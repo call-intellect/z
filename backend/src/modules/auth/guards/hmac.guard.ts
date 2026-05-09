@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -34,8 +34,8 @@ import { HmacService } from '../services/hmac.service';
 @Injectable()
 export class HmacGuard implements CanActivate {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly hmac: HmacService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(HmacService) private readonly hmac: HmacService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {

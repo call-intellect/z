@@ -84,6 +84,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.warn(logMessage);
     }
 
+    // Если ответ уже отправлен (например, `HmacGuard` короткозамкнул
+    // идемпотентный ответ ДО `return false`, и Nest бросил `ForbiddenException`),
+    // повторно слать заголовки нельзя — они уже улетели в сокет.
+    if (response.headersSent) {
+      return;
+    }
+
     response.status(mapped.status).json(mapped.payload);
   }
 

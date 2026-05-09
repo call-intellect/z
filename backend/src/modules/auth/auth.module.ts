@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { AuthController } from './auth.controller';
 import { AdminGuard } from './guards/admin.guard';
 import { CookieAuthGuard } from './guards/cookie-auth.guard';
 import { HmacGuard } from './guards/hmac.guard';
@@ -15,9 +16,14 @@ import { JwtService } from './services/jwt.service';
  *   - `CookieAuthGuard` — для пользовательских роутов (с `@OptionalAuth()` режимом);
  *   - `HmacGuard`       — для Crossmark-роутов (HMAC + idempotency);
  *   - `AdminGuard`      — после `CookieAuthGuard` для admin-роутов.
+ *
+ * Контроллер `/api/v1/auth/{exchange,me,logout}` использует `UsersService`
+ * (найти пользователя по deep-link). `UsersModule` глобален, поэтому
+ * импортировать его в `AuthModule` не нужно.
  */
 @Global()
 @Module({
+  controllers: [AuthController],
   providers: [JwtService, HmacService, CookieAuthGuard, HmacGuard, AdminGuard],
   exports: [JwtService, HmacService, CookieAuthGuard, HmacGuard, AdminGuard],
 })

@@ -105,6 +105,17 @@ export class IdempotencyConflictError extends DomainError {
   }
 }
 
+// ─────────────────────────── 400 ──────────────────────────────────────
+
+export class GuestNameRequiredError extends DomainError {
+  readonly code = 'guest_name_required';
+  readonly httpStatus = 400;
+
+  constructor() {
+    super('Введите имя для входа в встречу');
+  }
+}
+
 // ─────────────────────────── 410 ──────────────────────────────────────
 
 export class MeetingFinishedError extends DomainError {

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   type CallHandler,
   type ExecutionContext,
+  Inject,
   Injectable,
   type NestInterceptor,
 } from '@nestjs/common';
@@ -29,7 +30,7 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = ctx.switchToHttp().getRequest<Request>();

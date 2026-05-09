@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
 
@@ -18,7 +18,7 @@ import { TypedConfigService } from '../../../common/config/index';
  */
 @Injectable()
 export class HmacService {
-  constructor(private readonly cfg: TypedConfigService) {}
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
   /**
    * Проверяет подпись запроса. Никогда не throw — возвращает `false` на любой

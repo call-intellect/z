@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { RetryService } from '../ai/services/retry.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
@@ -40,6 +41,7 @@ export class MeetingsController {
   constructor(
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(HostControlsService) private readonly hostControls: HostControlsService,
+    @Inject(RetryService) private readonly retry: RetryService,
   ) {}
 
   @Get(':id/access')
@@ -152,6 +154,23 @@ export class MeetingsController {
   ): Promise<{ ok: true }> {
     await this.hostControls.finish(meetingId, user.id);
     return { ok: true };
+  }
+
+  /**
+   * Перезапуск AI-pipeline. Только хост встречи. Rate-limit 3/час на пользователя.
+   * Перед вызовом проверяем ownership через `meetings.getForUser`, который
+   * бросит `NotAuthorizedError` если пользователь не хост.
+   */
+  @Post(':id/retry-ai')
+  @HttpCode(HttpStatus.OK)
+  async retryAi(
+    @Param('id') meetingId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true; stage: string }> {
+    // Проверка ownership: getForUser кидает NotAuthorizedError для не-хоста.
+    await this.meetings.getForUser(meetingId, user.id);
+    const result = await this.retry.retry(meetingId, 'user', user.id);
+    return { ok: true, stage: result.stage };
   }
 
   // ─────────────────────────── helpers ────────────────────────────────────

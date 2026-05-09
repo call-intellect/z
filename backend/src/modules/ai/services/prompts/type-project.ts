@@ -1,0 +1,61 @@
+import { z } from 'zod';
+
+import {
+  buildExtractTool,
+  fieldNullableString,
+  fieldStringArray,
+  type PromptInput,
+  type PromptOutput,
+  turnsToText,
+  withToolInstructions,
+} from './common';
+
+export const TOOL_NAME = 'extract_project';
+
+export const SCHEMA = z
+  .object({
+    agreements: z.array(z.string()),
+    responsibilities: z.array(z.string()),
+    deadlines: z.array(z.string()),
+    risks: z.array(z.string()),
+    open_questions: z.array(z.string()),
+    next_step: z.string().nullable(),
+  })
+  .strict();
+
+const SYSTEM = `Ты — деловой ассистент. Это проектная встреча.
+Извлеки:
+- "agreements": договорённости сторон.
+- "responsibilities": зоны ответственности (кто за что отвечает).
+- "deadlines": сроки/дедлайны (текстом, со ссылкой на задачу/блок если упомянуто).
+- "risks": риски проекта.
+- "open_questions": открытые вопросы.
+- "next_step": ближайший следующий шаг или null.`;
+
+export function buildPrompt(input: PromptInput): PromptOutput {
+  return {
+    system: withToolInstructions(SYSTEM, TOOL_NAME),
+    user: `Тип встречи: project\nЗаголовок: ${input.meeting.title}\n\nДиалог:\n${turnsToText(input.dialog)}`,
+  };
+}
+
+export const TOOL = buildExtractTool(
+  TOOL_NAME,
+  'Извлечь отчёт проектной встречи',
+  {
+    agreements: fieldStringArray,
+    responsibilities: fieldStringArray,
+    deadlines: fieldStringArray,
+    risks: fieldStringArray,
+    open_questions: fieldStringArray,
+    next_step: fieldNullableString,
+  },
+  [
+    'agreements',
+    'responsibilities',
+    'deadlines',
+    'risks',
+    'open_questions',
+    'next_step',
+  ],
+);

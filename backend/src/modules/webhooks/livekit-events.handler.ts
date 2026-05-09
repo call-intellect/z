@@ -1,9 +1,10 @@
-import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { type WebhookEvent } from 'livekit-server-sdk';
 
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { AiQueueService } from '../ai/ai-queue.service';
 import { MeetingsService } from '../meetings/meetings.service';
 import { RecordingsService } from '../recordings/recordings.service';
 
@@ -45,6 +46,13 @@ export class LivekitEventsHandler {
      */
     @Inject(forwardRef(() => RecordingsService))
     private readonly recordings: RecordingsService | null = null,
+    /**
+     * `AiQueueService` — глобальный (`AiModule`). В юнит-тестах Фазы 3 его нет,
+     * поэтому делаем `@Optional()`: дефолтное `null`, проверка перед вызовом.
+     */
+    @Optional()
+    @Inject(AiQueueService)
+    private readonly aiQueue: AiQueueService | null = null,
   ) {}
 
   async handle(event: WebhookEvent): Promise<void> {
@@ -359,12 +367,26 @@ export class LivekitEventsHandler {
         });
       }
 
-      // TODO (Фаза 5): поставить BullMQ job на транскрибацию.
-      // if (this.aiQueueService) await this.aiQueueService.enqueueTranscribe(meetingId);
-      this.logger.log(
-        { meetingId },
-        'recording_ready достигнут; AI-pipeline будет поставлен в Фазе 5',
-      );
+      // Фаза 5: ставим BullMQ job на транскрибацию.
+      if (this.aiQueue) {
+        try {
+          await this.aiQueue.enqueueTranscribe(meetingId);
+          this.logger.log(
+            { meetingId },
+            'recording_ready: AI-pipeline (transcribe) поставлен в очередь',
+          );
+        } catch (qerr) {
+          this.logger.warn(
+            { meetingId, err: qerr instanceof Error ? qerr.message : String(qerr) },
+            'recording_ready: enqueueTranscribe не удался',
+          );
+        }
+      } else {
+        this.logger.warn(
+          { meetingId },
+          'recording_ready: AiQueueService недоступен (нет AiModule в контексте)',
+        );
+      }
     } catch (err) {
       this.logger.warn(
         { meetingId, err: err instanceof Error ? err.message : String(err) },

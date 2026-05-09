@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -53,6 +54,62 @@ export class S3Service implements OnModuleDestroy {
     const url = await getSignedUrl(this.client, command, { expiresIn });
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
     return { url, expiresAt };
+  }
+
+  /**
+   * Скачивает объект и возвращает Buffer. Используется AI-pipeline'ом
+   * для подсасывания audio-дорожек перед отправкой в Vox.
+   */
+  async getObject(key: string): Promise<Buffer> {
+    const command = new GetObjectCommand({
+      Bucket: this.cfg.s3.bucket,
+      Key: key,
+    });
+    const response = await this.client.send(command);
+    if (!response.Body) {
+      throw new Error(`S3 GetObject: пустой Body для ${key}`);
+    }
+    // SDK v3 возвращает sdk-stream-mixin — у него есть transformToByteArray().
+    const body = response.Body as unknown as {
+      transformToByteArray?: () => Promise<Uint8Array>;
+    };
+    if (typeof body.transformToByteArray === 'function') {
+      const bytes = await body.transformToByteArray();
+      return Buffer.from(bytes);
+    }
+    // Fallback: на NodeJS.Readable. Соберём вручную.
+    const stream = response.Body as unknown as NodeJS.ReadableStream;
+    const chunks: Buffer[] = [];
+    return new Promise<Buffer>((resolve, reject) => {
+      stream.on('data', (chunk: Buffer | string) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', (err) => reject(err));
+    });
+  }
+
+  /**
+   * Загружает JSON-объект в S3. Используется AI-pipeline'ом для
+   * сохранения transcripts/{track_*, index, merged}.json.
+   */
+  async putJson(key: string, data: unknown): Promise<void> {
+    const body = Buffer.from(JSON.stringify(data), 'utf8');
+    const command = new PutObjectCommand({
+      Bucket: this.cfg.s3.bucket,
+      Key: key,
+      Body: body,
+      ContentType: 'application/json; charset=utf-8',
+    });
+    await this.client.send(command);
+  }
+
+  /**
+   * Скачивает JSON-объект и парсит. Generic — caller типизирует.
+   */
+  async getJson<T>(key: string): Promise<T> {
+    const buffer = await this.getObject(key);
+    return JSON.parse(buffer.toString('utf8')) as T;
   }
 
   /**

@@ -10,6 +10,7 @@ import { MetricsModule } from './common/metrics/metrics.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { AiModule } from './modules/ai/ai.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
@@ -58,6 +59,10 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
     // LiveKit-обёртка. Глобальный модуль — нужен в Participants/Meetings/Webhooks.
     LivekitModule,
+
+    // AI-pipeline (HTTP-side). Содержит `AiQueueService` (диспетчер очередей)
+    // и `RetryService`. Сами воркеры — в отдельном `WorkersModule`.
+    AiModule,
 
     // Бизнес-модули.
     HealthModule,

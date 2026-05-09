@@ -1,0 +1,109 @@
+# Локальный dev-стенд Z. Поднимает все зависимости backend + LiveKit.
+# Использование:
+#   docker compose up -d postgres redis minio livekit egress
+#   cd backend && bun run prisma:push && bun run dev
+#
+# Все секреты — для локалки, не для прод.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: z-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: z_main
+      POSTGRES_USER: z_app
+      POSTGRES_PASSWORD: z_app_dev_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '127.0.0.1:55435:5432'
+    volumes:
+      - z-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U z_app -d z_main']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: z-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'no']
+    ports:
+      - '127.0.0.1:56381:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: z-minio
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: z_minio_dev
+      MINIO_ROOT_PASSWORD: z_minio_dev_password
+    ports:
+      - '127.0.0.1:59000:9000'   # S3 API
+      - '127.0.0.1:59001:9001'   # Web console
+    volumes:
+      - z-minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: z-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 z_minio_dev z_minio_dev_password &&
+      mc mb -p local/meetings-dev || true &&
+      mc mb -p local/db-backups-dev || true &&
+      mc anonymous set none local/meetings-dev &&
+      echo 'MinIO buckets ready'
+      "
+    restart: 'no'
+
+  livekit:
+    image: livekit/livekit-server:v1.8.0
+    container_name: z-livekit
+    restart: unless-stopped
+    command: ['--config', '/etc/livekit.yaml']
+    network_mode: host  # SFU нужны UDP-порты на хосте; см. code-pitfalls.md §2
+    volumes:
+      - ./infra/livekit/livekit.yaml:/etc/livekit.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ['livekit']  # включается флагом --profile livekit (Linux-only)
+
+  egress:
+    image: livekit/egress:v1.8.6
+    container_name: z-egress
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    network_mode: host
+    cap_add:
+      - SYS_ADMIN  # для chrome-headless внутри
+    volumes:
+      - ./infra/livekit/egress.yaml:/etc/egress.yaml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    profiles: ['livekit']
+
+volumes:
+  z-postgres-data:
+  z-minio-data:

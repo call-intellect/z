@@ -1,0 +1,265 @@
+// Z — Prisma schema
+// Источник: plans/tz/2026-05-08-mvp-fullstack-tz.md §1.3
+// Правило: ТОЛЬКО `prisma db push`. Никаких `prisma migrate*`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────── enums ────────────────────────────
+
+enum UserRole {
+  user
+  admin
+}
+
+enum MeetingType {
+  team
+  standup
+  plan_fact
+  project
+  sales
+  custdev
+  partner
+  interview
+  customer_success
+}
+
+enum MeetingStatus {
+  scheduled
+  active
+  completed
+  recording_processing
+  recording_ready
+  transcription_processing
+  transcription_ready
+  ai_processing
+  ai_ready
+  failed
+}
+
+enum ParticipantRole {
+  host
+  guest
+}
+
+enum RecordingStatus {
+  not_started
+  requested
+  recording
+  finalizing
+  ready
+  failed
+  expired
+  archived
+  deleted
+}
+
+// ──────────────────────────── models ────────────────────────────
+
+model User {
+  id         String    @id @default(cuid())
+  externalId String?   @unique
+  email      String
+  name       String
+  role       UserRole  @default(user)
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+
+  meetings Meeting[]
+
+  @@index([email])
+}
+
+model Meeting {
+  id            String        @id // ULID, генерится сервисом
+  title         String
+  type          MeetingType
+  customPrompt  String?       @db.Text
+  ownerId       String
+  owner         User          @relation(fields: [ownerId], references: [id])
+  roomName      String        @unique // равен id
+  status        MeetingStatus @default(scheduled)
+  startedAt     DateTime?
+  endedAt       DateTime?
+  failureReason String?
+  createdAt     DateTime      @default(now())
+
+  participants Participant[]
+  recording    Recording?
+  transcript   Transcript?
+  aiResult     AiResult?
+  events       MeetingEvent[]
+
+  @@index([ownerId, createdAt])
+  @@index([status, endedAt])
+}
+
+model Participant {
+  id               String          @id @default(cuid())
+  meetingId        String
+  meeting          Meeting         @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  livekitIdentity  String
+  name             String
+  role             ParticipantRole
+  isRegisteredUser Boolean         @default(false)
+  userId           String? // если хост или зарегистрированный
+  deviceCount      Int             @default(1)
+  joinedAt         DateTime?
+  leftAt           DateTime?
+
+  audioTrack AudioTrack?
+
+  @@unique([meetingId, livekitIdentity])
+  @@index([meetingId])
+}
+
+model Recording {
+  id                String          @id @default(cuid())
+  meetingId         String          @unique
+  meeting           Meeting         @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  mainVideoUrl      String?
+  compositeEgressId String?
+  status            RecordingStatus @default(not_started)
+  retentionDays     Int
+  expiresAt         DateTime
+  archivedAt        DateTime?
+  deletedAt         DateTime?
+  bytesTotal        BigInt?
+  durationSeconds   Int?
+
+  audioTracks AudioTrack[]
+  actions     RecordingAction[]
+
+  @@index([expiresAt, status])
+}
+
+model AudioTrack {
+  id              String       @id @default(cuid())
+  recordingId     String
+  recording       Recording    @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  participantId   String?      @unique
+  participant     Participant? @relation(fields: [participantId], references: [id])
+  participantName String
+  livekitIdentity String
+  trackId         String
+  trackEgressId   String?
+  audioUrl        String
+  startedAt       DateTime
+  endedAt         DateTime
+  durationSeconds Int
+  bytes           BigInt?
+
+  @@index([recordingId])
+}
+
+model Transcript {
+  id                   String   @id @default(cuid())
+  meetingId            String   @unique
+  meeting              Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  rawIndexS3Url        String // объект-индекс per-track jsons
+  mergedS3Url          String?
+  totalWords           Int?
+  totalDurationSeconds Int?
+  createdAt            DateTime @default(now())
+}
+
+model AiResult {
+  id             String      @id @default(cuid())
+  meetingId      String      @unique
+  meeting        Meeting     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingType    MeetingType
+  summary        String      @db.Text
+  structuredData Json?
+  customOutputMd String?     @db.Text
+  followUpEmail  String?     @db.Text
+  tasks          Json?
+  modelUsed      String
+  createdAt      DateTime    @default(now())
+}
+
+model AiUsageLog {
+  id              String   @id @default(cuid())
+  meetingId       String?
+  agentType       String // "transcribe" | "summary" | "report-by-type" | "follow-up" | "tasks"
+  jobId           String?
+  model           String
+  provider        String // "anthropic" | "vox" | "openai"
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  reasoningTokens Int?
+  costUsd         Decimal  @db.Decimal(10, 6)
+  durationMs      Int
+  success         Boolean
+  errorText       String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  @@index([meetingId])
+  @@index([createdAt])
+}
+
+model IntegrationKey {
+  id          String    @id @default(cuid())
+  partnerName String
+  keyHash     String    @unique
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime?
+
+  @@index([revokedAt])
+}
+
+model WebhookSeenEvent {
+  eventId    String   @id
+  eventType  String
+  receivedAt DateTime @default(now())
+}
+
+model CrossmarkIdempotency {
+  key          String   @id
+  responseHash String
+  responseBody Json
+  httpStatus   Int
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model MeetingEvent {
+  id         String   @id @default(cuid())
+  meetingId  String
+  meeting    Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  eventType  String
+  payload    Json
+  receivedAt DateTime @default(now())
+
+  @@index([meetingId, receivedAt])
+}
+
+model RecordingAction {
+  id          String    @id @default(cuid())
+  recordingId String
+  recording   Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  action      String // 'created' | 'extended' | 'archived' | 'deleted' | 'exported'
+  actor       String // 'user:<id>' | 'cron' | 'admin:<id>'
+  reason      String?
+  createdAt   DateTime  @default(now())
+
+  @@index([recordingId])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+}

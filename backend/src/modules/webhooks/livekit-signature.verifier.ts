@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import jwt from 'jsonwebtoken';
 import { type WebhookEvent } from 'livekit-server-sdk';
 
@@ -24,7 +24,7 @@ import { IntegrationKeyInvalidError } from '../../common/errors/domain-errors';
  */
 @Injectable()
 export class LivekitSignatureVerifier {
-  constructor(private readonly cfg: TypedConfigService) {}
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
   verify(input: { rawBody: Buffer; authHeader: string | undefined }): WebhookEvent {
     const { rawBody, authHeader } = input;

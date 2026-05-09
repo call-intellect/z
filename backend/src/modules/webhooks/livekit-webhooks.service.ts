@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Counter } from 'prom-client';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Prisma } from '@prisma/client';
 import { type WebhookEvent } from 'livekit-server-sdk';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { LivekitEventsHandler } from './livekit-events.handler';
 import { LivekitSignatureVerifier } from './livekit-signature.verifier';
 
 /**
@@ -29,10 +30,13 @@ export class LivekitWebhooksService {
   private readonly logger = new Logger(LivekitWebhooksService.name);
 
   constructor(
+    @Inject(LivekitSignatureVerifier)
     private readonly verifier: LivekitSignatureVerifier,
-    private readonly prisma: PrismaService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @InjectMetric(LIVEKIT_WEBHOOK_EVENTS_TOTAL)
     private readonly eventsTotal: Counter<'type' | 'dedup'>,
+    @Inject(LivekitEventsHandler)
+    private readonly eventsHandler: LivekitEventsHandler,
   ) {}
 
   async handle(rawBody: Buffer, authHeader: string | undefined): Promise<void> {
@@ -85,6 +89,19 @@ export class LivekitWebhooksService {
           },
         });
       }
+    }
+
+    // Фаза 3.3: маршрутизация в FSM-переходы и upsert participant'ов.
+    // Хэндлер сам решает, надо ли что-то делать по типу события.
+    try {
+      await this.eventsHandler.handle(event);
+    } catch (err) {
+      // Логируем, но не валим обработку — webhook уже дедуплицирован.
+      // LiveKit не будет ретраить (мы вернули 200).
+      this.logger.error(
+        { err, eventType, eventId },
+        'LivekitEventsHandler упал — событие уже зафиксировано в meeting_event',
+      );
     }
   }
 

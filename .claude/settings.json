@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -r /*)",
+      "Bash(find * -delete)",
+      "Bash(curl *$*)",
+      "Bash(curl *${*)",
+      "Bash(wget *$*)",
+      "Bash(wget *${*)",
+      "Bash(cat *.env)",
+      "Bash(cat .env*)",
+      "Bash(cat */.env*)",
+      "Bash(cat */credentials*)",
+      "Bash(cat */secrets*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/credentials.json)",
+      "Read(**/credentials.yml)",
+      "Read(**/secrets.json)",
+      "Read(**/secrets.yml)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.secret)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(jq -r \".tool_input.command // \\\"\\\"\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"git push.*\\b(main|master)\\b\"; then echo \"BLOCKED: git push to main/master is not allowed without explicit override\" >&2; exit 2; fi; if echo \"$CMD\" | grep -qE \"rm -rf /( |$)|rm -rf /\\*\"; then echo \"BLOCKED: rm -rf on root\" >&2; exit 2; fi; if echo \"$CMD\" | grep -qiE \"DROP\\s+TABLE\\b\"; then echo \"BLOCKED: DROP TABLE detected — confirm explicitly via raw psql\" >&2; exit 2; fi; exit 0'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'set -e; cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || exit 0; if ! command -v git >/dev/null 2>&1; then exit 0; fi; if ! git rev-parse --git-dir >/dev/null 2>&1; then exit 0; fi; LAST_COMMIT_TS=$(git log -1 --format=%ct 2>/dev/null || echo 0); NOW=$(date +%s); DIFF=$((NOW - LAST_COMMIT_TS)); if [ \"$DIFF\" -gt 300 ]; then exit 0; fi; CHANGED=$(git show --name-only --pretty=format: HEAD 2>/dev/null || true); HIT=0; if echo \"$CHANGED\" | grep -qE \"^backend/src/|^frontend/src/|\\.prisma$\"; then HIT=1; fi; if [ \"$HIT\" = \"1\" ]; then SB=$(echo \"$CHANGED\" | grep -E \"^second-brain/\" || true); if [ -z \"$SB\" ]; then echo \"WARNING: коммит затронул код (backend/src, frontend/src, *.prisma), но second-brain/ не обновлён в этом коммите. Проверь по таблице в CLAUDE.md (триггер 1).\" >&2; fi; fi; exit 0'"
+          }
+        ]
+      }
+    ]
+  }
+}

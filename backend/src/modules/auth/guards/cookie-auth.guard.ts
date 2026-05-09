@@ -1,6 +1,7 @@
 import {
   type CanActivate,
   type ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -29,8 +30,8 @@ const COOKIE_NAME = 'z_session';
 @Injectable()
 export class CookieAuthGuard implements CanActivate {
   constructor(
-    private readonly jwt: JwtService,
-    private readonly reflector: Reflector,
+    @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(Reflector) private readonly reflector: Reflector,
   ) {}
 
   canActivate(ctx: ExecutionContext): boolean {

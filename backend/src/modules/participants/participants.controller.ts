@@ -25,7 +25,8 @@ interface JoinResponse {
   livekit_identity: string;
   livekit: {
     url: string;
-    token: string | null;
+    token: string;
+    identity: string;
   };
 }
 

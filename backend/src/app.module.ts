@@ -12,6 +12,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { LivekitModule } from './modules/livekit/livekit.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { UsersModule } from './modules/users/users.module';
@@ -52,6 +53,9 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
     // Глобальный auth-модуль (JwtService, HmacService, Cookie/Hmac/Admin guards).
     AuthModule,
+
+    // LiveKit-обёртка. Глобальный модуль — нужен в Participants/Meetings/Webhooks.
+    LivekitModule,
 
     // Бизнес-модули.
     HealthModule,

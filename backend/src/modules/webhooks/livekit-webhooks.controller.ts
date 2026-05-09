@@ -3,6 +3,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Inject,
   Logger,
   Post,
   Req,
@@ -30,7 +31,10 @@ import { LivekitWebhooksService } from './livekit-webhooks.service';
 export class LivekitWebhooksController {
   private readonly logger = new Logger(LivekitWebhooksController.name);
 
-  constructor(private readonly service: LivekitWebhooksService) {}
+  constructor(
+    @Inject(LivekitWebhooksService)
+    private readonly service: LivekitWebhooksService,
+  ) {}
 
   @Post('livekit')
   @HttpCode(HttpStatus.OK)

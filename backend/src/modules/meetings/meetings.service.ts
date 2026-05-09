@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { type Meeting, type MeetingStatus, type MeetingType } from '@prisma/client';
+import { Prisma, type Meeting, type MeetingStatus, type MeetingType } from '@prisma/client';
 import { ulid } from 'ulid';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -231,6 +231,61 @@ export class MeetingsService {
     });
     this.metrics.incCrossmarkApiRequest('DELETE /meetings/:id', 200);
     this.logger.log(`Встреча ${id} отменена партнёром`);
+  }
+
+  /**
+   * Универсальный FSM-переход. Используется webhook-обработчиком и host-controls.
+   *
+   * Семантика:
+   *   1. В транзакции читаем текущий статус.
+   *   2. `assertTransition(from, to)` — бросит `InvalidFsmTransitionError` на запрет.
+   *   3. Обновляем `status` + опциональные поля (startedAt/endedAt/failureReason).
+   *   4. Записываем `MeetingEvent` (event_type = `fsm:<from>->to>`).
+   *
+   * Возвращаем обновлённую встречу.
+   */
+  async transitionStatus(
+    meetingId: string,
+    toStatus: MeetingStatus,
+    extras: {
+      startedAt?: Date | null;
+      endedAt?: Date | null;
+      failureReason?: string | null;
+      reason?: string;
+    } = {},
+  ): Promise<Meeting> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.meeting.findUnique({ where: { id: meetingId } });
+      if (!current) throw new MeetingNotFoundError(meetingId);
+
+      assertTransition(current.status, toStatus);
+
+      const updated = await tx.meeting.update({
+        where: { id: meetingId },
+        data: {
+          status: toStatus,
+          ...(extras.startedAt !== undefined ? { startedAt: extras.startedAt } : {}),
+          ...(extras.endedAt !== undefined ? { endedAt: extras.endedAt } : {}),
+          ...(extras.failureReason !== undefined
+            ? { failureReason: extras.failureReason }
+            : {}),
+        },
+      });
+
+      await tx.meetingEvent.create({
+        data: {
+          meetingId,
+          eventType: `fsm:${current.status}->${toStatus}`,
+          payload: {
+            from: current.status,
+            to: toStatus,
+            ...(extras.reason ? { reason: extras.reason } : {}),
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    });
   }
 
   // ────────────────────────── helpers ────────────────────────────────────

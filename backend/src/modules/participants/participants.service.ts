@@ -10,6 +10,7 @@ import {
 } from '../../common/errors/domain-errors';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
+import { LivekitService } from '../livekit/livekit.service';
 
 /**
  * Сервис гостевого/host-join'а.
@@ -29,7 +30,8 @@ export interface JoinResult {
   livekitIdentity: string;
   livekit: {
     url: string;
-    token: string | null;
+    token: string;
+    identity: string;
   };
   /** Если установили новый guest-cookie — фронт должен принять её. */
   guestSessionCookie?: {
@@ -51,6 +53,7 @@ export class ParticipantsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(LivekitService) private readonly livekit: LivekitService,
   ) {}
 
   static guestCookieName(meetingId: string): string {
@@ -120,11 +123,23 @@ export class ParticipantsService {
       this.logger.log(`Создан host-Participant ${participant.id} для встречи ${meeting.id}`);
     }
 
+    // Idempotent создаём LiveKit room и выдаём реальный host-токен.
+    await this.livekit.ensureRoom({ id: meeting.id });
+    const token = await this.livekit.generateHostToken(
+      { id: meeting.id, endedAt: meeting.endedAt },
+      livekitIdentity,
+      participant.name,
+    );
+
     return {
       participantId: participant.id,
       role: 'host',
       livekitIdentity,
-      livekit: { url: this.cfg.livekit.apiUrl, token: null },
+      livekit: {
+        url: this.cfg.livekit.apiUrl,
+        token,
+        identity: livekitIdentity,
+      },
     };
   }
 
@@ -144,11 +159,21 @@ export class ParticipantsService {
             where: { id: payload.participantId },
           });
           if (existing && existing.meetingId === meeting.id && existing.role === 'guest') {
+            await this.livekit.ensureRoom({ id: meeting.id });
+            const token = await this.livekit.generateGuestToken(
+              { id: meeting.id, endedAt: meeting.endedAt },
+              existing.livekitIdentity,
+              existing.name,
+            );
             return {
               participantId: existing.id,
               role: 'guest',
               livekitIdentity: existing.livekitIdentity,
-              livekit: { url: this.cfg.livekit.apiUrl, token: null },
+              livekit: {
+                url: this.cfg.livekit.apiUrl,
+                token,
+                identity: existing.livekitIdentity,
+              },
             };
           }
         }
@@ -187,11 +212,23 @@ export class ParticipantsService {
       meetingId: meeting.id,
     });
 
+    // 5. Генерируем реальный гостевой LiveKit-токен.
+    await this.livekit.ensureRoom({ id: meeting.id });
+    const token = await this.livekit.generateGuestToken(
+      { id: meeting.id, endedAt: meeting.endedAt },
+      livekitIdentity,
+      participant.name,
+    );
+
     return {
       participantId: participant.id,
       role: 'guest',
       livekitIdentity,
-      livekit: { url: this.cfg.livekit.apiUrl, token: null },
+      livekit: {
+        url: this.cfg.livekit.apiUrl,
+        token,
+        identity: livekitIdentity,
+      },
       guestSessionCookie: {
         name: ParticipantsService.guestCookieName(meeting.id),
         value: cookieValue,

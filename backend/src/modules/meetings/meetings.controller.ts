@@ -1,8 +1,11 @@
 import {
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Param,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +21,7 @@ import {
   ListMeetingsQuerySchema,
 } from './dto/list-meetings.dto';
 import type { MeetingForUserDto } from './dto/meeting-public.dto';
+import { HostControlsService } from './host-controls.service';
 import { MeetingsService } from './meetings.service';
 
 /**
@@ -33,7 +37,10 @@ import { MeetingsService } from './meetings.service';
 @Controller('api/v1/meetings')
 @UseGuards(CookieAuthGuard)
 export class MeetingsController {
-  constructor(@Inject(MeetingsService) private readonly meetings: MeetingsService) {}
+  constructor(
+    @Inject(MeetingsService) private readonly meetings: MeetingsService,
+    @Inject(HostControlsService) private readonly hostControls: HostControlsService,
+  ) {}
 
   @Get(':id/access')
   @OptionalAuth()
@@ -90,6 +97,64 @@ export class MeetingsController {
       })),
     };
   }
+
+  // ─────────────────────────── host controls ─────────────────────────────
+
+  @Post(':id/participants/:pid/mute')
+  @HttpCode(HttpStatus.OK)
+  async muteParticipant(
+    @Param('id') meetingId: string,
+    @Param('pid') participantId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.hostControls.muteParticipant(meetingId, participantId, user.id);
+    return { ok: true };
+  }
+
+  @Post(':id/participants/:pid/unmute')
+  @HttpCode(HttpStatus.OK)
+  async unmuteParticipant(
+    @Param('id') meetingId: string,
+    @Param('pid') participantId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.hostControls.unmuteParticipant(meetingId, participantId, user.id);
+    return { ok: true };
+  }
+
+  @Post(':id/participants/:pid/kick')
+  @HttpCode(HttpStatus.OK)
+  async kickParticipant(
+    @Param('id') meetingId: string,
+    @Param('pid') participantId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.hostControls.kickParticipant(meetingId, participantId, user.id);
+    return { ok: true };
+  }
+
+  @Post(':id/participants/:pid/lower-hand')
+  @HttpCode(HttpStatus.OK)
+  async lowerHand(
+    @Param('id') meetingId: string,
+    @Param('pid') participantId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.hostControls.lowerHand(meetingId, participantId, user.id);
+    return { ok: true };
+  }
+
+  @Post(':id/finish')
+  @HttpCode(HttpStatus.OK)
+  async finish(
+    @Param('id') meetingId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.hostControls.finish(meetingId, user.id);
+    return { ok: true };
+  }
+
+  // ─────────────────────────── helpers ────────────────────────────────────
 
   private mapMeetingSummary(m: {
     id: string;

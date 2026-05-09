@@ -44,6 +44,7 @@ _пусто_
 - `plans/architecture/2026-05-08-z-architecture.md` — целевая архитектура MVP (полное полотно: модули, FSM, контракты API, ENV, безопасность, decisions log)
 - `plans/tz/2026-05-08-mvp-fullstack-tz.md` — основное ТЗ MVP по фазам 0–9 (frontend + backend + AI + admin + observability)
 - `plans/tz/2026-05-06-infrastructure-deployment-tz.md` — фаза 0 (инфра): развёртывание серверов, LiveKit, Egress, БД, мониторинг, Selectel S3
+- `plans/tz/2026-05-09-standalone-product.md` — Z как самостоятельный продукт: lead-style регистрация (имя+email → временный пароль письмом), кабинет с sidebar, журнал встреч в master-detail, дизайн-система на shadcn/ui
 
 ## Баги и инциденты (`03_bugs/`)
 _пусто_

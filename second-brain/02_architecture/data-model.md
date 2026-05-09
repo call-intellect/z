@@ -32,6 +32,7 @@ type: architecture
   "type": "sales",
   "custom_prompt": null,
   "owner_id": "user_abc",
+  "card_id": "ckxxxxxxxxxxxx",
   "room_name": "01HMZP9X2J5K8R3T4Q7Y6N0F",
   "status": "scheduled",
   "started_at": null,
@@ -47,6 +48,36 @@ type: architecture
 **Отдельного `guest_link` нет.** Одна ссылка на встречу = `meet.crossmark.ru/m/<id>` — её и хост, и все гости открывают одинаково (как в Zoom / Google Meet / Яндекс Телемост). Хост узнаётся по cookie (поставленному при первом входе через deep-link из Crossmark); гость без cookie видит форму «Введите имя».
 
 **Поле `type`** — один из 9 типов (см. [[../01_projects/meeting-types]]). От него зависит шаблон AI-анализа.
+
+**Поле `card_id`** — опциональная привязка к CRM-карточке (см. [[../01_projects/cards]]). `onDelete: SetNull` — при удалении карточки встреча сохраняется, привязка обнуляется. Один `card_id` (one-to-many от Card к Meeting). Несколько карточек на встречу — vNext.
+
+### Card (CRM)
+
+```json
+{
+  "id": "ckxxxxxxxxxxxx",
+  "owner_id": "user_abc",
+  "name": "Иван Петров",
+  "kind": "client",
+  "color": "#5EEAD4",
+  "contact_name": "Иван Петров",
+  "contact_email": "ivan@example.ru",
+  "contact_phone": "+7...",
+  "pinned": false,
+  "summary_cache": "...AI rollup markdown...",
+  "summary_updated_at": "2026-05-09T15:00:00Z",
+  "meeting_count": 7,
+  "last_meeting_at": "2026-05-09T14:00:00Z"
+}
+```
+
+`kind` — `client | deal | project | topic | custom`. Хранится строкой (а не enum'ом), чтобы можно было дополнять без миграций.
+
+`summary_cache` — кэш AI rollup-сводки по последним 20 встречам карточки. Обновляется воркером `ai.card-rollup` через дебаунс 5 сек. См. [[../01_projects/cards]] §AI-pipeline.
+
+Один primary-контакт полями (`contact_name/email/phone`). Несколько контактов — vNext.
+
+Soft-delete с 30-дневным grace, retention-cron делает hard-delete. Уникальный индекс `[owner_id, name]` — пользователь не может иметь две карточки с одинаковым именем.
 
 ### Participant
 

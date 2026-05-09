@@ -119,6 +119,21 @@ export class LivekitService {
       if (message.toLowerCase().includes('already exists')) {
         return null;
       }
+      // LiveKit недоступен (fetch failed, ECONNREFUSED, timeout) — НЕ блокируем
+      // join: SFU сам создаст room при первом подключении participant'а
+      // (auto-create поведение по умолчанию). Логируем warning и продолжаем.
+      const isNetworkError =
+        message.toLowerCase().includes('fetch failed') ||
+        message.toLowerCase().includes('econnrefused') ||
+        message.toLowerCase().includes('timeout') ||
+        message.toLowerCase().includes('enotfound');
+      if (isNetworkError) {
+        this.logger.warn(
+          `LiveKit недоступен при ensureRoom(${meeting.id}): ${message}. ` +
+            `Полагаемся на auto-create при подключении клиента.`,
+        );
+        return null;
+      }
       this.logger.error(`Не удалось создать room ${meeting.id}: ${message}`);
       throw err;
     }

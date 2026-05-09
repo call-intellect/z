@@ -5,6 +5,7 @@ import {
   type PromptInput,
   type PromptOutput,
   turnsToText,
+  withRoomChatNote,
   withToolInstructions,
 } from './common';
 
@@ -16,9 +17,12 @@ const FOLLOW_UP_SYSTEM = `Ты — деловой ассистент. По ит�
 Поле "subject" — тема письма. Поле "body" — само письмо в формате plain-text (без HTML).`;
 
 export function buildFollowUpPrompt(input: PromptInput): PromptOutput {
-  const dialog = turnsToText(input.dialog);
+  const dialog = turnsToText(input.dialog, input.roomChat);
   return {
-    system: withToolInstructions(FOLLOW_UP_SYSTEM, FOLLOW_UP_TOOL_NAME),
+    system: withRoomChatNote(
+      withToolInstructions(FOLLOW_UP_SYSTEM, FOLLOW_UP_TOOL_NAME),
+      input.roomChat,
+    ),
     user: `Тип встречи: ${input.meeting.type}\nЗаголовок: ${input.meeting.title}\n\nДиалог:\n${dialog}`,
   };
 }

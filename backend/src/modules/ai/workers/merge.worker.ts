@@ -12,6 +12,7 @@ import { type AiJobData, QUEUE_NAMES } from '../queues';
 
 import {
   countWords,
+  loadRoomChatForMerge,
   maxEndSec,
   mergeWordTimestamps,
   type PerTrackWords,
@@ -20,7 +21,7 @@ import {
   type TranscriptIndex,
   transcriptMergedKey,
 } from '../services/s3-ai-keys';
-import type { DialogTurn } from '../services/prompts/common';
+import type { DialogTurn, RoomChatMessage } from '../services/prompts/common';
 
 /**
  * Worker стадии `ai.merge`.
@@ -139,11 +140,27 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     const totalWords = countWords(dialog);
     const totalDurationSeconds = maxEndSec(dialog);
 
-    // 4. Сохраняем merged.json.
-    const mergedKey = transcriptMergedKey(meetingId);
-    await this.s3.putJson(mergedKey, { meetingId, turns: dialog });
+    // 4. Подмешиваем in-meeting чат (опционально, по флагу INCLUDE_ROOM_CHAT_IN_AI).
+    //    Ключ `roomChat` добавляется в merged.json только если флаг включён И
+    //    сообщения есть — иначе downstream видит идентичный историческому payload.
+    const roomChat: RoomChatMessage[] | null = await loadRoomChatForMerge({
+      prisma: this.prisma,
+      cfg: this.cfg,
+      meetingId,
+    });
 
-    // 5. Обновляем Transcript.
+    // 5. Сохраняем merged.json.
+    const mergedKey = transcriptMergedKey(meetingId);
+    const mergedPayload: { meetingId: string; turns: DialogTurn[]; roomChat?: RoomChatMessage[] } = {
+      meetingId,
+      turns: dialog,
+    };
+    if (roomChat !== null) {
+      mergedPayload.roomChat = roomChat;
+    }
+    await this.s3.putJson(mergedKey, mergedPayload);
+
+    // 6. Обновляем Transcript.
     await this.prisma.transcript.update({
       where: { meetingId },
       data: {
@@ -153,14 +170,14 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    // 6. FSM → transcription_ready (если ещё в processing).
+    // 7. FSM → transcription_ready (если ещё в processing).
     if (meeting.status === 'transcription_processing') {
       await this.meetings.transitionStatus(meetingId, 'transcription_ready', {
         reason: 'ai:merge:done',
       });
     }
 
-    // 7. Метрика и enqueue.
+    // 8. Метрика и enqueue.
     this.metrics.observeAiPipelineDuration({
       stage: 'merge',
       type: meeting.type,
@@ -170,11 +187,14 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.queue.enqueueAnalyze(meetingId);
     this.logger.log(
-      { meetingId, totalWords, totalDurationSeconds },
+      {
+        meetingId,
+        totalWords,
+        totalDurationSeconds,
+        roomChatCount: roomChat?.length ?? 0,
+      },
       'merge: успешно — analyze поставлен',
     );
-
-    void this.cfg; // suppress unused warning (нужен под conf-зависимости в будущем)
   }
 
   private async onJobFailed(job: Job<AiJobData> | null, err: Error): Promise<void> {

@@ -15,6 +15,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.spec.ts', 'test/**/*.spec.ts', 'test/**/*.test.ts'],
     fileParallelism: false,
+    setupFiles: ['./test/setup-test-env.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

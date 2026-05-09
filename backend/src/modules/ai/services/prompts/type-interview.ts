@@ -7,6 +7,7 @@ import {
   type PromptInput,
   type PromptOutput,
   turnsToText,
+  withRoomChatNote,
   withToolInstructions,
 } from './common';
 
@@ -39,8 +40,8 @@ const SYSTEM = `Ты — рекрутер-ассистент. Это собес�
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
-    system: withToolInstructions(SYSTEM, TOOL_NAME),
-    user: `Тип встречи: interview\nЗаголовок: ${input.meeting.title}\n\nДиалог:\n${turnsToText(input.dialog)}`,
+    system: withRoomChatNote(withToolInstructions(SYSTEM, TOOL_NAME), input.roomChat),
+    user: `Тип встречи: interview\nЗаголовок: ${input.meeting.title}\n\nДиалог:\n${turnsToText(input.dialog, input.roomChat)}`,
   };
 }
 

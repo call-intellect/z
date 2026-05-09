@@ -1,0 +1,187 @@
+/**
+ * Design tokens for Z — AI meeting workspace.
+ * Source of truth: plans/analysis/2026-05-09-ai-meeting-workspace-design.md
+ *
+ * Two themes via [data-theme="dark|light"] on <html>. Default = dark.
+ * Mint accent #5EEAD4 (dark) / #14B8A6 (light) — узнаваемый brand-color.
+ */
+
+:root,
+:root[data-theme='dark'] {
+  /* Backgrounds — глубина через слои, не через тени (в dark теней нет) */
+  --bg-base: #0a0e14;
+  --bg-elevated: #11161e;
+  --bg-card: #161d26;
+  --bg-overlay: #1b232e;
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  /* Text */
+  --text-primary: #e8eaed;
+  --text-secondary: #a0a6b0;
+  --text-tertiary: #6b7280;
+
+  /* Accent — mint */
+  --accent: #5eead4;
+  --accent-hover: #7cf2dd;
+  --accent-muted: rgba(94, 234, 212, 0.12);
+  --accent-muted-strong: rgba(94, 234, 212, 0.2);
+  --accent-border: rgba(94, 234, 212, 0.28);
+  --accent-glow: 0 0 32px rgba(94, 234, 212, 0.35);
+  --accent-fg: #0a0e14;
+
+  /* Status */
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+
+  /* Radius */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+
+  /* Shadows (используются точечно, в light — основные) */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.4);
+  --shadow-glow-mint: 0 0 24px rgba(94, 234, 212, 0.3);
+
+  /* Blur */
+  --blur-glass: blur(12px) saturate(1.4);
+  --blur-modal: blur(8px);
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Fonts (set via next/font in layout, эти как fallback) */
+  --font-sans:
+    'Geist', 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    system-ui, sans-serif;
+  --font-mono:
+    'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+
+  /* Header / sidebar widths */
+  --header-h: 64px;
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 64px;
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg-base: #ffffff;
+  --bg-elevated: #f8fafb;
+  --bg-card: #ffffff;
+  --bg-overlay: #f3f4f6;
+
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+
+  --accent: #14b8a6;
+  --accent-hover: #0d9488;
+  --accent-muted: rgba(20, 184, 166, 0.1);
+  --accent-muted-strong: rgba(20, 184, 166, 0.18);
+  --accent-border: rgba(20, 184, 166, 0.28);
+  --accent-glow: 0 0 24px rgba(20, 184, 166, 0.25);
+  --accent-fg: #ffffff;
+
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info: #2563eb;
+
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-modal: 0 24px 48px rgba(15, 23, 42, 0.18);
+  --shadow-glow-mint: 0 0 24px rgba(20, 184, 166, 0.25);
+
+  color-scheme: light;
+}
+
+/* Базовые стили — применяются после tailwind base */
+html,
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reduced motion respected globally */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Scrollbar — тонкий dark в dark-режиме */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Skeleton shimmer keyframes */
+@keyframes z-shimmer {
+  0% {
+    background-position: -1200px 0;
+  }
+  100% {
+    background-position: 1200px 0;
+  }
+}
+
+.z-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-card) 0%,
+    var(--bg-overlay) 50%,
+    var(--bg-card) 100%
+  );
+  background-size: 1200px 100%;
+  animation: z-shimmer 1.5s infinite linear;
+}

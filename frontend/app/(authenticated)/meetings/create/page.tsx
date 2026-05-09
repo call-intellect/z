@@ -1,9 +1,11 @@
-import { CreateMeetingForm } from '@/ui/components/create-meeting-form/CreateMeetingForm';
+import { CreateMeetingFormV2 } from '@/ui/components/create-meeting-form/CreateMeetingFormV2';
 
+/**
+ * Создание встречи (M7) — wizard в 2 шага: галерея шаблонов → параметры.
+ *
+ * Старая форма (`CreateMeetingForm`) остаётся в репо для возможного отката
+ * (TODO M7 cleanup).
+ */
 export default function CreateMeetingPage() {
-  return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      <CreateMeetingForm />
-    </main>
-  );
+  return <CreateMeetingFormV2 />;
 }

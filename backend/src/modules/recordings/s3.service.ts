@@ -105,6 +105,21 @@ export class S3Service implements OnModuleDestroy {
   }
 
   /**
+   * Загрузка произвольного бинарного объекта (mp4, mp3, zip и т.п.).
+   * `contentType` обязателен — без него браузер скачает файл с
+   * `application/octet-stream`, что ломает inline-просмотр (видео/аудио).
+   */
+  async putObject(args: { key: string; body: Buffer; contentType: string }): Promise<void> {
+    const command = new PutObjectCommand({
+      Bucket: this.cfg.s3.bucket,
+      Key: args.key,
+      Body: args.body,
+      ContentType: args.contentType,
+    });
+    await this.client.send(command);
+  }
+
+  /**
    * Скачивает JSON-объект и парсит. Generic — caller типизирует.
    */
   async getJson<T>(key: string): Promise<T> {

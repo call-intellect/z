@@ -6,6 +6,7 @@ import {
   type PromptOutput,
   TasksSchema,
   turnsToText,
+  withRoomChatNote,
   withToolInstructions,
 } from './common';
 
@@ -20,9 +21,12 @@ const TASKS_SYSTEM = `Ты — деловой ассистент. Извлеки
 Не выдумывай задач. Если задач не было — верни пустой массив.`;
 
 export function buildTasksPrompt(input: PromptInput): PromptOutput {
-  const dialog = turnsToText(input.dialog);
+  const dialog = turnsToText(input.dialog, input.roomChat);
   return {
-    system: withToolInstructions(TASKS_SYSTEM, TASKS_TOOL_NAME),
+    system: withRoomChatNote(
+      withToolInstructions(TASKS_SYSTEM, TASKS_TOOL_NAME),
+      input.roomChat,
+    ),
     user: `Тип встречи: ${input.meeting.type}\nЗаголовок: ${input.meeting.title}\n\nДиалог:\n${dialog}`,
   };
 }

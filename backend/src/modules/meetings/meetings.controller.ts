@@ -1,8 +1,11 @@
 import {
   Body,
+  ConflictException,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   Inject,
   Param,
@@ -11,8 +14,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
+  QuotaExceededError as AiQuotaExceededError,
+  RegenerateConflictError,
+  RegenerateService,
+} from '../ai/services/regenerate.service';
 import { RetryService } from '../ai/services/retry.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
@@ -31,6 +40,19 @@ import type { MeetingForUserDto } from './dto/meeting-public.dto';
 import { HostControlsService } from './host-controls.service';
 import { MeetingsService } from './meetings.service';
 
+const RegenerateMeetingSchema = z.object({
+  expectedRecapVersion: z.coerce.number().int().min(1),
+  templateId: z.string().min(1).optional(),
+});
+type RegenerateMeetingBody = z.infer<typeof RegenerateMeetingSchema>;
+
+const RegenerateSectionSchema = z.object({
+  expectedRecapVersion: z.coerce.number().int().min(1),
+  sectionKey: z.string().min(1).max(100),
+  userInstruction: z.string().max(2000).optional(),
+});
+type RegenerateSectionBody = z.infer<typeof RegenerateSectionSchema>;
+
 /**
  * Cookie endpoints для встреч (для фронта).
  *
@@ -48,6 +70,7 @@ export class MeetingsController {
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(HostControlsService) private readonly hostControls: HostControlsService,
     @Inject(RetryService) private readonly retry: RetryService,
+    @Inject(RegenerateService) private readonly regenerate: RegenerateService,
   ) {}
 
   @Get(':id/access')
@@ -72,7 +95,16 @@ export class MeetingsController {
     limit: number;
     total: number;
   }> {
-    const result = await this.meetings.list(user.id, query);
+    const result = await this.meetings.list(user.id, {
+      page: query.page,
+      limit: query.limit,
+      query: query.query,
+      dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
+      dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
+      status: query.status,
+      type: query.type,
+      cardId: query.cardId,
+    });
     return {
       items: result.items.map((m) => this.mapMeetingSummary(m)),
       page: result.page,
@@ -96,6 +128,7 @@ export class MeetingsController {
         type: body.type,
         title: body.title,
         customPrompt: body.custom_prompt ?? null,
+        cardId: body.card_id ?? null,
       },
       user.id,
     );
@@ -238,7 +271,124 @@ export class MeetingsController {
     return { ok: true, stage: result.stage };
   }
 
+  // ─────────────────────────── regenerate (M3a) ──────────────────────────
+
+  /**
+   * Полная регенерация AI-отчёта. Optimistic-lock через `expectedRecapVersion`.
+   *
+   *   - 200 OK с новым `recapVersion` — успех (jobs поставлены в очередь).
+   *   - 409 `recap_version_mismatch` — версия успела измениться.
+   *   - 429 `quota_exceeded` — `MAX_REGENERATE_PER_MEETING_PER_DAY`.
+   */
+  @Post(':id/regenerate')
+  @HttpCode(HttpStatus.OK)
+  async regenerateMeeting(
+    @Param('id') meetingId: string,
+    @Body(new ZodValidationPipe(RegenerateMeetingSchema)) body: RegenerateMeetingBody,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ recapVersion: number }> {
+    try {
+      return await this.regenerate.regenerateMeeting({
+        meetingId,
+        userId: user.id,
+        expectedRecapVersion: body.expectedRecapVersion,
+        ...(body.templateId !== undefined ? { templateId: body.templateId } : {}),
+      });
+    } catch (err) {
+      throw this.mapRegenerateError(err);
+    }
+  }
+
+  /**
+   * Регенерация одной секции `AiResult.structuredData[sectionKey]`.
+   * Семантика статусов та же: 409 / 429.
+   */
+  @Post(':id/regenerate-section')
+  @HttpCode(HttpStatus.OK)
+  async regenerateSection(
+    @Param('id') meetingId: string,
+    @Body(new ZodValidationPipe(RegenerateSectionSchema)) body: RegenerateSectionBody,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ recapVersion: number; newSectionValue: unknown }> {
+    try {
+      return await this.regenerate.regenerateSection({
+        meetingId,
+        userId: user.id,
+        expectedRecapVersion: body.expectedRecapVersion,
+        sectionKey: body.sectionKey,
+        ...(body.userInstruction !== undefined
+          ? { userInstruction: body.userInstruction }
+          : {}),
+      });
+    } catch (err) {
+      throw this.mapRegenerateError(err);
+    }
+  }
+
+  // ─────────────────────────── soft-delete ───────────────────────────────
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMeeting(
+    @Param('id') meetingId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<void> {
+    await this.meetings.softDelete(meetingId, user.id);
+  }
+
   // ─────────────────────────── helpers ────────────────────────────────────
+
+  /**
+   * Маппинг ошибок RegenerateService → HttpException.
+   * `RegenerateForbiddenError` мы не маппим тут отдельно — он наследуется
+   * не от DomainError, поэтому будет 500 в `AllExceptionsFilter`. Для UI
+   * этого достаточно, т.к. forbidden случается только если `userId` не
+   * совпадает с ownerId, а на этом эндпоинте ownership уже подтверждён
+   * (в RegenerateService.regenerateMeeting проверяет владельца — но
+   * на cookie-флоу пользователь = owner, иначе вернётся 500 что мы
+   * мапим как 403 здесь).
+   */
+  private mapRegenerateError(err: unknown): HttpException {
+    if (err instanceof RegenerateConflictError) {
+      return new ConflictException({
+        ok: false,
+        error: {
+          code: 'recap_version_mismatch',
+          message: `Версия отчёта уже изменилась (current=${err.currentVersion})`,
+        },
+      });
+    }
+    if (err instanceof AiQuotaExceededError) {
+      const retryAfterSeconds = err.windowHours * 3600;
+      return new HttpException(
+        {
+          ok: false,
+          error: {
+            code: 'quota_exceeded',
+            message: `Превышен лимит регенераций (${err.limit} в ${err.windowHours}ч)`,
+          },
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+        // Retry-After ставим через response.setHeader в фильтре нельзя — он
+        // у нас не сохраняет HttpException-headers. Поэтому отдадим в payload.
+        { description: `Retry-After: ${retryAfterSeconds}` },
+      );
+    }
+    if (err instanceof Error && err.name === 'RegenerateForbiddenError') {
+      return new HttpException(
+        {
+          ok: false,
+          error: { code: 'forbidden', message: 'Нет прав на это действие' },
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (err instanceof HttpException) return err;
+    if (err instanceof Error) {
+      return new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    return new HttpException('Internal error', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
 
   private mapMeetingSummary(m: {
     id: string;

@@ -133,7 +133,11 @@ export function MeetingRoom({
           isHost={isHost}
           identityToParticipantId={identityMap}
         />
-        <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+        <ChatPanel
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          meetingId={meetingId}
+        />
       </div>
 
       <ControlsBar

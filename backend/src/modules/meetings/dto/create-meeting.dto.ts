@@ -22,11 +22,15 @@ export type CreateMeetingDto = z.infer<typeof CreateMeetingSchema>;
 /**
  * Схема для cookie-эндпоинта (Фаза 7.5).
  * Юзер уже есть (cookie), поэтому `host` не нужен.
+ *
+ * `card_id` (опц.) — встреча будет автоматически привязана к карточке владельца.
+ * Используется при «Создать встречу из карточки» (deeplink с `?cardId=...`).
  */
 export const CreateMeetingForUserSchema = z.object({
   type: z.nativeEnum(MeetingType),
   title: z.string().min(1).max(200),
   custom_prompt: z.string().max(10000).nullish(),
+  card_id: z.string().min(1).max(50).nullish(),
 });
 
 export type CreateMeetingForUserDto = z.infer<typeof CreateMeetingForUserSchema>;

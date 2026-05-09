@@ -9,11 +9,12 @@ import { AdminRouteGuard } from '@/contexts/admin-route-guard';
 import { useAuth } from '@/contexts/auth-context';
 import { t } from '@/lib/i18n';
 
-const NAV: Array<{ href: string; key: string }> = [
+const NAV: Array<{ href: string; key?: string; label?: string }> = [
   { href: '/admin', key: 'admin.nav.home' },
   { href: '/admin/meetings', key: 'admin.nav.meetings' },
   { href: '/admin/integration-keys', key: 'admin.nav.integration_keys' },
   { href: '/admin/ai-usage', key: 'admin.nav.ai_usage' },
+  { href: '/admin/ai-models', label: 'AI Models' },
   { href: '/admin/recordings/expiring', key: 'admin.nav.expiring' },
 ];
 
@@ -46,7 +47,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                       : 'text-slate-700 hover:bg-slate-100',
                   )}
                 >
-                  {t(item.key as Parameters<typeof t>[0])}
+                  {item.key ? t(item.key as Parameters<typeof t>[0]) : item.label}
                 </Link>
               );
             })}

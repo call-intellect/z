@@ -21,6 +21,34 @@ export type CreateMeetingApiRequest = {
   type: MeetingType;
   title: string;
   custom_prompt?: string | null;
+  templateId?: string | null;
+  /**
+   * Опциональная привязка к карточке. Если задано — встреча создаётся уже
+   * привязанной к карточке (deeplink-сценарий «Создать встречу из карточки»).
+   */
+  card_id?: string | null;
+};
+
+export type ListMeetingsApiRequest = {
+  page?: number;
+  limit?: number;
+  status?: MeetingStatus | MeetingStatus[];
+  type?: MeetingType | MeetingType[];
+  query?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  tagIds?: string[];
+  cardId?: string;
+};
+
+export type RegenerateMeetingApiRequest = {
+  expectedRecapVersion: number;
+  templateId?: string | null;
+};
+
+export type RegenerateSectionApiRequest = {
+  expectedRecapVersion: number;
+  sectionKey: string;
 };
 
 export type CreateMeetingApiResponse = { id: string; url: string };
@@ -76,17 +104,31 @@ export type TranscriptApiResponse = {
 
 // ─────────────────── helpers ──────────────────
 
-function buildListQuery(opts: {
-  page?: number;
-  limit?: number;
-  status?: MeetingStatus;
-  type?: MeetingType;
-}): string {
+function buildListQuery(opts: ListMeetingsApiRequest): string {
   const params = new URLSearchParams();
   if (opts.page) params.set('page', String(opts.page));
   if (opts.limit) params.set('limit', String(opts.limit));
-  if (opts.status) params.set('status', opts.status);
-  if (opts.type) params.set('type', opts.type);
+  if (opts.status) {
+    if (Array.isArray(opts.status)) {
+      for (const s of opts.status) params.append('status', s);
+    } else {
+      params.set('status', opts.status);
+    }
+  }
+  if (opts.type) {
+    if (Array.isArray(opts.type)) {
+      for (const tt of opts.type) params.append('type', tt);
+    } else {
+      params.set('type', opts.type);
+    }
+  }
+  if (opts.query) params.set('query', opts.query);
+  if (opts.dateFrom) params.set('dateFrom', opts.dateFrom);
+  if (opts.dateTo) params.set('dateTo', opts.dateTo);
+  if (opts.tagIds) {
+    for (const id of opts.tagIds) params.append('tagId', id);
+  }
+  if (opts.cardId) params.set('cardId', opts.cardId);
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
@@ -94,18 +136,29 @@ function buildListQuery(opts: {
 // ─────────────────── api ──────────────────
 
 export const meetingsApi = {
-  list: (opts: {
-    page?: number;
-    limit?: number;
-    status?: MeetingStatus;
-    type?: MeetingType;
-  }) =>
+  list: (opts: ListMeetingsApiRequest) =>
     apiClient.get<ListMeetingsApiResponse>(
       `/api/v1/meetings${buildListQuery(opts)}`,
     ),
 
   create: (body: CreateMeetingApiRequest) =>
     apiClient.post<CreateMeetingApiResponse>('/api/v1/meetings', body),
+
+  /** Soft-delete встречи. */
+  softDelete: (id: string) =>
+    apiClient.del<{ ok: true }>(`/api/v1/meetings/${encodeURIComponent(id)}`),
+
+  regenerate: (id: string, body: RegenerateMeetingApiRequest) =>
+    apiClient.post<{ ok: true; queued: boolean }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/regenerate`,
+      body,
+    ),
+
+  regenerateSection: (id: string, body: RegenerateSectionApiRequest) =>
+    apiClient.post<{ ok: true; queued: boolean }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/regenerate-section`,
+      body,
+    ),
 
   get: (id: string) =>
     apiClient.get<MeetingDetailApi>(`/api/v1/meetings/${encodeURIComponent(id)}`),

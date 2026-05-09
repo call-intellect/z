@@ -25,10 +25,10 @@ const cspDirectives = [
   isProd
     ? "script-src 'self' 'unsafe-inline'"
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' blob: data: https:",
-  "font-src 'self' data:",
-  `connect-src 'self' ${backendUrl} ${livekitUrl} wss://*.crossmark.ru ${isProd ? '' : 'http://localhost:3000 ws://localhost:3000'}`.trim(),
+  "font-src 'self' data: https://fonts.gstatic.com",
+  `connect-src 'self' ${backendUrl} ${livekitUrl} wss://*.crossmark.ru ${isProd ? '' : 'http://localhost:3000 ws://localhost:3000 ws://localhost:7880 wss://localhost:7880'}`.trim(),
   "media-src 'self' blob:",
   "frame-ancestors 'none'",
   "object-src 'none'",

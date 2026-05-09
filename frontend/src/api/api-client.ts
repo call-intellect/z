@@ -3,6 +3,8 @@ import { ApiError } from './api-error';
 
 type GetOpts = { signal?: AbortSignal };
 type PostOpts = { idempotencyKey?: string; signal?: AbortSignal };
+type PatchOpts = { signal?: AbortSignal };
+type PutOpts = { signal?: AbortSignal };
 
 type BackendErrorPayload = {
   ok?: false;
@@ -56,12 +58,20 @@ export class ApiClient {
     });
   }
 
+  async patch<T>(path: string, body?: unknown, opts?: PatchOpts): Promise<T> {
+    return this.request<T>('PATCH', path, body, { signal: opts?.signal });
+  }
+
+  async put<T>(path: string, body?: unknown, opts?: PutOpts): Promise<T> {
+    return this.request<T>('PUT', path, body, { signal: opts?.signal });
+  }
+
   async del<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path);
   }
 
   private async request<T>(
-    method: 'GET' | 'POST' | 'DELETE',
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown,
     opts?: { idempotencyKey?: string; signal?: AbortSignal },

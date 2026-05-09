@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { countWords, maxEndSec, mergeWordTimestamps, type PerTrackWords } from './merger';
+import type { TypedConfigService } from '../../../common/config/index';
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+
+import {
+  countWords,
+  loadRoomChatForMerge,
+  maxEndSec,
+  mergeWordTimestamps,
+  type PerTrackWords,
+} from './merger';
 
 describe('mergeWordTimestamps', () => {
   it('пустой вход → пустой массив', () => {
@@ -117,5 +126,89 @@ describe('mergeWordTimestamps', () => {
     ];
     expect(countWords(turns)).toBe(5);
     expect(maxEndSec(turns)).toBe(10);
+  });
+});
+
+describe('loadRoomChatForMerge', () => {
+  /** Хэлпер: типизированные моки PrismaService.meetingRoomMessage и cfg. */
+  function makeDeps(opts: {
+    includeRoomChat: boolean;
+    rows: Array<{ authorName: string; content: string; sentAt: Date }>;
+  }): { prisma: PrismaService; cfg: TypedConfigService; findMany: ReturnType<typeof vi.fn> } {
+    const findMany = vi.fn().mockResolvedValue(opts.rows);
+    const prisma = {
+      meetingRoomMessage: { findMany },
+    } as unknown as PrismaService;
+    const cfg = {
+      aiFeatures: { includeRoomChat: opts.includeRoomChat },
+    } as unknown as TypedConfigService;
+    return { prisma, cfg, findMany };
+  }
+
+  it('includeRoomChat=true + 3 сообщения → массив в порядке sentAt asc', async () => {
+    const sentAt1 = new Date('2026-05-08T10:00:05.000Z');
+    const sentAt2 = new Date('2026-05-08T10:00:30.000Z');
+    const sentAt3 = new Date('2026-05-08T10:01:00.000Z');
+    const { prisma, cfg, findMany } = makeDeps({
+      includeRoomChat: true,
+      rows: [
+        { authorName: 'Алиса', content: 'привет', sentAt: sentAt1 },
+        { authorName: 'Боб', content: 'https://example.com/doc', sentAt: sentAt2 },
+        { authorName: 'Алиса', content: 'договорились на пятницу', sentAt: sentAt3 },
+      ],
+    });
+
+    const result = await loadRoomChatForMerge({ prisma, cfg, meetingId: 'm-1' });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { meetingId: 'm-1' },
+      orderBy: { sentAt: 'asc' },
+      select: { authorName: true, content: true, sentAt: true },
+    });
+    expect(result).toEqual([
+      { authorName: 'Алиса', content: 'привет', sentAt: sentAt1.toISOString() },
+      {
+        authorName: 'Боб',
+        content: 'https://example.com/doc',
+        sentAt: sentAt2.toISOString(),
+      },
+      {
+        authorName: 'Алиса',
+        content: 'договорились на пятницу',
+        sentAt: sentAt3.toISOString(),
+      },
+    ]);
+  });
+
+  it('includeRoomChat=true, нет сообщений → null (ключ не добавляется)', async () => {
+    const { prisma, cfg, findMany } = makeDeps({
+      includeRoomChat: true,
+      rows: [],
+    });
+
+    const result = await loadRoomChatForMerge({ prisma, cfg, meetingId: 'm-2' });
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(result).toBeNull();
+  });
+
+  it('includeRoomChat=false → null без обращения к БД', async () => {
+    const { prisma, cfg, findMany } = makeDeps({
+      includeRoomChat: false,
+      rows: [
+        // эти сообщения не должны быть прочитаны вообще, но кладём чтобы
+        // убедиться, что флаг отключает БД-запрос полностью.
+        {
+          authorName: 'Алиса',
+          content: 'это не должно попасть в AI',
+          sentAt: new Date('2026-05-08T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    const result = await loadRoomChatForMerge({ prisma, cfg, meetingId: 'm-3' });
+
+    expect(result).toBeNull();
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

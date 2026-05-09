@@ -1,17 +1,15 @@
-import { MeetingsTable } from '@/ui/components/meetings-list/MeetingsTable';
+import { MeetingsJournalReal } from '@/ui/components/meetings-journal/MeetingsJournalReal';
 
 /**
- * Защита роута: middleware (frontend/middleware.ts) проверяет наличие
- * cookie `z_session`. Если cookie нет — редиректит на `/`.
+ * Журнал встреч (M7) — master-detail layout с фильтрами, тегами,
+ * массовыми действиями (delete / set tags / bulk export).
  *
- * Внутри страницы мы дополнительно полагаемся на `apiClient`, который
- * на 401 эмитит `auth:expired` — `AuthProvider` сбросит user и UI прекратит
- * запросы.
+ * Защита роута: `frontend/middleware.ts` (cookie z_session).
+ * На 401 apiClient эмитит `auth:expired`.
+ *
+ * Старая табличная версия: `MeetingsTable` — больше не подключается,
+ * но файл остаётся в репо (TODO M7 cleanup).
  */
 export default function MeetingsListPage() {
-  return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <MeetingsTable />
-    </main>
-  );
+  return <MeetingsJournalReal />;
 }

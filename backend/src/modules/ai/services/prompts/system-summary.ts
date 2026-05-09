@@ -1,4 +1,9 @@
-import { type PromptInput, type PromptOutput, turnsToText } from './common';
+import {
+  type PromptInput,
+  type PromptOutput,
+  turnsToText,
+  withRoomChatNote,
+} from './common';
 
 const SUMMARY_SYSTEM = `Ты — ассистент, который резюмирует деловые встречи на русском языке.
 Сделай краткое саммари из 2-3 предложений: о чём была встреча, ключевые договорённости.
@@ -11,9 +16,9 @@ export function buildSummaryPrompt(input: PromptInput): PromptOutput {
     `Тип встречи: ${input.meeting.type}`,
     `Заголовок: ${input.meeting.title}`,
   ].join('\n');
-  const dialog = turnsToText(input.dialog);
+  const dialog = turnsToText(input.dialog, input.roomChat);
   return {
-    system: SUMMARY_SYSTEM,
+    system: withRoomChatNote(SUMMARY_SYSTEM, input.roomChat),
     user: `${meta}\n\nДиалог:\n${dialog}`,
   };
 }

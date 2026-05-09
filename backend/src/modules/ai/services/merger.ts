@@ -1,6 +1,13 @@
-import type { DialogTurn } from './prompts/common';
+import { Logger } from '@nestjs/common';
+
+import type { TypedConfigService } from '../../../common/config/index';
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+
+import type { DialogTurn, RoomChatMessage } from './prompts/common';
 
 export type { DialogTurn };
+
+const roomChatLogger = new Logger('Merger.roomChat');
 
 /**
  * Per-track word с привязкой к speaker и абсолютному времени trackStartedAt.
@@ -133,4 +140,59 @@ export function maxEndSec(turns: DialogTurn[]): number {
     if (t.endSec > max) max = t.endSec;
   }
   return Math.round(max);
+}
+
+/**
+ * Загружает in-meeting чат встречи для подмешивания в merged.json AI-pipeline.
+ *
+ * Контракт:
+ *   - если флаг `cfg.aiFeatures.includeRoomChat === false` → вернёт `null`
+ *     (downstream НЕ добавляет ключ `roomChat` в merged.json);
+ *   - если флаг включён, но сообщений нет → вернёт `null` (тоже без ключа,
+ *     чтобы LLM не получал пустой массив и не тратил токены на упоминание чата);
+ *   - иначе вернёт массив `RoomChatMessage[]` в порядке `sentAt asc`.
+ *
+ * Делается отдельной функцией (не методом сервиса), потому что merger.ts
+ * — pure-utility слой; injected зависимости передаются параметрами, чтобы
+ * не плодить класс ради двух методов и не ломать существующие чистые тесты
+ * `mergeWordTimestamps`.
+ *
+ * Источник: модель `MeetingRoomMessage` (см. ТЗ `meeting-room-chat`).
+ */
+export async function loadRoomChatForMerge(args: {
+  prisma: PrismaService;
+  cfg: TypedConfigService;
+  meetingId: string;
+}): Promise<RoomChatMessage[] | null> {
+  const { prisma, cfg, meetingId } = args;
+  const includeRoomChat = cfg.aiFeatures.includeRoomChat;
+  if (!includeRoomChat) {
+    roomChatLogger.debug({ meetingId, includeRoomChat: false }, 'roomChat выключен флагом');
+    return null;
+  }
+
+  const rows = await prisma.meetingRoomMessage.findMany({
+    where: { meetingId },
+    orderBy: { sentAt: 'asc' },
+    select: { authorName: true, content: true, sentAt: true },
+  });
+
+  if (rows.length === 0) {
+    roomChatLogger.debug(
+      { meetingId, chatCount: 0, includeRoomChat: true },
+      'roomChat пустой — ключ в merged.json не добавляется',
+    );
+    return null;
+  }
+
+  roomChatLogger.debug(
+    { meetingId, chatCount: rows.length, includeRoomChat: true },
+    'roomChat подмешан в merged.json',
+  );
+
+  return rows.map((r) => ({
+    sentAt: r.sentAt.toISOString(),
+    authorName: r.authorName,
+    content: r.content,
+  }));
 }

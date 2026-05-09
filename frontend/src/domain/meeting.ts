@@ -1,6 +1,18 @@
 import type { MeetingStatus, MeetingType, ParticipantRole } from './enums';
 
 /**
+ * Статус под-этапа AI-pipeline (chapters/tasks/embeddings).
+ * Используется в meeting.chaptersStatus / tasksStatus / embeddingsStatus.
+ */
+export type ProcessingStageStatus =
+  | 'pending'
+  | 'queued'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'skipped';
+
+/**
  * Доменная модель встречи.
  * Маппинг из ApiDto — `mapMeetingFromApi` ниже. Дата в виде ISO-строки или Date —
  * выбираем `Date | null` (в UI форматируем через i18n / format).
@@ -15,6 +27,16 @@ export type MeetingDomain = {
   createdAt: Date;
   customPrompt: string | null;
   failureReason: string | null;
+  /** Версия AI-отчёта (инкрементится при regenerate). */
+  recapVersion: number;
+  /** Под-этапы pipeline. backward-compat — поля могут отсутствовать на старых встречах. */
+  chaptersStatus: ProcessingStageStatus | null;
+  tasksStatus: ProcessingStageStatus | null;
+  embeddingsStatus: ProcessingStageStatus | null;
+  /** Длительность в миллисекундах (predtasked серверной стороной). */
+  durationMs: number | null;
+  /** Привязка к CRM-карточке. null если встреча не в карточке. */
+  cardId: string | null;
 };
 
 export type ParticipantDomain = {
@@ -57,6 +79,12 @@ export type MeetingApi = {
   createdAt: string;
   customPrompt?: string | null;
   failureReason?: string | null;
+  recapVersion?: number;
+  chaptersStatus?: ProcessingStageStatus | null;
+  tasksStatus?: ProcessingStageStatus | null;
+  embeddingsStatus?: ProcessingStageStatus | null;
+  durationMs?: number | null;
+  cardId?: string | null;
 };
 
 export type MeetingSummaryApi = {
@@ -67,6 +95,11 @@ export type MeetingSummaryApi = {
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
+  recapVersion?: number;
+  durationMs?: number | null;
+  chaptersStatus?: ProcessingStageStatus | null;
+  tasksStatus?: ProcessingStageStatus | null;
+  embeddingsStatus?: ProcessingStageStatus | null;
 };
 
 export type ParticipantApi = {
@@ -103,6 +136,12 @@ export function meetingFromApi(api: MeetingApi): MeetingDomain {
     createdAt: new Date(api.createdAt),
     customPrompt: api.customPrompt ?? null,
     failureReason: api.failureReason ?? null,
+    recapVersion: api.recapVersion ?? 1,
+    chaptersStatus: api.chaptersStatus ?? null,
+    tasksStatus: api.tasksStatus ?? null,
+    embeddingsStatus: api.embeddingsStatus ?? null,
+    durationMs: typeof api.durationMs === 'number' ? api.durationMs : null,
+    cardId: api.cardId ?? null,
   };
 }
 
@@ -117,6 +156,12 @@ export function meetingSummaryFromApi(api: MeetingSummaryApi): MeetingDomain {
     createdAt: new Date(api.createdAt),
     customPrompt: null,
     failureReason: null,
+    recapVersion: api.recapVersion ?? 1,
+    chaptersStatus: api.chaptersStatus ?? null,
+    tasksStatus: api.tasksStatus ?? null,
+    embeddingsStatus: api.embeddingsStatus ?? null,
+    durationMs: typeof api.durationMs === 'number' ? api.durationMs : null,
+    cardId: null,
   };
 }
 
@@ -143,10 +188,14 @@ export function accessFromApi(api: AccessApi): AccessDomain {
 }
 
 /**
- * Длительность встречи в секундах (по startedAt/endedAt).
- * Возвращает `null` если ещё нет endedAt.
+ * Длительность встречи в секундах (приоритет — `durationMs` от бэка,
+ * fallback — разница `startedAt`/`endedAt`).
+ * Возвращает `null` если данных недостаточно.
  */
 export function meetingDurationSeconds(m: MeetingDomain): number | null {
+  if (typeof m.durationMs === 'number' && m.durationMs > 0) {
+    return Math.round(m.durationMs / 1000);
+  }
   if (!m.startedAt || !m.endedAt) return null;
   const ms = m.endedAt.getTime() - m.startedAt.getTime();
   if (ms <= 0) return null;

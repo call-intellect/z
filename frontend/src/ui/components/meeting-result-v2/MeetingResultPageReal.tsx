@@ -1,0 +1,1412 @@
+'use client';
+
+/**
+ * Production-версия страницы результата AI-встречи.
+ *
+ * Использует тот же визуальный язык, что и
+ * `__design-reference__/MeetingResultPage.reference.tsx`,
+ * но с реальными данными из API:
+ *
+ *   - useMeeting (детальная встреча + опрос статусов)
+ *   - useMeetingChapters / Tasks / Highlights
+ *   - useMeetingChat (стейт-машина чата)
+ *
+ * Layout: 3 колонки. Левый sidebar — глобальный (через AppShell),
+ * центральная — плеер + tabs, правая — AI-чат (коллапсируемая).
+ *
+ * TODO M7: cleanup старого `meeting-result/*`.
+ */
+
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  Circle,
+  Clock,
+  Copy,
+  Download,
+  ExternalLink,
+  FileText,
+  ListChecks,
+  Loader2,
+  MessageCircle,
+  MessageSquareText,
+  MoreHorizontal,
+  Search,
+  Play,
+  Plus,
+  RefreshCw,
+  Scissors,
+  Share2,
+  Sparkles,
+  StickyNote,
+  Trash2,
+} from 'lucide-react';
+import useSWR from 'swr';
+import { useRouter } from 'next/navigation';
+
+import { meetingsApi } from '@/api/meetings.api';
+import { templatesApi } from '@/api/templates.api';
+import { chaptersApi } from '@/api/chapters.api';
+import { tasksApi } from '@/api/tasks.api';
+import { highlightsApi } from '@/api/highlights.api';
+import { exportsApi } from '@/api/exports.api';
+import { ApiError } from '@/api/api-error';
+import { useMeeting } from '@/hooks/use-meeting';
+import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
+import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
+import { useMeetingHighlights } from '@/hooks/use-meeting-highlights';
+import { useMeetingRoomMessages } from '@/hooks/use-meeting-room-messages';
+import { useVidstackPlayer } from '@/hooks/use-vidstack-player';
+
+import type { RoomMessageDomain } from '@/domain/room-message';
+
+import { aiResultFromApi } from '@/domain/ai-result';
+import type { MeetingDomain } from '@/domain/meeting';
+import { templateFromApi } from '@/domain/template';
+import type { TaskDomain } from '@/domain/task';
+
+import { Button } from '@/ui/shadcn/button';
+import { Badge } from '@/ui/shadcn/badge';
+import { Skeleton } from '@/ui/shadcn/skeleton';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/ui/shadcn/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/ui/shadcn/dropdown-menu';
+import { toast } from '@/ui/shadcn/toast';
+import { cn } from '@/ui/shadcn/lib/utils';
+
+import { MeetingPlayer } from './MeetingPlayer';
+import { MeetingChatPanel } from './MeetingChatPanel';
+import { ShareDialog } from './ShareDialog';
+import { HighlightCreatorDialog } from './HighlightCreatorDialog';
+import { fmtTime, fmtDurationCompact } from './format-utils';
+
+const MEETING_TYPE_LABELS: Record<string, string> = {
+  team: 'Team sync',
+  standup: 'Standup',
+  plan_fact: 'План-факт',
+  project: 'Проект',
+  sales: 'Sales',
+  custdev: 'Custdev',
+  partner: 'Партнёр',
+  interview: 'Интервью',
+  customer_success: 'Customer Success',
+};
+
+type TabKey = 'overview' | 'chapters' | 'transcript' | 'chat' | 'tasks' | 'notes';
+
+export type MeetingResultPageRealProps = {
+  meetingId: string;
+};
+
+export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps) {
+  // Базовая встреча.
+  const {
+    meeting,
+    isLoading: meetingLoading,
+    mutate: mutateMeeting,
+  } = useMeeting(meetingId);
+
+  // Детальный «result» с aiResult и recording info.
+  const {
+    data: result,
+    isLoading: resultLoading,
+    mutate: mutateResult,
+  } = useSWR(
+    meetingId ? ['meeting-result', meetingId] : null,
+    () => meetingsApi.result(meetingId),
+    { revalidateOnFocus: false },
+  );
+
+  const { chapters, mutate: mutateChapters } = useMeetingChapters(meetingId);
+  const { tasks, mutate: mutateTasks } = useMeetingTasks(meetingId);
+  const { highlights, mutate: mutateHighlights } = useMeetingHighlights(meetingId);
+  const { messages: roomMessages } = useMeetingRoomMessages(meetingId);
+
+  const player = useVidstackPlayer();
+  const [currentMs, setCurrentMs] = useState(0);
+  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [shareOpen, setShareOpen] = useState(false);
+  const [highlightOpen, setHighlightOpen] = useState(false);
+
+  const aiResult = useMemo(
+    () => (result?.aiResult ? aiResultFromApi(result.aiResult) : null),
+    [result],
+  );
+
+  const onSeek = (ms: number) => {
+    player.seekTo(ms);
+    setCurrentMs(ms);
+  };
+
+  if (meetingLoading || resultLoading) {
+    return <MeetingResultSkeleton />;
+  }
+
+  if (!meeting) {
+    return (
+      <div className="mx-auto max-w-md px-6 py-24 text-center">
+        <div className="text-base font-medium text-fg-primary">
+          Не удалось загрузить встречу
+        </div>
+        <div className="mt-2 text-sm text-fg-secondary">
+          Возможно, у вас нет доступа или встреча была удалена.
+        </div>
+        <Button asChild className="mt-6">
+          <Link href="/meetings">Вернуться к журналу</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const recording = result?.recording;
+  // Бэк может выдавать presigned URL под разными именами; пробуем оба.
+  const recordingAny = recording as unknown as Record<string, unknown> | null;
+  const videoUrl =
+    (recordingAny?.mainVideoUrl as string | undefined) ||
+    (recordingAny?.videoUrl as string | undefined) ||
+    (recordingAny?.url as string | undefined) ||
+    null;
+  const isRecordingReady = (recording?.status ?? '') === 'ready';
+  const safeVideoUrl = isRecordingReady ? videoUrl : null;
+
+  // Длительность в миллисекундах: приоритет — meeting.durationMs, fallback — recording.
+  const durationMs =
+    meeting.durationMs ??
+    (recording?.durationSeconds ? recording.durationSeconds * 1000 : null);
+
+  return (
+    <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
+      {/* Center column */}
+      <div className="flex min-w-0 flex-col gap-5">
+        <MeetingHeader
+          meeting={meeting}
+          durationMs={durationMs}
+          onShare={() => setShareOpen(true)}
+          onMutateMeeting={() => {
+            void mutateMeeting();
+            void mutateResult();
+          }}
+        />
+
+        <MeetingPlayer
+          videoUrl={safeVideoUrl}
+          durationMs={durationMs}
+          chapters={chapters}
+          highlights={highlights}
+          playerRef={player.playerRef}
+          onTimeUpdate={(ms) => setCurrentMs(ms)}
+          title={meeting.title}
+        />
+
+        <HighlightsStrip
+          highlights={highlights}
+          onCreate={() => setHighlightOpen(true)}
+          onSeek={onSeek}
+          onMutate={mutateHighlights}
+        />
+
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+          <TabsList>
+            <TabsTrigger value="overview">
+              <FileText size={14} strokeWidth={1.75} />
+              Обзор
+            </TabsTrigger>
+            <TabsTrigger value="chapters">
+              <Circle size={14} strokeWidth={1.75} />
+              Главы
+              {chapters.length > 0 && (
+                <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
+                  {chapters.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="transcript">
+              <MessageSquareText size={14} strokeWidth={1.75} />
+              Транскрипт
+            </TabsTrigger>
+            <TabsTrigger value="chat">
+              <MessageCircle size={14} strokeWidth={1.75} />
+              Чат
+              {roomMessages.length > 0 && (
+                <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
+                  {roomMessages.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="tasks">
+              <ListChecks size={14} strokeWidth={1.75} />
+              Задачи
+              {tasks.length > 0 && (
+                <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
+                  {tasks.length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="notes">
+              <StickyNote size={14} strokeWidth={1.75} />
+              Заметки
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18 }}
+              >
+                <OverviewTab
+                  meeting={meeting}
+                  durationMs={durationMs}
+                  summary={aiResult?.summary ?? null}
+                  followUpEmail={aiResult?.followUpEmail ?? null}
+                  structuredData={aiResult?.structuredData ?? null}
+                  customMd={aiResult?.customOutputMd ?? null}
+                  chaptersCount={chapters.length}
+                  tasksCount={tasks.length}
+                  highlightsCount={highlights.length}
+                />
+              </motion.div>
+            </AnimatePresence>
+          </TabsContent>
+
+          <TabsContent value="chapters">
+            <ChaptersTab
+              meetingId={meetingId}
+              chapters={chapters}
+              onSeek={onSeek}
+              onMutate={mutateChapters}
+            />
+          </TabsContent>
+
+          <TabsContent value="transcript">
+            <TranscriptTab meetingId={meetingId} />
+          </TabsContent>
+
+          <TabsContent value="chat">
+            <RoomChatTab messages={roomMessages} />
+          </TabsContent>
+
+          <TabsContent value="tasks">
+            <TasksTab
+              meetingId={meetingId}
+              tasks={tasks}
+              onSeek={onSeek}
+              onMutate={mutateTasks}
+            />
+          </TabsContent>
+
+          <TabsContent value="notes">
+            <NotesTab summary={aiResult?.summary ?? null} />
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Right column — AI chat */}
+      <MeetingChatPanel meetingId={meetingId} onSeek={onSeek} />
+
+      <ShareDialog
+        meetingId={meetingId}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
+      <HighlightCreatorDialog
+        meetingId={meetingId}
+        open={highlightOpen}
+        onOpenChange={setHighlightOpen}
+        durationMs={durationMs}
+        initialStartMs={currentMs > 0 ? currentMs : null}
+        onCreated={() => void mutateHighlights()}
+      />
+    </div>
+  );
+}
+
+// ─────────────── Header ───────────────
+
+function MeetingHeader({
+  meeting,
+  durationMs,
+  onShare,
+  onMutateMeeting,
+}: {
+  meeting: MeetingDomain;
+  durationMs: number | null;
+  onShare: () => void;
+  onMutateMeeting: () => void;
+}) {
+  const router = useRouter();
+  const typeLabel = MEETING_TYPE_LABELS[meeting.type] ?? meeting.type;
+
+  // Список юзерских и системных шаблонов для regenerate sub-menu.
+  const { data: templatesData } = useSWR(
+    'templates-list',
+    () => templatesApi.list(),
+    { revalidateOnFocus: false },
+  );
+  const templates = useMemo(
+    () => (templatesData?.items ? templatesData.items.map(templateFromApi) : []),
+    [templatesData],
+  );
+
+  const onRegenerate = async (templateId?: string | null) => {
+    try {
+      await meetingsApi.regenerate(meeting.id, {
+        expectedRecapVersion: meeting.recapVersion,
+        ...(templateId !== undefined ? { templateId } : {}),
+      });
+      toast.success('Регенерация запущена');
+      onMutateMeeting();
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.code === 'recap_version_mismatch') {
+          toast.error('Кто-то уже перегенерирует встречу. Обновляю...');
+          onMutateMeeting();
+          return;
+        }
+        if (e.code === 'quota_exceeded' || e.code === 'http_429') {
+          toast.error('Лимит регенераций исчерпан, попробуйте через час.');
+          return;
+        }
+        toast.error(e.message);
+        return;
+      }
+      toast.error('Не удалось запустить регенерацию');
+    }
+  };
+
+  const onExport = async (format: 'md' | 'docx') => {
+    try {
+      const job =
+        format === 'md'
+          ? await exportsApi.meetingMd(meeting.id)
+          : await exportsApi.meetingDocx(meeting.id);
+      toast.success(
+        `Экспорт ${format.toUpperCase()} запущен. Скачать можно будет в /settings/exports.`,
+      );
+      void job;
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка экспорта';
+      toast.error(msg);
+    }
+  };
+
+  const onDelete = async () => {
+    if (!window.confirm('Удалить встречу? Запись будет помечена как удалённая.')) {
+      return;
+    }
+    try {
+      await meetingsApi.softDelete(meeting.id);
+      toast.success('Встреча удалена');
+      router.push('/meetings');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Не удалось удалить';
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <header className="flex flex-col gap-3 border-b border-border-subtle pb-5">
+      <nav className="flex items-center gap-1.5 text-xs text-fg-tertiary">
+        <Link href="/meetings" className="hover:text-fg-secondary">
+          Встречи
+        </Link>
+        <span>›</span>
+        <span className="text-fg-secondary">{typeLabel}</span>
+      </nav>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-semibold tracking-tight text-fg-primary md:text-2xl">
+            {meeting.title}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-secondary">
+            <Badge variant="outline" className="border-accent-border bg-accent-muted text-accent">
+              {typeLabel}
+            </Badge>
+            <span className="inline-flex items-center gap-1.5">
+              <Clock size={12} strokeWidth={1.75} />
+              <span className="font-mono">{fmtDurationCompact(durationMs)}</span>
+            </span>
+            {meeting.startedAt && (
+              <span>{meeting.startedAt.toLocaleString('ru-RU')}</span>
+            )}
+            <span className="font-mono text-xs text-fg-tertiary">
+              v{meeting.recapVersion}
+            </span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onShare}>
+            <Share2 size={14} strokeWidth={1.75} />
+            Поделиться
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="secondary" size="sm">
+                <RefreshCw size={14} strokeWidth={1.75} />
+                Регенерировать
+                <ChevronDown size={12} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onSelect={() => void onRegenerate()}>
+                С тем же шаблоном
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Использовать другой шаблон…</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuLabel>Шаблоны</DropdownMenuLabel>
+                  {templates.length === 0 && (
+                    <DropdownMenuItem disabled>Нет доступных шаблонов</DropdownMenuItem>
+                  )}
+                  {templates.map((t) => (
+                    <DropdownMenuItem
+                      key={t.id}
+                      onSelect={() => void onRegenerate(t.id)}
+                    >
+                      {t.name}
+                      {t.isSystem && (
+                        <span className="ml-1 text-[10px] text-fg-tertiary">·system</span>
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm">
+                <Download size={14} strokeWidth={1.75} />
+                Скачать
+                <ChevronDown size={12} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void onExport('md')}>
+                Markdown (.md)
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void onExport('docx')}>
+                Word (.docx)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Меню">
+                <MoreHorizontal size={18} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link
+                  href={`/meetings/${meeting.id}/result?fullplayer=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink size={14} />
+                  Открыть в новой вкладке
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => void onDelete()}
+                className="text-danger focus:text-danger"
+              >
+                <Trash2 size={14} />
+                Удалить встречу
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <ProcessingBanner meeting={meeting} />
+    </header>
+  );
+}
+
+function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
+  const states = [meeting.chaptersStatus, meeting.tasksStatus, meeting.embeddingsStatus];
+  const inProgress = states.some((s) => s === 'queued' || s === 'processing');
+  if (!inProgress) return null;
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-accent-border bg-accent-muted px-4 py-2.5 text-sm text-accent">
+      <Loader2 size={14} className="animate-spin" />
+      AI обрабатывает встречу. Эта страница обновится сама — можно подождать.
+    </div>
+  );
+}
+
+// ─────────────── Highlights strip ───────────────
+
+function HighlightsStrip({
+  highlights,
+  onCreate,
+  onSeek,
+  onMutate,
+}: {
+  highlights: ReturnType<typeof useMeetingHighlights>['highlights'];
+  onCreate: () => void;
+  onSeek: (ms: number) => void;
+  onMutate: () => void;
+}) {
+  if (highlights.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={onCreate}
+        className="flex items-center gap-2 self-start rounded-md border border-dashed border-border bg-transparent px-3 py-2 text-sm text-fg-secondary transition-colors hover:border-accent-border hover:text-accent"
+      >
+        <Scissors size={14} strokeWidth={1.75} />
+        Создать клип из этой встречи
+      </button>
+    );
+  }
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Scissors size={13} className="text-fg-tertiary" />
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
+            Клипы · {highlights.length}
+          </h3>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onCreate}>
+          <Plus size={13} />
+          Новый клип
+        </Button>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {highlights.map((h) => (
+          <HighlightCard
+            key={h.id}
+            highlight={h}
+            onSeek={onSeek}
+            onMutate={onMutate}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HighlightCard({
+  highlight,
+  onSeek,
+  onMutate,
+}: {
+  highlight: ReturnType<typeof useMeetingHighlights>['highlights'][number];
+  onSeek: (ms: number) => void;
+  onMutate: () => void;
+}) {
+  const [downloading, setDownloading] = useState(false);
+
+  const onDownload = async () => {
+    setDownloading(true);
+    try {
+      if (highlight.renderStatus !== 'ready') {
+        const res = await highlightsApi.renderMp4(highlight.id);
+        if (res.status === 'ready') {
+          // ничего, переход дальше через download
+        } else {
+          toast.success('Рендер MP4 запущен. Скоро появится ссылка для скачивания.');
+          onMutate();
+          return;
+        }
+      }
+      const dl = await highlightsApi.download(highlight.id);
+      window.open(dl.url, '_blank', 'noopener');
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.code === 'render_in_progress' || e.code === 'http_409') {
+          toast.message('Рендер уже идёт. Попробуйте через минуту.');
+          return;
+        }
+        if (e.code === 'http_429' || e.code === 'quota_exceeded') {
+          toast.error('Превышен лимит рендеринга MP4.');
+          return;
+        }
+        toast.error(e.message);
+        return;
+      }
+      toast.error('Ошибка при скачивании');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <article className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-card p-3">
+      <button
+        type="button"
+        onClick={() => onSeek(highlight.startMs)}
+        className="flex items-center justify-between gap-2 text-left"
+      >
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-fg-primary">
+            {highlight.title}
+          </div>
+          <div className="font-mono text-xs text-fg-tertiary">
+            {fmtTime(highlight.startMs)} – {fmtTime(highlight.endMs)} ·{' '}
+            {fmtTime(highlight.durationMs)}
+          </div>
+        </div>
+        <Play size={14} className="text-accent" />
+      </button>
+      <div className="flex items-center gap-2">
+        <RenderStatusBadge status={highlight.renderStatus} />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDownload}
+          disabled={downloading}
+        >
+          {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+          {highlight.renderStatus === 'ready' ? 'MP4' : 'Запустить рендер'}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function RenderStatusBadge({
+  status,
+}: {
+  status: ReturnType<typeof useMeetingHighlights>['highlights'][number]['renderStatus'];
+}) {
+  const map: Record<typeof status, { label: string; cls: string }> = {
+    none: { label: 'без MP4', cls: 'text-fg-tertiary' },
+    queued: { label: 'в очереди', cls: 'text-warning' },
+    processing: { label: 'рендер...', cls: 'text-warning' },
+    ready: { label: 'MP4 готов', cls: 'text-accent' },
+    failed: { label: 'ошибка', cls: 'text-danger' },
+  };
+  const v = map[status];
+  return <span className={cn('font-mono text-[10px] uppercase tracking-wider', v.cls)}>{v.label}</span>;
+}
+
+// ─────────────── Tabs ───────────────
+
+function OverviewTab({
+  meeting,
+  durationMs,
+  summary,
+  followUpEmail,
+  structuredData,
+  customMd,
+  chaptersCount,
+  tasksCount,
+  highlightsCount,
+}: {
+  meeting: MeetingDomain;
+  durationMs: number | null;
+  summary: string | null;
+  followUpEmail: string | null;
+  structuredData: unknown;
+  customMd: string | null;
+  chaptersCount: number;
+  tasksCount: number;
+  highlightsCount: number;
+}) {
+  void meeting;
+  const stats: Array<{ label: string; value: string | number }> = [
+    { label: 'Главы', value: chaptersCount },
+    { label: 'Задачи', value: tasksCount },
+    { label: 'Клипы', value: highlightsCount },
+    { label: 'Длительность', value: fmtDurationCompact(durationMs) },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <StatsRow stats={stats} />
+      {summary && (
+        <Card>
+          <CardHeader title="Краткое содержание" />
+          <p className="m-0 text-base leading-relaxed text-fg-primary">
+            {summary}
+          </p>
+        </Card>
+      )}
+      {!summary && !customMd && (
+        <Card>
+          <div className="text-sm text-fg-secondary">
+            AI ещё не сформировал краткое содержание этой встречи.
+          </div>
+        </Card>
+      )}
+      {structuredData ? <StructuredDataCard data={structuredData} /> : null}
+      {customMd && (
+        <Card>
+          <CardHeader title="Кастомный отчёт" />
+          <pre className="m-0 max-h-[400px] overflow-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-base p-4 font-mono text-xs leading-relaxed text-fg-primary">
+            {customMd}
+          </pre>
+        </Card>
+      )}
+      {followUpEmail && <FollowUpCard text={followUpEmail} />}
+    </div>
+  );
+}
+
+function StatsRow({ stats }: { stats: Array<{ label: string; value: string | number }> }) {
+  return (
+    <div
+      className="grid gap-px overflow-hidden rounded-xl border border-border-subtle bg-border-subtle"
+      style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}
+    >
+      {stats.map((s) => (
+        <div key={s.label} className="bg-bg-card px-4 py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+            {s.label}
+          </div>
+          <div className="mt-1 font-mono text-base font-semibold tabular-nums text-fg-primary">
+            {s.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StructuredDataCard({ data }: { data: unknown }) {
+  // structuredData может быть object с разными ключами под тип встречи.
+  // Рендерим как key/value сетку с capped длиной строк.
+  const entries = useMemo(() => {
+    if (!data || typeof data !== 'object') return [];
+    return Object.entries(data as Record<string, unknown>);
+  }, [data]);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {entries.map(([k, v]) => (
+        <Card key={k}>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+            {k}
+          </div>
+          <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+            {renderStructuredValue(v)}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function renderStructuredValue(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+    return String(v);
+  }
+  if (Array.isArray(v)) {
+    return v.map((item) => renderStructuredValue(item)).join(', ');
+  }
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+}
+
+function FollowUpCard({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error('Не удалось скопировать');
+    }
+  };
+  return (
+    <Card>
+      <CardHeader
+        title="Follow-up письмо"
+        accessory={
+          <Button variant="outline" size="sm" onClick={onCopy}>
+            <Copy size={12} />
+            {copied ? 'Скопировано' : 'Скопировать'}
+          </Button>
+        }
+      />
+      <pre className="m-0 overflow-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-base p-4 font-mono text-xs leading-relaxed text-fg-primary">
+        {text}
+      </pre>
+    </Card>
+  );
+}
+
+function ChaptersTab({
+  meetingId,
+  chapters,
+  onSeek,
+  onMutate,
+}: {
+  meetingId: string;
+  chapters: ReturnType<typeof useMeetingChapters>['chapters'];
+  onSeek: (ms: number) => void;
+  onMutate: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const onRegenerate = async () => {
+    try {
+      await chaptersApi.regenerate(meetingId);
+      toast.success('Регенерация глав запущена');
+      onMutate();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      toast.error(msg);
+    }
+  };
+
+  const onSaveTitle = async (id: string) => {
+    if (!draftTitle.trim()) return;
+    try {
+      await chaptersApi.update(id, { title: draftTitle.trim() });
+      toast.success('Глава обновлена');
+      setEditingId(null);
+      onMutate();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      toast.error(msg);
+    }
+  };
+
+  const onDelete = async (id: string) => {
+    if (!window.confirm('Удалить главу?')) return;
+    try {
+      await chaptersApi.remove(id);
+      toast.success('Удалено');
+      onMutate();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      toast.error(msg);
+    }
+  };
+
+  const onAdd = async (form: HTMLFormElement) => {
+    const fd = new FormData(form);
+    const title = String(fd.get('title') ?? '').trim();
+    const startMs = Number(fd.get('startMs') ?? 0);
+    const endMs = Number(fd.get('endMs') ?? startMs + 60_000);
+    if (!title) return;
+    try {
+      await chaptersApi.create(meetingId, { title, startMs, endMs });
+      toast.success('Глава добавлена');
+      setAdding(false);
+      onMutate();
+      form.reset();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <Button variant="outline" size="sm" onClick={() => void onRegenerate()}>
+          <Sparkles size={13} />
+          Перегенерировать главы
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setAdding((v) => !v)}>
+          <Plus size={13} />
+          Добавить главу
+        </Button>
+      </div>
+      {adding && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onAdd(e.currentTarget);
+          }}
+          className="flex flex-wrap items-end gap-2 rounded-md border border-border-subtle bg-bg-card p-3"
+        >
+          <input
+            name="title"
+            placeholder="Название"
+            className="flex-1 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm outline-none placeholder:text-fg-tertiary"
+            required
+          />
+          <input
+            name="startMs"
+            placeholder="start ms"
+            type="number"
+            className="w-32 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 font-mono text-sm outline-none"
+            defaultValue={0}
+          />
+          <input
+            name="endMs"
+            placeholder="end ms"
+            type="number"
+            className="w-32 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 font-mono text-sm outline-none"
+            defaultValue={60000}
+          />
+          <Button type="submit" size="sm">Сохранить</Button>
+        </form>
+      )}
+      {chapters.length === 0 ? (
+        <Card>
+          <div className="py-6 text-center text-sm text-fg-secondary">
+            Глав ещё нет. Запустите автоматическое определение или добавьте вручную.
+          </div>
+        </Card>
+      ) : (
+        chapters.map((c) => (
+          <article
+            key={c.id}
+            className="rounded-md border border-border-subtle bg-bg-card p-4"
+          >
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => onSeek(c.startMs)}
+                className="w-20 shrink-0 text-left font-mono text-xs text-fg-tertiary hover:text-accent"
+              >
+                {fmtTime(c.startMs)}
+              </button>
+              <div className="min-w-0 flex-1">
+                {editingId === c.id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={draftTitle}
+                      onChange={(e) => setDraftTitle(e.target.value)}
+                      className="flex-1 rounded-md border border-accent-border bg-bg-overlay px-2 py-1 text-sm outline-none"
+                    />
+                    <Button size="sm" onClick={() => void onSaveTitle(c.id)}>
+                      OK
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditingId(null)}
+                    >
+                      Отмена
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(c.id);
+                      setDraftTitle(c.title);
+                    }}
+                    className="text-left text-sm font-medium text-fg-primary hover:text-accent"
+                  >
+                    {c.title}
+                  </button>
+                )}
+                {c.summary && (
+                  <p className="mt-1 text-xs text-fg-secondary">{c.summary}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => void onDelete(c.id)}
+                className="grid h-7 w-7 place-items-center rounded text-fg-secondary hover:bg-danger/15 hover:text-danger"
+                aria-label="Удалить"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+  );
+}
+
+function TranscriptTab({ meetingId }: { meetingId: string }) {
+  const { data, error, isLoading } = useSWR(
+    ['transcript', meetingId],
+    () => meetingsApi.transcript(meetingId),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  if (isLoading) {
+    return (
+      <Card>
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="mt-2 h-4 w-3/4" />
+      </Card>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <Card>
+        <div className="py-6 text-center text-sm text-fg-secondary">
+          Транскрипт доступен только в экспорте. Скачайте отчёт из меню «Скачать».
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Транскрипт"
+        accessory={
+          <Button asChild variant="outline" size="sm">
+            <a href={data.url} target="_blank" rel="noopener noreferrer">
+              <Download size={13} />
+              Скачать .json
+            </a>
+          </Button>
+        }
+      />
+      <p className="text-sm text-fg-secondary">
+        Полный merged-транскрипт хранится в S3 и доступен по presigned-ссылке (срок: до{' '}
+        {new Date(data.expiresAt).toLocaleString('ru-RU')}).
+      </p>
+    </Card>
+  );
+}
+
+function TasksTab({
+  meetingId,
+  tasks,
+  onSeek,
+  onMutate,
+}: {
+  meetingId: string;
+  tasks: TaskDomain[];
+  onSeek: (ms: number) => void;
+  onMutate: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+
+  const onAdd = async (form: HTMLFormElement) => {
+    const fd = new FormData(form);
+    const title = String(fd.get('title') ?? '').trim();
+    if (!title) return;
+    try {
+      await tasksApi.create(meetingId, {
+        title,
+        assigneeRaw: String(fd.get('assignee') ?? '') || null,
+      });
+      toast.success('Задача добавлена');
+      setAdding(false);
+      onMutate();
+      form.reset();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      toast.error(msg);
+    }
+  };
+
+  const onToggleDone = async (task: TaskDomain) => {
+    const next = task.status === 'done' ? 'open' : 'done';
+    try {
+      await tasksApi.update(task.id, { status: next });
+      onMutate();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {tasks.length === 0 && !adding && (
+        <Card>
+          <div className="py-6 text-center text-sm text-fg-secondary">
+            Задач пока нет. AI определит их при следующем анализе или добавьте вручную.
+          </div>
+        </Card>
+      )}
+
+      {tasks.map((t) => (
+        <article
+          key={t.id}
+          className="rounded-md border border-border-subtle bg-bg-card p-4"
+        >
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => void onToggleDone(t)}
+              className={cn(
+                'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors',
+                t.status === 'done'
+                  ? 'border-accent bg-accent text-accent-fg'
+                  : 'border-border-strong text-transparent hover:border-accent',
+              )}
+              aria-label="Отметить выполненной"
+            >
+              <CheckCircle2 size={12} strokeWidth={3} />
+            </button>
+            <div className="min-w-0 flex-1">
+              <div
+                className={cn(
+                  'text-sm leading-snug',
+                  t.status === 'done' ? 'text-fg-tertiary line-through' : 'text-fg-primary',
+                )}
+              >
+                {t.title}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-tertiary">
+                {t.assignee && (
+                  <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                    <span className="font-mono">{t.assignee}</span>
+                  </span>
+                )}
+                {t.dueDate && (
+                  <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                    до {t.dueDate.toLocaleDateString('ru-RU')}
+                  </span>
+                )}
+                {typeof t.confidence === 'number' && (
+                  <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                    AI · {(t.confidence * 100).toFixed(0)}%
+                  </span>
+                )}
+                {typeof t.sourceStartMs === 'number' && (
+                  <button
+                    type="button"
+                    onClick={() => onSeek(t.sourceStartMs!)}
+                    className="rounded border border-accent-border bg-accent-muted px-2 py-0.5 font-mono text-accent hover:bg-accent-muted-strong"
+                  >
+                    {fmtTime(t.sourceStartMs)} ›
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </article>
+      ))}
+
+      {adding ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onAdd(e.currentTarget);
+          }}
+          className="flex flex-wrap items-end gap-2 rounded-md border border-border-subtle bg-bg-card p-3"
+        >
+          <input
+            name="title"
+            placeholder="Описание задачи"
+            className="flex-1 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm outline-none placeholder:text-fg-tertiary"
+            required
+          />
+          <input
+            name="assignee"
+            placeholder="Кому (опционально)"
+            className="w-48 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm outline-none placeholder:text-fg-tertiary"
+          />
+          <Button type="submit" size="sm">Сохранить</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
+            Отмена
+          </Button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="flex items-center gap-2 self-start rounded-md border border-dashed border-border bg-transparent px-3 py-2 text-sm text-fg-secondary hover:border-accent-border hover:text-accent"
+        >
+          <Plus size={13} />
+          Добавить задачу вручную
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return messages;
+    return messages.filter(
+      (m) =>
+        m.content.toLowerCase().includes(q) ||
+        m.authorName.toLowerCase().includes(q),
+    );
+  }, [messages, query]);
+
+  // Группировка подряд идущих сообщений одного автора (по `authorIdentity`,
+  // fallback — `authorName`).
+  const groups = useMemo(() => {
+    const out: Array<{ author: string; key: string; items: RoomMessageDomain[] }> = [];
+    for (const m of filtered) {
+      const groupKey = m.authorIdentity || m.authorName;
+      const last = out[out.length - 1];
+      if (last && last.key === groupKey) {
+        last.items.push(m);
+      } else {
+        out.push({ author: m.authorName, key: groupKey, items: [m] });
+      }
+    }
+    return out;
+  }, [filtered]);
+
+  if (messages.length === 0) {
+    return (
+      <Card>
+        <div className="py-6 text-center text-sm text-fg-secondary">
+          Во время встречи никто не писал в чат.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <Search
+          size={14}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-tertiary"
+        />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Поиск по сообщениям…"
+          className="w-full rounded-md border border-border-subtle bg-bg-card py-2 pl-9 pr-3 text-sm outline-none placeholder:text-fg-tertiary focus:border-accent"
+          aria-label="Поиск по чату"
+        />
+      </div>
+
+      {groups.length === 0 ? (
+        <Card>
+          <div className="py-6 text-center text-sm text-fg-tertiary">
+            Ничего не найдено по запросу «{query}».
+          </div>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-card p-4">
+          {groups.map((g, i) => (
+            <article key={`${g.key}-${i}`} className="flex flex-col gap-1">
+              <div className="text-xs font-semibold text-fg-secondary">
+                {g.author}
+              </div>
+              {g.items.map((m) => (
+                <div
+                  key={m.id || m.clientMessageId}
+                  className="flex items-baseline gap-2"
+                >
+                  <span className="shrink-0 font-mono text-[10px] text-fg-tertiary">
+                    {m.sentAt.toLocaleTimeString('ru-RU', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  <p className="m-0 whitespace-pre-wrap break-words text-sm text-fg-primary">
+                    {m.content}
+                  </p>
+                </div>
+              ))}
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotesTab({ summary }: { summary: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    if (!summary) return;
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error('Не удалось скопировать');
+    }
+  };
+  return (
+    <Card>
+      <CardHeader
+        title="Заметки"
+        accessory={
+          summary ? (
+            <Button variant="outline" size="sm" onClick={onCopy}>
+              <Copy size={12} />
+              {copied ? 'Скопировано' : 'Скопировать'}
+            </Button>
+          ) : undefined
+        }
+      />
+      {summary ? (
+        <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
+          {summary}
+        </p>
+      ) : (
+        <p className="m-0 text-sm text-fg-tertiary">
+          Нет данных. Заметки появятся после AI-анализа.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+// ─────────────── Skeleton ───────────────
+
+function MeetingResultSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-9 w-2/3" />
+        <Skeleton className="aspect-video w-full rounded-xl" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+      <Skeleton className="h-[520px] w-full rounded-xl" />
+    </div>
+  );
+}
+
+// ─────────────── Primitives ───────────────
+
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border-subtle bg-bg-card p-5">
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({
+  title,
+  accessory,
+}: {
+  title: string;
+  accessory?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex items-center justify-between">
+      <h3 className="m-0 text-sm font-semibold text-fg-primary">{title}</h3>
+      {accessory}
+    </div>
+  );
+}

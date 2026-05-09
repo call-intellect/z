@@ -2,16 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --color-bg: #f8fafc;
-  --color-text: #0f172a;
+@import url('../src/ui/tokens.css');
+
+/* Selection с mint-акцентом */
+::selection {
+  background: var(--accent-muted-strong);
+  color: var(--text-primary);
 }
 
-html {
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
+/* Стартовое выравнивание шрифта на body */
 body {
-  background-color: var(--color-bg);
-  color: var(--color-text);
+  font-family: var(--font-geist-sans, var(--font-sans));
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* Glass-utility для AI-цитат и sticky headers */
+.glass {
+  background: var(--accent-muted);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  border: 1px solid var(--accent-border);
 }

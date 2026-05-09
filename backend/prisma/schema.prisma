@@ -1,14 +1,18 @@
 // Z — Prisma schema
 // Источник: plans/tz/2026-05-08-mvp-fullstack-tz.md §1.3
+//          plans/tz/2026-05-09-standalone-product.md
+//          plans/tz/2026-05-09-ai-meeting-workspace.md
 // Правило: ТОЛЬКО `prisma db push`. Никаких `prisma migrate*`.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
 // ──────────────────────────── enums ────────────────────────────
@@ -16,6 +20,16 @@ datasource db {
 enum UserRole {
   user
   admin
+}
+
+enum UserSignupSource {
+  crossmark
+  standalone
+}
+
+enum VerificationPurpose {
+  password_reset
+  account_restore
 }
 
 enum MeetingType {
@@ -43,6 +57,14 @@ enum MeetingStatus {
   failed
 }
 
+enum AiStepStatus {
+  none
+  queued
+  processing
+  ready
+  failed
+}
+
 enum ParticipantRole {
   host
   guest
@@ -60,46 +82,175 @@ enum RecordingStatus {
   deleted
 }
 
+enum TaskStatus {
+  open
+  in_progress
+  done
+  cancelled
+}
+
+enum RenderStatus {
+  none
+  queued
+  processing
+  ready
+  failed
+}
+
+enum ChatRole {
+  user
+  assistant
+}
+
+enum ApiKeyScope {
+  read
+  write
+}
+
+enum WebhookStatus {
+  active
+  paused
+  failing
+}
+
+enum DeliveryStatus {
+  pending
+  retrying
+  delivered
+  failed
+}
+
+enum DestinationType {
+  email
+  slack_webhook
+  telegram_bot
+  generic_webhook
+}
+
+enum ExportType {
+  meeting_md
+  meeting_pdf
+  meeting_docx
+  bulk_zip
+}
+
+enum ExportStatus {
+  queued
+  processing
+  ready
+  failed
+  expired
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
-  id           String    @id @default(cuid())
-  externalId   String?   @unique
-  email        String
-  name         String
-  role         UserRole  @default(user)
-  // bcrypt hash, только для role=admin локального логина (Phase 8.4).
-  passwordHash String?
-  createdAt    DateTime  @default(now())
-  lastSeenAt   DateTime?
+  id                 String           @id @default(cuid())
+  externalId         String?          @unique
+  email              String
+  name               String
+  role               UserRole         @default(user)
+  signupSource       UserSignupSource @default(crossmark)
+  // argon2id (standalone) или bcrypt (admin local login). Опционально для Crossmark-провижененных юзеров.
+  passwordHash       String?
+  mustChangePassword Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  lastSeenAt         DateTime?
+  deletedAt          DateTime?
 
-  meetings Meeting[]
+  meetings             Meeting[]
+  sessions             UserSession[]
+  verificationTokens   UserVerificationToken[]
+  apiKeys              ApiKey[]
+  webhookSubscriptions WebhookSubscription[]
+  destinations         IntegrationDestination[]
+  tags                 Tag[]
+  tasks                Task[]
+  chatMessages         MeetingChatMessage[]
+  userTemplates        UserTemplate[]
+  exports              Export[]
+  meetingShares        MeetingShare[]
+  highlightShares      HighlightShare[]
+  meetingHighlights    MeetingHighlight[]
+  quotaCounters        UserQuotaCounter[]
+  auditLog             AuditLog[]
+  apiAccessLog         ApiAccessLog[]
+  cards                Card[]
 
+  @@unique([email, signupSource])
   @@index([email])
+  @@index([deletedAt])
+}
+
+model UserSession {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jti       String    @unique
+  userAgent String?   @db.Text
+  ip        String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model UserVerificationToken {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String              @unique
+  purpose   VerificationPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
 }
 
 model Meeting {
-  id            String        @id // ULID, генерится сервисом
-  title         String
-  type          MeetingType
-  customPrompt  String?       @db.Text
-  ownerId       String
-  owner         User          @relation(fields: [ownerId], references: [id])
-  roomName      String        @unique // равен id
-  status        MeetingStatus @default(scheduled)
-  startedAt     DateTime?
-  endedAt       DateTime?
-  failureReason String?
-  createdAt     DateTime      @default(now())
+  id              String        @id // ULID, генерится сервисом
+  title           String
+  type            MeetingType
+  customPrompt    String?       @db.Text
+  ownerId         String
+  owner           User          @relation(fields: [ownerId], references: [id])
+  cardId          String?
+  card            Card?         @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  roomName        String        @unique // равен id
+  status          MeetingStatus @default(scheduled)
+  startedAt       DateTime?
+  endedAt         DateTime?
+  failureReason   String?
+  durationMs      Int?
+  recapVersion    Int           @default(1)
+  chaptersStatus  AiStepStatus  @default(none)
+  tasksStatus     AiStepStatus  @default(none)
+  embeddingsStatus AiStepStatus @default(none)
+  createdAt       DateTime      @default(now())
+  deletedAt       DateTime?
 
-  participants Participant[]
-  recording    Recording?
-  transcript   Transcript?
-  aiResult     AiResult?
-  events       MeetingEvent[]
+  participants     Participant[]
+  recording        Recording?
+  transcript       Transcript?
+  aiResult         AiResult?
+  events           MeetingEvent[]
+  tasks            Task[]
+  chapters         MeetingChapter[]
+  highlights       MeetingHighlight[]
+  shares           MeetingShare[]
+  transcriptChunks MeetingTranscriptChunk[]
+  chatMessages     MeetingChatMessage[]
+  roomMessages     MeetingRoomMessage[]
+  meetingTags      MeetingTag[]
 
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
+  @@index([deletedAt])
+  @@index([cardId, createdAt])
 }
 
 model Participant {
@@ -110,12 +261,13 @@ model Participant {
   name             String
   role             ParticipantRole
   isRegisteredUser Boolean         @default(false)
-  userId           String? // если хост или зарегистрированный
+  userId           String?
   deviceCount      Int             @default(1)
   joinedAt         DateTime?
   leftAt           DateTime?
 
-  audioTrack AudioTrack?
+  audioTrack   AudioTrack?
+  roomMessages MeetingRoomMessage[]
 
   @@unique([meetingId, livekitIdentity])
   @@index([meetingId])
@@ -164,7 +316,7 @@ model Transcript {
   id                   String   @id @default(cuid())
   meetingId            String   @unique
   meeting              Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  rawIndexS3Url        String // объект-индекс per-track jsons
+  rawIndexS3Url        String
   mergedS3Url          String?
   totalWords           Int?
   totalDurationSeconds Int?
@@ -180,18 +332,22 @@ model AiResult {
   structuredData Json?
   customOutputMd String?     @db.Text
   followUpEmail  String?     @db.Text
+  /// @deprecated после Phase 3 ai-workspace новые задачи пишутся в `Task`. Оставлено до миграции существующих записей через `backend/scripts/migrate-ai-tasks.ts`.
   tasks          Json?
   modelUsed      String
   createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 }
 
 model AiUsageLog {
   id              String   @id @default(cuid())
   meetingId       String?
-  agentType       String // "transcribe" | "summary" | "report-by-type" | "follow-up" | "tasks"
+  userId          String?
+  agentType       String
+  taskType        String?
   jobId           String?
   model           String
-  provider        String // "anthropic" | "vox" | "openai"
+  provider        String
   inputTokens     Int      @default(0)
   outputTokens    Int      @default(0)
   reasoningTokens Int?
@@ -203,6 +359,7 @@ model AiUsageLog {
 
   @@index([meetingId])
   @@index([createdAt])
+  @@index([userId, taskType, createdAt])
 }
 
 model IntegrationKey {
@@ -246,8 +403,8 @@ model RecordingAction {
   id          String    @id @default(cuid())
   recordingId String
   recording   Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
-  action      String // 'created' | 'extended' | 'archived' | 'deleted' | 'exported'
-  actor       String // 'user:<id>' | 'cron' | 'admin:<id>'
+  action      String
+  actor       String
   reason      String?
   createdAt   DateTime  @default(now())
 
@@ -264,4 +421,407 @@ model AdminAuditLog {
   createdAt  DateTime @default(now())
 
   @@index([actorId, createdAt])
+}
+
+// ──────────────────────────── ai-workspace: tasks / chapters / highlights ────────────────────────────
+
+model Task {
+  id              String     @id @default(cuid())
+  meetingId       String
+  meeting         Meeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?    @db.Text
+  status          TaskStatus @default(open)
+  assigneeRaw     String?
+  assigneeUserId  String?
+  dueDate         DateTime?
+  sourceStartMs   Int?
+  sourceEndMs     Int?
+  sourceQuote     String?    @db.Text
+  confidence      Float?
+  createdManually Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([userId, status])
+  @@index([meetingId])
+  @@index([dueDate])
+}
+
+model MeetingChapter {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  startMs   Int
+  endMs     Int
+  title     String
+  summary   String?  @db.Text
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([meetingId, order])
+}
+
+model MeetingHighlight {
+  id             String       @id @default(cuid())
+  meetingId      String
+  meeting        Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  startMs        Int
+  endMs          Int
+  title          String
+  description    String?
+  renderedMp4Key String?
+  renderStatus   RenderStatus @default(none)
+  renderError    String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  shares HighlightShare[]
+
+  @@index([meetingId])
+}
+
+// ──────────────────────────── ai-workspace: shares ────────────────────────────
+
+model MeetingShare {
+  id              String             @id @default(cuid())
+  token           String             @unique
+  meetingId       String
+  meeting         Meeting            @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User               @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  allowVideo      Boolean            @default(false)
+  allowTranscript Boolean            @default(false)
+  allowTasks      Boolean            @default(true)
+  allowChapters   Boolean            @default(true)
+  allowChat       Boolean            @default(false)
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  viewCount       Int                @default(0)
+  lastViewedAt    DateTime?
+  createdAt       DateTime           @default(now())
+  views           MeetingShareView[]
+
+  @@index([meetingId])
+  @@index([expiresAt])
+}
+
+model MeetingShareView {
+  id        String       @id @default(cuid())
+  shareId   String
+  share     MeetingShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  ipHash    String
+  userAgent String?      @db.Text
+  referrer  String?
+  viewedAt  DateTime     @default(now())
+
+  @@index([shareId, viewedAt])
+}
+
+model HighlightShare {
+  id           String           @id @default(cuid())
+  token        String           @unique
+  highlightId  String
+  highlight    MeetingHighlight @relation(fields: [highlightId], references: [id], onDelete: Cascade)
+  createdById  String
+  createdBy    User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  viewCount    Int              @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime         @default(now())
+
+  @@index([highlightId])
+}
+
+// ──────────────────────────── ai-workspace: tags ────────────────────────────
+
+model Tag {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String       @default("#888888")
+  createdAt DateTime     @default(now())
+  meetings  MeetingTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model MeetingTag {
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, tagId])
+  @@index([tagId])
+}
+
+// ──────────────────────────── ai-workspace: chat + RAG ────────────────────────────
+
+model MeetingChatMessage {
+  id        String   @id @default(cuid())
+  meetingId String?
+  meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  cardId    String?
+  card      Card?    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      ChatRole
+  content   String   @db.Text
+  citations Json?
+  tokensIn  Int?
+  tokensOut Int?
+  modelUsed String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([meetingId, createdAt])
+  @@index([cardId, createdAt])
+}
+
+// In-meeting room chat (LiveKit DataChannel → backend mirror).
+// Сообщения участников во время встречи: фронт отправляет одновременно через
+// LiveKit DataChannel (realtime) и POST'ом сюда (persistence). Идемпотентность
+// по `clientMessageId`, сгенерированному фронтом (ulid).
+// Денормализуем `authorName` / `authorIdentity` — Participant может уйти
+// вместе с soft-delete, а сообщение остаётся читаемым.
+model MeetingRoomMessage {
+  id              String       @id @default(cuid())
+  meetingId       String
+  meeting         Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  participantId   String?
+  participant     Participant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  authorName      String
+  authorIdentity  String
+  content         String       @db.Text
+  clientMessageId String       @unique
+  sentAt          DateTime     @default(now())
+
+  @@index([meetingId, sentAt])
+}
+
+model MeetingTranscriptChunk {
+  id        String                       @id @default(cuid())
+  meetingId String
+  meeting   Meeting                      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  startMs   Int
+  endMs     Int
+  text      String                       @db.Text
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime                     @default(now())
+
+  @@unique([meetingId, startMs, endMs])
+  @@index([meetingId])
+  @@index([userId])
+}
+
+// ──────────────────────────── ai-workspace: api / webhooks / destinations ────────────────────────────
+
+model ApiKey {
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  hashedKey  String        @unique
+  prefix     String
+  scopes     ApiKeyScope[]
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime      @default(now())
+
+  apiAccessLog ApiAccessLog[]
+
+  @@index([userId])
+}
+
+model WebhookSubscription {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url             String
+  secretEncrypted String
+  secretPrefix    String
+  events          String[]
+  status          WebhookStatus @default(active)
+  lastDeliveryAt  DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([userId])
+}
+
+model WebhookDelivery {
+  id             String              @id @default(cuid())
+  subscriptionId String
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  event          String
+  eventId        String              @unique
+  payload        Json
+  attempts       Int                 @default(0)
+  lastStatus     Int?
+  lastResponse   String?             @db.Text
+  status         DeliveryStatus      @default(pending)
+  nextAttemptAt  DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime            @default(now())
+
+  @@index([subscriptionId, createdAt])
+  @@index([nextAttemptAt])
+}
+
+model IntegrationDestination {
+  id        String          @id @default(cuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      DestinationType
+  name      String
+  config    Json
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([userId])
+}
+
+// ──────────────────────────── ai-workspace: export / templates / routing ────────────────────────────
+
+model Export {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        ExportType
+  meetingIds  String[]
+  options     Json
+  s3Key       String?
+  status      ExportStatus @default(queued)
+  error       String?      @db.Text
+  expiresAt   DateTime?
+  createdAt   DateTime     @default(now())
+  completedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model UserTemplate {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  basedOnType    MeetingType?
+  prompt         String?      @db.Text
+  sectionsConfig String[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+}
+
+model LlmTaskRoute {
+  id        String   @id @default(cuid())
+  taskType  String   @unique
+  providers Json
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+// ──────────────────────────── ai-workspace: audit / quotas / api access ────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  resourceId String?
+  metadata   Json?
+  ipHash     String?
+  userAgent  String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}
+
+model ApiAccessLog {
+  id         String   @id @default(cuid())
+  apiKeyId   String?
+  apiKey     ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  route      String
+  status     Int
+  durationMs Int?
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model UserQuotaCounter {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quotaName   String
+  windowStart DateTime
+  count       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, quotaName, windowStart])
+  @@index([userId, quotaName])
+}
+
+// ──────────────────────────── cards: CRM-структура встреч ────────────────────────────
+
+model Card {
+  id               String    @id @default(cuid())
+  ownerId          String
+  owner            User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name             String
+  // 'client' | 'deal' | 'project' | 'topic' | 'custom'.
+  // Хранится строкой (а не enum'ом), чтобы можно было добавлять виды без миграций.
+  kind             String    @default("client")
+  color            String    @default("#5EEAD4")
+  icon             String?
+  description      String?   @db.Text
+
+  // Один опциональный primary-контакт. Несколько — vNext через CardContact.
+  contactName      String?
+  contactEmail     String?
+  contactPhone     String?
+
+  pinned           Boolean   @default(false)
+  archivedAt       DateTime?
+  deletedAt        DateTime?
+
+  // AI rollup-кэш (заполняется card-rollup.worker'ом).
+  summaryCache     String?   @db.Text
+  summaryUpdatedAt DateTime?
+
+  // Денормализация для сортировки списка без JOIN.
+  meetingCount     Int       @default(0)
+  lastMeetingAt    DateTime?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  meetings     Meeting[]
+  chatMessages MeetingChatMessage[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId, lastMeetingAt])
+  @@index([ownerId, archivedAt])
+  @@index([deletedAt])
 }

@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { ConfigModule } from '../../common/config/index';
 import { LoggerModule } from '../../common/logger/logger.module';
 import { MetricsModule } from '../../common/metrics/metrics.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
+import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { UsersService } from '../users/users.service';
@@ -14,14 +16,24 @@ import { MeetingsService } from '../meetings/meetings.service';
 
 import { AiQueueService } from './ai-queue.service';
 import { AnalyzeWorker } from './workers/analyze.worker';
+import { CardRollupWorker } from './workers/card-rollup.worker';
+import { ChaptersWorker } from './workers/chapters.worker';
+import { ClipRenderWorker } from './workers/clip-render.worker';
 import { MergeWorker } from './workers/merge.worker';
 import { NotifyWorker } from './workers/notify.worker';
+import { TasksExtractWorker } from './workers/tasks-extract.worker';
 import { TranscribeWorker } from './workers/transcribe.worker';
+import { TranscriptIndexWorker } from './workers/transcript-index.worker';
 import { AiUsageLogService } from './services/ai-usage-log.service';
 import { AnthropicService } from './services/anthropic.service';
+import { CardRollupService } from './services/card-rollup.service';
+import { ChapterExtractionService } from './services/chapter-extraction.service';
 import { LlmFallbackService } from './services/llm-fallback.service';
+import { LlmRouterService } from './services/llm-router.service';
 import { MinimaxService } from './services/minimax.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
+import { RegenerateService } from './services/regenerate.service';
+import { TaskExtractionService } from './services/task-extraction.service';
 import { VoxService } from './services/vox.service';
 
 /**
@@ -48,6 +60,11 @@ import { VoxService } from './services/vox.service';
     PrismaModule,
     RedisModule,
     MetricsModule,
+    // ScheduleModule нужен для @Cron в LlmRouterService (refresh кэша routes).
+    ScheduleModule.forRoot(),
+    // EmbeddingsModule приносит EmbeddingFallback + TranscriptIndexer
+    // — используются TranscriptIndexWorker'ом и (опц.) другими сервисами M3c.
+    EmbeddingsModule,
   ],
   providers: [
     // бизнес — нужны для FSM-переходов.
@@ -66,11 +83,22 @@ import { VoxService } from './services/vox.service';
     LlmFallbackService,
     AiUsageLogService,
     AiQueueService,
+    // M3 AI-pipeline расширения.
+    LlmRouterService,
+    ChapterExtractionService,
+    TaskExtractionService,
+    RegenerateService,
+    CardRollupService,
     // Воркеры.
     TranscribeWorker,
     MergeWorker,
     AnalyzeWorker,
     NotifyWorker,
+    ChaptersWorker,
+    TasksExtractWorker,
+    TranscriptIndexWorker,
+    ClipRenderWorker,
+    CardRollupWorker,
   ],
 })
 export class WorkersModule {}

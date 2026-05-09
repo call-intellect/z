@@ -22,6 +22,13 @@ export interface SessionPayload {
   sub: string;
   email: string;
   role: 'user' | 'admin';
+  /**
+   * JWT ID. Опциональное поле — заполняется только для standalone-сессий
+   * (создаются в `AccountsService.login`), чтобы привязать JWT к записи
+   * `UserSession` и иметь возможность принудительного отзыва.
+   * Для legacy Crossmark-сессий и admin-логина — отсутствует.
+   */
+  jti?: string;
 }
 
 export interface DeepLinkPayload {
@@ -36,6 +43,7 @@ export interface GuestSessionPayload {
 
 export interface VerifiedSessionPayload extends SessionPayload {
   exp: number;
+  jti?: string;
 }
 
 export interface VerifiedDeepLinkPayload extends DeepLinkPayload {
@@ -59,8 +67,11 @@ export class JwtService {
       issuer: ISSUER,
       audience: AUDIENCE,
       expiresIn: this.cfg.auth.sessionTtlSeconds,
+      ...(payload.jti ? { jwtid: payload.jti } : {}),
     };
-    return jwt.sign(payload, this.cfg.auth.sessionSecret, options);
+    // jti кладём через `jwtid` опцию — иначе jsonwebtoken игнорирует поле в payload.
+    const { jti: _jti, ...rest } = payload;
+    return jwt.sign(rest, this.cfg.auth.sessionSecret, options);
   }
 
   verifySession(token: string): VerifiedSessionPayload {
@@ -132,6 +143,7 @@ export class JwtService {
     const email = obj['email'];
     const role = obj['role'];
     const exp = obj['exp'];
+    const jti = obj['jti'];
     if (
       typeof sub !== 'string' ||
       typeof email !== 'string' ||
@@ -140,7 +152,13 @@ export class JwtService {
     ) {
       throw new Error('Невалидный session JWT payload');
     }
-    return { sub, email, role, exp };
+    return {
+      sub,
+      email,
+      role,
+      exp,
+      ...(typeof jti === 'string' ? { jti } : {}),
+    };
   }
 
   private assertDeepLinkPayload(decoded: unknown): VerifiedDeepLinkPayload {

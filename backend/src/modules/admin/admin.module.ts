@@ -3,6 +3,8 @@ import { Global, Module } from '@nestjs/common';
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AiUsageAdminController } from './ai-usage.controller';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
+import { LlmRoutesController } from './llm-routes/llm-routes.controller';
+import { LlmRoutesService } from './llm-routes/llm-routes.service';
 import { MeetingsAdminController } from './meetings-admin.controller';
 import { RecordingsAdminController } from './recordings-admin.controller';
 
@@ -23,8 +25,9 @@ import { RecordingsAdminController } from './recordings-admin.controller';
     MeetingsAdminController,
     AiUsageAdminController,
     RecordingsAdminController,
+    LlmRoutesController,
   ],
-  providers: [AdminAuditInterceptor],
+  providers: [AdminAuditInterceptor, LlmRoutesService],
   exports: [AdminAuditInterceptor],
 })
 export class AdminModule {}

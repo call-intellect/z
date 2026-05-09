@@ -121,9 +121,18 @@ export class MeetingsService {
   /**
    * Создание встречи под уже залогиненного пользователя (Фаза 7.5).
    * Возврат — сама встреча, без deep-link (хост уже в cookie).
+   *
+   * Если передан `cardId` — встреча создаётся уже привязанной к карточке
+   * (главный сценарий «Запланировать встречу» с карточки). Owner-проверка
+   * карточки внутри транзакции; при невалидной/чужой/удалённой — `NotAuthorizedError`.
    */
   async createForUser(
-    input: { type: MeetingType; title: string; customPrompt?: string | null },
+    input: {
+      type: MeetingType;
+      title: string;
+      customPrompt?: string | null;
+      cardId?: string | null;
+    },
     userId: string,
   ): Promise<Meeting> {
     const meetingId = ulid();
@@ -134,6 +143,19 @@ export class MeetingsService {
       const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotAuthorizedError('user_not_found');
 
+      // Если cardId задан — проверяем владение и не-удалённость.
+      let resolvedCardId: string | null = null;
+      if (input.cardId) {
+        const card = await tx.card.findUnique({
+          where: { id: input.cardId },
+          select: { id: true, ownerId: true, deletedAt: true },
+        });
+        if (!card || card.ownerId !== userId || card.deletedAt !== null) {
+          throw new NotAuthorizedError('card_not_found');
+        }
+        resolvedCardId = card.id;
+      }
+
       created = await this.meetings.create(
         {
           id: meetingId,
@@ -141,6 +163,7 @@ export class MeetingsService {
           type: input.type,
           ownerId: userId,
           customPrompt: input.customPrompt ?? null,
+          cardId: resolvedCardId,
         },
         tx,
       );
@@ -155,6 +178,18 @@ export class MeetingsService {
           userId,
         },
       });
+
+      // Денормализация счётчиков карточки. Делается в той же транзакции —
+      // консистентно. Без recountMeetings: дешевле прибавить +1.
+      if (resolvedCardId) {
+        await tx.card.update({
+          where: { id: resolvedCardId },
+          data: {
+            meetingCount: { increment: 1 },
+            lastMeetingAt: new Date(),
+          },
+        });
+      }
     });
 
     this.metrics.incMeetingCreated(input.type);
@@ -182,7 +217,16 @@ export class MeetingsService {
 
   async list(
     userId: string,
-    filters: { page: number; limit: number; status?: MeetingStatus; type?: MeetingType },
+    filters: {
+      page: number;
+      limit: number;
+      query?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+      status?: MeetingStatus[];
+      type?: MeetingType[];
+      cardId?: string;
+    },
   ): Promise<Paginated<Meeting>> {
     const { items, total } = await this.meetings.listByOwner(userId, filters);
     return { items, total, page: filters.page, limit: filters.limit };
@@ -224,6 +268,28 @@ export class MeetingsService {
    * Партнёр может отменить встречу, пока она `scheduled`.
    * После — встреча идёт через FSM (active/completed) — отмена тут невалидна.
    */
+  /**
+   * Soft-delete встречи (workspace M3a). Хост-only. Помечает `deletedAt`,
+   * списки автоматически фильтруют по `deletedAt: null` (см. репозиторий).
+   * Идемпотентно: повторный вызов на уже удалённой возвращает без ошибки.
+   */
+  async softDelete(meetingId: string, userId: string): Promise<void> {
+    const meeting = await this.meetings.findById(meetingId);
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== userId) {
+      throw new NotAuthorizedError('not_meeting_host');
+    }
+    if (meeting.deletedAt !== null) {
+      // Уже удалена — no-op, не валим.
+      return;
+    }
+    await this.prisma.meeting.update({
+      where: { id: meetingId },
+      data: { deletedAt: new Date() },
+    });
+    this.logger.log(`Встреча ${meetingId} помечена soft-deleted`);
+  }
+
   async cancelScheduled(id: string, _partnerId: string): Promise<void> {
     const meeting = await this.meetings.findById(id);
     if (!meeting) throw new MeetingNotFoundError(id);
@@ -326,6 +392,7 @@ export class MeetingsService {
       createdAt: string;
       customPrompt: string | null;
       failureReason: string | null;
+      cardId: string | null;
     };
     participants: Array<{
       id: string;
@@ -381,6 +448,7 @@ export class MeetingsService {
         createdAt: meeting.createdAt.toISOString(),
         customPrompt: meeting.customPrompt ?? null,
         failureReason: meeting.failureReason ?? null,
+        cardId: meeting.cardId ?? null,
       },
       participants: meeting.participants.map((p: Participant) => ({
         id: p.id,

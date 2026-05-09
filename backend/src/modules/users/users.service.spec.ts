@@ -69,9 +69,12 @@ describe('UsersService.upsertFromCrossmark', () => {
     email: 'alice@x.com',
     name: 'Alice',
     role: 'user',
+    signupSource: 'crossmark',
     passwordHash: null,
+    mustChangePassword: false,
     createdAt: new Date('2026-01-01'),
     lastSeenAt: null,
+    deletedAt: null,
     ...over,
   });
 

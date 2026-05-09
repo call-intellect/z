@@ -70,6 +70,7 @@ export class MeetingsRepository {
       type: MeetingType;
       ownerId: string;
       customPrompt: string | null;
+      cardId?: string | null;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<Meeting> {
@@ -82,6 +83,9 @@ export class MeetingsRepository {
         type: data.type,
         ownerId: data.ownerId,
         customPrompt: data.customPrompt,
+        ...(data.cardId !== undefined && data.cardId !== null
+          ? { cardId: data.cardId }
+          : {}),
         status: 'scheduled',
       },
     });
@@ -111,20 +115,44 @@ export class MeetingsRepository {
 
   /**
    * Список встреч пользователя (он — хост; в MVP не считаем встречи, в которых он гость).
+   *
+   * Фильтры (Phase 2 standalone-product):
+   *   - `query` — ILIKE по `title`;
+   *   - `dateFrom` / `dateTo` — на `createdAt`;
+   *   - `status[]` / `type[]` — `IN`;
+   *   - всегда `deletedAt: null` (soft-delete).
    */
   async listByOwner(
     ownerId: string,
     filters: {
       page: number;
       limit: number;
-      status?: MeetingStatus;
-      type?: MeetingType;
+      query?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+      status?: MeetingStatus[];
+      type?: MeetingType[];
+      cardId?: string;
     },
   ): Promise<{ items: Meeting[]; total: number }> {
+    const createdAtFilter: Prisma.DateTimeFilter | undefined =
+      filters.dateFrom || filters.dateTo
+        ? {
+            ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+            ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+          }
+        : undefined;
+
     const where: Prisma.MeetingWhereInput = {
       ownerId,
-      ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.type ? { type: filters.type } : {}),
+      deletedAt: null,
+      ...(filters.status && filters.status.length > 0 ? { status: { in: filters.status } } : {}),
+      ...(filters.type && filters.type.length > 0 ? { type: { in: filters.type } } : {}),
+      ...(filters.query
+        ? { title: { contains: filters.query, mode: 'insensitive' } }
+        : {}),
+      ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
+      ...(filters.cardId ? { cardId: filters.cardId } : {}),
     };
     const skip = (filters.page - 1) * filters.limit;
 

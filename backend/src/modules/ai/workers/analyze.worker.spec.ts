@@ -50,6 +50,7 @@ function buildWorker(args: BuildArgs): {
       tasks: null,
       modelUsed: 'pending',
       createdAt: new Date(),
+      updatedAt: new Date(),
     }),
   );
   const aiResultUpdate = vi.fn(
@@ -64,6 +65,7 @@ function buildWorker(args: BuildArgs): {
       tasks: (input.data['tasks'] as object | null) ?? null,
       modelUsed: (input.data['modelUsed'] as string) ?? 'm',
       createdAt: new Date(),
+      updatedAt: new Date(),
     }),
   );
 

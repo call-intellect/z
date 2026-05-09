@@ -1,0 +1,47 @@
+# Локальная конфигурация LiveKit для Windows-стенда (нативный binary).
+# Запуск: infra/scripts/start-livekit-windows.ps1
+# Webhook идёт на наш backend (localhost:3000).
+
+port: 7880
+bind_addresses:
+  - '0.0.0.0'
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+
+# Redis — наш z-redis, проброшен на 127.0.0.1:56381
+redis:
+  address: 127.0.0.1:56381
+
+# API ключи. Совпадают с backend/.env (LIVEKIT_API_KEY=devkey,
+# LIVEKIT_API_SECRET=secretsecret...)
+keys:
+  devkey: secretsecretsecretsecretsecretsecretsecretsecret
+
+# Webhooks: наш backend принимает на /webhooks/livekit
+webhook:
+  api_key: devkey
+  urls:
+    - 'http://localhost:3000/webhooks/livekit'
+
+room:
+  empty_timeout: 600
+  max_participants: 10
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/vp8
+    - mime: video/h264
+
+# TURN для локального теста не нужен (без NAT).
+turn:
+  enabled: false
+
+logging:
+  level: info
+  json: false
+
+# Dev-режим: ослабленные требования для локального теста.
+development: true

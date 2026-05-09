@@ -1,9 +1,39 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { Queue } from 'bullmq';
+import { type JobsOptions, Queue } from 'bullmq';
 
 import { RedisService } from '../../common/redis/redis.service';
 
-import { type AiJobData, DEFAULT_JOB_OPTIONS, QUEUE_NAMES, type QueueName } from './queues';
+import {
+  type AiJobData,
+  type CardRollupJobData,
+  type ClipRenderJobData,
+  DEFAULT_JOB_OPTIONS,
+  QUEUE_NAMES,
+  type QueueName,
+} from './queues';
+
+/**
+ * Опции для clip-render — ffmpeg тяжёлый, лимит 2 попытки.
+ */
+const CLIP_RENDER_JOB_OPTIONS: JobsOptions = {
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: { age: 86400, count: 200 },
+  removeOnFail: false,
+};
+
+/**
+ * Опции для card-rollup. delay=5_000 даёт окно для дедупа: в течение 5 секунд
+ * после первого вызова повторные `add(jobId=...)` игнорируются BullMQ —
+ * серия из 3-4 встреч за минуту → один rollup.
+ */
+const CARD_ROLLUP_JOB_OPTIONS: JobsOptions = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 15_000 },
+  removeOnComplete: { age: 3600, count: 500 },
+  removeOnFail: false,
+  delay: 5_000,
+};
 
 /**
  * HTTP-side диспетчер для AI-pipeline. Воркеры подписаны в отдельном процессе
@@ -15,19 +45,29 @@ import { type AiJobData, DEFAULT_JOB_OPTIONS, QUEUE_NAMES, type QueueName } from
 @Injectable()
 export class AiQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AiQueueService.name);
-  private queues: Map<QueueName, Queue<AiJobData>> | null = null;
+  // Хранится как Queue<unknown> — payload типа AiJobData в большинстве очередей,
+  // ClipRenderJobData в `clip.render`. Каст делается в enqueue-методах.
+  private queues: Map<QueueName, Queue<unknown>> | null = null;
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
   onModuleInit(): void {
     const connection = this.redis.client;
-    const map = new Map<QueueName, Queue<AiJobData>>();
+    const map = new Map<QueueName, Queue<unknown>>();
     for (const name of Object.values(QUEUE_NAMES)) {
+      let opts: JobsOptions;
+      if (name === QUEUE_NAMES.CLIP_RENDER) {
+        opts = CLIP_RENDER_JOB_OPTIONS;
+      } else if (name === QUEUE_NAMES.CARD_ROLLUP) {
+        opts = CARD_ROLLUP_JOB_OPTIONS;
+      } else {
+        opts = DEFAULT_JOB_OPTIONS;
+      }
       map.set(
         name,
-        new Queue<AiJobData>(name, {
+        new Queue<unknown>(name, {
           connection,
-          defaultJobOptions: DEFAULT_JOB_OPTIONS,
+          defaultJobOptions: opts,
         }),
       );
     }
@@ -67,6 +107,79 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     return this.enqueue(QUEUE_NAMES.NOTIFY, meetingId, attempt);
   }
 
+  enqueueChapters(meetingId: string, attempt = 1): Promise<void> {
+    return this.enqueue(QUEUE_NAMES.CHAPTERS, meetingId, attempt);
+  }
+
+  enqueueTasksExtract(meetingId: string, attempt = 1): Promise<void> {
+    return this.enqueue(QUEUE_NAMES.TASKS, meetingId, attempt);
+  }
+
+  enqueueTranscriptIndex(meetingId: string, attempt = 1): Promise<void> {
+    return this.enqueue(QUEUE_NAMES.EMBEDDINGS, meetingId, attempt);
+  }
+
+  /**
+   * Перезапуск analyze (с опциональным templateId — для regenerate).
+   * jobId уникальный — повторные вызовы с тем же attempt не создадут дубль.
+   */
+  async enqueueAnalyzeWithTemplate(
+    meetingId: string,
+    attempt: number,
+    templateId?: string,
+  ): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.ANALYZE);
+    if (!q) throw new Error('AiQueueService: ai.analyze не инициализирован');
+    const jobId = `${meetingId}:analyze:${attempt}`;
+    const data: AiJobData = templateId
+      ? { meetingId, attempt, templateId }
+      : { meetingId, attempt };
+    await q.add('analyze', data, { jobId });
+    this.logger.debug(`enqueue ai.analyze meeting=${meetingId} attempt=${attempt} templateId=${templateId ?? '-'}`);
+  }
+
+  /**
+   * Постановка card-rollup. Идемпотентность через фиксированный jobId по cardId.
+   * Повторная постановка в окне дебаунса (5 сек) игнорируется — серия встреч
+   * мержится в один rollup.
+   */
+  async enqueueCardRollup(
+    cardId: string,
+    reason: CardRollupJobData['reason'] = 'analyze',
+  ): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.CARD_ROLLUP);
+    if (!q) throw new Error('AiQueueService: ai.card-rollup не инициализирован');
+    const jobId = `rollup:card:${cardId}`;
+    const payload: CardRollupJobData = { cardId, reason };
+    await q.add('card-rollup', payload, { jobId });
+    this.logger.debug(`enqueue ai.card-rollup card=${cardId} reason=${reason}`);
+  }
+
+  /**
+   * Постановка ffmpeg-рендера клипа.
+   * jobId — `clip:<highlightId>:<attempt>` для идемпотентности.
+   */
+  async enqueueClipRender(highlightId: string, attempt = 1): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.CLIP_RENDER);
+    if (!q) throw new Error('AiQueueService: clip.render не инициализирован');
+    const jobId = `clip:${highlightId}:${attempt}`;
+    const payload: ClipRenderJobData = { highlightId, attempt };
+    await q.add('clip-render', payload, { jobId });
+    this.logger.debug(`enqueue clip.render highlight=${highlightId} attempt=${attempt}`);
+  }
+
   private async enqueue(queue: QueueName, meetingId: string, attempt: number): Promise<void> {
     const map = this.queues;
     if (!map) {
@@ -78,7 +191,8 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const stage = queue.split('.')[1] ?? queue;
     const jobId = `${meetingId}:${stage}:${attempt}`;
-    await q.add(stage, { meetingId, attempt }, { jobId });
+    const payload: AiJobData = { meetingId, attempt };
+    await q.add(stage, payload, { jobId });
     this.logger.debug(`enqueue ${queue} meeting=${meetingId} attempt=${attempt}`);
   }
 }

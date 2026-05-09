@@ -30,13 +30,14 @@ import {
   SUMMARY_TOOL_NAME,
   buildSummaryPrompt,
 } from '../services/prompts/system-summary';
+import { ROOM_CHAT_SYSTEM_NOTE, formatChatTime } from '../services/prompts/common';
 import {
   TASKS_SCHEMA,
   TASKS_TOOL,
   TASKS_TOOL_NAME,
   buildTasksPrompt,
 } from '../services/prompts/tasks';
-import type { DialogTurn } from '../services/prompts/common';
+import type { DialogTurn, RoomChatMessage } from '../services/prompts/common';
 
 /**
  * Worker стадии `ai.analyze`.
@@ -128,18 +129,28 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 2. читаем merged.
-    const merged = await this.s3.getJson<{ turns: DialogTurn[] }>(
-      meeting.transcript.mergedS3Url,
-    );
+    // 2. читаем merged. Поле `roomChat` опционально — присутствует только
+    //    если merge.worker подмешал чат (флаг INCLUDE_ROOM_CHAT_IN_AI=true и
+    //    в БД были сообщения). Старые merged.json без roomChat остаются
+    //    обратносовместимыми: undefined → промпты идентичны историческим.
+    const merged = await this.s3.getJson<{
+      turns: DialogTurn[];
+      roomChat?: RoomChatMessage[];
+    }>(meeting.transcript.mergedS3Url);
     const dialog = merged.turns ?? [];
+    const roomChat = merged.roomChat;
 
     // 3. создаём/находим AiResult (placeholder для постепенного заполнения).
     let aiResult: AiResult = await this.upsertEmptyAiResult(meeting);
 
     // 4. Summary (всегда).
     const summaryStarted = Date.now();
-    const summary = await this.runSummary({ meeting, dialog, jobId: job.id ?? null });
+    const summary = await this.runSummary({
+      meeting,
+      dialog,
+      roomChat,
+      jobId: job.id ?? null,
+    });
     aiResult = await this.prisma.aiResult.update({
       where: { id: aiResult.id },
       data: {
@@ -160,6 +171,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       const out = await this.runCustomPrompt({
         meeting,
         dialog,
+        roomChat,
         jobId: job.id ?? null,
       });
       aiResult = await this.prisma.aiResult.update({
@@ -181,6 +193,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       const data = await this.runStructuredReport({
         meeting,
         dialog,
+        roomChat,
         jobId: job.id ?? null,
       });
       aiResult = await this.prisma.aiResult.update({
@@ -205,6 +218,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       const followUp = await this.runFollowUp({
         meeting,
         dialog,
+        roomChat,
         jobId: job.id ?? null,
       });
       const composed = followUp
@@ -228,6 +242,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       const tasks = await this.runTasks({
         meeting,
         dialog,
+        roomChat,
         jobId: job.id ?? null,
       });
       aiResult = await this.prisma.aiResult.update({
@@ -257,9 +272,77 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
 
     // 10. enqueue notify.
     await this.queue.enqueueNotify(meetingId);
+
+    // 11. Параллельные стадии M3: chapters / tasks-extract / transcript-index.
+    //
+    //   - Выставляем status='queued' заранее, чтобы UI сразу показал спиннер.
+    //   - Запускаем все три как Promise.all — ошибка добавления одной не
+    //     должна блокировать остальные. Поэтому используем allSettled.
+    //   - На ошибку добавления — пишем failureReason, но НЕ меняем общий
+    //     status (он уже ai_ready: основное саммари есть и доступно).
+    try {
+      await this.prisma.meeting.update({
+        where: { id: meetingId },
+        data: {
+          chaptersStatus: 'queued',
+          tasksStatus: 'queued',
+          embeddingsStatus: 'queued',
+        },
+      });
+      const enqueueAttempt = job.data.attempt ?? 1;
+      const settled = await Promise.allSettled([
+        this.queue.enqueueChapters(meetingId, enqueueAttempt),
+        this.queue.enqueueTasksExtract(meetingId, enqueueAttempt),
+        this.queue.enqueueTranscriptIndex(meetingId, enqueueAttempt),
+      ]);
+      const failed = settled
+        .map((r, i) => ({ r, name: ['chapters', 'tasks', 'embeddings'][i] }))
+        .filter((x) => x.r.status === 'rejected');
+      if (failed.length > 0) {
+        const reason = failed
+          .map(
+            (f) =>
+              `${f.name}=${
+                f.r.status === 'rejected'
+                  ? f.r.reason instanceof Error
+                    ? f.r.reason.message
+                    : String(f.r.reason)
+                  : '?'
+              }`,
+          )
+          .join('; ');
+        await this.prisma.meeting
+          .update({
+            where: { id: meetingId },
+            data: { failureReason: `post-analyze enqueue: ${reason}` },
+          })
+          .catch(() => undefined);
+        this.logger.warn(
+          { meetingId, reason },
+          'analyze: часть post-analyze jobs не добавилась',
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        `analyze post-analyze orchestration: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
+    // 12. Card rollup — если встреча принадлежит карточке, ставим пересборку
+    //     `Card.summaryCache` через дебаунсированную очередь `ai.card-rollup`.
+    if (meeting.cardId) {
+      await this.queue
+        .enqueueCardRollup(meeting.cardId, 'analyze')
+        .catch((err) =>
+          this.logger.warn(
+            `analyze: enqueueCardRollup упал: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+    }
+
     this.logger.log(
-      { meetingId, type: meeting.type, model: aiResult.modelUsed },
-      'analyze: успешно — notify поставлен',
+      { meetingId, type: meeting.type, model: aiResult.modelUsed, cardId: meeting.cardId ?? null },
+      'analyze: успешно — notify + post-analyze jobs поставлены',
     );
 
     void this.cfg;
@@ -285,11 +368,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async runSummary(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
+    roomChat?: RoomChatMessage[];
     jobId: string | null;
   }): Promise<LlmCompleteOutput> {
     const prompt = buildSummaryPrompt({
       meeting: { ...args.meeting },
       dialog: args.dialog,
+      roomChat: args.roomChat,
     });
     return this.callLlm({
       meeting: args.meeting,
@@ -306,20 +391,34 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async runCustomPrompt(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
+    roomChat?: RoomChatMessage[];
     jobId: string | null;
   }): Promise<LlmCompleteOutput> {
     const customSystem = args.meeting.customPrompt ?? '';
-    const userText = args.dialog
+    // Сохраняем компактный формат `Speaker: text` без таймкодов (legacy contract
+    // custom-промпта), но если есть чат — добавляем блок «Чат встречи» вручную,
+    // используя те же правила форматирования, что и `turnsToText`.
+    const dialogText = args.dialog
       .map((t) => `${t.speaker}: ${t.text}`)
       .join('\n');
+    const chatText =
+      args.roomChat && args.roomChat.length > 0
+        ? `\n\nЧат встречи:\n${args.roomChat
+            .map((m) => `[${formatChatTime(m.sentAt)}] @${m.authorName}: ${m.content}`)
+            .join('\n')}`
+        : '';
+    const systemWithChatNote =
+      args.roomChat && args.roomChat.length > 0
+        ? `${customSystem}\n\n${ROOM_CHAT_SYSTEM_NOTE}`
+        : customSystem;
     return this.callLlm({
       meeting: args.meeting,
       jobId: args.jobId,
       agentType: 'custom',
       promptName: 'custom_prompt',
       input: {
-        system: { text: customSystem, cacheControl: 'ephemeral' },
-        user: `Тип встречи: ${args.meeting.type}\nЗаголовок: ${args.meeting.title}\n\nДиалог:\n${userText}`,
+        system: { text: systemWithChatNote, cacheControl: 'ephemeral' },
+        user: `Тип встречи: ${args.meeting.type}\nЗаголовок: ${args.meeting.title}\n\nДиалог:\n${dialogText}${chatText}`,
       },
     });
   }
@@ -327,12 +426,14 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async runStructuredReport(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
+    roomChat?: RoomChatMessage[];
     jobId: string | null;
   }): Promise<{ json: unknown; model: string }> {
     const descriptor = getPromptForType(args.meeting.type);
     const prompt = descriptor.buildPrompt({
       meeting: { ...args.meeting },
       dialog: args.dialog,
+      roomChat: args.roomChat,
     });
 
     let lastError: unknown = null;
@@ -379,11 +480,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async runFollowUp(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
+    roomChat?: RoomChatMessage[];
     jobId: string | null;
   }): Promise<{ subject: string; body: string } | null> {
     const prompt = buildFollowUpPrompt({
       meeting: { ...args.meeting },
       dialog: args.dialog,
+      roomChat: args.roomChat,
     });
     return this.callStructured(
       args,
@@ -398,11 +501,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async runTasks(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
+    roomChat?: RoomChatMessage[];
     jobId: string | null;
   }): Promise<Array<{ title: string; assignee: string | null; dueDate: string | null }> | null> {
     const prompt = buildTasksPrompt({
       meeting: { ...args.meeting },
       dialog: args.dialog,
+      roomChat: args.roomChat,
     });
     const result = await this.callStructured(
       args,

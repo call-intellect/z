@@ -42,9 +42,20 @@ _пусто_
 
 ## Активные ТЗ
 - `plans/architecture/2026-05-08-z-architecture.md` — целевая архитектура MVP (полное полотно: модули, FSM, контракты API, ENV, безопасность, decisions log)
-- `plans/tz/2026-05-08-mvp-fullstack-tz.md` — основное ТЗ MVP по фазам 0–9 (frontend + backend + AI + admin + observability)
+- `plans/tz/2026-05-08-mvp-fullstack-tz.md` — основное ТЗ MVP по фазам 0–9 (frontend + backend + AI + admin + observability) ✅ закрыт
 - `plans/tz/2026-05-06-infrastructure-deployment-tz.md` — фаза 0 (инфра): развёртывание серверов, LiveKit, Egress, БД, мониторинг, Selectel S3
-- `plans/tz/2026-05-09-standalone-product.md` — Z как самостоятельный продукт: lead-style регистрация (имя+email → временный пароль письмом), кабинет с sidebar, журнал встреч в master-detail, дизайн-система на shadcn/ui
+- `plans/tz/2026-05-09-standalone-product.md` — Z как самостоятельный продукт ✅ реализован (2026-05-09): accounts/mail backend + signup/login/forgot/reset/onboarding + AppShell + master-detail журнал
+- `plans/tz/2026-05-09-ai-meeting-workspace.md` — расширенный AI Meeting Workspace ✅ реализован (2026-05-09): 9 backend cross-cutting модулей (security/audit/quotas/api-keys/webhooks-out/destinations/exports/chat/public-api), 6 domain (tasks/chapters/highlights/shares/tags/templates), AI-pipeline (LlmRouter + Embeddings + 4 новых worker'а), 3-колоночная страница встречи + AI-чат + Vidstack + clips + public share, /tasks /settings/{tags,api,webhooks,exports,integrations} /admin/ai-models /dashboard
+- `plans/tz/2026-05-09-cards.md` — Карточки (CRM-структура) ✅ реализован (2026-05-09): сущность Card (client/deal/project/topic/custom) с одним primary-контактом, Meeting.cardId (one-to-many), AI-сводка по карточке + AI-чат с RAG, ⌘K command palette, Public REST API, webhook events (card.created/updated/deleted, meeting.linked_to_card/unlinked), привязка только явная без LLM-угадывания
+- `plans/tz/2026-05-09-meeting-room-chat.md` — In-meeting чат с persist ✅ реализован (2026-05-09): MeetingRoomMessage модель, POST/GET с идемпотентностью, ChatPanel переписан с history+dedup, 6-й таб «Чат», MeetingShare.allowChat для публичного шеринга, AI-pipeline merger подмешивает roomChat во все 9 типов промптов
+
+## Заметки по реализации (2026-05-09)
+- [[01_projects/auth-and-accounts]] — standalone-аккаунты: argon2id, UserSession+jti, mail.hosting.reg.ru SMTP, forced-onboarding
+- [[01_projects/ai-workspace]] — карта новых модулей (tasks/chapters/highlights/shares/tags/templates/chat/api-keys/webhooks-out/destinations/exports), Public REST API
+- [[01_projects/meeting-room-chat]] — in-meeting чат с persist: LiveKit DataChannel + POST в БД, history на join, 6-й таб результата, allowChat шеринг, AI-pipeline mixing
+- [[01_projects/cards]] — CRM-структура встреч: Card (5 видов) + Meeting.cardId, card-rollup воркер с дебаунсом, AI-чат по карточке, ⌘K палитра, Public REST API
+- [[02_architecture/security]] — SSRF-guard, AES-GCM-256 envelope-encryption webhook-секретов, ipHash, soft-delete с 30-дневным grace, retention extras
+- [[02_architecture/design-system]] — dark-first + mint `#5EEAD4` + Geist + glass-cards, motion presets, AppShell
 
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
@@ -59,4 +70,4 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-06_
+_Обновлён: 2026-05-09_

@@ -24,7 +24,18 @@ import { TypedConfigService } from './typed-config.service';
           const logger = new Logger('ConfigModule');
           const message = err instanceof Error ? err.message : String(err);
           logger.error(message);
-          // Завершаем процесс — без валидной конфигурации запускаться нельзя.
+          // В test-mode (vitest / NODE_ENV=test) — бросаем Error,
+          // чтобы тесты увидели чистый assertion вместо `process.exit`.
+          // В prod/dev — завершаем процесс: без валидной конфигурации
+          // запускаться нельзя.
+          const isTest =
+            process.env['NODE_ENV'] === 'test' ||
+            process.env['VITEST'] === 'true' ||
+            typeof (globalThis as Record<string, unknown>)['__vitest_worker__'] !==
+              'undefined';
+          if (isTest) {
+            throw err instanceof Error ? err : new Error(message);
+          }
           process.exit(1);
         }
       },

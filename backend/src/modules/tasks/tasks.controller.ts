@@ -1,0 +1,182 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
+import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+
+import {
+  type CreateTaskDto,
+  CreateTaskSchema,
+} from './dto/create-task.dto';
+import {
+  type BulkTasksDto,
+  BulkTasksSchema,
+  type ListTasksQuery,
+  ListTasksQuerySchema,
+  type SendTaskDto,
+  SendTaskSchema,
+} from './dto/list-tasks.dto';
+import {
+  type UpdateTaskDto,
+  UpdateTaskSchema,
+} from './dto/update-task.dto';
+import { TasksService } from './tasks.service';
+
+/**
+ * Внутренний API задач (action items).
+ *
+ *   `GET /api/v1/tasks`                          — все задачи юзера
+ *   `GET /api/v1/meetings/:meetingId/tasks`      — задачи одной встречи
+ *   `POST /api/v1/meetings/:meetingId/tasks`     — ручное создание
+ *   `PATCH /api/v1/tasks/:id`                    — обновить
+ *   `DELETE /api/v1/tasks/:id`                   — удалить (hard, у Task нет deletedAt)
+ *   `POST /api/v1/tasks/:id/send`                — отправить в IntegrationDestination
+ *   `POST /api/v1/tasks/bulk`                    — массовая операция
+ */
+@Controller('api/v1')
+@UseGuards(CookieAuthGuard)
+export class TasksController {
+  constructor(@Inject(TasksService) private readonly tasks: TasksService) {}
+
+  @Get('tasks')
+  async listAll(
+    @Query(new ZodValidationPipe(ListTasksQuerySchema)) query: ListTasksQuery,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{
+    items: ReturnType<TasksController['mapTask']>[];
+    page: number;
+    limit: number;
+    total: number;
+  }> {
+    const result = await this.tasks.list(user.id, query);
+    return {
+      items: result.items.map((t) => this.mapTask(t)),
+      page: query.page,
+      limit: query.limit,
+      total: result.total,
+    };
+  }
+
+  @Get('meetings/:meetingId/tasks')
+  async listByMeeting(
+    @Param('meetingId') meetingId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ items: ReturnType<TasksController['mapTask']>[] }> {
+    const items = await this.tasks.listByMeeting(meetingId, user.id);
+    return { items: items.map((t) => this.mapTask(t)) };
+  }
+
+  @Post('meetings/:meetingId/tasks')
+  @HttpCode(HttpStatus.CREATED)
+  async create(
+    @Param('meetingId') meetingId: string,
+    @Body(new ZodValidationPipe(CreateTaskSchema)) body: CreateTaskDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<ReturnType<TasksController['mapTask']>> {
+    const task = await this.tasks.create(meetingId, user.id, body);
+    return this.mapTask(task);
+  }
+
+  @Patch('tasks/:id')
+  async update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateTaskSchema)) body: UpdateTaskDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<ReturnType<TasksController['mapTask']>> {
+    const task = await this.tasks.update(id, user.id, body);
+    return this.mapTask(task);
+  }
+
+  @Delete('tasks/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<void> {
+    await this.tasks.delete(id, user.id);
+  }
+
+  @Post('tasks/:id/send')
+  @HttpCode(HttpStatus.OK)
+  async send(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SendTaskSchema)) body: SendTaskDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    return this.tasks.send(id, user.id, body.destinationId);
+  }
+
+  @Post('tasks/bulk')
+  @HttpCode(HttpStatus.OK)
+  async bulk(
+    @Body(new ZodValidationPipe(BulkTasksSchema)) body: BulkTasksDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ affected: number; action: BulkTasksDto['action'] }> {
+    return this.tasks.bulk(user.id, body);
+  }
+
+  // ─────────────────────────── helpers ──────────────────────────────────
+
+  private mapTask(t: {
+    id: string;
+    meetingId: string;
+    userId: string;
+    title: string;
+    description: string | null;
+    status: string;
+    assigneeRaw: string | null;
+    dueDate: Date | null;
+    sourceStartMs: number | null;
+    sourceEndMs: number | null;
+    sourceQuote: string | null;
+    confidence: number | null;
+    createdManually: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }): {
+    id: string;
+    meetingId: string;
+    title: string;
+    description: string | null;
+    status: string;
+    assigneeRaw: string | null;
+    dueDate: string | null;
+    sourceStartMs: number | null;
+    sourceEndMs: number | null;
+    sourceQuote: string | null;
+    confidence: number | null;
+    createdManually: boolean;
+    createdAt: string;
+    updatedAt: string;
+  } {
+    return {
+      id: t.id,
+      meetingId: t.meetingId,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      assigneeRaw: t.assigneeRaw,
+      dueDate: t.dueDate?.toISOString() ?? null,
+      sourceStartMs: t.sourceStartMs,
+      sourceEndMs: t.sourceEndMs,
+      sourceQuote: t.sourceQuote,
+      confidence: t.confidence,
+      createdManually: t.createdManually,
+      createdAt: t.createdAt.toISOString(),
+      updatedAt: t.updatedAt.toISOString(),
+    };
+  }
+}

@@ -10,18 +10,39 @@ import { MetricsModule } from './common/metrics/metrics.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { ChaptersModule } from './modules/chapters/chapters.module';
 import { HealthModule } from './modules/health/health.module';
+import { HighlightsModule } from './modules/highlights/highlights.module';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
+import { MailModule } from './modules/mail/mail.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
 import { RetentionModule } from './modules/retention/retention.module';
+import { RoomMessagesModule } from './modules/room-messages/room-messages.module';
+import { SharesModule } from './modules/shares/shares.module';
+import { TagsModule } from './modules/tags/tags.module';
+import { TasksModule } from './modules/tasks/tasks.module';
+import { TemplatesModule } from './modules/templates/templates.module';
 import { UsersModule } from './modules/users/users.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+// M3c — cross-cutting ai-workspace модули.
+import { ApiKeysModule } from './modules/api-keys/api-keys.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { CardsModule } from './modules/cards/cards.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { SearchModule } from './modules/search/search.module';
+import { DestinationsModule } from './modules/destinations/destinations.module';
+import { ExportsModule } from './modules/exports/exports.module';
+import { PublicApiModule } from './modules/public-api/public-api.module';
+import { QuotasModule } from './modules/quotas/quotas.module';
+import { SecurityModule } from './modules/security/security.module';
+import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
 @Module({
   imports: [
@@ -80,6 +101,42 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     // Phase 8 — admin endpoints + дополнительные Crossmark endpoints.
     AdminModule,
     CrossmarkModule,
+
+    // Standalone-product (Phase 2): lead-style регистрация, login, профиль,
+    // forgot/reset password. Mail — глобальный, нужен и за пределами Accounts
+    // (нотификации, в будущем — owner-уведомления).
+    MailModule,
+    AccountsModule,
+
+    // M3c — cross-cutting cервисы: SecurityModule (SSRF/Encryption/IpHashing),
+    // AuditModule, QuotasModule. Должны идти ДО Tasks/Highlights/Shares/Chat,
+    // которые инжектят AuditLogService/QuotaService.
+    SecurityModule,
+    AuditModule,
+    QuotasModule,
+    ApiKeysModule,
+    WebhooksOutModule,
+    DestinationsModule,
+    ExportsModule,
+    ChatModule,
+    PublicApiModule,
+
+    // M3b workspace модули: tasks/chapters/highlights/shares/tags/templates.
+    TasksModule,
+    ChaptersModule,
+    HighlightsModule,
+    SharesModule,
+    TagsModule,
+    TemplatesModule,
+
+    // CRM-структура встреч: карточки.
+    CardsModule,
+
+    // Глобальный поиск (⌘K).
+    SearchModule,
+
+    // In-meeting room chat (LiveKit DataChannel mirror → БД).
+    RoomMessagesModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI, чтобы получить PinoLogger.

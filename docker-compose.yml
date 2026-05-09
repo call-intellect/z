@@ -7,7 +7,9 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 — официальный образ с pgvector (требуется схемой,
+    # см. backend/prisma/schema.prisma `extensions = [pgvector(map: "vector")]`).
+    image: pgvector/pgvector:pg16
     container_name: z-postgres
     restart: unless-stopped
     environment:

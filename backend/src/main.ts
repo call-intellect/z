@@ -88,6 +88,7 @@ async function bootstrap(): Promise<void> {
   // Swagger включаем только в dev. В prod защищается basic-auth middleware'ом.
   if (!cfg.runtime.isProduction) {
     try {
+      // Internal API — все controllers (cookie + bearer auth).
       const swaggerConfig = new DocumentBuilder()
         .setTitle('Z Backend API')
         .setDescription('API для AI-видеовстреч на LiveKit')
@@ -97,6 +98,38 @@ async function bootstrap(): Promise<void> {
         .build();
       const document = SwaggerModule.createDocument(app, swaggerConfig);
       SwaggerModule.setup('api/docs', app, document, {
+        swaggerOptions: { persistAuthorization: true },
+      });
+
+      // Public REST API (M3c) — отдельный документ, только endpoints под
+      // `/api/public/v1`. Предназначен для внешних интеграций по API-ключам.
+      const publicSwaggerConfig = new DocumentBuilder()
+        .setTitle('Z Public API')
+        .setDescription(
+          'Public REST API. Авторизация: Bearer <API key из /api/v1/api-keys>.',
+        )
+        .setVersion('1.0.0')
+        .addBearerAuth({
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'API Key',
+        })
+        .addServer('/api/public/v1')
+        .build();
+      const publicDocument = SwaggerModule.createDocument(app, publicSwaggerConfig, {
+        include: [],
+        // Включаем только controllers под `/api/public/v1`.
+        deepScanRoutes: true,
+        operationIdFactory: (controllerKey: string, methodKey: string) =>
+          `${controllerKey}_${methodKey}`,
+      });
+      // Фильтруем paths, оставляя только публичные.
+      publicDocument.paths = Object.fromEntries(
+        Object.entries(publicDocument.paths).filter(([path]) =>
+          path.startsWith('/api/public/v1'),
+        ),
+      );
+      SwaggerModule.setup('api/public/v1/docs', app, publicDocument, {
         swaggerOptions: { persistAuthorization: true },
       });
     } catch (err) {

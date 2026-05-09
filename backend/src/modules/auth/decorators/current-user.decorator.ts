@@ -6,6 +6,18 @@ export interface CurrentUserPayload {
   id: string;
   email: string;
   role: 'user' | 'admin';
+  /** JWT ID — присутствует только для standalone-сессий. */
+  jti?: string;
+  /**
+   * LiveKit identity участника. Заполняется только room-chat guard'ом
+   * (`MeetingMemberGuard`) при гостевом доступе (см. ТЗ meeting-room-chat).
+   * Для всех «нормальных» юзер-эндпоинтов остаётся undefined.
+   */
+  livekitIdentity?: string;
+  /** Participant.id (только для гостей через room-chat guard). */
+  participantId?: string;
+  /** Имя гостя из Participant — для денормализации authorName в room-chat. */
+  name?: string;
 }
 
 /**

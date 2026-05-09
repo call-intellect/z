@@ -32,6 +32,26 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── llm fallback ────────────────────────────────────────────────────
   private llmFallbackTotal!: Counter<'provider'>;
 
+  // ── llm router (per-task routing) ───────────────────────────────────
+  private llmRouterDispatchTotal!: Counter<'task_type' | 'provider' | 'status'>;
+
+  // ── embeddings ──────────────────────────────────────────────────────
+  private embeddingTokensTotal!: Counter<'provider' | 'status'>;
+  private embeddingChunksTotal!: Counter<'status'>;
+
+  // ── clip render ─────────────────────────────────────────────────────
+  private mp4RenderDurationSeconds!: Histogram<'status'>;
+
+  // ── ai-workspace cross-cutting ──────────────────────────────────────
+  private webhookDeliveryTotal!: Counter<'event' | 'status'>;
+  private quotaExceededTotal!: Counter<'quota_name'>;
+  private exportCompletedTotal!: Counter<'type' | 'status'>;
+  private chatRequestTotal!: Counter<'scope'>;
+
+  // ── cards (CRM) ─────────────────────────────────────────────────────
+  private cardsTotal!: Counter<'kind' | 'action'>;
+  private cardRollupRunsTotal!: Counter<'status'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -96,6 +116,67 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'livekit_webhook_events_total',
       help: 'События LiveKit webhook (по типу).',
       labelNames: ['type'] as const,
+    });
+
+    this.llmRouterDispatchTotal = this.getOrCreateCounter({
+      name: 'llm_router_dispatch_total',
+      help: 'Диспетчеризация задач по провайдерам в LlmRouter (status: success/fallback/failed).',
+      labelNames: ['task_type', 'provider', 'status'] as const,
+    });
+
+    this.embeddingTokensTotal = this.getOrCreateCounter({
+      name: 'embedding_tokens_total',
+      help: 'Сумма токенов, обработанных embedding-провайдерами (по провайдеру и статусу).',
+      labelNames: ['provider', 'status'] as const,
+    });
+
+    this.embeddingChunksTotal = this.getOrCreateCounter({
+      name: 'embedding_chunks_total',
+      help: 'Сколько чанков транскрипта проиндексировано (по статусу).',
+      labelNames: ['status'] as const,
+    });
+
+    this.mp4RenderDurationSeconds = this.getOrCreateHistogram({
+      name: 'mp4_render_duration_seconds',
+      help: 'Длительность ffmpeg-рендера клипа в секундах (по статусу).',
+      labelNames: ['status'] as const,
+      buckets: [1, 5, 10, 30, 60, 120, 300, 600, 1800],
+    });
+
+    this.webhookDeliveryTotal = this.getOrCreateCounter({
+      name: 'webhook_delivery_total',
+      help: 'Доставки исходящих webhooks (event × status: delivered/retrying/failed).',
+      labelNames: ['event', 'status'] as const,
+    });
+
+    this.quotaExceededTotal = this.getOrCreateCounter({
+      name: 'quota_exceeded_total',
+      help: 'Срабатывания per-user квот (по имени квоты).',
+      labelNames: ['quota_name'] as const,
+    });
+
+    this.exportCompletedTotal = this.getOrCreateCounter({
+      name: 'export_completed_total',
+      help: 'Завершённые экспорты (type × status: ready/failed).',
+      labelNames: ['type', 'status'] as const,
+    });
+
+    this.chatRequestTotal = this.getOrCreateCounter({
+      name: 'chat_request_total',
+      help: 'AI-чат запросы по scope (single/cross/card).',
+      labelNames: ['scope'] as const,
+    });
+
+    this.cardsTotal = this.getOrCreateCounter({
+      name: 'cards_total',
+      help: 'События с CRM-карточками (kind × action: created/updated/deleted/restored).',
+      labelNames: ['kind', 'action'] as const,
+    });
+
+    this.cardRollupRunsTotal = this.getOrCreateCounter({
+      name: 'card_rollup_runs_total',
+      help: 'Запуски пересборки rollup-сводки карточки (success/skipped/failed).',
+      labelNames: ['status'] as const,
     });
   }
 
@@ -173,6 +254,81 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incLivekitWebhookEvent(type: string): void {
     this.livekitWebhookEventsTotal.inc({ type });
+  }
+
+  /**
+   * Диспетчеризация задачи в LlmRouter.
+   *   status='success'  — провайдер вернул валидный ответ.
+   *   status='fallback' — провайдер упал, перешли к следующему.
+   *   status='failed'   — все провайдеры упали.
+   */
+  incLlmRouterDispatch(args: {
+    taskType: string;
+    provider: string;
+    status: 'success' | 'fallback' | 'failed';
+  }): void {
+    this.llmRouterDispatchTotal.inc({
+      task_type: args.taskType,
+      provider: args.provider,
+      status: args.status,
+    });
+  }
+
+  /**
+   * Кол-во токенов, обработанных embedding-провайдером.
+   *   status='success' | 'failed'.
+   */
+  addEmbeddingTokens(args: {
+    provider: string;
+    status: 'success' | 'failed';
+    tokens: number;
+  }): void {
+    if (args.tokens <= 0) return;
+    this.embeddingTokensTotal.inc({ provider: args.provider, status: args.status }, args.tokens);
+  }
+
+  addEmbeddingChunks(args: { status: 'success' | 'failed'; count: number }): void {
+    if (args.count <= 0) return;
+    this.embeddingChunksTotal.inc({ status: args.status }, args.count);
+  }
+
+  observeMp4RenderDuration(args: { status: string; seconds: number }): void {
+    this.mp4RenderDurationSeconds.observe({ status: args.status }, args.seconds);
+  }
+
+  // ────────────────────── ai-workspace ─────────────────────────────────
+
+  /** Доставка webhook'а: status — delivered / retrying / failed. */
+  incWebhookDelivery(args: { event: string; status: 'delivered' | 'retrying' | 'failed' }): void {
+    this.webhookDeliveryTotal.inc({ event: args.event, status: args.status });
+  }
+
+  /** Срабатывание квоты (429). */
+  incQuotaExceeded(args: { quotaName: string }): void {
+    this.quotaExceededTotal.inc({ quota_name: args.quotaName });
+  }
+
+  /** Завершение экспорта. */
+  incExportCompleted(args: { type: string; status: 'ready' | 'failed' }): void {
+    this.exportCompletedTotal.inc({ type: args.type, status: args.status });
+  }
+
+  /** AI-чат запрос: scope = single | cross | card. */
+  incChatRequest(args: { scope: 'single' | 'cross' | 'card' }): void {
+    this.chatRequestTotal.inc({ scope: args.scope });
+  }
+
+  /** Создание/обновление/удаление карточки. */
+  incCardEvent(args: {
+    kind: string;
+    action: 'created' | 'updated' | 'deleted' | 'restored';
+  }): void {
+    this.cardsTotal.inc({ kind: args.kind, action: args.action });
+  }
+
+  /** Запуск card-rollup воркера. */
+  incCardRollupRun(args: { status: 'success' | 'skipped' | 'failed' }): void {
+    this.cardRollupRunsTotal.inc({ status: args.status });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

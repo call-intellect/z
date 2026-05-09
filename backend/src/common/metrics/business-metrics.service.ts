@@ -117,8 +117,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.recordingsBytesTotal.inc(bytes);
   }
 
+  /** Алиас под более «глагольное» имя, фигурирует в ТЗ Фазы 4. */
+  incRecordingsBytes(bytes: number): void {
+    this.recordingsBytesTotal.inc(bytes);
+  }
+
   incRecordingDeleted(reason: string): void {
     this.recordingsDeletedTotal.inc({ reason });
+  }
+
+  /** Алиас. ТЗ Фазы 4 называет метод `incRecordingsDeleted({reason})`. */
+  incRecordingsDeleted(args: { reason: string }): void {
+    this.recordingsDeletedTotal.inc({ reason: args.reason });
   }
 
   incCrossmarkApiRequest(endpoint: string, status: number | string): void {

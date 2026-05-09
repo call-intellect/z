@@ -12,12 +12,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
+import { z } from 'zod';
 
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { CurrentPartner, type CurrentPartnerPayload } from '../auth/decorators/current-partner.decorator';
 import { HmacGuard } from '../auth/guards/hmac.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { RecordingsService } from '../recordings/recordings.service';
 
 import {
   type CreateMeetingDto,
@@ -25,6 +27,11 @@ import {
 } from './dto/create-meeting.dto';
 import type { MeetingPublicDto } from './dto/meeting-public.dto';
 import { MeetingsService } from './meetings.service';
+
+const ExtendRetentionSchema = z.object({
+  add_days: z.coerce.number().int().positive().max(365),
+});
+type ExtendRetentionDto = z.infer<typeof ExtendRetentionSchema>;
 
 /**
  * Crossmark integration endpoints (HMAC + idempotency).
@@ -38,6 +45,7 @@ export class MeetingsCrossmarkController {
   constructor(
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Inject(RecordingsService) private readonly recordings: RecordingsService,
   ) {}
 
   @Post()
@@ -81,5 +89,29 @@ export class MeetingsCrossmarkController {
   ): Promise<{ ok: true }> {
     await this.meetings.cancelScheduled(id, partner.id);
     return { ok: true };
+  }
+
+  // ─────────────────────────── recording ────────────────────────────────
+
+  @Get(':id/recording-url')
+  async getRecordingUrl(
+    @Param('id') id: string,
+    @CurrentPartner() partner: CurrentPartnerPayload,
+  ): Promise<{ url: string; expires_at: string }> {
+    const result = await this.recordings.getCrossmarkDownloadUrl(id, partner.id);
+    this.metrics.incCrossmarkApiRequest('GET /meetings/:id/recording-url', 200);
+    return { url: result.url, expires_at: result.expiresAt.toISOString() };
+  }
+
+  @Post(':id/extend-retention')
+  @HttpCode(HttpStatus.OK)
+  async extendRetention(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ExtendRetentionSchema)) dto: ExtendRetentionDto,
+    @CurrentPartner() partner: CurrentPartnerPayload,
+  ): Promise<{ ok: true; expires_at: string }> {
+    const result = await this.recordings.extendRetention(id, dto.add_days, partner.id);
+    this.metrics.incCrossmarkApiRequest('POST /meetings/:id/extend-retention', 200);
+    return { ok: true, expires_at: result.expiresAt.toISOString() };
   }
 }

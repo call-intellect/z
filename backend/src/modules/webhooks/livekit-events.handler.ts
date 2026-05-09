@@ -1,10 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { type WebhookEvent } from 'livekit-server-sdk';
 
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MeetingsService } from '../meetings/meetings.service';
+import { RecordingsService } from '../recordings/recordings.service';
 
 /**
  * Маршрутизация LiveKit-вебхуков по типу события.
@@ -15,14 +16,18 @@ import { MeetingsService } from '../meetings/meetings.service';
  *   participant_joined → upsert Participant.joinedAt; на отсутствие — создаём
  *                         guest Participant'а (отказоустойчивость).
  *   participant_left   → Participant.leftAt = now (статус meeting не трогаем).
- *   track_published / track_unpublished → MeetingEvent (детали — Фаза 4).
- *   egress_*           → no-op (Фаза 4.2).
+ *   track_published (audio) → Recordings.ensureTrackEgress (если запись активна).
+ *   track_unpublished  → no-op (MeetingEvent уже пишет LivekitWebhooksService).
+ *   egress_started     → Recording.status: requested → recording (composite)
+ *                          либо AudioTrack.startedAt (track).
+ *   egress_ended       → mainVideoUrl/bytes/duration (composite) или AudioTrack
+ *                          (track). Если всё готово — Meeting → recording_ready.
+ *   egress_updated     → no-op (статус-апдейты не нужны для FSM).
+ *   egress_failed      → Recording.status = 'failed', при необходимости
+ *                          Meeting → failed.
  *
  * Все мутации статуса встречи — через `MeetingsService.transitionStatus`,
  * который сам проверяет FSM и пишет `MeetingEvent`.
- *
- * `MeetingEvent` для остальных событий пишет `LivekitWebhooksService` —
- * чтобы избежать двойной записи, хэндлер сам ничего лишнего не дублирует.
  */
 @Injectable()
 export class LivekitEventsHandler {
@@ -32,6 +37,14 @@ export class LivekitEventsHandler {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    /**
+     * `RecordingsService` — `forwardRef` для подстраховки от циклов
+     * (Recordings ←→ Webhooks, если в будущем расширим).
+     * Также может быть `null` в юнит-тестах (LivekitEventsHandler без
+     * recordings-зависимости — уже существующие тесты Фазы 3.3).
+     */
+    @Inject(forwardRef(() => RecordingsService))
+    private readonly recordings: RecordingsService | null = null,
   ) {}
 
   async handle(event: WebhookEvent): Promise<void> {
@@ -55,15 +68,23 @@ export class LivekitEventsHandler {
         if (meetingId) await this.onParticipantLeft(meetingId, event);
         return;
       case 'track_published':
+        if (meetingId) await this.onTrackPublished(meetingId, event);
+        return;
       case 'track_unpublished':
         // MeetingEvent уже пишется в LivekitWebhooksService — здесь no-op.
         return;
       case 'egress_started':
-      case 'egress_updated':
+        if (meetingId) await this.onEgressStarted(meetingId, event);
+        return;
       case 'egress_ended':
-      // 'egress_failed' — нет в WebhookEventNames v2, но сохраним для совместимости.
+        if (meetingId) await this.onEgressEnded(meetingId, event);
+        return;
+      case 'egress_updated':
+        return;
+      // 'egress_failed' — нет в WebhookEventNames v2 как литерала, но LiveKit
+      // присылает строку именно так в payload. Сохраняем для совместимости.
       case 'egress_failed' as never:
-        // Фаза 4.2.
+        if (meetingId) await this.onEgressFailed(meetingId, event);
         return;
       default:
         this.logger.debug(
@@ -193,6 +214,165 @@ export class LivekitEventsHandler {
     });
   }
 
+  // ─────────────────────────── track_published ───────────────────────────
+
+  private async onTrackPublished(meetingId: string, event: WebhookEvent): Promise<void> {
+    if (!this.recordings) return;
+    const track = this.extractTrack(event);
+    if (!track || track.kind !== 'audio') {
+      this.logger.debug(
+        { meetingId, kind: track?.kind },
+        'track_published: не audio или нет track — no-op',
+      );
+      return;
+    }
+    const participant = this.extractParticipant(event);
+    if (!participant?.identity) {
+      this.logger.warn({ meetingId, trackId: track.sid }, 'track_published: нет participant');
+      return;
+    }
+    await this.recordings.ensureTrackEgress(
+      { id: meetingId },
+      participant,
+      { sid: track.sid },
+    );
+  }
+
+  // ─────────────────────────── egress_started ────────────────────────────
+
+  private async onEgressStarted(meetingId: string, event: WebhookEvent): Promise<void> {
+    if (!this.recordings) return;
+    const info = this.extractEgressInfo(event);
+    if (!info) return;
+
+    if (info.requestType === 'room_composite' || info.requestType === 'roomComposite') {
+      await this.recordings.markCompositeStarted(meetingId, info.egressId);
+      this.logger.log({ meetingId, egressId: info.egressId }, 'egress_started: composite');
+      return;
+    }
+    if (info.requestType === 'track') {
+      // Старт track egress'а — отметим время в AudioTrack'е (если найдём по trackEgressId).
+      await this.prisma.audioTrack.updateMany({
+        where: { trackEgressId: info.egressId },
+        data: { startedAt: new Date() },
+      });
+      this.logger.log({ meetingId, egressId: info.egressId }, 'egress_started: track');
+    }
+  }
+
+  // ─────────────────────────── egress_ended ──────────────────────────────
+
+  private async onEgressEnded(meetingId: string, event: WebhookEvent): Promise<void> {
+    if (!this.recordings) return;
+    const info = this.extractEgressInfo(event);
+    if (!info) return;
+
+    if (info.requestType === 'room_composite' || info.requestType === 'roomComposite') {
+      const file = info.fileResults[0] ?? null;
+      const result = await this.recordings.onCompositeEnded(meetingId, {
+        url: file?.location ?? null,
+        bytes: file?.size ?? null,
+        durationSeconds:
+          file?.duration !== null && file?.duration !== undefined
+            ? Math.round(file.duration / 1_000_000_000) // ns → s
+            : null,
+      });
+      await this.maybePromoteMeetingToReady(meetingId, result.allReady);
+      return;
+    }
+
+    if (info.requestType === 'track') {
+      const file = info.fileResults[0] ?? null;
+      const result = await this.recordings.onTrackEnded(meetingId, info.egressId, {
+        url: file?.location ?? null,
+        bytes: file?.size ?? null,
+        durationSeconds:
+          file?.duration !== null && file?.duration !== undefined
+            ? Math.round(file.duration / 1_000_000_000)
+            : null,
+        endedAt: new Date(),
+      });
+      await this.maybePromoteMeetingToReady(meetingId, result.allReady);
+    }
+  }
+
+  // ─────────────────────────── egress_failed ─────────────────────────────
+
+  private async onEgressFailed(meetingId: string, event: WebhookEvent): Promise<void> {
+    if (!this.recordings) return;
+    const info = this.extractEgressInfo(event);
+    const reason = info?.error || 'egress_failed';
+    await this.recordings.markFailed(meetingId, reason);
+
+    // Если запись фатально упала — переводим встречу в failed (если ещё не там).
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (
+      meeting &&
+      meeting.status !== 'failed' &&
+      meeting.status !== 'ai_ready'
+    ) {
+      try {
+        await this.meetings.transitionStatus(meetingId, 'failed', {
+          failureReason: 'recording_failed',
+          reason: 'livekit:egress_failed',
+        });
+      } catch (err) {
+        // FSM может отказать (уже terminal) — это норма, логируем.
+        this.logger.debug(
+          { meetingId, err: err instanceof Error ? err.message : String(err) },
+          'egress_failed: переход в failed не выполнен',
+        );
+      }
+    }
+  }
+
+  /**
+   * После egress_ended: если recording.status стал `ready` — переводим встречу
+   * `completed → recording_processing → recording_ready`. Делаем оба перехода
+   * одним вызовом, потому что FSM их связывает.
+   */
+  private async maybePromoteMeetingToReady(
+    meetingId: string,
+    allReady: boolean,
+  ): Promise<void> {
+    if (!allReady) return;
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { status: true },
+    });
+    if (!meeting) return;
+
+    try {
+      // completed → recording_processing → recording_ready (если ещё в completed).
+      if (meeting.status === 'completed') {
+        await this.meetings.transitionStatus(meetingId, 'recording_processing', {
+          reason: 'livekit:egress_ended',
+        });
+      }
+      const cur = await this.prisma.meeting.findUnique({
+        where: { id: meetingId },
+        select: { status: true },
+      });
+      if (cur?.status === 'recording_processing') {
+        await this.meetings.transitionStatus(meetingId, 'recording_ready', {
+          reason: 'livekit:egress_ended',
+        });
+      }
+
+      // TODO (Фаза 5): поставить BullMQ job на транскрибацию.
+      // if (this.aiQueueService) await this.aiQueueService.enqueueTranscribe(meetingId);
+      this.logger.log(
+        { meetingId },
+        'recording_ready достигнут; AI-pipeline будет поставлен в Фазе 5',
+      );
+    } catch (err) {
+      this.logger.warn(
+        { meetingId, err: err instanceof Error ? err.message : String(err) },
+        'maybePromoteMeetingToReady: FSM-переход не удался',
+      );
+    }
+  }
+
   // ─────────────────────────── helpers ───────────────────────────────────
 
   private extractMeetingId(event: WebhookEvent): string | null {
@@ -211,5 +391,124 @@ export class LivekitEventsHandler {
     const name = typeof p.name === 'string' ? p.name : '';
     if (!identity) return null;
     return { identity, name };
+  }
+
+  /**
+   * Извлекает audio/video kind из payload'а. LiveKit может прислать `track.type`
+   * как enum (`AUDIO`/`VIDEO`/`DATA`) либо строку — нормализуем к 'audio' |
+   * 'video' | 'data' | null.
+   */
+  private extractTrack(event: WebhookEvent): { sid: string; kind: string } | null {
+    const t = (event as unknown as {
+      track?: { sid?: unknown; type?: unknown; kind?: unknown };
+    }).track;
+    if (!t) return null;
+    const sid = typeof t.sid === 'string' ? t.sid : '';
+    if (!sid) return null;
+
+    // Нормализация kind: TrackType enum или строка.
+    let kind = '';
+    if (typeof t.kind === 'string') {
+      kind = t.kind.toLowerCase();
+    } else if (typeof t.type === 'string') {
+      kind = t.type.toLowerCase();
+    } else if (typeof t.type === 'number') {
+      // proto3: 0 = AUDIO, 1 = VIDEO, 2 = DATA.
+      kind = t.type === 0 ? 'audio' : t.type === 1 ? 'video' : t.type === 2 ? 'data' : '';
+    }
+    return { sid, kind };
+  }
+
+  /**
+   * Достаёт `egressInfo` из webhook'а, нормализуя к простому DTO.
+   * `requestType` — что именно: composite/track. У SDK это `request.case`
+   * (`'roomComposite'` | `'track'` | ...).
+   */
+  private extractEgressInfo(
+    event: WebhookEvent,
+  ): {
+    egressId: string;
+    requestType: string;
+    fileResults: Array<{
+      filename: string | null;
+      location: string | null;
+      size: number | null;
+      duration: number | null;
+    }>;
+    error: string | null;
+  } | null {
+    const info = (event as unknown as {
+      egressInfo?: {
+        egressId?: unknown;
+        request?: { case?: unknown };
+        // На webhook'ах LiveKit часто приходит уже сериализованным JSON'ом —
+        // тогда поле `request` ожидаемо отсутствует, а есть `request_type` /
+        // `requestType` или поля в самом info. Парсим максимально лояльно.
+        requestType?: unknown;
+        request_type?: unknown;
+        roomComposite?: unknown;
+        room_composite?: unknown;
+        track?: unknown;
+        fileResults?: unknown;
+        file_results?: unknown;
+        error?: unknown;
+      };
+      egress_info?: unknown; // snake_case вариант
+    }).egressInfo ?? (event as unknown as { egress_info?: unknown }).egress_info;
+    if (!info || typeof info !== 'object') return null;
+
+    const obj = info as Record<string, unknown>;
+    const egressId = String(obj.egressId ?? obj.egress_id ?? '');
+    if (!egressId) return null;
+
+    // Тип запроса — несколько возможных мест.
+    let requestType = '';
+    const req = obj.request as { case?: unknown } | undefined;
+    if (req && typeof req.case === 'string') {
+      requestType = req.case;
+    } else if (typeof obj.requestType === 'string') {
+      requestType = obj.requestType;
+    } else if (typeof obj.request_type === 'string') {
+      requestType = obj.request_type;
+    } else if (obj.roomComposite || obj.room_composite) {
+      requestType = 'roomComposite';
+    } else if (obj.track) {
+      requestType = 'track';
+    }
+
+    const fileResultsRaw =
+      (obj.fileResults as unknown[] | undefined) ??
+      (obj.file_results as unknown[] | undefined) ??
+      [];
+    const fileResults = fileResultsRaw.map((f) => {
+      const fo = (f ?? {}) as Record<string, unknown>;
+      const sizeRaw = fo.size;
+      const durationRaw = fo.duration;
+      return {
+        filename:
+          typeof fo.filename === 'string' ? fo.filename : null,
+        location: typeof fo.location === 'string' ? fo.location : null,
+        size:
+          typeof sizeRaw === 'number'
+            ? sizeRaw
+            : typeof sizeRaw === 'string' && sizeRaw !== ''
+              ? Number(sizeRaw)
+              : typeof sizeRaw === 'bigint'
+                ? Number(sizeRaw)
+                : null,
+        duration:
+          typeof durationRaw === 'number'
+            ? durationRaw
+            : typeof durationRaw === 'string' && durationRaw !== ''
+              ? Number(durationRaw)
+              : typeof durationRaw === 'bigint'
+                ? Number(durationRaw)
+                : null,
+      };
+    });
+
+    const error = typeof obj.error === 'string' ? obj.error : null;
+
+    return { egressId, requestType, fileResults, error };
   }
 }

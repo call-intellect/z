@@ -96,6 +96,37 @@ export class RecordingNotReadyError extends DomainError {
   }
 }
 
+export class RecordingNotFoundError extends DomainError {
+  readonly code = 'recording_not_found';
+  readonly httpStatus = 404;
+
+  constructor(meetingId: string) {
+    super('Запись для этой встречи не найдена', { meetingId });
+  }
+}
+
+export class RecordingAlreadyDeletedError extends DomainError {
+  readonly code = 'recording_already_deleted';
+  readonly httpStatus = 409;
+
+  constructor(meetingId: string) {
+    super('Запись уже удалена', { meetingId });
+  }
+}
+
+export class RecordingInvalidStateError extends DomainError {
+  readonly code = 'recording_invalid_state';
+  readonly httpStatus = 409;
+
+  constructor(meetingId: string, currentStatus: string, expected: string) {
+    super(`Запись в неподходящем статусе: ${currentStatus} (ожидался ${expected})`, {
+      meetingId,
+      currentStatus,
+      expected,
+    });
+  }
+}
+
 export class IdempotencyConflictError extends DomainError {
   readonly code = 'idempotency_conflict';
   readonly httpStatus = 409;

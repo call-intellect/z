@@ -15,6 +15,8 @@ import { HealthModule } from './modules/health/health.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
+import { RecordingsModule } from './modules/recordings/recordings.module';
+import { RetentionModule } from './modules/retention/retention.module';
 import { UsersModule } from './modules/users/users.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
@@ -61,7 +63,12 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     HealthModule,
     MeetingsModule,
     ParticipantsModule,
+    // RecordingsModule — должен подняться ДО WebhooksModule, т.к.
+    // LivekitEventsHandler инжектит RecordingsService.
+    RecordingsModule,
     WebhooksModule,
+    // Retention cron — нужен S3Service из RecordingsModule.
+    RetentionModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI, чтобы получить PinoLogger.

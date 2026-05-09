@@ -45,15 +45,32 @@ async function bootstrap(): Promise<void> {
         ? {
             directives: {
               defaultSrc: [`'self'`],
-              scriptSrc: [`'self'`],
+              // 'unsafe-inline' нужен для inline-скриптов Next.js RSC.
+              scriptSrc: [`'self'`, `'unsafe-inline'`],
               styleSrc: [`'self'`, `'unsafe-inline'`],
-              imgSrc: [`'self'`, 'data:', 'https:'],
-              connectSrc: [`'self'`, cfg.auth.publicFrontendUrl, cfg.livekit.apiUrl],
+              imgSrc: [`'self'`, 'blob:', 'data:', 'https:'],
+              mediaSrc: [`'self'`, 'blob:'],
+              connectSrc: [
+                `'self'`,
+                cfg.auth.publicFrontendUrl,
+                cfg.livekit.apiUrl,
+                'wss://*.crossmark.ru',
+              ],
               frameAncestors: [`'none'`],
+              objectSrc: [`'none'`],
+              baseUri: [`'self'`],
             },
           }
         : false,
       crossOriginEmbedderPolicy: false,
+      // HSTS включаем только в prod (за TLS-терминатором nginx).
+      strictTransportSecurity: cfg.runtime.isProduction
+        ? { maxAge: 63072000, includeSubDomains: true, preload: false }
+        : false,
+      // X-Frame-Options: DENY — двойная защита помимо CSP frame-ancestors.
+      frameguard: { action: 'deny' },
+      // X-Content-Type-Options: nosniff — включается по умолчанию, явно.
+      noSniff: true,
     }),
   );
 

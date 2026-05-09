@@ -23,10 +23,14 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── recordings / storage ────────────────────────────────────────────
   private recordingsBytesTotal!: Counter<string>;
   private recordingsDeletedTotal!: Counter<'reason'>;
+  private recordingsFailedTotal!: Counter<'reason'>;
 
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
   private livekitWebhookEventsTotal!: Counter<'type'>;
+
+  // ── llm fallback ────────────────────────────────────────────────────
+  private llmFallbackTotal!: Counter<'provider'>;
 
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
@@ -68,6 +72,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'recordings_deleted_total',
       help: 'Сколько записей было удалено и по какой причине.',
       labelNames: ['reason'] as const,
+    });
+
+    this.recordingsFailedTotal = this.getOrCreateCounter({
+      name: 'recordings_failed_total',
+      help: 'Сколько Egress-задач упало (по причине: timeout/s3-error/livekit-error/...).',
+      labelNames: ['reason'] as const,
+    });
+
+    this.llmFallbackTotal = this.getOrCreateCounter({
+      name: 'llm_fallback_total',
+      help: 'Срабатывания LLM-fallback по провайдерам (anthropic→minimax→openai-via-proxy).',
+      labelNames: ['provider'] as const,
     });
 
     this.crossmarkApiRequestsTotal = this.getOrCreateCounter({
@@ -129,6 +145,23 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Алиас. ТЗ Фазы 4 называет метод `incRecordingsDeleted({reason})`. */
   incRecordingsDeleted(args: { reason: string }): void {
     this.recordingsDeletedTotal.inc({ reason: args.reason });
+  }
+
+  incRecordingFailed(reason: string): void {
+    this.recordingsFailedTotal.inc({ reason });
+  }
+
+  /** Алиас под имя из ТЗ Фазы 4 (`incRecordingsFailed({reason})`). */
+  incRecordingsFailed(args: { reason: string }): void {
+    this.recordingsFailedTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * Срабатывание LLM-fallback. `provider` — провайдер, на КОТОРЫЙ упали
+   * (например: `provider='minimax'` означает «Anthropic не сработал, перешли на MiniMax»).
+   */
+  incLlmFallback(provider: string): void {
+    this.llmFallbackTotal.inc({ provider });
   }
 
   incCrossmarkApiRequest(endpoint: string, status: number | string): void {

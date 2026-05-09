@@ -1,0 +1,76 @@
+# Prometheus alert rules для инфры Z.
+# Завязаны на стандартный label `up` (job-by-job liveness).
+groups:
+  - name: z-infra
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: up{job="z-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend недоступен (`/metrics` не отвечает)"
+          description: "Job z-backend down >1 минуту. SSH на vm-backend, проверить systemd-юнит."
+
+      - alert: LiveKitDown
+        expr: up{job="z-livekit"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: livekit
+        annotations:
+          summary: "LiveKit Server недоступен"
+          description: "Все идущие встречи будут оборваны. Перезапуск LiveKit + alert hostов."
+
+      - alert: EgressDown
+        expr: up{job="z-egress"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: livekit-egress
+        annotations:
+          summary: "LiveKit Egress недоступен"
+          description: "Записи новых встреч не запустятся. Проверить docker logs egress."
+
+      - alert: PostgresDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL недоступен"
+          description: "Backend не сможет работать. Срочно поднять."
+
+      - alert: RedisDown
+        expr: up{job="redis-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis недоступен"
+          description: "BullMQ-воркеры остановятся, AI-pipeline зависнет."
+
+      - alert: NodeDiskFillingUp
+        # Свободного места <15% — пора чистить или расширять.
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: "Свободного места на корне < 15% (host {{ $labels.instance }})"
+          description: "Проверить /var/log, /tmp, docker layers."
+
+      - alert: NodeHighCpu
+        expr: avg by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m])) > 0.85
+        for: 15m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: "CPU >85% более 15 минут на {{ $labels.instance }}"
+          description: "Возможно нужно scale up SFU/Egress."

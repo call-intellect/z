@@ -8,6 +8,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -49,6 +50,9 @@ export class ParticipantsController {
   @Post(':id/join')
   @UseGuards(CookieAuthGuard)
   @OptionalAuth()
+  // Public endpoint (гость без cookie). 30 в минуту с IP — защита от
+  // перебора meetingId/брутфорса. Реальный гость использует ровно 1 запрос.
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async join(
     @Param('id') meetingId: string,
     @Body(new ZodValidationPipe(JoinMeetingSchema)) body: JoinMeetingDto,

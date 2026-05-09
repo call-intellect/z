@@ -1,0 +1,66 @@
+# Prometheus alert rules для бизнес-метрик Z.
+# Подключаются в prometheus.yml через `rule_files: [/etc/prometheus/alerts/*.yml]`.
+groups:
+  - name: z-business
+    interval: 30s
+    rules:
+      - alert: HighMeetingFailureRate
+        # Доля упавших встреч за 30 минут > 5%.
+        # clamp_min(., 1) защищает от деления на 0 при низком трафике.
+        expr: |
+          sum(rate(meetings_failed_total[30m]))
+            /
+          clamp_min(sum(rate(meetings_finished_total[30m])), 0.001)
+            > 0.05
+        for: 30m
+        labels:
+          severity: critical
+          component: meetings
+        annotations:
+          summary: "Доля упавших встреч >5% за 30 минут"
+          description: "Текущая доля failed/finished = {{ $value | humanizePercentage }}. Проверить логи backend, состояние LiveKit/Vox/LLM."
+
+      - alert: AiCostSpike
+        # За последние 24 часа потрачено более $10 на AI — это аномалия для MVP-трафика.
+        expr: increase(ai_cost_usd_total[24h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "AI-стоимость превысила $10 за 24 часа"
+          description: "Сумма ai_cost_usd_total за 24h = {{ $value | humanize }}. Проверить, нет ли встречи с патологически большим input/output, или зацикленного retry."
+
+      - alert: RecordingsFailing
+        # За 5 минут упала хотя бы одна запись — реагируем сразу,
+        # потому что пользователь без записи теряет AI-отчёт.
+        expr: increase(recordings_failed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: recordings
+        annotations:
+          summary: "Egress-задача упала ({{ $labels.reason }})"
+          description: "За последние 5 минут зафиксированы ошибки записи. reason={{ $labels.reason }}. Проверить Egress-логи и S3."
+
+      - alert: LlmFallbackHigh
+        # Слишком частый fallback Anthropic→MiniMax — намёк на блок/сбой.
+        expr: sum(rate(llm_fallback_total{provider="minimax"}[15m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "LLM fallback на MiniMax срабатывает >0.1 RPS за 15m"
+          description: "Anthropic недоступен. Проверить proxy.agent-lia.ru и/или anthropic-status."
+
+      - alert: BullMqFailedJobsHigh
+        # Более 5 упавших job'ов BullMQ за 10 минут — явный сбой воркеров.
+        expr: increase(bullmq_failed[10m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: workers
+        annotations:
+          summary: "BullMQ: >5 failed jobs за 10 минут"
+          description: "Проверить логи воркеров и Redis."

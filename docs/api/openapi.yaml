@@ -1,0 +1,221 @@
+# OpenAPI / Swagger спецификация Z Backend.
+#
+# Полная актуальная спецификация генерится из NestJS Swagger при запуске
+# dev-сервера: http://localhost:3000/api/docs (см. main.ts, SwaggerModule).
+# В prod — Swagger закрыт за basic-auth.
+#
+# Эта статическая копия — для команды Crossmark и для CI / API-клиентов
+# (cli-генераторов SDK). Обновлять вручную при изменении публичных контрактов.
+
+openapi: 3.0.3
+info:
+  title: Z Backend API
+  description: |
+    API для AI-видеовстреч на LiveKit. Три класса endpoint'ов:
+
+    1. **Cookie API** (`/api/v1/...`) — для frontend Z (host'ы и гости).
+    2. **HMAC API** (`/integrations/crossmark/v1/...`) — для партнёра Crossmark.
+    3. **Admin API** (`/admin/api/v1/...`) — для админ-панели Z.
+
+    Полные контракты см. http://localhost:3000/api/docs (Swagger UI).
+  version: '0.1.0'
+  contact:
+    name: Z Backend Team
+    email: support@crossmark.ru
+
+servers:
+  - url: https://z.crossmark.ru
+    description: Production
+  - url: http://localhost:3000
+    description: Local dev
+
+tags:
+  - name: Health
+  - name: Cookie API — Meetings
+  - name: HMAC API — Crossmark
+  - name: Admin
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe (DB, Redis, LiveKit, S3)
+      responses:
+        '200': { description: Все зависимости доступны }
+        '503': { description: Какая-то зависимость недоступна }
+
+  /integrations/crossmark/v1/meetings:
+    post:
+      tags: [HMAC API — Crossmark]
+      summary: Создать встречу
+      description: Полное описание см. docs/integrations/crossmark.md
+      security:
+        - hmacAuth: []
+      parameters:
+        - in: header
+          name: X-Crossmark-Signature
+          required: true
+          schema: { type: string, example: 'a1b2c3...' }
+        - in: header
+          name: X-Crossmark-Timestamp
+          required: true
+          schema: { type: string, example: '1715000000' }
+        - in: header
+          name: X-Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMeetingRequest'
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMeetingResponse'
+        '401': { description: Невалидная подпись или отозванный ключ }
+        '409': { description: Idempotency-collision }
+
+  /integrations/crossmark/v1/meetings/{id}/result:
+    get:
+      tags: [HMAC API — Crossmark]
+      summary: Получить результат AI-обработки
+      security: [{ hmacAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: AI готов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeetingResult'
+        '404': { description: Встреча не найдена или ai не готов }
+
+  /api/v1/meetings/{id}/access:
+    get:
+      tags: [Cookie API — Meetings]
+      summary: Узнать роль текущего пользователя в встрече
+      description: |
+        Cookie опциональна. Без cookie возвращает role='guest' если встреча
+        активна и принимает гостей.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role: { type: string, enum: [host, guest, observer, none] }
+                  meetingStatus: { type: string }
+
+  /api/v1/meetings/{id}/join:
+    post:
+      tags: [Cookie API — Meetings]
+      summary: Войти во встречу (host или guest)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                guest_name: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: LiveKit-токен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  participant_id: { type: string }
+                  role: { type: string, enum: [host, guest] }
+                  livekit:
+                    type: object
+                    properties:
+                      url: { type: string }
+                      token: { type: string }
+                      identity: { type: string }
+
+components:
+  securitySchemes:
+    hmacAuth:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer <integration_key>` + HMAC заголовки.
+
+  schemas:
+    CreateMeetingRequest:
+      type: object
+      required: [host, type, title]
+      properties:
+        host:
+          type: object
+          required: [external_id, email, name]
+          properties:
+            external_id: { type: string, maxLength: 100 }
+            email: { type: string, format: email }
+            name: { type: string, maxLength: 100 }
+        type:
+          type: string
+          enum: [sales, support, interview, 1on1, standup, planning, retrospective, all-hands, external]
+        title: { type: string, maxLength: 200 }
+        custom_prompt: { type: string, maxLength: 10000 }
+        scheduled_for: { type: string, format: date-time }
+
+    CreateMeetingResponse:
+      type: object
+      properties:
+        meeting_id: { type: string }
+        host_url: { type: string, format: uri }
+        guest_url: { type: string, format: uri }
+        status: { type: string, enum: [pending, active, finishing, ai_ready, failed] }
+
+    MeetingResult:
+      type: object
+      properties:
+        meeting_id: { type: string }
+        status: { type: string }
+        type: { type: string }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        duration_seconds: { type: integer }
+        report_md: { type: string }
+        transcript_url: { type: string, format: uri }
+        recording_url: { type: string, format: uri }
+        participants:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              role: { type: string, enum: [host, guest] }
+              speaking_seconds: { type: integer }

@@ -1,0 +1,13 @@
+# /etc/cron.d/z-backup-postgres
+# Ежедневный бэкап Postgres → Selectel S3 (db-backups bucket).
+#
+# Запускается от пользователя z_app. ENV-переменные подгружаются из
+# /etc/z/backup.env (прописать туда DB_*, BACKUP_KEY, S3_*).
+#
+# Логи — /var/log/z/backup-postgres.log (ротируется logrotate).
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+BASH_ENV=/etc/z/backup.env
+
+0 3 * * * z_app /usr/local/bin/backup-postgres.sh >> /var/log/z/backup-postgres.log 2>&1

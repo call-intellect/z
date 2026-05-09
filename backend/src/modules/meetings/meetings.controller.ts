@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { RetryService } from '../ai/services/retry.service';
@@ -51,6 +52,9 @@ export class MeetingsController {
 
   @Get(':id/access')
   @OptionalAuth()
+  // Public endpoint (страница `/m/:id` его дёргает у анонимного гостя).
+  // Лимит — 30 запросов в минуту с одного IP, защита от перебора meetingId.
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async access(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload | null | undefined,

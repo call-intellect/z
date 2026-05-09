@@ -1643,4 +1643,75 @@ class ApiClient {
 
 # Итог
 
-_Заполняется по факту реализации — что сделано целиком, что осталось._
+**Статус:** MVP реализован целиком (Фазы 0-9 ✅) на дату 2026-05-09.
+
+## Что сделано
+
+| Фаза | Содержимое | Статус |
+|------|------------|--------|
+| 0 | Инфраструктура (DNS, TLS, LiveKit, Postgres, Redis, S3) | ✅ |
+| 1 | Backend каркас, Auth (cookie+HMAC+admin), Prisma-схема, метрики | ✅ |
+| 2 | Crossmark API создания встреч, idempotency, FSM встречи | ✅ |
+| 3 | LiveKit-токены, /access /join, host controls, raise-hand | ✅ |
+| 4 | LiveKit Egress (общая запись + per-track audio), retention cron | ✅ |
+| 5 | AI-pipeline (Vox ASR → merger → analyze LLM → notify), 9 типов отчёта, custom prompt, fallback Anthropic→MiniMax→OpenAI-via-proxy | ✅ |
+| 6 | Frontend каркас (Next.js + LiveKit React Components, ApiClient, AuthContext) | ✅ |
+| 7 | Frontend pages (login, /meetings, /meetings/create, /m/:id, /meetings/:id/result, /admin/*) | ✅ |
+| 8 | Crossmark `GET ../result`, Admin (meetings, ai-usage, recordings, integration-keys), audit log, локальный admin-login | ✅ |
+| 9 | Observability (3 Grafana-дашборда + 11 алертов + Prometheus scrape), backups (cron + restore + S3 lifecycle), security hardening (CSP/HSTS/throttle), k6 load test, 4 runbook'а + интеграционная документация Crossmark, smoke-test | ✅ |
+
+## Тесты
+
+- **Backend unit:** 159 тестов в 23 файлах.
+- **Backend e2e:** 18 тестов в 5 файлах.
+- **Backend total:** 177 тестов, все зелёные.
+- **Backend typecheck + build:** 0 ошибок.
+- **Frontend typecheck + build:** 0 ошибок, 13 страниц собираются.
+
+## Метрики и observability
+
+- `meetings_created_total{type}`, `meetings_finished_total{type}`, `meetings_failed_total{stage}`.
+- `ai_pipeline_duration_seconds{stage,type,model}` (histogram), `ai_cost_usd_total`.
+- `recordings_bytes_total`, `recordings_deleted_total{reason}`, `recordings_failed_total{reason}` (новая в Фазе 9).
+- `crossmark_api_requests_total{endpoint,status}`, `livekit_webhook_events_total{type}`.
+- `llm_fallback_total{provider}` (новая в Фазе 9, инкрементируется в `LlmFallbackService`).
+
+## Безопасность
+
+См. `docs/security-checklist.md` — 13 пунктов закрыто. Один отложен на pre-release: `bun audit`.
+
+## Что отложено на V1.1 / V2
+
+Подробно в `docs/known-issues.md`:
+- Multi-region и HA LiveKit (V2).
+- Полноценный LiveKit-load (Playwright + WebRTC) — V1.1.
+- Webhook от Z в Crossmark (вместо polling) — V1.1.
+- Чанкование длинных встреч в `analyze.worker` — V1.1.
+- PITR/WAL-archiving для Postgres — V1.1.
+- WAF (nginx ModSecurity / cloudflare) — V1.1.
+- Pen-test внешним подрядчиком — V2.
+- Автоматическая ротация JWT/HMAC ключей — V1.1.
+
+## Артефакты Фазы 9
+
+- `backend/src/common/metrics/business-metrics.service.ts` — добавлены `recordings_failed_total`, `llm_fallback_total`.
+- `backend/src/modules/ai/services/llm-fallback.service.ts` — инкремент метрики при каждом fallback'е.
+- `backend/src/modules/meetings/meetings.controller.ts`, `participants/participants.controller.ts` — `@Throttle({ttl:60_000,limit:30})` на `/access` и `/join`.
+- `backend/src/main.ts` — расширен Helmet CSP (media-src, object-src, base-uri, wss://*.crossmark.ru), HSTS, X-Frame-Options DENY.
+- `frontend/next.config.js` — полный whitelist CSP, HSTS под isProd.
+- `backend/scripts/create-integration-key.ts` — CLI-скрипт.
+- `infra/grafana/dashboards/{z-business,z-ai-pipeline,z-livekit}.json`.
+- `infra/grafana/alerts/{business-alerts,infra-alerts}.yml`.
+- `infra/prometheus/prometheus.yml`.
+- `infra/scripts/{backup-postgres.sh,restore-postgres.sh,README.md}` + `infra/cron/backup-postgres.cron`.
+- `infra/selectel/lifecycle-policy.json` (retention 14 дней).
+- `infra/loadtest/{scenario-meeting.js,README.md}`.
+- `infra/smoke/smoke-test.sh`.
+- `docs/runbook/{incident-meeting-stuck,incident-ai-pipeline-failed,incident-livekit-down,restore-from-backup}.md`.
+- `docs/integrations/crossmark.md`.
+- `docs/api/openapi.yaml`.
+- `docs/architecture/deployment.md`.
+- `docs/dev/onboarding.md`.
+- `docs/security-checklist.md`, `docs/known-issues.md`.
+
+**MVP готов к prod-релизу.**

@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import { AnthropicService } from './anthropic.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
@@ -27,11 +29,19 @@ export class LlmFallbackService {
     @Inject(AnthropicService) private readonly anthropic: AnthropicService,
     @Inject(MinimaxService) private readonly minimax: MinimaxService,
     @Inject(OpenAiProxyService) private readonly openai: OpenAiProxyService,
+    // BusinessMetricsService может отсутствовать в юнит-тестах LlmFallbackService —
+    // делаем его опциональным, чтобы не ломать существующие тесты.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
    * Пытается выполнить запрос по цепочке провайдеров.
    * Возвращает успешный ответ либо последнюю ошибку.
+   *
+   * При каждом переключении инкрементируется метрика `llm_fallback_total{provider}`,
+   * где `provider` — провайдер, на КОТОРЫЙ перешли.
    */
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     // 1. Anthropic.
@@ -44,6 +54,7 @@ export class LlmFallbackService {
       this.logger.warn(
         `Fallback Anthropic→MiniMax (status=${status ?? 'no-status'}): ${errMsg(err)}`,
       );
+      this.metrics?.incLlmFallback('minimax');
     }
 
     // 2. MiniMax.
@@ -51,6 +62,7 @@ export class LlmFallbackService {
       return await this.minimax.complete(input);
     } catch (err) {
       this.logger.warn(`Fallback MiniMax→OpenAI-via-proxy: ${errMsg(err)}`);
+      this.metrics?.incLlmFallback('openai-via-proxy');
     }
 
     // 3. OpenAI-via-proxy.

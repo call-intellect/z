@@ -1,0 +1,30 @@
+'use client';
+
+import Link from 'next/link';
+import { t } from '@/lib/i18n';
+
+type Props = {
+  meetingId: string;
+  isHost: boolean;
+};
+
+export function MeetingFinishedPlaceholder({ meetingId, isHost }: Props) {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 py-12 text-center">
+      <h1 className="text-2xl font-semibold text-slate-900">
+        {t('lobby.finished_title')}
+      </h1>
+      <p className="max-w-md text-sm text-slate-600">
+        {t('lobby.finished_description')}
+      </p>
+      {isHost ? (
+        <Link
+          href={`/meetings/${meetingId}/result`}
+          className="inline-flex items-center justify-center rounded-md bg-blue-600 px-5 py-2.5 text-base font-medium text-white transition-colors hover:bg-blue-700"
+        >
+          {t('lobby.open_result')}
+        </Link>
+      ) : null}
+    </main>
+  );
+}

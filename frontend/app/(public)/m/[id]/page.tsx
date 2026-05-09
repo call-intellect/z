@@ -1,23 +1,36 @@
-// Заглушка страницы встречи. Реальная логика (exchange-token, lobby, room) — Фаза 7.
+import { redirect } from 'next/navigation';
+
+import { ExchangeAndRender } from './ExchangeAndRender';
 
 type Props = {
   params: { id: string };
+  searchParams: { t?: string | string[] };
 };
 
-export default function MeetingPage({ params }: Props) {
-  return <MeetingPageShell meetingId={params.id} />;
-}
+/**
+ * Server component страницы встречи.
+ *
+ * Подход к exchange (deep-link → cookie):
+ *   - На сервере НЕ делаем exchange — это требует пробросить Set-Cookie
+ *     обратно в браузер через next/headers, что в RSC ограничено.
+ *     Вместо этого client-shell `<ExchangeAndRender />` сам делает
+ *     `authApi.exchange(token, meetingId)` (с `credentials: 'include'`) —
+ *     backend ставит cookie на ответе, браузер её сохраняет.
+ *   - После успеха client делает `router.replace('/m/<id>')` — `?t=` уходит
+ *     из адресной строки и истории.
+ *   - На fail (например 401 — токен битый/просрочен) рендерим guest-flow.
+ */
+export default function MeetingPage({ params, searchParams }: Props) {
+  const id = params.id;
+  if (!id || id.length < 5) {
+    redirect('/');
+  }
+  const tokenParam = Array.isArray(searchParams.t) ? searchParams.t[0] : searchParams.t;
 
-function MeetingPageShell({ meetingId }: { meetingId: string }) {
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-start justify-center gap-4 px-6 py-16">
-      <h1 className="text-2xl font-semibold text-slate-900">Встреча</h1>
-      <p className="text-sm text-slate-600">
-        ID встречи: <code className="rounded bg-slate-100 px-1.5 py-0.5">{meetingId}</code>
-      </p>
-      <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        Эта страница появится в Фазе 7 — обмен deep-link токена, lobby, комната LiveKit.
-      </p>
-    </main>
+    <ExchangeAndRender
+      meetingId={id}
+      deepLinkToken={tokenParam ?? null}
+    />
   );
 }

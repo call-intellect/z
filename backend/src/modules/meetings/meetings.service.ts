@@ -1,5 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Prisma, type Meeting, type MeetingStatus, type MeetingType } from '@prisma/client';
+import {
+  Prisma,
+  type AiResult,
+  type Meeting,
+  type MeetingStatus,
+  type MeetingType,
+  type Participant,
+  type Recording,
+  type Transcript,
+} from '@prisma/client';
 import { ulid } from 'ulid';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -10,6 +19,8 @@ import {
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
+import { S3Service } from '../recordings/s3.service';
+import { extractKeyFromUrl } from '../recordings/s3-keys';
 import { UsersService } from '../users/users.service';
 
 import type {
@@ -46,6 +57,7 @@ export class MeetingsService {
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Inject(S3Service) private readonly s3: S3Service,
   ) {}
 
   // ────────────────────────── создание ──────────────────────────────────
@@ -288,7 +300,205 @@ export class MeetingsService {
     });
   }
 
+  // ────────────────────────── result page (Фаза 7.6) ─────────────────────
+
+  /**
+   * Полные данные result-страницы для host'а.
+   *
+   * Возвращает:
+   *   - meeting + participants
+   *   - aiResult (если есть; иначе null — ещё в процессе)
+   *   - recording info (БЕЗ presigned URL — отдельный endpoint /recording/download)
+   *   - transcript info (есть/нет mergedJson)
+   *   - флаг `aiReady` (для удобства фронта).
+   */
+  async getResult(
+    meetingId: string,
+    userId: string,
+  ): Promise<{
+    meeting: {
+      id: string;
+      title: string;
+      type: MeetingType;
+      status: MeetingStatus;
+      startedAt: string | null;
+      endedAt: string | null;
+      createdAt: string;
+      customPrompt: string | null;
+      failureReason: string | null;
+    };
+    participants: Array<{
+      id: string;
+      name: string;
+      role: 'host' | 'guest';
+      joinedAt: string | null;
+      leftAt: string | null;
+    }>;
+    aiResult: {
+      summary: string;
+      structuredData: unknown;
+      customOutputMd: string | null;
+      followUpEmail: string | null;
+      tasks: unknown;
+      modelUsed: string;
+      createdAt: string;
+    } | null;
+    recording: {
+      hasRecording: boolean;
+      status: string;
+      durationSeconds: number | null;
+      bytesTotal: string | null;
+      expiresAt: string | null;
+    } | null;
+    transcript: {
+      hasMerged: boolean;
+      totalDurationSeconds: number | null;
+    } | null;
+    aiReady: boolean;
+  }> {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      include: {
+        participants: true,
+        recording: true,
+        transcript: true,
+        aiResult: true,
+      },
+    });
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== userId) {
+      throw new NotAuthorizedError('not_meeting_host');
+    }
+
+    return {
+      meeting: {
+        id: meeting.id,
+        title: meeting.title,
+        type: meeting.type,
+        status: meeting.status,
+        startedAt: meeting.startedAt?.toISOString() ?? null,
+        endedAt: meeting.endedAt?.toISOString() ?? null,
+        createdAt: meeting.createdAt.toISOString(),
+        customPrompt: meeting.customPrompt ?? null,
+        failureReason: meeting.failureReason ?? null,
+      },
+      participants: meeting.participants.map((p: Participant) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        joinedAt: p.joinedAt?.toISOString() ?? null,
+        leftAt: p.leftAt?.toISOString() ?? null,
+      })),
+      aiResult: meeting.aiResult
+        ? this.toAiResultDto(meeting.aiResult)
+        : null,
+      recording: meeting.recording
+        ? this.toRecordingDto(meeting.recording)
+        : null,
+      transcript: meeting.transcript
+        ? this.toTranscriptDto(meeting.transcript)
+        : null,
+      aiReady: meeting.status === 'ai_ready',
+    };
+  }
+
+  /**
+   * Краткий статус для polling'а result-страницы. Не нагружает БД участниками/AI.
+   */
+  async getResultStatus(
+    meetingId: string,
+    userId: string,
+  ): Promise<{ stage: MeetingStatus; failureReason: string | null }> {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { ownerId: true, status: true, failureReason: true },
+    });
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== userId) {
+      throw new NotAuthorizedError('not_meeting_host');
+    }
+    return { stage: meeting.status, failureReason: meeting.failureReason ?? null };
+  }
+
+  /**
+   * Presigned URL на merged-json транскрипта. Только для host'а.
+   * Если транскрипта/merged ещё нет — 404 (через `MeetingNotFoundError`-подобный).
+   */
+  async getTranscript(
+    meetingId: string,
+    userId: string,
+  ): Promise<{ url: string; expiresAt: string; durationSeconds: number | null }> {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      include: { transcript: true },
+    });
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== userId) {
+      throw new NotAuthorizedError('not_meeting_host');
+    }
+    const t = meeting.transcript;
+    if (!t || !t.mergedS3Url) {
+      // Семантически — 404: merged.json ещё не готов. Используем тот же тип, что и для встречи.
+      throw new MeetingNotFoundError(`transcript:${meetingId}`);
+    }
+
+    const key = extractKeyFromUrl(t.mergedS3Url, this.cfg.s3.bucket);
+    const presigned = await this.s3.presignGet(key);
+    return {
+      url: presigned.url,
+      expiresAt: presigned.expiresAt.toISOString(),
+      durationSeconds: t.totalDurationSeconds ?? null,
+    };
+  }
+
   // ────────────────────────── helpers ────────────────────────────────────
+
+  private toAiResultDto(r: AiResult): {
+    summary: string;
+    structuredData: unknown;
+    customOutputMd: string | null;
+    followUpEmail: string | null;
+    tasks: unknown;
+    modelUsed: string;
+    createdAt: string;
+  } {
+    return {
+      summary: r.summary,
+      structuredData: r.structuredData ?? null,
+      customOutputMd: r.customOutputMd ?? null,
+      followUpEmail: r.followUpEmail ?? null,
+      tasks: r.tasks ?? null,
+      modelUsed: r.modelUsed,
+      createdAt: r.createdAt.toISOString(),
+    };
+  }
+
+  private toRecordingDto(r: Recording): {
+    hasRecording: boolean;
+    status: string;
+    durationSeconds: number | null;
+    bytesTotal: string | null;
+    expiresAt: string | null;
+  } {
+    const ready = r.status === 'ready' && !!r.mainVideoUrl;
+    return {
+      hasRecording: ready,
+      status: r.status,
+      durationSeconds: r.durationSeconds ?? null,
+      bytesTotal: r.bytesTotal !== null ? r.bytesTotal.toString() : null,
+      expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+    };
+  }
+
+  private toTranscriptDto(t: Transcript): {
+    hasMerged: boolean;
+    totalDurationSeconds: number | null;
+  } {
+    return {
+      hasMerged: !!t.mergedS3Url,
+      totalDurationSeconds: t.totalDurationSeconds ?? null,
+    };
+  }
 
   private toPublicDto(meeting: MeetingWithOwner): MeetingPublicDto {
     return {

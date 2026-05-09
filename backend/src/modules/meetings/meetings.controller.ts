@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -17,6 +18,10 @@ import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import type { AccessInfo } from './domain/meeting.domain';
+import {
+  type CreateMeetingForUserDto,
+  CreateMeetingForUserSchema,
+} from './dto/create-meeting.dto';
 import {
   type ListMeetingsQuery,
   ListMeetingsQuerySchema,
@@ -70,6 +75,62 @@ export class MeetingsController {
       limit: result.limit,
       total: result.total,
     };
+  }
+
+  /**
+   * Создание встречи под уже залогиненного юзера (Фаза 7.5).
+   * Возвращает `id` — фронт делает редирект на `/m/<id>`.
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  async create(
+    @Body(new ZodValidationPipe(CreateMeetingForUserSchema)) body: CreateMeetingForUserDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ id: string; url: string }> {
+    const meeting = await this.meetings.createForUser(
+      {
+        type: body.type,
+        title: body.title,
+        customPrompt: body.custom_prompt ?? null,
+      },
+      user.id,
+    );
+    return { id: meeting.id, url: `/m/${meeting.id}` };
+  }
+
+  // ─────────────────────────── result page (Фаза 7.6) ────────────────────
+
+  /**
+   * Полные данные result-страницы для host'а.
+   */
+  @Get(':id/result')
+  async getResult(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): ReturnType<MeetingsService['getResult']> {
+    return this.meetings.getResult(id, user.id);
+  }
+
+  /**
+   * Краткий стейт для polling'а.
+   */
+  @Get(':id/result/status')
+  async getResultStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): ReturnType<MeetingsService['getResultStatus']> {
+    return this.meetings.getResultStatus(id, user.id);
+  }
+
+  /**
+   * Presigned URL на merged transcript (host).
+   */
+  @Get(':id/transcript')
+  async getTranscript(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): ReturnType<MeetingsService['getTranscript']> {
+    return this.meetings.getTranscript(id, user.id);
   }
 
   @Get(':id')

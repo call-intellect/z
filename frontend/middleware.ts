@@ -17,6 +17,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 const SESSION_COOKIE = 'z_session';
 
 const PROTECTED_PREFIXES = ['/meetings'];
+const ADMIN_PREFIX = '/admin';
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -24,7 +25,10 @@ export function middleware(req: NextRequest) {
   const isProtected = PROTECTED_PREFIXES.some((prefix) =>
     pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
-  if (!isProtected) {
+  const isAdmin =
+    pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
+
+  if (!isProtected && !isAdmin) {
     return NextResponse.next();
   }
 
@@ -33,9 +37,9 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Без cookie — на главную.
+  // Без cookie — для /admin/* на /login, остальные на главную.
   const url = req.nextUrl.clone();
-  url.pathname = '/';
+  url.pathname = isAdmin ? '/login' : '/';
   url.search = '';
   return NextResponse.redirect(url);
 }

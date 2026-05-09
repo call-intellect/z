@@ -10,9 +10,11 @@ import { MetricsModule } from './common/metrics/metrics.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
@@ -74,6 +76,10 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     WebhooksModule,
     // Retention cron — нужен S3Service из RecordingsModule.
     RetentionModule,
+
+    // Phase 8 — admin endpoints + дополнительные Crossmark endpoints.
+    AdminModule,
+    CrossmarkModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI, чтобы получить PinoLogger.

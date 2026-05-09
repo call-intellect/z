@@ -1,6 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Post,
   Query,
@@ -24,6 +27,7 @@ import { UsersService } from '../users/users.service';
 import { CurrentUser, type CurrentUserPayload } from './decorators/current-user.decorator';
 import { OptionalAuth } from './decorators/optional-auth.decorator';
 import { CookieAuthGuard } from './guards/cookie-auth.guard';
+import { AdminLoginService } from './services/admin-login.service';
 import { JwtService } from './services/jwt.service';
 
 /**
@@ -35,6 +39,12 @@ const ExchangeQuerySchema = z.object({
   token: z.string().min(1, 'token обязателен'),
   meeting_id: z.string().min(1, 'meeting_id обязателен'),
 });
+
+const AdminLoginBodySchema = z.object({
+  email: z.string().email('Невалидный email'),
+  password: z.string().min(1, 'password обязателен'),
+});
+type AdminLoginBody = z.infer<typeof AdminLoginBodySchema>;
 
 /**
  * Auth-контроллер.
@@ -50,6 +60,7 @@ export class AuthController {
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(UsersService) private readonly users: UsersService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(AdminLoginService) private readonly adminLogin: AdminLoginService,
   ) {}
 
   @Get('exchange')
@@ -114,6 +125,23 @@ export class AuthController {
         role: fresh.role,
       },
     };
+  }
+
+  @Post('admin-login')
+  @HttpCode(HttpStatus.OK)
+  async adminLoginAction(
+    @Body(new ZodValidationPipe(AdminLoginBodySchema)) body: AdminLoginBody,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ ok: true }> {
+    const { sessionToken } = await this.adminLogin.login(body.email, body.password);
+    response.cookie(SESSION_COOKIE, sessionToken, {
+      domain: this.cfg.auth.cookieDomain,
+      httpOnly: true,
+      secure: !this.cfg.runtime.isDevelopment,
+      sameSite: 'lax',
+      maxAge: this.cfg.auth.sessionTtlSeconds * 1000,
+    });
+    return { ok: true };
   }
 
   @Post('logout')

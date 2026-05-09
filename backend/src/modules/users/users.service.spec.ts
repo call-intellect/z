@@ -69,6 +69,7 @@ describe('UsersService.upsertFromCrossmark', () => {
     email: 'alice@x.com',
     name: 'Alice',
     role: 'user',
+    passwordHash: null,
     createdAt: new Date('2026-01-01'),
     lastSeenAt: null,
     ...over,

@@ -63,13 +63,15 @@ enum RecordingStatus {
 // ──────────────────────────── models ────────────────────────────
 
 model User {
-  id         String    @id @default(cuid())
-  externalId String?   @unique
-  email      String
-  name       String
-  role       UserRole  @default(user)
-  createdAt  DateTime  @default(now())
-  lastSeenAt DateTime?
+  id           String    @id @default(cuid())
+  externalId   String?   @unique
+  email        String
+  name         String
+  role         UserRole  @default(user)
+  // bcrypt hash, только для role=admin локального логина (Phase 8.4).
+  passwordHash String?
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime?
 
   meetings Meeting[]
 

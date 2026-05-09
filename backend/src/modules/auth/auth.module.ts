@@ -4,6 +4,7 @@ import { AuthController } from './auth.controller';
 import { AdminGuard } from './guards/admin.guard';
 import { CookieAuthGuard } from './guards/cookie-auth.guard';
 import { HmacGuard } from './guards/hmac.guard';
+import { AdminLoginService } from './services/admin-login.service';
 import { HmacService } from './services/hmac.service';
 import { JwtService } from './services/jwt.service';
 
@@ -24,7 +25,21 @@ import { JwtService } from './services/jwt.service';
 @Global()
 @Module({
   controllers: [AuthController],
-  providers: [JwtService, HmacService, CookieAuthGuard, HmacGuard, AdminGuard],
-  exports: [JwtService, HmacService, CookieAuthGuard, HmacGuard, AdminGuard],
+  providers: [
+    JwtService,
+    HmacService,
+    AdminLoginService,
+    CookieAuthGuard,
+    HmacGuard,
+    AdminGuard,
+  ],
+  exports: [
+    JwtService,
+    HmacService,
+    AdminLoginService,
+    CookieAuthGuard,
+    HmacGuard,
+    AdminGuard,
+  ],
 })
 export class AuthModule {}

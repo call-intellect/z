@@ -50,7 +50,8 @@ export type ResourceType =
   | 'ai-usage'
   | 'block'
   | 'entity'
-  | 'theme';
+  | 'theme'
+  | 'goal';
 
 export type Action = 'read' | 'write' | 'delete' | 'manage';
 
@@ -312,6 +313,7 @@ function isResourceType(s: string): s is ResourceType {
     'block',
     'entity',
     'theme',
+    'goal',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

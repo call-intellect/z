@@ -257,6 +257,8 @@ export class TypedConfigService {
 
       maxCardsPerUser: this.get('MAX_CARDS_PER_USER'),
       maxCardRollupsPerDay: this.get('MAX_CARD_ROLLUPS_PER_DAY'),
+      /** Phase 9: ручной пересчёт strategic-alignment по Goal (на Org). */
+      maxGoalRecomputePerDay: this.get('MAX_GOAL_RECOMPUTE_PER_DAY'),
     } as const;
   }
 

@@ -100,6 +100,15 @@ p, admin, *, *, theme, write
 p, admin, *, *, theme, delete
 p, manager, *, *, theme, read
 
+# knowledge-core (Фаза 9) — goal. Цели компании — стратегическая
+# ответственность owner'а. admin / manager — read-only (видят дашборд
+# директора и /goals, но не редактируют). super_admin — bypass.
+p, owner, *, *, goal, read
+p, owner, *, *, goal, write
+p, owner, *, *, goal, delete
+p, admin, *, *, goal, read
+p, manager, *, *, goal, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

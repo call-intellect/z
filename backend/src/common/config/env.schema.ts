@@ -220,6 +220,9 @@ const WorkspaceLimitsSchema = z.object({
   MAX_REGENERATE_PER_MEETING_PER_DAY: z.coerce.number().int().positive().default(5),
   MAX_MEETINGS_CREATED_PER_DAY_VIA_API: z.coerce.number().int().positive().default(100),
   MAX_EMBEDDING_TOKENS_PER_MONTH_PER_USER: z.coerce.number().int().positive().default(10_000_000),
+  /** Сколько раз в сутки на Org можно вручную пересчитать strategic-alignment
+   *  цели (Фаза 9). Защита от LLM-злоупотреблений. */
+  MAX_GOAL_RECOMPUTE_PER_DAY: z.coerce.number().int().positive().default(5),
 
   MAX_HIGHLIGHTS_PER_MEETING: z.coerce.number().int().positive().default(50),
   MAX_BULK_OPERATION_IDS: z.coerce.number().int().positive().default(200),

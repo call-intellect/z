@@ -36,6 +36,7 @@
 - [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
+- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 2): IdeaBlock + Entity, pipeline ingest→distill→retrieve, гибридный поиск
 
 ## Решения / ADR
 _пусто_
@@ -66,6 +67,12 @@ _пусто_
 ## Заметки по реализации (2026-05-10) — Фаза 1 knowledge-core
 - [[01_projects/ingest-and-sources]] — Source/RawEvent + IngestService + meeting-adapter + core.raw-events очередь, hook в analyze.worker, MeetingTranscriptChunk помечен @deprecated
 
+## Заметки по реализации (2026-05-10) — Фаза 2 knowledge-core
+- [[02_architecture/knowledge-core]] — `IdeaBlock` + `Entity` + `IdeaBlockEvidence` + `IdeaBlockEntity`, pipeline `block-ingest.worker` → `block-distill.worker` → `entity-resolver.worker/cron`, гибридный поиск `cosine + BM25` (`POST /api/v1/knowledge/search`), pgvector HNSW + ts_vector GIN
+- [[02_architecture/data-model]] — обновлён разделом knowledge-core (IdeaBlock + Entity + связи)
+- [[02_architecture/module-map]] — добавлен раздел knowledge-core (services/workers/api)
+- [[01_projects/llm-router]] — DeepSeek/Ollama адаптеры, JSON Schema strict, taskType ядра (`block-ingest`, `block-distill`, `entity-merge-arbiter`)
+
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
 
@@ -79,4 +86,4 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-10_
+_Обновлён: 2026-05-10 (Фаза 2 knowledge-core: IdeaBlock + Entity + Search API)_

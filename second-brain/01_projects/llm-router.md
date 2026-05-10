@@ -120,10 +120,41 @@ AiUsageLog {
 - `AnthropicService` — Anthropic Messages API (через прокси при `ANTHROPIC_USE_PROXY`).
 - `MinimaxService` — Anthropic-совместимый.
 - `OpenAiProxyService` — OpenAI через прокси.
+- `DeepSeekService` (Фаза 2 шаг 0, 2026-05-10) — DeepSeek native API:
+  поддерживает `responseFormat: 'text' | 'json_object' | 'json_schema'`
+  и `reasoningEffort` (`low/medium/high`) для DeepSeek-V4-pro.
+- `OllamaService` (Фаза 2 шаг 0, 2026-05-10) — self-hosted моделей
+  (qwen3 / llama4 / bge-m3 embeddings). API-совместим с OpenAI Chat
+  Completions.
 
-**TODO (вне Фазы 0):**
-- `DeepSeekService` — для перевода primary stack на DeepSeek (см. ТЗ §1).
-- `OllamaService` — для self-hosted моделей (qwen, bge-m3 embeddings).
+## Структурированный вывод (Фаза 2)
+
+`LlmCompleteInput.responseFormat`:
+- `{ type: 'text' }` — обычный текст.
+- `{ type: 'json_object' }` — best-effort JSON.
+- `{ type: 'json_schema', name, strict: true, schema }` — strict JSON Schema.
+  Используется в knowledge-core для всех LLM-арбитров (block-distill,
+  entity-merge-arbiter) и block-ingest.
+
+`LlmCompleteOutput.cachedTokens` — провайдеры с prompt cache (DeepSeek,
+Anthropic) возвращают; пишется в AiUsageLog.
+
+## taskType-семья knowledge-core (Фаза 2)
+
+- `block-ingest` — извлечение IdeaBlock'ов из сегментов диалога.
+- `block-distill` — арбитр merge / distinct между новым и top-5 candidate'ом.
+- `entity-merge-arbiter` — арбитр сущностей с metadata-контекстом.
+- `block-linker` (Фаза 3), `theme-classify` (Фаза 4), `reframing` (Фаза 3) —
+  pending.
+
+Routes сидятся через `seed-llm-task-routes-knowledge-core.ts` (политика
+2026-05): primary — `deepseek:deepseek-v4-flash`, fallback —
+`openai-via-proxy:gpt-5.4-mini` → `ollama:qwen3:30b`.
+
+## Providers как массив
+
+`LlmTaskRoute.providers` теперь — JSON-массив `[{provider, model?}]`. Это
+позволяет переопределять fallback-цепочку per-task без изменения кода.
 
 ## Cron
 

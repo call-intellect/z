@@ -324,4 +324,91 @@ RawEvent {
 ещё на ней работает; `transcript-index.worker` продолжает индексировать новые
 встречи параллельно с ingest-pipeline.
 
+## Knowledge-core (Фаза 2): IdeaBlock + Entity
+
+Подробно — [[knowledge-core|knowledge-core.md]]. Здесь — сжатые модели и
+ER-связи.
+
+### IdeaBlock
+
+```
+IdeaBlock {
+  id, tenantId, name, criticalQuestion, trustedAnswer,
+  tags[], signalType (enum: fact / pain / feature_request / objection /
+                      churn_risk / idea / risk / commitment / decision /
+                      mood / drift / competitor_move / metric_change /
+                      knowledge_gap),
+  confidence Decimal(4,3), dataClass,
+  embedding vector(1536),                -- text-embedding-3-small
+  status (draft | canonical | merged_into | archived),
+  mergedIntoId? → IdeaBlock,
+  evidenceCount, dynamicScore Decimal(8,4),
+  createdAt, updatedAt,
+  search_tsv tsvector                    -- generated column (postgres-init.sql)
+  @@index([tenantId, status])
+  @@index([tenantId, signalType])
+  @@index([tenantId, mergedIntoId])
+}
+```
+
+HNSW индекс на `embedding` через `vector_cosine_ops` + GIN на `search_tsv`.
+
+### IdeaBlockEvidence
+
+```
+IdeaBlockEvidence { id, blockId → IdeaBlock, rawEventId → RawEvent,
+                    sourceType, sourceTimestamp?, quote @Text,
+                    startMs?, endMs?, createdAt }
+```
+
+N:1 к IdeaBlock — один блок может агрегировать множество свидетельств.
+При merge блока всё его evidence переносится на canonical через
+`updateMany`.
+
+### Entity
+
+```
+Entity { id, tenantId, type (client | person | project | product |
+                              topic | location | custom),
+         canonicalName, aliases[],
+         embedding vector(1536),
+         mergedIntoId? → Entity,
+         mentionsCount, metadata Json?,
+         createdAt, updatedAt
+  @@index([tenantId, type])
+  @@index([tenantId, canonicalName])
+}
+```
+
+HNSW на `embedding` (cosine). `entity-resolver` ищет дубли cron'ом и
+on-event.
+
+### IdeaBlockEntity (M:M)
+
+```
+IdeaBlockEntity {
+  blockId, entityId,
+  mentionContext @Text,
+  role (subject | object | mentioned),
+  createdAt
+  @@id([blockId, entityId])
+}
+```
+
+Composite PK даёт идемпотентность — повторное создание для той же пары
+блок↔сущность ловится через `Prisma.PrismaClientKnownRequestError P2002`.
+
+### ER (knowledge-core)
+
+```mermaid
+erDiagram
+  Org ||--o{ IdeaBlock : owns
+  IdeaBlock ||--o{ IdeaBlockEvidence : "has"
+  RawEvent ||--o{ IdeaBlockEvidence : "cited by"
+  IdeaBlock ||--o{ IdeaBlockEntity : mentions
+  Entity ||--o{ IdeaBlockEntity : "is mentioned"
+  IdeaBlock }o--|| IdeaBlock : mergedInto
+  Entity }o--|| Entity : mergedInto
+```
+
 [[../index|← index]]

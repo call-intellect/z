@@ -118,4 +118,46 @@ LiveKit чистит атрибуты автоматически при disconne
 
 Подробности: [[../01_projects/ingest-and-sources]].
 
+## Knowledge-core модули (Фаза 2, 2026-05-10)
+
+- **`backend/src/modules/knowledge-core/`** — `@Global` модуль:
+  - `services/segment-builder.service.ts` — режет meeting-payload на
+    скользящие окна сегментов.
+  - `services/block-extraction.service.ts` — LLM-вызов `block-ingest`
+    с JSON Schema strict.
+  - `services/embedding.service.ts` — обёртка над `EmbeddingFallbackService`:
+    `embedBlocks` / `embedEntityNames` / `embedQuery`.
+  - `services/entity-resolution.service.ts` — findOrCreate Entity по
+    `(tenantId, type, lower(canonicalName))` + embedding через
+    `$executeRawUnsafe`.
+  - `services/block-merge.service.ts` — KNN cosine top-5 + LLM-judge
+    `block-distill` (verdict merge|distinct).
+  - `services/entity-merge.service.ts` — KNN cosine top-5 + LLM-arbiter
+    `entity-merge-arbiter` (с metadata + recentMentions[]).
+  - `workers/block-ingest.worker.ts` — consumer `core.raw-events`,
+    concurrency=2.
+  - `workers/block-distill.worker.ts` — consumer `core.block-distill`,
+    дебаунс 30s, concurrency=2.
+  - `workers/entity-resolver.worker.ts` — consumer `core.entity-resolver`,
+    concurrency=1.
+  - `workers/entity-resolver.cron.ts` — `@Cron('*/5 * * * *')`,
+    сканирует пары Entity и enqueue'ит, лимит 50 пар на тик.
+  - `api/search.controller.ts` — `POST /api/v1/knowledge/search`.
+  - `api/search.service.ts` — гибридный SQL (cosine + bm25, веса из ENV).
+  - `api/blocks.controller.ts` — `GET /api/v1/knowledge/blocks/:id`.
+  - `api/entities.controller.ts` — `GET /api/v1/knowledge/entities` +
+    `GET /api/v1/knowledge/entities/:id`.
+  - `prompts/block-ingest.prompt.ts` — JSON Schema, helpers, ENTITY/SIGNAL
+    enum'ы.
+
+- **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
+  `block` и `entity` (read/write/delete для owner/admin, read для всех
+  member'ов Org).
+
+- **`backend/scripts/postgres-init.sql`** — pgvector HNSW индексы +
+  generated `IdeaBlock.search_tsv` + GIN. Применяется через
+  `bun run apply-postgres-init`.
+
+Подробности: [[knowledge-core|knowledge-core.md]].
+
 [[../index|← index]]

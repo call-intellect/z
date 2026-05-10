@@ -12,7 +12,14 @@ export type AiAgentType =
   | 'tasks'
   | 'custom';
 
-export type AiProvider = 'anthropic' | 'vox' | 'openai' | 'minimax' | 'openai-via-proxy';
+export type AiProvider =
+  | 'anthropic'
+  | 'vox'
+  | 'openai'
+  | 'minimax'
+  | 'openai-via-proxy'
+  | 'deepseek'
+  | 'ollama';
 
 export interface RecordAiUsageInput {
   /** Org, на которую списывается стоимость. NULL только для глобальных system jobs. */

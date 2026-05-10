@@ -1,19 +1,12 @@
 /**
- * Seed дефолтных LlmTaskRoute (Фаза 0 knowledge-core).
+ * Seed дефолтных LlmTaskRoute (Фаза 0–2 knowledge-core, политика 2026-05).
  *
- * Создаёт глобальные (tenantId=NULL) маршруты для каждого taskType,
- * используемого в существующем pipeline. До Фаз 5/6 эти routes продолжают
- * обслуживать summary/chapters/tasks/chat/card-rollup/etc.
- *
- * Согласно ТЗ: primary — `deepseek-v4-pro` (через нашу прокси / api), fallback —
- * `gpt-5.4`. Адаптеры под provider 'deepseek' будут добавлены в Шаге 1.5
- * (если ещё не добавлены), а пока fallback chain работает на anthropic/minimax/openai.
- *
- * ВАЖНО: на Шаге 1 у нас ещё нет адаптеров `DeepSeekService` и `OllamaService`.
- * Чтобы не сломать существующий pipeline, мы оставляем fallback chain в порядке
- * 'anthropic' → 'minimax' → 'openai-via-proxy' для текущих taskType. Чистый
- * перевод на deepseek primary будет в отдельном коммите после добавления
- * `DeepSeekService` (вне Фазы 0).
+ * Создаёт глобальные (tenantId=NULL) маршруты:
+ *   - legacy taskType (summary/chapters/tasks/chat/regenerate-section/
+ *     custom-prompt/follow-up/clip-title/card-rollup/card-chat) — все
+ *     переведены на deepseek primary с fallback на gpt-5.4-mini → ollama.
+ *   - новые knowledge-core taskType (block-ingest, block-distill, …) —
+ *     заранее задаём дефолты под будущие воркеры.
  *
  * Идемпотентность: upsert по (taskType, tenantId=null). Без --update-existing
  * ничего не меняем у уже-существующих записей. С флагом — обновляем providers.
@@ -27,25 +20,152 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+interface ProviderEntry {
+  provider: string;
+  model?: string;
+}
+
 interface RouteSeed {
   taskType: string;
-  providers: Array<{ provider: string; model?: string }>;
+  providers: ProviderEntry[];
   isActive: boolean;
 }
 
+const COMMON_LEGACY: ProviderEntry[] = [
+  { provider: 'deepseek', model: 'deepseek-v4-flash' },
+  { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+  { provider: 'ollama', model: 'qwen3:30b-a3b-instruct-2507' },
+];
+
 const ROUTES: RouteSeed[] = [
-  // Существующие taskType (legacy, продолжают работать до Фаз 5/6).
-  // Чистый перевод на deepseek primary — после добавления DeepSeekService.
-  { taskType: 'summary', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'chapters', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'tasks', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'chat', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'regenerate-section', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'custom-prompt', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'follow-up', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'clip-title', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'card-rollup', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
-  { taskType: 'card-chat', providers: [{ provider: 'anthropic' }, { provider: 'minimax' }, { provider: 'openai-via-proxy' }], isActive: true },
+  // Legacy taskType — продолжают работать до Фаз 5/6.
+  { taskType: 'summary', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'chapters', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'tasks', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'chat', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'regenerate-section', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'custom-prompt', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'follow-up', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'clip-title', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'card-rollup', providers: COMMON_LEGACY, isActive: true },
+  { taskType: 'card-chat', providers: COMMON_LEGACY, isActive: true },
+
+  // Knowledge-core (Фаза 2+) — дефолты под будущие воркеры.
+  {
+    taskType: 'block-ingest',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { provider: 'ollama', model: 'qwen3:30b-a3b-instruct-2507' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'block-distill',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'ollama', model: 'qwen3:30b-a3b-instruct-2507' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-nano' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'block-linker',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-nano' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'entity-resolver',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-nano' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'entity-merge-arbiter',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'theme-classify',
+    providers: [
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-nano' },
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'reframing',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'card-rollup-v2',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'task-extract-v2',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'chapter-extract-v2',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'summary-v2',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.5' },
+      { provider: 'minimax', model: 'MiniMax-M2.7' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'chat-v2',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'goal-alignment',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.5' },
+    ],
+    isActive: true,
+  },
+  {
+    taskType: 'dashboard-summary',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
 ];
 
 async function main(): Promise<void> {
@@ -58,8 +178,6 @@ async function main(): Promise<void> {
   let skipped = 0;
 
   for (const route of ROUTES) {
-    // findFirst+create-or-update вместо upsert: тут unique = composite (taskType+tenantId),
-    // и tenantId=null — Prisma уникальный where по NULL не поддерживает напрямую.
     const existing = await prisma.llmTaskRoute.findFirst({
       where: { taskType: route.taskType, tenantId: null },
     });
@@ -73,6 +191,8 @@ async function main(): Promise<void> {
         },
       });
       inserted++;
+      // eslint-disable-next-line no-console
+      console.log(`[created] ${route.taskType}`);
     } else if (updateExisting) {
       await prisma.llmTaskRoute.update({
         where: { id: existing.id },
@@ -82,8 +202,12 @@ async function main(): Promise<void> {
         },
       });
       updated++;
+      // eslint-disable-next-line no-console
+      console.log(`[updated] ${route.taskType}`);
     } else {
       skipped++;
+      // eslint-disable-next-line no-console
+      console.log(`[skipped] ${route.taskType}`);
     }
   }
 

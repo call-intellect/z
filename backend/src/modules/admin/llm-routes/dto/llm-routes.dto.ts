@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-const PROVIDER_NAMES = ['anthropic', 'minimax', 'openai-via-proxy'] as const;
+const PROVIDER_NAMES = [
+  'anthropic',
+  'minimax',
+  'openai-via-proxy',
+  'deepseek',
+  'ollama',
+] as const;
 const TASK_TYPES = [
   'summary',
   'chapters',

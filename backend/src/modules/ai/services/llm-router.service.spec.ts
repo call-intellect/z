@@ -5,6 +5,7 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { AiUsageLogService } from './ai-usage-log.service';
 import type { AnthropicService } from './anthropic.service';
+import type { DeepSeekService } from './deepseek.service';
 import {
   LlmRouterAllProvidersFailedError,
   LlmRouterService,
@@ -12,6 +13,7 @@ import {
 } from './llm-router.service';
 import type { LlmCompleteOutput } from './llm.types';
 import type { MinimaxService } from './minimax.service';
+import type { OllamaService } from './ollama.service';
 import type { OpenAiProxyService } from './openai-proxy.service';
 
 function makeOutput(provider: LlmCompleteOutput['provider'], model = 'm-test'): LlmCompleteOutput {
@@ -29,6 +31,8 @@ interface BuildOpts {
   anthropic?: ReturnType<typeof vi.fn>;
   minimax?: ReturnType<typeof vi.fn>;
   openai?: ReturnType<typeof vi.fn>;
+  deepseek?: ReturnType<typeof vi.fn>;
+  ollama?: ReturnType<typeof vi.fn>;
 }
 
 function build(opts: BuildOpts) {
@@ -54,8 +58,10 @@ function build(opts: BuildOpts) {
     updatedAt: new Date(),
   }));
   const update = vi.fn();
+  const priceFindFirst = vi.fn(async () => null);
   const prisma = {
     llmTaskRoute: { findMany, findFirst, create, update },
+    llmModelPrice: { findFirst: priceFindFirst },
   } as unknown as PrismaService;
 
   const anthropic = {
@@ -67,14 +73,42 @@ function build(opts: BuildOpts) {
   const openai = {
     complete: opts.openai ?? vi.fn(async () => makeOutput('openai-via-proxy', 'gpt-5-mini')),
   } as unknown as OpenAiProxyService;
+  const deepseek = {
+    complete: opts.deepseek ?? vi.fn(async () => makeOutput('deepseek', 'deepseek-v4-flash')),
+  } as unknown as DeepSeekService;
+  const ollama = {
+    complete: opts.ollama ?? vi.fn(async () => makeOutput('ollama', 'qwen3:30b-a3b-instruct-2507')),
+  } as unknown as OllamaService;
 
   const usageRecord = vi.fn();
   const usage = { record: usageRecord } as unknown as AiUsageLogService;
   const incLlmRouterDispatch = vi.fn();
   const metrics = { incLlmRouterDispatch } as unknown as BusinessMetricsService;
 
-  const router = new LlmRouterService(prisma, anthropic, minimax, openai, usage, metrics);
-  return { router, findMany, findFirst, create, update, anthropic, minimax, openai, usageRecord, incLlmRouterDispatch };
+  const router = new LlmRouterService(
+    prisma,
+    anthropic,
+    minimax,
+    openai,
+    deepseek,
+    ollama,
+    usage,
+    metrics,
+  );
+  return {
+    router,
+    findMany,
+    findFirst,
+    create,
+    update,
+    anthropic,
+    minimax,
+    openai,
+    deepseek,
+    ollama,
+    usageRecord,
+    incLlmRouterDispatch,
+  };
 }
 
 describe('LlmRouterService', () => {
@@ -151,15 +185,15 @@ describe('LlmRouterService', () => {
     expect(failedCall?.[0]).toMatchObject({ provider: 'minimax', status: 'failed' });
   });
 
-  it('нет route → используется дефолтная цепочка [anthropic,minimax,openai-via-proxy]', async () => {
+  it('нет route → используется дефолтная цепочка [deepseek, openai-via-proxy, ollama]', async () => {
     const ctx = build({ routes: [] });
     await ctx.router.refreshCache();
     const out = await ctx.router.call({
       ...baseParams,
       taskType: 'tasks' as LlmTaskType,
     });
-    expect(ctx.anthropic.complete).toHaveBeenCalledOnce();
-    expect(out.modelUsed).toBe('anthropic:claude-sonnet-4-6');
+    expect(ctx.deepseek.complete).toHaveBeenCalledOnce();
+    expect(out.modelUsed).toBe('deepseek:deepseek-v4-flash');
   });
 
   it('isActive=false → route игнорируется, используется дефолт', async () => {
@@ -172,7 +206,7 @@ describe('LlmRouterService', () => {
       taskType: 'chapters' as LlmTaskType,
     });
     expect(ctx.minimax.complete).not.toHaveBeenCalled();
-    expect(ctx.anthropic.complete).toHaveBeenCalledOnce();
+    expect(ctx.deepseek.complete).toHaveBeenCalledOnce();
   });
 
   it('AiUsageLog пишется на success', async () => {
@@ -189,7 +223,7 @@ describe('LlmRouterService', () => {
       expect.objectContaining({
         meetingId: 'm-1',
         agentType: 'summary',
-        provider: 'anthropic',
+        provider: 'deepseek',
         success: true,
         inputTokens: 100,
         outputTokens: 20,

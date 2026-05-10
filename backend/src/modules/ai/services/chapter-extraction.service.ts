@@ -56,7 +56,7 @@ export class ChapterExtractionService {
         ...(input.jobId !== undefined && input.jobId !== null
           ? { jobId: input.jobId }
           : {}),
-        responseFormat: 'json',
+        responseFormat: { type: 'json_object' },
         sourceRef: { type: 'meeting', id: input.meetingId },
       });
       const parsed = parseJsonChapters(result.text);

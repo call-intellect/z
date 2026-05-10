@@ -31,9 +31,11 @@ import { AiUsageLogService } from './services/ai-usage-log.service';
 import { AnthropicService } from './services/anthropic.service';
 import { CardRollupService } from './services/card-rollup.service';
 import { ChapterExtractionService } from './services/chapter-extraction.service';
+import { DeepSeekService } from './services/deepseek.service';
 import { LlmFallbackService } from './services/llm-fallback.service';
 import { LlmRouterService } from './services/llm-router.service';
 import { MinimaxService } from './services/minimax.service';
+import { OllamaService } from './services/ollama.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
 import { RegenerateService } from './services/regenerate.service';
 import { TaskExtractionService } from './services/task-extraction.service';
@@ -83,6 +85,8 @@ import { VoxService } from './services/vox.service';
     AnthropicService,
     MinimaxService,
     OpenAiProxyService,
+    DeepSeekService,
+    OllamaService,
     LlmFallbackService,
     AiUsageLogService,
     AiQueueService,

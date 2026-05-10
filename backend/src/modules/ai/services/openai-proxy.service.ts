@@ -56,7 +56,8 @@ export class OpenAiProxyService {
       params['max_output_tokens'] = input.maxTokens;
     }
     if (isReasoning) {
-      params['reasoning'] = { effort: 'medium' };
+      const effort = input.reasoningEffort ?? 'medium';
+      params['reasoning'] = { effort };
     } else if (input.temperature !== undefined) {
       params['temperature'] = input.temperature;
     }
@@ -69,6 +70,21 @@ export class OpenAiProxyService {
         strict: false,
       }));
       params['tools'] = tools;
+    }
+    const fmt = input.responseFormat;
+    if (fmt) {
+      if (fmt.type === 'json_object') {
+        params['text'] = { format: { type: 'json_object' } };
+      } else if (fmt.type === 'json_schema') {
+        params['text'] = {
+          format: {
+            type: 'json_schema',
+            name: fmt.name,
+            strict: fmt.strict,
+            schema: fmt.schema,
+          },
+        };
+      }
     }
 
     try {
@@ -94,6 +110,7 @@ export class OpenAiProxyService {
         usage?: {
           input_tokens?: number;
           output_tokens?: number;
+          input_tokens_details?: { cached_tokens?: number };
         };
       };
 
@@ -121,6 +138,7 @@ export class OpenAiProxyService {
         text: response.output_text ?? '',
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
+        cachedTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
         model,
         provider: 'openai-via-proxy',
         ...(toolCalls.length > 0 ? { toolCalls } : {}),

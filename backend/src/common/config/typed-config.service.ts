@@ -160,6 +160,12 @@ export class TypedConfigService {
       },
       deepseek: {
         apiKey: this.get('DEEPSEEK_API_KEY'),
+        baseUrl: this.get('DEEPSEEK_BASE_URL'),
+        defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
+      },
+      ollama: {
+        baseUrl: this.get('OLLAMA_BASE_URL'),
+        apiKey: this.get('OLLAMA_API_KEY'),
       },
       minimax: {
         apiKey: this.get('MINIMAX_API_KEY'),

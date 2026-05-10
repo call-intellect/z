@@ -252,7 +252,7 @@ export class RegenerateService {
       tenantId: meeting.tenantId,
       meetingId: input.meetingId,
       userId: input.userId,
-      responseFormat: 'json',
+      responseFormat: { type: 'json_object' },
       sourceRef: { type: 'meeting', id: input.meetingId },
     });
 

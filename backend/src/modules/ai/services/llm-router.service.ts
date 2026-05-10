@@ -13,18 +13,28 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AiUsageLogService } from './ai-usage-log.service';
 import { AnthropicService } from './anthropic.service';
-import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
+import { DeepSeekService } from './deepseek.service';
+import type {
+  LlmCompleteInput,
+  LlmCompleteOutput,
+  LlmResponseFormat,
+  LlmReasoningEffort,
+} from './llm.types';
 import { MinimaxService } from './minimax.service';
-import { calcCostUsd } from './model-prices';
+import { calcCostUsd, MODEL_PRICES } from './model-prices';
+import { OllamaService } from './ollama.service';
 import { OpenAiProxyService } from './openai-proxy.service';
 
 /**
  * Семейство задач, для которых LlmRouter определяет провайдера.
- * Параллельно существующему `LlmFallbackService` — он остаётся для
- * legacy цепочки (analyze.worker → summary/report/follow-up/tasks).
  *
- * LlmRouter используется новыми сервисами фазы M3 (chapters/tasks-extract/
- * chat/regenerate-section/clip-title/follow-up при regenerate).
+ * Legacy: summary/chapters/tasks/chat/regenerate-section/custom-prompt/
+ * follow-up/clip-title/card-rollup/card-chat.
+ *
+ * Knowledge-core (Фаза 2+): block-ingest, block-distill, block-linker,
+ * entity-resolver, entity-merge-arbiter, theme-classify, reframing,
+ * card-rollup-v2, task-extract-v2, chapter-extract-v2, summary-v2, chat-v2,
+ * goal-alignment, dashboard-summary.
  */
 export type LlmTaskType =
   | 'summary'
@@ -36,25 +46,76 @@ export type LlmTaskType =
   | 'follow-up'
   | 'clip-title'
   | 'card-rollup'
-  | 'card-chat';
+  | 'card-chat'
+  | 'block-ingest'
+  | 'block-distill'
+  | 'block-linker'
+  | 'entity-resolver'
+  | 'entity-merge-arbiter'
+  | 'theme-classify'
+  | 'reframing'
+  | 'card-rollup-v2'
+  | 'task-extract-v2'
+  | 'chapter-extract-v2'
+  | 'summary-v2'
+  | 'chat-v2'
+  | 'goal-alignment'
+  | 'dashboard-summary';
 
 /**
  * Имя провайдера, как оно хранится в `LlmTaskRoute.providers` (JSON-массив).
  * Для каждого провайдера в свитче ниже — соответствующий сервис.
  */
-export type LlmProviderName = 'anthropic' | 'minimax' | 'openai-via-proxy';
+export type LlmProviderName =
+  | 'anthropic'
+  | 'minimax'
+  | 'openai-via-proxy'
+  | 'deepseek'
+  | 'ollama';
 
 const ALL_PROVIDERS: LlmProviderName[] = [
   'anthropic',
   'minimax',
   'openai-via-proxy',
+  'deepseek',
+  'ollama',
 ];
 
-const DEFAULT_FALLBACK_CHAIN: LlmProviderName[] = [
-  'anthropic',
-  'minimax',
-  'openai-via-proxy',
+const DEFAULT_FALLBACK_CHAIN: ProviderEntry[] = [
+  { provider: 'deepseek' },
+  { provider: 'openai-via-proxy' },
+  { provider: 'ollama' },
 ];
+
+interface ProviderEntry {
+  provider: LlmProviderName;
+  model?: string;
+}
+
+/**
+ * Параметры эксперимента LlmTaskRoute.experiment.
+ *
+ *  - modelA / modelB — `<provider>:<model>` (например `deepseek:deepseek-v4-flash`).
+ *  - splitPercent: доля трафика на A в процентах (0..100).
+ *  - startedAt / endsAt — ISO-строки.
+ */
+interface ExperimentConfig {
+  enabled?: boolean;
+  modelA?: string;
+  modelB?: string;
+  splitPercent?: number;
+  startedAt?: string;
+  endsAt?: string;
+}
+
+interface PriceCacheEntry {
+  inputPer1M: number;
+  outputPer1M: number;
+  cachedPer1M: number;
+  fetchedAt: number;
+}
+
+const PRICE_CACHE_TTL_MS = 60_000;
 
 export interface LlmCallParams {
   taskType: LlmTaskType;
@@ -71,8 +132,10 @@ export interface LlmCallParams {
   meetingId?: string;
   userId?: string;
   jobId?: string;
-  /** Резервируется под будущий structured-output. Сейчас игнорируется (используются tools на уровне caller). */
-  responseFormat?: 'text' | 'json';
+  /** Структурированный вывод. */
+  responseFormat?: LlmResponseFormat;
+  /** Усилия модели на reasoning (для gpt-5* и deepseek-v4-pro). */
+  reasoningEffort?: LlmReasoningEffort;
   maxTokens?: number;
   /**
    * Если задан — переопределяет модель провайдера. Полезно для бенчмарков
@@ -85,10 +148,11 @@ export interface LlmCallParams {
 
 export interface LlmCallResult {
   text: string;
-  /** Формат: `<provider>:<model>` (e.g. `anthropic:claude-sonnet-4-6`). */
+  /** Формат: `<provider>:<model>` (e.g. `deepseek:deepseek-v4-flash`). */
   modelUsed: string;
   inputTokens: number;
   outputTokens: number;
+  cachedTokens: number;
   durationMs: number;
 }
 
@@ -114,26 +178,30 @@ export class LlmRouterAllProvidersFailedError extends Error {
  *   пробует последовательно. Успех — пишет в `AiUsageLog` + метрика
  *   `llm_router_dispatch_total{status='success'}`. Падение — переключение
  *   с метрикой `status='fallback'`. Все упали → `status='failed'` + exception.
- *
- * Этот сервис умышленно НЕ дублирует `LlmFallbackService` — он использует
- * существующие провайдер-сервисы напрямую, чтобы маршрутизация решалась
- * через DB-конфиг, а не код.
+ * - A/B-эксперименты через `LlmTaskRoute.experiment`: при `enabled=true`
+ *   и в окне `[startedAt, endsAt)` — рандомно по `splitPercent` выбираем
+ *   A или B и пишем `experimentGroup` в `AiUsageLog`.
+ * - Цена считается по `LlmModelPrice` (БД); при отсутствии записи — fallback
+ *   на `MODEL_PRICES` из кода. Цены кэшируются в памяти на 60 секунд.
  */
 @Injectable()
 export class LlmRouterService implements OnModuleInit {
   private readonly logger = new Logger(LlmRouterService.name);
-  private routes = new Map<LlmTaskType, LlmProviderName[]>();
+  private routes = new Map<LlmTaskType, ProviderEntry[]>();
   /**
    * Хранится отдельно от `routes`: при `isActive=false` маршрут игнорируется
    * (используется дефолтная цепочка), но видим в `getRoutes()` для админ-UI.
    */
   private allRoutes: LlmTaskRoute[] = [];
+  private priceCache = new Map<string, PriceCacheEntry>();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AnthropicService) private readonly anthropic: AnthropicService,
     @Inject(MinimaxService) private readonly minimax: MinimaxService,
     @Inject(OpenAiProxyService) private readonly openai: OpenAiProxyService,
+    @Inject(DeepSeekService) private readonly deepseek: DeepSeekService,
+    @Inject(OllamaService) private readonly ollama: OllamaService,
     @Inject(AiUsageLogService) private readonly usage: AiUsageLogService,
     @Optional()
     @Inject(BusinessMetricsService)
@@ -170,7 +238,7 @@ export class LlmRouterService implements OnModuleInit {
   async refreshCache(): Promise<void> {
     const all = await this.prisma.llmTaskRoute.findMany();
     this.allRoutes = all;
-    const map = new Map<LlmTaskType, LlmProviderName[]>();
+    const map = new Map<LlmTaskType, ProviderEntry[]>();
     for (const r of all) {
       if (!r.isActive) continue;
       const providers = parseProviders(r.providers);
@@ -202,9 +270,6 @@ export class LlmRouterService implements OnModuleInit {
     if (valid.length === 0) {
       throw new Error(`setRoute: пустой список валидных провайдеров для ${args.taskType}`);
     }
-    // Глобальный route (tenantId=null): findFirst+update/create, потому что
-    // unique-составной (taskType, tenantId) с NULL Prisma в `where` напрямую
-    // не разрешает. Этот метод оперирует только глобальными роутами.
     const existing = await this.prisma.llmTaskRoute.findFirst({
       where: { taskType: args.taskType, tenantId: null },
     });
@@ -233,23 +298,33 @@ export class LlmRouterService implements OnModuleInit {
    * следующий. На успех — записывает в AiUsageLog и возвращает результат.
    */
   async call(params: LlmCallParams): Promise<LlmCallResult> {
-    const providers =
-      this.routes.get(params.taskType) ?? DEFAULT_FALLBACK_CHAIN;
+    const route = this.allRoutes.find(
+      (r) => r.taskType === params.taskType && r.tenantId === null && r.isActive,
+    );
+    const { providers, experimentGroup } = this.chooseProviders(route, params);
 
     const errors: Array<{ provider: string; message: string }> = [];
     const overallStartedAt = Date.now();
 
     for (let i = 0; i < providers.length; i++) {
-      const provider = providers[i] as LlmProviderName;
+      const entry = providers[i] as ProviderEntry;
       const startedAt = Date.now();
       try {
-        const out = await this.dispatch(provider, params);
+        const out = await this.dispatch(entry, params);
         const durationMs = Date.now() - startedAt;
         this.metrics?.incLlmRouterDispatch({
           taskType: params.taskType,
-          provider,
+          provider: entry.provider,
           status: 'success',
         });
+        const cachedTokens = out.cachedTokens ?? 0;
+        const costUsd = await this.computeCostUsd(
+          out.provider,
+          out.model,
+          out.inputTokens,
+          out.outputTokens,
+          cachedTokens,
+        );
         await this.usage.record({
           tenantId: params.tenantId,
           meetingId: params.meetingId ?? null,
@@ -261,19 +336,23 @@ export class LlmRouterService implements OnModuleInit {
           provider: out.provider,
           inputTokens: out.inputTokens,
           outputTokens: out.outputTokens,
-          costUsd: calcCostUsd(out.model, out.inputTokens, out.outputTokens),
+          cachedTokens,
+          costUsd,
           durationMs,
           success: true,
           sourceRef: params.sourceRef ?? null,
+          experimentGroup,
         });
         this.logger.log(
           {
             taskType: params.taskType,
-            provider,
+            provider: entry.provider,
             model: out.model,
             durationMs,
             inputTokens: out.inputTokens,
             outputTokens: out.outputTokens,
+            cachedTokens,
+            experimentGroup,
             meetingId: params.meetingId,
           },
           'LlmRouter dispatch success',
@@ -283,21 +362,22 @@ export class LlmRouterService implements OnModuleInit {
           modelUsed: `${out.provider}:${out.model}`,
           inputTokens: out.inputTokens,
           outputTokens: out.outputTokens,
+          cachedTokens,
           durationMs: Date.now() - overallStartedAt,
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        errors.push({ provider, message });
+        errors.push({ provider: entry.provider, message });
         const isLast = i === providers.length - 1;
         this.metrics?.incLlmRouterDispatch({
           taskType: params.taskType,
-          provider,
+          provider: entry.provider,
           status: isLast ? 'failed' : 'fallback',
         });
         this.logger.warn(
           {
             taskType: params.taskType,
-            provider,
+            provider: entry.provider,
             durationMs: Date.now() - startedAt,
             isLast,
           },
@@ -312,8 +392,8 @@ export class LlmRouterService implements OnModuleInit {
             taskType: params.taskType,
             agentType: this.taskTypeToAgentType(params.taskType),
             jobId: params.jobId ?? null,
-            model: params.model ?? 'unknown',
-            provider: this.providerNameToUsageProvider(provider),
+            model: entry.model ?? params.model ?? 'unknown',
+            provider: this.providerNameToUsageProvider(entry.provider),
             inputTokens: 0,
             outputTokens: 0,
             costUsd: 0,
@@ -321,6 +401,7 @@ export class LlmRouterService implements OnModuleInit {
             success: false,
             errorText: message,
             sourceRef: params.sourceRef ?? null,
+            experimentGroup,
           });
         }
       }
@@ -357,28 +438,144 @@ export class LlmRouterService implements OnModuleInit {
 
   // ─────────────────────────── private ─────────────────────────────────────
 
+  /**
+   * Решает, какую цепочку провайдеров использовать с учётом A/B-эксперимента.
+   * Возвращает providers и (опционально) метку группы для AiUsageLog.
+   */
+  private chooseProviders(
+    route: LlmTaskRoute | undefined,
+    params: LlmCallParams,
+  ): { providers: ProviderEntry[]; experimentGroup: 'A' | 'B' | null } {
+    if (route?.experiment) {
+      const exp = route.experiment as ExperimentConfig;
+      const now = Date.now();
+      const startedAt = exp.startedAt ? Date.parse(exp.startedAt) : Number.NaN;
+      const endsAt = exp.endsAt ? Date.parse(exp.endsAt) : Number.NaN;
+      const inWindow =
+        Number.isFinite(startedAt) &&
+        Number.isFinite(endsAt) &&
+        now >= startedAt &&
+        now < endsAt;
+      if (exp.enabled === true && inWindow && exp.modelA && exp.modelB) {
+        const splitPercent = typeof exp.splitPercent === 'number' ? exp.splitPercent : 50;
+        const pickA = Math.random() * 100 < splitPercent;
+        const pick = pickA ? exp.modelA : exp.modelB;
+        const entry = parseProviderModelString(pick);
+        if (entry) {
+          this.logger.debug(
+            `experiment ${params.taskType}: group=${pickA ? 'A' : 'B'} → ${pick}`,
+          );
+          return { providers: [entry], experimentGroup: pickA ? 'A' : 'B' };
+        }
+      }
+    }
+    const cached = this.routes.get(params.taskType);
+    if (cached && cached.length > 0) {
+      return { providers: cached, experimentGroup: null };
+    }
+    return { providers: DEFAULT_FALLBACK_CHAIN, experimentGroup: null };
+  }
+
   private async dispatch(
-    provider: LlmProviderName,
+    entry: ProviderEntry,
     params: LlmCallParams,
   ): Promise<LlmCompleteOutput> {
+    // Приоритет: явный override через params.model, иначе модель из route entry.
+    const effectiveModel = params.model ?? entry.model;
     const input: LlmCompleteInput = {
       system: { text: params.systemPrompt, cacheControl: 'ephemeral' },
       user: params.userMessage,
       ...(params.maxTokens !== undefined ? { maxTokens: params.maxTokens } : {}),
-      ...(params.model !== undefined ? { model: params.model } : {}),
+      ...(effectiveModel !== undefined ? { model: effectiveModel } : {}),
+      ...(params.responseFormat !== undefined
+        ? { responseFormat: params.responseFormat }
+        : {}),
+      ...(params.reasoningEffort !== undefined
+        ? { reasoningEffort: params.reasoningEffort }
+        : {}),
     };
-    switch (provider) {
+    switch (entry.provider) {
       case 'anthropic':
         return this.anthropic.complete(input);
       case 'minimax':
         return this.minimax.complete(input);
       case 'openai-via-proxy':
         return this.openai.complete(input);
+      case 'deepseek':
+        return this.deepseek.complete(input);
+      case 'ollama':
+        return this.ollama.complete(input);
       default: {
-        const _exhaustive: never = provider;
+        const _exhaustive: never = entry.provider;
         throw new Error(`LlmRouter: неизвестный провайдер ${String(_exhaustive)}`);
       }
     }
+  }
+
+  /**
+   * Стоимость вызова в USD. Сначала смотрим в `LlmModelPrice` (БД, актуальная
+   * запись по effectiveFrom/effectiveTo). Если нет — fallback на код.
+   * Кэшируем результат на 60 секунд, чтобы не бить БД на каждый LLM-вызов.
+   */
+  private async computeCostUsd(
+    provider: string,
+    model: string,
+    inputTokens: number,
+    outputTokens: number,
+    cachedTokens: number,
+  ): Promise<number> {
+    const key = `${provider}:${model}`;
+    const cached = this.priceCache.get(key);
+    const now = Date.now();
+    let entry: PriceCacheEntry | null = null;
+    if (cached && now - cached.fetchedAt < PRICE_CACHE_TTL_MS) {
+      entry = cached;
+    } else {
+      try {
+        const fromDb = await this.prisma.llmModelPrice.findFirst({
+          where: {
+            provider,
+            model,
+            effectiveFrom: { lte: new Date(now) },
+            OR: [
+              { effectiveTo: null },
+              { effectiveTo: { gt: new Date(now) } },
+            ],
+          },
+          orderBy: { effectiveFrom: 'desc' },
+        });
+        if (fromDb) {
+          entry = {
+            inputPer1M: Number(fromDb.inputCostPerMillionTokens),
+            outputPer1M: Number(fromDb.outputCostPerMillionTokens),
+            cachedPer1M: Number(fromDb.cachedCostPerMillionTokens),
+            fetchedAt: now,
+          };
+          this.priceCache.set(key, entry);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `computeCostUsd: db lookup failed (${key}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    if (entry) {
+      const fullInputTokens = Math.max(0, inputTokens - cachedTokens);
+      const cost =
+        (fullInputTokens / 1_000_000) * entry.inputPer1M +
+        (cachedTokens / 1_000_000) * entry.cachedPer1M +
+        (outputTokens / 1_000_000) * entry.outputPer1M;
+      return Math.round(cost * 1_000_000) / 1_000_000;
+    }
+
+    // Fallback на статическую карту в коде.
+    if (!(model in MODEL_PRICES)) {
+      this.logger.debug(
+        `computeCostUsd: цена для ${key} не найдена ни в БД, ни в коде → 0`,
+      );
+    }
+    return calcCostUsd(model, inputTokens, outputTokens, cachedTokens);
   }
 
   /**
@@ -390,18 +587,13 @@ export class LlmRouterService implements OnModuleInit {
   ): 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' {
     switch (taskType) {
       case 'summary':
+      case 'summary-v2':
         return 'summary';
       case 'tasks':
+      case 'task-extract-v2':
         return 'tasks';
       case 'follow-up':
         return 'follow-up';
-      case 'chapters':
-      case 'chat':
-      case 'regenerate-section':
-      case 'custom-prompt':
-      case 'clip-title':
-      case 'card-rollup':
-      case 'card-chat':
       default:
         return 'custom';
     }
@@ -409,30 +601,66 @@ export class LlmRouterService implements OnModuleInit {
 
   private providerNameToUsageProvider(
     p: LlmProviderName,
-  ): 'anthropic' | 'minimax' | 'openai-via-proxy' {
+  ): 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' {
     return p;
   }
 }
 
 /**
- * `LlmTaskRoute.providers` — Json. Может быть `string[]` или `{providers: string[]}`.
- * Парсим в строгий список валидных имён.
+ * `LlmTaskRoute.providers` — Json. Поддерживаемые формы:
+ *   - `string[]` — `['deepseek', 'openai-via-proxy']`.
+ *   - `Array<{provider: string, model?: string}>` — c указанием модели.
+ *   - `{providers: <одна из форм выше>}` — обёртка.
+ *
+ * Парсим в строгий список валидных provider+model.
  */
-function parseProviders(raw: unknown): LlmProviderName[] {
+function parseProviders(raw: unknown): ProviderEntry[] {
   if (!raw) return [];
   let arr: unknown;
   if (Array.isArray(raw)) {
     arr = raw;
-  } else if (typeof raw === 'object' && raw !== null && Array.isArray((raw as { providers?: unknown }).providers)) {
+  } else if (
+    typeof raw === 'object' &&
+    raw !== null &&
+    Array.isArray((raw as { providers?: unknown }).providers)
+  ) {
     arr = (raw as { providers: unknown[] }).providers;
   } else {
     return [];
   }
-  const result: LlmProviderName[] = [];
+  const result: ProviderEntry[] = [];
   for (const item of arr as unknown[]) {
-    if (typeof item === 'string' && (ALL_PROVIDERS as string[]).includes(item)) {
-      result.push(item as LlmProviderName);
+    if (typeof item === 'string') {
+      if ((ALL_PROVIDERS as string[]).includes(item)) {
+        result.push({ provider: item as LlmProviderName });
+      }
+      continue;
+    }
+    if (typeof item === 'object' && item !== null) {
+      const providerRaw = (item as { provider?: unknown }).provider;
+      const modelRaw = (item as { model?: unknown }).model;
+      if (typeof providerRaw === 'string' && (ALL_PROVIDERS as string[]).includes(providerRaw)) {
+        result.push({
+          provider: providerRaw as LlmProviderName,
+          ...(typeof modelRaw === 'string' && modelRaw.length > 0
+            ? { model: modelRaw }
+            : {}),
+        });
+      }
     }
   }
   return result;
+}
+
+/**
+ * Парсит строку формата `<provider>:<model>` (используется в
+ * `LlmTaskRoute.experiment.modelA/modelB`).
+ */
+function parseProviderModelString(s: string): ProviderEntry | null {
+  const idx = s.indexOf(':');
+  if (idx <= 0 || idx === s.length - 1) return null;
+  const provider = s.slice(0, idx);
+  const model = s.slice(idx + 1);
+  if (!(ALL_PROVIDERS as string[]).includes(provider)) return null;
+  return { provider: provider as LlmProviderName, model };
 }

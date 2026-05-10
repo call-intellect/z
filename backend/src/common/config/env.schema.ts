@@ -106,6 +106,13 @@ const OpenAiSchema = z.object({
 
 const DeepSeekSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1),
+  DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com/v1'),
+  DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
+});
+
+const OllamaSchema = z.object({
+  OLLAMA_BASE_URL: z.string().url().default('https://ollama.agent-lia.ru/v1'),
+  OLLAMA_API_KEY: z.string().default(''),
 });
 
 const MiniMaxSchema = z.object({
@@ -287,6 +294,7 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(VoxSchema)
   .merge(OpenAiSchema)
   .merge(DeepSeekSchema)
+  .merge(OllamaSchema)
   .merge(MiniMaxSchema)
   .merge(GrsAiSchema)
   .merge(KieSchema)

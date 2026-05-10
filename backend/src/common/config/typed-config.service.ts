@@ -322,6 +322,10 @@ export class TypedConfigService {
       v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
       meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
+      // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов).
+      chatV2Enabled: this.get('CHAT_V2_ENABLED'),
+      chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
+      chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
     } as const;
   }
 

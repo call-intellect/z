@@ -14,7 +14,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { CardsService } from '../cards/cards.service';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
+import {
+  ChatV2Service,
+  type ChatV2Citation,
+  type ChatV2Scope,
+} from '../knowledge-core/services/chat-v2.service';
 import { QuotaService } from '../quotas/quota.service';
+import { RbacService } from '../rbac/rbac.service';
 
 import { ChatRepository } from './chat.repository';
 import {
@@ -51,6 +57,8 @@ export class ChatService {
     @Inject(QuotaService) private readonly quota: QuotaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(CardsService) private readonly cards: CardsService,
+    @Inject(ChatV2Service) private readonly chatV2: ChatV2Service,
+    @Inject(RbacService) private readonly rbac: RbacService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -305,6 +313,497 @@ export class ChatService {
     this.metrics?.incChatRequest({ scope: 'card' });
 
     return { message: result.text, citations, modelUsed: result.modelUsed };
+  }
+
+  // ─────────────────────────── ChatV2 (Фаза 6 knowledge-core) ───────────
+
+  /**
+   * Single-meeting через ChatV2Service. Owner-проверка + quota + persist
+   * остаётся в chat.service (контракт API не меняется); сама retrieval-логика
+   * и LLM-вызов делегируются в knowledge-core.
+   */
+  async askSingleMeetingV2(input: {
+    meetingId: string;
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
+    this.assertMessageLength(input.message);
+    await this.quota.checkAndIncrement({
+      userId: input.userId,
+      quotaName: 'chat_requests_per_day',
+      max: this.cfg.workspace.maxChatRequestsPerDay,
+      windowMs: 24 * 3600 * 1000,
+    });
+
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: input.meetingId },
+      select: {
+        id: true,
+        ownerId: true,
+        tenantId: true,
+        deletedAt: true,
+      },
+    });
+    if (!meeting || meeting.deletedAt !== null || meeting.ownerId !== input.userId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'meeting_not_found', message: 'Встреча не найдена' },
+      });
+    }
+    if (!meeting.tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'tenant_required',
+          message: 'У встречи нет привязки к Org — chat v2 недоступен',
+        },
+      });
+    }
+
+    const history = await this.repo.listMeetingHistory({
+      userId: input.userId,
+      meetingId: meeting.id,
+      limit: 12,
+    });
+
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: meeting.id,
+      role: 'user',
+      content: input.message,
+    });
+
+    const result = await this.chatV2.ask({
+      tenantId: meeting.tenantId,
+      userId: input.userId,
+      scope: 'meeting',
+      scopeId: meeting.id,
+      query: input.message,
+      history: this.toV2History(history),
+    });
+
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: meeting.id,
+      role: 'assistant',
+      content: result.message,
+      citations: result.citations,
+      tokensIn: result.inputTokens,
+      tokensOut: result.outputTokens,
+      modelUsed: result.modelUsed,
+    });
+
+    this.metrics?.incChatRequest({ scope: 'single' });
+
+    return {
+      message: result.message,
+      citations: result.citations,
+      modelUsed: result.modelUsed,
+    };
+  }
+
+  /**
+   * Cross-meeting (org-scope) через ChatV2Service.
+   */
+  async askCrossMeetingV2(input: {
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
+    this.assertMessageLength(input.message);
+    await this.quota.checkAndIncrement({
+      userId: input.userId,
+      quotaName: 'chat_requests_per_day',
+      max: this.cfg.workspace.maxChatRequestsPerDay,
+      windowMs: 24 * 3600 * 1000,
+    });
+
+    const tenantId = await this.llm.resolveTenantByUser(input.userId);
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'tenant_required',
+          message: 'Org не определена для пользователя',
+        },
+      });
+    }
+
+    const history = await this.repo.listCrossHistory({
+      userId: input.userId,
+      limit: 12,
+    });
+
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: null,
+      role: 'user',
+      content: input.message,
+    });
+
+    const result = await this.chatV2.ask({
+      tenantId,
+      userId: input.userId,
+      scope: 'org',
+      scopeId: null,
+      query: input.message,
+      history: this.toV2History(history),
+    });
+
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: null,
+      role: 'assistant',
+      content: result.message,
+      citations: result.citations,
+      tokensIn: result.inputTokens,
+      tokensOut: result.outputTokens,
+      modelUsed: result.modelUsed,
+    });
+
+    this.metrics?.incChatRequest({ scope: 'cross' });
+
+    return {
+      message: result.message,
+      citations: result.citations,
+      modelUsed: result.modelUsed,
+    };
+  }
+
+  /**
+   * Card-scope через ChatV2Service.
+   */
+  async askCardV2(input: {
+    cardId: string;
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
+    this.assertMessageLength(input.message);
+    const card = await this.cards.getById(input.cardId, input.userId);
+    if (!card.tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'tenant_required',
+          message: 'У карточки нет привязки к Org — chat v2 недоступен',
+        },
+      });
+    }
+
+    await this.quota.checkAndIncrement({
+      userId: input.userId,
+      quotaName: 'chat_requests_per_day',
+      max: this.cfg.workspace.maxChatRequestsPerDay,
+      windowMs: 24 * 3600 * 1000,
+    });
+
+    const history = await this.repo.listCardHistory({
+      userId: input.userId,
+      cardId: card.id,
+      limit: 12,
+    });
+
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: null,
+      cardId: card.id,
+      role: 'user',
+      content: input.message,
+    });
+
+    const result = await this.chatV2.ask({
+      tenantId: card.tenantId,
+      userId: input.userId,
+      scope: 'card',
+      scopeId: card.id,
+      query: input.message,
+      history: this.toV2History(history),
+    });
+
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: null,
+      cardId: card.id,
+      role: 'assistant',
+      content: result.message,
+      citations: result.citations,
+      tokensIn: result.inputTokens,
+      tokensOut: result.outputTokens,
+      modelUsed: result.modelUsed,
+    });
+
+    this.metrics?.incChatRequest({ scope: 'card' });
+
+    return {
+      message: result.message,
+      citations: result.citations,
+      modelUsed: result.modelUsed,
+    };
+  }
+
+  /**
+   * Unified chat для нового эндпоинта `POST /api/v1/chat/v2`.
+   * Делает auth/RBAC под scope, quota, ChatV2Service.ask, persist в общий
+   * `MeetingChatMessage`. Возвращает полный ChatV2-результат (с usedBlockIds).
+   */
+  async askUnifiedV2(input: {
+    userId: string;
+    scope: ChatV2Scope;
+    scopeId: string | null;
+    message: string;
+  }): Promise<{
+    message: string;
+    citations: ChatV2Citation[];
+    modelUsed: string;
+    usedBlockIds: string[];
+  }> {
+    this.assertMessageLength(input.message);
+
+    // 1) RBAC + достаём tenantId под scope.
+    const { tenantId, persistMeetingId, persistCardId } =
+      await this.resolveScopeAuth({
+        userId: input.userId,
+        scope: input.scope,
+        scopeId: input.scopeId,
+      });
+
+    // 2) Quota.
+    await this.quota.checkAndIncrement({
+      userId: input.userId,
+      quotaName: 'chat_requests_per_day',
+      max: this.cfg.workspace.maxChatRequestsPerDay,
+      windowMs: 24 * 3600 * 1000,
+    });
+
+    // 3) История диалога — берём по самому узкому контексту:
+    //    meeting → meeting history; card → card history; иначе cross-history.
+    let history: MeetingChatMessage[] = [];
+    if (persistMeetingId) {
+      history = await this.repo.listMeetingHistory({
+        userId: input.userId,
+        meetingId: persistMeetingId,
+        limit: 12,
+      });
+    } else if (persistCardId) {
+      history = await this.repo.listCardHistory({
+        userId: input.userId,
+        cardId: persistCardId,
+        limit: 12,
+      });
+    } else {
+      history = await this.repo.listCrossHistory({
+        userId: input.userId,
+        limit: 12,
+      });
+    }
+
+    // 4) Persist user-сообщения ДО llm-вызова.
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: persistMeetingId,
+      cardId: persistCardId,
+      role: 'user',
+      content: input.message,
+    });
+
+    // 5) ChatV2 ask.
+    const result = await this.chatV2.ask({
+      tenantId,
+      userId: input.userId,
+      scope: input.scope,
+      scopeId: input.scopeId,
+      query: input.message,
+      history: this.toV2History(history),
+    });
+
+    // 6) Persist assistant-ответа.
+    await this.repo.appendMessage({
+      userId: input.userId,
+      meetingId: persistMeetingId,
+      cardId: persistCardId,
+      role: 'assistant',
+      content: result.message,
+      citations: result.citations,
+      tokensIn: result.inputTokens,
+      tokensOut: result.outputTokens,
+      modelUsed: result.modelUsed,
+    });
+
+    // Метрика — маппим v2-scope в существующий enum (single/cross/card).
+    const metricScope: 'single' | 'cross' | 'card' =
+      input.scope === 'meeting'
+        ? 'single'
+        : input.scope === 'card'
+        ? 'card'
+        : 'cross';
+    this.metrics?.incChatRequest({ scope: metricScope });
+
+    return {
+      message: result.message,
+      citations: result.citations,
+      modelUsed: result.modelUsed,
+      usedBlockIds: result.usedBlockIds,
+    };
+  }
+
+  /**
+   * RBAC-проверка scope + резолв tenantId. Также возвращает, в какие поля
+   * `MeetingChatMessage` писать — для meeting/card в attached поля,
+   * для остальных — в cross-history (meetingId=null, cardId=null).
+   */
+  private async resolveScopeAuth(args: {
+    userId: string;
+    scope: ChatV2Scope;
+    scopeId: string | null;
+  }): Promise<{
+    tenantId: string;
+    persistMeetingId: string | null;
+    persistCardId: string | null;
+  }> {
+    const { userId, scope, scopeId } = args;
+
+    if (scope === 'meeting') {
+      if (!scopeId) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'scope_id_required', message: 'scopeId обязателен для scope=meeting' },
+        });
+      }
+      const meeting = await this.prisma.meeting.findUnique({
+        where: { id: scopeId },
+        select: { id: true, ownerId: true, tenantId: true, deletedAt: true },
+      });
+      if (
+        !meeting ||
+        meeting.deletedAt !== null ||
+        meeting.ownerId !== userId ||
+        !meeting.tenantId
+      ) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'meeting_not_found', message: 'Встреча не найдена' },
+        });
+      }
+      return {
+        tenantId: meeting.tenantId,
+        persistMeetingId: meeting.id,
+        persistCardId: null,
+      };
+    }
+
+    if (scope === 'card') {
+      if (!scopeId) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'scope_id_required', message: 'scopeId обязателен для scope=card' },
+        });
+      }
+      const card = await this.cards.getById(scopeId, userId);
+      if (!card.tenantId) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'tenant_required',
+            message: 'У карточки нет привязки к Org — chat v2 недоступен',
+          },
+        });
+      }
+      return {
+        tenantId: card.tenantId,
+        persistMeetingId: null,
+        persistCardId: card.id,
+      };
+    }
+
+    // org / theme / entity → tenant определяем из user membership +
+    // RBAC проверка resource (block/theme/entity).
+    const tenantId = await this.llm.resolveTenantByUser(userId);
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'tenant_required',
+          message: 'Org не определена для пользователя',
+        },
+      });
+    }
+
+    if (scope === 'theme') {
+      if (!scopeId) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'scope_id_required', message: 'scopeId обязателен для scope=theme' },
+        });
+      }
+      const theme = await this.prisma.theme.findUnique({
+        where: { id: scopeId },
+        select: { id: true, tenantId: true },
+      });
+      if (!theme || theme.tenantId !== tenantId) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'theme_not_found', message: 'Тема не найдена' },
+        });
+      }
+      const allowed = await this.rbac.canRead(userId, tenantId, 'theme');
+      if (!allowed) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'forbidden', message: 'Недостаточно прав' },
+        });
+      }
+    } else if (scope === 'entity') {
+      if (!scopeId) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'scope_id_required', message: 'scopeId обязателен для scope=entity' },
+        });
+      }
+      const entity = await this.prisma.entity.findUnique({
+        where: { id: scopeId },
+        select: { id: true, tenantId: true },
+      });
+      if (!entity || entity.tenantId !== tenantId) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'entity_not_found', message: 'Сущность не найдена' },
+        });
+      }
+      const allowed = await this.rbac.canRead(userId, tenantId, 'entity');
+      if (!allowed) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'forbidden', message: 'Недостаточно прав' },
+        });
+      }
+    } else {
+      // scope === 'org'
+      const allowed = await this.rbac.canRead(userId, tenantId, 'block');
+      if (!allowed) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'forbidden', message: 'Недостаточно прав' },
+        });
+      }
+    }
+
+    return { tenantId, persistMeetingId: null, persistCardId: null };
+  }
+
+  /**
+   * Преобразует историю из `MeetingChatMessage` в формат, который ждёт
+   * ChatV2Service (только role=user|assistant, content). Передаём только
+   * последние 6 — больше не помещается в prompt.
+   */
+  private toV2History(
+    rows: ReadonlyArray<MeetingChatMessage>,
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    return rows
+      .filter((r) => r.role === 'user' || r.role === 'assistant')
+      .slice(-6)
+      .map((r) => ({
+        role: r.role as 'user' | 'assistant',
+        content: r.content,
+      }));
   }
 
   // ─────────────────────────── helpers ──────────────────────────────────

@@ -200,6 +200,49 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Фаза 6 (единый AI-чат поверх IdeaBlock'ов, 5 scope)
+
+Зафиксировано после backend+frontend сессии Фазы 6.
+
+1. **Legacy `chat.service` НЕ удаляется в этой фазе.** Оставляем `askSingleMeeting`/`askCrossMeeting`/`askCard` живыми. Причина — A/B бенчмарк качества (без legacy сравнивать не с чем) + риск регрессии UX. Удаление = отдельная фаза после ручного решения владельца. Тот же подход что в Фазе 5 с tasks/chapters.
+
+2. **ENV-флаг `CHAT_V2_ENABLED` (default `false`).** Единая «ручка» включения. Когда `true` — существующие эндпоинты (`POST /meetings/:id/chat`, `POST /chat`, `POST /cards/:id/chat`) внутри контроллера switch'атся на новые `askXV2()` методы `ChatService` (тот же контракт ответа `{message, citations, modelUsed}`). История общая (`MeetingChatMessage`), формат citations совместим. ENV `CHAT_V2_TOP_BLOCKS=12`, `CHAT_V2_GRAPH_HOPS=1` — параметры retrieval'а.
+
+3. **Switching через chat.service, не через DI-провайдер.** Альтернатива (DI factory: при `chatV2Enabled` подменять `ChatService`-провайдер) отвергнута — лишняя сложность, и тесты ChatService становятся непрозрачными. Текущий вариант: контроллер делает `if (cfg.chatV2Enabled) return svc.askXV2() else return svc.askX()`. ChatService инжектит `ChatV2Service` напрямую (через `@Global() KnowledgeCoreModule` без явного import).
+
+4. **SSE/streaming НЕ реализуем в этой фазе.** Текущий API синхронный (POST → JSON-ответ). Это требует переделать chat.controller на event-stream + изменения api-client'а. Вынесено в vNext. ТЗ Фазы 6 строки 1136-1137 на «поток (SSE)» отложен.
+
+5. **Citations в v2 — через regex `[BLOCK:<id>]`.** LLM просим явно ставить маркер `[BLOCK:<id>]` рядом с фактом. Парсинг — `/\[BLOCK:([a-z0-9]+)\]/gi`. Для каждого валидного blockId — primaryMeetingEvidence (первая по startMs ASC). Если блок не имеет meeting evidence (например, evidence только из chat-source) — citation пропускается. Альтернатива (LLM возвращает structured `citations[]` через JSON Schema) отвергнута — текущий ответ markdown, structured output потребовал бы либо отдельного call'а с json_schema, либо двух прогонов. Regex проще и работает на любом провайдере.
+
+6. **Retrieval pool по scope — отдельный ChatV2RetrievalService.** Не расширяю `SearchService` новым методом — там общий гибридный поиск, scope-логика чужеродна. Отдельный сервис: `fetchCandidates({scope, scopeId, ...})` собирает blockIds, ранжирует cosine SQL-запросом по подмножеству (`b.id = ANY($ids)`), затем 1-hop через `IdeaBlockLink` (active links, ANY direction). Org-scope pool лимитирован 5000 блоков (защита от org с десятками тысяч; за рамками лимита нужен полноценный гибридный поиск, vNext).
+
+7. **History — последние 6 сообщений в system prompt.** LlmRouter в Z не поддерживает `messages[]` нативно (один system + один user message). Вместо этого встраиваем последние 6 (3 user + 3 assistant) в system prompt как Q/A блок. Длинные сообщения обрезаются до 600 символов. Альтернатива (расширять LlmRouter/Anthropic-API на native history) отвергнута — повторное усложнение для одной фазы; полный native messages — отдельная задача.
+
+8. **Persist в `MeetingChatMessage` остаётся в chat.service, не в knowledge-core.** ChatV2Service stateless — он только retrieval+LLM. История пишется в обёрточном методе `chat.service.askXV2()` через `ChatRepository`. Для unified endpoint `POST /chat/v2` — персистим по правилу: meeting → meetingId; card → cardId; иначе cross-history (meetingId=null, cardId=null). Scope-aware история (отдельные ленты для theme/entity) отложена в vNext.
+
+9. **RBAC под scope в unified endpoint.**
+   - `meeting` → owner-проверка `meeting.ownerId===userId` (как legacy single-meeting).
+   - `card` → `cards.getById(cardId, userId)` (owner-проверка).
+   - `theme` → `theme.tenantId===tenantId` + `RbacService.canRead(userId, tenantId, 'theme')`.
+   - `entity` → `entity.tenantId===tenantId` + `RbacService.canRead(userId, tenantId, 'entity')`.
+   - `org` → `RbacService.canRead(userId, tenantId, 'block')` — минимально достаточный resource (как в knowledge-search).
+
+10. **Frontend — graceful fallback при 503.** `/chat` страница пробует `POST /chat/v2` (org-scope). Если backend вернул `ApiError.code === 'chat_v2_disabled'` — fallback на legacy `POST /chat`. Так UI работает на любом окружении без знания флага. Альтернатива (новый endpoint `GET /api/v1/chat/v2/status`) отвергнута — лишний HTTP-запрос, текущий вариант проще и self-healing.
+
+11. **`chat-v2` taskType уже в LlmTaskType enum** (был добавлен в Фазе 2 Шаг 0 превентивно). `taskTypeToAgentType` маппинг — default `'custom'` agentType (drill-down в Z-Admin делается по taskType). Никаких правок в `llm-router.service.ts` не понадобилось. Default chain `[deepseek, openai-via-proxy, ollama]` подходит для chat-v2 (markdown text, не json_schema).
+
+12. **`incChatRequest` метрика — узкий enum.** `BusinessMetricsService.incChatRequest` принимает `'single' | 'cross' | 'card'`. В unified endpoint мы маппим v2-scope: meeting→single, card→card, иначе cross. Расширение enum'а на `theme`/`entity` отложено — пока не нужно (V2 ещё в A/B).
+
+13. **`ContextBlock.primaryMeetingEvidence` — первое evidence по startMs ASC.** Не самое релевантное, не самое цитируемое — просто хронологически первое. Достаточно для citation-link на встречу+таймкод. Расширение (выбор «лучшей» evidence — по совпадению с запросом) — vNext.
+
+14. **Pool blockIds для org-scope SQL — `b.id = ANY($ids::text[])`.** Альтернатива (`b.id IN ($1, $2, ...)` с N плейсхолдеров) отвергнута — для 5000 блоков это 5000 параметров. `ANY($1::text[])` принимает массив одним параметром — чище.
+
+15. **`fromGraph: true` блоки получают score `≈ -1`.** Это гарантирует, что они идут после top-K cosine-результатов в финальном списке (но не выкидываются). Простой способ маркировки без отдельного флага в SQL.
+
+16. **DTO `ChatV2AskSchema` — `query` (не `message`).** Сознательное расхождение с legacy `ChatAskSchema {message}`. Причина: ChatV2 — новый контракт, поле `query` точнее отражает интент (это поисковый запрос для retrieval). На legacy эндпоинтах поле осталось `message` для совместимости с фронтом.
+
+---
+
 ## 2026-05-10 — Phase 0 frontend: страницы найдены в `(authenticated)`
 
 **Вопрос.** При первом аудите Glob по `frontend/app/settings/organization/**` дал 0 файлов — сделал вывод что страницы отсутствуют. Повторный поиск показал, что они существуют в `frontend/app/(authenticated)/settings/organization/page.tsx` и `(authenticated)/invitations/[token]/page.tsx`.

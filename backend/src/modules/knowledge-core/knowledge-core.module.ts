@@ -16,6 +16,8 @@ import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChaptersExtractorV2Service } from './services/chapters-extractor-v2.service';
+import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
+import { ChatV2Service } from './services/chat-v2.service';
 import { ClusteringService } from './services/clustering.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
@@ -75,6 +77,9 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     TasksExtractorV2Service,
     ChaptersExtractorV2Service,
     SummaryExtractorV2Service,
+    // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов, 5 scope).
+    ChatV2RetrievalService,
+    ChatV2Service,
   ],
   exports: [
     SegmentBuilderService,
@@ -95,6 +100,10 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     TasksExtractorV2Service,
     ChaptersExtractorV2Service,
     SummaryExtractorV2Service,
+    // Фаза 6: ChatV2 экспортируется, чтобы chat.service из ChatModule мог
+    // его инжектить (этот модуль @Global, поэтому импортирует прозрачно).
+    ChatV2RetrievalService,
+    ChatV2Service,
   ],
 })
 export class KnowledgeCoreModule {}

@@ -390,6 +390,30 @@ const KnowledgeCoreSchema = z.object({
    * Несколько событий по одной встрече за окно складываются в один job.
    */
   MEETING_ANALYZE_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(120_000),
+
+  // ── Фаза 6: единый AI-чат поверх IdeaBlock'ов (5 scope: org/meeting/card/theme/entity) ──
+  /**
+   * Master-флаг ChatV2. По умолчанию `false` — существующие чат-эндпоинты
+   * (`POST /api/v1/chat`, `POST /api/v1/meetings/:id/chat`,
+   * `POST /api/v1/cards/:id/chat`) работают через legacy `ChatService`. При
+   * `true` — контроллер переключается на `ChatV2Service` (retrieval по
+   * IdeaBlock + 1-hop graph expansion). История чата общая (`MeetingChatMessage`),
+   * формат citations совместим с legacy. Включается на проде вручную для
+   * A/B-сравнения. Удаление legacy — отдельная фаза.
+   */
+  CHAT_V2_ENABLED: z.coerce.boolean().default(false),
+  /**
+   * Сколько top-K блоков подмешиваем в LLM-контекст ChatV2. 12 — компромисс
+   * между качеством (больше блоков → больше шансов попасть в нужный) и
+   * стоимостью токенов.
+   */
+  CHAT_V2_TOP_BLOCKS: z.coerce.number().int().positive().default(12),
+  /**
+   * Сколько шагов 1-hop graph-расширения добавлять к top-K кандидатам через
+   * `IdeaBlockLink`. Дефолт 1 = «прямые соседи»; добавляет до K*5 блоков.
+   * 0 = расширение выключено.
+   */
+  CHAT_V2_GRAPH_HOPS: z.coerce.number().int().min(0).max(2).default(1),
 });
 
 /** Шеринг (длительность ссылок). */

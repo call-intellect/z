@@ -145,6 +145,23 @@ export class RbacService implements OnModuleInit {
   }
 
   /**
+   * Может ли пользователь видеть директорский дашборд Org (Фаза 8).
+   *
+   * Партнёрская/руководящая роль `admin` видит дашборд директора так же,
+   * как `owner`. `manager` — нет (видит свой менеджерский дашборд).
+   * `super_admin` — bypass.
+   */
+  async canViewDirectorDashboard(
+    userId: string,
+    orgId: string,
+  ): Promise<boolean> {
+    const ctx = await this.loadContext(userId, orgId);
+    if (ctx === null) return false;
+    if (ctx.isSuperAdmin) return true;
+    return ctx.role === 'owner' || ctx.role === 'admin';
+  }
+
+  /**
    * Получить контекст (роль + visibility + isSuperAdmin) для пары (user, org).
    * Использует in-memory кэш на 60s, чтобы не бить БД на каждый запрос.
    */

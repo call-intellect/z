@@ -140,6 +140,23 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Фаза 4 backend (Theme + clusterer + card-rollup-v2)
+
+Зафиксировано после Subagent 5 (коммиты `19559e0`, `9fa2ebc`, `d256f04`, `0fac6e1`).
+
+1. **`Card.cachedTopThemeIds: String[]`** вместо отдельной `CardThemeRollup` — проще, без новой модели. v2-воркер пересчитывает на каждом тике.
+2. **theme-clusterer на TS-side O(N²)** (KNN-greedy union-find). Для N≤1000 ≈1.5s. Перенос на pgvector-side query — отложен до жалоб на крупных Org.
+3. **`POST .../save-as-card` создаёт Card напрямую через Prisma** в knowledge-core controller — избегаем циклической зависимости knowledge-core → cards. Уникальность имени защищена `@@unique([ownerId, name])` + 409 при P2002.
+4. **`themeSplits` из reframing — только лог-сигнал.** Авторазделение слишком рискованно. Owner Org разберёт через UI Фазы 5/6.
+5. **`themeMerges` транзакционно**: перенос ThemeIdeaBlock/ThemeEntity с source на target (skipDuplicates) → удаление source-связей → `source.status='merged_into'`.
+6. **theme-clusterer вызывает только `theme-classify`**, отдельной `theme-clusterer` LLM-route нет. ENV `THEME_CLUSTERER_CRON` — только расписание.
+7. **Старый `card-rollup.worker` НЕ трогали** — параллельная работа до Фаз 5/6.
+8. **Source блоков карточки**: через `RawEvent.sourceExternalId = meeting.id` (meetings) + `IdeaBlockEntity.entityId IN (Card.entityId ∪ Card.relatedEntityIds)` (entities). dedup, status=canonical, top 50.
+9. **`GET /cards/:id/themes`** добавлен в существующий `cards.controller.ts` — один origin для фронта, без отдельного контроллера.
+10. **Frontend Фазы 4 отложен** в следующую сессию — `/themes` страница, секция «AI-темы» на Card, save-as-card UI.
+
+---
+
 ## 2026-05-10 — Phase 0 frontend: страницы найдены в `(authenticated)`
 
 **Вопрос.** При первом аудите Glob по `frontend/app/settings/organization/**` дал 0 файлов — сделал вывод что страницы отсутствуют. Повторный поиск показал, что они существуют в `frontend/app/(authenticated)/settings/organization/page.tsx` и `(authenticated)/invitations/[token]/page.tsx`.

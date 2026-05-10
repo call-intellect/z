@@ -448,3 +448,48 @@ date: 2026-05-10
 **Откат.** Удалить строку `(req as any).tenantId = apiKey.tenantId` в `BearerAuthGuard`. Public API endpoints без `@RequireEntitlement` продолжат работать.
 
 ---
+
+## 2026-05-10 — Фаза 12 frontend: audit-log entries на `/admin/orgs/:id/billing` отложены
+
+**Вопрос.** План Фазы 12 шаг 12 предписывал на странице Z-Admin показывать lazy-load audit-log entries `TIER_CHANGED` / `ENTITLEMENT_OVERRIDE_SET` для конкретной Org.
+
+**Решение.** Не реализуем сейчас — оставляем явный TODO в `BillingAdminClient.tsx` и в чек-листе плана.
+
+**Почему.**
+- В `frontend/src/api/` нет общего `auditLogApi` (поиск показал только `org-admin-knowledge.api.ts` со словом «audit», но это про другое).
+- Создавать ad-hoc endpoint и API-клиент только под одну страницу — outside scope последнего фронт-агента (см. ТЗ: «если нет — пропусти и отметь TODO в decisions-log»).
+- Backend пишет `TIER_CHANGED` / `ENTITLEMENT_OVERRIDE_SET` корректно (`audit.types.ts` обновлён в Шаге 7 backend). Когда появится общий `auditLogApi`, добавить секцию в `BillingAdminClient.tsx` — 30 минут работы.
+
+**Откат.** Когда появится `auditLogApi.list({orgId, types: ['TIER_CHANGED', 'ENTITLEMENT_OVERRIDE_SET']})` — добавить секцию в `BillingAdminClient.tsx` под формой PATCH'а.
+
+---
+
+## 2026-05-10 — Фаза 12 frontend: `EntitlementProvider` подключён в `AuthenticatedShell`, не в RootLayout
+
+**Вопрос.** Где монтировать `EntitlementProvider` — в `frontend/app/layout.tsx` (рядом с `AuthProvider`) или в `frontend/app/(authenticated)/AuthenticatedShell.tsx`?
+
+**Решение.** В `AuthenticatedShell` — внутри guard'а, который уже проверил `user !== null` и `!mustChangePassword`.
+
+**Почему.**
+- На публичных страницах (`/`, `/login`, `/m/[id]`, `/share/*`) entitlement не нужен. Лишний `GET /api/v1/me/entitlements` от незалогиненного — минус 401 в логе на каждом mount'е.
+- На `/onboarding/change-password` тоже не нужен — там нет gating'овых пунктов меню.
+- `EntitlementProvider` сам слушает `auth-context`, поэтому подвешен внутри тех же guard'ов.
+
+**Откат.** Перенести `<EntitlementProvider>` в `frontend/app/layout.tsx` — если в будущем гейтинг понадобится на публичных страницах (например, на странице цен показывать «вы уже Pro»). Сейчас не нужен.
+
+---
+
+## 2026-05-10 — Фаза 12 frontend: `<TierGate>` не скрывает Sidebar-пункты, а помечает замком
+
+**Вопрос.** Как лучше для конверсии: скрывать недоступные пункты в Sidebar (Темы / Цели / AI-чат) или показывать с замком?
+
+**Решение.** Показываем с замком. Tooltip «Доступно на Pro», клик ведёт на `/settings/billing` вместо целевого URL.
+
+**Почему.**
+- Скрывать = пользователь не знает, что фича вообще существует. Это кладёт upgrade-funnel.
+- Показывать = ясный сигнал «у нас это есть, доступно на Pro». Поведение редиректа на `/settings/billing` мягко двигает к апгрейду без агрессивного modal'а.
+- Это уже зафиксировано в плане Фазы 12 §«Принципиальные решения 5».
+
+**Откат.** Убрать `gateFeature` из `NAV_ITEMS` или поменять логику в `SidebarNavLink` — заменить tooltip на `return null` для locked.
+
+---

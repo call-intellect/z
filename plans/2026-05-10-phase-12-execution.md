@@ -2,7 +2,7 @@
 type: execution-plan
 phase: 12
 feature: knowledge-core — тарифы и entitlements (tier_basic / tier_pro / tier_enterprise), декоратор @RequireEntitlement, gating UI
-status: in_progress
+status: completed
 date: 2026-05-10
 source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
 ---
@@ -175,55 +175,77 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
 
 ### Шаг 8 — Хук `useEntitlement` + контекст
 
-- [ ] [frontend/src/contexts/EntitlementContext.tsx](frontend/src/contexts/EntitlementContext.tsx):
+- [x] [frontend/src/contexts/entitlement-context.tsx](frontend/src/contexts/entitlement-context.tsx):
   - провайдер тянет `GET /api/v1/me/entitlements` при mount,
-  - кеш в `react-query` (или существующем стейт-менеджере),
-  - инвалидация по событию `entitlement.changed` (опционально через ws/poll; на MVP — refresh при смене tab/focus).
-- [ ] [frontend/src/hooks/useEntitlement.ts](frontend/src/hooks/useEntitlement.ts):
+  - локальный state (без react-query — следуем паттерну `auth-context`),
+  - refresh при `window.focus` (на смену tier'а из другой вкладки) + сброс на `auth:expired`.
+  - подключён в `frontend/app/(authenticated)/AuthenticatedShell.tsx` ВНУТРИ guard'а user — гарантия, что entitlement грузится только для аутентифицированных.
+- [x] [frontend/src/hooks/useEntitlement.ts](frontend/src/hooks/useEntitlement.ts):
   ```ts
   function useEntitlement(feature: FeatureKey): {enabled: boolean, tier: TierKey, loading: boolean};
   function useQuota(quota: QuotaKey): {max: number, loading: boolean};
   ```
+- [x] `frontend/src/api/entitlements.api.ts` — `getMe / getBilling / getAdminOrg / patchAdminOrg`.
+- [x] `frontend/src/domain/entitlement.ts` — типы `EntitlementApi/Domain`, mapper, лейблы (`tierLabel`, `featureLabel`, `quotaLabel`, `formatBytes`, `formatQuotaValue`), `FEATURE_GROUPS`, `FEATURE_MIN_TIER`.
+- [x] `bun run typecheck` — зелёный.
+- Коммит: `4684daa feat(knowledge-core): фаза 12 шаг 8 — EntitlementContext + useEntitlement / useQuota хуки`.
 
 ### Шаг 9 — Компонент `<TierGate>`
 
-- [ ] [frontend/src/ui/components/TierGate.tsx](frontend/src/ui/components/TierGate.tsx):
-  ```tsx
-  <TierGate feature="feature.theme">
-    <ThemesList />
-  </TierGate>
-  ```
-  - если `enabled=true` → рендерит children,
-  - иначе → fallback-блок: иконка-замок, текст «Доступно на тарифе Pro» + CTA «Подробнее о тарифах» (ссылка на `/settings/billing`).
-- [ ] Применить на:
-  - `/themes` (внутри page.tsx обернуть основной контент),
-  - `/dashboard-director` (Фаза 8 — пометить TODO там),
-  - `/goals` (Фаза 9 — TODO),
-  - `/chat` (только при scope='org' — UI должен показать заглушку для basic-Org).
+- [x] [frontend/src/ui/components/TierGate.tsx](frontend/src/ui/components/TierGate.tsx):
+  - если `enabled=true` → children,
+  - `loading` → skeleton (без flicker «закрыто → открыто»),
+  - иначе → fallback-блок (Card + Lock-иконка + текст «Доступно на тарифе X» + CTA «Подробнее о тарифах» → `/settings/billing`),
+  - доп. экспортируем `<DefaultTierFallback>` и `<InlineTierFallback>` — для встроенных секций.
+- [x] Применить:
+  - `/themes` — `<TierGate feature="feature.theme">`.
+  - `/goals` — `<TierGate feature="feature.goals_strategy">`.
+  - `/dashboard` — внутри `DashboardRouter` директорский путь обёрнут в `<TierGate feature="feature.dashboard_director">`. Manager-вид остаётся открытым (базовая фича).
+  - `/chat` — внутри `ChatClient` обёрнут в `<TierGate feature="feature.chat_org">` (org-scope).
+- [x] `bun run typecheck` — зелёный.
+- Коммит: `4cc35cf feat(knowledge-core): фаза 12 шаг 9 — <TierGate> + применение на /themes, /goals, dashboard, chat`.
 
 ### Шаг 10 — Sidebar c замками
 
-- [ ] [frontend/src/ui/components/app-shell/Sidebar.tsx](frontend/src/ui/components/app-shell/Sidebar.tsx):
-  - для каждого пункта, который требует фичи — обернуть в `useEntitlement`,
-  - если `enabled=false` → пункт остаётся видимым, но грейед-аут, иконка `Lock` справа, tooltip «Доступно на Pro», клик ведёт на `/settings/billing`.
+- [x] [frontend/src/ui/components/app-shell/Sidebar.tsx](frontend/src/ui/components/app-shell/Sidebar.tsx):
+  - в `NavItem` добавлено опциональное `gateFeature: FeatureKey`.
+  - вынесен подкомпонент `SidebarNavLink` — только он вызывает `useEntitlement` (чтобы не нарушать rules-of-hooks при динамическом списке),
+  - закрытые пункты остаются видимы, но в визуально приглушённом стиле, иконка `Lock` справа, `<Tooltip>` «Доступно на Pro/Enterprise», `href` подменён на `/settings/billing`,
+  - гейтятся пункты: AI-темы, Цели, AI-чат.
+- [x] `bun run typecheck` — зелёный.
+- Коммит: `97c1f59 feat(knowledge-core): фаза 12 шаг 10 — Sidebar замки на закрытых пунктах + redirect на /settings/billing`.
 
 ### Шаг 11 — Страница `/settings/billing`
 
-- [ ] [frontend/app/(authenticated)/settings/billing/page.tsx](frontend/app/(authenticated)/settings/billing/page.tsx) + `BillingClient.tsx`.
-- [ ] Owner-only (если не owner — redirect на `/`).
-- [ ] Секции:
-  - **Текущий тариф** — крупно, бейдж tier'а + дата активации.
-  - **Что входит** — таблица `feature → ✓/✗`, рассортированная по группам (knowledge / chat / dashboards / adapters / api / exports).
-  - **Лимиты** — таблица `quota → текущее / лимит / прогресс-бар` (текущее значение из `/api/v1/me/quotas` если есть, иначе только лимиты).
-  - **Сменить тариф** — кнопка «Связаться с нами» (mailto: или открывает Crisp/Intercom). На MVP без онлайн-апгрейда.
-  - **Заметка от super_admin** (`notes`, если есть) — для прозрачности override'ов.
+- [x] [frontend/app/(authenticated)/settings/billing/page.tsx](frontend/app/%28authenticated%29/settings/billing/page.tsx) + `BillingClient.tsx`.
+- [x] Owner-only (если не owner — empty-state «Только владелец Org может видеть тариф и лимиты»). Backend дополнительно гейтит API.
+- [x] Секции:
+  - **Текущий тариф** — крупно (3xl), badge tier'а, дата активации (`updatedAt`).
+  - **Что входит** — таблица `feature → ✓/✗`, сгруппированная по `FEATURE_GROUPS` (Знания / Коммуникация / Источники / Базовые). Show «индивидуально» badge для override'нутых фич.
+  - **Лимиты** — таблица `quota → значение`, через `formatQuotaValue` (байты — `formatBytes`). «индивидуально» badge для override'нутых квот.
+  - **Заметка от поддержки** (`notes`) — отдельный info-блок, если задано.
+  - **Сменить тариф** — `mailto:support@call-intellect.ai` + Telegram link (плейсхолдер).
+- [x] `frontend/app/(authenticated)/settings/SettingsSidebar.tsx` — добавлен пункт «Тариф и лимиты» (icon `Wallet`) в OWNER_ITEMS.
+- [x] `bun run typecheck` — зелёный.
+- Коммит: `332b21e feat(knowledge-core): фаза 12 шаг 11 — /settings/billing (owner-only)`.
 
 ### Шаг 12 — Z-Admin страница `/admin/orgs/:id/billing`
 
-- [ ] super_admin only.
-- [ ] Та же таблица + редактируемые поля: `tier` (select), `featureOverrides` (key→bool checkboxes), `quotaOverrides` (numeric inputs), `notes` (textarea), обязательное `reason`.
-- [ ] Кнопка «Применить» → `PATCH /api/v1/admin/orgs/:tenantId/entitlement`.
-- [ ] Show audit-log entries `TIER_CHANGED` / `ENTITLEMENT_OVERRIDE_SET` для этой Org (lazy load).
+- [x] super_admin only (через `useAuth().isSuperAdmin` + 403 от backend → `<AdminForbidden>`).
+- [x] Header: tenantId, кнопка «К списку Org».
+- [x] Секции:
+  - **Тариф** — `<Select>` из `tier_basic | tier_pro | tier_enterprise`, badge fail-safe если raw≠resolved.
+  - **Переопределения фич** — таблица all features × Select(`inherit | on | off`).
+  - **Переопределения квот** — таблица all quotas × Input(number). Пустое = из тарифа.
+  - **Заметка** — Textarea (≤2000).
+  - **Причина** — Textarea (≥3, ≤500), обязательное.
+  - **Применить** — `entitlementsApi.patchAdminOrg(tenantId, patch)`. Sonner-toast success/error.
+- [x] Patch-body собирается diff'ом: только реально изменённые поля попадают в PATCH, чтобы AuditLog был чистый.
+- [ ] **Audit-log entries** — TODO: ждёт общий `auditLogApi`. Сейчас не показываем (см. decisions-log). Backend пишет правильно (`TIER_CHANGED` / `ENTITLEMENT_OVERRIDE_SET`), фронт-секцию добавим, когда API появится.
+- [x] `frontend/app/(authenticated)/admin/orgs/OrgsClient.tsx` — в каждой строке Org добавлена кнопка-иконка `Wallet` → `/admin/orgs/:id/billing`.
+- [x] `bun run typecheck` — зелёный.
+- [x] `bun run build` — зелёный (50/50 страниц, `/admin/orgs/[id]/billing` 6.31 kB, `/settings/billing` 5 kB).
+- Коммит: `bad561c feat(knowledge-core): фаза 12 шаг 12 — Z-Admin /admin/orgs/[id]/billing (super_admin)`.
 
 ## Verification
 

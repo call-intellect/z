@@ -121,28 +121,36 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 10)
 
 ## Frontend
 
-### Шаг 9 — Страница `/settings/sources`
+### Шаг 9 — Страница `/settings/sources`  ✅ DONE
 
-- [ ] [frontend/app/(authenticated)/settings/sources/page.tsx](frontend/app/(authenticated)/settings/sources/page.tsx) — server обёртка, metadata.
-- [ ] `SourcesClient.tsx` — таблица Source'ов: иконка по type (telegram/phone/mail/web), name, isActive toggle, dataClass badge, last RawEvent timestamp, кнопка «Тест», «Настроить», «Отключить».
-- [ ] Кнопка «Подключить источник» → модалка с выбором типа → форма по типу:
-  - **Telegram**: поля `botToken` (password input + подсказка «получить у @BotFather»), `botUsername`, `allowedChatIds` (textarea, по строке), `includeForwarded` (checkbox), `dataClass` (select). После сохранения — показать сгенерированный webhook URL (для пользователя информативно, секрет внутри).
-  - **Mango**: `apiKey`, `apiSalt`, `extensions` (массив). Показать webhook URL для настройки в кабинете Mango.
-  - **IMAP**: `host`, `port`, `secure`, `user`, `password`, `folder`, `sensitiveFolders`. Кнопка «Проверить подключение» (вызывает `POST /sources/:id/test`).
-  - **Web-form**: только `dataClass` и `isActive` — само создание тривиальное.
-- [ ] Sidebar: пункт «Источники» в группе «Настройки».
+- [x] [frontend/app/(authenticated)/settings/sources/page.tsx](frontend/app/(authenticated)/settings/sources/page.tsx) — server обёртка, metadata.
+- [x] `SourcesClient.tsx` — таблица Source'ов: иконка по type (Telegram/Phone/Mail/Globe), name, isActive Switch, dataClass badge, relative `lastEventAt`, кнопки «Тест», «Настроить», «Отключить» (soft-delete).
+- [x] Модалка «Подключить источник» с TypePicker → форма по type:
+  - **Telegram**: `botToken` (password) + подсказка @BotFather, `botUsername`, `allowedChatIds` (textarea), `includeForwarded`, `dataClass`. `webhookSecret` генерируется на клиенте через `crypto.randomUUID()`. После сохранения — webhook URL для копирования.
+  - **Mango**: `apiKey`, `apiSalt`, `extensions` (textarea), `dataClass`. После сохранения — webhook URL для кабинета Mango.
+  - **IMAP**: `host`, `port`, `secure`, `user`, `password` (отправляется как `passwordEnc`), `folder`, `sinceDate?`, `sensitiveFolders`. Кнопка «Проверить подключение» через test-flow (создаём как `isActive=false` → `/test` → пользователь активирует Switch'ом).
+  - **Web-form**: `name`, `dataClass`, `isActive`.
+- [x] Edit модалка — те же поля, секреты приходят как `<encrypted>`. Пустое поле = сохранить старое (отправляется маркер `<encrypted>`).
+- [x] Sidebar: пункт «Источники» (icon `Link2`) в admin-блоке `/settings/sources`. Старый `/settings/admin/sources` — `redirect()`.
+- [x] `frontend/src/api/sources.api.ts` — `sourcesApi.{list, get, create, update, remove, test}` через `apiClient` + `orgHeaders(orgId)`.
+- [x] `frontend/src/domain/source.ts` — `SourceApi`/`SourceDomain`/`mapSourceDtoToDomain`, лейблы `SOURCE_TYPE_LABELS`/`DATA_CLASS_LABELS`, `dataClassBadgeVariant`, `relativeTime`, `parseLines*`, `generateWebhookSecret`/`generateNonce`.
+- [x] `bun run typecheck` зелёный.
 
-### Шаг 10 — Страница `/dump` (web-form-адаптер)
+### Шаг 10 — Страница `/dump` (web-form-адаптер)  ✅ DONE
 
-- [ ] [frontend/app/(authenticated)/dump/page.tsx](frontend/app/(authenticated)/dump/page.tsx) — большая textarea (`min-h-[60vh]`, monospace), кнопка «Сохранить мысль», счётчик символов.
-- [ ] Перед submit — генерация `nonce = crypto.randomUUID()`, `POST /api/v1/ingest/dump`. На `429 quota_exceeded` — toast с retry-after.
-- [ ] После успешного submit — toast «Мысль отправлена в knowledge-core», очистить textarea.
-- [ ] Sidebar: пункт «Дамп мысли» (`Brain` icon, lucide-react).
+- [x] [frontend/app/(authenticated)/dump/page.tsx](frontend/app/(authenticated)/dump/page.tsx) (server) + `DumpClient.tsx`:
+  textarea `min-h-[60vh]`, monospace, placeholder, счётчик символов 50 000 (warning >90%, danger >100%).
+- [x] Перед submit — `nonce = crypto.randomUUID()`, `POST /api/v1/ingest/dump`. На `429 quota_exceeded` — toast «Лимит 30 мыслей в день. Попробуйте позже.»
+- [x] На успех — toast «Мысль отправлена в knowledge-core», очистить textarea. Если `idempotent: true` — toast «Эта мысль уже была сохранена ранее».
+- [x] `frontend/src/api/dump.api.ts` — `dumpApi.create({text, nonce, dataClass?})`.
+- [x] Sidebar: пункт «Дамп мысли» (icon `Brain`) после «Цели».
+- [x] `bun run typecheck` зелёный, `bun run build` зелёный (`/dump` 4.07 kB, `/settings/sources` 14 kB).
 
 ## Verification
 
 - [ ] `bun run typecheck` (backend) — зелёный.
-- [ ] `bun run typecheck` (frontend) — зелёный.
+- [x] `bun run typecheck` (frontend) — зелёный (Шаг 10).
+- [x] `bun run build` (frontend) — зелёный (Шаг 10).
 - [ ] `bun run prisma:push` (если меняли schema под `ApiKey.scope`) — успешно.
 - [ ] **Smoke по адаптеру** (на dev):
   - Telegram: создать source с боевым ботом, отправить ему сообщение → `RawEvent` создан → через 30 сек блок появляется в `/search`.

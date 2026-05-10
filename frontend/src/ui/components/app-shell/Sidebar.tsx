@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  Brain,
   CalendarDays,
   ChevronDown,
   FolderKanban,
@@ -52,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
   { href: '/themes', label: 'AI-темы', icon: Sparkles, matchPrefix: '/themes' },
   { href: '/goals', label: 'Цели', icon: Target, matchPrefix: '/goals' },
+  { href: '/dump', label: 'Дамп мысли', icon: Brain, matchPrefix: '/dump' },
   { href: '/chat', label: 'AI-чат', icon: MessageCircle, matchPrefix: '/chat' },
   { href: '/meetings', label: 'Мои встречи', icon: CalendarDays, matchPrefix: '/meetings' },
   { href: '/tasks', label: 'Задачи', icon: ListChecks, matchPrefix: '/tasks' },

@@ -189,6 +189,20 @@ export class EntitlementService {
   }
 
   /**
+   * Записать `notes` (ручной комментарий super_admin'а в Z-Admin).
+   * Если записи `OrgEntitlement` нет — создаётся с дефолтным tier из схемы.
+   * Не пишет AuditLog (notes — UI-вспомогательное поле, не security event).
+   */
+  async setNotes(tenantId: string, notes: string | null): Promise<void> {
+    await this.prisma.orgEntitlement.upsert({
+      where: { tenantId },
+      create: { tenantId, notes },
+      update: { notes },
+    });
+    await this.invalidate(tenantId);
+  }
+
+  /**
    * Установить per-Org override на конкретную фичу или квоту.
    * `value === null` → удалить override.
    */

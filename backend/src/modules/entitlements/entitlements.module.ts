@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 
 import { EntitlementGuard } from './entitlement.guard';
 import { EntitlementService } from './entitlement.service';
+import { EntitlementsController } from './entitlements.controller';
 
 /**
  * EntitlementsModule (Фаза 12 knowledge-core).
@@ -14,9 +15,16 @@ import { EntitlementService } from './entitlement.service';
  *   - PrismaModule, RedisModule — инфраструктура.
  *   - AuditModule — за `AuditLogService` (mutate-методы пишут TIER_CHANGED /
  *     ENTITLEMENT_OVERRIDE_SET).
+ *   - RbacModule — `RbacService.canManageOrg` для owner-проверки на
+ *     `/settings/billing`.
+ *
+ * Controllers:
+ *   - EntitlementsController — `/me/entitlements`, `/settings/billing`,
+ *     `/admin/orgs/:tenantId/entitlement` (super_admin).
  */
 @Global()
 @Module({
+  controllers: [EntitlementsController],
   providers: [EntitlementService, EntitlementGuard],
   exports: [EntitlementService, EntitlementGuard],
 })

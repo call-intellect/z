@@ -20,24 +20,40 @@ export class ApiKeysRepository {
 
   create(input: {
     userId: string;
+    tenantId?: string | null;
     name: string;
     hashedKey: string;
     prefix: string;
     scopes: ApiKeyScope[];
+    scope?: 'api' | 'ingest';
   }): Promise<ApiKey> {
     return this.prisma.apiKey.create({
       data: {
         userId: input.userId,
+        tenantId: input.tenantId ?? null,
         name: input.name,
         hashedKey: input.hashedKey,
         prefix: input.prefix,
         scopes: input.scopes,
+        scope: input.scope ?? 'api',
       },
     });
   }
 
   findByHashed(hashedKey: string): Promise<ApiKey | null> {
     return this.prisma.apiKey.findUnique({ where: { hashedKey } });
+  }
+
+  /**
+   * Поиск активных ingest-ключей по префиксу (`zik_<10>`). Может вернуть
+   * несколько записей при коллизии префикса — caller сверяет hashedKey.
+   * Используется `IngestTokenGuard` в Фазе 10.
+   */
+  findActiveByPrefix(prefix: string): Promise<ApiKey[]> {
+    return this.prisma.apiKey.findMany({
+      where: { prefix, revokedAt: null },
+      take: 5,
+    });
   }
 
   findById(id: string): Promise<ApiKey | null> {

@@ -41,6 +41,8 @@ export class ApiKeysService {
     name: string;
     prefix: string;
     scopes: ApiKey['scopes'];
+    scope: string;
+    tenantId: string | null;
     lastUsedAt: Date | null;
     revokedAt: Date | null;
     createdAt: Date;
@@ -51,6 +53,8 @@ export class ApiKeysService {
       name: k.name,
       prefix: k.prefix,
       scopes: k.scopes,
+      scope: k.scope,
+      tenantId: k.tenantId,
       lastUsedAt: k.lastUsedAt,
       revokedAt: k.revokedAt,
       createdAt: k.createdAt,
@@ -59,10 +63,18 @@ export class ApiKeysService {
 
   /**
    * Создаёт ключ. Возвращает сам ключ в plain — единственный раз.
+   *
+   * Префикс зависит от `scope`:
+   *   - 'api'    → `z_<43>` (Public API).
+   *   - 'ingest' → `zik_<43>` (per-Org ingest webhook-ключ, Фаза 10).
+   *
+   * `tenantId` — обязателен для `scope='ingest'` (используется в IngestTokenGuard
+   * для привязки запроса к Org).
    */
   async create(
     userId: string,
-    dto: CreateApiKeyDto,
+    dto: Omit<CreateApiKeyDto, 'scope'> & { scope?: 'api' | 'ingest' },
+    tenantId?: string | null,
   ): Promise<{ apiKey: ApiKey; rawKey: string }> {
     const max = this.cfg.workspace.maxApiKeysPerUser;
     const active = await this.repo.countActive(userId);
@@ -76,26 +88,40 @@ export class ApiKeysService {
       });
     }
 
-    const rawKey = `z_${randomBytes(32).toString('base64url')}`;
+    const scope = dto.scope ?? 'api';
+    if (scope === 'ingest' && !tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'ingest_key_requires_tenant',
+          message: 'Ingest-ключ требует tenantId (Org-привязку)',
+        },
+      });
+    }
+
+    const tokenPrefix = scope === 'ingest' ? 'zik_' : 'z_';
+    const rawKey = `${tokenPrefix}${randomBytes(32).toString('base64url')}`;
     const hashedKey = sha256(rawKey);
     const prefix = rawKey.slice(0, 10);
 
     const apiKey = await this.repo.create({
       userId,
+      tenantId: tenantId ?? null,
       name: dto.name,
       hashedKey,
       prefix,
       scopes: dto.scopes,
+      scope,
     });
 
     await this.audit.log({
       userId,
       action: AUDIT.API_KEY_CREATE,
       resourceId: apiKey.id,
-      metadata: { name: dto.name, scopes: dto.scopes },
+      metadata: { name: dto.name, scopes: dto.scopes, scope, tenantId: tenantId ?? null },
     });
 
-    this.logger.log({ userId, apiKeyId: apiKey.id }, 'api-key создан');
+    this.logger.log({ userId, apiKeyId: apiKey.id, scope }, 'api-key создан');
     return { apiKey, rawKey };
   }
 
@@ -129,6 +155,28 @@ export class ApiKeysService {
     const key = await this.repo.findByHashed(hashed);
     if (!key) return null;
     if (key.revokedAt) return null;
+    return key;
+  }
+
+  /**
+   * Поиск активного ingest-ключа по plain `zik_*`. Используется `IngestTokenGuard`
+   * (Фаза 10). Возвращает null если ключ не найден / отозван / не ingest-scope.
+   *
+   * Алгоритм:
+   *   1. Считаем sha256 от plain — это hashedKey.
+   *   2. Ищем по hashedKey (быстрый @unique-индекс).
+   *   3. Проверяем scope='ingest' и revokedAt=null.
+   *
+   * `findActiveByPrefix` оставлен в репозитории для будущего: если потребуется
+   * брутфорс-устойчивая проверка (constant-time прохождение по нескольким
+   * кандидатам). На этой фазе достаточно прямого поиска по hashedKey.
+   */
+  async resolveIngestKey(rawKey: string): Promise<ApiKey | null> {
+    const hashed = sha256(rawKey);
+    const key = await this.repo.findByHashed(hashed);
+    if (!key) return null;
+    if (key.revokedAt) return null;
+    if (key.scope !== 'ingest') return null;
     return key;
   }
 

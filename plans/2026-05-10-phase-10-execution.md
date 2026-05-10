@@ -2,7 +2,7 @@
 type: execution-plan
 phase: 10
 feature: knowledge-core — дополнительные источники (telegram-бот, телефония, email/IMAP, web-form-дамп) + per-Org API-ключи для ingest
-status: planned
+status: in_progress
 date: 2026-05-10
 source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 10)
 ---

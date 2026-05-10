@@ -917,6 +917,11 @@ model ApiKey {
   hashedKey  String        @unique
   prefix     String
   scopes     ApiKeyScope[]
+  /// Тип ключа (knowledge-core Фаза 10):
+  ///   - 'api'    — Public API (создаётся через UI, prefix `z_`).
+  ///   - 'ingest' — per-Org webhook-ingest (внешние адаптеры, prefix `zik_`).
+  /// Хранится строкой, а не enum'ом, чтобы можно было расширить без миграции.
+  scope      String        @default("api")
   lastUsedAt DateTime?
   revokedAt  DateTime?
   createdAt  DateTime      @default(now())
@@ -925,6 +930,7 @@ model ApiKey {
 
   @@index([userId])
   @@index([tenantId])
+  @@index([prefix])
 }
 
 model WebhookSubscription {

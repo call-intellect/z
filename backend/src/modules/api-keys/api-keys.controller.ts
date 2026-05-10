@@ -8,9 +8,11 @@ import {
   Inject,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request as ExpressRequest } from 'express';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
@@ -43,19 +45,31 @@ export class ApiKeysController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Создать API-ключ',
-    description: 'rawKey возвращается в ответе ОДИН раз. Сохраните его сразу.',
+    description: 'rawKey возвращается в ответе ОДИН раз. Сохраните его сразу. Для scope="ingest" нужно передать заголовок X-Org-Id.',
   })
   async create(
     @CurrentUser() user: CurrentUserPayload,
     @Body(new ZodValidationPipe(CreateApiKeySchema)) dto: CreateApiKeyDto,
-  ): Promise<{ id: string; name: string; prefix: string; rawKey: string; scopes: unknown }> {
-    const { apiKey, rawKey } = await this.svc.create(user.id, dto);
+    @Req() req: ExpressRequest,
+  ): Promise<{ id: string; name: string; prefix: string; rawKey: string; scopes: unknown; scope: string }> {
+    // Для ingest-ключа нужен tenant. Берём из заголовка X-Org-Id (без полного TenantGuard:
+    // здесь сам ApiKeysController исторически не под TenantGuard, и менять его поведение
+    // для api-ключей было бы избыточно).
+    let tenantId: string | null = null;
+    if (dto.scope === 'ingest') {
+      const headerVal = req.headers['x-org-id'];
+      if (typeof headerVal === 'string' && headerVal.trim().length > 0) {
+        tenantId = headerVal.trim();
+      }
+    }
+    const { apiKey, rawKey } = await this.svc.create(user.id, dto, tenantId);
     return {
       id: apiKey.id,
       name: apiKey.name,
       prefix: apiKey.prefix,
       rawKey, // !! plain — отдаётся ТОЛЬКО здесь
       scopes: apiKey.scopes,
+      scope: apiKey.scope,
     };
   }
 

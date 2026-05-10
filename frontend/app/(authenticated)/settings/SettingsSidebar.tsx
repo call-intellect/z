@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Tag,
   User,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -49,6 +50,7 @@ const ADMIN_ITEMS: Item[] = [
 ];
 
 const OWNER_ITEMS: Item[] = [
+  { href: '/settings/billing', label: 'Тариф и лимиты', icon: Wallet },
   { href: '/settings/retention', label: 'Хранение и 152-ФЗ', icon: Database },
 ];
 

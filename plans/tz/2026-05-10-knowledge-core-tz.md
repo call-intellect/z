@@ -394,6 +394,171 @@ references:
 - **Совместимость с существующим `analyze.worker`** — после ingest он не должен дублировать запись чанков. Нужен явный флаг `useNewPipeline` или полная замена воркера (предпочтительнее).
 - **Размер `RawEvent.payload`** — транскрипты могут быть большие (десятки MB). Решение: jsonb до 10MB кладём inline, больше — в S3 (`payloadStorage = inline | s3`, `payloadS3Key`).
 
+### Детализация для агента-исполнителя (2026-05-10)
+
+Опирается на фактическую карту AI-pipeline, собранную после Фазы 0.
+
+#### Текущее состояние AI-pipeline (что нельзя сломать)
+
+- **`AnalyzeWorker`** ([backend/src/modules/ai/workers/analyze.worker.ts](backend/src/modules/ai/workers/analyze.worker.ts)) — главный оркестратор. После `transcription_ready` (`MergeWorker`) запускает Summary → CustomReport → Follow-up → Tasks (последовательно, всё с `tenantId`-логированием в `AiUsageLog`). По окончанию переводит `Meeting.aiStatus = 'ai_ready'` и **параллельно** запускает 3 фоновых job'а: `ai.chapters`, `ai.tasks`, `ai.embeddings` (`transcript-index.worker`), плюс опционально `ai.card-rollup` если есть `Meeting.cardId`. Использует `Promise.allSettled` — ошибка одного не валит остальные.
+- **`TranscriptIndexerService` + `transcript-index.worker`** ([backend/src/modules/embeddings/services/transcript-indexer.service.ts](backend/src/modules/embeddings/services/transcript-indexer.service.ts), [backend/src/modules/ai/workers/transcript-index.worker.ts](backend/src/modules/ai/workers/transcript-index.worker.ts)) — режет `merged.json` на 400-токенные `MeetingTranscriptChunk` с overlap 50, эмбеддит батчами по 100 через `EmbeddingFallbackService` (`text-embedding-3-small` по дефолту, BGE-M3 если `EMBEDDING_FALLBACK_LOCAL_URL`). Чанки используются `chat`-модулем для cross-meeting RAG.
+- **`MeetingTranscriptChunk`** ([backend/prisma/schema.prisma:681-695](backend/prisma/schema.prisma#L681-L695)) — `meetingId, userId, tenantId, startMs, endMs, text, embedding (vector 1536), createdAt`, `@@unique([meetingId, startMs, endMs])`.
+- **`Transcript`** (schema.prisma:355-364) — meta-запись со ссылками `rawIndexS3Url`, `mergedS3Url`, `totalWords`, `totalDurationSeconds`. Сами JSON-файлы в S3 по ключам `transcripts/<meetingId>/{index.json, merged.json, track_<trackId>.json}`. `merged.json` — массив `turns: [{speaker, text, startSec, endSec}]` + `roomChat: [...]`.
+- **`AiQueueService`** ([backend/src/modules/ai/ai-queue.service.ts](backend/src/modules/ai/ai-queue.service.ts)) и [backend/src/modules/ai/queues.ts](backend/src/modules/ai/queues.ts) — диспетчер очередей. Существующие очереди: `ai.transcribe`, `ai.merge`, `ai.analyze`, `ai.notify`, `ai.chapters`, `ai.tasks`, `ai.embeddings`, `clip.render`, `ai.card-rollup`. Дефолты: 5 attempts, exp backoff 8s, removeOnComplete{age:86400, count:1000}, removeOnFail:false.
+- **S3Service** ([backend/src/modules/recordings/s3.service.ts](backend/src/modules/recordings/s3.service.ts)) — `putJson(key, data)`, `getJson(key)`, `presignGet(key, ttl)`. Готов для raw-events ключей.
+- **`Source` / `IngestSource` сущностей в коде НЕТ** — Фаза 1 их вводит впервые.
+- **Idempotency-паттерны:** `BullMQ jobId = <meetingId>:<stage>:<attempt>`, `MeetingRoomMessage.clientMessageId` (chat dedupe), `CrossmarkIdempotency` (для интеграции). SHA256-хелпер не вынесен — `crypto.createHash('sha256')` используется напрямую в нескольких местах.
+
+#### Архитектурное решение (важно)
+
+ТЗ говорит «Старая логика `transcript-index.worker` отключена (jobs не запускаются), таблица `MeetingTranscriptChunk` помечена `@deprecated`». Однако `chat`-модуль (per-meeting и cross-meeting) использует `MeetingTranscriptChunk` для RAG, а его замена (`chat-v2` через ядро) — это Фаза 6. Если на Фазе 1 отключить `transcript-index.worker`, для новых встреч после Фазы 1 chat сломается до Фазы 6 (3-4 месяца).
+
+**Принимаю компромисс:** на Фазе 1 — параллельный путь.
+1. `transcript-index.worker` **остаётся работать** (читать продолжаем через chat для совместимости).
+2. `MeetingTranscriptChunk` помечается комментарием `/// @deprecated — будет удалён в Фазе 6 после chat-v2` (Prisma не поддерживает `@deprecated` на модели нативно — оставить как комментарий + `@@map("meeting_transcript_chunk_deprecated")` НЕ делать, потому что это сломает chat-модуль).
+3. **Меняем для всех новых встреч:** `analyze.worker` после `ai_ready` дополнительно вызывает `MeetingIngestAdapter.ingestMeeting(meetingId)`, который пишет `RawEvent` через универсальный `IngestService.ingest(...)`.
+4. Реальное выпиливание `transcript-index.worker` + dropping `MeetingTranscriptChunk` — задача Фазы 6.
+
+#### Ingest API: HTTP или прямой service call?
+
+ТЗ предлагает `POST /api/v1/ingest` — **внутренний** endpoint для адаптеров. Это полезно для будущих внешних адаптеров (telegram-bot из отдельного процесса, IMAP-listener). Но `meeting-adapter` живёт внутри того же backend-процесса — гонять HTTP-запрос самому себе избыточно.
+
+**Решение:** делаем **оба варианта**.
+1. `IngestService.ingest({tenantId, sourceId, sourceExternalId, occurredAt, payload, dataClass}): Promise<RawEvent>` — главный путь, прямой вызов из `meeting.adapter` и любого другого in-process адаптера.
+2. `POST /api/v1/ingest` — тонкая обёртка над `IngestService.ingest`, для внешних адаптеров. Защищён `BearerAuthGuard` через специальный API-ключ `IngestApiKey` (или просто отдельная роль `ingest_writer` у существующего `ApiKey`). На Фазе 1 — простейший shared-secret в env `INGEST_INTERNAL_TOKEN`, валидируется в guard'е. Полноценное API-key-управление — Фаза 10 (когда придут внешние адаптеры).
+
+#### Пошаговый план для агента
+
+Фаза 1 разбита на 4 шага. Каждый — атомарный коммит. После шагов 1, 2 — `npm run typecheck` + `npm run prisma:push --accept-data-loss`. После шага 4 — программный smoke.
+
+**Шаг 1. Схема Prisma + push.**
+
+Файл: [backend/prisma/schema.prisma](backend/prisma/schema.prisma).
+
+1. Добавить enum'ы:
+   ```
+   enum SourceType { meeting chat phone_call bot email web_form external }
+   enum DataClass { public internal sensitive private }
+   enum RawEventProcessingStatus { received ingested failed }
+   enum RawEventPayloadStorage { inline s3 }
+   ```
+2. Модель `Source`:
+   ```
+   model Source {
+     id          String       @id @default(cuid())
+     tenantId    String
+     type        SourceType
+     name        String
+     config      Json?
+     dataClass   DataClass    @default(internal)
+     isActive    Boolean      @default(true)
+     createdAt   DateTime     @default(now())
+     updatedAt   DateTime     @updatedAt
+
+     org         Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+     rawEvents   RawEvent[]
+
+     @@unique([tenantId, type, name])
+     @@index([tenantId, isActive])
+   }
+   ```
+3. Модель `RawEvent`:
+   ```
+   model RawEvent {
+     id                  String                    @id @default(cuid())
+     tenantId            String
+     sourceId            String
+     sourceType          SourceType
+     sourceExternalId    String?                   // если null — событие без внешнего ID, дедуп по checksum
+     idempotencyKey      String                    @unique  // sha256(sourceId + ':' + (sourceExternalId ?? checksum) + ':' + occurredAtIso)
+     occurredAt          DateTime
+     receivedAt          DateTime                  @default(now())
+     payloadStorage      RawEventPayloadStorage    @default(inline)
+     payload             Json?                     // null если payloadStorage = s3
+     payloadS3Key        String?                   // не null если payloadStorage = s3
+     payloadChecksum     String                    // sha256 от исходного payload (всегда, для верификации)
+     payloadSizeBytes    Int
+     dataClass           DataClass                 @default(internal)
+     processingStatus    RawEventProcessingStatus  @default(received)
+     processingError     String?                   // если failed
+     processedAt         DateTime?                 // когда последний раз обработался ingest pipeline (Фаза 2)
+
+     org                 Org                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+     source              Source                    @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+     @@index([tenantId, sourceId, occurredAt])
+     @@index([tenantId, processingStatus])
+   }
+   ```
+4. Добавить релейшены `Org.sources` и `Org.rawEvents`.
+5. Пометить `MeetingTranscriptChunk` комментарием `/// @deprecated knowledge-core Фаза 1: будет заменён IdeaBlock в Фазе 2, удалён в Фазе 6 после chat-v2. Не использовать в новом коде.`
+6. `npm run prisma:push --accept-data-loss`.
+7. `npm run prisma:generate` (если требуется).
+
+**Шаг 2. Backend: IngestModule + IngestService + meeting-adapter + BullMQ event.**
+
+1. Новый модуль [backend/src/modules/ingest/](backend/src/modules/ingest/):
+   - `ingest.module.ts`, `ingest.service.ts`, `ingest.controller.ts`.
+   - `adapters/meeting.adapter.ts` — реализует internal contract `IngestSourceAdapter`.
+   - `dto/ingest-event.dto.ts`, `dto/raw-event.dto.ts` (по правилам [nestjs-rules](skill)).
+2. `IngestService`:
+   - Метод `ingest({tenantId, sourceId, sourceExternalId, occurredAt, payload, dataClass}): Promise<RawEvent>`.
+   - Логика:
+     a) Проверка `Source.tenantId === tenantId && isActive`. Если нет — throw BadRequestException.
+     b) Сериализация payload в строку, расчёт `payloadChecksum = sha256(payloadJson)`, `payloadSizeBytes = Buffer.byteLength(payloadJson)`.
+     c) Расчёт `idempotencyKey = sha256(sourceId + ':' + (sourceExternalId ?? payloadChecksum) + ':' + occurredAt.toISOString())`.
+     d) Если `payloadSizeBytes > 10 * 1024 * 1024` (10MB) — `payloadStorage = 's3'`, кладём в S3 по ключу `raw-events/<tenantId>/<rawEventId>.json` через `S3Service.putJson`, в `RawEvent.payload` — `null`. Иначе `inline`.
+     e) `prisma.rawEvent.create()` с обработкой `P2002` на `idempotencyKey` (уникальный конфликт = идемпотентный возврат существующей записи).
+     f) Публикация события `raw.received` в BullMQ-очередь `core.raw-events` через новый `CoreQueueService.enqueueRawReceived(rawEventId)`.
+   - Все вызовы — через Prisma-транзакцию для атомарности create+enqueue.
+3. `IngestController`:
+   - `POST /api/v1/ingest` (под `BearerAuthGuard` или новым `IngestTokenGuard`, который валидирует `Authorization: Bearer ${INGEST_INTERNAL_TOKEN}` из env). Тело: `{sourceId, sourceExternalId?, occurredAt: ISO, payload: any, dataClass?}`. Возвращает `{rawEventId, idempotent: bool}`.
+   - `GET /api/v1/raw-events/:id` (под `CookieAuthGuard` + `TenantGuard` из Фазы 0; доступ — только `owner`/`admin` Org). Возвращает RawEvent (для inline payload — целиком; для s3 — presigned URL вместо payload).
+4. **`MeetingIngestAdapter`** ([backend/src/modules/ingest/adapters/meeting.adapter.ts](backend/src/modules/ingest/adapters/meeting.adapter.ts)):
+   - Метод `ingestMeeting(meetingId: string): Promise<RawEvent>`:
+     a) Найти `Meeting + Transcript + MeetingParticipants` по id.
+     b) Загрузить `merged.json` из S3 через `S3Service.getJson(transcript.mergedS3Url)`.
+     c) Найти/создать `Source(tenantId=meeting.tenantId, type='meeting', name='Встречи Z')` (lazy upsert).
+     d) Сформировать `payload = { meetingId, type: meeting.type, kind: meeting.kind, title: meeting.title, startedAt, endedAt, durationSeconds, participants: [{userId?, displayName, email?}], transcript: merged.turns, roomChat: merged.roomChat }`.
+     e) Вызвать `IngestService.ingest({tenantId, sourceId, sourceExternalId: meetingId, occurredAt: meeting.endedAt ?? meeting.startedAt, payload, dataClass: 'internal'})`.
+5. **Регистрация дефолтного `Source` для Org**:
+   - Хук в [backend/src/modules/orgs/orgs.service.ts](backend/src/modules/orgs/orgs.service.ts) (создан в Фазе 0): при создании нового Org — также создать `Source(type='meeting', name='Встречи Z', dataClass='internal', isActive=true)`.
+   - Backfill для уже существующих Org (после Фазы 0): скрипт `backend/scripts/backfill-meeting-sources-fase1.ts` — для каждого Org без `Source(type='meeting')` создать дефолтный.
+6. **`CoreQueueService`** ([backend/src/modules/core-queue/core-queue.service.ts](backend/src/modules/core-queue/core-queue.service.ts)) — новый сервис, по аналогии с `AiQueueService`. Новая очередь `core.raw-events` (константа в [backend/src/modules/core-queue/queues.ts](backend/src/modules/core-queue/queues.ts)). Метод `enqueueRawReceived(rawEventId, opts?)`. Дефолты: 5 attempts, exp backoff 5s. На Фазе 1 — никто на эту очередь не подписан (consumer появится в Фазе 2 как `block-ingest.worker`); jobs накапливаются в Redis. Это нормально — BullMQ умеет хранить.
+
+**Шаг 3. Подключение meeting-adapter к analyze.worker.**
+
+1. В [backend/src/modules/ai/workers/analyze.worker.ts](backend/src/modules/ai/workers/analyze.worker.ts) — после установки `Meeting.aiStatus = 'ai_ready'` (там, где сейчас `Promise.allSettled` для `enqueueChapters/enqueueTasksExtract/enqueueTranscriptIndex/enqueueCardRollup`) — добавить **четвёртый параллельный** вызов: `this.meetingIngestAdapter.ingestMeeting(meetingId).catch(...)`. Если падает — лог + не валит остальные. Не enqueue в очередь, а прямой await — потому что meeting-adapter сам внутри `IngestService` делает enqueue в `core.raw-events`.
+2. Импорт `MeetingIngestAdapter` в `AnalyzeWorker` через DI. Соответственно, `AiModule` должен импортировать `IngestModule`.
+
+**Шаг 4. Smoke + second-brain.**
+
+1. Создать `backend/scripts/smoke-ingest-fase1.ts` — программный smoke:
+   - Использовать существующего тестового юзера/Org из smoke Фазы 0 (или создать новый набор).
+   - Создать тестовый `Meeting + Transcript + merged.json в S3` (или использовать готовую тестовую встречу).
+   - Вызвать `MeetingIngestAdapter.ingestMeeting(meetingId)`.
+   - Проверить:
+     - `RawEvent` создан, `payloadChecksum` совпадает с независимым `sha256(payload)`.
+     - `idempotencyKey` уникальный.
+     - Повторный вызов `ingestMeeting(meetingId)` возвращает тот же `rawEventId` (идемпотентность).
+     - В BullMQ-очереди `core.raw-events` есть job (можно через `Queue.getJobCounts()`).
+   - Cleanup в конце.
+2. **second-brain обновления:**
+   - Создать [second-brain/01_projects/ingest-and-sources.md](second-brain/01_projects/ingest-and-sources.md) — описать `Source`, `RawEvent`, `IngestService`, `meeting-adapter`, паттерн для будущих адаптеров (telegram/email/call), идемпотентность по `idempotencyKey`, S3-fallback для больших payload.
+   - Обновить [second-brain/01_projects/ai-workspace.md](second-brain/01_projects/ai-workspace.md) — раздел «AI-pipeline» расширить: добавить упоминание `IngestService` и `meeting-adapter`, отметить что `MeetingTranscriptChunk` deprecated и будет заменён в Фазе 2.
+   - Обновить [second-brain/02_architecture/data-model.md](second-brain/02_architecture/data-model.md) — добавить `Source`, `RawEvent`.
+   - Обновить [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md) — добавить модули `ingest`, `core-queue`.
+   - Обновить [second-brain/index.md](second-brain/index.md) — добавить ссылку на `ingest-and-sources.md` в раздел «Проекты».
+
+#### Что вне Фазы 1 (для ясности агенту)
+
+- `IdeaBlock`, `Entity`, `Theme`, `IdeaBlockEvidence`, `IdeaBlockEntity` — Фаза 2.
+- `block-ingest.worker` (consumer для `core.raw-events`) — Фаза 2. На Фазе 1 jobs накапливаются.
+- Адаптеры telegram/email/call/web-form — Фаза 10.
+- UI управления источниками — Фаза 10.
+- Полноценное API-key управление для внешнего ingest — Фаза 10.
+- Удаление `transcript-index.worker` и `MeetingTranscriptChunk` — Фаза 6.
+
 ---
 
 ## Фаза 2 — IdeaBlock + Entity + pipeline ingest→distill→retrieve

@@ -27,6 +27,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
+import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
 
 /**
  * KnowledgeCoreModule — оркестрация ingest → distill для IdeaBlock'ов.
@@ -80,6 +81,8 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов, 5 scope).
     ChatV2RetrievalService,
     ChatV2Service,
+    // Фаза 11: snapshot-cron для core_* gauge'ев.
+    CoreMetricsSnapshotCron,
   ],
   exports: [
     SegmentBuilderService,

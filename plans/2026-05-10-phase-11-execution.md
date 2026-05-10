@@ -157,11 +157,11 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 Новый файл [backend/src/modules/knowledge-core/workers/core-metrics-snapshot.cron.ts](backend/src/modules/knowledge-core/workers/core-metrics-snapshot.cron.ts):
 
-- [ ] `@Cron('*/5 * * * *')`.
-- [ ] Per-tenant loop:
+- [x] `@Cron('*/5 * * * *')`.
+- [x] Per-tenant loop:
   - `SELECT status, COUNT(*) FROM IdeaBlock WHERE tenantId=? GROUP BY status` → `setCoreBlocks(tenant, status, count)`.
   - аналогично для `Entity` (по type), `IdeaBlockLink` (по relationType), `RawEvent` (по processingStatus).
-- [ ] Reset gauge при отсутствии записей (`set(0)`), иначе старые значения «зависают».
+- [ ] Reset gauge при отсутствии записей — НЕ реализован (зафиксировано в decisions-log: для MVP не критично, реализуем при первом инциденте).
 
 ### Шаг 10 — `AUDIT` константы
 

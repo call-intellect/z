@@ -267,4 +267,61 @@ LlmModelPrice {
 - `experiment Json?` — конфигурация A/B (Фаза 7).
 - Изменён unique: `@@unique([taskType, tenantId])` (было `taskType` UNIQUE).
 
+## knowledge-core: Source / RawEvent (Фаза 1, 2026-05-10)
+
+### Source
+
+```
+Source {
+  id, tenantId, type: SourceType (meeting|chat|phone_call|bot|email|web_form|external),
+  name, config Json?, dataClass: DataClass (public|internal|sensitive|private),
+  isActive Boolean (default true), createdAt, updatedAt
+  @@unique([tenantId, type, name])
+  @@index([tenantId, isActive])
+}
+```
+
+Дефолтный `Source(type=meeting, name='Встречи Z')` создаётся **автоматически
+при создании Org** (см. `OrgsService.createForOwner`). Backfill для
+существующих Org: [backfill-meeting-sources-fase1.ts](../../backend/scripts/backfill-meeting-sources-fase1.ts). Управление другими источниками
+(telegram/email/...) из UI — Фаза 10.
+
+### RawEvent
+
+```
+RawEvent {
+  id, tenantId, sourceId, sourceType,
+  sourceExternalId? (если null — дедуп по checksum),
+  idempotencyKey UNIQUE (sha256(sourceId + ':' + (sourceExternalId ?? checksum) + ':' + occurredAtIso)),
+  occurredAt, receivedAt (default now),
+  payloadStorage: RawEventPayloadStorage (inline|s3),
+  payload Json? (null если payloadStorage=s3),
+  payloadS3Key? (не null если payloadStorage=s3),
+  payloadChecksum (sha256 от payloadJson, всегда),
+  payloadSizeBytes,
+  dataClass,
+  processingStatus: RawEventProcessingStatus (received|ingested|failed),
+  processingError? @db.Text,
+  processedAt? (выставляется консумером Фазы 2)
+  @@index([tenantId, sourceId, occurredAt])
+  @@index([tenantId, processingStatus])
+}
+```
+
+Иммутабельная запись — главный entry-point в knowledge-core. Inline-payload
+до 10 MiB; больше — уезжает в S3 по ключу `raw-events/<tenantId>/<idempotencyKey>.json`.
+Идемпотентность — по уникальному `idempotencyKey`.
+
+После создания публикуется job в `core.raw-events` (BullMQ). Consumer
+(`block-ingest.worker`) — Фаза 2.
+
+### MeetingTranscriptChunk — @deprecated
+
+Помечена `/// @deprecated knowledge-core Фаза 1: будет заменён `IdeaBlock`
+в Фазе 2, удалён в Фазе 6 после `chat-v2`. Не использовать в новом коде.
+
+Сохраняется работающей до Фазы 6 — chat-модуль (per-meeting + cross-meeting RAG)
+ещё на ней работает; `transcript-index.worker` продолжает индексировать новые
+встречи параллельно с ingest-pipeline.
+
 [[../index|← index]]

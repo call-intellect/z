@@ -69,7 +69,10 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Публикация события `raw.received`. Consumer — `block-ingest.worker` (Фаза 2).
-   * jobId = `raw:<rawEventId>` для идемпотентности.
+   * jobId = `raw_<rawEventId>` для идемпотентности.
+   *
+   * NB: BullMQ 5.x запрещает `:` в Custom Id (см. Job.validateOptions),
+   * поэтому используем `_` как разделитель (cuid сам по себе `:` не содержит).
    */
   async enqueueRawReceived(rawEventId: string): Promise<void> {
     const map = this.queues;
@@ -80,7 +83,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     if (!q) {
       throw new Error('CoreQueueService: core.raw-events не инициализирован');
     }
-    const jobId = `raw:${rawEventId}`;
+    const jobId = `raw_${rawEventId}`;
     const payload: RawEventJobData = { rawEventId };
     await q.add('raw-received', payload, { jobId });
     this.logger.debug(`enqueue core.raw-events rawEventId=${rawEventId}`);

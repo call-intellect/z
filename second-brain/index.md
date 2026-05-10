@@ -63,6 +63,9 @@ _пусто_
 - [[01_projects/llm-router]] — LlmRouter с обязательным tenantId, LlmModelPrice (версионируемая прайс-карта), AiUsageLog (cachedTokens/sourceRef/experimentGroup)
 - [[13_glossary/index|Глоссарий]] — Org, Membership, super_admin, visibilityMode, tenantId, IdeaBlock/Entity/Theme/Source/RawEvent (placeholder'ы для Фаз 1-4)
 
+## Заметки по реализации (2026-05-10) — Фаза 1 knowledge-core
+- [[01_projects/ingest-and-sources]] — Source/RawEvent + IngestService + meeting-adapter + core.raw-events очередь, hook в analyze.worker, MeetingTranscriptChunk помечен @deprecated
+
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
 

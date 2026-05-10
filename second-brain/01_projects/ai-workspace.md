@@ -15,7 +15,7 @@ updated: 2026-05-09
 - `backend/src/modules/ai/services/regenerate.service.ts` — `regenerateMeeting` и `regenerateSection` с optimistic-lock (`recapVersion`). 409 на mismatch, 429 на превышение `MAX_REGENERATE_PER_MEETING_PER_DAY`.
 - `backend/src/modules/ai/services/{chapter,task}-extraction.service.ts` — structured extraction через LlmRouter с `responseFormat='json'` + zod-валидация.
 - `backend/src/modules/ai/workers/{chapters,tasks-extract,transcript-index,clip-render}.worker.ts` — 4 новых BullMQ-воркера. Очереди: `ai.chapters`, `ai.tasks`, `ai.embeddings`, `clip.render`.
-- `backend/src/modules/ai/workers/analyze.worker.ts` — после `ai_ready` оркеструет 3 параллельных job'а (chapters + tasks-extract + transcript-index) через `Promise.allSettled`.
+- `backend/src/modules/ai/workers/analyze.worker.ts` — после `ai_ready` оркеструет 3 параллельных job'а (chapters + tasks-extract + transcript-index) через `Promise.allSettled`. **С Фазы 1 knowledge-core (2026-05-10)** — добавлен 4-й параллельный вызов: `meetingIngest.ingestMeeting(meetingId)` (прямой await, не enqueue), который пишет канонический payload встречи в `RawEvent` через `IngestService` (см. [[ingest-and-sources]]). `transcript-index.worker` остаётся работать **параллельно** с ingest — chat-модуль ещё на нём (выпиливание — Фаза 6, после chat-v2). `MeetingTranscriptChunk` помечен `@deprecated`.
 
 ### Embeddings + RAG
 - `backend/src/modules/embeddings/services/openai-proxy-embedding.service.ts` — POST на `OPENAI_PROXY_EMBEDDINGS_URL` с моделью `text-embedding-3-small` (1536-dim).

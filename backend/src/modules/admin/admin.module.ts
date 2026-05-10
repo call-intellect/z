@@ -4,6 +4,9 @@ import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AiUsageAdminController } from './ai-usage.controller';
 import { AdminExperimentsController } from './controllers/admin-experiments.controller';
 import { AdminFunctionsController } from './controllers/admin-functions.controller';
+import { AdminHealthController } from './controllers/admin-health.controller';
+import { AdminOrgsController } from './controllers/admin-orgs.controller';
+import { AdminPricesController } from './controllers/admin-prices.controller';
 import { AdminUsageController } from './controllers/admin-usage.controller';
 import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
@@ -14,6 +17,9 @@ import { RecordingsAdminController } from './recordings-admin.controller';
 import { AdminCacheService } from './services/admin-cache.service';
 import { AdminExperimentsService } from './services/admin-experiments.service';
 import { AdminFunctionsService } from './services/admin-functions.service';
+import { AdminHealthService } from './services/admin-health.service';
+import { AdminOrgsService } from './services/admin-orgs.service';
+import { AdminPricesService } from './services/admin-prices.service';
 import { AdminUsageService } from './services/admin-usage.service';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 
@@ -39,6 +45,9 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     OrgAdminUsageController,
     AdminFunctionsController,
     AdminExperimentsController,
+    AdminPricesController,
+    AdminOrgsController,
+    AdminHealthController,
   ],
   providers: [
     AdminAuditInterceptor,
@@ -48,6 +57,9 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminUsageService,
     AdminFunctionsService,
     AdminExperimentsService,
+    AdminPricesService,
+    AdminOrgsService,
+    AdminHealthService,
   ],
   exports: [
     AdminAuditInterceptor,
@@ -56,6 +68,9 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminUsageService,
     AdminFunctionsService,
     AdminExperimentsService,
+    AdminPricesService,
+    AdminOrgsService,
+    AdminHealthService,
   ],
 })
 export class AdminModule {}

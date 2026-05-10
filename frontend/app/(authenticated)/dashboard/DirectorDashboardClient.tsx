@@ -10,15 +10,12 @@ import {
   Loader2,
   MessageCircle,
   RefreshCcw,
-  Send,
   Sparkles,
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
-import { chatApi, type ChatCitationApi } from '@/api/chat.api';
 import { dashboardApi } from '@/api/dashboard.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -43,10 +40,9 @@ import {
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
-import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
+import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
 
 /**
  * Дашборд директора (knowledge-core, Фаза 8).
@@ -178,7 +174,30 @@ export function DirectorDashboardClient() {
         {/* TODO Phase 9 strategicAlignment widget here */}
       </div>
 
-      <OrgChatInlinePanel />
+      <section className="mt-8">
+        <header className="mb-3 flex items-center gap-2">
+          <MessageCircle size={16} className="text-accent" />
+          <div>
+            <h2 className="text-sm font-semibold text-fg-primary">
+              Спросите про вашу компанию
+            </h2>
+            <p className="text-xs text-fg-tertiary">
+              AI ищет ответ в архиве встреч и знаний организации, отвечает с цитатами.
+            </p>
+          </div>
+        </header>
+        <OrgChatPanel
+          withHistory={false}
+          height="400px"
+          placeholder="Например: какие основные риски за неделю?"
+          intro={
+            <div className="px-4 py-8 text-center text-xs text-fg-tertiary">
+              Например: «Какие основные риски за неделю?» или «О чём договорились
+              с ключевыми клиентами?»
+            </div>
+          }
+        />
+      </section>
     </div>
   );
 }
@@ -578,146 +597,4 @@ function SkeletonList() {
 
 function EmptyHint({ text }: { text: string }) {
   return <p className="text-sm text-fg-tertiary">{text}</p>;
-}
-
-// ─── Inline OrgChat panel (Шаг 5 заменит на <OrgChatPanel withHistory={false}/>). ─
-
-type InlineMsg =
-  | { id: string; role: 'user'; content: string }
-  | {
-      id: string;
-      role: 'assistant';
-      content: string;
-      citations: ChatCitationApi[];
-    };
-
-function OrgChatInlinePanel() {
-  const [messages, setMessages] = useState<InlineMsg[]>([]);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-
-  const send = useCallback(async () => {
-    const text = input.trim();
-    if (!text || sending) return;
-    setSending(true);
-    const localId = `local-${Date.now()}`;
-    setMessages((prev) => [...prev, { id: localId, role: 'user', content: text }]);
-    setInput('');
-    try {
-      let answer: { message: string; citations: ChatCitationApi[] };
-      try {
-        const res = await chatApi.askV2({ scope: 'org', query: text });
-        answer = { message: res.message, citations: res.citations };
-      } catch (e) {
-        if (e instanceof ApiError && e.code === 'chat_v2_disabled') {
-          const res = await chatApi.sendGlobal({ message: text });
-          answer = { message: res.message, citations: res.citations };
-        } else {
-          throw e;
-        }
-      }
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `ai-${Date.now()}`,
-          role: 'assistant',
-          content: answer.message,
-          citations: answer.citations,
-        },
-      ]);
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Чат недоступен';
-      toast.error(msg);
-    } finally {
-      setSending(false);
-    }
-  }, [input, sending]);
-
-  return (
-    <section className="mt-8 rounded-xl border border-border-subtle bg-bg-elevated">
-      <header className="flex items-center gap-2 border-b border-border-subtle p-3">
-        <MessageCircle size={16} className="text-accent" />
-        <div>
-          <h2 className="text-sm font-semibold text-fg-primary">
-            Спросите про вашу компанию
-          </h2>
-          <p className="text-xs text-fg-tertiary">
-            AI ищет ответ в архиве встреч и знаний организации, отвечает с цитатами.
-          </p>
-        </div>
-      </header>
-      <div className="flex max-h-[400px] flex-col">
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {messages.length === 0 ? (
-            <div className="text-center text-xs text-fg-tertiary">
-              Например: «Какие основные риски за неделю?» или «О чём договорились с
-              ключевыми клиентами?»
-            </div>
-          ) : (
-            messages.map((m) => <ChatBubble key={m.id} message={m} />)
-          )}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-bg-overlay px-3 py-2">
-                <AiTypingDots />
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="border-t border-border-subtle p-3">
-          <div className="flex gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder="Задайте вопрос…"
-              disabled={sending}
-            />
-            <Button onClick={() => void send()} disabled={sending || !input.trim()}>
-              {sending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Send size={14} />
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ChatBubble({ message }: { message: InlineMsg }) {
-  const isUser = message.role === 'user';
-  return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
-          isUser ? 'bg-accent text-accent-fg' : 'bg-bg-overlay text-fg-primary',
-        )}
-      >
-        <p className="whitespace-pre-wrap">{message.content}</p>
-        {message.role === 'assistant' && message.citations.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {message.citations.map((c, i) => (
-              <Link
-                key={`${c.meetingId}-${c.startMs}-${i}`}
-                href={`/meetings/${encodeURIComponent(c.meetingId)}/result`}
-                className="inline-flex max-w-full items-center rounded-full border border-border-subtle bg-bg-elevated px-2 py-0.5 text-xs text-fg-secondary hover:border-accent/60 hover:text-accent"
-                title={c.snippet}
-              >
-                <span className="truncate">{c.meetingTitle ?? 'Встреча'}</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }

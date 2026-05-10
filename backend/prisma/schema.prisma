@@ -279,6 +279,43 @@ enum LinkStatus {
   archived
 }
 
+// ──────────────────────────── knowledge-core: theme (Фаза 4) ────────────────────────────
+
+/// Состояние темы:
+///   - active       — обнаружена кластерером, видна в UI и поиске.
+///   - archived     — устарела или неактуальна (после reframing).
+///   - merged_into  — слита в другую тему (mergedIntoId указывает целевую).
+enum ThemeStatus {
+  active
+  archived
+  merged_into
+}
+
+/// Динамика темы — заполняется reframing'ом по дельте новых блоков:
+///   growing / stable / declining.
+enum ThemeDynamic {
+  growing
+  stable
+  declining
+}
+
+/// 12 веток компании (M-07 delivery). Для отнесения темы к крупному блоку
+/// бизнеса. Опциональна — LLM может вернуть `null`, если ветка не очевидна.
+enum ThemeBranch {
+  strategy
+  clients
+  sales
+  marketing
+  product
+  operations
+  team
+  finance
+  technology
+  production
+  partnerships
+  legal
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
@@ -1015,6 +1052,15 @@ model Card {
   contactEmail String?
   contactPhone String?
 
+  // Knowledge-core (Фаза 4): primary-сущность карточки + связанные сущности +
+  // опциональная ссылка на Theme, из которой пользователь сохранил карточку
+  // через `POST /themes/:id/save-as-card`.
+  entityId         String?
+  entity           Entity?  @relation("CardEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  relatedEntityIds String[] @default([])
+  bornFromThemeId  String?
+  bornFromTheme    Theme?   @relation("CardBornFromTheme", fields: [bornFromThemeId], references: [id], onDelete: SetNull)
+
   pinned     Boolean   @default(false)
   archivedAt DateTime?
   deletedAt  DateTime?
@@ -1022,6 +1068,10 @@ model Card {
   // AI rollup-кэш (заполняется card-rollup.worker'ом).
   summaryCache     String?   @db.Text
   summaryUpdatedAt DateTime?
+
+  // Knowledge-core (Фаза 4): топ-N тем, связанных с карточкой через её блоки.
+  // Заполняется card-rollup-v2.worker'ом — кэш для быстрого рендера UI.
+  cachedTopThemeIds String[] @default([])
 
   // Денормализация для сортировки списка без JOIN.
   meetingCount  Int       @default(0)
@@ -1038,6 +1088,8 @@ model Card {
   @@index([ownerId, archivedAt])
   @@index([deletedAt])
   @@index([tenantId])
+  @@index([entityId])
+  @@index([bornFromThemeId])
 }
 
 // ──────────────────────────── orgs / RBAC / invitations (Фаза 0 knowledge-core) ────────────────────────────
@@ -1082,6 +1134,7 @@ model Org {
   entities     Entity[]
   blockLinks   IdeaBlockLink[]
   entityLinks  EntityLink[]
+  themes       Theme[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1250,6 +1303,7 @@ model IdeaBlock {
   entities   IdeaBlockEntity[]
   linksFrom  IdeaBlockLink[]     @relation("BlockLinkFrom")
   linksTo    IdeaBlockLink[]     @relation("BlockLinkTo")
+  themes     ThemeIdeaBlock[]
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
@@ -1300,6 +1354,8 @@ model Entity {
   blockMentions IdeaBlockEntity[]
   linksFrom     EntityLink[]      @relation("EntityLinkFrom")
   linksTo       EntityLink[]      @relation("EntityLinkTo")
+  themes        ThemeEntity[]
+  cards         Card[]            @relation("CardEntity")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -1377,4 +1433,76 @@ model EntityLink {
   @@index([tenantId, status])
   @@index([fromEntityId, status])
   @@index([toEntityId, status])
+}
+
+// ──────────────────────────── knowledge-core: Theme (Фаза 4) ────────────────────────────
+
+/// Theme — AI-кластер блоков. Создаётся `theme-clusterer.cron` (KNN-greedy
+/// по эмбеддингам блоков + LLM-классификатор имени/ветки). Никогда не
+/// создаётся пользователем вручную: если пользователь хочет «свою тему» —
+/// он жмёт `POST /themes/:id/save-as-card` и получает Card с kind='topic'.
+///
+/// branch — одна из 12 веток компании (delivery M-07). Опциональна: LLM
+/// может вернуть `null`, если ветка не определилась.
+///
+/// embedding(1536) — эмбеддинг от `name + ' ' + description`, для поиска
+/// связанных тем и для UI-фильтров.
+model Theme {
+  id           String                       @id @default(cuid())
+  tenantId     String
+  name         String
+  description  String                       @db.Text
+  weight       Decimal                      @default(0.5) @db.Decimal(4, 3)
+  dynamic      ThemeDynamic                 @default(stable)
+  confidence   Decimal                      @default(0.5) @db.Decimal(4, 3)
+  status       ThemeStatus                  @default(active)
+  mergedIntoId String?
+  branch       ThemeBranch?
+  embedding    Unsupported("vector(1536)")?
+  lastSignalAt DateTime?
+  createdAt    DateTime                     @default(now())
+  updatedAt    DateTime                     @updatedAt
+
+  org        Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mergedInto Theme?           @relation("ThemeMerges", fields: [mergedIntoId], references: [id])
+  mergedFrom Theme[]          @relation("ThemeMerges")
+  blocks     ThemeIdeaBlock[]
+  entities   ThemeEntity[]
+  cards      Card[]           @relation("CardBornFromTheme")
+
+  @@index([tenantId, status])
+  @@index([tenantId, branch])
+  @@index([tenantId, mergedIntoId])
+}
+
+/// ThemeIdeaBlock — M:M связь Theme ↔ IdeaBlock.
+/// weight — мера принадлежности блока к теме (1.0 для seed-кластера, ниже
+/// для дополнительно «прибившихся» блоков в reframing).
+model ThemeIdeaBlock {
+  themeId   String
+  blockId   String
+  weight    Decimal  @default(1.0) @db.Decimal(4, 3)
+  createdAt DateTime @default(now())
+
+  theme Theme     @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  block IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  @@id([themeId, blockId])
+  @@index([blockId])
+}
+
+/// ThemeEntity — denormalized связь Theme ↔ Entity (через блоки темы).
+/// Заполняется кластерером и поддерживается reframing'ом для быстрых фильтров
+/// «темы про этого клиента / этот продукт».
+model ThemeEntity {
+  themeId       String
+  entityId      String
+  mentionsCount Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  theme  Theme  @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@id([themeId, entityId])
+  @@index([entityId])
 }

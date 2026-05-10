@@ -22,6 +22,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -60,6 +61,7 @@ import { GoalsService } from './services/goals.service';
 @ApiTags('goals')
 @Controller('api/v1/goals')
 @UseGuards(CookieAuthGuard, TenantGuard)
+@RequireEntitlement('feature.goals_strategy')
 export class GoalsController {
   constructor(
     @Inject(GoalsService) private readonly goals: GoalsService,

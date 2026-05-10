@@ -16,6 +16,7 @@ import {
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
@@ -47,6 +48,7 @@ const MAX_NODES = 100;
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge/graph')
 @UseGuards(CookieAuthGuard, TenantGuard)
+@RequireEntitlement('feature.graph')
 export class KnowledgeGraphController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,

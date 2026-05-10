@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -14,6 +15,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { CardsService } from '../cards/cards.service';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
+import { EntitlementService } from '../entitlements/entitlement.service';
 import {
   ChatV2Service,
   type ChatV2Citation,
@@ -59,6 +61,7 @@ export class ChatService {
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(ChatV2Service) private readonly chatV2: ChatV2Service,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(EntitlementService) private readonly entitlements: EntitlementService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -565,6 +568,28 @@ export class ChatService {
         scope: input.scope,
         scopeId: input.scopeId,
       });
+
+    // 1.5) Phase 12: gating org-scope чата по `feature.chat_org`.
+    // На basic-Org разрешён только meeting/card/theme/entity scope; org — Pro+.
+    if (input.scope === 'org') {
+      const allowed = await this.entitlements.hasFeature(
+        tenantId,
+        'feature.chat_org',
+      );
+      if (!allowed) {
+        const ent = await this.entitlements.getEntitlement(tenantId);
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'entitlement_required',
+            message: `Чат по всей Org доступен на Pro+. Текущий тариф: ${ent.tier}.`,
+            feature: 'feature.chat_org',
+            currentTier: ent.tier,
+            upgradeUrl: '/settings/billing',
+          },
+        });
+      }
+    }
 
     // 2) Quota.
     await this.quota.checkAndIncrement({

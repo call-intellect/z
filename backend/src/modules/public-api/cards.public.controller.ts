@@ -21,6 +21,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BearerAuthGuard, RequireScope } from '../api-keys/bearer-auth.guard';
 import { CurrentApiUserId } from '../api-keys/current-api-key.decorator';
 import { CardsService } from '../cards/cards.service';
+import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import {
   type CreateCardDto,
   CreateCardSchema,
@@ -47,6 +48,7 @@ import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 @Controller('api/public/v1')
 @UseGuards(BearerAuthGuard)
 @UseInterceptors(ApiAccessLogInterceptor)
+@RequireEntitlement('feature.public_api')
 export class CardsPublicController {
   constructor(
     @Inject(CardsService) private readonly cards: CardsService,

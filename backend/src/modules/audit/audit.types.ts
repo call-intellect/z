@@ -68,6 +68,10 @@ export const AUDIT = {
   PERSON_DATA_ERASED: 'person.data_erased',
   RETENTION_POLICY_UPDATED: 'retention_policy.updated',
   DATA_CLASS_VIOLATION: 'data_class.violation',
+
+  // ── knowledge-core Фаза 12: entitlements / billing ──
+  TIER_CHANGED: 'tier.changed',
+  ENTITLEMENT_OVERRIDE_SET: 'entitlement.override_set',
 } as const;
 
 export type AuditAction = (typeof AUDIT)[keyof typeof AUDIT];

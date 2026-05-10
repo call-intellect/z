@@ -16,6 +16,8 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
+import { TenantGuard } from '../rbac/guards/tenant.guard';
 
 import { BulkExportSchema, type BulkExportDto } from './dto/export.dto';
 import { ExportsService } from './exports.service';
@@ -66,7 +68,9 @@ export class ExportsController {
 
   @Post('bulk')
   @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: 'Bulk-экспорт нескольких встреч в ZIP' })
+  @UseGuards(TenantGuard)
+  @RequireEntitlement('feature.export_advanced')
+  @ApiOperation({ summary: 'Bulk-экспорт нескольких встреч в ZIP (advanced — Pro+)' })
   bulk(
     @CurrentUser() user: CurrentUserPayload,
     @Body(new ZodValidationPipe(BulkExportSchema)) dto: BulkExportDto,

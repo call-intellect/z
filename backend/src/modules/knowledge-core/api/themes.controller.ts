@@ -22,6 +22,7 @@ import {
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
@@ -51,6 +52,7 @@ const THEME_DETAIL_ENTITIES_LIMIT = 50;
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge/themes')
 @UseGuards(CookieAuthGuard, TenantGuard)
+@RequireEntitlement('feature.theme')
 export class KnowledgeThemesController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,

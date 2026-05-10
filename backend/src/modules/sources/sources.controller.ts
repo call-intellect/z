@@ -22,6 +22,8 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { EntitlementService } from '../entitlements/entitlement.service';
+import type { FeatureKey } from '../entitlements/tier-config';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -62,7 +64,27 @@ export class SourcesController {
   constructor(
     @Inject(SourcesService) private readonly sources: SourcesService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(EntitlementService) private readonly entitlements: EntitlementService,
   ) {}
+
+  /**
+   * Phase 12: маппинг `SourceType` → требуемая `FeatureKey`. Если для типа
+   * нет gating'а (`meeting`, `chat`, `external`) — возвращает null.
+   */
+  private featureForType(type: string): FeatureKey | null {
+    switch (type) {
+      case 'bot':
+        return 'feature.adapter_telegram';
+      case 'email':
+        return 'feature.adapter_email';
+      case 'phone_call':
+        return 'feature.adapter_call';
+      case 'web_form':
+        return 'feature.adapter_web_form';
+      default:
+        return null;
+    }
+  }
 
   @Get()
   @ApiOperation({ summary: 'Список источников Org (фильтр по type)' })
@@ -98,6 +120,28 @@ export class SourcesController {
   ): Promise<SourceResponseDto> {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
+
+    // Phase 12: gating создания Source по типу адаптера. meeting/chat/external —
+    // без gating'а; bot/email/phone_call/web_form — требуют соответствующей
+    // `feature.adapter_*`.
+    const requiredFeature = this.featureForType(body.type);
+    if (requiredFeature) {
+      const allowed = await this.entitlements.hasFeature(t, requiredFeature);
+      if (!allowed) {
+        const ent = await this.entitlements.getEntitlement(t);
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'entitlement_required',
+            message: `Адаптер '${body.type}' не входит в тариф ${ent.tier}.`,
+            feature: requiredFeature,
+            currentTier: ent.tier,
+            upgradeUrl: '/settings/billing',
+          },
+        });
+      }
+    }
+
     return this.sources.create(t, user.id, body);
   }
 

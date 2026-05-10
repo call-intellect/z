@@ -17,6 +17,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BearerAuthGuard, RequireScope } from '../api-keys/bearer-auth.guard';
 import { CurrentApiUserId } from '../api-keys/current-api-key.decorator';
+import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import {
   CreateSubscriptionSchema,
   type CreateSubscriptionDto,
@@ -34,6 +35,7 @@ import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 @Controller('api/public/v1/webhooks/subscriptions')
 @UseGuards(BearerAuthGuard)
 @UseInterceptors(ApiAccessLogInterceptor)
+@RequireEntitlement('feature.public_api')
 export class WebhooksPublicController {
   constructor(@Inject(SubscriptionsService) private readonly svc: SubscriptionsService) {}
 

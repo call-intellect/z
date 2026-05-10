@@ -18,6 +18,7 @@ import {
   type CurrentUserPayload,
 } from '../../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../../rbac/guards/tenant.guard';
 
@@ -32,7 +33,10 @@ import { DumpService } from './dump.service';
  *
  *   - body: `{ text: string, occurredAt?: ISO, dataClass?: DataClass, nonce?: string }`.
  *
- * FIXME knowledge-core Фаза 12: добавить @RequireEntitlement('feature.adapter_web_form').
+ * Phase 12 knowledge-core: gating по `feature.adapter_web_form`. Фича включена
+ * на всех тарифах (basic/pro/enterprise), но декоратор стоит — это явная
+ * фиксация adapter-ограничений. Для basic-Org у нас `sources_other = 0`,
+ * но web-form гасится через `feature` (не через quota).
  */
 const DumpCreateSchema = z.object({
   text: z.string().trim().min(1).max(50_000),
@@ -46,6 +50,7 @@ type DumpCreateDto = z.infer<typeof DumpCreateSchema>;
 @ApiTags('ingest')
 @Controller('api/v1/ingest/dump')
 @UseGuards(CookieAuthGuard, TenantGuard)
+@RequireEntitlement('feature.adapter_web_form')
 export class WebFormDumpController {
   constructor(@Inject(DumpService) private readonly dump: DumpService) {}
 

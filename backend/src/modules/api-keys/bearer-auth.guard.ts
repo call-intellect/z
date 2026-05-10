@@ -72,6 +72,11 @@ export class BearerAuthGuard implements CanActivate {
 
     req.apiKey = apiKey;
     req.apiUserId = apiKey.userId;
+    // Phase 12: ставим `req.tenantId` для EntitlementGuard (на gated public-api
+    // эндпоинтах). System-wide ключи без tenantId — пропускаем (tenantId=null).
+    if (apiKey.tenantId) {
+      (req as unknown as { tenantId?: string }).tenantId = apiKey.tenantId;
+    }
     // Fire-and-forget — не блокируем запрос на UPDATE.
     void this.svc.touchLastUsed(apiKey.id);
     return true;

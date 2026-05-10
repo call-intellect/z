@@ -13,6 +13,7 @@ import type { Request } from 'express';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -32,6 +33,7 @@ import { DirectorDashboardService } from './services/director-dashboard.service'
 @ApiExcludeController()
 @Controller('api/v1/dashboard')
 @UseGuards(CookieAuthGuard, TenantGuard)
+@RequireEntitlement('feature.dashboard_director')
 export class DirectorDashboardController {
   constructor(
     @Inject(DirectorDashboardService)

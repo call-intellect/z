@@ -39,6 +39,14 @@ export const AUDIT = {
   CARD_RESTORE: 'card.restore',
   MEETING_LINK_TO_CARD: 'meeting.link_to_card',
   MEETING_UNLINK_FROM_CARD: 'meeting.unlink_from_card',
+
+  // ── knowledge-core Фаза 10: источники + ingest ──
+  SOURCE_CREATED: 'source.created',
+  SOURCE_UPDATED: 'source.updated',
+  SOURCE_DELETED: 'source.deleted',
+  SOURCE_TESTED: 'source.tested',
+  DUMP_CREATED: 'dump.created',
+  INGEST_API_KEY_USED: 'ingest_api_key.used',
 } as const;
 
 export type AuditAction = (typeof AUDIT)[keyof typeof AUDIT];

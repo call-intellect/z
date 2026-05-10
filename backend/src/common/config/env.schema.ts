@@ -268,6 +268,38 @@ const IngestSchema = z.object({
 });
 
 /**
+ * knowledge-core (Фаза 10) — общая crypto-обвязка для шифрования секретов
+ * адаптеров (botToken Telegram, apiKey/apiSalt Mango, password IMAP).
+ *
+ * `CRYPTO_MASTER_KEY` — base64 от 32 байт (256 бит). Для AES-256-GCM.
+ * Генерация: `openssl rand -base64 32`. На dev допустима пустая строка —
+ * `CryptoService` бросает только при первой попытке шифрования.
+ *
+ * `PUBLIC_HOST_URL` — внешний адрес backend'а (без trailing slash). Нужен
+ * Telegram-адаптеру для `setWebhook`. По умолчанию равен PUBLIC_FRONTEND_URL,
+ * но в проде их обычно разделяют (frontend — vercel, backend — наш сервер).
+ */
+const CryptoSchema = z.object({
+  CRYPTO_MASTER_KEY: z.string().default(''),
+  PUBLIC_HOST_URL: z.string().url().optional(),
+});
+
+/**
+ * knowledge-core (Фаза 10) — email IMAP-адаптер.
+ *
+ * `EMAIL_FETCH_ENABLED` — мастер-флаг cron'а; default false (на dev'е cron не
+ * запускается, чтобы не дёргать продовые ящики при локальной разработке).
+ *
+ * `EMAIL_FETCH_CRON` — расписание cron'а (default — каждые 5 минут).
+ * `EMAIL_FETCH_MAX_PER_RUN` — лимит писем за один проход на Source.
+ */
+const EmailFetchSchema = z.object({
+  EMAIL_FETCH_ENABLED: z.coerce.boolean().default(false),
+  EMAIL_FETCH_CRON: z.string().min(1).default('*/5 * * * *'),
+  EMAIL_FETCH_MAX_PER_RUN: z.coerce.number().int().positive().default(50),
+});
+
+/**
  * knowledge-core (Фаза 2+) — параметры дистилляции IdeaBlock'ов и Entity-резолвера.
  *
  * - DISTILL_MERGE_THRESHOLD: cosine-сходство, выше которого блок считается
@@ -466,6 +498,8 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(HashingSchema)
   .merge(ShareSchema)
   .merge(IngestSchema)
+  .merge(CryptoSchema)
+  .merge(EmailFetchSchema)
   .merge(KnowledgeCoreSchema);
 
 export type Env = z.infer<typeof EnvSchema>;

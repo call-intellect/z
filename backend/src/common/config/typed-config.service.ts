@@ -294,6 +294,32 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── crypto (Фаза 10) ──────────────────
+  get crypto() {
+    return {
+      masterKey: this.get('CRYPTO_MASTER_KEY'),
+    } as const;
+  }
+
+  /**
+   * Внешний хост backend'а — для регистрации webhook'ов адаптеров (Telegram,
+   * Mango). Если PUBLIC_HOST_URL не задан, фолбэчимся на PUBLIC_FRONTEND_URL.
+   */
+  get publicHostUrl(): string {
+    const host = this.get('PUBLIC_HOST_URL');
+    if (host) return host.replace(/\/+$/, '');
+    return this.get('PUBLIC_FRONTEND_URL').replace(/\/+$/, '');
+  }
+
+  // ─────────────────────────── email-fetch (Фаза 10) ─────────────
+  get emailFetch() {
+    return {
+      enabled: this.get('EMAIL_FETCH_ENABLED'),
+      cron: this.get('EMAIL_FETCH_CRON'),
+      maxPerRun: this.get('EMAIL_FETCH_MAX_PER_RUN'),
+    } as const;
+  }
+
   // ─────────────────────────── knowledge-core (Фаза 2+) ──────────
   get knowledgeCore() {
     return {

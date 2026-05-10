@@ -51,7 +51,8 @@ export type ResourceType =
   | 'block'
   | 'entity'
   | 'theme'
-  | 'goal';
+  | 'goal'
+  | 'source';
 
 export type Action = 'read' | 'write' | 'delete' | 'manage';
 
@@ -314,6 +315,7 @@ function isResourceType(s: string): s is ResourceType {
     'entity',
     'theme',
     'goal',
+    'source',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

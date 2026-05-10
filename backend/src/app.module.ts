@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { ConfigModule } from './common/config/index';
+import { CryptoModule } from './common/crypto/crypto.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './common/metrics/metrics.module';
@@ -49,6 +50,7 @@ import { PublicApiModule } from './modules/public-api/public-api.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { SecurityModule } from './modules/security/security.module';
+import { SourcesModule } from './modules/sources/sources.module';
 import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
 @Module({
@@ -79,6 +81,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Глобальные модули инфраструктуры.
     PrismaModule,
     RedisModule,
+
+    // Глобальный CryptoService (Фаза 10 knowledge-core) — шифрование секретов
+    // в Source.config (Telegram botToken, Mango apiKey/Salt, IMAP password).
+    // Должен быть до SourcesModule / IngestModule / адаптеров.
+    CryptoModule,
 
     // Глобальный модуль пользователей — должен подняться ДО AuthModule, так как
     // AuthController (внутри AuthModule) зависит от UsersService.
@@ -177,6 +184,10 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Phase 9 — цели компании + strategic-alignment (CRUD + темы).
     // Воркер живёт в WorkersModule (отдельный процесс).
     GoalsModule,
+
+    // Phase 10 — управление подключёнными источниками (telegram/mango/IMAP/web-form).
+    // Зависит от @Global модулей: Crypto, Audit, Rbac, Ingest (TelegramAdapterService).
+    SourcesModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI, чтобы получить PinoLogger.

@@ -109,6 +109,20 @@ p, owner, *, *, goal, delete
 p, admin, *, *, goal, read
 p, manager, *, *, goal, read
 
+# knowledge-core (Фаза 10) — source. Внешние источники (telegram, mango,
+# IMAP, web-form). Owner — full manage; admin — write/read; manager —
+# read-only (видят список своих источников, не редактируют).
+# `manage` — расширенное право для специальных действий (test, register
+# webhook). super_admin — bypass.
+p, owner, *, *, source, read
+p, owner, *, *, source, write
+p, owner, *, *, source, delete
+p, owner, *, *, source, manage
+p, admin, *, *, source, read
+p, admin, *, *, source, write
+p, admin, *, *, source, manage
+p, manager, *, *, source, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

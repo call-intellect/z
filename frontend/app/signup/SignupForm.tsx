@@ -26,6 +26,7 @@ export function SignupForm() {
   const { register } = useAuth();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -41,7 +42,12 @@ export function SignupForm() {
 
     setSubmitting(true);
     try {
-      const result = await register(email.trim(), name.trim(), honeypot);
+      const result = await register(
+        email.trim(),
+        name.trim(),
+        companyName.trim() || undefined,
+        honeypot,
+      );
       setSubmittedEmail(email.trim());
       if (!result.emailSent) {
         toast.warning(
@@ -132,6 +138,18 @@ export function SignupForm() {
             required
             autoComplete="email"
             placeholder="you@company.ru"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="signup-company">Название компании (опционально)</Label>
+          <Input
+            id="signup-company"
+            type="text"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            autoComplete="organization"
+            placeholder="Например: ООО Ромашка"
           />
         </div>
 

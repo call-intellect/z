@@ -1,0 +1,86 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
+
+import { ApiError } from '@/api/api-error';
+import { orgsApi } from '@/api/orgs.api';
+import { useToast } from '@/contexts/toast-context';
+import { Button } from '@/ui/shadcn/button';
+
+/**
+ * Страница принятия приглашения в Org.
+ *
+ * Сценарий:
+ *   - middleware.ts уже редиректит неавторизованного на /login?next=…
+ *   - Авторизованный — видит кнопку «Принять приглашение».
+ *   - При успехе → редирект на /dashboard (или /settings/organization).
+ *
+ * Не делаем автоматический accept на mount: даём юзеру осознанно подтвердить
+ * (защита от phishing-подобных кейсов, когда токен в URL мог быть подменён).
+ */
+export function AcceptInvitationClient({ token }: { token: string }) {
+  const router = useRouter();
+  const { addToast } = useToast();
+
+  const [accepting, setAccepting] = useState(false);
+  const [accepted, setAccepted] = useState<{ orgId: string; role: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAccept = async () => {
+    setAccepting(true);
+    setError(null);
+    try {
+      const res = await orgsApi.acceptInvitation(token);
+      setAccepted({ orgId: res.orgId, role: res.membership.role });
+      addToast({ type: 'success', message: 'Вы добавлены в организацию' });
+      // Редирект через 1.5 секунды чтобы юзер увидел подтверждение.
+      setTimeout(() => router.push('/dashboard'), 1500);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Не удалось принять приглашение';
+      setError(msg);
+      addToast({ type: 'error', message: msg });
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  if (accepted) {
+    return (
+      <div className="mx-auto max-w-md py-16 text-center">
+        <h1 className="mb-2 text-xl font-semibold">Готово</h1>
+        <p className="text-sm text-fg-secondary">
+          Вы добавлены как <strong>{accepted.role}</strong>. Сейчас перенесём вас на дашборд…
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-md py-16">
+      <h1 className="mb-2 text-2xl font-semibold">Приглашение в организацию</h1>
+      <p className="mb-6 text-sm text-fg-secondary">
+        Вы получили приглашение присоединиться к организации в Z. Нажмите «Принять»,
+        чтобы стать участником.
+      </p>
+      <Button
+        size="lg"
+        className="w-full"
+        onClick={handleAccept}
+        disabled={accepting}
+      >
+        {accepting ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Принимаем…
+          </>
+        ) : (
+          'Принять приглашение'
+        )}
+      </Button>
+      {error ? (
+        <p className="mt-4 text-sm text-status-danger">{error}</p>
+      ) : null}
+    </div>
+  );
+}

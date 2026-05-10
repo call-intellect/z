@@ -56,7 +56,12 @@ type AuthContextValue = AuthState & {
   /** Standalone-логин по email/паролю. После — refresh внутри. */
   loginStandalone: (email: string, password: string) => Promise<{ mustChangePassword: boolean }>;
   /** Lead-style регистрация. Возвращает `email_sent`. */
-  register: (email: string, name: string, honeypot?: string) => Promise<{ emailSent: boolean }>;
+  register: (
+    email: string,
+    name: string,
+    companyName?: string,
+    honeypot?: string,
+  ) => Promise<{ emailSent: boolean }>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -110,8 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const register = useCallback(
-    async (email: string, name: string, honeypot?: string) => {
-      const res = await accountsApi.register({ email, name, honeypot });
+    async (email: string, name: string, companyName?: string, honeypot?: string) => {
+      const res = await accountsApi.register({
+        email,
+        name,
+        ...(companyName ? { companyName } : {}),
+        ...(honeypot !== undefined ? { honeypot } : {}),
+      });
       return { emailSent: res.email_sent };
     },
     [],

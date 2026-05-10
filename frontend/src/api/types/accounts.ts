@@ -25,6 +25,8 @@ export interface AccountUserApi {
 export interface AccountsRegisterRequest {
   email: string;
   name: string;
+  /** Опциональное название компании. Если пусто — бэк подставит "Компания {name}". */
+  companyName?: string;
   /** Honeypot — пустое поле, видимое только ботам. */
   honeypot?: string;
 }

@@ -22,6 +22,7 @@ const PROTECTED_PREFIXES = [
   '/tasks',
   '/settings',
   '/integrations',
+  '/invitations',
 ];
 const ADMIN_PREFIX = '/admin';
 

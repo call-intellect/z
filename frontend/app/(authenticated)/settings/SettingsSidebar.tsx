@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Bell,
+  Building2,
   Download,
   KeyRound,
   Palette,
@@ -28,6 +29,7 @@ const ITEMS: Item[] = [
   { href: '/settings', label: 'Профиль', icon: User, matchExact: true },
   { href: '/settings', tab: 'security', label: 'Безопасность', icon: ShieldCheck },
   { href: '/settings', tab: 'appearance', label: 'Внешний вид', icon: Palette },
+  { href: '/settings/organization', label: 'Организация', icon: Building2 },
   { href: '/settings/tags', label: 'Теги', icon: Tag },
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug },
   { href: '/settings/api', label: 'API ключи', icon: KeyRound },

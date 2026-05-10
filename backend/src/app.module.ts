@@ -37,6 +37,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
+import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { ExportsModule } from './modules/exports/exports.module';
@@ -105,6 +106,13 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // AI-pipeline (HTTP-side). Содержит `AiQueueService` (диспетчер очередей)
     // и `RetryService`. Сами воркеры — в отдельном `WorkersModule`.
     AiModule,
+
+    // knowledge-core (Фаза 2) — Search API + Block/Entity controllers,
+    // плюс глобальные сервисы block-ingest / distill / embedding и т.д.
+    // Должен идти ПОСЛЕ AiModule: BlockMergeService / EntityMergeService
+    // инжектят LlmRouterService из @Global() AiModule. Воркеры запускаются
+    // в отдельном процессе (WorkersModule); здесь — только HTTP-side API.
+    KnowledgeCoreModule,
 
     // Бизнес-модули.
     HealthModule,

@@ -70,6 +70,26 @@ p, manager, open, self, chat-message, write
 p, manager, open, *, tag, read
 p, manager, open, self, tag, write
 
+# knowledge-core (Фаза 2 Шаг 5) — block / entity. Owner/admin Org — полный
+# доступ. У IdeaBlock и Entity нет ownerId (это shared knowledge внутри Org),
+# поэтому manager:strict разрешаем read всем member'ам Org — strict-режим
+# отделяет встречи / задачи / карточки, но ядро знаний доступно всем
+# member'ам (иначе knowledge-core разваливается на per-user силосы).
+p, owner, *, *, block, read
+p, owner, *, *, block, write
+p, owner, *, *, block, delete
+p, admin, *, *, block, read
+p, admin, *, *, block, write
+p, admin, *, *, block, delete
+p, manager, *, *, block, read
+p, owner, *, *, entity, read
+p, owner, *, *, entity, write
+p, owner, *, *, entity, delete
+p, admin, *, *, entity, read
+p, admin, *, *, entity, write
+p, admin, *, *, entity, delete
+p, manager, *, *, entity, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

@@ -33,4 +33,16 @@ export class KnowledgeEmbeddingService {
     if (names.length === 0) return [];
     return this.embeddings.embed(names);
   }
+
+  /**
+   * Эмбеддинг одного запроса (search). Тонкая обёртка над batched embed —
+   * берёт первый (и единственный) элемент. Если строка пустая —
+   * возвращает null, чтобы caller'ы могли пропустить cosine-фильтр.
+   */
+  async embedQuery(text: string): Promise<number[] | null> {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return null;
+    const [vec] = await this.embeddings.embed([trimmed]);
+    return vec ?? null;
+  }
 }

@@ -47,7 +47,9 @@ export type ResourceType =
   | 'chat-message'
   | 'tag'
   | 'audit-log'
-  | 'ai-usage';
+  | 'ai-usage'
+  | 'block'
+  | 'entity';
 
 export type Action = 'read' | 'write' | 'delete' | 'manage';
 
@@ -289,6 +291,8 @@ function isResourceType(s: string): s is ResourceType {
     'tag',
     'audit-log',
     'ai-usage',
+    'block',
+    'entity',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

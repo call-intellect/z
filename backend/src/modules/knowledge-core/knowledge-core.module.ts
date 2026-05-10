@@ -4,6 +4,10 @@ import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { S3Service } from '../recordings/s3.service';
 
+import { KnowledgeBlocksController } from './api/blocks.controller';
+import { KnowledgeEntitiesController } from './api/entities.controller';
+import { KnowledgeSearchController } from './api/search.controller';
+import { SearchService } from './api/search.service';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
@@ -33,6 +37,11 @@ import { SegmentBuilderService } from './services/segment-builder.service';
 @Global()
 @Module({
   imports: [ConfigModule, PrismaModule],
+  controllers: [
+    KnowledgeSearchController,
+    KnowledgeBlocksController,
+    KnowledgeEntitiesController,
+  ],
   providers: [
     S3Service,
     SegmentBuilderService,
@@ -41,6 +50,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     EntityResolutionService,
     BlockMergeService,
     EntityMergeService,
+    SearchService,
   ],
   exports: [
     SegmentBuilderService,
@@ -49,6 +59,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     EntityResolutionService,
     BlockMergeService,
     EntityMergeService,
+    SearchService,
   ],
 })
 export class KnowledgeCoreModule {}

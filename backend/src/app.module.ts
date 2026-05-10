@@ -1,5 +1,5 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 
@@ -18,6 +18,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
 import { HealthModule } from './modules/health/health.module';
 import { HighlightsModule } from './modules/highlights/highlights.module';
+import { EntitlementsModule } from './modules/entitlements/entitlements.module';
+import { EntitlementGuard } from './modules/entitlements/entitlement.guard';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
 import { MailModule } from './modules/mail/mail.module';
@@ -153,6 +155,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // которые инжектят AuditLogService/QuotaService.
     SecurityModule,
     AuditModule,
+    // Phase 12 knowledge-core — entitlements (тарифы / @RequireEntitlement / квоты).
+    // Должен идти ПОСЛЕ AuditModule (audit инжектится сервисом) и ДО Quotas /
+    // tenant-scoped модулей (chat, exports и т.п.), которые могут читать
+    // EntitlementService.getQuota.
+    EntitlementsModule,
     QuotasModule,
     ApiKeysModule,
     WebhooksOutModule,
@@ -200,6 +207,14 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    // Phase 12: глобальный EntitlementGuard. Прозрачен для эндпоинтов
+    // без `@RequireEntitlement(...)`. Внутренне читает `req.tenantId`,
+    // выставленный `TenantGuard` — поэтому требует TenantGuard выше по
+    // цепочке на gated-эндпоинтах.
+    {
+      provide: APP_GUARD,
+      useClass: EntitlementGuard,
     },
   ],
 })

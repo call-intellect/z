@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { AuditLogService } from '../audit/audit-log.service';
 import type { S3Service } from '../recordings/s3.service';
 
+import type { RetentionPolicyService } from './retention-policy.service';
 import { RetentionService } from './retention.service';
 
 interface ExpiredRecording {
@@ -38,13 +40,36 @@ function makeService(candidates: ExpiredRecording[]): {
 
   const metrics = {
     incRecordingsDeleted: vi.fn(),
+    incCoreRetentionDeleted: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const cfg = {
     s3: { bucket: 'z-records' },
+    retention: {
+      sweepBatchSize: 500,
+      rawEventsEnabled: false,
+      auditEnabled: false,
+      chatEnabled: false,
+      blocksEnabled: false,
+    },
   } as unknown as TypedConfigService;
 
-  return { svc: new RetentionService(prisma, s3, metrics, cfg), prisma, s3, metrics };
+  const policySvc = {
+    getOrInit: vi.fn(),
+    update: vi.fn(),
+    markSwept: vi.fn(),
+  } as unknown as RetentionPolicyService;
+
+  const audit = {
+    log: vi.fn(async () => undefined),
+  } as unknown as AuditLogService;
+
+  return {
+    svc: new RetentionService(prisma, s3, metrics, cfg, policySvc, audit),
+    prisma,
+    s3,
+    metrics,
+  };
 }
 
 describe('RetentionService', () => {

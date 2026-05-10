@@ -52,6 +52,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private cardsTotal!: Counter<'kind' | 'action'>;
   private cardRollupRunsTotal!: Counter<'status'>;
 
+  // ── knowledge-core (Фаза 11) ────────────────────────────────────────
+  private coreRetentionDeletedTotal!: Counter<'kind'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -177,6 +180,13 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'card_rollup_runs_total',
       help: 'Запуски пересборки rollup-сводки карточки (success/skipped/failed).',
       labelNames: ['status'] as const,
+    });
+
+    // ── knowledge-core (Фаза 11) ─────────────────────────────────────
+    this.coreRetentionDeletedTotal = this.getOrCreateCounter({
+      name: 'core_retention_deleted_total',
+      help: 'Сколько строк удалено retention-sweep по kind (raw_event/block/chat/audit/recording).',
+      labelNames: ['kind'] as const,
     });
   }
 
@@ -329,6 +339,18 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Запуск card-rollup воркера. */
   incCardRollupRun(args: { status: 'success' | 'skipped' | 'failed' }): void {
     this.cardRollupRunsTotal.inc({ status: args.status });
+  }
+
+  // ────────────────────── knowledge-core (Фаза 11) ─────────────────────
+
+  /**
+   * Удаление retention'ом строки/группы строк по kind.
+   * kind = 'raw_event' | 'block' | 'chat' | 'audit' | 'recording'.
+   */
+  incCoreRetentionDeleted(args: { kind: string; count?: number }): void {
+    const n = args.count ?? 1;
+    if (n <= 0) return;
+    this.coreRetentionDeletedTotal.inc({ kind: args.kind }, n);
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

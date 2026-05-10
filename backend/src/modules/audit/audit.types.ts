@@ -47,6 +47,27 @@ export const AUDIT = {
   SOURCE_TESTED: 'source.tested',
   DUMP_CREATED: 'dump.created',
   INGEST_API_KEY_USED: 'ingest_api_key.used',
+
+  // ── knowledge-core Фаза 11: blocks / entities / themes / retention / security ──
+  BLOCK_CREATED: 'block.created',
+  BLOCK_MERGED: 'block.merged',
+  BLOCK_ARCHIVED: 'block.archived',
+  BLOCK_DELETED_BY_RETENTION: 'block.deleted_by_retention',
+  ENTITY_CREATED: 'entity.created',
+  ENTITY_MERGED: 'entity.merged',
+  LINK_CREATED: 'link.created',
+  LINK_REMOVED: 'link.removed',
+  THEME_CREATED: 'theme.created',
+  THEME_ARCHIVED: 'theme.archived',
+  WORKER_FAILED: 'worker.failed',
+  ORG_CREATED: 'org.created',
+  ORG_UPDATED: 'org.updated',
+  MEMBERSHIP_INVITED: 'membership.invited',
+  MEMBERSHIP_REMOVED: 'membership.removed',
+  MEMBERSHIP_ROLE_CHANGED: 'membership.role_changed',
+  PERSON_DATA_ERASED: 'person.data_erased',
+  RETENTION_POLICY_UPDATED: 'retention_policy.updated',
+  DATA_CLASS_VIOLATION: 'data_class.violation',
 } as const;
 
 export type AuditAction = (typeof AUDIT)[keyof typeof AUDIT];

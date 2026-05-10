@@ -67,22 +67,22 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 [backend/src/modules/retention/retention.service.ts](backend/src/modules/retention/retention.service.ts):
 
-- [ ] `private async processExpiredRawEvents(): Promise<{deleted, failed}>`:
+- [x] `private async processExpiredRawEvents(): Promise<{deleted, failed}>`:
   - per-tenant loop: `OrgRetentionPolicy.findMany`,
   - `RawEvent.findMany({where: {tenantId, receivedAt: {lt: now - rawEventDays * 24h}}, take: BATCH})`,
   - для каждого: если `payloadStorage='s3'` → `S3Service.delete([payloadS3Key])`, потом `prisma.rawEvent.delete` (cascade удаляет `IdeaBlockEvidence`),
   - после удаления — найти блоки с `evidenceCount=0` и `archivedBlockAction='archive_then_delete'` → `status='archived'`,
   - метрика `core_retention_deleted_total{kind='raw_event'}` += deleted.
-- [ ] `private async processExpiredArchivedBlocks()`:
+- [x] `private async processExpiredArchivedBlocks()`:
   - `IdeaBlock.findMany({where: {status: 'archived', updatedAt: {lt: now - archivedBlockDays * 24h}}, take: BATCH})`,
   - hard delete (cascade на `IdeaBlockEvidence`, `IdeaBlockEntity`, `IdeaBlockLink`, `ThemeIdeaBlock`),
   - `AuditLog(action='block.deleted_by_retention', resourceId=blockId, metadata={tenantId, name, archivedAt})`.
-- [ ] `private async processExpiredChatMessages()`:
+- [x] `private async processExpiredChatMessages()`:
   - `MeetingChatMessage.deleteMany({where: {createdAt: {lt: now - chatMessageDays * 24h}}})` per tenant.
-- [ ] `private async processExpiredAuditLogs()`:
+- [x] `private async processExpiredAuditLogs()`:
   - `AuditLog.deleteMany({where: {createdAt: {lt: now - auditLogDays * 24h}}})` per tenant.
-- [ ] **`processAll()`** — оркестратор, объединяющий `processExpired()` (recordings) + новые методы. ENV-флаги управляют каждым sweep-ом независимо. После — `OrgRetentionPolicy.update({lastSweepAt: now})`.
-- [ ] Возвращает агрегированную статистику `{recordings, rawEvents, blocks, chat, audit}` для логов.
+- [x] **`processAll()`** — оркестратор, объединяющий `processExpired()` (recordings) + новые методы. ENV-флаги управляют каждым sweep-ом независимо. После — `OrgRetentionPolicy.update({lastSweepAt: now})`.
+- [x] Возвращает агрегированную статистику `{recordings, rawEvents, blocks, chat, audit}` для логов.
 
 ### Шаг 4 — Расширение `RetentionCron`
 

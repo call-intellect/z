@@ -51,12 +51,17 @@ _пусто_
 - `plans/tz/2026-05-09-meeting-room-chat.md` — In-meeting чат с persist ✅ реализован (2026-05-09): MeetingRoomMessage модель, POST/GET с идемпотентностью, ChatPanel переписан с history+dedup, 6-й таб «Чат», MeetingShare.allowChat для публичного шеринга, AI-pipeline merger подмешивает roomChat во все 9 типов промптов
 
 ## Заметки по реализации (2026-05-09)
-- [[01_projects/auth-and-accounts]] — standalone-аккаунты: argon2id, UserSession+jti, mail.hosting.reg.ru SMTP, forced-onboarding
+- [[01_projects/auth-and-accounts]] — standalone-аккаунты: argon2id, UserSession+jti, mail.hosting.reg.ru SMTP, forced-onboarding (+ Org-хук в register с 2026-05-10)
 - [[01_projects/ai-workspace]] — карта новых модулей (tasks/chapters/highlights/shares/tags/templates/chat/api-keys/webhooks-out/destinations/exports), Public REST API
 - [[01_projects/meeting-room-chat]] — in-meeting чат с persist: LiveKit DataChannel + POST в БД, history на join, 6-й таб результата, allowChat шеринг, AI-pipeline mixing
 - [[01_projects/cards]] — CRM-структура встреч: Card (5 видов) + Meeting.cardId, card-rollup воркер с дебаунсом, AI-чат по карточке, ⌘K палитра, Public REST API
 - [[02_architecture/security]] — SSRF-guard, AES-GCM-256 envelope-encryption webhook-секретов, ipHash, soft-delete с 30-дневным grace, retention extras
 - [[02_architecture/design-system]] — dark-first + mint `#5EEAD4` + Geist + glass-cards, motion presets, AppShell
+
+## Заметки по реализации (2026-05-10) — Фаза 0 knowledge-core
+- [[01_projects/orgs-and-rbac]] — Org / Membership / OrgInvitation, RBAC через RbacService (Casbin-совместимый), super_admin, visibilityMode (open/strict)
+- [[01_projects/llm-router]] — LlmRouter с обязательным tenantId, LlmModelPrice (версионируемая прайс-карта), AiUsageLog (cachedTokens/sourceRef/experimentGroup)
+- [[13_glossary/index|Глоссарий]] — Org, Membership, super_admin, visibilityMode, tenantId, IdeaBlock/Entity/Theme/Source/RawEvent (placeholder'ы для Фаз 1-4)
 
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
@@ -71,4 +76,4 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-09_
+_Обновлён: 2026-05-10_

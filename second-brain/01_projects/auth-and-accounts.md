@@ -1,7 +1,7 @@
 ---
 title: Аутентификация и аккаунты
 status: actual
-updated: 2026-05-09
+updated: 2026-05-10
 ---
 
 # Аутентификация и аккаунты
@@ -67,3 +67,15 @@ Soft-delete юзера: `deletedAt = now`, физическое удаление
 ## ENV
 
 `JWT_SESSION_SECRET`, `JWT_DEEP_LINK_SECRET`, `COOKIE_DOMAIN`, `COOKIE_STANDALONE_DOMAIN` (опц), `SESSION_TTL_SECONDS`, `DEEP_LINK_TTL_SECONDS`, `ARGON_MEMORY_KB/ITERATIONS/PARALLELISM`, `MAIL_*` (host/port/ssl/username/password/from/dryRun).
+
+## Org и роли (Фаза 0 knowledge-core, 2026-05-10)
+
+После Фазы 0 каждый юзер имеет **минимум одну Org** (создаётся автоматически при регистрации). См. подробности в [orgs-and-rbac.md](./orgs-and-rbac.md).
+
+**Регистрация теперь создаёт пару (User + Org + Membership(owner)) в одной Prisma-транзакции:**
+- `companyName` опциональное поле формы. Если пусто — Org называется «Компания {name}».
+- Идемпотентно: повторный register на тот же email не дублирует Org.
+
+**Поле `User.isSuperAdmin`** — флаг владельца продукта Z (Z-Admin). Независим от `User.role` и `Membership`. Включается вручную DBA или seed'ом. На Фазе 0 — bypass всех RBAC проверок (SuperAdminAccessLog появится в Фазе 7).
+
+**SignupForm** ([frontend/app/signup/SignupForm.tsx](../../frontend/app/signup/SignupForm.tsx)) расширена опциональным полем «Название компании». DTO `AccountsRegisterRequest.companyName` — backend-источник правды [register.dto.ts](../../backend/src/modules/accounts/dto/register.dto.ts).

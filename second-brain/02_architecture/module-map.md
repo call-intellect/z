@@ -69,4 +69,22 @@ LiveKit чистит атрибуты автоматически при disconne
 - `egress_ended`
 - `egress_failed`
 
+## Org / RBAC модули (Фаза 0 knowledge-core, 2026-05-10)
+
+- **`backend/src/modules/orgs/`** — Org / Membership / OrgInvitation:
+  - `orgs.service.ts` — CRUD Org, листинг/смена ролей/удаление членов.
+  - `org-invitations.service.ts` — создание/принятие/отзыв инвайтов, отправка email.
+  - `orgs.controller.ts` — REST endpoints `/api/v1/orgs/*` под CookieAuthGuard.
+  - DTO: `CreateOrgDto`, `UpdateOrgDto`, `InviteMemberDto`, `UpdateMemberDto` (zod).
+  - Экспортирует `OrgsService` (используется в `accounts.service.register` хуке).
+
+- **`backend/src/modules/rbac/`** — RBAC engine (Casbin-совместимый формат):
+  - `rbac.service.ts` — `check/canRead/canWrite/canManageOrg`, in-memory кэш membership на 60s.
+  - `guards/tenant.guard.ts` — TenantGuard, извлекает tenantId из `X-Org-Id`/`:orgId`/body/дефолта.
+  - `decorators/current-org.decorator.ts` — `@CurrentOrg()`.
+  - `policies/model.conf` + `policy.csv` — RBAC модель и правила. Версионируются через git.
+  - Глобальный модуль (`@Global`).
+
+Подробности: [[../01_projects/orgs-and-rbac]], [[../01_projects/llm-router]].
+
 [[../index|← index]]

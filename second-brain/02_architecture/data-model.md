@@ -193,4 +193,78 @@ ended_at
 
 Хранится либо как JSON-поле в `Recording.audio_tracks`, либо отдельной таблицей `audio_track`. Решение — на этапе ТЗ; для масштаба и индексации лучше отдельной таблицей.
 
+## Org / Membership / OrgInvitation / LlmModelPrice (Фаза 0 knowledge-core, 2026-05-10)
+
+Подробнее: [[../01_projects/orgs-and-rbac|orgs-and-rbac]] и [[../01_projects/llm-router|llm-router]].
+
+### Org
+
+```
+Org {
+  id, name, slug @unique, ownerId (FK User),
+  visibilityMode: open|strict (default open),
+  tier: basic|pro|enterprise (placeholder для Фазы 12),
+  createdAt, deletedAt?
+  @@index([ownerId]), @@index([deletedAt])
+}
+```
+
+### Membership
+
+```
+Membership {
+  orgId, userId, role: owner|admin|manager,
+  invitedBy?, joinedAt
+  @@unique([orgId, userId])
+  @@index([userId]), @@index([orgId, role])
+}
+```
+
+### OrgInvitation
+
+```
+OrgInvitation {
+  orgId, email, role,
+  token UNIQUE (nanoid 40),
+  status: pending|accepted|revoked|expired,
+  invitedBy, expiresAt (TTL 7д), acceptedAt?, acceptedByUserId?
+  @@index([orgId, status]), @@index([email, status]), @@index([expiresAt])
+}
+```
+
+### LlmModelPrice (версионируемая прайс-карта)
+
+```
+LlmModelPrice {
+  id, provider, model,
+  inputCostPerMillionTokens, outputCostPerMillionTokens,
+  cachedCostPerMillionTokens (default 0),
+  currency (default USD),
+  effectiveFrom (default now), effectiveTo?
+  @@index([provider, model, effectiveFrom])
+  @@index([effectiveFrom, effectiveTo])
+}
+```
+
+### Расширения существующих моделей
+
+**`User.isSuperAdmin: Boolean (default false)`** — флаг владельца Z-Admin (Фаза 7). Bypass RBAC.
+
+**`tenantId String?`** добавлен во все tenant-scoped модели + `@@index([tenantId])`:
+- `Meeting`, `Card`, `Task`, `MeetingChapter`, `MeetingHighlight`, `MeetingChatMessage`, `Tag`
+- `WebhookSubscription`, `IntegrationDestination`, `Export`, `ApiKey`
+- `LlmTaskRoute` (NULL = глобальный дефолт), `AuditLog`, `AiUsageLog`
+
+На Фазе 0 — nullable. После backfill в проде — отдельный push сделает NOT NULL для основных моделей. Скрипт: [backfill-orgs-fase0.ts](../../backend/scripts/backfill-orgs-fase0.ts).
+
+**`AiUsageLog`** дополнительно:
+- `cachedTokens Int @default(0)` — кэшированные input-токены (prompt cache hit).
+- `sourceRef Json?` — `{ type, id }` для drill-down в Z-Admin.
+- `experimentGroup String?` — `'A'|'B'` для A/B-экспериментов LlmTaskRoute.
+
+**`LlmTaskRoute`** дополнительно:
+- `tenantId String?` — NULL = глобальный, не-NULL = override на Org.
+- `experiment Json?` — конфигурация A/B (Фаза 7).
+- Изменён unique: `@@unique([taskType, tenantId])` (было `taskType` UNIQUE).
+
 [[../index|← index]]

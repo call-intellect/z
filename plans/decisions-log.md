@@ -177,6 +177,29 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Фаза 5 (Tasks-2.0/Chapters-2.0/Summary-2.0)
+
+Зафиксировано после backend-сессии Фазы 5.
+
+1. **Legacy НЕ удаляется в этой фазе.** `tasks-extract.worker`, `chapters.worker`, `task-extraction.service.ts`, `chapter-extraction.service.ts` остаются. Их вызовы из `analyze.worker.ts` не тронуты. Причина: ТЗ Фазы 5 требует A/B-сравнения с golden-set'ом — без legacy сравнивать не с чем + риск регрессии UX. Удаление = отдельная фаза после ручного решения владельца.
+2. **V2-агенты пишут в новые поля БД, не перезаписывают старые.** На Task/MeetingChapter добавлены `evidenceBlockIds: String[]` + `extractorVersion: String?` ('v2' маркирует knowledge-core, NULL = legacy). На AiResult — `summaryV2`/`summaryV2Model`/`summaryV2GeneratedAt` (отдельно от `summary`). На Meeting — `analyzeV2Status`/`analyzeV2GeneratedAt`/`analyzeV2Error` (status строкой, не enum'ом — проще расширять).
+3. **Master-флаг ENV `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`** (default `false`). Когда `false` — `meeting-analyze-v2.cron` не публикует jobs. Включается на проде вручную для A/B.
+4. **Cron-выражение `'*/10 * * * *'` зашито литералом** в декораторе `@Cron`. Декоратор Nest cron вычисляется на class-evaluation, до DI — нельзя через `cfg.knowledgeCore.meetingAnalyzeV2Cron`. ENV оставлен для будущей перерегистрации через `SchedulerRegistry`.
+5. **Дебаунс `MEETING_ANALYZE_V2_DEBOUNCE_MS = 120_000` (2 мин)** — даёт block-distill стабилизироваться (canonical блоки могут «доезжать» спустя несколько секунд после `meeting.status='ai_ready'`).
+6. **`MeetingAnalyzeV2Worker.concurrency = 1`.** Один LLM-сервис проекта Z имеет общие rate-limits, поэтому «один meeting за раз» проще, чем bookkeep'ить параллельно (тот же подход что у `EntityResolverWorker`).
+7. **Один LLM-вызов на каждого агента**, три параллельных через `Promise.allSettled`. Tasks/Chapters — `json_schema strict`; Summary — текстовый markdown. taskType: `task-extract-v2`, `chapter-extract-v2`, `summary-v2` (уже зарегистрированы в `LlmTaskType` union'е, никаких правок в `llm-router.service.ts` не понадобилось).
+8. **Tasks-write — без unique-индекса.** Task не имеет `(meetingId, title)` unique constraint, поэтому используется `findMany existing → filter в TS → create по одной`. Дедуп по `title.trim().toLowerCase()` против ВСЕХ существующих задач (legacy + предыдущие v2-результаты). На P2002 защищён try/catch на каждой `create`. Альтернатива — добавить `@@unique([meetingId, title])` — отвергнута: legacy задачи могут иметь одинаковые titles (LLM был неидеален), сломает существующие данные.
+9. **Chapters-write — `deleteMany {extractorVersion='v2'} → createMany`.** Legacy главы (`extractorVersion=null`) не трогаются. Это позволяет UI показывать оба набора (или переключатель) без миграции.
+10. **Summary-write — log warn + skip если AiResult отсутствует.** Это значит legacy ai-pipeline ещё не отработал — cron на следующем тике подхватит когда AiResult появится.
+11. **Фильтр для Tasks по `signalType ∈ {'commitment', 'decision'}`.** Не включаем `'task'` — этого значения нет в `SignalType` enum (есть в TS-кортеже `SIGNAL_TYPE_VALUES` для будущей расширяемости, но Prisma enum его не содержит). Если block-ingest когда-либо начнёт ставить `signalType='task'` — добавится в фильтр одной правкой.
+12. **`BlockFetchService` через цепочку RawEvent → Evidence → IdeaBlock,** только canonical, фильтр tenantId. Сортировка по min `evidence.startMs`. Альтернатива — JOIN запросом — отвергнута: Prisma не любит сложные include'ы с фильтрами по nested fields, проще тремя findMany.
+13. **Защита от LLM-выдумок blockId.** В extractor-сервисах после парсинга — `evidenceBlockIds.filter(id => validBlockIds.has(id))`. Если LLM сослался на чужой/несуществующий блок — отбрасываем. Если все ссылки выпали — задача всё равно принимается (с пустым `evidenceBlockIds`).
+14. **`Promise.allSettled`, не `Promise.all`.** Один упавший агент не должен валить остальные двое. Финальный статус — `ready` если все ок, `partial` если 1-2 упали, `failed` если все три. На `failed` worker делает throw → BullMQ зачтёт attempt → retry по политике очереди.
+15. **MeetingHighlight.evidenceBlockId добавлен превентивно** (требование ТЗ Фазы 5), но highlights-v2-генератор — vNext (этой фазы не касается).
+16. **`MEETING_ANALYZE_V2_CRON` ENV не используется в @Cron, но в config есть** — документирует ожидаемую частоту в логах (как `ENTITY_RESOLVER_CRON` в Фазе 2 Шаг 4).
+
+---
+
 ## 2026-05-10 — Phase 0 frontend: страницы найдены в `(authenticated)`
 
 **Вопрос.** При первом аудите Glob по `frontend/app/settings/organization/**` дал 0 файлов — сделал вывод что страницы отсутствуют. Повторный поиск показал, что они существуют в `frontend/app/(authenticated)/settings/organization/page.tsx` и `(authenticated)/invitations/[token]/page.tsx`.

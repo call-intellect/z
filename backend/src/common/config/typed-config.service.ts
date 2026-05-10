@@ -318,6 +318,10 @@ export class TypedConfigService {
       themeClusterMinSize: this.get('THEME_CLUSTER_MIN_SIZE'),
       themeCosineThreshold: this.get('THEME_COSINE_THRESHOLD'),
       cardRollupV2DebounceMs: this.get('CARD_ROLLUP_V2_DEBOUNCE_MS'),
+      // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
+      v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
+      meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
+      meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
     } as const;
   }
 

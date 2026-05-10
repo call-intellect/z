@@ -416,6 +416,14 @@ model Meeting {
   chaptersStatus   AiStepStatus  @default(none)
   tasksStatus      AiStepStatus  @default(none)
   embeddingsStatus AiStepStatus  @default(none)
+  /// Фаза 5 knowledge-core: статус v2-агентов (Tasks/Chapters/Summary над IdeaBlock).
+  /// NULL = не запускался; 'queued'/'processing'/'ready'/'partial'/'failed'.
+  /// Хранится строкой (а не enum'ом), чтобы было легко расширить без миграции.
+  analyzeV2Status      String?
+  /// Когда v2-агент завершил работу (последний раз).
+  analyzeV2GeneratedAt DateTime?
+  /// Текст ошибки на failed/partial. Multi-line, агент пишет короткую сводку.
+  analyzeV2Error       String?       @db.Text
   createdAt        DateTime      @default(now())
   deletedAt        DateTime?
 
@@ -522,6 +530,14 @@ model AiResult {
   /// @deprecated после Phase 3 ai-workspace новые задачи пишутся в `Task`. Оставлено до миграции существующих записей через `backend/scripts/migrate-ai-tasks.ts`.
   tasks          Json?
   modelUsed      String
+  /// Фаза 5 knowledge-core: альтернативная сводка, сгенерированная
+  /// `meeting-analyze-v2.worker` поверх IdeaBlock'ов встречи. Не перезаписывает
+  /// `summary`, чтобы UI оставался на legacy до решения владельца про A/B.
+  summaryV2            String?   @db.Text
+  /// `<provider>:<model>` модели, которая сгенерила `summaryV2`.
+  summaryV2Model       String?
+  /// Когда сгенерирован `summaryV2`.
+  summaryV2GeneratedAt DateTime?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 }
@@ -646,6 +662,13 @@ model Task {
   sourceQuote     String?    @db.Text
   confidence      Float?
   createdManually Boolean    @default(false)
+  /// Фаза 5 knowledge-core: какие IdeaBlock'и породили задачу (для drill-down).
+  /// Пустой массив = legacy задача, не связана с блоками.
+  evidenceBlockIds String[]   @default([])
+  /// Фаза 5: метка генератора. NULL = legacy `tasks-extract.worker`,
+  /// 'v2' = `meeting-analyze-v2.worker` (knowledge-core поверх блоков).
+  /// Используется для A/B-сравнения и для последующего скимаринга legacy.
+  extractorVersion String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -666,6 +689,12 @@ model MeetingChapter {
   title     String
   summary   String?  @db.Text
   order     Int
+  /// Фаза 5 knowledge-core: какие IdeaBlock'и относятся к этой главе.
+  /// Используется в UI для подсказок «откуда взято».
+  evidenceBlockIds String[] @default([])
+  /// Фаза 5: метка генератора. NULL = legacy `chapters.worker`,
+  /// 'v2' = `meeting-analyze-v2.worker` (knowledge-core поверх блоков).
+  extractorVersion String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -688,6 +717,9 @@ model MeetingHighlight {
   renderedMp4Key String?
   renderStatus   RenderStatus @default(none)
   renderError    String?      @db.Text
+  /// Фаза 5 knowledge-core: ссылка на породивший IdeaBlock (если highlight
+  /// сгенерирован поверх блоков). NULL для ручных и legacy-highlight'ов.
+  evidenceBlockId String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

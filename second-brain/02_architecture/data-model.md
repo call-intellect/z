@@ -529,6 +529,34 @@ Card {
 - `bornFromThemeId` — выставляет endpoint `POST /knowledge/themes/:id/save-as-card`.
 - `cachedTopThemeIds` — `card-rollup-v2.worker` пересчитывает на каждом тике.
 
+## Knowledge-core (Фаза 5): расширения Task / MeetingChapter / MeetingHighlight / AiResult / Meeting
+
+Фаза 5 переписывает Tasks/Chapters/Summary поверх IdeaBlock'ов через `MeetingAnalyzeV2Worker` (`core.meeting-analyze-v2`, debounce 2 мин). Legacy `tasks-extract.worker` / `chapters.worker` НЕ удалены — V2 пишет в новые поля параллельно для A/B-сравнения.
+
+**`Task` дополнительно:**
+- `evidenceBlockIds: String[]` (default `[]`) — id IdeaBlock'ов, породивших задачу.
+- `extractorVersion: String?` — `'v2'` если задача создана `meeting-analyze-v2.worker`'ом, NULL = legacy.
+
+**`MeetingChapter` дополнительно:**
+- `evidenceBlockIds: String[]` (default `[]`) — id блоков главы.
+- `extractorVersion: String?` — `'v2'` или NULL (legacy).
+
+**`MeetingHighlight` дополнительно:**
+- `evidenceBlockId: String?` — ссылка на породивший блок (для будущего highlights-v2-генератора). NULL для ручных и legacy.
+
+**`AiResult` дополнительно:**
+- `summaryV2: String?` — альтернативная сводка от `summary-extractor-v2.service.ts` (markdown поверх блоков).
+- `summaryV2Model: String?` — `<provider>:<model>`.
+- `summaryV2GeneratedAt: DateTime?`.
+- `summary` (legacy) НЕ перезаписывается — UI остаётся на legacy до решения владельца про переключение.
+
+**`Meeting` дополнительно (статус v2-агентов):**
+- `analyzeV2Status: String?` — `null | 'queued' | 'processing' | 'ready' | 'partial' | 'failed'` (строкой, не enum'ом — проще расширять).
+- `analyzeV2GeneratedAt: DateTime?`.
+- `analyzeV2Error: String?` — текст ошибки (multi-line) на failed/partial.
+
+ENV: `KNOWLEDGE_CORE_V2_AGENTS_ENABLED` (default `false`) — мастер-флаг включения cron'а v2-агентов. `MEETING_ANALYZE_V2_CRON='*/10 * * * *'`. `MEETING_ANALYZE_V2_DEBOUNCE_MS=120000`.
+
 ### ER (knowledge-core)
 
 ```mermaid

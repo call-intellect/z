@@ -11,15 +11,19 @@ import { KnowledgeSearchController } from './api/search.controller';
 import { SearchService } from './api/search.service';
 import { KnowledgeThemesController } from './api/themes.controller';
 import { BlockExtractionService } from './services/block-extraction.service';
+import { BlockFetchService } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
+import { ChaptersExtractorV2Service } from './services/chapters-extractor-v2.service';
 import { ClusteringService } from './services/clustering.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
+import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
+import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
 
 /**
@@ -66,6 +70,11 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     ClusteringService,
     ThemeClassificationService,
     CardRollupV2Service,
+    // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
+    BlockFetchService,
+    TasksExtractorV2Service,
+    ChaptersExtractorV2Service,
+    SummaryExtractorV2Service,
   ],
   exports: [
     SegmentBuilderService,
@@ -80,6 +89,12 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     ClusteringService,
     ThemeClassificationService,
     CardRollupV2Service,
+    // Фаза 5: экспортируем для воркеров (`MeetingAnalyzeV2Worker` и
+    // `MeetingAnalyzeV2Cron` живут в WorkersModule).
+    BlockFetchService,
+    TasksExtractorV2Service,
+    ChaptersExtractorV2Service,
+    SummaryExtractorV2Service,
   ],
 })
 export class KnowledgeCoreModule {}

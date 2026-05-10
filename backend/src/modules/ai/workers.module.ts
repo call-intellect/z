@@ -18,6 +18,8 @@ import { CardRollupV2Worker } from '../knowledge-core/workers/card-rollup-v2.wor
 import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-builder.cron';
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
+import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
+import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 import { S3Service } from '../recordings/s3.service';
@@ -138,6 +140,10 @@ import { VoxService } from './services/vox.service';
     ThemeClustererCron,
     // knowledge-core (Фаза 4) — card-rollup-v2: rollup поверх IdeaBlock'ов.
     CardRollupV2Worker,
+    // knowledge-core (Фаза 5) — meeting-analyze-v2: Tasks-2.0/Chapters-2.0/Summary-2.0
+    // поверх IdeaBlock'ов встречи. Параллельно legacy (не вместо).
+    MeetingAnalyzeV2Worker,
+    MeetingAnalyzeV2Cron,
   ],
 })
 export class WorkersModule {}

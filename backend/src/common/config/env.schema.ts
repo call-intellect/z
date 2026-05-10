@@ -364,6 +364,32 @@ const KnowledgeCoreSchema = z.object({
    * запас, чтобы догнать «пачку» link/unlink/regenerate.
    */
   CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
+
+  // ── Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0) ──
+  /**
+   * Master-флаг v2-агентов. По умолчанию `false`, чтобы legacy
+   * `tasks-extract.worker`/`chapters.worker` остались единственным источником
+   * данных в UI. При `true` — `meeting-analyze-v2.cron` начинает enqueue'ить
+   * jobs, которые пишут в `Task.evidenceBlockIds`/`MeetingChapter.evidenceBlockIds`/
+   * `AiResult.summaryV2` — параллельно legacy.
+   *
+   * Включается на проде вручную для A/B-сравнения. Удалить legacy — отдельная
+   * фаза после ручного решения владельца продукта (см. decisions-log).
+   */
+  KNOWLEDGE_CORE_V2_AGENTS_ENABLED: z.coerce.boolean().default(false),
+  /**
+   * Cron-расписание `meeting-analyze-v2.cron` — каждые 10 минут по умолчанию.
+   * Cron-выражение в декораторе литералом, ENV-значение для логов и для
+   * будущей перерегистрации через `SchedulerRegistry`.
+   */
+  MEETING_ANALYZE_V2_CRON: z.string().min(1).default('*/10 * * * *'),
+  /**
+   * Дебаунс enqueue в `core.meeting-analyze-v2`: после `meeting.status='ai_ready'`
+   * мы ждём 2 минуты, чтобы block-ingest/distill успели стабилизироваться
+   * (canonical-блоки могут «доезжать» спустя несколько секунд после ai_ready).
+   * Несколько событий по одной встрече за окно складываются в один job.
+   */
+  MEETING_ANALYZE_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(120_000),
 });
 
 /** Шеринг (длительность ссылок). */

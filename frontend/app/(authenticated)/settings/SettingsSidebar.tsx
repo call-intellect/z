@@ -7,6 +7,7 @@ import {
   Brain,
   Building2,
   CircleDollarSign,
+  Database,
   Download,
   KeyRound,
   Link2,
@@ -47,12 +48,17 @@ const ADMIN_ITEMS: Item[] = [
   { href: '/settings/sources', label: 'Источники', icon: Link2 },
 ];
 
+const OWNER_ITEMS: Item[] = [
+  { href: '/settings/retention', label: 'Хранение и 152-ФЗ', icon: Database },
+];
+
 export function SettingsSidebar() {
   const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get('tab') ?? null;
   const { currentOrgRole } = useAuth();
   const showAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const showOwner = currentOrgRole === 'owner';
 
   return (
     <aside className="md:w-56 md:shrink-0">
@@ -74,6 +80,23 @@ export function SettingsSidebar() {
             </div>
             <ul className="flex flex-col gap-0.5 pt-1">
               {ADMIN_ITEMS.map((item) => (
+                <SidebarLink
+                  key={`${item.href}-${item.tab ?? 'default'}`}
+                  item={item}
+                  pathname={pathname}
+                  tabParam={tabParam}
+                />
+              ))}
+            </ul>
+          </>
+        )}
+        {showOwner && (
+          <>
+            <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+              Владелец Org
+            </div>
+            <ul className="flex flex-col gap-0.5 pt-1">
+              {OWNER_ITEMS.map((item) => (
                 <SidebarLink
                   key={`${item.href}-${item.tab ?? 'default'}`}
                   item={item}

@@ -93,6 +93,110 @@ export class CardsController {
     return this.mapCard(card);
   }
 
+  @Get('cards/:id/themes')
+  @ApiOperation({ summary: 'Топ-3 темы, связанные с карточкой через её блоки' })
+  async listThemes(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{
+    items: Array<{
+      id: string;
+      name: string;
+      description: string;
+      branch: string | null;
+      blocksInCommon: number;
+    }>;
+  }> {
+    const card = await this.cards.getById(id, user.id);
+    if (!card.tenantId) {
+      // Legacy: до backfill tenant'а — нет смысла искать темы.
+      return { items: [] };
+    }
+
+    // 1) Собираем блоки карточки: через meetings (RawEvent.sourceExternalId)
+    //    + через card.entityId / relatedEntityIds.
+    const meetingIds = (
+      await this.prisma.meeting.findMany({
+        where: { cardId: card.id, deletedAt: null },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+    const candidateEntityIds = [
+      ...(card.entityId ? [card.entityId] : []),
+      ...card.relatedEntityIds,
+    ];
+
+    const blockIdSet = new Set<string>();
+    if (meetingIds.length > 0) {
+      const evRows = await this.prisma.ideaBlockEvidence.findMany({
+        where: {
+          rawEvent: {
+            tenantId: card.tenantId,
+            sourceExternalId: { in: meetingIds },
+          },
+          block: { status: 'canonical', tenantId: card.tenantId },
+        },
+        select: { blockId: true },
+        take: 500,
+      });
+      for (const r of evRows) blockIdSet.add(r.blockId);
+    }
+    if (candidateEntityIds.length > 0) {
+      const entRows = await this.prisma.ideaBlockEntity.findMany({
+        where: {
+          entityId: { in: candidateEntityIds },
+          block: { status: 'canonical', tenantId: card.tenantId },
+        },
+        select: { blockId: true },
+        take: 500,
+      });
+      for (const r of entRows) blockIdSet.add(r.blockId);
+    }
+    if (blockIdSet.size === 0) return { items: [] };
+
+    // 2) Находим темы, связанные с этими блоками, и считаем сколько общих.
+    const themeRows = await this.prisma.themeIdeaBlock.findMany({
+      where: {
+        blockId: { in: [...blockIdSet] },
+        theme: { tenantId: card.tenantId, status: 'active' },
+      },
+      select: { themeId: true },
+    });
+    const counts = new Map<string, number>();
+    for (const r of themeRows) {
+      counts.set(r.themeId, (counts.get(r.themeId) ?? 0) + 1);
+    }
+    const top = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+    if (top.length === 0) return { items: [] };
+
+    const themes = await this.prisma.theme.findMany({
+      where: { id: { in: top.map(([tid]) => tid) } },
+      select: { id: true, name: true, description: true, branch: true },
+    });
+    const byId = new Map(themes.map((t) => [t.id, t] as const));
+    const items: Array<{
+      id: string;
+      name: string;
+      description: string;
+      branch: string | null;
+      blocksInCommon: number;
+    }> = [];
+    for (const [tid, blocksInCommon] of top) {
+      const t = byId.get(tid);
+      if (!t) continue;
+      items.push({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        branch: t.branch as string | null,
+        blocksInCommon,
+      });
+    }
+    return { items };
+  }
+
   @Get('cards/:id/meetings')
   @ApiOperation({ summary: 'Встречи в карточке (лента таймлайна)' })
   async listMeetings(

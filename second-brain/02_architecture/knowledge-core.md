@@ -4,7 +4,7 @@ feature: knowledge-core
 status: active
 created: 2026-05-10
 updated: 2026-05-10
-phase: 3
+phase: 4
 ---
 
 # Knowledge core
@@ -60,8 +60,35 @@ reframing.cron (раз в сутки в 3:00)
    ├─ архивация слабых связей confidence<0.5 старше 7 дней (block + entity)
    ├─ dynamicScore decay — для canonical-блоков старше 90 дней
    │                       (`dynamicScore = max(0.1, dynamicScore - 0.1)`)
-   └─ LLM 'reframing'    — анализ свежих блоков (>=10 за 7 дней):
-                           splitCandidates, mergeCandidates, themeShifts (в лог)
+   ├─ LLM 'reframing'    — анализ свежих блоков (>=10 за 7 дней):
+   │                       splitCandidates, mergeCandidates, themeShifts (в лог)
+   └─ reflectOnThemes (Фаза 4) — split/merge/archive Theme'ов:
+                                 themeMerges → перенос ThemeIdeaBlock/ThemeEntity на target;
+                                 themesToArchive → status='archived';
+                                 themeSplits → только лог-сигнал.
+
+──── Темы (Фаза 4) ────
+theme-clusterer.cron (каждый час в :15)
+   ├─ Гейт THEME_CLUSTERING_MIN_BLOCKS=100 — пропускает Org с малым числом блоков
+   ├─ Загрузка до 1000 canonical-блоков без ThemeIdeaBlock с embedding'ом
+   ├─ ClusteringService.clusterByEmbedding (KNN-greedy union-find,
+   │  threshold=0.78, minSize=3) → массив кластеров
+   ├─ Top-10 entities по mentionsCount внутри кластера
+   ├─ ThemeClassificationService.classifyTheme (LLM 'theme-classify',
+   │  JSON Schema strict) → name/description/branch/tags/weight/confidence
+   ├─ Embedding темы (`name + ' ' + description`)
+   └─ Theme + ThemeIdeaBlock × N + ThemeEntity × M (skipDuplicates)
+
+card-rollup-v2.worker (consumer core.card-rollup-v2, concurrency=2)
+   ├─ Дебаунс 60s по jobId='card_rollup_v2_<cardId>'
+   ├─ Источники блоков карточки:
+   │    1) через meetings: RawEvent.sourceExternalId = meeting.id
+   │    2) через сущности: IdeaBlockEntity.entityId IN (Card.entityId ∪ relatedEntityIds)
+   ├─ Top-3 темы — `ThemeIdeaBlock` по подсчёту блоков в наборе карточки
+   ├─ LLM 'card-rollup-v2' (5 промптов по Card.kind: client/deal/project/topic/custom)
+   └─ update Card.summaryCache + summaryUpdatedAt + cachedTopThemeIds[]
+
+   * Старый card-rollup.worker живёт параллельно — переключение Фазы 5/6.
 ```
 
 ### Идемпотентность и дебаунсы
@@ -120,6 +147,29 @@ EntityLink {
   createdBy, status,
   @@unique(fromEntityId, toEntityId, relationType)
 }
+
+# ── Фаза 4 ──
+Theme {
+  id, tenantId, name, description @Text,
+  weight Decimal(4,3) default 0.500,
+  dynamic (growing | stable | declining) default 'stable',
+  confidence Decimal(4,3) default 0.500,
+  status (active | archived | merged_into),
+  mergedIntoId? → Theme,
+  branch? (strategy | clients | sales | marketing | product | operations |
+           team | finance | technology | production | partnerships | legal),
+  embedding vector(1536),
+  lastSignalAt?, createdAt, updatedAt
+}
+
+ThemeIdeaBlock { @@id(themeId, blockId), weight Decimal(4,3) default 1.000 }
+ThemeEntity    { @@id(themeId, entityId), mentionsCount Int default 0 }
+
+# Card расширения (Фаза 4):
+Card.entityId? → Entity            # primary-сущность
+Card.relatedEntityIds[] String     # дополнительные сущности
+Card.bornFromThemeId? → Theme      # при сохранении темы как карточки
+Card.cachedTopThemeIds[] String    # кэш топ-3 связанных тем (card-rollup-v2)
 ```
 
 ER-диаграмма (Mermaid):
@@ -127,6 +177,7 @@ ER-диаграмма (Mermaid):
 ```mermaid
 erDiagram
   Org ||--o{ IdeaBlock : owns
+  Org ||--o{ Theme : owns
   IdeaBlock ||--o{ IdeaBlockEvidence : "has"
   RawEvent ||--o{ IdeaBlockEvidence : "cited by"
   IdeaBlock ||--o{ IdeaBlockEntity : mentions
@@ -135,6 +186,13 @@ erDiagram
   Entity }o--|| Entity : mergedInto
   IdeaBlock ||--o{ IdeaBlockLink : "links from/to"
   Entity ||--o{ EntityLink : "links from/to"
+  Theme ||--o{ ThemeIdeaBlock : "groups blocks"
+  IdeaBlock ||--o{ ThemeIdeaBlock : "in themes"
+  Theme ||--o{ ThemeEntity : "co-mentions entities"
+  Entity ||--o{ ThemeEntity : "in themes"
+  Theme }o--|| Theme : mergedInto
+  Card }o--|| Theme : "born from"
+  Card }o--|| Entity : "primary entity"
 ```
 
 ### Postgres extras (НЕ в Prisma schema)
@@ -194,10 +252,16 @@ Response:
   (Фаза 3) — BFS-обход графа, depth до 3, лимит 100 nodes (`truncated=true`
   при превышении). Edges трёх типов: `block-link`, `entity-link`, `block-entity`
   (упоминание).
+- `GET /api/v1/knowledge/themes?branch=&status=&q=&limit=&offset=` (Фаза 4) —
+  список тем Org. По умолчанию `status=active`, сорт `weight DESC, lastSignalAt DESC`.
+- `GET /api/v1/knowledge/themes/:id` (Фаза 4) — тема + до 20 блоков + до 50 entities.
+- `POST /api/v1/knowledge/themes/:id/save-as-card` (Фаза 4) — Card(kind='topic',
+  bornFromThemeId=themeId). Body: `{name?: string}`.
+- `GET /api/v1/cards/:id/themes` (Фаза 4) — топ-3 темы карточки через её блоки.
 
-RBAC: новые resource type'ы `block` / `entity` в `policy.csv`. Все member'ы
-Org (включая manager:strict) получают `read` — knowledge-core это shared
-knowledge внутри Org, без per-user owner'а.
+RBAC: новые resource type'ы `block` / `entity` / `theme` (Фаза 4) в `policy.csv`.
+Все member'ы Org (включая manager:strict) получают `read` — knowledge-core это
+shared knowledge внутри Org, без per-user owner'а.
 
 ## LLM-инфра
 
@@ -209,8 +273,11 @@ knowledge внутри Org, без per-user owner'а.
   recentMentions[] контекст из IdeaBlockEntity).
 - `block-linker` (Фаза 3) — типизированные связи блоков (7 типов + 'none').
 - `entity-graph-builder` (Фаза 3) — связи сущностей (6 типов + 'none').
-- `reframing` (Фаза 3) — ночной анализ свежих блоков (split/merge/themeShifts).
-- `theme-classify` — Фаза 4.
+- `reframing` (Фаза 3+4) — ночной анализ свежих блоков (split/merge/themeShifts)
+  + рефлексия Theme'ов (Фаза 4: themeMerges/themeSplits/themesToArchive).
+- `theme-classify` (Фаза 4) — классификация кластера блоков (name/description/branch/tags).
+- `card-rollup-v2` (Фаза 4) — rollup `Card.summaryCache` поверх IdeaBlock'ов
+  (5 промптов по `Card.kind`).
 
 Primary провайдер по политике 2026-05 — DeepSeek V4-flash. Fallback:
 gpt-5.4-mini (через OpenAI proxy), Ollama qwen3:30b. Provider-цепочки задаются
@@ -237,16 +304,24 @@ REFRAMING_CRON='0 3 * * *'            # ночной reframing (3:00)
 BLOCK_DYNAMIC_SCORE_DECAY_DAYS=90     # после скольких дней без updates падает score
 ENTITY_GRAPH_BUILDER_CRON='0 * * * *' # entity-graph-builder — раз в час
 ENTITY_GRAPH_MIN_COMENTIONS=3         # минимум co-mentions, чтобы пара попала в LLM
+
+# Фаза 4
+THEME_CLUSTERER_CRON='15 * * * *'     # theme-clusterer — каждый час в :15
+THEME_CLUSTERING_MIN_BLOCKS=100       # порог пропуска маленьких Org
+THEME_CLUSTER_MIN_SIZE=3              # минимальный размер устойчивого кластера
+THEME_COSINE_THRESHOLD=0.78           # порог объединения блоков в один кластер
+CARD_ROLLUP_V2_DEBOUNCE_MS=60000      # дебаунс enqueueCardRollupV2
 ```
 
 Все читаются через `cfg.knowledgeCore.*` в `TypedConfigService`.
 
-## Что вне Фазы 3
+## Что вне Фазы 4
 
-- `Theme` + `theme-clusterer.worker` — Фаза 4.
+- Frontend `/themes` (UI-список + страница темы + кнопка save-as-card) — следующая сессия.
 - Tasks-2.0 / Chapters-2.0 / Summary-2.0 (агенты поверх блоков) — Фаза 5.
 - chat-v2 — Фаза 6 (на Фазе 2 старый chat остаётся работать поверх
   `MeetingTranscriptChunk`).
+- Переключение pipeline'а на `card-rollup-v2` (отказ от старого `card-rollup.worker`) — Фаза 5/6.
 
 ## Бенчмарк / smoke
 

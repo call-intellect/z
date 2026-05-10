@@ -90,6 +90,16 @@ p, admin, *, *, entity, write
 p, admin, *, *, entity, delete
 p, manager, *, *, entity, read
 
+# knowledge-core (Фаза 4) — theme. Темы — AI-кластеры блоков, доступны всем
+# member'ам Org для чтения (как block / entity). Запись/удаление — owner/admin.
+p, owner, *, *, theme, read
+p, owner, *, *, theme, write
+p, owner, *, *, theme, delete
+p, admin, *, *, theme, read
+p, admin, *, *, theme, write
+p, admin, *, *, theme, delete
+p, manager, *, *, theme, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

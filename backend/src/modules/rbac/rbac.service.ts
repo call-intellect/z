@@ -49,7 +49,8 @@ export type ResourceType =
   | 'audit-log'
   | 'ai-usage'
   | 'block'
-  | 'entity';
+  | 'entity'
+  | 'theme';
 
 export type Action = 'read' | 'write' | 'delete' | 'manage';
 
@@ -293,6 +294,7 @@ function isResourceType(s: string): s is ResourceType {
     'ai-usage',
     'block',
     'entity',
+    'theme',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

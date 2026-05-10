@@ -1,7 +1,7 @@
 ---
 title: Cards — CRM-структура встреч
 status: actual
-updated: 2026-05-09
+updated: 2026-05-10
 ---
 
 # Cards (CRM-структура встреч)
@@ -127,6 +127,37 @@ CRM-карточки, к которым подвязываются встреч�
 ### Расширения
 - `Meeting.cardId String?` + индекс `[cardId, createdAt]`.
 - `MeetingChatMessage.cardId String?` + индекс `[cardId, createdAt]`.
+
+## Knowledge-core (Фаза 4 — 2026-05-10)
+
+### Расширения `Card`
+- `entityId String?` — primary-сущность карточки (FK на `Entity`, `onDelete: SetNull`).
+- `relatedEntityIds String[] @default([])` — список дополнительных сущностей.
+- `bornFromThemeId String?` — если карточка создана из Theme через
+  `POST /api/v1/knowledge/themes/:id/save-as-card`.
+- `cachedTopThemeIds String[] @default([])` — кэш топ-3 связанных тем
+  (заполняет `card-rollup-v2.worker`).
+- Индексы: `@@index([entityId])`, `@@index([bornFromThemeId])`.
+
+### Card-rollup-v2 (новый воркер, параллельно со старым)
+- `backend/src/modules/knowledge-core/services/card-rollup-v2.service.ts` —
+  собирает блоки карточки через **встречи** (`RawEvent.sourceExternalId`) +
+  через **сущности** (`IdeaBlockEntity.entityId IN (Card.entityId ∪ Card.relatedEntityIds)`),
+  фильтр `status='canonical'`, top 50 по `updatedAt DESC`. Топ-3 темы — из
+  `ThemeIdeaBlock` по подсчёту блоков.
+- `backend/src/modules/knowledge-core/workers/card-rollup-v2.worker.ts` —
+  consumer очереди `core.card-rollup-v2`. Concurrency=2.
+- 5 промптов по `Card.kind` (client/deal/project/topic/custom) — все
+  возвращают plain-текст (без markdown).
+- Дебаунс: `CoreQueueService.enqueueCardRollupV2(cardId)` с
+  `delay = CARD_ROLLUP_V2_DEBOUNCE_MS` (60s по умолчанию), `jobId='card_rollup_v2_<cardId>'`.
+- **Старый `card-rollup.worker` живёт параллельно** — переключение pipeline'а
+  на v2 запланировано в Фазе 5/6.
+
+### API (новые)
+- `GET /api/v1/cards/:id/themes` — топ-3 темы для карточки (через её блоки).
+  Возвращает `{ items: [{ id, name, description, branch, blocksInCommon }] }`.
+- Связанные эндпоинты themes — см. [[themes]].
 
 Все модели — в [`backend/prisma/schema.prisma`](../../backend/prisma/schema.prisma).
 Применение схемы — только `bun prisma db push` (см. [prisma-db-push-rules](../../.claude/skills/prisma-db-push-rules/)).

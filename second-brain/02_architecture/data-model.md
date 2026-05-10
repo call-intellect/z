@@ -455,11 +455,86 @@ EntityLink {
 Создаётся `entity-graph-builder.cron` (раз в час, ищет co-mentioned пары
 сущностей в одних блоках, минимум `ENTITY_GRAPH_MIN_COMENTIONS=3` упоминаний).
 
+## Knowledge-core (Фаза 4): Theme + Card расширение
+
+### Theme
+
+```
+Theme {
+  id, tenantId, name, description @Text,
+  weight Decimal(4,3) default 0.500,
+  dynamic (growing | stable | declining) default 'stable',
+  confidence Decimal(4,3) default 0.500,
+  status (active | archived | merged_into),
+  mergedIntoId? → Theme,
+  branch? (strategy | clients | sales | marketing | product | operations |
+           team | finance | technology | production | partnerships | legal),
+  embedding vector(1536),
+  lastSignalAt?, createdAt, updatedAt,
+
+  @@index(tenantId, status)
+  @@index(tenantId, branch)
+  @@index(tenantId, mergedIntoId)
+}
+```
+
+AI-кластер canonical IdeaBlock'ов. Создаётся `theme-clusterer.cron` (раз в час
+в :15, KNN-greedy на embedding'ах с порогом `THEME_COSINE_THRESHOLD=0.78`,
+минимум `THEME_CLUSTER_MIN_SIZE=3` блоков, гейт по Org `THEME_CLUSTERING_MIN_BLOCKS=100`).
+
+Описание/имя/ветка генерируются LLM `theme-classify` (JSON Schema strict).
+Embedding темы — `text-embedding-3-small` от `name + ' ' + description`.
+
+### ThemeIdeaBlock (M:M)
+
+```
+ThemeIdeaBlock {
+  themeId, blockId, weight Decimal(4,3) default 1.000, createdAt
+  @@id(themeId, blockId)
+  @@index(blockId)
+}
+```
+
+### ThemeEntity (denormalized)
+
+```
+ThemeEntity {
+  themeId, entityId, mentionsCount Int default 0, createdAt
+  @@id(themeId, entityId)
+  @@index(entityId)
+}
+```
+
+Поддерживается `theme-clusterer` (создание) и `reframing.reflectOnThemes`
+(перенос при `themeMerges`).
+
+### Card расширение (Фаза 4)
+
+```
+Card {
+  ...
+  entityId          String?  → Entity     // primary-сущность
+  relatedEntityIds  String[] @default([]) // дополнительные сущности
+  bornFromThemeId   String?  → Theme      // если создана из темы
+  cachedTopThemeIds String[] @default([]) // кэш топ-3 связанных тем
+  ...
+  @@index(entityId)
+  @@index(bornFromThemeId)
+}
+```
+
+Заполнение:
+- `entityId` / `relatedEntityIds` — пользователь редактирует через UI
+  карточки (Фаза 5/6 — frontend).
+- `bornFromThemeId` — выставляет endpoint `POST /knowledge/themes/:id/save-as-card`.
+- `cachedTopThemeIds` — `card-rollup-v2.worker` пересчитывает на каждом тике.
+
 ### ER (knowledge-core)
 
 ```mermaid
 erDiagram
   Org ||--o{ IdeaBlock : owns
+  Org ||--o{ Theme : owns
   IdeaBlock ||--o{ IdeaBlockEvidence : "has"
   RawEvent ||--o{ IdeaBlockEvidence : "cited by"
   IdeaBlock ||--o{ IdeaBlockEntity : mentions
@@ -468,6 +543,13 @@ erDiagram
   Entity }o--|| Entity : mergedInto
   IdeaBlock ||--o{ IdeaBlockLink : "links from/to"
   Entity ||--o{ EntityLink : "links from/to"
+  Theme ||--o{ ThemeIdeaBlock : "groups blocks"
+  IdeaBlock ||--o{ ThemeIdeaBlock : "in themes"
+  Theme ||--o{ ThemeEntity : "co-mentions entities"
+  Entity ||--o{ ThemeEntity : "in themes"
+  Theme }o--|| Theme : mergedInto
+  Card }o--|| Theme : "born from"
+  Card }o--|| Entity : "primary entity"
 ```
 
 [[../index|← index]]

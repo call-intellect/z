@@ -9,6 +9,7 @@ import { KnowledgeEntitiesController } from './api/entities.controller';
 import { KnowledgeGraphController } from './api/graph.controller';
 import { KnowledgeSearchController } from './api/search.controller';
 import { SearchService } from './api/search.service';
+import { KnowledgeThemesController } from './api/themes.controller';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
@@ -48,6 +49,7 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     KnowledgeBlocksController,
     KnowledgeEntitiesController,
     KnowledgeGraphController,
+    KnowledgeThemesController,
   ],
   providers: [
     S3Service,

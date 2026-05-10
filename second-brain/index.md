@@ -36,7 +36,7 @@
 - [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
-- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 3): IdeaBlock + Entity + IdeaBlockLink + EntityLink, pipeline ingest→distill→link→reframing, гибридный поиск + граф
+- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы
 
 ## Решения / ADR
 _пусто_
@@ -79,6 +79,15 @@ _пусто_
 - API: `GET /api/v1/knowledge/blocks/:id/links`, `GET /api/v1/knowledge/entities/:id/links`, `GET /api/v1/knowledge/graph/neighbors?nodeType=block|entity&id=…&depth=1..3` (BFS, лимит 100 nodes, `truncated=true` при превышении)
 - LlmTaskType: добавлен `entity-graph-builder` (`reframing` уже был); seed обновлён
 
+## Заметки по реализации (2026-05-10) — Фаза 4 knowledge-core (только backend, frontend отложен)
+- [[01_projects/themes]] — новая сущность `Theme` (AI-кластер блоков, embedding 1536, ветка из 12 delivery, dynamic/status/weight). `ThemeIdeaBlock` (M:M с весом) + `ThemeEntity` (denorm с mentionsCount). Pipeline: `theme-clusterer.cron` (`15 * * * *`) — KNN-greedy union-find (threshold 0.78, minSize 3, гейт `THEME_CLUSTERING_MIN_BLOCKS=100`) + LLM `theme-classify` (JSON Schema strict). Reframing `reflectOnThemes` (themeMerges = перенос связей + status='merged_into', themesToArchive, themeSplits — только лог)
+- [[01_projects/cards]] — расширение `Card`: `entityId` (primary) + `relatedEntityIds[]` + `bornFromThemeId` + `cachedTopThemeIds[]`. Новый `card-rollup-v2.worker` (consumer `core.card-rollup-v2`, дебаунс 60s, 5 промптов по `Card.kind`); старый `card-rollup.worker` живёт параллельно до Фаз 5/6
+- [[02_architecture/knowledge-core]] — раздел «Темы (Фаза 4)»: theme-clusterer + card-rollup-v2 + reflectOnThemes
+- [[02_architecture/data-model]] — добавлены модели `Theme`, `ThemeIdeaBlock`, `ThemeEntity`, расширения `Card` + ER-связи
+- API: `GET /api/v1/knowledge/themes` (фильтры branch/status, пагинация), `GET /api/v1/knowledge/themes/:id`, `POST /api/v1/knowledge/themes/:id/save-as-card`, `GET /api/v1/cards/:id/themes`
+- RBAC: ResourceType расширен `'theme'` (read для всех member'ов Org, write/delete — owner/admin)
+- LlmTaskType: `theme-classify` уже был в seed'е; `card-rollup-v2` тоже; обновление через `--update-existing` не обязательно
+
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
 
@@ -92,4 +101,4 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-10 (Фаза 3 knowledge-core: IdeaBlockLink + EntityLink + block-linker/entity-graph-builder/reframing crons + graph API)_
+_Обновлён: 2026-05-10 (Фаза 4 knowledge-core: Theme + theme-clusterer + card-rollup-v2 + Card.entityId/relatedEntityIds/bornFromThemeId + themes API; backend-only, frontend отложен)_

@@ -49,6 +49,103 @@ const ReframingResponseSchema = z.object({
   themeShifts: z.array(z.string()).optional(),
 });
 
+/**
+ * JSON Schema для шага 4 reframing'а — рефлексия над Theme'ами.
+ * - themeSplits — id тем-кандидатов на разделение (ничего не делаем
+ *   автоматически, только лог-сигнал — UI разберёт через owner Org).
+ * - themeMerges — пары (sourceId, targetId): source становится merged_into target.
+ * - themesToArchive — id тем, которые reframing считает устаревшими.
+ */
+const REFRAMING_THEMES_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['analysis'],
+  properties: {
+    analysis: { type: 'string', maxLength: 1000 },
+    themeSplits: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['themeId', 'reason'],
+        properties: {
+          themeId: { type: 'string' },
+          reason: { type: 'string', maxLength: 500 },
+        },
+      },
+    },
+    themeMerges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sourceId', 'targetId', 'reason'],
+        properties: {
+          sourceId: { type: 'string' },
+          targetId: { type: 'string' },
+          reason: { type: 'string', maxLength: 500 },
+        },
+      },
+    },
+    themesToArchive: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['themeId', 'reason'],
+        properties: {
+          themeId: { type: 'string' },
+          reason: { type: 'string', maxLength: 500 },
+        },
+      },
+    },
+  },
+};
+
+const ThemesReframingResponseSchema = z.object({
+  analysis: z.string().max(1000),
+  themeSplits: z
+    .array(
+      z.object({
+        themeId: z.string(),
+        reason: z.string().max(500),
+      }),
+    )
+    .optional(),
+  themeMerges: z
+    .array(
+      z.object({
+        sourceId: z.string(),
+        targetId: z.string(),
+        reason: z.string().max(500),
+      }),
+    )
+    .optional(),
+  themesToArchive: z
+    .array(
+      z.object({
+        themeId: z.string(),
+        reason: z.string().max(500),
+      }),
+    )
+    .optional(),
+});
+
+const REFRAMING_THEMES_SYSTEM_PROMPT = `Ты — аналитик графа знаний компании. На вход — список активных Theme'ов (имя + описание + размер по числу блоков), плюс блоки за последнюю неделю, ещё не привязанные ни к одной теме.
+
+Твоя задача — найти проблемы в текущей карте тем:
+1. "themeSplits" — id тем, которые на самом деле смешивают две и более идеи и стоит разделить (пары / группы).
+2. "themeMerges" — пары тем (sourceId, targetId), которые описывают одно и то же. source → merged_into target.
+3. "themesToArchive" — темы, которые потеряли актуальность (нет новых блоков, описание устарело).
+4. "analysis" — краткий вывод (1-2 абзаца), что наблюдается на этой неделе по теме мапы.
+
+Правила:
+- Не выдумывай. Если карта ровная — возвращай только analysis.
+- Не предлагай объединять разные ветки компании.
+- Ответ — строго JSON по схеме.`;
+
+const REFRAMING_THEMES_MAX = 50;
+
 const REFRAMING_SYSTEM_PROMPT = `Ты — аналитик, переосмысливающий граф знания компании.
 На вход — список IdeaBlock'ов за последнюю неделю (имя + критический вопрос + доверенный ответ).
 
@@ -113,6 +210,9 @@ export class ReframingCron {
     archivedEntityLinks: number;
     decayedBlocks: number;
     analyzedOrgs: number;
+    themeMergesApplied: number;
+    themesArchivedByLlm: number;
+    themeSplitsLogged: number;
   }> {
     const orgs = await this.prisma.org.findMany({
       where: {
@@ -128,6 +228,9 @@ export class ReframingCron {
     let archivedEntityLinks = 0;
     let decayedBlocks = 0;
     let analyzedOrgs = 0;
+    let themeMergesApplied = 0;
+    let themesArchivedByLlm = 0;
+    let themeSplitsLogged = 0;
 
     const slowCutoff = this.daysAgo(SLOW_LINK_AGE_DAYS);
     const decayCutoff = this.daysAgo(
@@ -191,6 +294,12 @@ export class ReframingCron {
           await this.analyzeFreshBlocks(org.id, freshBlocks);
           analyzedOrgs += 1;
         }
+
+        // 4. Рефлексия над Theme'ами (Фаза 4 — split/merge/archive).
+        const themeOutcome = await this.reflectOnThemes(org.id);
+        themeMergesApplied += themeOutcome.merged;
+        themesArchivedByLlm += themeOutcome.archived;
+        themeSplitsLogged += themeOutcome.splitsLogged;
       } catch (err) {
         this.logger.warn(
           {
@@ -208,6 +317,9 @@ export class ReframingCron {
       archivedEntityLinks,
       decayedBlocks,
       analyzedOrgs,
+      themeMergesApplied,
+      themesArchivedByLlm,
+      themeSplitsLogged,
     };
   }
 
@@ -282,6 +394,236 @@ export class ReframingCron {
       return null;
     }
     const parsed = ReframingResponseSchema.safeParse(raw);
+    return parsed.success ? parsed.data : null;
+  }
+
+  /**
+   * Шаг 4 — рефлексия над Theme'ами Org.
+   *
+   * Если в Org < 2 активных тем — пропускаем (нечего сравнивать).
+   * Иначе: грузим до REFRAMING_THEMES_MAX тем + 30 свежих блоков без темы;
+   * один LLM-вызов `reframing` возвращает split/merge/archive списки.
+   *
+   *  - merge: переносим ThemeIdeaBlock/ThemeEntity с source на target,
+   *           ставим source.status='merged_into', mergedIntoId=target.id.
+   *  - archive: ставим status='archived'.
+   *  - splits: только лог-сигнал — не делаем автоматически (рискованно).
+   */
+  private async reflectOnThemes(
+    tenantId: string,
+  ): Promise<{ merged: number; archived: number; splitsLogged: number }> {
+    const themes = await this.prisma.theme.findMany({
+      where: { tenantId, status: 'active' },
+      orderBy: [{ weight: 'desc' }, { createdAt: 'desc' }],
+      take: REFRAMING_THEMES_MAX,
+      include: { _count: { select: { blocks: true } } },
+    });
+    if (themes.length < 2) {
+      return { merged: 0, archived: 0, splitsLogged: 0 };
+    }
+
+    const freshBlocks = await this.prisma.ideaBlock.findMany({
+      where: {
+        tenantId,
+        status: 'canonical',
+        createdAt: { gte: this.daysAgo(REFRAMING_RECENT_BLOCKS_DAYS) },
+        themes: { none: {} },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: {
+        id: true,
+        name: true,
+        criticalQuestion: true,
+        signalType: true,
+      },
+    });
+
+    const userPayload = {
+      themes: themes.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        branch: t.branch,
+        size: t._count.blocks,
+        weight: Number(t.weight),
+      })),
+      freshBlocksWithoutTheme: freshBlocks,
+    };
+    const userMessage = `Карта тем (active) и свежие блоки без темы:\n\n${JSON.stringify(userPayload, null, 2)}`;
+
+    let parsed: z.infer<typeof ThemesReframingResponseSchema> | null;
+    try {
+      const out = await this.llm.call({
+        taskType: 'reframing',
+        tenantId,
+        systemPrompt: REFRAMING_THEMES_SYSTEM_PROMPT,
+        userMessage,
+        responseFormat: {
+          type: 'json_schema',
+          name: 'ReframingThemes',
+          strict: true,
+          schema: REFRAMING_THEMES_JSON_SCHEMA,
+        },
+        sourceRef: { type: 'reframing-themes', id: tenantId },
+      });
+      parsed = this.parseThemesReframing(out.text);
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'reframing-themes: LLM-вызов упал — пропускаю',
+      );
+      return { merged: 0, archived: 0, splitsLogged: 0 };
+    }
+    if (!parsed) {
+      this.logger.warn({ tenantId }, 'reframing-themes: ответ LLM не распарсился');
+      return { merged: 0, archived: 0, splitsLogged: 0 };
+    }
+
+    const validIds = new Set(themes.map((t) => t.id));
+    let merged = 0;
+    let archived = 0;
+    let splitsLogged = 0;
+
+    for (const m of parsed.themeMerges ?? []) {
+      if (!validIds.has(m.sourceId) || !validIds.has(m.targetId)) continue;
+      if (m.sourceId === m.targetId) continue;
+      try {
+        await this.applyThemeMerge({ tenantId, sourceId: m.sourceId, targetId: m.targetId });
+        merged += 1;
+      } catch (err) {
+        this.logger.warn(
+          {
+            tenantId,
+            sourceId: m.sourceId,
+            targetId: m.targetId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'reframing-themes: ошибка слияния — пропускаю',
+        );
+      }
+    }
+
+    for (const a of parsed.themesToArchive ?? []) {
+      if (!validIds.has(a.themeId)) continue;
+      try {
+        const res = await this.prisma.theme.updateMany({
+          where: { id: a.themeId, tenantId, status: 'active' },
+          data: { status: 'archived' },
+        });
+        if (res.count > 0) archived += 1;
+      } catch (err) {
+        this.logger.warn(
+          {
+            tenantId,
+            themeId: a.themeId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'reframing-themes: ошибка архивации — пропускаю',
+        );
+      }
+    }
+
+    // Splits — только лог. Никакой автоматики: разделение требует ручного
+    // пересмотра owner'ом Org через UI (Фаза 5/6).
+    for (const s of parsed.themeSplits ?? []) {
+      if (!validIds.has(s.themeId)) continue;
+      this.logger.log(
+        {
+          tenantId,
+          themeId: s.themeId,
+          reason: s.reason,
+        },
+        'reframing-themes: split candidate — owner Org должен разобраться',
+      );
+      splitsLogged += 1;
+    }
+
+    if (merged > 0 || archived > 0 || splitsLogged > 0) {
+      this.logger.log(
+        { tenantId, merged, archived, splitsLogged, analysis: parsed.analysis },
+        'reframing-themes: применены изменения',
+      );
+    }
+
+    return { merged, archived, splitsLogged };
+  }
+
+  /**
+   * source.status='merged_into', source.mergedIntoId=target.
+   * Переносим/upsert'им ThemeIdeaBlock и ThemeEntity на target (skipDuplicates).
+   */
+  private async applyThemeMerge(args: {
+    tenantId: string;
+    sourceId: string;
+    targetId: string;
+  }): Promise<void> {
+    const { tenantId, sourceId, targetId } = args;
+    await this.prisma.$transaction(async (tx) => {
+      // Перенос блоков: на target — те, которых там ещё нет.
+      const sourceBlocks = await tx.themeIdeaBlock.findMany({
+        where: { themeId: sourceId },
+        select: { blockId: true, weight: true },
+      });
+      if (sourceBlocks.length > 0) {
+        await tx.themeIdeaBlock.createMany({
+          data: sourceBlocks.map((b) => ({
+            themeId: targetId,
+            blockId: b.blockId,
+            weight: b.weight,
+          })),
+          skipDuplicates: true,
+        });
+        await tx.themeIdeaBlock.deleteMany({ where: { themeId: sourceId } });
+      }
+
+      const sourceEntities = await tx.themeEntity.findMany({
+        where: { themeId: sourceId },
+        select: { entityId: true, mentionsCount: true },
+      });
+      if (sourceEntities.length > 0) {
+        await tx.themeEntity.createMany({
+          data: sourceEntities.map((e) => ({
+            themeId: targetId,
+            entityId: e.entityId,
+            mentionsCount: e.mentionsCount,
+          })),
+          skipDuplicates: true,
+        });
+        await tx.themeEntity.deleteMany({ where: { themeId: sourceId } });
+      }
+
+      await tx.theme.update({
+        where: { id: sourceId },
+        data: { status: 'merged_into', mergedIntoId: targetId },
+      });
+
+      // Tenant-чек: гарантируем, что обе темы из той же Org (страховочно).
+      const target = await tx.theme.findUnique({
+        where: { id: targetId },
+        select: { tenantId: true, status: true },
+      });
+      if (!target || target.tenantId !== tenantId || target.status !== 'active') {
+        throw new Error(
+          `applyThemeMerge: target ${targetId} не подходит для merge (tenantId/status)`,
+        );
+      }
+    });
+  }
+
+  private parseThemesReframing(
+    text: string,
+  ): z.infer<typeof ThemesReframingResponseSchema> | null {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    const parsed = ThemesReframingResponseSchema.safeParse(raw);
     return parsed.success ? parsed.data : null;
   }
 

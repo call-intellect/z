@@ -2,7 +2,7 @@
 type: execution-plan
 phase: 11
 feature: knowledge-core — retention, право на удаление личных данных (152-ФЗ), routing по dataClass, observability ядра (метрики core_*, Grafana dashboard)
-status: planned
+status: in_progress
 date: 2026-05-10
 source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 ---
@@ -34,7 +34,7 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 ### Шаг 1 — Prisma schema: `OrgRetentionPolicy`
 
-- [ ] Добавить модель:
+- [x] Добавить модель:
   ```prisma
   model OrgRetentionPolicy {
     id                  String   @id @default(cuid())
@@ -50,8 +50,8 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
     updatedAt           DateTime @updatedAt
   }
   ```
-- [ ] **db push**: `bun run prisma:push --accept-data-loss`.
-- [ ] **Backfill через `safe-seed-rules`-совместимый patch-script** [backend/scripts/seed-retention-policies.ts](backend/scripts/seed-retention-policies.ts): для каждой `Org` без `OrgRetentionPolicy` — `create` с дефолтами. Идемпотентен.
+- [x] **db push**: `bun run prisma:push --accept-data-loss`.
+- [x] **Backfill через `safe-seed-rules`-совместимый patch-script** [backend/scripts/seed-retention-policies.ts](backend/scripts/seed-retention-policies.ts): для каждой `Org` без `OrgRetentionPolicy` — `create` с дефолтами. Идемпотентен.
 - [ ] Default getter `RetentionPolicyService.getOrInit(tenantId)` — lazy upsert при первом обращении (на случай если seed не пробежал).
 
 ### Шаг 2 — ENV

@@ -1212,6 +1212,7 @@ model Org {
   themes       Theme[]
   goals        Goal[]
   goalAlignmentSnapshots GoalAlignmentSnapshot[]
+  retentionPolicy OrgRetentionPolicy?
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1705,4 +1706,35 @@ model GoalAlignmentSnapshot {
   @@index([goalId, createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, alertPending])
+}
+
+// ──────────────────────────── knowledge-core: retention (Фаза 11) ────────────────────────────
+
+/// OrgRetentionPolicy — конфиг ретеншена per-Org для knowledge-core/152-ФЗ
+/// (Фаза 11). Создаётся seed'ом или lazy upsert'ом в RetentionPolicyService.
+///
+/// Поля — длительности в днях:
+///   - rawEventDays: 7 лет (2555) — дефолт под 152-ФЗ; ниже 30 нельзя установить.
+///   - archivedBlockDays: 365 — сколько живёт IdeaBlock.status='archived' до hard-delete.
+///   - chatMessageDays: 90 — MeetingChatMessage.
+///   - auditLogDays: 730 — AuditLog (compliance).
+///
+/// archivedBlockAction:
+///   - 'archive_then_delete' (default) — блок без evidence уходит в archived,
+///     а через archivedBlockDays — hard-delete.
+///   - 'keep_forever' — архив остаётся всегда (нет hard-delete по retention).
+///
+/// lastSweepAt — когда последний раз RetentionService.processAll проходил по Org.
+model OrgRetentionPolicy {
+  id                  String    @id @default(cuid())
+  tenantId            String    @unique
+  org                 Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEventDays        Int       @default(2555)
+  archivedBlockDays   Int       @default(365)
+  chatMessageDays     Int       @default(90)
+  auditLogDays        Int       @default(730)
+  archivedBlockAction String    @default("archive_then_delete")
+  lastSweepAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 }

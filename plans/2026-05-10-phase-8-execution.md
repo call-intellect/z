@@ -13,24 +13,25 @@ date: 2026-05-10
 
 ## Backend
 
-- [ ] **Шаг 1 — модуль `dashboard` + сервис + контроллер.**
+- [x] **Шаг 1 — модуль `dashboard` + сервис + контроллер.**
   - `backend/src/modules/dashboard/dashboard.module.ts`.
   - `services/director-dashboard.service.ts` — `getDirectorView({tenantId, period})`. Внутри 6 параллельных запросов через `Promise.all` (newThemes, newSignals, signalCounters, activeThemes, hotEntities (RAW SQL), openQuestions). Кэш через `AdminCacheService`, ключ `dashboard:director:${tenantId}:${period}`, TTL 60s. `narrativeSummary = null` (заглушка).
   - `dto/director-dashboard.dto.ts` — Zod-схема query + типы DTO.
   - `director-dashboard.controller.ts` — `GET /api/v1/dashboard/director?period=week|month` под `CookieAuthGuard + TenantGuard + RbacService.canViewDirectorDashboard`.
   - Регистрация в `AppModule`.
-- [ ] **Шаг 1.bis — `RbacService.canViewDirectorDashboard(userId, tenantId)`.** Обёртка над `loadContext` с проверкой `role IN ('owner','admin')` ИЛИ `isSuperAdmin=true`.
-- [ ] `bun run typecheck` — зелёный.
-- [ ] Коммит `feat(knowledge-core): фаза 8 шаг 1 — DirectorDashboardService + GET /api/v1/dashboard/director`.
+- [x] **Шаг 1.bis — `RbacService.canViewDirectorDashboard(userId, tenantId)`.** Обёртка над `loadContext` с проверкой `role IN ('owner','admin')` ИЛИ `isSuperAdmin=true`.
+- [x] `bun run typecheck` — зелёный.
+- [x] Коммит `feat(knowledge-core): фаза 8 шаг 1 — DirectorDashboardService + GET /api/v1/dashboard/director` (`37e54d0`).
 
-- [ ] **Шаг 2 — `narrativeSummary` LLM-часть.**
+- [x] **Шаг 2 — `narrativeSummary` LLM-часть.**
   - `prompts/dashboard-summary.prompt.ts` — system prompt + builder для user-сообщения (топ-3 темы, топ-5 сигналов, счётчики, топ-3 сущности, топ-3 вопроса).
-  - `DirectorDashboardService.getNarrativeSummary` — вызов `LlmRouterService.call({taskType: 'dashboard-summary', ...})`, на fail/timeout → `null`.
+  - `DirectorDashboardService.getNarrativeSummary` — вызов `LlmRouterService.call({taskType: 'dashboard-summary', ...})`, на fail/timeout → `null`. Если виджеты пусты (totalSignals=0 && totalThemes=0) — `null` без LLM-вызова.
   - Кэш narrative: ключ `dashboard:director:narrative:${tenantId}:${period}`, TTL 24h через `AdminCacheService`.
-  - Cron `@Cron('0 6 * * *')` — `cache.invalidate('dashboard:director:narrative:')`.
-  - `backend/scripts/patch-dashboard-summary-route.ts` — одноразовый upsert с `update: {}` (защита admin-edited).
-- [ ] `bun run typecheck` — зелёный.
-- [ ] Коммит `feat(knowledge-core): фаза 8 шаг 2 — narrativeSummary LLM (taskType=dashboard-summary)`.
+  - Cron `@Cron('0 6 * * *')` `invalidateNarrativeCron` — `cache.invalidate('dashboard:director:narrative:')`.
+  - `backend/scripts/patch-dashboard-summary-route.ts` — findFirst+create (защита admin-edited): если запись уже есть, `[skipped]`.
+- [x] `bun run typecheck` — зелёный.
+- [x] Patch-script запущен — `[created] cmozlirez0001j7k5ci8eroqo`, идемпотентность проверена повторным запуском.
+- [x] Коммит `feat(knowledge-core): фаза 8 шаг 2 — narrativeSummary LLM (taskType=dashboard-summary)`.
 
 ## Не входит (этого слайса)
 

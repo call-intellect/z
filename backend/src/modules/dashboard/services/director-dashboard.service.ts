@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import type { SignalType } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminCacheService } from '../../admin/services/admin-cache.service';
+import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
   DirectorDashboardDto,
   DirectorDashboardEntityDto,
@@ -11,6 +13,10 @@ import type {
   DirectorDashboardSignalDto,
   DirectorDashboardThemeDto,
 } from '../dto/director-dashboard.dto';
+import {
+  buildDashboardSummaryUserMessage,
+  DASHBOARD_SUMMARY_SYSTEM_PROMPT,
+} from '../prompts/dashboard-summary.prompt';
 
 /**
  * DirectorDashboardService (Фаза 8 knowledge-core).
@@ -41,6 +47,8 @@ const SIGNAL_TYPES_FOR_NEW_SIGNALS: SignalType[] = [
 
 const TRUSTED_ANSWER_TRUNCATE = 280;
 const DASHBOARD_TTL_MS = 60_000;
+const NARRATIVE_TTL_MS = 24 * 60 * 60 * 1000;
+const NARRATIVE_CACHE_PREFIX = 'dashboard:director:narrative:';
 
 @Injectable()
 export class DirectorDashboardService {
@@ -49,6 +57,7 @@ export class DirectorDashboardService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AdminCacheService) private readonly cache: AdminCacheService,
+    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
   /**
@@ -84,6 +93,17 @@ export class DirectorDashboardService {
       this.fetchOpenQuestions(args.tenantId),
     ]);
 
+    const narrativeSummary = await this.getNarrativeSummary({
+      tenantId: args.tenantId,
+      period: args.period,
+      newThemes,
+      activeThemes,
+      newSignals,
+      signalCounters,
+      hotEntities,
+      openQuestions,
+    });
+
     const result: DirectorDashboardDto = {
       period: args.period,
       generatedAt: new Date().toISOString(),
@@ -93,12 +113,96 @@ export class DirectorDashboardService {
       activeThemes,
       hotEntities,
       openQuestions,
-      // narrativeSummary — Шаг 2 (LLM); пока заглушка.
-      narrativeSummary: null,
+      narrativeSummary,
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);
     return result;
+  }
+
+  /**
+   * Cron — раз в сутки в 06:00 сбрасывает все narrative-ключи.
+   * Виджет-кэш (60s TTL) сбрасывать не нужно — он сам истекает.
+   */
+  @Cron('0 6 * * *')
+  invalidateNarrativeCron(): void {
+    this.logger.debug('Cron 06:00 — сбрасываем кэш narrative-сводок дашборда');
+    this.cache.invalidate(NARRATIVE_CACHE_PREFIX);
+  }
+
+  // ─────────────────────────── narrative summary ───────────────────────────
+
+  /**
+   * Получить «Главное за неделю/месяц» через `LlmRouterService.call({taskType:
+   * 'dashboard-summary', ...})`. На любую ошибку LLM — возвращает `null`
+   * (UI скрывает блок, см. ТЗ §«Архитектурные решения» #5).
+   *
+   * Кэш — отдельный, ключ `dashboard:director:narrative:${tenantId}:${period}`,
+   * TTL 24 часа. Сброс — раз в сутки cron'ом `invalidateNarrativeCron`.
+   * Виджет-кэш (60s) и narrative-кэш живут независимо: первый перезапросит
+   * виджеты из БД через минуту, второй — переиспользует текущую сводку
+   * до 06:00 следующего дня.
+   */
+  private async getNarrativeSummary(args: {
+    tenantId: string;
+    period: 'week' | 'month';
+    newThemes: DirectorDashboardThemeDto[];
+    activeThemes: DirectorDashboardThemeDto[];
+    newSignals: DirectorDashboardSignalDto[];
+    signalCounters: DirectorDashboardSignalCountersDto;
+    hotEntities: DirectorDashboardEntityDto[];
+    openQuestions: DirectorDashboardOpenQuestionDto[];
+  }): Promise<string | null> {
+    const cacheKey = `${NARRATIVE_CACHE_PREFIX}${args.tenantId}:${args.period}`;
+    const cached = this.cache.get<string>(cacheKey);
+    if (cached !== null) return cached;
+
+    // Если данных совсем нет — нечего и просить LLM.
+    const totalSignals =
+      args.signalCounters.pain +
+      args.signalCounters.feature_request +
+      args.signalCounters.churn_risk +
+      args.signalCounters.objection +
+      args.signalCounters.risk +
+      args.signalCounters.decision +
+      args.signalCounters.commitment +
+      args.signalCounters.other;
+    const totalThemes = args.newThemes.length + args.activeThemes.length;
+    if (totalSignals === 0 && totalThemes === 0) {
+      return null;
+    }
+
+    const userMessage = buildDashboardSummaryUserMessage({
+      period: args.period,
+      newThemes: args.newThemes,
+      activeThemes: args.activeThemes,
+      newSignals: args.newSignals,
+      signalCounters: args.signalCounters,
+      hotEntities: args.hotEntities,
+      openQuestions: args.openQuestions,
+    });
+
+    try {
+      const out = await this.llm.call({
+        taskType: 'dashboard-summary',
+        tenantId: args.tenantId,
+        systemPrompt: DASHBOARD_SUMMARY_SYSTEM_PROMPT,
+        userMessage,
+        sourceRef: { type: 'dashboard', id: args.tenantId },
+        maxTokens: 600,
+      });
+      const text = (out.text ?? '').trim();
+      if (text.length === 0) {
+        return null;
+      }
+      this.cache.setWithTtl(cacheKey, text, NARRATIVE_TTL_MS);
+      return text;
+    } catch (err) {
+      this.logger.warn(
+        `narrativeSummary fail (tenantId=${args.tenantId}, period=${args.period}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
   }
 
   // ─────────────────────────── widgets ──────────────────────────────────────

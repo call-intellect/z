@@ -196,7 +196,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
             дней.
           </p>
           <p>
-            После наступления срока данные удаляются ежечасным sweep'ом
+            После наступления срока данные удаляются ежечасным sweep&rsquo;ом
             (RetentionCron). Удаление необратимо.
           </p>
         </div>

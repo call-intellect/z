@@ -1,0 +1,419 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+
+import { ApiError } from '@/api/api-error';
+import {
+  personsApi,
+  type EraseReportApi,
+  type PersonDetailApi,
+} from '@/api/persons.api';
+import { useAuth } from '@/contexts/auth-context';
+import { useToast } from '@/contexts/toast-context';
+import { Button } from '@/ui/shadcn/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/ui/shadcn/dialog';
+import { Input } from '@/ui/shadcn/input';
+import { Label } from '@/ui/shadcn/label';
+import { Textarea } from '@/ui/shadcn/textarea';
+
+import {
+  AdminError,
+  AdminForbidden,
+  AdminLoading,
+} from '../../admin/AdminStateViews';
+
+const ERASED_NAME = '[удалено по запросу]';
+
+/**
+ * `/persons/[id]` — карточка персоны (минимальная) + блок «Удалить все
+ * данные о персоне» (152-ФЗ, owner-only).
+ *
+ * Шаг 13 Фазы 11. Бэкэнд:
+ *   - GET    /api/v1/knowledge/entities/:id          — данные сущности.
+ *   - DELETE /api/v1/persons/:entityId/data          — стирание.
+ *
+ * UX-состояния (frontend-rules):
+ *   loading / forbidden / not-found / data + диалоговое подтверждение в
+ *   две стадии (сравнение ФИО + причина).
+ */
+export function PersonDetailClient({ entityId }: { entityId: string }) {
+  const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
+
+  if (authLoading) return <AdminLoading rows={4} />;
+  if (!currentOrgId) {
+    return (
+      <AdminForbidden
+        title="Нет организации"
+        description="Вы не состоите ни в одной Org. Попросите владельца пригласить вас."
+      />
+    );
+  }
+
+  return (
+    <PersonDetailContent
+      entityId={entityId}
+      orgId={currentOrgId}
+      isOwner={currentOrgRole === 'owner'}
+    />
+  );
+}
+
+function PersonDetailContent({
+  entityId,
+  orgId,
+  isOwner,
+}: {
+  entityId: string;
+  orgId: string;
+  isOwner: boolean;
+}) {
+  const [data, setData] = useState<PersonDetailApi | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setForbidden(false);
+    setNotFound(false);
+    try {
+      const dto = await personsApi.getEntity(orgId, entityId);
+      setData(dto);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.code === 'forbidden') setForbidden(true);
+        else if (e.code === 'entity_not_found' || e.code === 'http_404') {
+          setNotFound(true);
+        } else {
+          setError(e.message);
+        }
+      } else {
+        setError('Ошибка загрузки');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [orgId, entityId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (isLoading) return <AdminLoading rows={6} />;
+  if (forbidden) {
+    return (
+      <AdminForbidden
+        title="Нет прав на просмотр"
+        description="Этот раздел доступен авторизованным сотрудникам Org."
+      />
+    );
+  }
+  if (notFound) {
+    return (
+      <AdminForbidden
+        title="Персона не найдена"
+        description="Сущность не существует или не принадлежит вашей Org."
+      />
+    );
+  }
+  if (error) return <AdminError message={error} onRetry={load} />;
+  if (!data) return null;
+
+  const { entity, blocks } = data;
+  const isAlreadyErased = entity.canonicalName === ERASED_NAME;
+  const isPerson = entity.type === 'person';
+
+  return (
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
+      <header className="space-y-1">
+        <p className="text-xs uppercase tracking-wider text-fg-tertiary">
+          Персона
+        </p>
+        <h1 className="text-2xl font-semibold">{entity.canonicalName}</h1>
+        <p className="text-sm text-fg-secondary">
+          Тип: <code className="font-mono text-xs">{entity.type}</code>
+          {' · '}
+          Упоминаний: {entity.mentionsCount}
+          {entity.aliases.length > 0 && (
+            <>
+              {' · '}
+              Алиасы: {entity.aliases.join(', ')}
+            </>
+          )}
+        </p>
+      </header>
+
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
+        <h2 className="mb-3 text-base font-medium">Связанные блоки знаний</h2>
+        {blocks.length === 0 ? (
+          <p className="text-sm text-fg-tertiary">
+            Нет canonical-блоков, в которых упомянута персона.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border-subtle">
+            {blocks.map((b) => (
+              <li key={b.id} className="py-2.5">
+                <div className="text-sm font-medium">{b.name}</div>
+                <p className="mt-0.5 text-xs text-fg-tertiary">
+                  {b.criticalQuestion}
+                </p>
+                <p className="mt-1 text-xs text-fg-secondary">
+                  {b.trustedAnswer}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {isOwner && isPerson && !isAlreadyErased && (
+        <section className="space-y-3 rounded-lg border border-danger/40 bg-danger/5 p-5">
+          <div className="flex gap-3">
+            <AlertTriangle
+              size={20}
+              strokeWidth={1.75}
+              className="mt-0.5 shrink-0 text-danger"
+            />
+            <div className="space-y-1">
+              <h2 className="text-base font-medium text-danger">
+                Удаление личных данных (152-ФЗ)
+              </h2>
+              <p className="text-sm text-fg-secondary">
+                Необратимая операция. Будут стёрты все RawEvent-источники с
+                упоминанием персоны, удалены связанные evidence и связи между
+                сущностями. Блоки без оставшихся источников переведутся в
+                архив. Сама сущность будет обезличена. Действие фиксируется в
+                AuditLog.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="destructive"
+            onClick={() => setDialogOpen(true)}
+            className="bg-danger text-white hover:bg-danger/90"
+          >
+            <Trash2 size={14} className="mr-1.5" />
+            Удалить все данные о персоне
+          </Button>
+        </section>
+      )}
+
+      {isAlreadyErased && (
+        <section className="rounded-lg border border-border-subtle bg-bg-overlay p-5 text-sm text-fg-secondary">
+          Эта персона уже обезличена. Все личные данные были удалены.
+        </section>
+      )}
+
+      {!isOwner && isPerson && (
+        <section className="rounded-lg border border-border-subtle bg-bg-overlay p-5 text-sm text-fg-tertiary">
+          Удаление личных данных доступно только владельцу Org.
+        </section>
+      )}
+
+      {dialogOpen && (
+        <ErasePersonDialog
+          orgId={orgId}
+          entityId={entityId}
+          canonicalName={entity.canonicalName}
+          onClose={() => setDialogOpen(false)}
+          onSuccess={() => {
+            // Заметка: backend может отдать alreadyErased — toast уже показан.
+            setDialogOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Двухстадийный диалог подтверждения ─────────────────────────────────
+
+type Stage = 'confirm-name' | 'confirm-reason';
+
+function ErasePersonDialog({
+  orgId,
+  entityId,
+  canonicalName,
+  onClose,
+  onSuccess,
+}: {
+  orgId: string;
+  entityId: string;
+  canonicalName: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const router = useRouter();
+  const { addToast } = useToast();
+  const [stage, setStage] = useState<Stage>('confirm-name');
+  const [typedName, setTypedName] = useState('');
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const nameMatches = typedName.trim() === canonicalName.trim();
+  const reasonValid = reason.trim().length >= 3 && reason.length <= 2000;
+
+  const handleErase = async () => {
+    if (!reasonValid) return;
+    setSubmitting(true);
+    try {
+      const report = await personsApi.eraseData(
+        orgId,
+        entityId,
+        reason.trim(),
+      );
+      showEraseToast(report, addToast);
+      onSuccess();
+      router.push('/persons');
+    } catch (e) {
+      addToast({
+        type: 'error',
+        message:
+          e instanceof ApiError ? e.message : 'Не удалось удалить данные',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(v) => {
+        if (!v && !submitting) onClose();
+      }}
+    >
+      <DialogContent>
+        {stage === 'confirm-name' ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-danger">
+                Удаление необратимо
+              </DialogTitle>
+              <DialogDescription>
+                Будут стёрты RawEvent-источники с упоминанием персоны,
+                обезличена сама сущность, заархивированы блоки без других
+                evidence, удалены связи между сущностями. Восстановление
+                невозможно.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2 py-2">
+              <Label htmlFor="confirm-name-input">
+                Введите ФИО персоны для подтверждения
+              </Label>
+              <Input
+                id="confirm-name-input"
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+                placeholder={canonicalName}
+                autoFocus
+              />
+              <p className="text-xs text-fg-tertiary">
+                Должно точно совпасть с «{canonicalName}».
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>
+                Отмена
+              </Button>
+              <Button
+                onClick={() => setStage('confirm-reason')}
+                disabled={!nameMatches}
+              >
+                Далее
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="text-danger">Причина удаления</DialogTitle>
+              <DialogDescription>
+                Поле обязательно для compliance. Будет записано в AuditLog
+                вместе с user_id, инициировавшим удаление.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2 py-2">
+              <Label htmlFor="erase-reason">Причина (3..2000 символов)</Label>
+              <Textarea
+                id="erase-reason"
+                rows={4}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Запрос субъекта персональных данных по 152-ФЗ от 2026-05-10. Тикет CRM #123."
+                autoFocus
+              />
+              <p className="text-xs text-fg-tertiary">
+                Минимум 3 символа. {reason.length} / 2000.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setStage('confirm-name')}
+                disabled={submitting}
+              >
+                Назад
+              </Button>
+              <Button
+                onClick={() => void handleErase()}
+                disabled={!reasonValid || submitting}
+                className="bg-danger text-white hover:bg-danger/90"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={14} className="mr-1.5 animate-spin" />
+                    Удаляем…
+                  </>
+                ) : (
+                  'Удалить навсегда'
+                )}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function showEraseToast(
+  report: EraseReportApi,
+  addToast: ReturnType<typeof useToast>['addToast'],
+): void {
+  if (report.alreadyErased) {
+    addToast({
+      type: 'info',
+      message: 'Эта персона уже была обезличена ранее.',
+    });
+    return;
+  }
+  addToast({
+    type: 'success',
+    message: `Удалено: ${report.erasedRawEvents} RawEvent, ${report.deletedEvidences} evidence, ${report.archivedBlocks} ${pluralizeBlocks(report.archivedBlocks)} в архив.`,
+  });
+}
+
+function pluralizeBlocks(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'блок';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'блока';
+  return 'блоков';
+}

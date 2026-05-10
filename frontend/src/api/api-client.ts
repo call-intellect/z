@@ -9,7 +9,11 @@ type PostOpts = {
 };
 type PatchOpts = { signal?: AbortSignal; headers?: Record<string, string> };
 type PutOpts = { signal?: AbortSignal; headers?: Record<string, string> };
-type DelOpts = { signal?: AbortSignal; headers?: Record<string, string> };
+type DelOpts = {
+  signal?: AbortSignal;
+  headers?: Record<string, string>;
+  body?: unknown;
+};
 
 type BackendErrorPayload = {
   ok?: false;
@@ -84,7 +88,7 @@ export class ApiClient {
   }
 
   async del<T>(path: string, opts?: DelOpts): Promise<T> {
-    return this.request<T>('DELETE', path, undefined, {
+    return this.request<T>('DELETE', path, opts?.body, {
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
       ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
     });

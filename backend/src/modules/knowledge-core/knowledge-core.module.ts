@@ -12,6 +12,7 @@ import { SearchService } from './api/search.service';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
+import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ClusteringService } from './services/clustering.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
@@ -59,9 +60,10 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     BlockLinkService,
     EntityGraphService,
     SearchService,
-    // Фаза 4: Theme + clusterer.
+    // Фаза 4: Theme + clusterer + card-rollup-v2.
     ClusteringService,
     ThemeClassificationService,
+    CardRollupV2Service,
   ],
   exports: [
     SegmentBuilderService,
@@ -75,6 +77,7 @@ import { ThemeClassificationService } from './services/theme-classification.serv
     SearchService,
     ClusteringService,
     ThemeClassificationService,
+    CardRollupV2Service,
   ],
 })
 export class KnowledgeCoreModule {}

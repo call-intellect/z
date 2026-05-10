@@ -28,6 +28,11 @@ export const CORE_QUEUE_NAMES = {
   ENTITY_RESOLVER: 'core.entity-resolver',
   /** Кластеризация тем (Фаза 4). */
   THEME_CLUSTERER: 'core.theme-clusterer',
+  /**
+   * Card-rollup-v2 (Фаза 4): пересборка `Card.summaryCache` поверх IdeaBlock'ов
+   * (через meeting и через entityId). Дебаунс ~60s по jobId=`card_rollup_v2_<cardId>`.
+   */
+  CARD_ROLLUP_V2: 'core.card-rollup-v2',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -70,4 +75,10 @@ export interface BlockLinkerJobData {
 /** Payload для job'а `core.entity-resolver`. */
 export interface EntityResolverJobData {
   entityId: string;
+}
+
+/** Payload для job'а `core.card-rollup-v2`. Дополнительно reason — для логов. */
+export interface CardRollupV2JobData {
+  cardId: string;
+  reason?: string;
 }

@@ -14,6 +14,7 @@ import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
+import { CardRollupV2Worker } from '../knowledge-core/workers/card-rollup-v2.worker';
 import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-builder.cron';
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
@@ -135,6 +136,8 @@ import { VoxService } from './services/vox.service';
     ReframingCron,
     // knowledge-core (Фаза 4) — theme-clusterer: KNN-greedy + LLM theme-classify.
     ThemeClustererCron,
+    // knowledge-core (Фаза 4) — card-rollup-v2: rollup поверх IdeaBlock'ов.
+    CardRollupV2Worker,
   ],
 })
 export class WorkersModule {}

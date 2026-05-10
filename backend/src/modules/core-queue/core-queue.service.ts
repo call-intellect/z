@@ -14,6 +14,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import {
   type BlockDistillJobData,
   type BlockLinkerJobData,
+  type CardRollupV2JobData,
   CORE_DEFAULT_JOB_OPTIONS,
   CORE_QUEUE_NAMES,
   type CoreQueueName,
@@ -141,6 +142,31 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     const payload: EntityResolverJobData = { entityId };
     await q.add('entity-resolver', payload, { jobId });
     this.logger.debug(`enqueue core.entity-resolver entityId=${entityId}`);
+  }
+
+  /**
+   * Публикация события `card.rollup-v2`. Consumer — `card-rollup-v2.worker`
+   * (Фаза 4). Дедуп через `jobId = card_rollup_v2_<cardId>` + `delay`
+   * (по умолчанию `cfg.knowledgeCore.cardRollupV2DebounceMs` = 60s).
+   *
+   * Несколько подряд идущих enqueue для одного `cardId` сложатся в один
+   * отложенный job. На передачу `delayMs = 0` — сразу.
+   */
+  async enqueueCardRollupV2(
+    cardId: string,
+    opts?: { delayMs?: number; reason?: string },
+  ): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.CARD_ROLLUP_V2);
+    const delay =
+      opts?.delayMs !== undefined
+        ? opts.delayMs
+        : this.cfg?.knowledgeCore.cardRollupV2DebounceMs ?? 60_000;
+    const jobId = `card_rollup_v2_${cardId}`;
+    const payload: CardRollupV2JobData = { cardId, reason: opts?.reason };
+    await q.add('card-rollup-v2', payload, { jobId, delay });
+    this.logger.debug(
+      `enqueue core.card-rollup-v2 cardId=${cardId} delay=${delay}ms reason=${opts?.reason ?? 'n/a'}`,
+    );
   }
 
   // ─────────────────────────── internals ───────────────────────────────────

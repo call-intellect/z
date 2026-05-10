@@ -4,6 +4,7 @@ import type {
   CardListApi,
   CardMeetingsListApi,
 } from '@/domain/card';
+import type { CardThemeMiniApi } from '@/domain/theme';
 
 /**
  * API-клиент модуля cards. Контракт: `backend/src/modules/cards/`.
@@ -117,4 +118,10 @@ export const cardsApi = {
         citations?: unknown;
       }>;
     }>(`/api/v1/cards/${encodeURIComponent(cardId)}/chat/history`),
+
+  /** AI-темы, в которых блоки карточки участвуют (top-3, knowledge-core Фаза 4). */
+  listThemes: (cardId: string) =>
+    apiClient.get<{ items: CardThemeMiniApi[] }>(
+      `/api/v1/cards/${encodeURIComponent(cardId)}/themes`,
+    ),
 };

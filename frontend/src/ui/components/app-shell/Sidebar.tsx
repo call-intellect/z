@@ -13,6 +13,7 @@ import {
   Plus,
   Settings,
   Shapes,
+  Sparkles,
   User,
   KeyRound,
   type LucideIcon,
@@ -45,6 +46,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard' },
   { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
+  { href: '/themes', label: 'AI-темы', icon: Sparkles, matchPrefix: '/themes' },
   { href: '/meetings', label: 'Мои встречи', icon: CalendarDays, matchPrefix: '/meetings' },
   { href: '/tasks', label: 'Задачи', icon: ListChecks, matchPrefix: '/tasks' },
   { href: '/settings/templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/settings/templates' },

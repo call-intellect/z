@@ -157,6 +157,26 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Фаза 4 frontend (themes UI)
+
+Зафиксировано после фронтенд-сессии Фазы 4 (страницы `/themes`, секция «AI обнаружил эти темы» на карточке, sidebar).
+
+1. **Domain `ThemeBranch` без `null` в типе, ветка темы — `ThemeBranch | null`.** Бэкенд хранит ветку как `null`, если LLM ответил `'none'`. Не дублируем `'none'` в TS-енам — на ui всё равно показываем «без ветки» (пилюля просто не рендерится).
+2. **`ThemeStatus` — три значения** (`active`, `archived`, `merged_into`), маппинг строк из API через `KNOWN_STATUSES` set с дефолтом `active` (защищается от расширения enum'а на бэке).
+3. **Mapper'ы `themeFromApi`/`themeBlockFromApi`/`themeEntityFromApi`/`themeDetailFromApi`/`cardThemeMiniFromApi`** — отдельные функции, без `any`. Прибиты narrow'ы веток/статусов/dynamic строго к union'у.
+4. **`themesApi.list`** принимает `branch?` строго `ThemeBranch` (т.е. UI-слой сам преобразует `'all' → omit`). Не передаём `'all'` на бэк — это упрощает back-валидацию.
+5. **Save-as-card UI — отдельный shadcn `Dialog`**, не отдельная страница. Дефолтное имя = `theme.name`, при открытии диалога имя сбрасывается к актуальному `theme.name` (чтобы прошлая правка не «прилипала»).
+6. **409 `card_name_taken` обрабатывается явно** — `ApiError` нарративно конвертируется в локализованный toast «Карточка с таким названием уже существует». Остальные ошибки — общий msg.
+7. **`CardThemesSection` рендерится как `null`, если items пуст.** Не показываем «здесь ещё нет тем» — тема обнаруживается AI асинхронно; пустая карточка-плейсхолдер визуально шумит.
+8. **Tooltip заменён на нативный `title`-атрибут.** Shadcn `<Tooltip>` есть в репо, но `TooltipProvider` нигде не подключён — поднимать его в `AuthenticatedShell` ради одной подсказки нерационально. Использован `<span title="...">` с `<HelpCircle>` иконкой.
+9. **Деталка темы — без подгрузки evidence.** Показываем `name + criticalQuestion + trustedAnswer` блока, без таймкодов/quotes/source. Это требование ТЗ (детально не нужно), и соответствует тому, что эндпоинт `themes/:id` не возвращает evidence.
+10. **Иконка темы — `Sparkles` (lucide).** Совпадает с иконкой AI-сводки на карточке — единый визуальный язык «всё, что от AI».
+11. **`/themes` фильтр статуса — bool-тумблер (active/archived)**, не Select. `merged_into` темы доступны только по прямой ссылке (баннер «Перейти к актуальной теме»), на листинге — только active или archived.
+12. **Pagination на `/themes` — `limit: 100`** одной страницей. Если в будущем тем станет >100 — добавим offset-based пагинацию (бэкенд её уже поддерживает).
+13. **Sidebar — пункт «AI-темы» помещён между «Карточки» и «Мои встречи».** «AI-темы» это «знание о бизнесе», логически рядом с «Карточками».
+
+---
+
 ## 2026-05-10 — Phase 0 frontend: страницы найдены в `(authenticated)`
 
 **Вопрос.** При первом аудите Glob по `frontend/app/settings/organization/**` дал 0 файлов — сделал вывод что страницы отсутствуют. Повторный поиск показал, что они существуют в `frontend/app/(authenticated)/settings/organization/page.tsx` и `(authenticated)/invitations/[token]/page.tsx`.

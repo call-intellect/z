@@ -31,6 +31,7 @@ import { cardsApi } from '@/api/cards.api';
 import { ApiError } from '@/api/api-error';
 import { CARD_KIND_LABELS, type CardKind, cardFromApi } from '@/domain/card';
 import { CardChat } from '@/ui/components/cards/CardChat';
+import { CardThemesSection } from '@/ui/components/cards/CardThemesSection';
 import { Button } from '@/ui/shadcn/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 import {
@@ -299,12 +300,13 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
               )}
             </section>
 
-            {/* Sidebar: rollup */}
-            <aside>
+            {/* Sidebar: rollup + AI-темы */}
+            <aside className="flex flex-col gap-4">
               <RollupCard
                 summary={card.summary}
                 summaryUpdatedAt={card.summaryUpdatedAt}
               />
+              <CardThemesSection cardId={card.id} />
             </aside>
           </div>
         </TabsContent>

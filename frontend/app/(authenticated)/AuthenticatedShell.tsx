@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
 import { useAuth } from '@/contexts/auth-context';
+import { EntitlementProvider } from '@/contexts/entitlement-context';
 import { AppShell } from '@/ui/components/app-shell/AppShell';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
@@ -56,6 +57,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   }
 
   // Onboarding-режим: AppShell не оборачивает (свой layout рисует контент).
+  // EntitlementProvider тоже не нужен — на онбординге gating-фичи не светим.
   if (isOnboardingPath) {
     return <>{children}</>;
   }
@@ -70,5 +72,11 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
     );
   }
 
-  return <AppShell>{children}</AppShell>;
+  // EntitlementProvider оборачивает все защищённые страницы — гейтинг
+  // работает на /themes, /goals, /chat, /dashboard, /admin/*. См. Фаза 12.
+  return (
+    <EntitlementProvider>
+      <AppShell>{children}</AppShell>
+    </EntitlementProvider>
+  );
 }

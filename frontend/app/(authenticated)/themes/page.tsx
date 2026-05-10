@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { TierGate } from '@/ui/components/TierGate';
+
 import { ThemesClient } from './ThemesClient';
 
 export const metadata: Metadata = {
@@ -7,5 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function ThemesPage() {
-  return <ThemesClient />;
+  return (
+    <TierGate feature="feature.theme">
+      <ThemesClient />
+    </TierGate>
+  );
 }

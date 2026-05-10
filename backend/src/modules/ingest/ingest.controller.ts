@@ -25,7 +25,10 @@ import { S3Service } from '../recordings/s3.service';
 
 import { IngestEventSchema, type IngestEventDto } from './dto/ingest-event.dto';
 import type { IngestResponseDto, RawEventResponseDto } from './dto/raw-event.dto';
-import { IngestTokenGuard } from './guards/ingest-token.guard';
+import {
+  IngestTokenGuard,
+  type RequestWithIngestContext,
+} from './guards/ingest-token.guard';
 import { IngestService } from './ingest.service';
 
 /**
@@ -49,9 +52,31 @@ export class IngestController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body(new ZodValidationPipe(IngestEventSchema)) body: IngestEventDto,
+    @Req() req: RequestWithIngestContext,
   ): Promise<IngestResponseDto> {
+    // Per-Org ApiKey фиксирует tenantId: body.tenantId должен совпасть либо
+    // отсутствовать. Shared-secret режим — body.tenantId обязателен (как раньше).
+    const ctxTenantId = req.ingestContext?.tenantId ?? null;
+    let effectiveTenantId: string;
+    if (ctxTenantId) {
+      if (body.tenantId && body.tenantId !== ctxTenantId) {
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'tenant_mismatch',
+            message:
+              'body.tenantId не совпадает с tenantId, привязанным к ingest-ключу',
+          },
+        });
+      }
+      effectiveTenantId = ctxTenantId;
+    } else {
+      // shared-secret режим — body.tenantId обязателен.
+      effectiveTenantId = body.tenantId;
+    }
+
     const result = await this.ingest.ingest({
-      tenantId: body.tenantId,
+      tenantId: effectiveTenantId,
       sourceId: body.sourceId,
       sourceExternalId: body.sourceExternalId ?? null,
       occurredAt: new Date(body.occurredAt),

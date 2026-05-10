@@ -11,31 +11,88 @@ import {
 import type { Request } from 'express';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ApiKeysService } from '../../api-keys/api-keys.service';
 
 /**
- * Guard для POST /api/v1/ingest.
+ * Контекст ingest-запроса. Кладётся в `req.ingestContext` после успешной
+ * авторизации. В контроллере (`IngestController`) tenantId берётся отсюда —
+ * `body.tenantId` из запроса игнорируется или должен совпасть.
+ */
+export interface IngestRequestContext {
+  /** Org, к которой привязан ключ. Для shared-secret режима — null. */
+  tenantId: string | null;
+  /** ApiKey.id (только для per-Org ключа); для shared-secret — null. */
+  apiKeyId: string | null;
+  /** Источник авторизации: 'org_key' (per-Org `zik_*`) или 'shared_secret'. */
+  source: 'org_key' | 'shared_secret';
+}
+
+export type RequestWithIngestContext = Request & {
+  ingestContext?: IngestRequestContext;
+};
+
+/**
+ * Guard для POST /api/v1/ingest и других ingest-эндпоинтов.
  *
- * Простой shared-secret из ENV `INGEST_INTERNAL_TOKEN`. Используется только
- * адаптерами, которые живут вне backend-процесса (telegram/email/IMAP-listener).
- * In-process meeting-adapter напрямую вызывает `IngestService.ingest` и сюда
- * не приходит.
+ * Поддерживает ДВА режима авторизации:
  *
- *   - Заголовок: `Authorization: Bearer <INGEST_INTERNAL_TOKEN>`.
- *   - Если токен в ENV не настроен (пустая строка) — endpoint возвращает 503.
- *     Это намеренно: на Фазе 1 мы хотим чтобы DevOps явно сгенерировал
- *     длинный токен (40+ символов) перед прод-деплоем.
- *   - Сравнение через `timingSafeEqual` (защита от timing-атак).
+ *   1. **Per-Org ApiKey** (Фаза 10) — `Authorization: Bearer zik_*`.
+ *      Резолвится через `ApiKeysService.resolveIngestKey`. Проверки:
+ *      существует, не отозван, scope='ingest', tenantId есть.
+ *      Контекст: `{ tenantId, apiKeyId, source: 'org_key' }`.
+ *      Параллельно пишется `ApiAccessLog` (lastUsedAt + аудит).
  *
- * Полноценное per-Org API-key управление для внешних адаптеров — задача
- * Фазы 10 (когда придут реальные внешние адаптеры).
+ *   2. **Shared-secret** (Фаза 1) — `Authorization: Bearer <INGEST_INTERNAL_TOKEN>`.
+ *      Используется только in-process backend-cron'ами (например,
+ *      `email-fetch.cron` шага 6). Контекст:
+ *      `{ tenantId: null, apiKeyId: null, source: 'shared_secret' }`.
+ *
+ * Если ENV `INGEST_INTERNAL_TOKEN` пустой и переданный токен не `zik_*` —
+ * 503 (намеренно: DevOps должен явно сгенерировать токен перед deploy).
  */
 @Injectable()
 export class IngestTokenGuard implements CanActivate {
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(ApiKeysService) private readonly apiKeys: ApiKeysService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
-  canActivate(ctx: ExecutionContext): boolean {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest<RequestWithIngestContext>();
+    const header = req.headers.authorization;
+    if (!header || !header.toLowerCase().startsWith('bearer ')) {
+      throw this.unauthorized('Требуется заголовок Authorization: Bearer ...');
+    }
+    const presented = header.slice(7).trim();
+    if (presented.length === 0) {
+      throw this.unauthorized('Пустой Bearer-токен');
+    }
+
+    // ── Режим 1: per-Org ApiKey (zik_*) ──
+    if (presented.startsWith('zik_')) {
+      const apiKey = await this.apiKeys.resolveIngestKey(presented);
+      if (!apiKey) {
+        throw this.unauthorized('Невалидный или отозванный ingest-ключ');
+      }
+      if (!apiKey.tenantId) {
+        // По бизнес-правилу ingest-ключ обязан иметь tenantId. Если его нет —
+        // считаем ключ невалидным.
+        throw this.unauthorized('Ingest-ключ без tenantId');
+      }
+      req.ingestContext = {
+        tenantId: apiKey.tenantId,
+        apiKeyId: apiKey.id,
+        source: 'org_key',
+      };
+      // Fire-and-forget: lastUsedAt + ApiAccessLog. Не блокируем запрос.
+      void this.apiKeys.touchLastUsed(apiKey.id);
+      void this.logApiAccess(apiKey.id, req).catch(() => undefined);
+      return true;
+    }
+
+    // ── Режим 2: shared-secret (INGEST_INTERNAL_TOKEN) ──
     const expected = this.cfg.ingest.internalToken;
     if (!expected || expected.length < 16) {
       throw new ServiceUnavailableException({
@@ -47,19 +104,14 @@ export class IngestTokenGuard implements CanActivate {
         },
       });
     }
-
-    const req = ctx.switchToHttp().getRequest<Request>();
-    const header = req.headers.authorization;
-    if (!header || !header.toLowerCase().startsWith('bearer ')) {
-      throw this.unauthorized('Требуется заголовок Authorization: Bearer ...');
-    }
-    const presented = header.slice(7).trim();
-    if (presented.length === 0) {
-      throw this.unauthorized('Пустой Bearer-токен');
-    }
     if (!constantTimeStringEqual(presented, expected)) {
       throw this.unauthorized('Невалидный ingest-токен');
     }
+    req.ingestContext = {
+      tenantId: null,
+      apiKeyId: null,
+      source: 'shared_secret',
+    };
     return true;
   }
 
@@ -67,6 +119,25 @@ export class IngestTokenGuard implements CanActivate {
     return new UnauthorizedException({
       ok: false,
       error: { code: 'invalid_ingest_token', message },
+    });
+  }
+
+  /**
+   * Запись в `ApiAccessLog`. Не блокирует запрос — ошибки заглушены caller'ом.
+   */
+  private async logApiAccess(
+    apiKeyId: string,
+    req: Request,
+  ): Promise<void> {
+    await this.prisma.apiAccessLog.create({
+      data: {
+        apiKeyId,
+        userId: null,
+        route: `${req.method} ${(req as Request & { route?: { path?: string } }).route?.path ?? req.path}`,
+        status: 0, // 0 = до выполнения handler'а; финальный status неизвестен здесь.
+        durationMs: null,
+        ipHash: null,
+      },
     });
   }
 }

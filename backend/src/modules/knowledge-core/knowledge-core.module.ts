@@ -12,6 +12,7 @@ import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
+import { EntityGraphService } from './services/entity-graph.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
@@ -52,6 +53,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     BlockMergeService,
     EntityMergeService,
     BlockLinkService,
+    EntityGraphService,
     SearchService,
   ],
   exports: [
@@ -62,6 +64,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     BlockMergeService,
     EntityMergeService,
     BlockLinkService,
+    EntityGraphService,
     SearchService,
   ],
 })

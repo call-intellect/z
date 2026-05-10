@@ -14,8 +14,10 @@ import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
+import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-builder.cron';
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
+import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { UsersService } from '../users/users.service';
@@ -126,6 +128,10 @@ import { VoxService } from './services/vox.service';
     EntityResolverCronService,
     // knowledge-core (Фаза 3) — block-linker: типизированные связи блоков.
     BlockLinkerWorker,
+    // knowledge-core (Фаза 3) — entity-graph-builder: связи сущностей (раз в час).
+    EntityGraphBuilderCron,
+    // knowledge-core (Фаза 3) — reframing: ночное переосмысление графа (3:00).
+    ReframingCron,
   ],
 })
 export class WorkersModule {}

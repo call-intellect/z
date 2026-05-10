@@ -5,6 +5,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { BlockExtractionService } from './services/block-extraction.service';
+import { BlockMergeService } from './services/block-merge.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
@@ -37,12 +38,14 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     BlockExtractionService,
     KnowledgeEmbeddingService,
     EntityResolutionService,
+    BlockMergeService,
   ],
   exports: [
     SegmentBuilderService,
     BlockExtractionService,
     KnowledgeEmbeddingService,
     EntityResolutionService,
+    BlockMergeService,
   ],
 })
 export class KnowledgeCoreModule {}

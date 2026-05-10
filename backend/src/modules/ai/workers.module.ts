@@ -11,6 +11,7 @@ import { CoreQueueService } from '../core-queue/core-queue.service';
 import { MeetingIngestAdapter } from '../ingest/adapters/meeting.adapter';
 import { IngestService } from '../ingest/ingest.service';
 import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
+import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
@@ -114,9 +115,9 @@ import { VoxService } from './services/vox.service';
     TranscriptIndexWorker,
     ClipRenderWorker,
     CardRollupWorker,
-    // knowledge-core (Фаза 2) — воркер block-ingest. block-distill добавится
-    // в Шаге 3 (Шаг 2 уже публикует в очередь distill, jobs накапливаются).
+    // knowledge-core (Фаза 2) — воркеры block-ingest и block-distill.
     BlockIngestWorker,
+    BlockDistillWorker,
   ],
 })
 export class WorkersModule {}

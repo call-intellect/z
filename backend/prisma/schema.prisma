@@ -239,6 +239,46 @@ enum RawEventPayloadStorage {
   s3
 }
 
+// ──────────────────────────── knowledge-core: graph (Фаза 3) ────────────────────────────
+
+/// Тип типизированной связи между блоками. См. plans/tz/2026-05-10-knowledge-core-tz.md §Фаза 3.
+enum IdeaBlockLinkType {
+  develops
+  contradicts
+  causes
+  consequences_of
+  shares_topic
+  shares_entity
+  question_answered_by
+}
+
+/// Тип типизированной связи между сущностями.
+enum EntityLinkType {
+  works_at
+  belongs_to
+  part_of
+  opposes
+  depends_on
+  mentions_with
+}
+
+/// Кто создал связь:
+///   - linker: block-linker.worker (на canonical-блок).
+///   - reframing: ночной reframing.cron (рефлексия графа).
+///   - manual: пользователь через UI (не в MVP, но поле зафиксировано сразу).
+enum LinkCreatedBy {
+  linker
+  reframing
+  manual
+}
+
+/// Состояние связи: active = живая, archived = архив (понижен confidence или
+/// сброшен ночным reframing).
+enum LinkStatus {
+  active
+  archived
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
@@ -1040,6 +1080,8 @@ model Org {
   rawEvents    RawEvent[]
   ideaBlocks   IdeaBlock[]
   entities     Entity[]
+  blockLinks   IdeaBlockLink[]
+  entityLinks  EntityLink[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1206,6 +1248,8 @@ model IdeaBlock {
   mergedFrom IdeaBlock[]         @relation("BlockMerges")
   evidence   IdeaBlockEvidence[]
   entities   IdeaBlockEntity[]
+  linksFrom  IdeaBlockLink[]     @relation("BlockLinkFrom")
+  linksTo    IdeaBlockLink[]     @relation("BlockLinkTo")
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
@@ -1254,6 +1298,8 @@ model Entity {
   mergedInto    Entity?           @relation("EntityMerges", fields: [mergedIntoId], references: [id])
   mergedFrom    Entity[]          @relation("EntityMerges")
   blockMentions IdeaBlockEntity[]
+  linksFrom     EntityLink[]      @relation("EntityLinkFrom")
+  linksTo       EntityLink[]      @relation("EntityLinkTo")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -1274,4 +1320,61 @@ model IdeaBlockEntity {
 
   @@id([blockId, entityId])
   @@index([entityId])
+}
+
+/// IdeaBlockLink — типизированная связь между двумя IdeaBlock.
+/// Создаётся `block-linker.worker` (KNN top-K кандидатов + LLM-арбитр)
+/// или `reframing.cron` (рефлексия графа). 7 типов связей —
+/// см. enum `IdeaBlockLinkType`.
+///
+/// Дедупликация: уникальная пара (fromBlockId, toBlockId, relationType).
+/// Идемпотентный upsert при повторных проходах линкера.
+model IdeaBlockLink {
+  id           String            @id @default(cuid())
+  tenantId     String
+  fromBlockId  String
+  toBlockId    String
+  relationType IdeaBlockLinkType
+  confidence   Decimal           @db.Decimal(4, 3)
+  explanation  String            @db.Text
+  createdBy    LinkCreatedBy
+  status       LinkStatus        @default(active)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  org       Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromBlock IdeaBlock @relation("BlockLinkFrom", fields: [fromBlockId], references: [id], onDelete: Cascade)
+  toBlock   IdeaBlock @relation("BlockLinkTo", fields: [toBlockId], references: [id], onDelete: Cascade)
+
+  @@unique([fromBlockId, toBlockId, relationType])
+  @@index([tenantId, status])
+  @@index([fromBlockId, status])
+  @@index([toBlockId, status])
+}
+
+/// EntityLink — типизированная связь между двумя Entity.
+/// Создаётся `entity-graph-builder.cron` (раз в час) на основе пар сущностей,
+/// часто упомянутых в одних и тех же блоках. 6 типов связей —
+/// см. enum `EntityLinkType`.
+model EntityLink {
+  id           String         @id @default(cuid())
+  tenantId     String
+  fromEntityId String
+  toEntityId   String
+  relationType EntityLinkType
+  confidence   Decimal        @db.Decimal(4, 3)
+  explanation  String         @db.Text
+  createdBy    LinkCreatedBy
+  status       LinkStatus     @default(active)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  org        Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromEntity Entity @relation("EntityLinkFrom", fields: [fromEntityId], references: [id], onDelete: Cascade)
+  toEntity   Entity @relation("EntityLinkTo", fields: [toEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([fromEntityId, toEntityId, relationType])
+  @@index([tenantId, status])
+  @@index([fromEntityId, status])
+  @@index([toEntityId, status])
 }

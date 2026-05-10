@@ -194,6 +194,46 @@ enum RawEventProcessingStatus {
   failed
 }
 
+enum SignalType {
+  fact
+  pain
+  feature_request
+  objection
+  churn_risk
+  idea
+  risk
+  commitment
+  decision
+  mood
+  drift
+  competitor_move
+  metric_change
+  knowledge_gap
+}
+
+enum IdeaBlockStatus {
+  draft
+  canonical
+  merged_into
+  archived
+}
+
+enum EntityType {
+  client
+  person
+  project
+  product
+  topic
+  location
+  custom
+}
+
+enum IdeaBlockEntityRole {
+  subject
+  object
+  mentioned
+}
+
 enum RawEventPayloadStorage {
   inline
   s3
@@ -998,6 +1038,8 @@ model Org {
   aiUsageLogs  AiUsageLog[]
   sources      Source[]
   rawEvents    RawEvent[]
+  ideaBlocks   IdeaBlock[]
+  entities     Entity[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1117,9 +1159,119 @@ model RawEvent {
   /// Когда последний раз обработался ingest pipeline (Фаза 2).
   processedAt      DateTime?
 
-  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  source Source @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  org      Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source   Source              @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  evidence IdeaBlockEvidence[]
 
   @@index([tenantId, sourceId, occurredAt])
   @@index([tenantId, processingStatus])
+}
+
+// ──────────────────────────── knowledge-core: IdeaBlock + Entity (Фаза 2) ────────────────────────────
+
+/// IdeaBlock — единица знания «вопрос ↔ доверенный ответ».
+/// Извлекается block-ingest.worker'ом из RawEvent, дедуплицируется
+/// block-distill.worker'ом по эмбеддингам и LLM-арбитру.
+///
+/// Поля name / criticalQuestion / trustedAnswer индексируются ts_vector'ом
+/// (см. postgres-init.sql) для гибридного поиска. embedding (vector(1536))
+/// — для семантического поиска через HNSW.
+///
+/// status:
+///   - draft: только что извлечён, не прошёл distill
+///   - canonical: основной блок, остальные похожие через mergedIntoId → его id
+///   - merged_into: блок-дубликат, его mergedIntoId указывает на canonical
+///   - archived: устарел / явно скрыт
+model IdeaBlock {
+  id               String                       @id @default(cuid())
+  tenantId         String
+  name             String
+  criticalQuestion String                       @db.Text
+  trustedAnswer    String                       @db.Text
+  tags             String[]                     @default([])
+  signalType       SignalType
+  confidence       Decimal                      @default(0.5) @db.Decimal(4, 3)
+  dataClass        DataClass                    @default(internal)
+  embedding        Unsupported("vector(1536)")?
+  status           IdeaBlockStatus              @default(draft)
+  mergedIntoId     String?
+  evidenceCount    Int                          @default(0)
+  /// Динамический рейтинг: пересчитывается ретеншеном; влияет на ранжирование в поиске.
+  dynamicScore     Decimal                      @default(1.0) @db.Decimal(8, 4)
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  org        Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mergedInto IdeaBlock?          @relation("BlockMerges", fields: [mergedIntoId], references: [id])
+  mergedFrom IdeaBlock[]         @relation("BlockMerges")
+  evidence   IdeaBlockEvidence[]
+  entities   IdeaBlockEntity[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, signalType])
+  @@index([tenantId, mergedIntoId])
+}
+
+/// IdeaBlockEvidence — link block ↔ конкретный фрагмент RawEvent с цитатой.
+/// Один блок может иметь много свидетельств из разных встреч/чатов/звонков.
+/// quote — текстовая цитата, startMs/endMs — таймкоды (если применимо к источнику).
+model IdeaBlockEvidence {
+  id              String     @id @default(cuid())
+  blockId         String
+  rawEventId      String
+  sourceType      SourceType
+  sourceTimestamp DateTime?
+  quote           String     @db.Text
+  startMs         Int?
+  endMs           Int?
+  createdAt       DateTime   @default(now())
+
+  block    IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent  @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+
+  @@index([blockId])
+  @@index([rawEventId])
+}
+
+/// Entity — сущность (клиент, человек, проект, продукт, тема, локация, custom).
+/// Используется в IdeaBlockEntity (M:M с блоками) и в knowledge-core search.
+/// canonicalName уникален в рамках tenant + type через приложение (не индексом —
+/// возможны исторические дубликаты до прохода entity-merge-arbiter).
+model Entity {
+  id            String                       @id @default(cuid())
+  tenantId      String
+  type          EntityType
+  canonicalName String
+  aliases       String[]                     @default([])
+  mergedIntoId  String?
+  mentionsCount Int                          @default(0)
+  embedding     Unsupported("vector(1536)")?
+  metadata      Json?
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+
+  org           Org               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mergedInto    Entity?           @relation("EntityMerges", fields: [mergedIntoId], references: [id])
+  mergedFrom    Entity[]          @relation("EntityMerges")
+  blockMentions IdeaBlockEntity[]
+
+  @@index([tenantId, type])
+  @@index([tenantId, mergedIntoId])
+  @@index([tenantId, canonicalName])
+}
+
+/// IdeaBlockEntity — M:M связь block ↔ entity с ролью и контекстом упоминания.
+/// role — subject (главное действующее), object (на что направлено), mentioned (вскользь).
+model IdeaBlockEntity {
+  blockId        String
+  entityId       String
+  mentionContext String              @db.Text
+  role           IdeaBlockEntityRole @default(mentioned)
+  createdAt      DateTime            @default(now())
+
+  block  IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  entity Entity    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@id([blockId, entityId])
+  @@index([entityId])
 }

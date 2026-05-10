@@ -20,6 +20,7 @@
     "prisma:studio": "prisma studio",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx prisma/seed.ts",
+    "apply-postgres-init": "tsx scripts/apply-postgres-init.ts",
     "worker:dev": "tsx watch src/workers/main.ts",
     "worker:start": "node dist/workers/main.js"
   },

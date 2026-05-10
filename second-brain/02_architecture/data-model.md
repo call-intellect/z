@@ -398,6 +398,63 @@ IdeaBlockEntity {
 Composite PK даёт идемпотентность — повторное создание для той же пары
 блок↔сущность ловится через `Prisma.PrismaClientKnownRequestError P2002`.
 
+## Knowledge-core (Фаза 3): IdeaBlockLink + EntityLink
+
+Граф знаний поверх IdeaBlock и Entity — типизированные связи. Подробно —
+[[knowledge-core|knowledge-core.md]] раздел «Граф (Фаза 3)».
+
+### IdeaBlockLink
+
+```
+IdeaBlockLink {
+  id                cuid
+  tenantId          → Org
+  fromBlockId       → IdeaBlock
+  toBlockId         → IdeaBlock
+  relationType      enum (develops | contradicts | causes | consequences_of |
+                          shares_topic | shares_entity | question_answered_by)
+  confidence        Decimal(4,3)
+  explanation       String @Text
+  createdBy         enum (linker | reframing | manual)
+  status            enum (active | archived)  @default(active)
+  createdAt, updatedAt
+  @@unique(fromBlockId, toBlockId, relationType)
+  @@index(tenantId, status)
+  @@index(fromBlockId, status)
+  @@index(toBlockId, status)
+}
+```
+
+Источник создания — `block-linker.worker` (KNN top-10 + LLM-арбитр) или
+`reframing.cron` (ночная рефлексия, может архивировать слабые связи).
+Дедупликация через unique-индекс на тройку (from, to, relationType) — повторный
+проход линкера обновляет `confidence` и `explanation` через upsert.
+
+### EntityLink
+
+```
+EntityLink {
+  id                cuid
+  tenantId          → Org
+  fromEntityId      → Entity
+  toEntityId        → Entity
+  relationType      enum (works_at | belongs_to | part_of | opposes |
+                          depends_on | mentions_with)
+  confidence        Decimal(4,3)
+  explanation       String @Text
+  createdBy         enum (linker | reframing | manual)
+  status            enum (active | archived)  @default(active)
+  createdAt, updatedAt
+  @@unique(fromEntityId, toEntityId, relationType)
+  @@index(tenantId, status)
+  @@index(fromEntityId, status)
+  @@index(toEntityId, status)
+}
+```
+
+Создаётся `entity-graph-builder.cron` (раз в час, ищет co-mentioned пары
+сущностей в одних блоках, минимум `ENTITY_GRAPH_MIN_COMENTIONS=3` упоминаний).
+
 ### ER (knowledge-core)
 
 ```mermaid
@@ -409,6 +466,8 @@ erDiagram
   Entity ||--o{ IdeaBlockEntity : "is mentioned"
   IdeaBlock }o--|| IdeaBlock : mergedInto
   Entity }o--|| Entity : mergedInto
+  IdeaBlock ||--o{ IdeaBlockLink : "links from/to"
+  Entity ||--o{ EntityLink : "links from/to"
 ```
 
 [[../index|← index]]

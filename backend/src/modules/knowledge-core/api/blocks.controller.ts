@@ -21,6 +21,10 @@ import { RbacService } from '../../rbac/rbac.service';
 
 import type { BlockDetailDto } from './dto/block.dto';
 import type {
+  BlockLinkItemDto,
+  BlockLinksResultDto,
+} from './dto/graph.dto';
+import type {
   BlockSearchItemDto,
   EntityItemDto,
   EvidenceItemDto,
@@ -128,6 +132,99 @@ export class KnowledgeBlocksController {
         ? { mergedFrom: mergedFromRows.map((b) => this.mapBlock(b)) }
         : {}),
       ...(redirected ? { redirectedToCanonical: true } : {}),
+    };
+  }
+
+  /**
+   * `GET /api/v1/knowledge/blocks/:id/links` — типизированные связи блока
+   * (Фаза 3). Возвращает outgoing (где блок — fromBlockId) и incoming
+   * (где блок — toBlockId), отсортированные по убыванию confidence.
+   * Архивированные связи не показываем (`status='active'`).
+   */
+  @Get('blocks/:id/links')
+  @ApiOperation({ summary: 'Типизированные связи блока (outgoing + incoming)' })
+  async links(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<BlockLinksResultDto> {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Org не определена' },
+      });
+    }
+    const allowed = await this.rbac.canRead(user.id, tenantId, 'block');
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав' },
+      });
+    }
+    // Проверяем существование и принадлежность Org.
+    const block = await this.prisma.ideaBlock.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true },
+    });
+    if (!block || block.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_found', message: 'Блок не найден' },
+      });
+    }
+
+    const [outgoing, incoming] = await Promise.all([
+      this.prisma.ideaBlockLink.findMany({
+        where: { fromBlockId: id, status: 'active', tenantId },
+        include: { toBlock: true },
+        orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.ideaBlockLink.findMany({
+        where: { toBlockId: id, status: 'active', tenantId },
+        include: { fromBlock: true },
+        orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+      }),
+    ]);
+
+    return {
+      outgoing: outgoing.map(
+        (l): BlockLinkItemDto => ({
+          id: l.id,
+          fromBlockId: l.fromBlockId,
+          toBlockId: l.toBlockId,
+          relationType: l.relationType,
+          confidence: this.confToNumber(l.confidence),
+          explanation: l.explanation,
+          status: l.status,
+          createdBy: l.createdBy,
+          createdAt: l.createdAt.toISOString(),
+          other: {
+            blockId: l.toBlock.id,
+            name: l.toBlock.name,
+            criticalQuestion: l.toBlock.criticalQuestion,
+            signalType: l.toBlock.signalType,
+          },
+        }),
+      ),
+      incoming: incoming.map(
+        (l): BlockLinkItemDto => ({
+          id: l.id,
+          fromBlockId: l.fromBlockId,
+          toBlockId: l.toBlockId,
+          relationType: l.relationType,
+          confidence: this.confToNumber(l.confidence),
+          explanation: l.explanation,
+          status: l.status,
+          createdBy: l.createdBy,
+          createdAt: l.createdAt.toISOString(),
+          other: {
+            blockId: l.fromBlock.id,
+            name: l.fromBlock.name,
+            criticalQuestion: l.fromBlock.criticalQuestion,
+            signalType: l.fromBlock.signalType,
+          },
+        }),
+      ),
     };
   }
 

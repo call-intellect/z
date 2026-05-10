@@ -94,6 +94,14 @@ const ROUTES: RouteSeed[] = [
     isActive: true,
   },
   {
+    taskType: 'entity-graph-builder',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+    isActive: true,
+  },
+  {
     taskType: 'theme-classify',
     providers: [
       { provider: 'openai-via-proxy', model: 'gpt-5.4-nano' },

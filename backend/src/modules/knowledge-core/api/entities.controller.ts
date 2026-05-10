@@ -29,6 +29,10 @@ import {
   type ListEntitiesResultDto,
 } from './dto/entity.dto';
 import type {
+  EntityLinkItemDto,
+  EntityLinksResultDto,
+} from './dto/graph.dto';
+import type {
   BlockSearchItemDto,
   EntityItemDto,
 } from './dto/search.dto';
@@ -161,6 +165,94 @@ export class KnowledgeEntitiesController {
       },
       blocks: mentionRows.map((r): BlockSearchItemDto => this.mapBlock(r.block)),
       ...(entity.mergedIntoId ? { mergedIntoId: entity.mergedIntoId } : {}),
+    };
+  }
+
+  /**
+   * `GET /api/v1/knowledge/entities/:id/links` — типизированные связи сущности
+   * (Фаза 3). Возвращает outgoing + incoming, без архивных связей.
+   */
+  @Get('entities/:id/links')
+  @ApiOperation({ summary: 'Типизированные связи сущности (outgoing + incoming)' })
+  async links(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<EntityLinksResultDto> {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Org не определена' },
+      });
+    }
+    const allowed = await this.rbac.canRead(user.id, tenantId, 'entity');
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав' },
+      });
+    }
+    const entity = await this.prisma.entity.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true },
+    });
+    if (!entity || entity.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'entity_not_found', message: 'Сущность не найдена' },
+      });
+    }
+
+    const [outgoing, incoming] = await Promise.all([
+      this.prisma.entityLink.findMany({
+        where: { fromEntityId: id, status: 'active', tenantId },
+        include: { toEntity: true },
+        orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.entityLink.findMany({
+        where: { toEntityId: id, status: 'active', tenantId },
+        include: { fromEntity: true },
+        orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+      }),
+    ]);
+
+    return {
+      outgoing: outgoing.map(
+        (l): EntityLinkItemDto => ({
+          id: l.id,
+          fromEntityId: l.fromEntityId,
+          toEntityId: l.toEntityId,
+          relationType: l.relationType,
+          confidence: this.confToNumber(l.confidence),
+          explanation: l.explanation,
+          status: l.status,
+          createdBy: l.createdBy,
+          createdAt: l.createdAt.toISOString(),
+          other: {
+            entityId: l.toEntity.id,
+            type: l.toEntity.type,
+            canonicalName: l.toEntity.canonicalName,
+          },
+        }),
+      ),
+      incoming: incoming.map(
+        (l): EntityLinkItemDto => ({
+          id: l.id,
+          fromEntityId: l.fromEntityId,
+          toEntityId: l.toEntityId,
+          relationType: l.relationType,
+          confidence: this.confToNumber(l.confidence),
+          explanation: l.explanation,
+          status: l.status,
+          createdBy: l.createdBy,
+          createdAt: l.createdAt.toISOString(),
+          other: {
+            entityId: l.fromEntity.id,
+            type: l.fromEntity.type,
+            canonicalName: l.fromEntity.canonicalName,
+          },
+        }),
+      ),
     };
   }
 

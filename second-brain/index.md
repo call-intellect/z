@@ -36,7 +36,7 @@
 - [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
-- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 2): IdeaBlock + Entity, pipeline ingest→distill→retrieve, гибридный поиск
+- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 3): IdeaBlock + Entity + IdeaBlockLink + EntityLink, pipeline ingest→distill→link→reframing, гибридный поиск + граф
 
 ## Решения / ADR
 _пусто_
@@ -73,6 +73,12 @@ _пусто_
 - [[02_architecture/module-map]] — добавлен раздел knowledge-core (services/workers/api)
 - [[01_projects/llm-router]] — DeepSeek/Ollama адаптеры, JSON Schema strict, taskType ядра (`block-ingest`, `block-distill`, `entity-merge-arbiter`)
 
+## Заметки по реализации (2026-05-10) — Фаза 3 knowledge-core
+- [[02_architecture/knowledge-core]] — раздел «Граф (Фаза 3)»: `IdeaBlockLink` (7 типов связей: develops/contradicts/causes/consequences_of/shares_topic/shares_entity/question_answered_by) + `EntityLink` (6 типов: works_at/belongs_to/part_of/opposes/depends_on/mentions_with). `block-linker.worker` (consumer `core.block-linker`, KNN top-10 + LLM-арбитр, гейт LINKER_MIN_BLOCKS=50). `entity-graph-builder.cron` (раз в час, co-mentioned пары). `reframing.cron` (3:00, архивация слабых связей confidence<0.5, dynamicScore decay 90 дней, LLM-анализ свежих блоков)
+- [[02_architecture/data-model]] — добавлены модели `IdeaBlockLink`, `EntityLink` + ER-связи
+- API: `GET /api/v1/knowledge/blocks/:id/links`, `GET /api/v1/knowledge/entities/:id/links`, `GET /api/v1/knowledge/graph/neighbors?nodeType=block|entity&id=…&depth=1..3` (BFS, лимит 100 nodes, `truncated=true` при превышении)
+- LlmTaskType: добавлен `entity-graph-builder` (`reframing` уже был); seed обновлён
+
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
 
@@ -86,4 +92,4 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-10 (Фаза 2 knowledge-core: IdeaBlock + Entity + Search API)_
+_Обновлён: 2026-05-10 (Фаза 3 knowledge-core: IdeaBlockLink + EntityLink + block-linker/entity-graph-builder/reframing crons + graph API)_

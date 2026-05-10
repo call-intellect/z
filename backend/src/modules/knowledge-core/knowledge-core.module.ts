@@ -6,6 +6,7 @@ import { S3Service } from '../recordings/s3.service';
 
 import { KnowledgeBlocksController } from './api/blocks.controller';
 import { KnowledgeEntitiesController } from './api/entities.controller';
+import { KnowledgeGraphController } from './api/graph.controller';
 import { KnowledgeSearchController } from './api/search.controller';
 import { SearchService } from './api/search.service';
 import { BlockExtractionService } from './services/block-extraction.service';
@@ -43,6 +44,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     KnowledgeSearchController,
     KnowledgeBlocksController,
     KnowledgeEntitiesController,
+    KnowledgeGraphController,
   ],
   providers: [
     S3Service,

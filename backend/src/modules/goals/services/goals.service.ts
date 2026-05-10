@@ -7,8 +7,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
+import { QuotaService } from '../../quotas/quota.service';
 import type {
   CreateGoalDto,
   GoalAlignmentSnapshotDto,
@@ -37,6 +40,9 @@ export class GoalsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    @Inject(QuotaService) private readonly quotas: QuotaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   // ─────────────────────────── list / get ───────────────────────────
@@ -324,6 +330,64 @@ export class GoalsService {
       metadata: { tenantId: args.tenantId, themeId: args.themeId },
     });
     return { removed: true };
+  }
+
+  // ─────────────────────────── recompute ────────────────────────────
+
+  /**
+   * Ручной recompute strategic-alignment для цели. Только owner/admin/super_admin
+   * (проверка прав — в контроллере). Quota: `MAX_GOAL_RECOMPUTE_PER_DAY` per user.
+   *
+   * Возвращает `{enqueued, jobId}`. Snapshot создаст воркер позже —
+   * клиент должен опрашивать `GET /goals/:id` чтобы увидеть новый
+   * `cachedAlignment*`.
+   */
+  async recompute(args: {
+    tenantId: string;
+    userId: string;
+    goalId: string;
+  }): Promise<{ enqueued: true; jobId: string }> {
+    const goal = await this.prisma.goal.findUnique({
+      where: { id: args.goalId },
+      select: { id: true, tenantId: true, archivedAt: true, status: true },
+    });
+    if (!goal || goal.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'goal_not_found', message: 'Цель не найдена' },
+      });
+    }
+    if (goal.archivedAt || goal.status !== 'active') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'goal_not_active',
+          message: 'Пересчёт доступен только для активных целей',
+        },
+      });
+    }
+
+    await this.quotas.checkAndIncrement({
+      userId: args.userId,
+      quotaName: 'goal_recompute_per_day',
+      max: this.cfg.workspace.maxGoalRecomputePerDay,
+      windowMs: 24 * 3600 * 1000,
+    });
+
+    const { jobId } = await this.coreQueue.enqueueStrategicAlignment({
+      tenantId: args.tenantId,
+      goalId: args.goalId,
+      manual: true,
+    });
+
+    void this.audit.log({
+      userId: args.userId,
+      action: 'goal.alignment.recompute_requested',
+      resourceId: args.goalId,
+      metadata: { tenantId: args.tenantId, jobId },
+    });
+
+    return { enqueued: true, jobId };
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

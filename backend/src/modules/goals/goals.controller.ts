@@ -169,6 +169,32 @@ export class GoalsController {
     });
   }
 
+  @Post(':id/recompute')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Ручной пересчёт strategic-alignment (owner/super_admin)' })
+  async recompute(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ enqueued: true; jobId: string }> {
+    const t = this.requireTenant(tenantId);
+    const allowed = await this.rbac.canManageOrg(user.id, t);
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Пересчёт доступен только владельцу Org',
+        },
+      });
+    }
+    return this.goals.recompute({
+      tenantId: t,
+      userId: user.id,
+      goalId: id,
+    });
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {

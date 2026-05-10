@@ -316,6 +316,28 @@ enum ThemeBranch {
   legal
 }
 
+// ──────────────────────────── knowledge-core: goals (Фаза 9) ────────────────────────────
+
+/// Состояние цели:
+///   - active     — активная, ежедневно оценивается воркером.
+///   - paused     — owner временно приостановил мониторинг (не оценивается).
+///   - achieved   — цель достигнута (закрыта успешно).
+///   - abandoned  — цель брошена (soft-delete через archivedAt).
+enum GoalStatus {
+  active
+  paused
+  achieved
+  abandoned
+}
+
+/// Источник связи Goal ↔ Theme:
+///   - manual — owner вручную привязал тему через UI.
+///   - ai     — предложено strategic-alignment.suggester (vNext).
+enum GoalThemeSource {
+  manual
+  ai
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
@@ -359,6 +381,7 @@ model User {
   createdInvitations   OrgInvitation[]          @relation("OrgInvitationInvitedBy")
   acceptedInvitations  OrgInvitation[]          @relation("OrgInvitationAcceptedBy")
   superAdminAccessLogs SuperAdminAccessLog[]    @relation("SuperAdminAccessLog")
+  goalsCreated         Goal[]                   @relation("GoalCreatedBy")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -1152,6 +1175,9 @@ model Org {
   /// org.workersEnabled[workerName] !== false. Управляется из Org-Admin (Фаза 7).
   /// Структура: { "block-ingest": false, "block-distill": true, ... }.
   workersEnabled Json              @default("{}")
+  /// Окно (в днях) для strategic-alignment воркера (Фаза 9). По умолчанию 30,
+  /// валидация в API: 7..90.
+  strategicAlignmentWindowDays Int @default(30)
   createdAt      DateTime          @default(now())
   deletedAt      DateTime?
 
@@ -1178,6 +1204,8 @@ model Org {
   blockLinks   IdeaBlockLink[]
   entityLinks  EntityLink[]
   themes       Theme[]
+  goals        Goal[]
+  goalAlignmentSnapshots GoalAlignmentSnapshot[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1524,6 +1552,7 @@ model Theme {
   blocks     ThemeIdeaBlock[]
   entities   ThemeEntity[]
   cards      Card[]           @relation("CardBornFromTheme")
+  goalLinks  GoalTheme[]
 
   @@index([tenantId, status])
   @@index([tenantId, branch])
@@ -1583,4 +1612,91 @@ model SuperAdminAccessLog {
 
   @@index([superAdminUserId, createdAt])
   @@index([accessedTenantId, createdAt])
+}
+
+// ──────────────────────────── knowledge-core: goals (Фаза 9) ────────────────────────────
+
+/// Цель компании (Фаза 9 knowledge-core).
+/// Создаётся owner Org вручную. Связь с Theme — M:M (GoalTheme).
+/// Ежесуточно strategic-alignment.worker оценивает движение к цели.
+model Goal {
+  id           String       @id @default(cuid())
+  tenantId     String
+  tenant       Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String       @db.Text
+  /// Опциональный дедлайн. Используется как контекст для LLM-судьи.
+  targetDate   DateTime?
+  status       GoalStatus   @default(active)
+  /// Вес в среднем "Согласованность стратегии" (Фаза 8 dashboard). Default 1.0.
+  weight       Decimal      @default(1.0) @db.Decimal(4, 3)
+  createdById  String
+  createdBy    User         @relation("GoalCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  archivedAt   DateTime?
+  /// Кэш последнего snapshot для быстрого чтения списка целей без JOIN'а.
+  /// Обновляется воркером после каждого расчёта.
+  cachedAlignment      Int?      /// 0..100, NULL = ещё не считалось.
+  cachedAlignmentAt    DateTime?
+  cachedAlignmentDelta Int?      /// разница со снапшотом 24h назад, для подсветки падений.
+  cachedSnapshotId     String?   /// FK на последний GoalAlignmentSnapshot.
+
+  themes    GoalTheme[]
+  snapshots GoalAlignmentSnapshot[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, archivedAt])
+}
+
+/// M:M между Goal и Theme. На старте — ручная привязка от owner;
+/// AI-предложения добавляются с source='ai' в vNext.
+model GoalTheme {
+  goalId    String
+  themeId   String
+  /// Источник связи: manual (owner добавил) | ai (предложено suggester'ом).
+  source    GoalThemeSource @default(manual)
+  /// Вес (1.0 — основная, ниже — частично связанная). По умолчанию 1.0.
+  weight    Decimal         @default(1.0) @db.Decimal(4, 3)
+  createdAt DateTime        @default(now())
+
+  goal  Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@id([goalId, themeId])
+  @@index([themeId])
+}
+
+/// Суточный снапшот «движения к цели» от strategic-alignment.worker.
+/// Используется для timeline'а и вычисления delta.
+model GoalAlignmentSnapshot {
+  id           String   @id @default(cuid())
+  tenantId     String
+  goalId       String
+  /// 0..100 — оценка движения за окно (default 30 дней).
+  score        Int
+  /// Разница со снапшотом 24h назад (для подсветки падений). NULL для первого.
+  delta        Int?
+  /// 1-3 предложения объяснения от LLM.
+  explanation  String   @db.Text
+  /// Структура: { pro: ['…'], contra: ['…'] } — по 3-5 пунктов.
+  signals      Json
+  /// Какое окно использовалось (в днях).
+  windowDays   Int      @default(30)
+  /// Сколько связанных тем участвовало в оценке.
+  themesCount  Int
+  /// Сколько блоков LLM проанализировал.
+  blocksCount  Int
+  /// AiUsageLog.id (для drill-down в Z-Admin). FK не делаем — может быть очищен ретеншеном.
+  aiUsageLogId String?
+  /// Если delta <= -15 и score <= 60 — alertPending=true.
+  alertPending Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  goal   Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  tenant Org  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([goalId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, alertPending])
 }

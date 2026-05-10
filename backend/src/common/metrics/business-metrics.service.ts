@@ -55,6 +55,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── knowledge-core (Фаза 11) ────────────────────────────────────────
   private coreRetentionDeletedTotal!: Counter<'kind'>;
   private corePersonalDataErasuresTotal!: Counter<string>;
+  private coreDataClassViolationsTotal!: Counter<'task_type' | 'attempted_class'>;
 
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
@@ -192,6 +193,11 @@ export class BusinessMetricsService implements OnModuleInit {
     this.corePersonalDataErasuresTotal = this.getOrCreateCounter({
       name: 'core_personal_data_erasures_total',
       help: 'Сколько раз срабатывал DELETE /api/v1/persons/:id/data (152-ФЗ / GDPR erase).',
+    });
+    this.coreDataClassViolationsTotal = this.getOrCreateCounter({
+      name: 'core_data_class_violations_total',
+      help: 'Попытки отправить sensitive/private данные в неподходящий LLM-провайдер. Должно быть = 0.',
+      labelNames: ['task_type', 'attempted_class'] as const,
     });
   }
 
@@ -364,6 +370,18 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incCorePersonalDataErasure(): void {
     this.corePersonalDataErasuresTotal.inc(1);
+  }
+
+  /**
+   * Попытка отправить sensitive/private данные в провайдер, чей
+   * `maxDataClass` ниже требуемого. Должна быть = 0 на проде; > 0 →
+   * critical alert.
+   */
+  incCoreDataClassViolation(args: { taskType: string; attemptedClass: string }): void {
+    this.coreDataClassViolationsTotal.inc({
+      task_type: args.taskType,
+      attempted_class: args.attemptedClass,
+    });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

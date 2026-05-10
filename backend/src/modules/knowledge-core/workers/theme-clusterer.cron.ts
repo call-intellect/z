@@ -242,6 +242,7 @@ export class ThemeClustererCron {
         trustedAnswer: true,
         signalType: true,
         tags: true,
+        dataClass: true,
       },
     });
     if (blocks.length === 0) return null;

@@ -1041,6 +1041,12 @@ model LlmTaskRoute {
   ///                    splitPercent: number, startedAt: ISO, endsAt: ISO }.
   /// При enabled=true LlmRouter рандомно выбирает A/B и пишет experimentGroup в AiUsageLog.
   experiment Json?
+  /// Фаза 11 knowledge-core: минимальный класс данных, который маршрут
+  /// поддерживает. NULL трактуется как 'internal'. LlmRouter фильтрует
+  /// провайдеров по `provider.maxDataClass >= max(dataClass, requiredDataClass)`.
+  /// Если ни один провайдер не подходит — `NoEligibleProviderError` +
+  /// метрика `core_data_class_violations_total`.
+  requiredDataClass DataClass?
   updatedAt  DateTime @updatedAt
 
   @@unique([taskType, tenantId])

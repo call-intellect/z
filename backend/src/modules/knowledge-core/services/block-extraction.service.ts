@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { DataClass } from '@prisma/client';
 import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -73,6 +74,8 @@ interface ExtractArgs {
   rawEventId: string;
   meetingTitle?: string | undefined;
   segments: Segment[];
+  /** Фаза 11: dataClass исходного RawEvent — пробрасывается в LLM-вызов. */
+  dataClass?: DataClass;
 }
 
 /**
@@ -109,6 +112,7 @@ export class BlockExtractionService {
         meetingTitle: args.meetingTitle,
         windowIndex: Math.floor(i / windowSize),
         segments: slice,
+        dataClass: args.dataClass,
       });
       aggregated.push(...windowBlocks);
     }
@@ -124,6 +128,7 @@ export class BlockExtractionService {
     meetingTitle?: string | undefined;
     windowIndex: number;
     segments: Segment[];
+    dataClass?: DataClass;
   }): Promise<ExtractedBlock[]> {
     const { system, user } = buildBlockIngestPrompt({
       meetingTitle: args.meetingTitle,
@@ -144,6 +149,7 @@ export class BlockExtractionService {
             schema: BLOCK_INGEST_JSON_SCHEMA,
           },
           sourceRef: { type: 'raw-event', id: args.rawEventId },
+          dataClass: args.dataClass,
         });
         const parsed = this.parseAndValidate(out.text);
         if (parsed) {

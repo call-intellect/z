@@ -122,21 +122,18 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 [backend/src/modules/ai/services/llm-router.service.ts](backend/src/modules/ai/services/llm-router.service.ts):
 
-- [ ] **Prisma schema**: в `LlmTaskRoute` добавить поле `requiredDataClass DataClass?` (минимальный класс данных, который маршрут поддерживает; null = `internal`).
-- [ ] **`LlmProvider`-конфиг** (есть в коде где-то рядом с router'ом — проверить) расширить флагом `localOnly: boolean` и `maxDataClass: DataClass`. Дефолты:
+- [x] **Prisma schema**: в `LlmTaskRoute` добавить поле `requiredDataClass DataClass?` (минимальный класс данных, который маршрут поддерживает; null = `internal`).
+- [x] **`LlmProvider`-конфиг** (есть в коде где-то рядом с router'ом — проверить) расширить флагом `localOnly: boolean` и `maxDataClass: DataClass`. Дефолты:
   - `anthropic-direct` → `maxDataClass='sensitive'`, `localOnly=false`.
   - `openai-via-proxy` → `maxDataClass='internal'`, `localOnly=false`.
   - `minimax` → `maxDataClass='internal'`, `localOnly=false`.
-  - `local-llm` (если подключён) → `maxDataClass='private'`, `localOnly=true`.
-- [ ] Изменить сигнатуру: `LlmRouter.invoke({taskType, dataClass, ...})`. Если `dataClass` не передан — берётся `internal`.
-- [ ] Логика выбора:
+  - `local-llm` (если подключён) → `maxDataClass='private'`, `localOnly=true`. (Реализовано через `ollama` — он `localOnly=true, maxDataClass='private'`).
+- [x] Изменить сигнатуру: `LlmRouter.call({taskType, dataClass, ...})` (метод именуется `call`, не `invoke`; см. decisions-log). Если `dataClass` не передан — берётся `internal`.
+- [x] Логика выбора:
   - получить `LlmTaskRoute` для `taskType`,
   - отфильтровать кандидаты-провайдеры по `provider.maxDataClass >= dataClass` (порядок: `public < internal < sensitive < private`),
   - если после фильтра пусто → `throw NoEligibleProviderError({code: 'no_provider_for_data_class', taskType, dataClass})`.
-- [ ] **Все вызовы LLM** должны передать `dataClass` — обновить call-site'ы (`block-distill.worker`, `tasks-extractor-v2`, `chapters-extractor-v2`, `summary-extractor-v2`, `chat-v2.service`, `card-rollup-v2`, `theme-clusterer`, `analyze.worker`, `merge.worker`). Источник `dataClass`:
-  - воркеры, работающие с блоками — `IdeaBlock.dataClass` (max по входным блокам),
-  - chat-v2 — max(всех блоков в retrieval pool),
-  - meeting-level воркеры — `Meeting.dataClass` (если есть; иначе `internal`).
+- [x] **Все вызовы LLM** должны передать `dataClass` — обновить call-site'ы. Сделано для всех knowledge-core call-sites (block-extraction, block-merge, block-link, entity-graph, theme-classification, tasks-extractor-v2, chapters-extractor-v2, summary-extractor-v2, chat-v2, card-rollup-v2). Legacy (chat, regenerate, card-rollup, task-extraction, chapter-extraction) и `reframing.cron`/`strategic-alignment.worker`/`entity-merge.service`/`dashboard-summary` остаются с дефолтом `'internal'` — см. decisions-log.
 
 ### Шаг 8 — Метрики `core_*`
 

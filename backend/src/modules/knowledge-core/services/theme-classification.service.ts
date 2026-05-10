@@ -2,7 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Entity, IdeaBlock, ThemeBranch } from '@prisma/client';
 import { z } from 'zod';
 
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 
 /**
  * 12 веток компании из delivery M-07 + 'none' (LLM использует, если ветка
@@ -87,7 +90,13 @@ export interface ThemeClassificationInput {
   tenantId: string;
   blocks: Pick<
     IdeaBlock,
-    'id' | 'name' | 'criticalQuestion' | 'trustedAnswer' | 'signalType' | 'tags'
+    | 'id'
+    | 'name'
+    | 'criticalQuestion'
+    | 'trustedAnswer'
+    | 'signalType'
+    | 'tags'
+    | 'dataClass'
   >[];
   entities: Pick<Entity, 'id' | 'canonicalName' | 'type'>[];
 }
@@ -148,6 +157,8 @@ export class ThemeClassificationService {
         schema: THEME_CLASSIFY_JSON_SCHEMA,
       },
       sourceRef: { type: 'theme-classify', id: tenantId },
+      // Фаза 11: max dataClass по блокам кластера.
+      dataClass: maxDataClass(blocks.map((b) => b.dataClass)),
     });
 
     return this.parse(out.text);

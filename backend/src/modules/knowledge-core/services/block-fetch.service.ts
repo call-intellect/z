@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { SignalType } from '@prisma/client';
+import type { DataClass, SignalType } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -7,6 +7,9 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
  * Минимальное представление IdeaBlock + evidence, нужное v2-агентам Фазы 5
  * (Tasks-2.0/Chapters-2.0/Summary-2.0). Плоская структура без relations
  * Prisma — извлекается одним findMany + одним findMany по evidence.
+ *
+ * `dataClass` (Фаза 11) — нужен для LlmRouter dataClass-routing'а:
+ * v2-агенты считают max по входным блокам и передают в `LlmCallParams.dataClass`.
  */
 export interface MeetingBlock {
   id: string;
@@ -15,6 +18,7 @@ export interface MeetingBlock {
   trustedAnswer: string;
   signalType: SignalType;
   tags: string[];
+  dataClass: DataClass;
   evidence: MeetingBlockEvidence[];
 }
 
@@ -103,6 +107,7 @@ export class BlockFetchService {
         trustedAnswer: true,
         signalType: true,
         tags: true,
+        dataClass: true,
       },
     });
     if (blocks.length === 0) {
@@ -149,6 +154,7 @@ export class BlockFetchService {
       trustedAnswer: b.trustedAnswer,
       signalType: b.signalType,
       tags: b.tags,
+      dataClass: b.dataClass,
       evidence: evidenceByBlock.get(b.id) ?? [],
     }));
     enriched.sort((a, b) => minStartMs(a) - minStartMs(b));

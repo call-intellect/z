@@ -7,7 +7,10 @@ import {
 import { z } from 'zod';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 
 /**
  * Результат LLM-арбитра для пары сущностей.
@@ -220,6 +223,8 @@ export class EntityGraphService {
           schema: ENTITY_LINK_JSON_SCHEMA,
         },
         sourceRef: { type: 'entity', id: args.entityA.id },
+        // Фаза 11: dataClass — max по упомянутым блокам.
+        dataClass: maxDataClass(args.recentBlocks.map((b) => b.dataClass)),
       });
       const parsed = this.parseVerdict(out.text);
       if (parsed) return parsed;

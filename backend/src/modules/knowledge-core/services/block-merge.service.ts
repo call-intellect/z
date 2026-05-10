@@ -8,7 +8,10 @@ import {
 import { z } from 'zod';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 
 /**
  * Кандидат — canonical-блок, ближайший к новому по cosine. similarity ∈ [0,1].
@@ -174,6 +177,11 @@ export class BlockMergeService {
           schema: JUDGE_JSON_SCHEMA,
         },
         sourceRef: { type: 'idea-block', id: args.blockId },
+        // Фаза 11: dataClass = max(новый блок, кандидаты).
+        dataClass: maxDataClass([
+          args.newBlock.dataClass,
+          ...args.candidates.map((c) => c.dataClass),
+        ]),
       });
       const parsed = this.parseVerdict(out.text, args.candidates);
       if (parsed) return parsed;

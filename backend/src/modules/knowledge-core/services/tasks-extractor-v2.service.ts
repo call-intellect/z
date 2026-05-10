@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 import {
   buildTasksV2Prompt,
   TASKS_V2_JSON_SCHEMA,
@@ -92,6 +95,8 @@ export class TasksExtractorV2Service {
           strict: true,
         },
         sourceRef: { type: 'meeting', id: input.meetingId },
+        // Фаза 11: dataClass = max по входным блокам (commitment/decision).
+        dataClass: maxDataClass(candidateBlocks.map((b) => b.dataClass)),
       });
       modelUsed = result.modelUsed;
       const parsed = parseJsonObject(result.text);

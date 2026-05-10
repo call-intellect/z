@@ -1,8 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { DataClass } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 
 import {
   ChatV2RetrievalService,
@@ -64,6 +68,7 @@ interface ContextBlock {
   name: string;
   signalType: string;
   trustedAnswer: string;
+  dataClass: DataClass;
   /**
    * Первая evidence блока, привязанная к встрече (если есть). Ровно она и
    * становится citation в ответе AI.
@@ -164,6 +169,8 @@ export class ChatV2Service {
       tenantId,
       userId: input.userId,
       sourceRef: { type: scope, id: scopeId ?? tenantId },
+      // Фаза 11: max dataClass по retrieval pool.
+      dataClass: maxDataClass(contextBlocks.map((b) => b.dataClass)),
     });
 
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.
@@ -206,6 +213,7 @@ export class ChatV2Service {
         name: true,
         signalType: true,
         trustedAnswer: true,
+        dataClass: true,
       },
     });
     if (blocks.length === 0) return [];
@@ -279,6 +287,7 @@ export class ChatV2Service {
         name: b.name,
         signalType: b.signalType,
         trustedAnswer: b.trustedAnswer,
+        dataClass: b.dataClass,
         primaryMeetingEvidence: primary,
       });
     }

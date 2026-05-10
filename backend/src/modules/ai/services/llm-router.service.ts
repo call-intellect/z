@@ -6,7 +6,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import type { LlmTaskRoute } from '@prisma/client';
+import type { DataClass, LlmTaskRoute } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -116,6 +116,63 @@ const ALL_PROVIDERS: LlmProviderName[] = [
   'ollama',
 ];
 
+/**
+ * Фаза 11 knowledge-core: per-provider capability map.
+ *   - maxDataClass — самый «строгий» класс данных, который провайдер согласен
+ *     обрабатывать. public < internal < sensitive < private.
+ *   - localOnly — провайдер живёт локально (никогда не уходит наружу).
+ *
+ * `anthropic` — прямой Anthropic API; для нас это «sensitive» (договор).
+ *   Если ANTHROPIC_USE_PROXY=true — фактически идёт через сторонний прокси,
+ *   но capability в текущем MVP мы не понижаем (отслеживается ENV-флагом).
+ * `minimax` / `openai-via-proxy` / `deepseek` — внешние, internal-only.
+ * `ollama` — локальный, формально может обрабатывать private.
+ *
+ * Карта намеренно жёсткая — config-driven вариант (через БД) — vNext.
+ */
+const PROVIDER_CAPABILITY: Record<
+  LlmProviderName,
+  { maxDataClass: DataClass; localOnly: boolean }
+> = {
+  anthropic: { maxDataClass: 'sensitive', localOnly: false },
+  minimax: { maxDataClass: 'internal', localOnly: false },
+  'openai-via-proxy': { maxDataClass: 'internal', localOnly: false },
+  deepseek: { maxDataClass: 'internal', localOnly: false },
+  ollama: { maxDataClass: 'private', localOnly: true },
+};
+
+/**
+ * Порядок DataClass: public < internal < sensitive < private.
+ * Используется для `provider.maxDataClass >= dataClass` сравнения.
+ */
+const DATA_CLASS_RANK: Record<DataClass, number> = {
+  public: 0,
+  internal: 1,
+  sensitive: 2,
+  private: 3,
+};
+
+/**
+ * Возвращает «строжайший» из переданных DataClass'ов. Используется в
+ * call-site'ах LLM-вызовов, где входных блоков/документов больше одного
+ * (chat retrieval, distill judge, summary v2 и т.п.). Дефолт — 'internal'.
+ *
+ * Пустой/отсутствующий вход → 'internal' (чтобы вызовы без явного
+ * dataClass не оказывались более строгими, чем нужно).
+ */
+export function maxDataClass(
+  classes: Array<DataClass | null | undefined>,
+): DataClass {
+  let best: DataClass = 'internal';
+  for (const c of classes) {
+    if (!c) continue;
+    if (DATA_CLASS_RANK[c] > DATA_CLASS_RANK[best]) {
+      best = c;
+    }
+  }
+  return best;
+}
+
 const DEFAULT_FALLBACK_CHAIN: ProviderEntry[] = [
   { provider: 'deepseek' },
   { provider: 'openai-via-proxy' },
@@ -179,6 +236,19 @@ export interface LlmCallParams {
   model?: string;
   /** Указатель на источник вызова для drill-down в Z-Admin (Фаза 7). */
   sourceRef?: { type: string; id: string } | null;
+  /**
+   * Класс данных вызова (Фаза 11 knowledge-core).
+   *
+   * Определяет, какие провайдеры могут обработать запрос: только те, у
+   * которых `maxDataClass >= dataClass`. Если caller не передал —
+   * считаем 'internal' (большинство business-данных).
+   *
+   * Источник:
+   *   - воркеры над блоками — max(IdeaBlock.dataClass) по входным;
+   *   - chat — max по retrieval pool;
+   *   - meeting-уровень — наследуем из Meeting/RawEvent.
+   */
+  dataClass?: DataClass;
 }
 
 export interface LlmCallResult {
@@ -201,6 +271,27 @@ export class LlmRouterAllProvidersFailedError extends Error {
         errors.map((e) => `${e.provider}=${e.message}`).join('; '),
     );
     this.name = 'LlmRouterAllProvidersFailedError';
+  }
+}
+
+/**
+ * Фаза 11: ни один провайдер не подходит под требуемый dataClass.
+ * Бросается, когда `provider.maxDataClass < dataClass` для всех кандидатов.
+ * Caller должен либо понизить dataClass (если это допустимо политикой
+ * безопасности), либо подключить локальный провайдер.
+ */
+export class NoEligibleProviderError extends Error {
+  readonly code = 'no_provider_for_data_class';
+  constructor(
+    readonly taskType: LlmTaskType,
+    readonly dataClass: DataClass,
+    readonly attemptedProviders: string[],
+  ) {
+    super(
+      `LlmRouter: ни один провайдер не поддерживает dataClass='${dataClass}' для taskType='${taskType}'. ` +
+        `Кандидаты: ${attemptedProviders.join(', ') || '(none)'}.`,
+    );
+    this.name = 'NoEligibleProviderError';
   }
 }
 
@@ -331,18 +422,51 @@ export class LlmRouterService implements OnModuleInit {
   /**
    * Главный метод. Пробует провайдеров последовательно, на любую ошибку —
    * следующий. На успех — записывает в AiUsageLog и возвращает результат.
+   *
+   * Фаза 11: если caller передал `params.dataClass` (или маршрут задаёт
+   * `requiredDataClass`), результирующий класс данных = max двух. Затем
+   * провайдеры фильтруются по `provider.maxDataClass >= effectiveClass`.
+   * Если после фильтра пусто — `NoEligibleProviderError` + метрика
+   * `core_data_class_violations_total` += 1.
    */
   async call(params: LlmCallParams): Promise<LlmCallResult> {
     const route = this.allRoutes.find(
       (r) => r.taskType === params.taskType && r.tenantId === null && r.isActive,
     );
+    const effectiveDataClass = this.resolveEffectiveDataClass(route, params.dataClass);
     const { providers, experimentGroup } = this.chooseProviders(route, params);
+
+    // Фаза 11: фильтр по dataClass.
+    const filtered = providers.filter((entry) => {
+      const cap = PROVIDER_CAPABILITY[entry.provider];
+      return DATA_CLASS_RANK[cap.maxDataClass] >= DATA_CLASS_RANK[effectiveDataClass];
+    });
+
+    if (filtered.length === 0) {
+      this.metrics?.incCoreDataClassViolation({
+        taskType: params.taskType,
+        attemptedClass: effectiveDataClass,
+      });
+      this.logger.error(
+        {
+          taskType: params.taskType,
+          dataClass: effectiveDataClass,
+          attempted: providers.map((p) => p.provider),
+        },
+        'LlmRouter: no eligible provider for dataClass — block dispatch',
+      );
+      throw new NoEligibleProviderError(
+        params.taskType,
+        effectiveDataClass,
+        providers.map((p) => p.provider),
+      );
+    }
 
     const errors: Array<{ provider: string; message: string }> = [];
     const overallStartedAt = Date.now();
 
-    for (let i = 0; i < providers.length; i++) {
-      const entry = providers[i] as ProviderEntry;
+    for (let i = 0; i < filtered.length; i++) {
+      const entry = filtered[i] as ProviderEntry;
       const startedAt = Date.now();
       try {
         const out = await this.dispatch(entry, params);
@@ -410,7 +534,7 @@ export class LlmRouterService implements OnModuleInit {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         errors.push({ provider: entry.provider, message });
-        const isLast = i === providers.length - 1;
+        const isLast = i === filtered.length - 1;
         this.metrics?.incLlmRouterDispatch({
           taskType: params.taskType,
           provider: entry.provider,
@@ -484,6 +608,26 @@ export class LlmRouterService implements OnModuleInit {
   }
 
   // ─────────────────────────── private ─────────────────────────────────────
+
+  /**
+   * Фаза 11: вычисление эффективного dataClass'а вызова.
+   *
+   *   max(params.dataClass ?? 'internal', route.requiredDataClass ?? 'internal').
+   *
+   * Берём «строжайший» из двух: caller знает класс входных данных, маршрут
+   * может задавать минимальную чувствительность задачи (например, audit-flow
+   * всегда 'sensitive').
+   */
+  private resolveEffectiveDataClass(
+    route: LlmTaskRoute | undefined,
+    callerClass: DataClass | undefined,
+  ): DataClass {
+    const fromCaller: DataClass = callerClass ?? 'internal';
+    const fromRoute: DataClass = route?.requiredDataClass ?? 'internal';
+    return DATA_CLASS_RANK[fromCaller] >= DATA_CLASS_RANK[fromRoute]
+      ? fromCaller
+      : fromRoute;
+  }
 
   /**
    * Решает, какую цепочку провайдеров использовать с учётом A/B-эксперимента.

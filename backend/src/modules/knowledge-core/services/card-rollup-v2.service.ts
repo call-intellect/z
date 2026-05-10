@@ -2,7 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { IdeaBlock } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 
 /**
  * Максимум блоков, отдаваемых LLM для генерации rollup'а.
@@ -42,7 +45,14 @@ const SYSTEM_PROMPTS: Record<string, string> = {
 interface BlockForRollup
   extends Pick<
     IdeaBlock,
-    'id' | 'name' | 'criticalQuestion' | 'trustedAnswer' | 'tags' | 'signalType' | 'createdAt'
+    | 'id'
+    | 'name'
+    | 'criticalQuestion'
+    | 'trustedAnswer'
+    | 'tags'
+    | 'signalType'
+    | 'dataClass'
+    | 'createdAt'
   > {
   evidenceQuote?: string | null;
 }
@@ -170,6 +180,7 @@ export class CardRollupV2Service {
         trustedAnswer: true,
         tags: true,
         signalType: true,
+        dataClass: true,
         createdAt: true,
       },
     });
@@ -234,6 +245,8 @@ export class CardRollupV2Service {
       tenantId: args.tenantId,
       userId: card.ownerId,
       sourceRef: { type: 'card', id: card.id },
+      // Фаза 11: max dataClass по блокам карточки.
+      dataClass: maxDataClass(enriched.map((b) => b.dataClass)),
     });
 
     const summary = result.text.trim() || null;

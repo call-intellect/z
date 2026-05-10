@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { MeetingType } from '@prisma/client';
 
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 import {
   buildSummaryV2Prompt,
   SUMMARY_V2_TASK_TYPE,
@@ -62,6 +65,8 @@ export class SummaryExtractorV2Service {
       // Markdown — обычный текст, не json.
       responseFormat: { type: 'text' },
       sourceRef: { type: 'meeting', id: input.meetingId },
+      // Фаза 11: dataClass = max по входным блокам.
+      dataClass: maxDataClass(input.blocks.map((b) => b.dataClass)),
     });
     const markdown = result.text.trim();
     if (markdown.length === 0) {

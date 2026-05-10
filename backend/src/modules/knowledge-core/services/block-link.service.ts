@@ -9,7 +9,10 @@ import {
 import { z } from 'zod';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 
 /**
  * Результат LLM-арбитра типизированной связи между двумя блоками.
@@ -187,6 +190,11 @@ export class BlockLinkService {
           schema: LINK_JSON_SCHEMA,
         },
         sourceRef: { type: 'idea-block', id: args.fromBlock.id },
+        // Фаза 11: max(fromBlock, toBlock).dataClass.
+        dataClass: maxDataClass([
+          args.fromBlock.dataClass,
+          args.toBlock.dataClass,
+        ]),
       });
       const parsed = this.parseVerdict(out.text);
       if (parsed) return parsed;

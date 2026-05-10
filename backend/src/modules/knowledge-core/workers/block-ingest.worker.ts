@@ -127,6 +127,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         rawEventId: event.id,
         meetingTitle,
         segments,
+        // Фаза 11: dataClass наследуется от RawEvent.
+        dataClass: event.dataClass,
       });
       this.logger.log(
         { rawEventId, segments: segments.length, blocks: blocks.length },

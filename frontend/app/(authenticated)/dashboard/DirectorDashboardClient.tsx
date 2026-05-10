@@ -43,6 +43,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
+import { StrategicAlignmentWidget } from './widgets/StrategicAlignmentWidget';
 
 /**
  * Дашборд директора (knowledge-core, Фаза 8).
@@ -171,7 +172,10 @@ export function DirectorDashboardClient() {
           loading={loading}
           questions={data?.openQuestions ?? []}
         />
-        {/* TODO Phase 9 strategicAlignment widget here */}
+        <StrategicAlignmentWidget
+          data={data?.strategicAlignment}
+          loading={loading}
+        />
       </div>
 
       <section className="mt-8">

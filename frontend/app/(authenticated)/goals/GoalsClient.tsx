@@ -95,7 +95,7 @@ export function GoalsClient() {
     },
   );
 
-  const goals = data ?? [];
+  const goals = useMemo(() => data ?? [], [data]);
 
   const filteredGoals = useMemo(() => {
     if (!debouncedSearch) return goals;
@@ -317,8 +317,8 @@ function GoalCard({
         </div>
         {alignmentClamped === null && (
           <p className="text-[11px] text-fg-tertiary">
-            Не считалось — дождитесь cron'а или нажмите «Пересчитать» внутри
-            цели.
+            Не считалось — дождитесь cron&apos;а или нажмите «Пересчитать»
+            внутри цели.
           </p>
         )}
       </div>

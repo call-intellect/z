@@ -1,15 +1,15 @@
 ---
 type: execution-plan
 phase: 9
-feature: knowledge-core — Goal + strategic-alignment (backend slice)
+feature: knowledge-core — Goal + strategic-alignment (backend + frontend slice)
 status: in_progress
 date: 2026-05-10
 ---
 
-# Фаза 9 — execution (backend, шаги 1-6)
+# Фаза 9 — execution (backend шаги 1-6 + frontend шаги 7-8)
 
 Реализация по [plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md](tz/2026-05-10-phase-9-goals-strategic-alignment.md).
-Текущий слайс — backend (шаги 1-6). Frontend (шаги 7-8) и документация (шаг 9) — следующие итерации.
+Backend (шаги 1-6) и frontend (шаги 7-8) — готовы. Документация (шаг 9) — оркестратор.
 
 ## Backend slice
 
@@ -62,16 +62,54 @@ date: 2026-05-10
   - `alertGoals` = цели где `cachedAlignmentDelta <= -15 AND cachedAlignment <= 60`.
   - `bun run build` — чистый.
 
+## Frontend slice
+
+- [x] **Шаг 7 — frontend domain + API + страница `/goals`** (commit `986e0e9`).
+  - `frontend/src/domain/goal.ts` — `GoalApi/Domain`, snapshot/theme-link mappers,
+    форматтеры (`formatAlignment`, `formatDelta`, `alignmentTextColor/BarColor`,
+    `daysUntil/targetDateLabel`, `statusBadgeVariant`).
+  - `frontend/src/api/goals.api.ts` — `goalsApi.{list, get, create, update,
+    archive, addThemes, removeTheme, recompute}` через `apiClient` + `orgHeaders`.
+  - `frontend/app/(authenticated)/goals/{page,GoalsClient}.tsx`:
+    - Список Card'ов с прогресс-баром согласованности (цвет 0-40 red, 40-70
+      yellow, 70-100 green) + delta-стрелка.
+    - Tabs-фильтр статуса (Все/Активные/На паузе/Достигнутые/Архив), поиск по
+      `name` (clientside debounce 300ms), pluralizeRu для счётчиков.
+    - Диалоги «Создать» и «Редактировать» (с архивацией) — только owner.
+    - Empty state с подсказкой про owner / еженедельный мониторинг.
+  - `Sidebar.tsx` — пункт «Цели» (icon Target) между «AI-темы» и «AI-чат» для
+    всех ролей; manager увидит read-only (без кнопок).
+
+- [x] **Шаг 8 — frontend `/goals/[id]` + StrategicAlignmentWidget** (commit pending).
+  - `frontend/app/(authenticated)/goals/[id]/{page,GoalDetailClient}.tsx`:
+    - Header: name, description, status, targetDate, кнопки «Пересчитать»
+      (toast «Quota exceeded» на `quota_exceeded`), «Редактировать» (owner),
+      «Архивировать» (owner).
+    - Карточка «Текущая согласованность» с крупной цифрой, delta-pill,
+      прогресс-бар, AI explanation, alert-баннер при `alertPending`.
+    - Блок pro/contra (success/danger карточки).
+    - SVG-Timeline (line + цветные точки по диапазонам) при `timeline ≥ 3`,
+      иначе мелкая надпись «Недостаточно данных».
+    - Список snapshots под графиком (дата, score, delta, explanation).
+    - Связанные темы (read-only с linkable themeName) + диалог «Добавить
+      темы» (поиск через `themesApi.list`, multi-select, owner only).
+  - `frontend/app/(authenticated)/dashboard/widgets/StrategicAlignmentWidget.tsx`:
+    - 3 состояния: «нет целей» / «не считалось» / основной body с крупной
+      цифрой `average`, числом активных целей, списком `alertGoals`
+      (clickable, с подсветкой и Δ).
+  - `DirectorDashboardClient.tsx` — `<StrategicAlignmentWidget>` вместо TODO-якоря.
+  - `bun run typecheck` — зелёный.
+  - `bun run build` — зелёный.
+
 ## Verification
 
-- `bun run typecheck` — все 6 шагов зелёные.
-- `bun run build` — после Шага 6 зелёный.
+- `bun run typecheck` (backend + frontend) — все 8 шагов зелёные.
+- `bun run build` (frontend) — после шага 8 зелёный.
 - `bun run prisma:push` — после Шага 1, без warnings.
 - Patch-script `patch-goal-alignment-route.ts` — `[created]` → повторно `[skipped]` (идемпотентен).
 
 ## Не входит (этого слайса)
 
-- Шаги 7-8 — frontend `/goals`, `/goals/[id]`, `Sidebar`, `DirectorDashboardClient`.
 - Шаг 9 — second-brain документация и decisions-log.
 
 ## Открытые вопросы / отклонения

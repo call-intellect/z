@@ -39,6 +39,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { ExportsModule } from './modules/exports/exports.module';
+import { OrgsModule } from './modules/orgs/orgs.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
@@ -112,6 +113,9 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // forgot/reset password. Mail — глобальный, нужен и за пределами Accounts
     // (нотификации, в будущем — owner-уведомления).
     MailModule,
+    // OrgsModule должен идти ДО AccountsModule, потому что AccountsService
+    // импортирует OrgsService для хука в register (создание персонального Org).
+    OrgsModule,
     AccountsModule,
 
     // M3c — cross-cutting cервисы: SecurityModule (SSRF/Encryption/IpHashing),

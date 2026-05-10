@@ -10,6 +10,8 @@ import { z } from 'zod';
 export const RegisterSchema = z.object({
   email: z.string().email('Невалидный email').max(254),
   name: z.string().trim().min(1, 'Имя обязательно').max(120),
+  /** Опциональное название компании. Если пусто — бэк подставит "Компания {name}". */
+  companyName: z.string().trim().min(1).max(120).optional(),
   honeypot: z.string().optional(),
 });
 

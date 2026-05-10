@@ -55,7 +55,12 @@ export class AccountsController {
   async register(
     @Body(new ZodValidationPipe(RegisterSchema)) body: RegisterDto,
   ): Promise<{ status: 'ok'; email_sent: boolean; email_error?: string }> {
-    const result = await this.accounts.register(body);
+    const result = await this.accounts.register({
+      email: body.email,
+      name: body.name,
+      ...(body.companyName !== undefined ? { companyName: body.companyName } : {}),
+      ...(body.honeypot !== undefined ? { honeypot: body.honeypot } : {}),
+    });
     return {
       status: result.status,
       email_sent: result.emailSent,

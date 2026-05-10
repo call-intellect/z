@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { OrgsModule } from '../orgs/orgs.module';
+
 import { AccountsController } from './accounts.controller';
 import { AccountsRepository } from './accounts.repository';
 import { AccountsService } from './accounts.service';
@@ -12,8 +14,12 @@ import { SessionService } from './session.service';
  * `AuthModule` уже глобален → `JwtService` и `CookieAuthGuard` доступны через DI.
  * `MailModule` тоже глобален → `MailService` / `DisposableEmailService` доступны.
  * `PrismaModule` глобален → `PrismaService` доступен.
+ *
+ * OrgsModule импортируем для хука в register: при создании юзера сразу
+ * создаётся персональный Org + Membership(owner) (Фаза 0 knowledge-core).
  */
 @Module({
+  imports: [OrgsModule],
   controllers: [AccountsController],
   providers: [
     AccountsService,

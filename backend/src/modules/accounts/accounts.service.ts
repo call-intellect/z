@@ -7,6 +7,7 @@ import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { DisposableEmailService } from '../mail/disposable-email.service';
 import { MailService } from '../mail/mail.service';
+import { OrgsService } from '../orgs/orgs.service';
 
 import { AccountsRepository } from './accounts.repository';
 import {
@@ -70,6 +71,7 @@ export class AccountsService {
     @Inject(MailService) private readonly mail: MailService,
     @Inject(DisposableEmailService) private readonly disposable: DisposableEmailService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(OrgsService) private readonly orgs: OrgsService,
   ) {}
 
   // ─────────────────────────── register ─────────────────────────
@@ -80,6 +82,7 @@ export class AccountsService {
   async register(input: {
     email: string;
     name: string;
+    companyName?: string;
     honeypot?: string;
   }): Promise<RegisterResult> {
     if (input.honeypot && input.honeypot.length > 0) {
@@ -98,11 +101,29 @@ export class AccountsService {
     const tempPassword = AccountsService.generateTempPassword();
     const passwordHash = await this.passwords.hash(tempPassword);
 
-    await this.repo.upsertStandalone({
-      email,
-      name,
-      passwordHash,
-      mustChangePassword: true,
+    // В одной Prisma-транзакции:
+    //   1) upsert юзера (idempotency через (email, signupSource)).
+    //   2) если у юзера ещё нет owned Org — создать персональный Org +
+    //      Membership(owner). Если уже есть (повторная регистрация на
+    //      тот же email) — пропустить.
+    const orgName = (input.companyName?.trim() || `Компания ${name}`).slice(0, 120);
+    await this.prisma.$transaction(async (tx) => {
+      const user = await this.repo.upsertStandalone(
+        {
+          email,
+          name,
+          passwordHash,
+          mustChangePassword: true,
+        },
+        tx,
+      );
+      // Идемпотентность: создаём Org только если у юзера ещё нет своих.
+      const existingOwned = await tx.org.findFirst({
+        where: { ownerId: user.id, deletedAt: null },
+      });
+      if (!existingOwned) {
+        await this.orgs.createForOwner({ name: orgName, ownerId: user.id }, tx);
+      }
     });
 
     const loginUrl = `${this.cfg.auth.publicFrontendUrl}/login`;

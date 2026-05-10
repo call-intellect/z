@@ -68,7 +68,11 @@ describe('AccountsService', () => {
     sendPasswordReset: ReturnType<typeof vi.fn>;
   };
   let disposable: { isDisposable: ReturnType<typeof vi.fn> };
-  let prisma: { $transaction: ReturnType<typeof vi.fn> };
+  let prisma: {
+    $transaction: ReturnType<typeof vi.fn>;
+    org: { findFirst: ReturnType<typeof vi.fn> };
+  };
+  let orgs: { createForOwner: ReturnType<typeof vi.fn> };
   let cfg: TypedConfigService;
 
   beforeEach(() => {
@@ -100,7 +104,9 @@ describe('AccountsService', () => {
     disposable = { isDisposable: vi.fn(() => false) };
     prisma = {
       $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma)),
+      org: { findFirst: vi.fn(async () => null) },
     };
+    orgs = { createForOwner: vi.fn(async () => ({ id: 'org-1', name: 'Компания Alice' })) };
     cfg = {
       auth: { publicFrontendUrl: 'https://z.app' },
     } as unknown as TypedConfigService;
@@ -115,6 +121,7 @@ describe('AccountsService', () => {
       mail as unknown as MailService,
       disposable as unknown as DisposableEmailService,
       cfg,
+      orgs as unknown as import('../orgs/orgs.service').OrgsService,
     );
   }
 

@@ -311,6 +311,52 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Фаза 7 backend (шаги 1-8): фактические решения исполнителя
+
+Зафиксировано после backend-сессии Фазы 7 (коммиты `0a03275`, `6e73787`, `2f921d4`, `31dba5a`, `9af69cd`, `b6cc470`, `80fb281` + финал-коммит шага 8).
+
+1. **`LinkStatus` enum в коде имеет только `active|archived`,** не `active|archived|deleted` как было предположено в ТЗ Фазы 7. Решение: НЕ менять `LinkStatus`, всё soft-delete делать через новые поля `deletedAt/deletedBy`. UI Org-Admin фильтрует `deletedAt: null` на listLinks. Hard-delete после 30d — Фаза 11. Откат: добавить `deleted` значение в enum и расширить retention-чистку.
+
+2. **`SuperAdminAuditInterceptor` пишет SuperAdminAccessLog для GET тоже,** не только для мутаций. Это требование compliance ТЗ Фазы 7 («любое drill-down действие super_admin'а»). `AdminAuditInterceptor` (legacy) пишет только не-GET — это другой interceptor, поведение не меняем. Откат: в новом interceptor'е добавить `if (request.method === 'GET') return;`.
+
+3. **`requestPreview/responsePreview` помещены прямо в `AiUsageLog`,** не в отдельную таблицу `AiUsageCallPayload`. Открытый вопрос 2 ТЗ — выбрано «компактнее, JOIN не нужен». Truncate 8KB на стороне `AiUsageLogService.record` через `TextEncoder/TextDecoder` (байтовый размер UTF-8). Откат: создать `AiUsageCallPayload` с FK и переместить поля.
+
+4. **Cursor pagination — base64(JSON({createdAt, id})).** Открытый вопрос 1 ТЗ. Decoder defensive: на любую невалидную строку → `null` → начнём с начала. Используется в `getCallsLog`. Для `getUsersUsage` (groupBy не поддерживает cursor нативно) — упрощён: take=limit+1 → `nextCursor` если есть `+1`. Откат: офсет-пагинация при необходимости.
+
+5. **S3 health пропущен,** возвращается `{available: 'unknown'}` (Открытый вопрос 3 ТЗ). Полная интеграция — Фаза 11. Откат: добавить `s3.headObject` пинг с TTL 5m.
+
+6. **Org-Admin `/sources` — заглушка** на frontend (Открытый вопрос 4 ТЗ). На backend не реализуем — это уже под Фазой 10. На Фазе 7 строим только структуру.
+
+7. **`OrgAdminGuard` пропускает `owner` И `admin`,** не только `owner`. ТЗ Фазы 7 7.B описывает Org-Admin как «owner/admin Membership». `RbacService.canManageOrg` возвращает true только для `owner` или `super_admin`. Поэтому в guard'е сделана собственная проверка `loadContext` + `role ∈ {owner, admin}` или `isSuperAdmin`. Откат: вернуть `RbacService.canManageOrg` если решено сузить до owner-only.
+
+8. **`SuperAdminGuard` делает БД-lookup на каждый запрос,** не использует JWT-claim. Аргумент: смена `User.isSuperAdmin` через DB должна применяться без перевыпуска сессии. Кэш в `req.user.isSuperAdmin = true` после первого guard-вызова — защита от повторного lookup в одной цепочке guards/interceptors. Откат: добавить isSuperAdmin в JWT и читать оттуда (требует logout+login после смены флага).
+
+9. **`LlmRoutesController.upsert` делегирует в `AdminFunctionsService.setRouteForTaskType`** для совместимости — вместо двух путей (legacy `LlmRouterService.setRoute` без model + новый с model). Существующий PUT эндпоинт продолжает работать, но теперь сохраняет model + автоматически инвалидирует AdminCache. Откат: вернуть прямой вызов `LlmRouterService.setRoute`.
+
+10. **`TASK_TYPES_TUPLE = ALL_LLM_TASK_TYPES`** — один источник правды. Кортеж экспортируется из `llm-router.service.ts` и переиспользуется в `llm-routes.dto.ts`. При расширении union'а — обновляется одно место в коде.
+
+11. **`AdminFunctionsService.listFunctions` делает N запросов last-call** (по одному на taskType). На текущем масштабе (≤25 taskType) приемлемо. На большем — переход на одиночный SQL с `DISTINCT ON (taskType)` или предрасчёт.
+
+12. **`AdminExperimentsService.modelA` парсится из текущей `providers[0]`,** или fallback `'<provider>:default'` если model не задана. Это означает: при `winner=A` → миграция providers не нужна, просто обнуляем experiment. При `winner=B` → парсим modelB и переставляем первым.
+
+13. **A/B-эксперимент можно стартовать на `taskType` без существующей route** — создаётся «пустая» с `providers=[]`, `experiment={...}`. LLM-вызов в этом случае пойдёт через DEFAULT_FALLBACK_CHAIN, а В-группа всё равно будет учитываться через `experimentGroup`. Аргумент: упрощает UX — admin не должен сначала «настраивать» функцию, прежде чем запустить эксперимент.
+
+14. **`WorkerOrgGate` бросает ошибку** (`WorkerDisabledForOrgError`), не делает `job.moveToDelayed`. На Worker-уровне ошибка → BullMQ retry → failed. ТЗ Фазы 7 предлагает оба варианта. Выбран throw — понятнее для observability (failed-jobs видны в admin/health) и проще: owner возвращает тумблер → manual retry. Откат: переключиться на `moveToDelayed(now+5m)` если зашумит метрики.
+
+15. **`OrgAdminKnowledgeService.reprocessRawEvent`:** удаляет `IdeaBlock` через `IdeaBlockEvidence.rawEventId`, затем сбрасывает `processingStatus='received'` и enqueue с `suffix=Date.now().toString()`. Каскадные `IdeaBlockEntity` / `IdeaBlockEvidence` / `IdeaBlockLink` удаляются onDelete:Cascade. Откат: добавить опциональный флаг preserve-entities если потребуется.
+
+16. **`Theme.mergedFromIds`/`Entity.mergedFromIds` для unmerge — не делаем.** В schema нет такого поля; добавлять его не оправдано — текущее merge через `mergedIntoId` отслеживает только направление вперёд. Unmerge как отдельная операция требует backup'а до merge'а; в Фазе 7 — vNext. Org-Admin UI получает `mergeEntities` (manual), но не `unmergeEntity`. ТЗ Фазы 7 это допускает («если нет — vNext, на Фазе 7 заглушка»). Откат: добавить `Entity.mergedFromIds: String[]` в schema + восстановление через сервис.
+
+17. **`AdminCacheService` — single-process Map.** ТЗ Фазы 7 4.4 фиксирует TTL 60s. Распределённый кэш (Redis) — vNext, упомянуто в JSDoc. Сейчас backend-pod один (см. runtime topology). Откат: переключить на Redis-backed cache при горизонтальном scaling.
+
+18. **`AdminFunctionsService.listFunctions` использует `routes WHERE tenantId=null`.** На Фазе 7 всё управление — глобальное (super_admin меняет дефолт для всех Org). Per-Org override уже технически работает в `LlmRouter.findRoute`, но UI не делается на Фазе 7. ТЗ это допускает.
+
+19. **DTO для `org-admin/knowledge/audit-logs` принимает `entityTypes` как CSV-строку** (`?entityTypes=block,entity,theme`), парсится в контроллере функцией `parseEntityTypesCsv`. Альтернатива (zod `.transform`) ломает типизацию `ZodSchema<T>` (input ≠ output) — проще принять как строку и парсить отдельно.
+
+20. **Воркеры в `WorkersModule` НЕ импортируют `CoreQueueModule`,** а провайдят `CoreQueueService` и `WorkerOrgGate` напрямую в `providers`. Существующий паттерн: Workers — flat module без import'ов модулей, только providers. Согласовано с практикой Фаз 2-5.
+
+---
+
 ## 2026-05-10 — Phase 0 frontend: страницы найдены в `(authenticated)`
 
 **Вопрос.** При первом аудите Glob по `frontend/app/settings/organization/**` дал 0 файлов — сделал вывод что страницы отсутствуют. Повторный поиск показал, что они существуют в `frontend/app/(authenticated)/settings/organization/page.tsx` и `(authenticated)/invitations/[token]/page.tsx`.

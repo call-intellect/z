@@ -2,7 +2,7 @@
 type: execution-plan
 phase: 12
 feature: knowledge-core — тарифы и entitlements (tier_basic / tier_pro / tier_enterprise), декоратор @RequireEntitlement, gating UI
-status: planned
+status: in_progress
 date: 2026-05-10
 source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
 ---
@@ -29,7 +29,7 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
 
 ### Шаг 1 — Prisma schema: `OrgEntitlement`
 
-- [ ] Добавить:
+- [x] Добавить:
   ```prisma
   model OrgEntitlement {
     id               String   @id @default(cuid())
@@ -43,14 +43,14 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
     updatedAt        DateTime @updatedAt
   }
   ```
-- [ ] **db push**: `bun run prisma:push --accept-data-loss`.
-- [ ] **Backfill**: [backend/scripts/seed-entitlements.ts](backend/scripts/seed-entitlements.ts) — для каждой `Org` без `OrgEntitlement` → `create({tier: 'tier_pro'})`. Идемпотентно (см. `safe-seed-rules`).
+- [x] **db push**: `bun run prisma:push --accept-data-loss`.
+- [x] **Backfill**: [backend/scripts/seed-entitlements.ts](backend/scripts/seed-entitlements.ts) — для каждой `Org` без `OrgEntitlement` → `create({tier: 'tier_pro'})`. Идемпотентно (см. `safe-seed-rules`).
 
 ### Шаг 2 — `TierConfigRegistry`
 
 Новый файл [backend/src/modules/entitlements/tier-config.ts](backend/src/modules/entitlements/tier-config.ts):
 
-- [ ] Тип `TierConfig`:
+- [x] Тип `TierConfig`:
   ```ts
   type TierKey = 'tier_basic' | 'tier_pro' | 'tier_enterprise';
   type FeatureKey =
@@ -83,47 +83,48 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
     quotas: Record<QuotaKey, number>;
   }
   ```
-- [ ] Реестр (стартовая нарезка, бизнес правит позже):
+- [x] Реестр (стартовая нарезка, бизнес правит позже):
   - `tier_basic`: meeting+ai_report+card_rollup+chat_per_meeting+adapter_web_form. Всё остальное — `false`. Квоты низкие: 50 meeting/месяц, 5_000 блоков, 30 чат-запросов/день/юзер, 10 meeting-source'ов.
   - `tier_pro`: + theme, graph, chat_org, dashboard_director, adapter_telegram, adapter_email, adapter_call, public_api, export_advanced. Квоты в 10×.
   - `tier_enterprise`: + goals_strategy, strict_visibility. Квоты в 100× (фактически без лимита для большинства).
-- [ ] **Защита от опечаток**: `TIER_CONFIG: Record<TierKey, TierConfig>` — TS-проверка, что все features перечислены в каждом tier.
+- [x] **Защита от опечаток**: `TIER_CONFIG: Record<TierKey, TierConfig>` — TS-проверка, что все features перечислены в каждом tier.
 
 ### Шаг 3 — `EntitlementService`
 
 Новый файл [backend/src/modules/entitlements/entitlement.service.ts](backend/src/modules/entitlements/entitlement.service.ts):
 
-- [ ] Конструктор: `PrismaService`, `RedisService`.
-- [ ] `getEntitlement(tenantId): Promise<{tier: TierKey, features: Record<FeatureKey, boolean>, quotas: Record<QuotaKey, number>}>`:
+- [x] Конструктор: `PrismaService`, `RedisService`.
+- [x] `getEntitlement(tenantId): Promise<ResolvedEntitlement>`:
   - cache lookup `entitlement:<tenantId>`,
   - miss → `prisma.orgEntitlement.findUnique({tenantId})`,
   - если нет → fail-safe: `{tier: 'tier_basic', ...TIER_CONFIG.tier_basic}` + log warn,
   - merge: `features = {...TIER_CONFIG[tier].features, ...featureOverrides}`, `quotas = {...TIER_CONFIG[tier].quotas, ...quotaOverrides}`,
   - cache write TTL 300 сек,
   - return.
-- [ ] `hasFeature(tenantId, featureKey): Promise<boolean>` — обёртка над `getEntitlement`.
-- [ ] `getQuota(tenantId, quotaKey): Promise<number>` — обёртка.
-- [ ] `invalidate(tenantId): Promise<void>` — `redis.del(...)`.
-- [ ] `setTier(tenantId, tier, byUserId, reason): Promise<void>` — upsert `OrgEntitlement`, invalidate cache, AuditLog `TIER_CHANGED`.
-- [ ] `setOverride(tenantId, kind: 'feature'|'quota', key, value, byUserId): Promise<void>` — upsert + invalidate + AuditLog `ENTITLEMENT_OVERRIDE_SET`.
+- [x] `hasFeature(tenantId, featureKey): Promise<boolean>` — обёртка над `getEntitlement`.
+- [x] `getQuota(tenantId, quotaKey): Promise<number>` — обёртка.
+- [x] `invalidate(tenantId): Promise<void>` — `redis.del(...)`.
+- [x] `setTier(tenantId, tier, byUserId, reason): Promise<void>` — upsert `OrgEntitlement`, invalidate cache, AuditLog `TIER_CHANGED`.
+- [x] `setOverride(tenantId, kind: 'feature'|'quota', key, value, byUserId, reason): Promise<void>` — upsert + invalidate + AuditLog `ENTITLEMENT_OVERRIDE_SET`.
+- [x] `setNotes(tenantId, notes): Promise<void>` — upsert + invalidate (без AuditLog).
 
 ### Шаг 4 — `@RequireEntitlement` декоратор + `EntitlementGuard`
 
-- [ ] [backend/src/modules/entitlements/require-entitlement.decorator.ts](backend/src/modules/entitlements/require-entitlement.decorator.ts):
+- [x] [backend/src/modules/entitlements/require-entitlement.decorator.ts](backend/src/modules/entitlements/require-entitlement.decorator.ts):
   ```ts
   export const REQUIRE_ENTITLEMENT_KEY = 'requireEntitlement';
   export const RequireEntitlement = (feature: FeatureKey) =>
     SetMetadata(REQUIRE_ENTITLEMENT_KEY, feature);
   ```
-- [ ] [backend/src/modules/entitlements/entitlement.guard.ts](backend/src/modules/entitlements/entitlement.guard.ts):
+- [x] [backend/src/modules/entitlements/entitlement.guard.ts](backend/src/modules/entitlements/entitlement.guard.ts):
   - `canActivate`:
     - `feature = reflector.getAllAndOverride<FeatureKey>(REQUIRE_ENTITLEMENT_KEY, [handler, class])`,
     - если нет — `return true` (guard прозрачен),
     - `tenantId = req.tenantId` (ставит `TenantGuard`); если нет — `403 tenant_required`,
     - `enabled = await entitlements.hasFeature(tenantId, feature)`,
     - `if (!enabled) throw new ForbiddenException({ok:false, error:{code:'entitlement_required', feature, currentTier, upgradeUrl:'/settings/billing'}})`.
-- [ ] **Регистрация глобально** в `AppModule.providers`: `{provide: APP_GUARD, useClass: EntitlementGuard}`. Порядок guard'ов: `CookieAuthGuard → TenantGuard → EntitlementGuard → RbacGuard` (важно: tenant сначала, потом entitlement).
-- [ ] **Module**: `EntitlementsModule` — `@Global()`, экспортит `EntitlementService` и `EntitlementGuard`.
+- [x] **Регистрация глобально** в `AppModule.providers`: `{provide: APP_GUARD, useClass: EntitlementGuard}`. Порядок guard'ов: `CookieAuthGuard → TenantGuard → EntitlementGuard → RbacGuard` (важно: tenant сначала, потом entitlement).
+- [x] **Module**: `EntitlementsModule` — `@Global()`, экспортит `EntitlementService` и `EntitlementGuard`.
 
 ### Шаг 5 — Применение `@RequireEntitlement` на контроллерах
 
@@ -144,33 +145,31 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 12)
 | `ExportsController` (advanced exports) | `feature.export_advanced` | на advanced методах |
 | `SourcesController.create` | gate по `type` → `feature.adapter_<type>` | runtime check внутри method'а |
 
-- [ ] Перебор всех контроллеров, добавить декораторы. Для chat-v2 и sources — runtime-check (нельзя на классе, потому что зависит от body).
+- [x] Перебор всех контроллеров, добавить декораторы. Для chat-v2 и sources — runtime-check (нельзя на классе, потому что зависит от body). Также: BearerAuthGuard выставляет `req.tenantId` из ApiKey.tenantId — нужно для public-api gating'а.
 
 ### Шаг 6 — Перевод `QuotaService`-call-sites на entitlement-quotas
 
-- [ ] Найти все вызовы `quotaService.checkAndIncrement({max: ...})` в коде. Для каждого — заменить хардкод/ENV на:
+- [x] Найти все вызовы `quotaService.checkAndIncrement({max: ...})` в коде. Для каждого — заменить хардкод/ENV на:
   ```ts
   const max = await entitlements.getQuota(tenantId, 'chat_requests_per_day_per_user');
   await quotaService.checkAndIncrement({userId, quotaName: 'chat_requests_per_day_per_user', max, windowMs: 24*3600*1000});
   ```
-- [ ] Известные call-sites (проверить grep'ом, не считать полным):
-  - `chat.service.ts` — chat per day per user.
-  - `exports.service.ts` — exports per day.
-  - `dump.controller.ts` (Фаза 10) — dump per day per user.
-  - `regenerate.service.ts` — regenerate per day.
-- [ ] **Месячные/orgs-wide квоты** (`meetings_per_month`, `blocks_per_org`, `ingest_bytes_per_month`):
-  - Они per-tenant, не per-user. `QuotaService` сейчас per-user. Расширить на `org-scope`:
-    - метод `checkAndIncrementOrg({tenantId, quotaName, max, windowMs})` — ключ `quota:org:<tenantId>:<quotaName>:<windowStart>`.
-    - используется в `MeetingService.create` (cap meetings per month), `IngestService.ingest` (cap bytes / blocks).
+- [x] Известные call-sites:
+  - `chat.service.ts` — все 7 call-sites переключены на helper `checkChatQuota` через `entitlements.getQuota`.
+  - `dump.service.ts`, `exports.service.ts`, `clip-render.service.ts`, `goals.service.ts` — НЕ переключены (`dump_per_day_per_user`, `render_jobs_per_hour`, `goal_recompute_per_day` — вне фиксированного списка QuotaKey плана). См. decisions-log.
+- [x] **Месячные/orgs-wide квоты**:
+  - метод `checkAndIncrementOrg({tenantId, quotaName, max, windowMs, amount?})` — ключ `quota:org:<tenantId>:<quotaName>:<windowStart>`. + `peekOrg`.
+  - `MeetingsService.createForUser` — cap `meetings_per_month` (резолв tenantId по единственному membership; fail-open при отсутствии).
+  - `IngestService.ingest` — cap `ingest_bytes_per_month` (amount = payloadSizeBytes).
 
 ### Шаг 7 — Контроллеры управления
 
-- [ ] [backend/src/modules/entitlements/entitlements.controller.ts](backend/src/modules/entitlements/entitlements.controller.ts):
+- [x] [backend/src/modules/entitlements/entitlements.controller.ts](backend/src/modules/entitlements/entitlements.controller.ts):
   - `GET /api/v1/me/entitlements` — current user → tenantId → `EntitlementService.getEntitlement(tenantId)`. Используется фронтом.
   - `GET /api/v1/settings/billing` (owner-only) — ровно то же + `notes`.
   - `GET /api/v1/admin/orgs/:tenantId/entitlement` (super_admin only) — для Z-Admin.
   - `PATCH /api/v1/admin/orgs/:tenantId/entitlement` (super_admin) — body: `{tier?, featureOverrides?, quotaOverrides?, notes?, reason: string}` — обязательно `reason` для аудита.
-- [ ] **AuditLog**: `TIER_CHANGED`, `ENTITLEMENT_OVERRIDE_SET`. Добавить в [backend/src/modules/audit/audit.types.ts](backend/src/modules/audit/audit.types.ts).
+- [x] **AuditLog**: `TIER_CHANGED`, `ENTITLEMENT_OVERRIDE_SET`. Добавлены в [backend/src/modules/audit/audit.types.ts](backend/src/modules/audit/audit.types.ts).
 
 ## Frontend
 

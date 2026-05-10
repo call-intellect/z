@@ -411,3 +411,40 @@ date: 2026-05-10
 **Откат.** Удалить три поля из `PublicUserDto` + `getMe` загрузку membership/isSuperAdmin. Frontend-домен (`AccountUser`) автоматически защищается дефолтами (`isSuperAdmin: false`, `currentOrgRole: null`).
 
 ---
+
+## 2026-05-10 — Фаза 12: какие quota call-sites переключать на entitlement-quotas
+
+**Вопрос.** План Фазы 12 шаг 6 фиксирует список `QuotaKey` (7 ключей: `meetings_per_month`, `blocks_per_org`, `chat_requests_per_day_per_user`, `sources_meeting`, `sources_other`, `ingest_bytes_per_month`, `links_per_day`). Но в реальном коде есть и другие `quotaName`: `dump_per_day_per_user` (web-form), `render_jobs_per_hour` (highlights clip-render), `goal_recompute_per_day` (goals strategic-alignment recompute). План в шаге 6 явно перечисляет лишь `chat`, `exports`, `dump`, `regenerate` без сопоставления квот.
+
+**Альтернативы:**
+1. Расширить `QuotaKey` тремя ключами (`dump_per_day_per_user`, `render_jobs_per_hour`, `goal_recompute_per_day`) и добавить значения во все три tier'а в `TIER_CONFIG`.
+2. Оставить эти три квоты на ENV/hardcode и зафиксировать в decisions-log как явное отклонение от плана.
+3. Маппить их на существующие ключи (`dump → links_per_day`, `render → blocks_per_org` и т.п.) — costly, semantic mismatch.
+
+**Решение.** Вариант 2. Перевели только `chat_requests_per_day_per_user` (через helper `ChatService.checkChatQuota`), `meetings_per_month` (`MeetingsService.createForUser`) и `ingest_bytes_per_month` (`IngestService.ingest` через `checkAndIncrementOrg`). `dump`, `render_jobs`, `goal_recompute` — остаются на ENV.
+
+**Почему.**
+- План Фазы 12 §Шаг 2 фиксирует ровно 7 ключей — менять контракт без ТЗ нельзя.
+- Все три «не tier'ные» квоты — anti-abuse, не business-feature: rate-limit на дорогую операцию (clip-render, strategic-alignment, dump). Они одинаковы для всех тарифов и должны масштабироваться по серверным мощностям, а не по тарифу клиента.
+- `chat_requests_per_day` → `chat_requests_per_day_per_user`: разные quotaName в Redis, поэтому существующие counters сбросятся (не инцидент — лимит просто восстановится с следующего вызова).
+
+**Откат.** Если бизнес решит превратить эти три anti-abuse-квоты в часть тарифа: добавить в `QuotaKey`, добавить в `TIER_CONFIG`, переключить call-sites через `entitlements.getQuota`. Существующее ENV становится fallback.
+
+---
+
+## 2026-05-10 — Фаза 12: где выставлять `req.tenantId` для public-api gating'а
+
+**Вопрос.** `EntitlementGuard` читает `req.tenantId`, который ставит `TenantGuard`. Public API использует `BearerAuthGuard` вместо `TenantGuard` (cookie-сессии нет, ApiKey-токен), и `req.tenantId` не выставляется. На gating'е `feature.public_api` через `@RequireEntitlement` guard упадёт с `tenant_required`.
+
+**Альтернативы:**
+1. Добавить `TenantGuard` в цепочку рядом с `BearerAuthGuard` — но `TenantGuard` ожидает `req.user.id` (CookieAuthGuard), не подойдёт без рефакторинга.
+2. Сделать `EntitlementGuard` опциональным к `req.tenantId` — но тогда теряется сама идея per-Org gating'а.
+3. Расширить `BearerAuthGuard`: после успешной аутентификации выставлять `req.tenantId = apiKey.tenantId` (если не null).
+
+**Решение.** Вариант 3. `ApiKey` уже имеет `tenantId String?` (хотя для системных ключей null). После resolve в `BearerAuthGuard.canActivate` — `req.tenantId = apiKey.tenantId`. Системные ключи без tenantId продолжают работать как раньше — просто не покрыты `@RequireEntitlement` (для них guard падёт с `tenant_required`, что приемлемо: системные ключи не должны идти на tier-gated роуты).
+
+**Почему.** Минимальное изменение, контрактно совместимо: `req.tenantId` уже использовался в downstream-сервисах (`tenant: apiKey.tenantId` в фильтрах). Альтернативы либо требуют рефакторинга `TenantGuard`, либо ослабляют security-контракт (`EntitlementGuard` без tenantId — это бесполезно).
+
+**Откат.** Удалить строку `(req as any).tenantId = apiKey.tenantId` в `BearerAuthGuard`. Public API endpoints без `@RequireEntitlement` продолжат работать.
+
+---

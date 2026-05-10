@@ -87,6 +87,12 @@ function parseBranch(raw: string | null): ThemeBranch | null {
   return KNOWN_BRANCHES.has(raw) ? (raw as ThemeBranch) : null;
 }
 
+/** Публичный alias для переиспользования в смежных domain-моделях
+ *  (`director-dashboard.ts` и т.п.). Поведение идентично `parseBranch`. */
+export function parseBranchSafe(raw: string | null): ThemeBranch | null {
+  return parseBranch(raw);
+}
+
 function parseStatus(raw: string): ThemeStatus {
   return KNOWN_STATUSES.has(raw) ? (raw as ThemeStatus) : 'active';
 }

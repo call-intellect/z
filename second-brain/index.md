@@ -43,6 +43,10 @@ _пусто_
 
 ## Активные ТЗ
 - `plans/tz/2026-05-10-knowledge-core-tz.md` — **переустройство фундамента Z в единое информационное ядро (knowledge core)**. 12 фаз: org/multi-tenancy → universal ingest → IdeaBlock + Entity → граф связей → Theme → переписанные UX-агенты → AI-чат через ядро → админка отладки → дашборд директора → цели и стратегический согласователь → доп. источники → retention/security → tariffs. Концепции из `delivery/` и Blockify, реализация на стеке Z (NestJS/pgvector/BullMQ).
+  - **Дочерние ТЗ (для агентов-исполнителей):**
+    - `plans/tz/2026-05-10-phase-7-admin.md` — Z-Admin (super_admin) + Org-Admin (owner/admin): отладка, аналитика стоимости, A/B моделей, прайс-карта, тумблеры воркеров, отладка ядра.
+    - `plans/tz/2026-05-10-phase-8-director-dashboard.md` — Дашборд директора: 5 виджетов поверх ядра + AI-чат (org-scope chat-v2), role-based split на `/dashboard`.
+    - `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md` — Цели компании + воркер strategic-alignment (alignment 0-100 + history snapshots) + индикатор «Согласованность стратегии» на дашборде.
 - `plans/architecture/2026-05-08-z-architecture.md` — целевая архитектура MVP (полное полотно: модули, FSM, контракты API, ENV, безопасность, decisions log)
 - `plans/tz/2026-05-08-mvp-fullstack-tz.md` — основное ТЗ MVP по фазам 0–9 (frontend + backend + AI + admin + observability) ✅ закрыт
 - `plans/tz/2026-05-06-infrastructure-deployment-tz.md` — фаза 0 (инфра): развёртывание серверов, LiveKit, Egress, БД, мониторинг, Selectel S3

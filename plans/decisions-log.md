@@ -13,6 +13,74 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Раздробление Фаз 7/8/9 в отдельные ТЗ
+
+**Вопрос.** Фазы 7 (Z-Admin + Org-Admin), 8 (Дашборд директора) и 9 (Цели + strategic alignment) описаны в родительском `knowledge-core-tz.md` высокоуровнево (Фаза 7 — ~150 строк, Фазы 8/9 — по 30 строк). Передавать их агенту-исполнителю напрямую — мало (Фазы 8/9 без шагов и файлов) либо избыточно перемешано с другими фазами (Фаза 7).
+
+**Решение.** Создаю **отдельные дочерние ТЗ** в `plans/tz/`:
+- `plans/tz/2026-05-10-phase-7-admin.md` — Z-Admin + Org-Admin (9 шагов, schema/guards/services/controllers/UI).
+- `plans/tz/2026-05-10-phase-8-director-dashboard.md` — Дашборд директора (6 шагов, role-based split).
+- `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md` — Goal/strategic-alignment (9 шагов, новая модель + воркер + cron + UI + расширение Фазы 8).
+
+В родительском `knowledge-core-tz.md` оставляем высокоуровневое описание + ссылку на дочернее ТЗ.
+
+**Почему.**
+- Каждое дочернее ТЗ self-contained — агент-исполнитель может работать без чтения остальных фаз.
+- Лимит контекста агента не пропустит весь `knowledge-core-tz.md` (1497 строк) + код одновременно.
+- Фазы 8 и 9 связаны (Фаза 9 расширяет дашборд из Фазы 8) — это явно зафиксировано в каждом ТЗ.
+- Формат идентичен: цель → что входит → архитектурные решения → DoD → текущее состояние → пошаговый план → затронутые файлы → итог.
+
+**Откат.** Если ТЗ окажется недостаточно детальным — агент-исполнитель уточняет open-questions через decisions-log, не возвращается к родителю.
+
+---
+
+## 2026-05-10 — Архитектурные развилки в Фазе 7 (Z-Admin)
+
+**Зафиксированные ключевые решения** (полный список — в `plans/tz/2026-05-10-phase-7-admin.md` §«Архитектурные решения»):
+
+1. **Два guard'а** (`SuperAdminGuard` для `/api/v1/admin/*`, `OrgAdminGuard` для `/api/v1/org-admin/*`) — не один общий с `?scope=` параметром. Унификация на уровне сервисов через `{scope: 'global'|'org', tenantId?}`.
+2. **`SuperAdminAccessLog`** — новая таблица для compliance: каждое drill-down действие super_admin'а пишется через `SuperAdminAuditInterceptor`. Email-отчёт — vNext.
+3. **`Org.workersEnabled jsonb`** — новое поле для тумблеров в Org-Admin. Воркеры на старте processor'а через `WorkerOrgGate.checkOrThrow(tenantId, name)` пропускают/тратят retry. Default `{}` = все включены.
+4. **Soft-delete связей** через новые поля `IdeaBlockLink.deletedAt/By`, `EntityLink.deletedAt/By`. Hard-delete через 30 дней (отнесено в Фазу 11 retention).
+5. **`AiUsageLog.requestPreview` + `responsePreview`** (text, truncate 8KB каждый) — новые поля для drill-down в Z-Admin. Заполняются `LlmRouter` для всех новых вызовов; для исторических — null.
+6. **A/B-эксперименты** через `LlmTaskRoute.experiment` (поле уже есть, Фаза 0). Новый `AdminExperimentsService`. На finish: winner=B → переставить modelB первой в `providers`.
+7. **Существующий `AdminGuard`** (legacy, проверяет `User.role==='admin'`) на Фазе 7 заменяется `SuperAdminGuard` для `/admin/api/v1/ai-usage` и `/api/v1/admin/llm-routes`. Legacy `User.role='admin'` без `isSuperAdmin=true` теряет доступ — намеренно.
+
+**Откат.** Каждое решение откатывается отдельно. См. соответствующий шаг в дочернем ТЗ.
+
+---
+
+## 2026-05-10 — Архитектурные развилки в Фазе 8 (Дашборд директора)
+
+**Зафиксированные ключевые решения** (полный список — в `plans/tz/2026-05-10-phase-8-director-dashboard.md`):
+
+1. **Один эндпоинт `GET /api/v1/dashboard/director?period=`** — все 6 виджетов одним ответом (не отдельные `/widgets/themes`, `/widgets/signals`). Cache key один на всю страницу.
+2. **Период `week|month`** — `custom from/to` отнесён в vNext.
+3. **Роль `admin` тоже видит дашборд директора** (партнёрская роль). `manager` — нет. Реализуется через `RbacService.canViewDirectorDashboard`.
+4. **AI-чат встраивается в дашборд** через `chat-v2` org-scope (Фаза 6). Не отдельный Q&A-агент. Извлекаем общий компонент `<OrgChatPanel>` из `/chat`.
+5. **`narrativeSummary` LLM-блок** — опциональный 7-й блок, отдельный кэш TTL 24h. На фейл LLM — `null`, UI скрывает блок (а не показывает заглушку). LlmTaskRoute для `dashboard-summary` создаётся одноразовым патч-скриптом.
+6. **Manager-вид остаётся прежним** — текущий `DashboardClient.tsx` не трогаем, добавляем рядом `DirectorDashboardClient.tsx`. Split логика — клиентская через `useAuth()`. URL остаётся `/dashboard`.
+7. **`hotEntities` через SQL `groupBy(entityId)`** без денормализованного поля — на малых Org быстро. MV — vNext.
+
+---
+
+## 2026-05-10 — Архитектурные развилки в Фазе 9 (Цели + strategic alignment)
+
+**Зафиксированные ключевые решения** (полный список — в `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md`):
+
+1. **3 новые модели** `Goal`, `GoalTheme`, `GoalAlignmentSnapshot` + 2 enum'а (`GoalStatus`, `GoalThemeSource`). Snapshot **иммутабельный**, перерасчёт = новый snapshot.
+2. **Кэш `cachedAlignment*` в `Goal`** для быстрого чтения списка без JOIN'а на последний snapshot. Атомарно обновляется в транзакции воркера.
+3. **Cron `@Cron('0 4 * * *')`** + воркер `strategic-alignment.worker` (consumer `core.strategic-alignment`, concurrency 2). Окно по умолчанию 30 дней (`Org.strategicAlignmentWindowDays`, диапазон 7–90).
+4. **Delta** = разница со snapshot **20-50h назад** (не «вчерашний») — устойчивость к пропуску cron-запуска. **Alert** = `delta <= -15 AND score <= 60`. Email/push — vNext.
+5. **Авторизация:** только `owner` создаёт/редактирует/удаляет цели. `admin` и `manager` — read. Новый ресурс `'goal'` в RBAC + правила в `policy.csv`.
+6. **Quota на ручной recompute** — 5/сутки/Org через `QuotaService` (`MAX_GOAL_RECOMPUTE_PER_DAY`). Защита от LLM-злоупотреблений.
+7. **Перерасчёт по триггеру (новая встреча → пересчёт целей)** не делаем — только cron + ручной trigger. Снижает стоимость LLM.
+8. **AI-suggester тем для цели** — НЕ входит, только manual-привязка. vNext.
+9. **Расширение Фазы 8:** `DirectorDashboardDto.strategicAlignment` опциональное поле + UI-индикатор «Согласованность стратегии» — это часть **Фазы 9**, не Фазы 8.
+10. **JSON Schema strict в LLM-вызове** + температура 0.0 для стабильности score. UI-подпись: «AI-индикатор движения, точность ±10 пунктов».
+
+---
+
 ## 2026-05-10 — Casbin engine
 
 **Вопрос.** ТЗ Фазы 0 требует «Casbin как первичный engine RBAC». В коде реализован in-house policy CSV engine (`backend/src/modules/rbac/rbac.service.ts`) с Casbin-style форматом строк `p, role, visibility, owner_match, obj, act`.

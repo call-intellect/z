@@ -11,10 +11,10 @@ import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { AdminGuard } from '../auth/guards/admin.guard';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { SuperAdminGuard } from '../auth/guards/super-admin.guard';
 
-import { AdminAuditInterceptor } from './admin.audit.interceptor';
+import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 
 const QuerySchema = z.object({
   from: z.coerce.date(),
@@ -25,8 +25,8 @@ type AiUsageQuery = z.infer<typeof QuerySchema>;
 
 @ApiExcludeController()
 @Controller('admin/api/v1/ai-usage')
-@UseGuards(CookieAuthGuard, AdminGuard)
-@UseInterceptors(AdminAuditInterceptor)
+@UseGuards(CookieAuthGuard, SuperAdminGuard)
+@UseInterceptors(SuperAdminAuditInterceptor)
 export class AiUsageAdminController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 

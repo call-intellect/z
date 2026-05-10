@@ -4,6 +4,8 @@ import { AuthController } from './auth.controller';
 import { AdminGuard } from './guards/admin.guard';
 import { CookieAuthGuard } from './guards/cookie-auth.guard';
 import { HmacGuard } from './guards/hmac.guard';
+import { OrgAdminGuard } from './guards/org-admin.guard';
+import { SuperAdminGuard } from './guards/super-admin.guard';
 import { AdminLoginService } from './services/admin-login.service';
 import { HmacService } from './services/hmac.service';
 import { JwtService } from './services/jwt.service';
@@ -32,6 +34,8 @@ import { JwtService } from './services/jwt.service';
     CookieAuthGuard,
     HmacGuard,
     AdminGuard,
+    SuperAdminGuard,
+    OrgAdminGuard,
   ],
   exports: [
     JwtService,
@@ -40,6 +44,8 @@ import { JwtService } from './services/jwt.service';
     CookieAuthGuard,
     HmacGuard,
     AdminGuard,
+    SuperAdminGuard,
+    OrgAdminGuard,
   ],
 })
 export class AuthModule {}

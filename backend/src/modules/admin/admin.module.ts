@@ -7,6 +7,7 @@ import { LlmRoutesController } from './llm-routes/llm-routes.controller';
 import { LlmRoutesService } from './llm-routes/llm-routes.service';
 import { MeetingsAdminController } from './meetings-admin.controller';
 import { RecordingsAdminController } from './recordings-admin.controller';
+import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 
 /**
  * Admin-модуль (Phase 8.2).
@@ -27,7 +28,7 @@ import { RecordingsAdminController } from './recordings-admin.controller';
     RecordingsAdminController,
     LlmRoutesController,
   ],
-  providers: [AdminAuditInterceptor, LlmRoutesService],
-  exports: [AdminAuditInterceptor],
+  providers: [AdminAuditInterceptor, SuperAdminAuditInterceptor, LlmRoutesService],
+  exports: [AdminAuditInterceptor, SuperAdminAuditInterceptor],
 })
 export class AdminModule {}

@@ -167,22 +167,26 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 [backend/src/modules/audit/audit.types.ts](backend/src/modules/audit/audit.types.ts) — добавить:
 
-- [ ] `BLOCK_CREATED`, `BLOCK_MERGED`, `BLOCK_ARCHIVED`, `BLOCK_DELETED_BY_RETENTION`.
-- [ ] `ENTITY_CREATED`, `ENTITY_MERGED`.
-- [ ] `LINK_CREATED`, `LINK_REMOVED`.
-- [ ] `THEME_CREATED`, `THEME_ARCHIVED`.
-- [ ] `WORKER_FAILED` (с metadata.workerName).
-- [ ] `ORG_CREATED`, `ORG_UPDATED`.
-- [ ] `MEMBERSHIP_INVITED`, `MEMBERSHIP_REMOVED`, `MEMBERSHIP_ROLE_CHANGED`.
-- [ ] `PERSON_DATA_ERASED`.
-- [ ] `RETENTION_POLICY_UPDATED`.
-- [ ] `DATA_CLASS_VIOLATION` (попытка отправить sensitive в неподходящий провайдер).
+- [x] `BLOCK_CREATED`, `BLOCK_MERGED`, `BLOCK_ARCHIVED`, `BLOCK_DELETED_BY_RETENTION`.
+- [x] `ENTITY_CREATED`, `ENTITY_MERGED`.
+- [x] `LINK_CREATED`, `LINK_REMOVED`.
+- [x] `THEME_CREATED`, `THEME_ARCHIVED`.
+- [x] `WORKER_FAILED` (с metadata.workerName).
+- [x] `ORG_CREATED`, `ORG_UPDATED`.
+- [x] `MEMBERSHIP_INVITED`, `MEMBERSHIP_REMOVED`, `MEMBERSHIP_ROLE_CHANGED`.
+- [x] `PERSON_DATA_ERASED`.
+- [x] `RETENTION_POLICY_UPDATED`.
+- [x] `DATA_CLASS_VIOLATION` (попытка отправить sensitive в неподходящий провайдер).
+
+> Все константы добавлены в `audit.types.ts` в рамках коммита Шага 3
+> (Шаг 5 уже использует `AUDIT.BLOCK_DELETED_BY_RETENTION` и
+> `AUDIT.PERSON_DATA_ERASED`). Отдельный коммит шага 10 не нужен.
 
 ### Шаг 11 — `RetentionPolicyController`
 
-- [ ] `GET /api/v1/settings/retention` (owner-only) → текущая `OrgRetentionPolicy`.
-- [ ] `PATCH /api/v1/settings/retention` body: `{rawEventDays?, archivedBlockDays?, chatMessageDays?, auditLogDays?, archivedBlockAction?}`. Валидация: `rawEventDays >= 30` (нельзя стереть всё за день), `chatMessageDays >= 7`. AuditLog: `RETENTION_POLICY_UPDATED`.
-- [ ] **Не разрешать `< 30 дней` для rawEventDays** — защита от случайного wipe.
+- [x] `GET /api/v1/settings/retention` (owner-only) → текущая `OrgRetentionPolicy`.
+- [x] `PATCH /api/v1/settings/retention` body: `{rawEventDays?, archivedBlockDays?, chatMessageDays?, auditLogDays?, archivedBlockAction?}`. Валидация: `rawEventDays >= 30` (нельзя стереть всё за день), `chatMessageDays >= 7`. AuditLog: `RETENTION_POLICY_UPDATED`.
+- [x] **Не разрешать `< 30 дней` для rawEventDays** — защита от случайного wipe.
 
 ## Frontend
 

@@ -3,6 +3,10 @@ import { apiClient } from './api-client';
 /**
  * API DTO для админ-роутера LLM (admin → AI Models).
  * Контракт — `backend/src/modules/admin/llm-routes/`.
+ *
+ * Полный список taskType — `ALL_LLM_TASK_TYPES` в backend
+ * `llm-router.service.ts`. Backend Zod-схема расширена под все taskType
+ * (Фаза 7 шаг 4). Здесь зеркалируем их для UI.
  */
 
 export const LLM_TASK_TYPES = [
@@ -14,10 +18,33 @@ export const LLM_TASK_TYPES = [
   'custom-prompt',
   'follow-up',
   'clip-title',
+  'card-rollup',
+  'card-chat',
+  'block-ingest',
+  'block-distill',
+  'block-linker',
+  'entity-resolver',
+  'entity-merge-arbiter',
+  'entity-graph-builder',
+  'theme-classify',
+  'reframing',
+  'card-rollup-v2',
+  'task-extract-v2',
+  'chapter-extract-v2',
+  'summary-v2',
+  'chat-v2',
+  'goal-alignment',
+  'dashboard-summary',
 ] as const;
 export type LlmTaskType = (typeof LLM_TASK_TYPES)[number];
 
-export const LLM_PROVIDERS = ['anthropic', 'minimax', 'openai-via-proxy'] as const;
+export const LLM_PROVIDERS = [
+  'anthropic',
+  'minimax',
+  'openai-via-proxy',
+  'deepseek',
+  'ollama',
+] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
 export type LlmRouteProvider = {
@@ -26,7 +53,7 @@ export type LlmRouteProvider = {
 };
 
 export type LlmRouteApi = {
-  taskType: LlmTaskType;
+  taskType: string;
   providers: LlmRouteProvider[];
   isActive: boolean;
   updatedAt?: string;

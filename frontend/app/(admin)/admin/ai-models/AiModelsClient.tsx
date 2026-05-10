@@ -17,10 +17,10 @@ import {
   LLM_PROVIDERS,
   LLM_TASK_TYPES,
   type LlmProvider,
-  type LlmRouteApi,
   type LlmRouteProvider,
   type LlmTaskType,
 } from '@/api/admin-llm-routes.api';
+import { taskTypeLabel } from '@/domain/admin-experiment';
 import { useToast } from '@/contexts/toast-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -33,17 +33,6 @@ import {
 } from '@/ui/shadcn/select';
 import { Switch } from '@/ui/shadcn/switch';
 import { cn } from '@/ui/shadcn/lib/utils';
-
-const TASK_LABEL: Record<LlmTaskType, string> = {
-  summary: 'Summary',
-  chapters: 'Chapters',
-  tasks: 'Tasks',
-  chat: 'Chat',
-  'regenerate-section': 'Regenerate section',
-  'custom-prompt': 'Custom prompt',
-  'follow-up': 'Follow-up',
-  'clip-title': 'Clip title',
-};
 
 type RouteState = {
   providers: LlmRouteProvider[];
@@ -67,8 +56,8 @@ export function AiModelsClient() {
       const res = await adminLlmRoutesApi.list();
       const map = initialEmpty();
       for (const r of res.items) {
-        if (LLM_TASK_TYPES.includes(r.taskType)) {
-          map[r.taskType] = {
+        if ((LLM_TASK_TYPES as readonly string[]).includes(r.taskType)) {
+          map[r.taskType as LlmTaskType] = {
             providers: r.providers,
             isActive: r.isActive,
             dirty: false,
@@ -233,7 +222,7 @@ function RouteCard({
     <li className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center gap-3">
         <h3 className="text-base font-semibold text-slate-900">
-          {TASK_LABEL[taskType]}
+          {taskTypeLabel(taskType)}
         </h3>
         <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">
           {taskType}

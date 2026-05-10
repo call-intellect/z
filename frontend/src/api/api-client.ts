@@ -1,10 +1,15 @@
 import { nanoid } from 'nanoid';
 import { ApiError } from './api-error';
 
-type GetOpts = { signal?: AbortSignal };
-type PostOpts = { idempotencyKey?: string; signal?: AbortSignal };
-type PatchOpts = { signal?: AbortSignal };
-type PutOpts = { signal?: AbortSignal };
+type GetOpts = { signal?: AbortSignal; headers?: Record<string, string> };
+type PostOpts = {
+  idempotencyKey?: string;
+  signal?: AbortSignal;
+  headers?: Record<string, string>;
+};
+type PatchOpts = { signal?: AbortSignal; headers?: Record<string, string> };
+type PutOpts = { signal?: AbortSignal; headers?: Record<string, string> };
+type DelOpts = { signal?: AbortSignal; headers?: Record<string, string> };
 
 type BackendErrorPayload = {
   ok?: false;
@@ -48,33 +53,52 @@ export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
   async get<T>(path: string, opts?: GetOpts): Promise<T> {
-    return this.request<T>('GET', path, undefined, { signal: opts?.signal });
+    return this.request<T>('GET', path, undefined, {
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
+    });
   }
 
   async post<T>(path: string, body?: unknown, opts?: PostOpts): Promise<T> {
     return this.request<T>('POST', path, body, {
-      idempotencyKey: opts?.idempotencyKey,
-      signal: opts?.signal,
+      ...(opts?.idempotencyKey !== undefined
+        ? { idempotencyKey: opts.idempotencyKey }
+        : {}),
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
     });
   }
 
   async patch<T>(path: string, body?: unknown, opts?: PatchOpts): Promise<T> {
-    return this.request<T>('PATCH', path, body, { signal: opts?.signal });
+    return this.request<T>('PATCH', path, body, {
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
+    });
   }
 
   async put<T>(path: string, body?: unknown, opts?: PutOpts): Promise<T> {
-    return this.request<T>('PUT', path, body, { signal: opts?.signal });
+    return this.request<T>('PUT', path, body, {
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
+    });
   }
 
-  async del<T>(path: string): Promise<T> {
-    return this.request<T>('DELETE', path);
+  async del<T>(path: string, opts?: DelOpts): Promise<T> {
+    return this.request<T>('DELETE', path, undefined, {
+      ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
+    });
   }
 
   private async request<T>(
     method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown,
-    opts?: { idempotencyKey?: string; signal?: AbortSignal },
+    opts?: {
+      idempotencyKey?: string;
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+    },
   ): Promise<T> {
     const url = this.baseUrl.replace(/\/+$/, '') + path;
     const requestId = nanoid(12);
@@ -87,6 +111,11 @@ export class ApiClient {
     }
     if (opts?.idempotencyKey) {
       headers['Idempotency-Key'] = opts.idempotencyKey;
+    }
+    if (opts?.headers) {
+      for (const [k, v] of Object.entries(opts.headers)) {
+        headers[k] = v;
+      }
     }
 
     const init: RequestInit = {

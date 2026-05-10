@@ -6,6 +6,7 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { MeetingsService } from '../../meetings/meetings.service';
+import type { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import type { S3Service } from '../../recordings/s3.service';
 import type { AiQueueService } from '../ai-queue.service';
 import type { AiUsageLogService } from '../services/ai-usage-log.service';
@@ -99,6 +100,12 @@ function buildWorker(args: BuildArgs): {
   } as unknown as BusinessMetricsService;
   const cfg = { ai: {} } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
+  // knowledge-core (Фаза 1): meeting-adapter — мокаем noop, возвращающий null,
+  // чтобы тест не пытался ходить в S3/БД ради ingest-payload.
+  const ingestMeeting = vi.fn(async () => null);
+  const meetingIngest = {
+    ingestMeeting,
+  } as unknown as MeetingIngestAdapter;
 
   const worker = new AnalyzeWorker(
     redis,
@@ -110,6 +117,7 @@ function buildWorker(args: BuildArgs): {
     meetings,
     metrics,
     cfg,
+    meetingIngest,
   );
 
   return { worker, aiResultUpdate, enqueueNotify, transitionStatus };

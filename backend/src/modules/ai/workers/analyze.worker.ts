@@ -6,6 +6,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { MeetingsService } from '../../meetings/meetings.service';
 import { S3Service } from '../../recordings/s3.service';
 import { AiQueueService } from '../ai-queue.service';
@@ -71,6 +72,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(MeetingIngestAdapter) private readonly meetingIngest: MeetingIngestAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -290,13 +292,28 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
       const enqueueAttempt = job.data.attempt ?? 1;
+      // knowledge-core (Фаза 1): дополнительно вызываем meeting-adapter.
+      // Это прямой await (адаптер сам внутри ingest.service делает enqueue
+      // в core.raw-events), а не enqueue в нашу очередь. Ошибка ingest
+      // не должна валить chapters/tasks/embeddings — оборачиваем в
+      // .catch внутри Promise.allSettled.
       const settled = await Promise.allSettled([
         this.queue.enqueueChapters(meetingId, enqueueAttempt),
         this.queue.enqueueTasksExtract(meetingId, enqueueAttempt),
         this.queue.enqueueTranscriptIndex(meetingId, enqueueAttempt),
+        this.meetingIngest.ingestMeeting(meetingId).catch((err) => {
+          this.logger.warn(
+            { meetingId, err: err instanceof Error ? err.message : String(err) },
+            'analyze: meeting-adapter ingest упал — RawEvent не создан, продолжаем',
+          );
+          // Возвращаем resolved value, чтобы не попасть в `failed` ниже —
+          // ingest на Фазе 1 не критичен для основного pipeline (consumer
+          // в core.raw-events ещё не подписан).
+          return null;
+        }),
       ]);
       const failed = settled
-        .map((r, i) => ({ r, name: ['chapters', 'tasks', 'embeddings'][i] }))
+        .map((r, i) => ({ r, name: ['chapters', 'tasks', 'embeddings', 'ingest'][i] }))
         .filter((x) => x.r.status === 'rejected');
       if (failed.length > 0) {
         const reason = failed

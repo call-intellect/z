@@ -7,6 +7,9 @@ import { MetricsModule } from '../../common/metrics/metrics.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { CoreQueueService } from '../core-queue/core-queue.service';
+import { MeetingIngestAdapter } from '../ingest/adapters/meeting.adapter';
+import { IngestService } from '../ingest/ingest.service';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { UsersService } from '../users/users.service';
@@ -83,6 +86,10 @@ import { VoxService } from './services/vox.service';
     LlmFallbackService,
     AiUsageLogService,
     AiQueueService,
+    // knowledge-core (Фаза 1) — для AnalyzeWorker.
+    CoreQueueService,
+    IngestService,
+    MeetingIngestAdapter,
     // M3 AI-pipeline расширения.
     LlmRouterService,
     ChapterExtractionService,

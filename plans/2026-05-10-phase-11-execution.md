@@ -88,8 +88,8 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 [backend/src/modules/retention/retention.cron.ts](backend/src/modules/retention/retention.cron.ts):
 
-- [ ] Заменить `sweep()` на вызов `svc.processAll()`. Логи — структурированные, по kind.
-- [ ] Cron expression остаётся `'0 * * * *'`.
+- [x] Заменить `sweep()` на вызов `svc.processAll()`. Логи — структурированные, по kind.
+- [x] Cron expression остаётся `'0 * * * *'`.
 
 ### Шаг 5 — `PersonalDataDeletionService`
 

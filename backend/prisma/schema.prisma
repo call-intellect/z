@@ -169,6 +169,36 @@ enum OrgInvitationStatus {
   expired
 }
 
+// ──────────────────────────── knowledge-core: ingest (Фаза 1) ────────────────────────────
+
+enum SourceType {
+  meeting
+  chat
+  phone_call
+  bot
+  email
+  web_form
+  external
+}
+
+enum DataClass {
+  public
+  internal
+  sensitive
+  private
+}
+
+enum RawEventProcessingStatus {
+  received
+  ingested
+  failed
+}
+
+enum RawEventPayloadStorage {
+  inline
+  s3
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
@@ -678,6 +708,7 @@ model MeetingRoomMessage {
   @@index([meetingId, sentAt])
 }
 
+/// @deprecated knowledge-core Фаза 1: будет заменён IdeaBlock в Фазе 2, удалён в Фазе 6 после chat-v2. Не использовать в новом коде.
 model MeetingTranscriptChunk {
   id        String                       @id @default(cuid())
   meetingId String
@@ -965,6 +996,8 @@ model Org {
   llmRoutes    LlmTaskRoute[]
   auditLogs    AuditLog[]
   aiUsageLogs  AiUsageLog[]
+  sources      Source[]
+  rawEvents    RawEvent[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1031,4 +1064,62 @@ model LlmModelPrice {
 
   @@index([provider, model, effectiveFrom])
   @@index([effectiveFrom, effectiveTo])
+}
+
+// ──────────────────────────── knowledge-core: Source / RawEvent (Фаза 1) ────────────────────────────
+
+/// Справочник подключённых источников Org (meeting, chat, email, …).
+/// Дефолтный `Source(type=meeting, name='Встречи Z')` создаётся автоматически
+/// при создании Org. Управление источниками из UI — Фаза 10.
+model Source {
+  id        String     @id @default(cuid())
+  tenantId  String
+  type      SourceType
+  name      String
+  config    Json?
+  dataClass DataClass  @default(internal)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  org       Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvents RawEvent[]
+
+  @@unique([tenantId, type, name])
+  @@index([tenantId, isActive])
+}
+
+/// Иммутабельная запись сырого события из любого источника. Главный entry-point
+/// в knowledge-core. На Фазе 2 над ней появится `block-ingest.worker`.
+model RawEvent {
+  id               String                   @id @default(cuid())
+  tenantId         String
+  sourceId         String
+  sourceType       SourceType
+  /// Если null — событие без внешнего ID, дедуп по checksum.
+  sourceExternalId String?
+  /// sha256(sourceId + ':' + (sourceExternalId ?? payloadChecksum) + ':' + occurredAtIso)
+  idempotencyKey   String                   @unique
+  occurredAt       DateTime
+  receivedAt       DateTime                 @default(now())
+  payloadStorage   RawEventPayloadStorage   @default(inline)
+  /// null если payloadStorage = s3
+  payload          Json?
+  /// не null если payloadStorage = s3
+  payloadS3Key     String?
+  /// sha256 от исходного payload (всегда, для верификации).
+  payloadChecksum  String
+  payloadSizeBytes Int
+  dataClass        DataClass                @default(internal)
+  processingStatus RawEventProcessingStatus @default(received)
+  /// Текст ошибки при processingStatus = failed.
+  processingError  String?                  @db.Text
+  /// Когда последний раз обработался ingest pipeline (Фаза 2).
+  processedAt      DateTime?
+
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, sourceId, occurredAt])
+  @@index([tenantId, processingStatus])
 }

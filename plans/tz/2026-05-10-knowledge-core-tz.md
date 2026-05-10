@@ -620,6 +620,360 @@ references:
 - **Стоимость LLM на distill.** Каждый новый блок → KNN + (если есть кандидат) LLM-вызов merge. На большой Org может вырасти. Митигация: жёсткий порог cosine для отсечения, дебаунс батчами, кэш запросов merge.
 - **Entity dedup может схлопывать разное.** «Иван Петров» из ООО А и «Иван Петров» из ООО Б — разные люди. Митигация: при entity-merge LLM-арбитр обязательно смотрит на metadata + контекст ближайших блоков, не только на имя.
 
+### Детализация для агента-исполнителя (2026-05-10)
+
+Опирается на карту embeddings/pgvector/LlmRouter, собранную после Фазы 1.
+
+#### Текущее состояние (опираемся)
+
+- **`Source` + `RawEvent`** созданы в Фазе 1 ([backend/prisma/schema.prisma](backend/prisma/schema.prisma) ~L1074, L1094). `RawEvent.processingStatus: received|ingested|failed`, `processedAt?: DateTime`.
+- **`CoreQueueService.enqueueRawReceived(rawEventId)`** ([backend/src/modules/core-queue/core-queue.service.ts](backend/src/modules/core-queue/core-queue.service.ts)) кладёт в `core.raw-events`. На Фазе 1 consumer'а нет — jobs накапливаются. **На Фазе 2 появляется `block-ingest.worker` как consumer.**
+- **`MeetingIngestAdapter`** payload-структура (для парсинга в block-ingest): `{meetingId, type, title, startedAt, endedAt, durationMs, participants: [{participantId, userId, displayName, role, livekitIdentity, joinedAt, leftAt}], transcript: {totalWords, totalDurationSeconds, turns: [{speaker, text, startSec, endSec}]}, roomChat: [{sentAt, authorName, authorRole?, content}]}`.
+- **`EmbeddingFallbackService.embed(texts: string[])`** ([backend/src/modules/embeddings/services/embedding-fallback.service.ts](backend/src/modules/embeddings/services/embedding-fallback.service.ts)) уже работает каскадом proxy ↔ local. Используется в `transcript-indexer.service.ts` и `chat.service.ts`. ENV `EMBEDDING_PROVIDER` + `EMBEDDING_MODEL` (default `text-embedding-3-small`) + `EMBEDDING_DIMENSIONS` (default 1536).
+- **pgvector HNSW + cosine** уже настроен в [backend/scripts/postgres-init.sql](backend/scripts/postgres-init.sql) для `MeetingTranscriptChunk.embedding`. Шаблон KNN-запроса — в [backend/src/modules/chat/chat.service.ts:332](backend/src/modules/chat/chat.service.ts#L332): `1 - (embedding <=> $vec::vector) AS similarity`.
+- **`LlmRouterService.call({taskType, tenantId, systemPrompt, userMessage, ...})`** ([backend/src/modules/ai/services/llm-router.service.ts](backend/src/modules/ai/services/llm-router.service.ts)) — после Фазы 0 принимает обязательный `tenantId` и пишет полную запись в `AiUsageLog` (cachedTokens, sourceRef, experimentGroup поддержаны). **НО:** не поддерживает `jsonSchema` / `jsonMode` / `jsonObject` и не поддерживает A/B через `LlmTaskRoute.experiment` (в Фазе 0 поле добавлено, но логика не реализована — это OK для Фазы 7, но JSON Schema нужен здесь).
+- **Провайдеры в LlmRouter:** `AnthropicService`, `MinimaxService`, `OpenAiProxyService`. **DeepSeekService и OllamaService отсутствуют** (отступление Фазы 0). Их нужно добавить **до** `block-ingest.worker`, иначе primary-стек по новой политике не работает.
+- **Текущие routes в `LlmTaskRoute`** (через [backend/scripts/seed-llm-task-routes-knowledge-core.ts](backend/scripts/seed-llm-task-routes-knowledge-core.ts) Фазы 0): только legacy taskType (`summary, chapters, ...`) с цепочкой `anthropic → minimax → openai-via-proxy`. Это **противоречит** политике 2026-05 — переписать в Шаге 0.
+- **`MODEL_PRICES`** в [backend/src/modules/ai/services/model-prices.ts](backend/src/modules/ai/services/model-prices.ts) уже содержит DeepSeek V4, GPT-5.4 family, BGE-M3, qwen3 (мой подготовительный коммит `b1b88fd`). `LlmModelPrice` таблица заполнена `seed-llm-model-prices.ts` Фазы 0 — но **проверить**, что DeepSeek/GPT-5.4 действительно сиделись.
+
+#### Архитектурное решение по эмбеддингам
+
+ТЗ строка 258 говорит `embedding vector(1536)`. По LLM-политике 2026-05 primary embedding — `bge-m3` (1024-dim). Но ENV `EMBEDDING_DIMENSIONS=1536` хардкоднут, и `MeetingTranscriptChunk` уже vector(1536). Делать сейчас vector(1024) для IdeaBlock — конфликт.
+
+**Решение:** на Фазе 2 — `IdeaBlock.embedding vector(1536)`, `Entity.embedding vector(1536)`, primary embedding-модель — `text-embedding-3-small` через прокси (как в существующем коде). BGE-M3 как fallback — через `EMBEDDING_PROVIDER=local`. Полная миграция на bge-m3 (с ресэйзом до vector(1024)) — отдельной задачей в Фазе 11 или vNext.
+
+#### Архитектурное решение по JSON Schema
+
+ТЗ требует `IdeaBlock` извлекать как структурированный JSON — нужен strict JSON Schema. Текущий `LlmRouter` не передаёт JSON Schema провайдерам. Расширяю в Шаге 0:
+
+- В `LlmCallParams` добавить `responseFormat?: { type: 'text' } | { type: 'json_object' } | { type: 'json_schema', name: string, schema: object, strict: boolean }`.
+- В адаптерах:
+  - `OpenAiProxyService` — мапит на Responses API `text.format = {type: 'json_schema', name, strict, schema}` (уже описано в [llm-models-playbook.md §5](llm-models-playbook.md)).
+  - `DeepSeekService` (новый) — мапит на chat/completions `response_format: {type: 'json_schema', json_schema: {name, strict, schema}}`.
+  - `AnthropicService` — JSON Schema через tool-call (Anthropic не имеет нативного strict-режима; синтезируется через `tools: [{name, input_schema}], tool_choice: {type: 'tool', name}`). На Фазе 2 — поддержка опциональная (Anthropic не в дефолтах).
+  - `MinimaxService` — Anthropic-совместимый, тот же tool-trick.
+  - `OllamaService` (новый) — через `format: 'json'` (нативный JSON-mode без schema-валидации; валидация на стороне caller'а через `zod`).
+- Если провайдер не поддерживает запрашиваемый формат — `LlmRouterService` может выбросить `LlmFormatNotSupportedError` и перейти на следующий провайдер в fallback-цепочке.
+
+#### Архитектурное решение по `block-ingest.worker` нарезке
+
+ТЗ говорит «режет на смысловые сегменты (не по токенам, а по абзацам/смысловым границам — определяется LLM-вызовом “найди границы тем”)». Это два LLM-вызова на сегмент (сегментация + извлечение блоков). На длинных встречах (1ч ≈ 100 смысловых сегментов) это дорого.
+
+**Решение:** на Фазе 2 — упрощённая стратегия:
+1. Парсим `payload.transcript.turns` → группируем подряд идущие turns одного speaker'а в «high-level segments» с лимитом ≤2000 токенов.
+2. Скользим окно по сегментам: каждые 5-7 сегментов — один LLM-вызов `block-ingest` с **JSON Schema strict** «извлеки список IdeaBlock».
+3. Дедуп блоков из соседних окон делает `block-distill.worker` (это его задача).
+4. Оптимизация «найди границы тем» (одностраничные cluster boundaries по эмбеддингам или LLM-сегментация) — отдельный optimization-tickeр после Фазы 2 baseline.
+
+#### Пошаговый план для агента (6 шагов)
+
+Каждый шаг — атомарный коммит. После Шага 1 — `npm run prisma:push --accept-data-loss`. После каждого шага с кодом: `npm run typecheck` зелёный.
+
+**Шаг 0. LLM-инфраструктура (DeepSeekService + OllamaService + JSON Schema + новые routes).**
+
+1. Создать `backend/src/modules/ai/services/deepseek.service.ts`:
+   - Конструктор — берёт `cfg.ai.deepseek.apiKey`, `cfg.ai.deepseek.baseUrl` (default `https://api.deepseek.com/v1`; альтернатива `https://proxy.agent-lia.ru/deepseek/v1` — проверить наличие маршрута на прокси через тестовый GET; если 404 — использовать прямой). Дефолт-модель `deepseek-v4-flash` для общих, `deepseek-v4-pro` если caller передаёт `taskType in ('summary-v2', 'goal-alignment', 'reframing-arbiter')`.
+   - Метод `complete(input: LlmCompleteInput): Promise<LlmCompleteResult>`. Использует OpenAI SDK (уже в зависимостях) с `baseURL` и `apiKey`. JSON Schema через `response_format: {type: 'json_schema', json_schema: {name, strict, schema}}` если `input.responseFormat?.type === 'json_schema'`. Поддержка thinking on/off через `reasoning: {effort: 'low'|'medium'|'high'}` для V4-pro (V4-flash thinking-off дефолт).
+   - Поддержка prompt caching: DeepSeek авто-кэширует — токены `cached_input_tokens` приходят в `usage`, маппим в `LlmCompleteResult.cachedTokens`.
+   - Retry [500, 1000, 2000]ms на 429/5xx, как в OpenAI proxy.
+2. Создать `backend/src/modules/ai/services/ollama.service.ts`:
+   - Конструктор — `cfg.ai.ollama.baseUrl` (default `https://ollama.agent-lia.ru/v1`), `cfg.ai.ollama.apiKey` (опционально).
+   - Дефолт-модель `qwen3:30b-a3b-instruct-2507`. Caller может переопределить через `model` в input.
+   - Метод `complete()` — chat/completions OpenAI-compat. JSON-mode через `response_format: {type: 'json_object'}` (нативный), без strict-schema (caller валидирует zod'ом).
+   - Также — `embed(texts: string[])` для BGE-M3 (если URL содержит `bge-m3` — через `model: 'bge-m3'`, dim 1024). Но т.к. embedding-каскад уже через `LocalEmbeddingService` — на Фазе 2 эту часть пропускаем, оставляем для Фазы 11.
+3. Расширить `LlmCallParams` и `LlmCompleteInput`:
+   ```ts
+   responseFormat?:
+     | { type: 'text' }
+     | { type: 'json_object' }
+     | { type: 'json_schema'; name: string; schema: Record<string, unknown>; strict: boolean };
+   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+   ```
+4. Обновить `LlmRouterService.call()`:
+   - Передать `responseFormat` и `reasoningEffort` в адаптеры.
+   - Если адаптер бросает `LlmFormatNotSupportedError` (новый класс ошибок) — перейти на следующий провайдер в fallback (как обычная retriable error).
+   - Регистрировать новые провайдеры по ключам `'deepseek'` и `'ollama'` в фабрике провайдеров.
+5. Обновить `MODEL_PRICES` (если что-то отсутствует — добавить). Также проверить `LlmModelPrice`-таблицу: запустить `seed-llm-model-prices.ts` ещё раз — он должен быть идемпотентным и upsert'ить новые модели.
+6. **Переписать [backend/scripts/seed-llm-task-routes-knowledge-core.ts](backend/scripts/seed-llm-task-routes-knowledge-core.ts):**
+   - Legacy taskType (`summary, chapters, tasks, chat, regenerate-section, custom-prompt, follow-up, clip-title, card-rollup, card-chat`) → `[{provider: 'deepseek', model: 'deepseek-v4-flash'}, {provider: 'openai-via-proxy', model: 'gpt-5.4-mini'}, {provider: 'ollama', model: 'qwen3:30b-a3b-instruct-2507'}]`.
+   - Новые knowledge-core taskType (см. таблицу [llm-models-playbook.md §2.1](llm-models-playbook.md)):
+     - `block-ingest`: deepseek-v4-flash + json_schema strict, fallback gpt-5.4-mini, ollama.
+     - `block-distill`: deepseek-v4-flash thinking-off, fallback ollama qwen3:30b, gpt-5.4-nano.
+     - `block-linker`: deepseek-v4-flash, fallback gpt-5.4-nano.
+     - `entity-resolver`: deepseek-v4-flash, fallback gpt-5.4-nano.
+     - `entity-merge-arbiter`: deepseek-v4-flash, fallback gpt-5.4-mini.
+     - `theme-classify`: gpt-5.4-nano (primary), fallback deepseek-v4-flash, qwen3.
+     - `reframing`: deepseek-v4-flash, fallback gpt-5.4-mini.
+     - `card-rollup-v2`: deepseek-v4-flash, fallback gpt-5.4-mini.
+     - `task-extract-v2`: deepseek-v4-flash + json_schema strict.
+     - `chapter-extract-v2`: deepseek-v4-flash + json_schema strict.
+     - `summary-v2`: deepseek-v4-pro thinking-on, fallback gpt-5.5, MiniMax-M2.7.
+     - `chat-v2`: deepseek-v4-flash, fallback gpt-5.4, gpt-5.5.
+     - `goal-alignment`: deepseek-v4-pro thinking-on, fallback gpt-5.5.
+     - `dashboard-summary`: deepseek-v4-flash, fallback gpt-5.4-mini.
+   - Запустить с флагом `--update-existing`.
+7. Smoke: `backend/scripts/smoke-llm-router-fase2-step0.ts` — простой вызов `LlmRouterService.call({taskType: 'block-distill', tenantId: someTenantId, systemPrompt: 'Reply yes or no.', userMessage: 'Is sky blue?', responseFormat: {type: 'text'}})` и ещё один с `responseFormat: {type: 'json_schema', name: 'YesNo', strict: true, schema: {...}}`. Проверить, что DeepSeek реально отвечает, AiUsageLog пишется с правильным provider/model/cachedTokens.
+
+**Шаг 1. Prisma schema (IdeaBlock + Entity + связи) + push + индексы.**
+
+1. В [backend/prisma/schema.prisma](backend/prisma/schema.prisma) добавить enum'ы:
+   ```
+   enum SignalType {
+     fact pain feature_request objection churn_risk idea risk
+     commitment decision mood drift competitor_move metric_change knowledge_gap
+   }
+   enum IdeaBlockStatus { draft canonical merged_into archived }
+   enum EntityType { client person project product topic location custom }
+   enum IdeaBlockEntityRole { subject object mentioned }
+   ```
+2. Модель `IdeaBlock`:
+   ```
+   model IdeaBlock {
+     id               String         @id @default(cuid())
+     tenantId         String
+     name             String
+     criticalQuestion String         @db.Text
+     trustedAnswer    String         @db.Text
+     tags             String[]       @default([])
+     signalType       SignalType
+     confidence       Decimal        @default(0.5) @db.Decimal(4, 3)
+     dataClass        DataClass      @default(internal)
+     embedding        Unsupported("vector(1536)")?
+     status           IdeaBlockStatus @default(draft)
+     mergedIntoId     String?
+     evidenceCount    Int            @default(0)
+     dynamicScore     Decimal        @default(1.0) @db.Decimal(8, 4)
+     createdAt        DateTime       @default(now())
+     updatedAt        DateTime       @updatedAt
+
+     org              Org            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+     mergedInto       IdeaBlock?     @relation("BlockMerges", fields: [mergedIntoId], references: [id])
+     mergedFrom       IdeaBlock[]    @relation("BlockMerges")
+     evidence         IdeaBlockEvidence[]
+     entities         IdeaBlockEntity[]
+
+     @@index([tenantId, status])
+     @@index([tenantId, signalType])
+     @@index([tenantId, mergedIntoId])
+   }
+   ```
+3. Модель `IdeaBlockEvidence`:
+   ```
+   model IdeaBlockEvidence {
+     id              String     @id @default(cuid())
+     blockId         String
+     rawEventId      String
+     sourceType      SourceType
+     sourceTimestamp DateTime?
+     quote           String     @db.Text
+     startMs         Int?
+     endMs           Int?
+     createdAt       DateTime   @default(now())
+
+     block           IdeaBlock  @relation(fields: [blockId], references: [id], onDelete: Cascade)
+     rawEvent        RawEvent   @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+
+     @@index([blockId])
+     @@index([rawEventId])
+   }
+   ```
+   + добавить `evidence: IdeaBlockEvidence[]` в `RawEvent`.
+4. Модель `Entity`:
+   ```
+   model Entity {
+     id            String     @id @default(cuid())
+     tenantId      String
+     type          EntityType
+     canonicalName String
+     aliases       String[]   @default([])
+     mergedIntoId  String?
+     mentionsCount Int        @default(0)
+     embedding     Unsupported("vector(1536)")?
+     metadata      Json?
+     createdAt     DateTime   @default(now())
+     updatedAt     DateTime   @updatedAt
+
+     org           Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+     mergedInto    Entity?    @relation("EntityMerges", fields: [mergedIntoId], references: [id])
+     mergedFrom    Entity[]   @relation("EntityMerges")
+     blockMentions IdeaBlockEntity[]
+
+     @@index([tenantId, type])
+     @@index([tenantId, mergedIntoId])
+     @@index([tenantId, canonicalName])
+   }
+   ```
+5. Модель `IdeaBlockEntity`:
+   ```
+   model IdeaBlockEntity {
+     blockId        String
+     entityId       String
+     mentionContext String   @db.Text
+     role           IdeaBlockEntityRole @default(mentioned)
+     createdAt      DateTime @default(now())
+
+     block          IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+     entity         Entity    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+     @@id([blockId, entityId])
+     @@index([entityId])
+   }
+   ```
+6. Релейшены `Org.ideaBlocks`, `Org.entities`.
+7. `npm run prisma:push --accept-data-loss`.
+8. Расширить [backend/scripts/postgres-init.sql](backend/scripts/postgres-init.sql):
+   - `CREATE INDEX IF NOT EXISTS "IdeaBlock_embedding_hnsw_cosine_idx" ON "IdeaBlock" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;`
+   - `CREATE INDEX IF NOT EXISTS "Entity_embedding_hnsw_cosine_idx" ON "Entity" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;`
+   - Запустить скрипт вручную через `psql $DATABASE_URL -f backend/scripts/postgres-init.sql` (или добавить команду в `backend/package.json` если нет).
+
+**Шаг 2. `block-ingest.worker` (consumer для core.raw-events).**
+
+1. Создать [backend/src/modules/knowledge-core/](backend/src/modules/knowledge-core/) — главный модуль ядра.
+2. Сервисы:
+   - `services/segment-builder.service.ts` — функция `buildSegments(payload): Segment[]`. Группирует turns одного speaker'а подряд, splits по ≤2000 токенов (грубая оценка `chars / 4`), возвращает массив `{startMs, endMs, speakers, text}`.
+   - `services/block-extraction.service.ts` — `extractBlocks(segments: Segment[], tenantId, rawEvent): Promise<{blocks: ExtractedBlock[], usage}[]>`. Для групп по 5 сегментов (≈10K токенов) — один LLM-вызов `block-ingest` с JSON Schema strict, схема:
+     ```ts
+     {
+       type: 'object',
+       properties: {
+         blocks: {
+           type: 'array',
+           items: {
+             type: 'object',
+             required: ['name', 'criticalQuestion', 'trustedAnswer', 'signalType', 'tags', 'confidence', 'evidenceQuote', 'evidenceStartMs', 'evidenceEndMs', 'mentionedEntities'],
+             properties: {
+               name: {type: 'string', maxLength: 200},
+               criticalQuestion: {type: 'string'},
+               trustedAnswer: {type: 'string'},
+               signalType: {type: 'string', enum: SignalType.values},
+               tags: {type: 'array', items: {type: 'string'}},
+               confidence: {type: 'number', minimum: 0, maximum: 1},
+               evidenceQuote: {type: 'string'},
+               evidenceStartMs: {type: 'integer', minimum: 0},
+               evidenceEndMs: {type: 'integer', minimum: 0},
+               mentionedEntities: {
+                 type: 'array',
+                 items: {
+                   type: 'object',
+                   required: ['type', 'name', 'mentionContext'],
+                   properties: {
+                     type: {type: 'string', enum: EntityType.values},
+                     name: {type: 'string'},
+                     mentionContext: {type: 'string'},
+                     metadata: {type: 'object'},
+                   },
+                 },
+               },
+             },
+           },
+         },
+       },
+     }
+     ```
+   - Промпт системы (своими словами, не копируя delivery): «Ты — извлекатель структурированного знания из расшифровки встречи. Получи список turn'ов и верни массив IdeaBlock'ов: каждое значимое утверждение, обязательство, риск, идея, болевая точка, метрика. ...» (полный текст пишет агент, фиксируется в `backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts`).
+3. `services/embedding-service.service.ts` — обёртка `embedBlocks(texts: string[]): Promise<number[][]>` через `EmbeddingFallbackService` с batch=100. Используется и для блоков, и для сущностей (один и тот же canonicalName).
+4. `services/entity-resolution.service.ts` — `findOrCreateEntity({tenantId, type, name, metadata}): Promise<Entity>`. Логика на Шаге 2 — простой `findFirst by (tenantId, type, normalize(canonicalName))` с case-insensitive trim и unaccent. Если не найдено — `create` с `embedding`. Реальная LLM-арбитражная дедупликация — Шаг 3 (`entity-resolver.worker`).
+5. Worker [backend/src/modules/knowledge-core/workers/block-ingest.worker.ts](backend/src/modules/knowledge-core/workers/block-ingest.worker.ts):
+   - Слушает очередь `core.raw-events` (BullMQ Worker, concurrency 2 на старте).
+   - На job `{rawEventId}`:
+     a) Загрузить `RawEvent` (включая S3 payload через `S3Service.getJson(payloadS3Key)` если `payloadStorage='s3'`).
+     b) Если `processingStatus !== 'received'` — skip (idempotency для retry).
+     c) `buildSegments(payload)` → `extractBlocks(segments, tenantId, rawEvent)` → массив extracted blocks.
+     d) Для каждого extracted block — в одной Prisma-транзакции:
+        - `embedBlocks([block.criticalQuestion + ' ' + block.trustedAnswer])` → embedding.
+        - `prisma.ideaBlock.create({status: 'draft', ...})` → blockId.
+        - `prisma.ideaBlockEvidence.create({blockId, rawEventId, sourceType, sourceTimestamp: rawEvent.occurredAt, quote, startMs, endMs})`.
+        - Для каждой `mentionedEntity`: `findOrCreateEntity` → `prisma.ideaBlockEntity.create({blockId, entityId, mentionContext, role: 'mentioned'})`.
+     e) Обновить `RawEvent.processingStatus='ingested', processedAt=now`.
+     f) Опубликовать BullMQ-событие `block.draft-created` в новую очередь `core.block-distill` с jobId `block-distill_<blockId>` для каждого блока (это триггер для Шага 3 worker'а).
+   - На ошибку — `RawEvent.processingStatus='failed', processingError=err.message`. BullMQ retry по дефолту (5 attempts, exp backoff 5s).
+6. Регистрация worker'а в `WorkersModule` ([backend/src/modules/workers.module.ts](backend/src/modules/workers.module.ts)).
+7. Расширить `CoreQueueService` методом `enqueueBlockDistill(blockId)` + новой очередью `core.block-distill`.
+
+**Шаг 3. `block-distill.worker` (consumer для core.block-distill).**
+
+1. `services/block-merge.service.ts` — `mergeIfDuplicate({newBlock, candidates: IdeaBlock[]}): Promise<{verdict: 'distinct' | 'merge'; canonicalId?: string; explanation: string}>`. Один LLM-вызов `block-distill` с JSON Schema strict.
+2. Worker [backend/src/modules/knowledge-core/workers/block-distill.worker.ts](backend/src/modules/knowledge-core/workers/block-distill.worker.ts):
+   - Слушает `core.block-distill`. Concurrency 2.
+   - Дебаунс: BullMQ `delay: 30000` ms на каждый job (см. ТЗ строка 272). Дубль (тот же jobId) обновляет delay.
+   - На job `{blockId}`:
+     a) Загрузить `IdeaBlock(blockId)`. Если `status !== 'draft'` — skip.
+     b) KNN-поиск через pgvector: top-K (K=5) среди `IdeaBlock(tenantId=block.tenantId, status='canonical')` где `cosine_similarity > DISTILL_MERGE_THRESHOLD` (env var, default 0.92).
+     c) Если кандидатов нет — `block.status='canonical'`, `evidenceCount=block.evidence.length`, опубликовать `block.canonical-created` в очередь `core.block-linker` (для Фазы 3) и `core.theme-clusterer` (для Фазы 4 — но только статусом если кластерер запущен).
+     d) Если есть кандидаты — `mergeIfDuplicate(newBlock, candidates)`.
+     e) Если verdict=`distinct` — `block.status='canonical'`, как в (c).
+     f) Если verdict=`merge` — Prisma-транзакция:
+        - `block.status='merged_into', mergedIntoId=canonicalId`.
+        - Перенести evidence с new на canonical (`updateMany evidence.blockId=block.id → canonicalId`).
+        - Обновить canonical: `evidenceCount += new.evidenceCount`, `confidence = weighted avg`, `tags = union(canonical.tags, new.tags)`.
+        - Перенести `IdeaBlockEntity` с new на canonical (с merge mentionContext).
+3. Расширить `CoreQueueService` — `enqueueBlockLinker(blockId)` + очередь `core.block-linker` (consumer появится в Фазе 3, на Фазе 2 — jobs накапливаются).
+4. ENV переменные: `DISTILL_MERGE_THRESHOLD=0.92`, `DISTILL_DEBOUNCE_MS=30000`, `DISTILL_KNN_TOP_K=5`. Добавить в `env.schema.ts`.
+
+**Шаг 4. `entity-resolver.worker` (cron + on event).**
+
+1. `services/entity-merge.service.ts` — `mergeIfSameEntity({entity, candidates}): Promise<{verdict, canonicalId?, explanation}>` через LLM `entity-merge-arbiter`. Промпт обязательно включает metadata (для `person` — должность/email, для `client` — ИНН/домен) + контекст 3-5 ближайших блоков.
+2. Worker [backend/src/modules/knowledge-core/workers/entity-resolver.worker.ts](backend/src/modules/knowledge-core/workers/entity-resolver.worker.ts):
+   - Cron: `EveryExpression('*/5 * * * *')` — раз в 5 мин на каждый Org (через `@nestjs/schedule`). Также подписка на `core.entity-resolver` (очередь для on-demand ad-hoc вызовов после `block-ingest`).
+   - На каждый Org с `Membership.role IN (owner, admin)` (т.е. активный):
+     - Найти пары `Entity` той же `tenantId`, того же `type`, у которых cosine между embeddings > `ENTITY_MERGE_THRESHOLD` (default 0.88).
+     - Для каждой пары — `mergeIfSameEntity` → если merge: `entity.mergedIntoId=canonical.id`, перенос `IdeaBlockEntity` на canonical (`updateMany`).
+3. ENV: `ENTITY_MERGE_THRESHOLD=0.88`, `ENTITY_RESOLVER_CRON='*/5 * * * *'`.
+
+**Шаг 5. Search API + Block/Entity API.**
+
+1. Новый модуль [backend/src/modules/knowledge-core/api/](backend/src/modules/knowledge-core/api/):
+   - `search.controller.ts`, `search.service.ts`, `blocks.controller.ts`, `entities.controller.ts`.
+2. `POST /api/v1/search`:
+   - Body: `{query, signalTypes?, entityIds?, dateFrom?, dateTo?, limit?}`. tenantId — из `@CurrentOrg()` (Фаза 0).
+   - Логика:
+     a) Embed `query` через `EmbeddingFallbackService.embed([query])`.
+     b) Гибридный SQL: cosine + ts_vector BM25 на `name + ' ' + criticalQuestion + ' ' + trustedAnswer`. Веса из ENV (`SEARCH_COSINE_WEIGHT=0.7`, `SEARCH_BM25_WEIGHT=0.3`).
+     c) Фильтры: `tenantId`, `status='canonical'`, опциональные `signalType IN (...)`, `EXISTS (SELECT 1 FROM IdeaBlockEntity WHERE blockId=block.id AND entityId IN (...))`, `EXISTS (SELECT 1 FROM IdeaBlockEvidence WHERE blockId=block.id AND sourceTimestamp BETWEEN $from AND $to)`.
+     d) Limit (default 10, max 50).
+     e) Возврат: `{results: [{block: BlockDto, evidence: EvidenceDto[], score, matchedBy}]}`.
+   - Для DB-side ts_vector: добавить генерируемый столбец в `IdeaBlock` через [postgres-init.sql](backend/scripts/postgres-init.sql) (`ALTER TABLE "IdeaBlock" ADD COLUMN IF NOT EXISTS "search_tsv" tsvector GENERATED ALWAYS AS (to_tsvector('russian', name || ' ' || "criticalQuestion" || ' ' || "trustedAnswer")) STORED;` + GIN index). Prisma это игнорирует (Unsupported), но запросы через `$queryRawUnsafe` его читают.
+3. `GET /api/v1/blocks/:id` — блок + evidence + entities (с резолюцией mergedInto-цепочек).
+4. `GET /api/v1/entities` — список с фильтром `?type=...&search=...`. Pagination.
+5. `GET /api/v1/entities/:id` — сущность + связанные блоки + (vNext) ссылки.
+6. Все API под `CookieAuthGuard` + `TenantGuard` + RBAC проверка через `RbacService`.
+
+**Шаг 6. Бенчмарк + smoke + second-brain.**
+
+1. `backend/scripts/benchmark-knowledge-core.ts`:
+   - Golden-set: 5-10 заранее подготовленных встреч (можно из dev-БД), для каждой — список «ожидаемых ответов на типичные вопросы» (вручную).
+   - Прогон: для каждой встречи — ingest → distill → 5 вопросов через `POST /api/v1/search`.
+   - Метрики:
+     - top-3 hit rate (в скольких % вопросов ответ найден в top-3 блоков).
+     - сжатие (`canonical_blocks_count / segments_count`).
+     - покрытие сущностей.
+   - Сравнение со старым chunk-based RAG (через `chat.service`) — на тех же вопросах.
+   - Результаты в [docs/benchmarks/knowledge-core-baseline.md](docs/benchmarks/knowledge-core-baseline.md).
+2. `backend/scripts/smoke-knowledge-core-fase2.ts`:
+   - Создать тестовый Org + Source + RawEvent с заглушечным payload (~10 turns).
+   - Дождаться обработки `block-ingest.worker` (запустить его в том же процессе или sleep + проверить).
+   - Проверить: ≥3 IdeaBlock (status='canonical' после distill), ≥1 Entity, ≥1 IdeaBlockEntity, ≥1 IdeaBlockEvidence.
+   - Дёрнуть `POST /api/v1/search?q=test query` — получить результаты.
+   - Cleanup.
+3. **second-brain обновления:**
+   - Создать [second-brain/02_architecture/knowledge-core.md](second-brain/02_architecture/knowledge-core.md) — главный документ про новое ядро: pipeline ingest → distill → retrieve, JSON Schema, threshold'ы, очереди.
+   - Обновить [second-brain/02_architecture/data-model.md](second-brain/02_architecture/data-model.md) — IdeaBlock, IdeaBlockEvidence, Entity, IdeaBlockEntity, ER-диаграмма.
+   - Обновить [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md) — модуль `knowledge-core`.
+   - Обновить [second-brain/01_projects/llm-router.md](second-brain/01_projects/llm-router.md) — DeepSeek + Ollama адаптеры, JSON Schema поддержка.
+   - Обновить [second-brain/index.md](second-brain/index.md) — добавить `knowledge-core.md` в раздел «Архитектура».
+
+#### Что вне Фазы 2 (для ясности агенту)
+
+- `IdeaBlockLink` (связи блок↔блок типизированные) — Фаза 3.
+- `EntityLink` (связи сущность↔сущность) — Фаза 3.
+- `Reframing.worker` (ночное переосмысление) — Фаза 3.
+- `Theme` + `theme-clusterer.worker` — Фаза 4.
+- `Tasks-2.0`, `Chapters-2.0`, `Summary-2.0` агенты поверх блоков — Фаза 5.
+- `chat-v2` через ядро — Фаза 6 (на Фазе 2 старый `chat` остаётся работать поверх `MeetingTranscriptChunk`).
+- Z-Admin / Org-Admin UI для отладки ядра — Фаза 7.
+- Удаление `MeetingTranscriptChunk` + `transcript-index.worker` — Фаза 6.
+- Полная миграция на BGE-M3 (vector(1024)) — Фаза 11 / vNext.
+
 ---
 
 ## Фаза 3 — Связи и граф

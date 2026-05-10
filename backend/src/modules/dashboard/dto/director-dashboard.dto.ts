@@ -66,6 +66,28 @@ export interface DirectorDashboardOpenQuestionDto {
   createdAt: string;
 }
 
+/**
+ * Phase 9: блок «Согласованность стратегии» (Goal alignment).
+ *
+ * `average` — взвешенное среднее `cachedAlignment` активных целей.
+ * Если ни одна цель ещё не получила snapshot — `null` (UI: «нет данных»).
+ *
+ * `alertGoals` — цели с `cachedAlignmentDelta <= -15 AND cachedAlignment <= 60`.
+ * UI подсвечивает их в красной рамке.
+ */
+export interface DirectorDashboardAlertGoalDto {
+  id: string;
+  name: string;
+  score: number;
+  delta: number;
+}
+
+export interface DirectorDashboardStrategicAlignmentDto {
+  average: number | null;
+  goalsCount: number;
+  alertGoals: DirectorDashboardAlertGoalDto[];
+}
+
 export interface DirectorDashboardDto {
   period: 'week' | 'month';
   generatedAt: string;
@@ -77,4 +99,7 @@ export interface DirectorDashboardDto {
   openQuestions: DirectorDashboardOpenQuestionDto[];
   /** null = LLM недоступен или вернул ошибку. UI скрывает блок. */
   narrativeSummary: string | null;
+  /** Phase 9: блок «Согласованность стратегии». Опциональный для backward
+   *  compatibility — на проде Фаза 8 уже задеплоена без него. */
+  strategicAlignment?: DirectorDashboardStrategicAlignmentDto;
 }

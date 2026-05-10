@@ -6,11 +6,13 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminCacheService } from '../../admin/services/admin-cache.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
+  DirectorDashboardAlertGoalDto,
   DirectorDashboardDto,
   DirectorDashboardEntityDto,
   DirectorDashboardOpenQuestionDto,
   DirectorDashboardSignalCountersDto,
   DirectorDashboardSignalDto,
+  DirectorDashboardStrategicAlignmentDto,
   DirectorDashboardThemeDto,
 } from '../dto/director-dashboard.dto';
 import {
@@ -84,6 +86,7 @@ export class DirectorDashboardService {
       activeThemes,
       hotEntities,
       openQuestions,
+      strategicAlignment,
     ] = await Promise.all([
       this.fetchNewThemes(args.tenantId, since),
       this.fetchNewSignals(args.tenantId, since),
@@ -91,6 +94,7 @@ export class DirectorDashboardService {
       this.fetchActiveThemes(args.tenantId),
       this.fetchHotEntities(args.tenantId, since),
       this.fetchOpenQuestions(args.tenantId),
+      this.fetchStrategicAlignment(args.tenantId),
     ]);
 
     const narrativeSummary = await this.getNarrativeSummary({
@@ -114,6 +118,7 @@ export class DirectorDashboardService {
       hotEntities,
       openQuestions,
       narrativeSummary,
+      strategicAlignment,
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);
@@ -448,6 +453,70 @@ export class DirectorDashboardService {
       criticalQuestion: r.criticalQuestion,
       createdAt: r.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * Phase 9: блок «Согласованность стратегии».
+   *
+   * Загружает все активные не-archived `Goal[]` Org. Считает взвешенное
+   * среднее `cachedAlignment` по `weight`. `alertGoals` — цели с резким
+   * падением (`cachedAlignmentDelta <= -15 AND cachedAlignment <= 60`).
+   *
+   * Если у Org нет активных целей — `goalsCount=0, average=null, alertGoals=[]`.
+   * Если есть, но никто ещё не считался — `average=null`.
+   */
+  private async fetchStrategicAlignment(
+    tenantId: string,
+  ): Promise<DirectorDashboardStrategicAlignmentDto> {
+    const goals = await this.prisma.goal.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        archivedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        weight: true,
+        cachedAlignment: true,
+        cachedAlignmentDelta: true,
+      },
+    });
+
+    const goalsCount = goals.length;
+    if (goalsCount === 0) {
+      return { average: null, goalsCount: 0, alertGoals: [] };
+    }
+
+    let weightedSum = 0;
+    let weightTotal = 0;
+    const alertGoals: DirectorDashboardAlertGoalDto[] = [];
+
+    for (const g of goals) {
+      const w = this.decimalToNumber(g.weight);
+      if (g.cachedAlignment !== null && Number.isFinite(w) && w > 0) {
+        weightedSum += w * g.cachedAlignment;
+        weightTotal += w;
+      }
+      if (
+        g.cachedAlignment !== null &&
+        g.cachedAlignmentDelta !== null &&
+        g.cachedAlignmentDelta <= -15 &&
+        g.cachedAlignment <= 60
+      ) {
+        alertGoals.push({
+          id: g.id,
+          name: g.name,
+          score: g.cachedAlignment,
+          delta: g.cachedAlignmentDelta,
+        });
+      }
+    }
+
+    const average =
+      weightTotal > 0 ? Math.round(weightedSum / weightTotal) : null;
+
+    return { average, goalsCount, alertGoals };
   }
 
   // ─────────────────────────── helpers ──────────────────────────────────────

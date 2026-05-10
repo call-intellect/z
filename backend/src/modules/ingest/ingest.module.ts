@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { S3Service } from '../recordings/s3.service';
 
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
+import { TelegramWebhookController } from './adapters/telegram/telegram.controller';
 import { TelegramAdapterService } from './adapters/telegram/telegram.service';
 import { IngestTokenGuard } from './guards/ingest-token.guard';
 import {
@@ -29,7 +30,11 @@ import { IngestService } from './ingest.service';
  */
 @Global()
 @Module({
-  controllers: [IngestController, RawEventsController],
+  controllers: [
+    IngestController,
+    RawEventsController,
+    TelegramWebhookController,
+  ],
   providers: [
     IngestService,
     MeetingIngestAdapter,

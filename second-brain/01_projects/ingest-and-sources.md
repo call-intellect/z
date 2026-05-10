@@ -108,10 +108,54 @@ cd backend && npx tsx scripts/smoke-ingest-fase1.ts
 ## Что вне Фазы 1 (для напоминания)
 
 - `IdeaBlock`, `Entity`, `Theme`, `block-ingest.worker` — **Фаза 2**.
-- Адаптеры telegram/email/call/web-form — **Фаза 10**.
-- UI управления источниками — **Фаза 10**.
-- Полноценное per-Org API-key управление для внешнего ingest — **Фаза 10**.
-- Удаление `transcript-index.worker` + `MeetingTranscriptChunk` — **Фаза 6**
-  (после chat-v2).
+- Удаление `transcript-index.worker` + `MeetingTranscriptChunk` — **Фаза 6** (после chat-v2).
+
+## Фаза 10 — внешние адаптеры (закрыта 2026-05-10)
+
+Введены 4 адаптера поверх `IngestService`. Каждый адаптер живёт в `backend/src/modules/ingest/adapters/<adapter>/` и вызывает `IngestService.ingest(...)` — никакой записи в `RawEvent` напрямую.
+
+| Адаптер | Type / subtype | Endpoint | Auth |
+|---|---|---|---|
+| Telegram-бот | `bot/telegram` | `POST /api/v1/ingest/telegram/:sourceId` | `X-Telegram-Bot-Api-Secret-Token` (timing-safe) |
+| Mango Office | `phone_call/mango` | `POST /api/v1/ingest/calls/mango/:sourceId` | sha256(apiKey + json + apiSalt) |
+| IMAP email | `email/imap` | внутренний cron `email-fetch.cron` `*/5 * * * *` | `EMAIL_FETCH_ENABLED` ENV + `WorkerOrgGate` |
+| Web-form (дамп мысли) | `web_form` | `POST /api/v1/ingest/dump` | `CookieAuthGuard + TenantGuard`, quota 30/день/юзер |
+
+### `Source.config` schemas (Zod)
+- Telegram: `{subtype:'telegram', botToken (encrypted), botUsername, webhookSecret(>=32), allowedChatIds[], includeForwarded}`.
+- Mango: `{subtype:'mango', apiKey (encrypted), apiSalt (encrypted), extensions[]}`.
+- IMAP: `{subtype:'imap', host, port, secure, user, passwordEnc, folder, sinceDate?, sensitiveFolders[]}`.
+- Web-form: config не нужен (lazy-upsert через `DumpService`).
+
+Шифрование секретов — `CryptoService` ([backend/src/common/crypto/crypto.service.ts](backend/src/common/crypto/crypto.service.ts)) с AES-256-GCM на ENV-ключе `CRYPTO_MASTER_KEY` (32 байта base64).
+
+### Per-Org API-ключи для ingest
+
+`ApiKey.scope = 'ingest'` (расширение Phase 10). Префикс ключей `zik_*`. `IngestTokenGuard` поддерживает два режима: per-Org `zik_*` ключ → `req.ingestContext = {tenantId, apiKeyId, source:'org_key'}`; иначе → legacy shared-secret (для in-process IMAP-cron'ов).
+
+### `SourcesController` (Org-Admin CRUD)
+
+```
+GET    /api/v1/sources?type=                          [RBAC source.read]
+POST   /api/v1/sources  body: {type, name, config?}    [RBAC source.write]
+PATCH  /api/v1/sources/:id                            [RBAC source.write]
+DELETE /api/v1/sources/:id                            [soft isActive=false]
+POST   /api/v1/sources/:id/test                       [RBAC source.read]
+```
+
+Секреты в `SourceResponseDto` приходят как маркер `'<encrypted>'`. UI отправляет либо новое значение, либо маркер (backend сохранит старое).
+
+### Особенности Mango (отклонение от ТЗ)
+
+`MeetingType` enum НЕ содержит `phone_call`; у `Meeting` нет `source/externalCallId/ownerId nullable`. Расширение схемы Meeting под phone_call — **vNext**. Сейчас Mango адаптер хранит metadata в `RawEvent` с указателем на S3-запись, без создания Meeting.
+
+### Frontend
+
+- `/settings/sources` — CRUD адаптеров под `currentOrgRole IN ('owner','admin')`.
+- `/dump` — простая страница «дамп мысли» (textarea 60vh + nonce idempotency).
+
+### Gating через entitlements (Фаза 12)
+
+`SourcesController.create` runtime-check `feature.adapter_<type>`. Webhook'и НЕ гейтятся (внешние). `EmailFetchCron` пропускает Org без `feature.adapter_email`.
 
 [[../index|← index]]

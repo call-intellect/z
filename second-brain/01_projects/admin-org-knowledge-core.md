@@ -1,0 +1,71 @@
+---
+type: project
+status: in_progress
+phase: 7
+---
+
+# Org-Admin (отладка ядра знаний для owner)
+
+> Локальная админка владельца Org. Доступ — `Membership.role IN ('owner', 'admin')`.
+
+## Назначение
+
+Дать владельцу Org инструменты для:
+- наблюдения локальной экономики LLM-расхода;
+- отладки knowledge-core (тумблеры воркеров, журнал AuditLog, связи блоков и сущностей с soft-delete);
+- управления сущностями (слить, расклеить, переименовать, добавить алиас);
+- ручного перезапуска pipeline'а для `RawEvent`;
+- метрик Org (число блоков, сущностей, тем, RawEvent).
+
+## Доступ
+
+- `OrgAdminGuard` ([backend/src/modules/auth/guards/org-admin.guard.ts](backend/src/modules/auth/guards/org-admin.guard.ts)) — проверяет `RbacService.canManageOrg(userId, tenantId)` (роли `owner` или `admin` в Membership). super_admin тоже проходит.
+- Tenant — через `TenantGuard` (header `X-Org-Id` или активная Org).
+
+## API префикс
+
+Все Org-Admin endpoints: `/api/v1/org-admin/*` (см. [api-layer.md](api-layer.md)).
+
+| Группа | Префикс |
+|---|---|
+| Экономика | `/api/v1/org-admin/usage/*` (зеркалит `/api/v1/admin/usage/*` со scope=org) |
+| Knowledge-core debug | `/api/v1/org-admin/knowledge/*` |
+
+## Тумблеры воркеров
+
+Поле `Org.workersEnabled: Json @default("{}")`. Структура: `{ "block-ingest": false, "block-distill": true, ... }`. Пустой объект = все воркеры включены.
+
+`WorkerOrgGate.checkOrThrow(tenantId, workerName)` ([backend/src/modules/core-queue/worker-org-gate.ts](backend/src/modules/core-queue/worker-org-gate.ts)) — общий хелпер. Каждый knowledge-core воркер вызывает его в начале job. Если выключено — `throw new Error('worker_disabled_for_org')`, BullMQ ретраит.
+
+Воркеры под gate'ом: `block-ingest`, `block-distill`, `block-linker`, `entity-resolver`, `theme-clusterer`, `reframing`, `strategic-alignment` (Фаза 9), `email-fetch` (Фаза 10).
+
+## Soft-delete связей
+
+`IdeaBlockLink` и `EntityLink` имеют поля `deletedAt: DateTime?`, `deletedBy: String?`.
+
+Org-Admin удаляет связи через `DELETE /api/v1/org-admin/knowledge/links/:id?kind=block|entity` — soft. Hard-delete после 30 дней — vNext (отдельный cron, Фаза 11+).
+
+## Слияние сущностей (manual)
+
+`EntityMergeService.mergeManually(tenantId, fromEntityId, intoEntityId, byUserId)` ([backend/src/modules/knowledge-core/services/entity-merge.service.ts](backend/src/modules/knowledge-core/services/entity-merge.service.ts)) — прямой merge без LLM-арбитра. Используется через `POST /api/v1/org-admin/knowledge/entities/:id/merge`.
+
+## Reprocess RawEvent
+
+`POST /api/v1/org-admin/knowledge/raw-events/:id/reprocess` — удаляет блоки через `IdeaBlockEvidence.rawEventId` и переотправляет в `core.raw-events` с suffix-jobId (для прохождения dedup).
+
+## UI
+
+Расположение: [frontend/app/(authenticated)/settings/admin/](frontend/app/(authenticated)/settings/admin/).
+
+| URL | Назначение |
+|---|---|
+| `/settings/admin/usage` | Локальная экономика Org (CSV-экспорт) |
+| `/settings/admin/knowledge-core` | Тумблеры воркеров, журнал, связи, сущности, метрики (Tabs) |
+| `/settings/admin/members` | redirect на `/settings/organization` |
+| `/settings/admin/sources` | redirect на `/settings/sources` (Фаза 10) |
+
+## Связанные документы
+
+- [admin-z-global.md](admin-z-global.md) — Z-Admin (для super_admin).
+- [orgs-and-rbac.md](orgs-and-rbac.md) — Membership-роли.
+- [ingest-and-sources.md](ingest-and-sources.md) — управление источниками (отдельная страница).

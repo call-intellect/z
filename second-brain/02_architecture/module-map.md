@@ -160,4 +160,84 @@ LiveKit чистит атрибуты автоматически при disconne
 
 Подробности: [[knowledge-core|knowledge-core.md]].
 
+## Дельта Фаз 7–12 (closed 2026-05-10)
+
+### `backend/src/modules/admin/` (Phase 7)
+- `services/{admin-cache, admin-usage, admin-functions, admin-experiments, admin-prices, admin-orgs, admin-health, org-admin-knowledge}.service.ts` — Z-Admin + Org-Admin сервисы.
+- `controllers/{admin-usage, org-admin-usage, admin-functions, admin-experiments, admin-prices, admin-orgs, admin-health, org-admin-knowledge}.controller.ts` + `admin-usage.csv.ts` (CSV-stream).
+- `dto/{admin-usage, admin-experiments, admin-prices, admin-orgs, org-admin-knowledge}.dto.ts` — Zod.
+- `super-admin.audit.interceptor.ts` — пишет `SuperAdminAccessLog`.
+
+### `backend/src/modules/auth/guards/` (Phase 7)
+- `super-admin.guard.ts` — проверяет `User.isSuperAdmin`.
+- `org-admin.guard.ts` — проверяет `RbacService.canManageOrg` (owner/admin/super_admin).
+
+### `backend/src/modules/core-queue/` (Phase 7)
+- `worker-org-gate.ts` — `WorkerOrgGate.checkOrThrow(tenantId, workerName)` — общий хелпер для тумблеров `Org.workersEnabled`.
+
+### `backend/src/modules/dashboard/` (Phase 8)
+- `dashboard.module.ts`, `services/director-dashboard.service.ts`, `director-dashboard.controller.ts`, `dto/director-dashboard.dto.ts`, `prompts/dashboard-summary.prompt.ts`.
+- `GET /api/v1/dashboard/director?period=week|month` под `RbacService.canViewDirectorDashboard`.
+
+### `backend/src/modules/goals/` (Phase 9)
+- `goals.module.ts`, `services/goals.service.ts`, `goals.controller.ts`, `dto/goals.dto.ts`.
+- `RbacService.ResourceType` расширена `'goal'`. policy.csv: owner write/delete, admin/manager — read.
+
+### `backend/src/modules/knowledge-core/workers/` (Phase 9, 11)
+- `strategic-alignment.worker.ts` (concurrency 2) + `strategic-alignment.cron.ts` (`@Cron('0 4 * * *')`).
+- `core-metrics-snapshot.cron.ts` (`@Cron('*/5 * * * *')`) — gauges `core_*`.
+- `prompts/goal-alignment.prompt.ts`.
+
+### `backend/src/modules/sources/` (Phase 10)
+- `sources.module.ts`, `sources.service.ts`, `sources.controller.ts`, `dto/source.dto.ts`.
+- `RbacService.ResourceType` расширена `'source'`. owner/admin write, manager read.
+
+### `backend/src/modules/ingest/adapters/` (Phase 10)
+- `telegram/{telegram.controller, telegram.service, telegram-config.schema}.ts`.
+- `phone-call/{mango.controller, mango.service, mango-config.schema}.ts`.
+- `email/{email-fetch.service, email-fetch.cron, imap-config.schema, ingest-email.module}.ts`.
+- `web-form/{dump.controller, dump.service}.ts`.
+
+### `backend/src/common/crypto/` (Phase 10)
+- `crypto.service.ts` + `crypto.module.ts` (`@Global`) — AES-256-GCM на ENV `CRYPTO_MASTER_KEY`.
+
+### `backend/src/modules/retention/` (Phase 11, расширение)
+- `retention.service.ts` — `processAll()`, `processExpiredRawEvents/Blocks/Chat/Audit`.
+- `retention.cron.ts` — переключён на `processAll`.
+- `retention-policy.service.ts` — lazy upsert + `markSwept`.
+- `retention-policy.controller.ts` — `GET/PATCH /api/v1/settings/retention`.
+
+### `backend/src/modules/security/` (Phase 11)
+- `personal-data-deletion.service.ts` — `eraseEntity` (idempotent).
+- `personal-data.controller.ts` — `DELETE /api/v1/persons/:id/data`.
+- `RbacService.ResourceType` расширена `'person'`, action `'erase'`.
+
+### `backend/src/common/metrics/` (Phase 11)
+- `business-metrics.service.ts` — gauges/counters/histograms `core_*`. Обёртки `setCoreBlocks`, `observeCorePipelineDuration`, `addCoreLlmTokens`, `incCoreErasure`, `incCoreRetentionDeleted`, `incCoreDataClassViolation`.
+
+### `backend/src/modules/ai/services/llm-router.service.ts` (Phase 11)
+- Расширение `call({taskType, dataClass?, ...})`. Фильтр провайдеров по `provider.maxDataClass >= dataClass`. На фейл — `NoEligibleProviderError` + инкремент метрики.
+- Экспорт `ALL_LLM_TASK_TYPES` (Phase 7).
+
+### `backend/src/modules/entitlements/` (Phase 12)
+- `tier-config.ts` — реестр TIER_CONFIG (basic/pro/enterprise) + `FeatureKey/QuotaKey/TierKey` типы.
+- `entitlement.service.ts` — Redis cache TTL 300s.
+- `entitlement.guard.ts` + `require-entitlement.decorator.ts` — `APP_GUARD` global.
+- `entitlements.controller.ts` — `/me/entitlements`, `/settings/billing`, `/admin/orgs/:id/entitlement`.
+
+### Frontend (фазы 7–12)
+- `frontend/app/(authenticated)/admin/*` — Z-Admin (8 страниц + AdminShell).
+- `frontend/app/(authenticated)/settings/admin/*` — Org-Admin (4 страницы).
+- `frontend/app/(authenticated)/dashboard/{DashboardRouter, DirectorDashboardClient}.tsx` + `widgets/StrategicAlignmentWidget.tsx`.
+- `frontend/app/(authenticated)/goals/{page, GoalsClient, [id]/{page, GoalDetailClient}}.tsx`.
+- `frontend/app/(authenticated)/settings/{sources, retention, billing}/*.tsx`.
+- `frontend/app/(authenticated)/dump/{page, DumpClient}.tsx`.
+- `frontend/app/(authenticated)/persons/*` (новый раздел) + двухстадийный диалог 152-ФЗ erase.
+- `frontend/app/(authenticated)/admin/orgs/[id]/billing/*` — Z-Admin tier-управление.
+- `frontend/src/contexts/entitlement-context.tsx` + `useEntitlement.ts` + `<TierGate>`.
+- `frontend/src/ui/components/chat/OrgChatPanel.tsx` — общий компонент `/chat` и `/dashboard`.
+
+### Удалено (Phase 7 fix)
+- `frontend/app/(admin)/admin/page.tsx` (legacy home, дублировал новый Z-Admin dashboard).
+
 [[../index|← index]]

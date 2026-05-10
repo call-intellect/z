@@ -7,6 +7,8 @@ import { MangoCallWebhookController } from './adapters/phone-call/mango.controll
 import { MangoAdapterService } from './adapters/phone-call/mango.service';
 import { TelegramWebhookController } from './adapters/telegram/telegram.controller';
 import { TelegramAdapterService } from './adapters/telegram/telegram.service';
+import { WebFormDumpController } from './adapters/web-form/dump.controller';
+import { DumpService } from './adapters/web-form/dump.service';
 import { IngestTokenGuard } from './guards/ingest-token.guard';
 import {
   IngestController,
@@ -37,12 +39,14 @@ import { IngestService } from './ingest.service';
     RawEventsController,
     TelegramWebhookController,
     MangoCallWebhookController,
+    WebFormDumpController,
   ],
   providers: [
     IngestService,
     MeetingIngestAdapter,
     TelegramAdapterService,
     MangoAdapterService,
+    DumpService,
     IngestTokenGuard,
     S3Service,
   ],
@@ -51,6 +55,7 @@ import { IngestService } from './ingest.service';
     MeetingIngestAdapter,
     TelegramAdapterService,
     MangoAdapterService,
+    DumpService,
   ],
 })
 export class IngestModule {}

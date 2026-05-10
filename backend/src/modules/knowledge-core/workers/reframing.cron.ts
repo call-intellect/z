@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 
 const REFRAMING_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -189,6 +190,7 @@ export class ReframingCron {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   @Cron('0 3 * * *')
@@ -240,6 +242,17 @@ export class ReframingCron {
 
     for (const org of orgs) {
       try {
+        // Org-Admin Фаза 7: тумблер reframing — если выключен, скипаем.
+        try {
+          await this.gate.checkOrThrow(org.id, 'reframing');
+        } catch {
+          this.logger.debug(
+            { tenantId: org.id },
+            'reframing: gate disabled — skip Org',
+          );
+          continue;
+        }
+
         // 1. Архивация слабых блок-связей.
         const blockArc = await this.prisma.ideaBlockLink.updateMany({
           where: {

@@ -188,6 +188,157 @@ export class EntityMergeService {
     }
   }
 
+  /**
+   * Org-Admin Фаза 7: ручное слияние двух Entity (без LLM-арбитра).
+   *
+   * Алгоритм:
+   *   1. Загрузить fromEntity / intoEntity. Проверить tenantId match, оба
+   *      без mergedIntoId, оба того же type (если разные — ошибка).
+   *   2. Транзакция:
+   *      - перенос IdeaBlockEntity entityId=fromEntity.id → intoEntity.id;
+   *        composite PK (blockId, entityId) — try update, на P2002 → delete.
+   *      - перенос EntityLink (fromEntityId / toEntityId) → intoEntity.id;
+   *        unique (fromEntityId, toEntityId, relationType) — try update,
+   *        на P2002 → delete.
+   *      - intoEntity.mentionsCount += fromEntity.mentionsCount,
+   *        aliases = union(into.aliases, [from.canonicalName, ...from.aliases]),
+   *        updatedAt=now.
+   *      - fromEntity: mergedIntoId=intoEntity.id, updatedAt=now.
+   *   3. Лог + AuditLog (на Фазе 7 пишет caller, не сервис).
+   */
+  async mergeManually(args: {
+    tenantId: string;
+    fromEntityId: string;
+    intoEntityId: string;
+    byUserId: string;
+  }): Promise<{ ok: true }> {
+    const { tenantId, fromEntityId, intoEntityId } = args;
+    if (fromEntityId === intoEntityId) {
+      throw new Error('mergeManually: fromEntityId === intoEntityId');
+    }
+
+    const [fromEntity, intoEntity] = await Promise.all([
+      this.prisma.entity.findUnique({ where: { id: fromEntityId } }),
+      this.prisma.entity.findUnique({ where: { id: intoEntityId } }),
+    ]);
+    if (!fromEntity) throw new Error(`Entity not found: ${fromEntityId}`);
+    if (!intoEntity) throw new Error(`Entity not found: ${intoEntityId}`);
+    if (fromEntity.tenantId !== tenantId || intoEntity.tenantId !== tenantId) {
+      throw new Error('mergeManually: tenantId mismatch');
+    }
+    if (fromEntity.mergedIntoId !== null || intoEntity.mergedIntoId !== null) {
+      throw new Error('mergeManually: одна из сущностей уже мержена');
+    }
+    if (fromEntity.type !== intoEntity.type) {
+      throw new Error('mergeManually: разные type');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // Перенос IdeaBlockEntity. composite PK (blockId, entityId).
+      const mentions = await tx.ideaBlockEntity.findMany({
+        where: { entityId: fromEntityId },
+      });
+      for (const m of mentions) {
+        try {
+          await tx.ideaBlockEntity.update({
+            where: { blockId_entityId: { blockId: m.blockId, entityId: fromEntityId } },
+            data: { entityId: intoEntityId },
+          });
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            // Уже есть пара (blockId, intoEntityId) — просто удаляем from-запись.
+            await tx.ideaBlockEntity.delete({
+              where: {
+                blockId_entityId: { blockId: m.blockId, entityId: fromEntityId },
+              },
+            });
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Перенос EntityLink (входящие).
+      const linksTo = await tx.entityLink.findMany({
+        where: { toEntityId: fromEntityId },
+      });
+      for (const l of linksTo) {
+        try {
+          await tx.entityLink.update({
+            where: { id: l.id },
+            data: { toEntityId: intoEntityId },
+          });
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            await tx.entityLink.delete({ where: { id: l.id } });
+          } else {
+            throw err;
+          }
+        }
+      }
+      // Перенос EntityLink (исходящие).
+      const linksFrom = await tx.entityLink.findMany({
+        where: { fromEntityId: fromEntityId },
+      });
+      for (const l of linksFrom) {
+        try {
+          await tx.entityLink.update({
+            where: { id: l.id },
+            data: { fromEntityId: intoEntityId },
+          });
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            await tx.entityLink.delete({ where: { id: l.id } });
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Обновляем intoEntity (mentionsCount, aliases).
+      const aliasesUnion = Array.from(
+        new Set([
+          ...intoEntity.aliases,
+          fromEntity.canonicalName,
+          ...fromEntity.aliases,
+        ]),
+      );
+      await tx.entity.update({
+        where: { id: intoEntityId },
+        data: {
+          mentionsCount: intoEntity.mentionsCount + fromEntity.mentionsCount,
+          aliases: aliasesUnion,
+        },
+      });
+
+      // fromEntity → merged_into.
+      await tx.entity.update({
+        where: { id: fromEntityId },
+        data: { mergedIntoId: intoEntityId },
+      });
+    });
+
+    this.logger.log(
+      {
+        tenantId,
+        fromEntityId,
+        intoEntityId,
+        byUserId: args.byUserId,
+      },
+      'entity-merge: ручное слияние применено',
+    );
+    return { ok: true };
+  }
+
   // ─────────────────────────── helpers ─────────────────────────────────────
 
   private parseVerdict(

@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import {
   ClusteringService,
   type ClusterableBlock,
@@ -47,6 +48,7 @@ export class ThemeClustererCron {
     private readonly classifier: ThemeClassificationService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   @Cron('15 * * * *')
@@ -118,6 +120,14 @@ export class ThemeClustererCron {
     cosineThreshold: number;
   }): Promise<number> {
     const { tenantId, minBlocks, minClusterSize, cosineThreshold } = args;
+
+    // Org-Admin Фаза 7: тумблер. Если выключено — skip Org молча.
+    try {
+      await this.gate.checkOrThrow(tenantId, 'theme-clusterer');
+    } catch {
+      this.logger.debug({ tenantId }, 'theme-clusterer: gate disabled — skip Org');
+      return 0;
+    }
 
     // Сколько canonical-блоков без темы. Считаем «по факту присутствия» через
     // raw SQL — count(IdeaBlock) where status='canonical' AND NOT EXISTS

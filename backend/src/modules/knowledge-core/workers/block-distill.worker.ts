@@ -16,6 +16,7 @@ import {
   type BlockDistillJobData,
   CORE_QUEUE_NAMES,
 } from '../../core-queue/queues';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { BlockMergeService } from '../services/block-merge.service';
 
 /**
@@ -49,6 +50,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BlockMergeService) private readonly merger: BlockMergeService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   onModuleInit(): void {
@@ -98,6 +100,9 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+
+    // Org-Admin Фаза 7: проверка тумблера.
+    await this.gate.checkOrThrow(block.tenantId, 'block-distill');
 
     const candidates = await this.merger.knnCandidates({
       tenantId: block.tenantId,

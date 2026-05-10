@@ -84,13 +84,23 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
    *
    * NB: BullMQ 5.x запрещает `:` в Custom Id (см. Job.validateOptions),
    * поэтому используем `_` как разделитель (cuid сам по себе `:` не содержит).
+   *
+   * `suffix` (Org-Admin Фаза 7 reprocess): когда нужно повторно отправить тот
+   * же rawEventId через дедуп-окно BullMQ — добавляем суффикс к jobId. Воркер
+   * выполнит повторный ingest идемпотентно (после удаления старых блоков
+   * через `OrgAdminKnowledgeService.reprocessRawEvent`).
    */
-  async enqueueRawReceived(rawEventId: string): Promise<void> {
+  async enqueueRawReceived(
+    rawEventId: string,
+    opts?: { suffix?: string },
+  ): Promise<void> {
     const q = this.requireQueue(CORE_QUEUE_NAMES.RAW_EVENTS);
-    const jobId = `raw_${rawEventId}`;
+    const jobId = opts?.suffix
+      ? `raw_${rawEventId}_v2_${opts.suffix}`
+      : `raw_${rawEventId}`;
     const payload: RawEventJobData = { rawEventId };
     await q.add('raw-received', payload, { jobId });
-    this.logger.debug(`enqueue core.raw-events rawEventId=${rawEventId}`);
+    this.logger.debug(`enqueue core.raw-events rawEventId=${rawEventId} jobId=${jobId}`);
   }
 
   /**

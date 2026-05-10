@@ -15,6 +15,7 @@ import {
   CORE_QUEUE_NAMES,
   type RawEventJobData,
 } from '../../core-queue/queues';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { S3Service } from '../../recordings/s3.service';
 import { ENTITY_TYPE_VALUES } from '../prompts/block-ingest.prompt';
 import {
@@ -64,6 +65,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(EntityResolutionService)
     private readonly entities: EntityResolutionService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   onModuleInit(): void {
@@ -110,6 +112,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+
+    // Org-Admin Фаза 7: проверка тумблера. Если выключено — throw'нём,
+    // BullMQ ретрайнет и в итоге пометит job failed; owner может включить
+    // обратно и retry вручную.
+    await this.gate.checkOrThrow(event.tenantId, 'block-ingest');
 
     try {
       const payload = await this.loadPayload(event);

@@ -8,6 +8,7 @@ import { AdminHealthController } from './controllers/admin-health.controller';
 import { AdminOrgsController } from './controllers/admin-orgs.controller';
 import { AdminPricesController } from './controllers/admin-prices.controller';
 import { AdminUsageController } from './controllers/admin-usage.controller';
+import { OrgAdminKnowledgeController } from './controllers/org-admin-knowledge.controller';
 import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
 import { LlmRoutesController } from './llm-routes/llm-routes.controller';
@@ -21,6 +22,7 @@ import { AdminHealthService } from './services/admin-health.service';
 import { AdminOrgsService } from './services/admin-orgs.service';
 import { AdminPricesService } from './services/admin-prices.service';
 import { AdminUsageService } from './services/admin-usage.service';
+import { OrgAdminKnowledgeService } from './services/org-admin-knowledge.service';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 
 /**
@@ -48,6 +50,7 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminPricesController,
     AdminOrgsController,
     AdminHealthController,
+    OrgAdminKnowledgeController,
   ],
   providers: [
     AdminAuditInterceptor,
@@ -60,6 +63,7 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminPricesService,
     AdminOrgsService,
     AdminHealthService,
+    OrgAdminKnowledgeService,
   ],
   exports: [
     AdminAuditInterceptor,
@@ -71,6 +75,7 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminPricesService,
     AdminOrgsService,
     AdminHealthService,
+    OrgAdminKnowledgeService,
   ],
 })
 export class AdminModule {}

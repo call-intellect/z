@@ -15,6 +15,7 @@ import {
   type BlockLinkerJobData,
   CORE_QUEUE_NAMES,
 } from '../../core-queue/queues';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { BlockLinkService } from '../services/block-link.service';
 
 /**
@@ -45,6 +46,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BlockLinkService) private readonly linker: BlockLinkService,
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   onModuleInit(): void {
@@ -93,6 +95,9 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+
+    // Org-Admin Фаза 7: проверка тумблера.
+    await this.gate.checkOrThrow(block.tenantId, 'block-linker');
 
     // Гейт по объёму: меньше LINKER_MIN_BLOCKS canonical в Org — связывать нечего.
     const minBlocks = this.cfg.knowledgeCore.linkerMinBlocks;

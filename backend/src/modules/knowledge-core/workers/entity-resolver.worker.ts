@@ -15,6 +15,7 @@ import {
   CORE_QUEUE_NAMES,
   type EntityResolverJobData,
 } from '../../core-queue/queues';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { EntityMergeService } from '../services/entity-merge.service';
 
 /**
@@ -50,6 +51,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(EntityMergeService) private readonly merger: EntityMergeService,
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   onModuleInit(): void {
@@ -96,6 +98,9 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+
+    // Org-Admin Фаза 7: проверка тумблера.
+    await this.gate.checkOrThrow(entity.tenantId, 'entity-resolver');
 
     const candidates = await this.merger.findCandidates({
       tenantId: entity.tenantId,

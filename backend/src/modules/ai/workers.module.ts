@@ -8,6 +8,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { CoreQueueService } from '../core-queue/core-queue.service';
+import { WorkerOrgGate } from '../core-queue/worker-org-gate';
 import { MeetingIngestAdapter } from '../ingest/adapters/meeting.adapter';
 import { IngestService } from '../ingest/ingest.service';
 import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
@@ -106,6 +107,8 @@ import { VoxService } from './services/vox.service';
     AiQueueService,
     // knowledge-core (Фаза 1) — для AnalyzeWorker.
     CoreQueueService,
+    // knowledge-core (Фаза 7) — gate для воркеров (Org.workersEnabled).
+    WorkerOrgGate,
     IngestService,
     MeetingIngestAdapter,
     // M3 AI-pipeline расширения.

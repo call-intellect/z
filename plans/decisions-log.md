@@ -369,6 +369,32 @@ date: 2026-05-10
 
 ---
 
+## 2026-05-10 — Phase 10 шаг 5: Mango адаптер БЕЗ создания Meeting
+
+**Вопрос.** Execution-план Фазы 10 (шаг 5) требует, чтобы Mango-адаптер при `event.entry === 'call'` (summary) создавал `Meeting(type='phone_call', source='external', externalCallId=<callId>, ownerId=null, ...)`. Реальная Prisma-схема:
+- `enum MeetingType` НЕ содержит `phone_call` (только team/standup/plan_fact/project/sales/custdev/partner/interview/customer_success).
+- `model Meeting` НЕ имеет полей `source`, `externalCallId`.
+- `Meeting.ownerId` — `String` (NOT NULL), не допускает null.
+
+Расширение `MeetingType` enum + добавление полей `source`, `externalCallId`, делать `ownerId` nullable — изменение, затрагивающее десятки контроллеров/UI и противоречащее текущим соглашениям («Meeting — это AI-видеовстреча в LiveKit»). На MVP Фазы 10 это слишком большое расширение.
+
+Альтернативы:
+1. Расширить `MeetingType` + поля Meeting — много следствий.
+2. Завести отдельную модель `PhoneCall` (id, tenantId, externalCallId, recordUrl, transcript-ref) — отдельная фича, не вписывается в Фазу 10.
+3. **Хранить только `RawEvent` + S3-указатель на запись.** Транскрипция — vNext (отдельный воркер `phone-transcribe.worker`, который читает S3 и заполняет `payload.transcript` через `IngestService.ingest` повторно с тем же `sourceExternalId` идемпотентно).
+
+**Решение.** Вариант 3. Mango-адаптер на этой фазе:
+- Принимает webhook, валидирует подпись.
+- При `entry='call'` (summary): скачивает запись (если recordUrl есть) → S3 `phone-calls/<tenantId>/<callId>.mp3`.
+- Кладёт metadata-only payload в `IngestService.ingest`: `{callId, fromNumber, toNumber, durationSec, recordS3Key, raw}`.
+- Транскрипция и интеграция с `transcribe.queue` остаются как TODO (комментарии в коде ссылаются на этот decision).
+
+**Почему.** RawEvent — append-only, идемпотентен, единая точка входа в knowledge-core. Когда добавим `phone-transcribe.worker` (vNext), он скачает S3 → транскрибирует → выполнит повторный `ingest` с обновлённым payload (тот же `sourceExternalId = 'mango:<callId>'`), `IngestService` корректно вернёт «уже есть» (план: добавить отдельный путь `update-payload-on-transcribed`, но это уже другая фаза).
+
+**Откат.** Если решим всё-таки расширить Meeting под телефон: добавить `phone_call` в `MeetingType`, поля `source`, `externalCallId`, `ownerId String?` — миграция через `prisma db push --accept-data-loss` (на проде — в окне обслуживания). Тогда переписать `MangoCallWebhookController.process`, чтобы создавал `Meeting`. RawEvent при этом останется.
+
+---
+
 ## 2026-05-10 — Расширение `/api/v1/accounts/me` для гейта Z-Admin/Org-Admin (Фаза 7 шаг 9.4)
 
 **Вопрос.** Frontend-агент Фазы 7 шаг 9 должен рендерить условные пункты Sidebar («Z-Admin» / «Админка Org») и SettingsSidebar (раздел «Админка»), для чего фронт нужен `isSuperAdmin` и `currentOrgRole`. Их нет в текущем `accountsApi.me()` shape. ТЗ-09.4 говорит «расширить useAuth() — если уже отдаётся через /api/v1/me, использовать; если нет — расширить».

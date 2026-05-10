@@ -16,6 +16,7 @@ import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { AUDIT } from '../audit/audit.types';
+import { MangoAdapterService } from '../ingest/adapters/phone-call/mango.service';
 import { TelegramAdapterService } from '../ingest/adapters/telegram/telegram.service';
 
 import type {
@@ -47,6 +48,7 @@ export class SourcesService {
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(TelegramAdapterService) private readonly telegram: TelegramAdapterService,
+    @Inject(MangoAdapterService) private readonly mango: MangoAdapterService,
   ) {}
 
   async list(tenantId: string, query: SourceListQuery): Promise<SourceListResponseDto> {
@@ -241,9 +243,7 @@ export class SourcesService {
           result = await this.telegram.test(source);
           break;
         case 'phone_call':
-          // На этом этапе MangoAdapterService пока не подключён через DI —
-          // делаем встроенный smoke (TODO: вынести в MangoAdapterService на Шаге 5).
-          result = { ok: true, details: { note: 'mango: see Шаг 5' } };
+          result = this.mango.test(source);
           break;
         case 'email':
           result = { ok: true, details: { note: 'email: see Шаг 6' } };

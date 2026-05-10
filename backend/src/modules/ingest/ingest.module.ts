@@ -3,6 +3,8 @@ import { Global, Module } from '@nestjs/common';
 import { S3Service } from '../recordings/s3.service';
 
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
+import { MangoCallWebhookController } from './adapters/phone-call/mango.controller';
+import { MangoAdapterService } from './adapters/phone-call/mango.service';
 import { TelegramWebhookController } from './adapters/telegram/telegram.controller';
 import { TelegramAdapterService } from './adapters/telegram/telegram.service';
 import { IngestTokenGuard } from './guards/ingest-token.guard';
@@ -34,14 +36,21 @@ import { IngestService } from './ingest.service';
     IngestController,
     RawEventsController,
     TelegramWebhookController,
+    MangoCallWebhookController,
   ],
   providers: [
     IngestService,
     MeetingIngestAdapter,
     TelegramAdapterService,
+    MangoAdapterService,
     IngestTokenGuard,
     S3Service,
   ],
-  exports: [IngestService, MeetingIngestAdapter, TelegramAdapterService],
+  exports: [
+    IngestService,
+    MeetingIngestAdapter,
+    TelegramAdapterService,
+    MangoAdapterService,
+  ],
 })
 export class IngestModule {}

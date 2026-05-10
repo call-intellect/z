@@ -18,6 +18,12 @@ export interface AccountUserApi {
   signupSource: SignupSourceApi;
   mustChangePassword: boolean;
   createdAt: string;
+  /** Фаза 7: super_admin (Z-Admin). */
+  isSuperAdmin: boolean;
+  /** Фаза 7: роль в первой Org или null. */
+  currentOrgRole: 'owner' | 'admin' | 'manager' | null;
+  /** Фаза 7: id первой Org или null. */
+  currentOrgId: string | null;
 }
 
 // ─────────────── request payloads ───────────────

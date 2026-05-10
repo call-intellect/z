@@ -12,6 +12,9 @@ describe('mapAccountUserDtoToDomain', () => {
     signupSource: 'standalone',
     mustChangePassword: false,
     createdAt: '2026-05-09T10:30:00.000Z',
+    isSuperAdmin: false,
+    currentOrgRole: null,
+    currentOrgId: null,
   };
 
   it('преобразует createdAt в Date', () => {

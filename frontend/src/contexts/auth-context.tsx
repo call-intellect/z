@@ -16,6 +16,7 @@ import { authApi } from '@/api/auth.api';
 import {
   mapAccountUserDtoToDomain,
   type AccountUser,
+  type CurrentOrgRole,
   type SignupSource,
 } from '@/domain/account';
 
@@ -49,6 +50,12 @@ type AuthContextValue = AuthState & {
   mustChangePassword: boolean;
   /** `signupSource` пользователя — `null` если не залогинен. */
   signupSource: SignupSource | null;
+  /** Z-Admin (Фаза 7) — true только у владельца продукта. */
+  isSuperAdmin: boolean;
+  /** Роль в первой Org или null (Фаза 7). */
+  currentOrgRole: CurrentOrgRole;
+  /** ID первой Org или null (Фаза 7). */
+  currentOrgId: string | null;
   /** Перечитывает `accountsApi.me()` и обновляет state. */
   refresh: () => Promise<void>;
   /** Logout: backend revoke + локальный сброс. */
@@ -146,6 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: state.isLoading,
       mustChangePassword: state.user?.mustChangePassword ?? false,
       signupSource: state.user?.signupSource ?? null,
+      isSuperAdmin: state.user?.isSuperAdmin === true,
+      currentOrgRole: state.user?.currentOrgRole ?? null,
+      currentOrgId: state.user?.currentOrgId ?? null,
       refresh,
       logout,
       loginStandalone,

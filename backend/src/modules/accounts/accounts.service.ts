@@ -57,6 +57,16 @@ export interface PublicUserDto {
   signupSource: 'crossmark' | 'standalone';
   mustChangePassword: boolean;
   createdAt: string;
+  /** Z-Admin (super_admin) — true только у владельцев продукта. (Фаза 7) */
+  isSuperAdmin: boolean;
+  /**
+   * Роль в первой Org (если их несколько — берётся первая по joinedAt asc).
+   * `null` если пользователь не в Org. Используется фронтом для гейта
+   * раздела «Админка Org» (`/settings/admin/*`). (Фаза 7)
+   */
+  currentOrgRole: 'owner' | 'admin' | 'manager' | null;
+  /** ID первой Org (для удобства фронта). null если не в Org. (Фаза 7) */
+  currentOrgId: string | null;
 }
 
 @Injectable()
@@ -293,12 +303,34 @@ export class AccountsService {
   async getMe(userId: string): Promise<PublicUserDto | null> {
     const user = await this.repo.findById(userId);
     if (!user) return null;
-    return this.toPublicUser(user);
+    // Догружаем флаг super_admin + первую membership-роль
+    // (Фаза 7 — нужно для гейта Z-Admin / Org-Admin на фронте).
+    const [fresh, firstMembership] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { isSuperAdmin: true },
+      }),
+      this.prisma.membership.findFirst({
+        where: { userId, org: { deletedAt: null } },
+        orderBy: { joinedAt: 'asc' },
+        select: { orgId: true, role: true },
+      }),
+    ]);
+    return {
+      ...this.toPublicUser(user),
+      isSuperAdmin: fresh?.isSuperAdmin === true,
+      currentOrgRole: firstMembership?.role ?? null,
+      currentOrgId: firstMembership?.orgId ?? null,
+    };
   }
 
   // ─────────────────────────── helpers ──────────────────────────
 
   private toPublicUser(user: User): PublicUserDto {
+    // Дефолтные значения для новых полей (isSuperAdmin/currentOrgRole/currentOrgId).
+    // getMe() их перезаписывает; updateProfile/login возвращают значения,
+    // которые догружаются в caller'ах либо остаются `false/null` —
+    // фронт всё равно делает refresh().
     return {
       id: user.id,
       email: user.email,
@@ -307,6 +339,9 @@ export class AccountsService {
       signupSource: user.signupSource,
       mustChangePassword: user.mustChangePassword,
       createdAt: user.createdAt.toISOString(),
+      isSuperAdmin: false,
+      currentOrgRole: null,
+      currentOrgId: null,
     };
   }
 

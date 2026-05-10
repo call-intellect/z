@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
+  Activity,
   Bell,
+  Brain,
   Building2,
+  CircleDollarSign,
   Download,
   KeyRound,
   Palette,
@@ -15,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { useAuth } from '@/contexts/auth-context';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 type Item = {
@@ -37,39 +41,81 @@ const ITEMS: Item[] = [
   { href: '/settings/exports', label: 'Экспорты', icon: Download },
 ];
 
+const ADMIN_ITEMS: Item[] = [
+  { href: '/settings/admin/usage', label: 'Экономика', icon: CircleDollarSign },
+  { href: '/settings/admin/knowledge-core', label: 'Ядро знаний', icon: Brain },
+  { href: '/settings/admin/sources', label: 'Источники', icon: Activity },
+];
+
 export function SettingsSidebar() {
   const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get('tab') ?? null;
+  const { currentOrgRole } = useAuth();
+  const showAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
 
   return (
     <aside className="md:w-56 md:shrink-0">
       <nav className="rounded-lg border border-border-subtle bg-bg-card p-2">
         <ul className="flex flex-col gap-0.5">
-          {ITEMS.map((item) => {
-            const linkHref = item.tab ? `${item.href}?tab=${item.tab}` : item.href;
-            const isActive = computeActive(item, pathname, tabParam);
-            const Icon = item.icon;
-            return (
-              <li key={`${item.href}-${item.tab ?? 'default'}`}>
-                <Link
-                  href={linkHref}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
-                    isActive
-                      ? 'bg-accent-muted font-medium text-accent'
-                      : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
-                  )}
-                >
-                  <Icon size={15} strokeWidth={1.75} />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
+          {ITEMS.map((item) => (
+            <SidebarLink
+              key={`${item.href}-${item.tab ?? 'default'}`}
+              item={item}
+              pathname={pathname}
+              tabParam={tabParam}
+            />
+          ))}
         </ul>
+        {showAdmin && (
+          <>
+            <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+              Админка
+            </div>
+            <ul className="flex flex-col gap-0.5 pt-1">
+              {ADMIN_ITEMS.map((item) => (
+                <SidebarLink
+                  key={`${item.href}-${item.tab ?? 'default'}`}
+                  item={item}
+                  pathname={pathname}
+                  tabParam={tabParam}
+                />
+              ))}
+            </ul>
+          </>
+        )}
       </nav>
     </aside>
+  );
+}
+
+function SidebarLink({
+  item,
+  pathname,
+  tabParam,
+}: {
+  item: Item;
+  pathname: string;
+  tabParam: string | null;
+}) {
+  const linkHref = item.tab ? `${item.href}?tab=${item.tab}` : item.href;
+  const isActive = computeActive(item, pathname, tabParam);
+  const Icon = item.icon;
+  return (
+    <li>
+      <Link
+        href={linkHref}
+        className={cn(
+          'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
+          isActive
+            ? 'bg-accent-muted font-medium text-accent'
+            : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
+        )}
+      >
+        <Icon size={15} strokeWidth={1.75} />
+        {item.label}
+      </Link>
+    </li>
   );
 }
 

@@ -16,6 +16,8 @@ import type { UserRole } from './enums';
 
 export type SignupSource = SignupSourceApi;
 
+export type CurrentOrgRole = 'owner' | 'admin' | 'manager' | null;
+
 export interface AccountUser {
   id: string;
   email: string;
@@ -24,6 +26,12 @@ export interface AccountUser {
   signupSource: SignupSource;
   mustChangePassword: boolean;
   createdAt: Date;
+  /** Z-Admin (Фаза 7) — true только у владельца продукта. */
+  isSuperAdmin: boolean;
+  /** Роль в первой Org (Фаза 7). null если не в Org. */
+  currentOrgRole: CurrentOrgRole;
+  /** ID первой Org (Фаза 7). null если не в Org. */
+  currentOrgId: string | null;
 }
 
 export function mapAccountUserDtoToDomain(dto: AccountUserApi): AccountUser {
@@ -35,5 +43,8 @@ export function mapAccountUserDtoToDomain(dto: AccountUserApi): AccountUser {
     signupSource: dto.signupSource,
     mustChangePassword: dto.mustChangePassword,
     createdAt: new Date(dto.createdAt),
+    isSuperAdmin: dto.isSuperAdmin === true,
+    currentOrgRole: dto.currentOrgRole,
+    currentOrgId: dto.currentOrgId,
   };
 }

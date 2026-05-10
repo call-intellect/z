@@ -13,7 +13,9 @@ import {
   Plug,
   Plus,
   Settings,
+  Settings2,
   Shapes,
+  Shield,
   Sparkles,
   User,
   KeyRound,
@@ -64,6 +66,27 @@ export function Sidebar({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const { isSuperAdmin, currentOrgRole } = useAuth();
+
+  // Динамические admin-пункты (Фаза 7).
+  const adminItems: NavItem[] = [];
+  if (currentOrgRole === 'owner' || currentOrgRole === 'admin') {
+    adminItems.push({
+      href: '/settings/admin',
+      label: 'Админка Org',
+      icon: Settings2,
+      matchPrefix: '/settings/admin',
+    });
+  }
+  if (isSuperAdmin) {
+    adminItems.push({
+      href: '/admin',
+      label: 'Z-Admin',
+      icon: Shield,
+      matchPrefix: '/admin',
+    });
+  }
+  const navItems: NavItem[] = [...NAV_ITEMS, ...adminItems];
 
   return (
     <aside
@@ -105,7 +128,7 @@ export function Sidebar({
           {(() => {
             // Выбираем наиболее специфичный matchPrefix, чтобы /settings/integrations
             // не подсвечивал ОДНОВРЕМЕННО /settings/integrations и /settings.
-            const candidates = NAV_ITEMS.map((item, idx) => ({
+            const candidates = navItems.map((item, idx) => ({
               idx,
               prefix: item.matchPrefix ?? item.href,
               matches:
@@ -118,7 +141,7 @@ export function Sidebar({
             const winnerIdx = candidates.length
               ? candidates.reduce((a, b) => (b.prefix.length > a.prefix.length ? b : a)).idx
               : -1;
-            return NAV_ITEMS.map((item, idx) => {
+            return navItems.map((item, idx) => {
             const isActive = idx === winnerIdx;
             const Icon = item.icon;
             return (

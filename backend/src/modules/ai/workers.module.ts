@@ -18,6 +18,7 @@ import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-b
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
+import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { UsersService } from '../users/users.service';
@@ -132,6 +133,8 @@ import { VoxService } from './services/vox.service';
     EntityGraphBuilderCron,
     // knowledge-core (Фаза 3) — reframing: ночное переосмысление графа (3:00).
     ReframingCron,
+    // knowledge-core (Фаза 4) — theme-clusterer: KNN-greedy + LLM theme-classify.
+    ThemeClustererCron,
   ],
 })
 export class WorkersModule {}

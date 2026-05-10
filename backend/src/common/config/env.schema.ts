@@ -334,6 +334,36 @@ const KnowledgeCoreSchema = z.object({
    * которого entity-graph-builder её игнорирует. 3 — порог «не случайность».
    */
   ENTITY_GRAPH_MIN_COMENTIONS: z.coerce.number().int().positive().default(3),
+
+  // ── Фаза 4: Theme + clusterer + card-rollup-v2 ──
+  /**
+   * Cron-расписание `theme-clusterer.cron` — каждый час в :15 по умолчанию.
+   * Лёгкий проход; реальный объём LLM-вызовов ограничен порогом
+   * `THEME_CLUSTERING_MIN_BLOCKS` (Org с малым количеством блоков пропускается).
+   */
+  THEME_CLUSTERER_CRON: z.string().min(1).default('15 * * * *'),
+  /**
+   * Минимум canonical-блоков без темы в Org, ниже которого theme-clusterer
+   * пропускает Org (нечего кластеризовать). 100 — критическая масса для
+   * стабильных тем.
+   */
+  THEME_CLUSTERING_MIN_BLOCKS: z.coerce.number().int().positive().default(100),
+  /**
+   * Минимальный размер устойчивого кластера (в блоках). Меньше — кластер
+   * выбрасывается как шум. 3 — компромисс «не случайность, но и не строго».
+   */
+  THEME_CLUSTER_MIN_SIZE: z.coerce.number().int().positive().default(3),
+  /**
+   * Cosine-порог объединения блоков в один кластер при KNN-greedy.
+   * 0.78 — эмпирический порог OpenAI text-embedding-3-small для «одна тема».
+   */
+  THEME_COSINE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
+  /**
+   * Дебаунс enqueue в `core.card-rollup-v2`: несколько событий по одной Card
+   * за окно складываются в один отложенный job. 60 секунд — достаточный
+   * запас, чтобы догнать «пачку» link/unlink/regenerate.
+   */
+  CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
 });
 
 /** Шеринг (длительность ссылок). */

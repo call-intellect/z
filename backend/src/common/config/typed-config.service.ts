@@ -312,6 +312,12 @@ export class TypedConfigService {
       blockDynamicScoreDecayDays: this.get('BLOCK_DYNAMIC_SCORE_DECAY_DAYS'),
       entityGraphBuilderCron: this.get('ENTITY_GRAPH_BUILDER_CRON'),
       entityGraphMinComentions: this.get('ENTITY_GRAPH_MIN_COMENTIONS'),
+      // Фаза 4: Theme + card-rollup-v2.
+      themeClustererCron: this.get('THEME_CLUSTERER_CRON'),
+      themeClusteringMinBlocks: this.get('THEME_CLUSTERING_MIN_BLOCKS'),
+      themeClusterMinSize: this.get('THEME_CLUSTER_MIN_SIZE'),
+      themeCosineThreshold: this.get('THEME_COSINE_THRESHOLD'),
+      cardRollupV2DebounceMs: this.get('CARD_ROLLUP_V2_DEBOUNCE_MS'),
     } as const;
   }
 

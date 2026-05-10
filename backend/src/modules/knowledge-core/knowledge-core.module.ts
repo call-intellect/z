@@ -12,11 +12,13 @@ import { SearchService } from './api/search.service';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
+import { ClusteringService } from './services/clustering.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
+import { ThemeClassificationService } from './services/theme-classification.service';
 
 /**
  * KnowledgeCoreModule — оркестрация ingest → distill для IdeaBlock'ов.
@@ -57,6 +59,9 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     BlockLinkService,
     EntityGraphService,
     SearchService,
+    // Фаза 4: Theme + clusterer.
+    ClusteringService,
+    ThemeClassificationService,
   ],
   exports: [
     SegmentBuilderService,
@@ -68,6 +73,8 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     BlockLinkService,
     EntityGraphService,
     SearchService,
+    ClusteringService,
+    ThemeClassificationService,
   ],
 })
 export class KnowledgeCoreModule {}

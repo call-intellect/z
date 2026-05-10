@@ -9,6 +9,7 @@ import {
   FolderKanban,
   Home,
   ListChecks,
+  Lock,
   LogOut,
   MessageCircle,
   Plug,
@@ -37,8 +38,20 @@ import {
   DropdownMenuTrigger,
 } from '@/ui/shadcn/dropdown-menu';
 import { Separator } from '@/ui/shadcn/separator';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/ui/shadcn/tooltip';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
+import { useEntitlement } from '@/hooks/useEntitlement';
+import {
+  FEATURE_MIN_TIER,
+  tierLabel,
+  type FeatureKey,
+} from '@/domain/entitlement';
 import { useTheme } from '@/ui/components/theme/ThemeProvider';
 
 type NavItem = {
@@ -46,15 +59,39 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   matchPrefix?: string;
+  /**
+   * Если задано — пункт гейтится на feature. На закрытом тарифе:
+   * пункт остаётся видим, иконка-замок справа, tooltip и редирект на
+   * `/settings/billing` вместо целевого URL (Фаза 12 шаг 10).
+   */
+  gateFeature?: FeatureKey;
 };
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard' },
   { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
-  { href: '/themes', label: 'AI-темы', icon: Sparkles, matchPrefix: '/themes' },
-  { href: '/goals', label: 'Цели', icon: Target, matchPrefix: '/goals' },
+  {
+    href: '/themes',
+    label: 'AI-темы',
+    icon: Sparkles,
+    matchPrefix: '/themes',
+    gateFeature: 'feature.theme',
+  },
+  {
+    href: '/goals',
+    label: 'Цели',
+    icon: Target,
+    matchPrefix: '/goals',
+    gateFeature: 'feature.goals_strategy',
+  },
   { href: '/dump', label: 'Дамп мысли', icon: Brain, matchPrefix: '/dump' },
-  { href: '/chat', label: 'AI-чат', icon: MessageCircle, matchPrefix: '/chat' },
+  {
+    href: '/chat',
+    label: 'AI-чат',
+    icon: MessageCircle,
+    matchPrefix: '/chat',
+    gateFeature: 'feature.chat_org',
+  },
   { href: '/meetings', label: 'Мои встречи', icon: CalendarDays, matchPrefix: '/meetings' },
   { href: '/tasks', label: 'Задачи', icon: ListChecks, matchPrefix: '/tasks' },
   { href: '/settings/templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/settings/templates' },
@@ -128,50 +165,39 @@ export function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-2">
-        <ul className="flex flex-col gap-0.5">
-          {(() => {
-            // Выбираем наиболее специфичный matchPrefix, чтобы /settings/integrations
-            // не подсвечивал ОДНОВРЕМЕННО /settings/integrations и /settings.
-            const candidates = navItems.map((item, idx) => ({
-              idx,
-              prefix: item.matchPrefix ?? item.href,
-              matches:
-                pathname === item.href ||
-                (item.matchPrefix
-                  ? pathname === item.matchPrefix ||
-                    pathname.startsWith(`${item.matchPrefix}/`)
-                  : false),
-            })).filter((c) => c.matches);
-            const winnerIdx = candidates.length
-              ? candidates.reduce((a, b) => (b.prefix.length > a.prefix.length ? b : a)).idx
-              : -1;
-            return navItems.map((item, idx) => {
-            const isActive = idx === winnerIdx;
-            const Icon = item.icon;
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
-                    isActive
-                      ? 'bg-accent-muted font-medium text-accent'
-                      : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
-                  )}
-                >
-                  <Icon
-                    size={16}
-                    strokeWidth={1.75}
-                    className={isActive ? 'text-accent' : undefined}
-                  />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          });
-          })()}
-        </ul>
+        <TooltipProvider delayDuration={150}>
+          <ul className="flex flex-col gap-0.5">
+            {(() => {
+              // Выбираем наиболее специфичный matchPrefix, чтобы /settings/integrations
+              // не подсвечивал ОДНОВРЕМЕННО /settings/integrations и /settings.
+              const candidates = navItems
+                .map((item, idx) => ({
+                  idx,
+                  prefix: item.matchPrefix ?? item.href,
+                  matches:
+                    pathname === item.href ||
+                    (item.matchPrefix
+                      ? pathname === item.matchPrefix ||
+                        pathname.startsWith(`${item.matchPrefix}/`)
+                      : false),
+                }))
+                .filter((c) => c.matches);
+              const winnerIdx = candidates.length
+                ? candidates.reduce((a, b) =>
+                    b.prefix.length > a.prefix.length ? b : a,
+                  ).idx
+                : -1;
+              return navItems.map((item, idx) => (
+                <SidebarNavLink
+                  key={item.href}
+                  item={item}
+                  isActive={idx === winnerIdx}
+                  onNavigate={onNavigate}
+                />
+              ));
+            })()}
+          </ul>
+        </TooltipProvider>
       </nav>
 
       <Separator />
@@ -182,6 +208,96 @@ export function Sidebar({
       </div>
     </aside>
   );
+}
+
+/**
+ * Один пункт навигации с поддержкой тариф-гейтинга (Фаза 12 шаг 10).
+ *
+ * Поведение для `gateFeature`:
+ *   - loading или enabled — обычный Link на item.href.
+ *   - !enabled — пункт остаётся видим (не скрываем — это лучше для конверсии),
+ *     визуально приглушён, в правом краю иконка-замок, tooltip «Доступно
+ *     на тарифе X», клик ведёт на /settings/billing вместо целевого URL.
+ */
+function SidebarNavLink({
+  item,
+  isActive,
+  onNavigate,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  onNavigate?: () => void;
+}) {
+  const gate = useEntitlement(
+    // Хук всегда вызываем — иначе нарушим rules-of-hooks. Если gateFeature
+    // не задан, передаём «всегда true»-фичу `feature.meeting` (она в любом
+    // тарифе). Это безопасно: enabled выйдет true, gate не повлияет.
+    item.gateFeature ?? 'feature.meeting',
+  );
+  const Icon = item.icon;
+  const gateActive = item.gateFeature !== undefined;
+  // Loading — пока не будем замок показывать, чтобы не было flicker'а.
+  const locked = gateActive && !gate.loading && !gate.enabled;
+
+  const baseClass = cn(
+    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
+  );
+  const stateClass = isActive
+    ? 'bg-accent-muted font-medium text-accent'
+    : locked
+    ? 'text-fg-tertiary hover:bg-bg-overlay/60 hover:text-fg-secondary'
+    : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary';
+
+  const iconClass = cn(
+    'shrink-0',
+    isActive ? 'text-accent' : locked ? 'text-fg-tertiary/70' : undefined,
+  );
+
+  const href = locked ? '/settings/billing' : item.href;
+  const requiredTier = item.gateFeature
+    ? FEATURE_MIN_TIER[item.gateFeature] ?? 'tier_pro'
+    : null;
+
+  const linkContent = (
+    <>
+      <Icon size={16} strokeWidth={1.75} className={iconClass} />
+      <span className="flex-1 truncate">{item.label}</span>
+      {locked && (
+        <Lock
+          size={12}
+          strokeWidth={2}
+          className="shrink-0 text-fg-tertiary/70"
+          aria-hidden
+        />
+      )}
+    </>
+  );
+
+  const linkNode = (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={cn(baseClass, stateClass)}
+      aria-disabled={locked || undefined}
+    >
+      {linkContent}
+    </Link>
+  );
+
+  if (locked && requiredTier) {
+    return (
+      <li>
+        <Tooltip>
+          <TooltipTrigger asChild>{linkNode}</TooltipTrigger>
+          <TooltipContent side="right">
+            Доступно на {tierLabel(requiredTier)}
+          </TooltipContent>
+        </Tooltip>
+      </li>
+    );
+  }
+
+  return <li>{linkNode}</li>;
 }
 
 function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {

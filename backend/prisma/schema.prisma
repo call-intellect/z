@@ -142,6 +142,33 @@ enum ExportStatus {
   expired
 }
 
+// ──────────────────────────── orgs / RBAC enums (Фаза 0 knowledge-core) ────────────────────────────
+
+enum OrgVisibilityMode {
+  open
+  strict
+}
+
+/// Тариф Org — placeholder для Фазы 12 (billing). На Фазе 0 все Org = basic.
+enum OrgTier {
+  basic
+  pro
+  enterprise
+}
+
+enum MembershipRole {
+  owner
+  admin
+  manager
+}
+
+enum OrgInvitationStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
@@ -150,6 +177,9 @@ model User {
   email              String
   name               String
   role               UserRole         @default(user)
+  /// Флаг владельца продукта Z (super-admin Z-Admin раздела). См. orgs-and-rbac.md.
+  /// На уровне БД — независим от `role` и `Membership`. Включается вручную DBA / seed'ом.
+  isSuperAdmin       Boolean          @default(false)
   signupSource       UserSignupSource @default(crossmark)
   // argon2id (standalone) или bcrypt (admin local login). Опционально для Crossmark-провижененных юзеров.
   passwordHash       String?
@@ -176,6 +206,11 @@ model User {
   auditLog             AuditLog[]
   apiAccessLog         ApiAccessLog[]
   cards                Card[]
+  ownedOrgs            Org[]                    @relation("OrgOwner")
+  memberships          Membership[]
+  invitedMemberships   Membership[]             @relation("MembershipInvitedBy")
+  createdInvitations   OrgInvitation[]          @relation("OrgInvitationInvitedBy")
+  acceptedInvitations  OrgInvitation[]          @relation("OrgInvitationAcceptedBy")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -212,26 +247,30 @@ model UserVerificationToken {
 }
 
 model Meeting {
-  id              String        @id // ULID, генерится сервисом
-  title           String
-  type            MeetingType
-  customPrompt    String?       @db.Text
-  ownerId         String
-  owner           User          @relation(fields: [ownerId], references: [id])
-  cardId          String?
-  card            Card?         @relation(fields: [cardId], references: [id], onDelete: SetNull)
-  roomName        String        @unique // равен id
-  status          MeetingStatus @default(scheduled)
-  startedAt       DateTime?
-  endedAt         DateTime?
-  failureReason   String?
-  durationMs      Int?
-  recapVersion    Int           @default(1)
-  chaptersStatus  AiStepStatus  @default(none)
-  tasksStatus     AiStepStatus  @default(none)
-  embeddingsStatus AiStepStatus @default(none)
-  createdAt       DateTime      @default(now())
-  deletedAt       DateTime?
+  id               String        @id // ULID, генерится сервисом
+  title            String
+  type             MeetingType
+  customPrompt     String?       @db.Text
+  /// tenant: Org, в которой принадлежит встреча. NULL только для legacy-данных
+  /// до backfill-fase0. После backfill становится NOT NULL отдельным push'ом.
+  tenantId         String?
+  tenant           Org?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerId          String
+  owner            User          @relation(fields: [ownerId], references: [id])
+  cardId           String?
+  card             Card?         @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  roomName         String        @unique // равен id
+  status           MeetingStatus @default(scheduled)
+  startedAt        DateTime?
+  endedAt          DateTime?
+  failureReason    String?
+  durationMs       Int?
+  recapVersion     Int           @default(1)
+  chaptersStatus   AiStepStatus  @default(none)
+  tasksStatus      AiStepStatus  @default(none)
+  embeddingsStatus AiStepStatus  @default(none)
+  createdAt        DateTime      @default(now())
+  deletedAt        DateTime?
 
   participants     Participant[]
   recording        Recording?
@@ -251,6 +290,7 @@ model Meeting {
   @@index([status, endedAt])
   @@index([deletedAt])
   @@index([cardId, createdAt])
+  @@index([tenantId])
 }
 
 model Participant {
@@ -341,6 +381,10 @@ model AiResult {
 
 model AiUsageLog {
   id              String   @id @default(cuid())
+  /// tenant — Org, на которую списывается стоимость. NULL до backfill,
+  /// после Шага 1 backfill становится NOT NULL для не-системных вызовов.
+  tenantId        String?
+  tenant          Org?     @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   meetingId       String?
   userId          String?
   agentType       String
@@ -350,16 +394,26 @@ model AiUsageLog {
   provider        String
   inputTokens     Int      @default(0)
   outputTokens    Int      @default(0)
+  /// Кэшированные input-токены (prompt cache hit) — учитываются в costUsd по cachedPer1M.
+  cachedTokens    Int      @default(0)
   reasoningTokens Int?
   costUsd         Decimal  @db.Decimal(10, 6)
+  /// `durationMs` = latency end-to-end вызова. Поле оставлено как есть.
   durationMs      Int
   success         Boolean
   errorText       String?  @db.Text
+  /// Указатель на источник (откуда пришёл вызов) для drill-down в Z-Admin.
+  /// Пример: { type: 'meeting', id: 'mtg_01HX...' }, { type: 'card', id: 'crd_...' }, { type: 'block', id: '...' }.
+  sourceRef       Json?
+  /// Для A/B-экспериментов LlmTaskRoute.experiment: 'A' | 'B'. NULL = вне эксперимента.
+  experimentGroup String?
   createdAt       DateTime @default(now())
 
   @@index([meetingId])
   @@index([createdAt])
   @@index([userId, taskType, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, taskType, createdAt])
 }
 
 model IntegrationKey {
@@ -427,6 +481,9 @@ model AdminAuditLog {
 
 model Task {
   id              String     @id @default(cuid())
+  /// tenant: Org, к которой принадлежит задача. После backfill — NOT NULL.
+  tenantId        String?
+  tenant          Org?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   meetingId       String
   meeting         Meeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   userId          String
@@ -448,10 +505,13 @@ model Task {
   @@index([userId, status])
   @@index([meetingId])
   @@index([dueDate])
+  @@index([tenantId])
 }
 
 model MeetingChapter {
   id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Org?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   meetingId String
   meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   startMs   Int
@@ -463,10 +523,13 @@ model MeetingChapter {
   updatedAt DateTime @updatedAt
 
   @@index([meetingId, order])
+  @@index([tenantId])
 }
 
 model MeetingHighlight {
   id             String       @id @default(cuid())
+  tenantId       String?
+  tenant         Org?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   meetingId      String
   meeting        Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   createdById    String
@@ -484,6 +547,7 @@ model MeetingHighlight {
   shares HighlightShare[]
 
   @@index([meetingId])
+  @@index([tenantId])
 }
 
 // ──────────────────────────── ai-workspace: shares ────────────────────────────
@@ -543,6 +607,8 @@ model HighlightShare {
 
 model Tag {
   id        String       @id @default(cuid())
+  tenantId  String?
+  tenant    Org?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userId    String
   user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
@@ -552,6 +618,7 @@ model Tag {
 
   @@unique([userId, name])
   @@index([userId])
+  @@index([tenantId])
 }
 
 model MeetingTag {
@@ -568,6 +635,8 @@ model MeetingTag {
 
 model MeetingChatMessage {
   id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Org?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   meetingId String?
   meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   cardId    String?
@@ -585,6 +654,7 @@ model MeetingChatMessage {
   @@index([userId, createdAt])
   @@index([meetingId, createdAt])
   @@index([cardId, createdAt])
+  @@index([tenantId, createdAt])
 }
 
 // In-meeting room chat (LiveKit DataChannel → backend mirror).
@@ -628,6 +698,9 @@ model MeetingTranscriptChunk {
 
 model ApiKey {
   id         String        @id @default(cuid())
+  /// Может быть null для глобальных system-ключей (super_admin, integration tools).
+  tenantId   String?
+  tenant     Org?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userId     String
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   name       String
@@ -641,10 +714,14 @@ model ApiKey {
   apiAccessLog ApiAccessLog[]
 
   @@index([userId])
+  @@index([tenantId])
 }
 
 model WebhookSubscription {
   id              String        @id @default(cuid())
+  /// Может быть null для глобальных подписок super_admin (Z-Admin Фаза 7).
+  tenantId        String?
+  tenant          Org?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userId          String
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   url             String
@@ -659,6 +736,7 @@ model WebhookSubscription {
   deliveries WebhookDelivery[]
 
   @@index([userId])
+  @@index([tenantId])
 }
 
 model WebhookDelivery {
@@ -682,6 +760,9 @@ model WebhookDelivery {
 
 model IntegrationDestination {
   id        String          @id @default(cuid())
+  /// Может быть null для глобальных destination'ов super_admin.
+  tenantId  String?
+  tenant    Org?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userId    String
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      DestinationType
@@ -691,12 +772,15 @@ model IntegrationDestination {
   updatedAt DateTime        @updatedAt
 
   @@index([userId])
+  @@index([tenantId])
 }
 
 // ──────────────────────────── ai-workspace: export / templates / routing ────────────────────────────
 
 model Export {
   id          String       @id @default(cuid())
+  tenantId    String?
+  tenant      Org?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   type        ExportType
@@ -711,6 +795,7 @@ model Export {
 
   @@index([userId, createdAt])
   @@index([expiresAt])
+  @@index([tenantId])
 }
 
 model UserTemplate {
@@ -728,17 +813,30 @@ model UserTemplate {
 }
 
 model LlmTaskRoute {
-  id        String   @id @default(cuid())
-  taskType  String   @unique
-  providers Json
-  isActive  Boolean  @default(true)
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  /// NULL = глобальный дефолт, заданный super_admin (Z-Admin).
+  /// Не-NULL = override на конкретную Org (Z-Admin Фаза 7).
+  tenantId   String?
+  tenant     Org?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  taskType   String
+  providers  Json
+  isActive   Boolean  @default(true)
+  /// A/B-эксперимент: { enabled: bool, modelA: string, modelB: string,
+  ///                    splitPercent: number, startedAt: ISO, endsAt: ISO }.
+  /// При enabled=true LlmRouter рандомно выбирает A/B и пишет experimentGroup в AiUsageLog.
+  experiment Json?
+  updatedAt  DateTime @updatedAt
+
+  @@unique([taskType, tenantId])
+  @@index([tenantId])
 }
 
 // ──────────────────────────── ai-workspace: audit / quotas / api access ────────────────────────────
 
 model AuditLog {
   id         String   @id @default(cuid())
+  tenantId   String?
+  tenant     Org?     @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   userId     String?
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   action     String
@@ -750,6 +848,7 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
+  @@index([tenantId, createdAt])
 }
 
 model ApiAccessLog {
@@ -786,36 +885,39 @@ model UserQuotaCounter {
 // ──────────────────────────── cards: CRM-структура встреч ────────────────────────────
 
 model Card {
-  id               String    @id @default(cuid())
-  ownerId          String
-  owner            User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  name             String
+  id          String  @id @default(cuid())
+  /// tenant: Org, к которой принадлежит карточка. После backfill — NOT NULL.
+  tenantId    String?
+  tenant      Org?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name        String
   // 'client' | 'deal' | 'project' | 'topic' | 'custom'.
   // Хранится строкой (а не enum'ом), чтобы можно было добавлять виды без миграций.
-  kind             String    @default("client")
-  color            String    @default("#5EEAD4")
-  icon             String?
-  description      String?   @db.Text
+  kind        String  @default("client")
+  color       String  @default("#5EEAD4")
+  icon        String?
+  description String? @db.Text
 
   // Один опциональный primary-контакт. Несколько — vNext через CardContact.
-  contactName      String?
-  contactEmail     String?
-  contactPhone     String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
 
-  pinned           Boolean   @default(false)
-  archivedAt       DateTime?
-  deletedAt        DateTime?
+  pinned     Boolean   @default(false)
+  archivedAt DateTime?
+  deletedAt  DateTime?
 
   // AI rollup-кэш (заполняется card-rollup.worker'ом).
   summaryCache     String?   @db.Text
   summaryUpdatedAt DateTime?
 
   // Денормализация для сортировки списка без JOIN.
-  meetingCount     Int       @default(0)
-  lastMeetingAt    DateTime?
+  meetingCount  Int       @default(0)
+  lastMeetingAt DateTime?
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   meetings     Meeting[]
   chatMessages MeetingChatMessage[]
@@ -824,4 +926,109 @@ model Card {
   @@index([ownerId, lastMeetingAt])
   @@index([ownerId, archivedAt])
   @@index([deletedAt])
+  @@index([tenantId])
+}
+
+// ──────────────────────────── orgs / RBAC / invitations (Фаза 0 knowledge-core) ────────────────────────────
+
+/// Org — организация-клиент. Любой ресурс (встреча, карточка, задача и т.д.)
+/// принадлежит ровно одной Org через поле tenantId.
+///
+/// При регистрации создаётся персональный Org с owner=User. Member'ов добавляет
+/// owner через OrgInvitation. visibilityMode определяет, видят ли manager-ы
+/// чужие ресурсы внутри Org.
+model Org {
+  id             String            @id @default(cuid())
+  name           String
+  slug           String            @unique
+  ownerId        String
+  owner          User              @relation("OrgOwner", fields: [ownerId], references: [id])
+  visibilityMode OrgVisibilityMode @default(open)
+  /// Тариф — placeholder для Фазы 12. На Фазе 0 все Org = basic.
+  tier           OrgTier           @default(basic)
+  createdAt      DateTime          @default(now())
+  deletedAt      DateTime?
+
+  memberships  Membership[]
+  invitations  OrgInvitation[]
+  meetings     Meeting[]
+  cards        Card[]
+  tasks        Task[]
+  chapters     MeetingChapter[]
+  highlights   MeetingHighlight[]
+  chatMessages MeetingChatMessage[]
+  tags         Tag[]
+  apiKeys      ApiKey[]
+  webhookSubs  WebhookSubscription[]
+  destinations IntegrationDestination[]
+  exports      Export[]
+  llmRoutes    LlmTaskRoute[]
+  auditLogs    AuditLog[]
+  aiUsageLogs  AiUsageLog[]
+
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+model Membership {
+  id        String         @id @default(cuid())
+  orgId     String
+  org       Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      MembershipRole
+  /// Кто пригласил/добавил. Для owner-а первичной Org = NULL.
+  invitedBy String?
+  inviter   User?          @relation("MembershipInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+  joinedAt  DateTime       @default(now())
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@index([orgId, role])
+}
+
+model OrgInvitation {
+  id               String              @id @default(cuid())
+  orgId            String
+  org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  email            String
+  role             MembershipRole
+  /// Случайный nanoid(40); хранится как plaintext (короткоживущий + одноразовый).
+  token            String              @unique
+  status           OrgInvitationStatus @default(pending)
+  invitedBy        String
+  inviter          User                @relation("OrgInvitationInvitedBy", fields: [invitedBy], references: [id])
+  createdAt        DateTime            @default(now())
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?
+  acceptedByUser   User?               @relation("OrgInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([email, status])
+  @@index([expiresAt])
+}
+
+// ──────────────────────────── llm-prices (Фаза 0 knowledge-core) ────────────────────────────
+
+/// Версионируемая прайс-карта моделей. При расчёте `costUsd` LlmRouter сначала
+/// смотрит сюда (актуальная запись по provider+model+effectiveFrom<=now AND
+/// (effectiveTo IS NULL OR effectiveTo>now)), фолбэк на MODEL_PRICES в коде.
+///
+/// Цены — стоимость за 1 миллион токенов в указанной валюте.
+model LlmModelPrice {
+  id                         String    @id @default(cuid())
+  provider                   String
+  model                      String
+  inputCostPerMillionTokens  Decimal   @db.Decimal(10, 6)
+  outputCostPerMillionTokens Decimal   @db.Decimal(10, 6)
+  /// Цена за 1M кэшированных входных токенов (prompt cache hit). 0 — не поддерживается.
+  cachedCostPerMillionTokens Decimal   @default(0) @db.Decimal(10, 6)
+  currency                   String    @default("USD")
+  effectiveFrom              DateTime  @default(now())
+  effectiveTo                DateTime?
+  createdAt                  DateTime  @default(now())
+
+  @@index([provider, model, effectiveFrom])
+  @@index([effectiveFrom, effectiveTo])
 }

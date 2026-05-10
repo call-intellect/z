@@ -192,18 +192,28 @@ export class LlmRouterService implements OnModuleInit {
     if (valid.length === 0) {
       throw new Error(`setRoute: пустой список валидных провайдеров для ${args.taskType}`);
     }
-    const updated = await this.prisma.llmTaskRoute.upsert({
-      where: { taskType: args.taskType },
-      create: {
-        taskType: args.taskType,
-        providers: valid as unknown as object,
-        isActive: args.isActive,
-      },
-      update: {
-        providers: valid as unknown as object,
-        isActive: args.isActive,
-      },
+    // Глобальный route (tenantId=null): findFirst+update/create, потому что
+    // unique-составной (taskType, tenantId) с NULL Prisma в `where` напрямую
+    // не разрешает. Этот метод оперирует только глобальными роутами.
+    const existing = await this.prisma.llmTaskRoute.findFirst({
+      where: { taskType: args.taskType, tenantId: null },
     });
+    const updated = existing
+      ? await this.prisma.llmTaskRoute.update({
+          where: { id: existing.id },
+          data: {
+            providers: valid as unknown as object,
+            isActive: args.isActive,
+          },
+        })
+      : await this.prisma.llmTaskRoute.create({
+          data: {
+            taskType: args.taskType,
+            tenantId: null,
+            providers: valid as unknown as object,
+            isActive: args.isActive,
+          },
+        });
     await this.refreshCache();
     return updated;
   }

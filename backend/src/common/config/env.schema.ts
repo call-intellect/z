@@ -244,6 +244,19 @@ const HashingSchema = z.object({
   IP_HASH_DAILY_SALT: z.string().min(16).default('change-me-in-prod-please-32chars'),
 });
 
+/**
+ * knowledge-core (Фаза 1) — внутренний shared-secret для guard'а POST /api/v1/ingest.
+ * Используется только адаптерами, которые живут вне backend-процесса (например,
+ * будущие telegram/email/IMAP-listener'ы из Фазы 10). In-process meeting-adapter
+ * вызывает `IngestService` напрямую и токен не использует.
+ *
+ * На Фазе 1 пустая строка допустима — endpoint вернёт 503, пока DevOps не
+ * сгенерирует токен (длина 40+ символов, например `openssl rand -hex 32`).
+ */
+const IngestSchema = z.object({
+  INGEST_INTERNAL_TOKEN: z.string().default(''),
+});
+
 /** Шеринг (длительность ссылок). */
 const ShareSchema = z.object({
   SHARE_TOKEN_LENGTH_BYTES: z.coerce.number().int().min(16).default(24), // 32 base64url chars
@@ -288,7 +301,8 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(WorkspaceLimitsSchema)
   .merge(AiFeatureFlagsSchema)
   .merge(HashingSchema)
-  .merge(ShareSchema);
+  .merge(ShareSchema)
+  .merge(IngestSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

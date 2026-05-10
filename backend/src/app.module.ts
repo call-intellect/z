@@ -36,9 +36,11 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { ExportsModule } from './modules/exports/exports.module';
+import { IngestModule } from './modules/ingest/ingest.module';
 import { OrgsModule } from './modules/orgs/orgs.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
@@ -89,6 +91,16 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
     // LiveKit-обёртка. Глобальный модуль — нужен в Participants/Meetings/Webhooks.
     LivekitModule,
+
+    // knowledge-core (Фаза 1) — диспетчер очередей `core.*` (используется
+    // IngestService). Должен быть ДО IngestModule.
+    CoreQueueModule,
+
+    // knowledge-core (Фаза 1) — IngestService + meeting-adapter +
+    // POST /api/v1/ingest. Должен быть ДО AiModule, потому что AI-воркеры
+    // в WorkersModule (отдельный процесс) дёргают MeetingIngestAdapter.
+    // Здесь же глобальный модуль нужен и для HTTP API (раз RawEvents).
+    IngestModule,
 
     // AI-pipeline (HTTP-side). Содержит `AiQueueService` (диспетчер очередей)
     // и `RetryService`. Сами воркеры — в отдельном `WorkersModule`.

@@ -59,6 +59,10 @@ export class OrgsService {
   /**
    * Создать Org + Membership(owner) для текущего юзера.
    * Используется и в endpoint'е POST /orgs, и в хуке регистрации.
+   *
+   * Также создаёт дефолтный `Source(type=meeting, name='Встречи Z')` —
+   * единый канал ingest для встреч (knowledge-core Фаза 1). Управление
+   * другими источниками (telegram/email/...) — Фаза 10.
    */
   async createForOwner(
     input: { name: string; ownerId: string },
@@ -81,6 +85,19 @@ export class OrgsService {
         userId: input.ownerId,
         role: 'owner',
         invitedBy: null,
+      },
+    });
+    // knowledge-core Фаза 1: дефолтный Source для встреч.
+    // Канонический name берётся из MeetingIngestAdapter.DEFAULT_SOURCE_NAME,
+    // но импортировать его здесь нельзя (циклическая зависимость orgs↔ingest).
+    // Дублируем строковую константу — единственное место, где это допустимо.
+    await client.source.create({
+      data: {
+        tenantId: org.id,
+        type: 'meeting',
+        name: 'Встречи Z',
+        dataClass: 'internal',
+        isActive: true,
       },
     });
     this.rbac.invalidate(input.ownerId, org.id);

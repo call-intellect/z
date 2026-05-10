@@ -279,6 +279,13 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── ingest (Фаза 1 knowledge-core) ────
+  get ingest() {
+    return {
+      internalToken: this.get('INGEST_INTERNAL_TOKEN'),
+    } as const;
+  }
+
   // ─────────────────────────── idle ──────────────────────────────
   get idle() {
     return {

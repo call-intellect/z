@@ -304,6 +304,14 @@ export class TypedConfigService {
       blockIngestMaxTokensPerSegment: this.get('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT'),
       searchCosineWeight: this.get('SEARCH_COSINE_WEIGHT'),
       searchBm25Weight: this.get('SEARCH_BM25_WEIGHT'),
+      // Фаза 3: связи и граф.
+      linkMinConfidence: this.get('LINK_MIN_CONFIDENCE'),
+      linkerMinBlocks: this.get('LINKER_MIN_BLOCKS'),
+      linkKnnTopK: this.get('LINK_KNN_TOP_K'),
+      reframingCron: this.get('REFRAMING_CRON'),
+      blockDynamicScoreDecayDays: this.get('BLOCK_DYNAMIC_SCORE_DECAY_DAYS'),
+      entityGraphBuilderCron: this.get('ENTITY_GRAPH_BUILDER_CRON'),
+      entityGraphMinComentions: this.get('ENTITY_GRAPH_MIN_COMENTIONS'),
     } as const;
   }
 

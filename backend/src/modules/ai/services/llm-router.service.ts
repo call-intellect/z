@@ -32,9 +32,9 @@ import { OpenAiProxyService } from './openai-proxy.service';
  * follow-up/clip-title/card-rollup/card-chat.
  *
  * Knowledge-core (Фаза 2+): block-ingest, block-distill, block-linker,
- * entity-resolver, entity-merge-arbiter, theme-classify, reframing,
- * card-rollup-v2, task-extract-v2, chapter-extract-v2, summary-v2, chat-v2,
- * goal-alignment, dashboard-summary.
+ * entity-resolver, entity-merge-arbiter, entity-graph-builder, theme-classify,
+ * reframing, card-rollup-v2, task-extract-v2, chapter-extract-v2, summary-v2,
+ * chat-v2, goal-alignment, dashboard-summary.
  */
 export type LlmTaskType =
   | 'summary'
@@ -52,6 +52,7 @@ export type LlmTaskType =
   | 'block-linker'
   | 'entity-resolver'
   | 'entity-merge-arbiter'
+  | 'entity-graph-builder'
   | 'theme-classify'
   | 'reframing'
   | 'card-rollup-v2'

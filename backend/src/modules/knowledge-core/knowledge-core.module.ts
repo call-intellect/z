@@ -9,6 +9,7 @@ import { KnowledgeEntitiesController } from './api/entities.controller';
 import { KnowledgeSearchController } from './api/search.controller';
 import { SearchService } from './api/search.service';
 import { BlockExtractionService } from './services/block-extraction.service';
+import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityMergeService } from './services/entity-merge.service';
@@ -50,6 +51,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     EntityResolutionService,
     BlockMergeService,
     EntityMergeService,
+    BlockLinkService,
     SearchService,
   ],
   exports: [
@@ -59,6 +61,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     EntityResolutionService,
     BlockMergeService,
     EntityMergeService,
+    BlockLinkService,
     SearchService,
   ],
 })

@@ -293,6 +293,47 @@ const KnowledgeCoreSchema = z.object({
   BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT: z.coerce.number().int().positive().default(2000),
   SEARCH_COSINE_WEIGHT: z.coerce.number().min(0).max(1).default(0.7),
   SEARCH_BM25_WEIGHT: z.coerce.number().min(0).max(1).default(0.3),
+
+  // ── Фаза 3: связи и граф ──
+  /**
+   * Минимальный confidence LLM-арбитра, при котором связь блок↔блок или
+   * сущность↔сущность пишется в БД. Ниже — выбрасывается. 0.75 — компромисс
+   * между шумом (LLM любит выдумывать) и пропуском настоящих связей.
+   */
+  LINK_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.75),
+  /**
+   * Порог количества канонических блоков в Org, ниже которого block-linker
+   * пропускает запуск (нечего связывать). 50 — базовая критическая масса.
+   */
+  LINKER_MIN_BLOCKS: z.coerce.number().int().positive().default(50),
+  /**
+   * Сколько KNN-кандидатов на типизированную связь предъявить LLM-арбитру
+   * за один проход block-linker. Каждый кандидат — отдельный LLM-вызов
+   * (последовательно, чтобы не словить rate limit).
+   */
+  LINK_KNN_TOP_K: z.coerce.number().int().positive().default(10),
+  /**
+   * Cron-расписание `reframing.worker` (рефлексия графа: архивация слабых
+   * связей, dynamicScore decay, LLM-анализ свежих блоков). По умолчанию —
+   * раз в сутки в 3 утра.
+   */
+  REFRAMING_CRON: z.string().min(1).default('0 3 * * *'),
+  /**
+   * Сколько дней без обновления делает блок «застойным» — после чего ночной
+   * reframing понижает ему dynamicScore. 90 дней = полный квартал.
+   */
+  BLOCK_DYNAMIC_SCORE_DECAY_DAYS: z.coerce.number().int().positive().default(90),
+  /**
+   * Cron-расписание `entity-graph-builder.cron` — раз в час по умолчанию.
+   * Отдельная от reframing очередь: лёгкий проход, ищет co-mentioned пары
+   * сущностей и предлагает им связь LLM-арбитру.
+   */
+  ENTITY_GRAPH_BUILDER_CRON: z.string().min(1).default('0 * * * *'),
+  /**
+   * Минимум совместных упоминаний пары сущностей в одних блоках, ниже
+   * которого entity-graph-builder её игнорирует. 3 — порог «не случайность».
+   */
+  ENTITY_GRAPH_MIN_COMENTIONS: z.coerce.number().int().positive().default(3),
 });
 
 /** Шеринг (длительность ссылок). */

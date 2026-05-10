@@ -192,16 +192,22 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 ### Шаг 12 — Страница `/settings/retention`
 
-- [ ] [frontend/app/(authenticated)/settings/retention/page.tsx](frontend/app/(authenticated)/settings/retention/page.tsx) + `RetentionClient.tsx`.
-- [ ] Форма с 4 inputs (rawEventDays, archivedBlockDays, chatMessageDays, auditLogDays) + radio для `archivedBlockAction`. Заметные подсказки про минимумы и про 152-ФЗ.
-- [ ] Show `lastSweepAt`.
-- [ ] Сохранение через `PATCH /api/v1/settings/retention`.
+- [x] [frontend/app/(authenticated)/settings/retention/page.tsx](frontend/app/(authenticated)/settings/retention/page.tsx) + `RetentionClient.tsx`.
+- [x] Форма с 4 inputs (rawEventDays, archivedBlockDays, chatMessageDays, auditLogDays) + radio для `archivedBlockAction`. Заметные подсказки про минимумы и про 152-ФЗ.
+- [x] Show `lastSweepAt`.
+- [x] Сохранение через `PATCH /api/v1/settings/retention`.
+- [x] Owner-only guard: manager/admin/super_admin — empty state. Sidebar — пункт «Хранение и 152-ФЗ» в группе «Владелец Org».
+- [x] `frontend/src/api/retention.api.ts` + `frontend/src/domain/retention.ts` (mapper, лейблы, лимиты).
 
-### Шаг 13 — Страница `/settings/persons/:entityId`
+### Шаг 13 — Страница `/persons/[id]`
 
-- [ ] Существующая страница персоны (если её нет — создать минимальную) + кнопка «Удалить все данные о персоне» (owner-only).
-- [ ] Подтверждение в две стадии: сначала ввод текста (например, ФИО персоны) для подтверждения, потом обязательный input «Причина удаления» → `DELETE /api/v1/persons/:entityId/data`.
-- [ ] После успеха — toast с EraseReport, редирект на `/persons` с фильтром «обезличенные».
+- [x] Создана минимальная страница `frontend/app/(authenticated)/persons/[id]/page.tsx` + `PersonDetailClient.tsx` (под капотом — `GET /api/v1/knowledge/entities/:id`).
+- [x] Создан список `/persons` (для редиректа после удаления).
+- [x] Кнопка «Удалить все данные о персоне» — owner-only, скрыта для уже обезличенных (`canonicalName='[удалено по запросу]'`) и для не-`person`.
+- [x] Подтверждение в две стадии (Dialog): ввод ФИО на совпадение с `canonicalName` → причина (textarea, 3..2000 символов) → `DELETE /api/v1/persons/:entityId/data` body `{reason}`.
+- [x] После успеха — toast с EraseReport (учёт `alreadyErased: true`), редирект на `/persons`.
+- [x] `frontend/src/api/persons.api.ts` (`list`, `getEntity`, `eraseData`).
+- [x] Расширен `apiClient.del` поддержкой `body` (для DELETE с reason).
 
 ## Infra (Grafana dashboard)
 
@@ -225,7 +231,8 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 ## Verification
 
 - [ ] `bun run typecheck` (backend) — зелёный.
-- [ ] `bun run typecheck` (frontend) — зелёный.
+- [x] `bun run typecheck` (frontend) — зелёный (после шагов 12, 13).
+- [x] `bun run build` (frontend) — зелёный (3 новых роута: `/persons`, `/persons/[id]`, `/settings/retention`).
 - [ ] `bun run prisma:push` — успешно.
 - [ ] **Smoke**:
   - Создать тестовую `Org`, RawEvent с `receivedAt = now - 8 лет`. Включить `RETENTION_RAW_EVENTS_ENABLED=true`. Дождаться cron'а / вызвать `processAll()` вручную через debug-endpoint. RawEvent + связанный IdeaBlockEvidence удалён. Блок без evidence — `status='archived'`.

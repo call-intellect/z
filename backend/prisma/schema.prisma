@@ -1219,6 +1219,7 @@ model Org {
   goals        Goal[]
   goalAlignmentSnapshots GoalAlignmentSnapshot[]
   retentionPolicy OrgRetentionPolicy?
+  entitlement OrgEntitlement?
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1743,4 +1744,30 @@ model OrgRetentionPolicy {
   lastSweepAt         DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+}
+
+// ──────────────────────────── knowledge-core: entitlements (Фаза 12) ────────────────────────────
+
+/// OrgEntitlement — per-Org конфиг тарифа и override'ов фич/квот (Фаза 12).
+///
+/// `tier` — строка ('tier_basic' | 'tier_pro' | 'tier_enterprise'), не enum.
+/// Причина: бизнес может ввести четвёртый/пятый тариф без миграции.
+/// Реестр тарифов (features/quotas) — статический в коде (TierConfigRegistry).
+///
+/// `featureOverrides` / `quotaOverrides` — JSON-карты для исключений.
+/// Пример: `{"feature.theme": true}` даст enterprise-фичу одной Org бесплатно.
+///
+/// `notes` — ручной комментарий super_admin'а (для audit-trail в UI).
+///
+/// На MVP backfill сидит `tier_pro` по умолчанию (см. seed-entitlements.ts).
+model OrgEntitlement {
+  id               String   @id @default(cuid())
+  tenantId         String   @unique
+  org              Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tier             String   @default("tier_pro")
+  featureOverrides Json?
+  quotaOverrides   Json?
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }

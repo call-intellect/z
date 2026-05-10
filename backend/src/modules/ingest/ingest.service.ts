@@ -15,6 +15,8 @@ import {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
+import { EntitlementService } from '../entitlements/entitlement.service';
+import { QuotaService } from '../quotas/quota.service';
 import { S3Service } from '../recordings/s3.service';
 
 /**
@@ -72,6 +74,8 @@ export class IngestService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(S3Service) private readonly s3: S3Service,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    @Inject(EntitlementService) private readonly entitlements: EntitlementService,
+    @Inject(QuotaService) private readonly quotas: QuotaService,
   ) {}
 
   async ingest(input: IngestEventInput): Promise<IngestResult> {
@@ -140,6 +144,29 @@ export class IngestService {
         'ingest: идемпотентный возврат существующего RawEvent',
       );
       return { rawEvent: existing, idempotent: true };
+    }
+
+    // 4.5. Phase 12: cap ingest_bytes_per_month per tier. Не блокируем при ошибке
+    // вычитки entitlement — fail-open. QuotaExceededError пробрасываем (HTTP 429).
+    try {
+      const max = await this.entitlements.getQuota(
+        input.tenantId,
+        'ingest_bytes_per_month',
+      );
+      await this.quotas.checkAndIncrementOrg({
+        tenantId: input.tenantId,
+        quotaName: 'ingest_bytes_per_month',
+        max,
+        windowMs: 30 * 24 * 3600 * 1000,
+        amount: payloadSizeBytes,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'QuotaExceededError') throw err;
+      this.logger.warn(
+        `IngestService.ingest: ingest_bytes_per_month check fail для ${input.tenantId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
 
     // 5. Решение про inline / s3 storage. Если s3 — заранее выбираем cuid-подобный

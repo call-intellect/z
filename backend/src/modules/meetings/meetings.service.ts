@@ -19,6 +19,8 @@ import {
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
+import { EntitlementService } from '../entitlements/entitlement.service';
+import { QuotaService } from '../quotas/quota.service';
 import { S3Service } from '../recordings/s3.service';
 import { extractKeyFromUrl } from '../recordings/s3-keys';
 import { UsersService } from '../users/users.service';
@@ -58,7 +60,45 @@ export class MeetingsService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(S3Service) private readonly s3: S3Service,
+    @Inject(EntitlementService) private readonly entitlements: EntitlementService,
+    @Inject(QuotaService) private readonly quotas: QuotaService,
   ) {}
+
+  /**
+   * Phase 12: Org-wide месячная квота `meetings_per_month`.
+   * Резолвим tenantId через единственное активное членство (heuristic — то же,
+   * что использует TenantGuard для default Org). При ошибке/нет Org —
+   * fail-open: создание встречи не блокируем.
+   *
+   * Окно — календарный месяц (~30 дней) в скользящем формате через windowMs.
+   */
+  private async checkMeetingsMonthlyQuota(userId: string): Promise<void> {
+    const memberships = await this.prisma.membership.findMany({
+      where: { userId, org: { deletedAt: null } },
+      select: { orgId: true },
+      take: 2,
+    });
+    if (memberships.length !== 1 || !memberships[0]) return;
+    const tenantId = memberships[0].orgId;
+    try {
+      const max = await this.entitlements.getQuota(tenantId, 'meetings_per_month');
+      await this.quotas.checkAndIncrementOrg({
+        tenantId,
+        quotaName: 'meetings_per_month',
+        max,
+        windowMs: 30 * 24 * 3600 * 1000,
+      });
+    } catch (err) {
+      // QuotaExceededError должен пробрасываться (это HttpException);
+      // только остальные сбои (Redis недоступен и т.п.) — fail-open.
+      if (err instanceof Error && err.name === 'QuotaExceededError') throw err;
+      this.logger.warn(
+        `checkMeetingsMonthlyQuota: getQuota/check fail для ${tenantId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   // ────────────────────────── создание ──────────────────────────────────
 
@@ -135,6 +175,9 @@ export class MeetingsService {
     },
     userId: string,
   ): Promise<Meeting> {
+    // Phase 12: cap meetings_per_month per Org tier'а.
+    await this.checkMeetingsMonthlyQuota(userId);
+
     const meetingId = ulid();
     let created!: Meeting;
 

@@ -121,6 +121,77 @@ export class QuotaService {
     return value ? Number(value) : 0;
   }
 
+  /**
+   * Phase 12: Org-wide квота (per-tenant вместо per-user). Используется для
+   * месячных лимитов: `meetings_per_month`, `ingest_bytes_per_month`,
+   * `blocks_per_org` и т.п.
+   *
+   * Алгоритм аналогичен `checkAndIncrement`, только ключ:
+   *   `quota:org:<tenantId>:<quotaName>:<windowStart>`.
+   *
+   * `amount` — единиц для инкремента (для bytes-квот). Default 1.
+   */
+  async checkAndIncrementOrg(input: {
+    tenantId: string;
+    quotaName: string;
+    max: number;
+    windowMs: number;
+    amount?: number;
+  }): Promise<{ ok: true; current: number; remaining: number }> {
+    const amount = input.amount ?? 1;
+    const now = Date.now();
+    const windowStart = Math.floor(now / input.windowMs) * input.windowMs;
+    const key = `quota:org:${input.tenantId}:${input.quotaName}:${windowStart}`;
+    const ttlSec = Math.ceil(input.windowMs / 1000) + 60;
+
+    const client = this.redis.client;
+    const pipeline = client.multi();
+    pipeline.incrby(key, amount);
+    pipeline.expire(key, ttlSec);
+    const replies = await pipeline.exec();
+    if (!replies || replies.length === 0) {
+      this.logger.warn(
+        `QuotaService.checkAndIncrementOrg: pipeline.exec() пустой для ${key}, fail-open`,
+      );
+      return { ok: true, current: amount, remaining: input.max - amount };
+    }
+    const incrReply = replies[0];
+    const current = Number(incrReply?.[1] ?? 0);
+
+    if (current > input.max) {
+      await client.decrby(key, amount).catch(() => undefined);
+      this.metrics?.incQuotaExceeded({ quotaName: input.quotaName });
+      await this.audit.log({
+        action: AUDIT.QUOTA_EXCEEDED,
+        metadata: {
+          tenantId: input.tenantId,
+          quotaName: input.quotaName,
+          max: input.max,
+          requested: amount,
+          scope: 'org',
+        },
+      });
+      const retryAfterSeconds = Math.ceil((windowStart + input.windowMs - now) / 1000);
+      throw new QuotaExceededError(input.quotaName, retryAfterSeconds, input.max);
+    }
+
+    return { ok: true, current, remaining: Math.max(0, input.max - current) };
+  }
+
+  /**
+   * Текущее значение org-квоты (без инкремента).
+   */
+  async peekOrg(input: {
+    tenantId: string;
+    quotaName: string;
+    windowMs: number;
+  }): Promise<number> {
+    const windowStart = Math.floor(Date.now() / input.windowMs) * input.windowMs;
+    const key = `quota:org:${input.tenantId}:${input.quotaName}:${windowStart}`;
+    const value = await this.redis.client.get(key);
+    return value ? Number(value) : 0;
+  }
+
   private async snapshot(input: {
     userId: string;
     quotaName: string;

@@ -73,12 +73,6 @@ export class ChatService {
     message: string;
   }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
 
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: input.meetingId },
@@ -98,6 +92,8 @@ export class ChatService {
         error: { code: 'meeting_not_found', message: 'Встреча не найдена' },
       });
     }
+
+    await this.checkChatQuota(input.userId, meeting.tenantId);
 
     const [aiResult, chapters, tasks, chunks, history, fullMeeting] = await Promise.all([
       this.prisma.aiResult.findUnique({ where: { meetingId: meeting.id } }),
@@ -172,12 +168,8 @@ export class ChatService {
     message: string;
   }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
+    const tenantIdForQuota = await this.llm.resolveTenantByUser(input.userId);
+    await this.checkChatQuota(input.userId, tenantIdForQuota);
 
     // Embedding запроса.
     const [embedding] = await this.embeddings.embed([input.message]);
@@ -256,14 +248,9 @@ export class ChatService {
   }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
     // Owner-проверка карточки + 404 если её нет.
-    await this.cards.getById(input.cardId, input.userId);
+    const card = await this.cards.getById(input.cardId, input.userId);
 
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
+    await this.checkChatQuota(input.userId, card.tenantId ?? null);
 
     const [embedding] = await this.embeddings.embed([input.message]);
     if (!embedding) {
@@ -331,12 +318,6 @@ export class ChatService {
     message: string;
   }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
 
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: input.meetingId },
@@ -362,6 +343,8 @@ export class ChatService {
         },
       });
     }
+
+    await this.checkChatQuota(input.userId, meeting.tenantId);
 
     const history = await this.repo.listMeetingHistory({
       userId: input.userId,
@@ -413,12 +396,6 @@ export class ChatService {
     message: string;
   }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
 
     const tenantId = await this.llm.resolveTenantByUser(input.userId);
     if (!tenantId) {
@@ -430,6 +407,8 @@ export class ChatService {
         },
       });
     }
+
+    await this.checkChatQuota(input.userId, tenantId);
 
     const history = await this.repo.listCrossHistory({
       userId: input.userId,
@@ -492,12 +471,7 @@ export class ChatService {
       });
     }
 
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
+    await this.checkChatQuota(input.userId, card.tenantId);
 
     const history = await this.repo.listCardHistory({
       userId: input.userId,
@@ -592,12 +566,7 @@ export class ChatService {
     }
 
     // 2) Quota.
-    await this.quota.checkAndIncrement({
-      userId: input.userId,
-      quotaName: 'chat_requests_per_day',
-      max: this.cfg.workspace.maxChatRequestsPerDay,
-      windowMs: 24 * 3600 * 1000,
-    });
+    await this.checkChatQuota(input.userId, tenantId);
 
     // 3) История диалога — берём по самому узкому контексту:
     //    meeting → meeting history; card → card history; иначе cross-history.
@@ -832,6 +801,41 @@ export class ChatService {
   }
 
   // ─────────────────────────── helpers ──────────────────────────────────
+
+  /**
+   * Phase 12: per-user chat-квота. `max` берётся через `EntitlementService`
+   * (поле `chat_requests_per_day_per_user` в TierConfig). Если tenantId
+   * отсутствует — fallback на ENV `cfg.workspace.maxChatRequestsPerDay`.
+   *
+   * `quotaName` намеренно изменён на `chat_requests_per_day_per_user` —
+   * новое имя ключа Redis, чтобы счётчики не схлопнулись с legacy.
+   */
+  private async checkChatQuota(
+    userId: string,
+    tenantId: string | null | undefined,
+  ): Promise<void> {
+    let max = this.cfg.workspace.maxChatRequestsPerDay;
+    if (tenantId) {
+      try {
+        max = await this.entitlements.getQuota(
+          tenantId,
+          'chat_requests_per_day_per_user',
+        );
+      } catch (err) {
+        this.logger.warn(
+          `checkChatQuota: getQuota fail для ${tenantId}: ${
+            err instanceof Error ? err.message : String(err)
+          }, fallback на ENV`,
+        );
+      }
+    }
+    await this.quota.checkAndIncrement({
+      userId,
+      quotaName: 'chat_requests_per_day_per_user',
+      max,
+      windowMs: 24 * 3600 * 1000,
+    });
+  }
 
   private assertMessageLength(message: string): void {
     const max = this.cfg.workspace.maxChatMessageChars;

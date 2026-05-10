@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
-  Activity,
   Bell,
   Brain,
   Building2,
   CircleDollarSign,
   Download,
   KeyRound,
+  Link2,
   Palette,
   Plug,
   ShieldCheck,
@@ -44,7 +44,7 @@ const ITEMS: Item[] = [
 const ADMIN_ITEMS: Item[] = [
   { href: '/settings/admin/usage', label: 'Экономика', icon: CircleDollarSign },
   { href: '/settings/admin/knowledge-core', label: 'Ядро знаний', icon: Brain },
-  { href: '/settings/admin/sources', label: 'Источники', icon: Activity },
+  { href: '/settings/sources', label: 'Источники', icon: Link2 },
 ];
 
 export function SettingsSidebar() {

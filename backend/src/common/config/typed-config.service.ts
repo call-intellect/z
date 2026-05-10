@@ -213,6 +213,12 @@ export class TypedConfigService {
       webhookDeliveryDays: this.get('WEBHOOK_DELIVERY_RETENTION_DAYS'),
       shareViewDays: this.get('SHARE_VIEW_RETENTION_DAYS'),
       apiAccessLogDays: this.get('API_ACCESS_LOG_RETENTION_DAYS'),
+      // ── Фаза 11: knowledge-core retention sweeps ──
+      sweepBatchSize: this.get('RETENTION_SWEEP_BATCH_SIZE'),
+      rawEventsEnabled: this.get('RETENTION_RAW_EVENTS_ENABLED'),
+      auditEnabled: this.get('RETENTION_AUDIT_ENABLED'),
+      chatEnabled: this.get('RETENTION_CHAT_ENABLED'),
+      blocksEnabled: this.get('RETENTION_BLOCKS_ENABLED'),
     } as const;
   }
 

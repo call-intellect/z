@@ -161,6 +161,21 @@ const RetentionSchema = z.object({
   WEBHOOK_DELIVERY_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   SHARE_VIEW_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   API_ACCESS_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  /**
+   * Фаза 11 — knowledge-core retention (per-Org через `OrgRetentionPolicy`).
+   * Здесь — глобальные тумблеры и размер batch'а.
+   *
+   *   - RETENTION_SWEEP_BATCH_SIZE — сколько строк за один проход на kind.
+   *   - RETENTION_*_ENABLED — включает соответствующий sweep в processAll().
+   *
+   * На фазе 11 RAW/AUDIT/BLOCKS по умолчанию выключены — включаются на проде
+   * операционно после полного бэкапа. CHAT включён сразу (90 дней).
+   */
+  RETENTION_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().default(500),
+  RETENTION_RAW_EVENTS_ENABLED: z.coerce.boolean().default(false),
+  RETENTION_AUDIT_ENABLED: z.coerce.boolean().default(false),
+  RETENTION_CHAT_ENABLED: z.coerce.boolean().default(true),
+  RETENTION_BLOCKS_ENABLED: z.coerce.boolean().default(false),
 });
 
 const IdleSchema = z.object({

@@ -52,16 +52,16 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
   ```
 - [x] **db push**: `bun run prisma:push --accept-data-loss`.
 - [x] **Backfill через `safe-seed-rules`-совместимый patch-script** [backend/scripts/seed-retention-policies.ts](backend/scripts/seed-retention-policies.ts): для каждой `Org` без `OrgRetentionPolicy` — `create` с дефолтами. Идемпотентен.
-- [ ] Default getter `RetentionPolicyService.getOrInit(tenantId)` — lazy upsert при первом обращении (на случай если seed не пробежал).
+- [x] Default getter `RetentionPolicyService.getOrInit(tenantId)` — lazy upsert при первом обращении (на случай если seed не пробежал).
 
 ### Шаг 2 — ENV
 
-- [ ] `RETENTION_SWEEP_BATCH_SIZE` (default `500`) — сколько строк за один проход на каждый kind.
-- [ ] `RETENTION_RAW_EVENTS_ENABLED` (default `false` на Фазе 11; включается операционно после полного бэкапа).
-- [ ] `RETENTION_AUDIT_ENABLED` (default `false`).
-- [ ] `RETENTION_CHAT_ENABLED` (default `true`).
-- [ ] `RETENTION_BLOCKS_ENABLED` (default `false`).
-- [ ] Геттеры `cfg.retention.{rawEventsEnabled, auditEnabled, chatEnabled, blocksEnabled, sweepBatchSize}`.
+- [x] `RETENTION_SWEEP_BATCH_SIZE` (default `500`) — сколько строк за один проход на каждый kind.
+- [x] `RETENTION_RAW_EVENTS_ENABLED` (default `false` на Фазе 11; включается операционно после полного бэкапа).
+- [x] `RETENTION_AUDIT_ENABLED` (default `false`).
+- [x] `RETENTION_CHAT_ENABLED` (default `true`).
+- [x] `RETENTION_BLOCKS_ENABLED` (default `false`).
+- [x] Геттеры `cfg.retention.{rawEventsEnabled, auditEnabled, chatEnabled, blocksEnabled, sweepBatchSize}`.
 
 ### Шаг 3 — Расширение `RetentionService`
 

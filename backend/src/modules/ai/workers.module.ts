@@ -6,6 +6,7 @@ import { LoggerModule } from '../../common/logger/logger.module';
 import { MetricsModule } from '../../common/metrics/metrics.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
+import { AuditModule } from '../audit/audit.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 import { WorkerOrgGate } from '../core-queue/worker-org-gate';
@@ -22,6 +23,8 @@ import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.
 import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
 import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
+import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
+import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
@@ -85,6 +88,8 @@ import { VoxService } from './services/vox.service';
     EmbeddingsModule,
     // knowledge-core (Фаза 2) — services для block-ingest/distill воркеров.
     KnowledgeCoreModule,
+    // Phase 9: AuditLogService нужен strategic-alignment воркеру/cron'у.
+    AuditModule,
   ],
   providers: [
     // бизнес — нужны для FSM-переходов.
@@ -147,6 +152,10 @@ import { VoxService } from './services/vox.service';
     // поверх IdeaBlock'ов встречи. Параллельно legacy (не вместо).
     MeetingAnalyzeV2Worker,
     MeetingAnalyzeV2Cron,
+    // knowledge-core (Фаза 9) — strategic-alignment: суточная LLM-оценка
+    // движения к Goal (cron 04:00 + ручной recompute через очередь).
+    StrategicAlignmentWorker,
+    StrategicAlignmentCron,
   ],
 })
 export class WorkersModule {}

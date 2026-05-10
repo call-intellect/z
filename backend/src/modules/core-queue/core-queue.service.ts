@@ -21,6 +21,7 @@ import {
   type EntityResolverJobData,
   type MeetingAnalyzeV2JobData,
   type RawEventJobData,
+  type StrategicAlignmentJobData,
 } from './queues';
 
 /**
@@ -206,6 +207,36 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /**
+   * Публикация события `strategic.alignment` (Фаза 9). Consumer —
+   * `strategic-alignment.worker`. По умолчанию jobId дневной (`strat_<goalId>_<YYYYMMDD>`)
+   * — это нужно cron'у, чтобы не запускать одну и ту же цель дважды в день.
+   * Для ручного recompute передаём `manual: true` + jobId
+   * `strat_manual_<goalId>_<ts>`, чтобы пройти дедуп BullMQ.
+   */
+  async enqueueStrategicAlignment(args: {
+    tenantId: string;
+    goalId: string;
+    manual?: boolean;
+    windowDays?: number;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.STRATEGIC_ALIGNMENT);
+    const jobId = args.manual
+      ? `strat_manual_${args.goalId}_${Date.now()}`
+      : `strat_${args.goalId}_${ymdUtc(new Date())}`;
+    const payload: StrategicAlignmentJobData = {
+      tenantId: args.tenantId,
+      goalId: args.goalId,
+      ...(args.manual ? { manual: true } : {}),
+      ...(args.windowDays !== undefined ? { windowDays: args.windowDays } : {}),
+    };
+    await q.add('strategic-alignment', payload, { jobId });
+    this.logger.debug(
+      `enqueue core.strategic-alignment goalId=${args.goalId} jobId=${jobId} manual=${args.manual ? 'true' : 'false'}`,
+    );
+    return { jobId };
+  }
+
   // ─────────────────────────── internals ───────────────────────────────────
 
   private requireQueue(name: CoreQueueName): Queue<unknown> {
@@ -219,4 +250,15 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     }
     return q;
   }
+}
+
+/**
+ * `YYYYMMDD` в UTC. Используется для дневной дедупликации jobId
+ * strategic-alignment cron'а (Фаза 9).
+ */
+function ymdUtc(d: Date): string {
+  const y = d.getUTCFullYear().toString().padStart(4, '0');
+  const m = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+  const day = d.getUTCDate().toString().padStart(2, '0');
+  return `${y}${m}${day}`;
 }

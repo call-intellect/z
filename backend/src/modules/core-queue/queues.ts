@@ -41,6 +41,12 @@ export const CORE_QUEUE_NAMES = {
    * Дебаунс ~2 мин по jobId=`meeting_analyze_v2_<meetingId>`.
    */
   MEETING_ANALYZE_V2: 'core.meeting-analyze-v2',
+  /**
+   * Strategic-alignment (Фаза 9): суточная LLM-оценка движения к Goal Org.
+   * Один job на (Org, Goal). jobId=`strat_<goalId>_<YYYYMMDD>` для cron'а
+   * (дневной dedup) или `strat_manual_<goalId>_<ts>` для ручного recompute.
+   */
+  STRATEGIC_ALIGNMENT: 'core.strategic-alignment',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -97,4 +103,17 @@ export interface CardRollupV2JobData {
  */
 export interface MeetingAnalyzeV2JobData {
   meetingId: string;
+}
+
+/**
+ * Payload для job'а `core.strategic-alignment`. Воркер сам подтянет Goal,
+ * связанные темы и блоки. `manual` помечает запуски через UI (для логов
+ * и метрик). `windowDays` опционален — если не задан, используется
+ * `Org.strategicAlignmentWindowDays`.
+ */
+export interface StrategicAlignmentJobData {
+  tenantId: string;
+  goalId: string;
+  manual?: boolean;
+  windowDays?: number;
 }

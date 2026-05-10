@@ -13,6 +13,8 @@ import { IngestService } from '../ingest/ingest.service';
 import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
+import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
+import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { UsersService } from '../users/users.service';
@@ -118,6 +120,9 @@ import { VoxService } from './services/vox.service';
     // knowledge-core (Фаза 2) — воркеры block-ingest и block-distill.
     BlockIngestWorker,
     BlockDistillWorker,
+    // knowledge-core (Фаза 2 Шаг 4) — entity-resolver: cron + on-event worker.
+    EntityResolverWorker,
+    EntityResolverCronService,
   ],
 })
 export class WorkersModule {}

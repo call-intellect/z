@@ -7,6 +7,7 @@ import { S3Service } from '../recordings/s3.service';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
+import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
 
@@ -39,6 +40,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     KnowledgeEmbeddingService,
     EntityResolutionService,
     BlockMergeService,
+    EntityMergeService,
   ],
   exports: [
     SegmentBuilderService,
@@ -46,6 +48,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
     KnowledgeEmbeddingService,
     EntityResolutionService,
     BlockMergeService,
+    EntityMergeService,
   ],
 })
 export class KnowledgeCoreModule {}

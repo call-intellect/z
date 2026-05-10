@@ -36,7 +36,7 @@ references:
 |---|---|
 | Подход к Blockify | Только концепции (формат IdeaBlock + pipeline ingest→distill→retrieve + бенчмарки качества). Код Blockify не подключаем — реализуем на TypeScript внутри Z. |
 | Старый pipeline | Полная замена. `MeetingTranscriptChunk` и старые extractor'ы tasks/chapters/highlights выпиливаются. Никаких параллельных слоёв. |
-| Историческая БД | Чистый лист. Production-данных нет, нечего мигрировать. На старте — `prisma migrate reset` для всех затронутых таблиц. |
+| Историческая БД | Чистый лист. Production-данных нет, нечего мигрировать. На старте — `bun run prisma:push --accept-data-loss` (наш проектный стандарт — только `db push`, никаких `migrate`, см. memory `prisma-db-push-rules`). |
 | Связи | Все 5 типов в схеме сразу: блок↔источник, блок↔сущность, блок↔Card, блок↔блок (типизированные), сущность↔сущность. |
 | Подтверждение связей | Без ручного подтверждения. AI создаёт связи автоматически. Низкоуверенные (`confidence < 0.7`) скрыты в выдаче, но видны в админке отладки. |
 | Ingest | Универсальный с первого дня. Pipeline принимает любой источник: встреча, чат, звонок, бот, email, web-form. |
@@ -195,7 +195,7 @@ references:
 - [ ] Переключение `visibilityMode = strict` ограничивает менеджера видеть только свои встречи.
 - [ ] `User.isSuperAdmin = true` для владельца продукта Z (вручную в БД).
 - [ ] Расширение `AiUsageLog` применено, миграция прошла, таблица содержит все новые поля.
-- [ ] Таблица `LlmModelPrice` создана и наполнена актуальными ценами для всех используемых моделей (минимум: `claude-sonnet-4-6`, `claude-haiku-4-5`, `text-embedding-3-small`, плюс модели из `proxy.agent-lia.ru`).
+- [ ] Таблица `LlmModelPrice` создана и наполнена актуальными ценами для всех моделей primary-стэка по политике 2026-05 (см. `llm-models-playbook.md` §2.1 и §12): `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-v3.2`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `text-embedding-3-small`, `bge-m3` (нулевая цена), `qwen3:30b-a3b-instruct-2507` (нулевая цена). Опциональные A/B-кандидаты: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `MiniMax-M2.7`, `gemini-3-pro` — добавляются с актуальными ценами, но НЕ ставятся в дефолтные `LlmTaskRoute.providers`.
 - [ ] Существующие LLM-вызовы (старый AI-pipeline до Фазы 1 ещё работает) — после деплоя пишут полную стоимость в `AiUsageLog`. Проверка: после тестовой встречи в `AiUsageLog` есть записи с непустыми `costUsd`, `inputTokens`, `outputTokens`, `model`.
 - [ ] Обновлены `second-brain/01_projects/auth-and-accounts.md` (роли расширены) + новый файл `second-brain/01_projects/orgs-and-rbac.md`.
 
@@ -204,6 +204,155 @@ references:
 - **Backfill `tenantId` на существующих таблицах** — операция тяжёлая, но в нашем случае production-данных нет, риск нулевой.
 - **Casbin policy сложность** — visibilityMode сразу даёт 4 ситуации (admin/manager × own/foreign). Тесты на каждую обязательны.
 - **Регрессия существующих экранов** — все списки и детали должны быть протестированы под новым фильтром.
+
+### Детализация для агента-исполнителя (2026-05-10)
+
+Опирается на фактическое состояние кода, проверено агентом-исследователем.
+
+#### Текущее состояние (что уже есть)
+
+- **`User`** — [backend/prisma/schema.prisma](backend/prisma/schema.prisma) (модель, ~L147-L183). Поля: `id`, `externalId`, `email`, `name`, `role` enum `UserRole {user|admin}`, `signupSource` enum `{crossmark|standalone}`, `passwordHash?`, `mustChangePassword`, `createdAt`, `lastSeenAt`, `deletedAt`. Поля `isSuperAdmin` нет.
+- **`AiUsageLog`** — [backend/prisma/schema.prisma](backend/prisma/schema.prisma) (~L342-L363). Поля: `id`, `meetingId?`, `userId?`, `agentType`, `taskType?`, `jobId?`, `model`, `provider`, `inputTokens`, `outputTokens`, `reasoningTokens?`, `costUsd Decimal(10,6)`, `durationMs`, `success`, `errorText?`. Нужно добавить: `tenantId`, `cachedTokens`, `latencyMs` (если отличается от durationMs — переименовать), `sourceRef Json?`, `experimentGroup?`.
+- **`LlmTaskRoute`** — [backend/prisma/schema.prisma](backend/prisma/schema.prisma) (~L730-L736). Поля: `id`, `taskType` (unique), `providers Json`, `isActive`, `updatedAt`. Нужно добавить: `tenantId?` (NULL = глобальный дефолт, заданный super_admin; не-NULL = override на конкретную Org, фича Z-Admin Фазы 7), `experiment Json?`.
+- **`LlmRouterService`** — [backend/src/modules/ai/services/llm-router.service.ts](backend/src/modules/ai/services/llm-router.service.ts). Метод `call(params)` уже идёт по списку провайдеров из `LlmTaskRoute`, пишет `AiUsageLog` через `AiUsageLogService.record()`. Текущие taskType: `summary | chapters | tasks | chat | regenerate-section | custom-prompt | follow-up | clip-title | card-rollup | card-chat`. Адаптеры провайдеров: `AnthropicService`, `MinimaxService`, `OpenAiProxyService`. **Нужно:**
+  - Добавить адаптер `DeepSeekService` (через `proxy.agent-lia.ru/deepseek/v1/chat/completions` — проверить маршрут; если на прокси нет — напрямую `api.deepseek.com`). OpenAI-compat API, поддержка `response_format: { type: 'json_schema', strict: true }`, function calling, prompt caching.
+  - Добавить адаптер `OllamaService` (через `ollama.agent-lia.ru/v1/chat/completions` + `/v1/embeddings`).
+  - Расширить `call()`: при `LlmTaskRoute.experiment.enabled = true` — рандомный выбор A/B по `splitPercent`, запись `experimentGroup: 'A'|'B'` в `AiUsageLog`. Логика — отдельный private-метод, не размазана по `call()`.
+  - Расширить `record()` под новые поля `cachedTokens`, `sourceRef`, `experimentGroup`. `tenantId` — обязательное поле.
+  - **Жёсткое правило:** `LlmRouterService.call()` не должен молча падать на отсутствии `tenantId` в `params`. Сделать `tenantId` обязательным в типе `LlmCallParams`. Все существующие точки вызова обновить.
+  - При расчёте `costUsd` — сначала смотреть в БД-таблицу `LlmModelPrice` (актуальная запись по `provider+model+effectiveFrom<=now AND (effectiveTo IS NULL OR effectiveTo>now)`), фолбэк на `MODEL_PRICES` в [backend/src/modules/ai/services/model-prices.ts](backend/src/modules/ai/services/model-prices.ts).
+- **Auth** — [backend/src/modules/auth/](backend/src/modules/auth/), [backend/src/modules/accounts/](backend/src/modules/accounts/). Регистрация: `POST /api/v1/accounts/register` (lead-style: email + name + временный пароль argon2id, письмо через `MailService`).
+- **Frontend регистрация** — [frontend/app/signup/SignupForm.tsx](frontend/app/signup/SignupForm.tsx). Поля: `name`, `email`, honeypot, чекбокс согласия. Нужно добавить опциональное поле «Название компании» (если пусто — дефолт `Компания {name}`).
+- **Guards** — `CookieAuthGuard`, `AdminGuard` (по `User.role=admin`), `BearerAuthGuard`, `HmacGuard`, `MeetingMemberGuard`. Casbin отсутствует.
+- **prisma push команда** — `bun run prisma:push` ([backend/package.json](backend/package.json)).
+
+#### Прайс-карта в коде уже обновлена
+
+[backend/src/modules/ai/services/model-prices.ts](backend/src/modules/ai/services/model-prices.ts) уже содержит цены для всех моделей primary-стэка (см. коммит-кандидат к этой фазе). Нужно использовать как fallback для `LlmModelPrice`-таблицы.
+
+#### Пошаговый план для агента
+
+Фаза 0 разбита на 5 шагов. Каждый шаг — атомарный коммит. После шагов 1, 2, 3 — `bun run prisma:push --accept-data-loss` и `bun run build`. Шаг 5 — smoke-тест.
+
+**Шаг 1. Расширение схемы Prisma + push.**
+
+Файл: [backend/prisma/schema.prisma](backend/prisma/schema.prisma).
+
+1. Добавить `User.isSuperAdmin Boolean @default(false)`.
+2. Добавить новые enum'ы:
+   ```
+   enum OrgVisibilityMode { open strict }
+   enum OrgTier { basic pro enterprise }  // placeholder для Фазы 12
+   enum MembershipRole { owner admin manager }
+   enum OrgInvitationStatus { pending accepted revoked expired }
+   ```
+3. Добавить новые модели:
+   - `Org { id, name, slug @unique, ownerId (FK User), visibilityMode (default open), tier (default basic), createdAt, deletedAt? }`
+   - `Membership { id, orgId, userId, role, invitedBy?, joinedAt, @@unique([orgId, userId]) }`
+   - `OrgInvitation { id, orgId, email, role, token @unique, status, invitedBy, createdAt, expiresAt, acceptedAt?, acceptedByUserId? }`
+   - `LlmModelPrice { id, provider, model, inputCostPerMillionTokens Decimal(10,6), outputCostPerMillionTokens Decimal(10,6), cachedCostPerMillionTokens Decimal(10,6) @default(0), currency String @default("USD"), effectiveFrom DateTime @default(now()), effectiveTo DateTime?, @@index([provider, model, effectiveFrom]) }`
+4. Добавить `tenantId String?` (FK на `Org.id`, nullable на старте — после backfill сделать NOT NULL отдельным push'ом) во все модели из ТЗ строки 154: `Meeting`, `Card`, `Task`, `MeetingChapter`, `MeetingHighlight`, `MeetingChatMessage`, `Tag`, `WebhookSubscription`, `IntegrationDestination`, `Export`, `ApiKey`, `LlmTaskRoute`, `AuditLog`, `AiUsageLog`. Для каждого — `@@index([tenantId])`.
+5. Расширить `AiUsageLog`:
+   - `tenantId String?` (после backfill NOT NULL).
+   - `cachedTokens Int @default(0)`.
+   - `sourceRef Json?` (`{type: 'meeting'|'block'|...', id: string}`).
+   - `experimentGroup String?` (`'A'|'B'`).
+   - Поле `durationMs` оставить (это и есть latency).
+6. Расширить `LlmTaskRoute`:
+   - `tenantId String?` (NULL = глобальный дефолт).
+   - `experiment Json?` (`{enabled: bool, modelA: string, modelB: string, splitPercent: number, startedAt: ISO, endsAt: ISO}`).
+   - Изменить `@@unique` на `@@unique([taskType, tenantId])`.
+7. Запустить `bun run prisma:push --accept-data-loss` (чистый лист, ОК).
+8. **Backfill:**
+   - Создать `backend/scripts/backfill-orgs-fase0.ts` (по правилам `safe-seed-rules`, runtime — bun, идемпотентность через upsert по `ownerId`).
+   - Логика: для каждого `User` без owned `Org` — создать `Org { name: user.name + " (личный)", slug: slugify(user.name + '-' + user.id.slice(-6)), ownerId: user.id }` + `Membership { orgId, userId: user.id, role: owner, joinedAt: now }`.
+   - Для каждой записи в `Meeting/Card/Task/...` без `tenantId` — найти `userId` владельца записи (поле зависит от модели — для `Meeting` это `ownerId`, для `Card` это `ownerId`, для `Task` это `assigneeUserId` или `creatorUserId`, проверить по схеме), достать `Membership.orgId` для этого `userId`, проставить `tenantId`.
+   - Для записей без явного `userId` (если такие найдутся — например, `LlmTaskRoute` глобальный) — оставить `tenantId = NULL`.
+   - Запустить через `bun run backend/scripts/backfill-orgs-fase0.ts`.
+9. Опциональный второй `prisma:push` после backfill, который сделает `tenantId NOT NULL` для тех моделей, где должен быть обязательным (Meeting, Card, Task, MeetingChapter, MeetingHighlight, MeetingChatMessage, Tag, AiUsageLog, AuditLog, Export). Для `LlmTaskRoute`, `WebhookSubscription`, `IntegrationDestination`, `ApiKey` — оставить nullable (могут быть глобальными для super_admin).
+10. **Seed `LlmModelPrice`:** скрипт `backend/scripts/seed-llm-model-prices.ts` — наполнить таблицу всеми моделями из [backend/src/modules/ai/services/model-prices.ts](backend/src/modules/ai/services/model-prices.ts) (provider определяется по префиксу: `deepseek-*` → `deepseek`, `gpt-*` → `openai`, `claude-*` → `anthropic`, `MiniMax-*` → `minimax`, `bge-*` → `ollama`, `qwen*` → `ollama`, `gemini-*` → `gemini-grsai`). `effectiveFrom = now`, `effectiveTo = NULL`. Идемпотентность: upsert по `(provider, model, effectiveFrom-day)`.
+11. **Seed дефолтных `LlmTaskRoute`:** скрипт `backend/scripts/seed-llm-task-routes-knowledge-core.ts` — для каждого taskType из таблицы §2.1 playbook'а создать запись `{taskType, tenantId: null, providers: [{provider, model}, ...], isActive: true}`. **Старые taskType (`summary`, `chapters`, `tasks`, `chat`, `card-rollup`, ...) НЕ трогать** — они продолжают работать поверх старого pipeline до Фаз 5/6. Просто перевести их primary с `claude-sonnet-4-6` на `deepseek-v4-pro` с фолбэком `gpt-5.4`. Запускать с флагом `--update-existing` для контроля.
+
+**Шаг 2. RBAC через Casbin + middleware.**
+
+1. Установить пакет: в [backend/package.json](backend/package.json) добавить `casbin` (последняя стабильная), `casbin-prisma-adapter` (если совместим) или `casbin-postgres-adapter`. Если adapter'а под Prisma+Postgres нет в готовом виде — использовать `FileAdapter` для policy + хранить policies в [backend/src/modules/rbac/policies/](backend/src/modules/rbac/policies/) (текстовые файлы, версионируются через git).
+2. Создать модуль `backend/src/modules/rbac/`:
+   - `rbac.module.ts` — экспортирует `RbacService`.
+   - `rbac.service.ts` — обёртка над Casbin enforcer'ом. Методы: `canRead(userId, resourceType, resourceId, tenantId): Promise<boolean>`, `canWrite(...)`, `canManageOrg(userId, orgId): Promise<boolean>`.
+   - `rbac.model.conf` — RBAC + tenant + visibilityMode.
+3. Логика модели:
+   - `super_admin` (User.isSuperAdmin = true) — видит всё (но действия логируются в `SuperAdminAccessLog` — это Фаза 7; на Фазе 0 — просто пропускает все проверки).
+   - `owner`/`admin` Org — видит/правит всё в своей Org.
+   - `manager` Org:
+     - в `visibilityMode = open` — видит все ресурсы Org, правит свои.
+     - в `visibilityMode = strict` — видит только ресурсы, где `ownerUserId == self.userId`, плюс общие (Entity, Theme — но их в Фазе 0 нет, поэтому правило ставим, но активируется в Фазе 2).
+4. Создать `TenantGuard` ([backend/src/modules/rbac/guards/tenant.guard.ts](backend/src/modules/rbac/guards/tenant.guard.ts)) — извлекает `tenantId` из request (заголовок `X-Org-Id` или из URL `/orgs/:id/...` или из тела), проверяет, что у текущего `User` есть `Membership` в этом `tenantId`. Если нет — 403.
+5. Создать декоратор `@CurrentOrg()` — извлекает выбранный `Org` для запроса. По умолчанию — единственная Org пользователя. Если у пользователя несколько Org (vNext) — берёт из заголовка `X-Org-Id`.
+6. Применить `TenantGuard` к контроллерам: `MeetingsController`, `CardsController`, `TasksController`, `MeetingChaptersController`, `MeetingHighlightsController`, и т.д. — все, что работают с tenant-scoped данными.
+7. Все существующие сервисы, читающие данные по `userId` напрямую, переписать на `tenantId`-фильтрацию (с дополнительным `userId`-фильтром только в `strict` режиме). Это самый объёмный кусок — потребуется аккуратный обход.
+
+**Шаг 3. Org/Membership/Invitation API + сервисы.**
+
+1. Модуль `backend/src/modules/orgs/`:
+   - `orgs.module.ts`, `orgs.controller.ts`, `orgs.service.ts`, `org-invitations.controller.ts`, `org-invitations.service.ts`.
+2. DTO в `dto/`: `CreateOrgDto`, `UpdateOrgDto`, `InviteMemberDto`, `AcceptInvitationDto`, `UpdateMemberDto`, плюс DomainModel'ы и UiModel'ы по правилам [nestjs-rules](skill).
+3. Эндпоинты (все под `CookieAuthGuard` + `TenantGuard` где применимо):
+   - `POST /api/v1/orgs` (для регистрации — без `TenantGuard`, авторизованный пользователь без своей Org может создать).
+   - `GET /api/v1/orgs/me` — список Org текущего юзера.
+   - `PATCH /api/v1/orgs/:id` (только owner): `name`, `visibilityMode`.
+   - `GET /api/v1/orgs/:id/members` (member любой роли).
+   - `PATCH /api/v1/orgs/:id/members/:userId` (только owner/admin): сменить роль или удалить (`DELETE` отдельным методом).
+   - `DELETE /api/v1/orgs/:id/members/:userId` (только owner/admin).
+   - `POST /api/v1/orgs/:id/invitations` (только owner/admin): создать `OrgInvitation`, отправить письмо через `MailService`.
+   - `POST /api/v1/orgs/invitations/:token/accept` (без `TenantGuard`, любой авторизованный): найти инвайт, проверить срок, создать `Membership`, обновить статус инвайта.
+   - `GET /api/v1/orgs/:id/invitations` (только owner/admin): список pending/expired.
+   - `DELETE /api/v1/orgs/:id/invitations/:invitationId` (revoke).
+4. Логика сервисов:
+   - При `POST /orgs` — создать Org + Membership(owner) для текущего юзера в одной Prisma-транзакции.
+   - Slug — `slugify(name) + '-' + nanoid(6)`, проверка уникальности.
+   - Token инвайта — `nanoid(40)`, expires через 7 дней.
+   - `MailService.send` — шаблон письма «Вас пригласили в {orgName}», ссылка на `${FRONTEND_URL}/invitations/${token}`.
+5. **Хук в существующий `accounts.controller.ts`:** при `POST /api/v1/accounts/register` — после создания `User` сразу создать персональный `Org { name: companyName ?? "Компания " + user.name }` + `Membership(owner)`. Поле `companyName` приходит из формы (опционально).
+
+**Шаг 4. Frontend — поле компании в регистрации + страница `/settings/organization`.**
+
+1. [frontend/app/signup/SignupForm.tsx](frontend/app/signup/SignupForm.tsx) — добавить опциональное поле `companyName` (русская подпись «Название компании», placeholder «Например: ООО Ромашка»). Дефолт — пусто, бэк подставит «Компания {name}». Обновить тип запроса в `apiClient`.
+2. Новая страница `frontend/app/settings/organization/page.tsx` (в Next.js App Router):
+   - Компонент `OrgSettingsPage` — серверный fetch `GET /api/v1/orgs/me` + `GET /api/v1/orgs/:id/members` + `GET /api/v1/orgs/:id/invitations`.
+   - Секции:
+     - «Информация» — `name`, `visibilityMode` (radio `open`/`strict` с пояснениями), кнопка «Сохранить» → `PATCH /api/v1/orgs/:id`.
+     - «Участники» — таблица `email | role | joinedAt | actions (изменить роль / удалить)`. Только owner/admin видит actions.
+     - «Приглашения» — форма «email + role» → `POST /api/v1/orgs/:id/invitations`. Список pending инвайтов с кнопкой «Отозвать».
+   - Архитектура — по [frontend-rules](skill): ApiDto → DomainModel → UiModel, единый apiClient, server-side rendering для list-данных, mutations через client component.
+3. Страница `/invitations/[token]` — принять приглашение. Если пользователь не залогинен — редирект на login с возвратом. Если залогинен — кнопка «Принять приглашение в {orgName}» → `POST /api/v1/orgs/invitations/:token/accept` → редирект на `/dashboard`.
+4. Все существующие списки (`/meetings`, `/cards`, `/tasks`, `/chapters` и т.д.) — пройти и убедиться, что они либо неявно фильтруются по `tenantId` (через middleware и заголовок `X-Org-Id`, либо явно — добавить `?orgId=` если есть выбор Org).
+
+**Шаг 5. Smoke-тест + second-brain обновления.**
+
+1. **Smoke вручную через UI:**
+   - Зарегистрировать тестового юзера A с companyName="Тест-Компания-A". Проверить, что Org создан, Membership(owner) есть.
+   - Зарегистрировать юзера B без companyName. Проверить дефолт.
+   - От юзера A отправить инвайт на email юзера B (роль manager).
+   - Залогиниться как B, перейти на `/invitations/{token}`, принять. Проверить что появился второй Membership.
+   - Юзер B видит встречи юзера A (`visibilityMode = open` дефолт).
+   - Юзер A переключает на `strict` → юзер B перестаёт видеть встречи юзера A.
+   - Юзер B пытается дёрнуть `GET /api/v1/orgs/{другая_org_id}/members` → 403.
+   - Создать тестовую встречу под юзером A, проверить что в `AiUsageLog` после AI-обработки есть запись с `tenantId`, `model`, `costUsd`, `inputTokens`, `outputTokens`.
+2. **second-brain обновления:**
+   - Обновить [second-brain/01_projects/auth-and-accounts.md](second-brain/01_projects/auth-and-accounts.md) — раздел «Org и роли», описать новую модель и SignupForm с companyName.
+   - Создать [second-brain/01_projects/orgs-and-rbac.md](second-brain/01_projects/orgs-and-rbac.md) — модель Org/Membership/OrgInvitation, RBAC через Casbin, visibilityMode (open/strict), super_admin (вне Membership).
+   - Создать [second-brain/01_projects/llm-router.md](second-brain/01_projects/llm-router.md) — описать архитектуру LlmRouter после расширения: taskType-based маршрутизация, `LlmModelPrice` версионируется, `LlmTaskRoute.experiment` для A/B, обязательный `tenantId` в `AiUsageLog`.
+   - Обновить [second-brain/02_architecture/data-model.md](second-brain/02_architecture/data-model.md) — добавить раздел про Org/Membership/OrgInvitation/LlmModelPrice + расширения AiUsageLog/LlmTaskRoute.
+   - Обновить [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md) — добавить модули `orgs`, `rbac`.
+   - Создать [second-brain/13_glossary/index.md](second-brain/13_glossary/index.md) — глоссарий новых терминов: Org (Организация), Membership, OrgInvitation, super_admin, visibilityMode, IdeaBlock (Блок знаний — для будущих фаз), Entity (Сущность), Theme (Тема), Source (Источник), RawEvent (Событие источника). На Фазе 0 нужны термины Org/Membership/super_admin/visibilityMode; остальные — заглушки со ссылками на будущие фазы.
+
+#### Что вне Фазы 0 (для ясности агенту)
+
+- Любые таблицы knowledge-core (`IdeaBlock`, `Entity`, `Theme`, `RawEvent`, `Source`, `IdeaBlockLink`, `EntityLink`) — это Фазы 1-3. На Фазе 0 их НЕ создавать.
+- Удаление `MeetingTranscriptChunk` — Фаза 1.
+- Замена `tasks-extract.worker` / `chapters.worker` — Фаза 5.
+- Z-Admin UI и Org-Admin UI (`/admin/*`, `/settings/admin/*`) — Фаза 7. На Фазе 0 — только базовая `/settings/organization` для управления членами.
+- Адаптеры источников (telegram, email, call, web-form) — Фаза 10.
 
 ---
 

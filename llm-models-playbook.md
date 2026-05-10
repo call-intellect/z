@@ -82,20 +82,66 @@ throw new Error('Vox timeout');
 Таблица — что доступно сегодня. Колонка **Статус для Z** — где модель находится в
 нашем процессе тестирования. Обновляется по результатам бенчмарков (§15).
 
+> **Политика 2026-05 (knowledge-core ТЗ):** primary — DeepSeek V4 / GPT-5.4 через
+> свою прокси `proxy.agent-lia.ru`. Anthropic Claude — **только** опциональный
+> fallback и инструмент A/B-сравнения, не дефолт. Embeddings — `bge-m3` self-hosted
+> на `ollama.agent-lia.ru` (SOTA на русском, 8K контекст), `text-embedding-3-small`
+> через прокси — fallback. Цель: вся базовая нагрузка идёт через свою инфру, внешние
+> провайдеры — только когда явно нужно.
+
 | Ключ | Модели | Тип API | Через прокси? | Назначение в Z | Статус |
 |---|---|---|---|---|---|
-| `openai` | `gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.2`, `gpt-5.4`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-4o-mini`, `text-embedding-3-small`, `text-embedding-3-large` | OpenAI Responses + Embeddings | **Да** (`proxy.agent-lia.ru`) | Кандидат для AI-отчёта (reasoning, structured outputs) | candidate |
-| `sonnet` | `claude-sonnet-4-6`, `claude-opus-4-7` | Anthropic Messages | Нет (прямо в `api.anthropic.com`) | Кандидат для AI-отчёта (длинный контекст, prompt caching) | candidate |
-| `haiku` | `claude-haiku-4-5-20251001` | Anthropic Messages | Нет | Кандидат для лёгких/частых вызовов | candidate |
-| `deepseek` | `deepseek-reasoner`, `deepseek-chat` | OpenAI-compat chat/completions | Нет (`api.deepseek.com`) | Дешёвая reasoning-альтернатива GPT-5 | candidate |
-| `minimax` | `MiniMax-M2.5` | Anthropic-compat Messages | Нет (`api.minimax.io/anthropic`) | Дешёвый Anthropic-совместимый канал, фолбэк | candidate |
-| `grsai` | `gemini-3-pro`, `gemini-3.1-pro` | OpenAI-compat (SSE-streaming) | **Да** (`/grsai/...`) | Gemini через proxy: дешевле и стабильнее | candidate |
-| `kie` | `gemini-3-pro` | OpenAI-compat (developer-role + thoughts) | **Да** (`/kie/...`) | Gemini c thinking; запасной канал | candidate |
-| `ollama` | `qwen3.5:9b` (может смениться) | OpenAI-compat chat/completions | Нет (`ollama.agent-lia.ru`) | Self-hosted дешёвый канал для фоновых/массовых задач | candidate |
+| `deepseek` | `deepseek-v4-pro` (1M ctx, thinking on/off, $1.74/$3.48 со скидкой −75% до 31.05.2026), `deepseek-v4-flash` (1M ctx, $0.14/$0.28), `deepseek-v3.2` (legacy, 131K, до 24.07.2026) | OpenAI-compat chat/completions, JSON Schema strict, FC, авто prompt cache | Да (`/deepseek/...` через прокси), доступно и напрямую `api.deepseek.com` | **Primary** для block-ingest, block-distill, chat-v2, card-rollup-v2; pro-вариант — для summary-v2 | **in-prod-target** |
+| `openai` | `gpt-5.5` (1M, $5/$30, top intelligence), `gpt-5.4` (400K, $2/$10), `gpt-5.4-mini` (400K, $0.75/$4.5), `gpt-5.4-nano` (400K, $0.20/$1.25), `gpt-5/5-mini/5-nano/5.2` (legacy), `gpt-4.1*`, `gpt-4o-mini`, `text-embedding-3-small`, `text-embedding-3-large` | OpenAI Responses + Embeddings | **Да** (`proxy.agent-lia.ru`) | **Primary fallback** для всех задач; `gpt-5.4-nano` — primary для коротких классификаторов (theme-classify, entity-resolver) | **in-prod-target** |
+| `ollama` | `qwen3:30b-a3b-instruct-2507` (MoE, 3B активных, RU ок), `bge-m3` (embeddings, RU SOTA), опционально `qwen3:235b-a22b-instruct-2507` | OpenAI-compat chat/completions + embeddings endpoint | Нет (`ollama.agent-lia.ru`) | **Primary** для embeddings (`bge-m3`); fallback для distill/linker при недоступности прокси | **in-prod-target** |
+| `minimax` | `MiniMax-M2.7` (новейший, цены TBD), `MiniMax-M2.5` ($0.30/$1.20) | Anthropic-compat Messages | Нет (`api.minimax.io/anthropic`) | Опциональный Anthropic-совместимый fallback; A/B-кандидат на summary-v2 | candidate |
+| `sonnet` | `claude-sonnet-4-6`, `claude-opus-4-7` | Anthropic Messages | Нет | **Не дефолт.** Только A/B-сравнение качества + опциональный fallback при настройке через Z-Admin (Фаза 7) | optional-fallback |
+| `haiku` | `claude-haiku-4-5-20251001` | Anthropic Messages | Нет | Не дефолт. Опциональный кандидат для лёгких задач при A/B | optional-fallback |
+| `grsai` | `gemini-3-pro`, `gemini-3.1-pro` | OpenAI-compat (SSE-streaming) | **Да** (`/grsai/...`) | Резервный канал Gemini для A/B | candidate |
+| `kie` | `gemini-3-pro` | OpenAI-compat (developer-role + thoughts) | **Да** (`/kie/...`) | Gemini c thinking; A/B-кандидат | candidate |
 
 > **Важно:** прямой выход в `api.anthropic.com` из российских IP может блокироваться
-> с ошибкой `403 "Request not allowed"`. На случай блокировки — фолбэк-цепочка (§11)
-> или MiniMax как Anthropic-совместимый канал.
+> с ошибкой `403 "Request not allowed"`. По новой политике это не критично — Claude
+> в дефолтах не используется. ENV-переменные для Anthropic храним для возможности A/B
+> и аварийного фолбэка через `LlmTaskRoute`-конфигурацию.
+
+### 2.1. Дефолтная маршрутизация taskType → primary → fallback (2026-05)
+
+Эта таблица — стартовая конфигурация `LlmTaskRoute` для Фазы 0+ knowledge-core ТЗ.
+В админке Z-Admin (Фаза 7) можно менять модель/fallback на любую другую без правки
+кода. Цены — оценка стоимости на одну часовую встречу (≈8K транскрипт-токенов).
+
+| TaskType | Primary | Fallback chain | ~$/встреча |
+|---|---|---|---|
+| `block-ingest` | `deepseek-v4-flash` (json_schema strict) | `gpt-5.4-mini`, `qwen3:30b-a3b-instruct-2507` | ~$0.005 |
+| `block-distill` | `deepseek-v4-flash` (thinking off) | `qwen3:30b-a3b-instruct-2507`, `gpt-5.4-nano` | ~$0.0001 |
+| `block-linker` | `deepseek-v4-flash` | `gpt-5.4-nano` | ~$0.0002 |
+| `entity-resolver` | `deepseek-v4-flash` | `gpt-5.4-nano` | ~$0.0002 |
+| `entity-merge-arbiter` | `deepseek-v4-flash` | `gpt-5.4-mini` | ~$0.0001 |
+| `theme-classify` | `gpt-5.4-nano` | `deepseek-v4-flash`, `qwen3:30b-a3b-instruct-2507` | ~$0.0001 |
+| `theme-clusterer` | (не LLM, embeddings + HDBSCAN на бэке) | — | $0 |
+| `reframing` | `deepseek-v4-flash` | `gpt-5.4-mini` | по объёму |
+| `summary-v2` | `deepseek-v4-pro` (thinking on) | `gpt-5.5`, `MiniMax-M2.7` | ~$0.04 (со скидкой ~$0.01) |
+| `chat-v2` | `deepseek-v4-flash` | `gpt-5.4`, `gpt-5.5` (для сложных запросов) | ~$0.005/сессия |
+| `card-rollup-v2` | `deepseek-v4-flash` | `gpt-5.4-mini` | ~$0.003 |
+| `task-extract-v2` | `deepseek-v4-flash` (json_schema) | `gpt-5.4-mini` | ~$0.002 |
+| `chapter-extract-v2` | `deepseek-v4-flash` (json_schema) | `gpt-5.4-mini` | ~$0.002 |
+| `goal-alignment` | `deepseek-v4-pro` (thinking on) | `gpt-5.5` | ~$0.01 |
+| `dashboard-summary` | `deepseek-v4-flash` | `gpt-5.4-mini` | ~$0.002 |
+| `embeddings` | `bge-m3` (Ollama self-hosted, 1024 dim) | `text-embedding-3-small` (через прокси, 1536 dim) | $0 / $0.02-0.13/1M |
+
+**Итого на встречу при primary-стэке:** ~$0.05–0.06 (со скидкой DeepSeek Pro до
+31.05.2026 — ещё ниже). При полном fallback на GPT-5.x: ~$0.20–0.30.
+
+**Открытые вопросы (проверить при Фазе 0/2):**
+1. Поддерживает ли `proxy.agent-lia.ru` маршрут `/deepseek/v1/chat/completions` и
+   `/v1/embeddings`? Если нет — DeepSeek ходит напрямую `api.deepseek.com`.
+2. Реальное имя модели qwen на `ollama.agent-lia.ru` — проверить `ollama list`. В
+   старой memory было `qwen3.5:9b`, такой версии нет; подтянуть актуальную.
+3. MiniMax-M2.7 цены — данные не нашли в публичных источниках, перепроверить на
+   intl.minimaxi.com.
+4. После 31.05.2026 (конец промо DeepSeek) — пересчитать экономику summary-v2 и
+   обновить таблицу.
 
 ---
 
@@ -697,14 +743,25 @@ openai-compat провайдеров.
 failed / ECONNRESET / ENOTFOUND / EAI_AGAIN / socket hang up`, переключаемся на
 следующий в цепочке.
 
-**Стартовая цепочка для Z (предложение, актуализируется по результатам бенчмарка):**
+**Стартовая цепочка для Z по политике 2026-05 (см. §2.1):**
 
 ```ts
 const Z_FALLBACK_CHAIN = {
-  // основная задача — AI-отчёт по типу встречи
-  meetingReport: ['sonnet', 'gpt54', 'gpt52', 'deepseek', 'grsai', 'minimax'],
+  // тяжёлые reasoning-задачи (summary-v2, goal-alignment)
+  heavyReasoning: ['deepseek-v4-pro', 'gpt-5.5', 'minimax-m2.7'],
+  // основной поток (block-ingest, distill, linker, chat-v2, card-rollup-v2)
+  generalPurpose: ['deepseek-v4-flash', 'gpt-5.4-mini', 'qwen3:30b-a3b-instruct-2507'],
+  // короткие классификаторы (theme-classify, entity-resolver)
+  classifier: ['gpt-5.4-nano', 'deepseek-v4-flash', 'qwen3:30b-a3b-instruct-2507'],
+  // embeddings
+  embeddings: ['bge-m3', 'text-embedding-3-small'],
 };
 ```
+
+> **Принцип:** Anthropic-провайдеры (`sonnet`, `haiku`) НЕ входят в дефолтный
+> fallback. Они активируются только если super_admin в Z-Admin (Фаза 7) явно
+> поставит их в `LlmTaskRoute.providers` для конкретного taskType — обычно для
+> A/B-сравнения качества против DeepSeek.
 
 ```ts
 async function callWithFallback(stage, providers, payload) {
@@ -739,31 +796,47 @@ function isRetriableProviderError(e: unknown): boolean {
 
 ---
 
-## 12. Цены (на 2026-02-26, USD per 1M tokens)
+## 12. Цены (на 2026-05-10, USD per 1M tokens)
 
 ```ts
 export const MODEL_PRICES = {
-  // OpenAI
-  'gpt-4.1':                 { input: 2.0,  output: 8.0,  cached: 0.5   },
-  'gpt-4.1-mini':            { input: 0.4,  output: 1.6,  cached: 0.1   },
-  'gpt-4.1-nano':            { input: 0.1,  output: 0.4,  cached: 0.025 },
+  // DeepSeek (primary stack)
+  'deepseek-v4-pro':         { input: 1.74, output: 3.48, cached: 0.174 }, // -75% promo до 31.05.2026; полная цена $6.96/$13.92
+  'deepseek-v4-flash':       { input: 0.14, output: 0.28, cached: 0.014 },
+  'deepseek-v3.2':           { input: 0.28, output: 0.42, cached: 0.028 }, // legacy, до 24.07.2026
+  'deepseek-reasoner':       { input: 0.28, output: 0.42 },                // alias на v4-flash thinking-on, deprecated
+
+  // OpenAI (primary fallback)
+  'gpt-5.5':                 { input: 5.0,  output: 30.0, cached: 0.5  },
+  'gpt-5.5-pro':             { input: 30.0, output: 180.0 },
+  'gpt-5.4':                 { input: 2.0,  output: 10.0, cached: 0.2  },
+  'gpt-5.4-mini':            { input: 0.75, output: 4.5,  cached: 0.075 },
+  'gpt-5.4-nano':            { input: 0.20, output: 1.25, cached: 0.02 },
   'gpt-5':                   { input: 1.25, output: 10.0, cached: 0.125 },
   'gpt-5-mini':              { input: 0.25, output: 2.0,  cached: 0.025 },
   'gpt-5-nano':              { input: 0.05, output: 0.4,  cached: 0.005 },
   'gpt-5.2':                 { input: 1.75, output: 14.0, cached: 0.175 },
+  'gpt-4.1':                 { input: 2.0,  output: 8.0,  cached: 0.5   },
+  'gpt-4.1-mini':            { input: 0.4,  output: 1.6,  cached: 0.1   },
+  'gpt-4.1-nano':            { input: 0.1,  output: 0.4,  cached: 0.025 },
+  'gpt-4o-mini':             { input: 0.15, output: 0.6   },
   'text-embedding-3-small':  { input: 0.02, output: 0 },
   'text-embedding-3-large':  { input: 0.13, output: 0 },
 
-  // DeepSeek
-  'deepseek-reasoner':       { input: 0.28, output: 0.42 },
-
-  // Anthropic
+  // Anthropic (опциональный канал, не дефолт)
   'claude-sonnet-4-6':       { input: 3.0,  output: 15.0 },
+  'claude-opus-4-7':         { input: 15.0, output: 75.0 },
+  'claude-haiku-4-5-20251001': { input: 1.0, output: 5.0 },
 
-  // MiniMax (Anthropic-совместимый)
+  // MiniMax (Anthropic-совместимый, fallback)
   'MiniMax-M2.5':            { input: 0.3,  output: 1.2 },
+  'MiniMax-M2.7':            { input: 0,    output: 0 },  // данные TBD, перепроверить
 
-  // Gemini (через grsai/kie)
+  // Self-hosted (расход = инфра)
+  'qwen3:30b-a3b-instruct-2507': { input: 0, output: 0 },
+  'bge-m3':                  { input: 0, output: 0 },     // embeddings, dim=1024
+
+  // Gemini (через grsai/kie, A/B-кандидаты)
   'gemini-3-pro':            { input: 0.5,  output: 3.5 },
 };
 

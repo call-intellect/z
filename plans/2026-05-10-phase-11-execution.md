@@ -95,7 +95,7 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 Новый файл [backend/src/modules/security/personal-data-deletion.service.ts](backend/src/modules/security/personal-data-deletion.service.ts) (или внутри существующего `security` модуля).
 
-- [ ] Метод `eraseEntity(input: {entityId, tenantId, requestedBy: userId, reason: string}): Promise<EraseReport>`:
+- [x] Метод `eraseEntity(input: {entityId, tenantId, requestedBy: userId, reason: string}): Promise<EraseReport>`:
   - `Entity` lookup, проверка `type='person'` и `tenantId` совпадает,
   - `IdeaBlockEntity.findMany({entityId})` → `blockIds[]`,
   - для каждого `blockId`: `IdeaBlockEvidence.findMany` → `rawEventIds[]`,
@@ -108,7 +108,7 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
     - обезличить `Entity`: `canonicalName='[удалено по запросу]'`, `aliases=[]`, `metadata={erasedAt: now, requestedBy, reason}`,
     - `AuditLog(action='person.data_erased', userId=requestedBy, resourceId=entityId, metadata={erasedRawEvents, archivedBlocks, deletedEvidences})`.
   - Возвращает `EraseReport = {erasedRawEvents, archivedBlocks, deletedEvidences, deletedEntityLinks}`.
-- [ ] **Идемпотентность**: повторный вызов на уже-обезличенной персоне (`canonicalName='[удалено по запросу]'`) — возвращает `{...все нули, alreadyErased: true}`.
+- [x] **Идемпотентность**: повторный вызов на уже-обезличенной персоне (`canonicalName='[удалено по запросу]'`) — возвращает `{...все нули, alreadyErased: true}`.
 
 ### Шаг 6 — `PersonalDataController`
 

@@ -54,6 +54,7 @@ export class BusinessMetricsService implements OnModuleInit {
 
   // ── knowledge-core (Фаза 11) ────────────────────────────────────────
   private coreRetentionDeletedTotal!: Counter<'kind'>;
+  private corePersonalDataErasuresTotal!: Counter<string>;
 
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
@@ -187,6 +188,10 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_retention_deleted_total',
       help: 'Сколько строк удалено retention-sweep по kind (raw_event/block/chat/audit/recording).',
       labelNames: ['kind'] as const,
+    });
+    this.corePersonalDataErasuresTotal = this.getOrCreateCounter({
+      name: 'core_personal_data_erasures_total',
+      help: 'Сколько раз срабатывал DELETE /api/v1/persons/:id/data (152-ФЗ / GDPR erase).',
     });
   }
 
@@ -351,6 +356,14 @@ export class BusinessMetricsService implements OnModuleInit {
     const n = args.count ?? 1;
     if (n <= 0) return;
     this.coreRetentionDeletedTotal.inc({ kind: args.kind }, n);
+  }
+
+  /**
+   * Срабатывание eraseEntity (152-ФЗ / GDPR data erase).
+   * Должен быть редким — дашборд алертит при > 5/день.
+   */
+  incCorePersonalDataErasure(): void {
+    this.corePersonalDataErasuresTotal.inc(1);
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

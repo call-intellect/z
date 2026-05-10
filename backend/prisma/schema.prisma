@@ -358,6 +358,7 @@ model User {
   invitedMemberships   Membership[]             @relation("MembershipInvitedBy")
   createdInvitations   OrgInvitation[]          @relation("OrgInvitationInvitedBy")
   acceptedInvitations  OrgInvitation[]          @relation("OrgInvitationAcceptedBy")
+  superAdminAccessLogs SuperAdminAccessLog[]    @relation("SuperAdminAccessLog")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -570,6 +571,12 @@ model AiUsageLog {
   sourceRef       Json?
   /// Для A/B-экспериментов LlmTaskRoute.experiment: 'A' | 'B'. NULL = вне эксперимента.
   experimentGroup String?
+  /// Z-Admin Фаза 7: превью отправленного промпта (system + user, конкатенация),
+  /// truncate до 8KB. Заполняется LlmRouter'ом при каждом успешном вызове.
+  /// Для исторических записей до Фазы 7 — null. Используется в drill-down.
+  requestPreview  String?  @db.Text
+  /// Z-Admin Фаза 7: превью ответа модели (text), truncate до 8KB.
+  responsePreview String?  @db.Text
   createdAt       DateTime @default(now())
 
   @@index([meetingId])
@@ -1141,6 +1148,10 @@ model Org {
   visibilityMode OrgVisibilityMode @default(open)
   /// Тариф — placeholder для Фазы 12. На Фазе 0 все Org = basic.
   tier           OrgTier           @default(basic)
+  /// Карта тумблеров воркеров для Org. {} = все включены. Воркеры читают
+  /// org.workersEnabled[workerName] !== false. Управляется из Org-Admin (Фаза 7).
+  /// Структура: { "block-ingest": false, "block-distill": true, ... }.
+  workersEnabled Json              @default("{}")
   createdAt      DateTime          @default(now())
   deletedAt      DateTime?
 
@@ -1427,6 +1438,11 @@ model IdeaBlockLink {
   explanation  String            @db.Text
   createdBy    LinkCreatedBy
   status       LinkStatus        @default(active)
+  /// Soft-delete: записывается при удалении из Org-Admin (Фаза 7).
+  /// Hard-delete после 30 дней (Фаза 11). Если не null — связь скрыта в UI.
+  deletedAt    DateTime?
+  /// userId, инициировавший удаление через Org-Admin. Для аудита.
+  deletedBy    String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -1438,6 +1454,7 @@ model IdeaBlockLink {
   @@index([tenantId, status])
   @@index([fromBlockId, status])
   @@index([toBlockId, status])
+  @@index([tenantId, deletedAt])
 }
 
 /// EntityLink — типизированная связь между двумя Entity.
@@ -1454,6 +1471,11 @@ model EntityLink {
   explanation  String         @db.Text
   createdBy    LinkCreatedBy
   status       LinkStatus     @default(active)
+  /// Soft-delete: записывается при удалении из Org-Admin (Фаза 7).
+  /// Hard-delete после 30 дней (Фаза 11).
+  deletedAt    DateTime?
+  /// userId, инициировавший удаление через Org-Admin.
+  deletedBy    String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
@@ -1465,6 +1487,7 @@ model EntityLink {
   @@index([tenantId, status])
   @@index([fromEntityId, status])
   @@index([toEntityId, status])
+  @@index([tenantId, deletedAt])
 }
 
 // ──────────────────────────── knowledge-core: Theme (Фаза 4) ────────────────────────────
@@ -1537,4 +1560,27 @@ model ThemeEntity {
 
   @@id([themeId, entityId])
   @@index([entityId])
+}
+
+// ──────────────────────────── Z-Admin: SuperAdminAccessLog (Фаза 7) ────────────────────────────
+
+/// Лог drill-down действий super_admin (Z-Admin Фаза 7).
+/// Любое чтение/запись super_admin'а в данные конкретной Org пишется сюда
+/// для compliance. На Фазе 7 — только запись, ежемесячный email-отчёт vNext.
+///
+/// Глобальная таблица (нет tenantId на уровне модели — `accessedTenantId`
+/// указывает, к какой Org обращался super_admin; null = глобальный уровень).
+model SuperAdminAccessLog {
+  id               String   @id @default(cuid())
+  superAdminUserId String
+  superAdmin       User     @relation("SuperAdminAccessLog", fields: [superAdminUserId], references: [id], onDelete: Cascade)
+  /// NULL = действие на глобальном уровне (без конкретной Org).
+  accessedTenantId String?
+  route            String
+  method           String
+  params           Json?
+  createdAt        DateTime @default(now())
+
+  @@index([superAdminUserId, createdAt])
+  @@index([accessedTenantId, createdAt])
 }

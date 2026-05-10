@@ -38,6 +38,7 @@ import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { GoalsModule } from './modules/goals/goals.module';
 import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
@@ -172,6 +173,10 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Phase 8 — director dashboard (`GET /api/v1/dashboard/director`).
     // Зависит от Admin (AdminCacheService) / Rbac / Ai (LlmRouter) — все @Global.
     DashboardModule,
+
+    // Phase 9 — цели компании + strategic-alignment (CRUD + темы).
+    // Воркер живёт в WorkersModule (отдельный процесс).
+    GoalsModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI, чтобы получить PinoLogger.

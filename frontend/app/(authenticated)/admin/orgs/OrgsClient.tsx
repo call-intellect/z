@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
-import { Search, Snowflake, Trash2 } from 'lucide-react';
+import { Search, Snowflake, Trash2, Wallet } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { adminOrgsApi } from '@/api/admin-orgs.api';
@@ -276,6 +277,16 @@ function OrgRow({
       </td>
       <td className="px-3 py-2">
         <div className="flex items-center gap-1">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            title="Тариф и лимиты (Phase 12)"
+          >
+            <Link href={`/admin/orgs/${encodeURIComponent(org.id)}/billing`}>
+              <Wallet size={14} />
+            </Link>
+          </Button>
           <Button
             variant="ghost"
             size="sm"

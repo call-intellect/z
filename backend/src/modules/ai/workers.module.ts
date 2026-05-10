@@ -10,6 +10,8 @@ import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 import { MeetingIngestAdapter } from '../ingest/adapters/meeting.adapter';
 import { IngestService } from '../ingest/ingest.service';
+import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
+import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { S3Service } from '../recordings/s3.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { UsersService } from '../users/users.service';
@@ -70,6 +72,8 @@ import { VoxService } from './services/vox.service';
     // EmbeddingsModule приносит EmbeddingFallback + TranscriptIndexer
     // — используются TranscriptIndexWorker'ом и (опц.) другими сервисами M3c.
     EmbeddingsModule,
+    // knowledge-core (Фаза 2) — services для block-ingest/distill воркеров.
+    KnowledgeCoreModule,
   ],
   providers: [
     // бизнес — нужны для FSM-переходов.
@@ -110,6 +114,9 @@ import { VoxService } from './services/vox.service';
     TranscriptIndexWorker,
     ClipRenderWorker,
     CardRollupWorker,
+    // knowledge-core (Фаза 2) — воркер block-ingest. block-distill добавится
+    // в Шаге 3 (Шаг 2 уже публикует в очередь distill, jobs накапливаются).
+    BlockIngestWorker,
   ],
 })
 export class WorkersModule {}

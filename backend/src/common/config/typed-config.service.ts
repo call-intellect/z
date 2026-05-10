@@ -292,6 +292,21 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── knowledge-core (Фаза 2+) ──────────
+  get knowledgeCore() {
+    return {
+      distillMergeThreshold: this.get('DISTILL_MERGE_THRESHOLD'),
+      distillDebounceMs: this.get('DISTILL_DEBOUNCE_MS'),
+      distillKnnTopK: this.get('DISTILL_KNN_TOP_K'),
+      entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
+      entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
+      blockIngestWindowSegments: this.get('BLOCK_INGEST_WINDOW_SEGMENTS'),
+      blockIngestMaxTokensPerSegment: this.get('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT'),
+      searchCosineWeight: this.get('SEARCH_COSINE_WEIGHT'),
+      searchBm25Weight: this.get('SEARCH_BM25_WEIGHT'),
+    } as const;
+  }
+
   // ─────────────────────────── idle ──────────────────────────────
   get idle() {
     return {

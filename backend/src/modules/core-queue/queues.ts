@@ -5,15 +5,29 @@ import type { JobsOptions } from 'bullmq';
  * информационное ядро). Префикс `core.` отделяет от `ai.*` очередей
  * AI-pipeline.
  *
- * На Фазе 1 существует одна очередь:
- *   - `core.raw-events` — публикуется `IngestService` после успешного
- *     создания `RawEvent`. Consumer (`block-ingest.worker`) появится
- *     в Фазе 2; до этого jobs накапливаются в Redis (это нормально —
- *     BullMQ умеет их хранить).
+ * Состав по фазам:
+ *   - `core.raw-events`     (Фаза 1) — публикуется `IngestService`. Consumer:
+ *      `block-ingest.worker` (Фаза 2). Payload: `{ rawEventId }`.
+ *   - `core.block-distill`  (Фаза 2) — после block-ingest. Consumer:
+ *      `block-distill.worker`. Payload: `{ blockId }`. Дебаунс 30s,
+ *      jobId = `block_distill_<blockId>` (повторный enqueue обновляет delay).
+ *   - `core.block-linker`   (Фаза 3) — после distill для canonical-блоков.
+ *      На Фазе 2 jobs накапливаются — это нормально.
+ *   - `core.entity-resolver` (Фаза 4) — арбитраж дублей Entity. На Фазе 2
+ *      jobs не публикуются — очередь существует только для предсоздания.
+ *   - `core.theme-clusterer` (Фаза 4) — кластеризация тем. Аналогично — pending.
  */
 export const CORE_QUEUE_NAMES = {
   /** Универсальная очередь raw events для ingest pipeline. */
   RAW_EVENTS: 'core.raw-events',
+  /** После создания IdeaBlock — дистилляция (KNN + LLM-арбитр merge/distinct). */
+  BLOCK_DISTILL: 'core.block-distill',
+  /** После канонизации блока — пересчёт связей (Фаза 3). */
+  BLOCK_LINKER: 'core.block-linker',
+  /** Дедупликация Entity (Фаза 4). */
+  ENTITY_RESOLVER: 'core.entity-resolver',
+  /** Кластеризация тем (Фаза 4). */
+  THEME_CLUSTERER: 'core.theme-clusterer',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -41,4 +55,19 @@ export const CORE_DEFAULT_JOB_OPTIONS: JobsOptions = {
  */
 export interface RawEventJobData {
   rawEventId: string;
+}
+
+/** Payload для job'а `core.block-distill`. */
+export interface BlockDistillJobData {
+  blockId: string;
+}
+
+/** Payload для job'а `core.block-linker`. */
+export interface BlockLinkerJobData {
+  blockId: string;
+}
+
+/** Payload для job'а `core.entity-resolver`. */
+export interface EntityResolverJobData {
+  entityId: string;
 }

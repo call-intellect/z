@@ -264,6 +264,37 @@ const IngestSchema = z.object({
   INGEST_INTERNAL_TOKEN: z.string().default(''),
 });
 
+/**
+ * knowledge-core (Фаза 2+) — параметры дистилляции IdeaBlock'ов и Entity-резолвера.
+ *
+ * - DISTILL_MERGE_THRESHOLD: cosine-сходство, выше которого блок считается
+ *   кандидатом на merge. 0.92 — эмпирический порог OpenAI text-embedding-3-small.
+ * - DISTILL_DEBOUNCE_MS: задержка enqueue в `core.block-distill`. Свежий блок
+ *   ждёт N мс, прежде чем его «распилит» distill-воркер — даёт шанс другим
+ *   блокам из той же встречи приехать и сравниться сразу.
+ * - DISTILL_KNN_TOP_K: сколько ближайших canonical-блоков предъявить LLM-арбитру.
+ * - ENTITY_MERGE_THRESHOLD: то же для Entity (Шаг 4, заранее).
+ * - ENTITY_RESOLVER_CRON: расписание прохода entity-merge-arbiter (Шаг 4).
+ * - BLOCK_INGEST_WINDOW_SEGMENTS: сколько сегментов скармливаем LLM за один
+ *   block-ingest-вызов. 5 — компромисс между качеством (больше контекста) и
+ *   стоимостью (меньше токенов).
+ * - BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT: грубый предел длины одного сегмента;
+ *   проверяется как `chars/4 > limit` в SegmentBuilderService.
+ * - SEARCH_COSINE_WEIGHT / SEARCH_BM25_WEIGHT: коэффициенты гибридного скоринга
+ *   (Шаг 5). Сумма не нормируется здесь, но обычно ~1.
+ */
+const KnowledgeCoreSchema = z.object({
+  DISTILL_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
+  DISTILL_DEBOUNCE_MS: z.coerce.number().int().positive().default(30_000),
+  DISTILL_KNN_TOP_K: z.coerce.number().int().positive().default(5),
+  ENTITY_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.88),
+  ENTITY_RESOLVER_CRON: z.string().min(1).default('*/5 * * * *'),
+  BLOCK_INGEST_WINDOW_SEGMENTS: z.coerce.number().int().positive().default(5),
+  BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT: z.coerce.number().int().positive().default(2000),
+  SEARCH_COSINE_WEIGHT: z.coerce.number().min(0).max(1).default(0.7),
+  SEARCH_BM25_WEIGHT: z.coerce.number().min(0).max(1).default(0.3),
+});
+
 /** Шеринг (длительность ссылок). */
 const ShareSchema = z.object({
   SHARE_TOKEN_LENGTH_BYTES: z.coerce.number().int().min(16).default(24), // 32 base64url chars
@@ -310,7 +341,8 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(AiFeatureFlagsSchema)
   .merge(HashingSchema)
   .merge(ShareSchema)
-  .merge(IngestSchema);
+  .merge(IngestSchema)
+  .merge(KnowledgeCoreSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

@@ -2,37 +2,46 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import { type JobsOptions, Queue } from 'bullmq';
 
+import { TypedConfigService } from '../../common/config/index';
 import { RedisService } from '../../common/redis/redis.service';
 
 import {
+  type BlockDistillJobData,
+  type BlockLinkerJobData,
   CORE_DEFAULT_JOB_OPTIONS,
   CORE_QUEUE_NAMES,
   type CoreQueueName,
+  type EntityResolverJobData,
   type RawEventJobData,
 } from './queues';
 
 /**
  * HTTP-side диспетчер knowledge-core очередей. По аналогии с `AiQueueService`.
  *
- * Воркеры (`block-ingest.worker`, Фаза 2) живут в отдельном процессе.
- * На Фазе 1 ни один консумер не подписан на `core.raw-events` — jobs
- * накапливаются в Redis. BullMQ хранит их без потерь.
+ * Воркеры (`block-ingest.worker`, `block-distill.worker`, ...) живут в отдельном
+ * процессе. На Фазе 2 уже есть consumer'ы для `core.raw-events` и
+ * `core.block-distill`; для `core.block-linker` / `core.entity-resolver` /
+ * `core.theme-clusterer` jobs накапливаются — Фазы 3-4 их разберут.
  *
- * jobId формируется из `rawEventId` — даёт идемпотентность: повторный
- * enqueue для того же `RawEvent` (например, при retry ingest pipeline)
- * не создаст дубль job'а в очереди.
+ * jobId формируется из id источника — даёт идемпотентность: повторный enqueue
+ * для того же `RawEvent` / `IdeaBlock` / `Entity` не создаст дубль job'а
+ * (а для distill-очереди — обновит delay-дебаунс).
  */
 @Injectable()
 export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CoreQueueService.name);
   private queues: Map<CoreQueueName, Queue<unknown>> | null = null;
 
-  constructor(@Inject(RedisService) private readonly redis: RedisService) {}
+  constructor(
+    @Inject(RedisService) private readonly redis: RedisService,
+    @Optional() @Inject(TypedConfigService) private readonly cfg?: TypedConfigService,
+  ) {}
 
   onModuleInit(): void {
     const connection = this.redis.client;
@@ -75,17 +84,76 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
    * поэтому используем `_` как разделитель (cuid сам по себе `:` не содержит).
    */
   async enqueueRawReceived(rawEventId: string): Promise<void> {
-    const map = this.queues;
-    if (!map) {
-      throw new Error('CoreQueueService: попытка enqueue до onModuleInit');
-    }
-    const q = map.get(CORE_QUEUE_NAMES.RAW_EVENTS);
-    if (!q) {
-      throw new Error('CoreQueueService: core.raw-events не инициализирован');
-    }
+    const q = this.requireQueue(CORE_QUEUE_NAMES.RAW_EVENTS);
     const jobId = `raw_${rawEventId}`;
     const payload: RawEventJobData = { rawEventId };
     await q.add('raw-received', payload, { jobId });
     this.logger.debug(`enqueue core.raw-events rawEventId=${rawEventId}`);
+  }
+
+  /**
+   * Публикация события `block.distill`. Consumer — `block-distill.worker`
+   * (Фаза 2 Шаг 3). По умолчанию — debounce `cfg.knowledgeCore.distillDebounceMs`
+   * (30s): несколько подряд идущих enqueue для одного `blockId` сложатся в
+   * один отложенный job (BullMQ при тех же jobId обновит delay).
+   *
+   * Передача `delayMs = 0` — сразу, без дебаунса (например, при тестовом
+   * вызове или для повторной попытки уже после canonical → linker chain).
+   */
+  async enqueueBlockDistill(
+    blockId: string,
+    opts?: { delayMs?: number },
+  ): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.BLOCK_DISTILL);
+    const delay =
+      opts?.delayMs !== undefined
+        ? opts.delayMs
+        : this.cfg?.knowledgeCore.distillDebounceMs ?? 30_000;
+    const jobId = `block_distill_${blockId}`;
+    const payload: BlockDistillJobData = { blockId };
+    await q.add('block-distill', payload, { jobId, delay });
+    this.logger.debug(
+      `enqueue core.block-distill blockId=${blockId} delay=${delay}ms`,
+    );
+  }
+
+  /**
+   * Публикация события `block.linker`. Consumer — `block-linker.worker`
+   * (Фаза 3). На Фазе 2 jobs накапливаются.
+   * jobId = `block_linker_<blockId>`.
+   */
+  async enqueueBlockLinker(blockId: string): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.BLOCK_LINKER);
+    const jobId = `block_linker_${blockId}`;
+    const payload: BlockLinkerJobData = { blockId };
+    await q.add('block-linker', payload, { jobId });
+    this.logger.debug(`enqueue core.block-linker blockId=${blockId}`);
+  }
+
+  /**
+   * Публикация события `entity.resolver`. Consumer — `entity-resolver.worker`
+   * (Фаза 2 Шаг 4). На текущем шаге jobs не публикуются — очередь готова.
+   * jobId = `entity_resolver_<entityId>`.
+   */
+  async enqueueEntityResolver(entityId: string): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.ENTITY_RESOLVER);
+    const jobId = `entity_resolver_${entityId}`;
+    const payload: EntityResolverJobData = { entityId };
+    await q.add('entity-resolver', payload, { jobId });
+    this.logger.debug(`enqueue core.entity-resolver entityId=${entityId}`);
+  }
+
+  // ─────────────────────────── internals ───────────────────────────────────
+
+  private requireQueue(name: CoreQueueName): Queue<unknown> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('CoreQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(name);
+    if (!q) {
+      throw new Error(`CoreQueueService: очередь ${name} не инициализирована`);
+    }
+    return q;
   }
 }

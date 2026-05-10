@@ -93,6 +93,7 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
 
     const tasks = await this.extractor.extractTasks({
       meetingId,
+      tenantId: meeting.tenantId,
       meeting: { id: meeting.id, type: meeting.type, title: meeting.title },
       dialog,
       jobId: job.id ?? null,
@@ -107,6 +108,7 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
       await this.prisma.task.createMany({
         data: tasks.map((t) => ({
           meetingId,
+          tenantId: meeting.tenantId,
           userId: meeting.ownerId,
           title: t.title,
           description: t.description ?? null,

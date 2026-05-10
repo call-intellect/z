@@ -11,6 +11,8 @@ import type { DialogTurn } from './prompts/common';
 
 export interface ExtractChaptersInput {
   meetingId: string;
+  /** tenantId: Org встречи. Извлекается caller'ом из meeting.tenantId. */
+  tenantId: string | null;
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
   jobId?: string | null;
@@ -48,12 +50,14 @@ export class ChapterExtractionService {
         taskType: CHAPTERS_TASK_TYPE,
         systemPrompt: prompt.system,
         userMessage,
+        tenantId: input.tenantId,
         meetingId: input.meetingId,
         ...(input.userId !== undefined ? { userId: input.userId } : {}),
         ...(input.jobId !== undefined && input.jobId !== null
           ? { jobId: input.jobId }
           : {}),
         responseFormat: 'json',
+        sourceRef: { type: 'meeting', id: input.meetingId },
       });
       const parsed = parseJsonChapters(result.text);
       if (!parsed.success) {

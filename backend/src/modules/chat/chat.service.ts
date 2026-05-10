@@ -76,6 +76,7 @@ export class ChatService {
         title: true,
         type: true,
         ownerId: true,
+        tenantId: true,
         startedAt: true,
         deletedAt: true,
       },
@@ -131,8 +132,10 @@ export class ChatService {
       taskType: 'chat',
       systemPrompt: ctx.systemPrompt,
       userMessage: ctx.userMessage,
+      tenantId: meeting.tenantId,
       meetingId: meeting.id,
       userId: input.userId,
+      sourceRef: { type: 'meeting', id: meeting.id },
     });
 
     const citations = parseCitations(result.text, ctx.contextChunks);
@@ -184,10 +187,12 @@ export class ChatService {
     });
 
     const ctx = buildCrossMeetingContext({ chunks, question: input.message });
+    const tenantId = await this.llm.resolveTenantByUser(input.userId);
     const result = await this.llm.call({
       taskType: 'chat',
       systemPrompt: ctx.systemPrompt,
       userMessage: ctx.userMessage,
+      tenantId,
       userId: input.userId,
     });
 
@@ -273,11 +278,14 @@ export class ChatService {
     });
 
     const ctx = buildCrossMeetingContext({ chunks, question: input.message });
+    const tenantId = await this.llm.resolveTenantByUser(input.userId);
     const result = await this.llm.call({
       taskType: 'card-chat',
       systemPrompt: ctx.systemPrompt,
       userMessage: ctx.userMessage,
+      tenantId,
       userId: input.userId,
+      sourceRef: { type: 'card', id: input.cardId },
     });
 
     const citations = parseCitations(result.text, ctx.contextChunks);

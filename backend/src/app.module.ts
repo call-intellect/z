@@ -41,6 +41,7 @@ import { DestinationsModule } from './modules/destinations/destinations.module';
 import { ExportsModule } from './modules/exports/exports.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
+import { RbacModule } from './modules/rbac/rbac.module';
 import { SecurityModule } from './modules/security/security.module';
 import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
@@ -79,6 +80,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
     // Глобальный auth-модуль (JwtService, HmacService, Cookie/Hmac/Admin guards).
     AuthModule,
+
+    // Глобальный RBAC (Org / Membership) — RbacService + TenantGuard.
+    // Должен быть ДО tenant-scoped модулей (Meetings/Cards/Tasks/etc),
+    // которые могут использовать TenantGuard.
+    RbacModule,
 
     // LiveKit-обёртка. Глобальный модуль — нужен в Participants/Meetings/Webhooks.
     LivekitModule,

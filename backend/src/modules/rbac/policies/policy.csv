@@ -1,0 +1,91 @@
+# Casbin-style policy для Z RBAC (Фаза 0 knowledge-core).
+# Формат: p, role, visibility, owner_match, obj, act
+#   visibility: 'open' | 'strict' | '*'
+#   owner_match: 'self' (только свои) | '*' (любые ресурсы Org)
+# super_admin — НЕ описан, обрабатывается явным bypass'ом в RbacService.
+
+# owner / admin Org — полный доступ ко всему в Org.
+p, owner, *, *, org, read
+p, owner, *, *, org, write
+p, owner, *, *, org, manage
+p, owner, *, *, meeting, read
+p, owner, *, *, meeting, write
+p, owner, *, *, meeting, delete
+p, owner, *, *, card, read
+p, owner, *, *, card, write
+p, owner, *, *, card, delete
+p, owner, *, *, task, read
+p, owner, *, *, task, write
+p, owner, *, *, task, delete
+p, owner, *, *, chapter, read
+p, owner, *, *, chapter, write
+p, owner, *, *, highlight, read
+p, owner, *, *, highlight, write
+p, owner, *, *, chat-message, read
+p, owner, *, *, chat-message, write
+p, owner, *, *, tag, read
+p, owner, *, *, tag, write
+p, owner, *, *, audit-log, read
+p, owner, *, *, ai-usage, read
+
+p, admin, *, *, org, read
+p, admin, *, *, org, write
+p, admin, *, *, meeting, read
+p, admin, *, *, meeting, write
+p, admin, *, *, meeting, delete
+p, admin, *, *, card, read
+p, admin, *, *, card, write
+p, admin, *, *, card, delete
+p, admin, *, *, task, read
+p, admin, *, *, task, write
+p, admin, *, *, task, delete
+p, admin, *, *, chapter, read
+p, admin, *, *, chapter, write
+p, admin, *, *, highlight, read
+p, admin, *, *, highlight, write
+p, admin, *, *, chat-message, read
+p, admin, *, *, chat-message, write
+p, admin, *, *, tag, read
+p, admin, *, *, tag, write
+p, admin, *, *, audit-log, read
+p, admin, *, *, ai-usage, read
+
+# manager в open-режиме — read на всё, write только свои.
+p, manager, open, *, org, read
+p, manager, open, *, meeting, read
+p, manager, open, self, meeting, write
+p, manager, open, self, meeting, delete
+p, manager, open, *, card, read
+p, manager, open, self, card, write
+p, manager, open, self, card, delete
+p, manager, open, *, task, read
+p, manager, open, self, task, write
+p, manager, open, self, task, delete
+p, manager, open, *, chapter, read
+p, manager, open, self, chapter, write
+p, manager, open, *, highlight, read
+p, manager, open, self, highlight, write
+p, manager, open, *, chat-message, read
+p, manager, open, self, chat-message, write
+p, manager, open, *, tag, read
+p, manager, open, self, tag, write
+
+# manager в strict-режиме — read/write только своих.
+p, manager, strict, *, org, read
+p, manager, strict, self, meeting, read
+p, manager, strict, self, meeting, write
+p, manager, strict, self, meeting, delete
+p, manager, strict, self, card, read
+p, manager, strict, self, card, write
+p, manager, strict, self, card, delete
+p, manager, strict, self, task, read
+p, manager, strict, self, task, write
+p, manager, strict, self, task, delete
+p, manager, strict, self, chapter, read
+p, manager, strict, self, chapter, write
+p, manager, strict, self, highlight, read
+p, manager, strict, self, highlight, write
+p, manager, strict, self, chat-message, read
+p, manager, strict, self, chat-message, write
+p, manager, strict, self, tag, read
+p, manager, strict, self, tag, write

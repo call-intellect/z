@@ -11,6 +11,8 @@ import {
 
 export interface ExtractTasksInput {
   meetingId: string;
+  /** tenantId: Org встречи. */
+  tenantId: string | null;
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
   jobId?: string | null;
@@ -53,12 +55,14 @@ export class TaskExtractionService {
         taskType: TASKS_STRUCTURED_TASK_TYPE,
         systemPrompt: prompt.system,
         userMessage,
+        tenantId: input.tenantId,
         meetingId: input.meetingId,
         ...(input.userId !== undefined ? { userId: input.userId } : {}),
         ...(input.jobId !== undefined && input.jobId !== null
           ? { jobId: input.jobId }
           : {}),
         responseFormat: 'json',
+        sourceRef: { type: 'meeting', id: input.meetingId },
       });
       const parsed = parseJsonTasks(result.text);
       if (!parsed.success) {

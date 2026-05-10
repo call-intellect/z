@@ -96,6 +96,7 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
 
     const chapters = await this.extractor.extractChapters({
       meetingId,
+      tenantId: meeting.tenantId,
       meeting: { id: meeting.id, type: meeting.type, title: meeting.title },
       dialog,
       jobId: job.id ?? null,
@@ -107,6 +108,7 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
       if (chapters.length > 0) {
         await tx.meetingChapter.createMany({
           data: chapters.map((c) => ({
+            tenantId: meeting.tenantId,
             meetingId,
             startMs: c.startMs,
             endMs: c.endMs,

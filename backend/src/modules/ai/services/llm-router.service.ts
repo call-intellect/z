@@ -60,6 +60,14 @@ export interface LlmCallParams {
   taskType: LlmTaskType;
   systemPrompt: string;
   userMessage: string;
+  /**
+   * tenantId — обязательное поле (Фаза 0 knowledge-core).
+   *
+   * Все вызовы LLM должны быть атрибутированы Org для биллинга/аналитики.
+   * Если caller не может определить tenantId (system jobs, scheduled tasks
+   * без owner) — допустимо передать null явно, но это исключение.
+   */
+  tenantId: string | null;
   meetingId?: string;
   userId?: string;
   jobId?: string;
@@ -71,6 +79,8 @@ export interface LlmCallParams {
    * (одна и та же задача → разные модели).
    */
   model?: string;
+  /** Указатель на источник вызова для drill-down в Z-Admin (Фаза 7). */
+  sourceRef?: { type: string; id: string } | null;
 }
 
 export interface LlmCallResult {
@@ -241,7 +251,10 @@ export class LlmRouterService implements OnModuleInit {
           status: 'success',
         });
         await this.usage.record({
+          tenantId: params.tenantId,
           meetingId: params.meetingId ?? null,
+          userId: params.userId ?? null,
+          taskType: params.taskType,
           agentType: this.taskTypeToAgentType(params.taskType),
           jobId: params.jobId ?? null,
           model: out.model,
@@ -251,6 +264,7 @@ export class LlmRouterService implements OnModuleInit {
           costUsd: calcCostUsd(out.model, out.inputTokens, out.outputTokens),
           durationMs,
           success: true,
+          sourceRef: params.sourceRef ?? null,
         });
         this.logger.log(
           {
@@ -292,7 +306,10 @@ export class LlmRouterService implements OnModuleInit {
         // На последнем провайдере — записываем неуспешный AiUsageLog.
         if (isLast) {
           await this.usage.record({
+            tenantId: params.tenantId,
             meetingId: params.meetingId ?? null,
+            userId: params.userId ?? null,
+            taskType: params.taskType,
             agentType: this.taskTypeToAgentType(params.taskType),
             jobId: params.jobId ?? null,
             model: params.model ?? 'unknown',
@@ -303,12 +320,39 @@ export class LlmRouterService implements OnModuleInit {
             durationMs: Date.now() - startedAt,
             success: false,
             errorText: message,
+            sourceRef: params.sourceRef ?? null,
           });
         }
       }
     }
 
     throw new LlmRouterAllProvidersFailedError(params.taskType, errors);
+  }
+
+  /**
+   * Удобный helper: достать tenantId по meetingId. Если meeting не найден или
+   * у него tenantId=null — вернёт null. Используется в воркерах AI, где
+   * caller знает только meetingId.
+   */
+  async resolveTenantByMeeting(meetingId: string): Promise<string | null> {
+    const m = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { tenantId: true },
+    });
+    return m?.tenantId ?? null;
+  }
+
+  /**
+   * Helper: достать tenantId по userId (берём первый Membership).
+   * Подходит для вызовов, не привязанных к встрече (chat cross-meeting и т.п.).
+   */
+  async resolveTenantByUser(userId: string): Promise<string | null> {
+    const m = await this.prisma.membership.findFirst({
+      where: { userId, org: { deletedAt: null } },
+      select: { orgId: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return m?.orgId ?? null;
   }
 
   // ─────────────────────────── private ─────────────────────────────────────

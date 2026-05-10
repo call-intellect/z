@@ -185,6 +185,7 @@ export class RegenerateService {
       select: {
         id: true,
         ownerId: true,
+        tenantId: true,
         recapVersion: true,
         type: true,
         title: true,
@@ -248,9 +249,11 @@ export class RegenerateService {
       taskType: REGENERATE_SECTION_TASK_TYPE,
       systemPrompt: prompt.system,
       userMessage: prompt.user,
+      tenantId: meeting.tenantId,
       meetingId: input.meetingId,
       userId: input.userId,
       responseFormat: 'json',
+      sourceRef: { type: 'meeting', id: input.meetingId },
     });
 
     const stripped = stripCodeFence(result.text);

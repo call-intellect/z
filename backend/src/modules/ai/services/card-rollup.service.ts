@@ -103,7 +103,9 @@ export class CardRollupService {
       taskType: 'card-rollup',
       systemPrompt,
       userMessage,
+      tenantId: card.tenantId,
       userId: card.ownerId,
+      sourceRef: { type: 'card', id: cardId },
     });
 
     const text = result.text.trim();

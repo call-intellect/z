@@ -15,18 +15,28 @@ export type AiAgentType =
 export type AiProvider = 'anthropic' | 'vox' | 'openai' | 'minimax' | 'openai-via-proxy';
 
 export interface RecordAiUsageInput {
+  /** Org, на которую списывается стоимость. NULL только для глобальных system jobs. */
+  tenantId?: string | null;
   meetingId?: string | null;
+  userId?: string | null;
+  /** Полное имя taskType (chapters, summary, card-rollup, etc). */
+  taskType?: string | null;
   agentType: AiAgentType;
   jobId?: string | null;
   model: string;
   provider: AiProvider;
   inputTokens?: number;
   outputTokens?: number;
+  cachedTokens?: number;
   reasoningTokens?: number | null;
   costUsd: number;
   durationMs: number;
   success: boolean;
   errorText?: string | null;
+  /** {type, id} — drill-down ссылка для Z-Admin. */
+  sourceRef?: { type: string; id: string } | null;
+  /** A/B-эксперимент LlmTaskRoute.experiment: 'A' | 'B'. NULL = вне эксперимента. */
+  experimentGroup?: string | null;
 }
 
 /**
@@ -53,13 +63,17 @@ export class AiUsageLogService {
     try {
       await this.prisma.aiUsageLog.create({
         data: {
+          tenantId: input.tenantId ?? null,
           meetingId: input.meetingId ?? null,
+          userId: input.userId ?? null,
+          taskType: input.taskType ?? null,
           agentType: input.agentType,
           jobId: input.jobId ?? null,
           model: input.model,
           provider: input.provider,
           inputTokens: input.inputTokens ?? 0,
           outputTokens: input.outputTokens ?? 0,
+          cachedTokens: input.cachedTokens ?? 0,
           ...(input.reasoningTokens !== undefined && input.reasoningTokens !== null
             ? { reasoningTokens: input.reasoningTokens }
             : {}),
@@ -67,6 +81,10 @@ export class AiUsageLogService {
           durationMs: input.durationMs,
           success: input.success,
           errorText: input.errorText ?? null,
+          sourceRef: input.sourceRef
+            ? (input.sourceRef as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          experimentGroup: input.experimentGroup ?? null,
         },
       });
 

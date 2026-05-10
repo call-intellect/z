@@ -38,18 +38,24 @@ function build(opts: BuildOpts) {
       taskType: r.taskType,
       providers: r.providers,
       isActive: r.isActive,
+      tenantId: null,
+      experiment: null,
       updatedAt: new Date(),
     })),
   );
-  const upsert = vi.fn(async (args: { create: { taskType: string; providers: string[]; isActive: boolean } }) => ({
-    id: 'r-up',
-    taskType: args.create.taskType,
-    providers: args.create.providers,
-    isActive: args.create.isActive,
+  const findFirst = vi.fn(async () => null);
+  const create = vi.fn(async (args: { data: { taskType: string; providers: string[]; isActive: boolean } }) => ({
+    id: 'r-new',
+    taskType: args.data.taskType,
+    providers: args.data.providers,
+    isActive: args.data.isActive,
+    tenantId: null,
+    experiment: null,
     updatedAt: new Date(),
   }));
+  const update = vi.fn();
   const prisma = {
-    llmTaskRoute: { findMany, upsert },
+    llmTaskRoute: { findMany, findFirst, create, update },
   } as unknown as PrismaService;
 
   const anthropic = {
@@ -68,13 +74,14 @@ function build(opts: BuildOpts) {
   const metrics = { incLlmRouterDispatch } as unknown as BusinessMetricsService;
 
   const router = new LlmRouterService(prisma, anthropic, minimax, openai, usage, metrics);
-  return { router, findMany, upsert, anthropic, minimax, openai, usageRecord, incLlmRouterDispatch };
+  return { router, findMany, findFirst, create, update, anthropic, minimax, openai, usageRecord, incLlmRouterDispatch };
 }
 
 describe('LlmRouterService', () => {
   const baseParams = {
     systemPrompt: 'sys',
     userMessage: 'u',
+    tenantId: null as string | null,
   };
 
   it('использует первый provider из route, если он есть', async () => {
@@ -190,7 +197,7 @@ describe('LlmRouterService', () => {
     );
   });
 
-  it('setRoute: апсерт + инвалидация кэша', async () => {
+  it('setRoute: создаёт новую запись + инвалидация кэша', async () => {
     const ctx = build({});
     await ctx.router.refreshCache();
     await ctx.router.setRoute({
@@ -198,7 +205,8 @@ describe('LlmRouterService', () => {
       providers: ['minimax'],
       isActive: true,
     });
-    expect(ctx.upsert).toHaveBeenCalledOnce();
+    expect(ctx.findFirst).toHaveBeenCalledOnce();
+    expect(ctx.create).toHaveBeenCalledOnce();
     // refreshCache был дёрнут setRoute'ом — findMany вызван дважды (init + после setRoute).
     expect(ctx.findMany).toHaveBeenCalledTimes(2);
   });

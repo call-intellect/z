@@ -52,9 +52,21 @@ export type ResourceType =
   | 'entity'
   | 'theme'
   | 'goal'
-  | 'source';
+  | 'source'
+  /**
+   * Фаза 11: «персона» как отдельный ресурс RBAC, отделена от 'entity'
+   * исключительно ради действия 'erase' (152-ФЗ — право на удаление личных
+   * данных), которое доступно только owner'у Org.
+   */
+  | 'person';
 
-export type Action = 'read' | 'write' | 'delete' | 'manage';
+/**
+ * Action: read / write / delete / manage / erase.
+ * `erase` (Фаза 11) — отдельное действие для 152-ФЗ (право на удаление
+ * личных данных). Разрешено только owner'у Org через policy.csv;
+ * super_admin — bypass.
+ */
+export type Action = 'read' | 'write' | 'delete' | 'manage' | 'erase';
 
 export interface CheckParams {
   userId: string;
@@ -316,8 +328,15 @@ function isResourceType(s: string): s is ResourceType {
     'theme',
     'goal',
     'source',
+    'person',
   ].includes(s);
 }
 function isAction(s: string): s is Action {
-  return s === 'read' || s === 'write' || s === 'delete' || s === 'manage';
+  return (
+    s === 'read' ||
+    s === 'write' ||
+    s === 'delete' ||
+    s === 'manage' ||
+    s === 'erase'
+  );
 }

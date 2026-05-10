@@ -112,11 +112,11 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 ### Шаг 6 — `PersonalDataController`
 
-- [ ] `DELETE /api/v1/persons/:entityId/data` под `CookieAuthGuard + TenantGuard + Rbac('person', 'erase')`.
-- [ ] Body (опционально): `{reason: string}` — для аудита и compliance.
-- [ ] Response: `EraseReport`.
-- [ ] **Только owner Org** имеет право `person.erase` (RBAC). super_admin может — через Z-Admin (Фаза 7).
-- [ ] **Метрика**: `core_personal_data_erasures_total` += 1.
+- [x] `DELETE /api/v1/persons/:entityId/data` под `CookieAuthGuard + TenantGuard + Rbac('person', 'erase')`.
+- [x] Body (опционально): `{reason: string}` — для аудита и compliance.
+- [x] Response: `EraseReport`.
+- [x] **Только owner Org** имеет право `person.erase` (RBAC). super_admin может — через Z-Admin (Фаза 7).
+- [x] **Метрика**: `core_personal_data_erasures_total` += 1.
 
 ### Шаг 7 — Расширение `LlmRouter` под `dataClass`
 

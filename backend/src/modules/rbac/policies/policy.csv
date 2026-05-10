@@ -123,6 +123,11 @@ p, admin, *, *, source, write
 p, admin, *, *, source, manage
 p, manager, *, *, source, read
 
+# knowledge-core (Фаза 11) — person.erase. 152-ФЗ «право на удаление
+# личных данных»: только owner Org может инициировать. super_admin —
+# bypass через RbacService. admin / manager не получают это право.
+p, owner, *, *, person, erase
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

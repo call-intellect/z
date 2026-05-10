@@ -2,11 +2,11 @@
 type: execution-plan
 phase: 7
 feature: knowledge-core — Z-Admin (super_admin) + Org-Admin (owner/admin) — отладка, наблюдение, аналитика стоимости, A/B
-status: in_progress
+status: completed
 date: 2026-05-10
 ---
 
-# Фаза 7 — backend (шаги 1-8). Frontend (шаг 9) — отдельный агент.
+# Фаза 7 — backend (шаги 1-8) + frontend (шаг 9).
 
 ## Контекст
 
@@ -98,10 +98,62 @@ Backend-имплементация двух админок поверх ядра
     - `OrgAdminKnowledgeService.setWorkersEnabled` (точечная: `usage:dashboard:org:${tenantId}:*`).
   - Коммит шага 8 — финализация execution-плана + decisions-log.
 
-## Frontend (Шаг 9 — другой агент)
+## Frontend (Шаг 9)
 
-Не входит в этот execution-план.
+- [x] **Шаг 9.1 — API-клиенты + domain (admin/org-admin).**
+  - `frontend/src/api/admin-{usage,experiments,prices,orgs,health}.api.ts`,
+    `org-admin-{usage,knowledge}.api.ts`, `admin-helpers.ts` (buildQuery + orgHeaders).
+  - `frontend/src/domain/admin-{usage,experiment,price,org,health}.ts`,
+    `org-admin-knowledge.ts` — ApiDto / DomainModel / mapper'ы / RU-лейблы taskType.
+  - `apiClient` расширен поддержкой произвольных headers (для X-Org-Id).
+  - `admin-llm-routes.api.ts` — расширен на полный `ALL_LLM_TASK_TYPES`,
+    `LLM_PROVIDERS` дополнен `deepseek`/`ollama`.
+  - Legacy `AiModelsClient.tsx` мигрирован на `taskTypeLabel` хелпер.
+  - Коммиты: `8aa834a` (cherry-picked → `336470c` после merge с phase-9).
+
+- [x] **Шаг 9.2 — Z-Admin страницы (8 страниц + общий шелл).**
+  - `/admin/*` под `(authenticated)` группой. AdminShell sidebar
+    (Dashboard / Users / Functions / Experiments / Prices / Orgs / Health).
+  - 7.A.1 Dashboard, 7.A.2 UsersUsage, 7.A.3 Functions list, 7.A.4 FunctionDetail
+    (provider chain editor + кнопка A/B), 7.A.5 Experiment status (A vs B + recent
+    calls + перевод/откат), 7.A.6 LlmPrices (CRUD), 7.A.7 Orgs (tier/freeze/delete),
+    7.A.8 Health (Bull queues + DB + Redis).
+  - Общие компоненты: `AdminStateViews` (loading/forbidden/error/empty),
+    `useAdminQuery` (минимальный hook с обработкой 403 → empty-state «Нет прав»).
+  - Все запросы — через `apiClient`. Никаких прямых fetch.
+  - Коммит: `5db4ebf`.
+
+- [x] **Шаг 9.3 — Org-Admin страницы (4 страницы).**
+  - `/settings/admin/*` под общим `SettingsSidebar`. Используем
+    probe-pattern: при 403 от org-admin endpoint показываем `AdminForbidden`.
+  - 7.B.1 OrgUsage (org-scope dashboard + CSV через fetch+blob с X-Org-Id),
+    7.B.2 KnowledgeCore (Tabs: воркеры тумблеры / метрики / журнал AuditLog /
+    связи блоков и сущностей с soft-delete / reprocess RawEvent),
+    7.B.3 Members (server-redirect на `/settings/organization`),
+    7.B.4 Sources (заглушка с anchor на `/settings/integrations`).
+  - `useCurrentOrgId` — helper (обновлён в 9.4 под `currentOrgId` из auth).
+  - Коммит: `2338012`.
+
+- [x] **Шаг 9.4 — Sidebar/SettingsSidebar расширения + auth-context.**
+  - Backend (минимальное расширение `accounts.service.getMe`): добавлены
+    поля `isSuperAdmin`, `currentOrgRole`, `currentOrgId` в `PublicUserDto`.
+    Получаем одним `Promise.all`. Без отдельных probe-вызовов с фронта.
+    См. decisions-log.
+  - Frontend domain: `AccountUser` дополнен теми же полями. Маппер обновлён.
+  - `auth-context` публикует `isSuperAdmin` / `currentOrgRole` / `currentOrgId`.
+  - `Sidebar` (AppShell): пункт «Z-Admin» (Shield) если super_admin;
+    пункт «Админка Org» (Settings2) если owner|admin.
+  - `SettingsSidebar`: раздел «Админка» (Экономика / Ядро знаний / Источники)
+    виден только owner|admin.
+  - `useCurrentOrgId` упрощён: читает из auth-context.
+  - Тест `account.test.ts` обновлён под новый shape.
+  - Коммит: `438135b`.
+
+## Verification
+
+- `bun run typecheck` (frontend) — зелёный после каждого подшага.
+- `bun run typecheck` (backend) — зелёный после расширения `accounts.service`.
 
 ## Decisions / open questions
 
-См. `plans/decisions-log.md` — будут добавляться по ходу.
+См. `plans/decisions-log.md` — добавлено решение по расширению `accounts.service.getMe`.

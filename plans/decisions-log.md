@@ -368,3 +368,20 @@ date: 2026-05-10
 **Откат.** Если позднее окажется, что client-component не реализует требуемого UX (visibilityMode toggle, members list, invitations) — вынести в feature-task на доработку.
 
 ---
+
+## 2026-05-10 — Расширение `/api/v1/accounts/me` для гейта Z-Admin/Org-Admin (Фаза 7 шаг 9.4)
+
+**Вопрос.** Frontend-агент Фазы 7 шаг 9 должен рендерить условные пункты Sidebar («Z-Admin» / «Админка Org») и SettingsSidebar (раздел «Админка»), для чего фронт нужен `isSuperAdmin` и `currentOrgRole`. Их нет в текущем `accountsApi.me()` shape. ТЗ-09.4 говорит «расширить useAuth() — если уже отдаётся через /api/v1/me, использовать; если нет — расширить».
+
+Альтернативы:
+1. Probe-вызовы (например, `GET /admin/health` для проверки super_admin) — но это пишет в `SuperAdminAccessLog` и захламляет таблицу;
+2. Дополнительный фронт-вызов `orgsApi.listMembers` — лишний RTT + сложно для multi-org;
+3. Расширить `accounts.service.getMe` тремя полями.
+
+**Решение.** Вариант 3 — расширить `getMe` полями `isSuperAdmin`, `currentOrgRole`, `currentOrgId`. Догружаем одним `Promise.all` (один лишний `findUnique` + один `findFirst`). Это маленькое расширение в `backend/src/modules/accounts/`, не пересекается с Phase 8 (`backend/src/modules/dashboard/`), которую делает параллельный агент.
+
+**Почему.** Один источник правды. Probe-вызов — побочный эффект (audit-log). Фронт получает данные синхронно с user, не нужно дополнительное состояние загрузки. Совместимо с auth-context refresh().
+
+**Откат.** Удалить три поля из `PublicUserDto` + `getMe` загрузку membership/isSuperAdmin. Frontend-домен (`AccountUser`) автоматически защищается дефолтами (`isSuperAdmin: false`, `currentOrgRole: null`).
+
+---

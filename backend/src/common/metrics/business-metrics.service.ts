@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { Counter, Histogram, register } from 'prom-client';
+import { Counter, Gauge, Histogram, register } from 'prom-client';
 
 /**
  * Кастомные бизнес-метрики Z. Регистрируются в дефолтном `prom-client`
@@ -53,6 +53,16 @@ export class BusinessMetricsService implements OnModuleInit {
   private cardRollupRunsTotal!: Counter<'status'>;
 
   // ── knowledge-core (Фаза 11) ────────────────────────────────────────
+  // TODO (cardinality): label `tenant` потенциально безграничный — на
+  //    масштабе сотен Org допустимо, но при > 1k тенантов рассмотреть
+  //    замену на `tenant_bucket = hash(tenantId) % 64` или агрегацию
+  //    в отдельный сборщик с ограничением series.
+  private coreBlocksTotal!: Gauge<'tenant' | 'status'>;
+  private coreEntitiesTotal!: Gauge<'tenant' | 'type'>;
+  private coreLinksTotal!: Gauge<'tenant' | 'relation_type'>;
+  private coreRawEventsTotal!: Gauge<'tenant' | 'processing_status'>;
+  private corePipelineDurationSeconds!: Histogram<'worker'>;
+  private coreLlmTokensTotal!: Counter<'tenant' | 'task_type'>;
   private coreRetentionDeletedTotal!: Counter<'kind'>;
   private corePersonalDataErasuresTotal!: Counter<string>;
   private coreDataClassViolationsTotal!: Counter<'task_type' | 'attempted_class'>;
@@ -185,6 +195,37 @@ export class BusinessMetricsService implements OnModuleInit {
     });
 
     // ── knowledge-core (Фаза 11) ─────────────────────────────────────
+    this.coreBlocksTotal = this.getOrCreateGauge({
+      name: 'core_blocks_total',
+      help: 'Количество IdeaBlock по статусам (snapshot, обновляется CoreMetricsSnapshotCron).',
+      labelNames: ['tenant', 'status'] as const,
+    });
+    this.coreEntitiesTotal = this.getOrCreateGauge({
+      name: 'core_entities_total',
+      help: 'Количество Entity по типам (snapshot).',
+      labelNames: ['tenant', 'type'] as const,
+    });
+    this.coreLinksTotal = this.getOrCreateGauge({
+      name: 'core_links_total',
+      help: 'Количество IdeaBlockLink по relationType (snapshot, status=active).',
+      labelNames: ['tenant', 'relation_type'] as const,
+    });
+    this.coreRawEventsTotal = this.getOrCreateGauge({
+      name: 'core_raw_events_total',
+      help: 'Количество RawEvent по processingStatus (snapshot).',
+      labelNames: ['tenant', 'processing_status'] as const,
+    });
+    this.corePipelineDurationSeconds = this.getOrCreateHistogram({
+      name: 'core_pipeline_duration_seconds',
+      help: 'Длительность knowledge-core воркеров в секундах (label: worker).',
+      labelNames: ['worker'] as const,
+      buckets: [0.5, 1, 2, 5, 10, 30, 60, 120, 300],
+    });
+    this.coreLlmTokensTotal = this.getOrCreateCounter({
+      name: 'core_llm_tokens_total',
+      help: 'Сумма input+output токенов LLM-вызовов по tenant и task_type.',
+      labelNames: ['tenant', 'task_type'] as const,
+    });
     this.coreRetentionDeletedTotal = this.getOrCreateCounter({
       name: 'core_retention_deleted_total',
       help: 'Сколько строк удалено retention-sweep по kind (raw_event/block/chat/audit/recording).',
@@ -384,6 +425,58 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  /**
+   * Обновляет gauge `core_blocks_total{tenant,status}` для одной комбинации.
+   * Вызывается CoreMetricsSnapshotCron'ом по результатам group-by SELECT.
+   */
+  setCoreBlocks(args: { tenant: string; status: string; count: number }): void {
+    this.coreBlocksTotal.set({ tenant: args.tenant, status: args.status }, args.count);
+  }
+
+  setCoreEntities(args: { tenant: string; type: string; count: number }): void {
+    this.coreEntitiesTotal.set({ tenant: args.tenant, type: args.type }, args.count);
+  }
+
+  setCoreLinks(args: { tenant: string; relationType: string; count: number }): void {
+    this.coreLinksTotal.set(
+      { tenant: args.tenant, relation_type: args.relationType },
+      args.count,
+    );
+  }
+
+  setCoreRawEvents(args: {
+    tenant: string;
+    processingStatus: string;
+    count: number;
+  }): void {
+    this.coreRawEventsTotal.set(
+      { tenant: args.tenant, processing_status: args.processingStatus },
+      args.count,
+    );
+  }
+
+  /** Длительность завершившегося воркера knowledge-core (в секундах). */
+  observeCorePipelineDuration(args: { worker: string; seconds: number }): void {
+    if (args.seconds < 0) return;
+    this.corePipelineDurationSeconds.observe({ worker: args.worker }, args.seconds);
+  }
+
+  /**
+   * Сумма input+output токенов одного LLM-вызова. Вызывается
+   * AiUsageLogService после успешной записи (см. шаг 8 ТЗ).
+   */
+  addCoreLlmTokens(args: {
+    tenant: string;
+    taskType: string;
+    tokens: number;
+  }): void {
+    if (args.tokens <= 0) return;
+    this.coreLlmTokensTotal.inc(
+      { tenant: args.tenant, task_type: args.taskType },
+      args.tokens,
+    );
+  }
+
   // ────────────────────── helpers ──────────────────────────────────────
 
   /**
@@ -422,6 +515,22 @@ export class BusinessMetricsService implements OnModuleInit {
       help: config.help,
       labelNames: (config.labelNames as L[] | undefined) ?? [],
       buckets: config.buckets,
+    });
+  }
+
+  private getOrCreateGauge<L extends string>(config: {
+    name: string;
+    help: string;
+    labelNames?: readonly L[];
+  }): Gauge<L> {
+    const existing = register.getSingleMetric(config.name);
+    if (existing instanceof Gauge) {
+      return existing as Gauge<L>;
+    }
+    return new Gauge<L>({
+      name: config.name,
+      help: config.help,
+      labelNames: (config.labelNames as L[] | undefined) ?? [],
     });
   }
 }

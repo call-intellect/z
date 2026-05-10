@@ -118,6 +118,21 @@ export class AiUsageLogService {
       if (input.costUsd > 0) {
         this.metrics.addAiCostUsd(input.costUsd);
       }
+
+      // Фаза 11 knowledge-core: метрика core_llm_tokens_total{tenant,task_type}.
+      // Считаем суммарно input+output (не учитываем cached как отдельный
+      // bucket — для общего usage-дашборда этого достаточно).
+      if (input.tenantId && input.taskType && input.success) {
+        const tokens =
+          (input.inputTokens ?? 0) + (input.outputTokens ?? 0);
+        if (tokens > 0) {
+          this.metrics.addCoreLlmTokens({
+            tenant: input.tenantId,
+            taskType: input.taskType,
+            tokens,
+          });
+        }
+      }
     } catch (err) {
       this.logger.warn(
         {

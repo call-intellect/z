@@ -139,19 +139,19 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 11)
 
 [backend/src/common/metrics/business-metrics.service.ts](backend/src/common/metrics/business-metrics.service.ts):
 
-- [ ] Зарегистрировать новые **gauges** (через `prom-client.Gauge`):
+- [x] Зарегистрировать новые **gauges** (через `prom-client.Gauge`):
   - `core_blocks_total{tenant,status}`,
   - `core_entities_total{tenant,type}`,
   - `core_links_total{tenant,relation_type}`,
   - `core_raw_events_total{tenant,processing_status}`.
-- [ ] Зарегистрировать **histograms / counters**:
+- [x] Зарегистрировать **histograms / counters**:
   - `core_pipeline_duration_seconds{worker}` (histogram, buckets `[0.5, 1, 2, 5, 10, 30, 60, 120, 300]`).
   - `core_llm_tokens_total{tenant,task_type}` (counter; пишется из `AiUsageLogService` после каждого вызова).
   - `core_personal_data_erasures_total` (counter).
   - `core_retention_deleted_total{kind}` (counter; kind='raw_event'|'block'|'chat'|'audit'|'recording').
   - `core_data_class_violations_total{task_type,attempted_class}` (counter; инкремент при `NoEligibleProviderError` в LlmRouter).
-- [ ] Обёртки-методы (`setCoreBlocks`, `observeCorePipelineDuration`, `addCoreLlmTokens`, `incCoreErasure`, `incCoreRetentionDeleted`, `incCoreDataClassViolation`).
-- [ ] **Cardinality guard**: `tenant`-label потенциально большой. На MVP допустимо (несколько сотен Org), но при росте — заменить на `tenant_bucket` (хеш % 64). Оставить TODO-комментарий.
+- [x] Обёртки-методы (`setCoreBlocks`, `setCoreEntities`, `setCoreLinks`, `setCoreRawEvents`, `observeCorePipelineDuration`, `addCoreLlmTokens`, `incCorePersonalDataErasure`, `incCoreRetentionDeleted`, `incCoreDataClassViolation`).
+- [x] **Cardinality guard**: `tenant`-label потенциально большой. TODO-комментарий проставлен в business-metrics.service.ts (на Фазе 11 допустимо, при росте → tenant_bucket).
 
 ### Шаг 9 — `CoreMetricsSnapshotCron`
 

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ALL_LLM_TASK_TYPES } from '../../../ai/services/llm-router.service';
+
 const PROVIDER_NAMES = [
   'anthropic',
   'minimax',
@@ -7,16 +9,14 @@ const PROVIDER_NAMES = [
   'deepseek',
   'ollama',
 ] as const;
-const TASK_TYPES = [
-  'summary',
-  'chapters',
-  'tasks',
-  'chat',
-  'regenerate-section',
-  'custom-prompt',
-  'follow-up',
-  'clip-title',
-] as const;
+
+/**
+ * Источник правды — `ALL_LLM_TASK_TYPES` из `llm-router.service.ts`. Здесь
+ * кортеж переэкспортируется как readonly array и используется для runtime-валидации.
+ *
+ * Расширение taskType — только в одном месте: `LlmTaskType` union + `ALL_LLM_TASK_TYPES`.
+ */
+export const TASK_TYPES_TUPLE = ALL_LLM_TASK_TYPES;
 
 export const PutLlmRouteSchema = z.object({
   providers: z
@@ -32,5 +32,3 @@ export const PutLlmRouteSchema = z.object({
 });
 
 export type PutLlmRouteDto = z.infer<typeof PutLlmRouteSchema>;
-
-export const TASK_TYPES_TUPLE = TASK_TYPES;

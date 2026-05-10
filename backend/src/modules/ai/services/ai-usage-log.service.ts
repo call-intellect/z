@@ -44,6 +44,24 @@ export interface RecordAiUsageInput {
   sourceRef?: { type: string; id: string } | null;
   /** A/B-эксперимент LlmTaskRoute.experiment: 'A' | 'B'. NULL = вне эксперимента. */
   experimentGroup?: string | null;
+  /** Z-Admin Фаза 7: превью промпта (system+user) — truncate до 8KB. */
+  requestPreview?: string | null;
+  /** Z-Admin Фаза 7: превью ответа модели — truncate до 8KB. */
+  responsePreview?: string | null;
+}
+
+/** Максимальный размер превью промпта/ответа в AiUsageLog (8KB). */
+const PREVIEW_MAX_BYTES = 8 * 1024;
+
+function truncatePreview(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  // Точный байтовый размер UTF-8 — encode + slice по байтам, чтобы не разрезать
+  // суррогатные пары. Используем TextEncoder/TextDecoder.
+  const enc = new TextEncoder();
+  const bytes = enc.encode(value);
+  if (bytes.length <= PREVIEW_MAX_BYTES) return value;
+  const dec = new TextDecoder('utf-8', { fatal: false });
+  return dec.decode(bytes.slice(0, PREVIEW_MAX_BYTES));
 }
 
 /**
@@ -92,6 +110,8 @@ export class AiUsageLogService {
             ? (input.sourceRef as unknown as Prisma.InputJsonValue)
             : Prisma.JsonNull,
           experimentGroup: input.experimentGroup ?? null,
+          requestPreview: truncatePreview(input.requestPreview),
+          responsePreview: truncatePreview(input.responsePreview),
         },
       });
 

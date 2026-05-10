@@ -64,6 +64,40 @@ export type LlmTaskType =
   | 'dashboard-summary';
 
 /**
+ * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
+ * Должен совпадать с union'ом выше, добавляются новые taskType ОДНОВРЕМЕННО
+ * в обоих местах. tsc предупредит при несоответствии (через `satisfies`-trick
+ * не делаем — TS пока без `Exhaustive<T>` helper'а на runtime-tuple).
+ */
+export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
+  'summary',
+  'chapters',
+  'tasks',
+  'chat',
+  'regenerate-section',
+  'custom-prompt',
+  'follow-up',
+  'clip-title',
+  'card-rollup',
+  'card-chat',
+  'block-ingest',
+  'block-distill',
+  'block-linker',
+  'entity-resolver',
+  'entity-merge-arbiter',
+  'entity-graph-builder',
+  'theme-classify',
+  'reframing',
+  'card-rollup-v2',
+  'task-extract-v2',
+  'chapter-extract-v2',
+  'summary-v2',
+  'chat-v2',
+  'goal-alignment',
+  'dashboard-summary',
+] as const;
+
+/**
  * Имя провайдера, как оно хранится в `LlmTaskRoute.providers` (JSON-массив).
  * Для каждого провайдера в свитче ниже — соответствующий сервис.
  */
@@ -343,6 +377,13 @@ export class LlmRouterService implements OnModuleInit {
           success: true,
           sourceRef: params.sourceRef ?? null,
           experimentGroup,
+          // Z-Admin Фаза 7: превью промпта (system+user) и ответа для drill-down.
+          // Truncate до 8KB на стороне AiUsageLogService.
+          requestPreview: this.buildRequestPreview(
+            params.systemPrompt,
+            params.userMessage,
+          ),
+          responsePreview: out.text,
         });
         this.logger.log(
           {
@@ -403,6 +444,11 @@ export class LlmRouterService implements OnModuleInit {
             errorText: message,
             sourceRef: params.sourceRef ?? null,
             experimentGroup,
+            requestPreview: this.buildRequestPreview(
+              params.systemPrompt,
+              params.userMessage,
+            ),
+            responsePreview: null,
           });
         }
       }
@@ -604,6 +650,22 @@ export class LlmRouterService implements OnModuleInit {
     p: LlmProviderName,
   ): 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' {
     return p;
+  }
+
+  /**
+   * Превью промпта для AiUsageLog (Z-Admin Фаза 7).
+   * Конкатенация system + user с метками. Truncate до 8KB делает AiUsageLogService.
+   */
+  private buildRequestPreview(systemPrompt: string, userMessage: string): string {
+    return `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userMessage}`;
+  }
+
+  /**
+   * Сбросить in-memory кэш цен. Вызывается из AdminPricesService при
+   * изменении прайс-карты — следующий вызов прочитает свежие цены из БД.
+   */
+  refreshPrices(): void {
+    this.priceCache.clear();
   }
 }
 

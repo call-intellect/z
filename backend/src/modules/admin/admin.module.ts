@@ -2,11 +2,15 @@ import { Global, Module } from '@nestjs/common';
 
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AiUsageAdminController } from './ai-usage.controller';
+import { AdminUsageController } from './controllers/admin-usage.controller';
+import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
 import { LlmRoutesController } from './llm-routes/llm-routes.controller';
 import { LlmRoutesService } from './llm-routes/llm-routes.service';
 import { MeetingsAdminController } from './meetings-admin.controller';
 import { RecordingsAdminController } from './recordings-admin.controller';
+import { AdminCacheService } from './services/admin-cache.service';
+import { AdminUsageService } from './services/admin-usage.service';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 
 /**
@@ -27,8 +31,21 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AiUsageAdminController,
     RecordingsAdminController,
     LlmRoutesController,
+    AdminUsageController,
+    OrgAdminUsageController,
   ],
-  providers: [AdminAuditInterceptor, SuperAdminAuditInterceptor, LlmRoutesService],
-  exports: [AdminAuditInterceptor, SuperAdminAuditInterceptor],
+  providers: [
+    AdminAuditInterceptor,
+    SuperAdminAuditInterceptor,
+    LlmRoutesService,
+    AdminCacheService,
+    AdminUsageService,
+  ],
+  exports: [
+    AdminAuditInterceptor,
+    SuperAdminAuditInterceptor,
+    AdminCacheService,
+    AdminUsageService,
+  ],
 })
 export class AdminModule {}

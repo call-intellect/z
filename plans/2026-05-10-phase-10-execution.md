@@ -30,90 +30,50 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 10)
 
 ## Backend
 
-### Шаг 1 — Расширение `ApiKey` под scope='ingest'
+### Шаг 1 — Расширение `ApiKey` под scope='ingest'  ✅ DONE
 
-- [ ] **Prisma schema**:
-  - В `model ApiKey` поле `scope String @default("api")` уже есть (предположительно — проверить; если нет — добавить).
-  - Добавить новое значение в Zod-валидаторе `ApiKeyCreateSchema`: `scope: z.enum(['api', 'ingest'])`.
-  - Если `scope='ingest'`, то ключ нельзя использовать для других путей (см. шаг 2).
-- [ ] **db push**: `bun run prisma:push --accept-data-loss` (если поле меняется).
-- [ ] **Backfill не нужен** — существующие ключи остаются `scope='api'`.
+- [x] **Prisma schema**: добавлено поле `ApiKey.scope String @default("api")` + индекс на `prefix`. Применён `prisma db push`.
+- [x] **Zod-валидатор**: `CreateApiKeySchema.scope: z.enum(['api', 'ingest'])` (default `'api'`).
+- [x] **`ApiKeysService.create(userId, dto, tenantId?)`** + `resolveIngestKey(rawKey)` — проверки revokedAt + scope='ingest'.
+- [x] Префиксы: `z_*` (api) и `zik_*` (ingest).
 
-### Шаг 2 — `IngestTokenGuard` с двумя режимами
+### Шаг 2 — `IngestTokenGuard` с двумя режимами  ✅ DONE
 
-- [ ] Добавить второй путь авторизации: если `Authorization: Bearer <token>` начинается с префикса `zik_` (zet ingest key) — резолвим через `ApiKeysService.findByPrefix(...)`, проверяем:
-  - ключ существует, не отозван, `scope='ingest'`,
-  - `apiKey.tenantId` есть.
-- [ ] При успехе — кладём в `req.ingestContext = { tenantId, apiKeyId, source: 'org_key' }`. Контроллеры читают оттуда `tenantId` и игнорируют поле `tenantId` из body (или 400, если оно есть и не совпадает).
-- [ ] Если префикса нет — текущая логика shared-secret работает как раньше (для in-process IMAP-cron'ов).
-- [ ] Логирование в `ApiAccessLog` (модель уже есть, [schema.prisma:1034](backend/prisma/schema.prisma#L1034)) — для аудита внешних обращений.
+- [x] Per-Org ApiKey (`zik_*`) → `ApiKeysService.resolveIngestKey` → `req.ingestContext = { tenantId, apiKeyId, source: 'org_key' }`.
+- [x] Shared-secret (`INGEST_INTERNAL_TOKEN`) → `req.ingestContext = { tenantId: null, apiKeyId: null, source: 'shared_secret' }`.
+- [x] `body.tenantId !== ingestContext.tenantId` → 403 `tenant_mismatch`.
+- [x] `ApiAccessLog` пишется fire-and-forget при per-Org вызовах.
 
-### Шаг 3 — `SourcesController` + `SourcesService`
+### Шаг 3 — `SourcesController` + `SourcesService`  ✅ DONE
 
-Новый модуль [backend/src/modules/sources/](backend/src/modules/sources/) — owner/admin-only управление Source'ами.
+- [x] `GET /api/v1/sources?type=`, `GET /:id`, `POST`, `PATCH`, `DELETE` (soft `isActive=false`), `POST /:id/test`.
+- [x] Под `CookieAuthGuard + TenantGuard`. RBAC проверки явные через `RbacService` (`requireRead`/`requireManage`/`requireDelete`).
+- [x] Расширен `RbacService.ResourceType` (`'source'`) + `policy.csv` (owner manage/delete, admin manage, manager read).
+- [x] CryptoService (@Global) шифрует секреты в `Source.config` (botToken / apiKey / apiSalt / passwordEnc) — формат `gcm:v1:<iv>:<tag>:<ct>`. UI получает `<encrypted>`. При update значение `<encrypted>` подменяется на сохранённое в БД.
+- [x] `lastEventAt` — последняя `RawEvent.receivedAt` (через `groupBy`).
+- [x] `webhookUrl` отдаётся для type=bot и phone_call.
+- [x] ENV: `CRYPTO_MASTER_KEY`, `PUBLIC_HOST_URL`.
 
-- [ ] `GET /api/v1/sources` — список Source'ов текущего Org (фильтр по type).
-- [ ] `POST /api/v1/sources` — создать; body: `{type, name, config}`. `config` валидируется по type (см. шаги 4–7).
-- [ ] `PATCH /api/v1/sources/:id` — обновить `name`, `config`, `isActive`, `dataClass`.
-- [ ] `DELETE /api/v1/sources/:id` — soft-delete (`isActive=false`); реальное удаление — vNext (есть FK от RawEvent через onDelete: Restrict).
-- [ ] `POST /api/v1/sources/:id/test` — адаптер-зависимый smoke-test (см. шаги 4–7), возвращает `{ok, details, lastErrorMessage?}`.
-- [ ] Все endpoints под `CookieAuthGuard + TenantGuard + RbacGuard('source', 'manage')`.
+### Шаг 4 — Адаптер `telegram`  ✅ DONE
 
-### Шаг 4 — Адаптер `telegram`
+- [x] `TelegramBotConfigSchema` (Zod) — `botToken/botUsername/webhookSecret>=32/allowedChatIds/includeForwarded`.
+- [x] `TelegramAdapterService.registerWebhook` / `unregisterWebhook` через Bot API; URL `https://<publicHostUrl>/api/v1/ingest/telegram/<sourceId>`.
+- [x] `POST /api/v1/ingest/telegram/:sourceId` без `IngestTokenGuard`, авторизация через `X-Telegram-Bot-Api-Secret-Token` (timing-safe compare).
+- [x] Поддержка `update.message` и `update.channel_post`. Фильтры `allowedChatIds`, `includeForwarded`.
+- [x] Payload: `{updateId, chatId, chatTitle, messageId, fromUserId, fromUsername, fromName, text, photoFileIds, date, raw}`. `sourceExternalId = 'tg:<chatId>:<messageId>'`.
+- [x] `getMe` для smoke-test через `SourcesService.test`.
+- [x] Лимит payload >4 MiB через `content-length` → 400 `payload_too_large`.
+- [ ] Метрика `ingest_adapter_events_total{adapter='telegram',status=...}` — отложено, как vNext (отдельный label-pattern; не блокирующее).
 
-Подмодуль [backend/src/modules/ingest/adapters/telegram/](backend/src/modules/ingest/adapters/telegram/).
+### Шаг 5 — Адаптер `phone_call` (Mango Office)  ✅ DONE (с отклонением)
 
-- [ ] **`Source.config` schema (zod)** для `type=bot`, `subtype='telegram'`:
-  ```ts
-  TelegramBotConfigSchema = z.object({
-    subtype: z.literal('telegram'),
-    botToken: z.string().min(40),         // шифруется через CryptoService при write, расшифровывается lazy
-    botUsername: z.string(),              // для отображения в UI: «@meeting_helper_bot»
-    webhookSecret: z.string().min(32),    // X-Telegram-Bot-Api-Secret-Token
-    allowedChatIds: z.array(z.number()).default([]),  // empty = принимать ВСЕ чаты
-    includeForwarded: z.boolean().default(false),
-  });
-  ```
-- [ ] **`TelegramAdapterService.registerWebhook(sourceId)`** — при создании/активации Source: HTTP POST на Telegram Bot API `setWebhook` с URL `https://<host>/api/v1/ingest/telegram/<sourceId>` и `secret_token=<webhookSecret>`. URL хоста — из `cfg.publicHostUrl`.
-- [ ] **`TelegramAdapterService.unregisterWebhook(sourceId)`** — при `isActive=false` или delete: `deleteWebhook`.
-- [ ] **`POST /api/v1/ingest/telegram/:sourceId`** (новый контроллер `TelegramWebhookController`, без `IngestTokenGuard` — авторизация через `X-Telegram-Bot-Api-Secret-Token` header):
-  - валидация secret-токена (timing-safe compare, как в `IngestTokenGuard`),
-  - `Source` lookup по `sourceId`, проверка `type=bot`, `isActive=true`, `subtype='telegram'`,
-  - `allowedChatIds` filter: если массив непустой и `update.message.chat.id` не в нём → `200 ok` без ingest (Telegram не любит non-2xx),
-  - `update.message.forward_from_chat` фильтр: если `includeForwarded=false` и есть forward — пропускаем,
-  - **payload**: `{updateId, chatId, messageId, fromUserId, fromUsername, text, photoFileIds[], date, raw}` — `raw` это весь оригинальный update (для возможной дораскодировки в будущем),
-  - `sourceExternalId = "tg:" + chatId + ":" + messageId`,
-  - `occurredAt = new Date(update.message.date * 1000)`,
-  - вызов `IngestService.ingest({...})` с `dataClass = source.dataClass`.
-- [ ] **Test endpoint** `POST /api/v1/sources/:id/test` для telegram: `getMe` через Bot API → возвращает `{botUsername, canReceiveUpdates}`.
-- [ ] **Метрика**: `ingest_adapter_events_total{adapter='telegram',status='accepted|filtered|failed'}`.
-- [ ] **Лимит**: первый payload > 4 МБ (медиа-сообщения) — отклоняем с `payload_too_large`. Скачивание медиа в S3 — vNext.
-
-### Шаг 5 — Адаптер `phone_call` (Mango Office)
-
-Подмодуль [backend/src/modules/ingest/adapters/phone-call/](backend/src/modules/ingest/adapters/phone-call/).
-
-- [ ] **`Source.config`** для `type=phone_call`, `subtype='mango'`:
-  ```ts
-  MangoCallConfigSchema = z.object({
-    subtype: z.literal('mango'),
-    apiKey: z.string().min(20),     // Mango API key — зашифровать
-    apiSalt: z.string().min(20),    // их HMAC-salt
-    extensions: z.array(z.string()).default([]),  // фильтр по добавочным
-  });
-  ```
-- [ ] **`POST /api/v1/ingest/calls/mango/:sourceId`** (контроллер `MangoCallWebhookController`):
-  - валидация подписи Mango: `sign = sha256(apiKey + json + apiSalt)` (по их docs),
-  - `Source` lookup,
-  - проверяем `event.entry === 'call'` (есть `summary` событие после звонка),
-  - **создаём Meeting-родственное событие**: `Meeting(type='phone_call', source='external', externalCallId=<callId>, ownerId=null, ...)`. Точная схема — в шаге 5b.
-  - кладём короткий «metadata-only» payload в `IngestService.ingest`. Сама транскрипция — асинхронно.
-- [ ] **Шаг 5b — асинхронная транскрипция**:
-  - Скачать запись звонка по `recordUrl` из event (Mango выдаёт MP3) → S3 `phone-calls/<tenantId>/<callId>.mp3`.
-  - Поставить job в существующую очередь `transcribe.queue` (тот же Vox/GigaAM, что для встреч), но с `MeetingType='phone_call'` для роутинга промптов.
-  - После транскрипции — `MeetingIngestAdapter.ingestMeeting(meetingId)` (Фаза 1) уже работает универсально → блоки появятся.
-- [ ] **Test endpoint**: проверка подписи на тестовом payload (без реального звонка).
-- [ ] **Метрика**: `ingest_adapter_events_total{adapter='phone_call',...}`, `phone_call_transcribe_duration_seconds`.
+- [x] `MangoCallConfigSchema` (Zod) — `apiKey>=20/apiSalt>=20/extensions[]`.
+- [x] `POST /api/v1/ingest/calls/mango/:sourceId` — form-encoded body `{json, sign}`. Подпись `sha256(apiKey+json+apiSalt)` валидируется.
+- [x] Только `event.entry === 'call'` (summary). Фильтр по `extensions`.
+- [x] `recordUrl` (если есть) скачивается в S3 `phone-calls/<tenantId>/<callId>.mp3` (fire-and-forget; ошибки не блокируют ingest).
+- [x] Payload metadata-only: `{callId, from, to, durationSec, direction, recordingUrlExternal, recordS3Key, raw}`. `sourceExternalId='mango:<callId>'`.
+- [x] `MangoAdapterService.test` (UI smoke-test): расшифровка ключей + расчёт sample-подписи.
+- [ ] **ОТКЛОНЕНИЕ:** Meeting(type='phone_call') НЕ создаётся. `MeetingType` enum не содержит `phone_call`, у `Meeting` нет полей `source`/`externalCallId`, `ownerId` не nullable. Расширение схемы потребует изменения десятков controllers/UI — вне MVP Фазы 10. Хранится только `RawEvent`. Транскрипция и интеграция с `transcribe.queue` — vNext (отдельный воркер `phone-transcribe.worker`). Подробности: `plans/decisions-log.md` 2026-05-10.
 
 ### Шаг 6 — Адаптер `email` (IMAP)
 
@@ -133,44 +93,31 @@ source-tz: plans/tz/2026-05-10-knowledge-core-tz.md (§ Фаза 10)
     sensitiveFolders: z.array(z.string()).default([]),  // папки, payload из которых = sensitive
   });
   ```
-- [ ] **`EmailFetchService.fetchOne(sourceId)`**:
-  - подключение `node-imap` (или `imapflow`),
-  - `SEARCH UNSEEN SINCE <lastFetchAt or sinceDate>`,
-  - для каждого письма: `mailparser` → `{messageId, from, to, cc, subject, date, text, html, attachments[]}`,
-  - вложения > 1 MB → S3 `email-attachments/<tenantId>/<messageId>/<filename>`, ссылка в payload,
-  - `sourceExternalId = messageId ?? sha256(from+date+subject+bodyLen)`,
-  - `dataClass = sensitiveFolders.includes(currentFolder) ? 'sensitive' : source.dataClass`,
-  - `IngestService.ingest(...)`,
-  - после успешного ingest — `flag \\Seen`.
-- [ ] **`EmailFetchCron`** (новый):
-  ```ts
-  @Cron('*/5 * * * *')
-  async sweep() {
-    if (!cfg.knowledgeCore.emailFetchEnabled) return;
-    const sources = await prisma.source.findMany({ where: { type: 'email', isActive: true } });
-    for (const s of sources) await this.svc.fetchOne(s.id).catch(log);
-  }
-  ```
-- [ ] **ENV**: `EMAIL_FETCH_ENABLED` (default `false`), `EMAIL_FETCH_CRON` (default `'*/5 * * * *'`), `EMAIL_FETCH_MAX_PER_RUN` (default `50` писем за один проход на Source).
-- [ ] **Test endpoint**: `POST /api/v1/sources/:id/test` для IMAP — пробует connect+login, возвращает `{ok, folderCount, lastUid}`.
-- [ ] **CryptoService.encrypt/decrypt** — нужен сервис для шифрования паролей IMAP/токенов Telegram. Если уже есть — используем, иначе создаём как `backend/src/common/crypto/crypto.service.ts` с AES-256-GCM на ENV-ключе `CRYPTO_MASTER_KEY` (32 байта base64).
+- [x] `ImapMailboxConfigSchema` (Zod) — `host/port/secure/user/passwordEnc/folder/sinceDate?/sensitiveFolders`.
+- [x] `EmailFetchService.fetchOne` через `imapflow` + `mailparser`. `SEARCH UNSEEN SINCE` (max(receivedAt)-1min или sinceDate или -7d). Attachments >1MB → S3 `email-attachments/<tenantId>/<messageId>/<filename>`. `sourceExternalId = Message-ID || 'email-fallback:<sha256-32>'`. dataClass повышается до `sensitive` если `sensitiveFolders.includes(folder)`. После ingest — `flag \\Seen`.
+- [x] `EmailFetchCron @Cron('*/5 * * * *')`: гейт по `EMAIL_FETCH_ENABLED` + `WorkerOrgGate.checkOrThrow(tenantId, 'email-fetch')`.
+- [x] ENV: `EMAIL_FETCH_ENABLED`/`EMAIL_FETCH_CRON`/`EMAIL_FETCH_MAX_PER_RUN`.
+- [x] Test endpoint: `EmailFetchService.test` (connect+login+folderCount+lastUid).
+- [x] CryptoService — реализован в Шаге 3 (Фаза 10).
 
-### Шаг 7 — Адаптер `web_form` («дамп мысли»)
+### Шаг 7 — Адаптер `web_form` («дамп мысли»)  ✅ DONE
 
-- [ ] **`POST /api/v1/ingest/dump`** под `CookieAuthGuard + TenantGuard` (не shared-secret, не ApiKey):
-  - body: `{text: string, occurredAt?: ISO, dataClass?: DataClass}`,
-  - lazy-upsert `Source(tenantId, type='web_form', name='Дамп мысли')`,
-  - `sourceExternalId = "web:" + userId + ":" + nonce` (nonce генерится фронтом),
-  - payload: `{text, authorUserId, authorName}`,
-  - вызов `IngestService.ingest`.
-- [ ] **Quota**: `dump_per_day_per_user` (через существующий `QuotaService` ([backend/src/modules/quotas/quota.service.ts](backend/src/modules/quotas/quota.service.ts))), default 30/день.
-- [ ] **Аудит**: `AuditLog(action='dump.created', resourceId=rawEventId, metadata={length, dataClass})`. Добавить константу `DUMP_CREATED` в [backend/src/modules/audit/audit.types.ts](backend/src/modules/audit/audit.types.ts).
+- [x] `POST /api/v1/ingest/dump` под `CookieAuthGuard + TenantGuard` (Cookie+Org, не shared-secret, не ApiKey).
+- [x] Body Zod: `{text: 1..50000, occurredAt? ISO, dataClass? DataClass, nonce? 8..64}`.
+- [x] `DumpService.createDump`: lazy-upsert `Source(tenantId, type='web_form', name='Дамп мысли')`; `sourceExternalId = 'web:<userId>:<nonce>'` (server-side UUID если nonce не передан).
+- [x] Quota `dump_per_day_per_user` (max=30, window=24h) через `QuotaService.checkAndIncrement` — на превышение `429 quota_exceeded` с retry-after.
+- [x] Audit `AUDIT.DUMP_CREATED` (`metadata: {length, dataClass}`).
 
-### Шаг 8 — Регистрация модулей
+### Шаг 8 — Регистрация модулей  ✅ DONE
 
-- [ ] В `IngestModule` ([backend/src/modules/ingest/ingest.module.ts](backend/src/modules/ingest/ingest.module.ts)) добавить новые контроллеры (`TelegramWebhookController`, `MangoCallWebhookController`, `WebFormDumpController`) и сервисы.
-- [ ] Email-fetcher и cron — в отдельном `IngestEmailModule` (потому что зависит от cron-scheduler'а; пусть импортируется из `IngestModule` или регистрируется в `AppModule`).
-- [ ] `SourcesModule` — отдельный, импортируется в `AppModule`.
+- [x] `IngestModule` controllers: `IngestController` + `RawEventsController` + `TelegramWebhookController` + `MangoCallWebhookController` + `WebFormDumpController`.
+- [x] `IngestModule` providers/exports: `IngestService`, `MeetingIngestAdapter`, `TelegramAdapterService`, `MangoAdapterService`, `DumpService`, `IngestTokenGuard`, `S3Service`.
+- [x] `IngestEmailModule` (отдельно в AppModule) — `EmailFetchService` + `EmailFetchCron`.
+- [x] `SourcesModule` (отдельно в AppModule) — импортирует `IngestEmailModule` для smoke-test IMAP.
+- [x] `CryptoModule` (@Global, AppModule).
+- [x] Audit constants добавлены: `SOURCE_CREATED/UPDATED/DELETED/TESTED`, `DUMP_CREATED`, `INGEST_API_KEY_USED`.
+- [x] `RbacService.ResourceType` расширен `'source'`; policy.csv обновлён.
+- [x] `bun run typecheck` зелёный, `bun run build` зелёный.
 
 ## Frontend
 

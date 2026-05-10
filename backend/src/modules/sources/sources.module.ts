@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { IngestEmailModule } from '../ingest/adapters/email/ingest-email.module';
+
 import { SourcesController } from './sources.controller';
 import { SourcesService } from './sources.service';
 
@@ -12,10 +14,10 @@ import { SourcesService } from './sources.service';
  *   - AuditModule (@Global) — AuditLogService.
  *   - RbacModule (@Global) — RbacService.
  *   - IngestModule (@Global) — экспортирует TelegramAdapterService и др.
- *
- * Всё перечисленное — глобальные модули; здесь ничего импортировать не нужно.
+ *   - IngestEmailModule — EmailFetchService (smoke-test IMAP).
  */
 @Module({
+  imports: [IngestEmailModule],
   controllers: [SourcesController],
   providers: [SourcesService],
   exports: [SourcesService],

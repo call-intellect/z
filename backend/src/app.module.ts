@@ -44,6 +44,7 @@ import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.mod
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { ExportsModule } from './modules/exports/exports.module';
+import { IngestEmailModule } from './modules/ingest/adapters/email/ingest-email.module';
 import { IngestModule } from './modules/ingest/ingest.module';
 import { OrgsModule } from './modules/orgs/orgs.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
@@ -185,8 +186,13 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Воркер живёт в WorkersModule (отдельный процесс).
     GoalsModule,
 
+    // Phase 10 — Email IMAP адаптер + cron. Регистрируется отдельно от
+    // IngestModule, потому что cron включается только если EMAIL_FETCH_ENABLED=true.
+    IngestEmailModule,
+
     // Phase 10 — управление подключёнными источниками (telegram/mango/IMAP/web-form).
-    // Зависит от @Global модулей: Crypto, Audit, Rbac, Ingest (TelegramAdapterService).
+    // Зависит от @Global модулей: Crypto, Audit, Rbac, Ingest (TelegramAdapterService),
+    // и от IngestEmailModule (для smoke-test IMAP).
     SourcesModule,
   ],
   providers: [

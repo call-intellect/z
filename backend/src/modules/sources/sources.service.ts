@@ -16,6 +16,7 @@ import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { AUDIT } from '../audit/audit.types';
+import { EmailFetchService } from '../ingest/adapters/email/email-fetch.service';
 import { MangoAdapterService } from '../ingest/adapters/phone-call/mango.service';
 import { TelegramAdapterService } from '../ingest/adapters/telegram/telegram.service';
 
@@ -49,6 +50,7 @@ export class SourcesService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(TelegramAdapterService) private readonly telegram: TelegramAdapterService,
     @Inject(MangoAdapterService) private readonly mango: MangoAdapterService,
+    @Inject(EmailFetchService) private readonly emailFetch: EmailFetchService,
   ) {}
 
   async list(tenantId: string, query: SourceListQuery): Promise<SourceListResponseDto> {
@@ -246,7 +248,7 @@ export class SourcesService {
           result = this.mango.test(source);
           break;
         case 'email':
-          result = { ok: true, details: { note: 'email: see Шаг 6' } };
+          result = await this.emailFetch.test(source);
           break;
         case 'web_form':
           result = { ok: true, details: { note: 'web-form: no-op' } };

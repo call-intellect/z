@@ -10,7 +10,6 @@ import { useAuth } from '@/contexts/auth-context';
 import { t } from '@/lib/i18n';
 
 const NAV: Array<{ href: string; key?: string; label?: string }> = [
-  { href: '/admin', key: 'admin.nav.home' },
   { href: '/admin/meetings', key: 'admin.nav.meetings' },
   { href: '/admin/integration-keys', key: 'admin.nav.integration_keys' },
   { href: '/admin/ai-usage', key: 'admin.nav.ai_usage' },
@@ -32,10 +31,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
           <nav className="flex flex-col gap-1 p-3">
             {NAV.map((item) => {
-              const active =
-                item.href === '/admin'
-                  ? pathname === '/admin'
-                  : pathname.startsWith(item.href);
+              const active = pathname.startsWith(item.href);
               return (
                 <Link
                   key={item.href}

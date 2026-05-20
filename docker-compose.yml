@@ -83,7 +83,7 @@ services:
     command:
       - sh
       - -c
-      - 'bunx prisma db push --skip-generate && bun scripts/apply-postgres-init.ts'
+      - 'bunx prisma db push && bun scripts/apply-postgres-init.ts'
     depends_on:
       postgres:
         condition: service_healthy

@@ -56,7 +56,19 @@ Frontend-кандидаты оставлены на ревью.
 - `docker compose config -q` — OK для root / dev / media.
 - Подстановка кастомных портов из env работает (app + host раздельно).
 - `backend tsc --noEmit` — 0 ошибок после удаления мёртвого кода.
-- Все stale-ссылки на удалённые файлы вычищены (кроме датированных записей в plans/05_история).
+- **Реальная сборка контейнеров:** `docker compose build backend|frontend` — оба образа
+  собраны (exit 0). Frontend `next build` — 49 роутов, TypeScript ок, standalone-артефакт.
+- **Реальный запуск стека:** `docker compose up -d backend` → postgres+redis healthy,
+  migrate отработал (db push + apply-postgres-init), backend `Nest application successfully
+  started`, очереди BullMQ in-process (8 core + 9 ai), `/health`=ok,
+  `/health/ready` postgres+redis=ok (livekit=fail — не запущен). Frontend-контейнер — HTTP 200.
+
+### Пойманные баги деплоя (исправлены)
+
+1. **Prisma 7 убрал `--skip-generate` у `db push`** — `migrate` падал exit 1. Фикс: убрал флаг.
+   Латентный баг с прошлой сессии (там валидировали только `compose config`, не запускали migrate).
+2. **Пустые `MAIL_USERNAME=`/`MAIL_PASSWORD=` в .env.example ломали boot** — `min(1).optional()`:
+   пустая строка != отсутствие ключа. Закомментировал в `.env.example`.
 
 ## Чему научился
 
@@ -70,6 +82,13 @@ Frontend-кандидаты оставлены на ревью.
   оба из `.env`; healthcheck/EXPOSE должны использовать APP-порт, иначе ломаются при смене.
 - **LiveKit отдельно — не каприз, а необходимость:** `network_mode: host` несовместим с
   bridge-сетью основного compose; плюс принцип #6 (своя нода). Объединять нельзя.
+- **`compose config` ≠ рабочий деплой:** валидный YAML не значит, что контейнеры собираются
+  и поднимаются. Прошлая сессия пропустила оба бага, проверив только конфиг. Деплой надо
+  ПОДНИМАТЬ (build + up + health), а не только парсить.
+- **Zod `.min(1).optional()` + env-строки:** в .env пустое `KEY=` — это пустая СТРОКА (валится
+  на min), а не отсутствие ключа. Optional-поля в .env.example держать закомментированными.
+- **Prisma 7 — ещё одна несовместимость CLI:** `db push --skip-generate` удалён (после $use,
+  driver-adapter, url-в-config). При апгрейдах Prisma проверять CLI-флаги в скриптах/compose.
 
 ## Prod-операции
 

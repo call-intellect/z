@@ -30,14 +30,27 @@
   `docs/architecture/deployment.md`, `CLAUDE.md`, `backend/README.md`, `tech-stack.md`.
 - [x] **Фаза 7 — Статанализ мёртвого кода.** knip → отчёт (без удаления, см. ниже).
 - [x] **Фаза 8 — Верификация.** `docker compose config -q` OK для root/dev/media; stale-ссылки
-  вычищены (кроме датированных записей в plans/05_история).
+  вычищены. **Реальная сборка+запуск:** `docker compose build backend|frontend` — оба образа
+  собраны (exit 0); `docker compose up -d backend` — postgres+redis+migrate+backend подняты,
+  `/health`=ok, `/health/ready` postgres+redis=ok (livekit=fail, т.к. не запущен), очереди
+  BullMQ (8 core + 9 ai) in-process, 200+ роутов замаплено; frontend контейнер — HTTP 200.
+  Поймано 2 бага деплоя (см. итог).
 - [ ] **Фаза 9 — second-brain + рефлексия.** tech-stack обновлён; рефлексия — после коммита/пуша.
 
 ## Итог
 
-Реализовано целиком (кроме рефлексии — пишется после подтверждения коммита).
+Реализовано целиком и **проверено реальной сборкой/запуском контейнеров**.
 Деплой сведён к `docker compose up -d --build backend` из корня, порты через `.env`,
 nginx-конфиги для хоста, медиа отдельно. Мусор (~45 МБ) удалён.
+
+### Баги деплоя, пойманные при верификации (исправлены)
+
+1. **Prisma 7: `prisma db push --skip-generate` падает** — опция `--skip-generate` удалена в v7.
+   `migrate` падал с exit 1. Фикс: `bunx prisma db push` (без флага) в `docker-compose.yml`.
+   Баг был латентным (прошлая сессия валидировала только `compose config`, не запускала migrate).
+2. **`.env.example`: пустые `MAIL_USERNAME=`/`MAIL_PASSWORD=` ломают boot** — поля
+   `z.string().min(1).optional()`: пустая строка проваливает `.min(1)`, отсутствие ключа — ок.
+   Фикс: закомментированы в `.env.example` (остальные пустые поля имеют `.default('')` — безопасны).
 
 ### Отчёт по мёртвому коду (knip — НЕ удалялось, требует подтверждения)
 

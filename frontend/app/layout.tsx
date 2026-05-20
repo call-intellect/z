@@ -22,8 +22,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ru" data-theme="dark" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className={GeistSans.className}>
+    // suppressHydrationWarning — браузерные расширения (LanguageTool/Grammarly и т.п.)
+    // дописывают атрибуты в <html>/<body> ДО гидрации React (напр. data-lt-installed),
+    // вызывая ложный hydration-mismatch. Подавляем его на этих двух тегах (1 уровень).
+    <html
+      lang="ru"
+      data-theme="dark"
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className={GeistSans.className} suppressHydrationWarning>
         <ThemeProvider>
           <AuthProvider>
             {/*

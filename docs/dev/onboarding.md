@@ -121,15 +121,24 @@ docker run -d --name z-minio -p 9000:9000 -p 9001:9001 \
 # затем S3_ENDPOINT_URL=http://localhost:9000, ключи = z_minio_dev / z_minio_dev_password, S3_BUCKET=meetings-dev
 ```
 
-## LiveKit/Egress для dev (опционально)
+## LiveKit для dev — реальное аудио/видео (опционально)
 
-Только если работаешь со встречами/записью. Linux-only (host networking):
+Нужен, только если работаешь с самими видеовстречами. Локальный LiveKit (single-node,
+без redis) поднимается одним скриптом — **при первом запуске он сам скачает образ**:
 
 ```bash
-docker compose --profile livekit up      # из корня репозитория (infra/livekit/*)
+infra/livekit/livekit-dev.sh up       # первый раз скачает образ LiveKit, затем стартует
+infra/livekit/livekit-dev.sh status   # статус
+infra/livekit/livekit-dev.sh logs     # логи
+infra/livekit/livekit-dev.sh down     # остановить (rm — удалить контейнер)
 ```
 
-Иначе можно подключиться к dev-инстансу LiveKit (см. `docs/architecture/deployment.md`).
+Ключи/порт совпадают с `backend/.env` (`devkey` / `ws://localhost:7880`) — больше ничего
+настраивать не нужно. После `up`: `/health/ready` покажет `livekit: ok`, и встреча на
+`/m/<id>` даёт живое аудио/видео/screen-share.
+
+> Конфиг — `infra/livekit/livekit-dev.yaml`. Egress (запись) для dev не обязателен —
+> поднимается отдельно (см. `docs/architecture/deployment.md`).
 
 ## Ссылки
 

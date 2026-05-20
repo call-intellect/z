@@ -1,0 +1,41 @@
+# LiveKit для ЛОКАЛЬНОЙ разработки (single-node, без redis).
+# Запуск: infra/livekit/livekit-dev.sh up
+# Ключи совпадают с backend/.env (LIVEKIT_API_KEY=devkey / LIVEKIT_API_SECRET=secretsecret...).
+
+port: 7880
+bind_addresses:
+  - '0.0.0.0'
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+  node_ip: 127.0.0.1
+
+keys:
+  devkey: secretsecretsecretsecretsecretsecretsecretsecret
+
+room:
+  empty_timeout: 600
+  max_participants: 10
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/vp8
+    - mime: video/h264
+
+# Webhooks на наш backend (события комнаты/записи). Если backend не поднят — LiveKit просто ретраит.
+webhook:
+  api_key: devkey
+  urls:
+    - 'http://localhost:3000/webhooks/livekit'
+
+turn:
+  enabled: false
+
+logging:
+  level: info
+  json: false
+
+# single-node, ослабленные требования для локалки.
+development: true

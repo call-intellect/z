@@ -28,7 +28,8 @@ const cspDirectives = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' blob: data: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  `connect-src 'self' ${backendUrl} ${livekitUrl} wss://*.crossmark.ru ${isProd ? '' : 'http://localhost:3000 ws://localhost:3000 ws://localhost:7880 wss://localhost:7880'}`.trim(),
+  // LiveKit-клиент перед WS делает HTTP(S)-validate на тот же хост — нужен и http(s)-вариант livekit-URL.
+  `connect-src 'self' ${backendUrl} ${livekitUrl} ${livekitUrl.replace(/^ws/, 'http')} wss://*.crossmark.ru ${isProd ? '' : 'http://localhost:3000 ws://localhost:3000 http://localhost:7880 ws://localhost:7880 wss://localhost:7880'}`.trim(),
   "media-src 'self' blob:",
   "frame-ancestors 'none'",
   "object-src 'none'",

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * Защита маршрутов:
+ * Защита маршрутов (Next 16: конвенция `proxy` вместо `middleware`).
  *   - `(authenticated)` группа (`/meetings`, `/meetings/create`,
  *     `/meetings/:id/result`, `/tasks`, `/settings/*`, `/integrations`)
  *     требует cookie `z_session`. Если её нет — редирект на `/`.
@@ -44,7 +44,7 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (isPublic(pathname)) {

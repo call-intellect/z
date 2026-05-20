@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Приглашение в организацию — Z',
 };
 
-export default function AcceptInvitationPage({
+export default async function AcceptInvitationPage({
   params,
 }: {
-  params: { token: string };
+  params: Promise<{ token: string }>;
 }) {
-  return <AcceptInvitationClient token={params.token} />;
+  const { token } = await params;
+  return <AcceptInvitationClient token={token} />;
 }

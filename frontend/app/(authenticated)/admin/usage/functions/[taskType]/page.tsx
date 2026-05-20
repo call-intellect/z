@@ -4,10 +4,11 @@ import { FunctionDetailClient } from './FunctionDetailClient';
 
 export const metadata: Metadata = { title: 'Z-Admin — Функция LLM' };
 
-export default function FunctionDetailPage({
+export default async function FunctionDetailPage({
   params,
 }: {
-  params: { taskType: string };
+  params: Promise<{ taskType: string }>;
 }) {
-  return <FunctionDetailClient taskType={params.taskType} />;
+  const { taskType } = await params;
+  return <FunctionDetailClient taskType={taskType} />;
 }

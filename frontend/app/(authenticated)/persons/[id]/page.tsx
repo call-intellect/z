@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Персона',
 };
 
-export default function PersonDetailPage({
+export default async function PersonDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PersonDetailClient entityId={params.id} />;
+  const { id } = await params;
+  return <PersonDetailClient entityId={id} />;
 }

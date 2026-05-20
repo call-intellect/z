@@ -2,7 +2,7 @@ import { ShareMeetingClient } from './ShareMeetingClient';
 
 export const dynamic = 'force-dynamic';
 
-type Props = { params: { token: string } };
+type Props = { params: Promise<{ token: string }> };
 
 /**
  * Публичная страница встречи. AppShell не используется (это «extranet» —
@@ -11,6 +11,7 @@ type Props = { params: { token: string } };
  * Логика рендера и обработки 404/410 — в client-компоненте, чтобы единым
  * способом ходить через `apiClient`.
  */
-export default function PublicShareMeetingPage({ params }: Props) {
-  return <ShareMeetingClient token={params.token} />;
+export default async function PublicShareMeetingPage({ params }: Props) {
+  const { token } = await params;
+  return <ShareMeetingClient token={token} />;
 }

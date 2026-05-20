@@ -3,8 +3,9 @@ import { redirect } from 'next/navigation';
 import { ExchangeAndRender } from './ExchangeAndRender';
 
 type Props = {
-  params: { id: string };
-  searchParams: { t?: string | string[] };
+  // Next 15+/16: params и searchParams теперь Promise — их нужно await'ить.
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ t?: string | string[] }>;
 };
 
 /**
@@ -20,12 +21,13 @@ type Props = {
  *     из адресной строки и истории.
  *   - На fail (например 401 — токен битый/просрочен) рендерим guest-flow.
  */
-export default function MeetingPage({ params, searchParams }: Props) {
-  const id = params.id;
+export default async function MeetingPage({ params, searchParams }: Props) {
+  const { id } = await params;
   if (!id || id.length < 5) {
     redirect('/');
   }
-  const tokenParam = Array.isArray(searchParams.t) ? searchParams.t[0] : searchParams.t;
+  const sp = await searchParams;
+  const tokenParam = Array.isArray(sp.t) ? sp.t[0] : sp.t;
 
   return (
     <ExchangeAndRender

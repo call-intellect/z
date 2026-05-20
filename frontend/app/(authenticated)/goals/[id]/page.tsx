@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Цель',
 };
 
-export default function GoalDetailPage({
+export default async function GoalDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <GoalDetailClient goalId={params.id} />;
+  const { id } = await params;
+  return <GoalDetailClient goalId={id} />;
 }

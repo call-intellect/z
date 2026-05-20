@@ -4,10 +4,11 @@ import { ExperimentClient } from './ExperimentClient';
 
 export const metadata: Metadata = { title: 'Z-Admin — Эксперимент' };
 
-export default function ExperimentPage({
+export default async function ExperimentPage({
   params,
 }: {
-  params: { taskType: string };
+  params: Promise<{ taskType: string }>;
 }) {
-  return <ExperimentClient taskType={params.taskType} />;
+  const { taskType } = await params;
+  return <ExperimentClient taskType={taskType} />;
 }

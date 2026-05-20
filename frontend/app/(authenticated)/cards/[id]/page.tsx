@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Карточка',
 };
 
-export default function CardDetailPage({
+export default async function CardDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <CardDetailClient cardId={params.id} />;
+  const { id } = await params;
+  return <CardDetailClient cardId={id} />;
 }

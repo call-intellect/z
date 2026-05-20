@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'AI-тема',
 };
 
-export default function ThemeDetailPage({
+export default async function ThemeDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <ThemeDetailClient themeId={params.id} />;
+  const { id } = await params;
+  return <ThemeDetailClient themeId={id} />;
 }

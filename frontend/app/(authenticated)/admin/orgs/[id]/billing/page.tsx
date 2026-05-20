@@ -10,10 +10,11 @@ export const metadata: Metadata = {
  * Server-обёртка над `<BillingAdminClient>`. Проверка super_admin происходит
  * внутри клиентского компонента (через apiClient + onForbidden state).
  */
-export default function AdminOrgBillingPage({
+export default async function AdminOrgBillingPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <BillingAdminClient tenantId={params.id} />;
+  const { id } = await params;
+  return <BillingAdminClient tenantId={id} />;
 }

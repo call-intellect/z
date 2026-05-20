@@ -1,7 +1,8 @@
 import { AdminMeetingDetails } from '@/ui/components/admin/AdminMeetingDetails';
 
-type Props = { params: { id: string } };
+type Props = { params: Promise<{ id: string }> };
 
-export default function AdminMeetingDetailsPage({ params }: Props) {
-  return <AdminMeetingDetails meetingId={decodeURIComponent(params.id)} />;
+export default async function AdminMeetingDetailsPage({ params }: Props) {
+  const { id } = await params;
+  return <AdminMeetingDetails meetingId={decodeURIComponent(id)} />;
 }

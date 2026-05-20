@@ -1,6 +1,6 @@
 import { MeetingResultPageReal } from '@/ui/components/meeting-result-v2/MeetingResultPageReal';
 
-type Props = { params: { id: string } };
+type Props = { params: Promise<{ id: string }> };
 
 /**
  * Защищённая страница результата встречи (production-версия M7).
@@ -12,6 +12,7 @@ type Props = { params: { id: string } };
  * Старая реализация (`@/ui/components/meeting-result/ResultPage`) оставлена
  * в репозитории до полного cleanup (TODO M7).
  */
-export default function MeetingResultPage({ params }: Props) {
-  return <MeetingResultPageReal meetingId={params.id} />;
+export default async function MeetingResultPage({ params }: Props) {
+  const { id } = await params;
+  return <MeetingResultPageReal meetingId={id} />;
 }

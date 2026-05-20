@@ -8,9 +8,13 @@
  *  - Пароль НЕ устанавливаем — это задача Фазы 8.4.
  */
 
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// Prisma 7: standalone-клиент тоже требует driver adapter (URL — из env; bun грузит .env).
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
+});
 
 async function main(): Promise<void> {
   const email = process.env.ADMIN_BOOTSTRAP_EMAIL;

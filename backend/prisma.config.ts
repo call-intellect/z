@@ -1,3 +1,7 @@
+// dotenv/config — Prisma CLI читает prisma.config.ts своим загрузчиком, куда
+// bun-автозагрузка .env не долетает; dotenv явно подхватывает .env (а в Docker,
+// где .env нет, остаётся no-op и используются реальные env-переменные из compose).
+import 'dotenv/config';
 import { defineConfig } from 'prisma/config';
 
 /**
@@ -6,11 +10,8 @@ import { defineConfig } from 'prisma/config';
  * Connection URL вынесен сюда из schema.prisma (в v7 `url` в datasource удалён).
  * Рантайм-клиент использует driver adapter (PrismaPg) — см. PrismaService.
  *
- * DATABASE_URL подхватывается из окружения: Bun автозагружает `.env` в dev,
- * а в docker-деплое переменные приходят из compose `env_file`. Здесь читаем
- * `process.env` напрямую с фолбэком на '' — это конфиг CLI (не app-код), и
- * фолбэк нужен, чтобы `prisma generate` не падал, когда БД не требуется
- * (например, на этапе сборки Docker-образа без DATABASE_URL).
+ * `process.env['DATABASE_URL'] ?? ''` — фолбэк нужен, чтобы `prisma generate`
+ * не падал, когда БД не требуется (например, на этапе сборки Docker-образа без DATABASE_URL).
  */
 export default defineConfig({
   schema: 'prisma/schema.prisma',

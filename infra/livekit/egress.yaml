@@ -1,18 +1,23 @@
-# Локальная конфигурация LiveKit Egress.
+# LiveKit Egress — PROD-ШАБЛОН (монтируется в infra/livekit/docker-compose.yml).
+# Заполни значения CHANGE_ME.
 
-api_key: devkey
-api_secret: secretsecretsecretsecretsecretsecretsecretsecret
+# Должны совпадать с ключами в livekit.yaml.
+api_key: CHANGE_ME_API_KEY
+api_secret: CHANGE_ME_API_SECRET
+
+# LiveKit в той же host-сети.
 ws_url: ws://127.0.0.1:7880
 
 redis:
   address: 127.0.0.1:6379
 
+# Куда egress кладёт записи. То же S3, что и backend (S3_* в .env).
 s3:
-  access_key: z_minio_dev
-  secret: z_minio_dev_password
-  region: us-east-1
-  bucket: meetings-dev
-  endpoint: http://127.0.0.1:9000
+  access_key: CHANGE_ME
+  secret: CHANGE_ME
+  region: ru-7
+  bucket: meetings-prod
+  endpoint: https://s3.ru-7.storage.selcloud.ru
   force_path_style: true
 
 logging:

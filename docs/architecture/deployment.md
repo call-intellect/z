@@ -12,8 +12,9 @@ cd backend && bun run dev          # :3000 (включает воркеры)
 cd frontend && bun run dev         # :3001
 ```
 
-LiveKit для локальной разработки — `docker compose --profile livekit up`
-(`infra/livekit/`) или dev-инстанс `media-dev.crossmark.ru`.
+Зависимости (Postgres+pgvector / Redis / MinIO) — `docker compose -f docker-compose.dev.yml up -d`.
+LiveKit для локальной разработки — `bun run livekit` (поднимает контейнер из `infra/livekit/`,
+конфиг `livekit-dev.yaml`) или dev-инстанс `media-dev.crossmark.ru`.
 
 ## Production
 
@@ -39,27 +40,28 @@ LiveKit для локальной разработки — `docker compose --pro
 
 ### Docker Compose деплой (актуальный путь)
 
-Полная инструкция — [`deploy/README.md`](../../deploy/README.md). Кратко:
+Полная инструкция — корневой [`README.md`](../../README.md) → «Деплой на сервер».
+nginx-конфиги — [`deploy/README.md`](../../deploy/README.md). Кратко:
 
-- **Backend** (контейнеры): postgres(pgvector)+redis+migrate+backend (воркеры BullMQ in-process), рантайм Bun.
+- **Backend + Frontend** — единый `docker-compose.yml` в корне (postgres(pgvector) +
+  redis + migrate(one-shot) + backend + frontend), рантайм Bun, без профилей.
   ```bash
-  cd deploy/backend && cp backend.env.example backend.env   # заполнить
-  docker compose --env-file backend.env up -d --build
+  cp .env.example .env                       # заполнить секреты + порты
+  docker compose up -d --build backend       # postgres + redis + migrate + backend
+  docker compose up -d --build frontend      # Next standalone
   ```
-- **Frontend** (контейнер): Next `output: 'standalone'`, `bun server.js` в контейнере,
-  слушает 127.0.0.1:3001, nginx на хосте проксирует.
-  ```bash
-  cd deploy/frontend && cp frontend.env.example frontend.env
-  docker compose --env-file frontend.env up -d --build
-  ```
+- Порты публикации/приложений — через `.env` (`BACKEND_HOST_PORT`/`PORT`,
+  `FRONTEND_HOST_PORT`/`FRONTEND_PORT`). Слушают только 127.0.0.1.
 - **nginx** — на хост-машине (`deploy/nginx/*.conf`), TLS через certbot.
 
 > Рантайм везде — Bun (последний). Prod-runner backend больше не на Node.
 
 ### LiveKit / Egress
 
-Стандартные docker-compose из `infra/livekit/livekit.yaml` и `infra/livekit/egress.yaml`.
-Обновляются вручную: `docker-compose pull && docker-compose up -d`.
+Отдельный compose: [`infra/livekit/docker-compose.yml`](../../infra/livekit/docker-compose.yml)
+(network_mode host, Linux-only). Конфиги — `infra/livekit/livekit.yaml`, `egress.yaml`
+(прод-шаблоны, заполнить CHANGE_ME). Запуск: `cd infra/livekit && docker compose up -d`.
+Обновление: `docker compose pull && docker compose up -d`.
 
 ## Бэкапы
 

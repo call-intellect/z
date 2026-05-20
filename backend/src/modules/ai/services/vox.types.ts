@@ -9,7 +9,7 @@
  *   - punctuationMode `pro` (auto-пунктуация)
  *   - diarizationEnabled — у нас всегда `false`, спикеры по participant_id
  *
- * Источник: `c:\work\z\llm-models-playbook.md` §1.
+ * Источник: `docs/reference/llm-models-playbook.md` §1.
  */
 
 export type VoxLanguage = 'ru' | 'en';

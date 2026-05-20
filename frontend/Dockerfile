@@ -2,13 +2,13 @@
 #
 # Z frontend — сборка Next.js (output: 'standalone') ВНУТРИ контейнера на Bun.
 #
-# Результат сборки (`/app/deploy-out`) — самодостаточный артефакт:
-#   server.js + минимальные node_modules + .next/static + public.
-# Деплой-compose копирует его в host-директорию (FRONTEND_DEPLOY_DIR),
-# где он запускается `bun server.js` под systemd, а nginx на хосте проксирует.
+# Стадия `runner` — самодостаточный образ (server.js + минимальные node_modules
+# + .next/static + public), запускается `bun server.js`, слушает 127.0.0.1:${PORT}.
+# Наружу публикует nginx на хосте (см. deploy/nginx/z-frontend.conf).
+# Запуск: см. корневой docker-compose.yml (сервис `frontend`).
 #
 # ВАЖНО: NEXT_PUBLIC_* инлайнятся в бандл на этапе СБОРКИ — поэтому передаются
-# как build-args (см. deploy/frontend/docker-compose.build.yml).
+# как build-args (см. docker-compose.yml → frontend.build.args).
 
 # ---------- deps ----------
 FROM oven/bun:1.3-alpine AS deps

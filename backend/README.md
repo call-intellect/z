@@ -9,9 +9,9 @@ NestJS 10 + Prisma 5 + PostgreSQL + Redis + BullMQ + LiveKit Server SDK + S3 + A
 ## Локальный запуск
 
 1. Скопируй `.env.example` в `.env` и заполни значения.
-2. Подними локальные зависимости (Postgres, Redis, MinIO):
+2. Подними локальные зависимости (Postgres, Redis, MinIO) из корня:
    ```
-   docker compose up postgres redis minio
+   docker compose -f docker-compose.dev.yml up -d
    ```
 3. Накати схему БД и сгенерируй Prisma Client:
    ```

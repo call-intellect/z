@@ -1,0 +1,89 @@
+# Локальные dev-зависимости Z (Postgres + Redis + MinIO).
+#
+# Поднимает только инфраструктуру, на которой работает backend в dev-режиме.
+# Сам backend/frontend запускаются процессами из исходников (`bun run dev`),
+# а не контейнерами — так быстрее итерации.
+#
+# Использование:
+#   docker compose -f docker-compose.dev.yml up -d        # поднять зависимости
+#   cd backend && bun run prisma:push && bun run dev      # backend + воркеры
+#   cd frontend && bun run dev                            # frontend
+#   bun run livekit                                       # LiveKit (отдельно, см. infra/livekit/)
+#
+# Все секреты здесь — ТОЛЬКО для локалки.
+
+name: z-dev
+
+services:
+  postgres:
+    # pgvector/pgvector — официальный образ с расширением pgvector
+    # (требуется схемой: backend/prisma/schema.prisma `extensions = [pgvector]`).
+    image: pgvector/pgvector:pg17
+    container_name: z-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: z_main
+      POSTGRES_USER: z_app
+      POSTGRES_PASSWORD: z_app_dev_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - '127.0.0.1:55435:5432'
+    volumes:
+      - z-dev-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U z_app -d z_main']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    container_name: z-dev-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'no']
+    ports:
+      - '127.0.0.1:56381:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: z-dev-minio
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: z_minio_dev
+      MINIO_ROOT_PASSWORD: z_minio_dev_password
+    ports:
+      - '127.0.0.1:59000:9000'   # S3 API
+      - '127.0.0.1:59001:9001'   # Web console
+    volumes:
+      - z-dev-minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: z-dev-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 z_minio_dev z_minio_dev_password &&
+      mc mb -p local/meetings-dev || true &&
+      mc mb -p local/db-backups-dev || true &&
+      mc anonymous set none local/meetings-dev &&
+      echo 'MinIO buckets ready'
+      "
+    restart: 'no'
+
+volumes:
+  z-dev-postgres-data:
+  z-dev-minio-data:

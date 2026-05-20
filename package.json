@@ -1,0 +1,15 @@
+{
+  "name": "z",
+  "private": true,
+  "description": "Z — AI-видеовстречи на LiveKit. Корневые dev-скрипты (оркестрация локального стека).",
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "livekit": "infra/livekit/livekit-dev.sh up",
+    "livekit:down": "infra/livekit/livekit-dev.sh down",
+    "livekit:rm": "infra/livekit/livekit-dev.sh rm",
+    "livekit:logs": "infra/livekit/livekit-dev.sh logs",
+    "livekit:status": "infra/livekit/livekit-dev.sh status",
+    "dev:backend": "cd backend && bun run dev",
+    "dev:frontend": "cd frontend && bun run dev"
+  }
+}

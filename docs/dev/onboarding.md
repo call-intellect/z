@@ -79,20 +79,28 @@ bun run apply-postgres-init     # HNSW/GIN-индексы pgvector (не в sche
 bun run prisma:seed             # промпты по типам встреч + дефолтные шаблоны (опц., нужен ADMIN_BOOTSTRAP_EMAIL)
 ```
 
-## 5. Два процесса (два терминала)
+## 5. Запуск
 
 AI/knowledge-core воркеры BullMQ работают **внутри** backend (in-process) — отдельный
-worker-процесс больше не нужен.
+worker-процесс не нужен.
 
+### Вариант A — весь стек одной командой (из корня репо)
 ```bash
-# терминал 1 — backend: HTTP API (:3000) + воркеры BullMQ in-process
-cd backend && bun run dev
+bun run dev      # LiveKit (Docker) + backend (:3000 + воркеры) + frontend (:3001)
+```
+Первый запуск сам скачает образ LiveKit. Ctrl+C останавливает backend+frontend
+(LiveKit — сервис, гасится отдельно: `bun run livekit:down`).
 
-# терминал 2 — frontend (:3001)
-cd frontend && bun install && bun run dev
+### Вариант B — по отдельности (по терминалу на сервис)
+```bash
+bun run livekit                       # LiveKit (Docker), опционально — для видео
+cd backend  && bun run dev            # HTTP API :3000 + воркеры in-process
+cd frontend && bun run dev            # :3001
 ```
 
 Открой http://localhost:3001. Swagger: http://localhost:3000/api/docs. Health: http://localhost:3000/health.
+
+Корневые скрипты: `bun run dev` · `bun run livekit[:down|:rm|:logs|:status]` · `bun run dev:backend` · `bun run dev:frontend`.
 
 ## Полезные команды
 

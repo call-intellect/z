@@ -7,9 +7,10 @@ import { MetricsModule } from '../../common/metrics/metrics.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { RedisModule } from '../../common/redis/redis.module';
 import { AuditModule } from '../audit/audit.module';
+import { CoreQueueModule } from '../core-queue/core-queue.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
-import { CoreQueueService } from '../core-queue/core-queue.service';
-import { WorkerOrgGate } from '../core-queue/worker-org-gate';
+import { EntitlementGlobalModule } from '../entitlements/entitlement-global.module';
+import { QuotasModule } from '../quotas/quotas.module';
 import { MeetingIngestAdapter } from '../ingest/adapters/meeting.adapter';
 import { IngestService } from '../ingest/ingest.service';
 import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
@@ -34,6 +35,7 @@ import { MeetingsRepository } from '../meetings/meetings.repository';
 import { MeetingsService } from '../meetings/meetings.service';
 
 import { AiQueueService } from './ai-queue.service';
+import { LlmRouterGlobalModule } from './llm-router-global.module';
 import { AnalyzeWorker } from './workers/analyze.worker';
 import { CardRollupWorker } from './workers/card-rollup.worker';
 import { ChaptersWorker } from './workers/chapters.worker';
@@ -43,16 +45,9 @@ import { NotifyWorker } from './workers/notify.worker';
 import { TasksExtractWorker } from './workers/tasks-extract.worker';
 import { TranscribeWorker } from './workers/transcribe.worker';
 import { TranscriptIndexWorker } from './workers/transcript-index.worker';
-import { AiUsageLogService } from './services/ai-usage-log.service';
-import { AnthropicService } from './services/anthropic.service';
 import { CardRollupService } from './services/card-rollup.service';
 import { ChapterExtractionService } from './services/chapter-extraction.service';
-import { DeepSeekService } from './services/deepseek.service';
 import { LlmFallbackService } from './services/llm-fallback.service';
-import { LlmRouterService } from './services/llm-router.service';
-import { MinimaxService } from './services/minimax.service';
-import { OllamaService } from './services/ollama.service';
-import { OpenAiProxyService } from './services/openai-proxy.service';
 import { RegenerateService } from './services/regenerate.service';
 import { TaskExtractionService } from './services/task-extraction.service';
 import { VoxService } from './services/vox.service';
@@ -90,6 +85,15 @@ import { VoxService } from './services/vox.service';
     KnowledgeCoreModule,
     // Phase 9: AuditLogService нужен strategic-alignment воркеру/cron'у.
     AuditModule,
+    // @Global-обёртки/модули для NestJS 11 (строгий DI): делают видимыми для
+    // @Global KnowledgeCoreModule и локальных провайдеров воркера сервисы, которые
+    // на HTTP даёт @Global AiModule. LlmRouterGlobalModule — LlmRouter + LLM-клиенты;
+    // EntitlementGlobalModule — EntitlementService (без HTTP-контроллера);
+    // CoreQueueModule — CoreQueueService/WorkerOrgGate; QuotasModule — QuotaService.
+    LlmRouterGlobalModule,
+    EntitlementGlobalModule,
+    CoreQueueModule,
+    QuotasModule,
   ],
   providers: [
     // бизнес — нужны для FSM-переходов.
@@ -100,24 +104,15 @@ import { VoxService } from './services/vox.service';
     JwtService,
     // S3 — для скачивания audio из S3 и записи transcripts/*.
     S3Service,
-    // AI-клиенты.
+    // AI-клиенты. Anthropic/Minimax/OpenAiProxy/DeepSeek/Ollama/AiUsageLog/LlmRouter
+    // — из @Global LlmRouterGlobalModule. CoreQueueService/WorkerOrgGate — из
+    // @Global CoreQueueModule. EntitlementService/QuotaService — из их @Global модулей.
     VoxService,
-    AnthropicService,
-    MinimaxService,
-    OpenAiProxyService,
-    DeepSeekService,
-    OllamaService,
     LlmFallbackService,
-    AiUsageLogService,
     AiQueueService,
-    // knowledge-core (Фаза 1) — для AnalyzeWorker.
-    CoreQueueService,
-    // knowledge-core (Фаза 7) — gate для воркеров (Org.workersEnabled).
-    WorkerOrgGate,
     IngestService,
     MeetingIngestAdapter,
-    // M3 AI-pipeline расширения.
-    LlmRouterService,
+    // M3 AI-pipeline расширения (LlmRouterService — из LlmRouterGlobalModule).
     ChapterExtractionService,
     TaskExtractionService,
     RegenerateService,

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 
 import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
@@ -20,7 +20,11 @@ import { TranscriptIndexerService } from './services/transcript-indexer.service'
  *
  * `S3Service` — providet локально, потому что `RecordingsModule` HTTP-only,
  *  а индексер работает в worker-процессе тоже.
+ *
+ * @Global — чтобы `EmbeddingFallbackService` был виден @Global `KnowledgeCoreModule`
+ * и в worker-процессе (на HTTP это давал @Global-реэкспорт `AiModule`).
  */
+@Global()
 @Module({
   imports: [ConfigModule, PrismaModule],
   providers: [

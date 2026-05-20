@@ -54,4 +54,34 @@ Doc прямо говорит: handler должен быть идемпотен�
 
 **Как обойти:** склеивать аудио в файлы по нескольку минут перед отправкой. Не дробить фразами.
 
+## Апгрейд пакетов / рантайм (2026-05-20)
+
+### 7. NestJS 11: строгий DI ломает «плоскую» проводку worker-процесса
+
+`WorkersModule` (root `createApplicationContext`) перечислял сервисы (`LlmRouterService`, `MeetingsService` и т.д.) **локальными провайдерами** вместо импорта их модулей. На HTTP это работало, потому что `@Global AiModule` реэкспортит нужное. В воркере `AiModule` нет, и `@Global KnowledgeCoreModule` (импортируемый воркером) **не видит** локальные провайдеры root-модуля — под NestJS 11 это жёсткая `UnknownDependenciesException` (каскадом: LlmRouter → Embedding → CoreQueue → Entitlement/Quota → auth-guard контроллеров).
+
+**Как обойти:**
+- Узкие `@Global`-обёртки для воркера: `LlmRouterGlobalModule`, `EntitlementGlobalModule` (provide+export один сервис + его зависимости, без HTTP-багажа вроде `RetryService→MeetingsService`).
+- Импортировать готовые `@Global`-модули (`CoreQueueModule`, `QuotasModule`), а не дублировать их провайдеры локально.
+- Сделать `@Global` модули, чьи exports нужны @Global-консьюмерам (`EmbeddingsModule`).
+- Контроллеры выносить из сервис-модуля: `KnowledgeCoreApiModule` (controllers) ↔ `KnowledgeCoreModule` (@Global services) — иначе воркер инстанцирует контроллеры и их `CookieAuthGuard/TenantGuard`.
+
+### 8. Prisma 7 — driver adapter, а не просто bump
+
+Rust-движок убран. `url` в `datasource` запрещён → выносится в `prisma.config.ts` (`datasource.url`), рантайм-клиент создаётся с `adapter: new PrismaPg({ connectionString })`. `$use` (middleware) удалён → slow-query логирование через `$on('query')`. **Любой** standalone `new PrismaClient()` (seed, скрипты) тоже требует adapter.
+
+**Как обойти:** `PrismaService` и `prisma/seed.ts` — через `@prisma/adapter-pg`. `prisma.config.ts`: `import 'dotenv/config'` (Prisma CLI не видит bun-автозагрузку `.env`) + `url: process.env['DATABASE_URL'] ?? ''` (фолбэк, чтобы `prisma generate` не падал без БД в Docker-сборке).
+
+### 9. tsc не копирует non-TS ассеты в dist
+
+`RbacService` читает `policies/policy.csv` через `readFileSync(join(__dirname, ...))`. `bun run dev` (из `src/`) работает, а собранный `bun dist/main.js` падает с ENOENT — `tsc` копирует только `.ts`.
+
+**Как обойти:** шаг `bun scripts/copy-assets.ts` в `build` (копирует ассеты в `dist/`). Альтернатива — инлайнить (как mail-шаблоны).
+
+### 10. «Latest» иногда — ломающий rewrite или вообще ниже текущего
+
+`archiver` 8 — ESM-rewrite на классы (`new ZipArchive()` вместо `archiver('zip')`), ломает `import archiver` под bun и сам API → пин на `^7`. `@vidstack/react`/`media-icons`: npm `latest` (0.6.x/0.10.x) **ниже** установленных (1.x) → не трогать. ESLint 10 убрал eslintrc (flat config обязателен) + `eslint-plugin-import` несовместим → `eslint-plugin-import-x`; `eslint-config-next` под ESLint 10 падает на циклической ссылке → `@next/eslint-plugin-next` напрямую.
+
+**Как обойти:** перед бампом мажора проверять changelog и что `latest` действительно новее; держать список оправданных исключений.
+
 [[../index|← index]]

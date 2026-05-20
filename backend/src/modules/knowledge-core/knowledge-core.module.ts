@@ -4,12 +4,7 @@ import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { S3Service } from '../recordings/s3.service';
 
-import { KnowledgeBlocksController } from './api/blocks.controller';
-import { KnowledgeEntitiesController } from './api/entities.controller';
-import { KnowledgeGraphController } from './api/graph.controller';
-import { KnowledgeSearchController } from './api/search.controller';
 import { SearchService } from './api/search.service';
-import { KnowledgeThemesController } from './api/themes.controller';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockFetchService } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
@@ -47,17 +42,14 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
  * Помечаем `@Global()`, чтобы воркеры в `WorkersModule` могли инжектить
  * `BlockExtractionService` / `EntityResolutionService` / `SegmentBuilderService`
  * без явного импорта самого модуля несколько раз.
+ *
+ * HTTP-контроллеры вынесены в `KnowledgeCoreApiModule` — чтобы worker-процесс,
+ * импортирующий этот сервис-модуль, не инстанцировал контроллеры и их auth-guard'ы
+ * (CookieAuthGuard/TenantGuard), которым в воркере нет места.
  */
 @Global()
 @Module({
   imports: [ConfigModule, PrismaModule],
-  controllers: [
-    KnowledgeSearchController,
-    KnowledgeBlocksController,
-    KnowledgeEntitiesController,
-    KnowledgeGraphController,
-    KnowledgeThemesController,
-  ],
   providers: [
     S3Service,
     SegmentBuilderService,

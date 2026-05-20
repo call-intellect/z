@@ -86,6 +86,23 @@ Frontend: Next 14→16, React 18→19, Tailwind 3→4, lucide 0.4x→1.x, sonner
 - **«Latest» ≠ всегда выше:** `@vidstack/react`/`media-icons` в npm `latest` ниже установленных — проверять перед бампом.
 - **Bun тянет весь NestJS-стек** (HTTP + worker, прод-рантайм) — Node как prod-runner не нужен.
 
+## Worker DI: рефакторинг wiring (после локальной верификации)
+
+При локальном запуске с валидным `.env` всплыло: `bun run worker:dev` не стартовал — NestJS 11
+строгий DI. `WorkersModule` (root) перечислял сервисы локально, а `@Global KnowledgeCoreModule`
+их не видел (на HTTP давал `@Global AiModule`, в воркере его нет). Каскад: LlmRouter → Embedding
+→ CoreQueue → Entitlement/Quota → auth-guard'ы контроллеров knowledge-core.
+
+Починено (логика сервисов не менялась, только проводка):
+- `LlmRouterGlobalModule`, `EntitlementGlobalModule` — узкие @Global-обёртки для воркера.
+- `EmbeddingsModule` → `@Global`; в WorkersModule импорт `CoreQueueModule` + `QuotasModule` вместо локальных провайдеров.
+- Контроллеры knowledge-core вынесены в `KnowledgeCoreApiModule` (HTTP), `KnowledgeCoreModule` — только сервисы (@Global) → воркер их не инстанцирует.
+
+**Верификация:** `bun run worker:dev` И `bun dist/workers/main.js` (прод-путь) стартуют, BullMQ
+зарегистрировал все очереди (`ai.*`, `core.*`, `clip.render`, `webhook.delivery`, `export`). HTTP —
+229 роутов замаплено, knowledge-контроллеры на месте. typecheck/build/lint без новых ошибок.
+Детали — `02_architecture/code-pitfalls.md` §7.
+
 ## Prod-операции
 
 Деплой описан в `deploy/README.md`. Особенность Prisma 7: схема накатывается сервисом `migrate`

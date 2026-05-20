@@ -42,6 +42,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { GoalsModule } from './modules/goals/goals.module';
+import { KnowledgeCoreApiModule } from './modules/knowledge-core/knowledge-core-api.module';
 import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
@@ -125,6 +126,8 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // инжектят LlmRouterService из @Global() AiModule. Воркеры запускаются
     // в отдельном процессе (WorkersModule); здесь — только HTTP-side API.
     KnowledgeCoreModule,
+    // HTTP-контроллеры knowledge-core (вынесены из @Global сервис-модуля).
+    KnowledgeCoreApiModule,
 
     // Бизнес-модули.
     HealthModule,

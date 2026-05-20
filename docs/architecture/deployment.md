@@ -1,30 +1,20 @@
 # Deployment guide
 
-## Локальная разработка (docker-compose)
+## Локальная разработка
 
+Рантайм — **Bun** (Node не требуется). Полная пошаговая инструкция (без контейнеров,
+с локальными Postgres+pgvector / Redis) — в [`docs/dev/onboarding.md`](../dev/onboarding.md).
+
+Кратко (три процесса):
 ```bash
-cd backend
-docker-compose up -d   # postgres + redis + minio
-cp .env.example .env   # подставить DATABASE_URL, REDIS_URL, S3_*
-
-bun install
-bun run prisma:push
-bun run prisma:seed    # промпты + дефолтные шаблоны
-
-# В первом терминале:
-bun run dev            # NestJS на :3000
-
-# Во втором терминале:
-bun run worker:dev     # AI-воркеры (transcribe/merge/analyze/notify)
-
-# В третьем терминале:
-cd ../frontend
-bun install
-bun run dev            # Next.js на :3001
+# backend HTTP + AI-воркеры (отдельный процесс) + frontend
+cd backend && bun run dev          # :3000
+cd backend && bun run worker:dev   # BullMQ
+cd frontend && bun run dev         # :3001
 ```
 
-LiveKit для локальной разработки можно поднять отдельным docker-compose
-(`infra/livekit/`) или подключиться к dev-инстансу `media-dev.crossmark.ru`.
+LiveKit для локальной разработки — `docker compose --profile livekit up`
+(`infra/livekit/`) или dev-инстанс `media-dev.crossmark.ru`.
 
 ## Production
 
@@ -48,30 +38,24 @@ LiveKit для локальной разработки можно поднять
 - nginx-конфиг для TLS-терминации (certbot autorenew).
 - ENV-файл `/etc/z/<service>.env` (mode 0600).
 
-### Backend деплой
+### Docker Compose деплой (актуальный путь)
 
-```bash
-ssh root@vm-backend
-cd /opt/z/backend
-git pull
-bun install --frozen-lockfile
-bun run build
-bun run prisma:push
-systemctl restart z-backend z-workers
-```
+Полная инструкция — [`deploy/README.md`](../../deploy/README.md). Кратко:
 
-### Frontend деплой
+- **Backend** (контейнеры): postgres(pgvector)+redis+migrate+backend+worker, рантайм Bun.
+  ```bash
+  cd deploy/backend && cp backend.env.example backend.env   # заполнить
+  docker compose --env-file backend.env up -d --build
+  ```
+- **Frontend** (контейнер): Next `output: 'standalone'`, `bun server.js` в контейнере,
+  слушает 127.0.0.1:3001, nginx на хосте проксирует.
+  ```bash
+  cd deploy/frontend && cp frontend.env.example frontend.env
+  docker compose --env-file frontend.env up -d --build
+  ```
+- **nginx** — на хост-машине (`deploy/nginx/*.conf`), TLS через certbot.
 
-Next.js — статический build + Node runtime для RSC:
-
-```bash
-ssh root@vm-frontend
-cd /opt/z/frontend
-git pull
-bun install --frozen-lockfile
-bun run build
-systemctl restart z-frontend
-```
+> Рантайм везде — Bun (последний). Prod-runner backend больше не на Node.
 
 ### LiveKit / Egress
 

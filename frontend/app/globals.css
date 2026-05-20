@@ -1,8 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@import url('../src/ui/tokens.css');
+/* Tailwind 4: единый импорт ядра (preflight + utilities) вместо @tailwind-директив. */
+@import 'tailwindcss';
+/* Дизайн-токены (CSS-переменные). @import должен идти до прочих правил. */
+@import '../src/ui/tokens.css';
+/* Legacy JS-конфиг (theme/colors/animations/plugins) — v4 поддерживает через @config. */
+@config '../tailwind.config.ts';
 
 /* Selection с mint-акцентом */
 ::selection {

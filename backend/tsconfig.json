@@ -3,6 +3,9 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
+    // TS 6: node10-резолюция и baseUrl помечены deprecated (отключатся в TS 7).
+    // Оставляем текущее поведение явным флагом; миграция на nodenext — отдельно.
+    "ignoreDeprecations": "6.0",
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": ".",

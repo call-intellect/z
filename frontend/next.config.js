@@ -61,6 +61,9 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Самодостаточная сборка (server.js + минимальные node_modules) для запуска
+  // фронта контейнером: `bun server.js`. nginx на хосте проксирует. См. deploy/README.md.
+  output: 'standalone',
   transpilePackages: [
     '@livekit/components-react',
     '@livekit/components-styles',

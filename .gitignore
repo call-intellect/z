@@ -6,6 +6,9 @@ out/
 .env
 .env.*
 !.env.example
+# deploy-секреты (backend.env / frontend.env) — НИКОГДА не коммитить.
+deploy/**/*.env
+!deploy/**/*.env.example
 *.log
 coverage/
 .DS_Store

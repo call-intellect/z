@@ -9,7 +9,6 @@ import {
   Pencil,
   Plus,
   Send,
-  Slack,
   Trash2,
 } from 'lucide-react';
 
@@ -45,7 +44,7 @@ const TYPE_META: Record<
   { label: string; icon: typeof AtSign; description: string }
 > = {
   email: { label: 'Email', icon: AtSign, description: 'Письмо на адрес' },
-  slack_webhook: { label: 'Slack', icon: Slack, description: 'Incoming webhook URL' },
+  slack_webhook: { label: 'Slack', icon: MessagesSquare, description: 'Incoming webhook URL' },
   telegram_bot: {
     label: 'Telegram',
     icon: MessagesSquare,

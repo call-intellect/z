@@ -45,7 +45,7 @@ export type CreateDestinationDto = z.infer<typeof CreateDestinationSchema>;
 
 export const UpdateDestinationSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type UpdateDestinationDto = z.infer<typeof UpdateDestinationSchema>;

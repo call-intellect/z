@@ -38,6 +38,24 @@ type: architecture
 - сохранение ссылок на записи
 - запуск AI-обработки
 
+## Рантайм и деплой (актуально на 2026-05-20)
+
+- **Рантайм — Bun (последний, ≥1.3) везде:** dev, сборка и prod-runner. Node как
+  prod-runner backend больше не используется. `tsx`/`ts-node` удалены — TS-скрипты
+  (seed, apply-postgres-init, copy-assets) запускаются `bun`.
+- **Сборка backend:** `tsc -p tsconfig.build.json` → `dist/`, затем `bun scripts/copy-assets.ts`
+  копирует non-TS ассеты (RBAC `policies/*.conf|.csv`) в `dist/` — иначе `bun dist/main.js`
+  падает на старте.
+- **Деплой — раздельный docker compose** (см. [`deploy/README.md`](../../deploy/README.md)):
+  - backend — контейнеры (postgres+redis+migrate+backend+worker), Bun-образ;
+  - frontend — Next `output: 'standalone'` контейнером (`bun server.js`, 127.0.0.1:3001),
+    nginx на хосте проксирует (как и backend).
+- **Версии (мажоры, после апгрейда 2026-05-20):** NestJS 11, Prisma **7** (driver adapter
+  `@prisma/adapter-pg`, без Rust-движка; URL в `prisma.config.ts`, не в schema), zod 4,
+  Next 16, React 19, Tailwind 4 (CSS-first, legacy-конфиг через `@config`), TypeScript 6,
+  ESLint 10, vitest 4. Исключения: `@vidstack/react`/`media-icons` оставлены на текущих
+  (npm `latest` у них ниже).
+
 ## Медиа
 
 - LiveKit Server (SFU) — только аудио/видео/screen share/media routing

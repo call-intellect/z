@@ -11,7 +11,9 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  url        = env("DATABASE_URL")
+  // Prisma 7: connection URL вынесен из schema.
+  //   - CLI (db push / studio) берёт url из prisma.config.ts
+  //   - рантайм — через driver adapter (PrismaPg) в PrismaService
   extensions = [pgvector(map: "vector")]
 }
 

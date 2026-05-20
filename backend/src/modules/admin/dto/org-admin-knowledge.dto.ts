@@ -5,7 +5,7 @@ import { z } from 'zod';
  */
 
 export const SetWorkersSchema = z
-  .record(z.boolean())
+  .record(z.string(), z.boolean())
   .refine((m) => Object.keys(m).length > 0, {
     message: 'хотя бы один воркер должен быть указан',
   });

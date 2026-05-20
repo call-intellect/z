@@ -48,7 +48,8 @@ export class VoxService {
         const form = new FormData();
         // FormData/Blob есть в Node 20+ глобально.
         // Файл подаём с MIME 'audio/ogg' — egress от LiveKit это `.ogg`.
-        const blob = new Blob([audio], { type: 'audio/ogg' });
+        // @types/node 25: Buffer<ArrayBufferLike> не входит в BlobPart — оборачиваем в Uint8Array.
+        const blob = new Blob([new Uint8Array(audio)], { type: 'audio/ogg' });
         form.append('file', blob, 'voice.ogg');
         form.append('model', model);
         form.append('punctuationMode', punctuationMode);

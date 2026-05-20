@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+build
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.DS_Store
+.vscode
+.idea
+.vitest-cache
+next-env.d.ts
+Dockerfile
+.dockerignore
+README.md

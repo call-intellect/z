@@ -78,10 +78,29 @@ Rust-движок убран. `url` в `datasource` запрещён → вын�
 
 **Как обойти:** шаг `bun scripts/copy-assets.ts` в `build` (копирует ассеты в `dist/`). Альтернатива — инлайнить (как mail-шаблоны).
 
-### 10. «Latest» иногда — ломающий rewrite или вообще ниже текущего
+### 10. Принцип: брать LATEST stable и адаптировать код, а не откатывать версию под код
 
-`archiver` 8 — ESM-rewrite на классы (`new ZipArchive()` вместо `archiver('zip')`), ломает `import archiver` под bun и сам API → пин на `^7`. `@vidstack/react`/`media-icons`: npm `latest` (0.6.x/0.10.x) **ниже** установленных (1.x) → не трогать. ESLint 10 убрал eslintrc (flat config обязателен) + `eslint-plugin-import` несовместим → `eslint-plugin-import-x`; `eslint-config-next` под ESLint 10 падает на циклической ссылке → `@next/eslint-plugin-next` напрямую.
+`archiver` 8 — ESM-rewrite на классы (`new ZipArchive()` вместо `archiver('zip')`), без
+official-типов. Правильно: `import { ZipArchive }` + локальная декларация `src/types/archiver.d.ts`
+(убрать `@types/archiver` — он описывает v7) + адаптировать `bulk-zip.generator.ts`. Под bun ESM-only
+пакет работает (require ESM). ESLint 10 убрал eslintrc → flat config; `eslint-plugin-import` несовместим
+→ `eslint-plugin-import-x`; `eslint-config-next` под ESLint 10 падает циклической ссылкой → `@next/eslint-plugin-next` напрямую.
 
-**Как обойти:** перед бампом мажора проверять changelog и что `latest` действительно новее; держать список оправданных исключений.
+Исключение (редкое): `@vidstack/react`/`media-icons` — npm `latest` (0.6.x/0.10.x) **ниже** установленных
+(1.x) → оставить текущие. Перед бампом проверять, что `latest` реально новее.
+
+### 11. LiveKit: версия сервера ДОЛЖНА соответствовать версии клиента
+
+`livekit-client` 2.19 ходит на `/rtc/v1`; старый `livekit-server` v1.8 его не знает →
+`v1 RTC path not found` → `websocket 1006` → `negotiation timed out`, видео не подключается.
+Сервер/egress держать на актуальной (v1.12+ под client 2.19). Плюс:
+- Токен должен включать `canUpdateOwnMetadata: true` — иначе `@livekit/components-react`
+  бросает `does not have permission to update own metadata`.
+- Вебхуки LiveKit идут с `Content-Type: application/webhook+json` — `express.json` должен
+  ловить и его (`type: [...]`), иначе нет `rawBody` → `webhook_signature_invalid`.
+- В CSP `connect-src` нужен http(s)-вариант livekit-URL (клиент делает HTTP-validate перед WS).
+
+**Как обойти:** при апгрейде `livekit-client`/`livekit-server-sdk` синхронно поднимать
+docker-образ `livekit/livekit-server` (и egress) до совместимой версии.
 
 [[../index|← index]]

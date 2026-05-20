@@ -77,6 +77,8 @@ export class LivekitService {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
+      // Нужно @livekit/components-react (обновляет метаданные участника, напр. hand-raise).
+      canUpdateOwnMetadata: true,
       roomAdmin: isHost,
     });
     return at.toJwt();

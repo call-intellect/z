@@ -15,7 +15,8 @@
 # Ключи/порт совпадают с backend/.env (devkey / ws://localhost:7880).
 set -euo pipefail
 
-IMAGE="livekit/livekit-server:v1.8.0"
+# v1.12+ обязателен: livekit-client 2.19 ходит на /rtc/v1, которого нет в старых серверах.
+IMAGE="livekit/livekit-server:v1.12.0"
 NAME="z-livekit-dev"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$DIR/livekit-dev.yaml"

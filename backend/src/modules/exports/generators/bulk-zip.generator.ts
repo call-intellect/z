@@ -2,7 +2,7 @@ import { PassThrough } from 'node:stream';
 
 import { Inject, Injectable } from '@nestjs/common';
 import type { Meeting } from '@prisma/client';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -52,7 +52,7 @@ export class BulkZipGenerator {
     };
   }): Promise<BuildResult> {
     const limit = this.cfg.workspace.exportZipMaxBytes;
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
     let totalBytes = 0;

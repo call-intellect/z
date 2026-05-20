@@ -23,6 +23,9 @@ async function bootstrap(): Promise<void> {
   app.use(
     express.json({
       limit: '1mb',
+      // LiveKit шлёт вебхуки с Content-Type: application/webhook+json — без этого
+      // express.json его не парсит, rawBody не сохраняется и sha256-проверка падает.
+      type: ['application/json', 'application/webhook+json'],
       verify: (req, _res, buf) => {
         (req as unknown as { rawBody?: Buffer }).rawBody = Buffer.from(buf);
       },

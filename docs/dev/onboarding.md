@@ -79,16 +79,16 @@ bun run apply-postgres-init     # HNSW/GIN-индексы pgvector (не в sche
 bun run prisma:seed             # промпты по типам встреч + дефолтные шаблоны (опц., нужен ADMIN_BOOTSTRAP_EMAIL)
 ```
 
-## 5. Три процесса (три терминала)
+## 5. Два процесса (два терминала)
+
+AI/knowledge-core воркеры BullMQ работают **внутри** backend (in-process) — отдельный
+worker-процесс больше не нужен.
 
 ```bash
-# терминал 1 — backend HTTP (:3000)
+# терминал 1 — backend: HTTP API (:3000) + воркеры BullMQ in-process
 cd backend && bun run dev
 
-# терминал 2 — AI-воркеры BullMQ (отдельный процесс!)
-cd backend && bun run worker:dev
-
-# терминал 3 — frontend (:3001)
+# терминал 2 — frontend (:3001)
 cd frontend && bun install && bun run dev
 ```
 

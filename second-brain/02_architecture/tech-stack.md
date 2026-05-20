@@ -47,7 +47,9 @@ type: architecture
   копирует non-TS ассеты (RBAC `policies/*.conf|.csv`) в `dist/` — иначе `bun dist/main.js`
   падает на старте.
 - **Деплой — раздельный docker compose** (см. [`deploy/README.md`](../../deploy/README.md)):
-  - backend — контейнеры (postgres+redis+migrate+backend+worker), Bun-образ;
+  - backend — контейнеры (postgres+redis+migrate+backend), Bun-образ; воркеры BullMQ
+    работают IN-PROCESS внутри backend (AppModule импортирует WorkersModule) — отдельного
+    worker-процесса/контейнера нет;
   - frontend — Next `output: 'standalone'` контейнером (`bun server.js`, 127.0.0.1:3001),
     nginx на хосте проксирует (как и backend).
 - **Версии (мажоры, после апгрейда 2026-05-20):** NestJS 11, Prisma **7** (driver adapter

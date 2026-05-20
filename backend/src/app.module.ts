@@ -6,7 +6,6 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from './common/config/index';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { LoggerModule } from './common/logger/logger.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './common/prisma/prisma.module';
@@ -14,6 +13,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
+import { WorkersModule } from './modules/ai/workers.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
 import { HealthModule } from './modules/health/health.module';
@@ -62,9 +62,6 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Глобальный конфиг — должен идти ПЕРВЫМ, чтобы валидация ENV выполнилась
     // до любых других модулей, зависящих от значений.
     ConfigModule,
-
-    // Pino-логгер. В dev — pretty, в prod — json. requestId — из middleware.
-    LoggerModule,
 
     // Prometheus-метрики (`/metrics`) + кастомные business-метрики.
     MetricsModule,
@@ -204,9 +201,13 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Зависит от @Global модулей: Crypto, Audit, Rbac, Ingest (TelegramAdapterService),
     // и от IngestEmailModule (для smoke-test IMAP).
     SourcesModule,
+
+    // AI/knowledge-core воркеры и cron'ы — IN-PROCESS (отдельного worker-процесса
+    // больше нет). Должен идти ПОСЛЕ всех @Global-модулей, чьи сервисы инжектят воркеры.
+    WorkersModule,
   ],
   providers: [
-    // Фильтр зарегистрирован через DI, чтобы получить PinoLogger.
+    // Фильтр зарегистрирован через DI.
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,

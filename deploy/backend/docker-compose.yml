@@ -1,6 +1,6 @@
 # Z backend — production docker compose.
 #
-# Поднимает: postgres(pgvector) + redis + migrate(one-shot) + backend(HTTP) + worker(BullMQ).
+# Поднимает: postgres(pgvector) + redis + migrate(one-shot) + backend (HTTP + BullMQ-воркеры in-process).
 # Backend слушает только на 127.0.0.1:3000 — наружу его публикует nginx на хост-машине
 # (см. deploy/nginx/z-backend.conf).
 #
@@ -89,18 +89,9 @@ services:
       start_period: 25s
     networks: [z-internal]
 
-  worker:
-    image: z-backend:latest
-    container_name: z-prod-worker
-    command: ['bun', 'dist/workers/main.js']
-    env_file: [backend.env]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [z-internal]
+  # NB: отдельного worker-сервиса больше нет — AI/knowledge-core воркеры работают
+  # IN-PROCESS внутри backend (AppModule импортирует WorkersModule). Один контейнер
+  # = HTTP API + воркеры BullMQ.
 
 volumes:
   z-postgres-data:

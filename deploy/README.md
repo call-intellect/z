@@ -6,7 +6,7 @@
 ```
 deploy/
 ├── backend/
-│   ├── docker-compose.yml        # postgres(pgvector) + redis + migrate + backend + worker
+│   ├── docker-compose.yml        # postgres(pgvector) + redis + migrate + backend (воркеры in-process)
 │   └── backend.env.example       # → backend.env (секреты)
 ├── frontend/
 │   ├── docker-compose.yml        # Next standalone контейнером (bun server.js)
@@ -40,14 +40,14 @@ docker compose --env-file backend.env up -d --build
 1. Соберётся образ `z-backend:latest` (multi-stage, Bun).
 2. Поднимутся `postgres` + `redis` (с volume и healthcheck).
 3. One-shot `migrate`: `prisma db push` (схема) + `apply-postgres-init` (HNSW/GIN-индексы pgvector).
-4. После успешной миграции стартуют `backend` (HTTP :3000) и `worker` (BullMQ).
+4. После успешной миграции стартует `backend` (HTTP :3000 + воркеры BullMQ in-process).
 
 Проверка:
 ```bash
 docker compose --env-file backend.env ps
 curl -s http://127.0.0.1:3000/health        # {"status":"ok","version":"..."}
 curl -s http://127.0.0.1:3000/health/ready  # проверка postgres/redis/livekit
-docker compose --env-file backend.env logs -f backend worker
+docker compose --env-file backend.env logs -f backend
 ```
 
 Первый super-admin (если задан `ADMIN_BOOTSTRAP_EMAIL`):

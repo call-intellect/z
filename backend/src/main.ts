@@ -7,7 +7,6 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import helmet from 'helmet';
-import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
 import { TypedConfigService } from './common/config/index';
@@ -18,7 +17,6 @@ async function bootstrap(): Promise<void> {
   // сырой Buffer тела в `req.rawBody` (нужно для HMAC-подписей Crossmark и
   // для верификации LiveKit-вебхуков). Парсинг `req.body` остаётся прежним.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bufferLogs: true,
     bodyParser: false,
   });
 
@@ -31,9 +29,6 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-
-  // Pino-логгер — глобально вместо стандартного Nest-логгера.
-  app.useLogger(app.get(Logger));
 
   const cfg = app.get(TypedConfigService);
 

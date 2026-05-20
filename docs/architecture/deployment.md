@@ -7,9 +7,8 @@
 
 Кратко (три процесса):
 ```bash
-# backend HTTP + AI-воркеры (отдельный процесс) + frontend
-cd backend && bun run dev          # :3000
-cd backend && bun run worker:dev   # BullMQ
+# backend (HTTP + воркеры BullMQ in-process) + frontend — два процесса
+cd backend && bun run dev          # :3000 (включает воркеры)
 cd frontend && bun run dev         # :3001
 ```
 
@@ -42,7 +41,7 @@ LiveKit для локальной разработки — `docker compose --pro
 
 Полная инструкция — [`deploy/README.md`](../../deploy/README.md). Кратко:
 
-- **Backend** (контейнеры): postgres(pgvector)+redis+migrate+backend+worker, рантайм Bun.
+- **Backend** (контейнеры): postgres(pgvector)+redis+migrate+backend (воркеры BullMQ in-process), рантайм Bun.
   ```bash
   cd deploy/backend && cp backend.env.example backend.env   # заполнить
   docker compose --env-file backend.env up -d --build

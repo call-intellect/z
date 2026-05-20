@@ -46,7 +46,7 @@ interface MappedError {
  *                                   → пробрасывает status; формат ответа — наш.
  *   - всё остальное                 → 500 `internal_error`.
  *
- * Каждая ошибка логируется через `PinoLogger` (nestjs-pino), stack уходит
+ * Каждая ошибка логируется встроенным Nest `Logger`, stack уходит
  * только в лог. Клиенту отдаётся `{ ok:false, error:{ code, message, requestId } }`.
  */
 @Injectable()
@@ -62,7 +62,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const mapped = this.toMapped(exception, requestId);
 
-    // Логируем сразу всё в одном объекте — pino корректно его сериализует.
+    // Логируем всё одним объектом.
     const logBindings: Record<string, unknown> = {
       method: request.method,
       url: request.url,

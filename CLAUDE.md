@@ -38,6 +38,40 @@
 
 Подробно: [second-brain/02_architecture/tech-stack.md](second-brain/02_architecture/tech-stack.md).
 
+## Команды разработки
+
+Рантайм — **Bun** для dev/build, **Node 20** для prod-runner. Команды запускаются из `backend/` или `frontend/`. Полная таблица — в [backend/README.md](backend/README.md).
+
+**Локальные зависимости** (из корня): `docker compose up postgres redis minio` (Postgres+pgvector :55435, Redis :56381, MinIO :59000/:59001). LiveKit+Egress — `docker compose --profile livekit up` (Linux-only, `network_mode: host`).
+
+**Backend** (`cd backend`, слушает :3000, Swagger `/api/docs`, health `/health`, метрики `/metrics`):
+- Первый запуск: `bun install && bun run prisma:push && bun run prisma:generate` (+ опц. `bun run prisma:seed`)
+- Dev: `bun run dev` (HTTP) и `bun run worker:dev` (BullMQ-воркеры — **отдельный процесс**, `src/workers/main.ts`)
+- Проверка: `bun run typecheck` · `bun run lint` · `bun run build`
+- Тесты (vitest): `bun run test:unit` / `test:integration` / `test:e2e`. Один файл: `bunx vitest run src/путь/файл.spec.ts`; по имени: `bunx vitest run -t "имя теста"`
+- pgvector-индексы (HNSW + GIN, не в schema.prisma): `bun run apply-postgres-init`
+
+**Frontend** (`cd frontend`, :3001): `bun run dev` · `bun run typecheck` · `bun run lint` · `bun run build` · `bun run test:unit`
+
+**Prisma:** только `bun run prisma:push`, **никогда** `prisma migrate*` (см. skill `prisma-db-push-rules`). После любой правки моделей — `bun run prisma:generate`. ENV — только через `TypedConfigService` / `env.schema.ts`, никаких `process.env.*` в коде.
+
+## Архитектура кода
+
+Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/Grafana/Prometheus/loadtest) + `second-brain/` (источник правды) + `plans/` (ТЗ и анализ) + `docs/`.
+
+**Backend** (`backend/src/`):
+- `main.ts` — HTTP-приложение; глобальный префикс API `/api/v1`. `workers/main.ts` — отдельный процесс воркеров/кронов BullMQ (поверх Redis).
+- `modules/*` — ~45 feature-модулей (meetings, livekit, recordings, ai, knowledge-core, orgs, rbac, admin, dashboard, goals, entitlements, …). Каждый эндпоинт — Zod-DTO (`nestjs-zod`) + Swagger.
+- `common/*` — cross-cutting: `config` (TypedConfigService), `prisma`, `redis`, `crypto` (AES-256-GCM), `metrics` (prom-client), `logger` (pino), `filters`/`interceptors`/`pipes`/`middleware`.
+- **knowledge-core — ядро продукта.** Pipeline `ingest → IdeaBlock + Entity → IdeaBlockLink/EntityLink (граф) → Theme (кластеры)`, всё через BullMQ-воркеры и `@Cron`. Карта модулей и потоков: [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md), детали: [second-brain/02_architecture/knowledge-core.md](second-brain/02_architecture/knowledge-core.md).
+- **Multi-tenancy:** `orgs` + `rbac` (Casbin-совместимый, `policies/policy.csv`). `TenantGuard` достаёт `tenantId` из `X-Org-Id`/`:orgId`. Любой knowledge-запрос требует `tenantId`.
+- **LLM:** `ai/services/llm-router.service.ts` маршрутизирует по `taskType` к провайдерам (фильтр по `dataClass`); промпты редактируются из админки (registry с code-fallback). ASR + Claude — через внутренний proxy.
+- **Данные:** одна Prisma-схема `backend/prisma/schema.prisma` (~1.7к строк, pgvector для embeddings). One-off скрипты — `backend/scripts/*` (seed/patch/smoke/backfill).
+
+**Frontend** (`frontend/`): слоистая модель **ApiDto → DomainModel → UiModel** (см. skill `frontend-rules`):
+- `src/api/*.api.ts` — вызовы через единый `api-client.ts` (ApiDto); `src/domain/*.ts` — мапперы в DomainModel; `src/ui` — компоненты; `src/contexts` — `auth` / `entitlement` / `toast`; `src/hooks`; data-fetching — SWR.
+- `app/` — App Router с route-группами `(public)` / `(authenticated)` / `(admin)` / `(design-preview)`. UI на LiveKit React Components + Radix + Tailwind; плеер — Vidstack.
+
 ## Точка входа в second-brain
 
 [second-brain/index.md](second-brain/index.md) — все разделы ведут отсюда.

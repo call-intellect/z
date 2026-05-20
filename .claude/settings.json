@@ -35,6 +35,16 @@
             "command": "bash -c 'CMD=$(jq -r \".tool_input.command // \\\"\\\"\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"git push.*\\b(main|master)\\b\"; then echo \"BLOCKED: git push to main/master is not allowed without explicit override\" >&2; exit 2; fi; if echo \"$CMD\" | grep -qE \"rm -rf /( |$)|rm -rf /\\*\"; then echo \"BLOCKED: rm -rf on root\" >&2; exit 2; fi; if echo \"$CMD\" | grep -qiE \"DROP\\s+TABLE\\b\"; then echo \"BLOCKED: DROP TABLE detected — confirm explicitly via raw psql\" >&2; exit 2; fi; exit 0'"
           }
         ]
+      },
+      {
+        "matcher": "Grep|Glob|Regex",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/vexp-guard.sh",
+            "timeout": 3000
+          }
+        ]
       }
     ],
     "Stop": [

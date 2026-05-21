@@ -3,16 +3,31 @@ node_modules/
 dist/
 build/
 out/
+
+# ENV — секреты никогда не коммитим, только *.example.
 .env
 .env.*
 !.env.example
-# deploy-секреты (backend.env / frontend.env) — НИКОГДА не коммитить.
-deploy/**/*.env
-!deploy/**/*.env.example
+
 *.log
 coverage/
+
+# LiveKit prod-конфиги с секретами — в git только *.example.
+# На сервере: cp livekit.yaml.example livekit.yaml && cp egress.yaml.example egress.yaml
+infra/livekit/livekit.yaml
+infra/livekit/egress.yaml
+
+# Бинарные артефакты — никогда в git (LiveKit и пр. ставятся из Docker-образов).
+*.exe
+*.dll
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
 .DS_Store
 .vscode/
 .idea/
 .cache/
 .bun-cache/
+.vexp

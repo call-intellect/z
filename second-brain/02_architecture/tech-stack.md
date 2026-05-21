@@ -46,12 +46,18 @@ type: architecture
 - **Сборка backend:** `tsc -p tsconfig.build.json` → `dist/`, затем `bun scripts/copy-assets.ts`
   копирует non-TS ассеты (RBAC `policies/*.conf|.csv`) в `dist/` — иначе `bun dist/main.js`
   падает на старте.
-- **Деплой — раздельный docker compose** (см. [`deploy/README.md`](../../deploy/README.md)):
-  - backend — контейнеры (postgres+redis+migrate+backend), Bun-образ; воркеры BullMQ
-    работают IN-PROCESS внутри backend (AppModule импортирует WorkersModule) — отдельного
-    worker-процесса/контейнера нет;
-  - frontend — Next `output: 'standalone'` контейнером (`bun server.js`, 127.0.0.1:3001),
-    nginx на хосте проксирует (как и backend).
+- **Деплой — единый корневой `docker-compose.yml`** (`docker compose up -d --build backend`,
+  без профилей; полная инструкция — корневой [`README.md`](../../README.md), nginx —
+  [`deploy/README.md`](../../deploy/README.md)):
+  - backend — postgres(pgvector)+redis+migrate(one-shot)+backend в одном compose, Bun-образ;
+    воркеры BullMQ работают IN-PROCESS внутри backend (AppModule импортирует WorkersModule) —
+    отдельного worker-процесса/контейнера нет;
+  - frontend — Next `output: 'standalone'` контейнером (`bun server.js`, 127.0.0.1:${FRONTEND_PORT}),
+    тем же compose; nginx на хосте проксирует (как и backend);
+  - порты публикации/приложений — через `.env` (`BACKEND_HOST_PORT`/`PORT`,
+    `FRONTEND_HOST_PORT`/`FRONTEND_PORT`);
+  - медиа-стек (LiveKit+Egress) — ОТДЕЛЬНЫЙ compose `infra/livekit/docker-compose.yml`
+    (network_mode host, Linux-only), принцип #6 «не на одной ноде».
 - **Версии (мажоры, после апгрейда 2026-05-20):** NestJS 11, Prisma **7** (driver adapter
   `@prisma/adapter-pg`, без Rust-движка; URL в `prisma.config.ts`, не в schema), zod 4,
   Next 16, React 19, Tailwind 4 (CSS-first, legacy-конфиг через `@config`), TypeScript 6,

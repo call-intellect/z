@@ -1,9 +1,45 @@
-# Локальный dev-стенд Z. Поднимает все зависимости backend + LiveKit.
-# Использование:
-#   docker compose up -d postgres redis minio livekit egress
-#   cd backend && bun run prisma:push && bun run dev
+# Z — production docker compose (единый, без профилей).
 #
-# Все секреты — для локалки, не для прод.
+# Поднимает весь backend-стек одной командой:
+#   cp .env.example .env        # заполнить секреты и порты
+#   docker compose up -d --build backend
+#
+# Состав:
+#   postgres  — PostgreSQL 17 + pgvector (внутренняя сеть)
+#   redis     — Redis 8 (BullMQ-очереди, AOF)
+#   migrate   — one-shot: prisma db push + pgvector-индексы (HNSW/GIN); запускается ДО backend
+#   backend   — NestJS HTTP API + воркеры BullMQ in-process
+#   frontend  — Next.js (output: standalone), bun server.js
+#
+# Порты — через .env (см. .env.example):
+#   BACKEND_HOST_PORT  → публикация backend на 127.0.0.1 (nginx проксирует сюда)
+#   PORT               → порт, который слушает backend ВНУТРИ контейнера
+#   FRONTEND_HOST_PORT → публикация frontend на 127.0.0.1
+#   FRONTEND_PORT      → порт frontend ВНУТРИ контейнера
+#
+# Backend и frontend слушают только на 127.0.0.1 — наружу публикует nginx на хосте
+# (см. deploy/nginx/*.conf). LiveKit/Egress — отдельный compose (см. infra/livekit/).
+#
+# Команды:
+#   docker compose up -d --build backend     # только backend-стек (+ его зависимости)
+#   docker compose up -d --build frontend    # только frontend
+#   docker compose up -d --build             # всё сразу
+#   docker compose logs -f backend
+#   docker compose down
+
+name: z
+
+# Единая сборка образа z-backend:latest — переиспользуют migrate и backend.
+# HTTP(S)_PROXY — опциональный прокси для загрузки пакетов на этапе сборки
+# (apk + bun install). Это «предопределённые» build-args Docker: применяются к RUN
+# и НЕ остаются в финальном образе (рантайм приложения через прокси НЕ идёт).
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+  args:
+    HTTP_PROXY: ${HTTP_PROXY:-}
+    HTTPS_PROXY: ${HTTPS_PROXY:-}
+    NO_PROXY: ${NO_PROXY:-}
 
 services:
   postgres:
@@ -22,99 +58,117 @@ services:
     container_name: z-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: z_main
-      POSTGRES_USER: z_app
-      POSTGRES_PASSWORD: z_app_dev_password
-      POSTGRES_HOST_AUTH_METHOD: trust
-    ports:
-      - '127.0.0.1:55435:5432'
+      POSTGRES_DB: ${POSTGRES_DB:-z_main}
+      POSTGRES_USER: ${POSTGRES_USER:-z_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен в .env}
     volumes:
       - z-postgres-data:/var/lib/postgresql/data
+    # Опционально (отладка с хоста): раскомментируй и задай POSTGRES_HOST_PORT в .env.
+    # ports:
+    #   - '127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U z_app -d z_main']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-z_app} -d ${POSTGRES_DB:-z_main}']
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+    networks: [z-internal]
 
   redis:
     image: redis:8-alpine
     container_name: z-redis
     restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'no']
-    ports:
-      - '127.0.0.1:56381:6379'
+    # appendonly yes — BullMQ-очереди переживают рестарт redis.
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - z-redis-data:/data
+    # Опционально (отладка с хоста): раскомментируй и задай REDIS_HOST_PORT в .env.
+    # ports:
+    #   - '127.0.0.1:${REDIS_HOST_PORT:-6379}:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+    networks: [z-internal]
 
-  minio:
-    image: minio/minio:latest
-    container_name: z-minio
-    restart: unless-stopped
-    command: ['server', '/data', '--console-address', ':9001']
-    environment:
-      MINIO_ROOT_USER: z_minio_dev
-      MINIO_ROOT_PASSWORD: z_minio_dev_password
-    ports:
-      - '127.0.0.1:59000:9000'   # S3 API
-      - '127.0.0.1:59001:9001'   # Web console
-    volumes:
-      - z-minio-data:/data
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: z-minio-init
+  # One-shot: схема (prisma db push) + pgvector-индексы (postgres-init.sql).
+  # backend стартует только после успешного завершения миграции.
+  migrate:
+    image: z-backend:latest
+    build: *backend-build
+    container_name: z-migrate
+    env_file: [.env]
+    command:
+      - sh
+      - -c
+      - 'bunx prisma db push && bun scripts/apply-postgres-init.ts'
     depends_on:
-      minio:
+      postgres:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 z_minio_dev z_minio_dev_password &&
-      mc mb -p local/meetings-dev || true &&
-      mc mb -p local/db-backups-dev || true &&
-      mc anonymous set none local/meetings-dev &&
-      echo 'MinIO buckets ready'
-      "
     restart: 'no'
+    networks: [z-internal]
 
-  livekit:
-    image: livekit/livekit-server:v1.12.0
-    container_name: z-livekit
-    restart: unless-stopped
-    command: ['--config', '/etc/livekit.yaml']
-    network_mode: host  # SFU нужны UDP-порты на хосте; см. code-pitfalls.md §2
-    volumes:
-      - ./infra/livekit/livekit.yaml:/etc/livekit.yaml:ro
-    depends_on:
-      redis:
-        condition: service_healthy
-    profiles: ['livekit']  # включается флагом --profile livekit (Linux-only)
-
-  egress:
-    image: livekit/egress:v1.12.0
-    container_name: z-egress
-    restart: unless-stopped
+  backend:
+    image: z-backend:latest
+    build: *backend-build
+    container_name: z-backend
+    env_file: [.env]
     environment:
-      EGRESS_CONFIG_FILE: /etc/egress.yaml
-    network_mode: host
-    cap_add:
-      - SYS_ADMIN  # для chrome-headless внутри
-    volumes:
-      - ./infra/livekit/egress.yaml:/etc/egress.yaml:ro
+      # PORT берётся из .env; дублируем дефолт на случай отсутствия.
+      PORT: ${PORT:-3000}
+    ports:
+      - '127.0.0.1:${BACKEND_HOST_PORT:-3000}:${PORT:-3000}'
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
-      livekit:
-        condition: service_started
-    profiles: ['livekit']
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:${PORT:-3000}/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks: [z-internal]
+
+  frontend:
+    image: z-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runner
+      # NEXT_PUBLIC_* инлайнятся в бандл во время СБОРКИ (build-args).
+      # При смене URL — пересобрать: docker compose up -d --build frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?required}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:?required}
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:?required}
+        NEXT_PUBLIC_FRONTEND_URL: ${NEXT_PUBLIC_FRONTEND_URL:-}
+        # Прокси для загрузки пакетов на сборке (см. комментарий выше у backend).
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    container_name: z-frontend
+    environment:
+      NODE_ENV: production
+      PORT: ${FRONTEND_PORT:-3001}
+      HOSTNAME: '0.0.0.0'
+      NEXT_TELEMETRY_DISABLED: '1'
+    ports:
+      - '127.0.0.1:${FRONTEND_HOST_PORT:-3001}:${FRONTEND_PORT:-3001}'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:${FRONTEND_PORT:-3001}']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   z-postgres-data:
-  z-minio-data:
+  z-redis-data:
+
+networks:
+  z-internal:
+    driver: bridge

@@ -1,0 +1,52 @@
+# LiveKit Server — PROD-ШАБЛОН (монтируется в infra/livekit/docker-compose.yml).
+# Заполни значения CHANGE_ME. Для dev используется отдельный livekit-dev.yaml.
+
+port: 7880
+bind_addresses:
+  - '0.0.0.0'
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  # PROD: true — сервер за NAT/в облаке должен анонсировать внешний IP.
+  use_external_ip: true
+
+redis:
+  # redis из media-compose, опубликован на 127.0.0.1:6379 (livekit в host-сети).
+  address: 127.0.0.1:6379
+
+keys:
+  # Ключ:секрет. Должны совпадать с LIVEKIT_API_KEY / LIVEKIT_API_SECRET в backend .env.
+  CHANGE_ME_API_KEY: CHANGE_ME_API_SECRET
+
+webhook:
+  # api_key — один из ключей выше (LIVEKIT_WEBHOOK_API_KEY в backend .env).
+  api_key: CHANGE_ME_API_KEY
+  urls:
+    - 'https://api.example.com/webhooks/livekit'
+
+room:
+  empty_timeout: 600
+  max_participants: 10
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/vp8
+    - mime: video/h264
+
+# Встроенный TURN ВЫКЛЮЧЕН: с tls_port он требует TLS-сертификат, иначе
+# LiveKit падает («TURN tls cert required») в рестарт-петлю. Для старта TURN не нужен —
+# медиа идёт по UDP-портам (port_range + tcp_port) напрямую.
+# Если нужен TURN/TLS за строгим NAT — включи и пропиши сертификаты:
+#   turn:
+#     enabled: true
+#     domain: meet.crossmark.ru
+#     tls_port: 5349
+#     cert_file: /etc/livekit/turn.crt
+#     key_file:  /etc/livekit/turn.key
+turn:
+  enabled: false
+
+logging:
+  level: info
+  json: true

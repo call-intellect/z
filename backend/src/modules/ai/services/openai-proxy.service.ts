@@ -14,7 +14,7 @@ import { LlmError } from './llm.types';
  * OpenAI Responses API через `proxy.agent-lia.ru`.
  * Используется как последний fallback, если Anthropic и MiniMax недоступны.
  *
- * Особенности (см. `c:\work\z\llm-models-playbook.md` §5):
+ * Особенности (см. `docs/reference/llm-models-playbook.md` §5):
  *   - baseURL: `cfg.ai.proxy.baseUrl`
  *   - Authorization: `Bearer <prefix>:<OPENAI_API_KEY>`
  *   - reasoning-модели (`gpt-5*`) — без `temperature`, c `reasoning.effort`.

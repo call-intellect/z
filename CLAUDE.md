@@ -49,7 +49,7 @@
 
 Рантайм — **Bun** для dev/build, **Node 20** для prod-runner. Команды запускаются из `backend/` или `frontend/`. Полная таблица — в [backend/README.md](backend/README.md).
 
-**Локальные зависимости** (из корня): `docker compose up postgres redis minio` (Postgres+pgvector :55435, Redis :56381, MinIO :59000/:59001). LiveKit+Egress — `docker compose --profile livekit up` (Linux-only, `network_mode: host`).
+**Локальные зависимости** (из корня): `docker compose -f docker-compose.dev.yml up -d` (Postgres+pgvector :55435, Redis :56381, MinIO :59000/:59001). LiveKit для dev — `bun run livekit` (Linux-only, `network_mode: host`). Прод-деплой — единый корневой `docker-compose.yml` (`docker compose up -d --build backend`, порты через `.env`); медиа-стек отдельно — `infra/livekit/docker-compose.yml`.
 
 **Backend** (`cd backend`, слушает :3000, Swagger `/api/docs`, health `/health`, метрики `/metrics`):
 - Первый запуск: `bun install && bun run prisma:push && bun run prisma:generate` (+ опц. `bun run prisma:seed`)

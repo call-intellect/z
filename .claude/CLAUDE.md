@@ -58,3 +58,23 @@ Only use Read when you need exact raw content to edit a specific line.
 `run_pipeline` auto-queries all indexed repos. Use `repos: ["alias"]` to scope.
 Use `index_status` to discover available repo aliases.
 <!-- /vexp -->
+
+## Context7 — свежая документация внешних библиотек (MCP)
+
+vexp даёт контекст по **нашему** коду. Context7 даёт **актуальную документацию внешних библиотек** (API меняется чаще, чем обновляется обучение модели). Это разные слои — не путать.
+
+### Когда обязательно вызвать Context7
+- Перед интеграцией/обновлением версии любой внешней библиотеки: Next.js, NestJS, Prisma, LiveKit Server SDK, LiveKit React Components, BullMQ, Casbin, Zod / nestjs-zod, Vidstack, prom-client, pino, Radix, Tailwind, SWR, AWS SDK / S3-клиенты, Anthropic SDK и т.п.
+- При использовании незнакомого API библиотеки или редкого её модуля.
+- Когда падает что-то с подозрением на breaking change или depreciation.
+- Перед добавлением новой зависимости в `package.json` — проверь актуальный API и совместимость.
+
+### Когда можно не вызывать
+- Тривиальная правка чужого кода без новых API.
+- Внутренние модули проекта — это территория vexp.
+
+### Как вызывать (два шага)
+1. `mcp__context7__resolve-library-id` с названием библиотеки → получи `libraryId` (например `/vercel/next.js`).
+2. `mcp__context7__query-docs` с этим `libraryId` и конкретным вопросом/задачей → получи фрагменты документации.
+
+Не полагайся на знания из тренировки в спорных местах — спрашивай Context7.

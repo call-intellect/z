@@ -98,11 +98,17 @@ export class EntityGraphBuilderCron {
           const confidenceDecimal = new Prisma.Decimal(
             verdict.confidence.toFixed(3),
           );
+          // С Фазы 0a EntityLink — полиморфная модель (fromType/toType).
+          // Для legacy Entity↔Entity связей явно ставим fromType='entity',
+          // toType='entity' — иначе composite unique ключ не совпадёт
+          // и upsert создаст дубликат при следующем проходе.
           await this.prisma.entityLink.upsert({
             where: {
-              fromEntityId_toEntityId_relationType: {
+              fromEntityId_fromType_toEntityId_toType_relationType: {
                 fromEntityId: pair.entityA.id,
+                fromType: 'entity',
                 toEntityId: pair.entityB.id,
+                toType: 'entity',
                 relationType: verdict.relationType,
               },
             },
@@ -114,7 +120,9 @@ export class EntityGraphBuilderCron {
             create: {
               tenantId: org.id,
               fromEntityId: pair.entityA.id,
+              fromType: 'entity',
               toEntityId: pair.entityB.id,
+              toType: 'entity',
               relationType: verdict.relationType,
               confidence: confidenceDecimal,
               explanation: verdict.explanation,

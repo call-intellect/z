@@ -8,6 +8,8 @@ import {
 import { type EntityType, Prisma, type RawEvent } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+import { GraphService } from '../../../common/graph/graph.service';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
@@ -35,14 +37,23 @@ import { SegmentBuilderService } from '../services/segment-builder.service';
  *   2. Idempotency: processingStatus !== 'received' → skip.
  *   3. Загружаем payload (inline или S3).
  *   4. Строим сегменты (SegmentBuilder).
- *   5. Извлекаем ExtractedBlock'и (BlockExtraction).
+ *   5. Извлекаем ExtractedBlock'и + типизированные сущности группы Б
+ *      (BlockExtraction). Фаза 0b: один проход возвращает и блоки, и группу Б
+ *      с `sourceBlockIndex` для провенанса.
  *   6. Эмбеддим блоки (один батч на все).
  *   7. На каждый блок — Prisma-транзакция:
- *      - create IdeaBlock + executeRaw embedding.
+ *      - create IdeaBlock + executeRaw embedding (с role_relevant + roleId
+ *        после resolveRoleByHint).
  *      - create IdeaBlockEvidence.
  *      - upsert Entity'ев + create IdeaBlockEntity (skip P2002).
- *   8. Вне транзакции — enqueueBlockDistill(blockId).
- *   9. RawEvent → processingStatus='ingested', processedAt=now.
+ *      - Если signalType='decision' и LLM не вернул отдельный Decision —
+ *        fallback Decision-create (idempotent по sourceIdeaBlockId).
+ *   8. Группа Б — для каждой сущности с confidence ≥ minConfidence:
+ *      - GraphService.upsertEntity({ type, data, sourceProvenance }) — двойная
+ *        запись в Postgres + AGE.
+ *      - LLM-вернутые Decision'ы имеют приоритет над auto-create в шаге 7.
+ *   9. Вне транзакции — enqueueBlockDistill(blockId).
+ *  10. RawEvent → processingStatus='ingested', processedAt=now.
  *  На ошибку — processingStatus='failed', processingError=msg, BullMQ retry.
  *
  * Concurrency=2: LLM-вызовы — наиболее тяжёлая часть, упираемся в провайдера.
@@ -66,6 +77,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     private readonly entities: EntityResolutionService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    @Inject(GraphService) private readonly graph: GraphService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -122,7 +136,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const payload = await this.loadPayload(event);
       const segments = this.segments.buildSegments(payload);
       const meetingTitle = this.tryGetMeetingTitle(payload);
-      const { blocks } = await this.extractor.extractBlocks({
+      const extraction = await this.extractor.extractFull({
         tenantId: event.tenantId,
         rawEventId: event.id,
         meetingTitle,
@@ -130,24 +144,323 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         // Фаза 11: dataClass наследуется от RawEvent.
         dataClass: event.dataClass,
       });
+      const { blocksInOrder, typed } = extraction;
       this.logger.log(
-        { rawEventId, segments: segments.length, blocks: blocks.length },
+        {
+          rawEventId,
+          segments: segments.length,
+          blocks: blocksInOrder.length,
+          typedCounts: {
+            processes: typed.processes.length,
+            decisions: typed.decisions.length,
+            regulations: typed.regulations.length,
+            policies: typed.policies.length,
+            metrics: typed.metrics.length,
+            tools: typed.tools.length,
+          },
+        },
         'block-ingest: извлечение завершено',
       );
 
       const embeddings =
-        blocks.length > 0 ? await this.embeddings.embedBlocks(blocks) : [];
+        blocksInOrder.length > 0
+          ? await this.embeddings.embedBlocks(blocksInOrder)
+          : [];
 
+      // Маппинг: индекс блока в массиве (порядок LLM-выдачи) → реальный blockId.
+      const indexToBlockId = new Map<number, string>();
       const blockIds: string[] = [];
-      for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i] as ExtractedBlock;
+      // Соберём id блоков, у которых signalType='decision' — для fallback-
+      // Decision (если LLM не вернул отдельный decisions[] item).
+      const decisionBlockIds = new Set<string>();
+
+      for (let i = 0; i < blocksInOrder.length; i++) {
+        const block = blocksInOrder[i] as ExtractedBlock;
         const vector = embeddings[i];
+
+        // Резолвим roleId по roleHint (если есть и role_relevant=true).
+        let roleId: string | null = null;
+        if (block.role_relevant && block.roleHint) {
+          roleId = await this.entities
+            .resolveRoleByHint(event.tenantId, block.roleHint)
+            .catch(() => null);
+        }
+
         const blockId = await this.persistBlock({
           event,
           block,
           embedding: vector ?? null,
+          roleRelevant: block.role_relevant && roleId !== null,
+          roleId,
         });
-        if (blockId) blockIds.push(blockId);
+        if (blockId) {
+          blockIds.push(blockId);
+          indexToBlockId.set(i, blockId);
+          if (block.signalType === 'decision') {
+            decisionBlockIds.add(blockId);
+          }
+        }
+      }
+
+      // ── Группа Б: типизированные сущности через GraphService.upsertEntity ──
+      // Decision имеет приоритет: LLM-вернутый item затирает auto-create.
+      const llmDecisionBlockIds = new Set<string>();
+
+      // Process
+      for (const proc of typed.processes) {
+        try {
+          const data: Record<string, unknown> = {
+            name: proc.name,
+            description: proc.description ?? null,
+            triggerDescription: proc.triggerDescription ?? null,
+          };
+          if (proc.ownerRoleHint) {
+            const ownerRoleId = await this.entities
+              .resolveRoleByHint(event.tenantId, proc.ownerRoleHint)
+              .catch(() => null);
+            if (ownerRoleId) data['ownerRoleId'] = ownerRoleId;
+          }
+          const prov = this.provenance(event, indexToBlockId, proc.sourceBlockIndex);
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'process',
+            data,
+            confidence: proc.confidence,
+            sourceProvenance: prov,
+          });
+          await this.linkProvenance(event.tenantId, 'process', res.id, prov, proc.confidence);
+          this.metrics.incExtractionEntity({ type: 'process' });
+          this.metrics.observeExtractionConfidence({
+            type: 'process',
+            confidence: proc.confidence,
+          });
+          this.metrics.incEntityResolutionDedup({
+            type: 'process',
+            action: res.created ? 'created' : 'merged',
+          });
+        } catch (err) {
+          this.warnTypedFail('process', proc.name, err);
+        }
+      }
+
+      // Regulation
+      // NB: GraphService.upsertEntity для regulation сейчас НЕ записывает
+      // category, severity (для policy), kind (для tool), valueType (для metric)
+      // — это hidden TODO в graph.service.ts upsertNameKeyedEntity. На MVP
+      // выпадают на default-значения схемы. Расширить при первой пилотной нагрузке.
+      for (const reg of typed.regulations) {
+        try {
+          const prov = this.provenance(event, indexToBlockId, reg.sourceBlockIndex);
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'regulation',
+            data: {
+              name: reg.name,
+              contentMd: reg.contentMd,
+              category: reg.category,
+            },
+            confidence: reg.confidence,
+            sourceProvenance: prov,
+          });
+          await this.linkProvenance(event.tenantId, 'regulation', res.id, prov, reg.confidence);
+          this.metrics.incExtractionEntity({ type: 'regulation' });
+          this.metrics.observeExtractionConfidence({
+            type: 'regulation',
+            confidence: reg.confidence,
+          });
+          this.metrics.incEntityResolutionDedup({
+            type: 'regulation',
+            action: res.created ? 'created' : 'merged',
+          });
+        } catch (err) {
+          this.warnTypedFail('regulation', reg.name, err);
+        }
+      }
+
+      // Policy
+      for (const pol of typed.policies) {
+        try {
+          const prov = this.provenance(event, indexToBlockId, pol.sourceBlockIndex);
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'policy',
+            data: {
+              name: pol.name,
+              contentMd: pol.contentMd,
+              severity: pol.severity,
+            },
+            confidence: pol.confidence,
+            sourceProvenance: prov,
+          });
+          await this.linkProvenance(event.tenantId, 'policy', res.id, prov, pol.confidence);
+          this.metrics.incExtractionEntity({ type: 'policy' });
+          this.metrics.observeExtractionConfidence({
+            type: 'policy',
+            confidence: pol.confidence,
+          });
+          this.metrics.incEntityResolutionDedup({
+            type: 'policy',
+            action: res.created ? 'created' : 'merged',
+          });
+        } catch (err) {
+          this.warnTypedFail('policy', pol.name, err);
+        }
+      }
+
+      // Tool
+      for (const tool of typed.tools) {
+        try {
+          const prov = this.provenance(event, indexToBlockId, tool.sourceBlockIndex);
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'tool',
+            data: {
+              name: tool.name,
+              kind: tool.kind,
+              externalUrl: tool.externalUrl ?? null,
+            },
+            confidence: tool.confidence,
+            sourceProvenance: prov,
+          });
+          await this.linkProvenance(event.tenantId, 'tool', res.id, prov, tool.confidence);
+          this.metrics.incExtractionEntity({ type: 'tool' });
+          this.metrics.observeExtractionConfidence({
+            type: 'tool',
+            confidence: tool.confidence,
+          });
+          this.metrics.incEntityResolutionDedup({
+            type: 'tool',
+            action: res.created ? 'created' : 'merged',
+          });
+        } catch (err) {
+          this.warnTypedFail('tool', tool.name, err);
+        }
+      }
+
+      // Metric
+      for (const metric of typed.metrics) {
+        try {
+          const prov = this.provenance(event, indexToBlockId, metric.sourceBlockIndex);
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'metric',
+            data: {
+              name: metric.name,
+              description: metric.description ?? null,
+              unit: metric.unit,
+              target: metric.target ?? null,
+              valueType: metric.valueType,
+            },
+            confidence: metric.confidence,
+            sourceProvenance: prov,
+          });
+          await this.linkProvenance(event.tenantId, 'metric', res.id, prov, metric.confidence);
+          this.metrics.incExtractionEntity({ type: 'metric' });
+          this.metrics.observeExtractionConfidence({
+            type: 'metric',
+            confidence: metric.confidence,
+          });
+          this.metrics.incEntityResolutionDedup({
+            type: 'metric',
+            action: res.created ? 'created' : 'merged',
+          });
+        } catch (err) {
+          this.warnTypedFail('metric', metric.name, err);
+        }
+      }
+
+      // Decision (приоритет за LLM-вернутыми)
+      for (const dec of typed.decisions) {
+        try {
+          const sourceBlockId =
+            dec.sourceBlockIndex != null
+              ? indexToBlockId.get(dec.sourceBlockIndex) ?? null
+              : null;
+
+          // decidedAt: ISO8601 строка или null → дата rawEvent.occurredAt.
+          const decidedAt = this.parseDecidedAt(dec.decidedAt) ?? event.occurredAt;
+
+          // decidedByPersonId: резолвим из decidedByPersonHint.
+          let decidedByPersonId: string | undefined;
+          if (dec.decidedByPersonHint) {
+            const personId = await this.entities
+              .resolvePersonByHint(event.tenantId, dec.decidedByPersonHint)
+              .catch(() => null);
+            if (personId) decidedByPersonId = personId;
+          }
+
+          const decisionData: Record<string, unknown> = {
+            text: dec.text,
+            decidedAt,
+            rationale: dec.rationale ?? null,
+            sourceMeetingId:
+              event.sourceType === 'meeting' ? event.sourceExternalId : null,
+          };
+          if (sourceBlockId) decisionData['sourceIdeaBlockId'] = sourceBlockId;
+          if (decidedByPersonId) decisionData['decidedByPersonId'] = decidedByPersonId;
+
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'decision',
+            data: decisionData,
+            confidence: dec.confidence,
+            sourceProvenance: this.provenance(event, indexToBlockId, dec.sourceBlockIndex),
+          });
+          this.metrics.incExtractionEntity({ type: 'decision' });
+          this.metrics.observeExtractionConfidence({
+            type: 'decision',
+            confidence: dec.confidence,
+          });
+          this.metrics.incEntityResolutionDedup({
+            type: 'decision',
+            action: res.created ? 'created' : 'merged',
+          });
+          if (sourceBlockId) llmDecisionBlockIds.add(sourceBlockId);
+        } catch (err) {
+          this.warnTypedFail('decision', dec.text.slice(0, 80), err);
+        }
+      }
+
+      // Fallback Decision-create для блоков signalType='decision', по которым
+      // LLM не вернул отдельную запись в decisions[]. Idempotent по
+      // sourceIdeaBlockId (upsertEntity сам проверяет существование).
+      for (const blockId of decisionBlockIds) {
+        if (llmDecisionBlockIds.has(blockId)) continue;
+        const block = blocksInOrder.find(
+          (_, idx) => indexToBlockId.get(idx) === blockId,
+        );
+        if (!block) continue;
+        try {
+          const res = await this.graph.upsertEntity({
+            tenantId: event.tenantId,
+            type: 'decision',
+            data: {
+              text: block.trustedAnswer,
+              decidedAt: event.occurredAt,
+              sourceIdeaBlockId: blockId,
+              sourceMeetingId:
+                event.sourceType === 'meeting' ? event.sourceExternalId : null,
+            },
+            confidence: block.confidence,
+            sourceProvenance: {
+              rawEventId: event.id,
+              ideaBlockId: blockId,
+            },
+          });
+          if (res.created) {
+            this.metrics.incExtractionEntity({ type: 'decision' });
+            this.metrics.observeExtractionConfidence({
+              type: 'decision',
+              confidence: block.confidence,
+            });
+            this.metrics.incEntityResolutionDedup({
+              type: 'decision',
+              action: 'created',
+            });
+          }
+        } catch (err) {
+          this.warnTypedFail('decision (fallback)', block.trustedAnswer.slice(0, 80), err);
+        }
       }
 
       await this.prisma.rawEvent.update({
@@ -218,8 +531,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     event: RawEvent;
     block: ExtractedBlock;
     embedding: number[] | null;
+    roleRelevant: boolean;
+    roleId: string | null;
   }): Promise<string | null> {
-    const { event, block, embedding } = args;
+    const { event, block, embedding, roleRelevant, roleId } = args;
     try {
       const blockId = await this.prisma.$transaction(async (tx) => {
         const ideaBlock = await tx.ideaBlock.create({
@@ -234,6 +549,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             dataClass: event.dataClass,
             status: 'draft',
             evidenceCount: 1,
+            roleRelevant,
+            roleId,
           },
         });
         if (embedding && embedding.length > 0) {
@@ -348,5 +665,102 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       },
       'block-ingest: финальный fail после всех ретраев',
     );
+  }
+
+  // ─────────────────────────── helpers (group Б) ───────────────────────────
+
+  /**
+   * Собирает provenance для GraphService.upsertEntity. Источник documentId:
+   *   - `sourceExternalId='doc:<id>'` (`DocumentIngestAdapter` использует
+   *     этот префикс при создании RawEvent — см. document.adapter.ts).
+   *   - Либо `payload.documentId` (text.adapter и document.adapter оба кладут
+   *     его в payload).
+   *
+   * Если sourceType='meeting'/'chat'/...'` — documentId отсутствует.
+   */
+  private provenance(
+    event: RawEvent,
+    indexToBlockId: Map<number, string>,
+    sourceBlockIndex: number | null,
+  ): { rawEventId: string; ideaBlockId?: string; documentId?: string } {
+    const result: {
+      rawEventId: string;
+      ideaBlockId?: string;
+      documentId?: string;
+    } = { rawEventId: event.id };
+    if (sourceBlockIndex != null) {
+      const bid = indexToBlockId.get(sourceBlockIndex);
+      if (bid) result.ideaBlockId = bid;
+    }
+    // Извлекаем documentId. document.adapter / text.adapter оба используют
+    // `sourceExternalId='doc:<id>'`.
+    const ext = event.sourceExternalId;
+    if (typeof ext === 'string' && ext.startsWith('doc:')) {
+      result.documentId = ext.slice('doc:'.length);
+    }
+    return result;
+  }
+
+  private parseDecidedAt(input: string | null | undefined): Date | null {
+    if (!input) return null;
+    const d = new Date(input);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  /**
+   * Безопасный warn для падений группы Б — мы не валим весь job из-за
+   * одной кривой сущности, но детально логируем для аудита.
+   */
+  private warnTypedFail(type: string, name: string, err: unknown): void {
+    this.logger.warn(
+      {
+        type,
+        name,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      'block-ingest: типизированная сущность группы Б не сохранилась — пропуск',
+    );
+  }
+
+  /**
+   * Создаёт типизированное ребро `derived_from` от извлечённой сущности
+   * (Process/Regulation/Policy/Metric/Tool) к Document (если provenance
+   * содержит documentId).
+   *
+   * Это даёт API `/documents/:id` возможность вернуть «какие сущности
+   * группы Б извлечены из этого документа» через `EntityLink.findMany`
+   * (см. DocumentsService.getDetail).
+   *
+   * На ошибку — только warn, не валим pipeline (provenance — best-effort).
+   */
+  private async linkProvenance(
+    tenantId: string,
+    fromType: 'process' | 'regulation' | 'policy' | 'metric' | 'tool',
+    fromId: string,
+    prov: { documentId?: string; ideaBlockId?: string },
+    confidence: number,
+  ): Promise<void> {
+    if (!prov.documentId) return;
+    try {
+      await this.graph.addEdge({
+        tenantId,
+        from: { type: fromType, id: fromId },
+        to: { type: 'document', id: prov.documentId },
+        linkType: 'derived_from',
+        confidence,
+        explanation: 'извлечено из документа (block-ingest v2)',
+        createdBy: 'linker',
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          fromType,
+          fromId,
+          documentId: prov.documentId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'block-ingest: derived_from-ребро не создалось — пропуск (provenance best-effort)',
+      );
+    }
   }
 }

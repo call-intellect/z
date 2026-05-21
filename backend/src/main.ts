@@ -89,7 +89,7 @@ async function bootstrap(): Promise<void> {
       // Internal API — все controllers (cookie + bearer auth).
       const swaggerConfig = new DocumentBuilder()
         .setTitle('Z Backend API')
-        .setDescription('API для AI-видеовстреч на LiveKit')
+        .setDescription('Z — память компании. Backend API. MVP-вертикаль — AI-встречи на LiveKit.')
         .setVersion('0.1.0')
         .addCookieAuth('session')
         .addBearerAuth()

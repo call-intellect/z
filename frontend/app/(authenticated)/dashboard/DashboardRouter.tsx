@@ -1,33 +1,41 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
 import { useAuth } from '@/contexts/auth-context';
 import { TierGate } from '@/ui/components/TierGate';
 
-import { DashboardClient } from './DashboardClient';
 import { DirectorDashboardClient } from './DirectorDashboardClient';
 
 /**
  * Client-компонент, выбирающий между manager-видом и директорским видом
  * на основе `useAuth()` → `currentOrgRole`/`isSuperAdmin`.
  *
- *   - owner / admin / super_admin → `<DirectorDashboardClient>` (Фаза 8),
- *     обёрнут в `<TierGate feature="feature.dashboard_director">` —
- *     директорский дашборд лежит в tier_pro+.
- *   - manager / роль не определена → существующий `<DashboardClient>`
- *     (manager-вид всегда доступен — это базовая, не-платная функция).
+ *   - owner / admin / super_admin → `<DirectorDashboardClient>` (Фаза 8).
+ *   - manager (== member в Z) → редирект на `/me` (ТЗ 0c, sub-TZ 0c.4).
+ *     Для member dashboard теперь не точка входа — он попадает на свой
+ *     личный кабинет.
  *
- * Пока `useAuth().isLoading` — не рендерим, чтобы не было «прыжка» с
- * manager-вида на директорский после первого `accountsApi.me()`.
+ * Пока `useAuth().isLoading` — ничего не рендерим, чтобы избежать «прыжка».
  */
 export function DashboardRouter() {
   const { currentOrgRole, isSuperAdmin, isLoading } = useAuth();
+  const router = useRouter();
+
+  const isDirector =
+    isSuperAdmin || currentOrgRole === 'owner' || currentOrgRole === 'admin';
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isDirector) {
+      router.replace('/me');
+    }
+  }, [isLoading, isDirector, router]);
 
   if (isLoading) {
     return null;
   }
-
-  const isDirector =
-    isSuperAdmin || currentOrgRole === 'owner' || currentOrgRole === 'admin';
 
   if (isDirector) {
     return (
@@ -36,5 +44,6 @@ export function DashboardRouter() {
       </TierGate>
     );
   }
-  return <DashboardClient />;
+  // member — пока идёт редирект, ничего не показываем.
+  return null;
 }

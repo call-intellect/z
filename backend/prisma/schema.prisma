@@ -44,6 +44,10 @@ enum MeetingType {
   partner
   interview
   customer_success
+  /// Фаза 0 — обзорная встреча (review). Может стать триггером RoleProfile-агента.
+  review
+  /// Фаза 0 — ретроспектива (retrospective). См. ontology уровень 5 «Учится».
+  retrospective
 }
 
 enum MeetingStatus {
@@ -254,14 +258,65 @@ enum IdeaBlockLinkType {
   question_answered_by
 }
 
-/// Тип типизированной связи между сущностями.
+/// Тип типизированной связи между сущностями. С Фазы 0 — также все
+/// бизнес-связи каркаса компании (Person↔Role↔Department, Process↔Role,
+/// Strategy↔Goal и т.д.). См. plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md §4.4.
 enum EntityLinkType {
+  // ── существующие knowledge-core связи Entity↔Entity (Фаза 3) ──
   works_at
   belongs_to
   part_of
   opposes
   depends_on
   mentions_with
+
+  // ── Фаза 0: Person ↔ Role ↔ Department ↔ Skill ──
+  /// Person -> Role; временной интервал в validFrom/validTo.
+  executes_role
+  /// Person -> Department.
+  member_of
+  /// Role -> JobDescription.
+  described_by
+  /// JobDescription -> Document (или Process -> Document, см. produces).
+  derived_from
+  /// Role -> Skill (требование).
+  requires_skill
+  /// Person -> Skill (наблюдается).
+  has_skill
+
+  // ── Фаза 0: каркас 5 уровней (группа Б) ──
+  /// Mission -> Strategy.
+  realized_by
+  /// Strategy -> Goal; Goal -> Goal (декомпозиция).
+  decomposes_into
+  /// Goal -> Metric; Process -> Metric.
+  measured_by
+  /// Strategy -> Process.
+  executed_by
+  /// Process -> ProcessStep.
+  has_step
+  /// Process -> Role / Person; Role -> Process (Role is_responsible_for).
+  owned_by
+  /// Process -> Tool.
+  lives_in
+  /// Process -> Document.
+  produces
+  /// Process -> Event / Meeting.
+  triggered_by
+  /// Regulation -> Process.
+  regulates
+  /// Policy -> Process / Role / любая сущность.
+  constrains
+  /// Regulation(category=standard) -> ArtifactType (строковый идентификатор в properties.artifactType).
+  applies_to
+  /// Role -> Process (зеркало owned_by для дискриминации направления).
+  is_responsible_for
+
+  // ── Фаза 0: RACI (UI назначения — Фаза γ) ──
+  responsible_for
+  accountable_for
+  consulted_on
+  informed_about
 }
 
 /// Кто создал связь:
@@ -340,6 +395,89 @@ enum GoalThemeSource {
   ai
 }
 
+// ──────────────────────────── Фаза 0: каркас компании (группа А, видимая) ────────────────────────────
+
+/// Горизонт цели/стратегии/миссии (см. ontology §11.6). Используется и для
+/// Goal (расширение), и для Mission/Strategy (Фаза 0, группа Б).
+enum GoalHorizon {
+  strategic
+  annual
+  quarterly
+  monthly
+  sprint
+}
+
+/// Тип документа в Document-модели (Фаза 0).
+enum DocumentKind {
+  pdf
+  docx
+  markdown
+  /// Создаётся из text.adapter (фронт /dump → POST /api/v1/dumps).
+  text
+  other
+}
+
+/// Статус document-ingest pipeline.
+enum DocumentStatus {
+  uploaded          // только что POSTнут
+  parsing           // парсер работает
+  parsed            // парсер завершил
+  blocks_extracted  // BlockExtractionService отработал
+  failed
+}
+
+/// Статус сборки карты должности (Фаза 0d, RoleProfileAgent).
+enum RoleProfileStatus {
+  forming    // данных <N блоков идей с role_relevant=true
+  ready      // summaryCache заполнен
+  stale      // прошло >24ч с lastBuildAt + есть новые данные
+  error      // LLM упал, нужна ручная проверка
+}
+
+// ──────────────────────────── Фаза 0: каркас компании (группа Б, без UI в Фазе 0) ────────────────────────────
+
+/// Категория регламента (см. ontology §10 «Уровень 3»).
+enum RegulationCategory {
+  regulation
+  standard
+}
+
+/// Статус процесса/регламента/политики.
+enum ProcessStatus {
+  active
+  deprecated
+  archived
+}
+
+enum PolicySeverity {
+  advisory    // рекомендация
+  mandatory   // обязательно
+  blocking    // нарушение блокирует процесс
+}
+
+enum ToolKind {
+  software
+  hardware
+  template
+  document
+  service
+  other
+}
+
+enum MetricValueType {
+  count
+  ratio
+  duration_seconds
+  money
+  other
+}
+
+enum DecisionStatus {
+  active
+  rolled_back
+  superseded
+}
+
 // ──────────────────────────── models ────────────────────────────
 
 model User {
@@ -384,6 +522,8 @@ model User {
   acceptedInvitations  OrgInvitation[]          @relation("OrgInvitationAcceptedBy")
   superAdminAccessLogs SuperAdminAccessLog[]    @relation("SuperAdminAccessLog")
   goalsCreated         Goal[]                   @relation("GoalCreatedBy")
+  /// Фаза 0a — Person-аватары пользователя в Org'ах (после accept'а приглашений).
+  persons              Person[]                 @relation("UserPersons")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -466,6 +606,8 @@ model Meeting {
   chatMessages     MeetingChatMessage[]
   roomMessages     MeetingRoomMessage[]
   meetingTags      MeetingTag[]
+  /// Фаза 0a — Decision'ы, источник которых эта встреча (Фаза 0b extraction).
+  decisions        Decision[]               @relation("DecisionSourceMeeting")
 
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
@@ -1223,6 +1365,27 @@ model Org {
   retentionPolicy OrgRetentionPolicy?
   entitlement OrgEntitlement?
 
+  // ── Фаза 0 — каркас компании ──
+  departments     Department[]
+  roles           Role[]
+  persons         Person[]
+  personRoles     PersonRole[]
+  jobDescriptions JobDescription[]
+  skills          Skill[]
+  documents       Document[]
+  roleProfiles    RoleProfile[]
+  // Группа Б
+  missions        Mission[]
+  visions         Vision[]
+  strategies      Strategy[]
+  processes       Process[]
+  processSteps    ProcessStep[]
+  regulations     Regulation[]
+  policies        Policy[]
+  tools           Tool[]
+  metrics         Metric[]
+  decisions       Decision[]
+
   @@index([ownerId])
   @@index([deletedAt])
 }
@@ -1237,11 +1400,16 @@ model Membership {
   /// Кто пригласил/добавил. Для owner-а первичной Org = NULL.
   invitedBy String?
   inviter   User?          @relation("MembershipInvitedBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+  /// Фаза 0a §10 — линковка с бизнес-Person, заполняется при accept'е
+  /// приглашения. NULL для legacy memberships (до Фазы 0).
+  personId  String?
+  person    Person?        @relation("MembershipPerson", fields: [personId], references: [id], onDelete: SetNull)
   joinedAt  DateTime       @default(now())
 
   @@unique([orgId, userId])
   @@index([userId])
   @@index([orgId, role])
+  @@index([personId])
 }
 
 model OrgInvitation {
@@ -1255,6 +1423,11 @@ model OrgInvitation {
   status           OrgInvitationStatus @default(pending)
   invitedBy        String
   inviter          User                @relation("OrgInvitationInvitedBy", fields: [invitedBy], references: [id])
+  /// Фаза 0a §10 — линковка с бизнес-Person. Опц.; при создании приглашения
+  /// из wizard'а или /structure?tab=persons backend заранее создаёт Person
+  /// и сохраняет ссылку здесь, чтобы при accept'е заполнить Person.userId.
+  personId         String?
+  person           Person?             @relation("OrgInvitationPerson", fields: [personId], references: [id], onDelete: SetNull)
   createdAt        DateTime            @default(now())
   expiresAt        DateTime
   acceptedAt       DateTime?
@@ -1264,6 +1437,7 @@ model OrgInvitation {
   @@index([orgId, status])
   @@index([email, status])
   @@index([expiresAt])
+  @@index([personId])
 }
 
 // ──────────────────────────── llm-prices (Фаза 0 knowledge-core) ────────────────────────────
@@ -1380,6 +1554,11 @@ model IdeaBlock {
   evidenceCount    Int                          @default(0)
   /// Динамический рейтинг: пересчитывается ретеншеном; влияет на ранжирование в поиске.
   dynamicScore     Decimal                      @default(1.0) @db.Decimal(8, 4)
+  /// Фаза 0b — пометка role-relevance из BlockExtractionService.
+  /// Если true и roleId != null — блок учитывается RoleProfileAgent'ом (Фаза 0d).
+  roleRelevant     Boolean                      @default(false)
+  /// Опц. связь блока с Role (бизнес-должность). NULL — общий блок.
+  roleId           String?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
 
@@ -1391,10 +1570,16 @@ model IdeaBlock {
   linksFrom  IdeaBlockLink[]     @relation("BlockLinkFrom")
   linksTo    IdeaBlockLink[]     @relation("BlockLinkTo")
   themes     ThemeIdeaBlock[]
+  /// Decision-сущности, созданные параллельно этому блоку (idempotent по
+  /// sourceIdeaBlockId; Фаза 0b §I.66 зонтичного ТЗ).
+  decisions  Decision[]
+  /// Фаза 0d — link на Role-бизнес-должность для RoleProfileAgent.
+  role       Role?               @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
   @@index([tenantId, mergedIntoId])
+  @@index([tenantId, roleRelevant, roleId])
 }
 
 /// IdeaBlockEvidence — link block ↔ конкретный фрагмент RawEvent с цитатой.
@@ -1439,10 +1624,15 @@ model Entity {
   mergedInto    Entity?           @relation("EntityMerges", fields: [mergedIntoId], references: [id])
   mergedFrom    Entity[]          @relation("EntityMerges")
   blockMentions IdeaBlockEntity[]
-  linksFrom     EntityLink[]      @relation("EntityLinkFrom")
-  linksTo       EntityLink[]      @relation("EntityLinkTo")
+  // ↓ С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Обратные
+  //   relations убраны; для поиска связей используется
+  //   EntityLink.findMany({ where: { fromEntityId, fromType: 'entity' } })
+  //   или GraphService.getNeighbors. См. EntityLink выше.
   themes        ThemeEntity[]
   cards         Card[]            @relation("CardEntity")
+  /// Линковка Person → Entity (Фаза 0b §8.3): Entity{type=person} может быть
+  /// связана с Prisma-моделью Person через EntityResolutionService.
+  persons       Person[]
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -1501,20 +1691,48 @@ model IdeaBlockLink {
   @@index([tenantId, deletedAt])
 }
 
-/// EntityLink — типизированная связь между двумя Entity.
-/// Создаётся `entity-graph-builder.cron` (раз в час) на основе пар сущностей,
-/// часто упомянутых в одних и тех же блоках. 6 типов связей —
-/// см. enum `EntityLinkType`.
+/// EntityLink — типизированная связь между двумя узлами графа.
+///
+/// До Фазы 0 — только Entity↔Entity (knowledge-core, создаётся
+/// `entity-graph-builder.cron` раз в час). С Фазы 0 — единая полиморфная
+/// модель рёбер для ВСЕХ бизнес-связей Z (см.
+/// plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md §4.4).
+///
+/// `fromType` / `toType` — discriminator типа узла. NULL = legacy запись
+/// до Фазы 0 (читается как `entity`). Backfill — `backend/scripts/backfill-entity-link-types.ts`.
+///
+/// FK на Entity убраны: новые связи могут ссылаться на Role, Person, Process,
+/// Document и т.д. — таблицы, которые не Entity. Каскадное удаление узла
+/// чистит рёбра через `GraphService.removeNode` (см. 0a.2).
+///
+/// Двойная запись Postgres EntityLink + AGE `z_graph` — единственная точка
+/// записи через `GraphService.addEdge` (см.
+/// `second-brain/02_architecture/code-pitfalls.md` «Cypher только через GraphService»).
 model EntityLink {
   id           String         @id @default(cuid())
   tenantId     String
+  /// id источника. До Фазы 0 — всегда `Entity.id`. С Фазы 0 — id любой
+  /// бизнес-сущности (см. fromType).
   fromEntityId String
+  /// id цели. До Фазы 0 — всегда `Entity.id`. С Фазы 0 — id любой
+  /// бизнес-сущности (см. toType).
   toEntityId   String
+  /// Discriminator типа источника. NULL = legacy (`entity`).
+  /// Возможные значения см. `NodeType` в `backend/src/common/graph/graph.types.ts`.
+  fromType     String?        @db.VarChar(50)
+  /// Discriminator типа цели. NULL = legacy (`entity`).
+  toType       String?        @db.VarChar(50)
   relationType EntityLinkType
   confidence   Decimal        @db.Decimal(4, 3)
   explanation  String         @db.Text
   createdBy    LinkCreatedBy
   status       LinkStatus     @default(active)
+  /// Временной интервал жизни связи (для bi-temporal в Фазе α; в Фазе 0 —
+  /// используется для `executes_role` Person→Role).
+  validFrom    DateTime       @default(now())
+  validTo      DateTime?
+  /// Произвольные свойства связи (cosine score, RACI-флаги, observed_at и т.д.).
+  properties   Json           @default("{}")
   /// Soft-delete: записывается при удалении из Org-Admin (Фаза 7).
   /// Hard-delete после 30 дней (Фаза 11).
   deletedAt    DateTime?
@@ -1523,14 +1741,16 @@ model EntityLink {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  org        Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  fromEntity Entity @relation("EntityLinkFrom", fields: [fromEntityId], references: [id], onDelete: Cascade)
-  toEntity   Entity @relation("EntityLinkTo", fields: [toEntityId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([fromEntityId, toEntityId, relationType])
+  // Composite unique с учётом fromType/toType: одна и та же пара id может
+  // быть одновременно entity→entity и (с Фазы 0) role→person с тем же
+  // relationType. Включаем fromType/toType в ключ для однозначности.
+  @@unique([fromEntityId, fromType, toEntityId, toType, relationType])
   @@index([tenantId, status])
-  @@index([fromEntityId, status])
-  @@index([toEntityId, status])
+  @@index([tenantId, fromEntityId, fromType])
+  @@index([tenantId, toEntityId, toType])
+  @@index([tenantId, relationType, validFrom])
   @@index([tenantId, deletedAt])
 }
 
@@ -1646,6 +1866,13 @@ model Goal {
   status       GoalStatus   @default(active)
   /// Вес в среднем "Согласованность стратегии" (Фаза 8 dashboard). Default 1.0.
   weight       Decimal      @default(1.0) @db.Decimal(4, 3)
+  /// Фаза 0a §11.6 — горизонт цели для декомпозиции strategic→annual→…→sprint.
+  /// Default quarterly — типичная цель компании в delivery/03-frame.md.
+  horizon      GoalHorizon  @default(quarterly)
+  /// Фаза 0a §11.6 — декомпозиция целей. Self-relation; UI появится в Фазе γ.
+  parentGoalId String?
+  parent       Goal?        @relation("GoalDecomposition", fields: [parentGoalId], references: [id], onDelete: SetNull)
+  children     Goal[]       @relation("GoalDecomposition")
   createdById  String
   createdBy    User         @relation("GoalCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   createdAt    DateTime     @default(now())
@@ -1663,6 +1890,8 @@ model Goal {
 
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, horizon])
+  @@index([tenantId, parentGoalId])
 }
 
 /// M:M между Goal и Theme. На старте — ручная привязка от owner;
@@ -1772,4 +2001,464 @@ model OrgEntitlement {
   notes            String?  @db.Text
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Фаза 0 — каркас компании (см. plans/tz/2026-05-21-phase-0-roles-and-onboarding.md)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Группа А (с UI в Фазе 0):
+//   Department, Role, Person, PersonRole, JobDescription, Skill, Document, RoleProfile.
+//
+// Группа Б (без UI в Фазе 0, наполняется extraction'ом):
+//   Mission, Vision, Strategy, Process, ProcessStep, Regulation, Policy,
+//   Tool, Metric, Decision. См. ниже после группы А.
+//
+// Conventions: id = cuid(); tenantId (НЕ orgId, для консистентности с
+// существующими моделями); все @relation на tenant идут через Org.
+// Membership.role (owner/admin/manager) ≠ бизнес-Role (должность в компании
+// клиента) — это две разные сущности. См. README в second-brain.
+
+// ──────────────────────────── группа А: структура компании ────────────────────────────
+
+/// Department — отдел компании клиента (Фаза 0).
+/// Поле `parentDepartmentId` — иерархия в схеме, UI в Фазе 0 плоский (γ
+/// добавит дерево). См. зонтичный ТЗ §2 «Не входит».
+model Department {
+  id                 String      @id @default(cuid())
+  tenantId           String
+  name               String      @db.VarChar(200)
+  parentDepartmentId String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  /// Soft-delete: cohabits с уникальностью (orgId, name) благодаря включению deletedAt в @@unique.
+  deletedAt          DateTime?
+
+  org      Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   Department?  @relation("DepartmentParent", fields: [parentDepartmentId], references: [id])
+  children Department[] @relation("DepartmentParent")
+  roles    Role[]
+  persons  Person[]     @relation("PersonPrimaryDepartment")
+
+  @@unique([tenantId, name, deletedAt])
+  @@index([tenantId])
+  @@index([tenantId, parentDepartmentId])
+  @@map("departments")
+}
+
+/// Role — должность в компании клиента (бизнес-сущность).
+/// **НЕ ПУТАТЬ** с `Membership.role` (owner/admin/manager) — это права доступа
+/// в Z. `Role` (эта модель) — бизнес-должность ("Менеджер по продажам", "QA Engineer").
+model Role {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String    @db.VarChar(200)
+  departmentId String?
+  /// Свободные теги для поиска и фильтрации.
+  tags         String[]  @default([])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department      Department?      @relation(fields: [departmentId], references: [id])
+  jobDescriptions JobDescription[]
+  roleProfile     RoleProfile?
+  personRoles     PersonRole[]
+  /// IdeaBlock-и с пометкой role_relevant=true для RoleProfileAgent (Фаза 0d).
+  ideaBlocks      IdeaBlock[]
+  /// Документы, явно загруженные на эту должность через wizard или /structure.
+  attachedDocuments Document[]    @relation("DocumentAttachedRole")
+  /// Процессы, owner которых — эта роль (Фаза 0b, наполняется extraction'ом).
+  ownedProcesses    Process[]     @relation("ProcessOwnerRole")
+
+  @@unique([tenantId, name, deletedAt])
+  @@index([tenantId, departmentId])
+  @@map("roles")
+}
+
+/// Person — сотрудник компании клиента (Фаза 0).
+///
+/// Отличие от Entity{type=person}: `Entity` — это упоминание персоны в графе
+/// знаний (knowledge-core); `Person` — это сущность ЛК со связями с
+/// Role/Department/User. `Person.entityId` — линковка, заполняется
+/// EntityResolutionService (Фаза 0b §8.3).
+///
+/// `userId` NULL до accept'а приглашения. Membership создаётся атомарно с
+/// `Person.userId = currentUserId` в `POST /api/v1/orgs/:orgId/invitations/:token/accept`.
+model Person {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  /// NULL до accept'а приглашения. После accept'а — атомарно линкуется с User.
+  userId              String?
+  name                String    @db.VarChar(200)
+  email               String    @db.VarChar(320)
+  /// Основной отдел для UI; для графовых связей `member_of` — через PersonRole.
+  primaryDepartmentId String?
+  /// Линковка с Entity{type=person} (см. EntityResolutionService, Фаза 0b §8.3).
+  entityId            String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  org                 Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                User?        @relation("UserPersons", fields: [userId], references: [id], onDelete: SetNull)
+  primaryDepartment   Department?  @relation("PersonPrimaryDepartment", fields: [primaryDepartmentId], references: [id])
+  entity              Entity?      @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  personRoles        PersonRole[]
+  uploadedDocuments  Document[]   @relation("DocumentUploader")
+  decisionsMade      Decision[]   @relation("DecisionDecidedBy")
+  ownedProcesses     Process[]    @relation("ProcessOwnerPerson")
+  memberships        Membership[] @relation("MembershipPerson")
+  invitations        OrgInvitation[] @relation("OrgInvitationPerson")
+
+  @@unique([tenantId, email, deletedAt])
+  @@index([tenantId, userId])
+  @@index([tenantId, primaryDepartmentId])
+  @@index([tenantId, entityId])
+  @@map("persons")
+}
+
+/// PersonRole — many-to-many Person ↔ Role с временным интервалом.
+/// Зеркало AGE-ребра `executes_role` (Фаза 0a). Открытая роль = validTo IS NULL.
+/// Закрытие старой роли при переназначении: validTo = now() + создание новой записи.
+model PersonRole {
+  id        String    @id @default(cuid())
+  tenantId  String
+  personId  String
+  roleId    String
+  validFrom DateTime  @default(now())
+  validTo   DateTime?
+  createdAt DateTime  @default(now())
+
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, roleId, validFrom])
+  @@index([tenantId, roleId])
+  @@index([tenantId, personId])
+  @@index([tenantId, validTo])
+  @@map("person_roles")
+}
+
+/// JobDescription — declared-форма должности (что прописано в инструкции,
+/// в отличие от observed-картины в RoleProfile).
+model JobDescription {
+  id               String    @id @default(cuid())
+  tenantId         String
+  roleId           String
+  contentMd        String    @db.Text
+  sourceDocumentId String?
+  version          Int       @default(1)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  org            Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role           Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, roleId])
+  @@map("job_descriptions")
+}
+
+/// Skill — переиспользуемая компетенция (одна Skill — много Role/Person).
+model Skill {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name, deletedAt])
+  @@index([tenantId])
+  @@map("skills")
+}
+
+/// Document — загруженный файл (PDF / DOCX / Markdown / text). Фаза 0b.
+///
+/// inline ≤ 10 MiB кладётся в `inlineContent`; больше — в S3 (`s3Key`).
+/// `parsedText` заполняется `document.adapter` / `text.adapter` (Фаза 0b).
+/// `attachedRoleId` — если документ привязан к конкретной должности (из
+/// wizard step-4 или `/structure?tab=roles → Загрузить должностную`).
+model Document {
+  id             String         @id @default(cuid())
+  tenantId       String
+  /// Person.id (НЕ User.id) — кто загрузил.
+  uploaderId     String
+  kind           DocumentKind
+  name           String         @db.VarChar(500)
+  mimeType       String         @db.VarChar(100)
+  /// S3-ключ; null если используется inlineContent (file ≤ 10 MiB).
+  s3Key          String?        @db.VarChar(500)
+  /// Inline-байты; null если использован S3.
+  inlineContent  Bytes?
+  originalSize   Int
+  /// Заполняется парсером (Фаза 0b).
+  parsedText     String?        @db.Text
+  /// Если status=failed — текст ошибки парсера.
+  parseError     String?        @db.Text
+  status         DocumentStatus @default(uploaded)
+  /// Если документ привязан к Role — wizard step-4 или /structure → Загрузить должностную.
+  attachedRoleId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  uploader        Person           @relation("DocumentUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+  attachedRole    Role?            @relation("DocumentAttachedRole", fields: [attachedRoleId], references: [id], onDelete: SetNull)
+  jobDescriptions JobDescription[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, uploaderId])
+  @@index([tenantId, attachedRoleId])
+  @@map("documents")
+}
+
+/// RoleProfile — материализованный кеш "карта должности" (observed-форма).
+/// Один RoleProfile на Role. Создаётся автоматически при создании Role
+/// (через RolesService); наполняется RoleProfileAgent (Фаза 0d).
+model RoleProfile {
+  id           String            @id @default(cuid())
+  tenantId     String
+  roleId       String            @unique
+  /// `{ responsibilities[], skills[], decision_patterns[], common_pitfalls[], style_profile }`.
+  /// Schema валидируется zod'ом в `role-profile.service.ts` (Фаза 0d).
+  summaryCache Json              @default("{}")
+  status       RoleProfileStatus @default(forming)
+  lastBuildAt  DateTime?
+  /// Инкрементируется при каждой успешной пересборке. Используется в
+  /// idempotency-key BullMQ ('role-profile:${roleId}:${buildVersion}').
+  buildVersion Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  org  Org  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("role_profiles")
+}
+
+// ──────────────────────────── группа Б: каркас 5 уровней (без UI в Фазе 0) ────────────────────────────
+
+/// Mission — «зачем» компании (Фаза 0a, группа Б). UI в Фазе γ.
+/// Наполняется UI-формой в γ; в Фазе 0 поле существует, extraction отключен
+/// флагом `EXTRACTION_ENABLE_TOP_LEVEL=false` (зонтичный ТЗ §6 решение #11).
+model Mission {
+  id         String      @id @default(cuid())
+  tenantId   String
+  contentMd  String      @db.Text
+  markets    Json?
+  bets       Json?
+  horizon    GoalHorizon @default(strategic)
+  targetDate DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("missions")
+}
+
+/// Vision — образ будущего компании (Фаза 0a, группа Б). UI в Фазе γ.
+model Vision {
+  id           String    @id @default(cuid())
+  tenantId     String
+  contentMd    String    @db.Text
+  horizonYears Int?
+  targetDate   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("visions")
+}
+
+/// Strategy — стратегия (рынки + ставки) (Фаза 0a, группа Б). UI в Фазе γ.
+model Strategy {
+  id         String      @id @default(cuid())
+  tenantId   String
+  contentMd  String      @db.Text
+  markets    Json        @default("[]")
+  bets       Json        @default("[]")
+  horizon    GoalHorizon @default(strategic)
+  targetDate DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("strategies")
+}
+
+/// Process — бизнес-процесс компании (Фаза 0a, группа Б). UI в Фазе γ.
+///
+/// Наполняется BlockExtractionService (Фаза 0b) с дедупом через
+/// EntityResolutionService. `confidence` — точность LLM-классификации;
+/// `ambiguousTypes` — если LLM колебалась (например, Process vs Regulation),
+/// сохраняем оба варианта для CuratorAgent в Фазе δ.
+model Process {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  name               String        @db.VarChar(300)
+  description        String?       @db.Text
+  ownerRoleId        String?
+  ownerPersonId      String?
+  triggerDescription String?       @db.Text
+  slaMinutes         Int?
+  status             ProcessStatus @default(active)
+  /// 0..1 — confidence от extraction-LLM (Фаза 0b §6.2).
+  confidence         Float?
+  /// Если LLM колеблется (Process vs Regulation/Policy) — список альтернатив.
+  ambiguousTypes     String[]      @default([])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  org         Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerRole   Role?         @relation("ProcessOwnerRole", fields: [ownerRoleId], references: [id], onDelete: SetNull)
+  ownerPerson Person?       @relation("ProcessOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  steps       ProcessStep[]
+
+  /// Уникальность гарантируется EntityResolutionService + cosine + LLM-arbiter (0b §8).
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, ownerRoleId])
+  @@map("processes")
+}
+
+/// ProcessStep — шаг процесса (Фаза 0a, группа Б).
+model ProcessStep {
+  id          String    @id @default(cuid())
+  tenantId    String
+  processId   String
+  name        String    @db.VarChar(300)
+  order       Int
+  description String?   @db.Text
+  slaMinutes  Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  org     Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  process Process @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@unique([processId, order])
+  @@index([tenantId, processId])
+  @@map("process_steps")
+}
+
+/// Regulation — регламент / стандарт (Фаза 0a, группа Б).
+/// `category=standard` через AGE-ребро `applies_to` ссылается на тип
+/// артефакта (строка, динамическая онтология — γ).
+model Regulation {
+  id         String             @id @default(cuid())
+  tenantId   String
+  name       String             @db.VarChar(300)
+  contentMd  String             @db.Text
+  category   RegulationCategory @default(regulation)
+  status     ProcessStatus      @default(active)
+  version    Int                @default(1)
+  confidence Float?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, category])
+  @@map("regulations")
+}
+
+/// Policy — политика (Фаза 0a, группа Б). UI в Фазе γ.
+model Policy {
+  id         String         @id @default(cuid())
+  tenantId   String
+  name       String         @db.VarChar(300)
+  contentMd  String         @db.Text
+  severity   PolicySeverity @default(advisory)
+  status     ProcessStatus  @default(active)
+  confidence Float?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, severity])
+  @@map("policies")
+}
+
+/// Tool — инструмент / система / шаблон (Фаза 0a, группа Б).
+model Tool {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String    @db.VarChar(200)
+  kind        ToolKind  @default(software)
+  externalUrl String?   @db.VarChar(500)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("tools")
+}
+
+/// Metric — метрика (Фаза 0a, группа Б).
+model Metric {
+  id          String          @id @default(cuid())
+  tenantId    String
+  name        String          @db.VarChar(200)
+  description String?         @db.Text
+  unit        String          @db.VarChar(50)
+  target      Float?
+  valueType   MetricValueType @default(count)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("metrics")
+}
+
+/// Decision — решение, принятое в компании (Фаза 0a, группа Б).
+///
+/// Критично для миграционного долга: сейчас «размазан» как
+/// `IdeaBlock.signalType='decision'`. С Фазы 0 — отдельная сущность с
+/// idempotent-связью к исходному `IdeaBlock` (один Decision на IdeaBlock).
+model Decision {
+  id                 String         @id @default(cuid())
+  tenantId           String
+  text               String         @db.Text
+  rationale          String?        @db.Text
+  decidedAt          DateTime
+  decidedByPersonId  String?
+  sourceMeetingId    String?
+  sourceIdeaBlockId  String?        @unique
+  status             DecisionStatus @default(active)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  org             Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  decidedBy       Person?    @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
+  sourceMeeting   Meeting?   @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
+  sourceIdeaBlock IdeaBlock? @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, decidedAt])
+  @@index([tenantId, decidedByPersonId])
+  @@map("decisions")
 }

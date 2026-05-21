@@ -43,7 +43,18 @@ x-backend-build: &backend-build
 
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    # Composite-образ PG16 + pgvector + Apache AGE (см. infra/postgres/Dockerfile).
+    # Оба расширения нужны в одной БД:
+    #   - pgvector — для embedding'ов IdeaBlock/Entity/MeetingTranscriptChunk.
+    #   - apache/age — для графовой инфраструктуры Фазы 0 (см.
+    #     plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md §5).
+    # На prod (Yandex Managed PostgreSQL 16) образ не нужен — оба расширения
+    # доступны как managed extensions (см.
+    # second-brain/02_architecture/age-deployment-decision.md).
+    build:
+      context: ./infra/postgres
+      dockerfile: Dockerfile
+    image: z-postgres-age-pgvector:pg16
     container_name: z-postgres
     restart: unless-stopped
     environment:

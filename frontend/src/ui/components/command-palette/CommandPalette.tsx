@@ -3,10 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  Building2,
   Calendar,
+  FileText,
   FolderKanban,
+  IdCard,
   ListChecks,
-  Search,
+  Sparkles,
+  UserRound,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -66,7 +70,16 @@ export function CommandPalette() {
     setLoading(true);
     const t = window.setTimeout(() => {
       searchApi
-        .query(trimmed)
+        .query(trimmed, [
+          'cards',
+          'meetings',
+          'tasks',
+          'roles',
+          'departments',
+          'persons',
+          'documents',
+          'role-profiles',
+        ])
         .then((res) => {
           if (cancelled) return;
           setResults(res);
@@ -93,13 +106,27 @@ export function CommandPalette() {
   const cards = results?.cards ?? [];
   const meetings = results?.meetings ?? [];
   const tasks = results?.tasks ?? [];
+  const roles = results?.roles ?? [];
+  const departments = results?.departments ?? [];
+  const persons = results?.persons ?? [];
+  const documents = results?.documents ?? [];
+  const roleProfiles = results?.roleProfiles ?? [];
   const empty =
-    !loading && results !== null && cards.length === 0 && meetings.length === 0 && tasks.length === 0;
+    !loading &&
+    results !== null &&
+    cards.length === 0 &&
+    meetings.length === 0 &&
+    tasks.length === 0 &&
+    roles.length === 0 &&
+    departments.length === 0 &&
+    persons.length === 0 &&
+    documents.length === 0 &&
+    roleProfiles.length === 0;
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput
-        placeholder="Поиск карточек, встреч и задач…"
+        placeholder="Поиск по компании: должности, отделы, сотрудники, документы, встречи…"
         value={query}
         onValueChange={setQuery}
       />
@@ -166,6 +193,89 @@ export function CommandPalette() {
                   icon={ListChecks}
                   title={t.title}
                   subtitle={`${t.status}`}
+                />
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {roles.length > 0 && (
+          <CommandGroup heading="Должности">
+            {roles.map((r) => (
+              <CommandItem
+                key={`role-${r.id}`}
+                value={`role-${r.id}-${r.name}`}
+                onSelect={() => go(`/roles/${encodeURIComponent(r.id)}`)}
+              >
+                <ResultRow
+                  icon={IdCard}
+                  title={r.name}
+                  subtitle={r.departmentName ?? 'Без отдела'}
+                />
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {departments.length > 0 && (
+          <CommandGroup heading="Отделы">
+            {departments.map((d) => (
+              <CommandItem
+                key={`dept-${d.id}`}
+                value={`dept-${d.id}-${d.name}`}
+                onSelect={() => go('/structure?tab=departments')}
+              >
+                <ResultRow icon={Building2} title={d.name} subtitle="Отдел" />
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {persons.length > 0 && (
+          <CommandGroup heading="Сотрудники">
+            {persons.map((p) => (
+              <CommandItem
+                key={`person-${p.id}`}
+                value={`person-${p.id}-${p.fullName}`}
+                onSelect={() => go('/structure?tab=persons')}
+              >
+                <ResultRow
+                  icon={UserRound}
+                  title={p.fullName}
+                  subtitle={p.roleName ?? 'Без должности'}
+                />
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {documents.length > 0 && (
+          <CommandGroup heading="Документы">
+            {documents.map((d) => (
+              <CommandItem
+                key={`doc-${d.id}`}
+                value={`doc-${d.id}-${d.name}`}
+                onSelect={() => go(`/documents/${encodeURIComponent(d.id)}`)}
+              >
+                <ResultRow
+                  icon={FileText}
+                  title={d.name}
+                  subtitle={d.kind ?? 'документ'}
+                />
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {roleProfiles.length > 0 && (
+          <CommandGroup heading="Карты должностей">
+            {roleProfiles.map((rp) => (
+              <CommandItem
+                key={`rp-${rp.roleId}`}
+                value={`rp-${rp.roleId}-${rp.roleName}`}
+                onSelect={() =>
+                  go(`/roles/${encodeURIComponent(rp.roleId)}`)
+                }
+              >
+                <ResultRow
+                  icon={Sparkles}
+                  title={rp.roleName}
+                  subtitle="карта должности"
                 />
               </CommandItem>
             ))}

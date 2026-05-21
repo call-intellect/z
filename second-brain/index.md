@@ -1,6 +1,8 @@
-# SECOND BRAIN — Z (AI-встречи на LiveKit)
+# SECOND BRAIN — Z (память компании)
 
 > Главный навигационный файл. Все разделы ведут отсюда.
+>
+> **Категория продукта:** «память компании» / memory layer (см. [[06_marketing/positioning]]). **Первая рабочая вертикаль:** AI-встречи на LiveKit (MVP).
 
 ## Карты верхнего уровня
 
@@ -22,6 +24,7 @@
 - [[01_projects/crossmark-integration]] — связь с Crossmark: только через API, развёртывание отдельное
 - [[01_projects/meeting-types]] — 9 типов встреч MVP
 - [[01_projects/ai-analysis-by-type]] — шаблоны AI-анализа по типу
+- [[01_projects/ai-value-director]] — **AI-директор по ценности** (Value Director) — первый агент в будущем AI-совете директоров CEO, работает на методологии из [[06_marketing/client-value-framework]]
 - [[01_projects/roles-and-permissions]] — роли host/guest и их права
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
 - [[01_projects/meeting-result-page]] — карточка результата: что показываем после встречи
@@ -42,6 +45,8 @@
 _пусто_
 
 ## Активные ТЗ
+- `plans/tz/2026-05-21-phase-0-roles-and-onboarding.md` — **Фаза 0: должности, каркас компании и знакомство** (зонтичный ТЗ, 4 sub-TZ: 0a фундамент моделей + AGE + GraphService, 0b document-ingest + extraction типизированных сущностей группы Б, 0c wizard + личный кабинет, 0d RoleProfileAgent). Все 4 sub-TZ ещё не созданы.
+  - **Аналитика ЛК (блокер 0c):** [`plans/analysis/2026-05-21-user-cabinet-design.md`](../plans/analysis/2026-05-21-user-cabinet-design.md) — draft от 2026-05-21. Дизайн навигации (3 группы Компания / Оперативка / Настройки), default landing по роли, видимость γ-разделов, `/dump` и `/me` минимальные, multi-org switcher, wizard 5 шагов.
 - `plans/tz/2026-05-10-knowledge-core-tz.md` — **переустройство фундамента Z в единое информационное ядро (knowledge core)**. 12 фаз: org/multi-tenancy → universal ingest → IdeaBlock + Entity → граф связей → Theme → переписанные UX-агенты → AI-чат через ядро → админка отладки → дашборд директора → цели и стратегический согласователь → доп. источники → retention/security → tariffs. Концепции из `delivery/` и Blockify, реализация на стеке Z (NestJS/pgvector/BullMQ).
   - **Дочерние ТЗ (для агентов-исполнителей):**
     - `plans/tz/2026-05-10-phase-7-admin.md` — Z-Admin (super_admin) + Org-Admin (owner/admin): отладка, аналитика стоимости, A/B моделей, прайс-карта, тумблеры воркеров, отладка ядра.
@@ -91,6 +96,16 @@ _пусто_
 - API: `GET /api/v1/knowledge/themes` (фильтры branch/status, пагинация), `GET /api/v1/knowledge/themes/:id`, `POST /api/v1/knowledge/themes/:id/save-as-card`, `GET /api/v1/cards/:id/themes`
 - RBAC: ResourceType расширен `'theme'` (read для всех member'ов Org, write/delete — owner/admin)
 - LlmTaskType: `theme-classify` уже был в seed'е; `card-rollup-v2` тоже; обновление через `--update-existing` не обязательно
+
+## Маркетинг
+
+- [[06_marketing/index]] — навигация по маркетинговому разделу
+- [[06_marketing/competitors]] — анализ конкурентов (Fireflies, Otter, Granola, tl;dv и др.)
+- [[06_marketing/positioning]] — ценностное предложение, отличия от конкурентов
+- [[06_marketing/icp]] — портрет идеального покупателя (ICP)
+- [[06_marketing/messaging]] — ключевые сообщения, заголовки, tone of voice
+- [[06_marketing/client-value-framework]] — методология клиентской ценности (по Гордееву) + роль Value Officer
+- [[06_marketing/company-ontology]] — онтология компании (13 классов сущностей + ~40 типов рёбер, клон сотрудника как subgraph, специфика РФ) — фундамент архитектуры «второго мозга»
 
 ## Баги и инциденты (`03_bugs/`)
 _пусто_

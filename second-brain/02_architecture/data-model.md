@@ -612,4 +612,37 @@ erDiagram
 
 - **`OrgEntitlement`** — `tenantId @unique, tier (String, default 'tier_pro' — намеренно строка, не enum), featureOverrides jsonb?, quotaOverrides jsonb?, notes (Text)?`.
 
+## Фаза 0 — каркас компании (Z 2026-05-21)
+
+### Группа А (с UI)
+- `Department(id, tenantId, name, parentDepartmentId?, deletedAt?)` — иерархия в схеме, UI плоский.
+- `Role(id, tenantId, name, departmentId?, tags[], deletedAt?)` — бизнес-должность.
+- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК.
+- `PersonRole(id, tenantId, personId, roleId, validFrom, validTo?)` — M:M Person↔Role с временем.
+- `JobDescription(id, tenantId, roleId, contentMd, sourceDocumentId?, version, deletedAt?)`.
+- `Skill(id, tenantId, name, description?, deletedAt?)`.
+- `Document(id, tenantId, uploaderId, kind, name, s3Key?, inlineContent?, parsedText?, status, attachedRoleId?, deletedAt?)`.
+- `RoleProfile(id, tenantId, roleId UNIQUE, summaryCache Json, status, lastBuildAt?, buildVersion)`.
+
+### Группа Б (без UI в Фазе 0)
+- `Mission, Vision, Strategy` — Уровень 1.
+- `Process, ProcessStep, Regulation, Policy` — Уровень 3.
+- `Tool` — Уровень 4.
+- `Metric` — Уровень 5.
+- `Decision` — миграционный долг.
+
+### Расширения existing
+- `Goal.horizon GoalHorizon @default(quarterly)`, `Goal.parentGoalId?` (self-relation).
+- `MeetingType` enum + `review`, `retrospective`.
+- `IdeaBlock.roleRelevant Boolean`, `IdeaBlock.roleId?`.
+- `EntityLink` полиморфизована: `fromType?`, `toType?`, `validFrom`, `validTo?`, `properties Json`. Composite unique включает fromType/toType. FK на Entity убраны.
+- `EntityLinkType` enum +17 типов рёбер (см. `plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md` §4.4).
+- `Membership.personId?`, `OrgInvitation.personId?`, `User.persons[]`.
+
+### Графовая инфраструктура
+- Apache AGE 1.5.0 (PG16) — `infra/postgres/Dockerfile` (dev), Yandex Managed (prod).
+- Граф `z_graph`.
+- `GraphService` в `backend/src/common/graph/` — единая точка двойной записи Postgres EntityLink + AGE.
+- Запрет прямого Cypher — см. [[code-pitfalls]].
+
 [[../index|← index]]

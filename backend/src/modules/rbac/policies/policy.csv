@@ -128,6 +128,118 @@ p, manager, *, *, source, read
 # bypass через RbacService. admin / manager не получают это право.
 p, owner, *, *, person, erase
 
+# ──────────────────────────── Фаза 0 — структура компании (группа А) ────────────────────────────
+# ResourceType: department, role, person, job-description, skill, document, role-profile.
+# Owner / admin Org — полный доступ. Manager — read на всю структуру компании
+# (видят отделы, должности, людей, карты должностей и собственные документы),
+# write — только owner/admin.
+p, owner, *, *, department, read
+p, owner, *, *, department, write
+p, owner, *, *, department, delete
+p, admin, *, *, department, read
+p, admin, *, *, department, write
+p, admin, *, *, department, delete
+p, manager, *, *, department, read
+
+p, owner, *, *, role, read
+p, owner, *, *, role, write
+p, owner, *, *, role, delete
+p, admin, *, *, role, read
+p, admin, *, *, role, write
+p, admin, *, *, role, delete
+p, manager, *, *, role, read
+
+p, owner, *, *, person, read
+p, owner, *, *, person, write
+p, owner, *, *, person, delete
+p, admin, *, *, person, read
+p, admin, *, *, person, write
+p, admin, *, *, person, delete
+p, manager, *, *, person, read
+
+p, owner, *, *, job-description, read
+p, owner, *, *, job-description, write
+p, owner, *, *, job-description, delete
+p, admin, *, *, job-description, read
+p, admin, *, *, job-description, write
+p, admin, *, *, job-description, delete
+p, manager, *, *, job-description, read
+
+p, owner, *, *, skill, read
+p, owner, *, *, skill, write
+p, owner, *, *, skill, delete
+p, admin, *, *, skill, read
+p, admin, *, *, skill, write
+p, admin, *, *, skill, delete
+p, manager, *, *, skill, read
+
+# Document: member видит свои + загруженные на свою должность; admin видит все.
+p, owner, *, *, document, read
+p, owner, *, *, document, write
+p, owner, *, *, document, delete
+p, admin, *, *, document, read
+p, admin, *, *, document, write
+p, admin, *, *, document, delete
+p, manager, *, self, document, write
+p, manager, *, self, document, delete
+p, manager, *, *, document, read
+
+# RoleProfile — материализованный кеш «карта должности». Видна всем members,
+# rebuild — admin/owner.
+p, owner, *, *, role-profile, read
+p, owner, *, *, role-profile, write
+p, admin, *, *, role-profile, read
+p, admin, *, *, role-profile, write
+p, manager, *, *, role-profile, read
+
+# ──────────────────────────── Фаза 0 — каркас 5 уровней (группа Б, без UI) ────────────────────────────
+# UI появится в Фазе γ; в Фазе 0 — записываются автоматически через extraction,
+# читаются через /api/v1/search и /api/v1/{processes,regulations,...}/count.
+# Manager не имеет прямого доступа — только через search.
+p, owner, *, *, mission, read
+p, owner, *, *, mission, write
+p, admin, *, *, mission, read
+p, owner, *, *, vision, read
+p, owner, *, *, vision, write
+p, admin, *, *, vision, read
+p, owner, *, *, strategy, read
+p, owner, *, *, strategy, write
+p, admin, *, *, strategy, read
+
+p, owner, *, *, process, read
+p, owner, *, *, process, write
+p, owner, *, *, process, delete
+p, admin, *, *, process, read
+
+p, owner, *, *, process-step, read
+p, owner, *, *, process-step, write
+p, admin, *, *, process-step, read
+
+p, owner, *, *, regulation, read
+p, owner, *, *, regulation, write
+p, owner, *, *, regulation, delete
+p, admin, *, *, regulation, read
+
+p, owner, *, *, policy, read
+p, owner, *, *, policy, write
+p, owner, *, *, policy, delete
+p, admin, *, *, policy, read
+
+p, owner, *, *, tool, read
+p, owner, *, *, tool, write
+p, admin, *, *, tool, read
+
+p, owner, *, *, metric, read
+p, owner, *, *, metric, write
+p, owner, *, *, metric, delete
+p, admin, *, *, metric, read
+
+p, owner, *, *, decision, read
+p, owner, *, *, decision, write
+p, owner, *, *, decision, delete
+p, admin, *, *, decision, read
+p, manager, *, self, decision, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

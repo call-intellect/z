@@ -61,7 +61,8 @@ export type LlmTaskType =
   | 'summary-v2'
   | 'chat-v2'
   | 'goal-alignment'
-  | 'dashboard-summary';
+  | 'dashboard-summary'
+  | 'role-profile-build';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -95,6 +96,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'chat-v2',
   'goal-alignment',
   'dashboard-summary',
+  'role-profile-build',
 ] as const;
 
 /**

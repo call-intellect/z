@@ -363,6 +363,42 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── document-ingest (Фаза 0b) ────────
+  get document() {
+    const customBucket = this.get('S3_BUCKET_DOCUMENTS');
+    return {
+      parseTimeoutMs: this.get('DOCUMENT_PARSE_TIMEOUT_MS'),
+      maxSizeMb: this.get('DOCUMENT_MAX_SIZE_MB'),
+      maxSizeBytes: this.get('DOCUMENT_MAX_SIZE_MB') * 1024 * 1024,
+      inlineThresholdMb: this.get('DOCUMENT_INLINE_THRESHOLD_MB'),
+      inlineThresholdBytes:
+        this.get('DOCUMENT_INLINE_THRESHOLD_MB') * 1024 * 1024,
+      /**
+       * Если `S3_BUCKET_DOCUMENTS` не задан — используем основной bucket.
+       * На локальном MinIO так живём (один bucket на всё), на проде
+       * рекомендуется отдельный bucket с другими retention/ACL.
+       */
+      s3Bucket: customBucket && customBucket.length > 0 ? customBucket : this.get('S3_BUCKET'),
+    } as const;
+  }
+
+  // ─────────────────────────── extraction (Фаза 0b) ─────────────
+  /**
+   * Параметры extraction'а группы Б (Process/Decision/Regulation/Policy/
+   * Metric/Tool). См. ТЗ 0b §6.2 и решение #11 в зонтичном ТЗ.
+   *
+   *   - `enableTopLevel` — мастер-флаг автоизвлечения Mission/Vision/
+   *     Strategy. По умолчанию false; включается только в Фазе δ.
+   *   - `typedEntityMinConfidence` — нижний порог confidence, ниже которого
+   *     LLM-извлечённая сущность отбрасывается (не сохраняется в БД).
+   */
+  get extraction() {
+    return {
+      enableTopLevel: this.get('EXTRACTION_ENABLE_TOP_LEVEL'),
+      typedEntityMinConfidence: this.get('EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE'),
+    } as const;
+  }
+
   // ─────────────────────────── idle ──────────────────────────────
   get idle() {
     return {

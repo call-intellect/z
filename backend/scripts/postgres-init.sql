@@ -8,6 +8,27 @@
 --    На Yandex Cloud Managed PostgreSQL — доступно из коробки.
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- 1b. Apache AGE — графовая инфраструктура Фазы 0 (см.
+--    plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md §5).
+--    На Yandex Cloud Managed PostgreSQL 16 — доступно как managed extension
+--    (включается в настройках кластера: shared_preload_libraries = 'age').
+--    Локально в dev — через composite-образ (infra/postgres/Dockerfile).
+CREATE EXTENSION IF NOT EXISTS age;
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- 1c. Граф z_graph — единое graph-namespace для всех бизнес-связей Z.
+--     Идемпотентно: повторный create_graph падает, поэтому ловим через
+--     проверку ag_catalog.ag_graph.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'z_graph'
+  ) THEN
+    PERFORM ag_catalog.create_graph('z_graph');
+  END IF;
+END $$;
+
 -- 2. HNSW-индекс на эмбеддингах для cross-meeting search и AI-чата по архиву.
 --    Прогон ИДЕМПОТЕНТНЫЙ — IF NOT EXISTS защищает от повторного выполнения.
 --    Запускать ПОСЛЕ `prisma db push` (когда таблица уже существует).

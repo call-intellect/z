@@ -1,6 +1,21 @@
 import { z } from 'zod';
 
 /**
+ * Boolean из ENV-строки. НЕЛЬЗЯ `z.coerce.boolean()` — он делает `Boolean(v)`,
+ * а `Boolean("false") === true` (любая непустая строка → true). Поэтому парсим явно:
+ *   true/1/yes/on → true;  false/0/no/off/'' / отсутствие → false.
+ */
+const zBool = (def: boolean) =>
+  z.preprocess((v) => {
+    if (v === undefined || v === null || v === '') return def;
+    if (typeof v === 'boolean') return v;
+    const s = String(v).trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(s)) return true;
+    if (['false', '0', 'no', 'off'].includes(s)) return false;
+    return v; // мусор → z.boolean() даст внятную ошибку валидации
+  }, z.boolean());
+
+/**
  * Полная zod-схема ENV проекта Z.
  * Источник:
  *   - plans/architecture/2026-05-08-z-architecture.md §6.7
@@ -9,7 +24,7 @@ import { z } from 'zod';
  *
  * Принципы:
  *  - Все обязательные ключи помечены без default. Падаем на старте, если их нет.
- *  - Числа и булевы значения парсим из строк через z.coerce.
+ *  - Числа — через z.coerce; булевы — через zBool (см. выше; z.coerce.boolean НЕ годится).
  *  - Никаких `any`, никаких хардкодов вне этого файла.
  */
 
@@ -49,13 +64,13 @@ const ArgonSchema = z.object({
 const MailSchema = z.object({
   MAIL_HOST: z.string().min(1).default('mail.hosting.reg.ru'),
   MAIL_PORT: z.coerce.number().int().positive().default(465),
-  MAIL_SSL: z.coerce.boolean().default(true),
+  MAIL_SSL: zBool(true),
   MAIL_USERNAME: z.string().min(1).optional(),
   MAIL_PASSWORD: z.string().min(1).optional(),
   MAIL_FROM: z.string().email().default('noreply@crossmark.ru'),
   MAIL_FROM_NAME: z.string().default('Z'),
   /** При true — MailService логирует письма вместо реальной отправки (dev/test). */
-  MAIL_DRY_RUN: z.coerce.boolean().default(false),
+  MAIL_DRY_RUN: zBool(false),
 });
 
 const LiveKitSchema = z.object({
@@ -72,7 +87,7 @@ const TurnSchema = z.object({
   TURN_PORT: z.coerce.number().int().positive().optional(),
   TURN_USERNAME: z.string().optional(),
   TURN_PASSWORD: z.string().optional(),
-  TURN_TLS: z.coerce.boolean().default(true),
+  TURN_TLS: zBool(true),
 });
 
 const S3Schema = z.object({
@@ -87,7 +102,7 @@ const S3Schema = z.object({
 const AnthropicSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   ANTHROPIC_MODEL: z.string().min(1).default('claude-sonnet-4-6'),
-  ANTHROPIC_USE_PROXY: z.coerce.boolean().default(false),
+  ANTHROPIC_USE_PROXY: zBool(false),
   ANTHROPIC_PROXY_URL: z.string().url().default('https://proxy.agent-lia.ru'),
 });
 
@@ -172,10 +187,10 @@ const RetentionSchema = z.object({
    * операционно после полного бэкапа. CHAT включён сразу (90 дней).
    */
   RETENTION_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().default(500),
-  RETENTION_RAW_EVENTS_ENABLED: z.coerce.boolean().default(false),
-  RETENTION_AUDIT_ENABLED: z.coerce.boolean().default(false),
-  RETENTION_CHAT_ENABLED: z.coerce.boolean().default(true),
-  RETENTION_BLOCKS_ENABLED: z.coerce.boolean().default(false),
+  RETENTION_RAW_EVENTS_ENABLED: zBool(false),
+  RETENTION_AUDIT_ENABLED: zBool(false),
+  RETENTION_CHAT_ENABLED: zBool(true),
+  RETENTION_BLOCKS_ENABLED: zBool(false),
 });
 
 const IdleSchema = z.object({
@@ -261,7 +276,7 @@ const AiFeatureFlagsSchema = z.object({
    * Подмешивать ли in-meeting room-chat в merged-объект для AI-отчёта.
    * См. ТЗ meeting-room-chat §AI-pipeline.
    */
-  INCLUDE_ROOM_CHAT_IN_AI: z.coerce.boolean().default(true),
+  INCLUDE_ROOM_CHAT_IN_AI: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */
@@ -309,7 +324,7 @@ const CryptoSchema = z.object({
  * `EMAIL_FETCH_MAX_PER_RUN` — лимит писем за один проход на Source.
  */
 const EmailFetchSchema = z.object({
-  EMAIL_FETCH_ENABLED: z.coerce.boolean().default(false),
+  EMAIL_FETCH_ENABLED: zBool(false),
   EMAIL_FETCH_CRON: z.string().min(1).default('*/5 * * * *'),
   EMAIL_FETCH_MAX_PER_RUN: z.coerce.number().int().positive().default(50),
 });
@@ -426,7 +441,7 @@ const KnowledgeCoreSchema = z.object({
    * Включается на проде вручную для A/B-сравнения. Удалить legacy — отдельная
    * фаза после ручного решения владельца продукта (см. decisions-log).
    */
-  KNOWLEDGE_CORE_V2_AGENTS_ENABLED: z.coerce.boolean().default(false),
+  KNOWLEDGE_CORE_V2_AGENTS_ENABLED: zBool(false),
   /**
    * Cron-расписание `meeting-analyze-v2.cron` — каждые 10 минут по умолчанию.
    * Cron-выражение в декораторе литералом, ENV-значение для логов и для
@@ -451,7 +466,7 @@ const KnowledgeCoreSchema = z.object({
    * формат citations совместим с legacy. Включается на проде вручную для
    * A/B-сравнения. Удаление legacy — отдельная фаза.
    */
-  CHAT_V2_ENABLED: z.coerce.boolean().default(false),
+  CHAT_V2_ENABLED: zBool(false),
   /**
    * Сколько top-K блоков подмешиваем в LLM-контекст ChatV2. 12 — компромисс
    * между качеством (больше блоков → больше шансов попасть в нужный) и

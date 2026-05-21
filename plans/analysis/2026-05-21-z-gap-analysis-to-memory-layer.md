@@ -494,13 +494,14 @@ Diff вычисляется агентом по запросу. Кеширует
 
 Подразумевает **постепенный путь, без big-bang переписывания**. Каждая фаза — самостоятельная польза + не ломает текущий продукт встреч.
 
-### Фаза α (фундамент): добавляем графовый и temporal слои
+### Фаза α (фундамент): bi-temporal layer
 
-- Установить Apache AGE на Postgres.
-- Создать графовое отображение поверх `IdeaBlock` + `Entity` + `IdeaBlockLink` + `EntityLink`. Двойная запись: Postgres + AGE.
+> **Обновлено 2026-05-21 (итерация 14):** установка Apache AGE и сервис `GraphService` перенесены в Фазу 0 — нужны с первого дня для генерации `RoleProfile` и для демо-запросов реальным клиентам. См. [2026-05-21-ontology-process-regulation.md](2026-05-21-ontology-process-regulation.md), раздел 8.
+
 - Добавить `valid_from` / `valid_to` к `IdeaBlock` и `Entity`.
-- Расширить `/knowledge/graph/neighbors` на Cypher через AGE.
-- **Не ломаем:** существующий код продолжает работать через Postgres-таблицы.
+- Temporal walk-запросы — обходы вида «как менялось состояние X с момента Y по момент Z».
+- Опциональное эпизодическое хранилище (TimescaleDB hypertable для `RawEvent` и `AiUsageLog`), либо Postgres-partitioning по месяцу как более лёгкая альтернатива (решение в открытых вопросах).
+- **Не ломаем:** AGE-инфраструктура и `EntityLink`-рёбра уже стоят из Фазы 0; здесь только bi-temporality поверх.
 
 ### Фаза β: ABAC и audit trail на knowledge-запросы
 

@@ -12,6 +12,11 @@ out/
 *.log
 coverage/
 
+# LiveKit prod-конфиги с секретами — в git только *.example.
+# На сервере: cp livekit.yaml.example livekit.yaml && cp egress.yaml.example egress.yaml
+infra/livekit/livekit.yaml
+infra/livekit/egress.yaml
+
 # Бинарные артефакты — никогда в git (LiveKit и пр. ставятся из Docker-образов).
 *.exe
 *.dll

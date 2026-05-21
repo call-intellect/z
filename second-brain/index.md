@@ -24,6 +24,7 @@
 - [[01_projects/crossmark-integration]] — связь с Crossmark: только через API, развёртывание отдельное
 - [[01_projects/meeting-types]] — 9 типов встреч MVP
 - [[01_projects/ai-analysis-by-type]] — шаблоны AI-анализа по типу
+- [[01_projects/ai-value-director]] — **AI-директор по ценности** (Value Director) — первый агент в будущем AI-совете директоров CEO, работает на методологии из [[06_marketing/client-value-framework]]
 - [[01_projects/roles-and-permissions]] — роли host/guest и их права
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
 - [[01_projects/meeting-result-page]] — карточка результата: что показываем после встречи

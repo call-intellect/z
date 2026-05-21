@@ -21,8 +21,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { QuotaService } from '../quotas/quota.service';
-import { S3Service } from '../recordings/s3.service';
-import { extractKeyFromUrl } from '../recordings/s3-keys';
 import { UsersService } from '../users/users.service';
 
 import type {
@@ -59,7 +57,6 @@ export class MeetingsService {
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
-    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(EntitlementService) private readonly entitlements: EntitlementService,
     @Inject(QuotaService) private readonly quotas: QuotaService,
   ) {}
@@ -172,6 +169,7 @@ export class MeetingsService {
       title: string;
       customPrompt?: string | null;
       cardId?: string | null;
+      recordByDefault?: boolean;
     },
     userId: string,
   ): Promise<Meeting> {
@@ -207,6 +205,7 @@ export class MeetingsService {
           ownerId: userId,
           customPrompt: input.customPrompt ?? null,
           cardId: resolvedCardId,
+          recordByDefault: input.recordByDefault ?? true,
         },
         tx,
       );
@@ -289,13 +288,21 @@ export class MeetingsService {
       if (meeting.ownerId === userId) {
         role = 'host';
       } else if (meeting.participants.some((p) => p.userId === userId)) {
-        // зарегистрированный гость (V2-сценарий, в MVP редкий).
         role = 'guest';
       }
     }
 
+    const recording = await this.prisma.recording.findUnique({
+      where: { meetingId },
+      select: { status: true },
+    });
+    const isRecordingActive =
+      recording?.status === 'requested' || recording?.status === 'recording';
+
     return {
       role,
+      isRecordingActive,
+      recordByDefault: meeting.recordByDefault,
       meeting: {
         id: meeting.id,
         title: meeting.title,
@@ -532,32 +539,35 @@ export class MeetingsService {
   }
 
   /**
-   * Presigned URL на merged-json транскрипта. Только для host'а.
-   * Если транскрипта/merged ещё нет — 404 (через `MeetingNotFoundError`-подобный).
+   * Данные транскрипта (turns + roomChat) из БД. Только для host'а.
+   * Если transcript.turns ещё нет — 404.
    */
   async getTranscript(
     meetingId: string,
     userId: string,
-  ): Promise<{ url: string; expiresAt: string; durationSeconds: number | null }> {
+  ): Promise<{
+    turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+    roomChat?: Array<{ sentAt: string; authorName: string; content: string }>;
+    durationSeconds: number | null;
+  }> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      include: { transcript: true },
+      include: { transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } } },
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
     if (meeting.ownerId !== userId) {
       throw new NotAuthorizedError('not_meeting_host');
     }
     const t = meeting.transcript;
-    if (!t || !t.mergedS3Url) {
-      // Семантически — 404: merged.json ещё не готов. Используем тот же тип, что и для встречи.
+    if (!t?.turns) {
       throw new MeetingNotFoundError(`transcript:${meetingId}`);
     }
 
-    const key = extractKeyFromUrl(t.mergedS3Url, this.cfg.s3.bucket);
-    const presigned = await this.s3.presignGet(key);
+    const turns = t.turns as Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+    const roomChat = (t.roomChat as Array<{ sentAt: string; authorName: string; content: string }> | null) ?? undefined;
     return {
-      url: presigned.url,
-      expiresAt: presigned.expiresAt.toISOString(),
+      turns,
+      ...(roomChat && roomChat.length > 0 ? { roomChat } : {}),
       durationSeconds: t.totalDurationSeconds ?? null,
     };
   }
@@ -606,7 +616,7 @@ export class MeetingsService {
     totalDurationSeconds: number | null;
   } {
     return {
-      hasMerged: !!t.mergedS3Url,
+      hasMerged: t.turns !== null,
       totalDurationSeconds: t.totalDurationSeconds ?? null,
     };
   }

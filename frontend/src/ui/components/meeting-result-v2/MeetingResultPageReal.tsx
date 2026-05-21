@@ -17,7 +17,7 @@
  * TODO M7: cleanup старого `meeting-result/*`.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -150,6 +150,16 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     [result],
   );
 
+  // Presigned URL — отдельный endpoint; null-ключ отключает запрос до готовности.
+  // Хук должен быть ДО любых early return'ов (Rules of Hooks).
+  const isRecordingReady = result?.recording?.hasRecording === true;
+  const { data: downloadData } = useSWR(
+    isRecordingReady ? ['recording-download', meetingId] : null,
+    () => meetingsApi.downloadUrl(meetingId),
+    { revalidateOnFocus: false },
+  );
+  const safeVideoUrl = downloadData?.url ?? null;
+
   const onSeek = (ms: number) => {
     player.seekTo(ms);
     setCurrentMs(ms);
@@ -176,15 +186,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   }
 
   const recording = result?.recording;
-  // Бэк может выдавать presigned URL под разными именами; пробуем оба.
-  const recordingAny = recording as unknown as Record<string, unknown> | null;
-  const videoUrl =
-    (recordingAny?.mainVideoUrl as string | undefined) ||
-    (recordingAny?.videoUrl as string | undefined) ||
-    (recordingAny?.url as string | undefined) ||
-    null;
-  const isRecordingReady = (recording?.status ?? '') === 'ready';
-  const safeVideoUrl = isRecordingReady ? videoUrl : null;
 
   // Длительность в миллисекундах: приоритет — meeting.durationMs, fallback — recording.
   const durationMs =
@@ -1044,50 +1045,142 @@ function ChaptersTab({
 }
 
 function TranscriptTab({ meetingId }: { meetingId: string }) {
+  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+
   const { data, error, isLoading } = useSWR(
     ['transcript', meetingId],
     () => meetingsApi.transcript(meetingId),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
+  const { data: tracksData } = useSWR(
+    meetingId ? ['audio-tracks', meetingId] : null,
+    () => meetingsApi.audioTracks(meetingId),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  const seekTo = (sec: number, speaker: string) => {
+    const tracks = tracksData?.tracks ?? [];
+    const match = tracks.find((t) => t.participantName === speaker);
+    const el = match ? audioRefs.current[match.id] : null;
+    if (el) {
+      el.currentTime = sec;
+      void el.play().catch(() => undefined);
+    }
+  };
+
+  const hasTracks = (tracksData?.tracks?.length ?? 0) > 0;
+  const hasTurns = !error && (data?.turns?.length ?? 0) > 0;
+
   if (isLoading) {
     return (
       <Card>
         <Skeleton className="h-4 w-full" />
         <Skeleton className="mt-2 h-4 w-3/4" />
+        <Skeleton className="mt-2 h-4 w-5/6" />
       </Card>
     );
   }
 
-  if (error || !data) {
+  if (!hasTracks && !hasTurns) {
     return (
       <Card>
         <div className="py-6 text-center text-sm text-fg-secondary">
-          Транскрипт доступен только в экспорте. Скачайте отчёт из меню «Скачать».
+          Транскрипт и аудиодорожки появятся после обработки встречи.
         </div>
       </Card>
     );
   }
 
   return (
-    <Card>
-      <CardHeader
-        title="Транскрипт"
-        accessory={
-          <Button asChild variant="outline" size="sm">
-            <a href={data.url} target="_blank" rel="noopener noreferrer">
-              <Download size={13} />
-              Скачать .json
-            </a>
-          </Button>
-        }
-      />
-      <p className="text-sm text-fg-secondary">
-        Полный merged-транскрипт хранится в S3 и доступен по presigned-ссылке (срок: до{' '}
-        {new Date(data.expiresAt).toLocaleString('ru-RU')}).
-      </p>
-    </Card>
+    <div className="flex flex-col gap-3">
+      {hasTracks && (
+        <div className="rounded-xl border border-border-subtle bg-bg-card p-4">
+          <h3 className="mb-3 text-sm font-semibold text-fg-primary">
+            Аудиодорожки · {tracksData!.tracks.length}{' '}
+            {tracksData!.tracks.length === 1 ? 'участник' : 'участника'}
+          </h3>
+          <div className="flex flex-col gap-3">
+            {tracksData!.tracks.map((track) => (
+              <div key={track.id} className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+                    {track.participantName}
+                  </span>
+                  <span className="font-mono text-[10px] text-fg-tertiary">
+                    {Math.round(track.durationSeconds / 60)} мин
+                  </span>
+                </div>
+                <audio
+                  ref={(el) => {
+                    audioRefs.current[track.id] = el;
+                  }}
+                  src={track.url}
+                  controls
+                  preload="metadata"
+                  className="h-8 w-full"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasTurns && (
+        <div className="rounded-xl border border-border-subtle bg-bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-fg-primary">
+              Транскрипт · {data!.turns.length} реплик
+            </h3>
+            {data!.durationSeconds && (
+              <span className="font-mono text-xs text-fg-tertiary">
+                {Math.round(data!.durationSeconds / 60)} мин
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto">
+            {data!.turns.map((turn, i) => (
+              <div key={i} className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => seekTo(turn.startSec, turn.speaker)}
+                  className={cn(
+                    'w-16 shrink-0 pt-0.5 text-left font-mono text-[11px] text-fg-tertiary',
+                    hasTracks && 'cursor-pointer hover:text-accent',
+                  )}
+                  title={hasTracks ? 'Перейти к этому моменту в аудио' : undefined}
+                >
+                  {formatSec(turn.startSec)}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-accent mb-0.5">
+                    {turn.speaker}
+                  </div>
+                  <p className="m-0 text-sm leading-relaxed text-fg-primary">
+                    {turn.text}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!hasTurns && hasTracks && (
+        <Card>
+          <div className="py-4 text-center text-sm text-fg-secondary">
+            Транскрипт ещё не готов. Он появится после обработки аудиозаписи.
+          </div>
+        </Card>
+      )}
+    </div>
   );
+}
+
+function formatSec(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function TasksTab({

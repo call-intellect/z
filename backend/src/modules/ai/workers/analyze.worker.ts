@@ -8,7 +8,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { MeetingsService } from '../../meetings/meetings.service';
-import { S3Service } from '../../recordings/s3.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 
@@ -65,7 +64,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(LlmFallbackService) private readonly llm: LlmFallbackService,
     @Inject(AiUsageLogService) private readonly usage: AiUsageLogService,
     @Inject(AiQueueService) private readonly queue: AiQueueService,
@@ -109,8 +107,8 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       where: { id: meetingId },
       include: { transcript: true, aiResult: true },
     });
-    if (!meeting?.transcript?.mergedS3Url) {
-      this.logger.warn({ meetingId }, 'analyze: нет mergedS3Url');
+    if (!meeting?.transcript?.turns) {
+      this.logger.warn({ meetingId }, 'analyze: нет transcript.turns в БД');
       return;
     }
     if (
@@ -131,16 +129,9 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 2. читаем merged. Поле `roomChat` опционально — присутствует только
-    //    если merge.worker подмешал чат (флаг INCLUDE_ROOM_CHAT_IN_AI=true и
-    //    в БД были сообщения). Старые merged.json без roomChat остаются
-    //    обратносовместимыми: undefined → промпты идентичны историческим.
-    const merged = await this.s3.getJson<{
-      turns: DialogTurn[];
-      roomChat?: RoomChatMessage[];
-    }>(meeting.transcript.mergedS3Url);
-    const dialog = merged.turns ?? [];
-    const roomChat = merged.roomChat;
+    // 2. Читаем turns/roomChat из БД (сохранены merge.worker).
+    const dialog = (meeting.transcript.turns as unknown as DialogTurn[] | null) ?? [];
+    const roomChat = (meeting.transcript.roomChat as unknown as RoomChatMessage[] | null) ?? undefined;
 
     // 3. создаём/находим AiResult (placeholder для постепенного заполнения).
     let aiResult: AiResult = await this.upsertEmptyAiResult(meeting);
@@ -362,7 +353,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       'analyze: успешно — notify + post-analyze jobs поставлены',
     );
 
-    void this.cfg;
   }
 
   // ─────────────────────────── pieces ──────────────────────────────────────

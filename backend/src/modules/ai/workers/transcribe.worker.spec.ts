@@ -58,12 +58,14 @@ describe('TranscribeWorker.process (happy path)', () => {
           },
         ],
       },
-      transcript: null,
+      transcript: { tracks: [] },
     }));
-    const transcriptUpsert = vi.fn(async () => undefined);
+    const transcriptUpsert = vi.fn(async () => ({ id: 'tr-1' }));
+    const transcriptTrackCreate = vi.fn(async () => undefined);
     const prisma = {
       meeting: { findUnique: meetingFindUnique },
       transcript: { upsert: transcriptUpsert },
+      transcriptTrack: { create: transcriptTrackCreate },
     } as unknown as PrismaService;
 
     const transitionStatus = vi.fn(async () => undefined);
@@ -124,8 +126,8 @@ describe('TranscribeWorker.process (happy path)', () => {
     expect(transitionStatus).toHaveBeenCalledWith(meetingId, 'transcription_processing', expect.any(Object));
     expect(submit).toHaveBeenCalledTimes(2);
     expect(poll).toHaveBeenCalledTimes(2);
-    // 2 per-track json + 1 index.json.
-    expect(putJson).toHaveBeenCalledTimes(3);
+    // Данные треков сохраняются в БД (2 трека).
+    expect(transcriptTrackCreate).toHaveBeenCalledTimes(2);
     expect(transcriptUpsert).toHaveBeenCalledOnce();
     expect(enqueueMerge).toHaveBeenCalledWith(meetingId);
     expect(observe).toHaveBeenCalled();
@@ -133,13 +135,13 @@ describe('TranscribeWorker.process (happy path)', () => {
     expect(usageRecord).toHaveBeenCalledTimes(2);
   });
 
-  it('идемпотентность: уже есть rawIndexS3Url → сразу enqueueMerge', async () => {
+  it('идемпотентность: уже есть TranscriptTrack → сразу enqueueMerge', async () => {
     const meetingFindUnique = vi.fn(async () => ({
       id: 'm-2',
       type: 'team',
       status: 'transcription_processing',
       recording: { audioTracks: [] },
-      transcript: { rawIndexS3Url: 'meetings/m-2/transcripts/index.json' },
+      transcript: { tracks: [{ id: 'trk-1' }] },
     }));
     const prisma = {
       meeting: { findUnique: meetingFindUnique },

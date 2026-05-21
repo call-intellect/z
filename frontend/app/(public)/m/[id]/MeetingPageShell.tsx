@@ -44,8 +44,7 @@ export function MeetingPageShell({ meetingId }: Props) {
     if (joined) return;
     if (autoJoinAttempted) return;
     if (access.state !== 'ready') return;
-    const role = access.data.role;
-    const status = access.data.meeting.status;
+    const { role, meeting: { status } } = access.data;
 
     const isJoinableStatus = status === 'scheduled' || status === 'active';
     if (role === 'host' && isJoinableStatus) {
@@ -103,7 +102,7 @@ export function MeetingPageShell({ meetingId }: Props) {
     );
   }
 
-  const { role, meeting } = access.data;
+  const { role, meeting, recordByDefault } = access.data;
 
   if (meeting.status === 'failed') {
     return <MeetingFailedPlaceholder />;
@@ -117,11 +116,10 @@ export function MeetingPageShell({ meetingId }: Props) {
         meeting={meeting}
         livekit={joined.joined.livekit}
         role={joined.joined.role}
+        recordByDefault={recordByDefault}
         identityToParticipantId={joined.identityToParticipantId}
         onLeave={() => {
           setJoined(null);
-          // После leave вернёмся в страницу — access по-прежнему валиден.
-          // Если встреча уже не active — useMeetingAccess подтянет это.
           access.mutate();
         }}
       />

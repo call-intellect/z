@@ -198,8 +198,8 @@ export class MeetingsAdminController {
     } | null;
     transcript: {
       id: string;
-      rawIndexS3Url: string;
-      mergedS3Url: string | null;
+      hasTracks: boolean;
+      hasTurns: boolean;
       totalWords: number | null;
       totalDurationSeconds: number | null;
       createdAt: string;
@@ -227,7 +227,7 @@ export class MeetingsAdminController {
         owner: { select: { id: true, externalId: true, email: true, name: true } },
         participants: true,
         recording: { include: { audioTracks: true } },
-        transcript: true,
+        transcript: { include: { tracks: { select: { id: true }, take: 1 } } },
         aiResult: true,
       },
     });
@@ -288,8 +288,8 @@ export class MeetingsAdminController {
       transcript: meeting.transcript
         ? {
             id: meeting.transcript.id,
-            rawIndexS3Url: meeting.transcript.rawIndexS3Url,
-            mergedS3Url: meeting.transcript.mergedS3Url ?? null,
+            hasTracks: meeting.transcript.tracks.length > 0,
+            hasTurns: meeting.transcript.turns !== null,
             totalWords: meeting.transcript.totalWords ?? null,
             totalDurationSeconds: meeting.transcript.totalDurationSeconds ?? null,
             createdAt: meeting.transcript.createdAt.toISOString(),

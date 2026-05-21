@@ -128,6 +128,19 @@ export class LivekitEventsHandler {
       reason: 'livekit:room_started',
     });
     this.logger.log({ meetingId }, 'room_started → meeting.active');
+
+    // Авто-запись: если recordByDefault — стартуем composite egress сразу.
+    if (meeting.recordByDefault && this.recordings) {
+      try {
+        await this.recordings.start(meetingId, meeting.ownerId);
+        this.logger.log({ meetingId }, 'room_started: auto-recording started (recordByDefault)');
+      } catch (err) {
+        this.logger.warn(
+          { meetingId, err: err instanceof Error ? err.message : String(err) },
+          'room_started: auto-recording start failed (non-fatal)',
+        );
+      }
+    }
   }
 
   // ─────────────────────────── room_finished ─────────────────────────────
@@ -398,9 +411,16 @@ export class LivekitEventsHandler {
   // ─────────────────────────── helpers ───────────────────────────────────
 
   private extractMeetingId(event: WebhookEvent): string | null {
-    const room = (event as unknown as { room?: { name?: unknown } }).room;
-    const name = room?.name;
-    return typeof name === 'string' && name.length > 0 ? name : null;
+    const ev = event as unknown as {
+      room?: { name?: unknown };
+      egressInfo?: { roomName?: unknown };
+    };
+    const fromRoom = ev.room?.name;
+    if (typeof fromRoom === 'string' && fromRoom.length > 0) return fromRoom;
+    // Egress webhooks don't always include `room` — fall back to egressInfo.roomName.
+    const fromEgress = ev.egressInfo?.roomName;
+    if (typeof fromEgress === 'string' && fromEgress.length > 0) return fromEgress;
+    return null;
   }
 
   private extractParticipant(
@@ -438,6 +458,9 @@ export class LivekitEventsHandler {
       // proto3: 0 = AUDIO, 1 = VIDEO, 2 = DATA.
       kind = t.type === 0 ? 'audio' : t.type === 1 ? 'video' : t.type === 2 ? 'data' : '';
     }
+    // proto3 сериализует AUDIO (= 0, дефолт) без поля — kind останется ''.
+    // VIDEO = 1 и DATA = 2 всегда присутствуют в JSON, поэтому '' = audio.
+    if (!kind) kind = 'audio';
     return { sid, kind };
   }
 

@@ -27,6 +27,7 @@ export type CreateMeetingApiRequest = {
    * привязанной к карточке (deeplink-сценарий «Создать встречу из карточки»).
    */
   card_id?: string | null;
+  record_by_default?: boolean;
 };
 
 export type ListMeetingsApiRequest = {
@@ -96,10 +97,30 @@ export type ResultStatusApiResponse = {
   failureReason: string | null;
 };
 
+export type TranscriptTurn = {
+  speaker: string;
+  text: string;
+  startSec: number;
+  endSec: number;
+};
+
 export type TranscriptApiResponse = {
+  turns: TranscriptTurn[];
+  durationSeconds: number | null;
+  roomChat?: Array<{ sentAt: string; authorName: string; content: string }>;
+};
+
+export type AudioTrackApi = {
+  id: string;
+  participantName: string;
+  livekitIdentity: string;
+  durationSeconds: number;
   url: string;
   expiresAt: string;
-  durationSeconds: number | null;
+};
+
+export type AudioTracksApiResponse = {
+  tracks: AudioTrackApi[];
 };
 
 // ─────────────────── helpers ──────────────────
@@ -237,5 +258,10 @@ export const meetingsApi = {
   transcript: (id: string) =>
     apiClient.get<TranscriptApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/transcript`,
+    ),
+
+  audioTracks: (id: string) =>
+    apiClient.get<AudioTracksApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/recording/audio-tracks`,
     ),
 };

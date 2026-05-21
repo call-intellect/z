@@ -8,7 +8,6 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { S3Service } from '../../recordings/s3.service';
 
 import type { TranscriptChunk } from '../embeddings.types';
 
@@ -48,7 +47,6 @@ export class TranscriptIndexerService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(EmbeddingFallbackService)
     private readonly embeddings: EmbeddingFallbackService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -70,14 +68,13 @@ export class TranscriptIndexerService {
       if (!meeting) {
         throw new Error(`indexMeeting: meeting ${meetingId} не найден`);
       }
-      if (!meeting.transcript?.mergedS3Url) {
-        throw new Error(`indexMeeting: нет mergedS3Url для ${meetingId}`);
+      if (!meeting.transcript?.turns) {
+        throw new Error(`indexMeeting: нет transcript.turns в БД для ${meetingId}`);
       }
 
-      const merged = await this.s3.getJson<MergedTranscript>(
-        meeting.transcript.mergedS3Url,
-      );
-      const turns = Array.isArray(merged.turns) ? merged.turns : [];
+      const turns = Array.isArray(meeting.transcript.turns)
+        ? (meeting.transcript.turns as unknown as MergedTranscriptTurn[])
+        : [];
       const chunks = this.chunkTurns(turns, {
         targetTokens: this.cfg.ai.embeddings.chunkTargetTokens,
         overlapTokens: this.cfg.ai.embeddings.chunkOverlapTokens,

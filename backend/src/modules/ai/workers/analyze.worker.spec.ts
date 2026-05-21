@@ -7,7 +7,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { MeetingsService } from '../../meetings/meetings.service';
 import type { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
-import type { S3Service } from '../../recordings/s3.service';
 import type { AiQueueService } from '../ai-queue.service';
 import type { AiUsageLogService } from '../services/ai-usage-log.service';
 import type { LlmFallbackService } from '../services/llm-fallback.service';
@@ -34,7 +33,13 @@ function buildWorker(args: BuildArgs): {
     title: 'Sample',
     customPrompt: args.customPrompt ?? null,
     status: 'transcription_ready',
-    transcript: { mergedS3Url: 'meetings/m-1/transcripts/merged.json' },
+    transcript: {
+      turns: [
+        { speaker: 'Alice', text: 'Привет', startSec: 0, endSec: 1 },
+        { speaker: 'Bob', text: 'Здравствуй', startSec: 1.5, endSec: 3 },
+      ],
+      roomChat: null,
+    },
     aiResult: null,
   }));
 
@@ -89,14 +94,6 @@ function buildWorker(args: BuildArgs): {
   const transitionStatus = vi.fn(async () => undefined);
   const meetings = { transitionStatus } as unknown as MeetingsService;
 
-  const getJson = vi.fn(async () => ({
-    turns: [
-      { speaker: 'Alice', text: 'Привет', startSec: 0, endSec: 1 },
-      { speaker: 'Bob', text: 'Здравствуй', startSec: 1.5, endSec: 3 },
-    ],
-  }));
-  const s3 = { getJson } as unknown as S3Service;
-
   const llm = { complete: args.llmComplete } as unknown as LlmFallbackService;
   const usage = { record: vi.fn() } as unknown as AiUsageLogService;
   const enqueueNotify = vi.fn(async () => undefined);
@@ -117,7 +114,6 @@ function buildWorker(args: BuildArgs): {
   const worker = new AnalyzeWorker(
     redis,
     prisma,
-    s3,
     llm,
     usage,
     queue,

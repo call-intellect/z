@@ -20,7 +20,7 @@ interface Mocks {
   setMeeting: (m: {
     id: string;
     status: string;
-    transcript: { rawIndexS3Url: string | null; mergedS3Url: string | null } | null;
+    transcript: { turns: unknown; tracks: { id: string }[] } | null;
     aiResult: { id: string } | null;
   } | null) => void;
 }
@@ -30,7 +30,7 @@ function makeMocks(): Mocks {
     | {
         id: string;
         status: string;
-        transcript: { rawIndexS3Url: string | null; mergedS3Url: string | null } | null;
+        transcript: { turns: unknown; tracks: { id: string }[] } | null;
         aiResult: { id: string } | null;
       }
     | null = null;
@@ -104,11 +104,11 @@ describe('RetryService.retry', () => {
     expect(mocks.enqueueTranscribe).toHaveBeenCalledOnce();
   });
 
-  it('failed с rawIndex без merged → enqueueMerge (stage=merge)', async () => {
+  it('failed с tracks без turns → enqueueMerge (stage=merge)', async () => {
     mocks.setMeeting({
       id: 'm-2',
       status: 'failed',
-      transcript: { rawIndexS3Url: 'k1', mergedS3Url: null },
+      transcript: { turns: null, tracks: [{ id: 'trk-1' }] },
       aiResult: null,
     });
     const result = await svc.retry('m-2', 'user', 'u-1');
@@ -116,11 +116,11 @@ describe('RetryService.retry', () => {
     expect(mocks.enqueueMerge).toHaveBeenCalledOnce();
   });
 
-  it('failed с merged без AiResult → enqueueAnalyze (stage=analyze)', async () => {
+  it('failed с turns без AiResult → enqueueAnalyze (stage=analyze)', async () => {
     mocks.setMeeting({
       id: 'm-3',
       status: 'failed',
-      transcript: { rawIndexS3Url: 'k1', mergedS3Url: 'k2' },
+      transcript: { turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }], tracks: [{ id: 'trk-1' }] },
       aiResult: null,
     });
     const result = await svc.retry('m-3', 'user', 'u-1');
@@ -132,7 +132,7 @@ describe('RetryService.retry', () => {
     mocks.setMeeting({
       id: 'm-4',
       status: 'failed',
-      transcript: { rawIndexS3Url: 'k1', mergedS3Url: 'k2' },
+      transcript: { turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }], tracks: [{ id: 'trk-1' }] },
       aiResult: { id: 'a-1' },
     });
     await expect(svc.retry('m-4', 'user', 'u-1')).rejects.toThrow();

@@ -60,6 +60,24 @@ export class RecordingsController {
     return { url: result.url, expires_at: result.expiresAt.toISOString() };
   }
 
+  @Get('audio-tracks')
+  async audioTracks(
+    @Param('id') meetingId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{
+    tracks: Array<{
+      id: string;
+      participantName: string;
+      livekitIdentity: string;
+      durationSeconds: number;
+      url: string;
+      expiresAt: string;
+    }>;
+  }> {
+    const tracks = await this.recordings.getAudioTracks(meetingId, user.id);
+    return { tracks };
+  }
+
   @Delete()
   @HttpCode(HttpStatus.OK)
   async deleteEarly(

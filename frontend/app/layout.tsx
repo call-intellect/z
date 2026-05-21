@@ -4,6 +4,8 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import './globals.css';
 import '@livekit/components-styles';
+import '@vidstack/react/player/styles/default/theme.css';
+import '@vidstack/react/player/styles/default/layouts/video.css';
 import { AuthProvider } from '@/contexts/auth-context';
 import { ToastProvider } from '@/contexts/toast-context';
 import { ThemeProvider } from '@/ui/components/theme/ThemeProvider';

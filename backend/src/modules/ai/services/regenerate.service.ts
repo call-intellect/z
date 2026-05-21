@@ -10,7 +10,6 @@ import {
   REGENERATE_SECTION_TASK_TYPE,
   buildRegenerateSectionPrompt,
 } from './prompts/regenerate-section';
-import { S3Service } from '../../recordings/s3.service';
 
 export class RegenerateConflictError extends Error {
   constructor(readonly meetingId: string, readonly currentVersion: number) {
@@ -74,7 +73,6 @@ export class RegenerateService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AiQueueService) private readonly queue: AiQueueService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
-    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
@@ -190,7 +188,7 @@ export class RegenerateService {
         type: true,
         title: true,
         cardId: true,
-        transcript: { select: { mergedS3Url: true } },
+        transcript: { select: { turns: true } },
         aiResult: { select: { structuredData: true } },
       },
     });
@@ -214,21 +212,8 @@ export class RegenerateService {
       if (k !== input.sectionKey) otherSections[k] = v;
     }
 
-    let mergedTranscriptText = '';
-    if (meeting.transcript?.mergedS3Url) {
-      try {
-        const merged = await this.s3.getJson<{ turns?: Array<{ speaker: string; text: string }> }>(
-          meeting.transcript.mergedS3Url,
-        );
-        mergedTranscriptText = (merged.turns ?? [])
-          .map((t) => `${t.speaker}: ${t.text}`)
-          .join('\n');
-      } catch (err) {
-        this.logger.warn(
-          `regenerateSection: не удалось загрузить merged: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
+    const turns = (meeting.transcript?.turns as Array<{ speaker: string; text: string }> | null) ?? [];
+    const mergedTranscriptText = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
 
     const prompt = buildRegenerateSectionPrompt({
       meeting: {

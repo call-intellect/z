@@ -53,6 +53,7 @@ export class S3Service implements OnModuleDestroy {
     });
     const url = await getSignedUrl(this.client, command, { expiresIn });
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    this.logger.debug({ key, expiresIn }, 'S3 presignGet OK');
     return { url, expiresAt };
   }
 
@@ -61,6 +62,7 @@ export class S3Service implements OnModuleDestroy {
    * для подсасывания audio-дорожек перед отправкой в Vox.
    */
   async getObject(key: string): Promise<Buffer> {
+    this.logger.debug({ key }, 'S3 getObject: читаем объект');
     const command = new GetObjectCommand({
       Bucket: this.cfg.s3.bucket,
       Key: key,
@@ -75,7 +77,9 @@ export class S3Service implements OnModuleDestroy {
     };
     if (typeof body.transformToByteArray === 'function') {
       const bytes = await body.transformToByteArray();
-      return Buffer.from(bytes);
+      const buf = Buffer.from(bytes);
+      this.logger.debug({ key, sizeBytes: buf.byteLength }, 'S3 getObject OK');
+      return buf;
     }
     // Fallback: на NodeJS.Readable. Соберём вручную.
     const stream = response.Body as unknown as NodeJS.ReadableStream;
@@ -84,7 +88,11 @@ export class S3Service implements OnModuleDestroy {
       stream.on('data', (chunk: Buffer | string) => {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
-      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        this.logger.debug({ key, sizeBytes: buf.byteLength }, 'S3 getObject OK (stream)');
+        resolve(buf);
+      });
       stream.on('error', (err) => reject(err));
     });
   }
@@ -95,6 +103,7 @@ export class S3Service implements OnModuleDestroy {
    */
   async putJson(key: string, data: unknown): Promise<void> {
     const body = Buffer.from(JSON.stringify(data), 'utf8');
+    this.logger.debug({ key, sizeBytes: body.byteLength }, 'S3 putJson: записываем JSON');
     const command = new PutObjectCommand({
       Bucket: this.cfg.s3.bucket,
       Key: key,
@@ -102,6 +111,7 @@ export class S3Service implements OnModuleDestroy {
       ContentType: 'application/json; charset=utf-8',
     });
     await this.client.send(command);
+    this.logger.debug({ key }, 'S3 putJson OK');
   }
 
   /**

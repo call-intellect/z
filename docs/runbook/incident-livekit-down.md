@@ -13,8 +13,9 @@
 
    ```bash
    ssh vm-livekit
-   docker ps | grep livekit
-   docker logs --tail 200 livekit
+   cd /home/docker/z/infra/livekit
+   docker compose ps
+   docker compose logs --tail 200 livekit
    ```
 
 2. Сетевая доступность:
@@ -35,8 +36,19 @@
 4. Проверить, не проблема ли в Egress (он делит инфру):
 
    ```bash
-   docker logs --tail 100 egress
+   docker compose logs --tail 100 egress
    ```
+
+5. Если backend возвращает 500 на `/api/v1/meetings/:id/join`, а в логах LiveKit есть
+   `invalid API key`, проверить совпадение ключей:
+
+   ```bash
+   grep -A3 '^keys:' livekit.yaml
+   grep '^LIVEKIT_API_' /home/docker/z/.env
+   ```
+
+   `LIVEKIT_API_KEY` должен быть ключом из `keys:`, а `LIVEKIT_API_SECRET` - его
+   значением.
 
 ## Recovery
 
@@ -44,9 +56,10 @@
 
 ```bash
 ssh vm-livekit
-docker restart livekit
+cd /home/docker/z/infra/livekit
+docker compose restart livekit
 sleep 5
-docker logs --tail 50 livekit  # «started serving on...»
+docker compose logs --tail 50 livekit  # "starting LiveKit server"
 ```
 
 ### Шаг 2: проверить, что новые встречи поднимаются
@@ -72,13 +85,16 @@ psql z_main -c \
 
 ```bash
 ssh vm-livekit
-cd /opt/livekit
-docker-compose down
-docker-compose pull
-docker-compose up -d
+cd /home/docker/z/infra/livekit
+docker compose down
+docker compose pull
+docker compose up -d
 ```
 
-Конфиг — `infra/livekit/livekit.yaml`. Если он повреждён, восстановить из git.
+Реальные `infra/livekit/livekit.yaml` и `infra/livekit/egress.yaml` не хранятся в git.
+Если файл повреждён, скопировать `.example`, заполнить реальные секреты из менеджера
+секретов/серверного бэкапа и перезапустить media-compose. Не оставлять `CHANGE_ME`:
+LiveKit отклонит backend-запросы или упадёт на коротком секрете.
 
 ## Escalation
 

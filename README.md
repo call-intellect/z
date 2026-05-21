@@ -164,6 +164,10 @@ LiveKit требует host-сети (UDP 50000–60000) и обычно жив�
 
 ```bash
 cd infra/livekit
+# Первый запуск на сервере: реальные YAML не отслеживаются git'ом.
+cp livekit.yaml.example livekit.yaml
+cp egress.yaml.example egress.yaml
+
 # Заполни ключи/домен/S3 в livekit.yaml и egress.yaml (CHANGE_ME).
 # Ключи должны совпадать с LIVEKIT_API_KEY/SECRET в .env backend.
 docker compose up -d
@@ -184,6 +188,8 @@ nginx для signaling: `deploy/nginx/z-livekit.conf` (wss://media.example.com �
 
 | Симптом | Причина / решение |
 |---|---|
+| LiveKit пишет `invalid API key` при `CreateRoom` | `LIVEKIT_API_KEY/SECRET` в `.env` backend не совпадают с `keys:` в `infra/livekit/livekit.yaml`; поправь реальные YAML на сервере и перезапусти media + backend |
+| LiveKit падает с `TURN tls cert required` | включён встроенный TURN/TLS без `cert_file`/`key_file`; для старта оставь `turn.enabled: false` или пропиши реальные сертификаты |
 | backend падает: «Невалидная конфигурация ENV» | не заполнен обязательный ключ в `.env` — смотри список в логе |
 | `migrate` падает | postgres не готов / неверный `DATABASE_URL` (host = `postgres`) |
 | фронт зовёт `localhost:3000` в проде | пересобери — `NEXT_PUBLIC_*` вшиваются на сборке |

@@ -1,7 +1,7 @@
 {
   "name": "z",
   "private": true,
-  "description": "Z — AI-видеовстречи на LiveKit. Корневые dev-скрипты (оркестрация локального стека).",
+  "description": "Z — память компании. Корневые dev-скрипты (оркестрация локального стека). MVP-вертикаль — AI-встречи на LiveKit.",
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "livekit": "infra/livekit/livekit-dev.sh up",

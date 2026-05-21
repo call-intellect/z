@@ -2,7 +2,7 @@
   "name": "z-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Z — AI-видеовстречи на LiveKit. Backend (NestJS).",
+  "description": "Z — память компании. Backend (NestJS). MVP-вертикаль — AI-встречи на LiveKit.",
   "engines": {
     "bun": ">=1.3",
     "node": ">=20"

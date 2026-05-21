@@ -92,6 +92,15 @@ _пусто_
 - RBAC: ResourceType расширен `'theme'` (read для всех member'ов Org, write/delete — owner/admin)
 - LlmTaskType: `theme-classify` уже был в seed'е; `card-rollup-v2` тоже; обновление через `--update-existing` не обязательно
 
+## Маркетинг
+
+- [[06_marketing/index]] — навигация по маркетинговому разделу
+- [[06_marketing/competitors]] — анализ конкурентов (Fireflies, Otter, Granola, tl;dv и др.)
+- [[06_marketing/positioning]] — ценностное предложение, отличия от конкурентов
+- [[06_marketing/icp]] — портрет идеального покупателя (ICP)
+- [[06_marketing/messaging]] — ключевые сообщения, заголовки, tone of voice
+- [[06_marketing/company-ontology]] — онтология компании (13 классов сущностей + ~40 типов рёбер, клон сотрудника как subgraph, специфика РФ) — фундамент архитектуры «второго мозга»
+
 ## Баги и инциденты (`03_bugs/`)
 _пусто_
 

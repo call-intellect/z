@@ -58,7 +58,25 @@ export type ResourceType =
    * исключительно ради действия 'erase' (152-ФЗ — право на удаление личных
    * данных), которое доступно только owner'у Org.
    */
-  | 'person';
+  | 'person'
+  // ── Фаза 0a — структура компании (группа А) ──
+  | 'department'
+  | 'role'
+  | 'job-description'
+  | 'skill'
+  | 'document'
+  | 'role-profile'
+  // ── Фаза 0a — каркас 5 уровней (группа Б) ──
+  | 'mission'
+  | 'vision'
+  | 'strategy'
+  | 'process'
+  | 'process-step'
+  | 'regulation'
+  | 'policy'
+  | 'tool'
+  | 'metric'
+  | 'decision';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -329,6 +347,24 @@ function isResourceType(s: string): s is ResourceType {
     'goal',
     'source',
     'person',
+    // Фаза 0a — структура компании (группа А)
+    'department',
+    'role',
+    'job-description',
+    'skill',
+    'document',
+    'role-profile',
+    // Фаза 0a — каркас 5 уровней (группа Б)
+    'mission',
+    'vision',
+    'strategy',
+    'process',
+    'process-step',
+    'regulation',
+    'policy',
+    'tool',
+    'metric',
+    'decision',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

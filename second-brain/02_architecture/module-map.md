@@ -240,4 +240,20 @@ LiveKit чистит атрибуты автоматически при disconne
 ### Удалено (Phase 7 fix)
 - `frontend/app/(admin)/admin/page.tsx` (legacy home, дублировал новый Z-Admin dashboard).
 
+## Фаза 0 — каркас компании
+
+- `backend/src/common/graph/` — GraphService (Postgres EntityLink + AGE двойная запись).
+- `backend/src/modules/departments/` — CRUD `/api/v1/departments`.
+- `backend/src/modules/roles-domain/` — CRUD `/api/v1/roles` (бизнес-должности).
+- `backend/src/modules/persons/` — CRUD `/api/v1/persons` (новый, не путать с knowledge-core entities/persons).
+- `backend/src/modules/job-descriptions/` — CRUD `/api/v1/job-descriptions`.
+- `backend/src/modules/skills/` — CRUD `/api/v1/skills`.
+- `backend/src/modules/documents/` — CRUD `/api/v1/documents`.
+- `backend/src/modules/role-profiles/` — `/api/v1/role-profiles` (rebuild stub до 0d).
+- `backend/src/modules/structure/` — `/api/v1/structure/summary`.
+- `backend/src/modules/ingest/adapters/document/` — document.adapter.
+- `backend/src/modules/ingest/adapters/text/` — text.adapter.
+- `backend/src/modules/ingest/parsers/document-parser.service.ts`.
+- `backend/src/modules/knowledge-core/workers/role-profile.worker.ts` (Фаза 0d).
+
 [[../index|← index]]

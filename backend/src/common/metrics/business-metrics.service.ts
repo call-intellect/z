@@ -67,6 +67,12 @@ export class BusinessMetricsService implements OnModuleInit {
   private corePersonalDataErasuresTotal!: Counter<string>;
   private coreDataClassViolationsTotal!: Counter<'task_type' | 'attempted_class'>;
 
+  // ── extraction (Фаза 0b) ──────────────────────────────────────────
+  private extractionEntitiesTotal!: Counter<'type'>;
+  private extractionConfidence!: Histogram<'type'>;
+  private extractionAmbiguousTotal!: Counter<'type'>;
+  private entityResolutionDedupTotal!: Counter<'type' | 'action'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -239,6 +245,29 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_data_class_violations_total',
       help: 'Попытки отправить sensitive/private данные в неподходящий LLM-провайдер. Должно быть = 0.',
       labelNames: ['task_type', 'attempted_class'] as const,
+    });
+
+    // ── extraction (Фаза 0b) ──────────────────────────────────────
+    this.extractionEntitiesTotal = this.getOrCreateCounter({
+      name: 'z_extraction_entities_total',
+      help: 'Количество извлечённых типизированных сущностей группы Б по типу (process/decision/regulation/policy/metric/tool).',
+      labelNames: ['type'] as const,
+    });
+    this.extractionConfidence = this.getOrCreateHistogram({
+      name: 'z_extraction_confidence',
+      help: 'Распределение confidence извлечённых сущностей группы Б по типу.',
+      labelNames: ['type'] as const,
+      buckets: [0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
+    });
+    this.extractionAmbiguousTotal = this.getOrCreateCounter({
+      name: 'z_extraction_ambiguous_total',
+      help: 'Сколько сущностей помечены как ambiguous (LLM колеблется между несколькими типами).',
+      labelNames: ['type'] as const,
+    });
+    this.entityResolutionDedupTotal = this.getOrCreateCounter({
+      name: 'z_entity_resolution_dedup_total',
+      help: 'Действия EntityResolutionService при дедупе типизированных сущностей (action: merged | created | resolved).',
+      labelNames: ['type', 'action'] as const,
     });
   }
 
@@ -475,6 +504,42 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant: args.tenant, task_type: args.taskType },
       args.tokens,
     );
+  }
+
+  // ────────────────────── extraction (Фаза 0b) ─────────────────────────
+
+  /**
+   * Инкремент счётчика извлечённых сущностей группы Б.
+   * type ∈ {process, decision, regulation, policy, metric, tool}.
+   */
+  incExtractionEntity(args: { type: string; count?: number }): void {
+    const n = args.count ?? 1;
+    if (n <= 0) return;
+    this.extractionEntitiesTotal.inc({ type: args.type }, n);
+  }
+
+  /** Распределение confidence извлечённой сущности. 0..1. */
+  observeExtractionConfidence(args: { type: string; confidence: number }): void {
+    if (args.confidence < 0 || args.confidence > 1) return;
+    this.extractionConfidence.observe({ type: args.type }, args.confidence);
+  }
+
+  /** Ambiguous-кейс (LLM вернул несколько кандидатов типа). */
+  incExtractionAmbiguous(args: { type: string }): void {
+    this.extractionAmbiguousTotal.inc({ type: args.type });
+  }
+
+  /**
+   * Дедуп типизированной сущности. action ∈ {merged, created, resolved}:
+   *   - merged — найден существующий по точному совпадению или cosine.
+   *   - created — создана новая.
+   *   - resolved — резолвен hint (role/person) в существующий id.
+   */
+  incEntityResolutionDedup(args: { type: string; action: string }): void {
+    this.entityResolutionDedupTotal.inc({
+      type: args.type,
+      action: args.action,
+    });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

@@ -53,7 +53,7 @@ export function DumpClient() {
       } else {
         addToast({
           type: 'success',
-          message: 'Мысль отправлена в knowledge-core',
+          message: 'Мысль сохранена в память компании',
         });
       }
       setText('');
@@ -103,8 +103,8 @@ export function DumpClient() {
             Дамп мысли
           </h1>
           <p className="text-sm text-fg-secondary">
-            Любая мысль, замечание или идея. Уходит в knowledge-core, появится в
-            поиске и в AI-чате через несколько минут.
+            Любая мысль, замечание или идея. Через несколько минут она попадёт
+            в общую память компании и появится в поиске и помощнике.
           </p>
         </div>
       </header>
@@ -121,8 +121,7 @@ export function DumpClient() {
         />
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-fg-tertiary">
-            Идемпотентно по nonce: повторный submit одной и той же мысли не
-            создаст дубль.
+            Если отправить ту же мысль ещё раз — дубль не создастся.
           </span>
           <span
             className={

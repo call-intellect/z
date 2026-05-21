@@ -103,4 +103,22 @@ official-типов. Правильно: `import { ZipArchive }` + локаль�
 **Как обойти:** при апгрейде `livekit-client`/`livekit-server-sdk` синхронно поднимать
 docker-образ `livekit/livekit-server` (и egress) до совместимой версии.
 
+## Cypher только через GraphService
+
+С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.
+
+**Почему:** двойная запись `Postgres EntityLink` + `AGE z_graph` гарантирует консистентность только внутри одной Prisma-транзакции `GraphService`. Вне его — рассинхрон (Postgres-связь есть, AGE-ребра нет, или наоборот), и обход графа на Cypher даёт неверные ответы.
+
+**Escape-hatch:** `GraphService.traverse(...)` принимает raw Cypher для сложных запросов (например, RoleProfileAgent-обход контекста роли). Используется только внутри `common/graph/` или специализированных воркеров с явным обоснованием.
+
+**Контракт двойной записи** (`addEdge` / `removeEdge` / `addNode` / `removeNode` / `upsertEntity`):
+1. Открывается `prisma.$transaction(async (tx) => { ... })`.
+2. Сначала пишется/обновляется `EntityLink` (или бизнес-таблица для `upsertEntity`).
+3. Затем выполняется `SELECT * FROM cypher('z_graph', $$ ... $$)` через `tx.$queryRawUnsafe`.
+4. Любая ошибка на шагах 2/3 откатывает всю транзакцию. Источник правды — Postgres.
+
+**Cypher injection:** AGE не поддерживает параметризацию label/relType. Метки узлов и типы рёбер подставляются литералом через `CypherBuilder.toAgeLabel()` / `toRelType()` — обе функции валидируют значение по жёсткому whitelist'у (`ALL_NODE_TYPES`, `ALL_LINK_TYPES`). При добавлении нового `EntityLinkType` в `schema.prisma` — обязательно дописать в whitelist `cypher-builder.ts`.
+
+**ESLint-правило** для запрета `cypher(` в файлах вне `common/graph/` — TODO Фазы 0d (через `no-restricted-syntax` или кастомное правило).
+
 [[../index|← index]]

@@ -6,16 +6,20 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 
 /**
- * EntityResolutionService (Шаг 2 baseline):
+ * EntityResolutionService (Шаг 2 baseline + Фаза 0b расширения):
  *
- *   - findOrCreate по `(tenantId, type, lower(canonicalName))`.
- *   - На повторное упоминание — `mentionsCount += 1`, метаданные мерджатся
- *     (новые ключи добавляются, старые — не перезаписываются).
- *   - На создание — генерим embedding (через `KnowledgeEmbeddingService`)
- *     и кладём через сырой $executeRaw (Prisma не умеет тип vector).
+ *   - `findOrCreateEntity` — findOrCreate по `(tenantId, type, lower(canonicalName))`.
+ *     На повторное упоминание — `mentionsCount += 1`, метаданные мерджатся.
+ *   - `resolveRoleByHint` / `resolvePersonByHint` — резолв «hint»-имён из
+ *     extraction'а (ownerRoleHint, decidedByPersonHint) в реальные id.
+ *   - `resolveTypedEntity` — дедуп типизированных сущностей группы Б
+ *     (Process/Regulation/Policy/Metric/Tool). См. ТЗ 0b §8.2.
+ *   - `linkPersonEntity` / `linkEntityPerson` — линковка Entity{type=person} ↔
+ *     Person (ТЗ 0b §8.3).
  *
  * LLM-арбитражная дедупликация дубликатов с разными вариантами написания —
- * Шаг 4 (`entity-resolver.worker`). Здесь же — простая нормализация имени.
+ * Шаг 4 (`entity-resolver.worker`). Здесь — простая нормализация + cosine на
+ * embedding'е имени, LLM-arbiter оставлен TODO.
  */
 @Injectable()
 export class EntityResolutionService {
@@ -41,8 +45,6 @@ export class EntityResolutionService {
 
     // findFirst по (tenantId, type) + ручная фильтрация по lower(canonicalName).
     // На больших тенантах это упрётся — Шаг 4 заменит на ts_vector + KNN.
-    // Сейчас экономим инфраструктуру, индекс @@index([tenantId, canonicalName])
-    // даёт seq scan по типу-тенанту + bytewise фильтр.
     const candidates = await this.prisma.entity.findMany({
       where: { tenantId: args.tenantId, type: args.type, mergedIntoId: null },
       select: { id: true, canonicalName: true, metadata: true, mentionsCount: true },
@@ -59,6 +61,21 @@ export class EntityResolutionService {
           ...(mergedMeta !== undefined ? { metadata: mergedMeta } : {}),
         },
       });
+      // Если это Person-Entity — попробуем найти/слинковать с Person.
+      if (args.type === 'person') {
+        await this.linkEntityPerson({
+          tenantId: args.tenantId,
+          entityId: updated.id,
+        }).catch((err) => {
+          this.logger.warn(
+            {
+              entityId: updated.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'entity↔person линковка не удалась (продолжаем без линка)',
+          );
+        });
+      }
       return { entity: updated, created: false };
     }
 
@@ -90,10 +107,391 @@ export class EntityResolutionService {
         'entity: не удалось проставить embedding — продолжаем без него',
       );
     }
+    if (args.type === 'person') {
+      await this.linkEntityPerson({
+        tenantId: args.tenantId,
+        entityId: created.id,
+      }).catch((err) => {
+        this.logger.warn(
+          {
+            entityId: created.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'entity↔person линковка нового Entity не удалась',
+        );
+      });
+    }
     return { entity: created, created: true };
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────────
+  // ─────────────────────────── Фаза 0b: hint resolvers ─────────────────────
+
+  /**
+   * Резолвит подсказку имени должности (`ownerRoleHint` из extraction'а)
+   * в реальный Role.id. Алгоритм:
+   *   1. Точное совпадение нормализованного имени (case-insensitive).
+   *   2. ILIKE-fuzzy (содержит подстроку) среди активных Role.
+   *
+   * Возвращает null, если кандидатов нет или их > 1 (неоднозначность).
+   * LLM-arbiter — TODO (Фаза γ).
+   */
+  async resolveRoleByHint(
+    tenantId: string,
+    hint: string,
+  ): Promise<string | null> {
+    const normalized = this.normalizeName(hint);
+    if (normalized.length === 0) return null;
+
+    const roles = await this.prisma.role.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (roles.length === 0) return null;
+
+    const lowered = normalized.toLowerCase();
+    const exact = roles.find((r) => r.name.trim().toLowerCase() === lowered);
+    if (exact) return exact.id;
+
+    // Fuzzy: ищем те, чьё имя содержит подстроку нашей подсказки или наоборот.
+    const fuzzy = roles.filter((r) => {
+      const rn = r.name.trim().toLowerCase();
+      return rn.includes(lowered) || lowered.includes(rn);
+    });
+    if (fuzzy.length === 1 && fuzzy[0]) {
+      return fuzzy[0].id;
+    }
+    if (fuzzy.length > 1) {
+      this.logger.debug(
+        { tenantId, hint, candidates: fuzzy.length },
+        'resolveRoleByHint: неоднозначная подсказка — пропуск',
+      );
+    }
+    return null;
+  }
+
+  /**
+   * Резолвит подсказку имени персоны (`decidedByPersonHint` из extraction'а)
+   * в реальный Person.id. Алгоритм аналогичен resolveRoleByHint.
+   */
+  async resolvePersonByHint(
+    tenantId: string,
+    hint: string,
+  ): Promise<string | null> {
+    const normalized = this.normalizeName(hint);
+    if (normalized.length === 0) return null;
+
+    const persons = await this.prisma.person.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (persons.length === 0) return null;
+
+    const lowered = normalized.toLowerCase();
+    const exact = persons.find((p) => p.name.trim().toLowerCase() === lowered);
+    if (exact) return exact.id;
+
+    const fuzzy = persons.filter((p) => {
+      const pn = p.name.trim().toLowerCase();
+      return pn.includes(lowered) || lowered.includes(pn);
+    });
+    if (fuzzy.length === 1 && fuzzy[0]) {
+      return fuzzy[0].id;
+    }
+    if (fuzzy.length > 1) {
+      this.logger.debug(
+        { tenantId, hint, candidates: fuzzy.length },
+        'resolvePersonByHint: неоднозначная подсказка — пропуск',
+      );
+    }
+    return null;
+  }
+
+  // ─────────────────────────── Фаза 0b: typed entity dedup ─────────────────
+
+  /**
+   * Дедуп типизированных сущностей группы Б (Process/Regulation/Policy/
+   * Metric/Tool). Алгоритм (ТЗ 0b §8.2):
+   *   1. Точное совпадение нормализованного имени в Org → returnExisting.
+   *   2. Cosine sim >= 0.92 с embedding'ом существующего → returnExisting.
+   *   3. Cosine sim 0.78..0.92 → LLM-arbiter (TODO, сейчас всегда createNew).
+   *   4. < 0.78 → createNew.
+   *
+   * Возвращает `{ existingId, matchKind }`. `existingId=null` означает «надо
+   * создавать новую». `matchKind='exact'|'cosine'` — что сработало.
+   *
+   * NB: Реальное создание делает `GraphService.upsertEntity` — этот метод
+   * только подсказывает «есть ли дубль». Используется как hook'дополнение к
+   * uniqueIndex'у БД (он защитит от race), но даёт более умный fuzzy-match
+   * до удара в БД.
+   */
+  async resolveTypedEntity(args: {
+    tenantId: string;
+    type: 'process' | 'regulation' | 'policy' | 'metric' | 'tool';
+    name: string;
+  }): Promise<{
+    existingId: string | null;
+    matchKind: 'exact' | 'cosine' | 'llm' | 'none';
+  }> {
+    const normalized = this.normalizeName(args.name);
+    if (normalized.length === 0) {
+      return { existingId: null, matchKind: 'none' };
+    }
+    const lowered = normalized.toLowerCase();
+
+    // 1. Точное совпадение по name (case-insensitive).
+    const exact = await this.findTypedEntityByName(
+      args.tenantId,
+      args.type,
+      lowered,
+    );
+    if (exact) {
+      return { existingId: exact.id, matchKind: 'exact' };
+    }
+
+    // 2. Cosine sim — TODO. У моделей группы Б в schema.prisma пока нет
+    //    pgvector-колонки embedding (см. Process/Regulation/.../Tool/Metric).
+    //    Альтернатива: pg_trgm для fuzzy-match по name. Если расширение не
+    //    установлено — пропускаем (MVP-приёмлемо: точное совпадение покрывает
+    //    основные случаи; реальный fuzzy появится через embedding'и в γ).
+    try {
+      const fuzzyMatch = await this.findTypedEntityByPgTrgm(
+        args.tenantId,
+        args.type,
+        normalized,
+      );
+      if (fuzzyMatch) {
+        return { existingId: fuzzyMatch.id, matchKind: 'cosine' };
+      }
+    } catch (err) {
+      this.logger.debug(
+        {
+          type: args.type,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'resolveTypedEntity: pg_trgm недоступен — пропускаем fuzzy-match',
+      );
+    }
+
+    // 3. LLM-arbiter — TODO. На эту итерацию точного совпадения достаточно.
+    return { existingId: null, matchKind: 'none' };
+  }
+
+  // ─────────────────────────── Person ↔ Entity линковка ────────────────────
+
+  /**
+   * Линковка Entity{type=person} ↔ Person (ТЗ 0b §8.3). Вызывается при
+   * создании Person'а (см. POST /api/v1/persons).
+   *
+   * Ищет существующий Entity{type='person', tenantId, canonicalName похоже
+   * на person.name}. Если найден — Person.entityId = entity.id.
+   */
+  async linkPersonEntity(args: {
+    tenantId: string;
+    personId: string;
+  }): Promise<void> {
+    const person = await this.prisma.person.findUnique({
+      where: { id: args.personId },
+      select: { tenantId: true, name: true, entityId: true, deletedAt: true },
+    });
+    if (!person || person.deletedAt || person.tenantId !== args.tenantId) {
+      return;
+    }
+    if (person.entityId) return; // уже слинкован
+
+    const lowered = this.normalizeName(person.name).toLowerCase();
+    if (lowered.length === 0) return;
+
+    const entity = await this.prisma.entity.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        type: 'person',
+        mergedIntoId: null,
+      },
+      select: { id: true, canonicalName: true },
+    });
+    if (!entity) return;
+
+    if (entity.canonicalName.trim().toLowerCase() !== lowered) {
+      // Точного совпадения нет — fuzzy/cosine — TODO.
+      return;
+    }
+
+    await this.prisma.person.update({
+      where: { id: args.personId },
+      data: { entityId: entity.id },
+    });
+    this.logger.debug(
+      { personId: args.personId, entityId: entity.id },
+      'person ↔ entity линковка установлена (Person.entityId заполнен)',
+    );
+  }
+
+  /**
+   * Обратный путь: при создании Entity{type=person} — ищем Person с похожим
+   * именем и заполняем Person.entityId.
+   *
+   * Идемпотентно: если уже слинкован — no-op.
+   */
+  async linkEntityPerson(args: {
+    tenantId: string;
+    entityId: string;
+  }): Promise<void> {
+    const entity = await this.prisma.entity.findUnique({
+      where: { id: args.entityId },
+      select: { tenantId: true, type: true, canonicalName: true },
+    });
+    if (
+      !entity ||
+      entity.type !== 'person' ||
+      entity.tenantId !== args.tenantId
+    ) {
+      return;
+    }
+    const lowered = this.normalizeName(entity.canonicalName).toLowerCase();
+    if (lowered.length === 0) return;
+
+    // Ищем Person, у кого ещё нет entityId, в той же Org.
+    const persons = await this.prisma.person.findMany({
+      where: {
+        tenantId: args.tenantId,
+        deletedAt: null,
+        entityId: null,
+      },
+      select: { id: true, name: true },
+    });
+    const match = persons.find(
+      (p) => this.normalizeName(p.name).toLowerCase() === lowered,
+    );
+    if (!match) return;
+    await this.prisma.person.update({
+      where: { id: match.id },
+      data: { entityId: args.entityId },
+    });
+    this.logger.debug(
+      { personId: match.id, entityId: args.entityId },
+      'entity ↔ person линковка установлена (новый Entity нашёл Person-а)',
+    );
+  }
+
+  // ─────────────────────────── private helpers ─────────────────────────────
+
+  /**
+   * Точный поиск типизированной сущности по нормализованному name.
+   * Использует prisma делегаты соответствующего типа.
+   */
+  private async findTypedEntityByName(
+    tenantId: string,
+    type: 'process' | 'regulation' | 'policy' | 'metric' | 'tool',
+    loweredName: string,
+  ): Promise<{ id: string } | null> {
+    // У всех типов group-Б есть @@unique([tenantId, name]) — но мы делаем
+    // case-insensitive поиск через findMany + filter (без citext-колонки в
+    // schema.prisma это самый дешёвый путь).
+    switch (type) {
+      case 'process': {
+        const rows = await this.prisma.process.findMany({
+          where: { tenantId },
+          select: { id: true, name: true },
+        });
+        return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
+          ?? null;
+      }
+      case 'regulation': {
+        const rows = await this.prisma.regulation.findMany({
+          where: { tenantId },
+          select: { id: true, name: true },
+        });
+        return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
+          ?? null;
+      }
+      case 'policy': {
+        const rows = await this.prisma.policy.findMany({
+          where: { tenantId },
+          select: { id: true, name: true },
+        });
+        return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
+          ?? null;
+      }
+      case 'metric': {
+        const rows = await this.prisma.metric.findMany({
+          where: { tenantId },
+          select: { id: true, name: true },
+        });
+        return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
+          ?? null;
+      }
+      case 'tool': {
+        const rows = await this.prisma.tool.findMany({
+          where: { tenantId },
+          select: { id: true, name: true },
+        });
+        return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
+          ?? null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Fuzzy-поиск через pg_trgm `similarity()`. Если pg_trgm не установлен —
+   * упадёт; catch на уровне caller'а сделает graceful fallback.
+   *
+   * Порог: 0.78 (по ТЗ §8.2 для cosine — повторно используем как порог
+   * trigram-сходства; на практике 0.78 trigram достаточно «строгий»).
+   */
+  private async findTypedEntityByPgTrgm(
+    tenantId: string,
+    type: 'process' | 'regulation' | 'policy' | 'metric' | 'tool',
+    name: string,
+  ): Promise<{ id: string } | null> {
+    const table = this.tableForType(type);
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ id: string; sim: number }>
+    >(
+      `SELECT id, similarity(name, $1) AS sim
+       FROM ${table}
+       WHERE "tenantId" = $2
+         AND similarity(name, $1) >= 0.78
+       ORDER BY sim DESC
+       LIMIT 1`,
+      name,
+      tenantId,
+    );
+    if (rows && rows[0]) {
+      return { id: rows[0].id };
+    }
+    return null;
+  }
+
+  private tableForType(
+    type: 'process' | 'regulation' | 'policy' | 'metric' | 'tool',
+  ): string {
+    switch (type) {
+      case 'process':
+        return '"processes"';
+      case 'regulation':
+        return '"regulations"';
+      case 'policy':
+        return '"policies"';
+      case 'metric':
+        return '"metrics"';
+      case 'tool':
+        return '"tools"';
+    }
+  }
+
+  /**
+   * Нормализация имени: trim + collapse whitespace + удаление кавычек.
+   * Лемматизация (`morpher` / stemmer) — TODO в γ.
+   */
+  private normalizeName(input: string): string {
+    if (!input) return '';
+    return input
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/["'«»“”„‟]/g, '');
+  }
 
   /**
    * Мерджит metadata: существующие ключи остаются как есть, новые ключи

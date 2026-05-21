@@ -254,14 +254,27 @@ export class KnowledgeGraphController {
       edges: [],
     };
 
+    // С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Фильтруем
+    // только Entity↔Entity связи; узлы Фазы 0 (Role/Person/Process/...)
+    // на этом графе не возвращаем — он работает только внутри knowledge-core.
     const [entityLinksFrom, entityLinksTo, blockMentions] = await Promise.all([
       this.prisma.entityLink.findMany({
-        where: { fromEntityId: node.id, status: 'active', tenantId },
-        include: { toEntity: true },
+        where: {
+          fromEntityId: node.id,
+          status: 'active',
+          tenantId,
+          OR: [{ fromType: null }, { fromType: 'entity' }],
+          AND: { OR: [{ toType: null }, { toType: 'entity' }] },
+        },
       }),
       this.prisma.entityLink.findMany({
-        where: { toEntityId: node.id, status: 'active', tenantId },
-        include: { fromEntity: true },
+        where: {
+          toEntityId: node.id,
+          status: 'active',
+          tenantId,
+          OR: [{ toType: null }, { toType: 'entity' }],
+          AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
+        },
       }),
       this.prisma.ideaBlockEntity.findMany({
         where: { entityId: node.id, block: { status: 'canonical', tenantId } },
@@ -270,11 +283,27 @@ export class KnowledgeGraphController {
       }),
     ]);
 
+    const peerIds = Array.from(
+      new Set([
+        ...entityLinksFrom.map((l) => l.toEntityId),
+        ...entityLinksTo.map((l) => l.fromEntityId),
+      ]),
+    );
+    const peers = peerIds.length
+      ? await this.prisma.entity.findMany({
+          where: { id: { in: peerIds }, tenantId },
+          select: { id: true, canonicalName: true },
+        })
+      : [];
+    const peerById = new Map(peers.map((p) => [p.id, p]));
+
     for (const l of entityLinksFrom) {
+      const peer = peerById.get(l.toEntityId);
+      if (!peer) continue;
       result.nodes.push({
-        id: l.toEntity.id,
+        id: peer.id,
         type: 'entity',
-        label: l.toEntity.canonicalName,
+        label: peer.canonicalName,
         depth: level,
       });
       result.edges.push({
@@ -286,10 +315,12 @@ export class KnowledgeGraphController {
       });
     }
     for (const l of entityLinksTo) {
+      const peer = peerById.get(l.fromEntityId);
+      if (!peer) continue;
       result.nodes.push({
-        id: l.fromEntity.id,
+        id: peer.id,
         type: 'entity',
-        label: l.fromEntity.canonicalName,
+        label: peer.canonicalName,
         depth: level,
       });
       result.edges.push({

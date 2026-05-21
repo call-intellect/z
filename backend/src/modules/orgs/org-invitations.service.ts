@@ -208,12 +208,41 @@ export class OrgInvitationsService {
           acceptedByUserId: userId,
         },
       });
+      // Фаза 0a §10 — линковка Person ↔ User: если приглашение было создано
+      // с заранее заведённой Person (wizard / /structure?tab=persons), то
+      // при accept'е этот Person линкуется с текущим User'ом, а Membership
+      // получает ссылку на Person.
+      let personIdForMembership: string | null = null;
+      if (invite.personId) {
+        const person = await tx.person.findUnique({
+          where: { id: invite.personId },
+          select: { tenantId: true, userId: true, deletedAt: true },
+        });
+        if (
+          person &&
+          person.tenantId === invite.orgId &&
+          !person.deletedAt &&
+          person.userId === null
+        ) {
+          await tx.person.update({
+            where: { id: invite.personId },
+            data: { userId },
+          });
+          personIdForMembership = invite.personId;
+        } else {
+          this.logger.warn(
+            { invitationId: invite.id, personId: invite.personId },
+            'acceptInvitation: Person для линковки уже занят/удалён/из чужой Org — пропускаем',
+          );
+        }
+      }
       return tx.membership.create({
         data: {
           orgId: invite.orgId,
           userId,
           role: invite.role,
           invitedBy: invite.invitedBy,
+          personId: personIdForMembership,
         },
       });
     });

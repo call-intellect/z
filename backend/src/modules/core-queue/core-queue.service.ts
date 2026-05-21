@@ -18,9 +18,12 @@ import {
   CORE_DEFAULT_JOB_OPTIONS,
   CORE_QUEUE_NAMES,
   type CoreQueueName,
+  type DocumentUploadedJobData,
+  type DumpCreatedJobData,
   type EntityResolverJobData,
   type MeetingAnalyzeV2JobData,
   type RawEventJobData,
+  type RoleProfileJobData,
   type StrategicAlignmentJobData,
 } from './queues';
 
@@ -233,6 +236,107 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('strategic-alignment', payload, { jobId });
     this.logger.debug(
       `enqueue core.strategic-alignment goalId=${args.goalId} jobId=${jobId} manual=${args.manual ? 'true' : 'false'}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Публикация события `role.profile` (Фаза 0d). Consumer —
+   * `RoleProfileWorker`. Идемпотентность через `jobId = role_profile_<roleId>_<buildVersion>`
+   * — повторный enqueue для того же roleId+buildVersion не создаст дубль.
+   *
+   * Для on-demand rebuild — особый jobId (`role_profile_<roleId>_ondemand_<ts>`)
+   * с проверкой на стороне controller'а (409 если waiting/active job уже есть).
+   */
+  async enqueueRoleProfile(args: {
+    tenantId: string;
+    roleId: string;
+    buildVersion: number;
+    triggerReason: 'cron' | 'on-demand' | 'stale-detected';
+    triggeredByUserId?: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.ROLE_PROFILE);
+    const jobId =
+      args.triggerReason === 'on-demand'
+        ? `role_profile_${args.roleId}_ondemand_${Date.now()}`
+        : `role_profile_${args.roleId}_v${args.buildVersion}`;
+    const payload: RoleProfileJobData = {
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      triggerReason: args.triggerReason,
+      ...(args.triggeredByUserId ? { triggeredByUserId: args.triggeredByUserId } : {}),
+    };
+    await q.add('role-profile-build', payload, { jobId });
+    this.logger.debug(
+      `enqueue core.role-profile roleId=${args.roleId} jobId=${jobId} trigger=${args.triggerReason}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Поиск активных/ожидающих job'ов для roleId — нужно controller'у для
+   * 409 при on-demand rebuild (см. plans/tz/2026-05-21-phase-0d-role-profile-agent.md §8).
+   */
+  async findActiveRoleProfileJob(
+    roleId: string,
+  ): Promise<{ status: 'queued' | 'running'; since: string } | null> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.ROLE_PROFILE);
+    const jobs = await q.getJobs(['waiting', 'active', 'delayed']);
+    for (const job of jobs) {
+      const data = job.data as RoleProfileJobData | undefined;
+      if (data?.roleId === roleId) {
+        const status = job.processedOn ? ('running' as const) : ('queued' as const);
+        const since = new Date(job.processedOn ?? job.timestamp).toISOString();
+        return { status, since };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Публикация события `document.uploaded` (Фаза 0b). Consumer —
+   * `DocumentIngestAdapter`. Идемпотентность через `jobId = doc_<documentId>`
+   * — повторный enqueue для того же документа не создаст дубль job'а.
+   */
+  async enqueueDocumentUploaded(args: {
+    tenantId: string;
+    documentId: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.DOCUMENT_UPLOADED);
+    const jobId = `doc_${args.documentId}`;
+    const payload: DocumentUploadedJobData = {
+      tenantId: args.tenantId,
+      documentId: args.documentId,
+    };
+    await q.add('document-uploaded', payload, { jobId });
+    this.logger.debug(
+      `enqueue core.document-uploaded documentId=${args.documentId} tenantId=${args.tenantId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Публикация события `dump.created` (Фаза 0b). Consumer — `TextIngestAdapter`.
+   * Передаём весь `content` в payload, чтобы воркер не лез в БД за parsedText'ом.
+   * Идемпотентность через `jobId = dump_<documentId>`.
+   */
+  async enqueueDumpCreated(args: {
+    tenantId: string;
+    documentId: string;
+    uploaderPersonId: string;
+    content: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.DUMP_CREATED);
+    const jobId = `dump_${args.documentId}`;
+    const payload: DumpCreatedJobData = {
+      tenantId: args.tenantId,
+      documentId: args.documentId,
+      uploaderPersonId: args.uploaderPersonId,
+      content: args.content,
+    };
+    await q.add('dump-created', payload, { jobId });
+    this.logger.debug(
+      `enqueue core.dump-created documentId=${args.documentId} tenantId=${args.tenantId}`,
     );
     return { jobId };
   }

@@ -47,6 +47,28 @@ export const CORE_QUEUE_NAMES = {
    * (дневной dedup) или `strat_manual_<goalId>_<ts>` для ручного recompute.
    */
   STRATEGIC_ALIGNMENT: 'core.strategic-alignment',
+  /**
+   * Role-profile-build (Фаза 0d): сборка карты должности через LLM поверх
+   * контекста графа Role→Person→Meeting→IdeaBlock. Один job на
+   * (Org, Role, buildVersion); idempotency через `role_profile:<roleId>:<buildVersion>`.
+   * Cron каждые 4 часа + on-demand через POST /api/v1/role-profiles/:roleId/rebuild.
+   */
+  ROLE_PROFILE: 'core.role-profile',
+  /**
+   * Document-uploaded (Фаза 0b knowledge-core): consumer —
+   * `DocumentIngestAdapter`. Скачивает содержимое `Document` (inline или S3),
+   * парсит через `DocumentParserService`, заполняет `Document.parsedText`,
+   * переводит status в `parsed`, создаёт `RawEvent` и публикует raw-event
+   * для knowledge-core. jobId = `doc_<documentId>` — идемпотентно.
+   */
+  DOCUMENT_UPLOADED: 'core.document-uploaded',
+  /**
+   * Dump-created (Фаза 0b knowledge-core): consumer — `TextIngestAdapter`.
+   * Принимает уже готовый текст (`Document.kind='text'`, `status='parsed'`),
+   * без парсинга создаёт `RawEvent` и запускает knowledge-core pipeline.
+   * jobId = `dump_<documentId>`.
+   */
+  DUMP_CREATED: 'core.dump-created',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -116,4 +138,41 @@ export interface StrategicAlignmentJobData {
   goalId: string;
   manual?: boolean;
   windowDays?: number;
+}
+
+/**
+ * Payload для job'а `core.role-profile` (Фаза 0d).
+ * Идемпотентность через `jobId = role_profile:<roleId>:<buildVersion>` —
+ * повторный enqueue не создаёт дубликат.
+ */
+export interface RoleProfileJobData {
+  tenantId: string;
+  roleId: string;
+  triggerReason: 'cron' | 'on-demand' | 'stale-detected';
+  triggeredByUserId?: string;
+}
+
+/**
+ * Payload для job'а `core.document-uploaded` (Фаза 0b knowledge-core).
+ * Минимальный — `documentId` + `tenantId`. Адаптер сам подтянет Document
+ * из БД, проверит status и возьмёт байты.
+ */
+export interface DocumentUploadedJobData {
+  documentId: string;
+  tenantId: string;
+}
+
+/**
+ * Payload для job'а `core.dump-created` (Фаза 0b knowledge-core).
+ * Передаём `content` inline, чтобы text.adapter не лез повторно в БД —
+ * текст у нас уже на руках в момент publish'а (см. `DumpService` и
+ * `DocumentsService.createTextDump`).
+ */
+export interface DumpCreatedJobData {
+  documentId: string;
+  tenantId: string;
+  /** Person.id автора (uploaderId). Для audit-логов внутри адаптера. */
+  uploaderPersonId: string;
+  /** Готовый текст дампа — без парсинга. */
+  content: string;
 }

@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
+import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
@@ -76,6 +78,10 @@ import { VoxService } from './services/vox.service';
     MeetingAnalyzeV2Cron,
     StrategicAlignmentWorker,
     StrategicAlignmentCron,
+
+    // Фаза 0b knowledge-core: ingest-адаптеры документов и дампов.
+    DocumentIngestAdapter,
+    TextIngestAdapter,
   ],
 })
 export class WorkersModule {}

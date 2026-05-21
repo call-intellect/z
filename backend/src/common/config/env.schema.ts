@@ -300,6 +300,54 @@ const CryptoSchema = z.object({
 });
 
 /**
+ * knowledge-core (Фаза 0b) — document-ingest pipeline.
+ *
+ * `DOCUMENT_PARSE_TIMEOUT_MS` — таймаут на один парсинг документа (pdf-parse /
+ * mammoth / marked). При превышении — `ParseTimeoutError`, документ
+ * переводится в `failed` со статус-сообщением. По умолчанию 30 секунд.
+ *
+ * `DOCUMENT_MAX_SIZE_MB` — максимальный размер файла, обрабатываемого
+ * парсером. Сверка делается ДО запуска парсера (по `originalSize`). При
+ * превышении — `ParseSizeError`. По умолчанию 50 MiB.
+ *
+ * `DOCUMENT_INLINE_THRESHOLD_MB` — порог, ниже которого содержимое
+ * хранится в `Document.inlineContent` (`Bytes`); выше — уезжает в S3
+ * (`Document.s3Key`). По умолчанию 10 MiB (см. зонтичный TZ §4.4).
+ *
+ * `S3_BUCKET_DOCUMENTS` — отдельный bucket для документов. Если пустая
+ * строка — переиспользуем основной `S3_BUCKET` (по умолчанию). Это нужно,
+ * чтобы локально на одном MinIO всё работало без отдельного bucket'а.
+ */
+const DocumentIngestSchema = z.object({
+  DOCUMENT_PARSE_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  DOCUMENT_MAX_SIZE_MB: z.coerce.number().int().positive().default(50),
+  DOCUMENT_INLINE_THRESHOLD_MB: z.coerce.number().int().positive().default(10),
+  S3_BUCKET_DOCUMENTS: z.string().default(''),
+});
+
+/**
+ * Extraction (Фаза 0b §6, §11 ТЗ).
+ *
+ * `EXTRACTION_ENABLE_TOP_LEVEL` — мастер-флаг автоизвлечения Mission/Vision/
+ * Strategy из текстов. По умолчанию false (зонтичный §6 решение #11). Когда
+ * выставлен в true — LLM может возвращать заполненные mission/vision/strategy
+ * и `GraphService.upsertEntity({type: 'mission'|'vision'|'strategy'})` начнёт
+ * работать. На Фазе 0b всегда false.
+ *
+ * `EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE` — порог confidence для сохранения
+ * типизированных сущностей группы Б (Process/Decision/Regulation/Policy/
+ * Metric/Tool) после LLM-извлечения. 0.5 по умолчанию (см. ТЗ 0b §6.2).
+ */
+const ExtractionSchema = z.object({
+  EXTRACTION_ENABLE_TOP_LEVEL: z.coerce.boolean().default(false),
+  EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE: z.coerce
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.5),
+});
+
+/**
  * knowledge-core (Фаза 10) — email IMAP-адаптер.
  *
  * `EMAIL_FETCH_ENABLED` — мастер-флаг cron'а; default false (на dev'е cron не
@@ -515,7 +563,9 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(IngestSchema)
   .merge(CryptoSchema)
   .merge(EmailFetchSchema)
-  .merge(KnowledgeCoreSchema);
+  .merge(KnowledgeCoreSchema)
+  .merge(DocumentIngestSchema)
+  .merge(ExtractionSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

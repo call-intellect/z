@@ -39,5 +39,49 @@ export default tseslint.config(
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+  // Phase 0a — запрет прямого Cypher вне `common/graph/`.
+  //
+  // Все обращения к Apache AGE — через `GraphService` (двойная запись
+  // Postgres EntityLink + AGE гарантируется только внутри сервиса). Прямой
+  // `$queryRaw cypher(...)` из бизнес-сервисов приводит к рассинхрону
+  // Postgres↔AGE — см. `second-brain/02_architecture/code-pitfalls.md`
+  // «Cypher только через GraphService».
+  //
+  // Escape-hatch: `GraphService.traverse(...)` для сложных запросов
+  // (например, ContextBuilder в RoleProfileAgent). Доступен только внутри
+  // `common/graph/` и `*/services/context-builder.service.ts` (явно
+  // одобренные потребители).
+  {
+    files: ['src/**/*.ts'],
+    ignores: [
+      'src/common/graph/**',
+      // ContextBuilder для RoleProfileAgent — одобренный потребитель traverse.
+      'src/modules/role-profiles/services/context-builder.service.ts',
+      // Тесты могут вызывать GraphService.traverse напрямую.
+      'src/**/*.spec.ts',
+      'src/**/*.test.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          // Шаблонные строки с прямым обращением к AGE: `SELECT ... cypher(...)`.
+          // esquery не поддерживает inline-флаги `(?i)`, поэтому ловим
+          // case-sensitive `cypher(` — это покрывает все реальные случаи.
+          selector:
+            "TemplateLiteral[quasis.0.value.cooked=/\\bcypher\\s*\\(/]",
+          message:
+            'Прямой Cypher запрещён вне common/graph/. Используй GraphService (см. second-brain/02_architecture/code-pitfalls.md «Cypher только через GraphService»).',
+        },
+        {
+          // Обычные строковые литералы 'cypher(' / "cypher(".
+          selector:
+            "Literal[value=/\\bcypher\\s*\\(/]",
+          message:
+            'Прямой Cypher запрещён вне common/graph/. Используй GraphService.',
+        },
+      ],
+    },
+  },
   prettier,
 );

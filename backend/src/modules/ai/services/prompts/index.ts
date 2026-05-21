@@ -85,6 +85,11 @@ const REGISTRY: Record<MeetingType, PromptDescriptor> = {
     toolName: customerSuccess.TOOL_NAME,
     schema: customerSuccess.SCHEMA,
   },
+  // Фаза 0a — новые типы встреч review/retrospective. Промпт ещё не написан,
+  // используем `team` как разумный default (обзорная и retro близки к командной
+  // структуре). Замена на специализированные промпты — в Фазе γ.
+  review: { buildPrompt: team.buildPrompt, tool: team.TOOL, toolName: team.TOOL_NAME, schema: team.SCHEMA },
+  retrospective: { buildPrompt: team.buildPrompt, tool: team.TOOL, toolName: team.TOOL_NAME, schema: team.SCHEMA },
 };
 
 export function getPromptForType(type: MeetingType): PromptDescriptor {

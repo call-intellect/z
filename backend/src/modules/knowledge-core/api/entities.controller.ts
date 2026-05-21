@@ -203,56 +203,94 @@ export class KnowledgeEntitiesController {
       });
     }
 
+    // С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Связи на
+    // Entity↔Entity фильтруем по fromType/toType IS NULL (legacy) OR = 'entity';
+    // остальные узлы (Role/Person/Process/...) на этой ручке не возвращаем —
+    // /entities/* — view knowledge-core, а не графа Фазы 0.
     const [outgoing, incoming] = await Promise.all([
       this.prisma.entityLink.findMany({
-        where: { fromEntityId: id, status: 'active', tenantId },
-        include: { toEntity: true },
+        where: {
+          fromEntityId: id,
+          status: 'active',
+          tenantId,
+          OR: [{ fromType: null }, { fromType: 'entity' }],
+          AND: { OR: [{ toType: null }, { toType: 'entity' }] },
+        },
         orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
       }),
       this.prisma.entityLink.findMany({
-        where: { toEntityId: id, status: 'active', tenantId },
-        include: { fromEntity: true },
+        where: {
+          toEntityId: id,
+          status: 'active',
+          tenantId,
+          OR: [{ toType: null }, { toType: 'entity' }],
+          AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
+        },
         orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
       }),
     ]);
 
+    // Подгружаем Entity-узлы отдельным запросом, потому что FK relation
+    // (fromEntity/toEntity) убраны при полиморфизации EntityLink.
+    const peerIds = Array.from(
+      new Set([
+        ...outgoing.map((l) => l.toEntityId),
+        ...incoming.map((l) => l.fromEntityId),
+      ]),
+    );
+    const peers = peerIds.length
+      ? await this.prisma.entity.findMany({
+          where: { id: { in: peerIds }, tenantId },
+          select: { id: true, type: true, canonicalName: true },
+        })
+      : [];
+    const peerById = new Map(peers.map((p) => [p.id, p]));
+
     return {
-      outgoing: outgoing.map(
-        (l): EntityLinkItemDto => ({
-          id: l.id,
-          fromEntityId: l.fromEntityId,
-          toEntityId: l.toEntityId,
-          relationType: l.relationType,
-          confidence: this.confToNumber(l.confidence),
-          explanation: l.explanation,
-          status: l.status,
-          createdBy: l.createdBy,
-          createdAt: l.createdAt.toISOString(),
-          other: {
-            entityId: l.toEntity.id,
-            type: l.toEntity.type,
-            canonicalName: l.toEntity.canonicalName,
-          },
-        }),
-      ),
-      incoming: incoming.map(
-        (l): EntityLinkItemDto => ({
-          id: l.id,
-          fromEntityId: l.fromEntityId,
-          toEntityId: l.toEntityId,
-          relationType: l.relationType,
-          confidence: this.confToNumber(l.confidence),
-          explanation: l.explanation,
-          status: l.status,
-          createdBy: l.createdBy,
-          createdAt: l.createdAt.toISOString(),
-          other: {
-            entityId: l.fromEntity.id,
-            type: l.fromEntity.type,
-            canonicalName: l.fromEntity.canonicalName,
-          },
-        }),
-      ),
+      outgoing: outgoing
+        .map((l): EntityLinkItemDto | null => {
+          const peer = peerById.get(l.toEntityId);
+          if (!peer) return null;
+          return {
+            id: l.id,
+            fromEntityId: l.fromEntityId,
+            toEntityId: l.toEntityId,
+            relationType: l.relationType,
+            confidence: this.confToNumber(l.confidence),
+            explanation: l.explanation,
+            status: l.status,
+            createdBy: l.createdBy,
+            createdAt: l.createdAt.toISOString(),
+            other: {
+              entityId: peer.id,
+              type: peer.type,
+              canonicalName: peer.canonicalName,
+            },
+          };
+        })
+        .filter((x): x is EntityLinkItemDto => x !== null),
+      incoming: incoming
+        .map((l): EntityLinkItemDto | null => {
+          const peer = peerById.get(l.fromEntityId);
+          if (!peer) return null;
+          return {
+            id: l.id,
+            fromEntityId: l.fromEntityId,
+            toEntityId: l.toEntityId,
+            relationType: l.relationType,
+            confidence: this.confToNumber(l.confidence),
+            explanation: l.explanation,
+            status: l.status,
+            createdBy: l.createdBy,
+            createdAt: l.createdAt.toISOString(),
+            other: {
+              entityId: peer.id,
+              type: peer.type,
+              canonicalName: peer.canonicalName,
+            },
+          };
+        })
+        .filter((x): x is EntityLinkItemDto => x !== null),
     };
   }
 

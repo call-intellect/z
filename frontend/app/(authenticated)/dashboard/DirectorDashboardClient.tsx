@@ -43,7 +43,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
+import { IntroWizardWidget } from './widgets/IntroWizardWidget';
 import { StrategicAlignmentWidget } from './widgets/StrategicAlignmentWidget';
+import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
 
 /**
  * Дашборд директора (knowledge-core, Фаза 8).
@@ -134,6 +136,10 @@ export function DirectorDashboardClient() {
         </div>
       )}
 
+      <div className="mb-6">
+        <IntroWizardWidget />
+      </div>
+
       {data?.narrativeSummary && (
         <div className="mb-6 rounded-xl border border-accent/30 bg-accent/5 p-4">
           <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-accent">
@@ -150,6 +156,7 @@ export function DirectorDashboardClient() {
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <StructureSummaryWidget />
         <WhatLearnedWidget
           loading={loading}
           newThemes={data?.newThemes ?? []}

@@ -30,9 +30,16 @@
 name: z
 
 # Единая сборка образа z-backend:latest — переиспользуют migrate и backend.
+# HTTP(S)_PROXY — опциональный прокси для загрузки пакетов на этапе сборки
+# (apk + bun install). Это «предопределённые» build-args Docker: применяются к RUN
+# и НЕ остаются в финальном образе (рантайм приложения через прокси НЕ идёт).
 x-backend-build: &backend-build
   context: ./backend
   dockerfile: Dockerfile
+  args:
+    HTTP_PROXY: ${HTTP_PROXY:-}
+    HTTPS_PROXY: ${HTTPS_PROXY:-}
+    NO_PROXY: ${NO_PROXY:-}
 
 services:
   postgres:
@@ -127,6 +134,10 @@ services:
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:?required}
         NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:?required}
         NEXT_PUBLIC_FRONTEND_URL: ${NEXT_PUBLIC_FRONTEND_URL:-}
+        # Прокси для загрузки пакетов на сборке (см. комментарий выше у backend).
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     container_name: z-frontend
     environment:
       NODE_ENV: production

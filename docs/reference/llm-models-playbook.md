@@ -7,6 +7,24 @@
 >
 > Файл вырос из LLM-handover проекта Crossmark — оттуда же шаблоны кода. Здесь они
 > переработаны под Z и дополнены методологией бенчмарка.
+>
+> ⚠ **Этот файл — целевая карта (что планируется), не verified-состояние.** Для
+> вопроса «что реально работает прямо сейчас» — единственный источник правды
+> [second-brain/01_projects/llm-providers-verified.md](../../second-brain/01_projects/llm-providers-verified.md).
+> Все расхождения этого файла с verified-картой — в пользу verified.
+>
+> Расхождения, обнаруженные в smoke-test 2026-05-21
+> (см. [plans/analysis/2026-05-21-llm-smoke-test.md](../../plans/analysis/2026-05-21-llm-smoke-test.md)):
+>
+> - **Anthropic не используем** — решение владельца, ключ не закупаем. Все
+>   упоминания `claude-sonnet-4-6`/`claude-opus-4-7`/`claude-haiku-*` в этом
+>   файле — справочные. В дефолтных `LlmTaskRoute.providers` Claude нет.
+> - **`bge-m3` через Ollama не используем** — модели физически нет на нашем
+>   `ollama.agent-lia.ru`, и embeddings через Ollama не планируем. Единственный
+>   verified канал embeddings — `text-embedding-3-small` через прокси (dim=1536).
+> - **`qwen3:30b-a3b-instruct-2507` не установлен** — на нашем Ollama
+>   реально стоит только `qwen3.5:9b`. Везде ниже, где упомянуто
+>   `qwen3:30b-a3b-instruct-2507`, читать как `qwen3.5:9b`.
 
 ---
 

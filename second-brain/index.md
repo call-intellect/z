@@ -45,6 +45,8 @@
 _пусто_
 
 ## Активные ТЗ
+- `plans/tz/2026-05-21-phase-0-roles-and-onboarding.md` — **Фаза 0: должности, каркас компании и знакомство** (зонтичный ТЗ, 4 sub-TZ: 0a фундамент моделей + AGE + GraphService, 0b document-ingest + extraction типизированных сущностей группы Б, 0c wizard + личный кабинет, 0d RoleProfileAgent). Все 4 sub-TZ ещё не созданы.
+  - **Аналитика ЛК (блокер 0c):** [`plans/analysis/2026-05-21-user-cabinet-design.md`](../plans/analysis/2026-05-21-user-cabinet-design.md) — draft от 2026-05-21. Дизайн навигации (3 группы Компания / Оперативка / Настройки), default landing по роли, видимость γ-разделов, `/dump` и `/me` минимальные, multi-org switcher, wizard 5 шагов.
 - `plans/tz/2026-05-10-knowledge-core-tz.md` — **переустройство фундамента Z в единое информационное ядро (knowledge core)**. 12 фаз: org/multi-tenancy → universal ingest → IdeaBlock + Entity → граф связей → Theme → переписанные UX-агенты → AI-чат через ядро → админка отладки → дашборд директора → цели и стратегический согласователь → доп. источники → retention/security → tariffs. Концепции из `delivery/` и Blockify, реализация на стеке Z (NestJS/pgvector/BullMQ).
   - **Дочерние ТЗ (для агентов-исполнителей):**
     - `plans/tz/2026-05-10-phase-7-admin.md` — Z-Admin (super_admin) + Org-Admin (owner/admin): отладка, аналитика стоимости, A/B моделей, прайс-карта, тумблеры воркеров, отладка ядра.

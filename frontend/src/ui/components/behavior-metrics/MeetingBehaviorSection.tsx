@@ -12,6 +12,8 @@
  * Все строки на русском (memory `feedback_admin_ui_russian_only`).
  */
 
+import type { JSX } from 'react';
+
 import { useMeetingBehaviorMetrics } from '@/hooks/use-meeting-behavior-metrics';
 import type {
   BehaviorMetricsDomain,

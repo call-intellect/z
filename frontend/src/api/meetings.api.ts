@@ -110,6 +110,11 @@ export type TranscriptApiResponse = {
   roomChat?: Array<{ sentAt: string; authorName: string; content: string }>;
 };
 
+/** Ответ POST /meetings/:id/transcript/clean. */
+export type CleanTranscriptApiResponse = {
+  status: 'queued' | 'already_clean';
+};
+
 export type AudioTrackApi = {
   id: string;
   participantName: string;

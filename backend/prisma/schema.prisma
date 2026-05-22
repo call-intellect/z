@@ -185,6 +185,12 @@ enum SourceType {
   email
   web_form
   external
+  /// SBA α-1 — Conversational Channels Foundation.
+  /// Источник свободных заметок (free_note), пришедших через любой
+  /// `Channel` (in_app, email, telegram_bot, max_bot и т.д.). По одному
+  /// `Source(type=conversational)` на Org — создаётся лениво при первой
+  /// входящей заметке. См. plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md.
+  conversational
 }
 
 enum DataClass {
@@ -192,6 +198,25 @@ enum DataClass {
   internal
   sensitive
   private
+}
+
+/// Фаза A.1 — Prompt Registry (sub-TZ 2026-05-21-phase-A-prompt-registry-admin §4.1).
+/// Scope шаблона промпта AI-отчёта.
+///   - system: системный шаблон Z, доступен всем Org, read-only для Org-Admin.
+///   - org: создан Org-Admin'ом, виден только своей Org.
+enum PromptTemplateScope {
+  system
+  org
+}
+
+/// Фаза A.1 — Статус шаблона промпта AI-отчёта.
+///   - draft: редактируется, не используется в analyze.
+///   - active: используется в analyze.worker.
+///   - archived: не используется, видим только для истории/аудита.
+enum PromptTemplateStatus {
+  draft
+  active
+  archived
 }
 
 enum RawEventProcessingStatus {
@@ -524,6 +549,17 @@ model User {
   goalsCreated         Goal[]                   @relation("GoalCreatedBy")
   /// Фаза 0a — Person-аватары пользователя в Org'ах (после accept'а приглашений).
   persons              Person[]                 @relation("UserPersons")
+  // ── SBA α-1 — Conversational Channels Foundation ──
+  channelBindings      ChannelBinding[]
+  notifications        Notification[]           @relation("NotificationRecipient")
+
+  // ── Фаза A.1 — Prompt Registry ──
+  createdPromptTemplates  PromptTemplate[]        @relation("PromptTemplateCreatedBy")
+  createdPromptVersions   PromptTemplateVersion[] @relation("PromptTemplateVersionCreatedBy")
+  createdPromptExperiments PromptExperiment[]     @relation("PromptExperimentCreatedBy")
+  aiResultFeedback        AiResultFeedback[]     @relation("AiResultFeedbackUser")
+  // ── Фаза A.4 — Audit log переключений LlmTaskRoute ──
+  llmTaskRouteChanges     LlmTaskRouteChange[]    @relation("LlmTaskRouteChangeBy")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -590,6 +626,17 @@ model Meeting {
   analyzeV2GeneratedAt DateTime?
   /// Текст ошибки на failed/partial. Multi-line, агент пишет короткую сводку.
   analyzeV2Error       String?       @db.Text
+  /// Фаза B — статус расчёта поведенческих метрик участников встречи.
+  /// NULL = не запускался; 'pending' | 'ready' | 'failed' | 'low_confidence'.
+  /// Обновляется воркером `ai.behavior-metrics`. UI смотрит на это поле
+  /// для loading-state секции «Поведение участников».
+  behaviorMetricsStatus String?
+  /// Фаза C — статус AI-оценки качества встречи (sub-TZ C §4).
+  /// NULL = не запускался; 'pending' | 'ready' | 'failed' | 'disabled'.
+  /// 'disabled' — встреча слишком короткая (<3 мин) или тип в
+  /// `Org.qualityScoreDisabledForTypes`. UI смотрит на это поле для
+  /// loading-state секции «Оценка качества встречи».
+  qualityScoreStatus String?
   createdAt        DateTime      @default(now())
   deletedAt        DateTime?
 
@@ -597,6 +644,10 @@ model Meeting {
   recording        Recording?
   transcript       Transcript?
   aiResult         AiResult?
+  /// Фаза B — one-to-one с MeetingBehaviorMetrics (метрики поведения участников).
+  behaviorMetrics  MeetingBehaviorMetrics?
+  /// Фаза C — one-to-one с MeetingQualityScore (AI-оценка качества).
+  qualityScore     MeetingQualityScore?
   events           MeetingEvent[]
   tasks            Task[]
   chapters         MeetingChapter[]
@@ -608,6 +659,10 @@ model Meeting {
   meetingTags      MeetingTag[]
   /// Фаза 0a — Decision'ы, источник которых эта встреча (Фаза 0b extraction).
   decisions        Decision[]               @relation("DecisionSourceMeeting")
+  /// Фаза E — дополнительные («custom») AI-отчёты, сгенерированные по выбранным
+  /// шаблонам поверх той же встречи. Primary-отчёт остаётся в `aiResult`
+  /// (one-to-one). См. plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md.
+  customReports    MeetingReport[]
 
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
@@ -631,6 +686,10 @@ model Participant {
 
   audioTrack   AudioTrack?
   roomMessages MeetingRoomMessage[]
+  /// Фаза B — поведенческие метрики, рассчитанные для этого участника
+  /// (one-to-many: один участник может фигурировать в нескольких MeetingBehaviorMetrics,
+  /// если идёт регенерация и старая запись осталась — но обычно одна).
+  behaviorEntries MeetingParticipantBehavior[]
 
   @@unique([meetingId, livekitIdentity])
   @@index([meetingId])
@@ -684,6 +743,19 @@ model Transcript {
   totalWords           Int?
   totalDurationSeconds Int?
   createdAt            DateTime @default(now())
+  /// Фаза D — Очистка транскрипта (sub-TZ 2026-05-21-phase-D-transcript-cleaning §4).
+  /// S3-ключ на cleaned.json (формат — §5 sub-TZ D). NULL = ещё не запускали
+  /// или cleaning не готов. Оригинал `mergedS3Url` НИКОГДА не перезаписывается.
+  cleanedS3Url         String?
+  /// Статус cleaning-пайплайна: 'pending' | 'ready' | 'failed' | 'not_started'.
+  /// NULL семантически = 'not_started' (cleaning ещё не запускали).
+  cleaningStatus       String?
+  /// Json со статистикой очистки (что и сколько удалили). Структура:
+  /// { fillerWordsRemoved: N, repeatsRemoved: M, falseStartsRemoved: K,
+  ///   charsBefore: X, charsAfter: Y, llmRefineSkipped?: boolean }.
+  cleaningStats        Json?
+  /// Когда фактически завершён cleaning (status='ready'). NULL до первого ready.
+  cleanedAt            DateTime?
 }
 
 model AiResult {
@@ -706,8 +778,20 @@ model AiResult {
   summaryV2Model       String?
   /// Когда сгенерирован `summaryV2`.
   summaryV2GeneratedAt DateTime?
+  /// Фаза A.1 — какой версией шаблона промпта (`PromptTemplateVersion`) сгенерирован основной отчёт
+  /// (structuredData / customOutputMd). NULL = `code_fallback` (промпт пришёл из встроенного кода
+  /// `ai/services/prompts/type-*.ts`), что нормально при пустой БД или ошибке резолва.
+  promptTemplateVersionId String?
+  promptTemplateVersion   PromptTemplateVersion? @relation("from_prompt_version", fields: [promptTemplateVersionId], references: [id], onDelete: SetNull)
+  /// Фаза A.1 — группа A/B-эксперимента, если резолвер попал в активный `PromptExperiment`.
+  /// 'A' | 'B' | NULL. NULL = вне эксперимента.
+  experimentGroup String?
+  /// Фаза A.3 — обратная связь пользователей по этому AI-результату (👍/👎).
+  feedback                AiResultFeedback[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+
+  @@index([promptTemplateVersionId])
 }
 
 model AiUsageLog {
@@ -744,6 +828,12 @@ model AiUsageLog {
   requestPreview  String?  @db.Text
   /// Z-Admin Фаза 7: превью ответа модели (text), truncate до 8KB.
   responsePreview String?  @db.Text
+  /// Фаза A.1 (заведено заранее под A.4) — фактически использованный уровень цепочки моделей:
+  /// 'primary' | 'secondary' | 'tertiary'. NULL = legacy записи до A.4 или одноуровневая цепочка.
+  tier            String?
+  /// Фаза A.1 (заведено заранее под A.4) — причина срабатывания fallback'а на secondary/tertiary,
+  /// например: 'primary_timeout' | 'primary_error' | 'primary_rate_limit' | 'secondary_*' | NULL.
+  fallbackReason  String?
   createdAt       DateTime @default(now())
 
   @@index([meetingId])
@@ -1172,6 +1262,12 @@ model UserTemplate {
   @@index([userId])
 }
 
+enum LlmRouteTier {
+  primary
+  secondary
+  tertiary
+}
+
 model LlmTaskRoute {
   id         String   @id @default(cuid())
   /// NULL = глобальный дефолт, заданный super_admin (Z-Admin).
@@ -1179,11 +1275,30 @@ model LlmTaskRoute {
   tenantId   String?
   tenant     Org?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   taskType   String
-  providers  Json
+  /// Legacy (до A.4): JSON-массив { provider, model? } — fallback chain в одной записи.
+  /// После A.4 запись = ОДИН провайдер + tier + priority (см. поля ниже). Legacy-форма
+  /// остаётся работать, пока для taskType нет ни одной записи с `tier IS NOT NULL`.
+  /// Routing решает: если есть tier'ы — собирает цепочку по ним; иначе использует
+  /// legacy JSON. Это обратная совместимость.
+  providers  Json?
   isActive   Boolean  @default(true)
-  /// A/B-эксперимент: { enabled: bool, modelA: string, modelB: string,
+  /// Фаза A.4 — уровень в цепочке: primary / secondary / tertiary.
+  /// NULL = legacy-запись (старая модель). NOT NULL = нормализованная запись.
+  tier       LlmRouteTier?
+  /// Фаза A.4 — порядок внутри одного tier'а (0 = первый кандидат). Только если tier NOT NULL.
+  priority   Int      @default(0)
+  /// Фаза A.4 — фактический провайдер для нормализованной записи (если tier NOT NULL).
+  /// Совпадает с одним из ALL_PROVIDERS (`deepseek` / `openai-via-proxy` / …).
+  providerName String?
+  /// Фаза A.4 — конкретная модель в рамках провайдера (например `deepseek-v4-flash`).
+  /// NULL = провайдер выбирает default.
+  model        String?
+  /// Фаза A.4 — был ли маршрут вручную отредактирован админом. Используется в
+  /// идемпотентном seed'е: если true — seed не перезаписывает запись.
+  editedByAdmin Boolean @default(false)
+  /// A/B-эксперимент legacy: { enabled: bool, modelA: string, modelB: string,
   ///                    splitPercent: number, startedAt: ISO, endsAt: ISO }.
-  /// При enabled=true LlmRouter рандомно выбирает A/B и пишет experimentGroup в AiUsageLog.
+  /// Новые A/B-эксперименты per-agent — через модель `LlmModelExperiment`.
   experiment Json?
   /// Фаза 11 knowledge-core: минимальный класс данных, который маршрут
   /// поддерживает. NULL трактуется как 'internal'. LlmRouter фильтрует
@@ -1193,8 +1308,69 @@ model LlmTaskRoute {
   requiredDataClass DataClass?
   updatedAt  DateTime @updatedAt
 
-  @@unique([taskType, tenantId])
+  /// Legacy unique: (taskType, tenantId) — для записей БЕЗ tier (одна запись на taskType).
+  /// Сохраняем для обратной совместимости. Записи с tier живут отдельно — для них
+  /// уникальность держится по (taskType, tenantId, tier, providerName).
+  @@unique([taskType, tenantId, tier, providerName], name: "task_tenant_tier_provider_unique")
   @@index([tenantId])
+  @@index([taskType, tier, priority])
+}
+
+/// Фаза A.4 — audit log переключений маршрутов в `/admin/ai-models`.
+/// На каждый switch-primary / add-provider / remove-provider / start-ab / stop-ab — запись.
+/// Используется в `<TaskTypeDetailsCard />` для отображения истории и в API
+/// `GET /admin/ai-models/:taskType/history`.
+model LlmTaskRouteChange {
+  id          String       @id @default(cuid())
+  /// NULL = глобальное изменение (только super_admin); иначе org-scoped.
+  tenantId    String?
+  taskType    String
+  /// Tier, который менялся. NULL для удалений где tier не определён.
+  tier        LlmRouteTier?
+  /// Один из: 'switched_primary' | 'added_provider' | 'removed_provider' |
+  /// 'started_ab' | 'stopped_ab' | 'reset_to_default'.
+  changeType  String
+  /// Snapshot цепочки до изменения (массив { tier, providerName, model, priority }).
+  before      Json
+  /// Snapshot цепочки после изменения.
+  after       Json
+  changedById String
+  changedBy   User         @relation("LlmTaskRouteChangeBy", fields: [changedById], references: [id], onDelete: NoAction)
+  /// Обязательно для switch-primary (по DoD §7.4).
+  reason      String?
+  createdAt   DateTime     @default(now())
+
+  @@index([taskType, createdAt])
+  @@index([changedById, createdAt])
+  @@index([tenantId, taskType, createdAt])
+}
+
+/// Фаза A.4 — A/B-эксперимент per-agent (по моделям, а не по промптам).
+/// Параллельная сущность к `PromptExperiment` (которая про шаблоны промптов).
+model LlmModelExperiment {
+  id              String        @id @default(cuid())
+  /// NULL = глобальный (только super_admin); иначе org-scoped.
+  tenantId        String?
+  taskType        String
+  /// Текущий primary (контрольная группа).
+  controlModel    String
+  controlProvider String
+  /// Тестируемая модель (вариант).
+  variantModel    String
+  variantProvider String
+  /// 0..100 — доля трафика на variant (sticky-allocation по hash(meetingId)).
+  splitPercent    Int
+  /// 'draft' | 'running' | 'stopped' | 'completed'.
+  status          String        @default("draft")
+  startedAt       DateTime?
+  endsAt          DateTime?
+  createdById     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  notes           String?
+
+  @@index([tenantId, taskType, status])
+  @@index([status, startedAt])
 }
 
 // ──────────────────────────── ai-workspace: audit / quotas / api access ────────────────────────────
@@ -1334,6 +1510,17 @@ model Org {
   /// Окно (в днях) для strategic-alignment воркера (Фаза 9). По умолчанию 30,
   /// валидация в API: 7..90.
   strategicAlignmentWindowDays Int @default(30)
+  /// Фаза D — Очистка транскрипта (sub-TZ 2026-05-21-phase-D-transcript-cleaning §4).
+  /// Если true — после завершения `ai.merge` автоматически ставится job в `ai.transcript-clean`.
+  /// По умолчанию false — Org включает руками, оценив бюджет на LLM-refine (~$0.05 за 100 мин).
+  /// Поле живёт на Org для простоты (отдельной модели OrgSettings в проекте сейчас нет).
+  transcriptCleaningAuto Boolean @default(false)
+  /// Фаза C — типы встреч, для которых AI-оценка качества НЕ рассчитывается
+  /// (sub-TZ C §4). Управляется через `PATCH /org/settings/quality-score`
+  /// owner/admin'ом Org. Пустой массив = считать для всех типов. Поле живёт
+  /// на Org по консистентности с `transcriptCleaningAuto` (отдельной OrgSettings
+  /// в проекте нет).
+  qualityScoreDisabledForTypes MeetingType[] @default([])
   createdAt      DateTime          @default(now())
   deletedAt      DateTime?
 
@@ -1385,6 +1572,14 @@ model Org {
   tools           Tool[]
   metrics         Metric[]
   decisions       Decision[]
+
+  // ── Фаза A.1 — Prompt Registry ──
+  promptTemplates  PromptTemplate[]
+  promptExperiments PromptExperiment[]
+
+  // ── SBA α-1 — Conversational Channels Foundation ──
+  channels      Channel[]
+  notifications Notification[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -2461,4 +2656,581 @@ model Decision {
   @@index([tenantId, decidedAt])
   @@index([tenantId, decidedByPersonId])
   @@map("decisions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Фаза A.1 — Prompt Registry
+// Источник: plans/tz/2026-05-21-phase-A-prompt-registry-admin.md §4
+//
+// Идея: все 9 системных промптов AI-отчёта (по типам встреч) + tasks /
+// chapters / follow-up / card-rollup переезжают в БД как `PromptTemplate`
+// с версионированием через `PromptTemplateVersion`. Файлы
+// `backend/src/modules/ai/services/prompts/type-*.ts` остаются в коде
+// как fallback и НЕ удаляются. Резолв и выбор источника промпта живёт
+// в `PromptResolverService`.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Шаблон промпта AI-отчёта. Может быть системным (поставляется с Z) или
+/// созданным Org-Admin'ом. В рамках Org `key` уникален; для system orgId=null
+/// и `key` уникален глобально.
+///
+/// `activeVersionId` ссылается на текущую активную `PromptTemplateVersion`.
+/// Менять активную версию — через `POST /admin/prompt-templates/:id/activate-version/:versionId`
+/// (см. A.2). В A.1 endpoint'ов нет — только модель + seed.
+model PromptTemplate {
+  id              String                  @id @default(cuid())
+  scope           PromptTemplateScope
+  /// NULL для scope='system'; обязателен для scope='org' (валидируется в сервисе).
+  orgId           String?
+  /// Уникальный slug, e.g. 'type-sales', 'tasks-default', 'custom-sales-deep-dive'.
+  key             String
+  name            String
+  description     String?                 @db.Text
+  /// Если задан — шаблон используется только для этого типа встречи.
+  /// NULL = универсальный (например, tasks/chapters/follow-up для всех типов).
+  meetingType     MeetingType?
+  /// Legacy LLM taskType: 'summary' | 'tasks' | 'chapters' | 'follow-up' | 'card-rollup'.
+  /// Хранится как String, чтобы расширяться без миграций enum'а.
+  taskType        String
+  status          PromptTemplateStatus    @default(draft)
+  /// Текущая активная версия (FK на PromptTemplateVersion). NULL до первого save.
+  activeVersionId String?                 @unique
+  /// Флаг safe-seed: true = шаблон редактировался админом, при повторном запуске seed'а
+  /// не перезаписываем содержимое. Защита от потери ручных правок (skill `safe-seed-rules`).
+  editedByAdmin   Boolean                 @default(false)
+  createdById     String
+  createdBy       User                    @relation("PromptTemplateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  deletedAt       DateTime?
+
+  org             Org?                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  versions        PromptTemplateVersion[] @relation("PromptTemplateVersions")
+  activeVersion   PromptTemplateVersion?  @relation("PromptTemplateActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  /// Фаза E — дополнительные («custom») отчёты встреч, созданные по этому шаблону.
+  /// onDelete=Restrict на стороне MeetingReport: история отчётов жива даже после
+  /// архивирования шаблона.
+  meetingReports  MeetingReport[]         @relation("MeetingReportTemplate")
+
+  @@unique([orgId, key])
+  @@index([scope, status])
+  @@index([orgId, status])
+  @@index([taskType, meetingType, status])
+}
+
+/// Версия шаблона промпта. На каждое «Сохранить как новую версию» в UI A.2
+/// создаётся новая запись. История версий используется для отката и
+/// сравнения через diff в UI.
+model PromptTemplateVersion {
+  id              String                    @id @default(cuid())
+  templateId      String
+  /// Целочисленный номер версии (1, 2, 3...). Уникален в рамках шаблона.
+  versionNumber   Int
+  /// Общая часть промпта (шапка system-message).
+  systemPrompt    String                    @db.Text
+  /// Ожидаемая JSON-схема ответа (для structured-вывода через tool_use).
+  /// Может включать `properties`, `required` — формат совместим с LlmTool.input_schema.
+  outputSchema    Json
+  /// Имя tool'а, который будет передан LLM при вызове (например, 'extract_sales').
+  /// Используется для парсинга `toolCalls[].name` в analyze.worker. NULL = вызов без tool_use.
+  toolName        String?
+  createdById     String
+  createdBy       User                      @relation("PromptTemplateVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime                  @default(now())
+  /// Свободный changelog от автора версии (см. ТЗ A §4.1).
+  notes           String?                   @db.Text
+
+  template          PromptTemplate          @relation("PromptTemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  asActiveOf        PromptTemplate?         @relation("PromptTemplateActiveVersion")
+  sections          PromptTemplateSection[]
+  aiResults         AiResult[]              @relation("from_prompt_version")
+  experimentsAsA    PromptExperiment[]      @relation("experiment_a")
+  experimentsAsB    PromptExperiment[]      @relation("experiment_b")
+  /// Фаза E — snapshot этой версии в MeetingReport: какая именно версия была
+  /// использована при генерации (для воспроизводимости/диффа).
+  meetingReports    MeetingReport[]         @relation("MeetingReportVersion")
+
+  @@unique([templateId, versionNumber])
+  @@index([templateId])
+}
+
+/// Раздел отчёта в рамках версии шаблона. До 30 разделов на версию
+/// (валидируется в сервисе). В A.1 секции создаются seed'ом из существующих
+/// type-*.ts: каждое поле SCHEMA = одна секция с outputType.
+model PromptTemplateSection {
+  id              String                  @id @default(cuid())
+  versionId       String
+  /// Порядковый номер 1..30. Уникален в рамках версии.
+  order           Int
+  /// Slug секции для маппинга на ключ в JSON-ответе LLM.
+  key             String
+  title           String
+  /// Инструкция LLM «что писать в этой секции».
+  instruction     String                  @db.Text
+  /// 'text' | 'bullet_list' | 'table' | 'json_object'. Хранится как String для расширяемости.
+  outputType      String
+  required        Boolean                 @default(true)
+  /// Опциональный лимит maxTokens на секцию (см. валидатор в A.2).
+  maxTokens       Int?
+
+  version         PromptTemplateVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, key])
+  @@unique([versionId, order])
+  @@index([versionId])
+}
+
+/// A/B-эксперимент между двумя версиями шаблонов. Реализация A.3.
+/// В A.1 модель заводится только для FK-целостности и future-proof'а — резолвер
+/// уже умеет читать experimentGroup, но активных экспериментов в A.1 не будет.
+model PromptExperiment {
+  id              String     @id @default(cuid())
+  /// NULL = эксперимент системного шаблона (только super_admin); иначе Org-эксперимент.
+  orgId           String?
+  /// Версия A (control).
+  templateAId     String
+  /// Версия B (variant).
+  templateBId     String
+  /// Доля трафика на B, 0..100.
+  splitPercent    Int
+  /// 'draft' | 'running' | 'stopped' | 'completed'.
+  status          String     @default("draft")
+  startedAt       DateTime?
+  endsAt          DateTime?
+  createdById     String
+  createdBy       User       @relation("PromptExperimentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime   @default(now())
+  notes           String?    @db.Text
+
+  org             Org?                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  templateA       PromptTemplateVersion   @relation("experiment_a", fields: [templateAId], references: [id], onDelete: Restrict)
+  templateB       PromptTemplateVersion   @relation("experiment_b", fields: [templateBId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, status])
+  @@index([status])
+}
+
+/// Реакция пользователя (👍/👎) на AI-результат встречи. Заполняется
+/// эндпоинтом A.3 `POST /api/v1/meetings/:meetingId/result/feedback`.
+/// В A.1 модель заводится только для FK-целостности; UI/endpoint появляется в A.3.
+model AiResultFeedback {
+  id              String    @id @default(cuid())
+  aiResultId      String
+  userId          String
+  /// 'positive' | 'negative'.
+  reaction        String
+  comment         String?   @db.Text
+  createdAt       DateTime  @default(now())
+
+  aiResult        AiResult  @relation(fields: [aiResultId], references: [id], onDelete: Cascade)
+  user            User      @relation("AiResultFeedbackUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([aiResultId, userId])
+  @@index([aiResultId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Фаза E — несколько AI-отчётов на одну встречу
+// ─────────────────────────────────────────────────────────────────────────
+// Источник: plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md §4.
+//
+// Primary-отчёт (`AiResult`, под `Meeting.type`) остаётся как есть. `MeetingReport`
+// хранит «дополнительные» отчёты, генерируемые on-demand по выбранному шаблону.
+// Partial unique index `(meeting_id, prompt_template_id) WHERE status IN
+// ('pending','running')` создаётся вручную через apply-postgres-init.sql —
+// Prisma partial unique не поддерживает.
+
+enum MeetingReportStatus {
+  pending
+  running
+  ready
+  failed
+  archived
+}
+
+/// Дополнительный («custom») AI-отчёт встречи. Генерируется воркером
+/// `ai.custom-report` по выбранному `PromptTemplate` + `PromptTemplateVersion`.
+/// Снимок версии шаблона хранится в `promptTemplateVersionId` для
+/// воспроизводимости: если шаблон позже изменили или архивировали — отчёт всё
+/// равно показывает то, что было в момент генерации.
+model MeetingReport {
+  id                      String              @id @default(cuid())
+  meetingId               String
+  /// tenant: Org, в которой принадлежит отчёт. Дублирует `meeting.tenantId`,
+  /// чтобы admin-выборки/аудит не делали join.
+  tenantId                String
+  promptTemplateId        String
+  promptTemplateVersionId String
+
+  /// 'primary' | 'additional'. В рамках E все записи — 'additional';
+  /// primary-отчёт показывается из `AiResult` синтетически. Колонка введена
+  /// сразу, чтобы при будущей миграции primary в `MeetingReport` ничего не
+  /// ломать в API-контракте.
+  kind                    String              @default("additional")
+  /// Снимок `PromptTemplate.name` в момент генерации (защита от ребрендинга
+  /// шаблона позже).
+  title                   String
+
+  status                  MeetingReportStatus @default(pending)
+  /// JSON-вывод LLM по `PromptTemplateVersion.outputSchema`. NULL пока не ready.
+  output                  Json?
+  /// Фактическая стоимость в USD (precision 4 знака после запятой).
+  llmCostUsd              Decimal?            @db.Decimal(10, 4)
+  llmDurationMs           Int?
+  errorMessage            String?
+
+  createdById             String
+  createdAt               DateTime            @default(now())
+  completedAt             DateTime?
+  /// Soft-delete: при DELETE выставляем `status='archived'` + `deletedAt=now()`.
+  deletedAt               DateTime?
+
+  meeting                 Meeting                 @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  promptTemplate          PromptTemplate          @relation("MeetingReportTemplate", fields: [promptTemplateId], references: [id], onDelete: Restrict)
+  promptTemplateVersion   PromptTemplateVersion   @relation("MeetingReportVersion", fields: [promptTemplateVersionId], references: [id], onDelete: Restrict)
+
+  @@index([meetingId, status])
+  @@index([meetingId, deletedAt])
+  @@index([tenantId, createdAt])
+  @@index([promptTemplateId])
+  @@index([promptTemplateVersionId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SBA α-1 — Conversational Channels Foundation
+// ─────────────────────────────────────────────────────────────────────────
+// Источник: plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md
+//
+// Двунаправленный омниканальный слой общения с человеком. InApp + Email
+// — фундамент α-1. Telegram/MAX добавляются в β-1 расширением `ChannelKind`
+// без правки моделей.
+
+/// Тип канала. На α-1: `in_app`, `email_smtp`, `email_imap`. На β-1
+/// добавляются `telegram_bot`, `max_bot`. На γ+: `slack`, `mattermost`,
+/// `vk_messenger`, `whatsapp_business`, `web_push`, `voice_via_asr`.
+enum ChannelKind {
+  in_app
+  email_smtp
+  email_imap
+  telegram_bot
+  max_bot
+}
+
+/// Направление канала. Большинство каналов — bidirectional. Outbound-only
+/// (`email_smtp`) есть; inbound-only (`email_imap`) появится с β-1.
+enum ChannelDirection {
+  inbound_only
+  outbound_only
+  bidirectional
+}
+
+enum ChannelStatus {
+  active
+  disabled
+  broken
+}
+
+/// Жизненный цикл `Notification`.
+/// `queued` → `sent_partial` (часть доставок ушла, часть в очереди) →
+/// `delivered` (хотя бы один канал доставил) → `read` (хотя бы один отметил
+/// прочитанным) → `responded` (получен ответ). `failed` — ни одна доставка
+/// не прошла, retry'и исчерпаны.
+enum NotificationStatus {
+  queued
+  sent_partial
+  delivered
+  read
+  responded
+  failed
+}
+
+/// Статус ожидания ответа на probe-нотификацию. Для не-probe (например,
+/// `curation.pending` без явного respond-flow) — `null`.
+enum NotificationResponseStatus {
+  pending
+  answered
+  dismissed
+  expired
+}
+
+/// Статус одной попытки доставки в конкретный `ChannelBinding`. Отдельный
+/// enum от webhook'ового `DeliveryStatus`, потому что семантика другая
+/// (read/responded состояния значимы для conversational, не для webhook).
+enum NotificationDeliveryStatus {
+  queued
+  sent
+  delivered
+  read
+  responded
+  failed
+}
+
+/// Channel — настроенный per-Org канал общения.
+///
+/// Конкретные секреты (botToken, IMAP password и т.п.) лежат в `config`
+/// в зашифрованном виде через `CryptoService.encrypt(...)`. Для `in_app`
+/// `config` пустой (`{}`). Для `email_smtp` — переиспользуем общий SMTP
+/// из `cfg.mail` (per-Org переопределение появится позже), но запись
+/// в `Channel` всё равно нужна, чтобы маршрутизатор знал, что Org
+/// разрешила email-доставку.
+model Channel {
+  id           String           @id @default(cuid())
+  tenantId     String
+  kind         ChannelKind
+  direction    ChannelDirection
+  /// Зашифрованные секреты (botToken, etc). Для `in_app` = `{}`.
+  config       Json             @default("{}")
+  status       ChannelStatus    @default(active)
+  /// Верхний потолок класса данных, который разрешено отправлять в этот
+  /// канал. `internal` по умолчанию — `sensitive`/`private` не уходят
+  /// во внешние каналы без явного апгрейда настройки.
+  maxDataClass DataClass        @default(internal)
+  brokenReason String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  org      Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bindings ChannelBinding[]
+
+  @@unique([tenantId, kind])
+  @@index([tenantId, kind])
+  @@index([tenantId, status])
+  @@map("channels")
+}
+
+/// ChannelBinding — привязка конкретного пользователя к конкретному каналу.
+/// Для `in_app` `externalId = userId` (равенство сохраняется ради
+/// единообразия). Для `email_smtp/imap` — email. Для `telegram_bot/max_bot`
+/// — внешний user_id мессенджера (после verify через одноразовый код).
+model ChannelBinding {
+  id          String    @id @default(cuid())
+  userId      String
+  channelId   String
+  /// Внешний идентификатор адресата: userId (in_app), email
+  /// (email_smtp/imap), tg/max user_id (β-1). Уникален на канал.
+  externalId  String
+  /// Preferences пользователя per-binding: quiet hours, rate limits,
+  /// фильтры eventType. См. ChannelBindingPreferences (zod-схема).
+  preferences Json      @default("{}")
+  linkedAt    DateTime  @default(now())
+  /// Заполняется после проверки кода/верификации. Для in_app — равен
+  /// `linkedAt` (auto-verified).
+  verifiedAt  DateTime?
+
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel    Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@unique([channelId, externalId])
+  @@unique([userId, channelId])
+  @@index([userId])
+  @@index([channelId])
+  @@map("channel_bindings")
+}
+
+/// Notification — событие, адресованное пользователю, доставляемое через
+/// один или несколько `ChannelBinding`. Логическая единица — пожизненна,
+/// `NotificationDelivery` — попытка доставки в конкретный канал.
+///
+/// `payload.schemaVersion`/`payload.body` — фактическая структура зависит
+/// от `eventType`. Валидация — в `ConversationalService.sendNotification`
+/// через `NotificationEventPayloadRegistry`.
+model Notification {
+  id              String                      @id @default(cuid())
+  tenantId        String
+  recipientUserId String
+  /// Тип события, например `probe.question`, `curation.pending`,
+  /// `idea.status_changed`. На α-1 — `probe.question`, `curation.pending`,
+  /// `system.message`. Расширяется потребителями (α-4, β-5).
+  eventType       String
+  payload         Json
+  dataClass       DataClass                   @default(internal)
+  /// Опц. ссылка на исходный `IdeaBlock` (для probe'а на блок).
+  contextBlockId  String?
+  /// Опц. ссылка на карточку специалиста (Card, Decision, Regulation, ...).
+  contextCardId   String?
+  status          NotificationStatus          @default(queued)
+  responseStatus  NotificationResponseStatus?
+  responsePayload Json?
+  expiresAt       DateTime?
+  createdAt       DateTime                    @default(now())
+  respondedAt     DateTime?
+
+  org        Org                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipient  User                   @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@index([tenantId, recipientUserId, status])
+  @@index([tenantId, eventType, status])
+  @@index([recipientUserId, status])
+  @@index([expiresAt])
+  @@map("notifications")
+}
+
+/// NotificationDelivery — одна попытка доставки в конкретный
+/// `ChannelBinding`. На один `Notification` может быть несколько
+/// доставок (по числу выбранных routing'ом каналов).
+model NotificationDelivery {
+  id                String                     @id @default(cuid())
+  notificationId    String
+  channelBindingId  String
+  status            NotificationDeliveryStatus @default(queued)
+  /// Внешний id сообщения (smtp messageId, telegram message_id, …).
+  externalMessageId String?
+  errorReason       String?
+  /// Сколько раз пробовали отправить (для retry-логики worker'а).
+  attempts          Int                        @default(0)
+  attemptedAt       DateTime                   @default(now())
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  respondedAt       DateTime?
+
+  notification    Notification    @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channelBinding  ChannelBinding  @relation(fields: [channelBindingId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([channelBindingId, status])
+  @@map("notification_deliveries")
+}
+
+// ──────────────────────────── фаза B: поведенческие метрики встречи ────────────────────────────
+
+/// MeetingBehaviorMetrics — общие (per-meeting) поведенческие метрики
+/// (one-to-one с Meeting). Источник: ТЗ B (`plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md` §4).
+///
+/// Рассчитывается воркером `ai.behavior-metrics` параллельно `ai.analyze`
+/// после `ai.merge`. Не зависит от готовности AiResult — может стать готовой
+/// раньше/позже основного отчёта.
+model MeetingBehaviorMetrics {
+  id        String  @id @default(cuid())
+  meetingId String  @unique
+  tenantId  String
+
+  /// Общая длительность встречи (по Meeting.endedAt - startedAt), мс.
+  totalDurationMs Int
+  /// Суммарное время речи всех участников (с учётом crosstalk дважды), мс.
+  totalSpeechMs   Int
+  /// Суммарная тишина (ни один спикер не говорит), мс.
+  silenceMs       Int
+  /// Доля тишины (0..100).
+  silencePercent  Float
+  /// Суммарное время одновременной речи 2+ участников, мс.
+  crossTalkMs     Int
+  /// Нормированный индекс доминирования: max(speakingTimeMs)/median(speakingTimeMs).
+  /// При median=0 возвращаем 999 (моноспикер / низкая активность).
+  dominanceIndex  Float
+
+  /// Confidence диаризации (0..1) из Vox-ответа. <0.85 → lowConfidence=true.
+  diarizationConfidence Float
+  /// True, если метрики ориентировочные (низкое качество диаризации /
+  /// короткая встреча / иные edge-кейсы из ТЗ B §5.4).
+  lowConfidence Boolean @default(false)
+
+  computedAt DateTime @default(now())
+
+  meeting      Meeting                       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  participants MeetingParticipantBehavior[]
+
+  @@index([tenantId])
+}
+
+/// MeetingParticipantBehavior — per-participant поведенческие метрики
+/// (one-to-many от MeetingBehaviorMetrics). Источник: ТЗ B §4.
+///
+/// displayName хранит снимок имени на момент расчёта (для гостей, у которых
+/// нет пользовательского профиля). isGuest повторяет Participant.role='guest'
+/// для удобства фильтра без JOIN.
+model MeetingParticipantBehavior {
+  id                       String @id @default(cuid())
+  meetingBehaviorMetricsId String
+  /// participantId NULL допустим только для синтезированных гостей без
+  /// записи в Participant (edge-case из ТЗ B §5.4). На MVP всегда заполнен.
+  participantId            String?
+  tenantId                 String
+
+  /// Снимок имени на момент расчёта (для гостей, у которых нет userId).
+  displayName String
+  /// True для гостей без аккаунта.
+  isGuest     Boolean @default(false)
+
+  speakingTimeMs             Int
+  speakingTimePercent        Float
+  turnsCount                 Int
+  avgTurnDurationMs          Float
+  /// Сколько turn'ов длительностью >= 60_000 мс.
+  monologueCount             Int
+  longestMonologueMs         Int
+  questionCount              Int
+  fillerWordsCount           Int
+  interruptionsMadeCount     Int
+  interruptionsReceivedCount Int
+
+  metrics     MeetingBehaviorMetrics @relation(fields: [meetingBehaviorMetricsId], references: [id], onDelete: Cascade)
+  participant Participant?           @relation(fields: [participantId], references: [id], onDelete: SetNull)
+
+  @@unique([meetingBehaviorMetricsId, participantId])
+  @@index([tenantId])
+  @@index([participantId])
+}
+
+// ──────────────────────────── фаза C: AI-оценка качества встречи ────────────────────────────
+
+/// MeetingQualityScore — AI-оценка качества встречи (sub-TZ C §4).
+///
+/// Источник: plans/tz/2026-05-21-phase-C-meeting-quality-score.md §4.
+///
+/// One-to-one с `Meeting`. Создаётся воркером `ai.quality-score` после
+/// `ai_ready` основного pipeline'а. Видит хост (`Meeting.ownerId`) и
+/// Org-Admin (owner/admin). Гости и non-host members получают 403.
+///
+/// Категорий всегда 5: preparation/structure/clarity/outcomes/engagement
+/// (0..100). `overallScore` — взвешенное среднее (вычисляет LLM).
+///
+/// `recommendations` — массив `{ text, severity, category, degradedMode? }`.
+/// `degradedMode=true` появляется, когда LLM-router сработал на tertiary
+/// (Ollama qwen3.5:9b — graceful-degradation по sub-TZ C §5.4).
+///
+/// `strengths` — массив строк (2-4 пункта «что было хорошо»).
+///
+/// `promptTemplateVersionId` — версия шаблона `meeting-quality-score`
+/// (после A.2/A.3 — из БД; до этого — NULL = code-fallback).
+model MeetingQualityScore {
+  id        String @id @default(cuid())
+  meetingId String @unique
+  tenantId  String
+
+  /// Общий балл качества встречи, 0..100. Взвешенное среднее категорий,
+  /// рассчитывает LLM (см. промпт).
+  overallScore     Int
+  /// Подготовка: озвучена ли повестка / цель в первые 5 минут (0..100).
+  preparationScore Int
+  /// Структура: есть ли введение → обсуждение → итоги (0..100).
+  structureScore   Int
+  /// Чёткость формулировок vs «надо подумать», «как-то решим» (0..100).
+  clarityScore     Int
+  /// Итоги: есть ли конкретные решения с ответственными и сроками (0..100).
+  outcomesScore    Int
+  /// Вовлечённость участников (0..100). Не путать с behaviorMetrics — это
+  /// LLM-оценка диалога, не статистика.
+  engagementScore  Int
+
+  /// Список рекомендаций «как сделать встречу лучше».
+  /// Структура: [{ text: string, severity: 'info'|'warning'|'critical',
+  ///   category: 'preparation'|'structure'|'clarity'|'outcomes'|'engagement',
+  ///   degradedMode?: boolean }].
+  recommendations Json
+  /// Что было хорошо (2-4 пункта). Структура: string[].
+  strengths       Json
+
+  /// Версия шаблона `meeting-quality-score` (PromptTemplateVersion.id).
+  /// NULL = code-fallback (`ai/services/prompts/meeting-quality-score.ts`).
+  promptTemplateVersionId String?
+  computedAt              DateTime @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, overallScore])
+  @@index([tenantId, computedAt])
 }

@@ -276,6 +276,17 @@ export class TypedConfigService {
   get aiFeatures() {
     return {
       includeRoomChat: this.get('INCLUDE_ROOM_CHAT_IN_AI'),
+      /**
+       * Фаза D (sub-TZ §6.2) — включает LLM-уточнение уровня 2 в воркере
+       * `ai.transcript-clean`. При false воркер работает только через
+       * детерминистский уровень 1.
+       */
+      transcriptCleaningLlmRefine: this.get('TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED'),
+      /**
+       * Фаза B (sub-TZ 2026-05-21-phase-B §7) — включает LLM-refine
+       * в воркере `ai.behavior-metrics`. По умолчанию false.
+       */
+      behaviorMetricsLlmRefine: this.get('BEHAVIOR_METRICS_LLM_REFINE_ENABLED'),
     } as const;
   }
 
@@ -396,6 +407,32 @@ export class TypedConfigService {
     return {
       enableTopLevel: this.get('EXTRACTION_ENABLE_TOP_LEVEL'),
       typedEntityMinConfidence: this.get('EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE'),
+    } as const;
+  }
+
+  // ─────────────────────────── conversational (SBA α-1) ────────
+  /**
+   * Параметры conversational-слоя (Channels / Notifications). См.
+   * plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md §8.
+   *
+   *   - `outboundConcurrency` — concurrency BullMQ-воркера doставки.
+   *   - `linkCodeTtlSec` — TTL одноразового кода привязки канала.
+   *   - `quietHoursDefault` — окно тихих часов в формате `HH:mm-HH:mm`.
+   *   - `rateLimitDefaultPerHour` — дефолтный лимит не-критических
+   *     уведомлений на пользователя.
+   *   - `emailFromDefault` — From-адрес для email-каналов; если пусто,
+   *     берётся `MAIL_FROM`.
+   *   - `maxDeliveryAttempts` — потолок retry'ев outbound-воркера.
+   */
+  get conversational() {
+    const fromDefault = this.get('CONVERSATIONAL_EMAIL_FROM_DEFAULT');
+    return {
+      outboundConcurrency: this.get('CONVERSATIONAL_OUTBOUND_CONCURRENCY'),
+      linkCodeTtlSec: this.get('CONVERSATIONAL_LINK_CODE_TTL_SEC'),
+      quietHoursDefault: this.get('CONVERSATIONAL_QUIET_HOURS_DEFAULT'),
+      rateLimitDefaultPerHour: this.get('CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR'),
+      emailFromDefault: fromDefault.length > 0 ? fromDefault : this.get('MAIL_FROM'),
+      maxDeliveryAttempts: this.get('CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS'),
     } as const;
   }
 

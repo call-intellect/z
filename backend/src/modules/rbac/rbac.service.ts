@@ -76,7 +76,9 @@ export type ResourceType =
   | 'policy'
   | 'tool'
   | 'metric'
-  | 'decision';
+  | 'decision'
+  // ── Фаза A.2 — шаблоны промптов AI-отчёта (prompt registry) ──
+  | 'prompt_template';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -365,6 +367,8 @@ function isResourceType(s: string): s is ResourceType {
     'tool',
     'metric',
     'decision',
+    // Фаза A.2 — шаблоны промптов AI-отчёта
+    'prompt_template',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

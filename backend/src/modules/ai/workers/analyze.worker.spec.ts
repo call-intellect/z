@@ -54,6 +54,8 @@ function buildWorker(args: BuildArgs): {
       summaryV2: null,
       summaryV2Model: null,
       summaryV2GeneratedAt: null,
+      promptTemplateVersionId: null,
+      experimentGroup: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     }),
@@ -72,6 +74,8 @@ function buildWorker(args: BuildArgs): {
       summaryV2: null,
       summaryV2Model: null,
       summaryV2GeneratedAt: null,
+      promptTemplateVersionId: (input.data['promptTemplateVersionId'] as string | null) ?? null,
+      experimentGroup: (input.data['experimentGroup'] as string | null) ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     }),
@@ -100,7 +104,8 @@ function buildWorker(args: BuildArgs): {
   const llm = { complete: args.llmComplete } as unknown as LlmFallbackService;
   const usage = { record: vi.fn() } as unknown as AiUsageLogService;
   const enqueueNotify = vi.fn(async () => undefined);
-  const queue = { enqueueNotify } as unknown as AiQueueService;
+  const enqueueQualityScore = vi.fn(async () => undefined);
+  const queue = { enqueueNotify, enqueueQualityScore } as unknown as AiQueueService;
   const metrics = {
     observeAiPipelineDuration: vi.fn(),
     incMeetingFailed: vi.fn(),

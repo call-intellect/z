@@ -256,4 +256,26 @@ LiveKit чистит атрибуты автоматически при disconne
 - `backend/src/modules/ingest/parsers/document-parser.service.ts`.
 - `backend/src/modules/knowledge-core/workers/role-profile.worker.ts` (Фаза 0d).
 
+## SBA α-1 — Conversational Channels Foundation (2026-05-21)
+
+`backend/src/modules/conversational/` — `@Global` модуль omnichannel-слоя:
+- `conversational.service.ts` — публичный API `sendNotification` / `respondToProbe` / `linkChannel` / `listMyNotifications` + routing (per-event policy + dataClass + preferences + quiet hours).
+- `conversational.controller.ts` — REST `/api/v1/me/channels` и `/api/v1/me/notifications` (включая `POST /respond`, `POST /dismiss`, `POST /read`, `POST /free-note`).
+- `channel-registry.ts` — реестр адаптеров каналов, заполняется через `@Injectable() + onModuleInit()`.
+- `adapters/in-app.adapter.ts` — канал `in_app` (БД-резидент, без external transport).
+- `adapters/email-smtp.adapter.ts` — outbound через общий `MailService`.
+- `adapters/conversational-ingest.adapter.ts` — free-note → `RawEvent(Source.type='conversational')` через `IngestService`.
+- `link-code.service.ts` — одноразовые коды привязки (Redis, TTL 10 мин).
+- `queue/conversational-queue.service.ts` + `conversational-send.worker.ts` — BullMQ-очередь `conversational.send` (concurrency + retry с exp backoff).
+- `types/event-payload.registry.ts` — Zod-схемы payload'ов per-eventType (`probe.question`, `curation.pending`, `system.message`); потребители могут регистрировать новые через `registerEventPayloadSchema`.
+- `types/preferences.schema.ts` — `ChannelBindingPreferences` (quietHours, eventType allow/deny, rateLimitPerHour, disabledUntil).
+
+Frontend:
+- `frontend/src/api/conversational.api.ts` — REST-клиент.
+- `frontend/src/domain/conversational.ts` — мапперы ApiDto → Domain.
+- `frontend/app/(authenticated)/me/channels/` — страница «Мои каналы» (привязка/отвязка, генерация link-code).
+- `frontend/app/(authenticated)/me/notifications/` — центр уведомлений (master-detail, respond/dismiss, free-note форма).
+
+Подробности: [[../01_projects/conversational-channels|conversational-channels.md]].
+
 [[../index|← index]]

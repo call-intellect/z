@@ -240,6 +240,44 @@ p, owner, *, *, decision, delete
 p, admin, *, *, decision, read
 p, manager, *, self, decision, read
 
+# ──────────────────────────── SBA α-1 — Conversational Channels ────────────────────────────
+# channel: настройки каналов на уровне Org (SMTP/Telegram/etc) — только owner/admin.
+# Members видят свои привязки (ChannelBinding) и preferences через /me/* — обходятся
+# CurrentUser-фильтром в контроллере, RBAC на ресурсе channel НЕ применяется к ним.
+p, owner, *, *, channel, read
+p, owner, *, *, channel, write
+p, owner, *, *, channel, delete
+p, owner, *, *, channel, manage
+p, admin, *, *, channel, read
+p, admin, *, *, channel, write
+p, admin, *, *, channel, manage
+p, manager, *, *, channel, read
+
+# notification: уведомления. owner/admin видят все нотификации в Org (для модерации/аудита);
+# manager — только свои (через self). Доступ к чужим notification из admin — для будущих
+# нужд (триаж/escalation). Обычный пользовательский доступ к собственным notification идёт
+# через /me/notifications с явной фильтрацией recipientUserId.
+p, owner, *, *, notification, read
+p, owner, *, *, notification, write
+p, owner, *, *, notification, delete
+p, admin, *, *, notification, read
+p, admin, *, *, notification, write
+p, manager, *, self, notification, read
+p, manager, *, self, notification, write
+
+# ──────────────────────────── Фаза A.2 — Prompt Templates ────────────────────────────
+# ResourceType: prompt_template.
+# super_admin — bypass. owner+admin Org — read системных + полный доступ к своим Org-шаблонам;
+# manager — read-only (видит шаблоны Org для понимания, какие AI-отчёты доступны).
+# Org-овнерство проверяется в сервисе по scope='org' AND orgId=tenantId.
+p, owner, *, *, prompt_template, read
+p, owner, *, *, prompt_template, write
+p, owner, *, *, prompt_template, delete
+p, admin, *, *, prompt_template, read
+p, admin, *, *, prompt_template, write
+p, admin, *, *, prompt_template, delete
+p, manager, *, *, prompt_template, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

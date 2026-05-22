@@ -1,26 +1,30 @@
 'use client';
 
+/**
+ * Фаза A.4 — `/admin/ai-models` главная страница.
+ *
+ * Таблица всех `taskType`-ов с цепочкой primary/secondary/tertiary.
+ * Группировка по: AI-конвейер встреч / База знаний / Паритет с конкурентами.
+ * Источник данных — `adminAiModelsApi.list()` (новый API).
+ *
+ * Все строки на русском (memory `feedback_admin_ui_russian_only`).
+ *
+ * Связанные страницы:
+ *   - `/admin/ai-models/[taskType]` — детальная карточка с метриками и audit.
+ *   - `/admin/ai-models/experiments` — A/B-эксперименты на моделях.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ArrowDown,
-  ArrowUp,
-  ExternalLink,
-  Loader2,
-  Plus,
-  Save,
-  Trash2,
-} from 'lucide-react';
+import Link from 'next/link';
+import { ExternalLink, Loader2, Search } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import {
-  adminLlmRoutesApi,
-  LLM_PROVIDERS,
-  LLM_TASK_TYPES,
-  type LlmProvider,
-  type LlmRouteProvider,
-  type LlmTaskType,
-} from '@/api/admin-llm-routes.api';
-import { taskTypeLabel } from '@/domain/admin-experiment';
+  AI_MODELS_GROUPS,
+  adminAiModelsApi,
+  type AiModelGroup,
+} from '@/api/admin-ai-models.api';
+import { mapTaskTypeRoute, type TaskTypeRouteUi } from '@/domain/admin-ai-model';
 import { useToast } from '@/contexts/toast-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -31,112 +35,102 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-type RouteState = {
-  providers: LlmRouteProvider[];
-  isActive: boolean;
-  dirty: boolean;
-  saving: boolean;
-};
 
 export function AiModelsClient() {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [routes, setRoutes] = useState<Record<LlmTaskType, RouteState>>(() =>
-    initialEmpty(),
-  );
+  const [items, setItems] = useState<TaskTypeRouteUi[]>([]);
+  const [groupFilter, setGroupFilter] = useState<'all' | AiModelGroup>('all');
+  const [search, setSearch] = useState('');
 
-  const fetchRoutes = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await adminLlmRoutesApi.list();
-      const map = initialEmpty();
-      for (const r of res.items) {
-        if ((LLM_TASK_TYPES as readonly string[]).includes(r.taskType)) {
-          map[r.taskType as LlmTaskType] = {
-            providers: r.providers,
-            isActive: r.isActive,
-            dirty: false,
-            saving: false,
-          };
-        }
-      }
-      setRoutes(map);
+      const res = await adminAiModelsApi.list({
+        ...(groupFilter !== 'all' ? { group: groupFilter } : {}),
+        ...(search ? { search } : {}),
+      });
+      setItems(res.items.map(mapTaskTypeRoute));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить роуты');
+      const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить модели';
+      setError(msg);
+      addToast({ type: 'error', message: msg });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [groupFilter, search, addToast]);
 
   useEffect(() => {
-    void fetchRoutes();
-  }, [fetchRoutes]);
+    void fetchData();
+  }, [fetchData]);
 
-  const updateRoute = useCallback(
-    (taskType: LlmTaskType, patch: Partial<RouteState>) => {
-      setRoutes((prev) => ({
-        ...prev,
-        [taskType]: { ...prev[taskType], ...patch, dirty: true },
-      }));
-    },
-    [],
-  );
-
-  const handleSave = async (taskType: LlmTaskType) => {
-    const state = routes[taskType];
-    if (state.providers.length === 0) {
-      addToast({ type: 'error', message: 'Нужен хотя бы один provider' });
-      return;
+  const grouped = useMemo(() => {
+    const map = new Map<string, TaskTypeRouteUi[]>();
+    for (const it of items) {
+      const list = map.get(it.group) ?? [];
+      list.push(it);
+      map.set(it.group, list);
     }
-    setRoutes((prev) => ({
-      ...prev,
-      [taskType]: { ...prev[taskType], saving: true },
-    }));
-    try {
-      await adminLlmRoutesApi.upsert(taskType, {
-        providers: state.providers,
-        isActive: state.isActive,
-      });
-      setRoutes((prev) => ({
-        ...prev,
-        [taskType]: { ...prev[taskType], dirty: false, saving: false },
-      }));
-      addToast({
-        type: 'success',
-        message: 'Сохранено. Применится через ~60 секунд (cache).',
-      });
-    } catch (e) {
-      setRoutes((prev) => ({
-        ...prev,
-        [taskType]: { ...prev[taskType], saving: false },
-      }));
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
-    }
-  };
+    return Array.from(map.entries());
+  }, [items]);
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          AI Models — маршрутизация LLM
-        </h1>
-        <p className="text-sm text-slate-600">
-          На каждый тип задачи — порядок провайдеров (fallback). Если первый недоступен —
-          используется следующий.
-        </p>
+    <div className="mx-auto max-w-6xl">
+      <header className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Модели агентов
+          </h1>
+          <p className="text-sm text-slate-600">
+            Цепочка моделей primary → secondary → tertiary для каждого AI-агента.
+            Источник дефолтов — playbook §2.1.
+          </p>
+        </div>
+        <Link href="/admin/ai-models/experiments">
+          <Button variant="secondary" size="sm">
+            A/B-эксперименты
+          </Button>
+        </Link>
       </header>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Поиск по taskType"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 w-64 rounded-md border border-slate-200 bg-white pl-7 pr-3 text-sm"
+          />
+        </div>
+        <Select
+          value={groupFilter}
+          onValueChange={(v) => setGroupFilter(v as 'all' | AiModelGroup)}
+        >
+          <SelectTrigger className="h-9 w-56 bg-white text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все группы</SelectItem>
+            {AI_MODELS_GROUPS.map((g) => (
+              <SelectItem key={g} value={g}>
+                {g === 'ai-pipeline'
+                  ? 'AI-конвейер встреч'
+                  : g === 'knowledge-core'
+                    ? 'База знаний'
+                    : 'Паритет с конкурентами'}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {loading && (
         <div className="flex items-center justify-center py-16 text-sm text-slate-500">
-          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
         </div>
       )}
 
@@ -146,191 +140,100 @@ export function AiModelsClient() {
         </div>
       )}
 
-      {!loading && !error && (
-        <ul className="space-y-3">
-          {LLM_TASK_TYPES.map((taskType) => (
-            <RouteCard
-              key={taskType}
-              taskType={taskType}
-              state={routes[taskType]}
-              onUpdate={(patch) => updateRoute(taskType, patch)}
-              onSave={() => void handleSave(taskType)}
-            />
-          ))}
-        </ul>
+      {!loading && !error && items.length === 0 && (
+        <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+          Пока нет ни одной записи. Запустите{' '}
+          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">
+            bun run scripts/seed-llm-task-routes-default.ts
+          </code>{' '}
+          на проде, чтобы применить дефолтные цепочки из playbook §2.1.
+        </div>
       )}
 
-      {/* Метрики */}
-      <div className="mt-8 rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-900">Метрики dispatch</h2>
-        <p className="mt-1 text-xs text-slate-600">
-          Метрика <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">llm_router_dispatch_total{`{task_type}`}</code>
-          {' '}доступна в Prometheus. Полные дашборды — в Grafana.
-        </p>
-        <a
-          href="/grafana"
-          target="_blank"
-          rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-        >
-          Открыть Grafana <ExternalLink size={11} />
-        </a>
-      </div>
+      {grouped.map(([group, list]) => (
+        <section key={group} className="mb-8">
+          <h2 className="mb-3 text-base font-semibold text-slate-900">
+            {list[0]?.groupLabel ?? group}
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              {list.length} агентов
+            </span>
+          </h2>
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Задача</th>
+                  <th className="px-3 py-2 text-left font-medium">Основная</th>
+                  <th className="px-3 py-2 text-left font-medium">Запасная</th>
+                  <th className="px-3 py-2 text-left font-medium">Локальная</th>
+                  <th className="w-24 px-3 py-2 text-right font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((row) => (
+                  <tr key={row.taskType} className="border-t border-slate-100">
+                    <td className="px-3 py-2">
+                      <code className="font-mono text-xs text-slate-700">{row.taskType}</code>
+                    </td>
+                    <td className="px-3 py-2">
+                      <TierBadge color="green" label="primary" entry={row.primary} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <TierBadge color="orange" label="secondary" entry={row.secondary} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <TierBadge color="gray" label="tertiary" entry={row.tertiary} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Link
+                        href={`/admin/ai-models/${encodeURIComponent(row.taskType)}`}
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                      >
+                        Подробно <ExternalLink size={11} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
 
-function RouteCard({
-  taskType,
-  state,
-  onUpdate,
-  onSave,
+function TierBadge({
+  color,
+  label,
+  entry,
 }: {
-  taskType: LlmTaskType;
-  state: RouteState;
-  onUpdate: (patch: Partial<RouteState>) => void;
-  onSave: () => void;
+  color: 'green' | 'orange' | 'gray';
+  label: string;
+  entry: TaskTypeRouteUi['primary'];
 }) {
-  const [newProvider, setNewProvider] = useState<LlmProvider>('anthropic');
-
-  const move = (idx: number, dir: -1 | 1) => {
-    const next = [...state.providers];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target], next[idx]];
-    onUpdate({ providers: next });
-  };
-
-  const remove = (idx: number) => {
-    onUpdate({ providers: state.providers.filter((_, i) => i !== idx) });
-  };
-
-  const add = () => {
-    if (state.providers.some((p) => p.provider === newProvider)) return;
-    onUpdate({ providers: [...state.providers, { provider: newProvider }] });
-  };
-
-  const availableNew = useMemo(
-    () =>
-      LLM_PROVIDERS.filter(
-        (p) => !state.providers.some((sp) => sp.provider === p),
-      ),
-    [state.providers],
-  );
-
-  return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex items-center gap-3">
-        <h3 className="text-base font-semibold text-slate-900">
-          {taskTypeLabel(taskType)}
-        </h3>
-        <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">
-          {taskType}
-        </code>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-slate-600">Активен</span>
-          <Switch
-            checked={state.isActive}
-            onCheckedChange={(v) => onUpdate({ isActive: v })}
-          />
-        </div>
-      </div>
-
-      <ul className="space-y-1">
-        {state.providers.length === 0 && (
-          <li className="rounded-md border border-dashed border-slate-200 p-3 text-center text-xs text-slate-500">
-            Нет провайдеров. Добавьте хотя бы один.
-          </li>
-        )}
-        {state.providers.map((p, idx) => (
-          <li
-            key={`${p.provider}-${idx}`}
-            className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-sm"
-          >
-            <Badge variant="secondary" className="text-[10px]">
-              #{idx + 1}
-            </Badge>
-            <span className="font-mono text-xs text-slate-900">{p.provider}</span>
-            {p.model && (
-              <span className="text-[11px] text-slate-500">model: {p.model}</span>
-            )}
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                className={cn(
-                  'rounded p-1 text-slate-500 hover:bg-slate-200 disabled:opacity-30',
-                )}
-                disabled={idx === 0}
-                onClick={() => move(idx, -1)}
-                aria-label="Выше"
-              >
-                <ArrowUp size={12} />
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  'rounded p-1 text-slate-500 hover:bg-slate-200 disabled:opacity-30',
-                )}
-                disabled={idx === state.providers.length - 1}
-                onClick={() => move(idx, 1)}
-                aria-label="Ниже"
-              >
-                <ArrowDown size={12} />
-              </button>
-              <button
-                type="button"
-                className="rounded p-1 text-slate-500 hover:bg-red-100 hover:text-red-600"
-                onClick={() => remove(idx)}
-                aria-label="Удалить"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <div className="mt-3 flex items-center gap-2">
-        {availableNew.length > 0 && (
-          <>
-            <Select
-              value={newProvider}
-              onValueChange={(v) => setNewProvider(v as LlmProvider)}
-            >
-              <SelectTrigger className="h-8 w-48 bg-white text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {availableNew.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button size="sm" variant="secondary" onClick={add}>
-              <Plus size={12} /> Добавить provider
-            </Button>
-          </>
-        )}
-        <Button
-          size="sm"
-          className="ml-auto"
-          onClick={onSave}
-          disabled={!state.dirty || state.saving}
-        >
-          {state.saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-          Сохранить
-        </Button>
-      </div>
-    </li>
-  );
-}
-
-function initialEmpty(): Record<LlmTaskType, RouteState> {
-  const r = {} as Record<LlmTaskType, RouteState>;
-  for (const t of LLM_TASK_TYPES) {
-    r[t] = { providers: [], isActive: true, dirty: false, saving: false };
+  if (!entry) {
+    return (
+      <span className="text-xs text-slate-400">— не задана —</span>
+    );
   }
-  return r;
+  const colorClass =
+    color === 'green'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : color === 'orange'
+        ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
+  return (
+    <div className="flex flex-col gap-1">
+      <Badge variant="outline" className={`w-fit border ${colorClass} text-[10px]`}>
+        {label}
+      </Badge>
+      <div className="text-xs">
+        <span className="font-medium text-slate-900">{entry.providerLabel}</span>
+        {entry.model && (
+          <span className="ml-1 text-slate-500">/ {entry.model}</span>
+        )}
+      </div>
+    </div>
+  );
 }

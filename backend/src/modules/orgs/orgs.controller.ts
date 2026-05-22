@@ -12,8 +12,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
+import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { TranscriptCleaningService } from '../ai/services/transcript-cleaning.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
@@ -23,6 +25,13 @@ import { UpdateMemberSchema, type UpdateMemberDto } from './dto/update-member.dt
 import { UpdateOrgSchema, type UpdateOrgDto } from './dto/update-org.dto';
 import { OrgInvitationsService } from './org-invitations.service';
 import { OrgsService } from './orgs.service';
+
+/**
+ * Фаза D — PATCH /api/v1/orgs/:id/settings/transcript-cleaning.
+ * Тело — { auto: boolean }. Только owner/admin (проверка в сервисе).
+ */
+const PatchTranscriptCleaningSchema = z.object({ auto: z.boolean() });
+type PatchTranscriptCleaningDto = z.infer<typeof PatchTranscriptCleaningSchema>;
 
 /**
  * Org / Membership / Invitation API.
@@ -38,6 +47,8 @@ export class OrgsController {
   constructor(
     @Inject(OrgsService) private readonly orgs: OrgsService,
     @Inject(OrgInvitationsService) private readonly invitations: OrgInvitationsService,
+    @Inject(TranscriptCleaningService)
+    private readonly transcriptCleaning: TranscriptCleaningService,
   ) {}
 
   @Post()
@@ -76,6 +87,25 @@ export class OrgsController {
   ) {
     const org = await this.orgs.update(id, user.id, body);
     return { org };
+  }
+
+  /**
+   * Фаза D (sub-TZ §8.3) — настройка автозапуска очистки транскрипта.
+   * При auto=true новые встречи получают cleaning автоматически после ai.merge.
+   * При auto=false — только по ручному `POST .../transcript/clean`.
+   */
+  @Patch(':id/settings/transcript-cleaning')
+  async setTranscriptCleaningAuto(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(PatchTranscriptCleaningSchema))
+    body: PatchTranscriptCleaningDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ auto: boolean }> {
+    return this.transcriptCleaning.setAuto({
+      orgId: id,
+      userId: user.id,
+      auto: body.auto,
+    });
   }
 
   @Get(':id/members')

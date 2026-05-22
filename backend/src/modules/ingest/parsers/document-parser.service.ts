@@ -109,11 +109,10 @@ export class DocumentParserService {
 
   private async parsePdf(buffer: Buffer): Promise<ParseResult> {
     try {
-      // Динамический импорт — см. JSDoc класса. ts-expect-error на случай,
-      // если пакет ещё не установлен в окружении (например, во время
-      // typecheck'а до `bun install`). В рантайме `bun install` ставит
-      // `pdf-parse` и импорт резолвится нормально.
-      // @ts-expect-error — `pdf-parse` подключается динамически
+      // Динамический импорт — см. JSDoc класса. Пакет может быть не
+      // установлен в окружении до `bun install`; в рантайме после установки
+      // импорт резолвится. Cast через `unknown` достаточен — `@ts-ignore`
+      // выше становится unused после установки типов.
       const mod = (await import('pdf-parse')) as unknown as {
         PDFParse?: new (opts: { data: Buffer | Uint8Array }) => {
           getText: () => Promise<{
@@ -190,7 +189,6 @@ export class DocumentParserService {
 
   private async parseDocx(buffer: Buffer): Promise<ParseResult> {
     try {
-      // @ts-expect-error — `mammoth` подключается динамически
       const mod = (await import('mammoth')) as unknown as {
         extractRawText: (input: {
           buffer: Buffer;
@@ -240,7 +238,6 @@ export class DocumentParserService {
 
   private async parseMarkdown(content: string): Promise<ParseResult> {
     try {
-      // @ts-expect-error — `marked` подключается динамически
       const mod = (await import('marked')) as unknown as {
         marked: {
           parse: (md: string) => string | Promise<string>;

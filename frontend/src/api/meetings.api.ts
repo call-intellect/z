@@ -100,6 +100,17 @@ export type TranscriptApiResponse = {
   url: string;
   expiresAt: string;
   durationSeconds: number | null;
+  /** Фаза D — true если URL ведёт на cleaned.json, false — на оригинал merged.json. */
+  cleaned?: boolean;
+};
+
+/**
+ * Фаза D — ответ POST /meetings/:id/transcript/clean.
+ * - `queued` — job встал в очередь;
+ * - `already_clean` — cleaning уже готов, повторно не запускали.
+ */
+export type CleanTranscriptApiResponse = {
+  status: 'queued' | 'already_clean';
 };
 
 // ─────────────────── helpers ──────────────────
@@ -234,8 +245,19 @@ export const meetingsApi = {
       `/api/v1/meetings/${encodeURIComponent(id)}/result/status`,
     ),
 
-  transcript: (id: string) =>
+  transcript: (id: string, opts?: { cleaned?: boolean }) =>
     apiClient.get<TranscriptApiResponse>(
-      `/api/v1/meetings/${encodeURIComponent(id)}/transcript`,
+      `/api/v1/meetings/${encodeURIComponent(id)}/transcript${
+        opts?.cleaned ? '?cleaned=true' : ''
+      }`,
+    ),
+
+  /**
+   * Фаза D — запустить очистку транскрипта от слов-паразитов.
+   * Rate-limit на сервере: 1 в час на пользователя.
+   */
+  cleanTranscript: (id: string) =>
+    apiClient.post<CleanTranscriptApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/transcript/clean`,
     ),
 };

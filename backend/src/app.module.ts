@@ -16,6 +16,8 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorkersModule } from './modules/ai/workers.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
+import { QualityScoreModule } from './modules/quality-score/quality-score.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
 import { HealthModule } from './modules/health/health.module';
 import { HighlightsModule } from './modules/highlights/highlights.module';
@@ -24,6 +26,7 @@ import { EntitlementGuard } from './modules/entitlements/entitlement.guard';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
 import { MailModule } from './modules/mail/mail.module';
+import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
@@ -40,6 +43,7 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { ConversationalModule } from './modules/conversational/conversational.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 // Phase 0a — структура компании (группа А) + дополнительные эндпоинты.
@@ -197,6 +201,16 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // CRM-структура встреч: карточки.
     CardsModule,
 
+    // Фаза B — поведенческие метрики (HTTP endpoints; воркер живёт в WorkersModule).
+    BehaviorMetricsModule,
+
+    // Фаза C — AI-оценка качества встречи (HTTP endpoints; воркер — в WorkersModule).
+    QualityScoreModule,
+
+    // Фаза E — несколько AI-отчётов на одну встречу (HTTP endpoints;
+    // воркер ai.custom-report — в WorkersModule).
+    MeetingReportsModule,
+
     // Фаза 0b knowledge-core — Document-ingest pipeline. HTTP API
     // /api/v1/documents + multipart upload + текстовый дамп. Воркеры
     // (document.adapter, text.adapter) живут в WorkersModule.
@@ -252,6 +266,13 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Phase 0a.3 — GET /api/v1/me/profile (Person + Role + Department +
     // RoleProfile в контексте текущей Org).
     MeModule,
+
+    // SBA α-1 — Conversational Channels Foundation.
+    // @Global модуль (Channel/Notification/Delivery), используется Layer 4
+    // (curation), Layer 5 (chat-v2 inbound), Layer 6 (probe-agent). Регистрируется
+    // ПОСЛЕ MailModule и IngestModule, потому что адаптеры инжектят MailService
+    // и ConversationalIngestAdapter — IngestService.
+    ConversationalModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

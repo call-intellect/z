@@ -78,6 +78,26 @@ BEGIN
   END IF;
 END $$;
 
+-- 3c. Фаза E — partial unique на MeetingReport: запрет двух pending/running
+--     отчётов с одним и тем же `promptTemplateId` в рамках одной встречи.
+--     Prisma `@@unique` не поддерживает WHERE-условие, поэтому индекс
+--     создаётся вручную здесь. Идемпотентно через `IF NOT EXISTS`.
+--     См. plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md §4.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'MeetingReport'
+  ) THEN
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS meeting_report_pending_unique
+      ON "MeetingReport" ("meetingId", "promptTemplateId")
+      WHERE status IN ('pending', 'running')
+    $sql$;
+  END IF;
+END $$;
+
 -- 4. ts_vector для гибридного поиска IdeaBlock (search API Шаг 5 Фазы 2).
 --    Колонка GENERATED ALWAYS — авто-обновление при INSERT/UPDATE.
 --    Веса: name=A, criticalQuestion=B, trustedAnswer=C.

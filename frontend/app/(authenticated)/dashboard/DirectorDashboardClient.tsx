@@ -44,6 +44,7 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
+import { QualityScoreWidget } from './widgets/QualityScoreWidget';
 import { StrategicAlignmentWidget } from './widgets/StrategicAlignmentWidget';
 import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
 
@@ -183,6 +184,8 @@ export function DirectorDashboardClient() {
           data={data?.strategicAlignment}
           loading={loading}
         />
+        {/* Фаза C — карточка «Качество встреч» (только owner/admin; backend защищает 403). */}
+        <QualityScoreWidget />
       </div>
 
       <section className="mt-8">

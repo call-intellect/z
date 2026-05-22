@@ -277,6 +277,22 @@ const AiFeatureFlagsSchema = z.object({
    * См. ТЗ meeting-room-chat §AI-pipeline.
    */
   INCLUDE_ROOM_CHAT_IN_AI: zBool(true),
+  /**
+   * Фаза D (sub-TZ 2026-05-21-phase-D-transcript-cleaning §6.2) —
+   * Включает уровень 2 LLM-уточнения в воркере `ai.transcript-clean`.
+   * По умолчанию `true` — LLM-refine дешёвый (~$0.05 на 100 мин)
+   * и заметно улучшает качество. При `false` — воркер работает только
+   * через детерминистский уровень 1 (словарь + повторы), это всегда корректно.
+   */
+  TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED: zBool(true),
+  /**
+   * Фаза B (sub-TZ 2026-05-21-phase-B-meeting-behavior-metrics §7) —
+   * Включает LLM-refine в воркере `ai.behavior-metrics` (классификация
+   * filler-кандидатов и question-кандидатов). По умолчанию `false` —
+   * детерминистского достаточно для MVP паритета; включаем после пилотных
+   * оценок (B DoD §11).
+   */
+  BEHAVIOR_METRICS_LLM_REFINE_ENABLED: zBool(false),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */
@@ -545,6 +561,33 @@ const ShareSchema = z.object({
 });
 
 /**
+ * SBA α-1 — Conversational Channels Foundation.
+ * Параметры outbound-очереди, link-кодов, anti-spam дефолтов.
+ *
+ *   - CONVERSATIONAL_OUTBOUND_CONCURRENCY — concurrency BullMQ-воркера,
+ *     отправляющего notifications в каналы.
+ *   - CONVERSATIONAL_LINK_CODE_TTL_SEC — TTL одноразового кода для linking-
+ *     flow (10 минут по умолчанию; код хранится в Redis).
+ *   - CONVERSATIONAL_QUIET_HOURS_DEFAULT — дефолтное окно «тихих часов»
+ *     в формате `HH:mm-HH:mm` (применяется в локали пользователя; для α-1
+ *     — серверная TZ, локализация в β+).
+ *   - CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR — дефолтный лимит
+ *     не-критических нотификаций в час на пользователя.
+ *   - CONVERSATIONAL_EMAIL_FROM_DEFAULT — From-адрес для каналов
+ *     email_smtp; если пусто — берётся `MAIL_FROM`.
+ *   - CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS — потолок retry'ев outbound-
+ *     воркера на одну `NotificationDelivery`.
+ */
+const ConversationalSchema = z.object({
+  CONVERSATIONAL_OUTBOUND_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  CONVERSATIONAL_LINK_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
+  CONVERSATIONAL_QUIET_HOURS_DEFAULT: z.string().default('22:00-08:00'),
+  CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR: z.coerce.number().int().positive().default(10),
+  CONVERSATIONAL_EMAIL_FROM_DEFAULT: z.string().default(''),
+  CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS: z.coerce.number().int().positive().default(5),
+});
+
+/**
  * Полная схема — слияние всех групп.
  */
 export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
@@ -580,7 +623,8 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(EmailFetchSchema)
   .merge(KnowledgeCoreSchema)
   .merge(DocumentIngestSchema)
-  .merge(ExtractionSchema);
+  .merge(ExtractionSchema)
+  .merge(ConversationalSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

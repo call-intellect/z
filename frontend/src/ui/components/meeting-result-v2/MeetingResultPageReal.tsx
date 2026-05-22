@@ -28,6 +28,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Files,
   FileText,
   ListChecks,
   Loader2,
@@ -68,6 +69,9 @@ import type { MeetingDomain } from '@/domain/meeting';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
 
+import { MeetingBehaviorSection } from '@/ui/components/behavior-metrics/MeetingBehaviorSection';
+import { MeetingQualityScoreSection } from '@/ui/components/quality-score/MeetingQualityScoreSection';
+
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
 import { Skeleton } from '@/ui/shadcn/skeleton';
@@ -91,8 +95,10 @@ import {
 import { toast } from '@/ui/shadcn/toast';
 import { cn } from '@/ui/shadcn/lib/utils';
 
+import { FeedbackButton } from './FeedbackButton';
 import { MeetingPlayer } from './MeetingPlayer';
 import { MeetingChatPanel } from './MeetingChatPanel';
+import { ReportsTab } from './ReportsTab';
 import { ShareDialog } from './ShareDialog';
 import { HighlightCreatorDialog } from './HighlightCreatorDialog';
 import { fmtTime, fmtDurationCompact } from './format-utils';
@@ -109,7 +115,14 @@ const MEETING_TYPE_LABELS: Record<string, string> = {
   customer_success: 'Customer Success',
 };
 
-type TabKey = 'overview' | 'chapters' | 'transcript' | 'chat' | 'tasks' | 'notes';
+type TabKey =
+  | 'overview'
+  | 'reports'
+  | 'chapters'
+  | 'transcript'
+  | 'chat'
+  | 'tasks'
+  | 'notes';
 
 export type MeetingResultPageRealProps = {
   meetingId: string;
@@ -228,6 +241,10 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
               <FileText size={14} strokeWidth={1.75} />
               Обзор
             </TabsTrigger>
+            <TabsTrigger value="reports">
+              <Files size={14} strokeWidth={1.75} />
+              Отчёты
+            </TabsTrigger>
             <TabsTrigger value="chapters">
               <Circle size={14} strokeWidth={1.75} />
               Главы
@@ -284,8 +301,24 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   tasksCount={tasks.length}
                   highlightsCount={highlights.length}
                 />
+                {/* Фаза A.3 — Кнопка обратной связи 👍/👎 на AI-отчёт. */}
+                <div className="mt-4">
+                  <FeedbackButton meetingId={meetingId} />
+                </div>
+                {/* Фаза C — AI-оценка качества встречи (ПОСЛЕ AI-отчёта, ПЕРЕД поведением). Видна только хосту/org-admin: backend возвращает 403 для остальных, секция автоматически скрывается. */}
+                <div className="mt-6">
+                  <MeetingQualityScoreSection meetingId={meetingId} />
+                </div>
+                {/* Фаза B — Поведение участников (рядом с summary). */}
+                <div className="mt-6">
+                  <MeetingBehaviorSection meetingId={meetingId} />
+                </div>
               </motion.div>
             </AnimatePresence>
+          </TabsContent>
+
+          <TabsContent value="reports">
+            <ReportsTab meetingId={meetingId} />
           </TabsContent>
 
           <TabsContent value="chapters">
@@ -1044,17 +1077,85 @@ function ChaptersTab({
 }
 
 function TranscriptTab({ meetingId }: { meetingId: string }) {
-  const { data, error, isLoading } = useSWR(
-    ['transcript', meetingId],
-    () => meetingsApi.transcript(meetingId),
+  // Фаза D — toggle «Очистить от слов-паразитов». При cleaned=true дёргаем
+  // ?cleaned=true. Если cleaning ещё не готов — backend возвращает 404,
+  // мы трактуем это как «нужно нажать «Очистить»». Кнопка делает POST .../clean,
+  // после успеха пользователь нажмёт toggle ещё раз через 30-60 сек.
+  const [cleaned, setCleaned] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+
+  const { data, error, isLoading, mutate } = useSWR(
+    ['transcript', meetingId, cleaned],
+    () => meetingsApi.transcript(meetingId, { cleaned }),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
+
+  const onRequestClean = async () => {
+    setCleaning(true);
+    try {
+      const res = await meetingsApi.cleanTranscript(meetingId);
+      if (res.status === 'queued') {
+        toast.success('Очистка транскрипта запущена. Готово через 30–60 секунд.');
+      } else {
+        toast.success('Транскрипт уже очищен. Включаю режим «без слов-паразитов».');
+        setCleaned(true);
+        void mutate();
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        // Backend возвращает code = 'http_409' / 'http_429' (см. api-client.ts).
+        if (e.code === 'http_409') {
+          toast.error('Очистка уже идёт — подождите 30–60 секунд.');
+        } else if (e.code === 'http_429') {
+          toast.error('Лимит: одна очистка в час. Попробуйте позже.');
+        } else {
+          toast.error(e.message);
+        }
+      } else {
+        toast.error('Не удалось запустить очистку');
+      }
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   if (isLoading) {
     return (
       <Card>
         <Skeleton className="h-4 w-full" />
         <Skeleton className="mt-2 h-4 w-3/4" />
+      </Card>
+    );
+  }
+
+  // Cleaned-режим запрошен, но ещё не готов на сервере → показываем кнопку «Очистить».
+  const cleanedNotReady =
+    cleaned && error instanceof ApiError && error.code === 'http_404';
+
+  if (cleanedNotReady) {
+    return (
+      <Card>
+        <CardHeader
+          title="Транскрипт"
+          accessory={
+            <TranscriptCleanedToggle cleaned={cleaned} onChange={setCleaned} />
+          }
+        />
+        <div className="flex flex-col items-start gap-3 py-2">
+          <p className="text-sm text-fg-secondary">
+            Очищенный транскрипт ещё не готов. Запустите очистку — она занимает 30–60 секунд
+            и удалит из текста слова-паразиты, повторы и незавершённые фразы. Оригинал
+            остаётся без изменений.
+          </p>
+          <Button
+            size="sm"
+            onClick={() => void onRequestClean()}
+            disabled={cleaning}
+          >
+            <Scissors size={13} />
+            {cleaning ? 'Запускаю…' : 'Очистить от слов-паразитов'}
+          </Button>
+        </div>
       </Card>
     );
   }
@@ -1074,19 +1175,62 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
       <CardHeader
         title="Транскрипт"
         accessory={
-          <Button asChild variant="outline" size="sm">
-            <a href={data.url} target="_blank" rel="noopener noreferrer">
-              <Download size={13} />
-              Скачать .json
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <TranscriptCleanedToggle cleaned={cleaned} onChange={setCleaned} />
+            <Button asChild variant="outline" size="sm">
+              <a href={data.url} target="_blank" rel="noopener noreferrer">
+                <Download size={13} />
+                Скачать .json
+              </a>
+            </Button>
+          </div>
         }
       />
       <p className="text-sm text-fg-secondary">
-        Полный merged-транскрипт хранится в S3 и доступен по presigned-ссылке (срок: до{' '}
-        {new Date(data.expiresAt).toLocaleString('ru-RU')}).
+        {data.cleaned ? (
+          <>
+            Показан очищенный транскрипт без слов-паразитов и повторов. Оригинал доступен
+            при выключенном переключателе. Срок действия ссылки: до{' '}
+            {new Date(data.expiresAt).toLocaleString('ru-RU')}.
+          </>
+        ) : (
+          <>
+            Полный оригинальный транскрипт хранится в S3 и доступен по временной ссылке
+            (срок: до {new Date(data.expiresAt).toLocaleString('ru-RU')}).
+          </>
+        )}
       </p>
     </Card>
+  );
+}
+
+/**
+ * Маленький переключатель «Очистить от слов-паразитов». Без отдельного UI-kit
+ * компонента toggle — реализуем как кнопку с aria-pressed, чтобы не зависеть
+ * от наличия Radix Switch в проекте.
+ */
+function TranscriptCleanedToggle({
+  cleaned,
+  onChange,
+}: {
+  cleaned: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={cleaned}
+      onClick={() => onChange(!cleaned)}
+      className={
+        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ' +
+        (cleaned
+          ? 'border-accent-border bg-accent-muted text-accent'
+          : 'border-border-subtle bg-bg-base text-fg-secondary hover:border-accent-border hover:text-accent')
+      }
+    >
+      <Scissors size={12} />
+      {cleaned ? 'Без слов-паразитов' : 'Очистить от слов-паразитов'}
+    </button>
   );
 }
 

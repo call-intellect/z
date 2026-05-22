@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { type AiResult, type Meeting, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -16,6 +16,8 @@ import { AiUsageLogService } from '../services/ai-usage-log.service';
 import { LlmFallbackService } from '../services/llm-fallback.service';
 import type { LlmCompleteOutput, LlmTool } from '../services/llm.types';
 import { calcCostUsd } from '../services/model-prices';
+import { PromptResolverService } from '../services/prompt-resolver.service';
+import type { ResolvedPrompt } from '../services/prompt-resolver.types';
 import {
   FOLLOW_UP_SCHEMA,
   FOLLOW_UP_TOOL,
@@ -73,6 +75,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(MeetingIngestAdapter) private readonly meetingIngest: MeetingIngestAdapter,
+    // Фаза A.1 — PromptResolver. Optional: в существующих unit-тестах analyze.worker
+    // его нет, и поведение должно остаться идентичным (code-fallback через
+    // getPromptForType). Если резолвер инжектится — используем его и сохраняем
+    // promptTemplateVersionId в AiResult.
+    @Optional()
+    @Inject(PromptResolverService)
+    private readonly promptResolver?: PromptResolverService,
   ) {}
 
   onModuleInit(): void {
@@ -204,6 +213,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           structuredData: data.json as Prisma.InputJsonValue,
           modelUsed: data.model,
           customOutputMd: null,
+          // Фаза A.1 — если PromptResolver резолвил через БД, фиксируем
+          // версию шаблона в AiResult.promptTemplateVersionId; для
+          // code-fallback оставляем NULL (как и было до A.1).
+          ...(data.promptTemplateVersionId
+            ? { promptTemplateVersionId: data.promptTemplateVersionId }
+            : {}),
+          ...(data.experimentGroup ? { experimentGroup: data.experimentGroup } : {}),
         },
       });
       this.metrics.observeAiPipelineDuration({
@@ -357,6 +373,19 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         );
     }
 
+    // 13. Фаза C — quality-score. Ставим job в очередь ai.quality-score
+    //     после ai_ready. Сам воркер внутри проверит skip-условия
+    //     (тип в org.qualityScoreDisabledForTypes / duration < 3 мин)
+    //     и при необходимости пометит встречу как 'disabled'. Идемпотентный
+    //     jobId `quality:<meetingId>` — повторный analyze не создаст дубль.
+    await this.queue
+      .enqueueQualityScore(meetingId)
+      .catch((err) =>
+        this.logger.warn(
+          `analyze: enqueueQualityScore упал: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+
     this.logger.log(
       { meetingId, type: meeting.type, model: aiResult.modelUsed, cardId: meeting.cardId ?? null },
       'analyze: успешно — notify + post-analyze jobs поставлены',
@@ -445,46 +474,77 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     dialog: DialogTurn[];
     roomChat?: RoomChatMessage[];
     jobId: string | null;
-  }): Promise<{ json: unknown; model: string }> {
+  }): Promise<{
+    json: unknown;
+    model: string;
+    promptTemplateVersionId: string | null;
+    experimentGroup: string | null;
+  }> {
+    // Фаза A.1: PromptResolver выбирает источник промпта (БД → code-fallback).
+    // Если резолвер инжектнут — спрашиваем его; при source='code_fallback' или
+    // если резолвер вообще не подключён (старые unit-тесты), идём по существующему
+    // пути через `getPromptForType` и сохраняем 1:1 поведение. Это критично для
+    // side-by-side compatibility (см. ТЗ A.1 §15 «Регрессия качества»).
+    const resolved = await this.tryResolvePrompt(args.meeting);
     const descriptor = getPromptForType(args.meeting.type);
-    const prompt = descriptor.buildPrompt({
+
+    // Источник промпта решает, что подать в LLM:
+    //  - code_fallback → используем descriptor.buildPrompt как раньше (с roomChat-обёрткой);
+    //  - db_org/db_system → systemPrompt берём из БД, user-составляющую формируем
+    //    тем же способом (turns + room-chat), потому что user — это транскрипт,
+    //    он не зависит от шаблона.
+    const codeBuilt = descriptor.buildPrompt({
       meeting: { ...args.meeting },
       dialog: args.dialog,
       roomChat: args.roomChat,
     });
+    const useDb = resolved && resolved.source !== 'code_fallback';
+    const systemText = useDb
+      ? resolved!.systemPrompt + (args.roomChat && args.roomChat.length > 0 ? `\n\n${ROOM_CHAT_SYSTEM_NOTE}` : '')
+      : codeBuilt.system;
+    const tool: LlmTool = useDb
+      ? {
+          name: resolved!.toolName ?? descriptor.toolName,
+          description: resolved!.toolDescription ?? descriptor.tool.description,
+          input_schema: resolved!.outputSchema,
+        }
+      : descriptor.tool;
+    const expectedToolName = useDb ? (resolved!.toolName ?? descriptor.toolName) : descriptor.toolName;
+    const promptTemplateVersionId = resolved?.versionId ?? null;
+    const experimentGroup = resolved?.experimentGroup ?? null;
 
     let lastError: unknown = null;
     let model = 'unknown';
     for (let attempt = 0; attempt < 3; attempt++) {
       const userExtra =
         attempt === 0
-          ? prompt.user
-          : `${prompt.user}\n\nНа предыдущей попытке ответ не прошёл валидацию по схеме. Верни корректный объект, точно соответствующий схеме инструмента \`${descriptor.toolName}\`.`;
+          ? codeBuilt.user
+          : `${codeBuilt.user}\n\nНа предыдущей попытке ответ не прошёл валидацию по схеме. Верни корректный объект, точно соответствующий схеме инструмента \`${expectedToolName}\`.`;
       const out = await this.callLlm({
         meeting: args.meeting,
         jobId: args.jobId,
         agentType: 'report-by-type',
-        promptName: descriptor.toolName,
+        promptName: expectedToolName,
         input: {
-          system: { text: prompt.system, cacheControl: 'ephemeral' },
+          system: { text: systemText, cacheControl: 'ephemeral' },
           user: userExtra,
-          tools: [descriptor.tool],
+          tools: [tool],
         },
       });
       model = out.model;
-      const candidate = pickToolInput(out, descriptor.toolName);
+      const candidate = pickToolInput(out, expectedToolName);
       if (candidate === null) {
         lastError = new Error('LLM не вызвал tool');
         continue;
       }
       const parsed = descriptor.schema.safeParse(candidate);
       if (parsed.success) {
-        return { json: parsed.data, model };
+        return { json: parsed.data, model, promptTemplateVersionId, experimentGroup };
       }
       lastError = parsed.error;
       this.logger.warn(
         { meetingId: args.meeting.id, attempt },
-        `analyze: invalid JSON по схеме (${descriptor.toolName}); ретрай`,
+        `analyze: invalid JSON по схеме (${expectedToolName}); ретрай`,
       );
     }
     throw new Error(
@@ -492,6 +552,32 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         lastError instanceof Error ? lastError.message : String(lastError)
       }`,
     );
+  }
+
+  /**
+   * Фаза A.1: безопасный вызов PromptResolver. Если резолвер не подключён
+   * (старые тесты) или у встречи нет orgId — возвращает null. Никогда не
+   * бросает: при ошибке резолвера логирует warn и возвращает null
+   * (caller использует code-fallback через getPromptForType).
+   */
+  private async tryResolvePrompt(meeting: Meeting): Promise<ResolvedPrompt | null> {
+    if (!this.promptResolver) return null;
+    const tenantId = (meeting as unknown as { tenantId?: string | null }).tenantId;
+    if (!tenantId) return null;
+    try {
+      return await this.promptResolver.resolveForMeeting({
+        tenantId,
+        meetingId: meeting.id,
+        meetingType: meeting.type,
+        taskType: 'summary',
+      });
+    } catch (e) {
+      this.logger.warn(
+        { meetingId: meeting.id, err: e instanceof Error ? e.message : String(e) },
+        'analyze: PromptResolver упал — используем code-fallback через getPromptForType',
+      );
+      return null;
+    }
   }
 
   private async runFollowUp(args: {

@@ -32,7 +32,9 @@ export type FeatureKey =
   | 'feature.public_api'
   | 'feature.export_advanced'
   | 'feature.goals_strategy'
-  | 'feature.strict_visibility';
+  | 'feature.strict_visibility'
+  // Фаза E — несколько AI-отчётов на одну встречу. См. backend tier-config.
+  | 'feature.multi_reports_per_meeting';
 
 export type QuotaKey =
   | 'meetings_per_month'
@@ -41,7 +43,9 @@ export type QuotaKey =
   | 'sources_meeting'
   | 'sources_other'
   | 'ingest_bytes_per_month'
-  | 'links_per_day';
+  | 'links_per_day'
+  // Фаза E — лимит дополнительных отчётов на встречу.
+  | 'multi_reports_limit_per_meeting';
 
 export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.meeting',
@@ -60,6 +64,7 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.export_advanced',
   'feature.goals_strategy',
   'feature.strict_visibility',
+  'feature.multi_reports_per_meeting',
 ] as const;
 
 export const ALL_QUOTAS: readonly QuotaKey[] = [
@@ -70,6 +75,7 @@ export const ALL_QUOTAS: readonly QuotaKey[] = [
   'sources_other',
   'ingest_bytes_per_month',
   'links_per_day',
+  'multi_reports_limit_per_meeting',
 ] as const;
 
 export const ALL_TIERS: readonly TierKey[] = [
@@ -104,6 +110,7 @@ export const FEATURE_MIN_TIER: Record<FeatureKey, TierKey> = {
   'feature.export_advanced': 'tier_pro',
   'feature.goals_strategy': 'tier_enterprise',
   'feature.strict_visibility': 'tier_enterprise',
+  'feature.multi_reports_per_meeting': 'tier_pro',
 };
 
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
@@ -123,6 +130,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   'feature.export_advanced': 'Расширенные экспорты',
   'feature.goals_strategy': 'Цели и стратегия',
   'feature.strict_visibility': 'Строгая видимость / приватность',
+  'feature.multi_reports_per_meeting': 'Несколько отчётов на встречу',
 };
 
 export const QUOTA_LABELS: Record<QuotaKey, string> = {
@@ -133,6 +141,7 @@ export const QUOTA_LABELS: Record<QuotaKey, string> = {
   sources_other: 'Источников остальных типов',
   ingest_bytes_per_month: 'Объём загрузки в месяц',
   links_per_day: 'AI-связей в день',
+  multi_reports_limit_per_meeting: 'Доп. отчётов на встречу',
 };
 
 /** True — если строка корректный TierKey. */

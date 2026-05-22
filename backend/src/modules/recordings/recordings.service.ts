@@ -83,10 +83,19 @@ export class RecordingsService {
 
     const compositeOutputKey = compositeKey(meetingId);
 
+    this.logger.debug(
+      { meetingId, compositeOutputKey, bucket: this.cfg.s3.bucket, retentionDays },
+      'Recording start: запускаем composite egress',
+    );
+
     // Сначала запускаем egress (потенциально может упасть — не плодим Recording).
     const egressResult = await this.egress.startRoomCompositeEgress(
       { id: meetingId },
       { bucket: this.cfg.s3.bucket, key: compositeOutputKey },
+    );
+    this.logger.debug(
+      { meetingId, egressId: egressResult.egressId, compositeOutputKey },
+      'Recording start: composite egress запущен',
     );
 
     // Создаём/обновляем Recording в одной транзакции с RecordingAction.
@@ -237,6 +246,11 @@ export class RecordingsService {
 
     const trackKey = audioTrackKey(meeting.id, participant.identity);
 
+    this.logger.debug(
+      { meetingId: meeting.id, identity: participant.identity, trackSid: track.sid, trackKey },
+      'ensureTrackEgress: запускаем track egress',
+    );
+
     let egressId: string | null = null;
     try {
       const result = await this.egress.startTrackEgress(meeting, track.sid, {
@@ -244,6 +258,10 @@ export class RecordingsService {
         key: trackKey,
       });
       egressId = result.egressId;
+      this.logger.debug(
+        { meetingId: meeting.id, identity: participant.identity, egressId, trackKey },
+        'ensureTrackEgress: track egress запущен',
+      );
     } catch (err) {
       this.logger.error(
         {
@@ -317,6 +335,49 @@ export class RecordingsService {
     _partnerId: string,
   ): Promise<{ url: string; expiresAt: Date }> {
     return this.presignComposite(meetingId);
+  }
+
+  /**
+   * Presigned-ссылки на per-participant OGG-аудиодорожки.
+   * Доступно только host'у. Если записи нет — возвращает пустой массив.
+   */
+  async getAudioTracks(
+    meetingId: string,
+    userId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      participantName: string;
+      livekitIdentity: string;
+      durationSeconds: number;
+      url: string;
+      expiresAt: string;
+    }>
+  > {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== userId) throw new NotAuthorizedError('not_meeting_host');
+
+    const recording = await this.prisma.recording.findUnique({
+      where: { meetingId },
+      include: { audioTracks: true },
+    });
+    if (!recording || recording.audioTracks.length === 0) return [];
+
+    return Promise.all(
+      recording.audioTracks.map(async (track) => {
+        const key = extractKeyFromUrl(track.audioUrl, this.cfg.s3.bucket);
+        const { url, expiresAt } = await this.s3.presignGet(key);
+        return {
+          id: track.id,
+          participantName: track.participantName,
+          livekitIdentity: track.livekitIdentity,
+          durationSeconds: track.durationSeconds,
+          url,
+          expiresAt: expiresAt.toISOString(),
+        };
+      }),
+    );
   }
 
   /**
@@ -441,6 +502,11 @@ export class RecordingsService {
       return { status: 'failed', allReady: false };
     }
 
+    this.logger.debug(
+      { meetingId, url: payload.url, bytes: payload.bytes, durationSeconds: payload.durationSeconds },
+      'onCompositeEnded: сохраняем данные composite в БД',
+    );
+
     await this.prisma.recording.update({
       where: { meetingId },
       data: {
@@ -479,6 +545,11 @@ export class RecordingsService {
       this.logger.warn({ meetingId, trackEgressId }, 'onTrackEnded: AudioTrack не найден');
       return this.tryFinalizeReady(meetingId);
     }
+
+    this.logger.debug(
+      { meetingId, trackEgressId, audioTrackId: audioTrack.id, url: payload.url, bytes: payload.bytes },
+      'onTrackEnded: сохраняем данные аудиодорожки в БД',
+    );
 
     await this.prisma.audioTrack.update({
       where: { id: audioTrack.id },
@@ -561,6 +632,18 @@ export class RecordingsService {
     );
 
     const allReady = compositeReady && (recording.audioTracks.length === 0 || allTracksReady);
+
+    this.logger.debug(
+      {
+        meetingId,
+        compositeReady,
+        allTracksReady,
+        tracksTotal: recording.audioTracks.length,
+        allReady,
+        currentStatus: recording.status,
+      },
+      'tryFinalizeReady: проверяем готовность записи',
+    );
 
     if (allReady && recording.status !== 'ready' && recording.status !== 'deleted') {
       await this.prisma.recording.update({

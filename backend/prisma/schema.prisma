@@ -626,17 +626,9 @@ model Meeting {
   analyzeV2GeneratedAt DateTime?
   /// Текст ошибки на failed/partial. Multi-line, агент пишет короткую сводку.
   analyzeV2Error       String?       @db.Text
-  /// Фаза B — статус расчёта поведенческих метрик участников встречи.
-  /// NULL = не запускался; 'pending' | 'ready' | 'failed' | 'low_confidence'.
-  /// Обновляется воркером `ai.behavior-metrics`. UI смотрит на это поле
-  /// для loading-state секции «Поведение участников».
-  behaviorMetricsStatus String?
-  /// Фаза C — статус AI-оценки качества встречи (sub-TZ C §4).
-  /// NULL = не запускался; 'pending' | 'ready' | 'failed' | 'disabled'.
-  /// 'disabled' — встреча слишком короткая (<3 мин) или тип в
-  /// `Org.qualityScoreDisabledForTypes`. UI смотрит на это поле для
-  /// loading-state секции «Оценка качества встречи».
-  qualityScoreStatus String?
+  /// Автоматически вести запись при старте встречи. Если true — запись стартует
+  /// при подключении хоста; ручное управление записью в комнате недоступно.
+  recordByDefault  Boolean       @default(true)
   createdAt        DateTime      @default(now())
   deletedAt        DateTime?
 
@@ -735,27 +727,35 @@ model AudioTrack {
 }
 
 model Transcript {
-  id                   String   @id @default(cuid())
-  meetingId            String   @unique
-  meeting              Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  rawIndexS3Url        String
-  mergedS3Url          String?
+  id                   String            @id @default(cuid())
+  meetingId            String            @unique
+  meeting              Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  /// Merged dialog turns: DialogTurn[] = { speaker, text, startSec, endSec }[]. Null пока MergeWorker не завершил.
+  turns                Json?
+  /// Optional room-chat messages, если INCLUDE_ROOM_CHAT_IN_AI=true. RoomChatMessage[].
+  roomChat             Json?
   totalWords           Int?
   totalDurationSeconds Int?
-  createdAt            DateTime @default(now())
-  /// Фаза D — Очистка транскрипта (sub-TZ 2026-05-21-phase-D-transcript-cleaning §4).
-  /// S3-ключ на cleaned.json (формат — §5 sub-TZ D). NULL = ещё не запускали
-  /// или cleaning не готов. Оригинал `mergedS3Url` НИКОГДА не перезаписывается.
-  cleanedS3Url         String?
-  /// Статус cleaning-пайплайна: 'pending' | 'ready' | 'failed' | 'not_started'.
-  /// NULL семантически = 'not_started' (cleaning ещё не запускали).
-  cleaningStatus       String?
-  /// Json со статистикой очистки (что и сколько удалили). Структура:
-  /// { fillerWordsRemoved: N, repeatsRemoved: M, falseStartsRemoved: K,
-  ///   charsBefore: X, charsAfter: Y, llmRefineSkipped?: boolean }.
-  cleaningStats        Json?
-  /// Когда фактически завершён cleaning (status='ready'). NULL до первого ready.
-  cleanedAt            DateTime?
+  createdAt            DateTime          @default(now())
+  tracks               TranscriptTrack[]
+}
+
+/// Per-participant transcript data, сохраняется TranscribeWorker'ом вместо S3 JSON.
+model TranscriptTrack {
+  id              String     @id @default(cuid())
+  transcriptId    String
+  transcript      Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  livekitIdentity String
+  speakerName     String
+  participantId   String?
+  trackStartedAt  DateTime
+  baseStartedAt   DateTime
+  transcriptText  String     @db.Text
+  durationSeconds Float
+  /// Array<{ word: string; startMs: number; endMs: number }>
+  words           Json
+
+  @@index([transcriptId])
 }
 
 model AiResult {

@@ -69,8 +69,9 @@ export interface PublicMeetingSharePayload {
     dueDate: string | null;
   }>;
   transcript?: {
-    url: string;
-    expiresAt: string;
+    turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+    roomChat?: Array<{ sentAt: string; authorName: string; content: string }>;
+    durationSeconds: number | null;
   };
   videoUrl?: {
     url: string;
@@ -239,7 +240,7 @@ export class SharesService {
         chapters: { orderBy: { order: 'asc' } },
         tasks: true,
         aiResult: { select: { summary: true } },
-        transcript: { select: { mergedS3Url: true } },
+        transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } },
         recording: { select: { mainVideoUrl: true, status: true } },
       },
     });
@@ -302,22 +303,14 @@ export class SharesService {
       }));
     }
 
-    if (share.allowTranscript && meeting.transcript?.mergedS3Url) {
-      try {
-        const key = extractKeyFromUrl(
-          meeting.transcript.mergedS3Url,
-          this.cfg.s3.bucket,
-        );
-        const presigned = await this.s3.presignGet(key);
-        payload.transcript = {
-          url: presigned.url,
-          expiresAt: presigned.expiresAt.toISOString(),
-        };
-      } catch (err) {
-        this.logger.warn(
-          `getPublicMeetingShare: cannot presign transcript: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+    if (share.allowTranscript && meeting.transcript?.turns) {
+      const turns = meeting.transcript.turns as Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+      const roomChat = (meeting.transcript.roomChat as Array<{ sentAt: string; authorName: string; content: string }> | null) ?? undefined;
+      payload.transcript = {
+        turns,
+        ...(roomChat && roomChat.length > 0 ? { roomChat } : {}),
+        durationSeconds: meeting.transcript.totalDurationSeconds ?? null,
+      };
     }
 
     if (

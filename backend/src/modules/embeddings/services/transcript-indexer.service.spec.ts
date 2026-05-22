@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
-import type { S3Service } from '../../recordings/s3.service';
-
 import type { EmbeddingFallbackService } from './embedding-fallback.service';
 import {
   TranscriptIndexerService,
@@ -31,7 +29,7 @@ function makeCfg(over: Partial<{ batchSize: number; chunkTargetTokens: number; c
 interface BuildOpts {
   meeting?: {
     ownerId?: string;
-    transcript?: { mergedS3Url: string } | null;
+    transcript?: { turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> } | null;
   } | null;
   mergedTurns?: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
   embedFn?: ReturnType<typeof vi.fn>;
@@ -44,7 +42,11 @@ function build(opts: BuildOpts) {
       : {
           id: 'm-1',
           ownerId: opts.meeting?.ownerId ?? 'u-1',
-          transcript: opts.meeting?.transcript ?? { mergedS3Url: 'meetings/m-1/transcripts/merged.json' },
+          transcript: opts.meeting?.transcript ?? {
+            turns: opts.mergedTurns ?? [
+              { speaker: 'Alice', text: 'one two three four five six seven eight', startSec: 0, endSec: 8 },
+            ],
+          },
         },
   );
   const meetingUpdate = vi.fn(async () => undefined);
@@ -57,20 +59,13 @@ function build(opts: BuildOpts) {
     $executeRawUnsafe: executeRawUnsafe,
   } as unknown as PrismaService;
 
-  const getJson = vi.fn(async () => ({
-    turns: opts.mergedTurns ?? [
-      { speaker: 'Alice', text: 'one two three four five six seven eight', startSec: 0, endSec: 8 },
-    ],
-  }));
-  const s3 = { getJson } as unknown as S3Service;
-
   const embed =
     opts.embedFn ??
     vi.fn(async (texts: string[]) => texts.map(() => [0.1, 0.2, 0.3]));
   const embeddings = { embed } as unknown as EmbeddingFallbackService;
 
-  const svc = new TranscriptIndexerService(prisma, s3, embeddings, makeCfg());
-  return { svc, meetingFindUnique, meetingUpdate, chunkDeleteMany, executeRawUnsafe, getJson, embed };
+  const svc = new TranscriptIndexerService(prisma, embeddings, makeCfg());
+  return { svc, meetingFindUnique, meetingUpdate, chunkDeleteMany, executeRawUnsafe, embed };
 }
 
 describe('TranscriptIndexerService', () => {

@@ -26,11 +26,13 @@ export const roomMessagesApi = {
    * История сообщений встречи в порядке `sentAt asc`.
    * Опц. `since` — ISO-таймстамп для фильтра «новее чем».
    */
-  history: (meetingId: string, since?: string) =>
-    apiClient.get<RoomMessageApi[]>(
+  history: async (meetingId: string, since?: string): Promise<RoomMessageApi[]> => {
+    const res = await apiClient.get<{ items: RoomMessageApi[] }>(
       `/api/v1/meetings/${encodeURIComponent(meetingId)}/room-messages` +
         (since ? `?since=${encodeURIComponent(since)}` : ''),
-    ),
+    );
+    return res.items ?? [];
+  },
 
   /**
    * Отправить сообщение. Идемпотентно по `clientMessageId`:

@@ -29,8 +29,10 @@ const cspDirectives = [
   "img-src 'self' blob: data: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
   // LiveKit-клиент перед WS делает HTTP(S)-validate на тот же хост — нужен и http(s)-вариант livekit-URL.
-  `connect-src 'self' ${backendUrl} ${livekitUrl} ${livekitUrl.replace(/^ws/, 'http')} wss://*.crossmark.ru ${isProd ? '' : 'http://localhost:3000 ws://localhost:3000 http://localhost:7880 ws://localhost:7880 wss://localhost:7880'}`.trim(),
-  "media-src 'self' blob:",
+  `connect-src 'self' ${backendUrl} ${livekitUrl} ${livekitUrl.replace(/^ws/, 'http')} wss://*.crossmark.ru https: ${isProd ? '' : 'http://localhost:3000 ws://localhost:3000 http://localhost:7880 ws://localhost:7880 wss://localhost:7880 http://localhost:59000'}`.trim(),
+  // S3 presigned URLs — MinIO в dev на :59000, HTTPS S3 в prod.
+  // blob: — LiveKit аудио/видео-треки. https: — любой HTTPS S3.
+  `media-src 'self' blob: https: ${isProd ? '' : 'http://localhost:59000 http://localhost:3000'}`.trim(),
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -69,6 +71,7 @@ const nextConfig = {
     '@livekit/components-react',
     '@livekit/components-styles',
     'livekit-client',
+    '@vidstack/react',
   ],
   async headers() {
     return [

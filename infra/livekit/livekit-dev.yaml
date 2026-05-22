@@ -1,4 +1,4 @@
-# LiveKit для ЛОКАЛЬНОЙ разработки (single-node, без redis).
+# LiveKit для ЛОКАЛЬНОЙ разработки (single-node + redis для PSRPC с Egress).
 # Запуск: infra/livekit/livekit-dev.sh up
 # Ключи совпадают с backend/.env (LIVEKIT_API_KEY=devkey / LIVEKIT_API_SECRET=secretsecret...).
 
@@ -11,7 +11,9 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: false
-  node_ip: 127.0.0.1
+  # node_ip фиксируем на LAN IP машины — иначе Egress Chrome не может установить
+  # WebRTC ICE-соединение (получает только 127.0.0.1, а Chrome рекламирует внешний IP).
+  node_ip: 192.168.0.16
 
 keys:
   devkey: secretsecretsecretsecretsecretsecretsecretsecret
@@ -32,6 +34,10 @@ webhook:
 
 turn:
   enabled: false
+
+# Redis нужен для PSRPC-коммуникации с Egress-воркером.
+redis:
+  address: localhost:56381
 
 logging:
   level: info

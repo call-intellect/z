@@ -8,7 +8,6 @@ import {
 import type { RawEvent } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { S3Service } from '../../recordings/s3.service';
 import {
   IngestService,
   type IngestResult,
@@ -55,7 +54,6 @@ export class MeetingIngestAdapter {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(IngestService) private readonly ingest: IngestService,
   ) {}
 
@@ -66,7 +64,7 @@ export class MeetingIngestAdapter {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
       include: {
-        transcript: true,
+        transcript: { select: { turns: true, roomChat: true, totalWords: true, totalDurationSeconds: true } },
         participants: true,
       },
     });
@@ -87,20 +85,22 @@ export class MeetingIngestAdapter {
         },
       });
     }
-    if (!meeting.transcript?.mergedS3Url) {
+    if (!meeting.transcript?.turns) {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'meeting_no_merged_transcript',
-          message: `Meeting ${meetingId}: нет merged.json — нечего ingest'ить`,
+          message: `Meeting ${meetingId}: нет transcript.turns в БД — нечего ingest'ить`,
         },
       });
     }
 
-    // 1. Загружаем merged.json (поле хранит S3-key, не URL — см. merge.worker).
-    const merged = await this.s3.getJson<MergedTranscript>(
-      meeting.transcript.mergedS3Url,
-    );
+    // 1. Читаем turns/roomChat из БД.
+    const merged: MergedTranscript = {
+      meetingId: meeting.id,
+      turns: (meeting.transcript.turns as MergedTranscript['turns']) ?? [],
+      roomChat: (meeting.transcript.roomChat as MergedTranscript['roomChat']) ?? [],
+    };
 
     // 2. lazy-upsert дефолтного Source(type=meeting) для tenant.
     const source = await this.upsertDefaultMeetingSource(meeting.tenantId);

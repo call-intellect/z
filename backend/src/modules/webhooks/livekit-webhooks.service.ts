@@ -112,9 +112,16 @@ export class LivekitWebhooksService {
 
   private extractMeetingId(event: WebhookEvent): string | null {
     // У LiveKit room name = meetingId (в нашей конвенции из §2.2 ТЗ).
-    const room = (event as unknown as { room?: { name?: unknown } }).room;
-    const name = room?.name;
-    return typeof name === 'string' && name.length > 0 ? name : null;
+    const ev = event as unknown as {
+      room?: { name?: unknown };
+      egressInfo?: { roomName?: unknown };
+    };
+    const fromRoom = ev.room?.name;
+    if (typeof fromRoom === 'string' && fromRoom.length > 0) return fromRoom;
+    // Egress webhooks don't include `room` — fall back to egressInfo.roomName.
+    const fromEgress = ev.egressInfo?.roomName;
+    if (typeof fromEgress === 'string' && fromEgress.length > 0) return fromEgress;
+    return null;
   }
 
   private toJson(event: WebhookEvent): Prisma.InputJsonValue {

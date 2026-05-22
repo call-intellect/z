@@ -31,3 +31,4 @@ infra/livekit/egress.yaml
 .cache/
 .bun-cache/
 .vexp
+.playwright-mcp

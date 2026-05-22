@@ -10,7 +10,6 @@ import { type Job, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import { S3Service } from '../../recordings/s3.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { ChapterExtractionService } from '../services/chapter-extraction.service';
 import type { DialogTurn } from '../services/prompts/common';
@@ -30,7 +29,6 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(ChapterExtractionService)
     private readonly extractor: ChapterExtractionService,
   ) {}
@@ -71,8 +69,8 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.warn({ meetingId }, 'chapters: meeting не найден');
       return;
     }
-    if (!meeting.transcript?.mergedS3Url) {
-      this.logger.warn({ meetingId }, 'chapters: нет mergedS3Url, пропуск');
+    if (!meeting.transcript?.turns) {
+      this.logger.warn({ meetingId }, 'chapters: нет transcript.turns в БД, пропуск');
       return;
     }
 
@@ -81,10 +79,7 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
       data: { chaptersStatus: 'processing' },
     });
 
-    const merged = await this.s3.getJson<{ turns: DialogTurn[] }>(
-      meeting.transcript.mergedS3Url,
-    );
-    const dialog = merged.turns ?? [];
+    const dialog = (meeting.transcript.turns as unknown as DialogTurn[] | null) ?? [];
     if (dialog.length === 0) {
       await this.prisma.meeting.update({
         where: { id: meetingId },

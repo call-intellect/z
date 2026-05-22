@@ -95,11 +95,11 @@ export class BulkZipGenerator {
       const md = this.md.build({ meeting, aiResult, chapters, tasks, transcript });
       archive.append(md, { name: `${safeName}/${safeName}.md` });
 
-      if (input.options.includeTranscript && transcript?.mergedS3Url) {
-        // Не качаем огромные транскрипты в zip — пишем ссылку.
-        linksLines.push(`## ${meeting.title} — transcript`);
-        linksLines.push(`s3://${transcript.mergedS3Url}`);
-        linksLines.push('');
+      if (input.options.includeTranscript && transcript?.turns) {
+        // Транскрипт хранится в БД — включаем как текст в zip.
+        const turns = transcript.turns as Array<{ speaker: string; text: string }>;
+        const transcriptText = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
+        archive.append(transcriptText, { name: `${safeName}/${safeName}-transcript.txt` });
       }
 
       if (input.options.includeVideo && recording?.mainVideoUrl) {

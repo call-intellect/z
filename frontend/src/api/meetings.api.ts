@@ -27,6 +27,7 @@ export type CreateMeetingApiRequest = {
    * привязанной к карточке (deeplink-сценарий «Создать встречу из карточки»).
    */
   card_id?: string | null;
+  record_by_default?: boolean;
 };
 
 export type ListMeetingsApiRequest = {
@@ -96,21 +97,30 @@ export type ResultStatusApiResponse = {
   failureReason: string | null;
 };
 
-export type TranscriptApiResponse = {
-  url: string;
-  expiresAt: string;
-  durationSeconds: number | null;
-  /** Фаза D — true если URL ведёт на cleaned.json, false — на оригинал merged.json. */
-  cleaned?: boolean;
+export type TranscriptTurn = {
+  speaker: string;
+  text: string;
+  startSec: number;
+  endSec: number;
 };
 
-/**
- * Фаза D — ответ POST /meetings/:id/transcript/clean.
- * - `queued` — job встал в очередь;
- * - `already_clean` — cleaning уже готов, повторно не запускали.
- */
-export type CleanTranscriptApiResponse = {
-  status: 'queued' | 'already_clean';
+export type TranscriptApiResponse = {
+  turns: TranscriptTurn[];
+  durationSeconds: number | null;
+  roomChat?: Array<{ sentAt: string; authorName: string; content: string }>;
+};
+
+export type AudioTrackApi = {
+  id: string;
+  participantName: string;
+  livekitIdentity: string;
+  durationSeconds: number;
+  url: string;
+  expiresAt: string;
+};
+
+export type AudioTracksApiResponse = {
+  tracks: AudioTrackApi[];
 };
 
 // ─────────────────── helpers ──────────────────
@@ -259,5 +269,10 @@ export const meetingsApi = {
   cleanTranscript: (id: string) =>
     apiClient.post<CleanTranscriptApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/transcript/clean`,
+    ),
+
+  audioTracks: (id: string) =>
+    apiClient.get<AudioTracksApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/recording/audio-tracks`,
     ),
 };

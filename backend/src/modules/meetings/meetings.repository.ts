@@ -71,6 +71,7 @@ export class MeetingsRepository {
       ownerId: string;
       customPrompt: string | null;
       cardId?: string | null;
+      recordByDefault?: boolean;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<Meeting> {
@@ -83,6 +84,7 @@ export class MeetingsRepository {
         type: data.type,
         ownerId: data.ownerId,
         customPrompt: data.customPrompt,
+        recordByDefault: data.recordByDefault ?? true,
         ...(data.cardId !== undefined && data.cardId !== null
           ? { cardId: data.cardId }
           : {}),

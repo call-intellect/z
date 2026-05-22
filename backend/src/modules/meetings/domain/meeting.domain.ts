@@ -20,6 +20,8 @@ export type MeetingWithOwnerAndParticipants = Meeting & {
 
 export interface AccessInfo {
   role: 'host' | 'guest' | 'none';
+  isRecordingActive: boolean;
+  recordByDefault: boolean;
   meeting: {
     id: string;
     title: string;

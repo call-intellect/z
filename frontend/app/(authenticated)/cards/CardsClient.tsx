@@ -8,6 +8,7 @@ import {
   FolderKanban,
   Layers,
   Plus,
+  Store,
   Tag as TagIcon,
   User,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ const KIND_OPTIONS: KindOption[] = [
   { value: 'client', label: 'Клиенты' },
   { value: 'deal', label: 'Сделки' },
   { value: 'project', label: 'Проекты' },
+  { value: 'vendor', label: 'Поставщики' },
   { value: 'topic', label: 'Темы' },
   { value: 'custom', label: 'Прочее' },
 ];
@@ -45,6 +47,7 @@ const KIND_ICONS: Record<CardKind, typeof FolderKanban> = {
   client: User,
   deal: Briefcase,
   project: Layers,
+  vendor: Store,
   topic: TagIcon,
   custom: FolderKanban,
 };

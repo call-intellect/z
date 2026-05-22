@@ -170,14 +170,6 @@ function buildEnv(args: {
   const worker = new AnalyzeWorker(
     { client: {} } as unknown as RedisService,
     prisma,
-    {
-      getJson: vi.fn(async () => ({
-        turns: [
-          { speaker: 'Alice', text: 'Привет', startSec: 0, endSec: 1 },
-          { speaker: 'Bob', text: 'Здравствуй', startSec: 1.5, endSec: 3 },
-        ],
-      })),
-    } as unknown as S3Service,
     llm,
     { record: vi.fn() } as unknown as AiUsageLogService,
     { enqueueNotify: vi.fn(), enqueueChapters: vi.fn(), enqueueTasksExtract: vi.fn(), enqueueTranscriptIndex: vi.fn(), enqueueCardRollup: vi.fn() } as unknown as AiQueueService,

@@ -503,6 +503,252 @@ async function collectSse(resp: Response): Promise<{
   return { text: chunks.join(''), inputTokens, outputTokens };
 }
 
+// ─── 6.5. KIE Claude (Anthropic-compat, прямой вызов api.kie.ai) ──────────
+//
+// Эндпоинт `/claude/v1/messages` принимает Anthropic-формат запроса/ответа,
+// но авторизуется по Bearer (без `myFeedproxy3128:` префикса).
+// Модель указывается в поле `model`. Поток ответов отключаем явно — у KIE
+// в этой ручке `stream` по умолчанию `true`.
+
+async function testKieClaude(model: string): Promise<void> {
+  const channel = 'kie-claude';
+  if (!shouldRun(channel)) return;
+  const key = process.env.KIE_API_KEY;
+  if (!key) {
+    skip(channel, model, 'KIE_API_KEY не задан');
+    return;
+  }
+  const base = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(/\/$/, '');
+  const url = `${base}/claude/v1/messages`;
+  try {
+    // KIE-спека не документирует top-level `system`, поэтому склеиваем system+user
+    // в одно user-сообщение — гарантированно работает по присланной OpenAPI.
+    const body = {
+      model,
+      max_tokens: MAX_TOKENS,
+      stream: false,
+      messages: [
+        { role: 'user', content: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` },
+      ],
+    };
+    const [{ text, inputTokens, outputTokens }, latencyMs] = await timed(async () => {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+      }
+      const data = (await resp.json()) as {
+        content?: Array<{ type?: string; text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      const reply = (data.content ?? [])
+        .filter((b) => b?.type === 'text')
+        .map((b) => b.text ?? '')
+        .join('');
+      return {
+        text: reply,
+        inputTokens: data.usage?.input_tokens ?? 0,
+        outputTokens: data.usage?.output_tokens ?? 0,
+      };
+    });
+    logResult({
+      channel,
+      model,
+      status: 'ok',
+      latencyMs,
+      inputTokens,
+      outputTokens,
+      reply: text,
+      expectedHit: checkExpected(text),
+    });
+  } catch (err) {
+    logResult({
+      channel,
+      model,
+      status: 'fail',
+      latencyMs: 0,
+      error: errMsg(err),
+    });
+  }
+}
+
+// ─── 6.6. KIE GPT (OpenAI Responses-style, прямой вызов api.kie.ai) ───────
+//
+// Эндпоинт `/codex/v1/responses` принимает OpenAI-Responses-формат: вход —
+// массив `input` с `content`-блоками (`input_text`/`input_image`/`input_file`),
+// `reasoning.effort` — `low|medium|high|xhigh`. Авторизация — Bearer.
+// Ответ — массив `output` с блоками `reasoning` и `message` (внутри
+// `content[].type === 'output_text'`).
+
+async function testKieGpt(model: string): Promise<void> {
+  const channel = 'kie-gpt';
+  if (!shouldRun(channel)) return;
+  const key = process.env.KIE_API_KEY;
+  if (!key) {
+    skip(channel, model, 'KIE_API_KEY не задан');
+    return;
+  }
+  const base = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(/\/$/, '');
+  const url = `${base}/codex/v1/responses`;
+  try {
+    const body = {
+      model,
+      stream: false,
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` },
+          ],
+        },
+      ],
+      reasoning: { effort: 'low' },
+    };
+    const [{ text, inputTokens, outputTokens }, latencyMs] = await timed(async () => {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+      }
+      const data = (await resp.json()) as {
+        output?: Array<{
+          type?: string;
+          role?: string;
+          content?: Array<{ type?: string; text?: string }>;
+        }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      const msg = (data.output ?? []).find((o) => o?.type === 'message');
+      const reply = (msg?.content ?? [])
+        .filter((c) => c?.type === 'output_text')
+        .map((c) => c.text ?? '')
+        .join('');
+      return {
+        text: reply,
+        inputTokens: data.usage?.input_tokens ?? 0,
+        outputTokens: data.usage?.output_tokens ?? 0,
+      };
+    });
+    logResult({
+      channel,
+      model,
+      status: 'ok',
+      latencyMs,
+      inputTokens,
+      outputTokens,
+      reply: text,
+      expectedHit: checkExpected(text),
+    });
+  } catch (err) {
+    logResult({
+      channel,
+      model,
+      status: 'fail',
+      latencyMs: 0,
+      error: errMsg(err),
+    });
+  }
+}
+
+// ─── 6.7. KIE Gemini (OpenAI chat/completions, прямой вызов api.kie.ai) ───
+//
+// Эндпоинт `/${modelSlug}/v1/chat/completions` (OpenAI-compat). Модель
+// закодирована в URL — в теле поле `model` НЕ передаётся. Bearer-auth.
+// Параметр `stream` по умолчанию `true` — обязательно явно `false`.
+// `reasoning_effort: 'low'|'high'`, `include_thoughts: boolean`.
+
+async function testKieGemini(modelSlug: string): Promise<void> {
+  const channel = 'kie-gemini-direct';
+  if (!shouldRun(channel)) return;
+  const key = process.env.KIE_API_KEY;
+  if (!key) {
+    skip(channel, modelSlug, 'KIE_API_KEY не задан');
+    return;
+  }
+  const base = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(/\/$/, '');
+  const url = `${base}/${modelSlug}/v1/chat/completions`;
+  try {
+    const body = {
+      stream: false,
+      include_thoughts: false,
+      reasoning_effort: 'low',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` },
+          ],
+        },
+      ],
+    };
+    const [{ text, inputTokens, outputTokens }, latencyMs] = await timed(async () => {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+      }
+      const data = (await resp.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const raw = data.choices?.[0]?.message?.content ?? '';
+      const reply =
+        typeof raw === 'string'
+          ? raw
+          : Array.isArray(raw)
+            ? raw.map((p: { text?: string }) => p?.text ?? '').join('')
+            : String(raw);
+      return {
+        text: reply,
+        inputTokens: data.usage?.prompt_tokens ?? 0,
+        outputTokens: data.usage?.completion_tokens ?? 0,
+      };
+    });
+    logResult({
+      channel,
+      model: modelSlug,
+      status: 'ok',
+      latencyMs,
+      inputTokens,
+      outputTokens,
+      reply: text,
+      expectedHit: checkExpected(text),
+    });
+  } catch (err) {
+    logResult({
+      channel,
+      model: modelSlug,
+      status: 'fail',
+      latencyMs: 0,
+      error: errMsg(err),
+    });
+  }
+}
+
 // ─── 7. KIE (Gemini через прокси) ─────────────────────────────────────────
 
 async function testKie(model: string): Promise<void> {
@@ -743,6 +989,16 @@ async function main(): Promise<void> {
   // 6. GRSAI Gemini
   await testGrsai('gemini-3-pro');
   await testGrsai('gemini-3.1-pro');
+
+  // 6.5. KIE Claude (Anthropic-compat через api.kie.ai)
+  await testKieClaude('claude-opus-4-7');
+
+  // 6.6. KIE GPT (OpenAI Responses-style через api.kie.ai)
+  await testKieGpt('gpt-5-4');
+
+  // 6.7. KIE Gemini direct (OpenAI chat/completions через api.kie.ai,
+  //      модель в URL-сегменте)
+  await testKieGemini('gemini-3-flash');
 
   // 7. KIE Gemini
   await testKie('gemini-3-pro');

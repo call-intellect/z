@@ -1,11 +1,18 @@
 import type { Metadata } from 'next';
 
-import { ComingSoonPage } from '@/ui/components/coming-soon/ComingSoonPage';
+import { RegulationsListClient } from './RegulationsListClient';
 
 export const metadata: Metadata = {
   title: 'Регламенты',
 };
 
+/**
+ * `/regulations` — единый master-detail для Regulation / Process / Policy
+ * (SBA α-7). Фильтр `kind` показывает соответствующий тип записей.
+ *
+ * Первая видимая ценность Слоя 3: «у компании появились регламенты сами
+ * собой» — генерируются Specialist'ом 3.1 из встреч с провенансом до цитаты.
+ */
 export default function RegulationsPage() {
-  return <ComingSoonPage section="regulations" />;
+  return <RegulationsListClient />;
 }

@@ -238,7 +238,50 @@ p, owner, *, *, decision, read
 p, owner, *, *, decision, write
 p, owner, *, *, decision, delete
 p, admin, *, *, decision, read
+# SBA β-3 — admin может write/delete (manual create + supersede + status + outcomes).
+p, admin, *, *, decision, write
+p, admin, *, *, decision, delete
+# SBA β-3 — decision shared knowledge: manager open читает все, manager strict — self.
+p, manager, open, *, decision, read
 p, manager, *, self, decision, read
+
+# ──────────────────────────── SBA β-5 — Ideas Collector + Probe-Agent ────────────────────────────
+# idea: идеи (внутренние и от клиентов). Shared knowledge компании.
+# owner/admin — r/w/d (включая смену status). manager open — r/w (могут
+# поддерживать и отзывать). manager strict — r self.
+p, owner, *, *, idea, read
+p, owner, *, *, idea, write
+p, owner, *, *, idea, delete
+p, admin, *, *, idea, read
+p, admin, *, *, idea, write
+p, admin, *, *, idea, delete
+p, manager, open, *, idea, read
+p, manager, open, *, idea, write
+p, manager, strict, self, idea, read
+p, manager, strict, self, idea, write
+
+# probe_event: внутренний ресурс Layer 6 Probe-Agent. Только admin/owner —
+# просмотр очереди. Member'ы видят probe через /me/notifications (separate
+# endpoint, без RBAC на ресурс).
+p, owner, *, *, probe_event, read
+p, owner, *, *, probe_event, write
+p, owner, *, *, probe_event, delete
+p, admin, *, *, probe_event, read
+p, admin, *, *, probe_event, write
+
+# ──────────────────────────── SBA β-4 — Insights Radar ────────────────────────────
+# insight: повторяющиеся проблемы / риски / блокеры / неэффективности. Shared
+# knowledge компании. owner/admin — r/w/d; manager open — r/w (write нужен для
+# фиксирования mitigationPlan и изменения статуса); manager strict — r self.
+p, owner, *, *, insight, read
+p, owner, *, *, insight, write
+p, owner, *, *, insight, delete
+p, admin, *, *, insight, read
+p, admin, *, *, insight, write
+p, admin, *, *, insight, delete
+p, manager, open, *, insight, read
+p, manager, open, *, insight, write
+p, manager, *, self, insight, read
 
 # ──────────────────────────── SBA α-1 — Conversational Channels ────────────────────────────
 # channel: настройки каналов на уровне Org (SMTP/Telegram/etc) — только owner/admin.
@@ -265,6 +308,74 @@ p, admin, *, *, notification, write
 p, manager, *, self, notification, read
 p, manager, *, self, notification, write
 
+# ──────────────────────────── SBA α-3 — Layer 2 ontology extension ────────────────────────────
+# ResourceType: vendor — поставщик (модель Vendor). Read доступен всем member'ам Org
+# (как card/block/entity — поставщики разделяются по компании, силоса нет).
+# Write/delete — owner/admin. На α-3 только read-only API; POST/PATCH появятся в α-6.
+p, owner, *, *, vendor, read
+p, owner, *, *, vendor, write
+p, owner, *, *, vendor, delete
+p, admin, *, *, vendor, read
+p, admin, *, *, vendor, write
+p, admin, *, *, vendor, delete
+p, manager, *, *, vendor, read
+
+# ResourceType: event_card — событие графа знаний (модель Event). Имя event_card
+# (не event), чтобы не конфликтовать с доменными событиями LiveKit/AI/etc.
+p, owner, *, *, event_card, read
+p, owner, *, *, event_card, write
+p, owner, *, *, event_card, delete
+p, admin, *, *, event_card, read
+p, admin, *, *, event_card, write
+p, admin, *, *, event_card, delete
+p, manager, *, *, event_card, read
+
+# ──────────────────────────── SBA α-4 — Layer 4 Curation Foundation ────────────────────────────
+# 5 ResourceType'ов: curation_item, curation_decision, conflict_item, card_version, curator_assignment.
+#
+# curation_item — запись в очереди проверки. owner/admin: r/w/d; manager: r self
+# (только если он в candidateCuratorIds или assignedToUserId — проверяется в сервисе через self).
+p, owner, *, *, curation_item, read
+p, owner, *, *, curation_item, write
+p, owner, *, *, curation_item, delete
+p, admin, *, *, curation_item, read
+p, admin, *, *, curation_item, write
+p, admin, *, *, curation_item, delete
+p, manager, *, self, curation_item, read
+p, manager, *, self, curation_item, write
+
+# curation_decision — решение куратора. owner/admin: r/w. manager — write self
+# (может принять решение, если в candidateCuratorIds; проверяется в сервисе).
+p, owner, *, *, curation_decision, read
+p, owner, *, *, curation_decision, write
+p, admin, *, *, curation_decision, read
+p, admin, *, *, curation_decision, write
+p, manager, *, self, curation_decision, read
+p, manager, *, self, curation_decision, write
+
+# conflict_item — конфликт между карточками. owner/admin: r/w/d. manager — read открытых.
+p, owner, *, *, conflict_item, read
+p, owner, *, *, conflict_item, write
+p, owner, *, *, conflict_item, delete
+p, admin, *, *, conflict_item, read
+p, admin, *, *, conflict_item, write
+p, admin, *, *, conflict_item, delete
+p, manager, *, *, conflict_item, read
+
+# card_version — версии карточек. Все member'ы Org — read. Запись/удаление
+# идёт только через CurationService (прямого API нет).
+p, owner, *, *, card_version, read
+p, admin, *, *, card_version, read
+p, manager, *, *, card_version, read
+
+# curator_assignment — назначение кураторов. Только owner/admin Org.
+p, owner, *, *, curator_assignment, read
+p, owner, *, *, curator_assignment, write
+p, owner, *, *, curator_assignment, delete
+p, admin, *, *, curator_assignment, read
+p, admin, *, *, curator_assignment, write
+p, admin, *, *, curator_assignment, delete
+
 # ──────────────────────────── Фаза A.2 — Prompt Templates ────────────────────────────
 # ResourceType: prompt_template.
 # super_admin — bypass. owner+admin Org — read системных + полный доступ к своим Org-шаблонам;
@@ -277,6 +388,57 @@ p, admin, *, *, prompt_template, read
 p, admin, *, *, prompt_template, write
 p, admin, *, *, prompt_template, delete
 p, manager, *, *, prompt_template, read
+
+# ──────────────────────────── SBA β-2 — Knowledge Clone (Specialist 3.2) ────────────────────────────
+# ResourceType: knowledge_profile — `Person.knowledgeProfile` (что человек знает).
+# Это shared knowledge внутри Org: всем member'ам нужно «спросить, кто разбирается
+# в X». owner/admin — r/w/d. manager (open) — read всех профилей. manager (strict)
+# — read только своего профиля (по self). Write идёт исключительно через worker —
+# ручного API write нет; markWrong → CurationItem (deep review).
+p, owner, *, *, knowledge_profile, read
+p, owner, *, *, knowledge_profile, write
+p, owner, *, *, knowledge_profile, delete
+p, admin, *, *, knowledge_profile, read
+p, admin, *, *, knowledge_profile, write
+p, admin, *, *, knowledge_profile, delete
+p, manager, open, *, knowledge_profile, read
+p, manager, strict, self, knowledge_profile, read
+
+# ──────────────────────────── SBA γ-1 — Skill + ExecutablePersona + Clone ────────────────────────────
+# skill_profile: навыковый профиль сотрудника (Person + SkillTrait[]). Видимость:
+# owner/admin Org — r/w/d. manager open — read всех (для direct manager'ов).
+# manager strict — read только своего. Write идёт только через worker; ручного API write нет.
+# mark_as_misleading (action 'write') — owner/admin/manager open (для direct manager'ов).
+p, owner, *, *, skill_profile, read
+p, owner, *, *, skill_profile, write
+p, owner, *, *, skill_profile, delete
+p, admin, *, *, skill_profile, read
+p, admin, *, *, skill_profile, write
+p, admin, *, *, skill_profile, delete
+p, manager, open, *, skill_profile, read
+p, manager, strict, self, skill_profile, read
+
+# clone_persona: executable persona для clone API. Read = тем, кто имеет доступ
+# к skill_profile того же Person'а. Call ask — то же самое + сам носитель.
+# Тонкая логика (direct manager в той же department) проверяется в ClonesService.
+p, owner, *, *, clone_persona, read
+p, admin, *, *, clone_persona, read
+p, manager, open, *, clone_persona, read
+p, manager, strict, self, clone_persona, read
+
+# ──────────────────────────── SBA α-5 — Layer 5 Chat-v2 Omnichannel ────────────────────────────
+# ResourceType: chat_v2_conversation — диалог пользователя с AI-чатом.
+# Каждый user управляет только своими диалогами (self). owner/admin Org
+# могут читать диалоги для отладки/аудита (не write). super_admin — bypass.
+p, owner, *, *, chat_v2_conversation, read
+p, admin, *, *, chat_v2_conversation, read
+p, manager, *, self, chat_v2_conversation, read
+p, manager, *, self, chat_v2_conversation, write
+p, manager, *, self, chat_v2_conversation, delete
+p, owner, *, self, chat_v2_conversation, write
+p, owner, *, self, chat_v2_conversation, delete
+p, admin, *, self, chat_v2_conversation, write
+p, admin, *, self, chat_v2_conversation, delete
 
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read

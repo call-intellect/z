@@ -71,7 +71,66 @@ export type LlmTaskType =
   // Фаза E — дополнительные («custom») AI-отчёты встречи. Один общий taskType
   // для всех шаблонов; per-template override — через UI админки моделей,
   // которая создаёт более специфичный route. См. ТЗ E §5.5.
-  | 'custom-report';
+  | 'custom-report'
+  // SBA α-5 — Layer 5 Chat-v2 Omnichannel.
+  // 'chat-v2-cite-select' — пост-обработка, выбор лучших цитат (опц., на α-5
+  // не используется — заведён про запас).
+  // 'chat-v2-conversation-title' — короткий title диалога (3-7 слов) из
+  // первого user-сообщения (см. ConversationsService.generateTitle).
+  | 'chat-v2-cite-select'
+  | 'chat-v2-conversation-title'
+  // SBA α-7 — Specialist 3.1 (Regulations / Processes / Policies).
+  // 'regulation-extract' — извлечение черновика Regulation/Process/Policy из блока.
+  // 'regulation-dedupe' — арбитр merge/new/extension/contradicts (KNN-кандидаты).
+  // 'process-steps-extract' — извлечение упорядоченных шагов процесса.
+  | 'regulation-extract'
+  | 'regulation-dedupe'
+  | 'process-steps-extract'
+  // SBA β-2 — Specialist 3.2 (Knowledge Clone).
+  // 'knowledge-clone-extract' — из набора блоков сотрудника → черновик
+  //   knowledgeProfile (категории + опыт).
+  // 'knowledge-clone-merge' — старый профиль + новый черновик → объединённый
+  //   профиль с decay устаревших категорий.
+  | 'knowledge-clone-extract'
+  | 'knowledge-clone-merge'
+  // SBA β-3 — Specialist 3.3 (Decisions Registry).
+  // 'decision-extract' — из IdeaBlock (signalType=decision|rationale|decision_basis)
+  //   → черновик Decision (statement + rationale + alternatives + hints).
+  // 'decision-supersede-detect' — арбитр {new | merge | supersedes} по top-K KNN
+  //   кандидатам; на supersedes — evolvingMeta для resolve.
+  | 'decision-extract'
+  | 'decision-supersede-detect'
+  // SBA β-4 — Specialist 3.5 (Insights Radar).
+  // 'insight-extract' — из IdeaBlock (signalType=pain|risk|churn_risk|objection)
+  //   → черновик Insight (kind, statement, severity, affectedEntityHints, mitigationSuggestion).
+  // 'insight-link-to-decisions' — для нового Insight найти Decision'ы, которые
+  //   могли его спровоцировать (linked-decision arbiter).
+  | 'insight-extract'
+  | 'insight-link-to-decisions'
+  // SBA β-5 — Specialist 3.6 (Ideas Collector) + Layer 6 (Probe-Agent).
+  // 'idea-extract' — из IdeaBlock (signalType=idea|feature_request) → черновик Idea.
+  // 'idea-cluster-merge' — арбитр кластеризации (new_cluster|add|standalone).
+  // 'probe-formulate' — короткий точечный вопрос для Probe-Agent (2–4 inline options).
+  // 'idea-status-summarize' — title+body для closing-loop нотификации
+  //   supporter'ам идеи при изменении статуса.
+  | 'idea-extract'
+  | 'idea-cluster-merge'
+  | 'probe-formulate'
+  | 'idea-status-summarize'
+  // SBA γ-1 — Specialist 3.7 (SkillProfile) + Clone API.
+  // 'skill-trait-detect' — самая ответственная задача γ-1: 5+ reasoning-цитат
+  //   сотрудника → один структурированный SkillTrait (эмерджентная категория +
+  //   гипотезная формулировка + confidence). Качество модели здесь определяет
+  //   полезность всей γ-фазы (см. зонтичный §3.4 + sub-TZ §12).
+  // 'skill-trait-merge' — арбитр merge/supersedes/new по top-K KNN-кандидатам.
+  // 'executable-persona-compile' — собирает persona prompt («думай как X»)
+  //   из списка активных traits.
+  // 'clone-respond' — генерирует ответ в стиле сотрудника на вопрос
+  //   (persona prompt + subgraph context + question → текст + citations).
+  | 'skill-trait-detect'
+  | 'skill-trait-merge'
+  | 'executable-persona-compile'
+  | 'clone-respond';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -110,6 +169,31 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'behavior-refine',
   'meeting-quality-score',
   'custom-report',
+  'chat-v2-cite-select',
+  'chat-v2-conversation-title',
+  // SBA α-7
+  'regulation-extract',
+  'regulation-dedupe',
+  'process-steps-extract',
+  // SBA β-2
+  'knowledge-clone-extract',
+  'knowledge-clone-merge',
+  // SBA β-3
+  'decision-extract',
+  'decision-supersede-detect',
+  // SBA β-4
+  'insight-extract',
+  'insight-link-to-decisions',
+  // SBA β-5
+  'idea-extract',
+  'idea-cluster-merge',
+  'probe-formulate',
+  'idea-status-summarize',
+  // SBA γ-1
+  'skill-trait-detect',
+  'skill-trait-merge',
+  'executable-persona-compile',
+  'clone-respond',
 ] as const;
 
 /**

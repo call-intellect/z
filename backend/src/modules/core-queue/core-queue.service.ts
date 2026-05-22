@@ -21,9 +21,14 @@ import {
   type DocumentUploadedJobData,
   type DumpCreatedJobData,
   type EntityResolverJobData,
+  type IdeaClustererJobData,
   type MeetingAnalyzeV2JobData,
+  type ProbeEventJobData,
   type RawEventJobData,
+  type RebuildKnowledgeProfileJobData,
+  type RebuildSkillProfileJobData,
   type RoleProfileJobData,
+  type SpecialistRoutingJobData,
   type StrategicAlignmentJobData,
 } from './queues';
 
@@ -337,6 +342,140 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('dump-created', payload, { jobId });
     this.logger.debug(
       `enqueue core.dump-created documentId=${args.documentId} tenantId=${args.tenantId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * SBA α-3 — публикация события `specialist.routing` для одного специалиста
+   * Слоя 3. jobName = `specialistName`, jobId = `<specialistName>_<blockId>`
+   * → идемпотентно: повторный enqueue для того же блока в того же специалиста
+   * не создаст дубль.
+   *
+   * На α-3 consumer'ы ещё не запущены — job накапливается, специалист подберёт
+   * её, когда появится (α-6/α-7/β-2/β-3/γ-1).
+   */
+  async enqueueSpecialistRouting(args: {
+    specialistName: string;
+    blockId: string;
+    tenantId: string;
+    signalType: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.SPECIALIST_ROUTING);
+    const jobId = `${args.specialistName}_${args.blockId}`;
+    const payload: SpecialistRoutingJobData = {
+      blockId: args.blockId,
+      tenantId: args.tenantId,
+      signalType: args.signalType,
+      specialistName: args.specialistName,
+    };
+    await q.add(args.specialistName, payload, { jobId });
+    this.logger.debug(
+      `enqueue core.specialist-routing specialist=${args.specialistName} blockId=${args.blockId} signalType=${args.signalType} jobId=${jobId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * SBA β-2 — публикация события `knowledge-clone.rebuild`. Consumer —
+   * `KnowledgeCloneRebuildWorker`. jobId = `rebuild-knowledge-profile_<personId>`
+   * — повторный enqueue для того же Person'а в окне debounce обновит delay
+   * (BullMQ + наш дебаунс) → один итоговый rebuild.
+   *
+   * `delayMs` по умолчанию — `cfg.knowledgeClone.debounceMs` (60s); 0 — сразу
+   * (для cron'а / ручного recompute).
+   */
+  async enqueueRebuildKnowledgeProfile(args: {
+    personId: string;
+    tenantId: string;
+    reason?: string;
+    delayMs?: number;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.KNOWLEDGE_CLONE_REBUILD);
+    const delay =
+      args.delayMs !== undefined
+        ? args.delayMs
+        : this.cfg?.knowledgeClone.debounceMs ?? 60_000;
+    const jobId = `rebuild-knowledge-profile_${args.personId}`;
+    const payload: RebuildKnowledgeProfileJobData = {
+      personId: args.personId,
+      tenantId: args.tenantId,
+      ...(args.reason ? { reason: args.reason } : {}),
+    };
+    await q.add('rebuild-knowledge-profile', payload, { jobId, delay });
+    this.logger.debug(
+      `enqueue core.knowledge-clone-rebuild personId=${args.personId} delay=${delay}ms reason=${args.reason ?? 'n/a'}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * SBA β-5 — публикация probe-event для Layer 6 dispatcher'а. jobId =
+   * `probe_<probeEventId>` — идемпотентно (повторный enqueue по тому же
+   * probe-event не создаст дубля). Реальный probe уже хранится в БД с
+   * status='pending'.
+   */
+  async enqueueProbeEvent(args: {
+    probeEventId: string;
+    delayMs?: number;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.PROBE_EVENTS);
+    const jobId = `probe_${args.probeEventId}`;
+    const payload: ProbeEventJobData = { probeEventId: args.probeEventId };
+    const opts: JobsOptions = { jobId };
+    if (args.delayMs !== undefined && args.delayMs > 0) {
+      opts.delay = args.delayMs;
+    }
+    await q.add('probe-event', payload, opts);
+    this.logger.debug(
+      `enqueue core.probe-events probeEventId=${args.probeEventId} delay=${args.delayMs ?? 0}ms`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * SBA β-5 — публикация задания idea-clusterer (post-create dedup + cluster
+   * merge). jobId = `idea_cluster_<tenantId>_<bucket>` — допускаем 1 job в
+   * минуту на Org (bucket = floor(now()/60s)), дальше cron возьмёт остаток.
+   */
+  async enqueueIdeaClusterer(args: {
+    tenantId: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.IDEA_CLUSTERER);
+    const bucket = Math.floor(Date.now() / 60_000);
+    const jobId = `idea_cluster_${args.tenantId}_${bucket}`;
+    const payload: IdeaClustererJobData = { tenantId: args.tenantId };
+    await q.add('idea-clusterer', payload, { jobId });
+    return { jobId };
+  }
+
+  /**
+   * SBA γ-1 — публикация события `skill-profile.rebuild`. Consumer —
+   * `SkillProfileRebuildWorker`. jobId = `skill-profile-rebuild_<profileId>`
+   * — повторный enqueue для того же профиля в окне debounce обновит delay →
+   * один итоговый rebuild. `delayMs` по умолчанию `cfg.skill.rebuildDebounceMs`
+   * (60s); 0 — сразу (для cron'а / ручного recompute).
+   */
+  async enqueueRebuildSkillProfile(args: {
+    profileId: string;
+    tenantId: string;
+    reason?: string;
+    delayMs?: number;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.SKILL_PROFILE_REBUILD);
+    const delay =
+      args.delayMs !== undefined
+        ? args.delayMs
+        : this.cfg?.skill.rebuildDebounceMs ?? 60_000;
+    const jobId = `skill-profile-rebuild_${args.profileId}`;
+    const payload: RebuildSkillProfileJobData = {
+      profileId: args.profileId,
+      tenantId: args.tenantId,
+      ...(args.reason ? { reason: args.reason } : {}),
+    };
+    await q.add('rebuild-skill-profile', payload, { jobId, delay });
+    this.logger.debug(
+      `enqueue core.skill-profile-rebuild profileId=${args.profileId} delay=${delay}ms reason=${args.reason ?? 'n/a'}`,
     );
     return { jobId };
   }

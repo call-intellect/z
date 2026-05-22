@@ -36,7 +36,13 @@ export type SignalType =
   | 'metric_change'
   | 'idea'
   | 'fact'
-  | 'knowledge_gap';
+  | 'knowledge_gap'
+  // SBA α-2 — расширение Layer 1 разметки.
+  | 'reasoning'
+  | 'rationale'
+  | 'decision_basis'
+  | 'regulation'
+  | 'process_step';
 
 export const SIGNAL_TYPE_LABELS: Record<SignalType, string> = {
   pain: 'Боль клиента',
@@ -53,6 +59,11 @@ export const SIGNAL_TYPE_LABELS: Record<SignalType, string> = {
   idea: 'Идея',
   fact: 'Факт',
   knowledge_gap: 'Открытый вопрос',
+  reasoning: 'Обоснование',
+  rationale: 'Логика решения',
+  decision_basis: 'Основание решения',
+  regulation: 'Регламент',
+  process_step: 'Шаг процесса',
 };
 
 export function signalTypeLabel(raw: string): string {

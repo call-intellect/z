@@ -1,0 +1,166 @@
+/**
+ * Доменная модель Decision (SBA β-3).
+ *
+ * Контракт: `backend/src/modules/decisions/dto/decisions.dto.ts`.
+ *
+ * Слои:
+ *   - `Decision*Api` — что приходит с бэка (см. `src/api/decisions.api.ts`).
+ *   - `Decision*Domain` — UI-friendly: Date вместо string, готовые лейблы.
+ */
+
+import type {
+  DecisionAlternativeApi,
+  DecisionDetailApi,
+  DecisionHistoryResponseApi,
+  DecisionListItemApi,
+  DecisionStatusApi,
+  DecisionSupersedeChainResponseApi,
+  DecisionVersionItemApi,
+} from '@/api/decisions.api';
+
+export type DecisionStatus = DecisionStatusApi;
+
+/** Лейблы статусов на русском (β-3 + legacy для совместимости). */
+export const DECISION_STATUS_LABEL: Record<DecisionStatus, string> = {
+  proposed: 'Предложенное',
+  approved: 'Принятое',
+  rejected: 'Отклонённое',
+  implemented: 'Реализованное',
+  cancelled: 'Отменено',
+  superseded: 'Заменено',
+  // legacy 0a:
+  active: 'Действующее',
+  rolled_back: 'Откатано',
+};
+
+/** Цветовые группы для UI-бейджей (mapping на ui/colors). */
+export const DECISION_STATUS_TONE: Record<
+  DecisionStatus,
+  'neutral' | 'success' | 'warning' | 'error' | 'info'
+> = {
+  proposed: 'info',
+  approved: 'success',
+  rejected: 'error',
+  implemented: 'success',
+  cancelled: 'neutral',
+  superseded: 'neutral',
+  active: 'success',
+  rolled_back: 'warning',
+};
+
+export interface DecisionAlternative {
+  option: string;
+  reasonRejected: string | null;
+}
+
+export interface DecisionListItem {
+  id: string;
+  statement: string;
+  status: DecisionStatus;
+  decidedByPersonIds: string[];
+  decidedAt: Date | null;
+  deadline: Date | null;
+  supersedesId: string | null;
+  affectsEntityIds: string[];
+  confidence: number | null;
+  updatedAt: Date;
+  createdAt: Date;
+}
+
+export interface DecisionDetail extends DecisionListItem {
+  rationale: string | null;
+  alternatives: DecisionAlternative[];
+  sourceBlockIds: string[];
+  personSubjectIds: string[];
+  currentVersionId: string | null;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  actualOutcomes: string | null;
+  dataClass: string;
+}
+
+export interface DecisionVersionItem {
+  id: string;
+  version: number;
+  previousVersionId: string | null;
+  payload: Record<string, unknown>;
+  changeReason: string | null;
+  createdAt: Date;
+  createdByUserId: string | null;
+}
+
+export interface DecisionSupersedeChain {
+  ancestors: DecisionListItem[];
+  descendants: DecisionListItem[];
+}
+
+// ─────────────────────────── mappers ───────────────────────────
+
+function parseDateOrNull(value: string | null): Date | null {
+  return value ? new Date(value) : null;
+}
+
+export function mapDecisionListItem(dto: DecisionListItemApi): DecisionListItem {
+  return {
+    id: dto.id,
+    statement: dto.statement,
+    status: dto.status,
+    decidedByPersonIds: dto.decidedByPersonIds,
+    decidedAt: parseDateOrNull(dto.decidedAt),
+    deadline: parseDateOrNull(dto.deadline),
+    supersedesId: dto.supersedesId,
+    affectsEntityIds: dto.affectsEntityIds,
+    confidence: dto.confidence,
+    updatedAt: new Date(dto.updatedAt),
+    createdAt: new Date(dto.createdAt),
+  };
+}
+
+export function mapDecisionDetail(dto: DecisionDetailApi): DecisionDetail {
+  return {
+    ...mapDecisionListItem(dto),
+    rationale: dto.rationale,
+    alternatives: dto.alternatives.map(
+      (a: DecisionAlternativeApi): DecisionAlternative => ({
+        option: a.option,
+        reasonRejected: a.reasonRejected,
+      }),
+    ),
+    sourceBlockIds: dto.sourceBlockIds,
+    personSubjectIds: dto.personSubjectIds,
+    currentVersionId: dto.currentVersionId,
+    validFrom: parseDateOrNull(dto.validFrom),
+    validUntil: parseDateOrNull(dto.validUntil),
+    actualOutcomes: dto.actualOutcomes,
+    dataClass: dto.dataClass,
+  };
+}
+
+export function mapDecisionVersionItem(
+  dto: DecisionVersionItemApi,
+): DecisionVersionItem {
+  return {
+    id: dto.id,
+    version: dto.version,
+    previousVersionId: dto.previousVersionId,
+    payload: dto.payload,
+    changeReason: dto.changeReason,
+    createdAt: new Date(dto.createdAt),
+    createdByUserId: dto.createdByUserId,
+  };
+}
+
+export function mapDecisionHistory(
+  dto: DecisionHistoryResponseApi,
+): DecisionVersionItem[] {
+  return dto.items.map(mapDecisionVersionItem);
+}
+
+export function mapDecisionSupersedeChain(
+  dto: DecisionSupersedeChainResponseApi,
+): DecisionSupersedeChain {
+  return {
+    ancestors: dto.ancestors.map(mapDecisionListItem),
+    descendants: dto.descendants.map(mapDecisionListItem),
+  };
+}

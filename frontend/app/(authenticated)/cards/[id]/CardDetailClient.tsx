@@ -21,6 +21,7 @@ import {
   Sparkles,
   Tag as TagIcon,
   Trash2,
+  Truck,
   User,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -32,6 +33,7 @@ import { ApiError } from '@/api/api-error';
 import { CARD_KIND_LABELS, type CardKind, cardFromApi } from '@/domain/card';
 import { CardChat } from '@/ui/components/cards/CardChat';
 import { CardThemesSection } from '@/ui/components/cards/CardThemesSection';
+import { CurationBanner } from '@/ui/components/curation/CurationBanner';
 import { Button } from '@/ui/shadcn/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 import {
@@ -49,6 +51,8 @@ const KIND_ICONS: Record<CardKind, typeof FolderKanban> = {
   project: Layers,
   topic: TagIcon,
   custom: FolderKanban,
+  // SBA α-3: новый kind 'vendor' (поставщик). Иконка — грузовик.
+  vendor: Truck,
 };
 
 export function CardDetailClient({ cardId }: { cardId: string }) {
@@ -242,6 +246,13 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
           </DropdownMenu>
         </div>
       </header>
+
+      {/* SBA α-6 — Curation Banner: показывает «На проверке», если для этой
+          карточки есть открытый CurationItem (auto-rollup не прошёл триаж и
+          ждёт куратора). Сам компонент рендерит null, если открытых items нет. */}
+      <div className="mb-4">
+        <CurationBanner resourceType="card" resourceId={card.id} />
+      </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as 'overview' | 'chat')}>
         <TabsList>

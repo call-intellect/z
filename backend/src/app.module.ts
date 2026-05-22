@@ -1,5 +1,6 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 
@@ -43,8 +44,10 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { ChatV2Module } from './modules/chat-v2/chat-v2.module';
 import { ConversationalModule } from './modules/conversational/conversational.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
+import { CurationModule } from './modules/curation/curation.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 // Phase 0a — структура компании (группа А) + дополнительные эндпоинты.
 import { DepartmentsModule } from './modules/departments/departments.module';
@@ -56,8 +59,16 @@ import { RoleProfilesModule } from './modules/role-profiles/role-profiles.module
 import { RolesDomainModule } from './modules/roles-domain/roles-domain.module';
 import { SkillsModule } from './modules/skills/skills.module';
 import { StructureModule } from './modules/structure/structure.module';
+import { ClonesModule } from './modules/clones/clones.module';
+import { KnowledgeCloneModule } from './modules/knowledge-clone/knowledge-clone.module';
 import { KnowledgeCoreApiModule } from './modules/knowledge-core/knowledge-core-api.module';
 import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.module';
+import { Specialist31Module } from './modules/knowledge-core/specialist-3-1.module';
+import { Specialist32Module } from './modules/knowledge-core/specialist-3-2.module';
+import { Specialist33Module } from './modules/knowledge-core/specialist-3-3.module';
+import { Specialist34Module } from './modules/knowledge-core/specialist-3-4.module';
+import { Specialist35Module } from './modules/knowledge-core/specialist-3-5.module';
+import { Specialist36Module } from './modules/knowledge-core/specialist-3-6.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
@@ -72,6 +83,14 @@ import { RoleProfilesAgentModule } from './modules/role-profiles/role-profiles-a
 import { SecurityModule } from './modules/security/security.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
+// SBA α-3 — категория A онтологии: поставщики и события.
+import { EventsModule } from './modules/events/events.module';
+import { RegulationsModule } from './modules/regulations/regulations.module';
+import { DecisionsModule } from './modules/decisions/decisions.module';
+import { InsightsModule } from './modules/insights/insights.module';
+import { IdeasModule } from './modules/ideas/ideas.module';
+import { ProbeModule } from './modules/probe/probe.module';
+import { VendorsModule } from './modules/vendors/vendors.module';
 
 @Module({
   imports: [
@@ -84,6 +103,16 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
     // Cron — для retention/idle-meeting jobs (используется со следующих фаз).
     ScheduleModule.forRoot(),
+
+    // SBA β-5 — глобальный EventEmitter (для idea.status_changed, idea.created,
+    // notification.responded). Wildcard включён, чтобы Probe-Agent мог слушать
+    // 'notification.*'.
+    EventEmitterModule.forRoot({
+      wildcard: true,
+      delimiter: '.',
+      maxListeners: 32,
+      verboseMemoryLeak: false,
+    }),
 
     // Глобальный rate-limiter. Конкретные лимиты на эндпоинтах
     // настраиваются через `@Throttle()` декоратор.
@@ -273,6 +302,92 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // ПОСЛЕ MailModule и IngestModule, потому что адаптеры инжектят MailService
     // и ConversationalIngestAdapter — IngestService.
     ConversationalModule,
+
+    // SBA α-3 — Layer 2 ontology extension. Read-only API для Vendor / Event
+    // (категория A онтологии). POST/PATCH/DELETE — в α-6.
+    VendorsModule,
+    EventsModule,
+
+    // SBA α-4 — Layer 4 Curation Foundation. CurationService.triage(...) +
+    // ConflictService.report(...) для специалистов Слоя 3, REST API для
+    // куратора, stale-detection cron. Должен быть ПОСЛЕ ConversationalModule
+    // (использует sendNotification).
+    CurationModule,
+
+    // SBA α-5 — Layer 5 Chat-v2 Omnichannel. Новый модуль chat-v2/ с
+    // conversation history (ChatV2Conversation + ChatV2Message) и
+    // omnichannel inbound через ConversationalService.subscribeInbound
+    // ('chat_query'). Зависит от @Global KnowledgeCoreModule (ChatV2Service)
+    // и ConversationalModule (subscribeInbound + sendChatReply). Должен
+    // быть ПОСЛЕ обоих. Legacy `ChatModule` остаётся живым (помечен
+    // @deprecated, переключается через ENV CHAT_V2_ENABLED).
+    ChatV2Module,
+
+    // SBA α-6 — регистрация специалиста 3.4 (Project / Customer Context)
+    // в CardSpecialistRegistry chat-v2. Должен идти ПОСЛЕ ChatV2Module
+    // (использует CardSpecialistRegistry из него).
+    Specialist34Module,
+
+    // SBA α-7 — регистрация специалиста 3.1 (Regulations / Processes /
+    // Policies) в CardSpecialistRegistry chat-v2. Должен идти ПОСЛЕ
+    // ChatV2Module и параллельно Specialist34Module — оба регистрируются
+    // в одном реестре с разными именами.
+    Specialist31Module,
+
+    // SBA α-7 — REST API `/api/v1/regulations` (master-detail для
+    // Regulation / Process / Policy с фильтром kind). RBAC через
+    // существующие `regulation` / `process` / `policy` ResourceType.
+    RegulationsModule,
+
+    // SBA β-2 — регистрация специалиста 3.2 (Knowledge Clone) в
+    // CardSpecialistRegistry chat-v2. Должен идти ПОСЛЕ ChatV2Module
+    // (использует CardSpecialistRegistry).
+    Specialist32Module,
+
+    // SBA β-3 — регистрация специалиста 3.3 (Decisions Registry) в
+    // CardSpecialistRegistry chat-v2. Должен идти ПОСЛЕ ChatV2Module.
+    Specialist33Module,
+
+    // SBA β-3 — REST API `/api/v1/decisions` (master-detail для решений).
+    // RBAC через `decision` ResourceType (см. policy.csv).
+    DecisionsModule,
+
+    // SBA β-4 — регистрация специалиста 3.5 (Insights Radar) в
+    // CardSpecialistRegistry chat-v2. Должен идти ПОСЛЕ ChatV2Module.
+    Specialist35Module,
+
+    // SBA β-4 — REST API `/api/v1/insights` (master-detail радара сигналов).
+    // RBAC через `insight` ResourceType (см. policy.csv).
+    InsightsModule,
+
+    // SBA β-5 — Layer 6 Probe-Agent (@Global). ProbeService.suggest вызывают
+    // все Specialist3X-probe сервисы (через @Optional inject — fallback на
+    // прямой sendNotification). ProbeDispatcherWorker + ProbePriorityCron
+    // поднимаются IN-PROCESS. Должен идти ПОСЛЕ ConversationalModule,
+    // AiModule, CoreQueueModule, KnowledgeCoreModule.
+    ProbeModule,
+
+    // SBA β-5 — регистрация специалиста 3.6 (Ideas Collector) в
+    // CardSpecialistRegistry + IdeasClosingLoopHandler (@OnEvent
+    // 'idea.status_changed'). Должен идти ПОСЛЕ ChatV2Module и
+    // ConversationalModule.
+    Specialist36Module,
+
+    // SBA β-5 — REST API `/api/v1/ideas` + `/api/v1/idea-clusters` +
+    // `/api/v1/me/ideas`. RBAC через `idea` ResourceType.
+    IdeasModule,
+
+    // SBA β-2 — REST API `/api/v1/me/knowledge-profile` и
+    // `/api/v1/persons/:id/knowledge-profile` + mark-wrong (CurationItem
+    // deep review). RBAC ResourceType — `knowledge_profile`.
+    KnowledgeCloneModule,
+
+    // SBA γ-1 — REST API `/api/v1/clones/persons/:id/ask` +
+    // `/api/v1/clones/roles/:id/ask`. RBAC: ClonesService.canAccessPersonClone
+    // (owner/admin/self/direct manager). Rate limit через Redis.
+    // Должен идти ПОСЛЕ KnowledgeCoreModule (ExecutablePersonaBuildService)
+    // и ChatV2Module (через SynthesisService подтягивает ClonesService).
+    ClonesModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

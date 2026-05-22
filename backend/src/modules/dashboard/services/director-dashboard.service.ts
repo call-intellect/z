@@ -384,6 +384,7 @@ export class DirectorDashboardService {
           break;
         default:
           // mood / drift / competitor_move / metric_change / idea / fact / knowledge_gap
+          // + SBA α-2: reasoning / rationale / decision_basis / regulation / process_step
           counters.other += cnt;
       }
     }

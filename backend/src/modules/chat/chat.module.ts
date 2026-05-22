@@ -17,6 +17,10 @@ import { ChatService } from './chat.service';
  *   - `BusinessMetricsService`
  *   - `PrismaService`
  *   - `CardsService` (CardsModule) — для проверки ownership карточки.
+ *
+ * @deprecated SBA α-5 — используйте `ChatV2Module` (`POST /api/v1/chat-v2/messages`).
+ *   Этот модуль остаётся для обратной совместимости с UI /chat и legacy API.
+ *   Удаление — отдельный sub-TZ позже.
  */
 @Module({
   imports: [CardsModule],

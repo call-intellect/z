@@ -69,6 +69,48 @@ export const CORE_QUEUE_NAMES = {
    * jobId = `dump_<documentId>`.
    */
   DUMP_CREATED: 'core.dump-created',
+  /**
+   * SBA α-3 — RouterService.dispatch публикует jobs в эту очередь после
+   * persist'а IdeaBlock'а. Multi-consumer: каждый специалист Слоя 3
+   * (3-1-regulations, 3-3-decisions, 3-4-project-customer, 3-5-insights,
+   * 3-6-ideas, 3-7-skill, 3-2-knowledge-clone) подписывается на свой jobName.
+   * Payload — `SpecialistRoutingJobData`. На α-3 consumer'ы ещё НЕ запущены —
+   * jobs накапливаются до появления первого специалиста (α-6, α-7, β-2, β-3, γ-1).
+   * jobId = `<specialistName>_<blockId>` — идемпотентно.
+   */
+  SPECIALIST_ROUTING: 'core.specialist-routing',
+  /**
+   * SBA β-2 — Specialist 3.2 (Knowledge Clone). Очередь rebuild'а профиля
+   * знаний конкретного Person. Consumer — `KnowledgeCloneRebuildWorker`.
+   * Дебаунс через jobId `rebuild-knowledge-profile_<personId>` + delay
+   * (`cfg.knowledgeClone.debounceMs`, 60s по умолчанию).
+   *
+   * Несколько подряд идущих enqueue для одного Person'а сложатся в один
+   * отложенный job — это снимает нагрузку, если в одной встрече упомянуто
+   * много блоков одного и того же сотрудника.
+   */
+  KNOWLEDGE_CLONE_REBUILD: 'core.knowledge-clone-rebuild',
+  /**
+   * SBA β-5 — Layer 6 (Probe-Agent). Consumer — `ProbeDispatcherWorker`.
+   * Принимает `{ probeEventId }`. Выбор recipient'а, LLM-формулировка вопроса,
+   * dispatch через `ConversationalService.sendNotification(eventType='probe.question')`.
+   * jobId = `probe_<probeEventId>` для идемпотентности.
+   */
+  PROBE_EVENTS: 'core.probe-events',
+  /**
+   * SBA β-5 — Specialist 3.6 (Ideas Collector). Consumer — `IdeaClustererCron`-
+   * style worker (или прямо cron вызывает). Очередь нужна, чтобы кластеризация
+   * не делалась синхронно при создании каждой идеи. jobId = `idea_cluster_<orgId>`.
+   */
+  IDEA_CLUSTERER: 'core.idea-clusterer',
+  /**
+   * SBA γ-1 — Specialist 3.7 (SkillProfile) rebuild. Consumer —
+   * `SkillProfileRebuildWorker`. Дебаунс через jobId
+   * `skill-profile-rebuild_<profileId>` + delay (`cfg.skill.rebuildDebounceMs`,
+   * 60s по умолчанию). Несколько подряд идущих enqueue для одного профиля
+   * сложатся в один отложенный job.
+   */
+  SKILL_PROFILE_REBUILD: 'core.skill-profile-rebuild',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -175,4 +217,59 @@ export interface DumpCreatedJobData {
   uploaderPersonId: string;
   /** Готовый текст дампа — без парсинга. */
   content: string;
+}
+
+/**
+ * Payload для `core.specialist-routing` (SBA α-3). Воркеры-специалисты сами
+ * подгрузят дополнительные данные из БД по `blockId`. `signalType` дублируется
+ * в payload для cheap-filter'а на стороне consumer'а (чтобы не лазить в БД
+ * только для проверки signalType).
+ */
+export interface SpecialistRoutingJobData {
+  blockId: string;
+  tenantId: string;
+  signalType: string;
+  /** Имя специалиста, на которого диспатчем (для логов и для match jobName). */
+  specialistName: string;
+}
+
+/**
+ * Payload для `core.knowledge-clone-rebuild` (SBA β-2). Воркер сам
+ * подгрузит блоки Person'а за окно `cfg.knowledgeClone.lookbackMonths`.
+ *
+ * `reason` — для трассировки в логах (откуда пришёл rebuild: dispatch
+ * специалиста / cron / manual).
+ */
+export interface RebuildKnowledgeProfileJobData {
+  personId: string;
+  tenantId: string;
+  reason?: string;
+}
+
+/**
+ * Payload для `core.probe-events` (SBA β-5). Воркер по probeEventId подтянет
+ * `ProbeEvent` из БД и сделает selectRecipient + LLM probe-formulate + dispatch
+ * через `ConversationalService.sendNotification`.
+ */
+export interface ProbeEventJobData {
+  probeEventId: string;
+}
+
+/**
+ * Payload для `core.idea-clusterer` (SBA β-5). Воркер запускает один проход
+ * группировки Idea → IdeaCluster в указанной Org.
+ */
+export interface IdeaClustererJobData {
+  tenantId: string;
+}
+
+/**
+ * Payload для `core.skill-profile-rebuild` (SBA γ-1). Воркер по profileId
+ * запустит `Specialist37Service.rebuildProfile`. `reason` — для логов
+ * (откуда пришёл rebuild: dispatch специалиста / cron / manual).
+ */
+export interface RebuildSkillProfileJobData {
+  profileId: string;
+  tenantId: string;
+  reason?: string;
 }

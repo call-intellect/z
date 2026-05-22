@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
+  AlertTriangle,
   Brain,
+  CalendarClock,
   CalendarDays,
   ChevronDown,
   ChevronRight,
@@ -15,6 +17,7 @@ import {
   Gauge,
   Home,
   IdCard,
+  Lightbulb,
   ListChecks,
   Lock,
   LogOut,
@@ -29,6 +32,7 @@ import {
   Shield,
   Sparkles,
   Target,
+  Truck,
   User,
   UserRound,
   Workflow,
@@ -122,6 +126,17 @@ const COMPANY_GROUP: NavGroup = {
     { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure' },
     { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
     { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles' },
+    // SBA α-3 — read-only список поставщиков и событий (категория A онтологии).
+    { href: '/vendors', label: 'Поставщики', icon: Truck, matchPrefix: '/vendors' },
+    { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
+    // SBA α-7 — единый master-detail для Regulation/Process/Policy.
+    { href: '/regulations', label: 'Регламенты', icon: ClipboardList, matchPrefix: '/regulations' },
+    // SBA β-3 — реестр решений компании (statement / rationale / supersedes).
+    { href: '/decisions', label: 'Решения', icon: ClipboardList, matchPrefix: '/decisions' },
+    // SBA β-4 — радар повторяющихся сигналов (problems / risks / blockers / inefficiencies).
+    { href: '/insights', label: 'Сигналы', icon: AlertTriangle, matchPrefix: '/insights' },
+    // SBA β-5 — реестр идей и запросов клиентов (internal / client_request).
+    { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
     {
       href: '/themes',
       label: 'Темы',
@@ -142,7 +157,6 @@ const COMPANY_GROUP: NavGroup = {
     defaultCollapsed: true,
     items: [
       { href: '/processes', label: 'Процессы', icon: Workflow, matchPrefix: '/processes', comingSoon: true },
-      { href: '/regulations', label: 'Регламенты', icon: ClipboardList, matchPrefix: '/regulations', comingSoon: true },
       { href: '/policies', label: 'Политики', icon: Scale, matchPrefix: '/policies', comingSoon: true },
       { href: '/metrics', label: 'Метрики', icon: Gauge, matchPrefix: '/metrics', comingSoon: true },
     ],

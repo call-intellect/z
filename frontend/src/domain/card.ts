@@ -4,7 +4,13 @@
  * Контракт: `backend/src/modules/cards/`.
  */
 
-export type CardKind = 'client' | 'deal' | 'project' | 'topic' | 'custom';
+export type CardKind =
+  | 'client'
+  | 'deal'
+  | 'project'
+  | 'topic'
+  | 'custom'
+  | 'vendor';
 
 export const CARD_KIND_LABELS: Record<CardKind, string> = {
   client: 'Клиент',
@@ -12,6 +18,7 @@ export const CARD_KIND_LABELS: Record<CardKind, string> = {
   project: 'Проект',
   topic: 'Тема',
   custom: 'Прочее',
+  vendor: 'Поставщик',
 };
 
 export type CardDomain = {

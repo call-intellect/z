@@ -543,6 +543,27 @@ const KnowledgeCoreSchema = z.object({
    * 0 = расширение выключено.
    */
   CHAT_V2_GRAPH_HOPS: z.coerce.number().int().min(0).max(2).default(1),
+
+  // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel (модуль chat-v2/) ──────────
+  /**
+   * История диалога: сколько последних сообщений передавать в LLM-контекст.
+   * 6 = 3 user + 3 assistant (рекомендация ChatV2Service из knowledge-core).
+   */
+  CHAT_V2_HISTORY_MESSAGES: z.coerce.number().int().min(0).max(20).default(6),
+  /**
+   * TTL диалогов: после стольких дней без updatedAt диалог авто-архивируется
+   * (если не pinned). Cron `chat-v2-cleanup.cron` — раз в неделю.
+   */
+  CHAT_V2_CONVERSATION_TTL_DAYS: z.coerce.number().int().positive().default(90),
+  /**
+   * Cron-расписание авто-архивации (по умолчанию — воскресенье 03:00).
+   */
+  CHAT_V2_CLEANUP_CRON: z.string().min(1).default('0 3 * * 0'),
+  /**
+   * Дефолтный mode для chat-v2 (factual/synthetic/clone_style). На α-5
+   * clone_style не реализован — fallback на synthetic.
+   */
+  CHAT_V2_DEFAULT_MODE: z.enum(['factual', 'synthetic', 'clone_style']).default('synthetic'),
 });
 
 /** Шеринг (длительность ссылок). */
@@ -558,6 +579,22 @@ const ShareSchema = z.object({
         .map((s) => Number.parseInt(s.trim(), 10))
         .filter((n) => Number.isFinite(n) && n > 0),
     ),
+});
+
+/**
+ * SBA α-3 — Layer 2 Ontology Extension + RouterService.
+ *
+ * `ROUTER_DISPATCH_CONCURRENCY` — concurrency BullMQ-воркеров специалистов
+ * (фактическое значение — на стороне consumer'ов в α-6/α-7/β-2/β-3/γ-1).
+ * Здесь — только потолок, чтобы не выставить разные значения по разным sub-TZ.
+ *
+ * `ROUTER_MAX_SPECIALISTS_PER_BLOCK` — анти-fan-out: если на один блок мapping
+ * выдал больше N специалистов, оставляем top-N по приоритету (см.
+ * `RouterService.PRIORITY`). Default 4.
+ */
+const RouterSchema = z.object({
+  ROUTER_DISPATCH_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  ROUTER_MAX_SPECIALISTS_PER_BLOCK: z.coerce.number().int().positive().default(4),
 });
 
 /**
@@ -585,6 +622,187 @@ const ConversationalSchema = z.object({
   CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR: z.coerce.number().int().positive().default(10),
   CONVERSATIONAL_EMAIL_FROM_DEFAULT: z.string().default(''),
   CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS: z.coerce.number().int().positive().default(5),
+});
+
+/**
+ * SBA β-1 — Telegram Bot channel.
+ *
+ *   - TELEGRAM_BOT_API_BASE — базовый URL Telegram Bot API. Override нужен
+ *     для тестов / proxy. По умолчанию — `https://api.telegram.org`.
+ *   - TELEGRAM_BOT_GLOBAL_RPS — глобальный rate-limit для outbound-вызовов
+ *     Telegram API (Bot API лимит ~30 msg/sec; держим pessimistic 25, чтобы
+ *     не словить 429 у соседних tenant'ов).
+ *
+ * Per-tenant botToken / webhookSecret лежат в `Channel.config` (encrypted).
+ * Здесь нет TELEGRAM_BOT_TOKEN — это правильно: токен per-tenant.
+ */
+const TelegramBotChannelSchema = z.object({
+  TELEGRAM_BOT_API_BASE: z.string().url().default('https://api.telegram.org'),
+  TELEGRAM_BOT_GLOBAL_RPS: z.coerce.number().int().positive().default(25),
+});
+
+/**
+ * SBA β-1 — MAX Bot channel (mssgr.ru / dev.max.ru).
+ *
+ *   - MAX_BOT_API_BASE — базовый URL Platform API. По умолчанию —
+ *     `https://platform-api.max.ru` (см. context7 / dev.max.ru/docs-api).
+ *   - MAX_BOT_GLOBAL_RPS — глобальный rate-limit (MAX рекомендует ≤30 RPS;
+ *     держим pessimistic 25).
+ *
+ * Per-tenant accessToken / webhookSecret лежат в `Channel.config` (encrypted).
+ */
+const MaxBotChannelSchema = z.object({
+  MAX_BOT_API_BASE: z.string().url().default('https://platform-api.max.ru'),
+  MAX_BOT_GLOBAL_RPS: z.coerce.number().int().positive().default(25),
+});
+
+/**
+ * SBA α-4 — Layer 4 Curation Foundation.
+ * Пороги triage'а, expiry, и stale-detection cron'а.
+ *
+ *   - CURATION_AUTO_THRESHOLD_DEFAULT — confidence >= порога → auto-canonical.
+ *   - CURATION_DEEP_REVIEW_THRESHOLD_DEFAULT — confidence < порога → deep review.
+ *     Между ними — light review.
+ *   - CURATION_CRITICAL_TYPES_DEFAULT — CSV типов, которые всегда идут на deep
+ *     review (вне зависимости от confidence). По умолчанию ['regulation',
+ *     'process', 'decision'] — самые опасные карточки.
+ *   - CURATION_ITEM_EXPIRY_DAYS — через сколько дней `pending` CurationItem
+ *     истекает (для stale-карточек — пометка `status='stale'`).
+ *   - CARD_STALE_DETECTOR_CRON — расписание ежедневного прохода
+ *     CardStaleDetectorCron.
+ *   - CARD_STALE_MONTHS_THRESHOLD — порог «давно не подтверждалась»
+ *     (`lastConfirmedAt > N мес.`).
+ *   - CARD_STALE_DYNAMIC_SCORE_THRESHOLD — порог упавшего `dynamicScore`,
+ *     ниже которого карточка считается кандидатом на stale-probe.
+ */
+const CurationSchema = z.object({
+  CURATION_AUTO_THRESHOLD_DEFAULT: z.coerce.number().min(0).max(1).default(0.85),
+  CURATION_DEEP_REVIEW_THRESHOLD_DEFAULT: z.coerce.number().min(0).max(1).default(0.6),
+  CURATION_CRITICAL_TYPES_DEFAULT: z
+    .string()
+    .default('regulation,process,decision')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  CURATION_ITEM_EXPIRY_DAYS: z.coerce.number().int().positive().default(30),
+  CARD_STALE_DETECTOR_CRON: z.string().min(1).default('0 4 * * *'),
+  CARD_STALE_MONTHS_THRESHOLD: z.coerce.number().int().positive().default(6),
+  CARD_STALE_DYNAMIC_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.3),
+});
+
+/**
+ * SBA β-2 — Specialist 3.2 Knowledge Clone.
+ *
+ *   - KNOWLEDGE_CLONE_REBUILD_CRON — расписание `KnowledgeCloneRebuildCron`,
+ *     по умолчанию раз в 6 часов.
+ *   - KNOWLEDGE_CLONE_LOOKBACK_MONTHS — окно блоков (за сколько месяцев
+ *     ищем материал для профиля). По умолчанию 12 месяцев.
+ *   - KNOWLEDGE_CLONE_DEBOUNCE_MS — дебаунс enqueue rebuild-job'а
+ *     (несколько подряд идущих диспатчей одного Person сложатся в один job).
+ *   - KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE — порог: если блоков меньше,
+ *     профиль не строится (мало материала — выйдет шум).
+ */
+const KnowledgeCloneSchema = z.object({
+  KNOWLEDGE_CLONE_REBUILD_CRON: z.string().min(1).default('0 */6 * * *'),
+  KNOWLEDGE_CLONE_LOOKBACK_MONTHS: z.coerce.number().int().positive().default(12),
+  KNOWLEDGE_CLONE_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
+  KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE: z.coerce.number().int().positive().default(10),
+});
+
+/**
+ * SBA β-4 — Specialist 3.5 (Insights Radar).
+ *
+ *   - INSIGHT_CLUSTER_THRESHOLD — порог cosine sim для KNN-кластеризации
+ *     (>= порога → считаем повтором, обновляем existing Insight).
+ *   - INSIGHT_CLUSTER_CRON — расписание `InsightClustererCron`, по умолчанию
+ *     раз в 6 часов: пересчёт frequency/dynamic + probe.escalation_suggested.
+ *   - INSIGHT_FREQUENCY_WINDOW_DAYS — окно rolling-частоты (default 30д).
+ *   - INSIGHT_SPIKE_RATIO — порог ratio 7d/30d, выше которого dynamicLabel='spike'.
+ */
+const InsightsSchema = z.object({
+  INSIGHT_CLUSTER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
+  INSIGHT_CLUSTER_CRON: z.string().min(1).default('0 */6 * * *'),
+  INSIGHT_FREQUENCY_WINDOW_DAYS: z.coerce.number().int().positive().default(30),
+  INSIGHT_SPIKE_RATIO: z.coerce.number().positive().default(3.0),
+});
+
+/**
+ * SBA β-5 — Specialist 3.6 (Ideas Collector).
+ *
+ *   - IDEA_CLUSTER_THRESHOLD — порог cosine sim для KNN-дедупа Idea (>= порога
+ *     → обновляем existing).
+ *   - IDEA_CLUSTERER_CRON — расписание `IdeaClustererCron` (group Idea →
+ *     IdeaCluster, обновление clusterWeight). По умолчанию каждые 4 часа.
+ *   - IDEA_MIN_SUPPORTERS_FOR_CLUSTER — минимум идей для создания нового
+ *     IdeaCluster (порог критической массы).
+ */
+const IdeasSchema = z.object({
+  IDEA_CLUSTER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.80),
+  IDEA_CLUSTERER_CRON: z.string().min(1).default('30 */4 * * *'),
+  IDEA_MIN_SUPPORTERS_FOR_CLUSTER: z.coerce.number().int().positive().default(2),
+});
+
+/**
+ * SBA β-5 — Layer 6 Probe-Agent.
+ *
+ *   - PROBE_DEDUP_TTL_HOURS — TTL Redis-кеша дедупа по contentHash.
+ *   - PROBE_RATE_LIMIT_PER_USER_PER_HOUR / _PER_DAY — анти-спам limits.
+ *   - PROBE_EXPIRY_DAYS — через сколько дней probe считается expired.
+ *   - PROBE_PRIORITY_REFRESH_CRON — расписание пересчёта engagement_rate.
+ *   - PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN — дефолтное смещение TZ
+ *     получателя (MSK = +180 мин). Локализация per-user — γ+.
+ *   - PROBE_COLD_START_MODE_HOURS — окно «прогрева» после deploy/old probe:
+ *     первые N часов после первого probe в Org все probe идут только в admin-
+ *     очередь (status='dropped_cold_start'), не в каналы.
+ */
+const ProbeSchema = z.object({
+  PROBE_DEDUP_TTL_HOURS: z.coerce.number().int().positive().default(72),
+  PROBE_RATE_LIMIT_PER_USER_PER_HOUR: z.coerce.number().int().positive().default(5),
+  PROBE_RATE_LIMIT_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
+  PROBE_EXPIRY_DAYS: z.coerce.number().int().positive().default(14),
+  PROBE_PRIORITY_REFRESH_CRON: z.string().min(1).default('*/15 * * * *'),
+  PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN: z.coerce.number().int().default(180),
+  PROBE_COLD_START_MODE_HOURS: z.coerce.number().int().min(0).default(24),
+});
+
+/**
+ * SBA γ-1 — Specialist 3.7 (SkillProfile + ExecutablePersona) + Clone API.
+ *
+ *   - SKILL_MIN_OBSERVATIONS — минимум наблюдений для появления trait (default 5).
+ *   - SKILL_TRAIT_SIMILARITY_THRESHOLD — KNN-cosine порог merge (default 0.85).
+ *   - SKILL_LOOKBACK_MONTHS — окно поиска subject-reasoning блоков (default 12).
+ *   - SKILL_DECAY_MONTHS — без подтверждений N мес → confidence↓ (default 6).
+ *   - SKILL_ARCHIVE_MONTHS — без подтверждений N мес → status='archived' (default 12).
+ *   - SKILL_RECALIBRATE_CRON — расписание daily decay-cron'а.
+ *   - SKILL_MANAGER_DIGEST_CRON — расписание weekly manager-дайджеста.
+ *   - CLONE_ASK_PER_USER_PER_DAY — rate limit запросов к Clone API.
+ */
+const SkillSchema = z.object({
+  SKILL_MIN_OBSERVATIONS: z.coerce.number().int().positive().default(5),
+  SKILL_TRAIT_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  SKILL_LOOKBACK_MONTHS: z.coerce.number().int().positive().default(12),
+  SKILL_DECAY_MONTHS: z.coerce.number().int().positive().default(6),
+  SKILL_ARCHIVE_MONTHS: z.coerce.number().int().positive().default(12),
+  SKILL_RECALIBRATE_CRON: z.string().min(1).default('0 5 * * *'),
+  SKILL_MANAGER_DIGEST_CRON: z.string().min(1).default('0 9 * * MON'),
+  SKILL_REBUILD_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
+  CLONE_ASK_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
+});
+
+/**
+ * SBA γ-1 — ExecutablePersona build cron + параметры компиляции.
+ *
+ *   - PERSONA_BUILD_CRON — расписание сборки snapshots (по умолчанию воскресенье 06:00).
+ *   - PERSONA_MIN_TRAITS — минимум активных traits в SkillProfile для появления Persona.
+ *   - PERSONA_ROLE_AGG_MIN_PERSONS — минимум employee'ев с активным профилем для role-persona.
+ */
+const PersonaSchema = z.object({
+  PERSONA_BUILD_CRON: z.string().min(1).default('0 6 * * SUN'),
+  PERSONA_MIN_TRAITS: z.coerce.number().int().positive().default(3),
+  PERSONA_ROLE_AGG_MIN_PERSONS: z.coerce.number().int().positive().default(2),
 });
 
 /**
@@ -624,7 +842,17 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(KnowledgeCoreSchema)
   .merge(DocumentIngestSchema)
   .merge(ExtractionSchema)
-  .merge(ConversationalSchema);
+  .merge(ConversationalSchema)
+  .merge(TelegramBotChannelSchema)
+  .merge(MaxBotChannelSchema)
+  .merge(RouterSchema)
+  .merge(CurationSchema)
+  .merge(KnowledgeCloneSchema)
+  .merge(InsightsSchema)
+  .merge(IdeasSchema)
+  .merge(ProbeSchema)
+  .merge(SkillSchema)
+  .merge(PersonaSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

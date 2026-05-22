@@ -240,6 +240,17 @@ enum SignalType {
   competitor_move
   metric_change
   knowledge_gap
+  // SBA α-2 — расширение Layer 1 разметки.
+  // reasoning — обоснование «почему я так решил» (главный источник для SkillProfile γ-1).
+  // rationale — структурированное обоснование, привязанное к decision.
+  // decision_basis — фрагмент обоснования внутри блока-decision (узкий случай rationale).
+  // regulation — фрагмент регламента / нормативного правила (источник для Specialist 3.1).
+  // process_step — шаг процесса (источник для Specialist 3.1).
+  reasoning
+  rationale
+  decision_basis
+  regulation
+  process_step
 }
 
 enum IdeaBlockStatus {
@@ -250,13 +261,24 @@ enum IdeaBlockStatus {
 }
 
 enum EntityType {
-  client
+  // SBA α-3 (2026-05-21) — расширение онтологии до 12 классов.
+  // `client` и `custom` помечены deprecated: убрать в следующем релизе
+  // после успешного применения patch-rename-client-to-customer.ts на проде
+  // (Postgres не поддерживает DROP VALUE на enum'е напрямую).
+  client      /// @deprecated → используй `customer`. Удалить после patch-script.
   person
+  customer    /// SBA α-3 — переименование `client`. Новые записи только с customer.
+  vendor      /// SBA α-3 — поставщик (категория A).
   project
   product
+  document    /// SBA α-3 — документ-сущность графа знаний.
+  goal        /// SBA α-3 — цель (привязка Goal.entityId).
+  event       /// SBA α-3 — событие (meeting | incident | release | …).
   topic
   location
-  custom
+  technology  /// SBA α-3 — технология / стек.
+  metric      /// SBA α-3 — метрика-сущность графа.
+  custom      /// @deprecated. Удалить после patch-script.
 }
 
 enum IdeaBlockEntityRole {
@@ -265,9 +287,96 @@ enum IdeaBlockEntityRole {
   mentioned
 }
 
+// ──────────────────────────── SBA α-3 — Layer 2 онтология ────────────────────────────
+
+/// PersonRelationship — отношение Person к компании (Org). Используется
+/// специалистами Слоя 3 (3-7-skill, 3-2-knowledge-clone) для фильтра
+/// «брать reasoning только сотрудников».
+enum PersonRelationship {
+  employee   /// активный сотрудник (есть Membership)
+  external   /// внешний контакт (клиент, партнёр, посетитель встречи)
+  candidate  /// кандидат на вакансию
+  former     /// бывший сотрудник
+}
+
+/// VendorSegment — сегмент поставщика (вид закупки).
+enum VendorSegment {
+  software
+  hardware
+  consulting
+  logistics
+  other
+}
+
+/// VendorStatus — текущее состояние отношений с поставщиком.
+enum VendorStatus {
+  active       /// активный контракт
+  evaluating   /// в оценке (тендер / pilot)
+  churned      /// расстались
+  banned       /// чёрный список
+}
+
+/// EventKind — вид события (для модели Event как сущности графа).
+/// `meeting` ссылается на Meeting через `relatedMeetingId`.
+enum EventKind {
+  meeting
+  incident
+  release
+  transition
+  milestone
+  other
+}
+
 enum RawEventPayloadStorage {
   inline
   s3
+}
+
+// ──────────────────────────── SBA α-4 — Layer 4 Curation Foundation ────────────────────────────
+
+/// CurationLevel — уровень triage'а для CurationItem (см. plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §4).
+/// `light` — одна кнопка approve/reject; `deep` — полный provenance + reasoning.
+enum CurationLevel {
+  light
+  deep
+}
+
+/// CurationItemStatus — жизненный цикл записи в очереди проверки.
+enum CurationItemStatus {
+  pending
+  decided
+  expired
+  cancelled
+}
+
+/// CurationDecisionType — тип решения куратора по карточке.
+///   - mark_as_misleading: SBA γ-1 — post-hoc пометка карточки специалиста (Skill traits)
+///     как «неверная» direct manager'ом / admin'ом. Skill не проходит pre-approval (auto-canonical),
+///     поэтому неверные traits лечатся только постфактум.
+enum CurationDecisionType {
+  approve
+  reject
+  approve_with_edits
+  split
+  merge
+  supersede
+  mark_as_misleading
+}
+
+/// ConflictStatus — статус ConflictItem.
+enum ConflictStatus {
+  open
+  resolved
+  dismissed
+}
+
+/// ConflictResolution — итог резолюции конфликта.
+/// `evolving` — особый случай: старое было правдой до даты X, новое — после.
+enum ConflictResolution {
+  accept_new
+  keep_old
+  merge
+  evolving
 }
 
 // ──────────────────────────── knowledge-core: graph (Фаза 3) ────────────────────────────
@@ -497,10 +606,69 @@ enum MetricValueType {
   other
 }
 
+/// SBA β-3 — расширенный набор статусов Decision'а.
+/// Значения 'active' и 'rolled_back' оставлены для обратной совместимости с
+/// legacy Decision'ами Фазы 0a (могут существовать в БД у dev-инстансов до
+/// миграции). Все новые Decision'ы создаются специалистом 3.3 со значением из
+/// {proposed, approved, rejected, implemented, cancelled, superseded}.
 enum DecisionStatus {
   active
   rolled_back
   superseded
+  // ── SBA β-3 ──
+  proposed
+  approved
+  rejected
+  implemented
+  cancelled
+}
+
+/// SBA β-4 — Specialist 3.5 (Insights Radar).
+/// Тип повторяющегося сигнала, который агрегирует специалист.
+///   - problem — фиксируемая проблема в работе компании.
+///   - risk — потенциальная угроза (ещё не реализовалась).
+///   - blocker — что мешает движению задачи / проекта.
+///   - inefficiency — неэффективность процесса (трата ресурсов без угрозы).
+enum InsightKind {
+  problem
+  risk
+  blocker
+  inefficiency
+}
+
+/// SBA β-4 — острота сигнала. Влияет на triage (critical → deep review) и
+/// сортировку радара (high/critical поднимаются вверх).
+enum InsightSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+/// SBA β-4 — динамика повторений сигнала за rolling-окно.
+///   - growing — 7d-частота заметно выше 30d-средней (ratio > 1.3).
+///   - stable — обычный фон.
+///   - declining — частота падает (ratio < 0.5).
+///   - spike — резкий всплеск (ratio > INSIGHT_SPIKE_RATIO, default 3.0).
+enum InsightDynamic {
+  growing
+  stable
+  declining
+  spike
+}
+
+/// SBA β-4 — статус карточки Insight.
+///   - active — активный, отображается на радаре.
+///   - mitigating — берут в работу (черновой mitigationPlan).
+///   - mitigated — закрыт; новое упоминание → probe recurring_after_mitigation.
+///   - archived — устарел, скрыт.
+///   - false_alarm — куратор / admin отметил ложной тревогой.
+enum InsightStatus {
+  active
+  mitigating
+  mitigated
+  archived
+  false_alarm
 }
 
 // ──────────────────────────── models ────────────────────────────
@@ -560,6 +728,15 @@ model User {
   aiResultFeedback        AiResultFeedback[]     @relation("AiResultFeedbackUser")
   // ── Фаза A.4 — Audit log переключений LlmTaskRoute ──
   llmTaskRouteChanges     LlmTaskRouteChange[]    @relation("LlmTaskRouteChangeBy")
+
+  // ── SBA α-4 — Layer 4 Curation Foundation ──
+  curationItemsAssigned   CurationItem[]          @relation("CurationItemAssignedTo")
+  curationDecisions       CurationDecision[]      @relation("CurationDecisionReviewer")
+  conflictsResolved       ConflictItem[]          @relation("ConflictItemResolvedBy")
+  cardVersionsCreated     CardVersion[]           @relation("CardVersionCreatedBy")
+
+  // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
+  chatV2Conversations     ChatV2Conversation[]    @relation("ChatV2ConversationUser")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -1434,7 +1611,8 @@ model Card {
   ownerId     String
   owner       User    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name        String
-  // 'client' | 'deal' | 'project' | 'topic' | 'custom'.
+  // 'client' | 'deal' | 'project' | 'topic' | 'custom' | 'vendor'.
+  // 'vendor' добавлен в SBA α-3 (поставщики, см. модель Vendor).
   // Хранится строкой (а не enum'ом), чтобы можно было добавлять виды без миграций.
   kind        String  @default("client")
   color       String  @default("#5EEAD4")
@@ -1467,6 +1645,21 @@ model Card {
   // Заполняется card-rollup-v2.worker'ом — кэш для быстрого рендера UI.
   cachedTopThemeIds String[] @default([])
 
+  // SBA α-6 — контракт специалиста §5.2 зонтичного.
+  // Заполняются Specialist 3.4 при rollup'е.
+  /// Блоки-источники последнего rollup'а (для citations в chat-v2).
+  sourceBlockIds   String[]      @default([])
+  /// confidence последнего LLM-rollup'а [0..1]. Используется CurationService.triage().
+  confidence       Decimal?      @db.Decimal(4, 3)
+  /// FK на текущую опубликованную версию CardVersion (α-4). Заполняется после auto-triage.
+  currentVersionId String?
+  currentVersion   CardVersion?  @relation("CardCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  /// Person.id, кому Card «присваивается» как subject. Для последующей сборки SkillProfile (γ-1).
+  personSubjectIds String[]      @default([])
+  /// Когда карточка последний раз подтверждалась (auto после успешного rollup'а
+  /// или вручную). Используется stale-detection из α-4 и probe `card.outdated_summary`.
+  lastConfirmedAt  DateTime?
+
   // Денормализация для сортировки списка без JOIN.
   meetingCount  Int       @default(0)
   lastMeetingAt DateTime?
@@ -1484,6 +1677,8 @@ model Card {
   @@index([tenantId])
   @@index([entityId])
   @@index([bornFromThemeId])
+  @@index([currentVersionId])
+  @@index([tenantId, lastConfirmedAt])
 }
 
 // ──────────────────────────── orgs / RBAC / invitations (Фаза 0 knowledge-core) ────────────────────────────
@@ -1572,6 +1767,12 @@ model Org {
   tools           Tool[]
   metrics         Metric[]
   decisions       Decision[]
+  // ── SBA β-4 — Specialist 3.5 (Insights Radar) ──
+  insights        Insight[]
+  // ── SBA β-5 — Specialist 3.6 (Ideas Collector) + Layer 6 (Probe-Agent) ──
+  ideas           Idea[]
+  ideaClusters    IdeaCluster[]
+  probeEvents     ProbeEvent[]
 
   // ── Фаза A.1 — Prompt Registry ──
   promptTemplates  PromptTemplate[]
@@ -1580,6 +1781,29 @@ model Org {
   // ── SBA α-1 — Conversational Channels Foundation ──
   channels      Channel[]
   notifications Notification[]
+
+  // ── SBA α-3 — Layer 2 ontology extension ──
+  vendors Vendor[]
+  events  Event[]
+
+  // ── SBA α-4 — Layer 4 Curation Foundation ──
+  curationItems      CurationItem[]
+  conflictItems      ConflictItem[]
+  cardVersions       CardVersion[]
+  curatorAssignments CuratorAssignment[]
+
+  // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
+  chatV2Conversations ChatV2Conversation[]
+
+  // ── SBA γ-1 — Specialist 3.7 (SkillProfile + ExecutablePersona) ──
+  skillProfiles      SkillProfile[]
+  executablePersonas ExecutablePersona[] @relation("ExecutablePersonaTenant")
+
+  /// Org-настройки Слоя 4 (curation). См. plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §8.
+  /// Структура: `{ autoThreshold: 0.85, deepReviewThreshold: 0.6,
+  /// criticalTypes: ['regulation','process','decision'], itemExpiryDays: 30 }`.
+  /// Если null — берутся ENV-defaults через TypedConfigService.
+  curationSettings Json?
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -1829,9 +2053,276 @@ model Entity {
   /// связана с Prisma-моделью Person через EntityResolutionService.
   persons       Person[]
 
+  /// SBA α-3 — обратные связи новых моделей категории A.
+  vendor   Vendor?   @relation("VendorEntity")
+  event    Event?    @relation("EventEntity")
+  goal     Goal?     @relation("GoalEntity")
+  document Document? @relation("DocumentEntity")
+
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
   @@index([tenantId, canonicalName])
+}
+
+// ──────────────────────────── SBA α-3 — категория A: Vendor / Event ────────────────────────────
+
+/// Vendor — поставщик (категория A онтологии, SBA α-3). С `entityId` строго
+/// привязан к Entity{type=vendor} для участия в графе знаний.
+///
+/// Дедупликация: приоритет `metadata.inn` (юридическое лицо), fallback на
+/// `name`. Реализация в `EntityResolutionService.findOrCreateVendorEntity`.
+model Vendor {
+  id                String        @id @default(cuid())
+  tenantId          String
+  /// Связка с Entity{type=vendor}. Уникальна (1:1).
+  entityId          String        @unique
+  entity            Entity        @relation("VendorEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  org               Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name              String        @db.VarChar(300)
+  inn               String?       @db.VarChar(20)
+  segment           VendorSegment?
+  status            VendorStatus  @default(active)
+  /// User.id ответственного со стороны компании. NULL — не назначен.
+  responsibleUserId String?
+  /// Document.id'ы договоров (опц.). FK не делаем — мягкая ссылка, чтобы не
+  /// каскадить delete документа на Vendor.
+  contractIds       String[]      @default([])
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+
+  @@index([tenantId, status])
+  @@index([tenantId, segment])
+  @@index([tenantId, deletedAt])
+}
+
+/// Event — событие графа знаний (категория A, SBA α-3). Объединяет встречи,
+/// инциденты, релизы, переходы и milestone'ы под единой типизацией для
+/// специалистов Слоя 3 (3-3-decisions, 3-5-insights).
+///
+/// Дедупликация: `(tenantId, title, startAt within ±1 day)`. Реализация в
+/// `EntityResolutionService.findOrCreateEventEntity`.
+model Event {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  /// Связка с Entity{type=event}.
+  entityId              String    @unique
+  entity                Entity    @relation("EventEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  org                   Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind                  EventKind @default(other)
+  title                 String    @db.VarChar(300)
+  startAt               DateTime
+  endAt                 DateTime?
+  durationMin           Int?
+  location              String?   @db.VarChar(300)
+  /// Person.id участников (мягкая ссылка, без FK — каскад не нужен).
+  participantsPersonIds String[]  @default([])
+  /// Meeting.id, если событие отражает реальную видеовстречу LiveKit.
+  relatedMeetingId      String?
+  outcomeSummary        String?   @db.Text
+  metadata              Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  @@index([tenantId, startAt])
+  @@index([tenantId, kind])
+  @@index([tenantId, deletedAt])
+}
+
+// ──────────────────────────── SBA α-4 — Layer 4 Curation Foundation ────────────────────────────
+
+/// CurationItem — запись в очереди проверки карточки специалиста (см.
+/// plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §4).
+///
+/// `proposedPayload` — что специалист предлагает канонизировать. Применяется
+/// после `decide`'а; до этого карточка не становится canonical.
+///
+/// `candidateCuratorIds` — кандидаты-кураторы, выбранные CuratorRoutingService
+/// (после `decide`'а — `assignedToUserId` указывает на финального ревьюера).
+///
+/// `triageReason` — JSON, например `{ confidence: 0.72, conflictIds: ['cf_1'],
+/// criticalType: false, reason: 'low_confidence' }`. Используется UI для
+/// объяснения «почему сюда попала».
+model CurationItem {
+  id                  String              @id @default(cuid())
+  tenantId            String
+  /// Тип карточки специалиста: 'regulation' | 'process' | 'decision' | 'insight'
+  /// | 'idea' | 'knowledge_profile' | ... (см. §3.6 зонтичного и sub-TZ Слоя 3).
+  resourceType        String              @db.VarChar(80)
+  resourceId          String              @db.VarChar(80)
+  level               CurationLevel
+  triageReason        Json
+  proposedPayload     Json
+  status              CurationItemStatus  @default(pending)
+  /// User.id куратора, реально принявшего решение (заполняется при decide).
+  assignedToUserId    String?
+  /// Список User.id'ов потенциальных кураторов (из CuratorRoutingService).
+  /// Любой из них может принять решение через decide.
+  candidateCuratorIds String[]            @default([])
+  createdAt           DateTime            @default(now())
+  decidedAt           DateTime?
+  expiresAt           DateTime?
+
+  org        Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTo User?              @relation("CurationItemAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  decisions  CurationDecision[]
+  versions   CardVersion[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, level, status])
+  @@index([assignedToUserId, status])
+  @@index([resourceType, resourceId])
+  @@index([expiresAt])
+}
+
+/// CurationDecision — решение куратора по CurationItem.
+///
+/// `payload` — изменения для approve_with_edits / split / merge / supersede
+/// (что записываем в новую CardVersion). Для reject — пустой объект.
+///
+/// `reasoning` — обязателен для `deep` review и для resolution-связанных
+/// решений (проверка в CurationService.decide).
+model CurationDecision {
+  id             String               @id @default(cuid())
+  curationItemId String
+  decisionType   CurationDecisionType
+  payload        Json                 @default("{}")
+  reasoning      String?              @db.Text
+  reviewerUserId String
+  createdAt      DateTime             @default(now())
+
+  curationItem CurationItem @relation(fields: [curationItemId], references: [id], onDelete: Cascade)
+  reviewer     User         @relation("CurationDecisionReviewer", fields: [reviewerUserId], references: [id], onDelete: Cascade)
+
+  @@index([curationItemId])
+  @@index([reviewerUserId])
+}
+
+/// ConflictItem — first-class сущность для конфликтов карточек.
+///
+/// Источник:
+///   - Авто: `IdeaBlockLink.relationType='contradicts'` с high confidence
+///     (block-linker.worker → ConflictService.report).
+///   - Специалистом Слоя 3 при обнаружении конкурирующей карточки.
+///   - Вручную из UI.
+///
+/// `evidence` — JSON со ссылками на блоки/факты-источники конфликта:
+/// `{ blockIds: ['...'], links: [{ id, relationType }], notes: '...' }`.
+///
+/// `evolvingMeta` — обязателен для `resolution='evolving'`: `{
+/// existingValidUntil: ISO, newValidFrom: ISO }`.
+model ConflictItem {
+  id               String              @id @default(cuid())
+  tenantId         String
+  resourceType     String              @db.VarChar(80)
+  existingId       String              @db.VarChar(80)
+  newId            String              @db.VarChar(80)
+  evidence         Json
+  /// Тип отношения, который породил конфликт ('contradicts' | 'duplicates' |
+  /// 'supersedes' | ...). Хранится как строка (а не enum IdeaBlockLinkType),
+  /// потому что не все источники конфликта — от block-linker'а.
+  relationType     String              @db.VarChar(40)
+  /// Кто/что инициировал создание ConflictItem ('block-linker' | 'specialist' |
+  /// 'manual' | ...).
+  detectedBy       String              @db.VarChar(40)
+  status           ConflictStatus      @default(open)
+  resolution       ConflictResolution?
+  evolvingMeta     Json?
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  reasoning        String?             @db.Text
+  createdAt        DateTime            @default(now())
+
+  org        Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("ConflictItemResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, resourceType, status])
+  @@index([resourceType, existingId])
+  @@index([resourceType, newId])
+}
+
+/// CardVersion — общая таблица версий для всех типов карточек специалистов
+/// (Regulation, Decision, Process, KnowledgeProfile, Idea, ...).
+///
+/// Решение по §13.1 sub-TZ: общая таблица, чтобы не дублировать историю
+/// в каждом модуле. Поиск версий: `WHERE resourceType=? AND resourceId=?`.
+///
+/// `payload` — полный snapshot карточки на момент создания версии. Может
+/// быть большим — см. §13.4: на α-4 без ограничений, мониторим размер.
+///
+/// `changeReason` — `'initial' | 'approve' | 'approve_with_edits' | 'merge' |
+/// 'supersede' | 'evolving' | 'stale-confirm' | ...`.
+model CardVersion {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  resourceType       String   @db.VarChar(80)
+  resourceId         String   @db.VarChar(80)
+  version            Int
+  previousVersionId  String?
+  payload            Json
+  changeReason       String?  @db.VarChar(40)
+  /// User.id автора правки. NULL — auto (triage с auto-canonical, stale-cron).
+  createdByUserId    String?
+  /// Опц. CurationDecision, в результате которого создалась эта версия.
+  curationDecisionId String?
+  /// Опц. CurationItem (связан через decision; денормализация для быстрой
+  /// фильтрации без JOIN'а через CurationDecision).
+  curationItemId     String?
+  createdAt          DateTime @default(now())
+
+  org              Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy        User?         @relation("CardVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  previousVersion  CardVersion?  @relation("CardVersionPrevious", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions     CardVersion[] @relation("CardVersionPrevious")
+  curationItem     CurationItem? @relation(fields: [curationItemId], references: [id], onDelete: SetNull)
+  /// SBA α-6 — обратное relation для Card.currentVersionId.
+  cardsAsCurrent   Card[]        @relation("CardCurrentVersion")
+  /// SBA α-7 — обратные relations для Process / Regulation / Policy.currentVersionId.
+  /// Используется Specialist 3.1 для отметки `currentVersionId = approvedVersion.id`
+  /// после triage'а (см. sub-TZ §4, §5).
+  processesAsCurrent    Process[]    @relation("ProcessCurrentVersion")
+  regulationsAsCurrent  Regulation[] @relation("RegulationCurrentVersion")
+  policiesAsCurrent     Policy[]     @relation("PolicyCurrentVersion")
+  /// SBA β-3 — обратное relation для Decision.currentVersionId.
+  decisionsAsCurrent    Decision[]   @relation("DecisionCurrentVersion")
+  /// SBA β-4 — обратное relation для Insight.currentVersionId.
+  insightsAsCurrent     Insight[]    @relation("InsightCurrentVersion")
+  /// SBA β-5 — обратное relation для Idea.currentVersionId.
+  ideasAsCurrent        Idea[]       @relation("IdeaCurrentVersion")
+
+  @@unique([resourceType, resourceId, version])
+  @@index([tenantId, resourceType])
+  @@index([resourceType, resourceId])
+  @@index([curationItemId])
+}
+
+/// CuratorAssignment — гибкое назначение кураторов per-ResourceType (см.
+/// sub-TZ §3.6).
+///
+/// `resourceType` = '*' — wildcard на все типы карточек.
+/// `criteria` — опционально доп. фильтр: `{ tag: 'enterprise', kind: 'process' }`.
+/// Если null — assignment применяется ко всем карточкам данного resourceType.
+///
+/// `curatorUserIds` — кандидаты-кураторы. Не пустой массив на нормальной
+/// конфигурации. Несколько ID — round-robin / любой по политике sub-TZ.
+///
+/// `level` = null — assignment применяется к light И deep.
+model CuratorAssignment {
+  id             String         @id @default(cuid())
+  tenantId       String
+  resourceType   String         @db.VarChar(80)
+  criteria       Json?
+  curatorUserIds String[]       @default([])
+  level          CurationLevel?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, resourceType])
 }
 
 /// IdeaBlockEntity — M:M связь block ↔ entity с ролью и контекстом упоминания.
@@ -2080,6 +2571,11 @@ model Goal {
   cachedAlignmentDelta Int?      /// разница со снапшотом 24h назад, для подсветки падений.
   cachedSnapshotId     String?   /// FK на последний GoalAlignmentSnapshot.
 
+  /// SBA α-3 — линковка с Entity{type=goal} для графа знаний. Заполняется
+  /// patch-backfill-entity-id-goal.ts и поддерживается knowledge-core.
+  entityId  String?  @unique
+  entity    Entity?  @relation("GoalEntity", fields: [entityId], references: [id], onDelete: SetNull)
+
   themes    GoalTheme[]
   snapshots GoalAlignmentSnapshot[]
 
@@ -2292,6 +2788,18 @@ model Person {
   primaryDepartmentId String?
   /// Линковка с Entity{type=person} (см. EntityResolutionService, Фаза 0b §8.3).
   entityId            String?
+  /// SBA α-3 (2026-05-21) §4.3 — отношение Person ↔ Org. По умолчанию
+  /// `external` (создан как контакт); patch-script проставит `employee`
+  /// тем, у кого есть активный Membership.
+  relationship        PersonRelationship @default(external)
+  /// SBA β-2 (2026-05-21) — Knowledge Clone (Specialist 3.2). Структурированный
+  /// кеш «что человек знает / опыт / типовые ответы по областям».
+  /// Заполняется воркером `knowledge-clone-rebuild`. См. sub-TZ §4.
+  knowledgeProfile    Json?
+  /// SBA β-2 — момент последней успешной пересборки `knowledgeProfile`.
+  lastProfileBuildAt  DateTime?
+  /// SBA β-2 — версия профиля (инкремент при каждой успешной пересборке).
+  profileBuildVersion Int       @default(0)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
@@ -2304,8 +2812,13 @@ model Person {
   uploadedDocuments  Document[]   @relation("DocumentUploader")
   decisionsMade      Decision[]   @relation("DecisionDecidedBy")
   ownedProcesses     Process[]    @relation("ProcessOwnerPerson")
+  /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
+  ownedRegulations   Regulation[] @relation("RegulationOwnerPerson")
+  ownedPolicies      Policy[]     @relation("PolicyOwnerPerson")
   memberships        Membership[] @relation("MembershipPerson")
   invitations        OrgInvitation[] @relation("OrgInvitationPerson")
+  /// SBA γ-1 — Specialist 3.7 (SkillProfile). 1:1 — у одного Person ровно один профиль.
+  skillProfile       SkillProfile?  @relation("SkillProfilePerson")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -2404,6 +2917,11 @@ model Document {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
+
+  /// SBA α-3 — линковка с Entity{type=document} для графа знаний. Заполняется
+  /// patch-backfill-entity-id-document.ts.
+  entityId  String?  @unique
+  entity    Entity?  @relation("DocumentEntity", fields: [entityId], references: [id], onDelete: SetNull)
 
   org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   uploader        Person           @relation("DocumentUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
@@ -2517,18 +3035,46 @@ model Process {
   confidence         Float?
   /// Если LLM колеблется (Process vs Regulation/Policy) — список альтернатив.
   ambiguousTypes     String[]      @default([])
+  /// SBA α-7 — расширение Фазы 0b (in-place, без новой таблицы Regulation.kind).
+  /// `entityId` — связка с графом (опц., создаётся, когда специалист 3.1 канонизирует процесс).
+  entityId           String?       @unique
+  /// `scope` — область действия: 'org' | 'department:<id>' | 'role:<id>' | 'project:<id>'.
+  scope              String?       @db.VarChar(120)
+  /// `currentVersionId` → CardVersion, последняя одобренная триажем версия.
+  currentVersionId   String?
+  /// `sourceBlockIds[]` — IdeaBlock-источники последнего извлечения / merge'а.
+  sourceBlockIds     String[]      @default([])
+  /// `personSubjectIds[]` — Person'ы, которым процесс присвоен как subject (для γ-1 SkillProfile).
+  personSubjectIds   String[]      @default([])
+  dataClass          DataClass     @default(internal)
+  /// Эмбеддинг (name + первый абзац description) — для KNN-дедупа в Specialist31Service.
+  embedding          Unsupported("vector(1536)")?
+  /// Когда последний раз процесс подтверждался (auto после canonical или вручную куратором).
+  lastConfirmedAt    DateTime?
+  /// SBA α-7 — структурированный ввод/вывод процесса (см. sub-TZ §4).
+  /// `inputs/outputs/metricsJson` — JSON-массивы / объекты, заполняются LLM
+  /// `process-steps-extract` или вручную через `POST /regulations/:id/edit` (γ).
+  /// `metricsJson` намеренно НЕ называется `metrics`, чтобы не конфликтовать с
+  /// доменной моделью `Metric` (отдельная Phase 0b сущность).
+  inputs             Json?
+  outputs            Json?
+  metricsJson        Json?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
-  org         Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ownerRole   Role?         @relation("ProcessOwnerRole", fields: [ownerRoleId], references: [id], onDelete: SetNull)
-  ownerPerson Person?       @relation("ProcessOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
-  steps       ProcessStep[]
+  org            Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerRole      Role?         @relation("ProcessOwnerRole", fields: [ownerRoleId], references: [id], onDelete: SetNull)
+  ownerPerson    Person?       @relation("ProcessOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  steps          ProcessStep[]
+  /// SBA α-7 — связь с CardVersion (текущая активная версия).
+  currentVersion CardVersion?  @relation("ProcessCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   /// Уникальность гарантируется EntityResolutionService + cosine + LLM-arbiter (0b §8).
   @@unique([tenantId, name])
   @@index([tenantId, status])
   @@index([tenantId, ownerRoleId])
+  @@index([tenantId, scope])
+  @@index([currentVersionId])
   @@map("processes")
 }
 
@@ -2564,17 +3110,48 @@ model Regulation {
   status     ProcessStatus      @default(active)
   version    Int                @default(1)
   confidence Float?
-  createdAt  DateTime           @default(now())
-  updatedAt  DateTime           @updatedAt
+  /// SBA α-7 — расширение Фазы 0b (in-place; см. sub-TZ §14.3).
+  /// `entityId` — связка с графом.
+  entityId         String?  @unique
+  /// `statement` — структурированная суть регламента / стандарта.
+  /// Альтернатива `contentMd` (markdown остаётся для отображения, statement —
+  /// для дедупа / chat-v2 retrieval). На α-7 заполняется LLM `regulation-extract`.
+  statement        String?  @db.Text
+  /// `scope` — область действия: 'org' | 'department:<id>' | 'role:<id>' | 'project:<id>'.
+  scope            String?  @db.VarChar(120)
+  /// FK на Person — назначенный ответственный за регламент.
+  ownerPersonId    String?
+  /// Self-relation для версионирования (новая запись «заменяет» старую).
+  supersedesId     String?
+  /// FK на CardVersion (последняя активная версия после triage).
+  currentVersionId String?
+  /// `sourceBlockIds[]` — IdeaBlock-источники последнего извлечения.
+  sourceBlockIds   String[]  @default([])
+  /// `personSubjectIds[]` — Person'ы, которым регламент присвоен как subject (для γ-1 SkillProfile).
+  personSubjectIds String[]  @default([])
+  dataClass        DataClass @default(internal)
+  /// Эмбеддинг (name + statement) — для KNN-дедупа.
+  embedding        Unsupported("vector(1536)")?
+  lastConfirmedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org            Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson    Person?       @relation("RegulationOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  supersedes     Regulation?   @relation("RegulationSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy   Regulation[]  @relation("RegulationSupersedes")
+  currentVersion CardVersion?  @relation("RegulationCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, name])
   @@index([tenantId, category])
+  @@index([tenantId, status])
+  @@index([tenantId, scope])
+  @@index([tenantId, ownerPersonId])
+  @@index([currentVersionId])
   @@map("regulations")
 }
 
-/// Policy — политика (Фаза 0a, группа Б). UI в Фазе γ.
+/// Policy — политика (Фаза 0a, группа Б). UI в Фазе α-7.
 model Policy {
   id         String         @id @default(cuid())
   tenantId   String
@@ -2583,13 +3160,30 @@ model Policy {
   severity   PolicySeverity @default(advisory)
   status     ProcessStatus  @default(active)
   confidence Float?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  /// SBA α-7 — расширение Фазы 0b (in-place).
+  entityId         String?  @unique
+  scope            String?  @db.VarChar(120)
+  ownerPersonId    String?
+  currentVersionId String?
+  sourceBlockIds   String[]  @default([])
+  personSubjectIds String[]  @default([])
+  dataClass        DataClass @default(internal)
+  /// Эмбеддинг (name + contentMd preview) — для KNN-дедупа.
+  embedding        Unsupported("vector(1536)")?
+  lastConfirmedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org            Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson    Person?       @relation("PolicyOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  currentVersion CardVersion?  @relation("PolicyCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, name])
   @@index([tenantId, severity])
+  @@index([tenantId, status])
+  @@index([tenantId, scope])
+  @@index([tenantId, ownerPersonId])
+  @@index([currentVersionId])
   @@map("policies")
 }
 
@@ -2629,33 +3223,334 @@ model Metric {
   @@map("metrics")
 }
 
-/// Decision — решение, принятое в компании (Фаза 0a, группа Б).
+/// Decision — решение, принятое в компании.
 ///
-/// Критично для миграционного долга: сейчас «размазан» как
-/// `IdeaBlock.signalType='decision'`. С Фазы 0 — отдельная сущность с
-/// idempotent-связью к исходному `IdeaBlock` (один Decision на IdeaBlock).
+/// Фаза 0a (legacy): простая запись со `text`, `decidedByPersonId`, `sourceIdeaBlockId`.
+///
+/// SBA β-3 — расширение in-place до полноценного «реестра решений» с rationale,
+/// alternatives, supersede-цепочками, evolving-конфликтами и probe-triggers.
+/// См. plans/tz/2026-05-21-sba-beta-3-specialist-3-3-decisions.md §4.
+///
+/// Все новые Decision'ы создаются специалистом 3.3 (decision-detector worker)
+/// со `statement` (структурированная суть решения), `rationale` (почему),
+/// `alternatives` (рассмотренные варианты), `decidedByPersonIds[]` (авторы),
+/// `affectsEntityIds[]` (Project/Customer/Vendor/Product на которые влияет),
+/// `supersedesId` (если новая версия старого), `validFrom/validUntil` (для
+/// evolving-резолюции).
+///
+/// Legacy-поля (text, decidedByPersonId, sourceMeetingId, sourceIdeaBlockId)
+/// оставлены nullable для обратной совместимости. Новые Decision'ы пишут
+/// `statement` (а `text` дублирует первые 1000 символов для legacy-чтения).
 model Decision {
   id                 String         @id @default(cuid())
   tenantId           String
-  text               String         @db.Text
-  rationale          String?        @db.Text
-  decidedAt          DateTime
+
+  // ── legacy Фазы 0a (оставлены для совместимости; в β-3 необязательны) ──
+  /// @deprecated SBA β-3: используй `statement`. Заполняется автоматически
+  /// для обратной совместимости (первые 1000 символов из `statement`).
+  text               String?        @db.Text
+  /// Legacy: один decidedByPerson. В β-3 — `decidedByPersonIds[]` (массив).
   decidedByPersonId  String?
+  /// Legacy: один источник встречи. В β-3 — берём из sourceBlockIds + RawEvent.
   sourceMeetingId    String?
+  /// Legacy: один блок-источник. В β-3 — `sourceBlockIds[]` (массив).
   sourceIdeaBlockId  String?        @unique
-  status             DecisionStatus @default(active)
+
+  // ── SBA β-3 — Specialist 3.3 (Decisions Registry) ──
+  /// Связка с графом (создаётся при canonical). Уникален — один Entity на Decision.
+  entityId           String?        @unique
+  /// Структурированная суть решения. Главное поле для дедупа и retrieval'а.
+  statement          String?        @db.Text
+  /// Почему так решили — главный источник для Skill (γ-1) и Insights (β-4).
+  rationale          String?        @db.Text
+  /// Json-массив рассмотренных альтернатив: [{ option: '...', reasonRejected: '...' }, ...].
+  /// Решение по §14.2: массив Json пока, отдельная таблица — γ+.
+  alternatives       Json?
+  /// Авторы решения (Person.id[]). Решение по §14.1: массив с GIN, join-таблица — γ+.
+  decidedByPersonIds String[]       @default([])
+  /// Когда решение было принято (отдельно от createdAt — может быть исторический import).
+  decidedAt          DateTime?
+  /// Срок исполнения. probe `decision.overdue` если deadline < now AND status NOT IN
+  /// ('implemented','cancelled').
+  deadline           DateTime?
+  /// Self-relation supersede: если этот Decision — новая версия старого.
+  supersedesId       String?
+  /// Entities (Customer/Project/Vendor/Product/Process), на которые влияет решение.
+  /// Массив с GIN — §14.1 (миграция в join-таблицу γ+).
+  affectsEntityIds   String[]       @default([])
+  /// IdeaBlock'и, на которых построено решение.
+  sourceBlockIds     String[]       @default([])
+  /// Person'ы, упомянутые в блоках как subject (для γ-1 SkillProfile).
+  personSubjectIds   String[]       @default([])
+  /// Уверенность извлечения [0..1] (Decimal(4,3) — 3 знака после точки).
+  confidence         Decimal?       @db.Decimal(4, 3)
+  /// Класс данных. Default 'sensitive' — решения чаще всего стратегические.
+  dataClass          DataClass      @default(sensitive)
+  /// Последняя активная CardVersion (после triage).
+  currentVersionId   String?
+  /// Эмбеддинг (statement + rationale preview) — для KNN-дедупа.
+  embedding          Unsupported("vector(1536)")?
+  /// Для evolving: с какого момента решение действительно.
+  validFrom          DateTime?
+  /// Для evolving: до какого момента (если superseded — заполняется в момент supersede).
+  validUntil         DateTime?
+  /// Фактические результаты (заполняется ретроспективно).
+  /// probe `decision.outcome_unknown` если implemented + null + > 3 мес.
+  actualOutcomes     String?        @db.Text
+
+  status             DecisionStatus @default(approved)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
+  /// Когда решение последний раз подтверждали (актуально, не устарело).
+  lastConfirmedAt    DateTime?
 
   org             Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   decidedBy       Person?    @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
   sourceMeeting   Meeting?   @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
   sourceIdeaBlock IdeaBlock? @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
+  // SBA β-3: self-relation supersede + CardVersion-current.
+  supersedes      Decision?     @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy    Decision[]    @relation("DecisionSupersedes")
+  currentVersion  CardVersion?  @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([tenantId, decidedAt])
   @@index([tenantId, decidedByPersonId])
+  // SBA β-3 — для overdue probe.
+  @@index([tenantId, deadline])
+  // SBA β-3 — для supersede-chain lookup.
+  @@index([supersedesId])
+  // SBA β-3 — для currentVersionId.
+  @@index([currentVersionId])
   @@map("decisions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SBA β-4 — Specialist 3.5 (Insights Radar)
+// Источник: plans/tz/2026-05-21-sba-beta-4-specialist-3-5-insights.md §4
+//
+// Idea: повторяющиеся pain/risk/churn_risk/objection блоки кластеризуются в
+// Insight (KNN cosine). Динамика считается по rolling-окнам (7d vs 30d).
+// Linking с Decision: «эта проблема — следствие решения X» (relatedDecisionIds[]).
+// ─────────────────────────────────────────────────────────────────────────
+model Insight {
+  id                 String           @id @default(cuid())
+  tenantId           String
+  /// Опциональная связка с графом (создаётся при canonical). Уникален.
+  entityId           String?          @unique
+
+  /// Тип сигнала. Сопоставляется с signalType блоков-источников.
+  kind               InsightKind
+  /// Суть сигнала одной строкой («Клиенты жалуются на медленную загрузку отчётов»).
+  statement          String           @db.Text
+  /// Острота сигнала. severity='critical' → triage с заведомо низкой confidence
+  /// (force deep review).
+  severity           InsightSeverity  @default(medium)
+
+  /// Частота упоминаний за окно (нормализованная 0..1; считает Specialist35Service.recalcMetrics).
+  frequencyScore     Decimal          @default(0) @db.Decimal(6, 3)
+  /// Сырое значение ratio 7d_count / 30d_avg_weekly. > spike-порога → spike.
+  dynamicScore       Decimal          @default(0) @db.Decimal(6, 3)
+  /// Текстовая метка динамики (для UI и сортировки радара).
+  dynamicLabel       InsightDynamic   @default(stable)
+
+  /// Entities (Customer/Project/Vendor/Product/Process/...) на которые влияет сигнал.
+  affectedEntityIds  String[]         @default([])
+  /// Decision'ы, которые могли спровоцировать сигнал (linking через LLM и
+  /// существующий IdeaBlockLink.relationType='consequences_of').
+  relatedDecisionIds String[]         @default([])
+  /// Текстовый план реагирования (в β-4 — текст; структурируем в γ+).
+  mitigationPlan     String?          @db.Text
+
+  /// Первое и последнее упоминание (для probe.no_mitigation_plan по age > 7d).
+  firstObservedAt    DateTime         @default(now())
+  lastObservedAt     DateTime         @default(now())
+
+  /// Статус карточки.
+  status             InsightStatus    @default(active)
+
+  /// IdeaBlock'и, на которых построен сигнал.
+  sourceBlockIds     String[]         @default([])
+  /// Person'ы, упомянутые в блоках как subject (например, кто жаловался).
+  personSubjectIds   String[]         @default([])
+  /// Уверенность extraction [0..1] (Decimal(4,3)).
+  confidence         Decimal          @default(0.5) @db.Decimal(4, 3)
+  /// Класс данных. Default 'internal' (sub-ТЗ — Insight чаще про процесс,
+  /// чем про конкретного человека).
+  dataClass          DataClass        @default(internal)
+  /// Последняя активная CardVersion (после triage).
+  currentVersionId   String?
+  /// Эмбеддинг (statement) — для KNN-кластеризации.
+  embedding          Unsupported("vector(1536)")?
+
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  /// Когда последний раз подтверждали актуальность.
+  lastConfirmedAt    DateTime?
+
+  org             Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  currentVersion  CardVersion? @relation("InsightCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  // SBA β-4 — частые фильтры радара.
+  @@index([tenantId, status, severity])
+  @@index([tenantId, kind])
+  @@index([tenantId, dynamicLabel])
+  @@index([tenantId, lastObservedAt])
+  // SBA β-4 — для currentVersionId.
+  @@index([currentVersionId])
+  @@map("insights")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SBA β-5 — Specialist 3.6 (Ideas Collector) + Layer 6 (Probe-Agent)
+// Источник: plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md
+//
+// Idea: блоки signalType ∈ {idea, feature_request} кластеризуются в Idea
+// (kind='internal' если предложил сотрудник, 'client_request' — если клиент).
+// Cosine-KNN дедуп. Кластеры идей (IdeaCluster) — следующий уровень
+// группировки смежных идей.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Вид идеи. `internal` — предложение сотрудника. `client_request` — запрос
+/// клиента / партнёра, извлечённый из встречи / переписки.
+enum IdeaKind {
+  internal
+  client_request
+}
+
+/// Статус Idea. Lifecycle: captured → in_discussion → accepted → in_progress →
+/// shipped. Альтернативные исходы: rejected (отказались), archived (автор
+/// withdrew или нерелевантно).
+enum IdeaStatus {
+  captured
+  in_discussion
+  accepted
+  in_progress
+  shipped
+  rejected
+  archived
+}
+
+/// Статус ProbeEvent. `pending` — создано, ждёт dispatcher'а. `dispatched` —
+/// отправлено через ConversationalService. `dropped_dedup` / `dropped_rate_limit`
+/// / `dropped_cold_start` — отброшено по соответствующей причине. `expired` —
+/// истёк срок жизни (probe.expiresAt в прошлом).
+enum ProbeStatus {
+  pending
+  dispatched
+  dropped_dedup
+  dropped_rate_limit
+  expired
+  dropped_cold_start
+}
+
+/// Idea — карточка идеи / запроса. SBA β-5 §4.1.
+///
+/// Аггрегирует supporter'ов (Person — сотрудники, Customer — клиенты) через
+/// JSON-массив `supporters`. `weight` — композитный score:
+/// `supporterCount * 1.0 + recency_factor * 0.5 + specificity_factor (0.5..1)`.
+///
+/// Closing loop: при изменении `status` (через REST API) специалист эмитит
+/// EventEmitter событие 'idea.status_changed' → handler уведомляет supporter'ов.
+model Idea {
+  id              String           @id @default(cuid())
+  tenantId        String
+  /// Опц. связка с графом (создаётся при canonical). Уникален.
+  entityId        String?          @unique
+  kind            IdeaKind
+  statement       String           @db.Text
+  rationale       String?          @db.Text
+  weight          Decimal          @default(0) @db.Decimal(6, 3)
+  supporterCount  Int              @default(1)
+  /// JSON-массив supporter'ов: `[{ kind: 'person'|'customer', entityId,
+  /// firstSupportedAt: ISO, blockId? }, ...]`.
+  supporters      Json             @default("[]")
+  firstProposedAt DateTime         @default(now())
+  lastDiscussedAt DateTime         @default(now())
+  status          IdeaStatus       @default(captured)
+  statusChangedAt DateTime?
+  statusChangedByUserId String?
+  statusReason    String?          @db.Text
+  clusterId       String?
+  sourceBlockIds  String[]         @default([])
+  personSubjectIds String[]        @default([])
+  confidence      Decimal          @default(0.5) @db.Decimal(4, 3)
+  dataClass       DataClass        @default(internal)
+  currentVersionId String?
+  embedding       Unsupported("vector(1536)")?
+  /// Author User.id — кто первый запостил блок-источник (если идея от
+  /// сотрудника). NULL — клиентская идея или не определилось.
+  createdByUserId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cluster         IdeaCluster?     @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  currentVersion  CardVersion?     @relation("IdeaCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, kind])
+  @@index([tenantId, weight])
+  @@index([tenantId, createdByUserId])
+  @@index([tenantId, clusterId])
+  @@index([currentVersionId])
+  @@map("ideas")
+}
+
+/// IdeaCluster — кластер смежных идей (как Theme для блоков). SBA β-5 §4.1.
+///
+/// Кластеризация через `idea-clusterer.cron`: KNN cosine на embedding'е
+/// existing IdeaCluster'ов; на miss — LLM-арбитр (`idea-cluster-merge`).
+/// Минимальный размер — `IDEA_MIN_SUPPORTERS_FOR_CLUSTER` (default 2).
+model IdeaCluster {
+  id              String           @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?          @db.Text
+  ideaIds         String[]         @default([])
+  clusterWeight   Decimal          @default(0) @db.Decimal(6, 3)
+  embedding       Unsupported("vector(1536)")?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ideas           Idea[]
+
+  @@index([tenantId])
+  @@map("idea_clusters")
+}
+
+/// ProbeEvent — запись очереди Probe-Agent (Слой 6). SBA β-5 §4.2.
+///
+/// Создаётся `ProbeService.suggest(...)` — внутренний API для специалистов
+/// Слоя 3. После dedup / rate-limit / cold-start checks попадает в БД с
+/// `status='pending'` и job в `core.probe-events`. Dispatcher выбирает
+/// recipient'а, формулирует вопрос через LLM `probe-formulate`, отправляет
+/// через `ConversationalService.sendNotification(eventType='probe.question')`.
+///
+/// `contentHash` — sha256(reason + JSON.stringify(payload.contextIds)) для
+/// дедупа (Redis-кеш TTL=72h + DB-уникальность хеша в рамках tenant).
+model ProbeEvent {
+  id                       String       @id @default(cuid())
+  tenantId                 String
+  emittedByService         String       @db.VarChar(80)
+  reason                   String       @db.VarChar(100)
+  payload                  Json
+  recipientCandidates      String[]     @default([])
+  selectedRecipientId      String?
+  status                   ProbeStatus  @default(pending)
+  dispatchedNotificationId String?
+  contentHash              String       @db.VarChar(80)
+  priority                 Int          @default(50)
+  createdAt                DateTime     @default(now())
+  dispatchedAt             DateTime?
+  expiresAt                DateTime?
+
+  org                      Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, emittedByService])
+  @@index([contentHash])
+  @@map("probe_events")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -3233,4 +4128,252 @@ model MeetingQualityScore {
   @@index([tenantId])
   @@index([tenantId, overallScore])
   @@index([tenantId, computedAt])
+}
+
+// ───────────────────────── SBA α-5 — Layer 5 Chat-v2 Omnichannel ─────────────────────────
+//
+// AI-чат компании поверх knowledge-core с conversation history и omnichannel
+// inbound/outbound. См. plans/tz/2026-05-21-sba-alpha-5-layer5-chat-v2.md.
+//
+// ChatV2Conversation — диалог пользователя с AI (память за всё время).
+// ChatV2Message — одно сообщение в диалоге (user или assistant). citations и
+// retrievalMeta/llmMeta хранятся в Json — структура задокументирована в
+// сервисах chat-v2 (см. ChatV2Output из knowledge-core/services/chat-v2.service.ts).
+//
+// `scope` — 5 «обычных» + 'personal' (личный диалог с AI без жёсткой
+// привязки). `channelKindOrigin` — где был СОЗДАН диалог (web/in_app/
+// telegram_bot/...); сами сообщения могут приходить и уходить через любой
+// канал, к которому привязан пользователь.
+
+/// Диалог пользователя с AI-чатом v2. Хранится вечно (cron auto-archive
+/// после 90 дней без активности, см. workers/chat-v2-cleanup.cron.ts).
+/// Pin через UI исключает диалог из auto-archive.
+model ChatV2Conversation {
+  id                String                   @id @default(uuid())
+  tenantId          String
+  tenant            Org                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User                     @relation("ChatV2ConversationUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Авто-генерация после первого сообщения через LLM (taskType
+  /// `chat-v2-conversation-title`). До генерации — NULL, фронт показывает
+  /// «Новый диалог».
+  title             String?
+  scope             ChatV2Scope
+  /// Для scope='meeting'/'card'/'theme'/'entity' — id соответствующей
+  /// сущности; для scope='org'/'personal' — NULL.
+  scopeRefId        String?
+  /// Где был создан диалог. 'web' / 'in_app' / 'email_smtp' / 'telegram_bot' /
+  /// 'max_bot'. Не валидируется enum'ом — расширяется новыми каналами без
+  /// миграций.
+  channelKindOrigin String?
+  status            ChatV2ConversationStatus @default(active)
+  /// NULL = не закреплён. Закреплённые диалоги не попадают в auto-archive.
+  pinnedAt          DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  messages          ChatV2Message[]
+
+  @@index([tenantId, userId, updatedAt])
+  @@index([tenantId, status])
+}
+
+/// Сообщение в диалоге chat-v2. role='user' — вопрос пользователя; role='assistant'
+/// — ответ AI с citations/retrievalMeta/llmMeta.
+model ChatV2Message {
+  id             String             @id @default(uuid())
+  conversationId String
+  conversation   ChatV2Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           ChatV2MessageRole
+  /// Только для assistant. factual / synthetic / clone_style. NULL для user.
+  mode           ChatV2Mode?
+  text           String             @db.Text
+  /// Структура: [{ blockId, evidenceId?, meetingId, meetingTitle, startMs,
+  /// endMs, snippet }, ...]. Парсится из [BLOCK:id] маркеров ChatV2Service.
+  citations      Json?
+  /// Структура: { usedBlockIds: string[], inputTokens, outputTokens,
+  /// candidateBlockIds?: string[] }.
+  retrievalMeta  Json?
+  /// Структура: { model: string, inputTokens: number, outputTokens: number,
+  /// tier?: 'primary'|'secondary'|'tertiary', fallbackUsed?: boolean }.
+  llmMeta        Json?
+  createdAt      DateTime           @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+/// 5 «обычных» scope (org/meeting/card/theme/entity) + 'personal' — личный
+/// диалог пользователя с AI без жёсткой привязки. Personal заведено для
+/// γ-1 (Employee Clone), на α-5 — общий org-доступ через retrieval.
+enum ChatV2Scope {
+  org
+  meeting
+  card
+  theme
+  entity
+  personal
+}
+
+enum ChatV2MessageRole {
+  user
+  assistant
+}
+
+/// factual — ответ только по найденным блокам (с цитатами).
+/// synthetic — синтез по нескольким источникам с маркировкой уверенности.
+/// clone_style — стиль конкретной персоны (Persona), реализация в γ-1.
+/// Имя clone_style выбрано вместо clone-style потому что Prisma enum не
+/// допускает дефис.
+enum ChatV2Mode {
+  factual
+  synthetic
+  clone_style
+}
+
+enum ChatV2ConversationStatus {
+  active
+  archived
+}
+
+// ──────────────────────────── SBA γ-1 — Specialist 3.7 SkillProfile + ExecutablePersona ────────────────────────────
+
+/// SkillProfileStatus — состояние навыкового профиля сотрудника.
+///   - active: сотрудник работает, профиль активно перестраивается.
+///   - archived: сотрудник перешёл в former — профиль заморожен, snapshots остаются.
+///   - paused_relationship: текущий relationship не employee (например, candidate) —
+///     профиль есть, но не достраивается до возвращения в employee.
+enum SkillProfileStatus {
+  active
+  archived
+  paused_relationship
+}
+
+/// SkillConfidence — качественная уверенность в trait (3 уровня).
+enum SkillConfidence {
+  low
+  medium
+  high
+}
+
+/// SkillTraitStatus — жизненный цикл черты профиля.
+///   - active: черта активна и видна.
+///   - superseded_by: заменена более новой формулировкой (см. supersededById).
+///   - archived: давно не подтверждалась (>SKILL_ARCHIVE_MONTHS).
+///   - misleading: пометил direct manager / admin как неверную.
+enum SkillTraitStatus {
+  active
+  superseded_by
+  archived
+  misleading
+}
+
+/// PersonaScope — область охвата исполняемой персоны.
+///   - person: персона конкретного сотрудника (profileId обязателен).
+///   - role: агрегат по должности (scopeRefId=roleId, profileId=null).
+enum PersonaScope {
+  person
+  role
+}
+
+/// PersonaStatus — статус снапшота персоны.
+///   - active: используется ClonesService.
+///   - superseded: заменён более новой версией.
+enum PersonaStatus {
+  active
+  superseded
+}
+
+/// SkillProfile — навыковый профиль сотрудника. 1:1 с Person (только relationship='employee').
+/// Источник информации — IdeaBlockEntity.role='subject' от Person с signalType
+/// ∈ {reasoning, rationale, decision_basis}. Категории черт эмерджентные —
+/// LLM сам формирует строковые имена (не enum). См. sub-TZ §4.
+model SkillProfile {
+  id           String              @id @default(uuid())
+  tenantId     String
+  /// 1:1 — у одного Person строго один SkillProfile.
+  personId     String              @unique
+  status       SkillProfileStatus  @default(active)
+  /// Момент последней успешной пересборки. null до первого rebuild'а.
+  lastBuildAt  DateTime?
+  /// Версия профиля (инкремент при каждом успешном rebuild).
+  buildVersion Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  tenant   Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person   Person              @relation("SkillProfilePerson", fields: [personId], references: [id], onDelete: Cascade)
+  traits   SkillTrait[]
+  personas ExecutablePersona[]
+
+  @@index([tenantId, status])
+  @@map("skill_profiles")
+}
+
+/// SkillTrait — отдельная черта рабочего поведения сотрудника. Эмерджентная
+/// категория (string), гипотезная формулировка («похоже, склонен к …»), минимум
+/// SKILL_MIN_OBSERVATIONS (5) наблюдений. См. sub-TZ §4 + зонтичный §3.4.
+model SkillTrait {
+  id                        String           @id @default(uuid())
+  profileId                 String
+  /// Эмерджентная категория — короткая строка в свободной форме, придумывает LLM
+  /// по смыслу группы цитат («осторожен с легаси-кодом», «расширяет scope под нагрузкой»).
+  category                  String           @db.VarChar(200)
+  /// Гипотезная формулировка: «похоже, …» / «склонен …» / «в большинстве случаев …».
+  statement                 String           @db.Text
+  confidence                SkillConfidence
+  observationCount          Int
+  /// IdeaBlock.id, на которых построена черта.
+  sourceBlockIds            String[]         @default([])
+  firstObservedAt           DateTime
+  lastConfirmedAt           DateTime
+  status                    SkillTraitStatus
+  /// Если status='superseded_by' — id нового trait'а.
+  supersededById            String?
+  /// Если status='misleading' — обязательное обоснование от куратора.
+  misleadingReason          String?          @db.Text
+  /// user.id куратора, пометившего trait как misleading.
+  misleadingFlaggedByUserId String?
+  misleadingFlaggedAt       DateTime?
+  /// Эмбеддинг (category + statement) для KNN-merge при rebuild'е.
+  embedding                 Unsupported("vector(1536)")?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+
+  profile SkillProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status])
+  @@index([profileId, category])
+  @@map("skill_traits")
+}
+
+/// ExecutablePersona — версионированный snapshot «думай как X» / «думай как Role».
+/// Собирается раз в неделю cron'ом (ExecutablePersonaBuildCron) + on-demand
+/// через admin API. Используется ClonesService при ответе в стиле сотрудника.
+/// См. sub-TZ §4.
+model ExecutablePersona {
+  id                   String        @id @default(uuid())
+  tenantId             String
+  /// Для scope='person' — обязателен (SkillProfile сотрудника).
+  /// Для scope='role' — null (используется scopeRefId=roleId).
+  profileId            String?
+  scope                PersonaScope
+  /// Для scope='role' — Role.id. Для scope='person' — null (берём profileId).
+  scopeRefId           String?
+  version              Int
+  snapshotAt           DateTime      @default(now())
+  /// Сам persona prompt — структурированный текст «Думай как X. Тебя характеризует …».
+  /// Длина 300–800 слов (TODO: на этапе γ-1 placeholder; финальную длину согласовать).
+  personaPrompt        String        @db.Text
+  /// SkillTrait.id[], попавшие в этот snapshot.
+  includedTraitIds     String[]      @default([])
+  status               PersonaStatus
+  builtFromTraitsCount Int
+  createdAt            DateTime      @default(now())
+
+  tenant  Org           @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  profile SkillProfile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, scope, scopeRefId, version])
+  @@index([scope, scopeRefId, status])
+  @@index([tenantId])
+  @@map("executable_personas")
 }

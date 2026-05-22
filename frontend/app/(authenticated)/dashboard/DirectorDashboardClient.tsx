@@ -43,6 +43,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
+import { CurationPendingWidget } from './widgets/CurationPendingWidget';
+import { InsightsTopWidget } from './widgets/InsightsTopWidget';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
 import { QualityScoreWidget } from './widgets/QualityScoreWidget';
 import { StrategicAlignmentWidget } from './widgets/StrategicAlignmentWidget';
@@ -186,6 +188,10 @@ export function DirectorDashboardClient() {
         />
         {/* Фаза C — карточка «Качество встреч» (только owner/admin; backend защищает 403). */}
         <QualityScoreWidget />
+        {/* SBA α-4 — карточка «На проверке у меня» (Layer 4 Curation). */}
+        <CurationPendingWidget />
+        {/* SBA β-4 — карточка «Топ-5 повторяющихся проблем» (Insights Radar). */}
+        <InsightsTopWidget />
       </div>
 
       <section className="mt-8">

@@ -155,13 +155,16 @@ export function toProcessProvenance(p: Pick<Process, 'id' | 'name' | 'confidence
   return { id: p.id, name: p.name, confidence: p.confidence };
 }
 
-export function toDecisionProvenance(d: Pick<Decision, 'id' | 'text'>): {
+export function toDecisionProvenance(
+  d: Pick<Decision, 'id' | 'text' | 'statement'>,
+): {
   id: string;
   text: string;
   confidence: number | null;
 } {
-  // Decision в schema.prisma confidence нет — возвращаем null (зарезервировано).
-  return { id: d.id, text: d.text, confidence: null };
+  // SBA β-3: Decision.text — legacy nullable; новые Decision'ы используют statement.
+  // Если text пуст — fallback на statement.
+  return { id: d.id, text: d.text ?? d.statement ?? '', confidence: null };
 }
 
 export function toRegulationProvenance(r: Pick<Regulation, 'id' | 'name' | 'category' | 'confidence'>): {

@@ -51,6 +51,16 @@ const ROUTES: RouteSeed[] = [
   { taskType: 'card-chat', providers: COMMON_LEGACY, isActive: true },
 
   // Knowledge-core (Фаза 2+) — дефолты под будущие воркеры.
+  //
+  // SBA α-2 — block-ingest промпт расширен: добавлены signalType
+  // reasoning / rationale / decision_basis / regulation / process_step
+  // (см. backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts).
+  // Цепочка provider'ов осталась прежней — все три держат JSON Schema strict
+  // на новом enum'е (verified-карта: docs/reference/llm-models-playbook.md,
+  // smoke-test 2026-05-21 — second-brain/01_projects/llm-providers-verified.md).
+  // primary: deepseek-v4-flash — лучшее качество/цена на структурированном выводе.
+  // secondary: gpt-5.4-mini — fallback при ошибке/timeout primary.
+  // tertiary: ollama qwen3:30b — local fallback при недоступности всех внешних.
   {
     taskType: 'block-ingest',
     providers: [
@@ -117,11 +127,21 @@ const ROUTES: RouteSeed[] = [
     ],
     isActive: true,
   },
+  // SBA α-6 — Specialist 3.4 (эталонный референс контракта §5 зонтичного).
+  // Три уровня provider'ов согласно §5.11 контракта: primary (рабочий) +
+  // secondary (внешний fallback) + tertiary (local, гарантия работы при
+  // полном отказе внешних). Verified-карта моделей:
+  // second-brain/01_projects/llm-providers-verified.md (smoke-test 2026-05-21).
+  // primary: deepseek-v4-flash — лучшее качество/цена для card-rollup'а.
+  // secondary: gpt-5.4-mini — fallback при ошибке/timeout primary.
+  // tertiary: ollama qwen3:30b — local fallback при недоступности всех внешних.
+  // Все три держат dataClass=internal (Card.summaryCache не отдаёт PII).
   {
     taskType: 'card-rollup-v2',
     providers: [
       { provider: 'deepseek', model: 'deepseek-v4-flash' },
       { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { provider: 'ollama', model: 'qwen3:30b-a3b-instruct-2507' },
     ],
     isActive: true,
   },

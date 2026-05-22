@@ -35,6 +35,11 @@ import { ChatService } from './chat.service';
  * Когда ON — единые «backwards-compatible» эндпоинты делегируются в `ChatService.askXV2`.
  * Когда OFF — работают legacy `askX`. История чата общая (`MeetingChatMessage`),
  * формат citations совместим.
+ *
+ * @deprecated SBA α-5 — все новые клиенты должны использовать
+ *   `POST /api/v1/chat-v2/messages` (см. `ChatV2Controller`). Этот контроллер
+ *   остаётся для обратной совместимости с фронтом /chat и API-клиентами,
+ *   которые ещё не мигрировали. План удаления — отдельный sub-TZ в β/γ.
  */
 @ApiTags('chat')
 @Controller('api/v1')

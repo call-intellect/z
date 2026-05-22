@@ -21,7 +21,22 @@
     "prisma:studio": "prisma studio",
     "prisma:generate": "prisma generate",
     "prisma:seed": "bun prisma/seed.ts",
-    "apply-postgres-init": "bun scripts/apply-postgres-init.ts"
+    "apply-postgres-init": "bun scripts/apply-postgres-init.ts",
+    "patch:rename-client-to-customer": "bun run scripts/patch-rename-client-to-customer.ts",
+    "patch:backfill-entity-id-person": "bun run scripts/patch-backfill-entity-id-person.ts",
+    "patch:backfill-entity-id-goal": "bun run scripts/patch-backfill-entity-id-goal.ts",
+    "patch:backfill-entity-id-document": "bun run scripts/patch-backfill-entity-id-document.ts",
+    "patch:backfill-entity-id": "bun run scripts/patch-backfill-entity-id-person.ts && bun run scripts/patch-backfill-entity-id-goal.ts && bun run scripts/patch-backfill-entity-id-document.ts",
+    "patch:person-relationship": "bun run scripts/patch-person-relationship.ts",
+    "patch:backfill-card-versions": "bun run scripts/patch-backfill-card-versions.ts",
+    "seed:llm-task-routes-regulations": "bun run scripts/seed-llm-task-routes-regulations.ts",
+    "seed:llm-task-routes-knowledge-clone": "bun run scripts/seed-llm-task-routes-knowledge-clone.ts",
+    "seed:llm-task-routes-decisions": "bun run scripts/seed-llm-task-routes-decisions.ts",
+    "seed:llm-task-routes-insights": "bun run scripts/seed-llm-task-routes-insights.ts",
+    "seed:llm-task-routes-ideas-and-probe": "bun run scripts/seed-llm-task-routes-ideas-and-probe.ts",
+    "seed:llm-task-routes-skill-and-clone": "bun run scripts/seed-llm-task-routes-skill-and-clone.ts",
+    "setup:telegram-bot": "bun run scripts/setup-telegram-bot.ts",
+    "setup:max-bot": "bun run scripts/setup-max-bot.ts"
   },
   "prisma": {
     "seed": "bun prisma/seed.ts"
@@ -33,6 +48,7 @@
     "@nestjs/common": "^11.1.21",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.21",
+    "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/platform-express": "^11.1.21",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.4.3",

@@ -98,6 +98,45 @@ BEGIN
   END IF;
 END $$;
 
+-- 3d. SBA α-3 (2026-05-21) — индексы для новых моделей категории A.
+--     Vendor и Event embedding не имеют (граф знаний даёт его через Entity,
+--     а Entity уже проиндексирован HNSW в шаге 3). Здесь — только полезные
+--     B-Tree / GIN на массивах для частых query-фильтров.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Event'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Event_participantsPersonIds_gin_idx"
+      ON "Event" USING gin ("participantsPersonIds")
+    $sql$;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Vendor'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Vendor_contractIds_gin_idx"
+      ON "Vendor" USING gin ("contractIds")
+    $sql$;
+    -- Уникальный частичный индекс на inn — чтобы избежать дублей юр.лиц
+    -- внутри одного tenantId. Allow NULL (несколько Vendor могут не иметь ИНН).
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "Vendor_tenantId_inn_unique_idx"
+      ON "Vendor" ("tenantId", "inn")
+      WHERE "inn" IS NOT NULL AND "deletedAt" IS NULL
+    $sql$;
+  END IF;
+END $$;
+
 -- 4. ts_vector для гибридного поиска IdeaBlock (search API Шаг 5 Фазы 2).
 --    Колонка GENERATED ALWAYS — авто-обновление при INSERT/UPDATE.
 --    Веса: name=A, criticalQuestion=B, trustedAnswer=C.
@@ -120,6 +159,189 @@ BEGIN
     EXECUTE $sql$
       CREATE INDEX IF NOT EXISTS "IdeaBlock_search_tsv_gin_idx"
       ON "IdeaBlock" USING gin ("search_tsv")
+    $sql$;
+  END IF;
+END $$;
+
+-- 5. SBA β-3 — Decisions Registry (Specialist 3.3).
+--    a) HNSW индекс на embedding для KNN cosine dedupe + supersede-detect.
+--    b) tsvector для гибридного поиска (statement + rationale + actualOutcomes).
+--    c) GIN на массивах affectsEntityIds / decidedByPersonIds / sourceBlockIds —
+--       для частых reverse-фильтров «какие решения касались Project X».
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'decisions'
+  ) THEN
+    -- (a) HNSW на embedding (cosine distance).
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "decisions_embedding_hnsw_cosine_idx"
+      ON "decisions" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+
+    -- (b) tsvector на statement/rationale/actualOutcomes (русский словарь).
+    EXECUTE $sql$
+      ALTER TABLE "decisions"
+        ADD COLUMN IF NOT EXISTS "decision_search_tsv" tsvector
+        GENERATED ALWAYS AS (
+          setweight(to_tsvector('russian', coalesce("statement",'')), 'A') ||
+          setweight(to_tsvector('russian', coalesce("rationale",'')), 'B') ||
+          setweight(to_tsvector('russian', coalesce("actualOutcomes",'')), 'C')
+        ) STORED
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "decisions_search_tsv_gin_idx"
+      ON "decisions" USING gin ("decision_search_tsv")
+    $sql$;
+
+    -- (c) GIN на массивах — для reverse-lookup'ов и hasSome-фильтров.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "decisions_affectsEntityIds_gin_idx"
+      ON "decisions" USING gin ("affectsEntityIds")
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "decisions_decidedByPersonIds_gin_idx"
+      ON "decisions" USING gin ("decidedByPersonIds")
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "decisions_sourceBlockIds_gin_idx"
+      ON "decisions" USING gin ("sourceBlockIds")
+    $sql$;
+  END IF;
+END $$;
+
+-- 6. SBA β-4 — Insights Radar (Specialist 3.5).
+--    a) HNSW индекс на embedding для KNN-кластеризации повторов (cosine).
+--    b) tsvector для полнотекста по statement + mitigationPlan.
+--    c) GIN на массивах affectedEntityIds / relatedDecisionIds / sourceBlockIds —
+--       для reverse-lookup'ов «какие сигналы касались Project X».
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'insights'
+  ) THEN
+    -- (a) HNSW на embedding (cosine distance).
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "insights_embedding_hnsw_cosine_idx"
+      ON "insights" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+
+    -- (b) tsvector на statement/mitigationPlan (русский словарь).
+    EXECUTE $sql$
+      ALTER TABLE "insights"
+        ADD COLUMN IF NOT EXISTS "insight_search_tsv" tsvector
+        GENERATED ALWAYS AS (
+          setweight(to_tsvector('russian', coalesce("statement",'')), 'A') ||
+          setweight(to_tsvector('russian', coalesce("mitigationPlan",'')), 'B')
+        ) STORED
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "insights_search_tsv_gin_idx"
+      ON "insights" USING gin ("insight_search_tsv")
+    $sql$;
+
+    -- (c) GIN на массивах — для reverse-lookup'ов и hasSome-фильтров.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "insights_affectedEntityIds_gin_idx"
+      ON "insights" USING gin ("affectedEntityIds")
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "insights_relatedDecisionIds_gin_idx"
+      ON "insights" USING gin ("relatedDecisionIds")
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "insights_sourceBlockIds_gin_idx"
+      ON "insights" USING gin ("sourceBlockIds")
+    $sql$;
+  END IF;
+END $$;
+
+-- 7. SBA β-5 — Ideas Collector (Specialist 3.6) + Layer 6 Probe-Agent.
+--    a) HNSW на Idea.embedding (KNN cosine дедуп идей).
+--    b) HNSW на IdeaCluster.embedding (KNN cosine merge кластеров).
+--    c) GIN на массивах sourceBlockIds / personSubjectIds (reverse-lookup).
+--    d) GIN на IdeaCluster.ideaIds.
+--    e) Уникальный индекс по contentHash в рамках tenant для probe_events
+--       (dedup hard-fence — на случай race в Redis).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'ideas'
+  ) THEN
+    -- (a) HNSW на embedding.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "ideas_embedding_hnsw_cosine_idx"
+      ON "ideas" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+    -- (c) GIN на массивах.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "ideas_sourceBlockIds_gin_idx"
+      ON "ideas" USING gin ("sourceBlockIds")
+    $sql$;
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "ideas_personSubjectIds_gin_idx"
+      ON "ideas" USING gin ("personSubjectIds")
+    $sql$;
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'idea_clusters'
+  ) THEN
+    -- (b) HNSW на embedding кластера.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "idea_clusters_embedding_hnsw_cosine_idx"
+      ON "idea_clusters" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+    -- (d) GIN на массиве ideaIds.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "idea_clusters_ideaIds_gin_idx"
+      ON "idea_clusters" USING gin ("ideaIds")
+    $sql$;
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'probe_events'
+  ) THEN
+    -- (e) Composite-index по (tenantId, status, createdAt) для admin-queue.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "probe_events_tenant_status_created_idx"
+      ON "probe_events" ("tenantId", "status", "createdAt" DESC)
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SBA γ-1 — Specialist 3.7 (SkillProfile + ExecutablePersona).
+--    a) HNSW индекс на SkillTrait.embedding для KNN-merge активных traits.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'skill_traits'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "skill_traits_embedding_hnsw_cosine_idx"
+      ON "skill_traits" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+    -- GIN на sourceBlockIds — для retrieval в Clone API (по blockId).
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "skill_traits_sourceBlockIds_gin_idx"
+      ON "skill_traits" USING gin ("sourceBlockIds")
     $sql$;
   END IF;
 END $$;

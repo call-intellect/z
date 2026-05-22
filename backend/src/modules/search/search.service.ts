@@ -506,22 +506,38 @@ export class SearchService {
     q: string,
     limit: number,
   ): Promise<UnifiedSearchResult[]> {
+    // SBA β-3: ищем по statement (приоритет) + text (legacy fallback).
     const rows = await this.prisma.decision.findMany({
       where: {
         tenantId,
-        text: { contains: q, mode: 'insensitive' },
+        OR: [
+          { statement: { contains: q, mode: 'insensitive' } },
+          { text: { contains: q, mode: 'insensitive' } },
+          { rationale: { contains: q, mode: 'insensitive' } },
+        ],
       },
-      orderBy: { decidedAt: 'desc' },
+      orderBy: [{ decidedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit,
-      select: { id: true, text: true, status: true, decidedAt: true },
+      select: {
+        id: true,
+        text: true,
+        statement: true,
+        status: true,
+        decidedAt: true,
+        createdAt: true,
+      },
     });
-    return rows.map((d) => ({
-      type: 'decision',
-      id: d.id,
-      title: d.text.slice(0, 120),
-      snippet: `Решение · ${d.status} · ${d.decidedAt.toISOString().slice(0, 10)}`,
-      relevance: 0.7,
-      url: `/decisions/${d.id}`,
-    }));
+    return rows.map((d) => {
+      const title = (d.statement ?? d.text ?? '').slice(0, 120);
+      const dt = (d.decidedAt ?? d.createdAt).toISOString().slice(0, 10);
+      return {
+        type: 'decision' as const,
+        id: d.id,
+        title,
+        snippet: `Решение · ${d.status} · ${dt}`,
+        relevance: 0.7,
+        url: `/decisions/${d.id}`,
+      };
+    });
   }
 }

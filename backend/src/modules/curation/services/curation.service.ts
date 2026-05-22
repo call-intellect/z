@@ -1,0 +1,729 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  type CurationDecisionType,
+  type CurationItem,
+  type CurationLevel,
+  Prisma,
+} from '@prisma/client';
+
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
+import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ConversationalService } from '../../conversational/conversational.service';
+
+import { CuratorRoutingService } from './curator-routing.service';
+
+import type {
+  CurationDecisionDto,
+  CurationDecisionTypeDto,
+  CurationItemDetailDto,
+  CurationItemDto,
+  CurationLevelDto,
+  CurationSettingsDto,
+  ListCurationQueueQuery,
+  ListCurationQueueResponse,
+  UpdateCurationSettingsBody,
+} from '../dto/curation.dto';
+
+/** Входной payload для `CurationService.triage`. Вызывается специалистами Слоя 3. */
+export interface TriageInput {
+  tenantId: string;
+  resourceType: string;
+  resourceId: string;
+  /** confidence карточки [0..1]. */
+  confidence: number;
+  /** Финальный payload карточки (что специалист предлагает канонизировать). */
+  proposedPayload: Record<string, unknown>;
+  /** Опц. сигналы конфликта от специалиста: «soft» / «hard». */
+  conflictSignal?: 'none' | 'soft' | 'hard';
+  /** Опц. дополнительные ID конфликтов, уже созданных через ConflictService. */
+  conflictIds?: string[];
+  /** Опц. дополнительный criteria (например, `{ tag: 'enterprise' }`). */
+  criteria?: Record<string, unknown>;
+  /** Опц. явный userId автора (для CardVersion.createdByUserId). */
+  createdByUserId?: string | null;
+  /** Опц. dataClass карточки (для нотификаций). */
+  dataClass?: 'public' | 'internal' | 'sensitive' | 'private';
+}
+
+export type TriageDecision = 'auto' | 'light' | 'deep';
+
+export interface TriageResult {
+  decision: TriageDecision;
+  /** Если 'auto' — id созданного CardVersion. Иначе — null. */
+  cardVersionId: string | null;
+  /** Если 'light' | 'deep' — id созданного CurationItem. Иначе — null. */
+  curationItemId: string | null;
+  /** Кандидаты-кураторы (после dispatch'а). */
+  candidateCuratorIds: string[];
+}
+
+export interface DecideInput {
+  tenantId: string;
+  curationItemId: string;
+  reviewerUserId: string;
+  decisionType: CurationDecisionTypeDto;
+  payload?: Record<string, unknown>;
+  reasoning?: string;
+}
+
+const DEFAULT_AUTO_THRESHOLD = 0.85;
+const DEFAULT_DEEP_REVIEW_THRESHOLD = 0.6;
+const DEFAULT_CRITICAL_TYPES = ['regulation', 'process', 'decision'] as const;
+
+/**
+ * CurationService — публичный API Слоя 4 (см.
+ * plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §5).
+ *
+ * Контракт для специалистов Слоя 3:
+ *
+ *   const res = await curation.triage({
+ *     tenantId, resourceType, resourceId,
+ *     confidence, proposedPayload, conflictSignal: 'none',
+ *   });
+ *   if (res.decision === 'auto') {
+ *     // карточка канонизирована — версия 1 уже создана в CardVersion;
+ *     // специалист обновляет своё хранилище (status='canonical').
+ *   } else {
+ *     // 'light' | 'deep' — карточка остаётся draft до завершения triage'а.
+ *   }
+ */
+@Injectable()
+export class CurationService {
+  private readonly logger = new Logger(CurationService.name);
+
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService,
+    @Inject(CuratorRoutingService)
+    private readonly routing: CuratorRoutingService,
+  ) {}
+
+  // ──────────────────────────── triage ────────────────────────────
+
+  async triage(input: TriageInput): Promise<TriageResult> {
+    if (!input.tenantId || !input.resourceType || !input.resourceId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_triage_input',
+          message: 'tenantId / resourceType / resourceId обязательны для triage',
+        },
+      });
+    }
+    if (input.confidence < 0 || input.confidence > 1) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_confidence',
+          message: 'confidence должен быть в диапазоне [0..1]',
+        },
+      });
+    }
+
+    const settings = await this.getSettings(input.tenantId);
+    const conflict = input.conflictSignal ?? 'none';
+    const isCritical = settings.criticalTypes.includes(input.resourceType);
+
+    // 1. auto-canonical
+    if (
+      !isCritical &&
+      conflict === 'none' &&
+      input.confidence >= settings.autoThreshold
+    ) {
+      const version = await this.createInitialCardVersion(input);
+      this.metrics.incCurationAutoCanonical({ resourceType: input.resourceType });
+      this.logger.log(
+        {
+          tenantId: input.tenantId,
+          resourceType: input.resourceType,
+          resourceId: input.resourceId,
+          versionId: version.id,
+        },
+        'curation.triage: auto-canonical',
+      );
+      return {
+        decision: 'auto',
+        cardVersionId: version.id,
+        curationItemId: null,
+        candidateCuratorIds: [],
+      };
+    }
+
+    // 2. deep / light
+    let level: CurationLevel;
+    if (
+      isCritical ||
+      conflict === 'hard' ||
+      input.confidence < settings.deepReviewThreshold
+    ) {
+      level = 'deep';
+    } else {
+      level = 'light';
+    }
+
+    const triageReason = {
+      confidence: input.confidence,
+      conflictSignal: conflict,
+      conflictIds: input.conflictIds ?? [],
+      criticalType: isCritical,
+      autoThreshold: settings.autoThreshold,
+      deepReviewThreshold: settings.deepReviewThreshold,
+    };
+
+    // ВНИМАНИЕ: dispatchProbe вне транзакции (notifications в БД создаются
+    // отдельной транзакцией, побочные эффекты — допустимо best-effort).
+    const candidates = await this.routing.resolveCurators({
+      tenantId: input.tenantId,
+      resourceType: input.resourceType,
+      level,
+      criteria: input.criteria,
+    });
+
+    const item = await this.prisma.curationItem.create({
+      data: {
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        level,
+        triageReason: triageReason as Prisma.InputJsonValue,
+        proposedPayload: input.proposedPayload as Prisma.InputJsonValue,
+        candidateCuratorIds: candidates,
+        expiresAt: this.expiryDate(settings.itemExpiryDays),
+      },
+    });
+
+    this.metrics.incCurationItem({
+      resourceType: input.resourceType,
+      level,
+      status: 'pending',
+    });
+
+    await this.dispatchProbe({
+      item,
+      candidateCuratorIds: candidates,
+      dataClass: input.dataClass,
+    });
+
+    this.logger.log(
+      {
+        tenantId: input.tenantId,
+        itemId: item.id,
+        level,
+        candidates: candidates.length,
+      },
+      'curation.triage: создан CurationItem + dispatch probe',
+    );
+
+    return {
+      decision: level,
+      cardVersionId: null,
+      curationItemId: item.id,
+      candidateCuratorIds: candidates,
+    };
+  }
+
+  // ──────────────────────────── decide ────────────────────────────
+
+  async decide(input: DecideInput): Promise<CurationItem> {
+    const item = await this.prisma.curationItem.findUnique({
+      where: { id: input.curationItemId },
+    });
+    if (!item || item.tenantId !== input.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'curation_item_not_found',
+          message: 'CurationItem не найден',
+        },
+      });
+    }
+    if (item.status !== 'pending') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'curation_item_not_pending',
+          message: `CurationItem уже в статусе ${item.status}`,
+        },
+      });
+    }
+
+    // Куратор должен быть в candidateCuratorIds, либо owner/admin (выше
+    // проверяется RBAC). Если списка кандидатов нет — позволяем любому
+    // owner/admin'у.
+    if (
+      item.candidateCuratorIds.length > 0 &&
+      !item.candidateCuratorIds.includes(input.reviewerUserId)
+    ) {
+      // Дополнительная мягкая проверка через Membership — owner/admin Org
+      // имеет право решать вне зависимости от candidateCuratorIds.
+      const membership = await this.prisma.membership.findUnique({
+        where: {
+          orgId_userId: { orgId: input.tenantId, userId: input.reviewerUserId },
+        },
+        select: { role: true },
+      });
+      if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'not_in_candidates',
+            message: 'Пользователь не назначен куратором для этой карточки',
+          },
+        });
+      }
+    }
+
+    if (input.decisionType === 'reject' && (input.payload ?? null) !== null) {
+      // Для reject payload игнорируется.
+    }
+    if (this.requiresReasoning(input.decisionType, item.level) && !input.reasoning) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'reasoning_required',
+          message:
+            'reasoning обязателен для deep review и для split/merge/supersede',
+        },
+      });
+    }
+
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const decision = await tx.curationDecision.create({
+        data: {
+          curationItemId: item.id,
+          decisionType: input.decisionType as CurationDecisionType,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+          reasoning: input.reasoning ?? null,
+          reviewerUserId: input.reviewerUserId,
+        },
+      });
+
+      const updated = await tx.curationItem.update({
+        where: { id: item.id },
+        data: {
+          status: 'decided',
+          decidedAt: now,
+          assignedToUserId: input.reviewerUserId,
+        },
+      });
+
+      // Создаём CardVersion для approve / approve_with_edits / split / merge / supersede.
+      if (input.decisionType !== 'reject') {
+        const payloadForVersion =
+          input.payload && Object.keys(input.payload).length > 0
+            ? input.payload
+            : (item.proposedPayload as Record<string, unknown>);
+        await this.appendCardVersion(tx, {
+          tenantId: item.tenantId,
+          resourceType: item.resourceType,
+          resourceId: item.resourceId,
+          payload: payloadForVersion,
+          changeReason: input.decisionType,
+          createdByUserId: input.reviewerUserId,
+          curationDecisionId: decision.id,
+          curationItemId: item.id,
+        });
+      }
+
+      return updated;
+    });
+
+    // Метрики (вне транзакции, best-effort).
+    this.metrics.incCurationDecision({
+      decisionType: input.decisionType,
+      level: item.level,
+    });
+    this.metrics.incCurationItem({
+      resourceType: item.resourceType,
+      level: item.level,
+      status: 'decided',
+    });
+    const seconds = Math.max(
+      0,
+      Math.floor((now.getTime() - item.createdAt.getTime()) / 1000),
+    );
+    this.metrics.observeCurationTimeToDecide({ level: item.level, seconds });
+
+    this.logger.log(
+      {
+        tenantId: item.tenantId,
+        itemId: item.id,
+        decisionType: input.decisionType,
+        reviewer: input.reviewerUserId,
+        timeToDecideSec: seconds,
+      },
+      'curation.decide: решение принято',
+    );
+
+    return result;
+  }
+
+  // ──────────────────────────── list / get ────────────────────────
+
+  async listQueue(args: {
+    tenantId: string;
+    requesterUserId: string;
+    query: ListCurationQueueQuery;
+  }): Promise<ListCurationQueueResponse> {
+    const { tenantId, requesterUserId, query } = args;
+    const where: Prisma.CurationItemWhereInput = { tenantId };
+    if (query.level) where.level = query.level;
+    if (query.status) where.status = query.status;
+    if (query.resourceType) where.resourceType = query.resourceType;
+    if (query.resourceId) where.resourceId = query.resourceId;
+    if (query.assignedToMe) {
+      where.OR = [
+        { assignedToUserId: requesterUserId },
+        { candidateCuratorIds: { has: requesterUserId } },
+      ];
+    }
+
+    if (query.limit === 0) {
+      // count-only режим.
+      const total = await this.prisma.curationItem.count({ where });
+      return { items: [], total, page: 1, limit: 0, totalPages: 0 };
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.curationItem.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.curationItem.count({ where }),
+    ]);
+    return {
+      items: items.map((i) => this.toItemDto(i)),
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / Math.max(1, query.limit))),
+    };
+  }
+
+  async getItemById(args: {
+    tenantId: string;
+    id: string;
+  }): Promise<CurationItemDetailDto> {
+    const item = await this.prisma.curationItem.findUnique({
+      where: { id: args.id },
+      include: {
+        decisions: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!item || item.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'curation_item_not_found',
+          message: 'CurationItem не найден',
+        },
+      });
+    }
+    // Подмешиваем связанные открытые конфликты для resourceId.
+    const conflicts = await this.prisma.conflictItem.findMany({
+      where: {
+        tenantId: args.tenantId,
+        resourceType: item.resourceType,
+        status: 'open',
+        OR: [{ existingId: item.resourceId }, { newId: item.resourceId }],
+      },
+      select: { id: true },
+    });
+    return {
+      ...this.toItemDto(item),
+      decisions: item.decisions.map((d) => this.toDecisionDto(d)),
+      relatedConflictIds: conflicts.map((c) => c.id),
+    };
+  }
+
+  // ──────────────────────────── settings ──────────────────────────
+
+  async getSettings(tenantId: string): Promise<CurationSettingsDto> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: tenantId },
+      select: { curationSettings: true },
+    });
+    return this.normalizeSettings(org?.curationSettings ?? null);
+  }
+
+  async updateSettings(args: {
+    tenantId: string;
+    patch: UpdateCurationSettingsBody;
+  }): Promise<CurationSettingsDto> {
+    const current = await this.getSettings(args.tenantId);
+    const next: CurationSettingsDto = {
+      autoThreshold: args.patch.autoThreshold ?? current.autoThreshold,
+      deepReviewThreshold:
+        args.patch.deepReviewThreshold ?? current.deepReviewThreshold,
+      criticalTypes: args.patch.criticalTypes ?? current.criticalTypes,
+      itemExpiryDays: args.patch.itemExpiryDays ?? current.itemExpiryDays,
+    };
+    if (next.autoThreshold < next.deepReviewThreshold) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_thresholds',
+          message:
+            'autoThreshold должен быть >= deepReviewThreshold (иначе triage не имеет «light» окна)',
+        },
+      });
+    }
+    await this.prisma.org.update({
+      where: { id: args.tenantId },
+      data: { curationSettings: next as unknown as Prisma.InputJsonValue },
+    });
+    return next;
+  }
+
+  // ──────────────────────────── helpers ──────────────────────────
+
+  private requiresReasoning(
+    decisionType: CurationDecisionTypeDto,
+    level: CurationLevel,
+  ): boolean {
+    if (level === 'deep') return true;
+    return (
+      decisionType === 'split' ||
+      decisionType === 'merge' ||
+      decisionType === 'supersede'
+    );
+  }
+
+  /**
+   * Создаёт первую CardVersion (`version=1`) для auto-canonical.
+   */
+  private async createInitialCardVersion(input: TriageInput) {
+    return this.appendCardVersion(this.prisma, {
+      tenantId: input.tenantId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      payload: input.proposedPayload,
+      changeReason: 'initial',
+      createdByUserId: input.createdByUserId ?? null,
+      curationDecisionId: null,
+      curationItemId: null,
+    });
+  }
+
+  /**
+   * Создаёт CardVersion, корректно вычисляя `version` и `previousVersionId`.
+   *
+   * NB: внутри транзакции — корректный read-then-write. Гарантия unique на
+   * `(resourceType, resourceId, version)` защищает от двойной записи (если
+   * две триажа одновременно создают v1, второй упадёт с unique-error).
+   */
+  private async appendCardVersion(
+    db: PrismaService | Prisma.TransactionClient,
+    args: {
+      tenantId: string;
+      resourceType: string;
+      resourceId: string;
+      payload: Record<string, unknown>;
+      changeReason: string;
+      createdByUserId: string | null;
+      curationDecisionId: string | null;
+      curationItemId: string | null;
+    },
+  ) {
+    const last = await db.cardVersion.findFirst({
+      where: { resourceType: args.resourceType, resourceId: args.resourceId },
+      orderBy: { version: 'desc' },
+      select: { id: true, version: true },
+    });
+    const version = (last?.version ?? 0) + 1;
+    return db.cardVersion.create({
+      data: {
+        tenantId: args.tenantId,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId,
+        version,
+        previousVersionId: last?.id ?? null,
+        payload: args.payload as Prisma.InputJsonValue,
+        changeReason: args.changeReason,
+        createdByUserId: args.createdByUserId,
+        curationDecisionId: args.curationDecisionId,
+        curationItemId: args.curationItemId,
+      },
+    });
+  }
+
+  private expiryDate(days: number): Date {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + days);
+    return d;
+  }
+
+  /**
+   * Отправка probe-нотификации каждому кандидату-куратору через
+   * ConversationalService. Best-effort: ошибка одного канала не валит triage.
+   */
+  private async dispatchProbe(args: {
+    item: CurationItem;
+    candidateCuratorIds: string[];
+    dataClass?: 'public' | 'internal' | 'sensitive' | 'private';
+  }): Promise<void> {
+    const { item, candidateCuratorIds } = args;
+    const summary = this.buildProbeSummary(item);
+    const actionUrl = `/curation/${item.id}`;
+    const dataClass = args.dataClass ?? 'internal';
+
+    for (const userId of candidateCuratorIds) {
+      try {
+        await this.conversational.sendNotification({
+          tenantId: item.tenantId,
+          recipientUserId: userId,
+          eventType: 'curation.pending',
+          payload: {
+            resourceType: item.resourceType,
+            resourceId: item.resourceId,
+            summary,
+            confidence: this.extractConfidenceFromReason(item.triageReason),
+            actionUrl,
+          },
+          dataClass,
+          contextCardId: item.resourceId,
+          expiresAt: item.expiresAt ? item.expiresAt.toISOString() : undefined,
+        });
+
+        // Для deep review дополнительно отправляем эскалацию через system.message.
+        if (item.level === 'deep') {
+          await this.conversational.sendNotification({
+            tenantId: item.tenantId,
+            recipientUserId: userId,
+            eventType: 'system.message',
+            payload: {
+              title: 'Карточка требует подробной проверки',
+              body: summary,
+              severity: 'warning',
+              actionUrl,
+            },
+            dataClass,
+            contextCardId: item.resourceId,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          {
+            tenantId: item.tenantId,
+            itemId: item.id,
+            userId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'curation: ошибка dispatchProbe — пропускаю получателя',
+        );
+      }
+    }
+  }
+
+  private buildProbeSummary(item: CurationItem): string {
+    const conf = this.extractConfidenceFromReason(item.triageReason);
+    const confText = conf !== undefined ? ` (уверенность ${(conf * 100).toFixed(0)}%)` : '';
+    return `На проверке карточка ${item.resourceType} ${item.resourceId}${confText} — уровень: ${item.level}.`;
+  }
+
+  private extractConfidenceFromReason(reason: Prisma.JsonValue): number | undefined {
+    if (
+      reason &&
+      typeof reason === 'object' &&
+      !Array.isArray(reason) &&
+      'confidence' in reason
+    ) {
+      const v = (reason as Record<string, unknown>).confidence;
+      if (typeof v === 'number') return v;
+    }
+    return undefined;
+  }
+
+  private normalizeSettings(raw: Prisma.JsonValue | null): CurationSettingsDto {
+    const def: CurationSettingsDto = {
+      autoThreshold: this.cfg.curation.autoThresholdDefault ?? DEFAULT_AUTO_THRESHOLD,
+      deepReviewThreshold:
+        this.cfg.curation.deepReviewThresholdDefault ?? DEFAULT_DEEP_REVIEW_THRESHOLD,
+      criticalTypes:
+        (this.cfg.curation.criticalTypesDefault as readonly string[])?.slice() ??
+        [...DEFAULT_CRITICAL_TYPES],
+      itemExpiryDays: this.cfg.curation.itemExpiryDays ?? 30,
+    };
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
+    const obj = raw as Record<string, unknown>;
+    return {
+      autoThreshold:
+        typeof obj.autoThreshold === 'number' ? obj.autoThreshold : def.autoThreshold,
+      deepReviewThreshold:
+        typeof obj.deepReviewThreshold === 'number'
+          ? obj.deepReviewThreshold
+          : def.deepReviewThreshold,
+      criticalTypes: Array.isArray(obj.criticalTypes)
+        ? (obj.criticalTypes.filter(
+            (s): s is string => typeof s === 'string',
+          ) as string[])
+        : def.criticalTypes,
+      itemExpiryDays:
+        typeof obj.itemExpiryDays === 'number'
+          ? obj.itemExpiryDays
+          : def.itemExpiryDays,
+    };
+  }
+
+  // ──────────────────────────── mappers ─────────────────────────
+
+  private toItemDto(item: CurationItem): CurationItemDto {
+    return {
+      id: item.id,
+      tenantId: item.tenantId,
+      resourceType: item.resourceType,
+      resourceId: item.resourceId,
+      level: item.level as CurationLevelDto,
+      triageReason: jsonObj(item.triageReason),
+      proposedPayload: jsonObj(item.proposedPayload),
+      status: item.status,
+      assignedToUserId: item.assignedToUserId,
+      candidateCuratorIds: item.candidateCuratorIds,
+      createdAt: item.createdAt.toISOString(),
+      decidedAt: item.decidedAt ? item.decidedAt.toISOString() : null,
+      expiresAt: item.expiresAt ? item.expiresAt.toISOString() : null,
+    };
+  }
+
+  private toDecisionDto(d: {
+    id: string;
+    curationItemId: string;
+    decisionType: CurationDecisionType;
+    payload: Prisma.JsonValue;
+    reasoning: string | null;
+    reviewerUserId: string;
+    createdAt: Date;
+  }): CurationDecisionDto {
+    return {
+      id: d.id,
+      curationItemId: d.curationItemId,
+      decisionType: d.decisionType as CurationDecisionTypeDto,
+      payload: jsonObj(d.payload),
+      reasoning: d.reasoning,
+      reviewerUserId: d.reviewerUserId,
+      createdAt: d.createdAt.toISOString(),
+    };
+  }
+}
+
+function jsonObj(v: Prisma.JsonValue): Record<string, unknown> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  return {};
+}

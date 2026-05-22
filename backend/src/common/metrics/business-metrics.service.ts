@@ -133,6 +133,88 @@ export class BusinessMetricsService implements OnModuleInit {
   private conversationalLinkAttemptsTotal!: Counter<'kind' | 'status'>;
   private conversationalResponseTimeSeconds!: Histogram<'kind' | 'event_type'>;
 
+  // ── telegram bot channel (SBA β-1) ────────────────────────────────
+  private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
+  private telegramBotWebhookReceivedTotal!: Counter<'type'>;
+
+  // ── max bot channel (SBA β-1) ─────────────────────────────────────
+  private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
+  private maxBotWebhookReceivedTotal!: Counter<'type'>;
+
+  // ── core router (SBA α-3) ─────────────────────────────────────────
+  private coreRouterDispatchedTotal!: Counter<'specialist' | 'signal_type'>;
+  private coreRouterFanOut!: Histogram<string>;
+  private coreRouterTrimmedTotal!: Counter<'signal_type'>;
+
+  // ── curation (SBA α-4) ───────────────────────────────────────────
+  private curationItemsTotal!: Counter<'resource_type' | 'level' | 'status'>;
+  private curationDecisionTotal!: Counter<'decision_type' | 'level'>;
+  private curationTimeToDecideSeconds!: Histogram<'level'>;
+  private curationAutoCanonicalTotal!: Counter<'resource_type'>;
+  private curationConflictsTotal!: Counter<'relation_type' | 'resolution'>;
+  private curationStaleDetectedTotal!: Counter<'resource_type'>;
+
+  // ── specialists (SBA α-6 — эталонный референс контракта §5 зонтичного) ──
+  // Метрики единые для всех специалистов Слоя 3 (3.1..3.7). Label `type`
+  // идентифицирует ресурс/специалиста: 'card' (3.4), 'regulation' (3.1),
+  // 'decision' (3.3), 'insight' (3.5), 'idea' (3.6), 'skill' (3.7),
+  // 'knowledge_clone' (3.2).
+  private coreSpecialistCardsTotal!: Gauge<'type' | 'status'>;
+  private coreSpecialistPipelineDurationSeconds!: Histogram<'type'>;
+  private coreSpecialistLlmTokensTotal!: Counter<'type' | 'model' | 'tier'>;
+  private coreSpecialistProbeEventsTotal!: Counter<'type' | 'reason'>;
+  private coreSpecialistConflictEventsTotal!: Counter<'type'>;
+  // SBA α-7 — счётчик неуспешных LLM-extraction'ов специалистов (reason:
+  // 'llm_error', 'json_parse', 'schema_validation', 'arbiter_skip', ...).
+  private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
+  // SBA β-3 — evolving-конфликты (отдельный counter рядом с
+  // core_specialist_conflict_events_total). Не сливаем в один counter, чтобы
+  // не ломать обратную совместимость существующих label'ов.
+  private coreSpecialistConflictEvolvingTotal!: Counter<'type'>;
+  // SBA β-3 — гистограмма длин supersede-цепочек Decision (для аналитики
+  // «как часто решения переписываются»).
+  private decisionSupersedeChainLength!: Histogram<never>;
+
+  // ── SBA β-2 — Knowledge Clone (Specialist 3.2) — два специфичных метрик'а.
+  private knowledgeCloneCategoriesPerProfile!: Histogram<never>;
+  private knowledgeCloneProfileSizeKb!: Histogram<never>;
+
+  // ── SBA β-4 — Insights Radar (Specialist 3.5) ─────────────────────
+  /**
+   * Сколько Insight'ов сейчас в каждом dynamicLabel-сегменте (gauge).
+   * label ∈ growing | stable | declining | spike.
+   */
+  private insightsDynamicLabelCount!: Gauge<'label'>;
+
+  // ── SBA β-5 — Probe-Agent (Layer 6) + Ideas Collector (Specialist 3.6)
+  private probeEventsTotal!: Counter<'emitted_by_service' | 'reason' | 'status'>;
+  private probeDispatchedTotal!: Counter<'kind'>;
+  private probeResponseTotal!: Counter<'event_type' | 'kind'>;
+  private probeResponseTimeSeconds!: Histogram<'event_type' | 'kind'>;
+  private probeDedupDroppedTotal!: Counter<'reason'>;
+  private probeRateLimitDroppedTotal!: Counter<never>;
+  private probeColdStartDroppedTotal!: Counter<never>;
+  private probeExpiredTotal!: Counter<never>;
+  private probeRecipientEngagementRate!: Gauge<'user_id'>;
+  private ideaStatusChangeNotificationsTotal!: Counter<'new_status'>;
+
+  // ── chat-v2 (SBA α-5) ─────────────────────────────────────────────
+  private chatV2QueriesTotal!: Counter<'mode' | 'channel_origin'>;
+  private chatV2RetrievalBlocks!: Histogram<'mode'>;
+  private chatV2SynthesisDurationSeconds!: Histogram<'mode'>;
+  private chatV2NoEvidenceTotal!: Counter<'mode'>;
+  private chatV2UncertaintyMarkedTotal!: Counter<'mode'>;
+  private chatV2ConversationsArchivedTotal!: Counter<'reason'>;
+
+  // ── SBA γ-1 — SkillProfile + ExecutablePersona + Clone API ────────
+  private skillProfilesActiveTotal!: Gauge<never>;
+  private skillTraitsPerProfile!: Histogram<never>;
+  private skillTraitsMarkedMisleadingTotal!: Counter<'category'>;
+  private personaActiveTotal!: Gauge<'scope'>;
+  private personaBuildDurationSeconds!: Histogram<never>;
+  private cloneAskTotal!: Counter<'scope'>;
+  private cloneAskByOwnerTotal!: Counter<never>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -555,6 +637,274 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Время ответа пользователя на probe-нотификацию (секунды, по kind × eventType).',
       labelNames: ['kind', 'event_type'] as const,
       buckets: [10, 60, 300, 900, 1800, 3600, 14_400, 86_400, 604_800],
+    });
+
+    // ── telegram bot (SBA β-1) ─────────────────────────────────────
+    this.telegramBotApiErrorsTotal = this.getOrCreateCounter({
+      name: 'telegram_bot_api_errors_total',
+      help: 'SBA β-1 — ошибки вызовов Telegram Bot API (api_method × HTTP/Telegram code).',
+      labelNames: ['api_method', 'code'] as const,
+    });
+    this.telegramBotWebhookReceivedTotal = this.getOrCreateCounter({
+      name: 'telegram_bot_webhook_received_total',
+      help: 'SBA β-1 — webhook Update от Telegram (type = message/callback_query/command/...).',
+      labelNames: ['type'] as const,
+    });
+
+    // ── max bot (SBA β-1) ──────────────────────────────────────────
+    this.maxBotApiErrorsTotal = this.getOrCreateCounter({
+      name: 'max_bot_api_errors_total',
+      help: 'SBA β-1 — ошибки вызовов MAX Bot API (api_method × HTTP/MAX code).',
+      labelNames: ['api_method', 'code'] as const,
+    });
+    this.maxBotWebhookReceivedTotal = this.getOrCreateCounter({
+      name: 'max_bot_webhook_received_total',
+      help: 'SBA β-1 — webhook Update от MAX (type = message_created/callback/command/...).',
+      labelNames: ['type'] as const,
+    });
+
+    // ── core router (SBA α-3) ──────────────────────────────────────
+    this.coreRouterDispatchedTotal = this.getOrCreateCounter({
+      name: 'core_router_dispatched_total',
+      help: 'SBA α-3 — RouterService.dispatch: количество jobs, отправленных специалистам Слоя 3 (по specialist × signal_type).',
+      labelNames: ['specialist', 'signal_type'] as const,
+    });
+    this.coreRouterFanOut = this.getOrCreateHistogram({
+      name: 'core_router_fan_out',
+      help: 'SBA α-3 — RouterService: распределение количества специалистов на один блок. > maxSpecialistsPerBlock — анти-fan-out срабатывает.',
+      labelNames: [] as const,
+      buckets: [0, 1, 2, 3, 4, 5, 6, 8, 10],
+    });
+    this.coreRouterTrimmedTotal = this.getOrCreateCounter({
+      name: 'core_router_trimmed_total',
+      help: 'SBA α-3 — RouterService: блоки, где сработало ограничение maxSpecialistsPerBlock (часть специалистов отброшена по приоритету).',
+      labelNames: ['signal_type'] as const,
+    });
+
+    // ── curation (SBA α-4) ───────────────────────────────────────
+    this.curationItemsTotal = this.getOrCreateCounter({
+      name: 'curation_items_total',
+      help: 'SBA α-4 — CurationItem: счётчик созданных/перешедших по статусу карточек (resource_type × level × status).',
+      labelNames: ['resource_type', 'level', 'status'] as const,
+    });
+    this.curationDecisionTotal = this.getOrCreateCounter({
+      name: 'curation_decision_total',
+      help: 'SBA α-4 — CurationDecision: счётчик принятых решений (decision_type × level).',
+      labelNames: ['decision_type', 'level'] as const,
+    });
+    this.curationTimeToDecideSeconds = this.getOrCreateHistogram({
+      name: 'curation_time_to_decide_seconds',
+      help: 'SBA α-4 — Время с момента создания CurationItem до принятия решения (секунды, по level).',
+      labelNames: ['level'] as const,
+      buckets: [60, 300, 900, 3600, 14_400, 86_400, 259_200, 604_800],
+    });
+    this.curationAutoCanonicalTotal = this.getOrCreateCounter({
+      name: 'curation_auto_canonical_total',
+      help: 'SBA α-4 — Карточки, прошедшие auto-canonical через triage (без CurationItem).',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationConflictsTotal = this.getOrCreateCounter({
+      name: 'curation_conflicts_total',
+      help: 'SBA α-4 — ConflictItem: создания и резолюции (relation_type × resolution; для created — resolution="created").',
+      labelNames: ['relation_type', 'resolution'] as const,
+    });
+    this.curationStaleDetectedTotal = this.getOrCreateCounter({
+      name: 'curation_stale_detected_total',
+      help: 'SBA α-4 — CardStaleDetectorCron: сколько карточек помечено кандидатами на stale (resource_type).',
+      labelNames: ['resource_type'] as const,
+    });
+
+    // ── specialists (SBA α-6 — единый контракт §5 для Слоя 3) ────────
+    this.coreSpecialistCardsTotal = this.getOrCreateGauge({
+      name: 'core_specialist_cards_total',
+      help: 'SBA α-6 — карточки специалистов Слоя 3 (type × status). type=card/regulation/decision/insight/idea/skill/knowledge_clone; status=canonical/pending/draft/archived.',
+      labelNames: ['type', 'status'] as const,
+    });
+    this.coreSpecialistPipelineDurationSeconds = this.getOrCreateHistogram({
+      name: 'core_specialist_pipeline_duration_seconds',
+      help: 'SBA α-6 — длительность полного цикла специалиста (от старта job до результата) в секундах (type).',
+      labelNames: ['type'] as const,
+      buckets: [0.5, 1, 2, 5, 10, 30, 60, 120, 300],
+    });
+    this.coreSpecialistLlmTokensTotal = this.getOrCreateCounter({
+      name: 'core_specialist_llm_tokens_total',
+      help: 'SBA α-6 — токены LLM, потраченные специалистом (type × model × tier). tier=primary/secondary/tertiary.',
+      labelNames: ['type', 'model', 'tier'] as const,
+    });
+    this.coreSpecialistProbeEventsTotal = this.getOrCreateCounter({
+      name: 'core_specialist_probe_events_total',
+      help: 'SBA α-6 — probe-events, отправленные специалистом (type × reason). reason — `card.missing_owner` / `card.missing_deadline` / `card.merge_suggestion` / `card.outdated_summary` и т.п.',
+      labelNames: ['type', 'reason'] as const,
+    });
+    this.coreSpecialistConflictEventsTotal = this.getOrCreateCounter({
+      name: 'core_specialist_conflict_events_total',
+      help: 'SBA α-6 — conflict-events, репортированные специалистом через ConflictService.report (type).',
+      labelNames: ['type'] as const,
+    });
+    this.coreSpecialistExtractionFailuresTotal = this.getOrCreateCounter({
+      name: 'core_specialist_extraction_failures_total',
+      help: 'SBA α-7 — провалы LLM-extraction специалистов Слоя 3 (type × reason). reason: `llm_error`/`json_parse`/`schema_validation`/`arbiter_skip`/`db_error`.',
+      labelNames: ['type', 'reason'] as const,
+    });
+    // SBA β-3 — evolving-конфликты (отдельный counter).
+    this.coreSpecialistConflictEvolvingTotal = this.getOrCreateCounter({
+      name: 'core_specialist_conflict_evolving_total',
+      help: 'SBA β-3 — конфликты с suggested resolution=evolving, репортированные специалистами (type). Для Decision: новая версия → старая → ConflictItem(evolving).',
+      labelNames: ['type'] as const,
+    });
+    // SBA β-3 — длина supersede-цепочек Decision.
+    this.decisionSupersedeChainLength = this.getOrCreateHistogram({
+      name: 'decision_supersede_chain_length',
+      help: 'SBA β-3 — длина supersede-цепочек Decision (chain length = сколько раз решение переписывалось). 0 — изначальное, 1 — заменено один раз, и т.д.',
+      labelNames: [] as const,
+      buckets: [0, 1, 2, 3, 5, 8, 13, 21],
+    });
+
+    // ── SBA β-2 — Knowledge Clone (Specialist 3.2) ──
+    this.knowledgeCloneCategoriesPerProfile = this.getOrCreateHistogram({
+      name: 'knowledge_clone_categories_per_profile',
+      help: 'SBA β-2 — распределение числа категорий в knowledgeProfile (per rebuild).',
+      labelNames: [] as const,
+      buckets: [0, 1, 3, 5, 8, 12, 18, 25, 40],
+    });
+    this.knowledgeCloneProfileSizeKb = this.getOrCreateHistogram({
+      name: 'knowledge_clone_profile_size_kb',
+      help: 'SBA β-2 — распределение размера сериализованного knowledgeProfile (KB).',
+      labelNames: [] as const,
+      buckets: [0.5, 1, 2, 4, 8, 16, 32, 64, 128],
+    });
+
+    // ── SBA β-4 — Insights Radar (Specialist 3.5) ──
+    this.insightsDynamicLabelCount = this.getOrCreateGauge({
+      name: 'insights_dynamic_label_count',
+      help: 'SBA β-4 — сколько активных Insight\'ов сейчас в каждом dynamicLabel-сегменте (label: growing | stable | declining | spike).',
+      labelNames: ['label'] as const,
+    });
+
+    // ── SBA β-5 — Probe-Agent + Ideas Collector ──
+    this.probeEventsTotal = this.getOrCreateCounter({
+      name: 'probe_events_total',
+      help: 'SBA β-5 — probe-события: сколько создано / отброшено (emitted_by_service × reason × status).',
+      labelNames: ['emitted_by_service', 'reason', 'status'] as const,
+    });
+    this.probeDispatchedTotal = this.getOrCreateCounter({
+      name: 'probe_dispatched_total',
+      help: 'SBA β-5 — сколько probe-событий доставлено в канал (kind).',
+      labelNames: ['kind'] as const,
+    });
+    this.probeResponseTotal = this.getOrCreateCounter({
+      name: 'probe_response_total',
+      help: 'SBA β-5 — сколько probe-событий получили ответ (event_type × kind).',
+      labelNames: ['event_type', 'kind'] as const,
+    });
+    this.probeResponseTimeSeconds = this.getOrCreateHistogram({
+      name: 'probe_response_time_seconds',
+      help: 'SBA β-5 — время от dispatch до ответа (event_type × kind), секунды.',
+      labelNames: ['event_type', 'kind'] as const,
+      buckets: [10, 60, 300, 900, 3600, 14400, 86400, 604800],
+    });
+    this.probeDedupDroppedTotal = this.getOrCreateCounter({
+      name: 'probe_dedup_dropped_total',
+      help: 'SBA β-5 — сколько probe-событий отброшено по дедупликации (reason).',
+      labelNames: ['reason'] as const,
+    });
+    this.probeRateLimitDroppedTotal = this.getOrCreateCounter({
+      name: 'probe_rate_limit_dropped_total',
+      help: 'SBA β-5 — сколько probe-событий отброшено по rate-limit\'у получателя.',
+      labelNames: [] as const,
+    });
+    this.probeColdStartDroppedTotal = this.getOrCreateCounter({
+      name: 'probe_cold_start_dropped_total',
+      help: 'SBA β-5 — сколько probe-событий отложено по cold-start mode (первые 24h после первого probe).',
+      labelNames: [] as const,
+    });
+    this.probeExpiredTotal = this.getOrCreateCounter({
+      name: 'probe_expired_total',
+      help: 'SBA β-5 — сколько probe-событий истекло без ответа.',
+      labelNames: [] as const,
+    });
+    this.probeRecipientEngagementRate = this.getOrCreateGauge({
+      name: 'probe_recipient_engagement_rate',
+      help: 'SBA β-5 — отзывчивость получателя за 30 дней (отвечено / отправлено), per user.',
+      labelNames: ['user_id'] as const,
+    });
+    this.ideaStatusChangeNotificationsTotal = this.getOrCreateCounter({
+      name: 'idea_status_change_notifications_total',
+      help: 'SBA β-5 — сколько уведомлений о смене статуса идеи отправлено supporter\'ам (new_status).',
+      labelNames: ['new_status'] as const,
+    });
+
+    // ── chat-v2 (SBA α-5) ────────────────────────────────────────────
+    this.chatV2QueriesTotal = this.getOrCreateCounter({
+      name: 'chat_v2_queries_total',
+      help: 'SBA α-5 — chat-v2: количество запросов (mode × channel_origin).',
+      labelNames: ['mode', 'channel_origin'] as const,
+    });
+    this.chatV2RetrievalBlocks = this.getOrCreateHistogram({
+      name: 'chat_v2_retrieval_blocks',
+      help: 'SBA α-5 — chat-v2: распределение числа блоков, использованных в ответе AI (mode).',
+      labelNames: ['mode'] as const,
+      buckets: [0, 1, 2, 4, 8, 12, 16, 20, 30],
+    });
+    this.chatV2SynthesisDurationSeconds = this.getOrCreateHistogram({
+      name: 'chat_v2_synthesis_duration_seconds',
+      help: 'SBA α-5 — chat-v2: длительность synthesis (retrieval + LLM call), секунды (mode).',
+      labelNames: ['mode'] as const,
+      buckets: [0.5, 1, 2, 5, 10, 20, 40, 60, 120],
+    });
+    this.chatV2NoEvidenceTotal = this.getOrCreateCounter({
+      name: 'chat_v2_no_evidence_total',
+      help: 'SBA α-5 — chat-v2: ответы без citations (плохой UX — AI выдумал или ничего не нашёл) (mode).',
+      labelNames: ['mode'] as const,
+    });
+    this.chatV2UncertaintyMarkedTotal = this.getOrCreateCounter({
+      name: 'chat_v2_uncertainty_marked_total',
+      help: 'SBA α-5 — chat-v2: ответы с пометкой uncertaintyNote (есть конфликты в источниках) (mode).',
+      labelNames: ['mode'] as const,
+    });
+    this.chatV2ConversationsArchivedTotal = this.getOrCreateCounter({
+      name: 'chat_v2_conversations_archived_total',
+      help: 'SBA α-5 — chat-v2: количество архивированных диалогов (reason: ttl/manual).',
+      labelNames: ['reason'] as const,
+    });
+
+    // ── SBA γ-1 — SkillProfile + ExecutablePersona + Clone API ──────
+    this.skillProfilesActiveTotal = this.getOrCreateGauge({
+      name: 'skill_profiles_active_total',
+      help: 'SBA γ-1 — сколько активных SkillProfile сейчас в системе (gauge).',
+      labelNames: [] as const,
+    });
+    this.skillTraitsPerProfile = this.getOrCreateHistogram({
+      name: 'skill_traits_per_profile',
+      help: 'SBA γ-1 — распределение числа active traits в SkillProfile.',
+      labelNames: [] as const,
+      buckets: [0, 1, 3, 5, 8, 12, 18, 25, 40],
+    });
+    this.skillTraitsMarkedMisleadingTotal = this.getOrCreateCounter({
+      name: 'skill_traits_marked_misleading_total',
+      help: 'SBA γ-1 — сколько SkillTrait помечено как misleading direct manager/admin (для тюна промпта).',
+      labelNames: ['category'] as const,
+    });
+    this.personaActiveTotal = this.getOrCreateGauge({
+      name: 'persona_active_total',
+      help: 'SBA γ-1 — сколько active ExecutablePersona (gauge, scope: person | role).',
+      labelNames: ['scope'] as const,
+    });
+    this.personaBuildDurationSeconds = this.getOrCreateHistogram({
+      name: 'persona_build_duration_seconds',
+      help: 'SBA γ-1 — длительность сборки одной ExecutablePersona (secondsdes).',
+      labelNames: [] as const,
+      buckets: [0.5, 1, 2, 5, 10, 30, 60, 120],
+    });
+    this.cloneAskTotal = this.getOrCreateCounter({
+      name: 'clone_ask_total',
+      help: 'SBA γ-1 — сколько раз вызван Clone API (scope: person | role).',
+      labelNames: ['scope'] as const,
+    });
+    this.cloneAskByOwnerTotal = this.getOrCreateCounter({
+      name: 'clone_ask_by_owner_total',
+      help: 'SBA γ-1 — сколько раз носитель спросил своего же клона (engagement).',
+      labelNames: [] as const,
     });
   }
 
@@ -1092,6 +1442,375 @@ export class BusinessMetricsService implements OnModuleInit {
       { kind: args.kind, event_type: args.eventType },
       args.seconds,
     );
+  }
+
+  // ────────────────────── telegram bot (SBA β-1) ─────────────────────
+
+  /** Ошибка вызова Telegram Bot API (network error / non-ok response). */
+  incTelegramBotApiError(args: { apiMethod: string; code: string }): void {
+    this.telegramBotApiErrorsTotal.inc({
+      api_method: args.apiMethod,
+      code: args.code,
+    });
+  }
+
+  /** Принят webhook Update от Telegram. type ∈ {message, callback_query, command, edited_message, ignored, unknown}. */
+  incTelegramBotWebhookReceived(args: { type: string }): void {
+    this.telegramBotWebhookReceivedTotal.inc({ type: args.type });
+  }
+
+  // ────────────────────── max bot (SBA β-1) ──────────────────────────
+
+  /** Ошибка вызова MAX Bot API. */
+  incMaxBotApiError(args: { apiMethod: string; code: string }): void {
+    this.maxBotApiErrorsTotal.inc({
+      api_method: args.apiMethod,
+      code: args.code,
+    });
+  }
+
+  /** Принят webhook update от MAX. type ∈ {message_created, message_callback, bot_started, ignored, unknown}. */
+  incMaxBotWebhookReceived(args: { type: string }): void {
+    this.maxBotWebhookReceivedTotal.inc({ type: args.type });
+  }
+
+  // ────────────────────── core router (SBA α-3) ──────────────────────
+
+  /** Один блок диспатчился в одного специалиста — счётчик инкрементируется. */
+  incCoreRouterDispatched(args: { specialist: string; signalType: string }): void {
+    this.coreRouterDispatchedTotal.inc({
+      specialist: args.specialist,
+      signal_type: args.signalType,
+    });
+  }
+
+  /** Распределение fan-out (сколько специалистов на блок до trimming'а). */
+  observeCoreRouterFanOut(count: number): void {
+    if (count < 0) return;
+    this.coreRouterFanOut.observe(count);
+  }
+
+  /** Сработал лимит `ROUTER_MAX_SPECIALISTS_PER_BLOCK` — часть отброшена. */
+  incCoreRouterTrimmed(args: { signalType: string }): void {
+    this.coreRouterTrimmedTotal.inc({ signal_type: args.signalType });
+  }
+
+  // ────────────────────── curation (SBA α-4) ───────────────────────
+
+  /** Инкремент при создании / переходе CurationItem по статусу. */
+  incCurationItem(args: {
+    resourceType: string;
+    level: string;
+    status: string;
+  }): void {
+    this.curationItemsTotal.inc({
+      resource_type: args.resourceType,
+      level: args.level,
+      status: args.status,
+    });
+  }
+
+  /** Инкремент при принятии решения куратором. */
+  incCurationDecision(args: { decisionType: string; level: string }): void {
+    this.curationDecisionTotal.inc({
+      decision_type: args.decisionType,
+      level: args.level,
+    });
+  }
+
+  /** Время с момента создания CurationItem до принятия решения. */
+  observeCurationTimeToDecide(args: { level: string; seconds: number }): void {
+    if (args.seconds < 0) return;
+    this.curationTimeToDecideSeconds.observe({ level: args.level }, args.seconds);
+  }
+
+  /** Auto-canonical через triage (минуя CurationItem). */
+  incCurationAutoCanonical(args: { resourceType: string }): void {
+    this.curationAutoCanonicalTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /**
+   * Конфликты — создание (resolution='created') или резолюция
+   * (resolution='accept_new'|'keep_old'|'merge'|'evolving'|'dismissed').
+   */
+  incCurationConflict(args: { relationType: string; resolution: string }): void {
+    this.curationConflictsTotal.inc({
+      relation_type: args.relationType,
+      resolution: args.resolution,
+    });
+  }
+
+  /** Карточка-кандидат на stale (probe владельцу). */
+  incCurationStale(args: { resourceType: string }): void {
+    this.curationStaleDetectedTotal.inc({ resource_type: args.resourceType });
+  }
+
+  // ────────────────────── specialists (SBA α-6) ────────────────────────
+
+  /**
+   * SBA α-6 — установка количества карточек специалиста по статусу.
+   * Gauge (а не Counter), потому что замеряется текущее состояние, а не поток.
+   * Обычно зовётся периодически из snapshot-cron'а на стороне каждого специалиста.
+   */
+  setCoreSpecialistCards(args: {
+    type: string;
+    status: string;
+    value: number;
+  }): void {
+    this.coreSpecialistCardsTotal.set(
+      { type: args.type, status: args.status },
+      Math.max(0, args.value),
+    );
+  }
+
+  /**
+   * Инкремент gauge: используется специалистом, когда нет smart-snapshot'а
+   * и проще пометить «+1 pending» / «+1 canonical» в момент перехода статуса.
+   * NB: для долгосрочной правильности предпочтительнее `setCoreSpecialistCards`.
+   */
+  incCoreSpecialistCards(args: { type: string; status: string }): void {
+    this.coreSpecialistCardsTotal.inc({ type: args.type, status: args.status });
+  }
+
+  /** Длительность полного цикла специалиста (job start → результат). */
+  observeCoreSpecialistPipelineDuration(args: {
+    type: string;
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.coreSpecialistPipelineDurationSeconds.observe(
+      { type: args.type },
+      args.seconds,
+    );
+  }
+
+  /** Прирост токенов, потраченных специалистом на LLM-вызов. */
+  incCoreSpecialistLlmTokens(args: {
+    type: string;
+    model: string;
+    tier: string;
+    tokens: number;
+  }): void {
+    if (args.tokens <= 0) return;
+    this.coreSpecialistLlmTokensTotal.inc(
+      { type: args.type, model: args.model, tier: args.tier },
+      args.tokens,
+    );
+  }
+
+  /** Специалист отправил probe-event (через ConversationalService/ProbeService). */
+  incCoreSpecialistProbeEvent(args: { type: string; reason: string }): void {
+    this.coreSpecialistProbeEventsTotal.inc({
+      type: args.type,
+      reason: args.reason,
+    });
+  }
+
+  /** Специалист зарепортил conflict через ConflictService.report. */
+  incCoreSpecialistConflictEvent(args: { type: string }): void {
+    this.coreSpecialistConflictEventsTotal.inc({ type: args.type });
+  }
+
+  /** SBA α-7 — провал LLM-extraction (LLM упала, JSON битый, схема не прошла, и т.п.). */
+  incCoreSpecialistExtractionFailure(args: {
+    type: string;
+    reason: string;
+  }): void {
+    this.coreSpecialistExtractionFailuresTotal.inc({
+      type: args.type,
+      reason: args.reason,
+    });
+  }
+
+  /** SBA β-3 — evolving-конфликт (специалист 3.3 нашёл supersede-связку). */
+  incCoreSpecialistConflictEvolving(args: { type: string }): void {
+    this.coreSpecialistConflictEvolvingTotal.inc({ type: args.type });
+  }
+
+  /** SBA β-3 — длина supersede-цепочки Decision (для аналитики). */
+  observeDecisionSupersedeChainLength(length: number): void {
+    if (length < 0) return;
+    this.decisionSupersedeChainLength.observe(length);
+  }
+
+  /** SBA β-2 — наблюдение по числу категорий в построенном knowledgeProfile. */
+  observeKnowledgeCloneCategoriesPerProfile(count: number): void {
+    if (count < 0) return;
+    this.knowledgeCloneCategoriesPerProfile.observe(count);
+  }
+
+  /** SBA β-2 — наблюдение по размеру сериализованного knowledgeProfile в KB. */
+  observeKnowledgeCloneProfileSizeKb(kb: number): void {
+    if (kb < 0) return;
+    this.knowledgeCloneProfileSizeKb.observe(kb);
+  }
+
+  /**
+   * SBA β-4 — выставить gauge числа Insight'ов в каждом dynamicLabel-сегменте.
+   * Вызывается из `InsightClustererCron` после пересчёта частот.
+   */
+  setInsightsDynamicLabelCount(args: {
+    label: 'growing' | 'stable' | 'declining' | 'spike';
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.insightsDynamicLabelCount.set({ label: args.label }, args.value);
+  }
+
+  // ────────────────────── probe-agent + ideas (SBA β-5) ────────────────
+
+  /** Создан probe-event (status: pending | dropped_* | dispatched). */
+  incProbeEvent(args: {
+    emittedByService: string;
+    reason: string;
+    status: string;
+  }): void {
+    this.probeEventsTotal.inc({
+      emitted_by_service: args.emittedByService,
+      reason: args.reason,
+      status: args.status,
+    });
+  }
+
+  /** Probe доставлен в конкретный канал (kind = ChannelKind). */
+  incProbeDispatched(args: { kind: string }): void {
+    this.probeDispatchedTotal.inc({ kind: args.kind });
+  }
+
+  /** Пользователь ответил на probe (event_type × kind). */
+  incProbeResponse(args: { eventType: string; kind: string }): void {
+    this.probeResponseTotal.inc({
+      event_type: args.eventType,
+      kind: args.kind,
+    });
+  }
+
+  /** Время от dispatch до ответа (event_type × kind), секунды. */
+  observeProbeResponseTime(args: {
+    eventType: string;
+    kind: string;
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.probeResponseTimeSeconds.observe(
+      { event_type: args.eventType, kind: args.kind },
+      args.seconds,
+    );
+  }
+
+  /** Probe отброшен по дедупу (reason — машинно-читаемый код причины). */
+  incProbeDedupDropped(args: { reason: string }): void {
+    this.probeDedupDroppedTotal.inc({ reason: args.reason });
+  }
+
+  /** Probe отброшен по rate-limit'у получателей. */
+  incProbeRateLimitDropped(): void {
+    this.probeRateLimitDroppedTotal.inc();
+  }
+
+  /** Probe отложен по cold-start mode. */
+  incProbeColdStartDropped(): void {
+    this.probeColdStartDroppedTotal.inc();
+  }
+
+  /** Probe истёк без ответа. */
+  incProbeExpired(): void {
+    this.probeExpiredTotal.inc();
+  }
+
+  /** Установить engagement rate для пользователя (cron-обновляемый gauge). */
+  setProbeRecipientEngagementRate(args: {
+    userId: string;
+    rate: number;
+  }): void {
+    if (args.rate < 0) return;
+    this.probeRecipientEngagementRate.set(
+      { user_id: args.userId },
+      args.rate,
+    );
+  }
+
+  /** Отправлено уведомление supporter'у о смене статуса идеи. */
+  incIdeaStatusChangeNotification(args: { newStatus: string }): void {
+    this.ideaStatusChangeNotificationsTotal.inc({ new_status: args.newStatus });
+  }
+
+  // ────────────────────── chat-v2 (SBA α-5) ────────────────────────────
+
+  incChatV2Query(args: { mode: string; channelOrigin: string }): void {
+    this.chatV2QueriesTotal.inc({
+      mode: args.mode,
+      channel_origin: args.channelOrigin,
+    });
+  }
+
+  observeChatV2RetrievalBlocks(args: { mode: string; count: number }): void {
+    this.chatV2RetrievalBlocks.observe({ mode: args.mode }, args.count);
+  }
+
+  observeChatV2SynthesisDuration(args: {
+    mode: string;
+    seconds: number;
+  }): void {
+    this.chatV2SynthesisDurationSeconds.observe(
+      { mode: args.mode },
+      args.seconds,
+    );
+  }
+
+  incChatV2NoEvidence(args: { mode: string }): void {
+    this.chatV2NoEvidenceTotal.inc({ mode: args.mode });
+  }
+
+  incChatV2UncertaintyMarked(args: { mode: string }): void {
+    this.chatV2UncertaintyMarkedTotal.inc({ mode: args.mode });
+  }
+
+  incChatV2ConversationArchived(args: { reason: string }): void {
+    this.chatV2ConversationsArchivedTotal.inc({ reason: args.reason });
+  }
+
+  // ────────────────────── SBA γ-1 (Skill + Persona + Clone) ────────────
+
+  /** SBA γ-1 — установить gauge активных SkillProfile. */
+  setSkillProfilesActiveTotal(count: number): void {
+    if (count < 0) return;
+    this.skillProfilesActiveTotal.set(count);
+  }
+
+  /** SBA γ-1 — наблюдение по числу активных traits в одном профиле. */
+  observeSkillTraitsPerProfile(count: number): void {
+    if (count < 0) return;
+    this.skillTraitsPerProfile.observe(count);
+  }
+
+  /** SBA γ-1 — counter mark_as_misleading (для тюна промпта). */
+  incSkillTraitsMarkedMisleading(args: { category: string }): void {
+    this.skillTraitsMarkedMisleadingTotal.inc({
+      category: args.category.slice(0, 200),
+    });
+  }
+
+  /** SBA γ-1 — gauge активных ExecutablePersona по scope. */
+  setPersonaActiveTotal(args: { scope: 'person' | 'role'; value: number }): void {
+    if (args.value < 0) return;
+    this.personaActiveTotal.set({ scope: args.scope }, args.value);
+  }
+
+  /** SBA γ-1 — длительность сборки одной ExecutablePersona. */
+  observePersonaBuildDuration(seconds: number): void {
+    if (seconds < 0) return;
+    this.personaBuildDurationSeconds.observe(seconds);
+  }
+
+  /** SBA γ-1 — counter вызовов Clone API. */
+  incCloneAsk(args: { scope: 'person' | 'role' }): void {
+    this.cloneAskTotal.inc({ scope: args.scope });
+  }
+
+  /** SBA γ-1 — counter вызовов клона носителем (engagement). */
+  incCloneAskByOwner(): void {
+    this.cloneAskByOwnerTotal.inc();
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

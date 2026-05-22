@@ -374,6 +374,21 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── SBA α-5 — Chat-v2 Omnichannel ─────
+  /**
+   * Конфигурация модуля `chat-v2/` (новая обёртка над knowledge-core
+   * ChatV2Service с conversation history и omnichannel inbound/outbound).
+   * См. plans/tz/2026-05-21-sba-alpha-5-layer5-chat-v2.md.
+   */
+  get chatV2() {
+    return {
+      historyMessages: this.get('CHAT_V2_HISTORY_MESSAGES'),
+      conversationTtlDays: this.get('CHAT_V2_CONVERSATION_TTL_DAYS'),
+      cleanupCron: this.get('CHAT_V2_CLEANUP_CRON'),
+      defaultMode: this.get('CHAT_V2_DEFAULT_MODE'),
+    } as const;
+  }
+
   // ─────────────────────────── document-ingest (Фаза 0b) ────────
   get document() {
     const customBucket = this.get('S3_BUCKET_DOCUMENTS');
@@ -433,6 +448,205 @@ export class TypedConfigService {
       rateLimitDefaultPerHour: this.get('CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR'),
       emailFromDefault: fromDefault.length > 0 ? fromDefault : this.get('MAIL_FROM'),
       maxDeliveryAttempts: this.get('CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS'),
+    } as const;
+  }
+
+  // ─────────────────────────── telegram bot (SBA β-1) ───────────
+  /**
+   * Глобальные параметры Telegram Bot channel-адаптера. Per-tenant
+   * botToken/webhookSecret лежат в `Channel.config` (encrypted), здесь —
+   * только глобальный base-URL и rate-limit (общий на все tenants —
+   * Telegram считает по IP отправителя).
+   */
+  get telegramBot() {
+    return {
+      apiBase: this.get('TELEGRAM_BOT_API_BASE').replace(/\/+$/, ''),
+      globalRps: this.get('TELEGRAM_BOT_GLOBAL_RPS'),
+    } as const;
+  }
+
+  // ─────────────────────────── max bot (SBA β-1) ─────────────────
+  /**
+   * Глобальные параметры MAX Bot channel-адаптера. Per-tenant
+   * accessToken/webhookSecret лежат в `Channel.config` (encrypted).
+   */
+  get maxBot() {
+    return {
+      apiBase: this.get('MAX_BOT_API_BASE').replace(/\/+$/, ''),
+      globalRps: this.get('MAX_BOT_GLOBAL_RPS'),
+    } as const;
+  }
+
+  // ─────────────────────────── router (SBA α-3) ─────────────────
+  /**
+   * Параметры RouterService (Слой 2 → Слой 3 dispatch). См.
+   * plans/tz/2026-05-21-sba-alpha-3-layer2-ontology-extension.md §5, §6.
+   */
+  get router() {
+    return {
+      dispatchConcurrency: this.get('ROUTER_DISPATCH_CONCURRENCY'),
+      maxSpecialistsPerBlock: this.get('ROUTER_MAX_SPECIALISTS_PER_BLOCK'),
+    } as const;
+  }
+
+  // ─────────────────────────── knowledge-clone (SBA β-2) ───────
+  /**
+   * Параметры Specialist 3.2 (Knowledge Clone). См.
+   * plans/tz/2026-05-21-sba-beta-2-specialist-3-2-knowledge-clone.md §7.
+   *
+   *   - `rebuildCron` — расписание `KnowledgeCloneRebuildCron`.
+   *   - `lookbackMonths` — окно блоков (для каждого Person строим профиль
+   *     из его блоков за N мес.).
+   *   - `debounceMs` — дебаунс enqueue rebuild-job'а (сворачивает шквал
+   *     диспатчей одного Person в один job).
+   *   - `minBlocksForProfile` — порог: если блоков меньше — профиль не
+   *     строится (нет достаточного материала, чтобы не выдавать шум).
+   */
+  get knowledgeClone() {
+    return {
+      rebuildCron: this.get('KNOWLEDGE_CLONE_REBUILD_CRON'),
+      lookbackMonths: this.get('KNOWLEDGE_CLONE_LOOKBACK_MONTHS'),
+      debounceMs: this.get('KNOWLEDGE_CLONE_DEBOUNCE_MS'),
+      minBlocksForProfile: this.get('KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE'),
+    } as const;
+  }
+
+  // ─────────────────────────── curation (SBA α-4) ──────────────
+  /**
+   * Параметры Layer 4 (Curation) — пороги triage'а, expiry,
+   * stale-detection cron. См.
+   * plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §8.
+   *
+   *   - `autoThresholdDefault` — confidence >= → auto-canonical
+   *     (если нет конфликта и тип не критический).
+   *   - `deepReviewThresholdDefault` — confidence < → deep review.
+   *   - `criticalTypesDefault` — массив типов, всегда уходящих в deep
+   *     review (по умолчанию ['regulation', 'process', 'decision']).
+   *   - `itemExpiryDays` — через сколько дней pending → expired.
+   *   - `staleDetectorCron` — расписание CardStaleDetectorCron.
+   *   - `staleMonthsThreshold` — порог `lastConfirmedAt > N мес.`.
+   *   - `staleDynamicScoreThreshold` — порог упавшего `dynamicScore`.
+   */
+  get curation() {
+    return {
+      autoThresholdDefault: this.get('CURATION_AUTO_THRESHOLD_DEFAULT'),
+      deepReviewThresholdDefault: this.get('CURATION_DEEP_REVIEW_THRESHOLD_DEFAULT'),
+      criticalTypesDefault: this.get(
+        'CURATION_CRITICAL_TYPES_DEFAULT',
+      ) as readonly string[],
+      itemExpiryDays: this.get('CURATION_ITEM_EXPIRY_DAYS'),
+      staleDetectorCron: this.get('CARD_STALE_DETECTOR_CRON'),
+      staleMonthsThreshold: this.get('CARD_STALE_MONTHS_THRESHOLD'),
+      staleDynamicScoreThreshold: this.get('CARD_STALE_DYNAMIC_SCORE_THRESHOLD'),
+    } as const;
+  }
+
+  // ─────────────────────────── insights (SBA β-4) ──────────────
+  /**
+   * Параметры Specialist 3.5 (Insights Radar). См.
+   * plans/tz/2026-05-21-sba-beta-4-specialist-3-5-insights.md §7.
+   *
+   *   - `clusterThreshold` — cosine-порог KNN для кластеризации повторов
+   *     (>= порога → обновляем existing Insight; иначе — создаём новый).
+   *   - `clusterCron` — расписание `InsightClustererCron` (frequency/dynamic
+   *     recalc + probe.escalation_suggested на 'spike').
+   *   - `frequencyWindowDays` — окно rolling-частоты (default 30д).
+   *   - `spikeRatio` — порог ratio 7d/30d-avg, выше которого ставим
+   *     dynamicLabel='spike' и эмиттим probe.escalation_suggested.
+   */
+  get insights() {
+    return {
+      clusterThreshold: this.get('INSIGHT_CLUSTER_THRESHOLD'),
+      clusterCron: this.get('INSIGHT_CLUSTER_CRON'),
+      frequencyWindowDays: this.get('INSIGHT_FREQUENCY_WINDOW_DAYS'),
+      spikeRatio: this.get('INSIGHT_SPIKE_RATIO'),
+    } as const;
+  }
+
+  // ─────────────────────────── ideas (SBA β-5) ──────────────────
+  /**
+   * Параметры Specialist 3.6 (Ideas Collector). См.
+   * plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md §8.
+   *
+   *   - `clusterThreshold` — cosine-порог KNN для дедупа идей.
+   *   - `clustererCron` — расписание `IdeaClustererCron` (кластеризация Idea
+   *     в IdeaCluster — по умолчанию каждые 4 часа).
+   *   - `minSupportersForCluster` — минимум идей в кластере (порог критической
+   *     массы для создания нового IdeaCluster).
+   */
+  get ideas() {
+    return {
+      clusterThreshold: this.get('IDEA_CLUSTER_THRESHOLD'),
+      clustererCron: this.get('IDEA_CLUSTERER_CRON'),
+      minSupportersForCluster: this.get('IDEA_MIN_SUPPORTERS_FOR_CLUSTER'),
+    } as const;
+  }
+
+  // ─────────────────────────── probe (SBA β-5) ──────────────────
+  /**
+   * Параметры Layer 6 (Probe-Agent). См.
+   * plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md §8.
+   *
+   *   - `dedupTtlHours` — TTL Redis-кеша дедупа по contentHash.
+   *   - `rateLimitPerHour` / `rateLimitPerDay` — per-user лимиты доставки.
+   *   - `expiryDays` — через сколько дней ProbeEvent → status='expired'.
+   *   - `priorityRefreshCron` — расписание `ProbePriorityCron` (engagement_rate).
+   *   - `quietHoursDefaultTzOffsetMin` — дефолтный TZ-сдвиг получателя.
+   *   - `coldStartModeHours` — окно прогрева после первого probe.
+   */
+  get probe() {
+    return {
+      dedupTtlHours: this.get('PROBE_DEDUP_TTL_HOURS'),
+      rateLimitPerHour: this.get('PROBE_RATE_LIMIT_PER_USER_PER_HOUR'),
+      rateLimitPerDay: this.get('PROBE_RATE_LIMIT_PER_USER_PER_DAY'),
+      expiryDays: this.get('PROBE_EXPIRY_DAYS'),
+      priorityRefreshCron: this.get('PROBE_PRIORITY_REFRESH_CRON'),
+      quietHoursDefaultTzOffsetMin: this.get(
+        'PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN',
+      ),
+      coldStartModeHours: this.get('PROBE_COLD_START_MODE_HOURS'),
+    } as const;
+  }
+
+  // ─────────────────────────── skill (SBA γ-1) ───────────────────
+  /**
+   * Параметры Specialist 3.7 (SkillProfile) + Clone API rate limits.
+   *
+   *   - `minObservations` — минимум наблюдений для появления trait.
+   *   - `traitSimilarityThreshold` — KNN-cosine порог merge активных traits.
+   *   - `lookbackMonths` — окно subject-reasoning блоков для rebuild'а.
+   *   - `decayMonths` / `archiveMonths` — пороги decay/archive по lastConfirmedAt.
+   *   - `recalibrateCron` / `managerDigestCron` — расписания cron'ов.
+   *   - `rebuildDebounceMs` — дебаунс enqueue rebuild-job'а одного профиля.
+   *   - `cloneAskPerUserPerDay` — rate limit запросов к /clones/persons/:id/ask.
+   */
+  get skill() {
+    return {
+      minObservations: this.get('SKILL_MIN_OBSERVATIONS'),
+      traitSimilarityThreshold: this.get('SKILL_TRAIT_SIMILARITY_THRESHOLD'),
+      lookbackMonths: this.get('SKILL_LOOKBACK_MONTHS'),
+      decayMonths: this.get('SKILL_DECAY_MONTHS'),
+      archiveMonths: this.get('SKILL_ARCHIVE_MONTHS'),
+      recalibrateCron: this.get('SKILL_RECALIBRATE_CRON'),
+      managerDigestCron: this.get('SKILL_MANAGER_DIGEST_CRON'),
+      rebuildDebounceMs: this.get('SKILL_REBUILD_DEBOUNCE_MS'),
+      cloneAskPerUserPerDay: this.get('CLONE_ASK_PER_USER_PER_DAY'),
+    } as const;
+  }
+
+  // ─────────────────────────── persona (SBA γ-1) ─────────────────
+  /**
+   * Параметры ExecutablePersona build (weekly snapshot + role agregation).
+   *
+   *   - `buildCron` — расписание сборки snapshots.
+   *   - `minTraits` — минимум активных traits в SkillProfile для появления Persona.
+   *   - `roleAggMinPersons` — минимум employee'ев с активным профилем для role-persona.
+   */
+  get persona() {
+    return {
+      buildCron: this.get('PERSONA_BUILD_CRON'),
+      minTraits: this.get('PERSONA_MIN_TRAITS'),
+      roleAggMinPersons: this.get('PERSONA_ROLE_AGG_MIN_PERSONS'),
     } as const;
   }
 

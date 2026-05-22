@@ -36,6 +36,28 @@ export function ChatClient() {
           </div>
         </header>
 
+        {/* SBA α-5: баннер про новую версию /chat-v2. */}
+        <div className="mb-4 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 text-sm">
+          <div className="flex items-start gap-2">
+            <MessageCircle size={16} className="mt-0.5 text-accent shrink-0" />
+            <div>
+              <span className="font-medium text-fg-primary">
+                Доступна новая версия чата
+              </span>
+              <span className="ml-1 text-fg-secondary">
+                — с историей диалогов, закреплением, доступом через Telegram/email и
+                цитатами из источников.
+              </span>{' '}
+              <a
+                href="/chat-v2"
+                className="font-medium text-accent underline hover:no-underline"
+              >
+                Попробовать /chat-v2
+              </a>
+            </div>
+          </div>
+        </div>
+
         <OrgChatPanel className="flex-1 min-h-[500px]" withHistory />
       </div>
     </TierGate>

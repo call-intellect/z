@@ -373,6 +373,156 @@ export class EntityResolutionService {
     );
   }
 
+  // ─────────────────────────── SBA α-3: Vendor/Event helpers ──────────────
+
+  /**
+   * Найти или создать Entity{type=vendor} + связанную Vendor-запись.
+   * Приоритет дедупа:
+   *   1. metadata.inn — если задан, ищем Vendor по `inn` (юр.лицо).
+   *   2. canonicalName — case-insensitive по Entity (как в findOrCreateEntity).
+   *
+   * Возвращает { entity, vendor, created } — created=true если Vendor создан
+   * в этом вызове (Entity может уже существовать).
+   */
+  async findOrCreateVendorEntity(args: {
+    tenantId: string;
+    name: string;
+    inn?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ entity: Entity; vendorId: string; created: boolean }> {
+    const normalized = args.name.trim();
+    if (normalized.length === 0) {
+      throw new Error('EntityResolution: пустое имя vendor');
+    }
+
+    // 1. Ищем Vendor по inn (если задан) — самый строгий ключ.
+    if (args.inn && args.inn.trim().length > 0) {
+      const innClean = args.inn.trim();
+      const byInn = await this.prisma.vendor.findFirst({
+        where: { tenantId: args.tenantId, inn: innClean, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (byInn) {
+        const ent = await this.prisma.entity.findUnique({
+          where: { id: byInn.entityId },
+        });
+        if (ent) {
+          await this.prisma.entity.update({
+            where: { id: ent.id },
+            data: { mentionsCount: { increment: 1 } },
+          });
+          return { entity: ent, vendorId: byInn.id, created: false };
+        }
+      }
+    }
+
+    // 2. Fallback на findOrCreateEntity по name (Entity dedup'ится по lower(name)).
+    const meta: Record<string, unknown> = { ...(args.metadata ?? {}) };
+    if (args.inn) meta['inn'] = args.inn;
+    const { entity } = await this.findOrCreateEntity({
+      tenantId: args.tenantId,
+      type: 'vendor',
+      name: normalized,
+      metadata: meta,
+    });
+
+    // Привязываем Vendor-запись 1:1 на Entity. Если она уже есть — переиспользуем.
+    const existingVendor = await this.prisma.vendor.findUnique({
+      where: { entityId: entity.id },
+      select: { id: true },
+    });
+    if (existingVendor) {
+      return { entity, vendorId: existingVendor.id, created: false };
+    }
+
+    const vendor = await this.prisma.vendor.create({
+      data: {
+        tenantId: args.tenantId,
+        entityId: entity.id,
+        name: normalized.slice(0, 300),
+        inn: args.inn ?? null,
+        // Дефолт — active. Меняется через PATCH (на α-3 read-only API,
+        // PATCH появится в α-6 вместе с UI Vendor management).
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    return { entity, vendorId: vendor.id, created: true };
+  }
+
+  /**
+   * Найти или создать Entity{type=event} + связанный Event-запись.
+   * Дедуп по `(tenantId, title, startAt within ±1 день)` — события с тем же
+   * заголовком в течение одного дня считаются одним событием.
+   */
+  async findOrCreateEventEntity(args: {
+    tenantId: string;
+    title: string;
+    startAt: Date;
+    kind?:
+      | 'meeting'
+      | 'incident'
+      | 'release'
+      | 'transition'
+      | 'milestone'
+      | 'other';
+    relatedMeetingId?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ entity: Entity; eventId: string; created: boolean }> {
+    const normalizedTitle = args.title.trim();
+    if (normalizedTitle.length === 0) {
+      throw new Error('EntityResolution: пустой title event');
+    }
+
+    // Окно ±1 день.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const from = new Date(args.startAt.getTime() - DAY_MS);
+    const to = new Date(args.startAt.getTime() + DAY_MS);
+
+    const existing = await this.prisma.event.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        title: normalizedTitle.slice(0, 300),
+        startAt: { gte: from, lte: to },
+        deletedAt: null,
+      },
+      select: { id: true, entityId: true },
+    });
+    if (existing) {
+      const ent = await this.prisma.entity.findUnique({
+        where: { id: existing.entityId },
+      });
+      if (ent) {
+        await this.prisma.entity.update({
+          where: { id: ent.id },
+          data: { mentionsCount: { increment: 1 } },
+        });
+        return { entity: ent, eventId: existing.id, created: false };
+      }
+    }
+
+    // Создаём новый Entity + Event.
+    const { entity } = await this.findOrCreateEntity({
+      tenantId: args.tenantId,
+      type: 'event',
+      name: normalizedTitle,
+      metadata: args.metadata,
+    });
+
+    const created = await this.prisma.event.create({
+      data: {
+        tenantId: args.tenantId,
+        entityId: entity.id,
+        kind: args.kind ?? 'other',
+        title: normalizedTitle.slice(0, 300),
+        startAt: args.startAt,
+        relatedMeetingId: args.relatedMeetingId ?? null,
+      },
+      select: { id: true },
+    });
+    return { entity, eventId: created.id, created: true };
+  }
+
   // ─────────────────────────── private helpers ─────────────────────────────
 
   /**

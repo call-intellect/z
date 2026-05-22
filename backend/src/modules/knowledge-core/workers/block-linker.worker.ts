@@ -16,7 +16,15 @@ import {
   CORE_QUEUE_NAMES,
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { ConflictService } from '../../curation/services/conflict.service';
 import { BlockLinkService } from '../services/block-link.service';
+
+/**
+ * SBA α-4 — порог confidence, выше которого `relationType='contradicts'`
+ * link автоматически эскалируется в `ConflictService.report(...)`. Ниже —
+ * это «слабый» сигнал противоречия (остаётся только как link).
+ */
+const CONFLICT_AUTO_ESCALATE_CONFIDENCE = 0.85;
 
 /**
  * Block-linker worker (`core.block-linker` consumer, Фаза 3).
@@ -47,6 +55,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BlockLinkService) private readonly linker: BlockLinkService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    @Inject(ConflictService) private readonly conflicts: ConflictService,
   ) {}
 
   onModuleInit(): void {
@@ -159,6 +168,39 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
           },
         });
         createdCount += 1;
+
+        // SBA α-4 — эскалация в Слой 4: высокоуверенный `contradicts` →
+        // `ConflictItem`. Best-effort: ошибка не валит link-job.
+        if (
+          verdict.relationType === 'contradicts' &&
+          verdict.confidence >= CONFLICT_AUTO_ESCALATE_CONFIDENCE
+        ) {
+          try {
+            await this.conflicts.report({
+              tenantId: block.tenantId,
+              resourceType: 'idea_block',
+              existingId: candidate.id,
+              newId: block.id,
+              evidence: {
+                blockIds: [block.id, candidate.id],
+                relationType: verdict.relationType,
+                confidence: verdict.confidence,
+                explanation: verdict.explanation,
+              },
+              relationType: verdict.relationType,
+              detectedBy: 'block-linker',
+            });
+          } catch (err) {
+            this.logger.warn(
+              {
+                blockId: block.id,
+                candidateId: candidate.id,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'block-linker: ошибка ConflictService.report — продолжаю',
+            );
+          }
+        }
       } catch (err) {
         this.logger.warn(
           {

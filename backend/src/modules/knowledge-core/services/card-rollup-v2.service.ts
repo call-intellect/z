@@ -1,11 +1,17 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { IdeaBlock } from '@prisma/client';
+import { Prisma, type IdeaBlock } from '@prisma/client';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   LlmRouterService,
   maxDataClass,
 } from '../../ai/services/llm-router.service';
+import { ConflictService } from '../../curation/services/conflict.service';
+import { CurationService } from '../../curation/services/curation.service';
+import { getCardRollupV2SystemPrompt } from '../prompts/card-rollup-v2.prompts';
+
+import { Specialist34ProbeService } from './specialist-3-4-probe.service';
 
 /**
  * Максимум блоков, отдаваемых LLM для генерации rollup'а.
@@ -24,23 +30,13 @@ const CARD_ROLLUP_V2_EVIDENCE_PER_BLOCK = 1;
 const CARD_ROLLUP_V2_TOP_THEMES = 3;
 
 /**
- * Системные промпты по виду карточки. Все возвращают связный текст
- * (без JSON / markdown headers), чтобы фронт мог отрендерить как есть.
+ * Дефолтный confidence для rollup'а: текущие промпты возвращают свободный
+ * текст без structured output, поэтому модель не отдаёт confidence явно.
+ * 0.9 = выше autoThreshold (0.85) → по дефолту auto-canonical. Когда
+ * TODO(owner-product) согласует промпт с JSON Schema, confidence будет
+ * приходить от модели.
  */
-const SYSTEM_PROMPTS: Record<string, string> = {
-  client: `Ты — аналитик в B2B-команде. Тебе дают подборку IdeaBlock'ов (вопрос ↔ доверенный ответ + теги + цитаты), которые относятся к одному клиенту. Также — топ-темы, под которые подпадают эти блоки.
-Твоя задача — суммаризировать активность с этим клиентом за весь известный период: что обсуждали, какие у клиента боли/запросы, какие приняты решения, какие риски/договорённости.
-Пиши на русском, в форме связного текста (3-6 коротких абзацев), без markdown-заголовков и буллетов. Не выдумывай факты вне предоставленных блоков.`,
-  deal: `Ты — RevOps-аналитик. Тебе дают IdeaBlock'и по конкретной сделке (вопрос ↔ доверенный ответ + теги + цитаты) и топ-темы.
-Опиши текущий статус сделки: на какой стадии она, какие возражения сняты, какие открыты, какие следующие шаги обещаны и какие риски проявились.
-На русском, связным текстом (3-5 абзацев), без markdown-заголовков. Только факты из блоков.`,
-  project: `Ты — PM-аналитик. Тебе дают IdeaBlock'и по конкретному проекту и топ-темы.
-Опиши прогресс проекта: что сделано, что запланировано, какие принятые решения, риски, командные зависимости. На русском, связным текстом (3-5 абзацев), без markdown.`,
-  topic: `Ты — knowledge-инженер. Тебе дают IdeaBlock'и, относящиеся к одной теме / области знаний, и связанные топ-темы.
-Сделай краткий обзор «что компания знает по этой теме» — основные факты, открытые вопросы, противоречия, ключевые сущности. На русском, связным текстом (3-5 абзацев), без markdown.`,
-  custom: `Ты — аналитик. Тебе дают IdeaBlock'и (вопрос ↔ доверенный ответ + теги + цитаты), сгруппированные пользователем под произвольный кейс, и топ-темы.
-Сделай связный обзор: о чём этот кейс, какие основные факты и решения, какие открытые вопросы. На русском, 3-5 абзацев, без markdown.`,
-};
+const CARD_ROLLUP_V2_DEFAULT_CONFIDENCE = 0.9;
 
 interface BlockForRollup
   extends Pick<
@@ -57,6 +53,24 @@ interface BlockForRollup
   evidenceQuote?: string | null;
 }
 
+/**
+ * SBA α-6 — результат `buildRollup`.
+ *
+ * Совместим с воркером Фазы 4 (поля `summary` / `topThemeIds` / `blocksUsed`)
+ * + расширения под §5 контракта:
+ *   - `triageDecision` — что решил curation triage (`auto` / `light` / `deep`).
+ *     На `auto` карточка уже обновлена (см. `applied`).
+ *   - `applied` — флаг «карточка обновлена прямо сейчас». Для `light`/`deep` —
+ *     false, карточка остаётся в текущем состоянии до approve.
+ *   - `cardVersionId` — id созданной CardVersion (только для `auto`).
+ *   - `curationItemId` — id созданного CurationItem (только для `light`/`deep`).
+ *   - `conflictReported` — был ли создан ConflictItem (status contradiction).
+ *   - `sourceBlockIds` — итоговый список блоков для citations chat-v2.
+ *   - `personSubjectIds` — Person'ы, которым присваиваем карточку как subject.
+ *   - `confidence` — итоговая уверенность rollup'а.
+ *   - `usedTier` / `usedModel` — какой провайдер реально отработал
+ *     (для метрик `core_specialist_llm_tokens_total`).
+ */
 export interface CardRollupV2Result {
   /** Сгенерированный summary; null, если генерировать не из чего. */
   summary: string | null;
@@ -64,10 +78,46 @@ export interface CardRollupV2Result {
   topThemeIds: string[];
   /** Сколько блоков было использовано для контекста. */
   blocksUsed: number;
+  /** SBA α-6: id блоков-источников (для citations). */
+  sourceBlockIds: string[];
+  /** SBA α-6: Person.id, кому карточка присваивается как subject. */
+  personSubjectIds: string[];
+  /** SBA α-6: уверенность rollup'а [0..1]. */
+  confidence: number;
+  /** SBA α-6: решение triage. */
+  triageDecision: 'auto' | 'light' | 'deep' | 'skipped';
+  /** SBA α-6: была ли карточка фактически обновлена в этом вызове. */
+  applied: boolean;
+  /** SBA α-6: id созданной CardVersion (если auto). */
+  cardVersionId: string | null;
+  /** SBA α-6: id созданного CurationItem (если light/deep). */
+  curationItemId: string | null;
+  /** SBA α-6: создан ли ConflictItem (status contradiction). */
+  conflictReported: boolean;
+  /** SBA α-6: tier провайдера, который отработал ('primary'/'secondary'/'tertiary'/null). */
+  usedTier: string | null;
+  /** SBA α-6: модель, которая отработала. */
+  usedModel: string | null;
+  /** SBA α-6: токены LLM (input + output). */
+  llmTokens: { input: number; output: number };
 }
 
 /**
  * CardRollupV2Service — генерация `Card.summaryCache` поверх IdeaBlock'ов.
+ *
+ * SBA α-6 — рефакторинг под §5 контракт зонтичного:
+ *   1. Загрузить блоки карточки (через meetings + entities, как было).
+ *   2. Top-3 темы через ThemeIdeaBlock.
+ *   3. LLM-вызов `card-rollup-v2` с правильным kind-промптом (vendor — новый).
+ *   4. Собрать proposedPayload + sourceBlockIds + personSubjectIds.
+ *   5. CurationService.triage({ resourceType: 'card', confidence, proposedPayload }).
+ *   6. На `auto` — апдейт Card (summary + cachedTopThemeIds + sourceBlockIds +
+ *      confidence + currentVersionId + personSubjectIds + lastConfirmedAt).
+ *      CardVersion(version=next, changeReason='auto-rollup') создаётся внутри triage.
+ *   7. На `light`/`deep` — Card НЕ обновляется до approve. summaryUpdatedAt
+ *      обновляется (чтобы дебаунс не штурмовал триаж снова и снова).
+ *   8. Conflict detection: regex-эвристика «активный ↔ закрыт» между старым
+ *      и новым summary. Если сработала → ConflictService.report(relationType='contradicts').
  *
  * Источники блоков для карточки:
  *   1. Через meetings: блоки с Evidence, у которых RawEvent.sourceExternalId
@@ -85,12 +135,37 @@ export class CardRollupV2Service {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(CurationService) private readonly curation: CurationService,
+    @Inject(ConflictService) private readonly conflicts: ConflictService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
+    @Inject(Specialist34ProbeService)
+    private readonly probes: Specialist34ProbeService,
   ) {}
 
   async buildRollup(args: {
     tenantId: string;
     cardId: string;
   }): Promise<CardRollupV2Result> {
+    const start = Date.now();
+
+    const empty: CardRollupV2Result = {
+      summary: null,
+      topThemeIds: [],
+      blocksUsed: 0,
+      sourceBlockIds: [],
+      personSubjectIds: [],
+      confidence: 0,
+      triageDecision: 'skipped',
+      applied: false,
+      cardVersionId: null,
+      curationItemId: null,
+      conflictReported: false,
+      usedTier: null,
+      usedModel: null,
+      llmTokens: { input: 0, output: 0 },
+    };
+
     const card = await this.prisma.card.findUnique({
       where: { id: args.cardId },
       select: {
@@ -104,17 +179,18 @@ export class CardRollupV2Service {
         entityId: true,
         relatedEntityIds: true,
         deletedAt: true,
+        summaryCache: true,
       },
     });
     if (!card || card.deletedAt) {
-      return { summary: null, topThemeIds: [], blocksUsed: 0 };
+      return empty;
     }
     if (card.tenantId !== args.tenantId) {
       this.logger.warn(
         { cardId: card.id, tenantId: args.tenantId },
         'card-rollup-v2: tenant mismatch — пропускаем',
       );
-      return { summary: null, topThemeIds: [], blocksUsed: 0 };
+      return empty;
     }
 
     // Все встречи карточки (id), чтобы найти связанные блоки через RawEvent.
@@ -161,8 +237,12 @@ export class CardRollupV2Service {
     }
 
     if (blockIdSet.size === 0) {
-      // Нечего суммаризировать — очищаем кэш.
-      return { summary: null, topThemeIds: [], blocksUsed: 0 };
+      // Нечего суммаризировать — очищаем кэш и выходим.
+      this.metrics.observeCoreSpecialistPipelineDuration({
+        type: 'card',
+        seconds: (Date.now() - start) / 1000,
+      });
+      return empty;
     }
 
     const blocks = await this.prisma.ideaBlock.findMany({
@@ -185,12 +265,18 @@ export class CardRollupV2Service {
       },
     });
     if (blocks.length === 0) {
-      return { summary: null, topThemeIds: [], blocksUsed: 0 };
+      this.metrics.observeCoreSpecialistPipelineDuration({
+        type: 'card',
+        seconds: (Date.now() - start) / 1000,
+      });
+      return empty;
     }
+
+    const sourceBlockIds = blocks.map((b) => b.id);
 
     // Свежая цитата на блок (для контекста LLM).
     const evidenceRows = await this.prisma.ideaBlockEvidence.findMany({
-      where: { blockId: { in: blocks.map((b) => b.id) } },
+      where: { blockId: { in: sourceBlockIds } },
       orderBy: [{ sourceTimestamp: 'desc' }, { createdAt: 'desc' }],
       select: { blockId: true, quote: true },
     });
@@ -199,7 +285,11 @@ export class CardRollupV2Service {
       if (!quoteByBlock.has(ev.blockId)) {
         quoteByBlock.set(ev.blockId, ev.quote);
       }
-      if (quoteByBlock.size >= blocks.length * CARD_ROLLUP_V2_EVIDENCE_PER_BLOCK) break;
+      if (
+        quoteByBlock.size >=
+        blocks.length * CARD_ROLLUP_V2_EVIDENCE_PER_BLOCK
+      )
+        break;
     }
     const enriched: BlockForRollup[] = blocks.map((b) => ({
       ...b,
@@ -208,7 +298,7 @@ export class CardRollupV2Service {
 
     // Топ-темы среди этих блоков.
     const themeRows = await this.prisma.themeIdeaBlock.findMany({
-      where: { blockId: { in: blocks.map((b) => b.id) } },
+      where: { blockId: { in: sourceBlockIds } },
       select: { themeId: true },
     });
     const themeCount = new Map<string, number>();
@@ -223,13 +313,23 @@ export class CardRollupV2Service {
     const topThemes =
       topThemeIds.length > 0
         ? await this.prisma.theme.findMany({
-            where: { id: { in: topThemeIds }, status: 'active', tenantId: args.tenantId },
+            where: {
+              id: { in: topThemeIds },
+              status: 'active',
+              tenantId: args.tenantId,
+            },
             select: { id: true, name: true, description: true, branch: true },
           })
         : [];
 
+    // SBA α-6 — personSubjectIds: Person'ы с ролью subject в блоках карточки.
+    const personSubjectIds = await this.collectPersonSubjects({
+      tenantId: args.tenantId,
+      blockIds: sourceBlockIds,
+    });
+
     // LLM-вызов.
-    const systemPrompt = SYSTEM_PROMPTS[card.kind] ?? SYSTEM_PROMPTS.custom!;
+    const systemPrompt = getCardRollupV2SystemPrompt(card.kind);
     const userMessage = this.buildUserMessage({
       cardKind: card.kind,
       cardName: card.name,
@@ -250,11 +350,211 @@ export class CardRollupV2Service {
     });
 
     const summary = result.text.trim() || null;
+    const confidence = CARD_ROLLUP_V2_DEFAULT_CONFIDENCE;
+    const usedTier = result.tier ?? null;
+    const usedModel = result.modelUsed ?? null;
+    const llmTokens = {
+      input: result.inputTokens,
+      output: result.outputTokens,
+    };
+
+    // Метрика токенов специалиста (см. §5.7 зонтичного).
+    if (llmTokens.input + llmTokens.output > 0 && usedModel) {
+      this.metrics.incCoreSpecialistLlmTokens({
+        type: 'card',
+        model: usedModel,
+        tier: usedTier ?? 'primary',
+        tokens: llmTokens.input + llmTokens.output,
+      });
+    }
+
+    if (!summary) {
+      // LLM вернула пустой текст — не отправляем в triage (бессмысленно).
+      this.metrics.observeCoreSpecialistPipelineDuration({
+        type: 'card',
+        seconds: (Date.now() - start) / 1000,
+      });
+      return {
+        ...empty,
+        topThemeIds,
+        blocksUsed: enriched.length,
+        sourceBlockIds,
+        personSubjectIds,
+        confidence,
+        usedTier,
+        usedModel,
+        llmTokens,
+        triageDecision: 'skipped',
+      };
+    }
+
+    // SBA α-6 — triage перед канонизацией.
+    const proposedPayload: Record<string, unknown> = {
+      summaryCache: summary,
+      kind: card.kind,
+      name: card.name,
+      entityId: card.entityId,
+      sourceBlockIds,
+      cachedTopThemeIds: topThemeIds,
+      personSubjectIds,
+      confidence,
+    };
+
+    const triage = await this.curation.triage({
+      tenantId: args.tenantId,
+      resourceType: 'card',
+      resourceId: card.id,
+      confidence,
+      proposedPayload,
+      conflictSignal: 'none',
+      createdByUserId: null,
+      dataClass: 'internal',
+    });
+
+    let applied = false;
+    const cardVersionId: string | null = triage.cardVersionId;
+    const curationItemId: string | null = triage.curationItemId;
+
+    if (triage.decision === 'auto') {
+      const updatedCard = await this.prisma.card.update({
+        where: { id: card.id },
+        data: {
+          summaryCache: summary,
+          summaryUpdatedAt: new Date(),
+          cachedTopThemeIds: topThemeIds,
+          sourceBlockIds,
+          confidence: new Prisma.Decimal(confidence),
+          currentVersionId: cardVersionId ?? undefined,
+          personSubjectIds,
+          lastConfirmedAt: new Date(),
+        },
+      });
+      applied = true;
+
+      // SBA α-6 — probe-checks после auto-canonical (см. §5.4 зонтичного).
+      // Best-effort: ProbeService сам ловит ошибки, не валит rollup.
+      await this.probes.checkAndEmitProbes(updatedCard);
+    } else {
+      // light/deep — Card НЕ обновляется до approve. Освежаем только метку,
+      // чтобы дебаунс не вызывал тот же rollup повторно (60s debounce из
+      // CoreQueueService).
+      await this.prisma.card.update({
+        where: { id: card.id },
+        data: { summaryUpdatedAt: new Date() },
+      });
+    }
+
+    // SBA α-6 — conflict detection: статус контрадикция между старым summary
+    // и новым. Если карточка резко поменяла знак («закрыт» → «активен» и
+    // наоборот) — это сигнал к ConflictItem(relationType='contradicts').
+    let conflictReported = false;
+    if (
+      summary &&
+      card.summaryCache &&
+      this.detectStatusContradiction(card.summaryCache, summary)
+    ) {
+      try {
+        await this.conflicts.report({
+          tenantId: args.tenantId,
+          resourceType: 'card',
+          // Сам с собой — две версии одной карточки. existingId vs newId
+          // должны различаться, поэтому помечаем «previous-version» через
+          // отдельный resource. Пока хранилища previousId у Card нет — берём
+          // currentVersionId, если есть; иначе пропускаем conflict.report.
+          existingId: card.id,
+          newId: `${card.id}:next`,
+          relationType: 'contradicts',
+          detectedBy: 'specialist',
+          evidence: {
+            specialistName: '3-4-project-customer',
+            heuristic: 'status-keyword-flip',
+            oldSummary: card.summaryCache.slice(0, 1_000),
+            newSummary: summary.slice(0, 1_000),
+            sourceBlockIds: sourceBlockIds.slice(0, 20),
+          },
+        });
+        conflictReported = true;
+        this.metrics.incCoreSpecialistConflictEvent({ type: 'card' });
+      } catch (err) {
+        // ConflictService.report валидирует existingId !== newId. Если
+        // сработает другая ошибка — лог и продолжаем (best-effort, не валим
+        // rollup).
+        this.logger.warn(
+          {
+            cardId: card.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'card-rollup-v2: conflict.report не удался — пропускаю',
+        );
+      }
+    }
+
+    this.metrics.observeCoreSpecialistPipelineDuration({
+      type: 'card',
+      seconds: (Date.now() - start) / 1000,
+    });
+
     return {
       summary,
       topThemeIds,
       blocksUsed: enriched.length,
+      sourceBlockIds,
+      personSubjectIds,
+      confidence,
+      triageDecision: triage.decision,
+      applied,
+      cardVersionId,
+      curationItemId,
+      conflictReported,
+      usedTier,
+      usedModel,
+      llmTokens,
     };
+  }
+
+  /**
+   * SBA α-6 — соберём Person.id, для которых хотя бы один блок-источник
+   * упоминает их как `IdeaBlockEntity.role='subject'`. Используется
+   * Skill-агентом (γ-1) для атрибуции «знание присвоено сотруднику X».
+   */
+  private async collectPersonSubjects(args: {
+    tenantId: string;
+    blockIds: string[];
+  }): Promise<string[]> {
+    if (args.blockIds.length === 0) return [];
+    const rows = await this.prisma.ideaBlockEntity.findMany({
+      where: {
+        blockId: { in: args.blockIds },
+        role: 'subject',
+        entity: { type: 'person' },
+      },
+      select: { entityId: true },
+    });
+    if (rows.length === 0) return [];
+    const entityIds = [...new Set(rows.map((r) => r.entityId))];
+    const persons = await this.prisma.person.findMany({
+      where: {
+        entityId: { in: entityIds },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return persons.map((p) => p.id);
+  }
+
+  /**
+   * Простая эвристика: содержит ли старый summary «закрыт/завершён» и
+   * новый — «активен/идёт» (или наоборот). Это сигнал, что специалист
+   * увидел противоречивые блоки. LLM-арбитр конфликтов появится в β-.
+   */
+  private detectStatusContradiction(oldText: string, newText: string): boolean {
+    const closedRe = /\b(закрыт|закрыто|завершён|завершен|остановлен|приостановлен|отменён|отменен)\b/i;
+    const activeRe = /\b(активен|активна|активно|идёт|идет|развивается|продолжается|открыт|открыта)\b/i;
+    const oldClosed = closedRe.test(oldText);
+    const oldActive = activeRe.test(oldText);
+    const newClosed = closedRe.test(newText);
+    const newActive = activeRe.test(newText);
+    return (oldClosed && newActive) || (oldActive && newClosed);
   }
 
   private buildUserMessage(args: {
@@ -263,9 +563,15 @@ export class CardRollupV2Service {
     contactName: string | null;
     contactEmail: string | null;
     blocks: BlockForRollup[];
-    themes: Array<{ id: string; name: string; description: string; branch: string | null }>;
+    themes: Array<{
+      id: string;
+      name: string;
+      description: string;
+      branch: string | null;
+    }>;
   }): string {
-    const { cardKind, cardName, contactName, contactEmail, blocks, themes } = args;
+    const { cardKind, cardName, contactName, contactEmail, blocks, themes } =
+      args;
     const header = [
       `Карточка: ${cardName}`,
       `Тип: ${cardKind}`,

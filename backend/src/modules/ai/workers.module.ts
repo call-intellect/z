@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { CurationModule } from '../curation/curation.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -12,6 +13,21 @@ import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.
 import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
 import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
+import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
+import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
+import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
+import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
+import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
+import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
+import { Specialist35InsightsWorker } from '../knowledge-core/workers/specialist-3-5-insights.worker';
+import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
+import { Specialist36IdeasWorker } from '../knowledge-core/workers/specialist-3-6-ideas.worker';
+import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
+import { Specialist37SkillWorker } from '../knowledge-core/workers/specialist-3-7-skill.worker';
+import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
+import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
+import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable-persona-build.cron';
+import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
@@ -49,6 +65,11 @@ import { VoxService } from './services/vox.service';
  *   - LlmFallbackService + его LLM-клиенты (Anthropic/Minimax/OpenAiProxy) — AnalyzeWorker'у.
  */
 @Module({
+  imports: [
+    // SBA α-4 — Layer 4 Curation. BlockLinkerWorker инжектирует ConflictService
+    // для авто-создания ConflictItem из IdeaBlockLink(relationType='contradicts').
+    CurationModule,
+  ],
   providers: [
     // worker-only сервисы (нет @Global-дома).
     VoxService,
@@ -86,6 +107,54 @@ import { VoxService } from './services/vox.service';
     ReframingCron,
     ThemeClustererCron,
     CardRollupV2Worker,
+    // SBA α-6 — consumer `core.specialist-routing` jobName='3-4-project-customer'.
+    // Матчит блок→карточки и публикует rollup-job'ы с дебаунсом 60s.
+    Specialist34ProjectCustomerWorker,
+    // SBA α-7 — consumer `core.specialist-routing` jobName='3-1-regulations'.
+    // Извлекает Regulation/Process/Policy из блоков и публикует triage.
+    Specialist31RegulationsWorker,
+    // SBA β-2 — consumer `core.specialist-routing` jobName='3-2-knowledge-clone'.
+    // Матчит блок → Person'ы (employee) и enqueue rebuild knowledgeProfile.
+    Specialist32KnowledgeCloneWorker,
+    // SBA β-2 — consumer `core.knowledge-clone-rebuild` jobName='rebuild-knowledge-profile'.
+    // Гоняет LLM extract+merge, отдаёт в triage, пишет в Person.knowledgeProfile.
+    KnowledgeCloneRebuildWorker,
+    // SBA β-2 — cron `0 *\/6 * * *`: пересборка профилей сотрудников
+    // со свежей активностью за неделю.
+    KnowledgeCloneRebuildCron,
+    // SBA β-3 — consumer `core.specialist-routing` jobName='3-3-decisions'.
+    // Извлекает Decision из блоков (decision/rationale/decision_basis),
+    // KNN+LLM supersede-detect, triage (deep review всегда).
+    Specialist33DecisionsWorker,
+    // SBA β-4 — consumer `core.specialist-routing` jobName='3-5-insights'.
+    // KNN-кластеризация повторов pain/risk/churn_risk/objection в Insight,
+    // LLM extract + linking с Decisions, triage (critical → deep review).
+    Specialist35InsightsWorker,
+    // SBA β-4 — cron `0 *‎/6 * * *`: пересчёт frequency/dynamic + probe
+    // no_mitigation_plan + gauge insights_dynamic_label_count.
+    InsightClustererCron,
+    // SBA β-5 — consumer `core.specialist-routing` jobName='3-6-ideas'.
+    // KNN-дедуп Idea, LLM extract, weight/supporters, EventEmitter
+    // 'idea.created'.
+    Specialist36IdeasWorker,
+    // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
+    // (KNN + LLM idea-cluster-merge на критической массе).
+    IdeaClustererCron,
+    // SBA γ-1 — consumer `core.specialist-routing` jobName='3-7-skill'.
+    // Матчит subject-reasoning блок → SkillProfile и enqueue rebuild.
+    Specialist37SkillWorker,
+    // SBA γ-1 — consumer `core.skill-profile-rebuild`. Гоняет KNN-группировку
+    // блоков, LLM skill-trait-detect + skill-trait-merge, decay,
+    // probe-events. Пишет SkillTrait в БД.
+    SkillProfileRebuildWorker,
+    // SBA γ-1 — cron `0 5 * * *`: daily decay confidence + archive старых traits.
+    SkillProfileRecalibrateCron,
+    // SBA γ-1 — cron `0 6 * * SUN`: weekly сборка ExecutablePersona snapshots
+    // (scope='person' + scope='role' aggregation).
+    ExecutablePersonaBuildCron,
+    // SBA γ-1 — cron `0 9 * * MON`: weekly digest direct manager'ам про
+    // новые SkillTrait'ы у подчинённых.
+    SkillManagerDigestCron,
     MeetingAnalyzeV2Worker,
     MeetingAnalyzeV2Cron,
     StrategicAlignmentWorker,

@@ -27,6 +27,7 @@ import {
 } from '../services/block-extraction.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
+import { RouterService } from '../services/router.service';
 import { SegmentBuilderService } from '../services/segment-builder.service';
 
 /**
@@ -80,6 +81,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(GraphService) private readonly graph: GraphService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(RouterService) private readonly router: RouterService,
   ) {}
 
   onModuleInit(): void {
@@ -482,6 +484,30 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             'block-ingest: enqueueBlockDistill упал — дистилляция произойдёт позже',
           );
         });
+      }
+
+      // SBA α-3 — RouterService.dispatch для каждого блока. Best-effort:
+      // не блокирует основной pipeline (dispatch внутри уже не throw'ит).
+      // На α-3 consumer'ы ещё не существуют — jobs накапливаются.
+      for (let i = 0; i < blocksInOrder.length; i++) {
+        const block = blocksInOrder[i] as ExtractedBlock;
+        const blockId = indexToBlockId.get(i);
+        if (!blockId) continue;
+        await this.router
+          .dispatch({
+            id: blockId,
+            tenantId: event.tenantId,
+            signalType: block.signalType,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              {
+                blockId,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'block-ingest: RouterService.dispatch упал — продолжаем без роутинга',
+            );
+          });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

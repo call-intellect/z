@@ -78,7 +78,52 @@ export type ResourceType =
   | 'metric'
   | 'decision'
   // ── Фаза A.2 — шаблоны промптов AI-отчёта (prompt registry) ──
-  | 'prompt_template';
+  | 'prompt_template'
+  // ── SBA α-3 — Layer 2 ontology extension ──
+  // 'vendor' — поставщик (модель Vendor + Entity{type=vendor}).
+  // 'event_card' — событие (модель Event + Entity{type=event}). Имя
+  // выбрано как `event_card`, чтобы не конфликтовать с доменными
+  // событиями (бизнес-вокабуляр) — RBAC ResourceType должен быть
+  // конкретным «карточным» именем.
+  | 'vendor'
+  | 'event_card'
+  // ── SBA α-4 — Layer 4 Curation Foundation ──
+  | 'curation_item'
+  | 'curation_decision'
+  | 'conflict_item'
+  | 'card_version'
+  | 'curator_assignment'
+  // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
+  // 'chat_v2_conversation' — диалог пользователя с AI-чатом. Owner — сам
+  // пользователь; admin/owner Org могут читать для отладки.
+  | 'chat_v2_conversation'
+  // ── SBA β-2 — Specialist 3.2 Knowledge Clone ──
+  // 'knowledge_profile' — Person.knowledgeProfile (что человек знает).
+  // Это shared knowledge внутри Org: owner/admin — r/w/d; manager — r на все
+  // профили Org; member-level (manager:strict) — r self. Write идёт только
+  // через worker; ручной API write нет.
+  | 'knowledge_profile'
+  // ── SBA β-4 — Specialist 3.5 Insights Radar ──
+  // 'insight' — повторяющиеся проблемы / риски / блокеры / неэффективности.
+  // Shared knowledge: owner/admin — r/w/d; manager open — r/w (write для
+  // mitigation); manager strict — r self; curator — w (через CurationItem).
+  | 'insight'
+  // ── SBA β-5 — Specialist 3.6 Ideas Collector + Layer 6 Probe-Agent ──
+  // 'idea' — идеи сотрудников и запросы клиентов. Shared knowledge:
+  // owner/admin — r/w/d; manager — r/w (support/withdraw); read для всех
+  // member'ов Org.
+  // 'probe_event' — внутренний ресурс Probe-Agent. Read — admin (queue).
+  // Получатель видит свои probe через `/me/notifications` (фильтр eventType).
+  | 'idea'
+  | 'probe_event'
+  // ── SBA γ-1 — Specialist 3.7 SkillProfile + Clone API ──
+  // 'skill_profile' — навыковый профиль сотрудника (SkillProfile + SkillTrait[]).
+  // Видимость: owner/admin Org / direct manager / сам носитель.
+  // Write — только worker (нет manual API).
+  // 'clone_persona' — ExecutablePersona (snapshot для clone API). Read = тем же,
+  // кто имеет read на skill_profile того же Person'а.
+  | 'skill_profile'
+  | 'clone_persona';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -369,6 +414,20 @@ function isResourceType(s: string): s is ResourceType {
     'decision',
     // Фаза A.2 — шаблоны промптов AI-отчёта
     'prompt_template',
+    // SBA α-3 — Layer 2 ontology extension
+    'vendor',
+    'event_card',
+    // SBA α-4 — Layer 4 Curation Foundation
+    'curation_item',
+    'curation_decision',
+    'conflict_item',
+    'card_version',
+    'curator_assignment',
+    // SBA β-4 — Insights Radar.
+    'insight',
+    // SBA β-5 — Ideas Collector + Probe-Agent.
+    'idea',
+    'probe_event',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

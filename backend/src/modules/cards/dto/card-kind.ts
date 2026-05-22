@@ -9,8 +9,16 @@ import { z } from 'zod';
  *   project — проект («Запуск курса»)
  *   topic   — тема без человека («Q4 планирование»)
  *   custom  — всё остальное
+ *   vendor  — поставщик (SBA α-3); карточка-связка к Vendor-сущности.
  */
-export const CARD_KINDS = ['client', 'deal', 'project', 'topic', 'custom'] as const;
+export const CARD_KINDS = [
+  'client',
+  'deal',
+  'project',
+  'topic',
+  'custom',
+  'vendor',
+] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
 
 export const CardKindSchema = z.enum(CARD_KINDS);

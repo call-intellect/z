@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 
 import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { CurationModule } from '../curation/curation.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { SearchService } from './api/search.service';
@@ -18,7 +19,22 @@ import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
+import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
+import { Specialist31ProbeService } from './services/specialist-3-1-probe.service';
+import { Specialist31Service } from './services/specialist-3-1-regulations.service';
+import { Specialist32Service } from './services/specialist-3-2-knowledge-clone.service';
+import { Specialist32ProbeService } from './services/specialist-3-2-probe.service';
+import { Specialist33Service } from './services/specialist-3-3-decisions.service';
+import { Specialist33ProbeService } from './services/specialist-3-3-probe.service';
+import { Specialist34ProbeService } from './services/specialist-3-4-probe.service';
+import { Specialist35Service } from './services/specialist-3-5-insights.service';
+import { Specialist35ProbeService } from './services/specialist-3-5-probe.service';
+import { Specialist36Service } from './services/specialist-3-6-ideas.service';
+import { Specialist36ProbeService } from './services/specialist-3-6-probe.service';
+import { Specialist37Service } from './services/specialist-3-7-skill.service';
+import { Specialist37ProbeService } from './services/specialist-3-7-skill-probe.service';
+import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
@@ -49,7 +65,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
  */
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  // SBA α-6 — CurationModule подключаем здесь, чтобы `CardRollupV2Service`
+  // мог инжектить `CurationService.triage()` и `ConflictService.report()`.
+  imports: [ConfigModule, PrismaModule, CurationModule],
   providers: [
     S3Service,
     SegmentBuilderService,
@@ -75,6 +93,40 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     ChatV2Service,
     // Фаза 11: snapshot-cron для core_* gauge'ев.
     CoreMetricsSnapshotCron,
+    // SBA α-3: RouterService — диспатч атомов в специалистов Слоя 3.
+    RouterService,
+    // SBA α-6: Specialist34ProbeService — probe-events специалиста 3.4.
+    Specialist34ProbeService,
+    // SBA α-7: Specialist31Service — extraction/dedupe/triage для регламентов
+    // и процессов; Specialist31ProbeService — probe-events.
+    Specialist31Service,
+    Specialist31ProbeService,
+    // SBA β-2: Specialist32Service (rebuild knowledgeProfile через LLM
+    // extract+merge+triage) и Specialist32ProbeService (probe-events
+    // new_expertise_detected / contradiction_detected).
+    Specialist32Service,
+    Specialist32ProbeService,
+    // SBA β-3: Specialist33Service (extract → KNN → supersede-detect → triage)
+    // и Specialist33ProbeService (5 probe-trigger'ов + daily cron для
+    // overdue / outcome_unknown).
+    Specialist33Service,
+    Specialist33ProbeService,
+    // SBA β-4: Specialist35Service (KNN-кластеризация → LLM extract → linking
+    // с Decisions → triage) и Specialist35ProbeService (4 probe-trigger'а).
+    Specialist35Service,
+    Specialist35ProbeService,
+    // SBA β-5: Specialist36Service (Ideas Collector — KNN-дедуп Idea, LLM
+    // extract, weight/supporters, EventEmitter idea.created/idea.status_changed)
+    // и Specialist36ProbeService (probe.support_request + probe.status_unclear).
+    Specialist36Service,
+    Specialist36ProbeService,
+    // SBA γ-1: Specialist37Service (SkillProfile rebuild — KNN-группировка
+    // reasoning-блоков → LLM detect → KNN-merge → decay) и
+    // Specialist37ProbeService (skill.profile_starved / contradicting_traits) +
+    // ExecutablePersonaBuildService (compile persona snapshots для Clone API).
+    Specialist37Service,
+    Specialist37ProbeService,
+    ExecutablePersonaBuildService,
   ],
   exports: [
     SegmentBuilderService,
@@ -99,6 +151,36 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // его инжектить (этот модуль @Global, поэтому импортирует прозрачно).
     ChatV2RetrievalService,
     ChatV2Service,
+    // SBA α-3: экспортируем RouterService — block-ingest worker инжектит его
+    // для dispatch'а после persist'а блока.
+    RouterService,
+    // SBA α-6: экспортируем для CardSpecialistRegistry-регистрации и тестов.
+    Specialist34ProbeService,
+    // SBA α-7: экспортируем для Worker'а и тестов.
+    Specialist31Service,
+    Specialist31ProbeService,
+    // SBA β-2: экспортируем — KnowledgeCloneRebuildWorker и
+    // Specialist32KnowledgeCloneWorker (WorkersModule) их инжектят.
+    Specialist32Service,
+    Specialist32ProbeService,
+    // SBA β-3: экспортируем для Specialist33DecisionsWorker (WorkersModule)
+    // и REST API DecisionsModule (через PrismaService — но для тестов
+    // удобно иметь явный export).
+    Specialist33Service,
+    Specialist33ProbeService,
+    // SBA β-4: экспортируем для Specialist35InsightsWorker / InsightClustererCron
+    // (WorkersModule) и REST API InsightsModule.
+    Specialist35Service,
+    Specialist35ProbeService,
+    // SBA β-5: экспортируем для Specialist36IdeasWorker / IdeaClustererCron
+    // (WorkersModule) и REST API IdeasModule + Specialist36Module.
+    Specialist36Service,
+    Specialist36ProbeService,
+    // SBA γ-1: экспортируем — Specialist37SkillWorker / SkillProfileRebuildWorker
+    // (WorkersModule), ClonesService (ClonesModule) и тесты инжектят.
+    Specialist37Service,
+    Specialist37ProbeService,
+    ExecutablePersonaBuildService,
   ],
 })
 export class KnowledgeCoreModule {}

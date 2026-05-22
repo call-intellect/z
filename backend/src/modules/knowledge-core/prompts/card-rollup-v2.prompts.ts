@@ -1,0 +1,82 @@
+/**
+ * SBA α-6 — system-промпты card-rollup-v2 по `Card.kind`.
+ *
+ * Промпты вынесены из CardRollupV2Service в отдельный модуль, чтобы:
+ *   - один таблица соответствий kind → prompt key (для prompt-registry в будущем);
+ *   - vendor (новый kind α-3) лежал рядом с client / deal / project / topic / custom;
+ *   - тексты можно было заменить на согласованные с продуктом версии (TODO ниже).
+ *
+ * TODO(owner-product): согласовать тексты промптов под продукт. Сейчас —
+ * placeholder, унаследованный из in-line версии CardRollupV2Service (Фаза 4).
+ * Целевая структура: 3-5 связных абзацев на русском, без markdown-заголовков,
+ * только факты из блоков, не дополнять.
+ */
+
+export type CardRollupV2Kind =
+  | 'client'
+  | 'deal'
+  | 'project'
+  | 'topic'
+  | 'vendor'
+  | 'custom';
+
+/**
+ * Все известные kinds (для type-narrowing и тестов).
+ */
+export const CARD_ROLLUP_V2_KINDS = [
+  'client',
+  'deal',
+  'project',
+  'topic',
+  'vendor',
+  'custom',
+] as const satisfies readonly CardRollupV2Kind[];
+
+// TODO(owner-product): согласовать текст промпта `client`.
+export const CARD_ROLLUP_V2_CLIENT_PROMPT = `Ты — аналитик в B2B-команде. Тебе дают подборку IdeaBlock'ов (вопрос ↔ доверенный ответ + теги + цитаты), которые относятся к одному клиенту. Также — топ-темы, под которые подпадают эти блоки.
+Твоя задача — суммаризировать активность с этим клиентом за весь известный период: что обсуждали, какие у клиента боли/запросы, какие приняты решения, какие риски/договорённости.
+Пиши на русском, в форме связного текста (3-6 коротких абзацев), без markdown-заголовков и буллетов. Не выдумывай факты вне предоставленных блоков.`;
+
+// TODO(owner-product): согласовать текст промпта `deal`.
+export const CARD_ROLLUP_V2_DEAL_PROMPT = `Ты — RevOps-аналитик. Тебе дают IdeaBlock'и по конкретной сделке (вопрос ↔ доверенный ответ + теги + цитаты) и топ-темы.
+Опиши текущий статус сделки: на какой стадии она, какие возражения сняты, какие открыты, какие следующие шаги обещаны и какие риски проявились.
+На русском, связным текстом (3-5 абзацев), без markdown-заголовков. Только факты из блоков.`;
+
+// TODO(owner-product): согласовать текст промпта `project`.
+export const CARD_ROLLUP_V2_PROJECT_PROMPT = `Ты — PM-аналитик. Тебе дают IdeaBlock'и по конкретному проекту и топ-темы.
+Опиши прогресс проекта: что сделано, что запланировано, какие принятые решения, риски, командные зависимости. На русском, связным текстом (3-5 абзацев), без markdown.`;
+
+// TODO(owner-product): согласовать текст промпта `topic`.
+export const CARD_ROLLUP_V2_TOPIC_PROMPT = `Ты — knowledge-инженер. Тебе дают IdeaBlock'и, относящиеся к одной теме / области знаний, и связанные топ-темы.
+Сделай краткий обзор «что компания знает по этой теме» — основные факты, открытые вопросы, противоречия, ключевые сущности. На русском, связным текстом (3-5 абзацев), без markdown.`;
+
+// TODO(owner-product): согласовать текст промпта `custom`.
+export const CARD_ROLLUP_V2_CUSTOM_PROMPT = `Ты — аналитик. Тебе дают IdeaBlock'и (вопрос ↔ доверенный ответ + теги + цитаты), сгруппированные пользователем под произвольный кейс, и топ-темы.
+Сделай связный обзор: о чём этот кейс, какие основные факты и решения, какие открытые вопросы. На русском, 3-5 абзацев, без markdown.`;
+
+// TODO(owner-product): согласовать текст промпта `vendor`.
+// Vendor — новый kind, появившийся в SBA α-3. Карточка отражает отношения
+// с поставщиком (B2B-партнёром).
+export const CARD_ROLLUP_V2_VENDOR_PROMPT = `Ты — аналитик отдела закупок / партнёрств. Тебе дают подборку IdeaBlock'ов (вопрос ↔ доверенный ответ + теги + цитаты), относящихся к одному поставщику (vendor). Также — топ-темы.
+Опиши работу с поставщиком: какие услуги/продукты предоставляет, какой статус контракта/договорённостей, какие были инциденты или вопросы качества, какие открытые риски и следующие шаги по сотрудничеству.
+На русском, связным текстом (3-5 абзацев), без markdown-заголовков и буллетов. Не выдумывай факты вне предоставленных блоков.`;
+
+const PROMPTS: Record<CardRollupV2Kind, string> = {
+  client: CARD_ROLLUP_V2_CLIENT_PROMPT,
+  deal: CARD_ROLLUP_V2_DEAL_PROMPT,
+  project: CARD_ROLLUP_V2_PROJECT_PROMPT,
+  topic: CARD_ROLLUP_V2_TOPIC_PROMPT,
+  vendor: CARD_ROLLUP_V2_VENDOR_PROMPT,
+  custom: CARD_ROLLUP_V2_CUSTOM_PROMPT,
+};
+
+/**
+ * Возвращает system-промпт под `kind`. Неизвестный kind (например, legacy
+ * 'custom-template') фоллбэчится на `custom`-промпт.
+ */
+export function getCardRollupV2SystemPrompt(kind: string): string {
+  if ((CARD_ROLLUP_V2_KINDS as readonly string[]).includes(kind)) {
+    return PROMPTS[kind as CardRollupV2Kind];
+  }
+  return CARD_ROLLUP_V2_CUSTOM_PROMPT;
+}

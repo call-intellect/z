@@ -31,3 +31,6 @@ infra/livekit/egress.yaml
 .cache/
 .bun-cache/
 .vexp
+
+# Локальные артефакты smoke-тестов и lint
+backend/tmp/

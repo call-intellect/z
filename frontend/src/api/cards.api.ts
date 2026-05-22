@@ -10,7 +10,13 @@ import type { CardThemeMiniApi } from '@/domain/theme';
  * API-клиент модуля cards. Контракт: `backend/src/modules/cards/`.
  */
 
-export type CardKindFilter = 'client' | 'deal' | 'project' | 'topic' | 'custom';
+export type CardKindFilter =
+  | 'client'
+  | 'deal'
+  | 'project'
+  | 'topic'
+  | 'custom'
+  | 'vendor';
 
 export type ListCardsRequest = {
   page?: number;

@@ -1,0 +1,149 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../auth/decorators/current-user.decorator';
+import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
+import { TenantGuard } from '../rbac/guards/tenant.guard';
+
+import {
+  AskCloneBodySchema,
+  type AskCloneBody,
+  type AskCloneResponseDto,
+  type SkillProfileDto,
+  type RoleSkillProfileDto,
+} from './dto/clones.dto';
+import { ClonesService } from './services/clones.service';
+
+/**
+ * SBA γ-1 — REST API Clone (γ-1.9).
+ *
+ *   POST /api/v1/clones/persons/:personId/ask — ответ от клона сотрудника.
+ *   POST /api/v1/clones/roles/:roleId/ask     — ответ от клона роли.
+ *
+ * RBAC: внутри ClonesService.canAccessPersonClone (owner/admin/self/direct manager).
+ * Rate limit: cfg.skill.cloneAskPerUserPerDay (default 20) на пользователя в день.
+ */
+@ApiTags('clones')
+@Controller('api/v1/clones')
+@UseGuards(CookieAuthGuard, TenantGuard)
+export class ClonesController {
+  constructor(@Inject(ClonesService) private readonly clones: ClonesService) {}
+
+  @Post('persons/:personId/ask')
+  @ApiOperation({
+    summary: 'Спросить клона конкретного сотрудника',
+  })
+  async askPerson(
+    @Param('personId') personId: string,
+    @Body(new ZodValidationPipe(AskCloneBodySchema)) body: AskCloneBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<AskCloneResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.askPerson({
+      tenantId: t,
+      requesterUserId: user.id,
+      personId,
+      question: body.question,
+      conversationId: body.conversationId,
+    });
+  }
+
+  @Post('roles/:roleId/ask')
+  @ApiOperation({
+    summary: 'Спросить клона роли (агрегат по сотрудникам этой должности)',
+  })
+  async askRole(
+    @Param('roleId') roleId: string,
+    @Body(new ZodValidationPipe(AskCloneBodySchema)) body: AskCloneBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<AskCloneResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.askRole({
+      tenantId: t,
+      requesterUserId: user.id,
+      roleId,
+      question: body.question,
+      conversationId: body.conversationId,
+    });
+  }
+
+  @Get('persons/:personId/skill-profile')
+  @ApiOperation({
+    summary: 'Навыковый профиль сотрудника (для manager / admin / self)',
+  })
+  async getPersonSkillProfile(
+    @Param('personId') personId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SkillProfileDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.getPersonSkillProfile({
+      tenantId: t,
+      requesterUserId: user.id,
+      personId,
+    });
+  }
+
+  @Get('roles/:roleId/skill-profile')
+  @ApiOperation({
+    summary: 'Агрегатный навыковый профиль роли (топ-черт по сотрудникам)',
+  })
+  async getRoleSkillProfile(
+    @Param('roleId') roleId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<RoleSkillProfileDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.getRoleSkillProfile({
+      tenantId: t,
+      requesterUserId: user.id,
+      roleId,
+    });
+  }
+
+  @Post('skill-traits/:traitId/mark-misleading')
+  @ApiOperation({
+    summary: 'Пометить черту в навыковом профиле как неверную',
+  })
+  async markTraitMisleading(
+    @Param('traitId') traitId: string,
+    @Body() body: { reason?: string },
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.clones.markTraitMisleading({
+      tenantId: t,
+      requesterUserId: user.id,
+      traitId,
+      reason: typeof body?.reason === 'string' ? body.reason : '',
+    });
+    return { ok: true };
+  }
+
+  private requireTenant(tenantId: string | undefined): string {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Организация не определена' },
+      });
+    }
+    return tenantId;
+  }
+}

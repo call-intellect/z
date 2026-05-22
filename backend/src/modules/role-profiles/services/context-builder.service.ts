@@ -168,11 +168,13 @@ export class RoleProfileContextBuilder {
           take: maxDecisions,
         })
       : [];
+    // SBA β-3 — Decision.text и Decision.decidedAt теперь nullable
+    // (статус 0a → β-3 расширение). Используем fallback на statement / createdAt.
     const decisions = decisionsRaw.map((d) => ({
       id: d.id,
-      text: d.text.slice(0, 400),
+      text: (d.text ?? d.statement ?? '').slice(0, 400),
       rationale: d.rationale ?? null,
-      decidedAt: d.decidedAt.toISOString(),
+      decidedAt: (d.decidedAt ?? d.createdAt).toISOString(),
     }));
 
     return {

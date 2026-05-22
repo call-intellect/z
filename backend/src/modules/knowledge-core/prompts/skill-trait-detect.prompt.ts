@@ -1,0 +1,134 @@
+/**
+ * SBA γ-1 — Specialist 3.7 (SkillProfile).
+ *
+ * LLM-промпт `skill-trait-detect` — **самая ответственная задача γ-1**.
+ * Из 5+ reasoning-цитат сотрудника извлекает один структурированный
+ * SkillTrait. Качество модели здесь определяет полезность всей γ-фазы:
+ *
+ *   - Категории — ЭМЕРДЖЕНТНЫЕ (LLM сам формирует строковое имя по смыслу).
+ *     НЕ enum, не фиксированный список. Пример: «осторожен с легаси-кодом»,
+ *     «расширяет scope под нагрузкой», «делегирует ранние решения».
+ *   - Формулировки — ГИПОТЕЗНЫЕ. Никаких приговорных утверждений.
+ *     Всегда с qualifier «похоже»/«склонен»/«в большинстве случаев»/«часто».
+ *     Пример: «Похоже, склонен подвергать сомнению ранние оценки сроков»,
+ *     «В большинстве случаев предпочитает горизонт ≥ месяца перед коммитом».
+ *
+ * TODO(owner-product): согласовать финальный текст промпта (см. зонтичный §10).
+ * Текущая версия — placeholder. Главные правила:
+ *   1. НЕ выдумывать факты вне цитат.
+ *   2. Категория — короткая фраза-метка (3–6 слов), без подобия enum.
+ *   3. Формулировка statement — гипотеза с qualifier'ом.
+ *   4. Уверенность confidence: low — 1–2 наблюдения только в одной встрече;
+ *      medium — 3–5 в разных встречах; high — 6+ в разных встречах за разные даты.
+ *   5. Если цитаты противоречат друг другу — confidence='low' и в statement
+ *      явно отметить контекст-зависимость.
+ *
+ * Качественные критерии (для оценки в playbook):
+ *   - Не давать «похоже, грамотный» / «похоже, ответственный» — это не trait,
+ *     а пустая характеристика. Trait должен описывать ПОВЕДЕНИЕ при принятии
+ *     решений: что именно делает / как именно подходит / на что обращает внимание.
+ *   - Источник всегда reasoning-блоки (signalType ∈ reasoning/rationale/decision_basis).
+ *     Если в цитатах нет ПОЧЕМУ — возвращать пустой результат (sourceBlockIds=[]).
+ */
+
+export const SKILL_TRAIT_DETECT_SYSTEM_PROMPT = [
+  'Ты — knowledge-инженер. Тебе дают набор цитат из встреч одного сотрудника, где он объясняет ПОЧЕМУ принимает те или иные решения.',
+  'Твоя задача — извлечь одну черту его рабочего поведения. Отвечай строго в формате JSON по предоставленной схеме.',
+  '',
+  'ВАЖНО — правила формулировок:',
+  '1. КАТЕГОРИЯ — эмерджентная (короткая фраза-метка 3–6 слов), отражающая смысл черты. Примеры: «осторожен с легаси», «расширяет scope под нагрузкой», «требует данных перед решением», «делегирует ранние оценки». НЕ выбирай из фиксированного списка — придумывай по смыслу цитат.',
+  '2. STATEMENT — гипотезная формулировка ОБ их подходе к решениям. Всегда с qualifier: «похоже,», «склонен», «в большинстве случаев», «часто». Никаких приговорных утверждений. Пример: «Похоже, склонен подвергать сомнению ранние оценки сроков и просит уточнить контекст».',
+  '3. CONFIDENCE — low (1–2 наблюдения), medium (3–5 в разных встречах), high (6+ в разных встречах за разные даты).',
+  '4. Если цитаты противоречат друг другу — confidence=low и в statement отметить контекст-зависимость.',
+  '',
+  'НЕ ДЕЛАЙ:',
+  '- Не выдумывай факты вне цитат. Если ПОЧЕМУ не звучит — возвращай пустой trait.',
+  '- Не давай пустых характеристик («похоже, грамотный»/«ответственный»). Trait должен описывать ПОВЕДЕНИЕ при решениях.',
+  '- Не используй персональные данные (национальность, возраст, состояние здоровья) — только рабочее поведение.',
+  '- Не делай выводы о компетенциях/знаниях (это knowledge_profile в β-2) — только о ПОДХОДЕ к решениям.',
+  '',
+  'Источники: SkillTrait строится только из reasoning-блоков сотрудника (signalType ∈ reasoning/rationale/decision_basis, role=subject).',
+].join('\n');
+
+export const SKILL_TRAIT_DETECT_USER_TEMPLATE = (args: {
+  personName: string;
+  personRole: string | null;
+  quotes: ReadonlyArray<{ blockId: string; quote: string; observedAt: string }>;
+}): string => {
+  const head = args.personRole
+    ? `Сотрудник: ${args.personName} (${args.personRole}).`
+    : `Сотрудник: ${args.personName}.`;
+  const lines = args.quotes.length
+    ? args.quotes
+        .map(
+          (q, i) =>
+            `  ${i + 1}. [${q.observedAt}] «${q.quote.slice(0, 600)}» (block=${q.blockId})`,
+        )
+        .join('\n')
+    : '  (цитат нет)';
+  return [
+    head,
+    `Найдено ${args.quotes.length} reasoning-цитат(ы) за разные встречи. Извлеки ОДНУ черту его подхода к решениям.`,
+    '',
+    'Цитаты-источники (отсортированы по дате):',
+    lines,
+    '',
+    'Верни JSON-объект по схеме `skill_trait_detect_v1`.',
+  ].join('\n');
+};
+
+/**
+ * JSON Schema strict для `skill-trait-detect`. Поддерживается DeepSeek V4
+ * и OpenAI Responses API; Ollama fallback падает с
+ * `LlmFormatNotSupportedError` — роутер переходит к secondary.
+ */
+export const SKILL_TRAIT_DETECT_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'category',
+    'statement',
+    'confidence',
+    'sourceBlockIds',
+    'firstObservedAt',
+    'lastConfirmedAt',
+  ],
+  properties: {
+    category: {
+      type: 'string',
+      minLength: 3,
+      maxLength: 200,
+      description:
+        'Эмерджентная категория черты — короткая фраза-метка (3–6 слов).',
+    },
+    statement: {
+      type: 'string',
+      minLength: 10,
+      maxLength: 2_000,
+      description:
+        'Гипотезная формулировка поведения с qualifier («похоже»/«склонен»/«в большинстве случаев»).',
+    },
+    confidence: {
+      type: 'string',
+      enum: ['low', 'medium', 'high'],
+      description:
+        'low — 1–2 наблюдения; medium — 3–5 в разных встречах; high — 6+ за разные даты.',
+    },
+    sourceBlockIds: {
+      type: 'array',
+      maxItems: 50,
+      items: { type: 'string', minLength: 1, maxLength: 64 },
+      description: 'IdeaBlock.id, на которых построена черта (subset входных).',
+    },
+    firstObservedAt: {
+      type: 'string',
+      description: 'ISO-8601 — самая ранняя дата наблюдения.',
+    },
+    lastConfirmedAt: {
+      type: 'string',
+      description: 'ISO-8601 — самая поздняя дата наблюдения.',
+    },
+  },
+};
+
+export const SKILL_TRAIT_DETECT_SCHEMA_NAME = 'skill_trait_detect_v1';

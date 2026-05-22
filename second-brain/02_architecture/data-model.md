@@ -626,7 +626,7 @@ erDiagram
 
 ### Группа Б (без UI в Фазе 0)
 - `Mission, Vision, Strategy` — Уровень 1.
-- `Process, ProcessStep, Regulation, Policy` — Уровень 3.
+- `Process, ProcessStep, Regulation, Policy` — Уровень 3. **SBA α-7** (2026-05-22) расширил эти модели in-place: `entityId @unique?`, `scope`, `ownerPersonId` (для Regulation/Policy), `currentVersionId → CardVersion`, `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `embedding Unsupported("vector(1536)")?`, `lastConfirmedAt`. Для `Regulation` дополнительно — `statement` (структурированное утверждение, альтернатива `contentMd` для дедупа/chat-v2), `supersedesId` (self-relation для версионирования). Для `Process` — `inputs`/`outputs`/`metricsJson` (JSON, не путать с моделью `Metric`). UI на `/regulations` (master-detail с фильтром `kind`).
 - `Tool` — Уровень 4.
 - `Metric` — Уровень 5.
 - `Decision` — миграционный долг.

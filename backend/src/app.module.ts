@@ -43,7 +43,6 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { ConversationalModule } from './modules/conversational/conversational.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 // Phase 0a — структура компании (группа А) + дополнительные эндпоинты.
@@ -266,13 +265,6 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Phase 0a.3 — GET /api/v1/me/profile (Person + Role + Department +
     // RoleProfile в контексте текущей Org).
     MeModule,
-
-    // SBA α-1 — Conversational Channels Foundation.
-    // @Global модуль (Channel/Notification/Delivery), используется Layer 4
-    // (curation), Layer 5 (chat-v2 inbound), Layer 6 (probe-agent). Регистрируется
-    // ПОСЛЕ MailModule и IngestModule, потому что адаптеры инжектят MailService
-    // и ConversationalIngestAdapter — IngestService.
-    ConversationalModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

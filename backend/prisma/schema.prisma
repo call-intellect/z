@@ -629,6 +629,12 @@ model Meeting {
   /// Автоматически вести запись при старте встречи. Если true — запись стартует
   /// при подключении хоста; ручное управление записью в комнате недоступно.
   recordByDefault  Boolean       @default(true)
+  /// Статус расчёта поведенческих метрик (воркер ai.behavior-metrics).
+  /// NULL = не запускался; 'pending'|'ready'|'failed'|'low_confidence'.
+  behaviorMetricsStatus String?
+  /// Статус AI-оценки качества встречи (воркер ai.quality-score).
+  /// NULL = не запускался; 'pending'|'ready'|'failed'|'disabled'.
+  qualityScoreStatus    String?
   createdAt        DateTime      @default(now())
   deletedAt        DateTime?
 
@@ -736,6 +742,12 @@ model Transcript {
   roomChat             Json?
   totalWords           Int?
   totalDurationSeconds Int?
+  /// S3-ключ merged-транскрипта (S3-пайплайн competitor-parity). NULL пока не готов.
+  mergedS3Url          String?
+  /// S3-ключ cleaned-транскрипта (фаза D cleaning). NULL = ещё не запускали.
+  cleanedS3Url         String?
+  /// Статус cleaning-пайплайна: 'pending'|'ready'|'failed'|'not_started' (NULL='not_started').
+  cleaningStatus       String?
   createdAt            DateTime          @default(now())
   tracks               TranscriptTrack[]
 }

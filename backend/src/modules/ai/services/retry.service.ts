@@ -53,7 +53,10 @@ export class RetryService {
   ): Promise<{ stage: 'transcribe' | 'merge' | 'analyze' }> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      include: { transcript: true, aiResult: true },
+      include: {
+        transcript: { include: { tracks: { take: 1 } } },
+        aiResult: true,
+      },
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
 
@@ -122,11 +125,11 @@ export class RetryService {
   // ─────────────────────────── private ─────────────────────────────────────
 
   private detectStage(meeting: {
-    transcript: { rawIndexS3Url: string | null; mergedS3Url: string | null } | null;
+    transcript: { turns: unknown; tracks: { id: string }[] } | null;
     aiResult: { id: string } | null;
   }): 'transcribe' | 'merge' | 'analyze' | null {
-    if (!meeting.transcript?.rawIndexS3Url) return 'transcribe';
-    if (!meeting.transcript.mergedS3Url) return 'merge';
+    if (!meeting.transcript || meeting.transcript.tracks.length === 0) return 'transcribe';
+    if (meeting.transcript.turns === null) return 'merge';
     if (!meeting.aiResult) return 'analyze';
     return null;
   }

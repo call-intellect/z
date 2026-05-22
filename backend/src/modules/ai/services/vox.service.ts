@@ -42,6 +42,10 @@ export class VoxService {
     const diarizationEnabled = opts.diarizationEnabled ?? false;
     const model = this.cfg.ai.vox.model;
 
+    this.logger.debug(
+      { audioSizeBytes: audio.byteLength, model, language, punctuationMode },
+      'Vox submit: отправляем аудио',
+    );
     let lastError: unknown = null;
     for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt++) {
       try {
@@ -54,8 +58,9 @@ export class VoxService {
         form.append('model', model);
         form.append('punctuationMode', punctuationMode);
         form.append('diarizationEnabled', diarizationEnabled ? 'true' : 'false');
-        form.append('language', language);
+        // language не поддерживается текущей версией Vox API (400: property language should not exist)
 
+        this.logger.debug({ attempt: attempt + 1, url }, 'Vox submit: POST запрос');
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -72,6 +77,7 @@ export class VoxService {
         if (!json.taskId) {
           throw new VoxError('Vox submit: пустой taskId в ответе');
         }
+        this.logger.debug({ taskId: json.taskId }, 'Vox submit OK — задача принята');
         return { taskId: json.taskId };
       } catch (err) {
         lastError = err;
@@ -127,7 +133,12 @@ export class VoxService {
       }
 
       const result = parseVoxResult(raw);
+      this.logger.debug({ taskId, attempt: i + 1, status: result.status }, 'Vox poll: ответ');
       if (result.status === 'COMPLETED') {
+        this.logger.debug(
+          { taskId, wordsCount: result.words?.length ?? 0, durationSeconds: result.durationSeconds },
+          'Vox poll COMPLETED',
+        );
         return {
           status: 'COMPLETED',
           transcriptText: result.transcriptText,

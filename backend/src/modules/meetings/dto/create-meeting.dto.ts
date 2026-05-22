@@ -31,6 +31,7 @@ export const CreateMeetingForUserSchema = z.object({
   title: z.string().min(1).max(200),
   custom_prompt: z.string().max(10000).nullish(),
   card_id: z.string().min(1).max(50).nullish(),
+  record_by_default: z.boolean().optional().default(true),
 });
 
 export type CreateMeetingForUserDto = z.infer<typeof CreateMeetingForUserSchema>;

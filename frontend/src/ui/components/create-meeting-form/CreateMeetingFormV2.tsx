@@ -29,6 +29,7 @@ import {
   Target,
   Users,
   UserSearch,
+  Video,
 } from 'lucide-react';
 import useSWR from 'swr';
 import type { LucideIcon } from 'lucide-react';
@@ -117,6 +118,7 @@ export function CreateMeetingFormV2() {
   const [title, setTitle] = useState('');
   const [includeFollowUp, setIncludeFollowUp] = useState(true);
   const [includeTasks, setIncludeTasks] = useState(true);
+  const [recordByDefault, setRecordByDefault] = useState(true);
   const [customPrompt, setCustomPrompt] = useState('');
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -153,6 +155,7 @@ export function CreateMeetingFormV2() {
         type: baseType,
         title: title.trim(),
         custom_prompt: finalPrompt,
+        record_by_default: recordByDefault,
         ...(selected.kind === 'custom' ? { templateId: selected.template.id } : {}),
         ...(cardId ? { card_id: cardId } : {}),
       });
@@ -278,6 +281,26 @@ export function CreateMeetingFormV2() {
               required
               maxLength={200}
             />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label>Запись встречи</Label>
+            <label className="flex items-start gap-3 rounded-md border border-border-subtle bg-bg-overlay px-4 py-3">
+              <Checkbox
+                checked={recordByDefault}
+                onCheckedChange={(v) => setRecordByDefault(v === true)}
+                className="mt-0.5"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-medium text-fg-primary">
+                  <Video size={14} className="text-accent" />
+                  Вести запись автоматически
+                </div>
+                <div className="mt-0.5 text-xs text-fg-tertiary">
+                  Запись стартует при входе хоста. Участники не смогут остановить запись вручную.
+                </div>
+              </div>
+            </label>
           </div>
 
           <div className="flex flex-col gap-2">

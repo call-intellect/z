@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { AudioTrack } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -12,35 +13,21 @@ import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 
 import { AiUsageLogService } from '../services/ai-usage-log.service';
-import {
-  type TranscriptIndex,
-  transcriptIndexKey,
-  transcriptTrackKey,
-} from '../services/s3-ai-keys';
 import { TypedConfigService } from '../../../common/config/index';
 import { VoxService } from '../services/vox.service';
-
-interface TrackTranscriptionResult {
-  participantId: string | null;
-  livekitIdentity: string;
-  speakerName: string;
-  s3Key: string;
-  trackStartedAt: string;
-  baseStartedAt: string;
-}
 
 /**
  * Worker стадии `ai.transcribe`.
  *
  *   - Тянет аудио каждой `AudioTrack` из S3.
  *   - Отправляет в Vox (submit + poll).
- *   - Сохраняет per-track json и index.json в S3.
- *   - Обновляет/создаёт `Transcript.rawIndexS3Url`.
+ *   - Сохраняет per-track данные в БД (TranscriptTrack).
+ *   - Создаёт/обновляет `Transcript` (без S3 URL — данные в БД).
  *   - Ставит job в `ai.merge`.
  *
  * Идемпотентность:
  *   - На входе проверяем status. Если уже `transcription_processing` или дальше — выходим.
- *   - Если `Transcript.rawIndexS3Url` уже есть — пропускаем загрузку, сразу enqueueMerge.
+ *   - Если у `Transcript` уже есть треки — пропускаем загрузку, сразу enqueueMerge.
  */
 @Injectable()
 export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
@@ -93,7 +80,7 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       where: { id: meetingId },
       include: {
         recording: { include: { audioTracks: true } },
-        transcript: true,
+        transcript: { include: { tracks: { take: 1 } } },
       },
     });
     if (!meeting) {
@@ -120,12 +107,9 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // Если уже есть rawIndexS3Url — повторно не транскрибируем.
-    if (meeting.transcript?.rawIndexS3Url) {
-      this.logger.log(
-        { meetingId },
-        'transcribe: rawIndexS3Url уже есть — переходим к merge',
-      );
+    // Если треки уже есть в БД — повторно не транскрибируем.
+    if (meeting.transcript && meeting.transcript.tracks.length > 0) {
+      this.logger.log({ meetingId }, 'transcribe: треки уже в БД — переходим к merge');
       await this.queue.enqueueMerge(meetingId);
       return;
     }
@@ -133,7 +117,6 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
     const audioTracks = meeting.recording?.audioTracks ?? [];
     if (audioTracks.length === 0) {
       this.logger.warn({ meetingId }, 'transcribe: нет audio-треков');
-      // Без треков нет смысла продолжать. Переводим в failed.
       await this.meetings.transitionStatus(meetingId, 'failed', {
         failureReason: 'transcribe: no_audio_tracks',
         reason: 'ai:transcribe:no_tracks',
@@ -142,34 +125,33 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Базовая точка времени = минимум startedAt по всем трекам (или старт записи).
-    const baseStartedAtMs = Math.min(
-      ...audioTracks.map((t) => t.startedAt.getTime()),
+    this.logger.debug(
+      { meetingId, tracksCount: audioTracks.length, identities: audioTracks.map((t) => t.livekitIdentity) },
+      'transcribe: начинаем транскрипцию треков',
     );
+
+    // Базовая точка времени = минимум startedAt по всем трекам.
+    const baseStartedAtMs = Math.min(...audioTracks.map((t) => t.startedAt.getTime()));
     const baseStartedAt = new Date(baseStartedAtMs);
 
-    const indexEntries: TrackTranscriptionResult[] = [];
-
-    for (const track of audioTracks) {
-      const entry = await this.transcribeOneTrack(meetingId, track, baseStartedAt, job);
-      indexEntries.push(entry);
-    }
-
-    // Сохраняем index.json.
-    const indexKey = transcriptIndexKey(meetingId);
-    const indexDoc: TranscriptIndex = {
-      meetingId,
-      tracks: indexEntries,
-      generatedAt: new Date().toISOString(),
-    };
-    await this.s3.putJson(indexKey, indexDoc);
-
-    // Обновляем/создаём Transcript.
-    await this.prisma.transcript.upsert({
+    // Создаём Transcript (если нет) — треки будут добавлены ниже.
+    const transcript = await this.prisma.transcript.upsert({
       where: { meetingId },
-      create: { meetingId, rawIndexS3Url: indexKey },
-      update: { rawIndexS3Url: indexKey },
+      create: { meetingId },
+      update: {},
     });
+
+    for (const [idx, track] of audioTracks.entries()) {
+      this.logger.debug(
+        { meetingId, trackIndex: idx + 1, total: audioTracks.length, identity: track.livekitIdentity, trackId: track.id },
+        'transcribe: обрабатываем трек',
+      );
+      await this.transcribeOneTrack(meetingId, transcript.id, track, baseStartedAt, job);
+      this.logger.debug(
+        { meetingId, trackIndex: idx + 1, identity: track.livekitIdentity },
+        'transcribe: трек транскрибирован',
+      );
+    }
 
     // Метрика длительности всей стадии.
     this.metrics.observeAiPipelineDuration({
@@ -181,7 +163,7 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.queue.enqueueMerge(meetingId);
     this.logger.log(
-      { meetingId, tracks: indexEntries.length },
+      { meetingId, tracks: audioTracks.length },
       'transcribe: успешно — merge поставлен',
     );
   }
@@ -190,18 +172,28 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
 
   private async transcribeOneTrack(
     meetingId: string,
+    transcriptId: string,
     track: AudioTrack,
     baseStartedAt: Date,
     job: Job<AiJobData>,
-  ): Promise<TrackTranscriptionResult> {
+  ): Promise<void> {
     const startedAt = Date.now();
     const audioKey = extractKeyFromUrl(track.audioUrl, this.cfg.s3.bucket);
     if (!audioKey) {
       throw new Error(`transcribe: пустой audio key для track ${track.id}`);
     }
 
+    this.logger.debug(
+      { meetingId, trackId: track.id, identity: track.livekitIdentity, audioKey },
+      'transcribeOneTrack: читаем аудио из S3',
+    );
+
     // 1. Читаем аудио из S3.
     const audio = await this.s3.getObject(audioKey);
+    this.logger.debug(
+      { meetingId, trackId: track.id, identity: track.livekitIdentity, sizeBytes: audio.byteLength },
+      'transcribeOneTrack: аудио прочитано из S3',
+    );
 
     // 2. Submit + poll Vox.
     let voxResult;
@@ -209,13 +201,25 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
     let errorText: string | null = null;
     try {
       const submitted = await this.vox.submit(audio, {});
+      this.logger.debug(
+        { meetingId, trackId: track.id, identity: track.livekitIdentity, taskId: submitted.taskId },
+        'transcribeOneTrack: Vox задача принята — ожидаем результат',
+      );
       voxResult = await this.vox.poll(submitted.taskId);
+      this.logger.debug(
+        {
+          meetingId, trackId: track.id, identity: track.livekitIdentity,
+          wordsCount: voxResult.words?.length ?? 0,
+          durationSeconds: voxResult.durationSeconds,
+          textLength: voxResult.transcriptText.length,
+        },
+        'transcribeOneTrack: Vox транскрипция получена',
+      );
       success = true;
     } catch (err) {
       errorText = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
-      // Лог использования: provider=vox, агент=transcribe, costUsd=0.
       await this.usage.record({
         meetingId,
         agentType: 'transcribe',
@@ -235,34 +239,28 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       throw new Error('transcribe: voxResult пуст');
     }
 
-    // 3. Сохраняем per-track json в S3.
-    const trackKey = transcriptTrackKey(meetingId, track.livekitIdentity);
-    await this.s3.putJson(trackKey, {
-      meetingId,
-      participantId: track.participantId,
-      livekitIdentity: track.livekitIdentity,
-      speakerName: track.participantName,
-      trackStartedAt: track.startedAt.toISOString(),
-      transcriptText: voxResult.transcriptText,
-      durationSeconds: voxResult.durationSeconds,
-      words: voxResult.words ?? [],
+    // 3. Сохраняем в БД (TranscriptTrack).
+    this.logger.debug(
+      { meetingId, trackId: track.id, identity: track.livekitIdentity },
+      'transcribeOneTrack: сохраняем в БД',
+    );
+    await this.prisma.transcriptTrack.create({
+      data: {
+        transcriptId,
+        livekitIdentity: track.livekitIdentity,
+        speakerName: track.participantName,
+        participantId: track.participantId ?? null,
+        trackStartedAt: track.startedAt,
+        baseStartedAt,
+        transcriptText: voxResult.transcriptText,
+        durationSeconds: voxResult.durationSeconds,
+        words: (voxResult.words ?? []) as unknown as Prisma.InputJsonValue,
+      },
     });
-
-    return {
-      participantId: track.participantId ?? null,
-      livekitIdentity: track.livekitIdentity,
-      speakerName: track.participantName,
-      s3Key: trackKey,
-      trackStartedAt: track.startedAt.toISOString(),
-      baseStartedAt: baseStartedAt.toISOString(),
-    };
   }
 
   // ────────────────────────── failure handling ─────────────────────────────
 
-  /**
-   * BullMQ event: job упал и `attemptsMade >= attempts`. Переводим встречу в `failed`.
-   */
   private async onJobFailed(job: Job<AiJobData> | null, err: Error): Promise<void> {
     if (!job || job.attemptsMade < (job.opts.attempts ?? 5)) {
       return;

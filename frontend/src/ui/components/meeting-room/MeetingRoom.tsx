@@ -34,25 +34,19 @@ type Props = {
   meeting: MeetingMeta;
   livekit: JoinMeetingApiResponse['livekit'];
   role: 'host' | 'guest';
-  /**
-   * Карта `livekitIdentity → participantId` для host-actions. Передаётся хосту
-   * (он знает всех участников через `/access` или `/`), у гостя пустая.
-   */
+  recordByDefault?: boolean;
   identityToParticipantId?: Record<string, string>;
   onLeave: () => void;
 };
 
-const RECORDING_POLL_MS = 10_000;
+const RECORDING_POLL_MS = 5_000;
 
-/**
- * Корневой компонент комнаты. Подключается к LiveKit, рендерит сетку видео
- * + audio mix + панели управления.
- */
 export function MeetingRoom({
   meetingId,
   meeting,
   livekit,
   role,
+  recordByDefault = true,
   identityToParticipantId,
   onLeave,
 }: Props) {
@@ -65,8 +59,6 @@ export function MeetingRoom({
     [identityToParticipantId],
   );
 
-  // Polling статуса встречи каждые 10 сек — нужен для индикатора записи.
-  // Используем `/access` (легковесный, без host-only-проверки).
   const { data: accessData } = useSWR(
     ['room-access', meetingId],
     async () => meetingsApi.access(meetingId),
@@ -77,10 +69,8 @@ export function MeetingRoom({
   );
 
   const status = accessData?.meeting.status ?? meeting.status;
-  const isRecording =
-    status === 'recording_processing' || status === 'recording_ready';
+  const isRecording = accessData?.isRecordingActive ?? false;
 
-  // Если встреча перешла в completed/failed — мягко отключаемся.
   useEffect(() => {
     if (
       status === 'completed' ||
@@ -112,18 +102,20 @@ export function MeetingRoom({
     >
       <RoomAudioRenderer />
 
-      <header className="flex items-center justify-between gap-2 bg-slate-900 px-4 py-2 text-white">
+      {/* Header */}
+      <header className="flex shrink-0 items-center justify-between gap-3 bg-[#1a1a2e] px-5 py-2.5">
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-semibold">{meeting.title}</span>
-          <span className="truncate text-xs text-slate-400">
+          <span className="truncate text-sm font-semibold text-white">{meeting.title}</span>
+          <span className="truncate text-[11px] text-slate-400">
             {t(`meeting_types.${meeting.type}.label`)}
           </span>
         </div>
         <RecordingIndicator active={isRecording} />
       </header>
 
-      <div className="flex flex-1 overflow-hidden bg-slate-950">
-        <div className="flex flex-1 flex-col">
+      {/* Main content */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[#0d0d1a]">
+        <div className="flex flex-1 flex-col overflow-hidden">
           <VideoArea />
         </div>
         <ParticipantsPanel
@@ -140,10 +132,12 @@ export function MeetingRoom({
         />
       </div>
 
+      {/* Controls */}
       <ControlsBar
         meetingId={meetingId}
         isHost={isHost}
         isRecording={isRecording}
+        recordByDefault={recordByDefault}
         onLeave={onLeave}
         onToggleParticipants={() => {
           setChatOpen(false);

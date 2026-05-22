@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
-import type { S3Service } from '../../recordings/s3.service';
 import type { AiQueueService } from '../ai-queue.service';
 
 import type { LlmRouterService } from './llm-router.service';
@@ -33,7 +32,7 @@ function build(opts: BuildOpts = {}) {
     recapVersion: opts.meeting?.recapVersion ?? 1,
     type: opts.meeting?.type ?? 'team',
     title: 'Sample',
-    transcript: { mergedS3Url: 'meetings/m-1/transcripts/merged.json' },
+    transcript: { turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }] },
     aiResult: { structuredData: { foo: 'old', bar: { x: 1 } } },
   };
   const findUnique = vi.fn(async () => (opts.meeting === null ? null : meeting));
@@ -79,17 +78,11 @@ function build(opts: BuildOpts = {}) {
     })),
   } as unknown as LlmRouterService;
 
-  const s3 = {
-    getJson: vi.fn(async () => ({
-      turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }],
-    })),
-  } as unknown as S3Service;
-
   const cfg = {
     workspace: { maxRegeneratePerMeetingPerDay: 5 },
   } as unknown as TypedConfigService;
 
-  const svc = new RegenerateService(prisma, queue, router, s3, cfg);
+  const svc = new RegenerateService(prisma, queue, router, cfg);
   return { svc, findUnique, update, aiResultUpdate, auditCreate, auditCount, queue, router, txn };
 }
 

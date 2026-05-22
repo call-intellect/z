@@ -1,18 +1,32 @@
 'use client';
 
 import { useState } from 'react';
-import clsx from 'clsx';
 import {
   TrackToggle,
   useLocalParticipant,
   useRoomContext,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
+import {
+  Copy,
+  MessageSquare,
+  Mic,
+  MicOff,
+  Monitor,
+  MonitorOff,
+  PhoneOff,
+  Users,
+  Video,
+  VideoOff,
+  CircleStop,
+  Circle,
+} from 'lucide-react';
+import clsx from 'clsx';
 
 import { useHostControls } from '@/hooks/use-host-controls';
 import { useToast } from '@/contexts/toast-context';
-import { Button } from '@/ui/components/shared/Button';
 import { Modal } from '@/ui/components/shared/Modal';
+import { Button } from '@/ui/components/shared/Button';
 import { t } from '@/lib/i18n';
 
 import { RaiseHandButton } from './RaiseHandButton';
@@ -20,22 +34,19 @@ import { RaiseHandButton } from './RaiseHandButton';
 type Props = {
   meetingId: string;
   isHost: boolean;
-  /** true → запись активна (по статусу встречи). Управляется родителем через polling. */
   isRecording: boolean;
+  /** Если true — запись автоматическая, кнопку записи не показываем */
+  recordByDefault: boolean;
   onLeave: () => void;
   onToggleParticipants: () => void;
   onToggleChat: () => void;
 };
 
-const baseBtn =
-  'inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors';
-const ghost = clsx(baseBtn, 'bg-slate-700 text-white hover:bg-slate-600');
-const danger = clsx(baseBtn, 'bg-red-600 text-white hover:bg-red-700');
-
 export function ControlsBar({
   meetingId,
   isHost,
   isRecording,
+  recordByDefault,
   onLeave,
   onToggleParticipants,
   onToggleChat,
@@ -49,8 +60,7 @@ export function ControlsBar({
 
   const copyLink = async () => {
     try {
-      const url = `${window.location.origin}/m/${meetingId}`;
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(`${window.location.origin}/m/${meetingId}`);
       addToast({ type: 'success', message: t('meetings.copied') });
     } catch {
       addToast({ type: 'error', message: t('errors.unknown') });
@@ -61,124 +71,115 @@ export function ControlsBar({
     setConfirmFinish(false);
     const result = await host.finish();
     if (result.ok) {
-      // На стороне backend room удалится → LiveKit разорвёт соединение, сработает onLeave.
-      // Но в качестве страховки — явный disconnect.
-      try {
-        await room.disconnect();
-      } catch {
-        // ignore
-      }
+      try { await room.disconnect(); } catch { /* ignore */ }
       onLeave();
     }
   };
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-center gap-2 bg-slate-900/95 px-4 py-3 text-white">
+      <div className="flex shrink-0 items-center justify-center gap-1 bg-[#1a1a2e] px-4 py-3">
+
+        {/* Media controls */}
         <TrackToggle
           source={Track.Source.Microphone}
-          className={ghost}
-          aria-label={
-            isMicrophoneEnabled
-              ? t('room.controls.mic_on')
-              : t('room.controls.mic_off')
-          }
+          className={clsx(
+            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
+            isMicrophoneEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-600 hover:bg-red-500',
+          )}
         >
           {isMicrophoneEnabled
-            ? t('room.controls.mic_on')
-            : t('room.controls.mic_off')}
+            ? <Mic size={20} strokeWidth={1.75} />
+            : <MicOff size={20} strokeWidth={1.75} />}
+          <span>{isMicrophoneEnabled ? 'Микрофон' : 'Выкл.'}</span>
         </TrackToggle>
+
         <TrackToggle
           source={Track.Source.Camera}
-          className={ghost}
-          aria-label={
-            isCameraEnabled
-              ? t('room.controls.camera_on')
-              : t('room.controls.camera_off')
-          }
+          className={clsx(
+            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
+            isCameraEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-600 hover:bg-red-500',
+          )}
         >
           {isCameraEnabled
-            ? t('room.controls.camera_on')
-            : t('room.controls.camera_off')}
+            ? <Video size={20} strokeWidth={1.75} />
+            : <VideoOff size={20} strokeWidth={1.75} />}
+          <span>{isCameraEnabled ? 'Камера' : 'Выкл.'}</span>
         </TrackToggle>
+
         <TrackToggle
           source={Track.Source.ScreenShare}
-          className={ghost}
-          aria-label={
-            isScreenShareEnabled
-              ? t('room.controls.screen_on')
-              : t('room.controls.screen_off')
-          }
+          className={clsx(
+            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
+            isScreenShareEnabled ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-700 hover:bg-slate-600',
+          )}
         >
           {isScreenShareEnabled
-            ? t('room.controls.screen_on')
-            : t('room.controls.screen_off')}
+            ? <MonitorOff size={20} strokeWidth={1.75} />
+            : <Monitor size={20} strokeWidth={1.75} />}
+          <span>{isScreenShareEnabled ? 'Стоп' : 'Экран'}</span>
         </TrackToggle>
 
+        <div className="mx-2 h-10 w-px bg-slate-600" />
+
+        {/* Interaction controls */}
         <RaiseHandButton />
 
-        <button type="button" onClick={onToggleParticipants} className={ghost}>
-          {t('room.controls.participants')}
-        </button>
-        <button type="button" onClick={onToggleChat} className={ghost}>
-          {t('room.controls.chat')}
-        </button>
+        <IconBtn icon={<Users size={20} strokeWidth={1.75} />} label="Участники" onClick={onToggleParticipants} />
+        <IconBtn icon={<MessageSquare size={20} strokeWidth={1.75} />} label="Чат" onClick={onToggleChat} />
 
-        {isHost ? (
+        {isHost && (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                if (isRecording) {
-                  void host.stopRecording();
-                } else {
-                  void host.startRecording();
+            <div className="mx-2 h-10 w-px bg-slate-600" />
+
+            <IconBtn
+              icon={<Copy size={20} strokeWidth={1.75} />}
+              label="Ссылка"
+              onClick={() => { void copyLink(); }}
+            />
+
+            {/* Кнопка записи — только если ручной режим */}
+            {!recordByDefault && (
+              <IconBtn
+                icon={isRecording
+                  ? <CircleStop size={20} strokeWidth={1.75} />
+                  : <Circle size={20} strokeWidth={1.75} />
                 }
-              }}
-              disabled={
-                host.pending === 'record-start' || host.pending === 'record-stop'
-              }
-              className={clsx(
-                baseBtn,
-                isRecording
-                  ? 'bg-amber-500 text-white hover:bg-amber-600'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700',
-                'disabled:opacity-60',
-              )}
-            >
-              {isRecording
-                ? t('room.controls.record_stop')
-                : t('room.controls.record_start')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void copyLink();
-              }}
-              className={ghost}
-            >
-              {t('room.controls.copy_link')}
-            </button>
+                label={isRecording ? 'Стоп' : 'Запись'}
+                active={isRecording}
+                activeClass="bg-red-600 hover:bg-red-500"
+                disabled={host.pending === 'record-start' || host.pending === 'record-stop'}
+                onClick={() => {
+                  if (isRecording) { void host.stopRecording(); }
+                  else { void host.startRecording(); }
+                }}
+              />
+            )}
+
             <button
               type="button"
               onClick={() => setConfirmFinish(true)}
-              className={danger}
+              className="flex flex-col items-center gap-1 rounded-xl bg-red-600 px-4 py-2 text-[10px] font-medium text-white transition-colors hover:bg-red-500"
             >
-              {t('room.controls.finish')}
+              <PhoneOff size={20} strokeWidth={1.75} />
+              <span>Завершить</span>
             </button>
           </>
-        ) : null}
+        )}
 
-        <button
-          type="button"
-          onClick={() => {
-            void room.disconnect();
-            onLeave();
-          }}
-          className={clsx(baseBtn, 'bg-slate-700 text-white hover:bg-slate-600')}
-        >
-          {t('room.controls.leave')}
-        </button>
+        {!isHost && (
+          <>
+            <div className="mx-2 h-10 w-px bg-slate-600" />
+            <button
+              type="button"
+              onClick={() => { void room.disconnect(); onLeave(); }}
+              className="flex flex-col items-center gap-1 rounded-xl bg-slate-700 px-4 py-2 text-[10px] font-medium text-white transition-colors hover:bg-slate-600"
+            >
+              <PhoneOff size={20} strokeWidth={1.75} />
+              <span>Выйти</span>
+            </button>
+          </>
+        )}
       </div>
 
       <Modal
@@ -186,9 +187,7 @@ export function ControlsBar({
         onClose={() => setConfirmFinish(false)}
         title={t('room.finish_confirm_title')}
       >
-        <p className="mb-6 text-sm text-slate-700">
-          {t('room.finish_confirm_description')}
-        </p>
+        <p className="mb-6 text-sm text-slate-700">{t('room.finish_confirm_description')}</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setConfirmFinish(false)}>
             {t('common.cancel')}
@@ -199,5 +198,38 @@ export function ControlsBar({
         </div>
       </Modal>
     </>
+  );
+}
+
+function IconBtn({
+  icon,
+  label,
+  onClick,
+  active,
+  activeClass,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  activeClass?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={clsx(
+        'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors disabled:opacity-50',
+        active
+          ? (activeClass ?? 'bg-amber-500 hover:bg-amber-400')
+          : 'bg-slate-700 hover:bg-slate-600',
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }

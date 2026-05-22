@@ -59,6 +59,8 @@ export type AccessRole = 'host' | 'guest' | 'none';
 
 export type AccessDomain = {
   role: AccessRole;
+  isRecordingActive: boolean;
+  recordByDefault: boolean;
   meeting: {
     id: string;
     title: string;
@@ -112,6 +114,8 @@ export type ParticipantApi = {
 
 export type AccessApi = {
   role: AccessRole;
+  isRecordingActive: boolean;
+  recordByDefault: boolean;
   meeting: {
     id: string;
     title: string;
@@ -178,6 +182,8 @@ export function participantFromApi(api: ParticipantApi): ParticipantDomain {
 export function accessFromApi(api: AccessApi): AccessDomain {
   return {
     role: api.role,
+    isRecordingActive: api.isRecordingActive,
+    recordByDefault: api.recordByDefault,
     meeting: {
       id: api.meeting.id,
       title: api.meeting.title,

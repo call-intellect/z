@@ -10,7 +10,7 @@
  * Доступ — owner / admin (бэк отдаёт 403 для других).
  */
 
-import { useMemo } from 'react';
+import { useMemo, type JSX } from 'react';
 import useSWR from 'swr';
 
 import { behaviorMetricsApi } from '@/api/behavior-metrics.api';

@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
   Inject,
+  NotFoundException,
   Post,
   Query,
   Res,
@@ -22,6 +24,7 @@ import {
   NotAuthorizedError,
 } from '../../common/errors/domain-errors';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 
 import { CurrentUser, type CurrentUserPayload } from './decorators/current-user.decorator';
@@ -46,6 +49,11 @@ const AdminLoginBodySchema = z.object({
 });
 type AdminLoginBody = z.infer<typeof AdminLoginBodySchema>;
 
+const SwitchOrgBodySchema = z.object({
+  orgId: z.string().min(1, 'orgId обязателен'),
+});
+type SwitchOrgBody = z.infer<typeof SwitchOrgBodySchema>;
+
 /**
  * Auth-контроллер.
  *
@@ -61,6 +69,7 @@ export class AuthController {
     @Inject(UsersService) private readonly users: UsersService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(AdminLoginService) private readonly adminLogin: AdminLoginService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Get('exchange')
@@ -153,5 +162,85 @@ export class AuthController {
       sameSite: 'lax',
     });
     return { ok: true };
+  }
+
+  /**
+   * `POST /api/v1/auth/switch-org` — переключение текущей Org.
+   *
+   * Проверяет, что у пользователя есть активная Membership в указанной Org.
+   * STUB Фазы 0a: ответ — успешный, но реальное обновление session-стейта
+   * откладывается. На фронте Org выбирается заголовком `X-Org-Id` на каждом
+   * запросе (см. `TenantGuard.resolveTenantId`), поэтому клиент уже сейчас
+   * может переключаться, просто меняя значение заголовка. Полное обновление
+   * сессии (Redis-state / re-issue JWT) — Фаза 0a.3 шаг 2.
+   */
+  @Post('switch-org')
+  @UseGuards(CookieAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async switchOrg(
+    @Body(new ZodValidationPipe(SwitchOrgBodySchema)) body: SwitchOrgBody,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{
+    success: true;
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      currentOrgId: string;
+      currentOrgRole: 'owner' | 'admin' | 'manager';
+    };
+    todo: string;
+  }> {
+    const membership = await this.prisma.membership.findUnique({
+      where: { orgId_userId: { orgId: body.orgId, userId: user.id } },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+      },
+    });
+    if (!membership) {
+      // super_admin может переключаться без Membership.
+      const u = await this.users.findById(user.id);
+      if (!u) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'user_not_found', message: 'Пользователь не найден' },
+        });
+      }
+      const userRow = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { isSuperAdmin: true },
+      });
+      if (!userRow?.isSuperAdmin) {
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'no_membership',
+            message: 'У вас нет доступа к этой организации',
+          },
+        });
+      }
+      return {
+        success: true,
+        user: {
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          currentOrgId: body.orgId,
+          currentOrgRole: 'admin',
+        },
+        todo: 'session update — Фаза 0a.3 шаг 2 (пока используется X-Org-Id на каждый запрос)',
+      };
+    }
+    return {
+      success: true,
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        name: membership.user.name,
+        currentOrgId: membership.orgId,
+        currentOrgRole: membership.role,
+      },
+      todo: 'session update — Фаза 0a.3 шаг 2 (пока используется X-Org-Id на каждый запрос)',
+    };
   }
 }

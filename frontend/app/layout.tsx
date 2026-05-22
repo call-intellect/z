@@ -12,8 +12,8 @@ import { ThemeProvider } from '@/ui/components/theme/ThemeProvider';
 import { Toaster } from '@/ui/shadcn/toast';
 
 export const metadata: Metadata = {
-  title: 'Z — AI-встречи',
-  description: 'Видеовстречи с AI-отчётом под тип встречи.',
+  title: 'Z — память компании',
+  description: 'Память вашей компании. То, что было сказано, решено и сделано — теперь не теряется.',
 };
 
 export const viewport: Viewport = {

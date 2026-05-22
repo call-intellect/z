@@ -13,7 +13,8 @@ const NAV: Array<{ href: string; key?: string; label?: string }> = [
   { href: '/admin/meetings', key: 'admin.nav.meetings' },
   { href: '/admin/integration-keys', key: 'admin.nav.integration_keys' },
   { href: '/admin/ai-usage', key: 'admin.nav.ai_usage' },
-  { href: '/admin/ai-models', label: 'AI Models' },
+  { href: '/admin/ai-models', label: 'Модели агентов' },
+  { href: '/admin/prompts', label: 'Шаблоны промптов' },
   { href: '/admin/recordings/expiring', key: 'admin.nav.expiring' },
 ];
 

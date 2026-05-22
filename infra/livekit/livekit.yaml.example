@@ -34,12 +34,18 @@ room:
     - mime: video/vp8
     - mime: video/h264
 
+# Встроенный TURN ВЫКЛЮЧЕН: с tls_port он требует TLS-сертификат, иначе
+# LiveKit падает («TURN tls cert required») в рестарт-петлю. Для старта TURN не нужен —
+# медиа идёт по UDP-портам (port_range + tcp_port) напрямую.
+# Если нужен TURN/TLS за строгим NAT — включи и пропиши сертификаты:
+#   turn:
+#     enabled: true
+#     domain: meet.crossmark.ru
+#     tls_port: 5349
+#     cert_file: /etc/livekit/turn.crt
+#     key_file:  /etc/livekit/turn.key
 turn:
-  enabled: true
-  # PROD: реальный домен + TLS-сертификаты (или вынести TURN на отдельный coturn).
-  domain: media.example.com
-  tls_port: 5349
-  udp_port: 3478
+  enabled: false
 
 logging:
   level: info

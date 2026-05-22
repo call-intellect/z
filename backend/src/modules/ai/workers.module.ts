@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
+import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
@@ -15,13 +17,17 @@ import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-al
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 
 import { AnalyzeWorker } from './workers/analyze.worker';
+import { BehaviorMetricsWorker } from './workers/behavior-metrics.worker';
 import { CardRollupWorker } from './workers/card-rollup.worker';
 import { ChaptersWorker } from './workers/chapters.worker';
 import { ClipRenderWorker } from './workers/clip-render.worker';
+import { CustomReportWorker } from './workers/custom-report.worker';
 import { MergeWorker } from './workers/merge.worker';
 import { NotifyWorker } from './workers/notify.worker';
+import { QualityScoreWorker } from './workers/quality-score.worker';
 import { TasksExtractWorker } from './workers/tasks-extract.worker';
 import { TranscribeWorker } from './workers/transcribe.worker';
+import { TranscriptCleanWorker } from './workers/transcript-clean.worker';
 import { TranscriptIndexWorker } from './workers/transcript-index.worker';
 import { AnthropicService } from './services/anthropic.service';
 import { LlmFallbackService } from './services/llm-fallback.service';
@@ -61,6 +67,14 @@ import { VoxService } from './services/vox.service';
     TranscriptIndexWorker,
     ClipRenderWorker,
     CardRollupWorker,
+    // Фаза B — поведенческие метрики (отдельный воркер параллельно ai.analyze).
+    BehaviorMetricsWorker,
+    // Фаза C — AI-оценка качества встречи.
+    QualityScoreWorker,
+    // Фаза D — очистка транскрипта от слов-паразитов.
+    TranscriptCleanWorker,
+    // Фаза E — дополнительные («custom») AI-отчёты по выбранному шаблону.
+    CustomReportWorker,
 
     // knowledge-core воркеры/cron'ы.
     BlockIngestWorker,
@@ -76,6 +90,10 @@ import { VoxService } from './services/vox.service';
     MeetingAnalyzeV2Cron,
     StrategicAlignmentWorker,
     StrategicAlignmentCron,
+
+    // Фаза 0b knowledge-core: ingest-адаптеры документов и дампов.
+    DocumentIngestAdapter,
+    TextIngestAdapter,
   ],
 })
 export class WorkersModule {}

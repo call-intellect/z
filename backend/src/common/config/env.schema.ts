@@ -1,6 +1,21 @@
 import { z } from 'zod';
 
 /**
+ * Boolean из ENV-строки. НЕЛЬЗЯ `z.coerce.boolean()` — он делает `Boolean(v)`,
+ * а `Boolean("false") === true` (любая непустая строка → true). Поэтому парсим явно:
+ *   true/1/yes/on → true;  false/0/no/off/'' / отсутствие → false.
+ */
+const zBool = (def: boolean) =>
+  z.preprocess((v) => {
+    if (v === undefined || v === null || v === '') return def;
+    if (typeof v === 'boolean') return v;
+    const s = String(v).trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(s)) return true;
+    if (['false', '0', 'no', 'off'].includes(s)) return false;
+    return v; // мусор → z.boolean() даст внятную ошибку валидации
+  }, z.boolean());
+
+/**
  * Полная zod-схема ENV проекта Z.
  * Источник:
  *   - plans/architecture/2026-05-08-z-architecture.md §6.7
@@ -9,7 +24,7 @@ import { z } from 'zod';
  *
  * Принципы:
  *  - Все обязательные ключи помечены без default. Падаем на старте, если их нет.
- *  - Числа и булевы значения парсим из строк через z.coerce.
+ *  - Числа — через z.coerce; булевы — через zBool (см. выше; z.coerce.boolean НЕ годится).
  *  - Никаких `any`, никаких хардкодов вне этого файла.
  */
 
@@ -49,13 +64,13 @@ const ArgonSchema = z.object({
 const MailSchema = z.object({
   MAIL_HOST: z.string().min(1).default('mail.hosting.reg.ru'),
   MAIL_PORT: z.coerce.number().int().positive().default(465),
-  MAIL_SSL: z.coerce.boolean().default(true),
+  MAIL_SSL: zBool(true),
   MAIL_USERNAME: z.string().min(1).optional(),
   MAIL_PASSWORD: z.string().min(1).optional(),
   MAIL_FROM: z.string().email().default('noreply@crossmark.ru'),
   MAIL_FROM_NAME: z.string().default('Z'),
   /** При true — MailService логирует письма вместо реальной отправки (dev/test). */
-  MAIL_DRY_RUN: z.coerce.boolean().default(false),
+  MAIL_DRY_RUN: zBool(false),
 });
 
 const LiveKitSchema = z.object({
@@ -72,7 +87,7 @@ const TurnSchema = z.object({
   TURN_PORT: z.coerce.number().int().positive().optional(),
   TURN_USERNAME: z.string().optional(),
   TURN_PASSWORD: z.string().optional(),
-  TURN_TLS: z.coerce.boolean().default(true),
+  TURN_TLS: zBool(true),
 });
 
 const S3Schema = z.object({
@@ -87,7 +102,7 @@ const S3Schema = z.object({
 const AnthropicSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   ANTHROPIC_MODEL: z.string().min(1).default('claude-sonnet-4-6'),
-  ANTHROPIC_USE_PROXY: z.coerce.boolean().default(false),
+  ANTHROPIC_USE_PROXY: zBool(false),
   ANTHROPIC_PROXY_URL: z.string().url().default('https://proxy.agent-lia.ru'),
 });
 
@@ -172,10 +187,10 @@ const RetentionSchema = z.object({
    * операционно после полного бэкапа. CHAT включён сразу (90 дней).
    */
   RETENTION_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().default(500),
-  RETENTION_RAW_EVENTS_ENABLED: z.coerce.boolean().default(false),
-  RETENTION_AUDIT_ENABLED: z.coerce.boolean().default(false),
-  RETENTION_CHAT_ENABLED: z.coerce.boolean().default(true),
-  RETENTION_BLOCKS_ENABLED: z.coerce.boolean().default(false),
+  RETENTION_RAW_EVENTS_ENABLED: zBool(false),
+  RETENTION_AUDIT_ENABLED: zBool(false),
+  RETENTION_CHAT_ENABLED: zBool(true),
+  RETENTION_BLOCKS_ENABLED: zBool(false),
 });
 
 const IdleSchema = z.object({
@@ -261,7 +276,23 @@ const AiFeatureFlagsSchema = z.object({
    * Подмешивать ли in-meeting room-chat в merged-объект для AI-отчёта.
    * См. ТЗ meeting-room-chat §AI-pipeline.
    */
-  INCLUDE_ROOM_CHAT_IN_AI: z.coerce.boolean().default(true),
+  INCLUDE_ROOM_CHAT_IN_AI: zBool(true),
+  /**
+   * Фаза D (sub-TZ 2026-05-21-phase-D-transcript-cleaning §6.2) —
+   * Включает уровень 2 LLM-уточнения в воркере `ai.transcript-clean`.
+   * По умолчанию `true` — LLM-refine дешёвый (~$0.05 на 100 мин)
+   * и заметно улучшает качество. При `false` — воркер работает только
+   * через детерминистский уровень 1 (словарь + повторы), это всегда корректно.
+   */
+  TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED: zBool(true),
+  /**
+   * Фаза B (sub-TZ 2026-05-21-phase-B-meeting-behavior-metrics §7) —
+   * Включает LLM-refine в воркере `ai.behavior-metrics` (классификация
+   * filler-кандидатов и question-кандидатов). По умолчанию `false` —
+   * детерминистского достаточно для MVP паритета; включаем после пилотных
+   * оценок (B DoD §11).
+   */
+  BEHAVIOR_METRICS_LLM_REFINE_ENABLED: zBool(false),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */
@@ -300,6 +331,54 @@ const CryptoSchema = z.object({
 });
 
 /**
+ * knowledge-core (Фаза 0b) — document-ingest pipeline.
+ *
+ * `DOCUMENT_PARSE_TIMEOUT_MS` — таймаут на один парсинг документа (pdf-parse /
+ * mammoth / marked). При превышении — `ParseTimeoutError`, документ
+ * переводится в `failed` со статус-сообщением. По умолчанию 30 секунд.
+ *
+ * `DOCUMENT_MAX_SIZE_MB` — максимальный размер файла, обрабатываемого
+ * парсером. Сверка делается ДО запуска парсера (по `originalSize`). При
+ * превышении — `ParseSizeError`. По умолчанию 50 MiB.
+ *
+ * `DOCUMENT_INLINE_THRESHOLD_MB` — порог, ниже которого содержимое
+ * хранится в `Document.inlineContent` (`Bytes`); выше — уезжает в S3
+ * (`Document.s3Key`). По умолчанию 10 MiB (см. зонтичный TZ §4.4).
+ *
+ * `S3_BUCKET_DOCUMENTS` — отдельный bucket для документов. Если пустая
+ * строка — переиспользуем основной `S3_BUCKET` (по умолчанию). Это нужно,
+ * чтобы локально на одном MinIO всё работало без отдельного bucket'а.
+ */
+const DocumentIngestSchema = z.object({
+  DOCUMENT_PARSE_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  DOCUMENT_MAX_SIZE_MB: z.coerce.number().int().positive().default(50),
+  DOCUMENT_INLINE_THRESHOLD_MB: z.coerce.number().int().positive().default(10),
+  S3_BUCKET_DOCUMENTS: z.string().default(''),
+});
+
+/**
+ * Extraction (Фаза 0b §6, §11 ТЗ).
+ *
+ * `EXTRACTION_ENABLE_TOP_LEVEL` — мастер-флаг автоизвлечения Mission/Vision/
+ * Strategy из текстов. По умолчанию false (зонтичный §6 решение #11). Когда
+ * выставлен в true — LLM может возвращать заполненные mission/vision/strategy
+ * и `GraphService.upsertEntity({type: 'mission'|'vision'|'strategy'})` начнёт
+ * работать. На Фазе 0b всегда false.
+ *
+ * `EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE` — порог confidence для сохранения
+ * типизированных сущностей группы Б (Process/Decision/Regulation/Policy/
+ * Metric/Tool) после LLM-извлечения. 0.5 по умолчанию (см. ТЗ 0b §6.2).
+ */
+const ExtractionSchema = z.object({
+  EXTRACTION_ENABLE_TOP_LEVEL: z.coerce.boolean().default(false),
+  EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE: z.coerce
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.5),
+});
+
+/**
  * knowledge-core (Фаза 10) — email IMAP-адаптер.
  *
  * `EMAIL_FETCH_ENABLED` — мастер-флаг cron'а; default false (на dev'е cron не
@@ -309,7 +388,7 @@ const CryptoSchema = z.object({
  * `EMAIL_FETCH_MAX_PER_RUN` — лимит писем за один проход на Source.
  */
 const EmailFetchSchema = z.object({
-  EMAIL_FETCH_ENABLED: z.coerce.boolean().default(false),
+  EMAIL_FETCH_ENABLED: zBool(false),
   EMAIL_FETCH_CRON: z.string().min(1).default('*/5 * * * *'),
   EMAIL_FETCH_MAX_PER_RUN: z.coerce.number().int().positive().default(50),
 });
@@ -426,7 +505,7 @@ const KnowledgeCoreSchema = z.object({
    * Включается на проде вручную для A/B-сравнения. Удалить legacy — отдельная
    * фаза после ручного решения владельца продукта (см. decisions-log).
    */
-  KNOWLEDGE_CORE_V2_AGENTS_ENABLED: z.coerce.boolean().default(false),
+  KNOWLEDGE_CORE_V2_AGENTS_ENABLED: zBool(false),
   /**
    * Cron-расписание `meeting-analyze-v2.cron` — каждые 10 минут по умолчанию.
    * Cron-выражение в декораторе литералом, ENV-значение для логов и для
@@ -451,7 +530,7 @@ const KnowledgeCoreSchema = z.object({
    * формат citations совместим с legacy. Включается на проде вручную для
    * A/B-сравнения. Удаление legacy — отдельная фаза.
    */
-  CHAT_V2_ENABLED: z.coerce.boolean().default(false),
+  CHAT_V2_ENABLED: zBool(false),
   /**
    * Сколько top-K блоков подмешиваем в LLM-контекст ChatV2. 12 — компромисс
    * между качеством (больше блоков → больше шансов попасть в нужный) и
@@ -479,6 +558,33 @@ const ShareSchema = z.object({
         .map((s) => Number.parseInt(s.trim(), 10))
         .filter((n) => Number.isFinite(n) && n > 0),
     ),
+});
+
+/**
+ * SBA α-1 — Conversational Channels Foundation.
+ * Параметры outbound-очереди, link-кодов, anti-spam дефолтов.
+ *
+ *   - CONVERSATIONAL_OUTBOUND_CONCURRENCY — concurrency BullMQ-воркера,
+ *     отправляющего notifications в каналы.
+ *   - CONVERSATIONAL_LINK_CODE_TTL_SEC — TTL одноразового кода для linking-
+ *     flow (10 минут по умолчанию; код хранится в Redis).
+ *   - CONVERSATIONAL_QUIET_HOURS_DEFAULT — дефолтное окно «тихих часов»
+ *     в формате `HH:mm-HH:mm` (применяется в локали пользователя; для α-1
+ *     — серверная TZ, локализация в β+).
+ *   - CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR — дефолтный лимит
+ *     не-критических нотификаций в час на пользователя.
+ *   - CONVERSATIONAL_EMAIL_FROM_DEFAULT — From-адрес для каналов
+ *     email_smtp; если пусто — берётся `MAIL_FROM`.
+ *   - CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS — потолок retry'ев outbound-
+ *     воркера на одну `NotificationDelivery`.
+ */
+const ConversationalSchema = z.object({
+  CONVERSATIONAL_OUTBOUND_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  CONVERSATIONAL_LINK_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
+  CONVERSATIONAL_QUIET_HOURS_DEFAULT: z.string().default('22:00-08:00'),
+  CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR: z.coerce.number().int().positive().default(10),
+  CONVERSATIONAL_EMAIL_FROM_DEFAULT: z.string().default(''),
+  CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS: z.coerce.number().int().positive().default(5),
 });
 
 /**
@@ -515,7 +621,10 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(IngestSchema)
   .merge(CryptoSchema)
   .merge(EmailFetchSchema)
-  .merge(KnowledgeCoreSchema);
+  .merge(KnowledgeCoreSchema)
+  .merge(DocumentIngestSchema)
+  .merge(ExtractionSchema)
+  .merge(ConversationalSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

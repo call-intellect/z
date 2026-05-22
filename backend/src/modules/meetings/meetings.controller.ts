@@ -23,6 +23,7 @@ import {
   RegenerateService,
 } from '../ai/services/regenerate.service';
 import { RetryService } from '../ai/services/retry.service';
+import { TranscriptCleaningService } from '../ai/services/transcript-cleaning.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
@@ -71,6 +72,8 @@ export class MeetingsController {
     @Inject(HostControlsService) private readonly hostControls: HostControlsService,
     @Inject(RetryService) private readonly retry: RetryService,
     @Inject(RegenerateService) private readonly regenerate: RegenerateService,
+    @Inject(TranscriptCleaningService)
+    private readonly transcriptCleaning: TranscriptCleaningService,
   ) {}
 
   @Get(':id/access')
@@ -161,14 +164,53 @@ export class MeetingsController {
   }
 
   /**
-   * Presigned URL на merged transcript (host).
+   * Presigned URL на транскрипт (host-only).
+   *
+   * Query: `?cleaned=true|false` (default false).
+   *   - false → оригинал `merged.json` (как раньше).
+   *   - true  → cleaned-транскрипт. Если cleaning не готов → 404 с
+   *     `{ reason: 'pending'|'not_started'|'failed' }` (см. sub-TZ D §8.1).
    */
   @Get(':id/transcript')
   async getTranscript(
     @Param('id') id: string,
+    @Query('cleaned') cleanedRaw: string | undefined,
     @CurrentUser() user: CurrentUserPayload,
-  ): ReturnType<MeetingsService['getTranscript']> {
-    return this.meetings.getTranscript(id, user.id);
+  ): Promise<{
+    url: string;
+    expiresAt: string;
+    durationSeconds: number | null;
+    cleaned: boolean;
+  }> {
+    const cleaned = cleanedRaw === 'true' || cleanedRaw === '1';
+    return this.transcriptCleaning.getTranscript({
+      meetingId: id,
+      userId: user.id,
+      cleaned,
+    });
+  }
+
+  /**
+   * Запуск очистки транскрипта от слов-паразитов (sub-TZ D §8.2).
+   *
+   * Auth: host встречи. Rate-limit: 1 в час на пользователя
+   * (cleaning редкая операция, дорогой LLM-refine).
+   * Идемпотентность по `Transcript.cleaningStatus`:
+   *   - 'ready' → 200 already_clean (без enqueue);
+   *   - 'pending' → 409 in_progress;
+   *   - 'failed' / 'not_started' / null → 202 queued.
+   */
+  @Post(':id/transcript/clean')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Throttle({ default: { ttl: 3_600_000, limit: 1 } })
+  async cleanTranscript(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ status: 'queued' | 'already_clean' }> {
+    return this.transcriptCleaning.requestClean({
+      meetingId: id,
+      userId: user.id,
+    });
   }
 
   @Get(':id')

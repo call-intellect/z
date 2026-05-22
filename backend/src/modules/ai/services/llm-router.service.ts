@@ -6,7 +6,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import type { DataClass, LlmTaskRoute } from '@prisma/client';
+import type { DataClass, LlmRouteTier, LlmTaskRoute } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -61,7 +61,17 @@ export type LlmTaskType =
   | 'summary-v2'
   | 'chat-v2'
   | 'goal-alignment'
-  | 'dashboard-summary';
+  | 'dashboard-summary'
+  | 'role-profile-build'
+  | 'transcript-clean-refine'
+  // Фаза B — refine для метрик поведения (классификация filler/question).
+  | 'behavior-refine'
+  // Фаза C — AI-оценка качества встречи (sub-TZ C §5.4).
+  | 'meeting-quality-score'
+  // Фаза E — дополнительные («custom») AI-отчёты встречи. Один общий taskType
+  // для всех шаблонов; per-template override — через UI админки моделей,
+  // которая создаёт более специфичный route. См. ТЗ E §5.5.
+  | 'custom-report';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -95,6 +105,11 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'chat-v2',
   'goal-alignment',
   'dashboard-summary',
+  'role-profile-build',
+  'transcript-clean-refine',
+  'behavior-refine',
+  'meeting-quality-score',
+  'custom-report',
 ] as const;
 
 /**
@@ -174,14 +189,30 @@ export function maxDataClass(
 }
 
 const DEFAULT_FALLBACK_CHAIN: ProviderEntry[] = [
-  { provider: 'deepseek' },
-  { provider: 'openai-via-proxy' },
-  { provider: 'ollama' },
+  { provider: 'deepseek', tier: 'primary' },
+  { provider: 'openai-via-proxy', tier: 'secondary' },
+  { provider: 'ollama', tier: 'tertiary' },
 ];
+
+/**
+ * Порядок tier'ов в цепочке fallback'а. primary всегда сначала, tertiary — последний.
+ * Используется в `refreshCache()` для сортировки tier-нормализованных записей.
+ */
+const TIER_RANK: Record<LlmRouteTier, number> = {
+  primary: 0,
+  secondary: 1,
+  tertiary: 2,
+};
 
 interface ProviderEntry {
   provider: LlmProviderName;
   model?: string;
+  /**
+   * Фаза A.4 — уровень в цепочке fallback'а. NULL = legacy запись (одноуровневая
+   * цепочка, tier'ы не определены — пишем в AiUsageLog.tier как `primary` для
+   * первого, `secondary` для второго и т.д. по позиции).
+   */
+  tier?: LlmRouteTier;
 }
 
 /**
@@ -259,6 +290,16 @@ export interface LlmCallResult {
   outputTokens: number;
   cachedTokens: number;
   durationMs: number;
+  /**
+   * Фаза A.4 — фактический tier цепочки, который отработал. Каждый caller,
+   * которому это важно (например, ai.quality-score выставляет
+   * `degradedMode=true` при `tier=tertiary` — sub-TZ C §5.4), может использовать
+   * это поле без подмены ответа в LlmRouter. NULL для legacy/нестабильных
+   * вызовов, где tier не определялся (тоже маловероятно после A.4).
+   */
+  tier?: LlmRouteTier | null;
+  /** Имя провайдера, который реально ответил (в дополнение к `modelUsed`). */
+  providerUsed?: string;
 }
 
 export class LlmRouterAllProvidersFailedError extends Error {
@@ -365,12 +406,48 @@ export class LlmRouterService implements OnModuleInit {
     const all = await this.prisma.llmTaskRoute.findMany();
     this.allRoutes = all;
     const map = new Map<LlmTaskType, ProviderEntry[]>();
+
+    // Фаза A.4 — нормализованные записи (tier NOT NULL) имеют приоритет.
+    // Группируем по taskType, сортируем primary → secondary → tertiary,
+    // внутри tier'а — по priority asc. Внутри одной (taskType, tier, providerName)
+    // запись уже уникальна по @@unique.
+    const tieredByTask = new Map<LlmTaskType, LlmTaskRoute[]>();
     for (const r of all) {
       if (!r.isActive) continue;
+      if (r.tenantId !== null) continue; // org-overrides не входят в дефолт-кэш
+      if (r.tier == null || r.providerName == null) continue;
+      const list = tieredByTask.get(r.taskType as LlmTaskType) ?? [];
+      list.push(r);
+      tieredByTask.set(r.taskType as LlmTaskType, list);
+    }
+    for (const [taskType, list] of tieredByTask.entries()) {
+      const sorted = list
+        .slice()
+        .sort((a, b) => {
+          const ta = TIER_RANK[a.tier as LlmRouteTier];
+          const tb = TIER_RANK[b.tier as LlmRouteTier];
+          if (ta !== tb) return ta - tb;
+          return a.priority - b.priority;
+        })
+        .filter((r) => (ALL_PROVIDERS as string[]).includes(r.providerName ?? ''))
+        .map((r) => ({
+          provider: r.providerName as LlmProviderName,
+          ...(r.model ? { model: r.model } : {}),
+          tier: r.tier as LlmRouteTier,
+        }));
+      if (sorted.length > 0) {
+        map.set(taskType, sorted);
+      }
+    }
+
+    // Legacy: для taskType'ов без tier-записей берём старую JSON-форму.
+    for (const r of all) {
+      if (!r.isActive) continue;
+      if (r.tenantId !== null) continue;
+      if (r.tier != null) continue; // нормализованные уже учли выше
+      if (map.has(r.taskType as LlmTaskType)) continue; // tier-цепочка уже задана
       const providers = parseProviders(r.providers);
       if (providers.length === 0) continue;
-      // taskType хранится как строка — приводим к нашему union'у только если он валидный.
-      // Иначе игнорируем (например, осколок старого ENUM'а).
       map.set(r.taskType as LlmTaskType, providers);
     }
     this.routes = map;
@@ -464,10 +541,23 @@ export class LlmRouterService implements OnModuleInit {
 
     const errors: Array<{ provider: string; message: string }> = [];
     const overallStartedAt = Date.now();
+    // Фаза A.4 — какой tier фактически использовался на предыдущей итерации.
+    // Используется для построения fallbackReason у следующего вызова.
+    let lastFailTier: LlmRouteTier | null = null;
 
     for (let i = 0; i < filtered.length; i++) {
       const entry = filtered[i] as ProviderEntry;
       const startedAt = Date.now();
+      // Фаза A.4 — какой tier фактически использован. Если у entry задан tier
+      // (нормализованная запись) — берём его. Иначе считаем по позиции в filtered
+      // ('primary'/'secondary'/'tertiary' для индекса 0/1/2; позиции >2 → 'tertiary').
+      const effectiveTier: LlmRouteTier =
+        entry.tier ?? (i === 0 ? 'primary' : i === 1 ? 'secondary' : 'tertiary');
+      // Причина срабатывания fallback'а: null для первого (primary) вызова,
+      // иначе '<source-tier>_<кодError>'. Используется в аналитике admin'а.
+      const fallbackReason: string | null = i === 0
+        ? null
+        : `${lastFailTier ?? 'primary'}_${classifyError(errors[errors.length - 1]?.message ?? 'error')}`;
       try {
         const out = await this.dispatch(entry, params);
         const durationMs = Date.now() - startedAt;
@@ -501,6 +591,8 @@ export class LlmRouterService implements OnModuleInit {
           success: true,
           sourceRef: params.sourceRef ?? null,
           experimentGroup,
+          tier: effectiveTier,
+          fallbackReason,
           // Z-Admin Фаза 7: превью промпта (system+user) и ответа для drill-down.
           // Truncate до 8KB на стороне AiUsageLogService.
           requestPreview: this.buildRequestPreview(
@@ -519,6 +611,8 @@ export class LlmRouterService implements OnModuleInit {
             outputTokens: out.outputTokens,
             cachedTokens,
             experimentGroup,
+            tier: effectiveTier,
+            fallbackReason,
             meetingId: params.meetingId,
           },
           'LlmRouter dispatch success',
@@ -530,10 +624,13 @@ export class LlmRouterService implements OnModuleInit {
           outputTokens: out.outputTokens,
           cachedTokens,
           durationMs: Date.now() - overallStartedAt,
+          tier: effectiveTier,
+          providerUsed: out.provider,
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         errors.push({ provider: entry.provider, message });
+        lastFailTier = effectiveTier;
         const isLast = i === filtered.length - 1;
         this.metrics?.incLlmRouterDispatch({
           taskType: params.taskType,
@@ -546,6 +643,7 @@ export class LlmRouterService implements OnModuleInit {
             provider: entry.provider,
             durationMs: Date.now() - startedAt,
             isLast,
+            tier: effectiveTier,
           },
           `LlmRouter dispatch ${isLast ? 'failed' : 'fallback'}: ${message}`,
         );
@@ -568,6 +666,8 @@ export class LlmRouterService implements OnModuleInit {
             errorText: message,
             sourceRef: params.sourceRef ?? null,
             experimentGroup,
+            tier: effectiveTier,
+            fallbackReason,
             requestPreview: this.buildRequestPreview(
               params.systemPrompt,
               params.userMessage,
@@ -578,6 +678,11 @@ export class LlmRouterService implements OnModuleInit {
       }
     }
 
+    // Фаза A.4 — все tier'ы упали → инкрементируем метрику отсутствия
+    // подходящего провайдера. Это сигнал для on-call: ни primary, ни secondary,
+    // ни tertiary не отвечают на конкретный taskType. Optional-chaining не только
+    // на сервисе, но и на методе — на случай мока с неполным интерфейсом.
+    this.metrics?.incCoreLlmNoProvider?.({ taskType: params.taskType });
     throw new LlmRouterAllProvidersFailedError(params.taskType, errors);
   }
 
@@ -870,4 +975,19 @@ function parseProviderModelString(s: string): ProviderEntry | null {
   const model = s.slice(idx + 1);
   if (!(ALL_PROVIDERS as string[]).includes(provider)) return null;
   return { provider: provider as LlmProviderName, model };
+}
+
+/**
+ * Фаза A.4 — классификация ошибки провайдера для `fallbackReason`. Из исходного
+ * текста ошибки извлекаем короткий код: timeout / rate_limit / auth / network / error.
+ * Используется в аналитике `/admin/ai-models` для понимания, почему случается fallback.
+ */
+function classifyError(message: string): string {
+  const m = message.toLowerCase();
+  if (/(timeout|timed out|etimedout|deadline)/.test(m)) return 'timeout';
+  if (/(429|rate.?limit|too many requests|quota)/.test(m)) return 'rate_limit';
+  if (/(401|403|unauthorized|forbidden|invalid.*key|api[_ ]?key)/.test(m)) return 'auth';
+  if (/(econn|enotfound|eai_again|socket hang up|fetch failed|network)/.test(m)) return 'network';
+  if (/5\d\d/.test(m)) return 'server_5xx';
+  return 'error';
 }

@@ -28,6 +28,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Files,
   FileText,
   ListChecks,
   Loader2,
@@ -68,6 +69,9 @@ import type { MeetingDomain } from '@/domain/meeting';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
 
+import { MeetingBehaviorSection } from '@/ui/components/behavior-metrics/MeetingBehaviorSection';
+import { MeetingQualityScoreSection } from '@/ui/components/quality-score/MeetingQualityScoreSection';
+
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
 import { Skeleton } from '@/ui/shadcn/skeleton';
@@ -91,8 +95,10 @@ import {
 import { toast } from '@/ui/shadcn/toast';
 import { cn } from '@/ui/shadcn/lib/utils';
 
+import { FeedbackButton } from './FeedbackButton';
 import { MeetingPlayer } from './MeetingPlayer';
 import { MeetingChatPanel } from './MeetingChatPanel';
+import { ReportsTab } from './ReportsTab';
 import { ShareDialog } from './ShareDialog';
 import { HighlightCreatorDialog } from './HighlightCreatorDialog';
 import { fmtTime, fmtDurationCompact } from './format-utils';
@@ -109,7 +115,14 @@ const MEETING_TYPE_LABELS: Record<string, string> = {
   customer_success: 'Customer Success',
 };
 
-type TabKey = 'overview' | 'chapters' | 'transcript' | 'chat' | 'tasks' | 'notes';
+type TabKey =
+  | 'overview'
+  | 'reports'
+  | 'chapters'
+  | 'transcript'
+  | 'chat'
+  | 'tasks'
+  | 'notes';
 
 export type MeetingResultPageRealProps = {
   meetingId: string;
@@ -229,6 +242,10 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
               <FileText size={14} strokeWidth={1.75} />
               Обзор
             </TabsTrigger>
+            <TabsTrigger value="reports">
+              <Files size={14} strokeWidth={1.75} />
+              Отчёты
+            </TabsTrigger>
             <TabsTrigger value="chapters">
               <Circle size={14} strokeWidth={1.75} />
               Главы
@@ -285,8 +302,24 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   tasksCount={tasks.length}
                   highlightsCount={highlights.length}
                 />
+                {/* Фаза A.3 — Кнопка обратной связи 👍/👎 на AI-отчёт. */}
+                <div className="mt-4">
+                  <FeedbackButton meetingId={meetingId} />
+                </div>
+                {/* Фаза C — AI-оценка качества встречи (ПОСЛЕ AI-отчёта, ПЕРЕД поведением). Видна только хосту/org-admin: backend возвращает 403 для остальных, секция автоматически скрывается. */}
+                <div className="mt-6">
+                  <MeetingQualityScoreSection meetingId={meetingId} />
+                </div>
+                {/* Фаза B — Поведение участников (рядом с summary). */}
+                <div className="mt-6">
+                  <MeetingBehaviorSection meetingId={meetingId} />
+                </div>
               </motion.div>
             </AnimatePresence>
+          </TabsContent>
+
+          <TabsContent value="reports">
+            <ReportsTab meetingId={meetingId} />
           </TabsContent>
 
           <TabsContent value="chapters">

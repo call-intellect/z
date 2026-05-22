@@ -15,6 +15,7 @@ import {
   RawEventsController,
 } from './ingest.controller';
 import { IngestService } from './ingest.service';
+import { DocumentParserService } from './parsers/document-parser.service';
 
 /**
  * IngestModule (Фаза 1 + Фаза 10 knowledge-core).
@@ -49,6 +50,9 @@ import { IngestService } from './ingest.service';
     DumpService,
     IngestTokenGuard,
     S3Service,
+    // Фаза 0b knowledge-core: парсер документов. Адаптеры (document.adapter /
+    // text.adapter) — BullMQ-воркеры — регистрируются в WorkersModule.
+    DocumentParserService,
   ],
   exports: [
     IngestService,
@@ -56,6 +60,7 @@ import { IngestService } from './ingest.service';
     TelegramAdapterService,
     MangoAdapterService,
     DumpService,
+    DocumentParserService,
   ],
 })
 export class IngestModule {}

@@ -7,6 +7,7 @@ import {
   type AiJobData,
   type CardRollupJobData,
   type ClipRenderJobData,
+  type CustomReportJobData,
   DEFAULT_JOB_OPTIONS,
   QUEUE_NAMES,
   type QueueName,
@@ -36,6 +37,26 @@ const CARD_ROLLUP_JOB_OPTIONS: JobsOptions = {
 };
 
 /**
+ * Фаза C — quality-score. 3 ретрая по sub-TZ C §6.4.
+ */
+const QUALITY_SCORE_JOB_OPTIONS: JobsOptions = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 10_000 },
+  removeOnComplete: { age: 86400, count: 500 },
+  removeOnFail: false,
+};
+
+/**
+ * Фаза E — custom-report. 3 попытки с экспоненциальным backoff (ТЗ §5.3).
+ */
+const CUSTOM_REPORT_JOB_OPTIONS: JobsOptions = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 10_000 },
+  removeOnComplete: { age: 86400, count: 500 },
+  removeOnFail: false,
+};
+
+/**
  * HTTP-side диспетчер для AI-pipeline. Воркеры подписаны в отдельном процессе
  * (`workers/main.ts`), здесь же только enqueue.
  *
@@ -60,6 +81,10 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
         opts = CLIP_RENDER_JOB_OPTIONS;
       } else if (name === QUEUE_NAMES.CARD_ROLLUP) {
         opts = CARD_ROLLUP_JOB_OPTIONS;
+      } else if (name === QUEUE_NAMES.QUALITY_SCORE) {
+        opts = QUALITY_SCORE_JOB_OPTIONS;
+      } else if (name === QUEUE_NAMES.CUSTOM_REPORT) {
+        opts = CUSTOM_REPORT_JOB_OPTIONS;
       } else {
         opts = DEFAULT_JOB_OPTIONS;
       }
@@ -120,6 +145,52 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Фаза B — постановка расчёта behavior-метрик. Идемпотентность через
+   * `<meetingId>:behavior-metrics:<attempt>` (повторный enqueue с тем же
+   * attempt не создаёт дубль).
+   */
+  enqueueBehaviorMetrics(meetingId: string, attempt = 1): Promise<void> {
+    return this.enqueue(QUEUE_NAMES.BEHAVIOR_METRICS, meetingId, attempt);
+  }
+
+  /**
+   * Фаза C — постановка расчёта quality-score. jobId — фиксированный по
+   * meetingId без attempt'а (`quality:<meetingId>`), чтобы повторная постановка
+   * в течение жизни той же job'ы в Redis игнорировалась (idempotency).
+   * См. sub-TZ C §6.
+   */
+  async enqueueQualityScore(meetingId: string): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.QUALITY_SCORE);
+    if (!q) throw new Error('AiQueueService: ai.quality-score не инициализирован');
+    const jobId = `quality:${meetingId}`;
+    const payload: AiJobData = { meetingId, attempt: 1 };
+    await q.add('quality-score', payload, { jobId });
+    this.logger.debug(`enqueue ai.quality-score meeting=${meetingId}`);
+  }
+
+  /**
+   * Фаза D — постановка очистки транскрипта. jobId дедуп — фиксированный по
+   * meetingId без attempt'а: повторная постановка в течение жизни той же job'ы
+   * в Redis игнорируется. См. sub-TZ D §7.3.
+   */
+  async enqueueTranscriptClean(meetingId: string): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.TRANSCRIPT_CLEAN);
+    if (!q) throw new Error('AiQueueService: ai.transcript-clean не инициализирован');
+    const jobId = `transcript-clean:${meetingId}`;
+    const payload: AiJobData = { meetingId, attempt: 1 };
+    await q.add('transcript-clean', payload, { jobId });
+    this.logger.debug(`enqueue ai.transcript-clean meeting=${meetingId}`);
+  }
+
+  /**
    * Перезапуск analyze (с опциональным templateId — для regenerate).
    * jobId уникальный — повторные вызовы с тем же attempt не создадут дубль.
    */
@@ -161,6 +232,36 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     const payload: CardRollupJobData = { cardId, reason };
     await q.add('card-rollup', payload, { jobId });
     this.logger.debug(`enqueue ai.card-rollup card=${cardId} reason=${reason}`);
+  }
+
+  /**
+   * Фаза E — постановка генерации дополнительного («custom») AI-отчёта.
+   * jobId — `custom-report:<reportId>:<reason>` (без attempt — повторный enqueue
+   * с тем же jobId в течение жизни первого игнорируется BullMQ; на регенерацию
+   * передаётся другой reason='regenerate', что даёт другой jobId).
+   */
+  async enqueueCustomReport(
+    reportId: string,
+    meetingId: string,
+    reason: 'create' | 'regenerate' = 'create',
+  ): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.CUSTOM_REPORT);
+    if (!q) throw new Error('AiQueueService: ai.custom-report не инициализирован');
+    const jobId = `custom-report:${reportId}:${reason}`;
+    const payload: CustomReportJobData = {
+      meetingReportId: reportId,
+      meetingId,
+      reason,
+      attempt: 1,
+    };
+    await q.add('custom-report', payload, { jobId });
+    this.logger.debug(
+      `enqueue ai.custom-report report=${reportId} meeting=${meetingId} reason=${reason}`,
+    );
   }
 
   /**

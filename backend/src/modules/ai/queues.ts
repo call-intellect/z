@@ -19,6 +19,31 @@ export const QUEUE_NAMES = {
   CLIP_RENDER: 'clip.render',
   /** Пересборка `Card.summaryCache` после новой обработанной встречи в карточке. */
   CARD_ROLLUP: 'ai.card-rollup',
+  /**
+   * Фаза B — расчёт поведенческих метрик встречи. Ставится из `ai.merge`
+   * параллельно `ai.analyze`. Результат — MeetingBehaviorMetrics +
+   * MeetingParticipantBehavior[].
+   */
+  BEHAVIOR_METRICS: 'ai.behavior-metrics',
+  /**
+   * Фаза D — очистка транскрипта от слов-паразитов (sub-TZ D §7).
+   * Independent очередь: enqueue либо из `ai.merge` (если включён
+   * `Org.transcriptCleaningAuto`), либо по запросу `POST /meetings/:id/transcript/clean`.
+   */
+  TRANSCRIPT_CLEAN: 'ai.transcript-clean',
+  /**
+   * Фаза C — AI-оценка качества встречи (sub-TZ C §6).
+   * Enqueue из `analyze.worker` после успешного `ai_ready`, либо по
+   * запросу `POST /meetings/:id/quality-score/regenerate`. Результат —
+   * MeetingQualityScore.
+   */
+  QUALITY_SCORE: 'ai.quality-score',
+  /**
+   * Фаза E — дополнительные («custom») AI-отчёты встречи. Enqueue только
+   * on-demand (по запросу `POST /meetings/:id/reports` или regenerate).
+   * Результат пишется в `MeetingReport`. См. ТЗ E §5.
+   */
+  CUSTOM_REPORT: 'ai.custom-report',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -70,4 +95,16 @@ export interface CardRollupJobData {
   cardId: string;
   /** Опциональная пометка причины — для логов и дебага. */
   reason?: 'analyze' | 'regenerate' | 'link' | 'unlink' | 'manual';
+}
+
+/**
+ * Payload `ai.custom-report` (Фаза E §5). Одно сообщение = один `MeetingReport`.
+ * jobId формируется как `custom-report:<reportId>:<reason>:<attempt>` —
+ * идемпотентность повторных enqueue в течение жизни job'а.
+ */
+export interface CustomReportJobData {
+  meetingReportId: string;
+  meetingId: string;
+  reason: 'create' | 'regenerate';
+  attempt: number;
 }

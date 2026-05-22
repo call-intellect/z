@@ -98,6 +98,8 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     if (meeting.transcript.turns !== null) {
       this.logger.log({ meetingId }, 'merge: turns уже в БД — analyze');
       await this.queue.enqueueAnalyze(meetingId);
+      // Фаза B — параллельно с analyze. Идемпотентность через jobId.
+      await this.queue.enqueueBehaviorMetrics(meetingId);
       return;
     }
 
@@ -158,14 +160,46 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     await this.queue.enqueueAnalyze(meetingId);
+    // Фаза B — поведенческие метрики параллельно с analyze (не блокирует).
+    await this.queue.enqueueBehaviorMetrics(meetingId);
+
+    // Фаза D — опционально ставим очистку транскрипта.
+    // Включается через `Org.transcriptCleaningAuto`. Если выключено — Org
+    // может запустить вручную через `POST /meetings/:id/transcript/clean`.
+    // Cleaning независим от AI-pipeline: ошибки воркера ai.transcript-clean
+    // НЕ влияют на ai.analyze / ai.chapters / ai.tasks (см. зонтик Q8).
+    let cleaningEnqueued = false;
+    try {
+      if (meeting.tenantId) {
+        const org = await this.prisma.org.findUnique({
+          where: { id: meeting.tenantId },
+          select: { transcriptCleaningAuto: true },
+        });
+        if (org?.transcriptCleaningAuto === true) {
+          await this.queue.enqueueTranscriptClean(meetingId);
+          cleaningEnqueued = true;
+        }
+      }
+    } catch (err) {
+      // Не валим merge — это вспомогательный путь. Логируем и продолжаем.
+      this.logger.warn(
+        {
+          meetingId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'merge: не удалось поставить ai.transcript-clean (продолжаем без cleaning)',
+      );
+    }
+
     this.logger.log(
       {
         meetingId,
         totalWords,
         totalDurationSeconds,
         roomChatCount: roomChat?.length ?? 0,
+        cleaningEnqueued,
       },
-      'merge: успешно — analyze поставлен',
+      'merge: успешно — analyze + behavior-metrics поставлены',
     );
   }
 

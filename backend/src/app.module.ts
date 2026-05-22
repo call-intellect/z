@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from './common/config/index';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { GraphModule } from './common/graph/graph.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './common/prisma/prisma.module';
@@ -15,6 +16,8 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorkersModule } from './modules/ai/workers.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
+import { QualityScoreModule } from './modules/quality-score/quality-score.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
 import { HealthModule } from './modules/health/health.module';
 import { HighlightsModule } from './modules/highlights/highlights.module';
@@ -23,6 +26,7 @@ import { EntitlementGuard } from './modules/entitlements/entitlement.guard';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
 import { MailModule } from './modules/mail/mail.module';
+import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
@@ -39,13 +43,24 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { ConversationalModule } from './modules/conversational/conversational.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+// Phase 0a — структура компании (группа А) + дополнительные эндпоинты.
+import { DepartmentsModule } from './modules/departments/departments.module';
 import { GoalsModule } from './modules/goals/goals.module';
+import { JobDescriptionsModule } from './modules/job-descriptions/job-descriptions.module';
+import { MeModule } from './modules/me/me.module';
+import { PersonsModule } from './modules/persons/persons.module';
+import { RoleProfilesModule } from './modules/role-profiles/role-profiles.module';
+import { RolesDomainModule } from './modules/roles-domain/roles-domain.module';
+import { SkillsModule } from './modules/skills/skills.module';
+import { StructureModule } from './modules/structure/structure.module';
 import { KnowledgeCoreApiModule } from './modules/knowledge-core/knowledge-core-api.module';
 import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.module';
 import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 import { ExportsModule } from './modules/exports/exports.module';
 import { IngestEmailModule } from './modules/ingest/adapters/email/ingest-email.module';
 import { IngestModule } from './modules/ingest/ingest.module';
@@ -53,6 +68,7 @@ import { OrgsModule } from './modules/orgs/orgs.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { RoleProfilesAgentModule } from './modules/role-profiles/role-profiles-agent.module';
 import { SecurityModule } from './modules/security/security.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
@@ -82,6 +98,12 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Глобальные модули инфраструктуры.
     PrismaModule,
     RedisModule,
+
+    // Глобальный GraphService (Фаза 0a) — единая точка работы с графом
+    // Postgres EntityLink + Apache AGE (`z_graph`). Должен быть ДО любых
+    // модулей, которые делают двойную запись узлов/рёбер (Persons, Roles,
+    // Processes, RoleProfileAgent и т.п.). Зависит только от PrismaModule.
+    GraphModule,
 
     // Глобальный CryptoService (Фаза 10 knowledge-core) — шифрование секретов
     // в Source.config (Telegram botToken, Mango apiKey/Salt, IMAP password).
@@ -179,6 +201,21 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // CRM-структура встреч: карточки.
     CardsModule,
 
+    // Фаза B — поведенческие метрики (HTTP endpoints; воркер живёт в WorkersModule).
+    BehaviorMetricsModule,
+
+    // Фаза C — AI-оценка качества встречи (HTTP endpoints; воркер — в WorkersModule).
+    QualityScoreModule,
+
+    // Фаза E — несколько AI-отчётов на одну встречу (HTTP endpoints;
+    // воркер ai.custom-report — в WorkersModule).
+    MeetingReportsModule,
+
+    // Фаза 0b knowledge-core — Document-ingest pipeline. HTTP API
+    // /api/v1/documents + multipart upload + текстовый дамп. Воркеры
+    // (document.adapter, text.adapter) живут в WorkersModule.
+    DocumentsModule,
+
     // Глобальный поиск (⌘K).
     SearchModule,
 
@@ -205,6 +242,37 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // AI/knowledge-core воркеры и cron'ы — IN-PROCESS (отдельного worker-процесса
     // больше нет). Должен идти ПОСЛЕ всех @Global-модулей, чьи сервисы инжектят воркеры.
     WorkersModule,
+
+    // Phase 0d — RoleProfileAgent (BullMQ-воркер + cron + on-demand rebuild).
+    // Импортируется после WorkersModule, чтобы не дублировать BullMQ-инициализацию.
+    // Зависит от CoreQueueModule, GraphModule (через traverse в будущем),
+    // AiModule (LlmRouterService).
+    RoleProfilesAgentModule,
+
+    // Phase 0a (группа А) — CRUD структуры компании: отделы, должности,
+    // сотрудники, должностные инструкции, компетенции + карта должности
+    // (read + stub rebuild). Зависят от @Global Prisma / Rbac / Auth / Audit.
+    DepartmentsModule,
+    RolesDomainModule,
+    PersonsModule,
+    JobDescriptionsModule,
+    SkillsModule,
+    RoleProfilesModule,
+
+    // Phase 0a.3 — структурные агрегаты + γ-счётчики
+    // (/api/v1/structure/summary + /processes/count, /regulations/count, …).
+    StructureModule,
+
+    // Phase 0a.3 — GET /api/v1/me/profile (Person + Role + Department +
+    // RoleProfile в контексте текущей Org).
+    MeModule,
+
+    // SBA α-1 — Conversational Channels Foundation.
+    // @Global модуль (Channel/Notification/Delivery), используется Layer 4
+    // (curation), Layer 5 (chat-v2 inbound), Layer 6 (probe-agent). Регистрируется
+    // ПОСЛЕ MailModule и IngestModule, потому что адаптеры инжектят MailService
+    // и ConversationalIngestAdapter — IngestService.
+    ConversationalModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

@@ -276,6 +276,17 @@ export class TypedConfigService {
   get aiFeatures() {
     return {
       includeRoomChat: this.get('INCLUDE_ROOM_CHAT_IN_AI'),
+      /**
+       * Фаза D (sub-TZ §6.2) — включает LLM-уточнение уровня 2 в воркере
+       * `ai.transcript-clean`. При false воркер работает только через
+       * детерминистский уровень 1.
+       */
+      transcriptCleaningLlmRefine: this.get('TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED'),
+      /**
+       * Фаза B (sub-TZ 2026-05-21-phase-B §7) — включает LLM-refine
+       * в воркере `ai.behavior-metrics`. По умолчанию false.
+       */
+      behaviorMetricsLlmRefine: this.get('BEHAVIOR_METRICS_LLM_REFINE_ENABLED'),
     } as const;
   }
 
@@ -360,6 +371,68 @@ export class TypedConfigService {
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
+    } as const;
+  }
+
+  // ─────────────────────────── document-ingest (Фаза 0b) ────────
+  get document() {
+    const customBucket = this.get('S3_BUCKET_DOCUMENTS');
+    return {
+      parseTimeoutMs: this.get('DOCUMENT_PARSE_TIMEOUT_MS'),
+      maxSizeMb: this.get('DOCUMENT_MAX_SIZE_MB'),
+      maxSizeBytes: this.get('DOCUMENT_MAX_SIZE_MB') * 1024 * 1024,
+      inlineThresholdMb: this.get('DOCUMENT_INLINE_THRESHOLD_MB'),
+      inlineThresholdBytes:
+        this.get('DOCUMENT_INLINE_THRESHOLD_MB') * 1024 * 1024,
+      /**
+       * Если `S3_BUCKET_DOCUMENTS` не задан — используем основной bucket.
+       * На локальном MinIO так живём (один bucket на всё), на проде
+       * рекомендуется отдельный bucket с другими retention/ACL.
+       */
+      s3Bucket: customBucket && customBucket.length > 0 ? customBucket : this.get('S3_BUCKET'),
+    } as const;
+  }
+
+  // ─────────────────────────── extraction (Фаза 0b) ─────────────
+  /**
+   * Параметры extraction'а группы Б (Process/Decision/Regulation/Policy/
+   * Metric/Tool). См. ТЗ 0b §6.2 и решение #11 в зонтичном ТЗ.
+   *
+   *   - `enableTopLevel` — мастер-флаг автоизвлечения Mission/Vision/
+   *     Strategy. По умолчанию false; включается только в Фазе δ.
+   *   - `typedEntityMinConfidence` — нижний порог confidence, ниже которого
+   *     LLM-извлечённая сущность отбрасывается (не сохраняется в БД).
+   */
+  get extraction() {
+    return {
+      enableTopLevel: this.get('EXTRACTION_ENABLE_TOP_LEVEL'),
+      typedEntityMinConfidence: this.get('EXTRACTION_TYPED_ENTITY_MIN_CONFIDENCE'),
+    } as const;
+  }
+
+  // ─────────────────────────── conversational (SBA α-1) ────────
+  /**
+   * Параметры conversational-слоя (Channels / Notifications). См.
+   * plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md §8.
+   *
+   *   - `outboundConcurrency` — concurrency BullMQ-воркера doставки.
+   *   - `linkCodeTtlSec` — TTL одноразового кода привязки канала.
+   *   - `quietHoursDefault` — окно тихих часов в формате `HH:mm-HH:mm`.
+   *   - `rateLimitDefaultPerHour` — дефолтный лимит не-критических
+   *     уведомлений на пользователя.
+   *   - `emailFromDefault` — From-адрес для email-каналов; если пусто,
+   *     берётся `MAIL_FROM`.
+   *   - `maxDeliveryAttempts` — потолок retry'ев outbound-воркера.
+   */
+  get conversational() {
+    const fromDefault = this.get('CONVERSATIONAL_EMAIL_FROM_DEFAULT');
+    return {
+      outboundConcurrency: this.get('CONVERSATIONAL_OUTBOUND_CONCURRENCY'),
+      linkCodeTtlSec: this.get('CONVERSATIONAL_LINK_CODE_TTL_SEC'),
+      quietHoursDefault: this.get('CONVERSATIONAL_QUIET_HOURS_DEFAULT'),
+      rateLimitDefaultPerHour: this.get('CONVERSATIONAL_RATE_LIMIT_DEFAULT_PER_HOUR'),
+      emailFromDefault: fromDefault.length > 0 ? fromDefault : this.get('MAIL_FROM'),
+      maxDeliveryAttempts: this.get('CONVERSATIONAL_MAX_DELIVERY_ATTEMPTS'),
     } as const;
   }
 

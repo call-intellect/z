@@ -240,4 +240,42 @@ LiveKit чистит атрибуты автоматически при disconne
 ### Удалено (Phase 7 fix)
 - `frontend/app/(admin)/admin/page.tsx` (legacy home, дублировал новый Z-Admin dashboard).
 
+## Фаза 0 — каркас компании
+
+- `backend/src/common/graph/` — GraphService (Postgres EntityLink + AGE двойная запись).
+- `backend/src/modules/departments/` — CRUD `/api/v1/departments`.
+- `backend/src/modules/roles-domain/` — CRUD `/api/v1/roles` (бизнес-должности).
+- `backend/src/modules/persons/` — CRUD `/api/v1/persons` (новый, не путать с knowledge-core entities/persons).
+- `backend/src/modules/job-descriptions/` — CRUD `/api/v1/job-descriptions`.
+- `backend/src/modules/skills/` — CRUD `/api/v1/skills`.
+- `backend/src/modules/documents/` — CRUD `/api/v1/documents`.
+- `backend/src/modules/role-profiles/` — `/api/v1/role-profiles` (rebuild stub до 0d).
+- `backend/src/modules/structure/` — `/api/v1/structure/summary`.
+- `backend/src/modules/ingest/adapters/document/` — document.adapter.
+- `backend/src/modules/ingest/adapters/text/` — text.adapter.
+- `backend/src/modules/ingest/parsers/document-parser.service.ts`.
+- `backend/src/modules/knowledge-core/workers/role-profile.worker.ts` (Фаза 0d).
+
+## SBA α-1 — Conversational Channels Foundation (2026-05-21)
+
+`backend/src/modules/conversational/` — `@Global` модуль omnichannel-слоя:
+- `conversational.service.ts` — публичный API `sendNotification` / `respondToProbe` / `linkChannel` / `listMyNotifications` + routing (per-event policy + dataClass + preferences + quiet hours).
+- `conversational.controller.ts` — REST `/api/v1/me/channels` и `/api/v1/me/notifications` (включая `POST /respond`, `POST /dismiss`, `POST /read`, `POST /free-note`).
+- `channel-registry.ts` — реестр адаптеров каналов, заполняется через `@Injectable() + onModuleInit()`.
+- `adapters/in-app.adapter.ts` — канал `in_app` (БД-резидент, без external transport).
+- `adapters/email-smtp.adapter.ts` — outbound через общий `MailService`.
+- `adapters/conversational-ingest.adapter.ts` — free-note → `RawEvent(Source.type='conversational')` через `IngestService`.
+- `link-code.service.ts` — одноразовые коды привязки (Redis, TTL 10 мин).
+- `queue/conversational-queue.service.ts` + `conversational-send.worker.ts` — BullMQ-очередь `conversational.send` (concurrency + retry с exp backoff).
+- `types/event-payload.registry.ts` — Zod-схемы payload'ов per-eventType (`probe.question`, `curation.pending`, `system.message`); потребители могут регистрировать новые через `registerEventPayloadSchema`.
+- `types/preferences.schema.ts` — `ChannelBindingPreferences` (quietHours, eventType allow/deny, rateLimitPerHour, disabledUntil).
+
+Frontend:
+- `frontend/src/api/conversational.api.ts` — REST-клиент.
+- `frontend/src/domain/conversational.ts` — мапперы ApiDto → Domain.
+- `frontend/app/(authenticated)/me/channels/` — страница «Мои каналы» (привязка/отвязка, генерация link-code).
+- `frontend/app/(authenticated)/me/notifications/` — центр уведомлений (master-detail, respond/dismiss, free-note форма).
+
+Подробности: [[../01_projects/conversational-channels|conversational-channels.md]].
+
 [[../index|← index]]

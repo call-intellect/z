@@ -1,6 +1,8 @@
-# SECOND BRAIN — Z (AI-встречи на LiveKit)
+# SECOND BRAIN — Z (память компании)
 
 > Главный навигационный файл. Все разделы ведут отсюда.
+>
+> **Категория продукта:** «память компании» / memory layer (см. [[06_marketing/positioning]]). **Первая рабочая вертикаль:** AI-встречи на LiveKit (MVP).
 
 ## Карты верхнего уровня
 
@@ -19,9 +21,15 @@
 
 ## Проекты
 
+- [[01_projects/onboarding-wizard]] — wizard «Знакомство с компанией» (Фаза 0c): 5 шагов, owner-only, AppShell скрыт
+- [[01_projects/company-framework-slots]] — слоты каркаса 5 уровней группы Б (Mission/Vision/Strategy/Process/Regulation/Policy/Tool/Metric/Decision): модели без UI до Фазы γ, наполняются автоматически
+- [[01_projects/document-ingest]] — pipeline загрузки документов (Фаза 0b): PDF/DOCX/MD/TXT через document.adapter, text.adapter для /dump, extraction группы Б с провенансом
+- [[01_projects/role-profile-agent]] — RoleProfileAgent (Фаза 0d): BullMQ-воркер карты должности, cron каждые 4 часа + on-demand rebuild, порог N=5
+- [[01_projects/conversational-channels]] — SBA α-1 Conversational Channels Foundation: omnichannel-слой (in_app + email), Notification/Delivery, BullMQ outbound, REST `/me/channels` `/me/notifications`, free-note ingest
 - [[01_projects/crossmark-integration]] — связь с Crossmark: только через API, развёртывание отдельное
 - [[01_projects/meeting-types]] — 9 типов встреч MVP
 - [[01_projects/ai-analysis-by-type]] — шаблоны AI-анализа по типу
+- [[01_projects/ai-value-director]] — **AI-директор по ценности** (Value Director) — первый агент в будущем AI-совете директоров CEO, работает на методологии из [[06_marketing/client-value-framework]]
 - [[01_projects/roles-and-permissions]] — роли host/guest и их права
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
 - [[01_projects/meeting-result-page]] — карточка результата: что показываем после встречи
@@ -31,8 +39,9 @@
 
 - [[02_architecture/project-overview]] — что такое проект и основной флоу
 - [[02_architecture/tech-stack]] — стек технологий
-- [[02_architecture/module-map]] — карта модулей и потоков данных
-- [[02_architecture/data-model]] — сущности (Meeting, Participant, Recording, AI Result) и FSM статусов
+- [[02_architecture/module-map]] — карта модулей и потоков данных (включая Фазу 0: departments/roles-domain/persons/job-descriptions/skills/documents/role-profiles/structure/graph)
+- [[02_architecture/data-model]] — сущности (Meeting, Participant, Recording, AI Result) и FSM статусов; Фаза 0: группа А (с UI) + группа Б (слоты каркаса) + расширения existing + Apache AGE
+- [[02_architecture/age-deployment-decision]] — решение по Apache AGE (граф знаний поверх PostgreSQL)
 - [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
@@ -42,6 +51,24 @@
 _пусто_
 
 ## Активные ТЗ
+- [`plans/tz/2026-05-21-second-brain-agents-umbrella.md`](../plans/tz/2026-05-21-second-brain-agents-umbrella.md) — **Второй мозг компании: архитектура 12 агентов в 6 слоях** (зонтичный ТЗ, draft 2026-05-21, матрица прослеживаемости 78 строк). Фиксирует **7 архитектурных решений** из диалога с владельцем: двухслойная модель знания (`IdeaBlock` + карточки специалистов) / онтология категорий A/B/C (`Entity.type` 7→12) / фазовая раскатка α-β-γ по архитектурной устойчивости / Skill как рабочий артефакт компании (не персональные данные, эмерджентные категории, главный источник `signalType='reasoning'`) / двунаправленные conversational channels (InApp = равноправный канал; Telegram+MAX в β; pluggable) / Curation triage с conflict first-class и обязательным `evolving` для temporal-памяти / **LLM provider routing — трёхуровневая подстраховка** (primary/secondary/tertiary, tertiary = local Ollama) + admin-переключение per-agent без выкатки кода + ссылка на [`llm-models-playbook.md`](../llm-models-playbook.md) в каждом seed-script. Контракт специалиста §5 — сквозной для всех 7 агентов Слоя 3 (11 пунктов, включая обязательную регистрацию taskType с цепочкой из 3 provider'ов). 13 sub-TZ:
+  - **α (фундамент):** [`α-1 Channels Foundation`](../plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md) + [`α-2 Layer1 Marking Extension`](../plans/tz/2026-05-21-sba-alpha-2-layer1-marking-extension.md) + [`α-3 Layer2 Ontology Extension`](../plans/tz/2026-05-21-sba-alpha-3-layer2-ontology-extension.md) + [`α-4 Layer4 Curation Foundation`](../plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md) + [`α-5 Layer5 Chat-v2 Omnichannel`](../plans/tz/2026-05-21-sba-alpha-5-layer5-chat-v2.md) + [`α-6 Specialist 3.4 Project/Customer`](../plans/tz/2026-05-21-sba-alpha-6-specialist-3-4-project-customer.md) + [`α-7 Specialist 3.1 Regulations`](../plans/tz/2026-05-21-sba-alpha-7-specialist-3-1-regulations.md)
+  - **β (социальные специалисты + замыкание петли):** [`β-1 Telegram + MAX`](../plans/tz/2026-05-21-sba-beta-1-channels-telegram-max.md) + [`β-2 Specialist 3.2 Knowledge Clone`](../plans/tz/2026-05-21-sba-beta-2-specialist-3-2-knowledge-clone.md) + [`β-3 Specialist 3.3 Decisions`](../plans/tz/2026-05-21-sba-beta-3-specialist-3-3-decisions.md) + [`β-4 Specialist 3.5 Insights`](../plans/tz/2026-05-21-sba-beta-4-specialist-3-5-insights.md) + [`β-5 Specialist 3.6 Ideas + Layer 6 Probe`](../plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md) (выпускаются парой)
+  - **γ (мышление):** [`γ-1 Specialist 3.7 Skill + Executable Persona + Clone API`](../plans/tz/2026-05-21-sba-gamma-1-specialist-3-7-skill-and-clone.md) (обязателен UI `/me/clone` для прозрачности перед носителем)
+  - **Промпты — отдельный круг согласования с владельцем продукта** (§10), в коде только placeholders.
+- [`plans/tz/2026-05-21-competitor-parity.md`](../plans/tz/2026-05-21-competitor-parity.md) — **Паритет с российскими конкурентами по post-meeting фичам** (зонтичный ТЗ, draft 2026-05-21, матрица 45 строк). Закрывает 5 гэпов от mymeet/FollowUp/Таймлист: конструктор шаблонов AI-отчёта в админке, метрики поведения участников, AI-оценка качества встречи, очистка транскрипта, несколько отчётов на встречу. 5 sub-TZ — все draft от 2026-05-21:
+  - [`A — Prompt Registry + Admin-конструктор шаблонов`](../plans/tz/2026-05-21-phase-A-prompt-registry-admin.md) (БД-registry + UI до 30 разделов, версионирование, A/B, Org-overrides, перенос 9 системных промптов из кода)
+  - [`B — Метрики поведения участников`](../plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md) (speakingTime, monologues, questions, filler words, interruptions; воркер `ai.behavior-metrics`)
+  - [`C — AI-оценка качества встречи`](../plans/tz/2026-05-21-phase-C-meeting-quality-score.md) (0–100 + 5 категорий + рекомендации руководителю; видим только хосту/Org-Admin)
+  - [`D — Очистка транскрипта`](../plans/tz/2026-05-21-phase-D-transcript-cleaning.md) (cleanedS3Url, не разрушающая оригинал; AI-pipeline продолжает работать с оригиналом)
+  - [`E — Несколько отчётов на встречу`](../plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md) (зависит от A; primary AiResult + many MeetingReport; entitlement-гейт по тарифу)
+- [`plans/tz/2026-05-21-phase-0-roles-and-onboarding.md`](../plans/tz/2026-05-21-phase-0-roles-and-onboarding.md) — **Фаза 0: должности, каркас компании и знакомство** (зонтичный ТЗ, матрица прослеживаемости 83 строки). 11 открытых вопросов закрыты решениями (§6). Все 4 sub-TZ — draft от 2026-05-21:
+  - [`0a — фундамент: модели + AGE + GraphService + API + RBAC`](../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) (16 моделей + 17 типов рёбер + Apache AGE)
+  - [`0b — document-ingest + text.adapter + extraction каркаса 5 уровней`](../plans/tz/2026-05-21-phase-0b-document-ingest.md) (PDF/DOCX/MD + дамп + сущности группы Б)
+  - [`0c — мастер знакомства + личный кабинет (frontend)`](../plans/tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md) (5-шаговый wizard + 5 новых страниц + ComingSoonPage)
+  - [`0d — RoleProfileAgent (BullMQ + cron + rebuild)`](../plans/tz/2026-05-21-phase-0d-role-profile-agent.md) (карта должности из observed-данных, порог N=5)
+  - **Аналитика ЛК (вход в 0c):** [`plans/analysis/2026-05-21-user-cabinet-design.md`](../plans/analysis/2026-05-21-user-cabinet-design.md) — draft от 2026-05-21. Дизайн навигации (3 группы Компания / Оперативка / Настройки), default landing по роли, видимость γ-разделов, `/dump` и `/me` минимальные, multi-org switcher, wizard 5 шагов.
+  - **Аналитика «ЛК × роли × доступ»:** [`plans/analysis/2026-05-21-cabinet-roles-value-and-access-model.md`](../plans/analysis/2026-05-21-cabinet-roles-value-and-access-model.md) — draft от 2026-05-21. Польза ЛК для руководителя vs сотрудника vs гостя; 4 слоя текущей защиты (tenantId + RBAC + visibilityMode + dataClass); gap для финансовых/HR/стратегических встреч; целевая 5-слойная модель с `sensitivity` + `FactAcl` (Фаза γ → Фаза β); матрица доступа по ролям.
 - `plans/tz/2026-05-10-knowledge-core-tz.md` — **переустройство фундамента Z в единое информационное ядро (knowledge core)**. 12 фаз: org/multi-tenancy → universal ingest → IdeaBlock + Entity → граф связей → Theme → переписанные UX-агенты → AI-чат через ядро → админка отладки → дашборд директора → цели и стратегический согласователь → доп. источники → retention/security → tariffs. Концепции из `delivery/` и Blockify, реализация на стеке Z (NestJS/pgvector/BullMQ).
   - **Дочерние ТЗ (для агентов-исполнителей):**
     - `plans/tz/2026-05-10-phase-7-admin.md` — Z-Admin (super_admin) + Org-Admin (owner/admin): отладка, аналитика стоимости, A/B моделей, прайс-карта, тумблеры воркеров, отладка ядра.
@@ -66,6 +93,7 @@ _пусто_
 ## Заметки по реализации (2026-05-10) — Фаза 0 knowledge-core
 - [[01_projects/orgs-and-rbac]] — Org / Membership / OrgInvitation, RBAC через RbacService (Casbin-совместимый), super_admin, visibilityMode (open/strict)
 - [[01_projects/llm-router]] — LlmRouter с обязательным tenantId, LlmModelPrice (версионируемая прайс-карта), AiUsageLog (cachedTokens/sourceRef/experimentGroup)
+- [[01_projects/llm-providers-verified]] — **verified-карта LLM-провайдеров и моделей (источник правды, прогон 2026-05-21).** Какие каналы реально работают, готовые образцы вызова, что НЕ используем (Anthropic, bge-m3). Любой новый AI-агент сверяется с этим файлом.
 - [[13_glossary/index|Глоссарий]] — Org, Membership, super_admin, visibilityMode, tenantId, IdeaBlock/Entity/Theme/Source/RawEvent (placeholder'ы для Фаз 1-4)
 
 ## Заметки по реализации (2026-05-10) — Фаза 1 knowledge-core
@@ -91,6 +119,16 @@ _пусто_
 - API: `GET /api/v1/knowledge/themes` (фильтры branch/status, пагинация), `GET /api/v1/knowledge/themes/:id`, `POST /api/v1/knowledge/themes/:id/save-as-card`, `GET /api/v1/cards/:id/themes`
 - RBAC: ResourceType расширен `'theme'` (read для всех member'ов Org, write/delete — owner/admin)
 - LlmTaskType: `theme-classify` уже был в seed'е; `card-rollup-v2` тоже; обновление через `--update-existing` не обязательно
+
+## Маркетинг
+
+- [[06_marketing/index]] — навигация по маркетинговому разделу
+- [[06_marketing/competitors]] — анализ конкурентов (Fireflies, Otter, Granola, tl;dv и др.)
+- [[06_marketing/positioning]] — ценностное предложение, отличия от конкурентов
+- [[06_marketing/icp]] — портрет идеального покупателя (ICP)
+- [[06_marketing/messaging]] — ключевые сообщения, заголовки, tone of voice
+- [[06_marketing/client-value-framework]] — методология клиентской ценности (по Гордееву) + роль Value Officer
+- [[06_marketing/company-ontology]] — онтология компании (13 классов сущностей + ~40 типов рёбер, клон сотрудника как subgraph, специфика РФ) — фундамент архитектуры «второго мозга»
 
 ## Баги и инциденты (`03_bugs/`)
 _пусто_

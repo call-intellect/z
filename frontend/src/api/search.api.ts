@@ -1,6 +1,14 @@
 import { apiClient } from './api-client';
 
-export type SearchTypeKey = 'cards' | 'meetings' | 'tasks';
+export type SearchTypeKey =
+  | 'cards'
+  | 'meetings'
+  | 'tasks'
+  | 'roles'
+  | 'departments'
+  | 'persons'
+  | 'documents'
+  | 'role-profiles';
 
 export type SearchCardItem = {
   id: string;
@@ -25,10 +33,45 @@ export type SearchTaskItem = {
   meetingId: string;
 };
 
+export type SearchRoleItem = {
+  id: string;
+  name: string;
+  departmentName?: string | null;
+};
+
+export type SearchDepartmentItem = {
+  id: string;
+  name: string;
+};
+
+export type SearchPersonItem = {
+  id: string;
+  fullName: string;
+  roleName?: string | null;
+};
+
+export type SearchDocumentItem = {
+  id: string;
+  name: string;
+  kind?: string;
+};
+
+export type SearchRoleProfileItem = {
+  /** id роли — карты живут на странице должности `/roles/:id`. */
+  roleId: string;
+  roleName: string;
+};
+
 export type SearchResponse = {
   cards: SearchCardItem[];
   meetings: SearchMeetingItem[];
   tasks: SearchTaskItem[];
+  /** Расширения Фазы 0c — могут отсутствовать в ответе старого backend. */
+  roles?: SearchRoleItem[];
+  departments?: SearchDepartmentItem[];
+  persons?: SearchPersonItem[];
+  documents?: SearchDocumentItem[];
+  roleProfiles?: SearchRoleProfileItem[];
 };
 
 export const searchApi = {

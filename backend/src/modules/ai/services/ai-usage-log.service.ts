@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type LlmRouteTier } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -44,6 +44,16 @@ export interface RecordAiUsageInput {
   sourceRef?: { type: string; id: string } | null;
   /** A/B-эксперимент LlmTaskRoute.experiment: 'A' | 'B'. NULL = вне эксперимента. */
   experimentGroup?: string | null;
+  /**
+   * Фаза A.4 — фактический уровень цепочки моделей: primary / secondary / tertiary.
+   * NULL для legacy-вызовов или legacy-цепочек без явных tier'ов.
+   */
+  tier?: LlmRouteTier | string | null;
+  /**
+   * Фаза A.4 — причина срабатывания fallback'а (`primary_timeout` / `secondary_error`
+   * / `primary_rate_limit` и т.д.). NULL для первичного успешного вызова.
+   */
+  fallbackReason?: string | null;
   /** Z-Admin Фаза 7: превью промпта (system+user) — truncate до 8KB. */
   requestPreview?: string | null;
   /** Z-Admin Фаза 7: превью ответа модели — truncate до 8KB. */
@@ -110,6 +120,8 @@ export class AiUsageLogService {
             ? (input.sourceRef as unknown as Prisma.InputJsonValue)
             : Prisma.JsonNull,
           experimentGroup: input.experimentGroup ?? null,
+          tier: input.tier ?? null,
+          fallbackReason: input.fallbackReason ?? null,
           requestPreview: truncatePreview(input.requestPreview),
           responsePreview: truncatePreview(input.responsePreview),
         },

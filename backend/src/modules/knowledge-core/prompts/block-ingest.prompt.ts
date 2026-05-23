@@ -74,6 +74,8 @@ export const ENTITY_TYPE_VALUES = [
   'location',
   'technology',
   'metric',
+  'market', // SBA α-3 wave 2 — ось CONTEXTUAL.
+  'org_unit', // SBA α-3 wave 2 — структурное подразделение / команда.
   'client', // @deprecated — используй 'customer'.
   'custom', // @deprecated — используй 'topic'.
 ] as const;
@@ -400,6 +402,8 @@ const SYSTEM_PROMPT = `Ты — извлекатель структуриров�
     - location: место (офис, регион, город).
     - technology: технология / стек / инструмент-категория.
     - metric: измеримый показатель / KPI.
+    - market: рынок (география × индустрия) — «РФ retail», «Europe SaaS», «СНГ fintech».
+    - org_unit: структурное подразделение или команда внутри компании — отдел, гильдия, project office, cross-functional team.
     - НЕ ИСПОЛЬЗУЙ deprecated: 'client' (используй 'customer'), 'custom' (используй 'topic').
   - name: каноническое имя сущности.
   - mentionContext: короткое описание роли упоминания в этом блоке.

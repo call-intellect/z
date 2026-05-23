@@ -294,6 +294,8 @@ enum EntityType {
   location
   technology  /// SBA α-3 — технология / стек.
   metric      /// SBA α-3 — метрика-сущность графа.
+  market      /// SBA α-3 — рынок (география × индустрия), категория A.
+  org_unit    /// SBA α-3 — структурное подразделение (отдел/команда/гильдия), категория A.
   custom      /// @deprecated. Удалить после patch-script.
 }
 
@@ -467,6 +469,22 @@ enum EntityLinkType {
   accountable_for
   consulted_on
   informed_about
+
+  // ── SBA α-3 (2026-05-23) — связи слоя организационного графа ──
+  /// Person/Role -> Person/Role: иерархия подчинения.
+  reports_to
+  /// Person/Role -> Person/Role: подчинённый/команда.
+  manages
+  /// Person/Department -> Person/Department: горизонтальные взаимодействия.
+  collaborates_with
+  /// Person -> Person: наставничество (источник для γ-1 SkillProfile).
+  mentors
+  /// Person -> Person: фиксированный конфликт (источник для β-8 PersonalRelation).
+  conflicted_with
+  /// Process -> Process / Role -> Role: передача результата по pipeline.
+  transfers_result_to
+  /// Decision/Person -> Role: эскалация до вышестоящего.
+  escalates_to
 }
 
 /// Кто создал связь:
@@ -1813,8 +1831,10 @@ model Org {
   notifications Notification[]
 
   // ── SBA α-3 — Layer 2 ontology extension ──
-  vendors Vendor[]
-  events  Event[]
+  vendors  Vendor[]
+  events   Event[]
+  markets  Market[]
+  orgUnits OrgUnit[]
 
   // ── SBA α-4 — Layer 4 Curation Foundation ──
   curationItems      CurationItem[]
@@ -2088,6 +2108,8 @@ model Entity {
   event    Event?    @relation("EventEntity")
   goal     Goal?     @relation("GoalEntity")
   document Document? @relation("DocumentEntity")
+  market   Market?   @relation("MarketEntity")
+  orgUnit  OrgUnit?  @relation("OrgUnitEntity")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -2158,6 +2180,73 @@ model Event {
 
   @@index([tenantId, startAt])
   @@index([tenantId, kind])
+  @@index([tenantId, deletedAt])
+}
+
+/// Market — рынок как сущность графа знаний (категория A, SBA α-3 wave 2).
+/// Ось CONTEXTUAL онтологии Кора v2: «где играем» (география × индустрия).
+/// Источник для β-7 Brand Voice (per-market принципы), α-9 Company Foundation
+/// (target markets), δ-1 Orchestrator.
+///
+/// Дедупликация: `(tenantId, name)` через приложение
+/// (`EntityResolutionService.findOrCreateMarketEntity`, реализуется в α-3 wave 3).
+model Market {
+  id            String   @id @default(cuid())
+  tenantId      String
+  /// Связка с Entity{type=market}. Уникальна (1:1).
+  entityId      String   @unique
+  entity        Entity   @relation("MarketEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  org           Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String   @db.VarChar(300)
+  /// Географический scope (например «РФ», «СНГ», «Europe»). NULL — global.
+  geography     String?  @db.VarChar(120)
+  /// Индустрия / вертикаль (например «retail», «fintech», «edtech»).
+  industry      String?  @db.VarChar(120)
+  /// Краткое описание сегмента в этом рынке.
+  description   String?  @db.Text
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  @@index([tenantId, geography])
+  @@index([tenantId, industry])
+  @@index([tenantId, deletedAt])
+}
+
+/// OrgUnit — структурное подразделение / команда / гильдия (категория A,
+/// SBA α-3 wave 2). Ось WHO онтологии Кора v2 на уровне коллектива.
+///
+/// Отличие от Department: Department — типизированный официальный отдел в
+/// орг-структуре (Phase 0a). OrgUnit — более общая абстракция для любой
+/// рабочей единицы: cross-functional team, гильдия архитекторов, временный
+/// project office, BizDev-pod. Может иметь parentDepartmentId на Department.
+model OrgUnit {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  /// Связка с Entity{type=org_unit}. Уникальна (1:1).
+  entityId            String    @unique
+  entity              Entity    @relation("OrgUnitEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  org                 Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                String    @db.VarChar(300)
+  /// Тип единицы: 'department' (формальный отдел) | 'team' (команда) |
+  /// 'guild' (гильдия по специализации) | 'project_office' (временный) |
+  /// 'committee' (комитет). Строкой, чтобы расширять без миграций.
+  unitKind            String    @db.VarChar(40)
+  /// Опц. ссылка на формальный Department (если OrgUnit — это пере-обёртка над ним).
+  parentDepartmentId  String?
+  /// User.id лидера команды. NULL — не назначен.
+  leadUserId          String?
+  /// Person.id участников (мягкая ссылка, без FK).
+  memberPersonIds     String[]  @default([])
+  description         String?   @db.Text
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  @@index([tenantId, unitKind])
+  @@index([tenantId, parentDepartmentId])
   @@index([tenantId, deletedAt])
 }
 

@@ -1845,6 +1845,13 @@ model Org {
   decisionPoints          DecisionPoint[]
   processHandoffs         ProcessHandoff[]
 
+  // ── SBA α-8 wave 2 — Role Map нормализация ──
+  responsibilityElements  ResponsibilityElement[]
+  authorityBoundaries     AuthorityBoundary[]
+  requiredKnowledge       RequiredKnowledge[]
+  decisionPolicies        DecisionPolicy[]
+  interactions            Interaction[]
+
   // ── SBA α-4 — Layer 4 Curation Foundation ──
   curationItems      CurationItem[]
   conflictItems      ConflictItem[]
@@ -2119,6 +2126,8 @@ model Entity {
   document Document? @relation("DocumentEntity")
   market   Market?   @relation("MarketEntity")
   orgUnit  OrgUnit?  @relation("OrgUnitEntity")
+  /// SBA α-8 wave 2 — линковка с Role.
+  role     Role?     @relation("RoleEntity")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -2858,6 +2867,8 @@ model Department {
   children Department[] @relation("DepartmentParent")
   roles    Role[]
   persons  Person[]     @relation("PersonPrimaryDepartment")
+  /// SBA α-8 wave 2 — обратная связь Interaction.
+  interactionsAsCounterpart Interaction[] @relation("InteractionCounterpartDept")
 
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId])
@@ -2875,12 +2886,21 @@ model Role {
   departmentId String?
   /// Свободные теги для поиска и фильтрации.
   tags         String[]  @default([])
+  /// SBA α-8 wave 2 (2026-05-23) — расширение Role Map.
+  /// Краткое описание миссии должности (1-2 предложения).
+  missionStatement String? @db.Text
+  /// Зрелость роли: 0..1, рассчитывается MaturityScorerCron как
+  /// произведение completeness × #observations × age. NULL до первого подсчёта.
+  maturityScore    Decimal? @db.Decimal(4, 3)
+  /// Опц. линковка с Entity{type=role} (если нужна для графа знаний).
+  entityId         String?  @unique
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
   org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   department      Department?      @relation(fields: [departmentId], references: [id])
+  entity          Entity?          @relation("RoleEntity", fields: [entityId], references: [id], onDelete: SetNull)
   jobDescriptions JobDescription[]
   roleProfile     RoleProfile?
   personRoles     PersonRole[]
@@ -2896,6 +2916,14 @@ model Role {
   decisionPointsAsDecider DecisionPoint[] @relation("DecisionPointDecider")
   handoffsFrom        ProcessHandoff[] @relation("HandoffFromRole")
   handoffsTo          ProcessHandoff[] @relation("HandoffToRole")
+  /// SBA α-8 wave 2 — Role Map нормализованные таблицы.
+  responsibilityElements ResponsibilityElement[]
+  authorityBoundaries    AuthorityBoundary[]    @relation("AuthorityBoundaryRole")
+  approvedBoundaries     AuthorityBoundary[]    @relation("AuthorityBoundaryApprover")
+  requiredKnowledge      RequiredKnowledge[]
+  decisionPolicies       DecisionPolicy[]
+  interactions           Interaction[]          @relation("InteractionRole")
+  interactionsAsCounterpart Interaction[]       @relation("InteractionCounterpartRole")
 
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId, departmentId])
@@ -3079,12 +3107,25 @@ model RoleProfile {
   roleId       String            @unique
   /// `{ responsibilities[], skills[], decision_patterns[], common_pitfalls[], style_profile }`.
   /// Schema валидируется zod'ом в `role-profile.service.ts` (Фаза 0d).
+  /// SBA α-8 wave 2: summaryCache остаётся как быстрый JSON-кеш для UI;
+  /// канонические данные живут в нормализованных таблицах ResponsibilityElement /
+  /// AuthorityBoundary / RequiredKnowledge / DecisionPolicy / Interaction.
   summaryCache Json              @default("{}")
   status       RoleProfileStatus @default(forming)
   lastBuildAt  DateTime?
   /// Инкрементируется при каждой успешной пересборке. Используется в
   /// idempotency-key BullMQ ('role-profile:${roleId}:${buildVersion}').
   buildVersion Int               @default(0)
+  /// SBA α-8 wave 2 (2026-05-23) — метаданные сборки.
+  /// Когда RoleProfileAgent последний раз построил профиль (отличается от
+  /// `updatedAt` — последнее изменение записи, например ручная правка summaryCache).
+  builtAt              DateTime?
+  /// Версия билдера (для воспроизводимости и поэтапного re-build).
+  builderAgentVersion  String?   @db.VarChar(40)
+  /// Сколько IdeaBlock-наблюдений использовалось для последнего билда.
+  observationCount     Int       @default(0)
+  /// 0..1 — насколько полно заполнены 9 слотов профиля. NULL до первого билда.
+  completeness         Decimal?  @db.Decimal(4, 3)
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -3093,6 +3134,165 @@ model RoleProfile {
 
   @@index([tenantId, status])
   @@map("role_profiles")
+}
+
+// ──────────────────────────── SBA α-8 wave 2 — Role Map нормализованные таблицы ────────────────────────────
+
+/// ResponsibilityElement — элемент ответственности роли (Кора v2 §α-8).
+/// Самореференция через parentId позволяет иерархию outcome → function →
+/// activity. На верхнем уровне — outcome (что должно случиться), глубже —
+/// function (какую работу делает), листья — activity (конкретные действия).
+model ResponsibilityElement {
+  id          String   @id @default(cuid())
+  tenantId    String
+  roleId      String
+  parentId    String?
+  /// kind: 'outcome' | 'function' | 'activity'. Строкой для расширения.
+  kind        String   @db.VarChar(20)
+  /// Краткое название элемента (1-7 слов).
+  name        String   @db.VarChar(300)
+  /// Полное описание (что/зачем/как измеряется).
+  description String?  @db.Text
+  /// Порядок отображения в карте роли.
+  order       Int      @default(0)
+  /// IdeaBlock-источники последнего извлечения (provenance).
+  sourceBlockIds String[] @default([])
+  /// Confidence от RoleProfileAgent (0..1).
+  confidence  Decimal? @db.Decimal(4, 3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  org      Org                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role     Role                      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  parent   ResponsibilityElement?    @relation("ResponsibilityHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children ResponsibilityElement[]   @relation("ResponsibilityHierarchy")
+
+  @@index([tenantId, roleId])
+  @@index([tenantId, roleId, kind])
+  @@index([parentId])
+  @@map("responsibility_elements")
+}
+
+/// AuthorityBoundary — границы полномочий должности: «что разрешено» и «что
+/// требует согласования». Используется в γ-2 Concierge и β-3 Decisions для
+/// validate «может ли этот человек принять X решение».
+model AuthorityBoundary {
+  id          String   @id @default(cuid())
+  tenantId    String
+  roleId      String
+  /// kind: 'allowed' | 'requires_approval' | 'forbidden'.
+  kind        String   @db.VarChar(40)
+  /// Что разрешено/запрещено (бизнес-описание).
+  scope       String   @db.Text
+  /// Если requires_approval — кто approver (roleId).
+  approverRoleId String?
+  /// Пороги (например, бюджет в рублях). JSON для гибкости.
+  thresholdsJson Json?
+  sourceBlockIds String[] @default([])
+  confidence  Decimal? @db.Decimal(4, 3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  org           Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role          Role  @relation("AuthorityBoundaryRole", fields: [roleId], references: [id], onDelete: Cascade)
+  approverRole  Role? @relation("AuthorityBoundaryApprover", fields: [approverRoleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, roleId])
+  @@index([tenantId, kind])
+  @@map("authority_boundaries")
+}
+
+/// RequiredKnowledge — что должен знать человек на этой должности (γ-1 SkillProfile
+/// сверяется с этим для gap-detection). Различает «обязательно» и «желательно».
+model RequiredKnowledge {
+  id          String   @id @default(cuid())
+  tenantId    String
+  roleId      String
+  /// Тема знания (например «SQL», «техника продаж SPIN», «бюджетирование»).
+  topic       String   @db.VarChar(300)
+  description String?  @db.Text
+  /// 'mandatory' | 'preferred' | 'nice_to_have'.
+  importance  String   @db.VarChar(20)
+  /// Уровень владения: 'beginner' | 'intermediate' | 'expert'.
+  expectedLevel String? @db.VarChar(20)
+  sourceBlockIds String[] @default([])
+  confidence  Decimal? @db.Decimal(4, 3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  org  Org  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, roleId])
+  @@index([tenantId, roleId, importance])
+  @@map("required_knowledge")
+}
+
+/// DecisionPolicy — правило принятия решения, привязанное к роли. Когда β-3
+/// Specialist Decisions фиксирует решение, он может ссылаться на эту policy
+/// через Decision.appliedPolicyId — для аудита соответствия.
+model DecisionPolicy {
+  id          String   @id @default(cuid())
+  tenantId    String
+  roleId      String
+  /// Краткое имя политики (например «лимит на скидку», «утверждение KP > 500к»).
+  name        String   @db.VarChar(300)
+  /// Условия применения (когда срабатывает).
+  conditionDescription String? @db.Text
+  /// Что делать (как принимать решение).
+  ruleDescription      String  @db.Text
+  /// Опц. ссылка на Regulation, формализующий эту политику.
+  regulationId         String?
+  sourceBlockIds       String[] @default([])
+  confidence           Decimal? @db.Decimal(4, 3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  org        Org         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role       Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  regulation Regulation? @relation(fields: [regulationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, roleId])
+  @@map("decision_policies")
+}
+
+/// Interaction — типовое взаимодействие роли с другими ролями / отделами /
+/// внешними участниками. Используется в γ-3 CrossFunctional для построения
+/// карты handoff'ов и в β-8 для PersonalRelation patterns.
+model Interaction {
+  id          String   @id @default(cuid())
+  tenantId    String
+  roleId      String
+  /// С кем взаимодействует: ровно одно из них заполнено.
+  counterpartRoleId       String?
+  counterpartDepartmentId String?
+  /// Free-text если counterpart — внешний (клиент, поставщик, регулятор).
+  counterpartExternal     String? @db.VarChar(300)
+  /// Тип взаимодействия: 'reports_to' | 'collaborates_with' | 'delegates_to' |
+  /// 'receives_handoff_from' | 'escalates_to' | 'customer_facing' | …
+  kind         String  @db.VarChar(40)
+  /// Частота: 'daily' | 'weekly' | 'monthly' | 'ad_hoc'.
+  frequency    String? @db.VarChar(20)
+  description  String? @db.Text
+  sourceBlockIds String[] @default([])
+  confidence   Decimal? @db.Decimal(4, 3)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  org                 Org        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role                Role       @relation("InteractionRole", fields: [roleId], references: [id], onDelete: Cascade)
+  counterpartRole     Role?      @relation("InteractionCounterpartRole", fields: [counterpartRoleId], references: [id], onDelete: SetNull)
+  counterpartDepartment Department? @relation("InteractionCounterpartDept", fields: [counterpartDepartmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, roleId])
+  @@index([tenantId, counterpartRoleId])
+  @@index([tenantId, kind])
+  @@map("interactions")
 }
 
 // ──────────────────────────── группа Б: каркас 5 уровней (без UI в Фазе 0) ────────────────────────────
@@ -3441,6 +3641,8 @@ model Regulation {
   supersedes     Regulation?   @relation("RegulationSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy   Regulation[]  @relation("RegulationSupersedes")
   currentVersion CardVersion?  @relation("RegulationCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  /// SBA α-8 wave 2 — обратная связь DecisionPolicy.
+  decisionPolicies DecisionPolicy[]
 
   @@unique([tenantId, name])
   @@index([tenantId, category])

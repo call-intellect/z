@@ -772,6 +772,9 @@ model User {
   // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
   chatV2Conversations     ChatV2Conversation[]    @relation("ChatV2ConversationUser")
 
+  // ── SBA α-7 wave 2 — Specialist 3.1 (ProcessTemplate) ──
+  publishedProcessTemplateVersions ProcessTemplateVersion[] @relation("ProcessTemplateVersionPublishedBy")
+
   @@unique([email, signupSource])
   @@index([email])
   @@index([deletedAt])
@@ -1836,6 +1839,12 @@ model Org {
   markets  Market[]
   orgUnits OrgUnit[]
 
+  // ── SBA α-7 wave 2 — Specialist 3.1 расширение ──
+  processTemplates        ProcessTemplate[]
+  processTemplateVersions ProcessTemplateVersion[]
+  decisionPoints          DecisionPoint[]
+  processHandoffs         ProcessHandoff[]
+
   // ── SBA α-4 — Layer 4 Curation Foundation ──
   curationItems      CurationItem[]
   conflictItems      ConflictItem[]
@@ -2882,6 +2891,12 @@ model Role {
   /// Процессы, owner которых — эта роль (Фаза 0b, наполняется extraction'ом).
   ownedProcesses    Process[]     @relation("ProcessOwnerRole")
 
+  /// SBA α-7 wave 2 — обратные связи новых моделей.
+  ownedProcessTemplates ProcessTemplate[] @relation("ProcessTemplateOwnerRole")
+  decisionPointsAsDecider DecisionPoint[] @relation("DecisionPointDecider")
+  handoffsFrom        ProcessHandoff[] @relation("HandoffFromRole")
+  handoffsTo          ProcessHandoff[] @relation("HandoffToRole")
+
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId, departmentId])
   @@map("roles")
@@ -2934,6 +2949,8 @@ model Person {
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
   ownedRegulations   Regulation[] @relation("RegulationOwnerPerson")
   ownedPolicies      Policy[]     @relation("PolicyOwnerPerson")
+  /// SBA α-7 wave 2 — Person как owner ProcessTemplate.
+  ownedProcessTemplates ProcessTemplate[] @relation("ProcessTemplateOwnerPerson")
   memberships        Membership[] @relation("MembershipPerson")
   invitations        OrgInvitation[] @relation("OrgInvitationPerson")
   /// SBA γ-1 — Specialist 3.7 (SkillProfile). 1:1 — у одного Person ровно один профиль.
@@ -3181,20 +3198,180 @@ model Process {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
+  /// SBA α-7 wave 2 (2026-05-23) — instance может ссылаться на canonical template.
+  templateId         String?
+
   org            Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ownerRole      Role?         @relation("ProcessOwnerRole", fields: [ownerRoleId], references: [id], onDelete: SetNull)
   ownerPerson    Person?       @relation("ProcessOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
   steps          ProcessStep[]
   /// SBA α-7 — связь с CardVersion (текущая активная версия).
   currentVersion CardVersion?  @relation("ProcessCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  /// SBA α-7 wave 2 — опц. библиотечный template, из которого instance создан.
+  template       ProcessTemplate? @relation("ProcessFromTemplate", fields: [templateId], references: [id], onDelete: SetNull)
 
   /// Уникальность гарантируется EntityResolutionService + cosine + LLM-arbiter (0b §8).
   @@unique([tenantId, name])
   @@index([tenantId, status])
   @@index([tenantId, ownerRoleId])
   @@index([tenantId, scope])
+  @@index([tenantId, templateId])
   @@index([currentVersionId])
   @@map("processes")
+}
+
+/// ProcessTemplate — библиотечный шаблон процесса (SBA α-7).
+///
+/// Решение «template vs instance»: существующий `Process` остаётся как
+/// runtime-instance конкретного процесса компании; `ProcessTemplate` — это
+/// канонический шаблон (например, «стандартный sales cycle», «hire process»).
+/// `Process.templateId` — опц. ссылка из instance на template.
+///
+/// Источники: специалист 3.1 Regulations извлекает template'ы из документов
+/// и встреч; куратор апрувит публикацию в библиотеку.
+model ProcessTemplate {
+  id                String                @id @default(cuid())
+  tenantId          String
+  name              String                @db.VarChar(300)
+  summary           String?               @db.Text
+  /// Категория шаблона: 'hire' | 'sales' | 'incident' | 'onboarding' | 'release' | 'custom'.
+  /// Строкой, чтобы расширять без миграций.
+  category          String?               @db.VarChar(60)
+  /// Где применяется: 'org' | 'department:<id>' | 'role:<id>'.
+  scope             String?               @db.VarChar(120)
+  status            ProcessStatus         @default(active)
+  /// Последняя одобренная версия (Editor → Curator → publish).
+  currentVersionId  String?
+  ownerRoleId       String?
+  ownerPersonId     String?
+  /// IdeaBlock-источники последнего обновления template (provenance).
+  sourceBlockIds    String[]              @default([])
+  dataClass         DataClass             @default(internal)
+  embedding         Unsupported("vector(1536)")?
+  lastConfirmedAt   DateTime?
+  metadata          Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  deletedAt         DateTime?
+
+  org             Org                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  currentVersion  ProcessTemplateVersion?   @relation("TemplateCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions        ProcessTemplateVersion[]  @relation("TemplateVersions")
+  ownerRole       Role?                     @relation("ProcessTemplateOwnerRole", fields: [ownerRoleId], references: [id], onDelete: SetNull)
+  ownerPerson     Person?                   @relation("ProcessTemplateOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  instances       Process[]                 @relation("ProcessFromTemplate")
+  decisionPoints  DecisionPoint[]
+  handoffsFrom    ProcessHandoff[]          @relation("HandoffFromTemplate")
+  handoffsTo      ProcessHandoff[]          @relation("HandoffToTemplate")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, category])
+  @@index([tenantId, scope])
+  @@map("process_templates")
+}
+
+/// ProcessTemplateVersion — версионируемый snapshot шаблона. Содержит полное
+/// определение (шаги + decision points + handoffs) в JSON. Версии иммутабельны
+/// после публикации; обновление = новая версия.
+model ProcessTemplateVersion {
+  id              String   @id @default(cuid())
+  tenantId        String
+  templateId      String
+  /// Версия: монотонно возрастающее целое от 1 на template.
+  version         Int
+  /// Полное определение версии: { steps: [...], decisionPoints: [...], handoffs: [...] }.
+  definitionJson  Json
+  /// Кто опубликовал.
+  publishedById   String?
+  publishedAt     DateTime?
+  /// Источник: 'manual' | 'agent' (auto-extracted by Specialist 3.1) | 'imported'.
+  source          String   @db.VarChar(40)
+  /// Краткие changelog/diff'ы к предыдущей версии.
+  changeNote      String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  org           Org             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template      ProcessTemplate @relation("TemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  currentOf     ProcessTemplate[] @relation("TemplateCurrentVersion")
+  publishedBy   User?           @relation("ProcessTemplateVersionPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([templateId, version])
+  @@index([tenantId, templateId])
+  @@map("process_template_versions")
+}
+
+/// DecisionPoint — точка принятия решения внутри процесса. Связана с конкретным
+/// `ProcessTemplate` (или с `ProcessStep` в legacy instance — поле опц.).
+/// Используется специалистом 3.3 Decisions для cross-link «принятое решение в
+/// рамках этого DecisionPoint».
+model DecisionPoint {
+  id            String   @id @default(cuid())
+  tenantId      String
+  templateId    String?
+  /// Опц. ссылка на legacy ProcessStep (если решение зафиксировано в инстансе).
+  processStepId String?
+  name          String   @db.VarChar(300)
+  /// Условие, по которому проходит ветвление (естественный язык + опц. JSON).
+  condition     String?  @db.Text
+  /// Возможные ветви: [{name, description, leadsToStepId?}, …].
+  branchesJson  Json
+  /// Опц. дефолтная Role/Person, принимающая решение в этой точке.
+  decidedByRoleId String?
+  /// Порядок в process flow.
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org             Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template        ProcessTemplate? @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  processStep     ProcessStep?     @relation(fields: [processStepId], references: [id], onDelete: Cascade)
+  decidedByRole   Role?            @relation("DecisionPointDecider", fields: [decidedByRoleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, templateId])
+  @@index([tenantId, processStepId])
+  @@map("decision_points")
+}
+
+/// ProcessHandoff — передача результата между процессами / шагами / ролями.
+/// Используется специалистом γ-3 CrossFunctional Process для трекинга
+/// межотдельных handoff'ов.
+model ProcessHandoff {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  /// Опц. ссылки на источник передачи (template ИЛИ конкретный шаг).
+  fromTemplateId       String?
+  fromProcessStepId    String?
+  fromRoleId           String?
+  /// Опц. ссылки на получателя.
+  toTemplateId         String?
+  toProcessStepId      String?
+  toRoleId             String?
+  /// Тип handoff'а: 'document' | 'data' | 'decision' | 'physical' | 'notification'.
+  kind                 String   @db.VarChar(40)
+  /// Что именно передаётся (артефакт, событие, документ).
+  payloadDescription   String?  @db.Text
+  /// Ожидаемое SLA передачи (в часах).
+  expectedSlaHours     Int?
+  /// Зафиксированные конфликты handoff'а (через γ-3 process-friction signals).
+  knownFrictionCount   Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromTemplate     ProcessTemplate? @relation("HandoffFromTemplate", fields: [fromTemplateId], references: [id], onDelete: Cascade)
+  toTemplate       ProcessTemplate? @relation("HandoffToTemplate", fields: [toTemplateId], references: [id], onDelete: Cascade)
+  fromProcessStep  ProcessStep?     @relation("HandoffFromStep", fields: [fromProcessStepId], references: [id], onDelete: SetNull)
+  toProcessStep    ProcessStep?     @relation("HandoffToStep", fields: [toProcessStepId], references: [id], onDelete: SetNull)
+  fromRole         Role?            @relation("HandoffFromRole", fields: [fromRoleId], references: [id], onDelete: SetNull)
+  toRole           Role?            @relation("HandoffToRole", fields: [toRoleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, kind])
+  @@index([tenantId, fromTemplateId])
+  @@index([tenantId, toTemplateId])
+  @@index([tenantId, fromRoleId])
+  @@index([tenantId, toRoleId])
+  @@map("process_handoffs")
 }
 
 /// ProcessStep — шаг процесса (Фаза 0a, группа Б).
@@ -3211,6 +3388,10 @@ model ProcessStep {
 
   org     Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   process Process @relation(fields: [processId], references: [id], onDelete: Cascade)
+  /// SBA α-7 wave 2 — обратные связи DecisionPoint и ProcessHandoff.
+  decisionPoints DecisionPoint[]
+  handoffsFrom   ProcessHandoff[] @relation("HandoffFromStep")
+  handoffsTo     ProcessHandoff[] @relation("HandoffToStep")
 
   @@unique([processId, order])
   @@index([tenantId, processId])

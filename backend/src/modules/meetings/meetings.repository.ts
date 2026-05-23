@@ -69,6 +69,7 @@ export class MeetingsRepository {
       title: string;
       type: MeetingType;
       ownerId: string;
+      tenantId: string;
       customPrompt: string | null;
       cardId?: string | null;
       recordByDefault?: boolean;
@@ -83,6 +84,7 @@ export class MeetingsRepository {
         title: data.title,
         type: data.type,
         ownerId: data.ownerId,
+        tenantId: data.tenantId,
         customPrompt: data.customPrompt,
         recordByDefault: data.recordByDefault ?? true,
         ...(data.cardId !== undefined && data.cardId !== null

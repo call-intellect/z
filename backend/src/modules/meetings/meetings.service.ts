@@ -69,6 +69,32 @@ export class MeetingsService {
    *
    * Окно — календарный месяц (~30 дней) в скользящем формате через windowMs.
    */
+  /**
+   * CRIT-3: для каждого Meeting обязателен tenantId (Org). Резолвим default-Org
+   * владельца — сначала owned (персональный), иначе первый по joinedAt
+   * Membership. На каждого активного юзера такой Org гарантирован через
+   * `backfill-orgs-fase0.ts` / signup-flow. Если Org нет — отказ.
+   */
+  private async resolveDefaultTenant(
+    userId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const client = tx ?? this.prisma;
+    const owned = await client.org.findFirst({
+      where: { ownerId: userId, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (owned) return owned.id;
+    const ms = await client.membership.findFirst({
+      where: { userId, org: { deletedAt: null } },
+      orderBy: { joinedAt: 'asc' },
+      select: { orgId: true },
+    });
+    if (ms) return ms.orgId;
+    throw new NotAuthorizedError('no_org_for_user');
+  }
+
   private async checkMeetingsMonthlyQuota(userId: string): Promise<void> {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, org: { deletedAt: null } },
@@ -116,12 +142,14 @@ export class MeetingsService {
 
     // 3. транзакция: Meeting + host-Participant.
     await this.prisma.$transaction(async (tx) => {
+      const tenantId = await this.resolveDefaultTenant(user.id, tx);
       await this.meetings.create(
         {
           id: meetingId,
           title: input.title,
           type: input.type,
           ownerId: user.id,
+          tenantId,
           customPrompt: input.customPrompt ?? null,
         },
         tx,
@@ -197,12 +225,14 @@ export class MeetingsService {
         resolvedCardId = card.id;
       }
 
+      const tenantId = await this.resolveDefaultTenant(userId, tx);
       created = await this.meetings.create(
         {
           id: meetingId,
           title: input.title,
           type: input.type,
           ownerId: userId,
+          tenantId,
           customPrompt: input.customPrompt ?? null,
           cardId: resolvedCardId,
           recordByDefault: input.recordByDefault ?? true,

@@ -19,18 +19,26 @@ function meeting(type: MeetingType) {
   };
 }
 
-describe('Prompts registry — все 9 типов', () => {
-  const TYPES: MeetingType[] = [
-    'team',
-    'standup',
-    'plan_fact',
-    'project',
-    'sales',
-    'custdev',
-    'partner',
-    'interview',
-    'customer_success',
-  ];
+// CRIT-2 guard: при добавлении нового значения в MeetingType TypeScript
+// потребует ключ в этой карте — тест ниже автоматически проверит регистр.
+// Без `satisfies Record<MeetingType, true>` забытый enum-value тихо ломал
+// бы AI-pipeline (см. plans/analysis/2026-05-22-code-reality-deltas.md §CRIT-2).
+const ALL_MEETING_TYPES = {
+  team: true,
+  standup: true,
+  plan_fact: true,
+  project: true,
+  sales: true,
+  custdev: true,
+  partner: true,
+  interview: true,
+  customer_success: true,
+  review: true,
+  retrospective: true,
+} satisfies Record<MeetingType, true>;
+
+describe('Prompts registry — все типы MeetingType покрыты', () => {
+  const TYPES = Object.keys(ALL_MEETING_TYPES) as MeetingType[];
 
   for (const t of TYPES) {
     describe(`type=${t}`, () => {

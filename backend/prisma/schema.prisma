@@ -777,10 +777,12 @@ model Meeting {
   title            String
   type             MeetingType
   customPrompt     String?       @db.Text
-  /// tenant: Org, в которой принадлежит встреча. NULL только для legacy-данных
-  /// до backfill-fase0. После backfill становится NOT NULL отдельным push'ом.
-  tenantId         String?
-  tenant           Org?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// tenant: Org, которой принадлежит встреча. CRIT-3 (2026-05-23):
+  /// переведено в NOT NULL после backfill-orgs-fase0 +
+  /// tighten-meeting-tenant-not-null. Все legacy-NULL заполнены personal-Org
+  /// владельца через `scripts/backfill-orgs-fase0.ts`.
+  tenantId         String
+  tenant           Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ownerId          String
   owner            User          @relation(fields: [ownerId], references: [id])
   cardId           String?

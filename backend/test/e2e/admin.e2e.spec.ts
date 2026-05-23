@@ -118,6 +118,16 @@ describe('Admin E2E (login → integration-keys → meetings → ai-usage)', () 
     const owner = await prisma.user.create({
       data: { email: 'owner-e2e@z.app', name: 'Owner', role: 'user' },
     });
+    // CRIT-3: tenantId обязателен. Создаём personal-Org для тестового owner'а.
+    const org = await prisma.org.create({
+      data: {
+        name: 'Owner E2E Org',
+        slug: `owner-e2e-${owner.id.slice(-6)}`,
+        ownerId: owner.id,
+        visibilityMode: 'open',
+        tier: 'basic',
+      },
+    });
     const id = `m_e2e_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
     await prisma.meeting.create({
       data: {
@@ -126,6 +136,7 @@ describe('Admin E2E (login → integration-keys → meetings → ai-usage)', () 
         title: 'E2E meeting',
         type: 'sales',
         ownerId: owner.id,
+        tenantId: org.id,
         status,
         ...(status === 'active' ? { startedAt: new Date() } : {}),
       },

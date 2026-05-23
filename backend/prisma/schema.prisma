@@ -1852,6 +1852,11 @@ model Org {
   decisionPolicies        DecisionPolicy[]
   interactions            Interaction[]
 
+  // ── SBA α-9 wave 2 — Company Foundation ──
+  companyProfile          CompanyProfile?
+  functionalDomains       FunctionalDomain[]
+  departmentDomainLinks   DepartmentDomainLink[]
+
   // ── SBA α-4 — Layer 4 Curation Foundation ──
   curationItems      CurationItem[]
   conflictItems      ConflictItem[]
@@ -2128,6 +2133,8 @@ model Entity {
   orgUnit  OrgUnit?  @relation("OrgUnitEntity")
   /// SBA α-8 wave 2 — линковка с Role.
   role     Role?     @relation("RoleEntity")
+  /// SBA α-9 wave 2 — линковка с Department.
+  department Department? @relation("DepartmentEntity")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -2857,6 +2864,18 @@ model Department {
   tenantId           String
   name               String      @db.VarChar(200)
   parentDepartmentId String?
+  /// SBA α-9 wave 2 (2026-05-23) — расширение Department для Company Foundation.
+  /// Краткое описание миссии отдела (1-2 предложения).
+  missionStatement   String?     @db.Text
+  /// 0..1 — насколько полно у отдела заполнены: roles, processes, regulations.
+  /// Рассчитывается MaturityScorerCron.
+  completeness       Decimal?    @db.Decimal(4, 3)
+  /// Опц. линковка с Entity{type=org_unit} (для участия в графе знаний).
+  entityId           String?     @unique
+  /// IdeaBlock-источники последнего извлечения отдела (provenance).
+  sourceBlockIds     String[]    @default([])
+  /// Confidence от extraction-LLM (для агентских записей).
+  confidence         Decimal?    @db.Decimal(4, 3)
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   /// Soft-delete: cohabits с уникальностью (orgId, name) благодаря включению deletedAt в @@unique.
@@ -2865,10 +2884,13 @@ model Department {
   org      Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   parent   Department?  @relation("DepartmentParent", fields: [parentDepartmentId], references: [id])
   children Department[] @relation("DepartmentParent")
+  entity   Entity?      @relation("DepartmentEntity", fields: [entityId], references: [id], onDelete: SetNull)
   roles    Role[]
   persons  Person[]     @relation("PersonPrimaryDepartment")
   /// SBA α-8 wave 2 — обратная связь Interaction.
   interactionsAsCounterpart Interaction[] @relation("InteractionCounterpartDept")
+  /// SBA α-9 wave 2 — m:n с FunctionalDomain.
+  domainLinks DepartmentDomainLink[]
 
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId])
@@ -3349,6 +3371,116 @@ model Strategy {
 
   @@index([tenantId])
   @@map("strategies")
+}
+
+// ──────────────────────────── SBA α-9 wave 2 — Company Foundation ────────────────────────────
+
+/// CompanyProfile — единая 1:1 запись о компании (Org). Заменяет тройку
+/// Mission/Vision/Strategy: контент остаётся в JSON-полях для гибкости (UI в γ),
+/// но точкой правды становится этот профиль.
+///
+/// Старые модели Mission/Vision/Strategy остаются для backward-compat
+/// (deprecated). Миграция данных — patch-script в α-9 wave 3.
+model CompanyProfile {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  /// Краткое имя компании (для UI).
+  displayName     String?  @db.VarChar(300)
+  /// Миссия: { contentMd, horizon, targetDate? }. JSON для упрощения миграции
+  /// из Mission и расширения новыми полями без alter table.
+  missionJson     Json?
+  /// Видение: { contentMd, horizonYears, targetDate? }.
+  visionJson      Json?
+  /// Стратегия: { contentMd, markets[], bets[], horizon, targetDate? }.
+  strategyJson    Json?
+  /// Target markets (Market.id[]) — для δ-1 Orchestrator и β-7 BrandVoice.
+  targetMarketIds String[] @default([])
+  /// Уровень зрелости (0..1) — рассчитывается MaturityScorerCron как
+  /// взвешенное completeness по 8 базовым FunctionalDomain'ам.
+  maturityScore   Decimal? @db.Decimal(4, 3)
+  /// Когда последний раз пересчитывался maturityScore.
+  lastMaturityCalcAt DateTime?
+  /// Краткое описание стадии (early-stage / growth / scale / enterprise).
+  stage           String?  @db.VarChar(40)
+  sourceBlockIds  String[] @default([])
+  /// Confidence от extraction-LLM (для агентского билда из встреч).
+  confidence      Decimal? @db.Decimal(4, 3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("company_profiles")
+}
+
+/// FunctionalDomain — функциональная область деятельности компании
+/// (Маркетинг, Продажи, Разработка, HR, Финансы, …). Дерево через parentDomainId.
+/// Авто-расширяется domain-expander.cron при обнаружении unmatched тем.
+///
+/// Используется как ось FUNCTIONAL в AxisClassifierService (α-3 wave 3) и
+/// для MaturityScorerCron (взвешенное completeness по доменам).
+model FunctionalDomain {
+  id              String   @id @default(cuid())
+  tenantId        String
+  parentDomainId  String?
+  name            String   @db.VarChar(200)
+  /// Краткое описание области.
+  description     String?  @db.Text
+  /// Иконка для UI (lucide icon name).
+  iconName        String?  @db.VarChar(60)
+  /// `slug` — нормализованный идентификатор для запросов (`sales`, `r-and-d`).
+  slug            String   @db.VarChar(80)
+  /// Системные дефолтные домены (seed) vs пользовательские (auto-expanded).
+  isSystem        Boolean  @default(false)
+  /// 0..1 — насколько у компании прокачана эта область (по объёму извлечённых
+  /// знаний / процессов / решений в этом домене).
+  completeness    Decimal? @db.Decimal(4, 3)
+  /// Порядок отображения.
+  order           Int      @default(0)
+  /// Confidence для auto-expanded доменов (от LLM-классификатора).
+  confidence      Decimal? @db.Decimal(4, 3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  org      Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   FunctionalDomain?   @relation("FunctionalDomainHierarchy", fields: [parentDomainId], references: [id], onDelete: SetNull)
+  children FunctionalDomain[]  @relation("FunctionalDomainHierarchy")
+  departmentLinks DepartmentDomainLink[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, parentDomainId])
+  @@index([tenantId, isSystem])
+  @@map("functional_domains")
+}
+
+/// DepartmentDomainLink — m:n связь Department ↔ FunctionalDomain.
+/// Один отдел может покрывать несколько доменов (HR-отдел: «найм» + «обучение»);
+/// один домен может быть распределён между несколькими отделами (BizDev в Sales
+/// и в Marketing).
+model DepartmentDomainLink {
+  id           String   @id @default(cuid())
+  tenantId     String
+  departmentId String
+  domainId     String
+  /// Какая доля domain-активности приходится на этот отдел (0..1). Сумма по
+  /// всем отделам для одного домена должна быть ~1; на расхождения реагирует
+  /// MaturityScorerCron.
+  coverageRatio Decimal? @db.Decimal(4, 3)
+  /// 'primary' (главный owner) | 'secondary' | 'supporting'.
+  role         String   @db.VarChar(20)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  org        Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  domain     FunctionalDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, domainId])
+  @@index([tenantId, domainId])
+  @@index([tenantId, departmentId])
+  @@map("department_domain_links")
 }
 
 /// Process — бизнес-процесс компании (Фаза 0a, группа Б). UI в Фазе γ.

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import {
   AlertTriangle,
   Brain,
+  Building2,
   CalendarClock,
   CalendarDays,
   ChevronDown,
@@ -13,6 +14,7 @@ import {
   ClipboardList,
   Clock4,
   FileText,
+  FlaskConical,
   FolderKanban,
   Gauge,
   Home,
@@ -23,6 +25,7 @@ import {
   LogOut,
   MessageCircle,
   Network,
+  Palette,
   Plug,
   Plus,
   Scale,
@@ -124,6 +127,11 @@ const COMPANY_GROUP: NavGroup = {
   items: [
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard' },
     { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure' },
+    // SBA α-9 wave 3 — Company Foundation: 4 новые страницы рядом со «Структурой».
+    { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company' },
+    { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments' },
+    { href: '/domains', label: 'Домены', icon: Shapes, matchPrefix: '/domains' },
+    { href: '/maturity', label: 'Зрелость', icon: Gauge, matchPrefix: '/maturity' },
     { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
     { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles' },
     // SBA α-3 — read-only список поставщиков и событий (категория A онтологии).
@@ -137,6 +145,10 @@ const COMPANY_GROUP: NavGroup = {
     { href: '/insights', label: 'Сигналы', icon: AlertTriangle, matchPrefix: '/insights' },
     // SBA β-5 — реестр идей и запросов клиентов (internal / client_request).
     { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
+    // SBA β-6 — институциональная память: эксперименты и их уроки.
+    { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
+    // SBA β-7 — голос бренда (Specialist 3.10). Tone/values/taboos.
+    { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
     {
       href: '/themes',
       label: 'Темы',

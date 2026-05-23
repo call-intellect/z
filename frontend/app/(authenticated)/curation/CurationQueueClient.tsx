@@ -11,6 +11,14 @@ import {
 } from '@/api/curation.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  completenessCardTypeLabel,
+  completenessSlotNameLabel,
+  completenessSlotStatusLabel,
+  mapCompletenessSlot,
+  type CompletenessParentCardType,
+  type CompletenessSlot,
+} from '@/domain/completeness-slot';
+import {
   conflictResolutionLabel,
   conflictStatusLabel,
   curationDecisionLabel,
@@ -25,6 +33,15 @@ import {
 } from '@/domain/curation';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
+
+const COMPLETENESS_CARD_TYPES_BY_RESOURCE: Partial<
+  Record<string, CompletenessParentCardType>
+> = {
+  regulation: 'regulation',
+  process: 'process',
+  role: 'role',
+  company_profile: 'company_profile',
+};
 
 import {
   AdminEmpty,
@@ -77,6 +94,8 @@ function CurationQueueContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
+  /// SBA α-4 wave 2 — счётчик открытых CompletenessSlot по всей Org (для виджета хедера).
+  const [openSlotsTotal, setOpenSlotsTotal] = useState<number | null>(null);
 
   const [level, setLevel] = useState<CurationLevelApi | ''>('');
   const [status, setStatus] = useState<CurationItemStatusApi | ''>('pending');
@@ -165,6 +184,25 @@ function CurationQueueContent() {
     }
   }, [selectedId, loadDetail]);
 
+  // SBA α-4 wave 2 — счётчик открытых слотов (для виджета в хедере).
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const res = await curationApi.listCompletenessSlots({
+          status: 'open',
+          take: 1,
+        });
+        if (active) setOpenSlotsTotal(res.totalCount);
+      } catch {
+        if (active) setOpenSlotsTotal(null);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   if (isLoading && items.length === 0) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;
   if (error)
@@ -176,6 +214,14 @@ function CurationQueueContent() {
         <h1 className="text-2xl font-semibold">Проверка карточек</h1>
         <p className="mt-1 text-sm text-fg-secondary">
           Очередь карточек на проверке. Всего: {total}.
+          {openSlotsTotal !== null && (
+            <>
+              {' '}
+              <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/5 px-2 py-0.5 text-xs">
+                Незаполненных слотов: {openSlotsTotal}
+              </span>
+            </>
+          )}
         </p>
       </header>
 
@@ -375,6 +421,17 @@ function CurationDetailPanel({
           {JSON.stringify(item.triageReason, null, 2)}
         </pre>
       </section>
+
+      {/* SBA α-4 wave 2 — Вкладка «Полнота карточки». Показывается только для
+          4 нормативных типов (regulation/process/role/company_profile). */}
+      {COMPLETENESS_CARD_TYPES_BY_RESOURCE[item.resourceType] && (
+        <CompletenessPanel
+          cardType={
+            COMPLETENESS_CARD_TYPES_BY_RESOURCE[item.resourceType] as CompletenessParentCardType
+          }
+          cardId={item.resourceId}
+        />
+      )}
 
       {conflicts.length > 0 && (
         <section>
@@ -605,5 +662,140 @@ function ConflictRow({
         </Button>
       </div>
     </li>
+  );
+}
+
+/**
+ * SBA α-4 wave 2 — секция «Полнота карточки».
+ * Показывается только для 4 нормативных типов (regulation/process/role/company_profile).
+ */
+function CompletenessPanel({
+  cardType,
+  cardId,
+}: {
+  cardType: CompletenessParentCardType;
+  cardId: string;
+}) {
+  const [slots, setSlots] = useState<CompletenessSlot[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await curationApi.listCompletenessSlots({
+        cardType,
+        cardId,
+        take: 50,
+      });
+      setSlots(res.items.map(mapCompletenessSlot));
+    } catch (e) {
+      setError(
+        e instanceof ApiError ? e.message : 'Не удалось загрузить слоты',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [cardType, cardId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const open = slots.filter((s) => s.status === 'open');
+  const filled = slots.filter((s) => s.status === 'filled');
+
+  const onMarkFilled = useCallback(
+    async (slotId: string) => {
+      try {
+        await curationApi.markCompletenessSlotFilled(slotId);
+        await load();
+      } catch (e) {
+        setError(
+          e instanceof ApiError
+            ? e.message
+            : 'Не удалось пометить слот заполненным',
+        );
+      }
+    },
+    [load],
+  );
+
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-medium">
+        Полнота карточки ({completenessCardTypeLabel(cardType)})
+      </h3>
+      {isLoading ? (
+        <p className="text-xs text-fg-tertiary">Загружаем слоты…</p>
+      ) : error ? (
+        <p className="text-xs text-danger">{error}</p>
+      ) : slots.length === 0 ? (
+        <p className="text-xs text-fg-tertiary">
+          Слоты для этой карточки ещё не сгенерированы. После ближайшего
+          прохода сканера полноты — появятся здесь.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {open.length > 0 && (
+            <div>
+              <div className="mb-1 text-xs text-fg-tertiary">
+                Открытые ({open.length})
+              </div>
+              <ul className="divide-y divide-border-subtle rounded-md border border-border-subtle bg-bg-input">
+                {open.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                  >
+                    <div>
+                      <div className="font-medium">
+                        {completenessSlotNameLabel(s.slotName)}
+                      </div>
+                      <div className="text-xs text-fg-tertiary">
+                        {s.slotKind === 'required'
+                          ? 'обязательный'
+                          : 'желательный'}{' '}
+                        · {completenessSlotStatusLabel(s.status)}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void onMarkFilled(s.id)}
+                    >
+                      Заполнить
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {filled.length > 0 && (
+            <details className="rounded-md border border-border-subtle bg-bg-input">
+              <summary className="cursor-pointer px-3 py-2 text-xs text-fg-tertiary">
+                Заполненные ({filled.length})
+              </summary>
+              <ul className="divide-y divide-border-subtle border-t border-border-subtle">
+                {filled.map((s) => (
+                  <li
+                    key={s.id}
+                    className="px-3 py-2 text-xs text-fg-secondary"
+                  >
+                    {completenessSlotNameLabel(s.slotName)}
+                    {s.filledAt && (
+                      <span className="ml-2 text-fg-tertiary">
+                        · {s.filledAt.toLocaleString('ru-RU')}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

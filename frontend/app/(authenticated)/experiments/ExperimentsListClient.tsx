@@ -1,0 +1,408 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+
+import { ApiError } from '@/api/api-error';
+import {
+  experimentsApi,
+  type ExperimentDetailApi,
+  type ExperimentStatusApi,
+  type ExperimentsListResponseApi,
+} from '@/api/experiments.api';
+import { useAuth } from '@/contexts/auth-context';
+import {
+  EXPERIMENT_LESSON_TYPE_LABEL,
+  EXPERIMENT_LESSON_TYPE_TONE,
+  EXPERIMENT_STATUS_LABEL,
+  EXPERIMENT_STATUS_TONE,
+  experimentRunningDurationDays,
+  mapExperimentDetail,
+  type ExperimentDetail,
+} from '@/domain/experiment';
+import { Input } from '@/ui/shadcn/input';
+
+import {
+  AdminError,
+  AdminForbidden,
+  AdminLoading,
+} from '../admin/AdminStateViews';
+
+/**
+ * Master-detail для `/experiments` (SBA β-6).
+ *
+ * Слева — фильтры по status + поиск + список экспериментов.
+ * Справа — детальная карточка: гипотеза, текущий результат, уроки
+ * (what_worked / what_failed / next_time), статус, действия (transition).
+ */
+export function ExperimentsListClient() {
+  const { currentOrgId, isLoading: authLoading } = useAuth();
+  if (authLoading) return <AdminLoading rows={4} />;
+  if (!currentOrgId) {
+    return (
+      <AdminForbidden
+        title="Нет организации"
+        description="Вы не состоите ни в одной Org."
+      />
+    );
+  }
+  return <ExperimentsListContent />;
+}
+
+const STATUS_FILTERS: ReadonlyArray<{
+  value: 'all' | ExperimentStatusApi;
+  label: string;
+}> = [
+  { value: 'all', label: 'Все статусы' },
+  { value: 'hypothesis', label: 'Гипотезы' },
+  { value: 'running', label: 'Идут' },
+  { value: 'completed', label: 'Завершённые' },
+  { value: 'dropped', label: 'Прекращённые' },
+  { value: 'paused', label: 'На паузе' },
+];
+
+const TRANSITION_OPTIONS: ReadonlyArray<{
+  to: 'running' | 'completed' | 'dropped' | 'paused';
+  label: string;
+}> = [
+  { to: 'running', label: 'Запустить' },
+  { to: 'completed', label: 'Завершить' },
+  { to: 'dropped', label: 'Прекратить' },
+  { to: 'paused', label: 'На паузу' },
+];
+
+const TONE_TO_CLASS: Record<string, string> = {
+  info: 'bg-blue-100 text-blue-800',
+  warning: 'bg-amber-100 text-amber-800',
+  success: 'bg-emerald-100 text-emerald-800',
+  neutral: 'bg-slate-100 text-slate-800',
+  danger: 'bg-red-100 text-red-800',
+};
+
+function ExperimentsListContent() {
+  const [data, setData] = useState<ExperimentsListResponseApi | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | ExperimentStatusApi
+  >('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ExperimentDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [transitionBusy, setTransitionBusy] = useState(false);
+
+  const fetchList = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const resp = await experimentsApi.list({
+        page: 1,
+        limit: 100,
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        ...(q.trim().length > 0 ? { q: q.trim() } : {}),
+      });
+      setData(resp);
+      if (!selectedId && resp.items.length > 0) {
+        setSelectedId(resp.items[0]?.id ?? null);
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === 'forbidden') {
+          setForbidden(true);
+        } else {
+          setError(err.message);
+        }
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Не удалось загрузить эксперименты');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+    // selectedId намеренно опущен из зависимостей — мы хотим автоматически
+    // выбирать первый элемент только при изменении фильтров, не при выборе.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, q]);
+
+  useEffect(() => {
+    void fetchList();
+  }, [fetchList]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    setDetailLoading(true);
+    experimentsApi
+      .get(selectedId)
+      .then((d) => setDetail(mapExperimentDetail(d)))
+      .catch((err) => {
+        if (err instanceof Error) setError(err.message);
+      })
+      .finally(() => setDetailLoading(false));
+  }, [selectedId]);
+
+  const handleTransition = useCallback(
+    async (to: 'running' | 'completed' | 'dropped' | 'paused') => {
+      if (!detail) return;
+      setTransitionBusy(true);
+      try {
+        const updated = await experimentsApi.transition(detail.id, { to });
+        setDetail(mapExperimentDetail(updated));
+        await fetchList();
+      } catch (err) {
+        if (err instanceof Error) setError(err.message);
+      } finally {
+        setTransitionBusy(false);
+      }
+    },
+    [detail, fetchList],
+  );
+
+  const items = useMemo(() => data?.items ?? [], [data]);
+
+  if (forbidden) {
+    return (
+      <AdminForbidden
+        title="Нет прав на просмотр экспериментов"
+        description="Попросите owner или admin Org выдать вам право `experiment:read`."
+      />
+    );
+  }
+  if (error) {
+    return <AdminError message={error} onRetry={() => void fetchList()} />;
+  }
+  if (isLoading && !data) return <AdminLoading rows={6} />;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-6">
+      {/* Left: list */}
+      <section className="space-y-4">
+        <header className="space-y-2">
+          <h1 className="text-2xl font-semibold">Эксперименты</h1>
+          <p className="text-sm text-slate-600">
+            Институциональная память компании: что попробовали, что вышло, чему
+            научились.
+          </p>
+        </header>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            placeholder="Поиск по гипотезе или названию…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="max-w-sm"
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as 'all' | ExperimentStatusApi)
+            }
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          >
+            {STATUS_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-2">
+          {items.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+              Пока нет экспериментов. Они появятся автоматически, как только в
+              ваших встречах прозвучат гипотезы и результаты.
+            </div>
+          ) : (
+            items.map((item) => {
+              const isSelected = item.id === selectedId;
+              const tone = EXPERIMENT_STATUS_TONE[item.status];
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedId(item.id)}
+                  className={`w-full rounded-md border p-3 text-left text-sm transition ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-slate-200 bg-white hover:border-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium text-slate-900">
+                      {item.name}
+                    </div>
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${
+                        TONE_TO_CLASS[tone] ?? TONE_TO_CLASS.neutral
+                      }`}
+                    >
+                      {EXPERIMENT_STATUS_LABEL[item.status]}
+                    </span>
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-xs text-slate-600">
+                    {item.hypothesisText}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                    <span>Уроков: {item.lessonsCount}</span>
+                    <span>Блоков: {item.sourceBlocksCount}</span>
+                    <span>
+                      Уверенность: {Math.round(item.confidence * 100)}%
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      {/* Right: detail */}
+      <section className="rounded-md border border-slate-200 bg-white p-5">
+        {!detail && !detailLoading ? (
+          <div className="text-sm text-slate-500">Выберите эксперимент слева.</div>
+        ) : detailLoading ? (
+          <AdminLoading rows={6} />
+        ) : (
+          detail && (
+            <ExperimentDetailView
+              detail={detail}
+              busy={transitionBusy}
+              onTransition={handleTransition}
+            />
+          )
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ExperimentDetailView({
+  detail,
+  busy,
+  onTransition,
+}: {
+  detail: ExperimentDetail;
+  busy: boolean;
+  onTransition: (
+    to: 'running' | 'completed' | 'dropped' | 'paused',
+  ) => Promise<void>;
+}) {
+  const tone = EXPERIMENT_STATUS_TONE[detail.status];
+  const days = experimentRunningDurationDays(detail);
+  return (
+    <article className="space-y-5">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xl font-semibold">{detail.name}</h2>
+          <span
+            className={`rounded px-2 py-1 text-xs font-medium ${
+              TONE_TO_CLASS[tone] ?? TONE_TO_CLASS.neutral
+            }`}
+          >
+            {EXPERIMENT_STATUS_LABEL[detail.status]}
+          </span>
+        </div>
+        <Link
+          href={`/experiments/${detail.id}`}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Открыть отдельной страницей →
+        </Link>
+      </header>
+
+      <section>
+        <h3 className="text-sm font-medium text-slate-700">Гипотеза</h3>
+        <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+          {detail.hypothesisText}
+        </p>
+      </section>
+
+      {detail.currentResult && (
+        <section>
+          <h3 className="text-sm font-medium text-slate-700">Текущий результат</h3>
+          <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+            {detail.currentResult}
+          </p>
+        </section>
+      )}
+
+      <section>
+        <h3 className="text-sm font-medium text-slate-700">Уроки</h3>
+        {detail.lessons.length === 0 ? (
+          <p className="mt-1 text-sm text-slate-500">
+            Уроки ещё не зафиксированы.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {detail.lessons.map((l, idx) => {
+              const lessonTone = EXPERIMENT_LESSON_TYPE_TONE[l.type];
+              return (
+                <li
+                  key={`${l.type}-${idx}`}
+                  className="rounded-md border border-slate-200 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                        TONE_TO_CLASS[lessonTone] ?? TONE_TO_CLASS.neutral
+                      }`}
+                    >
+                      {EXPERIMENT_LESSON_TYPE_LABEL[l.type]}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+                    {l.text}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 text-xs text-slate-600">
+        <div>
+          <div className="font-medium text-slate-700">Начат</div>
+          <div>{detail.startedAt ? new Date(detail.startedAt).toLocaleString('ru-RU') : '—'}</div>
+        </div>
+        <div>
+          <div className="font-medium text-slate-700">Завершён</div>
+          <div>
+            {detail.completedAt
+              ? new Date(detail.completedAt).toLocaleString('ru-RU')
+              : '—'}
+          </div>
+        </div>
+        <div>
+          <div className="font-medium text-slate-700">Длительность</div>
+          <div>{days !== null ? `${days} дн.` : '—'}</div>
+        </div>
+        <div>
+          <div className="font-medium text-slate-700">Блоков-источников</div>
+          <div>{detail.sourceBlockIds.length}</div>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-medium text-slate-700">Действия</h3>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {TRANSITION_OPTIONS.map((opt) => (
+            <button
+              key={opt.to}
+              type="button"
+              disabled={busy || opt.to === detail.status}
+              onClick={() => void onTransition(opt.to)}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </section>
+    </article>
+  );
+}

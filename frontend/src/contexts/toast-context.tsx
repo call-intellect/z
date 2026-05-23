@@ -14,10 +14,24 @@ import { nanoid } from 'nanoid';
 
 export type ToastType = 'success' | 'error' | 'info';
 
+/**
+ * Опциональное действие toast'а (SBA γ-2 — для «Готово. Отменить» от
+ * Concierge Agent). Если задано — рендерится кнопка справа от message;
+ * клик вызывает onClick (toast при этом обычно закрывается через dismiss).
+ */
+export type ToastAction = {
+  label: string;
+  onClick: () => void | Promise<void>;
+};
+
 export type Toast = {
   id: string;
   type: ToastType;
   message: string;
+  /** SBA γ-2: action toast (например, «Отменить» после tool call). */
+  action?: ToastAction;
+  /** Длительность в мс. Default 3000; 0 = не авто-скрывается (для action). */
+  durationMs?: number;
 };
 
 type ToastContextValue = {
@@ -84,22 +98,46 @@ function ToastItem({
   toast: Toast;
   onDismiss: (id: string) => void;
 }) {
+  // SBA γ-2: action toast'ы (с durationMs=0) НЕ авто-скрываются — ждут клика.
+  // Action toast по умолчанию живёт 8 секунд, обычный — 3.
+  const effectiveDuration =
+    toast.durationMs ?? (toast.action ? 8000 : DURATION_MS);
+
   useEffect(() => {
-    const timer = setTimeout(() => onDismiss(toast.id), DURATION_MS);
+    if (effectiveDuration <= 0) return;
+    const timer = setTimeout(() => onDismiss(toast.id), effectiveDuration);
     return () => clearTimeout(timer);
-  }, [toast.id, onDismiss]);
+  }, [toast.id, onDismiss, effectiveDuration]);
+
+  const handleAction = async () => {
+    if (!toast.action) return;
+    try {
+      await toast.action.onClick();
+    } finally {
+      onDismiss(toast.id);
+    }
+  };
 
   return (
     <div
       role="status"
       className={clsx(
-        'pointer-events-auto rounded-md px-4 py-3 text-sm shadow-lg',
+        'pointer-events-auto flex items-center gap-3 rounded-md px-4 py-3 text-sm shadow-lg',
         toast.type === 'success' && 'bg-green-600 text-white',
         toast.type === 'error' && 'bg-red-600 text-white',
         toast.type === 'info' && 'bg-slate-800 text-white',
       )}
     >
-      {toast.message}
+      <span className="flex-1">{toast.message}</span>
+      {toast.action && (
+        <button
+          type="button"
+          onClick={handleAction}
+          className="rounded border border-white/30 px-2 py-1 text-xs font-medium hover:bg-white/10"
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   );
 }

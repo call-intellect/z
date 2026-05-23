@@ -12,11 +12,14 @@ import {
   FlaskConical,
   Gauge,
   KeyRound,
+  LineChart,
   ListTree,
   MessagesSquare,
   PlayCircle,
+  Plug,
   Shield,
   Sparkles,
+  TrendingUp,
   Users,
   Video,
 } from 'lucide-react';
@@ -78,6 +81,34 @@ const NAV_GROUPS: NavGroup[] = [
         matchPrefix: '/admin/experiments',
       },
       { href: '/admin/llm-prices', label: 'Прайс-карта', icon: CircleDollarSign },
+      {
+        href: '/admin/llm/providers',
+        label: 'LLM провайдеры',
+        icon: Plug,
+        matchPrefix: '/admin/llm/providers',
+      },
+      {
+        href: '/admin/llm/models',
+        label: 'LLM модели',
+        icon: Bot,
+        matchPrefix: '/admin/llm/models',
+      },
+    ],
+  },
+  {
+    title: 'Юнит-экономика',
+    items: [
+      {
+        href: '/admin/economics',
+        label: 'Глобальный дашборд',
+        icon: TrendingUp,
+        matchPrefix: '/admin/economics',
+      },
+      {
+        href: '/admin/org/economics',
+        label: 'Экономика моей Org',
+        icon: LineChart,
+      },
     ],
   },
   {

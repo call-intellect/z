@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { MobileHeader } from './Header';
 import { CommandPalette } from '@/ui/components/command-palette/CommandPalette';
+import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton';
 
 /**
  * AppShell — основной layout для авторизованного кабинета.
@@ -15,7 +16,8 @@ import { CommandPalette } from '@/ui/components/command-palette/CommandPalette';
  * `/admin/*`) остаются как есть и рендерятся внутри `<main>`.
  *
  * Глобальная командная палитра (`⌘K`/`Ctrl+K`) монтируется здесь — доступна
- * на всех authenticated-страницах.
+ * на всех authenticated-страницах. Floating button Concierge (SBA γ-2) —
+ * sквозной AI-помощник кабинета, тоже доступен везде.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -32,6 +34,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Глобальная ⌘K палитра. */}
       <CommandPalette />
+
+      {/* SBA γ-2 — sквозной floating Concierge. */}
+      <ConciergeFloatingButton />
     </div>
   );
 }

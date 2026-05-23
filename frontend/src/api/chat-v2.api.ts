@@ -71,6 +71,10 @@ export interface ChatV2AskBody {
   mode?: ChatV2ModeApi;
   scope?: ChatV2ScopeApi;
   scopeRefId?: string | null;
+  /**
+   * SBA α-5 dialog-layer — temporal queries («что мы знали тогда»).
+   * ISO 8601 datetime. UI может предложить DateRange picker.
+   */
   asOf?: string;
 }
 
@@ -81,6 +85,11 @@ export interface ChatV2AskResponseApi {
   citations: ChatV2CitationApi[];
   uncertaintyNote: string | null;
   mode: ChatV2ModeApi;
+  /**
+   * SBA α-5 dialog-layer — true, если ответ извлечён из AnswerCache
+   * (0 LLM calls). UI показывает subtle badge «из кэша».
+   */
+  cacheHit: boolean;
 }
 
 export interface ChatV2ListConversationsQuery {
@@ -127,6 +136,19 @@ export const chatV2Api = {
   archiveConversation: (id: string) =>
     apiClient.post<ChatV2ConversationApi>(
       `/api/v1/chat-v2/conversations/${encodeURIComponent(id)}/archive`,
+      {},
+    ),
+
+  /**
+   * SBA α-5 dialog-layer — очистка AnswerCache+RetrievalCache по
+   * conversationId. Доступно владельцу диалога.
+   */
+  clearCache: (id: string) =>
+    apiClient.post<{
+      answerDeleted: number;
+      retrievalDeleted: number;
+    }>(
+      `/api/v1/chat-v2/conversations/${encodeURIComponent(id)}/clear-cache`,
       {},
     ),
 };

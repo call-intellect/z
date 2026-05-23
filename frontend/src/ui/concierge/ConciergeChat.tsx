@@ -1,0 +1,316 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import {
+  conciergeApi,
+  conciergeStreamApi,
+  type ConciergePageContextApi,
+  type ConciergeStreamEvent,
+} from '@/api/concierge.api';
+import { useToast } from '@/contexts/toast-context';
+
+/**
+ * SBA γ-2 — ConciergeChat.
+ *
+ * Внутренний компонент для floating button, страницы /assistant и
+ * <ConciergeSlot>. Делает реальный SSE-streaming через
+ * `conciergeStreamApi(...)`; при ошибке/неподдержке — fallback на
+ * `conciergeApi.askOnce` (polling).
+ *
+ * События:
+ *   - tool_result с undoLogId → показывает action toast «Готово. Отменить».
+ *   - quota_exceeded → показывает error toast с описанием.
+ *   - error → красный toast.
+ */
+
+export interface ConciergeChatProps {
+  /** Контекст страницы (clientPath, currentEntityKind/Id) — необязательно. */
+  pageContext?: ConciergePageContextApi;
+  /** Если задан — продолжаем conversation. Иначе — новый. */
+  conversationId?: string;
+  /** Render-prop для контейнера (модалка / страница / слот). */
+  className?: string;
+  /** Когда новый conversation создан — сообщаем родителю (для URL/state). */
+  onConversationStarted?: (id: string) => void;
+}
+
+interface ChatRow {
+  id: string;
+  role: 'user' | 'assistant' | 'tool' | 'system';
+  text: string;
+  meta?: { toolName?: string; ok?: boolean; undoLogId?: string };
+}
+
+export function ConciergeChat({
+  pageContext,
+  conversationId,
+  className,
+  onConversationStarted,
+}: ConciergeChatProps) {
+  const { addToast } = useToast();
+  const [rows, setRows] = useState<ChatRow[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [currentConv, setCurrentConv] = useState<string | undefined>(
+    conversationId,
+  );
+  const abortRef = useRef<AbortController | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [rows]);
+
+  const handleUndo = useCallback(
+    async (logId: string) => {
+      try {
+        const res = await conciergeApi.undo(logId);
+        if (res.ok) {
+          addToast({ type: 'success', message: 'Действие отменено' });
+        } else {
+          addToast({
+            type: 'error',
+            message: res.message ?? 'Не удалось отменить',
+          });
+        }
+      } catch {
+        addToast({ type: 'error', message: 'Ошибка отмены' });
+      }
+    },
+    [addToast],
+  );
+
+  const send = useCallback(async () => {
+    const trimmed = input.trim();
+    if (!trimmed || busy) return;
+    setInput('');
+    setBusy(true);
+    setRows((r) => [
+      ...r,
+      { id: `u-${Date.now()}`, role: 'user', text: trimmed },
+    ]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let sseFailed = false;
+    try {
+      for await (const ev of conciergeStreamApi(
+        {
+          userMessage: trimmed,
+          ...(currentConv ? { conversationId: currentConv } : {}),
+          ...(pageContext ? { pageContext } : {}),
+        },
+        controller.signal,
+      )) {
+        applyEvent(ev);
+      }
+    } catch (err) {
+      // Fallback на polling.
+      sseFailed = true;
+      console.warn('Concierge SSE failed, fallback to polling:', err);
+    } finally {
+      abortRef.current = null;
+    }
+
+    if (sseFailed) {
+      try {
+        const r = await conciergeApi.askOnce({
+          userMessage: trimmed,
+          ...(currentConv ? { conversationId: currentConv } : {}),
+          ...(pageContext ? { pageContext } : {}),
+        });
+        if (r.quotaExceeded) {
+          addToast({
+            type: 'error',
+            message:
+              r.quotaExceeded === 'daily'
+                ? 'Дневная квота Concierge исчерпана'
+                : 'Месячная квота Concierge исчерпана',
+          });
+        } else if (r.error) {
+          addToast({ type: 'error', message: r.error.message });
+        } else {
+          if (!currentConv && r.conversationId) {
+            setCurrentConv(r.conversationId);
+            onConversationStarted?.(r.conversationId);
+          }
+          for (const tc of r.toolCalls) {
+            setRows((prev) => [
+              ...prev,
+              {
+                id: `t-${tc.toolName}-${Date.now()}`,
+                role: 'tool',
+                text: `Инструмент: ${tc.toolName} (${tc.ok ? 'ок' : 'ошибка'})`,
+                meta: {
+                  toolName: tc.toolName,
+                  ok: tc.ok,
+                  ...(tc.undoLogId ? { undoLogId: tc.undoLogId } : {}),
+                },
+              },
+            ]);
+            if (tc.undoLogId) {
+              addToast({
+                type: 'success',
+                message: `Готово: ${tc.toolName}`,
+                action: { label: 'Отменить', onClick: () => handleUndo(tc.undoLogId!) },
+              });
+            }
+          }
+          if (r.text) {
+            setRows((prev) => [
+              ...prev,
+              {
+                id: `a-${Date.now()}`,
+                role: 'assistant',
+                text: r.text,
+              },
+            ]);
+          }
+        }
+      } catch {
+        addToast({ type: 'error', message: 'Concierge временно недоступен' });
+      }
+    }
+
+    setBusy(false);
+
+    function applyEvent(ev: ConciergeStreamEvent) {
+      switch (ev.type) {
+        case 'started':
+          if (!currentConv) {
+            setCurrentConv(ev.conversationId);
+            onConversationStarted?.(ev.conversationId);
+          }
+          break;
+        case 'tool_call':
+          setRows((prev) => [
+            ...prev,
+            {
+              id: `tc-${Date.now()}`,
+              role: 'system',
+              text: `Вызываю инструмент: ${ev.toolName}${
+                ev.requiresConfirm ? ' (требуется подтверждение)' : ''
+              }`,
+            },
+          ]);
+          break;
+        case 'tool_result':
+          setRows((prev) => [
+            ...prev,
+            {
+              id: `tr-${Date.now()}`,
+              role: 'tool',
+              text: `${ev.toolName}: ${ev.ok ? 'успех' : `ошибка ${ev.status}`}`,
+              meta: {
+                toolName: ev.toolName,
+                ok: ev.ok,
+                ...(ev.undoLogId ? { undoLogId: ev.undoLogId } : {}),
+              },
+            },
+          ]);
+          if (ev.undoLogId) {
+            addToast({
+              type: 'success',
+              message: `Готово: ${ev.toolName}`,
+              action: { label: 'Отменить', onClick: () => handleUndo(ev.undoLogId!) },
+            });
+          }
+          break;
+        case 'message':
+          setRows((prev) => [
+            ...prev,
+            { id: `a-${Date.now()}`, role: 'assistant', text: ev.text },
+          ]);
+          break;
+        case 'quota_exceeded':
+          addToast({
+            type: 'error',
+            message:
+              ev.scope === 'daily'
+                ? 'Дневная квота Concierge исчерпана'
+                : 'Месячная квота Concierge исчерпана',
+          });
+          break;
+        case 'error':
+          addToast({ type: 'error', message: ev.message });
+          break;
+        case 'thinking':
+        case 'done':
+        default:
+          break;
+      }
+    }
+  }, [
+    input,
+    busy,
+    currentConv,
+    pageContext,
+    addToast,
+    handleUndo,
+    onConversationStarted,
+  ]);
+
+  return (
+    <div
+      className={
+        className ??
+        'flex h-full max-h-[600px] w-full flex-col rounded-md border border-border-subtle bg-bg-base'
+      }
+    >
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-2 overflow-y-auto p-3 text-sm"
+      >
+        {rows.length === 0 && (
+          <div className="text-center text-fg-tertiary">
+            Я Concierge. Спросите что-нибудь или попросите выполнить действие.
+          </div>
+        )}
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className={
+              row.role === 'user'
+                ? 'rounded-md bg-bg-overlay p-2'
+                : row.role === 'assistant'
+                  ? 'rounded-md bg-emerald-900/20 p-2'
+                  : 'rounded-md bg-slate-800/30 p-2 text-xs text-fg-tertiary'
+            }
+          >
+            {row.text}
+          </div>
+        ))}
+        {busy && (
+          <div className="text-xs text-fg-tertiary">Concierge печатает…</div>
+        )}
+      </div>
+      <form
+        className="flex gap-2 border-t border-border-subtle p-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        <input
+          type="text"
+          className="flex-1 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 text-sm"
+          placeholder="Что нужно сделать?"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={busy}
+        />
+        <button
+          type="submit"
+          disabled={busy || !input.trim()}
+          className="rounded-md bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50"
+        >
+          Отправить
+        </button>
+      </form>
+    </div>
+  );
+}

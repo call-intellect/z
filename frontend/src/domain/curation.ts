@@ -42,6 +42,8 @@ const DECISION_LABEL: Record<CurationDecisionType, string> = {
   split: 'Разделить',
   merge: 'Объединить',
   supersede: 'Заменить',
+  merge_categories: 'Слить категории',
+  escalate: 'Передать другому',
 };
 const CONFLICT_STATUS_LABEL: Record<ConflictStatus, string> = {
   open: 'Открыт',

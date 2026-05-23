@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import useSWR, { mutate } from 'swr';
-import { Loader2, Send, X, MessageSquarePlus, MessageSquare } from 'lucide-react';
+import { Loader2, Send, X, MessageSquarePlus, MessageSquare, Sparkles } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import {
@@ -14,10 +14,18 @@ import {
   respondToNotification,
 } from '@/api/conversational.api';
 import {
+  dismissProactiveNotification,
+  listMyProactiveNotifications,
+} from '@/api/proactive.api';
+import {
   mapNotification,
   mapNotificationDetail,
   type Notification,
 } from '@/domain/conversational';
+import {
+  mapProactiveNotification,
+  type ProactiveNotification,
+} from '@/domain/proactive';
 import { useAuth } from '@/contexts/auth-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -26,6 +34,7 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Textarea } from '@/ui/shadcn/textarea';
 
 type Filter = 'unread' | 'pending_response' | 'all';
+type Tab = 'inbox' | 'proactive';
 
 const FILTER_LABELS: Record<Filter, string> = {
   unread: 'Непрочитанные',
@@ -33,8 +42,14 @@ const FILTER_LABELS: Record<Filter, string> = {
   all: 'Все',
 };
 
+const TAB_LABELS: Record<Tab, string> = {
+  inbox: 'Входящие',
+  proactive: 'Проактивные',
+};
+
 export function NotificationsClient() {
   const { currentOrgId, isLoading } = useAuth();
+  const [tab, setTab] = useState<Tab>('inbox');
   const [filter, setFilter] = useState<Filter>('unread');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -77,24 +92,46 @@ export function NotificationsClient() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">Уведомления</h1>
         <p className="text-sm text-muted-foreground">
-          Здесь Кора задаёт уточняющие вопросы и зовёт на модерацию карточек.
-          Ответы возвращаются обратно в память компании.
+          Здесь Кора задаёт уточняющие вопросы, зовёт на модерацию карточек и
+          сама подсвечивает вещи, которые могла бы посмотреть. Ответы
+          возвращаются обратно в память компании.
         </p>
       </header>
 
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
+      <div className="flex flex-wrap gap-2 border-b pb-2">
+        {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
           <Button
-            key={f}
-            variant={filter === f ? 'default' : 'outline'}
+            key={t}
+            variant={tab === t ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => setFilter(f)}
+            onClick={() => setTab(t)}
           >
-            {FILTER_LABELS[f]}
+            {t === 'proactive' && <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+            {TAB_LABELS[t]}
           </Button>
         ))}
       </div>
 
+      {tab === 'proactive' && (
+        <ProactivePanel orgId={currentOrgId} />
+      )}
+
+      {tab === 'inbox' && (
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
+            <Button
+              key={f}
+              variant={filter === f ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilter(f)}
+            >
+              {FILTER_LABELS[f]}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'inbox' && (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr]">
         <div className="space-y-2">
           {listLoading && (
@@ -156,8 +193,11 @@ export function NotificationsClient() {
           )}
         </div>
       </div>
+      )}
 
-      <FreeNoteCard orgId={currentOrgId} onCreated={() => mutate(listKey)} />
+      {tab === 'inbox' && (
+        <FreeNoteCard orgId={currentOrgId} onCreated={() => mutate(listKey)} />
+      )}
     </section>
   );
 }
@@ -402,6 +442,146 @@ function FreeNoteCard({
           )}
           Отправить
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * SBA δ-2 — панель проактивных уведомлений. Кора сама заметила вещи и
+ * подсветила их. Каждую можно «Скрыть».
+ */
+function ProactivePanel({ orgId }: { orgId: string }) {
+  const [includeDismissed, setIncludeDismissed] = useState(false);
+  const listKey = ['my-proactive-notifications', orgId, includeDismissed];
+  const { data, isLoading, error } = useSWR(
+    listKey,
+    async () => {
+      const res = await listMyProactiveNotifications(orgId, {
+        includeDismissed,
+        limit: 100,
+      });
+      return res.items.map(mapProactiveNotification);
+    },
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Кора заметила кое-что и решила позвать — без давления и без срочности.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIncludeDismissed((v) => !v)}
+        >
+          {includeDismissed ? 'Скрыть отклонённые' : 'Показать отклонённые'}
+        </Button>
+      </div>
+
+      {isLoading && (
+        <>
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </>
+      )}
+      {error instanceof Error && (
+        <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm">
+          Ошибка: {error.message}
+        </div>
+      )}
+      {!isLoading && data && data.length === 0 && (
+        <Card>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            Пока тихо — Кора не заметила ничего, что стоило бы подсветить.
+          </CardContent>
+        </Card>
+      )}
+      {data?.map((p) => (
+        <ProactiveRow
+          key={p.id}
+          item={p}
+          orgId={orgId}
+          onChanged={() => mutate(listKey)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ProactiveRow({
+  item,
+  orgId,
+  onChanged,
+}: {
+  item: ProactiveNotification;
+  orgId: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleDismiss() {
+    setBusy(true);
+    try {
+      await dismissProactiveNotification(orgId, item.id);
+      onChanged();
+    } catch (e) {
+      if (e instanceof ApiError) alert(`Не удалось скрыть: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const severityVariant: 'default' | 'secondary' | 'warning' | 'danger' =
+    item.severity === 'high'
+      ? 'danger'
+      : item.severity === 'medium'
+        ? 'warning'
+        : 'secondary';
+
+  return (
+    <Card className={item.dismissedAt ? 'opacity-60' : undefined}>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            {item.ruleLabel}
+          </span>
+          <Badge variant={severityVariant} className="text-[10px]">
+            {item.severityLabel}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <p className="font-medium">{item.title}</p>
+        <p className="text-muted-foreground">{item.body}</p>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {item.actionUrl && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={item.actionUrl}>Открыть</a>
+            </Button>
+          )}
+          {!item.dismissedAt && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleDismiss}
+              disabled={busy}
+            >
+              {busy ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <X className="mr-2 h-4 w-4" />
+              )}
+              Скрыть
+            </Button>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {item.emittedAt.toLocaleString('ru-RU')}
+            {item.dismissedAt && ' · скрыто'}
+          </span>
+        </div>
       </CardContent>
     </Card>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   Building2,
   Calendar,
@@ -9,12 +9,15 @@ import {
   FolderKanban,
   IdCard,
   ListChecks,
+  MessageCircle,
   Sparkles,
   UserRound,
   type LucideIcon,
 } from 'lucide-react';
 
 import { searchApi, type SearchResponse } from '@/api/search.api';
+import { conciergeApi } from '@/api/concierge.api';
+import { useToast } from '@/contexts/toast-context';
 import {
   CommandDialog,
   CommandEmpty,
@@ -27,15 +30,23 @@ import {
 /**
  * Глобальная командная палитра. Хоткей: ⌘K (mac) / Ctrl+K (win/linux).
  *
- * Ищет по карточкам, встречам и задачам через `GET /api/v1/search`.
- * Группирует результаты по типу. Enter переходит в нужный объект.
+ * Два режима (SBA γ-2 — Concierge):
+ *   - Search (default): поиск по карточкам/встречам/задачам через `/api/v1/search`.
+ *   - Command: пользователь ввёл запрос, начинающийся с `>` → запрос
+ *     отправляется в Concierge Agent (polling endpoint `messages/once`).
+ *     Результат показывается toast'ом, при tool_calls — action toast «Отменить».
  */
 export function CommandPalette() {
   const router = useRouter();
+  const pathname = usePathname();
+  const { addToast } = useToast();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [commandBusy, setCommandBusy] = useState(false);
+
+  const isCommandMode = query.trim().startsWith('>');
 
   // Hotkey: ⌘K (mac) / Ctrl+K (others).
   useEffect(() => {
@@ -58,10 +69,11 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  // Debounce-поиск.
+  // Debounce-поиск (только в Search-режиме). В Command-режиме поиск не
+  // запускается — отправка идёт по Enter.
   useEffect(() => {
     const trimmed = query.trim();
-    if (!trimmed) {
+    if (!trimmed || isCommandMode) {
       setResults(null);
       setLoading(false);
       return;
@@ -96,11 +108,65 @@ export function CommandPalette() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [query]);
+  }, [query, isCommandMode]);
 
   function go(href: string): void {
     setOpen(false);
     router.push(href);
+  }
+
+  /** SBA γ-2 — отправить запрос в Concierge (Command-режим). */
+  async function runCommand(): Promise<void> {
+    const text = query.trim().replace(/^>+\s*/, '');
+    if (!text || commandBusy) return;
+    setCommandBusy(true);
+    try {
+      const res = await conciergeApi.askOnce({
+        userMessage: text,
+        pageContext: { clientPath: pathname ?? undefined },
+      });
+      if (res.quotaExceeded) {
+        addToast({
+          type: 'error',
+          message:
+            res.quotaExceeded === 'daily'
+              ? 'Дневная квота Concierge исчерпана'
+              : 'Месячная квота Concierge исчерпана',
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', message: res.error.message });
+      } else {
+        if (res.text) {
+          addToast({ type: 'info', message: res.text });
+        }
+        for (const tc of res.toolCalls) {
+          if (tc.undoLogId) {
+            const logId = tc.undoLogId;
+            addToast({
+              type: 'success',
+              message: `Готово: ${tc.toolName}`,
+              action: {
+                label: 'Отменить',
+                onClick: async () => {
+                  try {
+                    await conciergeApi.undo(logId);
+                    addToast({ type: 'success', message: 'Отменено' });
+                  } catch {
+                    addToast({ type: 'error', message: 'Не удалось отменить' });
+                  }
+                },
+              },
+            });
+          }
+        }
+      }
+      setOpen(false);
+      setQuery('');
+    } catch {
+      addToast({ type: 'error', message: 'Concierge недоступен' });
+    } finally {
+      setCommandBusy(false);
+    }
   }
 
   const cards = results?.cards ?? [];
@@ -126,7 +192,7 @@ export function CommandPalette() {
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput
-        placeholder="Поиск по компании: должности, отделы, сотрудники, документы, встречи…"
+        placeholder="Поиск (или начните с > для команды Concierge)…"
         value={query}
         onValueChange={setQuery}
       />
@@ -138,10 +204,29 @@ export function CommandPalette() {
             Подсказка: <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">⌘K</kbd>
             {' / '}
             <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">Ctrl+K</kbd>{' '}
-            открывает поиск.
+            открывает поиск. Начните с <code>&gt;</code> чтобы попросить Concierge выполнить действие.
           </div>
         )}
-        {loading && query && (
+        {isCommandMode && (
+          <CommandGroup heading="Concierge">
+            <CommandItem
+              value="concierge-execute"
+              onSelect={() => void runCommand()}
+              disabled={commandBusy}
+            >
+              <ResultRow
+                icon={MessageCircle}
+                title={
+                  commandBusy
+                    ? 'Concierge выполняет…'
+                    : `Спросить Concierge: «${query.trim().replace(/^>+\s*/, '')}»`
+                }
+                subtitle="Enter — отправить"
+              />
+            </CommandItem>
+          </CommandGroup>
+        )}
+        {loading && query && !isCommandMode && (
           <div className="px-4 py-3 text-xs text-fg-tertiary">Поиск…</div>
         )}
         {empty && <CommandEmpty>Ничего не найдено</CommandEmpty>}

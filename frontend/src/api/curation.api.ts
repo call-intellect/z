@@ -28,7 +28,11 @@ export type CurationDecisionTypeApi =
   | 'approve_with_edits'
   | 'split'
   | 'merge'
-  | 'supersede';
+  | 'supersede'
+  /// SBA α-4 wave 2 — слияние SkillTraitCategory (γ-1).
+  | 'merge_categories'
+  /// SBA α-4 wave 2 — передача следующему куратору (escalateToUserId).
+  | 'escalate';
 export type ConflictStatusApi = 'open' | 'resolved' | 'dismissed';
 export type ConflictResolutionApi =
   | 'accept_new'
@@ -155,6 +159,45 @@ function buildQuery(filters: Record<string, unknown> | undefined): string {
   return qs ? `?${qs}` : '';
 }
 
+// ─── Completeness slots (SBA α-4 wave 2) ─────────────────────────
+
+export type CompletenessParentCardTypeApi =
+  | 'regulation'
+  | 'process'
+  | 'role'
+  | 'company_profile';
+export type CompletenessSlotKindApi = 'required' | 'optional';
+export type CompletenessSlotStatusApi = 'open' | 'filled';
+
+export interface CompletenessSlotApi {
+  id: string;
+  tenantId: string;
+  parentCardType: CompletenessParentCardTypeApi;
+  parentCardId: string;
+  slotName: string;
+  slotKind: CompletenessSlotKindApi;
+  status: CompletenessSlotStatusApi;
+  filledAt: string | null;
+  filledByUserId: string | null;
+  lastProbedAt: string | null;
+  probeAttempts: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListCompletenessSlotsResponseApi {
+  items: CompletenessSlotApi[];
+  totalCount: number;
+}
+
+export type ListCompletenessSlotsRequest = {
+  cardType?: CompletenessParentCardTypeApi;
+  cardId?: string;
+  status?: CompletenessSlotStatusApi;
+  take?: number;
+  skip?: number;
+};
+
 export const curationApi = {
   // ── queue ────────────────────────────────────────────────────────
   listQueue: (filters?: ListCurationQueueRequest) =>
@@ -202,4 +245,16 @@ export const curationApi = {
 
   updateSettings: (body: Partial<CurationSettingsApi>) =>
     apiClient.patch<CurationSettingsApi>('/api/v1/settings/curation', body),
+
+  // ── completeness slots (SBA α-4 wave 2) ──────────────────────────
+  listCompletenessSlots: (filters?: ListCompletenessSlotsRequest) =>
+    apiClient.get<ListCompletenessSlotsResponseApi>(
+      `/api/v1/curation/completeness-slots${buildQuery(filters)}`,
+    ),
+
+  markCompletenessSlotFilled: (id: string, filledByUserId?: string) =>
+    apiClient.post<CompletenessSlotApi>(
+      `/api/v1/curation/completeness-slots/${encodeURIComponent(id)}/mark-filled`,
+      filledByUserId ? { filledByUserId } : {},
+    ),
 };

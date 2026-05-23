@@ -6,6 +6,10 @@ import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import {
+  appointmentsApi,
+  type AppointmentTimelineItemApi,
+} from '@/api/appointments.api';
+import {
   personsApi,
   type EraseReportApi,
   type PersonDetailApi,
@@ -177,6 +181,10 @@ function PersonDetailContent({
           </ul>
         )}
       </section>
+
+      {isPerson && (
+        <AppointmentsTimelineSection orgId={orgId} entityId={entityId} />
+      )}
 
       {isOwner && isPerson && !isAlreadyErased && (
         <section className="space-y-3 rounded-lg border border-danger/40 bg-danger/5 p-5">
@@ -416,4 +424,116 @@ function pluralizeBlocks(n: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'блок';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'блока';
   return 'блоков';
+}
+
+// ─── SBA α-8 wave 3 — Appointments timeline ─────────────────────────────
+
+/**
+ * Минимальная вкладка «Назначения» — список Appointment'ов для Person,
+ * привязанного к Entity{type=person} через `Person.entityId`. На бэке
+ * резолв идёт автоматически (если связи нет — возвращается пустой список).
+ *
+ * Полноценный UI для Appointment'ов (создание, редактирование, фильтры
+ * по статусу) — в SBA α-8 wave 4 (role-map UI).
+ */
+function AppointmentsTimelineSection({
+  orgId,
+  entityId,
+}: {
+  orgId: string;
+  entityId: string;
+}) {
+  const [items, setItems] = useState<AppointmentTimelineItemApi[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await appointmentsApi.entityTimeline(orgId, entityId);
+        if (!cancelled) setItems(res.items);
+      } catch (e) {
+        if (!cancelled) {
+          setError(
+            e instanceof ApiError ? e.message : 'Не удалось загрузить назначения',
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, entityId]);
+
+  return (
+    <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
+      <h2 className="mb-3 text-base font-medium">Назначения</h2>
+      {loading && (
+        <p className="text-sm text-fg-tertiary">Загрузка истории назначений…</p>
+      )}
+      {!loading && error && (
+        <p className="text-sm text-danger">{error}</p>
+      )}
+      {!loading && !error && items !== null && items.length === 0 && (
+        <p className="text-sm text-fg-tertiary">
+          У этого сотрудника пока нет назначений. Создайте их через раздел
+          «Должности» или /api/v1/appointments.
+        </p>
+      )}
+      {!loading && !error && items !== null && items.length > 0 && (
+        <ul className="divide-y divide-border-subtle">
+          {items.map((a) => (
+            <li key={a.id} className="py-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="text-sm font-medium">
+                  {a.roleName ?? '(должность удалена)'}
+                </div>
+                <span className="text-xs text-fg-tertiary">
+                  {renderStatus(a.status)}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-fg-tertiary">
+                {a.departmentName
+                  ? `Отдел: ${a.departmentName}`
+                  : 'Отдел: —'}{' '}
+                · Ставка: {a.loadPercent}%
+              </p>
+              <p className="mt-0.5 text-xs text-fg-secondary">
+                {formatPeriod(a.validFrom, a.validTo)}
+                {a.durationDays !== null && (
+                  <> · {a.durationDays} {pluralizeDays(a.durationDays)}</>
+                )}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function renderStatus(s: AppointmentTimelineItemApi['status']): string {
+  if (s === 'active') return 'действующее';
+  if (s === 'acting') return 'и.о.';
+  return 'архив';
+}
+
+function formatPeriod(validFrom: string, validTo: string | null): string {
+  const from = new Date(validFrom).toLocaleDateString('ru-RU');
+  const to = validTo ? new Date(validTo).toLocaleDateString('ru-RU') : 'сейчас';
+  return `${from} — ${to}`;
+}
+
+function pluralizeDays(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
+  return 'дней';
 }

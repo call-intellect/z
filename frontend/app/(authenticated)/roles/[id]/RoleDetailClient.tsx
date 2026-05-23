@@ -7,6 +7,7 @@ import {
   CloudUpload,
   FileText,
   Loader2,
+  Map as MapIcon,
   RefreshCcw,
   Users,
 } from 'lucide-react';
@@ -171,13 +172,22 @@ function Content({
 
 function Header({ role }: { role: RoleDomainApi }) {
   return (
-    <header className="mb-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-        {role.name}
-      </h1>
-      <p className="mt-1 text-sm text-fg-secondary">
-        {role.departmentName ? `Отдел: ${role.departmentName}` : 'Без отдела'}
-      </p>
+    <header className="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+          {role.name}
+        </h1>
+        <p className="mt-1 text-sm text-fg-secondary">
+          {role.departmentName ? `Отдел: ${role.departmentName}` : 'Без отдела'}
+        </p>
+      </div>
+      <Link
+        href={`/roles/${role.id}/map`}
+        className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-card px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-hover"
+      >
+        <MapIcon size={14} />
+        Карта должности
+      </Link>
     </header>
   );
 }

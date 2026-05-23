@@ -205,6 +205,11 @@ function ConversationDetail({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // SBA α-5 dialog-layer — temporal query (advanced).
+  const [validAt, setValidAt] = useState<string>('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  // SBA α-5 dialog-layer — последний ответ был cache hit?
+  const [lastCacheHit, setLastCacheHit] = useState<boolean>(false);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -212,12 +217,19 @@ function ConversationDetail({
     if (!question || sending) return;
     setSending(true);
     setError(null);
+    setLastCacheHit(false);
     try {
+      // Если задан validAt — конвертим из datetime-local в ISO.
+      const asOfIso = validAt
+        ? new Date(validAt).toISOString()
+        : undefined;
       const response = await chatV2Api.ask({
         question,
         conversationId: conversationId ?? undefined,
+        ...(asOfIso ? { asOf: asOfIso } : {}),
       });
       setInput('');
+      setLastCacheHit(response.cacheHit);
       if (!conversationId) {
         onConversationCreated(response.conversationId);
       } else {
@@ -305,6 +317,12 @@ function ConversationDetail({
         {sending ? (
           <div className="text-sm italic text-fg-tertiary">AI печатает ответ...</div>
         ) : null}
+        {lastCacheHit ? (
+          <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 self-start">
+            <span aria-hidden>•</span>
+            <span>Ответ из кэша (мгновенно)</span>
+          </div>
+        ) : null}
         {error ? (
           <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
             Ошибка: {error}
@@ -315,8 +333,40 @@ function ConversationDetail({
       {/* Input */}
       <form
         onSubmit={onSubmit}
-        className="border-t border-border bg-surface p-3 flex gap-2"
+        className="border-t border-border bg-surface p-3 flex flex-col gap-2"
       >
+        {/* SBA α-5 dialog-layer — advanced: temporal query (validAt). */}
+        <div className="flex items-center justify-between text-xs text-fg-tertiary">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="underline-offset-2 hover:underline"
+          >
+            {showAdvanced ? 'Скрыть' : 'Дополнительно'}
+          </button>
+          {showAdvanced ? (
+            <label className="flex items-center gap-2">
+              <span>На момент:</span>
+              <input
+                type="datetime-local"
+                value={validAt}
+                onChange={(e) => setValidAt(e.target.value)}
+                className="rounded border border-border bg-bg px-2 py-0.5 text-xs"
+                aria-label="Temporal query — на какой момент времени смотрит ответ"
+              />
+              {validAt ? (
+                <button
+                  type="button"
+                  onClick={() => setValidAt('')}
+                  className="underline"
+                >
+                  сбросить
+                </button>
+              ) : null}
+            </label>
+          ) : null}
+        </div>
+        <div className="flex gap-2">
         <input
           type="text"
           className="flex-1 rounded border border-border bg-bg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
@@ -332,6 +382,7 @@ function ConversationDetail({
         >
           <Send size={16} />
         </button>
+        </div>
       </form>
     </>
   );

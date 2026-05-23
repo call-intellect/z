@@ -4,7 +4,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type Decision,
   type DecisionStatus,
@@ -48,6 +50,12 @@ export class DecisionsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CurationService) private readonly curation: CurationService,
     @Inject(ConflictService) private readonly conflicts: ConflictService,
+    /**
+     * SBA α-5 dialog-layer — эмит `card-version.created` для cache invalidation.
+     */
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events: EventEmitter2 | null = null,
   ) {}
 
   // ───────────────────────────── list ─────────────────────────────
@@ -567,6 +575,20 @@ export class DecisionsService {
       where: { id: args.decision.id },
       data: { currentVersionId: created.id },
     });
+    // SBA α-5 dialog-layer — эмит для CacheInvalidationService (best-effort).
+    try {
+      this.events?.emit('card-version.created', {
+        tenantId: args.tenantId,
+        cardVersionId: created.id,
+        resourceType: 'decision',
+        resourceId: args.decision.id,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'card-version.created emit failed (handled inside)',
+      );
+    }
   }
 
   private notFound(id: string): never {

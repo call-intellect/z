@@ -2,7 +2,12 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { ChatV2Mode, ChatV2Scope } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
 import { ClonesService } from '../../clones/services/clones.service';
+import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
+import { CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT } from '../prompts/clone-style.prompt';
+import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../prompts/factual.prompt';
+import { CHAT_V2_SYNTHETIC_SYSTEM_PROMPT } from '../prompts/synthetic.prompt';
 import {
   ChatV2Service as KnowledgeCoreChatV2Service,
   type ChatV2Citation,
@@ -35,6 +40,27 @@ export interface SynthesisInput {
   scope: ChatV2Scope;
   scopeRefId: string | null;
   history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+  /**
+   * SBA α-5 dialog-layer — заранее посчитанный standalone-вопрос (после
+   * Contextualizer + confidence fallback). Если null — используем question.
+   */
+  standaloneQuestion?: string | null;
+  /**
+   * SBA α-5 dialog-layer — массив запросов для retrieval (multi-query
+   * expansion).
+   */
+  queries?: ReadonlyArray<string>;
+  /** SBA α-5 dialog-layer — temporal queries. */
+  validAt?: Date | null;
+  /** SBA α-5 dialog-layer — сжатая старая часть диалога. */
+  conversationSummary?: string | null;
+  /** SBA α-5 dialog-layer — intent (для metrics / mode-prompt routing). */
+  intent?:
+    | 'factual'
+    | 'exploratory'
+    | 'analytical'
+    | 'clone_roleplay'
+    | null;
 }
 
 export interface SynthesisResult {
@@ -54,8 +80,18 @@ export class SynthesisService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeCoreChatV2Service)
     private readonly chatV2: KnowledgeCoreChatV2Service,
+    @Inject(RetrievalCacheService)
+    private readonly retrievalCache: RetrievalCacheService,
     @Optional() @Inject(ClonesService)
     private readonly clones?: ClonesService,
+    /**
+     * SBA β-7 — Brand Voice Curator. При mode='clone_style' AND scope='org'
+     * (без scopeRefId) подмешиваем BrandVoiceProfile в systemPrompt. Если
+     * модуль не подключён (тесты / частичная сборка), деградируем до
+     * обычного clone_style fallback.
+     */
+    @Optional() @Inject(BrandVoiceService)
+    private readonly brandVoice?: BrandVoiceService,
   ) {}
 
   async synthesize(input: SynthesisInput): Promise<SynthesisResult> {
@@ -107,16 +143,76 @@ export class SynthesisService {
 
     const knowledgeScope = this.mapScope(input.scope);
 
-    // На α-5 mode не передаётся в knowledge-core (там нет mode-prompts).
-    // Mode используется выше — для пост-обработки и mode-меток в БД.
+    // SBA α-5 dialog-layer:
+    //  - standaloneQuestion (если есть) → используется как основной query
+    //    и как ключ RetrievalCache.
+    //  - queries[] (если есть) → multi-query expansion в retrieval.
+    //  - validAt → temporal-фильтр.
+    //  - mode → системный промпт для knowledge-core (factual/synthetic/clone_style).
+    //  - RetrievalCache lookup ДО fetchCandidates: hit → передаём
+    //    `precomputedBlockIds` в knowledge-core и пропускаем retrieval.
+    const effectiveQuery = input.standaloneQuestion ?? input.question;
+    const validAtIso = input.validAt ? input.validAt.toISOString() : null;
+    const cacheKeyArgs = {
+      tenantId: input.tenantId,
+      standaloneQuestion: effectiveQuery,
+      scope: input.scope,
+      scopeRefId: input.scopeRefId,
+      validAt: validAtIso,
+    } as const;
+    const cachedRetrieval = await this.retrievalCache.get(cacheKeyArgs);
+    let systemPromptOverride = this.modePrompt(input.mode);
+
+    // SBA β-7 — clone_style scope='org' (без scopeRefId) → company-level
+    // brand voice. Подмешиваем BrandVoiceProfile в системный промпт, чтобы
+    // LLM генерировал ответ в фирменном tone/values/taboos. Если профиль
+    // пустой (corpus ниже порога) или сервис не подключён — оставляем
+    // дефолтный clone_style fallback.
+    if (
+      input.mode === 'clone_style' &&
+      input.scope === 'org' &&
+      !input.scopeRefId &&
+      this.brandVoice
+    ) {
+      try {
+        const profile = await this.brandVoice.getOrCreate(input.tenantId);
+        const injected = buildClonedCompanyPrompt(profile);
+        if (injected) {
+          systemPromptOverride = injected;
+        }
+      } catch (err) {
+        this.logger.warn(
+          {
+            tenantId: input.tenantId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'synthesis.clone_style[scope=org]: BrandVoice load упал — fallback',
+        );
+      }
+    }
+
     const result: ChatV2Output = await this.chatV2.ask({
       tenantId: input.tenantId,
       userId: input.userId,
       scope: knowledgeScope,
       scopeId: input.scopeRefId,
-      query: input.question,
+      query: effectiveQuery,
       history: input.history,
+      conversationSummary: input.conversationSummary ?? null,
+      queries: input.queries ?? undefined,
+      validAt: input.validAt ?? null,
+      intent: input.intent ?? undefined,
+      systemPromptOverride,
+      precomputedBlockIds: cachedRetrieval?.blockIds,
     });
+
+    // Сохраняем blockIds в RetrievalCache (если был miss).
+    if (!cachedRetrieval && result.usedBlockIds.length > 0) {
+      await this.retrievalCache.set(cacheKeyArgs, {
+        blockIds: result.usedBlockIds,
+        cachedAt: new Date().toISOString(),
+      });
+    }
 
     const retrievalMeta: Record<string, unknown> = {
       usedBlockIds: result.usedBlockIds,
@@ -171,4 +267,112 @@ export class SynthesisService {
     if (scope === 'personal') return 'org';
     return scope;
   }
+
+  /**
+   * SBA α-5 dialog-layer — mode-specific system prompt.
+   * Подменяет BASE_SYSTEM_PROMPT в knowledge-core ChatV2Service.
+   */
+  private modePrompt(mode: ChatV2Mode): string {
+    switch (mode) {
+      case 'factual':
+        return CHAT_V2_FACTUAL_SYSTEM_PROMPT;
+      case 'clone_style':
+        return CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT;
+      case 'synthetic':
+      default:
+        return CHAT_V2_SYNTHETIC_SYSTEM_PROMPT;
+    }
+  }
 }
+
+// ─────────────────────────── SBA β-7 helpers ──────────────────────────
+
+/**
+ * Структура BrandVoiceProfile из BrandVoiceService.getOrCreate(). Сокращённая
+ * — берём только нужные секции для инжекции в systemPrompt.
+ */
+interface BrandVoiceProfileForPrompt {
+  tone: Record<string, number> | null;
+  values:
+    | Array<{ value: string; weight: number }>
+    | null;
+  taboos:
+    | Array<{ phrase: string; alternative?: string; reason: string }>
+    | null;
+  belowCorpusThreshold: boolean;
+}
+
+/**
+ * SBA β-7 — собирает системный промпт для chat-v2 в режиме «голос компании»
+ * (mode='clone_style', scope='org'). При пустом профиле / корпус ниже
+ * порога — возвращает null (caller использует дефолтный CHAT_V2_CLONE_STYLE
+ * fallback).
+ */
+function buildClonedCompanyPrompt(
+  profile: BrandVoiceProfileForPrompt,
+): string | null {
+  // Если профиль пустой (корпус ниже порога ИЛИ extract ещё не отработал) —
+  // дегрейдим до обычного clone_style.
+  if (
+    profile.belowCorpusThreshold ||
+    (profile.tone === null && profile.values === null && profile.taboos === null)
+  ) {
+    return null;
+  }
+  const lines: string[] = [
+    'Ты — AI-помощник, который пишет от лица компании в её фирменном голосе бренда.',
+    '',
+    'Контекст: ниже извлечённый «голос бренда» (BrandVoiceProfile). Используй его как стилевую рамку — НЕ пересказывай его, а соблюдай.',
+    '',
+  ];
+
+  if (profile.tone) {
+    const toneEntries = Object.entries(profile.tone)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${TONE_LABEL_RU[k] ?? k}: ${v.toFixed(2)}`);
+    if (toneEntries.length > 0) {
+      lines.push('Тон (0..1):');
+      for (const t of toneEntries) {
+        lines.push(`- ${t}`);
+      }
+      lines.push('');
+    }
+  }
+  if (profile.values && profile.values.length > 0) {
+    lines.push('Ценности бренда (weight 0..1):');
+    for (const v of profile.values.slice(0, 8)) {
+      lines.push(`- ${v.value} (${v.weight.toFixed(2)})`);
+    }
+    lines.push('');
+  }
+  if (profile.taboos && profile.taboos.length > 0) {
+    lines.push('Табу (НЕ использовать):');
+    for (const t of profile.taboos.slice(0, 15)) {
+      const alt = t.alternative ? ` → лучше: «${t.alternative}»` : '';
+      lines.push(`- «${t.phrase}»${alt}. Причина: ${t.reason}`);
+    }
+    lines.push('');
+  }
+  lines.push(
+    'Правила:',
+    '- Отвечай на русском.',
+    '- Соблюдай tone/values/taboos. Не пересказывай их в ответе.',
+    '- Все ключевые утверждения помечай [BLOCK:<id>] из найденного контекста.',
+    '- В конце ответа курсивом «(в фирменном голосе бренда)».',
+  );
+  return lines.join('\n');
+}
+
+/** Русские лейблы для 10 канонических осей тона. */
+const TONE_LABEL_RU: Record<string, string> = {
+  formal: 'формальность',
+  technical: 'техничность',
+  casual: 'непринуждённость',
+  energetic: 'энергичность',
+  authoritative: 'авторитетность',
+  friendly: 'дружелюбность',
+  playful: 'игривость',
+  minimalist: 'минимализм',
+  expressive: 'выразительность',
+  inclusive: 'инклюзивность',
+};

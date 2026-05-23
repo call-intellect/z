@@ -13,9 +13,14 @@ import type {
   NotificationDelivery,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import { RedisService } from '../../../../common/redis/redis.service';
+import { VoxService } from '../../../ai/services/vox.service';
+import { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
+import { DocumentsService } from '../../../documents/documents.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
 import type {
@@ -27,32 +32,31 @@ import type {
 import { MaxApiClient, MaxApiError } from './max-api-client';
 import type {
   MaxBotChannelConfig,
-  MaxInlineKeyboardAttachment,
+  MaxIncomingAttachment,
   MaxMessage,
   MaxUpdate,
 } from './max.types';
 
 /**
- * MAX Bot ChannelAdapter (SBA β-1).
+ * MAX Bot ChannelAdapter (SBA β-1, zero-button rip-out 2026-05-23).
  *
- * Параллельная реализация `TelegramBotChannelAdapter`. MAX Bot API
+ * **Zero-button:** удалены inline-кнопки (`attachments[type='inline_keyboard']`),
+ * `message_callback` updates, slash-commands. Единственная hard-coded команда
+ * `/start <token>` обрабатывается в адаптере как deep-link.
+ *
+ * Параллельная реализация `TelegramBotChannelAdapter` для MAX. MAX Bot API
  * (dev.max.ru/docs-api, context7 verified 2026-05-22):
- *   - sendMessage:    `POST /messages`
- *   - subscribe webhook: `POST /subscriptions { url }`
- *   - inline keyboard: `attachments[0]={type:'inline_keyboard', payload:{buttons:[[{type:'callback', text, payload}]]}}`
- *   - update types:   `message_created` (новое сообщение боту),
- *                     `message_callback` (нажатие callback-кнопки),
- *                     ... (полный набор уточняется по факту на проде).
+ *   - sendMessage:    `POST /messages` (без attachments в β-1 rip-out).
+ *   - subscribe webhook: `POST /subscriptions { url }`.
+ *   - update types:   `message_created` (новое сообщение боту);
+ *                     `message_callback` — больше не подписываемся.
  *
- * Внимание: формат webhook-update'а MAX задокументирован в dev.max.ru,
- * но в context7 представлен фрагментарно. Поэтому парсер `ingestUpdate`
- * предусматривает defensive-парсинг по нескольким возможным полям
- * (`sender`/`from`, `chat_id`/`user_id`), а реальная финальная адаптация
- * — после smoke-теста на проде (см. SMOKE.md). Это явный TODO,
- * зафиксированный в final-отчёте β-1.
+ * Voice/document inbound — приходит через `body.attachments[]`. Формат
+ * атрибутов attachment'а в MAX более лаконичен, чем в Telegram —
+ * defensive-парсинг по нескольким возможным полям (`type='voice'|'audio'|
+ * 'document'|'file'`, `payload.file_id`, `payload.url`, `payload.duration`).
  *
- * `maxDataClass='internal'` — MAX внешний канал, sensitive/private туда
- * не уходит.
+ * `maxDataClass='internal'` — MAX внешний канал.
  */
 @Injectable()
 export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
@@ -60,22 +64,31 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
   readonly kind: ChannelKind = 'max_bot';
   readonly maxDataClass: DataClass = 'internal';
 
-  /** Префикс callback payload — должен помещаться в ограниченное поле. */
-  static readonly PROBE_CALLBACK_PREFIX = 'pq';
+  static readonly MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+  static readonly VOICE_PER_HOUR_PER_USER = 10;
+  static readonly LINK_CODE_REGEX = /^[a-f0-9]{6,32}$/i;
 
   constructor(
     @Inject(ChannelRegistry) private readonly registry: ChannelRegistry,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(MaxApiClient) private readonly api: MaxApiClient,
     @Inject(ConversationalLinkCodeService)
     private readonly linkCode: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(VoxService) private readonly vox: VoxService,
+    @Inject(DocumentsService) private readonly documents: DocumentsService,
+    @Inject(QueryClassifierService)
+    private readonly classifier: QueryClassifierService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   onModuleInit(): void {
     this.registry.register(this);
+    // MAX не имеет аналога setMyCommands — menu кнопок у бота нет
+    // по умолчанию. Здесь ничего «очищать» не нужно.
   }
 
   // ─────────────────────────────── send ────────────────────────────
@@ -100,20 +113,20 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     }
 
     const text = this.renderText(args.notification);
-    const attachments = this.renderInlineKeyboard(args.notification);
 
     try {
       const result = await this.api.sendMessage({
         accessToken: config.accessToken,
         chatId: userIdOrChat,
         text,
-        attachments,
       });
       const mid = result.message?.mid ?? null;
       return { externalMessageId: mid };
     } catch (err) {
       if (err instanceof MaxApiError && !err.transient) {
-        throw new Error(`max_final:${err.code}:${err.message}`);
+        throw new Error(`max_final:${err.code}:${err.message}`, {
+          cause: err,
+        });
       }
       throw err;
     }
@@ -121,11 +134,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
   // ─────────────────────────────── ingest ──────────────────────────
 
-  /**
-   * IChannel.ingest — заглушка, см. `TelegramBotChannelAdapter.ingest`:
-   * у MAX-адаптера нужен tenantId+channel, поэтому webhook controller
-   * вызывает `ingestUpdate(...)` напрямую.
-   */
   async ingest(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _rawMessage: ConversationalJson,
@@ -144,33 +152,22 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     const config = this.readChannelConfig(channel);
     const updateType = update.update_type ?? 'unknown';
 
-    if (updateType === 'message_callback' && update.callback) {
-      this.metrics.incMaxBotWebhookReceived({ type: 'message_callback' });
-      return this.handleCallback({
-        callback: update.callback,
-        tenantId,
-        channel,
-      });
+    if (!update.message) {
+      this.metrics.incMaxBotWebhookReceived({ type: updateType || 'unknown' });
+      this.logger.debug({ updateType }, 'max inbound: пустой message — игнор');
+      return null;
     }
 
-    if (updateType === 'message_created' || update.message) {
-      this.metrics.incMaxBotWebhookReceived({
-        type: updateType === 'message_created' ? 'message_created' : 'message',
-      });
-      return this.handleMessage({
-        message: update.message,
-        tenantId,
-        channel,
-        config,
-      });
-    }
+    this.metrics.incMaxBotWebhookReceived({
+      type: updateType === 'message_created' ? 'message_created' : 'message',
+    });
 
-    this.metrics.incMaxBotWebhookReceived({ type: updateType || 'unknown' });
-    this.logger.debug(
-      { updateType },
-      'max inbound: неизвестный/неподдерживаемый тип update — игнор',
-    );
-    return null;
+    return this.handleMessage({
+      message: update.message,
+      tenantId,
+      channel,
+      config,
+    });
   }
 
   // ─────────────────────────────── parseResponse (stub) ─────────────
@@ -188,19 +185,12 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
   // ─────────────────────────────── handlers ────────────────────────
 
   private async handleMessage(args: {
-    message: MaxMessage | undefined;
+    message: MaxMessage;
     tenantId: string;
     channel: Channel;
     config: MaxBotChannelConfig;
   }): Promise<InboundMessage | null> {
     const { message, tenantId, channel, config } = args;
-    if (!message) return null;
-
-    const text = (message.body?.text ?? '').trim();
-    if (!text) {
-      this.logger.debug('max inbound: пустой text — игнор');
-      return null;
-    }
 
     const senderId = message.sender?.user_id;
     const chatId = message.recipient?.chat_id ?? senderId;
@@ -210,13 +200,15 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     }
 
     const externalUserId = String(senderId);
+    const text = (message.body?.text ?? '').trim();
+    const attachments = message.body?.attachments ?? [];
 
-    // /link <code> — без binding'а.
-    const linkMatch = text.match(/^\/link(?:\s+(.+))?$/i);
-    if (linkMatch) {
-      this.metrics.incMaxBotWebhookReceived({ type: 'command' });
-      const code = linkMatch[1]?.trim();
-      await this.handleLink({
+    // 1. /start <token> — deep-link флоу.
+    const startMatch = text.match(/^\/start(?:\s+(\S+))?$/i);
+    if (startMatch) {
+      this.metrics.incBotInbound({ channel: 'max_bot', kind: 'start_command' });
+      const code = startMatch[1]?.trim();
+      await this.handleStart({
         code,
         externalUserId,
         chatId,
@@ -227,25 +219,119 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
-    // Все остальные команды требуют binding.
-    const binding = await this.prisma.channelBinding.findFirst({
-      where: { channelId: channel.id, externalId: externalUserId },
-    });
-    if (!binding || !binding.verifiedAt) {
-      await this.replyToUserBestEffort({
-        config,
+    // 2. Voice attachment.
+    const voiceAtt = attachments.find((a) =>
+      isVoiceAttachment(a),
+    );
+    if (voiceAtt) {
+      this.metrics.incBotInbound({ channel: 'max_bot', kind: 'voice' });
+      const binding = await this.requireVerifiedBinding({
+        externalUserId,
+        channelId: channel.id,
         chatId,
-        text:
-          'Аккаунт не привязан. Зайдите в личный кабинет, получите код привязки и отправьте сюда: /link <код>.',
+        config,
       });
+      if (!binding) return null;
+      if (!this.cfg.bot.voiceEnabled) {
+        await this.replyToUserBestEffort({
+          config,
+          chatId,
+          text: 'Голосовые сообщения сейчас недоступны. Напишите текстом.',
+        });
+        return null;
+      }
+      return this.handleVoice({
+        attachment: voiceAtt,
+        binding,
+        chatId,
+        tenantId,
+        channel,
+        config,
+      });
+    }
+
+    // 3. Document attachment.
+    const docAtt = attachments.find((a) => isDocumentAttachment(a));
+    if (docAtt) {
+      this.metrics.incBotInbound({ channel: 'max_bot', kind: 'document' });
+      const binding = await this.requireVerifiedBinding({
+        externalUserId,
+        channelId: channel.id,
+        chatId,
+        config,
+      });
+      if (!binding) return null;
+      if (!this.cfg.bot.documentEnabled) {
+        await this.replyToUserBestEffort({
+          config,
+          chatId,
+          text: 'Загрузка файлов сейчас выключена.',
+        });
+        return null;
+      }
+      await this.handleDocument({
+        attachment: docAtt,
+        binding,
+        chatId,
+        tenantId,
+        channel,
+        config,
+      });
+      if (!text) return null;
+      // если был и текст-caption — обработаем дальше
+    }
+
+    if (!text) {
+      this.logger.debug('max inbound: пустой text без поддерживаемых attachments — игнор');
       return null;
     }
 
-    if (text.startsWith('/')) {
-      this.metrics.incMaxBotWebhookReceived({ type: 'command' });
-      return this.parseSlashCommand({ rawText: text, binding, tenantId });
+    // 4. Голый код привязки (если ещё не привязан).
+    if (MaxBotChannelAdapter.LINK_CODE_REGEX.test(text)) {
+      const existing = await this.prisma.channelBinding.findFirst({
+        where: { channelId: channel.id, externalId: externalUserId },
+      });
+      if (!existing || !existing.verifiedAt) {
+        this.metrics.incBotInbound({ channel: 'max_bot', kind: 'link_code' });
+        await this.handleLinkCode({
+          code: text,
+          externalUserId,
+          chatId,
+          tenantId,
+          channel,
+          config,
+        });
+        return null;
+      }
     }
 
+    // 5. Резолв binding'а.
+    const binding = await this.requireVerifiedBinding({
+      externalUserId,
+      channelId: channel.id,
+      chatId,
+      config,
+    });
+    if (!binding) return null;
+
+    this.metrics.incBotInbound({ channel: 'max_bot', kind: 'text' });
+
+    // 6. Intent classification.
+    const intent = await this.classifyIntent({
+      text,
+      tenantId,
+      userId: binding.userId,
+    });
+
+    if (intent === 'chat_query') {
+      return {
+        type: 'chat_query',
+        userId: binding.userId,
+        tenantId,
+        question: text,
+        originChannelBindingId: binding.id,
+      };
+    }
     return {
       type: 'free_note',
       userId: binding.userId,
@@ -256,61 +342,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     };
   }
 
-  private async handleCallback(args: {
-    callback: NonNullable<MaxUpdate['callback']>;
-    tenantId: string;
-    channel: Channel;
-  }): Promise<InboundMessage | null> {
-    const { callback, tenantId, channel } = args;
-    const payload = callback.payload ?? '';
-    const senderId = callback.user?.user_id;
-    if (!senderId) {
-      this.logger.debug('max callback: нет user.user_id — игнор');
-      return null;
-    }
-    const parts = payload.split(':');
-    if (parts[0] !== MaxBotChannelAdapter.PROBE_CALLBACK_PREFIX) {
-      this.logger.debug({ payload }, 'max callback: неизвестный prefix — игнор');
-      return null;
-    }
-    const notificationId = parts[1];
-    const optionIndex = Number(parts[2]);
-    if (!notificationId || !Number.isFinite(optionIndex)) {
-      this.logger.debug({ payload }, 'max callback: невалидный payload — игнор');
-      return null;
-    }
-
-    const binding = await this.prisma.channelBinding.findFirst({
-      where: { channelId: channel.id, externalId: String(senderId) },
-    });
-    if (!binding) return null;
-
-    const notification = await this.prisma.notification.findUnique({
-      where: { id: notificationId },
-    });
-    let optionText: string | null = null;
-    if (notification?.payload && typeof notification.payload === 'object') {
-      const options = (notification.payload as { options?: string[] }).options;
-      if (Array.isArray(options) && options[optionIndex]) {
-        optionText = options[optionIndex];
-      }
-    }
-
-    return {
-      type: 'response',
-      userId: binding.userId,
-      tenantId,
-      notificationId,
-      payload: {
-        kind: 'option',
-        optionIndex,
-        optionText,
-      },
-      originChannelBindingId: binding.id,
-    };
-  }
-
-  private async handleLink(args: {
+  private async handleStart(args: {
     code: string | undefined;
     externalUserId: string;
     chatId: number | string;
@@ -318,21 +350,41 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     channel: Channel;
     config: MaxBotChannelConfig;
   }): Promise<void> {
-    const { code, externalUserId, chatId, tenantId, channel, config } = args;
-    if (!code) {
+    if (!args.code) {
       await this.replyToUserBestEffort({
-        config,
-        chatId,
+        config: args.config,
+        chatId: args.chatId,
         text:
-          'Использование: /link <код>. Код берётся в личном кабинете — раздел «Каналы».',
+          'Добро пожаловать. Чтобы привязать аккаунт, получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
       });
       return;
     }
-    const userId = await this.linkCode.consume({ kind: 'max_bot', code });
+    await this.handleLinkCode({
+      code: args.code,
+      externalUserId: args.externalUserId,
+      chatId: args.chatId,
+      tenantId: args.tenantId,
+      channel: args.channel,
+      config: args.config,
+    });
+  }
+
+  private async handleLinkCode(args: {
+    code: string;
+    externalUserId: string;
+    chatId: number | string;
+    tenantId: string;
+    channel: Channel;
+    config: MaxBotChannelConfig;
+  }): Promise<void> {
+    const userId = await this.linkCode.consume({
+      kind: 'max_bot',
+      code: args.code,
+    });
     if (!userId) {
       await this.replyToUserBestEffort({
-        config,
-        chatId,
+        config: args.config,
+        chatId: args.chatId,
         text: 'Код невалиден или истёк. Получите новый в личном кабинете.',
       });
       return;
@@ -340,97 +392,328 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     await this.prisma.channelBinding.upsert({
       where: {
         channelId_externalId: {
-          channelId: channel.id,
-          externalId: externalUserId,
+          channelId: args.channel.id,
+          externalId: args.externalUserId,
         },
       },
       update: { userId, verifiedAt: new Date() },
       create: {
         userId,
-        channelId: channel.id,
-        externalId: externalUserId,
+        channelId: args.channel.id,
+        externalId: args.externalUserId,
         verifiedAt: new Date(),
       },
     });
     this.logger.log(
-      `max /link: tenantId=${tenantId} userId=${userId} maxUserId=${externalUserId}`,
+      `max link: tenantId=${args.tenantId} userId=${userId} maxUserId=${args.externalUserId}`,
     );
     await this.replyToUserBestEffort({
-      config,
-      chatId,
+      config: args.config,
+      chatId: args.chatId,
       text:
-        'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. Доступные команды: /ask, /note, /idea, /status, /myideas, /help.',
+        'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. Просто напишите текст, голос или пришлите документ.',
     });
   }
 
-  private parseSlashCommand(args: {
-    rawText: string;
+  private async handleVoice(args: {
+    attachment: MaxIncomingAttachment;
     binding: ChannelBinding;
+    chatId: number | string;
     tenantId: string;
-  }): InboundMessage | null {
-    const { rawText, binding, tenantId } = args;
-    const match = rawText.match(/^\/(\w+)(?:\s+([\s\S]+))?$/);
-    if (!match) return null;
-    const cmd = match[1]!.toLowerCase();
-    const tail = match[2]?.trim() ?? '';
+    channel: Channel;
+    config: MaxBotChannelConfig;
+  }): Promise<InboundMessage | null> {
+    const allowed = await this.checkVoiceRateLimit({
+      userId: args.binding.userId,
+    });
+    if (!allowed) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: 'Слишком много голосовых сообщений за час. Попробуйте чуть позже.',
+      });
+      return null;
+    }
 
-    if (cmd === 'ask') {
-      if (!tail) {
-        return {
-          type: 'command',
-          userId: binding.userId,
-          tenantId,
-          commandName: 'help',
-          originChannelBindingId: binding.id,
-        };
-      }
+    const url = args.attachment.payload?.url;
+    if (!url) {
+      this.logger.warn(
+        { attachment: args.attachment },
+        'max voice: нет payload.url — игнор (требуется явный URL, file_id не поддержан)',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: 'Не удалось получить голосовое сообщение. Попробуйте ещё раз.',
+      });
+      return null;
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await this.api.downloadAttachment({
+        accessToken: args.config.accessToken,
+        url,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'max voice: download failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: 'Не удалось получить голосовое сообщение. Попробуйте ещё раз.',
+      });
+      return null;
+    }
+
+    const startedAt = Date.now();
+    let transcript: string;
+    try {
+      const submitted = await this.vox.submit(buffer);
+      const result = await this.vox.poll(submitted.taskId);
+      transcript = result.transcriptText.trim();
+    } catch (err) {
+      this.metrics.observeBotVoiceAsrDuration({
+        channel: 'max_bot',
+        seconds: (Date.now() - startedAt) / 1000,
+      });
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'max voice: ASR failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Не удалось распознать голос. Попробуйте отправить текст или повторите голосовое.',
+      });
+      return null;
+    }
+    this.metrics.observeBotVoiceAsrDuration({
+      channel: 'max_bot',
+      seconds: (Date.now() - startedAt) / 1000,
+    });
+    if (!transcript) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: 'Голос распознан как пустой. Попробуйте ещё раз — чуть громче.',
+      });
+      return null;
+    }
+
+    const intent = await this.classifyIntent({
+      text: transcript,
+      tenantId: args.tenantId,
+      userId: args.binding.userId,
+    });
+    if (intent === 'chat_query') {
       return {
         type: 'chat_query',
-        userId: binding.userId,
-        tenantId,
-        question: tail,
-        originChannelBindingId: binding.id,
-      };
-    }
-    if (cmd === 'note') {
-      if (!tail) return null;
-      return {
-        type: 'free_note',
-        userId: binding.userId,
-        tenantId,
-        text: tail,
-        metadata: { source: 'max_bot', command: 'note' },
-        originChannelBindingId: binding.id,
-      };
-    }
-    if (cmd === 'idea') {
-      if (!tail) return null;
-      return {
-        type: 'free_note',
-        userId: binding.userId,
-        tenantId,
-        text: tail,
-        metadata: { source: 'max_bot', command: 'idea', tag: 'idea' },
-        originChannelBindingId: binding.id,
-      };
-    }
-    if (cmd === 'status' || cmd === 'myideas' || cmd === 'help' || cmd === 'start') {
-      return {
-        type: 'command',
-        userId: binding.userId,
-        tenantId,
-        commandName: cmd === 'start' ? 'help' : cmd,
-        args: tail || undefined,
-        originChannelBindingId: binding.id,
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        question: transcript,
+        originChannelBindingId: args.binding.id,
       };
     }
     return {
-      type: 'command',
-      userId: binding.userId,
-      tenantId,
-      commandName: 'help',
-      originChannelBindingId: binding.id,
+      type: 'free_note',
+      userId: args.binding.userId,
+      tenantId: args.tenantId,
+      text: transcript,
+      metadata: { source: 'max_bot', kind: 'voice', chatId: args.chatId },
+      originChannelBindingId: args.binding.id,
     };
+  }
+
+  private async handleDocument(args: {
+    attachment: MaxIncomingAttachment;
+    binding: ChannelBinding;
+    chatId: number | string;
+    tenantId: string;
+    channel: Channel;
+    config: MaxBotChannelConfig;
+  }): Promise<void> {
+    const sizeBytes = args.attachment.payload?.file_size ?? 0;
+    if (sizeBytes > 0 && sizeBytes > MaxBotChannelAdapter.MAX_DOCUMENT_BYTES) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Файл слишком большой (>20 МБ). Загрузите его через веб-кабинет.',
+      });
+      return;
+    }
+    const url = args.attachment.payload?.url;
+    if (!url) {
+      this.logger.warn(
+        { attachment: args.attachment },
+        'max document: нет payload.url — игнор',
+      );
+      return;
+    }
+
+    const person = await this.prisma.person.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        userId: args.binding.userId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!person) {
+      this.logger.warn(
+        { userId: args.binding.userId, tenantId: args.tenantId },
+        'max document: нет Person — отказ',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Не удалось привязать файл к профилю сотрудника. Обратитесь к админу.',
+      });
+      return;
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await this.api.downloadAttachment({
+        accessToken: args.config.accessToken,
+        url,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'max document: download failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: 'Не удалось получить документ. Попробуйте ещё раз.',
+      });
+      return;
+    }
+
+    try {
+      const result = await this.documents.upload({
+        tenantId: args.tenantId,
+        uploaderPersonId: person.id,
+        file: {
+          buffer,
+          originalName:
+            args.attachment.payload?.file_name ?? 'max-document',
+          mimeType:
+            args.attachment.payload?.mime_type ?? 'application/octet-stream',
+          size: buffer.byteLength,
+        },
+      });
+      this.logger.log(
+        {
+          documentId: result.id,
+          tenantId: args.tenantId,
+          userId: args.binding.userId,
+        },
+        'max document: upload ok',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Документ принят. Я разберу его и подключу к знаниям компании.',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { tenantId: args.tenantId, err: message },
+        'max document: upload failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: `Не удалось принять документ: ${humanizeError(message)}`,
+      });
+    }
+  }
+
+  // ─────────────────────────────── helpers ──────────────────────────
+
+  private async checkVoiceRateLimit(args: {
+    userId: string;
+  }): Promise<boolean> {
+    const hour = Math.floor(Date.now() / 3_600_000);
+    const key = `bot:voice:rl:${args.userId}:${hour}`;
+    const count = await this.redis.client.incr(key);
+    if (count === 1) {
+      await this.redis.client.expire(key, 7200);
+    }
+    return count <= MaxBotChannelAdapter.VOICE_PER_HOUR_PER_USER;
+  }
+
+  private async requireVerifiedBinding(args: {
+    externalUserId: string;
+    channelId: string;
+    chatId: number | string;
+    config: MaxBotChannelConfig;
+  }): Promise<ChannelBinding | null> {
+    const binding = await this.prisma.channelBinding.findFirst({
+      where: { channelId: args.channelId, externalId: args.externalUserId },
+    });
+    if (!binding || !binding.verifiedAt) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Аккаунт не привязан. Получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
+      });
+      return null;
+    }
+    return binding;
+  }
+
+  private async classifyIntent(args: {
+    text: string;
+    tenantId: string;
+    userId: string;
+  }): Promise<'chat_query' | 'free_note'> {
+    if (this.cfg.bot.intentClassifierEnabled) {
+      try {
+        const result = await this.classifier.classify({
+          tenantId: args.tenantId,
+          userId: args.userId,
+          question: args.text,
+          conversationId: null,
+        });
+        const intent: 'chat_query' | 'free_note' =
+          result.intent === 'factual' ||
+          result.intent === 'exploratory' ||
+          result.intent === 'analytical' ||
+          result.intent === 'clone_roleplay'
+            ? 'chat_query'
+            : 'free_note';
+        const source: 'llm' | 'heuristic' =
+          result.source === 'heuristic' ? 'heuristic' : 'llm';
+        this.metrics.incBotIntentClassified({
+          channel: 'max_bot',
+          intent,
+          source,
+        });
+        return intent;
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'max classify: LLM упал — fallback на эвристики',
+        );
+      }
+    }
+    const intent = heuristicTextIntent(args.text);
+    this.metrics.incBotIntentClassified({
+      channel: 'max_bot',
+      intent,
+      source: 'heuristic',
+    });
+    return intent;
   }
 
   // ─────────────────────────────── render helpers ───────────────────
@@ -442,9 +725,12 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       case 'probe.question': {
         const q = (payload['question'] as string | undefined) ?? '';
         const ctx = (payload['context'] as string | undefined) ?? '';
-        return ctx
-          ? `Кора уточняет:\n\n${q}\n\n${ctx}`.slice(0, 4000)
-          : `Кора уточняет:\n\n${q}`.slice(0, 4000);
+        const head = 'Кора уточняет:';
+        const tail = ctx ? `\n\n${ctx}` : '';
+        return `${head}\n\n${q}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(
+          0,
+          4000,
+        );
       }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';
@@ -469,28 +755,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       default:
         return `Уведомление: ${notification.eventType}`;
     }
-  }
-
-  private renderInlineKeyboard(
-    notification: Notification,
-  ): MaxInlineKeyboardAttachment[] | undefined {
-    const payload = notification.payload as Record<string, unknown> | null;
-    if (!payload) return undefined;
-    const options = payload['options'];
-    if (!Array.isArray(options) || options.length === 0) return undefined;
-    const buttons = options.slice(0, 8).map((opt, idx) => [
-      {
-        type: 'callback' as const,
-        text: String(opt).slice(0, 200),
-        payload: `${MaxBotChannelAdapter.PROBE_CALLBACK_PREFIX}:${notification.id}:${idx}`,
-      },
-    ]);
-    return [
-      {
-        type: 'inline_keyboard',
-        payload: { buttons },
-      },
-    ];
   }
 
   // ─────────────────────────────── config ──────────────────────────
@@ -542,4 +806,43 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       );
     }
   }
+}
+
+function isVoiceAttachment(a: MaxIncomingAttachment): boolean {
+  const t = (a.type ?? '').toLowerCase();
+  return t === 'voice' || t === 'audio';
+}
+
+function isDocumentAttachment(a: MaxIncomingAttachment): boolean {
+  const t = (a.type ?? '').toLowerCase();
+  return t === 'document' || t === 'file';
+}
+
+function heuristicTextIntent(text: string): 'chat_query' | 'free_note' {
+  if (text.includes('?')) return 'chat_query';
+  const lower = text.trim().toLowerCase();
+  const questionStarts = [
+    'как ',
+    'что ',
+    'почему',
+    'зачем',
+    'кто ',
+    'где ',
+    'когда',
+    'сколько',
+    'какой',
+    'какая',
+    'какое',
+    'какие',
+  ];
+  for (const q of questionStarts) {
+    if (lower.startsWith(q)) return 'chat_query';
+  }
+  return 'free_note';
+}
+
+function humanizeError(message: string): string {
+  if (message.includes('document_too_large')) return 'файл слишком большой';
+  if (message.includes('document_empty')) return 'файл пустой';
+  return 'попробуйте ещё раз';
 }

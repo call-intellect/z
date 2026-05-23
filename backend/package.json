@@ -28,6 +28,7 @@
     "patch:backfill-entity-id-document": "bun run scripts/patch-backfill-entity-id-document.ts",
     "patch:backfill-entity-id": "bun run scripts/patch-backfill-entity-id-person.ts && bun run scripts/patch-backfill-entity-id-goal.ts && bun run scripts/patch-backfill-entity-id-document.ts",
     "patch:person-relationship": "bun run scripts/patch-person-relationship.ts",
+    "patch:skill-trait-categories": "bun run scripts/patch-skill-trait-categories-from-strings.ts",
     "patch:backfill-card-versions": "bun run scripts/patch-backfill-card-versions.ts",
     "seed:llm-task-routes-regulations": "bun run scripts/seed-llm-task-routes-regulations.ts",
     "seed:llm-task-routes-knowledge-clone": "bun run scripts/seed-llm-task-routes-knowledge-clone.ts",

@@ -1,10 +1,13 @@
 /**
- * SBA β-1 — Setup script для Telegram Bot канала.
+ * SBA β-1 — Setup script для Telegram Bot канала (zero-button, 2026-05-23).
  *
  * Что делает:
  *   1. setWebhook у Telegram (URL = <PUBLIC_HOST_URL>/api/v1/webhooks/telegram-bot/<tenantId>,
  *      secret_token = `--webhook-secret` или случайный).
- *   2. setMyCommands — выставляет список slash-команд (русские описания).
+ *      `allowed_updates=['message','edited_message']` — без `callback_query`
+ *      (β-1 zero-button: бот больше не показывает inline-кнопок).
+ *   2. setMyCommands([]) — очищает menu-хамбургер бота. Если в нём были
+ *      ранее /ask, /note, /idea и т.п. — Telegram удалит.
  *   3. getMe — для проверки токена и подтягивания username.
  *   4. Upsert Channel(tenantId, kind='telegram_bot', config={encrypted token,
  *      encrypted secret, botUsername}, status='active', maxDataClass='internal',
@@ -39,15 +42,9 @@ interface CliArgs {
 const TELEGRAM_API_BASE =
   process.env['TELEGRAM_BOT_API_BASE'] ?? 'https://api.telegram.org';
 
-const COMMANDS = [
-  { command: 'ask', description: 'Задать вопрос помощнику по знаниям' },
-  { command: 'note', description: 'Записать свободную заметку' },
-  { command: 'idea', description: 'Сохранить идею' },
-  { command: 'status', description: 'Статус задач и вопросов' },
-  { command: 'myideas', description: 'Мои идеи' },
-  { command: 'link', description: 'Привязать аккаунт (/link <код>)' },
-  { command: 'help', description: 'Помощь и список команд' },
-];
+// SBA β-1 zero-button (2026-05-23): slash-команды удалены. setMyCommands
+// вызывается с пустым массивом, чтобы Telegram очистил menu-хамбургер.
+const COMMANDS: Array<{ command: string; description: string }> = [];
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
@@ -145,11 +142,11 @@ async function main(): Promise<void> {
   const botUsername = (me.result as { username?: string })?.username;
   console.log(`[setup-telegram-bot] getMe ok, username=@${botUsername ?? '<unknown>'}`);
 
-  // 2. setWebhook.
+  // 2. setWebhook. β-1 zero-button: без callback_query.
   const setWebhook = await callTelegram(args.token, 'setWebhook', {
     url: webhookUrl,
     secret_token: args.webhookSecret,
-    allowed_updates: ['message', 'callback_query', 'edited_message'],
+    allowed_updates: ['message', 'edited_message'],
     drop_pending_updates: false,
   });
   if (!setWebhook.ok) {

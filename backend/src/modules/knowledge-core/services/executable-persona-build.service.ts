@@ -12,11 +12,27 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import { tenantTopLabel } from '../../company-foundation/utils/tenant-top';
 
 import {
   EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
   EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE,
 } from '../prompts/executable-persona-compile.prompt';
+
+/**
+ * SBA γ-1 доделки — почему был собран snapshot.
+ *   - 'scheduled' — еженедельный cron;
+ *   - 'threshold' — ≥N новых traits с прошлого snapshot;
+ *   - 'critical' — mark_as_misleading (severity=critical);
+ *   - 'manual' — вручную через admin API;
+ *   - 'on_demand' — on-the-fly из ClonesService (clones.askPerson/askRole).
+ */
+export type PersonaTriggerReason =
+  | 'scheduled'
+  | 'threshold'
+  | 'critical'
+  | 'manual'
+  | 'on_demand';
 
 /**
  * SBA γ-1 — ExecutablePersonaBuildService.
@@ -48,8 +64,14 @@ export class ExecutablePersonaBuildService {
    */
   async buildForProfile(args: {
     profileId: string;
+    /** SBA γ-1 доделки — почему этот snapshot сейчас собирается (по умолчанию on_demand). */
+    triggerReason?: PersonaTriggerReason;
+    /** SBA γ-1 доделки — момент триггерного события (для метрики lag). */
+    triggerEventAt?: Date | null;
   }): Promise<ExecutablePersona | null> {
     const start = Date.now();
+    const triggerReason: PersonaTriggerReason = args.triggerReason ?? 'on_demand';
+    const triggerEventAt = args.triggerEventAt ?? null;
     try {
       const profile = await this.prisma.skillProfile.findUnique({
         where: { id: args.profileId },
@@ -105,6 +127,8 @@ export class ExecutablePersonaBuildService {
             includedTraitIds: profile.traits.map((t) => t.id),
             status: 'active',
             builtFromTraitsCount: profile.traits.length,
+            triggerReason,
+            triggerEventAt,
           },
         });
       });
@@ -116,6 +140,29 @@ export class ExecutablePersonaBuildService {
         type: 'persona',
         status: 'canonical',
       });
+
+      // SBA γ-1 доделки — counter и lag-gauge для snapshot.
+      try {
+        const tenantTop = await tenantTopLabel(this.prisma, profile.tenantId);
+        this.metrics.incExecutablePersonaSnapshot({
+          tenantTop,
+          trigger: triggerReason,
+        });
+        if (triggerEventAt) {
+          this.metrics.setExecutablePersonaSnapshotLag({
+            tenantTop,
+            seconds: Math.max(
+              0,
+              Math.floor((Date.now() - triggerEventAt.getTime()) / 1000),
+            ),
+          });
+        }
+      } catch (metricsErr) {
+        this.logger.debug(
+          { err: metricsErr instanceof Error ? metricsErr.message : String(metricsErr) },
+          'buildForProfile: snapshot-метрика упала — skip',
+        );
+      }
 
       return newPersona;
     } catch (err) {
@@ -137,8 +184,12 @@ export class ExecutablePersonaBuildService {
   async buildForRole(args: {
     tenantId: string;
     roleId: string;
+    triggerReason?: PersonaTriggerReason;
+    triggerEventAt?: Date | null;
   }): Promise<ExecutablePersona | null> {
     const start = Date.now();
+    const triggerReason: PersonaTriggerReason = args.triggerReason ?? 'on_demand';
+    const triggerEventAt = args.triggerEventAt ?? null;
     try {
       // Найти всех employee'ев Role с активным SkillProfile.
       const personRoles = await this.prisma.personRole.findMany({
@@ -219,6 +270,8 @@ export class ExecutablePersonaBuildService {
             includedTraitIds: aggregatedTraits.map((t) => t.id),
             status: 'active',
             builtFromTraitsCount: aggregatedTraits.length,
+            triggerReason,
+            triggerEventAt,
           },
         });
       });
@@ -230,6 +283,29 @@ export class ExecutablePersonaBuildService {
         type: 'persona',
         status: 'canonical',
       });
+
+      // SBA γ-1 доделки — snapshot-метрики.
+      try {
+        const tenantTop = await tenantTopLabel(this.prisma, args.tenantId);
+        this.metrics.incExecutablePersonaSnapshot({
+          tenantTop,
+          trigger: triggerReason,
+        });
+        if (triggerEventAt) {
+          this.metrics.setExecutablePersonaSnapshotLag({
+            tenantTop,
+            seconds: Math.max(
+              0,
+              Math.floor((Date.now() - triggerEventAt.getTime()) / 1000),
+            ),
+          });
+        }
+      } catch (metricsErr) {
+        this.logger.debug(
+          { err: metricsErr instanceof Error ? metricsErr.message : String(metricsErr) },
+          'buildForRole: snapshot-метрика упала — skip',
+        );
+      }
 
       return newPersona;
     } catch (err) {

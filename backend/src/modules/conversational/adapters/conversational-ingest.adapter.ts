@@ -68,6 +68,62 @@ export class ConversationalIngestAdapter {
     return result.rawEvent;
   }
 
+  /**
+   * SBA β-5 closing-loop — записывает ответ пользователя на probe-уведомление
+   * как `RawEvent` (kind='notification_response') и явно связывает его с
+   * исходной `Notification` через `payload.respondsToNotificationId` (это
+   * наш «metaJson.respondsToNotificationId» — у RawEvent отдельного metaJson
+   * поля нет, используем тот же payload-канал, как для free_note).
+   *
+   * `sourceExternalId = notificationId` гарантирует идемпотентность: повторный
+   * вызов с тем же `notificationId` (+ той же `occurredAt`) вернёт ранее
+   * созданный `RawEvent`. Если по probe приходит два разных ответа подряд
+   * (см. ТЗ §3.4 idempotency), вызывающая сторона обязана передать разные
+   * `occurredAt` — иначе второй вызов будет дедуплицирован.
+   */
+  async ingestNotificationResponse(args: {
+    tenantId: string;
+    userId: string;
+    notificationId: string;
+    eventType: string;
+    payload: ConversationalJson;
+    occurredAt?: Date;
+    dataClass?: DataClass;
+    sourceChannelKind?: string | null;
+    contextBlockId?: string | null;
+    contextCardId?: string | null;
+  }): Promise<RawEvent> {
+    const source = await this.ensureSource(args.tenantId);
+    const occurredAt = args.occurredAt ?? new Date();
+
+    const rawPayload = {
+      kind: 'notification_response' as const,
+      userId: args.userId,
+      respondsToNotificationId: args.notificationId,
+      eventType: args.eventType,
+      sourceChannelKind: args.sourceChannelKind ?? null,
+      contextBlockId: args.contextBlockId ?? null,
+      contextCardId: args.contextCardId ?? null,
+      response: args.payload,
+    };
+
+    const result = await this.ingest.ingest({
+      tenantId: args.tenantId,
+      sourceId: source.id,
+      // sourceExternalId = `resp:<notificationId>` — детерминированная связка
+      // 1-к-1; повторный ingest того же ответа вернёт идемпотентный RawEvent.
+      sourceExternalId: `resp:${args.notificationId}`,
+      occurredAt,
+      payload: rawPayload,
+      dataClass: args.dataClass ?? 'internal',
+    });
+
+    this.logger.debug(
+      `ingestNotificationResponse tenantId=${args.tenantId} userId=${args.userId} notificationId=${args.notificationId} rawEventId=${result.rawEvent.id} idempotent=${result.idempotent}`,
+    );
+    return result.rawEvent;
+  }
+
   private async ensureSource(tenantId: string) {
     // Уникальность гарантирована @@unique([tenantId, type, name]) в Source.
     return this.prisma.source.upsert({

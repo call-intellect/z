@@ -187,7 +187,7 @@ export class AuthController {
       email: string;
       name: string;
       currentOrgId: string;
-      currentOrgRole: 'owner' | 'admin' | 'manager';
+      currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo';
     };
     todo: string;
   }> {

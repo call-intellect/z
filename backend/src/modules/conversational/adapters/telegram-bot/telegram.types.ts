@@ -4,6 +4,11 @@
  * Источник: context7 verified 2026-05-22 — `core.telegram.org/bots/api`.
  * Полная спецификация Bot API огромная; здесь только то, что использует
  * наш `TelegramApiClient` + `TelegramBotChannelAdapter`.
+ *
+ * NB (SBA β-1 rip-out, 2026-05-23): zero-button. Удалены inline keyboards,
+ * callback queries и slash-command setup. Адаптер больше не отвечает на
+ * callback_query (Telegram сам очистит menu через `setMyCommands([])`).
+ * См. plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md.
  */
 
 // ────────────────────── Bot API envelope ──────────────────────
@@ -15,34 +20,21 @@ export interface TelegramApiResponse<T> {
   error_code?: number;
 }
 
-// ────────────────────── outbound — sendMessage / answer ──────────────────────
+// ────────────────────── outbound — sendMessage ──────────────────────
 
-export interface TelegramInlineKeyboardButton {
-  text: string;
-  callback_data?: string;
-  url?: string;
-}
-
-export interface TelegramInlineKeyboardMarkup {
-  inline_keyboard: TelegramInlineKeyboardButton[][];
-}
-
+/**
+ * sendMessage без `reply_markup`: zero-button бот не показывает кнопок,
+ * вся коммуникация ведётся свободным текстом / voice / документами.
+ */
 export interface TelegramSendMessageRequest {
   chat_id: string | number;
   text: string;
   parse_mode?: 'HTML' | 'MarkdownV2';
-  reply_markup?: TelegramInlineKeyboardMarkup;
   reply_to_message_id?: number;
   disable_web_page_preview?: boolean;
 }
 
-export interface TelegramAnswerCallbackQueryRequest {
-  callback_query_id: string;
-  text?: string;
-  show_alert?: boolean;
-}
-
-// ────────────────────── setup — setWebhook / setMyCommands ──────────────────────
+// ────────────────────── setup — setWebhook ──────────────────────
 
 export interface TelegramSetWebhookRequest {
   url: string;
@@ -51,12 +43,7 @@ export interface TelegramSetWebhookRequest {
   drop_pending_updates?: boolean;
 }
 
-export interface TelegramBotCommand {
-  command: string;
-  description: string;
-}
-
-// ────────────────────── inbound — Update / Message / CallbackQuery ──────────────────────
+// ────────────────────── inbound — Update / Message ──────────────────────
 
 export interface TelegramUser {
   id: number;
@@ -73,6 +60,24 @@ export interface TelegramChat {
   username?: string;
 }
 
+/** Голосовое сообщение (поле `voice`). На β-1 zero-button нужен `file_id`. */
+export interface TelegramVoice {
+  file_id: string;
+  file_unique_id?: string;
+  duration?: number;
+  mime_type?: string;
+  file_size?: number;
+}
+
+/** Документ (поле `document`). Нужен `file_id` для скачивания через `getFile`. */
+export interface TelegramDocument {
+  file_id: string;
+  file_unique_id?: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   date: number;
@@ -81,25 +86,36 @@ export interface TelegramMessage {
   text?: string;
   caption?: string;
   reply_to_message?: TelegramMessage;
-  /** Любые медиа-аттачи — для β-1 пока игнорируются (см. §12.3 sub-ТЗ). */
-  voice?: unknown;
-  audio?: unknown;
+  voice?: TelegramVoice;
+  audio?: TelegramVoice;
+  document?: TelegramDocument;
+  /** Фото оставляем как `unknown` — на β-1 zero-button мы их не принимаем. */
   photo?: unknown;
-  document?: unknown;
 }
 
-export interface TelegramCallbackQuery {
-  id: string;
-  from: TelegramUser;
-  message?: TelegramMessage;
-  data?: string;
-}
-
+/**
+ * Update — zero-button. `callback_query` удалён (бот больше не делает
+ * inline-кнопок). `edited_message` оставляем — пользователь может
+ * исправить voice/text сразу после отправки.
+ */
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
-  callback_query?: TelegramCallbackQuery;
+}
+
+// ────────────────────── getFile ────────────────────────────────────
+
+/**
+ * Ответ `getFile`. Возвращает `file_path` — относительный путь, по которому
+ * затем качается файл: `https://api.telegram.org/file/bot<token>/<file_path>`.
+ * (см. core.telegram.org/bots/api#getfile, context7 verified 2026-05-23).
+ */
+export interface TelegramGetFileResponse {
+  file_id: string;
+  file_unique_id?: string;
+  file_size?: number;
+  file_path?: string;
 }
 
 // ────────────────────── Channel.config Telegram ──────────────────────

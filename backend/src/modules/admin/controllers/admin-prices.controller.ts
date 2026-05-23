@@ -33,7 +33,30 @@ export class AdminPricesController {
   list(
     @Query(new ZodValidationPipe(ListPricesQuerySchema)) q: ListPricesQuery,
   ) {
-    return this.svc.listPrices({ activeOnly: q.activeOnly });
+    return this.svc.listPrices({
+      activeOnly: q.activeOnly,
+      ...(q.modelId ? { modelId: q.modelId } : {}),
+      ...(q.providerId ? { providerId: q.providerId } : {}),
+      ...(q.provider ? { provider: q.provider } : {}),
+      ...(q.model ? { model: q.model } : {}),
+    });
+  }
+
+  /**
+   * SBA α-10 wave 3 — отдельный history endpoint (по факту дублирует
+   * `GET /` с activeOnly=false, но имеет более «explicit» имя для UI).
+   */
+  @Get('history')
+  history(
+    @Query(new ZodValidationPipe(ListPricesQuerySchema)) q: ListPricesQuery,
+  ) {
+    return this.svc.listPrices({
+      activeOnly: false,
+      ...(q.modelId ? { modelId: q.modelId } : {}),
+      ...(q.providerId ? { providerId: q.providerId } : {}),
+      ...(q.provider ? { provider: q.provider } : {}),
+      ...(q.model ? { model: q.model } : {}),
+    });
   }
 
   @Post()

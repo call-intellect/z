@@ -23,10 +23,19 @@ export class AdminPricesService {
     @Inject(AdminCacheService) private readonly cache: AdminCacheService,
   ) {}
 
-  async listPrices(args: { activeOnly: boolean }) {
-    const where: Prisma.LlmModelPriceWhereInput = args.activeOnly
-      ? { effectiveTo: null }
-      : {};
+  async listPrices(args: {
+    activeOnly: boolean;
+    modelId?: string;
+    providerId?: string;
+    provider?: string;
+    model?: string;
+  }) {
+    const where: Prisma.LlmModelPriceWhereInput = {
+      ...(args.activeOnly ? { effectiveTo: null } : {}),
+      ...(args.modelId ? { modelId: args.modelId } : {}),
+      ...(args.provider ? { provider: args.provider } : {}),
+      ...(args.model ? { model: args.model } : {}),
+    };
     const items = await this.prisma.llmModelPrice.findMany({
       where,
       orderBy: [

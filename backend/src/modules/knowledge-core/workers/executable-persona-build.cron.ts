@@ -32,6 +32,13 @@ export class ExecutablePersonaBuildCron {
 
   @Cron('0 6 * * SUN')
   async sweep(): Promise<void> {
+    // SBA γ-1 доделки — мастер-тумблер weekly snapshot.
+    if (!this.cfg.persona.scheduledRebuildEnabled) {
+      this.logger.debug(
+        'executable-persona-build.cron: scheduledRebuildEnabled=false — skip',
+      );
+      return;
+    }
     try {
       const summary = await this.runOnce();
       this.logger.log(
@@ -78,6 +85,7 @@ export class ExecutablePersonaBuildCron {
       try {
         const persona = await this.builder.buildForProfile({
           profileId: profile.id,
+          triggerReason: 'scheduled',
         });
         if (persona) profilesBuilt++;
         else profilesSkipped++;
@@ -104,6 +112,7 @@ export class ExecutablePersonaBuildCron {
         const persona = await this.builder.buildForRole({
           tenantId: role.tenantId,
           roleId: role.id,
+          triggerReason: 'scheduled',
         });
         if (persona) rolesBuilt++;
         else rolesSkipped++;

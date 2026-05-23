@@ -5,7 +5,6 @@ import { BusinessMetricsService } from '../../../../common/metrics/business-metr
 import { RedisService } from '../../../../common/redis/redis.service';
 
 import type {
-  MaxInlineKeyboardAttachment,
   MaxSendMessageRequest,
   MaxSendMessageResponse,
 } from './max.types';
@@ -48,14 +47,12 @@ export class MaxApiClient {
     chatId?: string | number;
     userId?: string | number;
     text: string;
-    attachments?: MaxInlineKeyboardAttachment[];
   }): Promise<MaxSendMessageResponse> {
     await this.throttle();
     const body: MaxSendMessageRequest = {
       ...(args.chatId !== undefined ? { chat_id: args.chatId } : {}),
       ...(args.userId !== undefined ? { user_id: args.userId } : {}),
       text: args.text,
-      ...(args.attachments ? { attachments: args.attachments } : {}),
     };
     return this.call<MaxSendMessageResponse>(
       args.accessToken,
@@ -63,6 +60,51 @@ export class MaxApiClient {
       '/messages',
       body,
     );
+  }
+
+  /**
+   * Скачать бинарный контент вложения по полному URL. MAX обычно отдаёт
+   * `payload.url` уже как полную ссылку с подписью — поэтому отдельный
+   * `getFile` не нужен, достаточно тонкого GET'а. Если адаптер найдёт
+   * только `file_id`, эта функция вернёт ошибку (специфичный GET endpoint
+   * для file_id в MAX-API на момент 2026-05-23 не документирован).
+   */
+  async downloadAttachment(args: {
+    accessToken: string;
+    url: string;
+  }): Promise<Buffer> {
+    let res: Response;
+    try {
+      res = await fetch(args.url, {
+        headers: { Authorization: args.accessToken },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.metrics.incMaxBotApiError({
+        apiMethod: 'downloadAttachment',
+        code: 'network_error',
+      });
+      throw new MaxApiError(
+        'downloadAttachment',
+        0,
+        `network: ${message}`,
+        true,
+      );
+    }
+    if (!res.ok) {
+      this.metrics.incMaxBotApiError({
+        apiMethod: 'downloadAttachment',
+        code: `http_${res.status}`,
+      });
+      throw new MaxApiError(
+        'downloadAttachment',
+        res.status,
+        `HTTP ${res.status}`,
+        res.status >= 500,
+      );
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   // ─────────────────────── setup ───────────────────────────────────
@@ -126,7 +168,7 @@ export class MaxApiClient {
       throw new MaxApiError(path, 0, `network: ${message}`, true);
     }
 
-    let parsed: unknown = null;
+    let parsed: unknown;
     const contentType = res.headers.get('content-type') ?? '';
     if (contentType.includes('application/json')) {
       try {

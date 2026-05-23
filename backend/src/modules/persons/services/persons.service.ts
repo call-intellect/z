@@ -13,7 +13,6 @@ import { AuditLogService } from '../../audit/audit-log.service';
 import type {
   BatchCreatePersonsDto,
   CreatePersonDto,
-  ListPersonsQuery,
   PersonDto,
   PersonListItemDto,
   UpdatePersonDto,
@@ -34,10 +33,25 @@ import type {
  *
  * EntityLink пишется напрямую через Prisma (fromType/toType явно).
  * Рефакторинг на GraphService позже — тривиален.
+ *
+ * SBA α-8 wave 3 (2026-05-23): feature-flag `USE_APPOINTMENT_FOR_PERSON_ROLES`.
+ * При флаге=true list/get/create/update пишут и читают `Appointment`
+ * параллельно с `PersonRole`; при флаге=false (default) логика идентична
+ * прежней. Patch-script `patch-migrate-person-role-to-appointment.ts`
+ * заполняет Appointment по существующим PersonRole. Через 1 месяц после
+ * прода — отдельный sub-ТЗ на удаление PersonRole.
+ *
+ * NB: используем `process.env.*` вместо `TypedConfigService` — добавление
+ * двух ENV в `EnvSchema` спровоцировало бы TS2589 на длинной merge-цепочке
+ * (см. typed-config.service.ts:21-22). См. ТЗ §13.
  */
 @Injectable()
 export class PersonsService {
   private readonly logger = new Logger(PersonsService.name);
+
+  /** Feature-flag SBA α-8 wave 3 — читать из Appointment вместо PersonRole. */
+  private readonly useAppointment: boolean =
+    process.env.USE_APPOINTMENT_FOR_PERSON_ROLES === 'true';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -67,12 +81,24 @@ export class PersonsService {
             ],
           }
         : {}),
+      // SBA α-8 wave 3 — фильтр по roleId: читаем из Appointment если флаг,
+      // иначе из PersonRole (как раньше).
       ...(args.roleId
-        ? {
-            personRoles: {
-              some: { roleId: args.roleId, validTo: null },
-            },
-          }
+        ? this.useAppointment
+          ? {
+              appointments: {
+                some: {
+                  roleId: args.roleId,
+                  validTo: null,
+                  status: { not: 'former' },
+                },
+              },
+            }
+          : {
+              personRoles: {
+                some: { roleId: args.roleId, validTo: null },
+              },
+            }
         : {}),
     };
 
@@ -85,6 +111,13 @@ export class PersonsService {
           primaryDepartment: { select: { id: true, name: true } },
           personRoles: {
             where: { validTo: null },
+            include: { role: { select: { id: true, name: true } } },
+            orderBy: { validFrom: 'desc' },
+            take: 1,
+          },
+          // SBA α-8 wave 3 — Appointment как параллельный источник «текущей должности».
+          appointments: {
+            where: { validTo: null, status: { not: 'former' } },
             include: { role: { select: { id: true, name: true } } },
             orderBy: { validFrom: 'desc' },
             take: 1,
@@ -116,6 +149,13 @@ export class PersonsService {
         primaryDepartment: { select: { id: true, name: true } },
         personRoles: {
           where: { validTo: null },
+          include: { role: { select: { id: true, name: true } } },
+          orderBy: { validFrom: 'desc' },
+          take: 1,
+        },
+        // SBA α-8 wave 3 — Appointment как параллельный источник «текущей должности».
+        appointments: {
+          where: { validTo: null, status: { not: 'former' } },
           include: { role: { select: { id: true, name: true } } },
           orderBy: { validFrom: 'desc' },
           take: 1,
@@ -170,6 +210,23 @@ export class PersonsService {
               roleId: args.body.roleId,
               validFrom: now,
               validTo: null,
+            },
+          });
+          // SBA α-8 wave 3 — параллельно создаём Appointment (replacement
+          // для PersonRole). Пишем всегда (без feature-flag), чтобы у Appointment
+          // была полная история; reads контролируются useAppointment.
+          await tx.appointment.create({
+            data: {
+              tenantId: args.tenantId,
+              personId: person.id,
+              roleId: args.body.roleId,
+              departmentId: args.body.primaryDepartmentId ?? null,
+              loadPercent: 100,
+              status: 'active',
+              validFrom: now,
+              validTo: null,
+              sourceBlockIds: [],
+              confidence: new Prisma.Decimal('1.000'),
             },
           });
           await this.upsertActiveLink(tx, {
@@ -342,6 +399,16 @@ export class PersonsService {
               },
               data: { validTo: now },
             });
+            // SBA α-8 wave 3 — параллельно архивируем активный Appointment.
+            await tx.appointment.updateMany({
+              where: {
+                tenantId: args.tenantId,
+                personId: args.id,
+                roleId: currentRoleId,
+                validTo: null,
+              },
+              data: { validTo: now, status: 'former' },
+            });
             await tx.entityLink.updateMany({
               where: {
                 tenantId: args.tenantId,
@@ -367,6 +434,24 @@ export class PersonsService {
                 roleId: args.body.roleId,
                 validFrom: now,
                 validTo: null,
+              },
+            });
+            // SBA α-8 wave 3 — параллельно создаём новый Appointment.
+            await tx.appointment.create({
+              data: {
+                tenantId: args.tenantId,
+                personId: args.id,
+                roleId: args.body.roleId,
+                departmentId:
+                  args.body.primaryDepartmentId ??
+                  existing.primaryDepartmentId ??
+                  null,
+                loadPercent: 100,
+                status: 'active',
+                validFrom: now,
+                validTo: null,
+                sourceBlockIds: [],
+                confidence: new Prisma.Decimal('1.000'),
               },
             });
             await this.upsertActiveLink(tx, {
@@ -430,6 +515,15 @@ export class PersonsService {
           validTo: null,
         },
         data: { validTo: now },
+      });
+      // SBA α-8 wave 3 — параллельно архивируем все активные Appointment.
+      await tx.appointment.updateMany({
+        where: {
+          tenantId: args.tenantId,
+          personId: args.id,
+          validTo: null,
+        },
+        data: { validTo: now, status: 'former' },
       });
       // Закрываем все EntityLink с этим Person.
       await tx.entityLink.updateMany({
@@ -583,12 +677,16 @@ export class PersonsService {
     primaryDepartmentId: string | null;
     primaryDepartment: { id: string; name: string } | null;
     personRoles: { roleId: string; role: { id: string; name: string } }[];
+    /** SBA α-8 wave 3 — параллельный источник; используется при useAppointment. */
+    appointments?: { roleId: string; role: { id: string; name: string } }[];
     invitations: { status: 'pending' | 'accepted' | 'revoked' | 'expired' }[];
     createdAt: Date;
     updatedAt: Date;
     deletedAt: Date | null;
   }): PersonListItemDto {
-    const currentRole = p.personRoles[0]?.role ?? null;
+    const currentRole = this.useAppointment
+      ? (p.appointments?.[0]?.role ?? p.personRoles[0]?.role ?? null)
+      : (p.personRoles[0]?.role ?? null);
     const lastInvitation = p.invitations[0]?.status ?? null;
     return {
       id: p.id,

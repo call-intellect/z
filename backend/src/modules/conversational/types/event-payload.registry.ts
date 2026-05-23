@@ -116,6 +116,48 @@ const IdeaStatusChangedPayloadSchema = z
   })
   .strict();
 
+/**
+ * SBA β-8 — payload для morning/evening checkin prompt'а.
+ *
+ * `kind` ∈ 'checkin' (используется CheckinResponseHandler в фильтре).
+ * `checkInKind` ∈ 'morning'|'evening' (что мы спрашиваем).
+ * `personId` / `dateLocal` — нужны handler'у, чтобы upsert'нуть DailyCheckIn
+ *   без повторной загрузки контекста.
+ * `question` — готовый текст вопроса (короткий, для отображения в канале).
+ */
+const CheckinPromptPayloadSchema = z
+  .object({
+    kind: z.literal('checkin'),
+    checkInKind: z.enum(['morning', 'evening']),
+    personId: z.string().min(1).max(80),
+    dateLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    question: z.string().min(1).max(2_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+/**
+ * SBA δ-2 — ProactiveWatcher.
+ *
+ * Payload отправляемого `Notification(eventType='proactive.notification')`.
+ * Recipient — userId, выбранный в правиле (assignee/owner/manager и т.п.).
+ *
+ * `ruleType` / `severity` — фасет правила (decision_no_owner / insight_no_mitigation /
+ * ... × low|medium|high). `proactiveNotificationId` — FK на ProactiveNotification
+ * (для UI dismiss action). `title` / `body` — текст от LLM `proactive-message-craft`.
+ * `actionUrl` — куда отправить пользователя по клику (карточка, страница списка).
+ */
+const ProactiveNotificationPayloadSchema = z
+  .object({
+    proactiveNotificationId: z.string().min(1).max(80),
+    ruleType: z.string().min(1).max(60),
+    severity: z.enum(['low', 'medium', 'high']),
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(4_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
@@ -125,6 +167,10 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['specialist.probe', SpecialistProbePayloadSchema],
   // SBA β-5 — closing-loop уведомления supporter'ам идей.
   ['idea.status_changed', IdeaStatusChangedPayloadSchema],
+  // SBA β-8 — morning/evening checkin prompt.
+  ['checkin.prompt', CheckinPromptPayloadSchema],
+  // SBA δ-2 — ProactiveWatcher (инициативное сообщение).
+  ['proactive.notification', ProactiveNotificationPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

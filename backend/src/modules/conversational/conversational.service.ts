@@ -85,6 +85,10 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // дефолту. Telegram/Max не используем — это не вопрос пользователю
   // (см. probe.question), а уведомление-подсказка с suggestedActions.
   'specialist.probe': ['in_app', 'email_smtp'],
+  // SBA δ-2: ProactiveWatcher — инициативное уведомление-подсказка («заметил X»).
+  // По дефолту in_app + telegram/max для friendly-каналов. Email — нет
+  // (это «нытик в почту», что обесценивает proactive-режим).
+  'proactive.notification': ['in_app', 'telegram_bot', 'max_bot'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

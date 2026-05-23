@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
+import { DocumentsModule } from '../documents/documents.module';
+
 import { ConversationalIngestAdapter } from './adapters/conversational-ingest.adapter';
 import { EmailSmtpChannelAdapter } from './adapters/email-smtp.adapter';
 import { InAppChannelAdapter } from './adapters/in-app.adapter';
@@ -10,7 +12,6 @@ import { TelegramApiClient } from './adapters/telegram-bot/telegram-api-client';
 import { TelegramBotChannelAdapter } from './adapters/telegram-bot/telegram-bot.adapter';
 import { TelegramWebhooksController } from './adapters/telegram-bot/telegram-webhooks.controller';
 import { ChannelRegistry } from './channel-registry';
-import { CommandHandlerService } from './command-handler.service';
 import { ConversationalController } from './conversational.controller';
 import { ConversationalService } from './conversational.service';
 import { ConversationalLinkCodeService } from './link-code.service';
@@ -33,12 +34,26 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
  *     BusinessMetricsService — все @Global.
  *   - MailService — @Global (MailModule).
  *   - IngestService — @Global (IngestModule).
+ *   - VoxService — экспортируется AiModule (@Global) для voice inbound
+ *     адаптеров (β-1 zero-button).
+ *   - QueryClassifierService — экспортируется DialogLayerModule (@Global)
+ *     для intent classify в voice/text inbound адаптеров (β-1 zero-button).
  *
  * Адаптеры (`InAppChannelAdapter`, `EmailSmtpChannelAdapter`) сами
  * регистрируются в `ChannelRegistry` через `onModuleInit()`.
+ *
+ * β-1 zero-button (2026-05-23): добавлен импорт `DocumentsModule` для
+ * `DocumentsService.upload(...)` из Telegram/MAX-адаптеров (document inbound).
+ * Удалён `CommandHandlerService` и подписка `command-handler` — slash-команды
+ * больше не поддерживаются (см. plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md).
  */
 @Global()
 @Module({
+  imports: [
+    // SBA β-1 zero-button — Telegram/MAX-адаптеры инжектят DocumentsService
+    // для document inbound. DocumentsModule НЕ @Global, нужно импортировать.
+    DocumentsModule,
+  ],
   controllers: [
     ConversationalController,
     // SBA β-1 — webhook'и для Telegram/MAX.
@@ -60,8 +75,6 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // SBA β-1 — MAX bot.
     MaxApiClient,
     MaxBotChannelAdapter,
-    // SBA β-1 — handler для slash-commands.
-    CommandHandlerService,
   ],
   exports: [
     ConversationalService,

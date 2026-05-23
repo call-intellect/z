@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { CurationModule } from '../curation/curation.module';
+import { ProcessesModule } from '../processes/processes.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -16,6 +17,8 @@ import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
 import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
 import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
+import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
+import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
 import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
 import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
 import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
@@ -27,10 +30,15 @@ import { Specialist37SkillWorker } from '../knowledge-core/workers/specialist-3-
 import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable-persona-build.cron';
+import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
+import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
+import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
 import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
+// SBA β-8 — PersonalRelationBuilderWorker.
+import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 
 import { AnalyzeWorker } from './workers/analyze.worker';
 import { BehaviorMetricsWorker } from './workers/behavior-metrics.worker';
@@ -69,6 +77,10 @@ import { VoxService } from './services/vox.service';
     // SBA α-4 — Layer 4 Curation. BlockLinkerWorker инжектирует ConflictService
     // для авто-создания ConflictItem из IdeaBlockLink(relationType='contradicts').
     CurationModule,
+    // SBA α-7 wave 2 — ProcessDetectorWorker + ProcessTemplateCompletenessCron
+    // инжектируют ProcessExtractionService / ProcessTemplateProbeService /
+    // ProcessTemplateCompletenessService из ProcessesModule.
+    ProcessesModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).
@@ -113,6 +125,14 @@ import { VoxService } from './services/vox.service';
     // SBA α-7 — consumer `core.specialist-routing` jobName='3-1-regulations'.
     // Извлекает Regulation/Process/Policy из блоков и публикует triage.
     Specialist31RegulationsWorker,
+    // SBA α-7 wave 2 — consumer `core.specialist-routing` jobName='3-1-process-detector'.
+    // Батчит блоки signalType=process_step|methodology_step и извлекает
+    // ProcessTemplate-кандидатов через LLM (одним пакетом). Завязан на
+    // ProcessExtractionService из ProcessesModule.
+    ProcessDetectorWorker,
+    // SBA α-7 wave 2 — cron `0 3 * * *`: ежедневный пересчёт completeness
+    // ProcessTemplate'ов + обновление gauge'ев Prometheus.
+    ProcessTemplateCompletenessCron,
     // SBA β-2 — consumer `core.specialist-routing` jobName='3-2-knowledge-clone'.
     // Матчит блок → Person'ы (employee) и enqueue rebuild knowledgeProfile.
     Specialist32KnowledgeCloneWorker,
@@ -133,6 +153,16 @@ import { VoxService } from './services/vox.service';
     // SBA β-4 — cron `0 *‎/6 * * *`: пересчёт frequency/dynamic + probe
     // no_mitigation_plan + gauge insights_dynamic_label_count.
     InsightClustererCron,
+    // SBA β-6 — consumer `core.specialist-routing` jobName='3-9-experiments'.
+    // LLM-extract Experiment'а из signalType ∈ {hypothesis, result, lesson},
+    // persist + ExperimentVersion snapshot, triage, probe.result_without_lesson.
+    ExperimentDetectorWorker,
+    // SBA β-6 — cron `0 *‎/6 * * *`: auto-status transitions при confidence ≥ 0.7,
+    // probe.no_owner + probe.running_too_long, gauge experiments_total.
+    ExperimentStatusResolverCron,
+    // SBA β-6 — cron `0 7 * * *`: эмит EntityLink predicates
+    // (result_supports_insight, lesson_informs_decision) для completed-экспериментов.
+    ExperimentTransitionsCron,
     // SBA β-5 — consumer `core.specialist-routing` jobName='3-6-ideas'.
     // KNN-дедуп Idea, LLM extract, weight/supporters, EventEmitter
     // 'idea.created'.
@@ -159,6 +189,12 @@ import { VoxService } from './services/vox.service';
     MeetingAnalyzeV2Cron,
     StrategicAlignmentWorker,
     StrategicAlignmentCron,
+
+    // SBA β-8 — consumer `core.specialist-routing` jobName='3-12-personal-relation'.
+    // Извлекает межличностные EntityLink ('conflicted_with') из блоков
+    // signalType ∈ {team_friction, process_friction}. На β-8 — упрощённая
+    // pairwise-логика; γ-2 переделает на полноценный LLM extract пары + role.
+    PersonalRelationBuilderWorker,
 
     // Фаза 0b knowledge-core: ingest-адаптеры документов и дампов.
     DocumentIngestAdapter,

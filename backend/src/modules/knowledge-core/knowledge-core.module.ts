@@ -19,6 +19,7 @@ import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
+import { AxisClassifierService } from './services/axis-classifier.service';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
 import { Specialist31ProbeService } from './services/specialist-3-1-probe.service';
@@ -34,7 +35,11 @@ import { Specialist36Service } from './services/specialist-3-6-ideas.service';
 import { Specialist36ProbeService } from './services/specialist-3-6-probe.service';
 import { Specialist37Service } from './services/specialist-3-7-skill.service';
 import { Specialist37ProbeService } from './services/specialist-3-7-skill-probe.service';
+import { Specialist39ExperimentProbeService } from './services/specialist-3-9-experiment-probe.service';
+import { Specialist39ExperimentsService } from './services/specialist-3-9-experiments.service';
 import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
+import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
+import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
@@ -95,6 +100,8 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     CoreMetricsSnapshotCron,
     // SBA α-3: RouterService — диспатч атомов в специалистов Слоя 3.
     RouterService,
+    // SBA α-3 wave 3: AxisClassifierService — fan-out IdeaBlock по 4 осям.
+    AxisClassifierService,
     // SBA α-6: Specialist34ProbeService — probe-events специалиста 3.4.
     Specialist34ProbeService,
     // SBA α-7: Specialist31Service — extraction/dedupe/triage для регламентов
@@ -115,6 +122,12 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // с Decisions → triage) и Specialist35ProbeService (4 probe-trigger'а).
     Specialist35Service,
     Specialist35ProbeService,
+    // SBA β-6: Specialist39ExperimentsService (Experiment Tracker — extract
+    // hypothesis/result/lesson → persist + ExperimentVersion → triage) и
+    // Specialist39ExperimentProbeService (3 probe-trigger'а: no_owner,
+    // running_too_long, result_without_lesson).
+    Specialist39ExperimentsService,
+    Specialist39ExperimentProbeService,
     // SBA β-5: Specialist36Service (Ideas Collector — KNN-дедуп Idea, LLM
     // extract, weight/supporters, EventEmitter idea.created/idea.status_changed)
     // и Specialist36ProbeService (probe.support_request + probe.status_unclear).
@@ -127,6 +140,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     Specialist37Service,
     Specialist37ProbeService,
     ExecutablePersonaBuildService,
+    // SBA γ-1 доделки: ExecutablePersonaVersioningService + trigger-watcher cron.
+    ExecutablePersonaVersioningService,
+    ExecutablePersonaTriggerWatcherCron,
   ],
   exports: [
     SegmentBuilderService,
@@ -154,6 +170,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // SBA α-3: экспортируем RouterService — block-ingest worker инжектит его
     // для dispatch'а после persist'а блока.
     RouterService,
+    // SBA α-3 wave 3: экспортируем AxisClassifierService — block-ingest worker
+    // дёргает его сразу после router.dispatch.
+    AxisClassifierService,
     // SBA α-6: экспортируем для CardSpecialistRegistry-регистрации и тестов.
     Specialist34ProbeService,
     // SBA α-7: экспортируем для Worker'а и тестов.
@@ -172,6 +191,10 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // (WorkersModule) и REST API InsightsModule.
     Specialist35Service,
     Specialist35ProbeService,
+    // SBA β-6: экспортируем для ExperimentDetectorWorker / ExperimentStatusResolverCron
+    // (WorkersModule) и REST API ExperimentsModule.
+    Specialist39ExperimentsService,
+    Specialist39ExperimentProbeService,
     // SBA β-5: экспортируем для Specialist36IdeasWorker / IdeaClustererCron
     // (WorkersModule) и REST API IdeasModule + Specialist36Module.
     Specialist36Service,
@@ -181,6 +204,8 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     Specialist37Service,
     Specialist37ProbeService,
     ExecutablePersonaBuildService,
+    // SBA γ-1 доделки.
+    ExecutablePersonaVersioningService,
   ],
 })
 export class KnowledgeCoreModule {}

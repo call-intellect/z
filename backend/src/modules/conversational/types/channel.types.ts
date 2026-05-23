@@ -22,13 +22,20 @@ export type ConversationalJson =
 
 /**
  * Inbound-сообщение, полученное от внешнего канала или от внутреннего
- * UI-канала (in_app). Четыре типа — каждый идёт по своему пути:
+ * UI-канала (in_app). Три типа — каждый идёт по своему пути:
  *   - `free_note`     → создаётся `RawEvent` через `IngestService`;
  *   - `response`      → разрешает открытый `Notification` (probe);
- *   - `chat_query`    → передаётся подписанному chat-handler'у (α-5);
- *   - `command`       → slash-command от бота (`/status`, `/myideas`, ...),
- *                        обрабатывается ConversationalService встроенным
- *                        command-handler'ом (SBA β-1).
+ *   - `chat_query`    → передаётся подписанному chat-handler'у (α-5).
+ *
+ * NB (SBA β-1 rip-out, 2026-05-23): тип `'command'` удалён вместе со
+ * slash-командами и `CommandHandlerService`. Telegram/MAX-боты теперь
+ * zero-button — единственная hard-coded команда `/start <token>` обрабатывается
+ * в самом адаптере и не доходит до `dispatchInbound`. Голый 6-значный код
+ * привязки распознаётся регексом до `dispatchInbound`. Всё остальное:
+ *
+ *   - голос → ASR → intent classify → free_note|chat_query;
+ *   - документ → DocumentsService.upload (own pipeline);
+ *   - свободный текст → intent classify → free_note|chat_query.
  */
 export type InboundMessage =
   | {
@@ -59,16 +66,6 @@ export type InboundMessage =
        * (см. ConversationalService.sendChatReply). NULL/undefined для in_app
        * (web-UI), где привязка не важна.
        */
-      originChannelBindingId?: string;
-    }
-  | {
-      type: 'command';
-      userId: string;
-      tenantId: string;
-      /** Имя команды без слэша: `status`, `myideas`, `help`. */
-      commandName: string;
-      /** Сырой аргумент-хвост после команды (если есть). */
-      args?: string;
       originChannelBindingId?: string;
     };
 

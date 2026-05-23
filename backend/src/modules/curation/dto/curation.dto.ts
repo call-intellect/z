@@ -29,6 +29,11 @@ export const CurationDecisionTypeSchema = z.enum([
   'split',
   'merge',
   'supersede',
+  /// SBA α-4 wave 2 — слияние SkillTraitCategory (для γ-1).
+  'merge_categories',
+  /// SBA α-4 wave 2 — передача карточки следующему куратору
+  /// (payload.escalateToUserId обязателен; CurationItem остаётся pending).
+  'escalate',
 ]);
 export type CurationDecisionTypeDto = z.infer<typeof CurationDecisionTypeSchema>;
 
@@ -232,4 +237,69 @@ export interface CuratorAssignmentDto {
 
 export interface ListCuratorAssignmentsResponse {
   items: CuratorAssignmentDto[];
+}
+
+// ─────────────────────────── Completeness Slots (SBA α-4 wave 2) ──
+
+/// Поддерживаемые типы родительской карточки для слотов.
+export const CompletenessParentCardTypeSchema = z.enum([
+  'regulation',
+  'process',
+  'role',
+  'company_profile',
+]);
+export type CompletenessParentCardTypeDto = z.infer<
+  typeof CompletenessParentCardTypeSchema
+>;
+
+export const CompletenessSlotKindSchema = z.enum(['required', 'optional']);
+export type CompletenessSlotKindDto = z.infer<typeof CompletenessSlotKindSchema>;
+
+export const CompletenessSlotStatusSchema = z.enum(['open', 'filled']);
+export type CompletenessSlotStatusDto = z.infer<
+  typeof CompletenessSlotStatusSchema
+>;
+
+export const ListCompletenessSlotsQuerySchema = z.object({
+  cardType: CompletenessParentCardTypeSchema.optional(),
+  cardId: z.string().trim().min(1).max(80).optional(),
+  status: CompletenessSlotStatusSchema.optional(),
+  /// Пагинация — простое take/skip.
+  take: z.coerce.number().int().min(1).max(200).default(50),
+  skip: z.coerce.number().int().min(0).default(0),
+});
+export type ListCompletenessSlotsQuery = z.infer<
+  typeof ListCompletenessSlotsQuerySchema
+>;
+
+export const MarkCompletenessSlotFilledBodySchema = z
+  .object({
+    /// User.id того, кто пометил слот заполненным (опц.: если не передан —
+    /// используется текущий пользователь из сессии).
+    filledByUserId: z.string().min(1).optional(),
+  })
+  .strict();
+export type MarkCompletenessSlotFilledBody = z.infer<
+  typeof MarkCompletenessSlotFilledBodySchema
+>;
+
+export interface CompletenessSlotDto {
+  id: string;
+  tenantId: string;
+  parentCardType: CompletenessParentCardTypeDto;
+  parentCardId: string;
+  slotName: string;
+  slotKind: CompletenessSlotKindDto;
+  status: CompletenessSlotStatusDto;
+  filledAt: string | null;
+  filledByUserId: string | null;
+  lastProbedAt: string | null;
+  probeAttempts: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListCompletenessSlotsResponse {
+  items: CompletenessSlotDto[];
+  totalCount: number;
 }

@@ -27,6 +27,7 @@ import {
 } from '../services/block-extraction.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
+import { AxisClassifierService } from '../services/axis-classifier.service';
 import { RouterService } from '../services/router.service';
 import { SegmentBuilderService } from '../services/segment-builder.service';
 
@@ -82,6 +83,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(RouterService) private readonly router: RouterService,
+    @Inject(AxisClassifierService)
+    private readonly axisClassifier: AxisClassifierService,
   ) {}
 
   onModuleInit(): void {
@@ -489,6 +492,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // SBA α-3 — RouterService.dispatch для каждого блока. Best-effort:
       // не блокирует основной pipeline (dispatch внутри уже не throw'ит).
       // На α-3 consumer'ы ещё не существуют — jobs накапливаются.
+      // SBA α-3 wave 3 — после router.dispatch вызываем AxisClassifier
+      // (синхронно, idempotent по unique (tenantId, blockId, axis, label)).
       for (let i = 0; i < blocksInOrder.length; i++) {
         const block = blocksInOrder[i] as ExtractedBlock;
         const blockId = indexToBlockId.get(i);
@@ -506,6 +511,22 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
                 err: err instanceof Error ? err.message : String(err),
               },
               'block-ingest: RouterService.dispatch упал — продолжаем без роутинга',
+            );
+          });
+        // SBA α-3 wave 3 — AxisClassifier (внутри не throw'ит).
+        await this.axisClassifier
+          .classify({
+            blockId,
+            tenantId: event.tenantId,
+            signalType: block.signalType,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              {
+                blockId,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'block-ingest: AxisClassifier.classify упал — продолжаем без axis-меток',
             );
           });
       }

@@ -5,7 +5,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type CurationDecisionType,
   type CurationItem,
@@ -17,6 +19,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { SkillTraitCategoryService } from '../../skills/services/skill-trait-categories.service';
 
 import { CuratorRoutingService } from './curator-routing.service';
 
@@ -108,6 +111,23 @@ export class CurationService {
     private readonly conversational: ConversationalService,
     @Inject(CuratorRoutingService)
     private readonly routing: CuratorRoutingService,
+    /**
+     * SBA γ-1 доделки — @Optional, потому что CurationModule может
+     * импортироваться в worker-процессе ДО регистрации SkillsModule, а
+     * `merge_categories` — операция HTTP-only. Если null — endpoint
+     * вернёт `merge_categories_unsupported`.
+     */
+    @Optional()
+    @Inject(SkillTraitCategoryService)
+    private readonly skillCategories: SkillTraitCategoryService | null,
+    /**
+     * SBA α-5 dialog-layer — эмит `card-version.created` для cache invalidation.
+     * @Optional, чтобы CurationModule можно было поднять без dialog-layer
+     * (EventEmitter глобальный, но защищаемся от регрессий).
+     */
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events: EventEmitter2 | null = null,
   ) {}
 
   // ──────────────────────────── triage ────────────────────────────
@@ -299,7 +319,37 @@ export class CurationService {
       });
     }
 
+    // SBA α-4 wave 2 — валидация payload для merge_categories / escalate.
+    if (input.decisionType === 'merge_categories') {
+      const src = input.payload?.sourceCategoryId;
+      const tgt = input.payload?.targetCategoryId;
+      if (typeof src !== 'string' || typeof tgt !== 'string' || src === tgt) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'merge_categories_payload_required',
+            message:
+              'merge_categories требует payload.sourceCategoryId и payload.targetCategoryId (разные)',
+          },
+        });
+      }
+    }
+    if (input.decisionType === 'escalate') {
+      const next = input.payload?.escalateToUserId;
+      if (typeof next !== 'string' || !next) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'escalate_user_required',
+            message: 'escalate требует payload.escalateToUserId',
+          },
+        });
+      }
+    }
+
     const now = new Date();
+    const isEscalate = input.decisionType === 'escalate';
+    let createdDecisionId: string | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       const decision = await tx.curationDecision.create({
         data: {
@@ -310,6 +360,25 @@ export class CurationService {
           reviewerUserId: input.reviewerUserId,
         },
       });
+      createdDecisionId = decision.id;
+
+      // escalate — НЕ финальное решение: item остаётся pending, переназначается
+      // следующему куратору через candidateCuratorIds (round-robin).
+      if (isEscalate) {
+        const nextUserId = String(input.payload?.escalateToUserId);
+        const candidates = item.candidateCuratorIds.includes(nextUserId)
+          ? item.candidateCuratorIds
+          : [...item.candidateCuratorIds, nextUserId];
+        const updated = await tx.curationItem.update({
+          where: { id: item.id },
+          data: {
+            // status остаётся pending; assignedToUserId = новый куратор.
+            assignedToUserId: nextUserId,
+            candidateCuratorIds: candidates,
+          },
+        });
+        return updated;
+      }
 
       const updated = await tx.curationItem.update({
         where: { id: item.id },
@@ -320,8 +389,17 @@ export class CurationService {
         },
       });
 
-      // Создаём CardVersion для approve / approve_with_edits / split / merge / supersede.
-      if (input.decisionType !== 'reject') {
+      // Создаём CardVersion только для approve* / split / merge / supersede.
+      // mark_as_misleading / merge_categories — не порождают новую версию исходной
+      // карточки (это служебные пометки; merge_categories обрабатывается γ-1
+      // специалистом отдельно по сохранённой decision-записи).
+      const writesCardVersion =
+        input.decisionType === 'approve' ||
+        input.decisionType === 'approve_with_edits' ||
+        input.decisionType === 'split' ||
+        input.decisionType === 'merge' ||
+        input.decisionType === 'supersede';
+      if (writesCardVersion) {
         const payloadForVersion =
           input.payload && Object.keys(input.payload).length > 0
             ? input.payload
@@ -346,16 +424,18 @@ export class CurationService {
       decisionType: input.decisionType,
       level: item.level,
     });
-    this.metrics.incCurationItem({
-      resourceType: item.resourceType,
-      level: item.level,
-      status: 'decided',
-    });
-    const seconds = Math.max(
-      0,
-      Math.floor((now.getTime() - item.createdAt.getTime()) / 1000),
-    );
-    this.metrics.observeCurationTimeToDecide({ level: item.level, seconds });
+    if (!isEscalate) {
+      this.metrics.incCurationItem({
+        resourceType: item.resourceType,
+        level: item.level,
+        status: 'decided',
+      });
+      const seconds = Math.max(
+        0,
+        Math.floor((now.getTime() - item.createdAt.getTime()) / 1000),
+      );
+      this.metrics.observeCurationTimeToDecide({ level: item.level, seconds });
+    }
 
     this.logger.log(
       {
@@ -363,10 +443,49 @@ export class CurationService {
         itemId: item.id,
         decisionType: input.decisionType,
         reviewer: input.reviewerUserId,
-        timeToDecideSec: seconds,
+        escalated: isEscalate,
       },
-      'curation.decide: решение принято',
+      isEscalate
+        ? 'curation.decide: escalate — переназначено следующему куратору'
+        : 'curation.decide: решение принято',
     );
+
+    // SBA γ-1 доделки — пост-decision эффект для `merge_categories`:
+    // вызываем SkillTraitCategoryService.merge ПОСЛЕ commit'а транзакции.
+    // Best-effort: ошибка merge'а не откатывает CurationDecision — куратор
+    // увидит запись в decision-log и может повторить вручную через REST.
+    if (input.decisionType === 'merge_categories' && !isEscalate) {
+      const sourceId = String(input.payload?.sourceCategoryId ?? '');
+      const targetId = String(input.payload?.targetCategoryId ?? '');
+      if (!this.skillCategories) {
+        this.logger.warn(
+          { itemId: item.id, sourceId, targetId },
+          'curation.decide: merge_categories — SkillTraitCategoryService недоступен (worker-процесс?). Решение зафиксировано, merge не выполнен.',
+        );
+      } else if (sourceId && targetId) {
+        try {
+          await this.skillCategories.merge({
+            tenantId: item.tenantId,
+            userId: input.reviewerUserId,
+            sourceId,
+            targetId,
+            reasoning: input.reasoning ?? null,
+            via: 'curation_decision',
+            curationDecisionId: createdDecisionId,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              itemId: item.id,
+              sourceId,
+              targetId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'curation.decide: merge_categories handler упал (best-effort)',
+          );
+        }
+      }
+    }
 
     return result;
   }
@@ -500,7 +619,10 @@ export class CurationService {
     return (
       decisionType === 'split' ||
       decisionType === 'merge' ||
-      decisionType === 'supersede'
+      decisionType === 'supersede' ||
+      /// SBA α-4 wave 2 — merge_categories / escalate всегда требуют обоснование.
+      decisionType === 'merge_categories' ||
+      decisionType === 'escalate'
     );
   }
 
@@ -546,7 +668,7 @@ export class CurationService {
       select: { id: true, version: true },
     });
     const version = (last?.version ?? 0) + 1;
-    return db.cardVersion.create({
+    const created = await db.cardVersion.create({
       data: {
         tenantId: args.tenantId,
         resourceType: args.resourceType,
@@ -560,6 +682,22 @@ export class CurationService {
         curationItemId: args.curationItemId,
       },
     });
+    // SBA α-5 dialog-layer — эмит для CacheInvalidationService.
+    // Best-effort: ошибка emit не должна валить triage.
+    try {
+      this.events?.emit('card-version.created', {
+        tenantId: args.tenantId,
+        cardVersionId: created.id,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'card-version.created emit failed (handled inside)',
+      );
+    }
+    return created;
   }
 
   private expiryDate(days: number): Date {

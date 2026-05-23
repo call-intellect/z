@@ -8,36 +8,25 @@
  * `DELETE /subscriptions` (deleteWebhook). Авторизация — header
  * `Authorization: <access_token>`.
  *
- * Формат webhook-update'а сверяется по `update_type` полю:
- *   - `message_created`   — новое сообщение пользователю боту;
- *   - `message_callback`  — нажатие callback-кнопки.
- * На β-1 трактуем минимально-необходимое; неизвестные типы игнорируем.
+ * NB (SBA β-1 rip-out, 2026-05-23): zero-button. Удалены
+ * MaxInlineKeyboardAttachment, MaxCallback, attachments из sendMessage,
+ * callback из update.
+ *
+ * Формат webhook-update'а: trustим `update_type='message_created'`.
  */
 
 // ────────────────────── outbound — sendMessage ──────────────────────
 
-export interface MaxInlineKeyboardCallbackButton {
-  type: 'callback';
-  text: string;
-  payload: string;
-}
-
-export interface MaxInlineKeyboardAttachmentPayload {
-  buttons: MaxInlineKeyboardCallbackButton[][];
-}
-
-export interface MaxInlineKeyboardAttachment {
-  type: 'inline_keyboard';
-  payload: MaxInlineKeyboardAttachmentPayload;
-}
-
+/**
+ * sendMessage без `attachments` — β-1 zero-button. Mediа-вложения
+ * не отправляем; только plain text.
+ */
 export interface MaxSendMessageRequest {
   /** Кому шлём — id чата (диалог bot ↔ user, обычно равен user_id). */
   chat_id?: string | number;
   /** Альтернатива chat_id — user_id (зависит от формы интеграции MAX). */
   user_id?: string | number;
   text: string;
-  attachments?: MaxInlineKeyboardAttachment[];
 }
 
 export interface MaxSendMessageResponse {
@@ -60,10 +49,29 @@ export interface MaxRecipient {
   user_id?: number;
 }
 
+/**
+ * Вложение от пользователя (voice / document). Поля документированы
+ * фрагментарно — defensive-парсинг по нескольким возможным полям
+ * (`type`, `payload.file_id`, `payload.url`, `payload.duration`).
+ */
+export interface MaxIncomingAttachment {
+  type?: string;
+  payload?: {
+    file_id?: string;
+    url?: string;
+    duration?: number;
+    file_name?: string;
+    mime_type?: string;
+    file_size?: number;
+    [k: string]: unknown;
+  };
+}
+
 export interface MaxMessageBody {
   mid?: string;
   text?: string;
-  attachments?: unknown;
+  /** Вложения от пользователя (voice/document). */
+  attachments?: MaxIncomingAttachment[];
 }
 
 export interface MaxMessage {
@@ -73,27 +81,15 @@ export interface MaxMessage {
   timestamp?: number;
 }
 
-export interface MaxCallback {
-  callback_id?: string;
-  payload?: string;
-  user?: MaxUser;
-  message?: MaxMessage;
-  timestamp?: number;
-}
-
 /**
  * MAX webhook payload. Идентифицируется по `update_type`. На β-1
- * поддерживаем `message_created` (text) и `message_callback` (callback).
- *
- * Структура: см. dev.max.ru/docs-api — типы обновлений детально
- * документированы для каждого update_type. Здесь только то, что нужно
- * парсеру inbound.
+ * zero-button поддерживаем только `message_created` (text/voice/document).
+ * `message_callback` удалён — кнопок больше нет.
  */
 export interface MaxUpdate {
   update_type?: string;
   timestamp?: number;
   message?: MaxMessage;
-  callback?: MaxCallback;
 }
 
 // ────────────────────── Channel.config MAX ──────────────────────

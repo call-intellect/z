@@ -15,11 +15,22 @@ import type { Env } from './env.schema';
 @Injectable()
 export class TypedConfigService {
   constructor(
-    @Inject(ConfigService) private readonly raw: ConfigService<Env, true>,
+    // NB: убрали generic ConfigService<Env, true> — на агрегированной схеме
+    // (~50 .merge), Env-union триггерит TS2589 ещё при объявлении конструктора.
+    // Типизация Env-значений делается на уровне приватного `get` ниже.
+    @Inject(ConfigService) private readonly raw: ConfigService,
   ) {}
 
-  private get<K extends keyof Env>(key: K): Env[K] {
-    return this.raw.get(key, { infer: true }) as Env[K];
+  /**
+   * NB: на длинной `.merge` цепочке EnvSchema (~50 разделов) generic-вывод
+   * `keyof Env` форсит TS пробежаться по всем литералам ключей одновременно —
+   * вылет TS2589 (excessively deep). Решение: принимаем key как `string`,
+   * cast'им результат через `unknown`. Caller типизирует через локальную
+   * аннотацию переменной (нет потери проверок на месте использования).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private get(key: string): any {
+    return (this.raw as unknown as { get(k: string): unknown }).get(key);
   }
 
   // ─────────────────────────── runtime ───────────────────────────
@@ -228,9 +239,11 @@ export class TypedConfigService {
       encryptionKey: this.get('WEBHOOK_SECRETS_ENCRYPTION_KEY'),
       deliveryTimeoutMs: this.get('WEBHOOK_DELIVERY_TIMEOUT_MS'),
       maxAttempts: this.get('WEBHOOK_MAX_ATTEMPTS'),
-      egressAllowedHosts: this.get('WEBHOOK_EGRESS_ALLOWED_HOSTS')
+      egressAllowedHosts: (
+        this.get('WEBHOOK_EGRESS_ALLOWED_HOSTS') as string
+      )
         .split(',')
-        .map((h) => h.trim())
+        .map((h: string) => h.trim())
         .filter(Boolean),
     } as const;
   }
@@ -477,6 +490,24 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── bot (SBA β-1 zero-button) ─────────
+  /**
+   * Master-flags zero-button inbound для Telegram/MAX-ботов.
+   * См. plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md §13.
+   *
+   *   - voiceEnabled — приём voice-сообщений → ASR → intent classify.
+   *   - documentEnabled — приём документов (PDF/DOCX/MD/TXT) → DocumentsService.
+   *   - intentClassifierEnabled — LLM-классификатор intent. False → fallback
+   *     на эвристики (тот же fallback срабатывает на throw LLM).
+   */
+  get bot() {
+    return {
+      voiceEnabled: this.get('BOT_VOICE_ENABLED'),
+      documentEnabled: this.get('BOT_DOCUMENT_ENABLED'),
+      intentClassifierEnabled: this.get('BOT_INTENT_CLASSIFIER_ENABLED'),
+    } as const;
+  }
+
   // ─────────────────────────── router (SBA α-3) ─────────────────
   /**
    * Параметры RouterService (Слой 2 → Слой 3 dispatch). См.
@@ -634,19 +665,44 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── dialog-layer (SBA α-5 dialog-layer) ─
+  /**
+   * Параметры dialog-layer (Contextualizer / Cache / Summarizer). Минимально
+   * добавлен здесь, чтобы dialog-layer модуль типизировался. Полноценный
+   * sub-ТЗ ведут другие wave coders; на γ-1 доделки — просто маппинг.
+   */
+  get dialogLayer() {
+    return {
+      enabled: this.get('DIALOG_LAYER_ENABLED'),
+      answerCacheTtlSeconds: this.get('ANSWER_CACHE_TTL_SECONDS'),
+      retrievalCacheTtlSeconds: this.get('RETRIEVAL_CACHE_TTL_SECONDS'),
+      contextualizerConfidenceMin: this.get('CONTEXTUALIZER_CONFIDENCE_MIN'),
+      summarizerMessageThreshold: this.get('SUMMARIZER_MESSAGE_THRESHOLD'),
+      multiQueryExpansionEnabled: this.get('MULTI_QUERY_EXPANSION_ENABLED'),
+      summarizerCron: this.get('DIALOG_SUMMARIZER_CRON'),
+      summarizerKeepLast: this.get('DIALOG_SUMMARIZER_KEEP_LAST'),
+      summarizerStalenessHours: this.get('DIALOG_SUMMARIZER_STALENESS_HOURS'),
+    } as const;
+  }
+
   // ─────────────────────────── persona (SBA γ-1) ─────────────────
   /**
-   * Параметры ExecutablePersona build (weekly snapshot + role agregation).
-   *
-   *   - `buildCron` — расписание сборки snapshots.
-   *   - `minTraits` — минимум активных traits в SkillProfile для появления Persona.
-   *   - `roleAggMinPersons` — минимум employee'ев с активным профилем для role-persona.
+   * Параметры ExecutablePersona build (weekly snapshot + role agregation
+   * + SBA γ-1 доделки: гибрид-версионирование).
    */
   get persona() {
     return {
       buildCron: this.get('PERSONA_BUILD_CRON'),
       minTraits: this.get('PERSONA_MIN_TRAITS'),
       roleAggMinPersons: this.get('PERSONA_ROLE_AGG_MIN_PERSONS'),
+      /// SBA γ-1 доделки.
+      scheduledRebuildEnabled: this.get(
+        'EXECUTABLE_PERSONA_SCHEDULED_REBUILD_ENABLED',
+      ),
+      thresholdTraitsCount: this.get('EXECUTABLE_PERSONA_THRESHOLD_TRAITS_COUNT'),
+      minRebuildIntervalMinutes: this.get(
+        'EXECUTABLE_PERSONA_MIN_REBUILD_INTERVAL_MINUTES',
+      ),
     } as const;
   }
 
@@ -666,11 +722,287 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── process-template (SBA α-7 wave 2) ────
+  /**
+   * Параметры Specialist 3.1 ProcessTemplate detector + completeness cron.
+   * См. plans/tz/2026-05-23-sba-alpha-7-wave2-process-template-services.md §13.
+   *
+   * NB: значения читаются через `raw.get` без typed inference, чтобы избежать
+   * каскадного TS2589 на агрегированной Env-схеме (см. issue в комментариях
+   * других accessor'ов TypedConfigService).
+   */
+  get processTemplate() {
+    return {
+      detectorBatchSize: Number(this.get('PROCESS_DETECTOR_BATCH_SIZE') ?? 10),
+      detectorBatchTimeoutSeconds: Number(
+        this.get('PROCESS_DETECTOR_BATCH_TIMEOUT_SECONDS') ?? 300,
+      ),
+      completenessCron: String(
+        this.get('PROCESS_TEMPLATE_COMPLETENESS_CRON') ?? '0 3 * * *',
+      ),
+      dedupeThreshold: Number(
+        this.get('PROCESS_TEMPLATE_DEDUPE_THRESHOLD') ?? 0.85,
+      ),
+      /// SBA γ-3 — Cross-Functional Process detector + friction aggregator.
+      crossFunctionalDetectorEnabled:
+        this.get('CROSS_FUNCTIONAL_DETECTOR_ENABLED') !== false,
+      crossFunctionalScoreThreshold: Number(
+        this.get('CROSS_FUNCTIONAL_SCORE_THRESHOLD') ?? 0.5,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── admin ─────────────────────────────
   get admin() {
     return {
       bootstrapEmail: this.get('ADMIN_BOOTSTRAP_EMAIL'),
       sessionTtlSeconds: this.get('ADMIN_SESSION_TTL_SECONDS'),
+    } as const;
+  }
+
+  // ─────────────────────────── company-foundation (SBA α-9 wave 3) ──
+  /**
+   * Параметры Company Foundation (CompanyProfile / FunctionalDomain /
+   * MaturityScorer). См. plans/tz/2026-05-23-sba-alpha-9-wave3-company-foundation-services.md §13.
+   */
+  get companyFoundation() {
+    return {
+      domainExpanderEnabled: this.get('DOMAIN_EXPANDER_ENABLED'),
+      domainExpanderMinClusterSize: this.get('DOMAIN_EXPANDER_MIN_CLUSTER_SIZE'),
+      domainExpanderMaxNewPerRun: this.get('DOMAIN_EXPANDER_MAX_NEW_PER_RUN'),
+      maturityScorerEnabled: this.get('MATURITY_SCORER_ENABLED'),
+    } as const;
+  }
+
+  // ─────────────────────────── experiments (SBA β-6) ─────────────────
+  /**
+   * Параметры Experiment Tracker (Specialist 3.9). См.
+   * plans/tz/2026-05-23-sba-beta-6-experiment-tracker.md §13.
+   *
+   *   - `autoStatusTransitionEnabled` — мастер-флаг автоперевода статусов
+   *     в `experiment-status-resolver.cron`. При false cron только считает
+   *     метрики и эмитит probe'ы, без UPDATE статуса.
+   *   - `runningProbeThresholdDays` — порог дней без результата для probe
+   *     `experiment.running_too_long`.
+   */
+  get experiments() {
+    return {
+      autoStatusTransitionEnabled: this.get(
+        'EXPERIMENT_AUTO_STATUS_TRANSITION_ENABLED',
+      ),
+      runningProbeThresholdDays: this.get(
+        'EXPERIMENT_RUNNING_PROBE_THRESHOLD_DAYS',
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── brand-voice (SBA β-7) ─────────────────
+  /**
+   * Параметры Brand Voice Curator (Specialist 3.10). См.
+   * plans/tz/2026-05-23-sba-beta-7-brand-voice-curator.md §13.
+   *
+   *   - `extractorEnabled` — мастер-флаг daily-cron'а извлечения профиля.
+   *     При false cron работает в no-op режиме (для прода первой недели).
+   *   - `minCorpusSize` — минимум документов с useCases includes 'brand_corpus',
+   *     ниже которого экстрактор пропускает Org (anti-noise threshold).
+   */
+  get brandVoice() {
+    return {
+      extractorEnabled: this.get('BRAND_VOICE_EXTRACTOR_ENABLED'),
+      minCorpusSize: this.get('BRAND_VOICE_MIN_CORPUS_SIZE'),
+    } as const;
+  }
+
+  // ─────────────────────────── role-map (SBA α-8 wave 4) ─────────────
+  /**
+   * Параметры Role Map builder + completeness cron. См.
+   * plans/tz/2026-05-23-sba-alpha-8-wave4-role-map-worker-rest-ui.md §13.
+   *
+   *   - `builderEnabled` — мастер-флаг RoleMapBuilderWorker. При false воркер
+   *     не подписывается на core.specialist-routing (no-op).
+   *   - `batchTimeoutSeconds` — окно дебаунса батча per role (default 300 =
+   *     5 мин); если за окно блоков накопилось — flush.
+   */
+  get roleMap() {
+    return {
+      builderEnabled: this.get('ROLE_MAP_BUILDER_ENABLED'),
+      batchTimeoutSeconds: Number(
+        this.get('ROLE_MAP_BATCH_TIMEOUT_SECONDS') ?? 300,
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── betaOps (SBA β-8) ─────────────────────
+  /**
+   * SBA β-8 — DailyCheckIn + OperationsDashboard (Personal Relation + COO).
+   * См. plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md §13.
+   *
+   *   - `dailyCheckInEnabled` — мастер-флаг cron'а; false → no-op.
+   *   - `morningLocalHour` / `eveningLocalHour` — час локальной TZ Person'а
+   *     для morning / evening prompt (default 9 / 18).
+   *   - `operationsDashboardCacheTtlSeconds` — TTL Redis-кэша COO-агрегата
+   *     `/api/v1/dashboard/operations/overview` (default 300 = 5 мин).
+   */
+  get betaOps() {
+    return {
+      dailyCheckInEnabled: this.get('DAILY_CHECKIN_ENABLED'),
+      morningLocalHour: Number(this.get('DAILY_CHECKIN_MORNING_LOCAL_HOUR') ?? 9),
+      eveningLocalHour: Number(this.get('DAILY_CHECKIN_EVENING_LOCAL_HOUR') ?? 18),
+      operationsDashboardCacheTtlSeconds: Number(
+        this.get('OPERATIONS_DASHBOARD_CACHE_TTL_SECONDS') ?? 300,
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── proactive (SBA δ-2) ───────────────────
+  /**
+   * SBA δ-2 — ProactiveWatcher. См.
+   * plans/tz/2026-05-23-sba-delta-2-proactive-watcher.md §13.
+   *
+   *   - `enabled` — мастер-флаг cron'а. False → no-op (cron всё равно тикает,
+   *     но сразу выходит — позволяет включать без рестарта).
+   *   - `antiSpamTtlHours` — TTL Redis-key `proactive:dedup:{tenantId}:{userId}:{dateLocal}`
+   *     (default 24h). После TTL — ключ исчезает, anti-spam-капля «сбрасывается».
+   *   - `rules.*` — per-rule тумблеры (admin может отключать отдельные правила).
+   *
+   * NB: ENV-ключи живут в `BetaOpsSchema` (см. env.schema.ts), чтобы не
+   * удлинять `.merge` цепочку EnvSchema (TS2589).
+   */
+  get proactive() {
+    return {
+      enabled: this.get('PROACTIVE_WATCHER_ENABLED') !== false,
+      antiSpamTtlHours: Number(
+        this.get('PROACTIVE_WATCHER_ANTI_SPAM_TTL_HOURS') ?? 24,
+      ),
+      rules: {
+        decisionNoOwner:
+          this.get('PROACTIVE_RULE_DECISION_NO_OWNER_ENABLED') !== false,
+        insightNoMitigation:
+          this.get('PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED') !== false,
+        experimentRunningTooLong:
+          this.get('PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED') !==
+          false,
+        processStaleReview:
+          this.get('PROACTIVE_RULE_PROCESS_STALE_REVIEW_ENABLED') !== false,
+        roleLowCompleteness:
+          this.get('PROACTIVE_RULE_ROLE_LOW_COMPLETENESS_ENABLED') !== false,
+        departmentNoDomain:
+          this.get('PROACTIVE_RULE_DEPARTMENT_NO_DOMAIN_ENABLED') !== false,
+        insightsSiloedInDomain:
+          this.get('PROACTIVE_RULE_INSIGHTS_SILOED_IN_DOMAIN_ENABLED') !==
+          false,
+        planItemOverdue:
+          this.get('PROACTIVE_RULE_PLAN_ITEM_OVERDUE_ENABLED') !== false,
+      },
+    } as const;
+  }
+
+  // ─────────────────────────── voice (SBA δ-3) ───────────────────────
+  /**
+   * Параметры VoiceChannelAdapter (TTS provider/voice + WebSocket master
+   * flag). См. plans/tz/2026-05-23-sba-delta-3-voice-channel-adapter.md §13.
+   *
+   *   - `ttsProvider` — `openai` (default) | `yandex` (опц., MVP не активен).
+   *   - `ttsVoice` — дефолтный голос для OpenAI TTS (per-call можно override).
+   *   - `wsEnabled` — мастер-флаг WS endpoint'а concierge voice. На δ-3
+   *     зарезервирован под γ-2 (handler ещё не реализован).
+   */
+  get voice() {
+    return {
+      ttsProvider: String(this.get('TTS_PROVIDER') ?? 'openai') as
+        | 'openai'
+        | 'yandex',
+      ttsVoice: String(this.get('TTS_VOICE') ?? 'alloy'),
+      wsEnabled: this.get('VOICE_WS_ENABLED') !== false,
+    } as const;
+  }
+
+  // ─────────────────────────── concierge (SBA γ-2) ────────────────────
+  /**
+   * Параметры Concierge Agent (sквозной UX-слой через tool-use). См.
+   * plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md §13.
+   *
+   *   - `enabled` — мастер-флаг модуля. False → REST возвращает 503.
+   *   - `dailyMessagesLimit` / `monthlyMessagesLimit` — defaults для
+   *     `OrgConciergeQuota` при создании записи (per-Org override через
+   *     админку). Анти-abuse.
+   *   - `sseHeartbeatSeconds` — интервал heartbeat-комментариев в SSE
+   *     stream, чтобы прокси/CDN не закрывали соединение по idle.
+   */
+  get concierge() {
+    // NB: ключи CONCIERGE_* читаем из process.env, а не через ConfigService.
+    // Они НЕ добавлены в EnvSchema, чтобы не углублять .merge цепочку и не
+    // триггерить TS2589. Парсинг — runtime fallback на defaults.
+    const enabledRaw = process.env.CONCIERGE_ENABLED;
+    const enabled =
+      enabledRaw === undefined ||
+      enabledRaw === '' ||
+      ['true', '1', 'yes', 'on'].includes(enabledRaw.trim().toLowerCase());
+    const parseInt = (raw: string | undefined, fallback: number): number => {
+      if (!raw) return fallback;
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+    };
+    return {
+      enabled,
+      dailyMessagesLimit: parseInt(process.env.CONCIERGE_DAILY_MESSAGES_LIMIT, 100),
+      monthlyMessagesLimit: parseInt(
+        process.env.CONCIERGE_MONTHLY_MESSAGES_LIMIT,
+        3000,
+      ),
+      sseHeartbeatSeconds: parseInt(
+        process.env.CONCIERGE_SSE_HEARTBEAT_SECONDS,
+        15,
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── budget (SBA α-10 wave 3) ───────────────
+  /**
+   * Параметры Admin LLM + Unit Economics: budget alerts, currency sync,
+   * provider smoke-tests + feature-flag для LlmProtocolAdapterRegistry.
+   * См. plans/tz/2026-05-23-sba-alpha-10-wave3-admin-llm-economics.md §13.
+   *
+   *   - `alertEnabled` — мастер-флаг BudgetAlertCron.
+   *   - `alertThresholdPercents` — массив порогов % (parsed из CSV "80,100").
+   *   - `currencyRateApiUrl` — ЦБ РФ или эквивалент (fallback rate ниже).
+   *   - `currencyFallbackUsdRub` — если API недоступен, считаем по этому курсу.
+   *   - `providerSmokeTestEnabled` — мастер-флаг ProviderSmokeTestCron.
+   *   - `providerSmokeTestIntervalMinutes` — частота smoke-теста.
+   *   - `providerSmokeTestFailThreshold` — сколько подряд провалов до alert.
+   *   - `useProtocolAdapterRegistry` — переключение `switch(provider)` →
+   *     LlmProtocolAdapterRegistry. Default false (production safety).
+   */
+  get budget() {
+    const rawThresholds = String(
+      this.get('BUDGET_ALERT_THRESHOLD_PERCENTS') ?? '80,100',
+    );
+    const thresholds = rawThresholds
+      .split(',')
+      .map((s) => Number.parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0 && n <= 1000)
+      .sort((a, b) => a - b);
+    return {
+      alertEnabled: this.get('BUDGET_ALERT_ENABLED') !== false,
+      alertThresholdPercents:
+        thresholds.length > 0 ? thresholds : [80, 100],
+      currencyRateApiUrl: String(
+        this.get('CURRENCY_RATE_API_URL') ??
+          'https://www.cbr-xml-daily.ru/daily_json.js',
+      ),
+      currencyFallbackUsdRub: Number(
+        this.get('CURRENCY_RATE_FALLBACK_USD_RUB') ?? 90,
+      ),
+      providerSmokeTestEnabled:
+        this.get('PROVIDER_SMOKE_TEST_ENABLED') !== false,
+      providerSmokeTestIntervalMinutes: Number(
+        this.get('PROVIDER_SMOKE_TEST_INTERVAL_MINUTES') ?? 30,
+      ),
+      providerSmokeTestFailThreshold: Number(
+        this.get('PROVIDER_SMOKE_TEST_FAIL_THRESHOLD') ?? 3,
+      ),
+      useProtocolAdapterRegistry:
+        this.get('USE_PROTOCOL_ADAPTER_REGISTRY') === true,
     } as const;
   }
 

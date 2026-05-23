@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotImplementedException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   type ChatV2Conversation,
   type ChatV2Mode,
@@ -14,6 +9,8 @@ import {
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { AnswerCacheService } from '../dialog-layer/services/answer-cache.service';
+import { DialogService } from '../dialog-layer/services/dialog.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
@@ -54,6 +51,11 @@ export interface ChatAnswer {
   citations: unknown[];
   uncertaintyNote: string | null;
   mode: ChatV2Mode;
+  /**
+   * SBA α-5 dialog-layer — true, если ответ найден в AnswerCache (без
+   * вызова retrieval+LLM). UI может показать subtle badge «кэш».
+   */
+  cacheHit: boolean;
 }
 
 @Injectable()
@@ -68,23 +70,27 @@ export class ChatV2OrchestrationService {
     @Inject(SynthesisService) private readonly synthesis: SynthesisService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(DialogService) private readonly dialog: DialogService,
+    @Inject(AnswerCacheService)
+    private readonly answerCache: AnswerCacheService,
   ) {}
 
   async ask(input: AskInput): Promise<ChatAnswer> {
-    if (input.asOf) {
-      throw new NotImplementedException({
-        ok: false,
-        error: {
-          code: 'temporal_not_implemented',
-          message:
-            'Temporal queries (asOf) будут реализованы после α-4 evolving — на α-5 не поддерживаются',
-        },
-      });
-    }
-
     const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
     const scope: ChatV2Scope = input.scope ?? 'org';
     const scopeRefId = input.scopeRefId ?? null;
+
+    // SBA α-5 dialog-layer — парсим temporal queries.
+    const validAtDate = input.asOf ? new Date(input.asOf) : null;
+    const validAt =
+      validAtDate && !Number.isNaN(validAtDate.getTime()) ? validAtDate : null;
+    if (input.asOf && !validAt) {
+      this.logger.warn(
+        { asOf: input.asOf },
+        'ChatV2OrchestrationService.ask: невалидный asOf, игнор → now()',
+      );
+    }
+    const validAtIso = validAt ? validAt.toISOString() : null;
 
     // 1. Получить или создать conversation.
     let conversation: ChatV2Conversation;
@@ -106,22 +112,97 @@ export class ChatV2OrchestrationService {
       isFirstUserMessage = true;
     }
 
-    // 2. Append user message.
+    // SBA α-5 dialog-layer — препроцессор (Contextualizer / Confidence /
+    // Classifier / MultiQuery + AnswerCache lookup). На feature-flag OFF
+    // вернёт no-op результат (см. DialogService.process).
+    const dialogResult = await this.dialog.process({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      userMessage: input.question,
+      conversationId: conversation.id,
+      scope,
+      scopeRefId,
+      validAt: validAtIso,
+    });
+
+    // 2. Append user message (после dialog-layer'а, чтобы текущий вопрос
+    // не попал в history контекстуализатора как «уже был»).
     await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'user',
       text: input.question,
     });
 
-    // 3. Загрузить history (последние N сообщений ДО ответа).
+    const startedAt = Date.now();
+
+    // 3. AnswerCache HIT — пропускаем retrieval + LLM, сразу пишем ответ
+    // в БД и возвращаем.
+    if (dialogResult.cachedAnswer) {
+      const cached = dialogResult.cachedAnswer;
+      const assistantMessage = await this.conversations.appendMessage({
+        conversationId: conversation.id,
+        role: 'assistant',
+        mode,
+        text: cached.text,
+        citations:
+          cached.citations.length > 0
+            ? (cached.citations as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+        retrievalMeta: {
+          usedBlockIds: cached.usedBlockIds,
+          fromCache: true,
+        } as Prisma.InputJsonValue,
+        llmMeta: { fromCache: true } as Prisma.InputJsonValue,
+      });
+      const durationSeconds = (Date.now() - startedAt) / 1000;
+      this.metrics.observeChatV2SynthesisDuration({
+        mode,
+        seconds: durationSeconds,
+      });
+      this.metrics.incChatV2Query({
+        mode,
+        channelOrigin:
+          conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
+      });
+      this.metrics.observeChatV2RetrievalBlocks({
+        mode,
+        count: cached.usedBlockIds.length,
+      });
+      if (isFirstUserMessage) {
+        void this.conversations
+          .generateTitle({
+            tenantId: input.tenantId,
+            conversationId: conversation.id,
+            firstUserMessage: input.question,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'generateTitle promise rejected (handled inside)',
+            );
+          });
+      }
+      return {
+        conversationId: conversation.id,
+        messageId: assistantMessage.id,
+        text: cached.text,
+        citations: cached.citations,
+        uncertaintyNote: cached.uncertaintyNote,
+        mode,
+        cacheHit: true,
+      };
+    }
+
+    // 4. Загрузить history + summary для systemPrompt.
     const history = await this.loadHistory(
       conversation.id,
       this.cfg.chatV2.historyMessages,
     );
+    const convSummary = await this.loadConversationSummary(conversation.id);
 
-    const startedAt = Date.now();
-
-    // 4. Synthesize.
+    // 5. Synthesize — передаём standalone/queries/validAt/intent/summary
+    // из dialog-layer'а. SynthesisService применит mode-prompt и
+    // RetrievalCache.
     const result = await this.synthesis.synthesize({
       tenantId: input.tenantId,
       userId: input.userId,
@@ -130,6 +211,11 @@ export class ChatV2OrchestrationService {
       scope,
       scopeRefId,
       history,
+      standaloneQuestion: dialogResult.standaloneQuestion,
+      queries: dialogResult.queries,
+      validAt,
+      conversationSummary: convSummary,
+      intent: dialogResult.intent,
     });
 
     const durationSeconds = (Date.now() - startedAt) / 1000;
@@ -155,7 +241,7 @@ export class ChatV2OrchestrationService {
       this.metrics.incChatV2UncertaintyMarked({ mode });
     }
 
-    // 5. Append assistant message.
+    // 6. Append assistant message.
     const assistantMessage = await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'assistant',
@@ -169,10 +255,38 @@ export class ChatV2OrchestrationService {
       llmMeta: result.llmMeta as Prisma.InputJsonValue,
     });
 
-    // 6. Сгенерировать title после первого ответного раунда.
+    // 7. Сохраняем ответ в AnswerCache (если dialog-layer enabled
+    // и ответ не пустой).
+    if (dialogResult.enabled && result.text.length > 0) {
+      void this.answerCache
+        .set(
+          {
+            tenantId: input.tenantId,
+            userId: input.userId,
+            standaloneQuestion: dialogResult.standaloneQuestion,
+            scope,
+            scopeRefId,
+            validAt: validAtIso,
+          },
+          {
+            text: result.text,
+            citations: result.citations,
+            uncertaintyNote: result.uncertaintyNote,
+            mode,
+            usedBlockIds,
+            cachedAt: new Date().toISOString(),
+          },
+        )
+        .catch((err) => {
+          this.logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'AnswerCache.set promise rejected (handled inside)',
+          );
+        });
+    }
+
+    // 8. Сгенерировать title после первого ответного раунда.
     if (isFirstUserMessage) {
-      // fire-and-forget — title не должен блокировать ответ. Ошибки
-      // ловятся внутри generateTitle.
       void this.conversations
         .generateTitle({
           tenantId: input.tenantId,
@@ -194,7 +308,18 @@ export class ChatV2OrchestrationService {
       citations: result.citations,
       uncertaintyNote: result.uncertaintyNote,
       mode,
+      cacheHit: false,
     };
+  }
+
+  private async loadConversationSummary(
+    conversationId: string,
+  ): Promise<string | null> {
+    const c = await this.prisma.chatV2Conversation.findUnique({
+      where: { id: conversationId },
+      select: { summary: true },
+    });
+    return c?.summary ?? null;
   }
 
   /**

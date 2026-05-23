@@ -141,6 +141,14 @@ export class BusinessMetricsService implements OnModuleInit {
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private maxBotWebhookReceivedTotal!: Counter<'type'>;
 
+  // ── zero-button bot inbound (SBA β-1 rip-out, 2026-05-23) ─────────
+  // Унифицированные метрики обоих ботов (telegram_bot + max_bot).
+  // kind ∈ text | voice | document | start_command | link_code | other.
+  private botInboundTotal!: Counter<'channel' | 'kind'>;
+  private botVoiceAsrDurationSeconds!: Histogram<'channel'>;
+  // source ∈ llm | heuristic. intent ∈ chat_query | free_note.
+  private botIntentClassifiedTotal!: Counter<'channel' | 'intent' | 'source'>;
+
   // ── core router (SBA α-3) ─────────────────────────────────────────
   private coreRouterDispatchedTotal!: Counter<'specialist' | 'signal_type'>;
   private coreRouterFanOut!: Histogram<string>;
@@ -153,6 +161,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationAutoCanonicalTotal!: Counter<'resource_type'>;
   private curationConflictsTotal!: Counter<'relation_type' | 'resolution'>;
   private curationStaleDetectedTotal!: Counter<'resource_type'>;
+  // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker ──
+  // Cardinality-safe: tenant НЕ выносим в label (паттерн остальных curation/probe-метрик).
+  // Top-100 tenant-агрегации делает Grafana / Prometheus recording rule поверх БД.
+  private completenessSlotsOpenTotal!: Gauge<'card_type'>;
+  private completenessSlotsFilledTotal!: Counter<'card_type'>;
+  private consistencyViolationsTotal!: Counter<'rule'>;
+  private consistencyCheckerDurationSeconds!: Histogram<never>;
 
   // ── specialists (SBA α-6 — эталонный референс контракта §5 зонтичного) ──
   // Метрики единые для всех специалистов Слоя 3 (3.1..3.7). Label `type`
@@ -179,6 +194,19 @@ export class BusinessMetricsService implements OnModuleInit {
   private knowledgeCloneCategoriesPerProfile!: Histogram<never>;
   private knowledgeCloneProfileSizeKb!: Histogram<never>;
 
+  // ── SBA α-7 wave 2 — ProcessTemplate detector + completeness ────────
+  private processTemplatesTotal!: Gauge<'tenant_top' | 'status'>;
+  private processTemplateCompletenessAvg!: Gauge<'tenant_top'>;
+  private processDetectorExtractionsTotal!: Counter<'tenant_top' | 'result'>;
+  private processTemplateExtractDurationSeconds!: Histogram<never>;
+
+  // ── SBA γ-3 — Cross-Functional Process + Handoff Tracker ────────────
+  private crossFunctionalProcessesTotal!: Gauge<'tenant_top'>;
+  private crossFunctionalFrictionActiveTotal!: Gauge<
+    'tenant_top' | 'severity'
+  >;
+  private crossFunctionalFrictionResolutionTimeSeconds!: Histogram<'tenant_top'>;
+
   // ── SBA β-4 — Insights Radar (Specialist 3.5) ─────────────────────
   /**
    * Сколько Insight'ов сейчас в каждом dynamicLabel-сегменте (gauge).
@@ -195,6 +223,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeRateLimitDroppedTotal!: Counter<never>;
   private probeColdStartDroppedTotal!: Counter<never>;
   private probeExpiredTotal!: Counter<never>;
+  private probeClosedTotal!: Counter<'tenant_top' | 'source'>;
   private probeRecipientEngagementRate!: Gauge<'user_id'>;
   private ideaStatusChangeNotificationsTotal!: Counter<'new_status'>;
 
@@ -206,6 +235,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private chatV2UncertaintyMarkedTotal!: Counter<'mode'>;
   private chatV2ConversationsArchivedTotal!: Counter<'reason'>;
 
+  // ── dialog-layer (SBA α-5 dialog-layer) ──────────────────────────
+  private answerCacheHitTotal!: Counter<'tenant_top'>;
+  private retrievalCacheHitTotal!: Counter<'tenant_top'>;
+  private dialogProcessingDurationSeconds!: Histogram<'step'>;
+  private conversationSummaryTotal!: Counter<'tenant_top'>;
+  private dialogConfidenceLowTotal!: Counter<'tenant_top'>;
+
   // ── SBA γ-1 — SkillProfile + ExecutablePersona + Clone API ────────
   private skillProfilesActiveTotal!: Gauge<never>;
   private skillTraitsPerProfile!: Histogram<never>;
@@ -214,6 +250,122 @@ export class BusinessMetricsService implements OnModuleInit {
   private personaBuildDurationSeconds!: Histogram<never>;
   private cloneAskTotal!: Counter<'scope'>;
   private cloneAskByOwnerTotal!: Counter<never>;
+  // ── SBA γ-1 доделки — SkillTraitCategory + hybrid versioning ──
+  private skillCategoriesTotal!: Gauge<'tenant_top'>;
+  private skillTraitCategorizedRatio!: Gauge<'tenant_top'>;
+  private executablePersonaSnapshotsTotal!: Counter<'tenant_top' | 'trigger'>;
+  private executablePersonaSnapshotLagSeconds!: Gauge<'tenant_top'>;
+
+  // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
+  private axisLabelsTotal!: Counter<'tenant_top' | 'axis' | 'source'>;
+  private routerFallbackCallsTotal!: Counter<'tenant_top' | 'result'>;
+  private routerFallbackCacheHitTotal!: Counter<'tenant_top'>;
+  private axisClassifyDurationSeconds!: Histogram<'axis'>;
+
+  // ── SBA α-9 wave 3 — Company Foundation (CompanyProfile / Domains / Maturity) ──
+  private maturityScoreAvg!: Gauge<'tenant_top' | 'scope'>;
+  private domainsTotal!: Gauge<'tenant_top'>;
+  private departmentsTotal!: Gauge<'tenant_top'>;
+  private companyProfileCompleteness!: Gauge<'tenant_top'>;
+  private domainExpanderCreatedTotal!: Counter<'tenant_top'>;
+  private maturityScorerDurationSeconds!: Histogram<'scope'>;
+
+  // ── SBA α-8 wave 3 — Appointment + KPI (replacement для PersonRole) ──
+  private appointmentsTotal!: Gauge<'tenant_top' | 'status'>;
+  private kpiMeasurementsTotal!: Counter<'tenant_top'>;
+  private kpiOverdueMeasurementsTotal!: Gauge<'tenant_top' | 'frequency'>;
+  private personRoleToAppointmentMigrationProgress!: Gauge<'tenant_top'>;
+
+  // ── SBA β-7 — Brand Voice Curator (Specialist 3.10) ────────────────
+  // Cardinality-safe: label `tenant_top` — top-100 bucket (hash mod 100 +
+  // 'other'). Не `tenantId`, иначе ряды gauge'а взорвутся на масштабе.
+  private brandVoiceProfileCompleteness!: Gauge<'tenant_top'>;
+  private brandVoiceExtractorRunsTotal!: Counter<'tenant_top' | 'result'>;
+  private brandVoiceCorpusSize!: Gauge<'tenant_top'>;
+
+  // ── SBA β-6 — Experiment Tracker (Specialist 3.9) ──────────────────
+  // Cardinality-safe: `tenant_top` (top-100 + 'other'), `status` ограничен 5
+  // допустимыми значениями (hypothesis|running|completed|dropped|paused).
+  private experimentsTotal!: Gauge<'tenant_top' | 'status'>;
+  private experimentsRunningDurationDays!: Histogram<'tenant_top'>;
+  private experimentsLessonsExtractedTotal!: Counter<'tenant_top'>;
+  private experimentDetectorRunsTotal!: Counter<'tenant_top' | 'result'>;
+
+  // ── SBA α-8 wave 4 — Role Map builder + completeness cron ────────────
+  // Cardinality-safe: tenant_top — top-100 bucket (hash mod 100) + 'other'.
+  // result ∈ {built|skipped_below_threshold|skipped_disabled|llm_error|db_error}.
+  private roleMapCompletenessAvg!: Gauge<'tenant_top'>;
+  private roleMapBuilderRunsTotal!: Counter<'tenant_top' | 'result'>;
+  private roleMapExtractDurationSeconds!: Histogram<never>;
+  private rolesWithNormalizedDataRatio!: Gauge<'tenant_top'>;
+
+  // ── SBA δ-3 — VoiceChannelAdapter (TTS + ASR REST) ─────────────────
+  // Cardinality-safe: tenant_top — top-100 bucket (hash mod 100 + 'other').
+  // provider ∈ vox | gigaam | openai | yandex (фиксированный набор);
+  // НЕ выносим конкретный голос (alloy/echo/...) — это бы взорвало серии.
+  private voiceAsrRequestsTotal!: Counter<'tenant_top' | 'provider'>;
+  private voiceAsrDurationSeconds!: Histogram<'provider'>;
+  private voiceTtsRequestsTotal!: Counter<'tenant_top' | 'provider'>;
+  private voiceTtsCharsTotal!: Counter<'tenant_top'>;
+
+  // ── SBA β-8 — DailyCheckIn + Operations + PersonalRelation ─────────
+  // Cardinality-safe: tenant_top — top-100 bucket; kind ограничен
+  // 'morning'|'evening'; severity — 'low'|'medium'|'high'|'unknown'.
+  private dailyCheckinsCompletedTotal!: Counter<'tenant_top' | 'kind'>;
+  private dailyCheckinsSkippedTotal!: Counter<'tenant_top' | 'kind' | 'reason'>;
+  private operationsBlockersTotal!: Gauge<'tenant_top' | 'severity'>;
+  private teamFrictionsTotal!: Gauge<'tenant_top'>;
+  private goalCascadeMissesTotal!: Counter<'tenant_top'>;
+  private personalRelationBuilderRunsTotal!: Counter<'tenant_top' | 'result'>;
+
+  // ── SBA γ-2 — Concierge Agent ──────────────────────────────────────
+  // Cardinality-safe: `tenant_top` — top-100 bucket (hash mod 100);
+  // `tool` — имя whitelist tool'а (ограниченный набор ServiceMap'а);
+  // `scope` ∈ daily|monthly; `status` ∈ ok|error|forbidden.
+  private conciergeMessagesTotal!: Counter<'tenant_top'>;
+  private conciergeToolCallsTotal!: Counter<'tenant_top' | 'tool' | 'status'>;
+  private conciergeUndoTotal!: Counter<'tenant_top' | 'tool'>;
+  private conciergeQuotaExceededTotal!: Counter<'tenant_top' | 'scope'>;
+
+  // ── SBA δ-1 — Orchestrator (multi-agent research) ───────────────────
+  // Cardinality-safe: `status` ∈ done|failed|timeout|cancelled;
+  // `agent_type` ∈ entity_research|comparison|topic_summary|timeline_construction
+  // (фиксированный whitelist); `result` ∈ done|failed|low_confidence.
+  // Никакого tenant в labels — top-100 агрегацию делает Grafana поверх БД.
+  private orchestratorRunsTotal!: Counter<'status'>;
+  private orchestratorSubagentsTotal!: Counter<'agent_type' | 'result'>;
+  private orchestratorRunDurationSeconds!: Histogram<never>;
+  private orchestratorVerificationLowConfidenceTotal!: Counter<never>;
+
+  // ── SBA δ-2 — ProactiveWatcher ─────────────────────────────────────
+  // Cardinality-safe: `rule` — ограниченный whitelist (8 значений),
+  // `severity` ∈ low|medium|high. Никакого tenant в labels — top-100
+  // агрегацию делает Grafana поверх БД (ProactiveNotification.tenantId).
+  private proactiveNotificationsEmittedTotal!: Counter<'rule' | 'severity'>;
+  private proactiveNotificationsDismissedTotal!: Counter<'rule'>;
+  private proactiveNotificationsDedupSkippedTotal!: Counter<never>;
+  private proactiveWatcherDurationSeconds!: Histogram<'rule'>;
+
+  // ── α-10 wave 3 — Admin LLM + Unit Economics ────────────────────────
+  // Cardinality-safe: tenant_top top-100 (нормализация на caller'е),
+  // task_type top-50 (enum-like), provider/model — bounded registry.
+  private aiCostUsdLabeledTotal!: Counter<
+    'tenant_top' | 'task_type' | 'provider' | 'model'
+  >;
+  private aiCostRubLabeledTotal!: Counter<
+    'tenant_top' | 'task_type' | 'provider' | 'model'
+  >;
+  private aiCallsLabeledTotal!: Counter<
+    'tenant_top' | 'task_type' | 'provider' | 'model' | 'success'
+  >;
+  private orgBudgetUtilizationPercent!: Gauge<'tenant_top'>;
+  private providerSmokeTestSuccess!: Gauge<'provider'>;
+  private providerSmokeTestDurationSeconds!: Histogram<'provider'>;
+  private currencyRateUsdRub!: Gauge<string>;
+  private currencyRateSyncTotal!: Counter<'result'>;
+  private dailyCostAggregatorRunsTotal!: Counter<'result'>;
+  private orgEconomicsRunsTotal!: Counter<'result'>;
+  private budgetAlertSentTotal!: Counter<'threshold'>;
 
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
@@ -663,6 +815,24 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['type'] as const,
     });
 
+    // ── zero-button bot inbound (SBA β-1 rip-out, 2026-05-23) ──────
+    this.botInboundTotal = this.getOrCreateCounter({
+      name: 'bot_inbound_total',
+      help: 'SBA β-1 zero-button — нормализованный inbound в Telegram/MAX-боты (kind: text/voice/document/start_command/link_code/other).',
+      labelNames: ['channel', 'kind'] as const,
+    });
+    this.botVoiceAsrDurationSeconds = this.getOrCreateHistogram({
+      name: 'bot_voice_asr_duration_seconds',
+      help: 'SBA β-1 zero-button — длительность ASR voice-сообщения от бота (Vox submit+poll, секунды).',
+      labelNames: ['channel'] as const,
+      buckets: [1, 3, 5, 10, 20, 40, 60, 120, 300],
+    });
+    this.botIntentClassifiedTotal = this.getOrCreateCounter({
+      name: 'bot_intent_classified_total',
+      help: 'SBA β-1 zero-button — результат intent-классификации входящего текста/voice (intent: chat_query/free_note; source: llm/heuristic).',
+      labelNames: ['channel', 'intent', 'source'] as const,
+    });
+
     // ── core router (SBA α-3) ──────────────────────────────────────
     this.coreRouterDispatchedTotal = this.getOrCreateCounter({
       name: 'core_router_dispatched_total',
@@ -712,6 +882,29 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_stale_detected_total',
       help: 'SBA α-4 — CardStaleDetectorCron: сколько карточек помечено кандидатами на stale (resource_type).',
       labelNames: ['resource_type'] as const,
+    });
+
+    // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker
+    this.completenessSlotsOpenTotal = this.getOrCreateGauge({
+      name: 'completeness_slots_open_total',
+      help: 'SBA α-4 wave 2 — сколько CompletenessSlot.filledAt IS NULL сейчас (card_type ∈ regulation|process|role|company_profile).',
+      labelNames: ['card_type'] as const,
+    });
+    this.completenessSlotsFilledTotal = this.getOrCreateCounter({
+      name: 'completeness_slots_filled_total',
+      help: 'SBA α-4 wave 2 — сколько слотов было закрыто (auto-scanner либо manual mark-filled), counter.',
+      labelNames: ['card_type'] as const,
+    });
+    this.consistencyViolationsTotal = this.getOrCreateCounter({
+      name: 'consistency_violations_total',
+      help: 'SBA α-4 wave 2 — сколько структурных нарушений детектировано ConsistencyCheckerCron (rule ∈ R1..R6).',
+      labelNames: ['rule'] as const,
+    });
+    this.consistencyCheckerDurationSeconds = this.getOrCreateHistogram({
+      name: 'consistency_checker_duration_seconds',
+      help: 'SBA α-4 wave 2 — длительность одного прохода ConsistencyCheckerCron в секундах.',
+      labelNames: [] as const,
+      buckets: [0.5, 1, 5, 15, 60, 300, 900],
     });
 
     // ── specialists (SBA α-6 — единый контракт §5 для Слоя 3) ────────
@@ -781,6 +974,47 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['label'] as const,
     });
 
+    // ── SBA α-7 wave 2 — ProcessTemplate (Specialist 3.1 process-detector) ──
+    this.processTemplatesTotal = this.getOrCreateGauge({
+      name: 'process_templates_total',
+      help: 'SBA α-7 wave 2 — число ProcessTemplate в каждой Org × status (tenant_top × status). tenant_top: top-100 + "other" для контроля cardinality.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.processTemplateCompletenessAvg = this.getOrCreateGauge({
+      name: 'process_template_completeness_avg',
+      help: 'SBA α-7 wave 2 — средний completeness активных ProcessTemplate в Org (0..1; tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.processDetectorExtractionsTotal = this.getOrCreateCounter({
+      name: 'process_detector_extractions_total',
+      help: 'SBA α-7 wave 2 — итог одного extract-батча process-detector (tenant_top × result). result: new | updated | skipped.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+    this.processTemplateExtractDurationSeconds = this.getOrCreateHistogram({
+      name: 'process_template_extract_duration_seconds',
+      help: 'SBA α-7 wave 2 — длительность одного LLM-extract-вызова process-template-extract (секунды).',
+      labelNames: [] as const,
+      buckets: [0.5, 1, 2, 5, 10, 30, 60, 120],
+    });
+
+    // ── SBA γ-3 — Cross-Functional Process + Handoff Tracker ──
+    this.crossFunctionalProcessesTotal = this.getOrCreateGauge({
+      name: 'cross_functional_processes_total',
+      help: 'SBA γ-3 — число cross-functional ProcessTemplate в Org (isCrossFunctional=true). tenant_top: top-100 buckets + "other".',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.crossFunctionalFrictionActiveTotal = this.getOrCreateGauge({
+      name: 'cross_functional_friction_active_total',
+      help: 'SBA γ-3 — число активных (resolvedAt=null) CrossFunctionalFrictionReport в Org × severity.',
+      labelNames: ['tenant_top', 'severity'] as const,
+    });
+    this.crossFunctionalFrictionResolutionTimeSeconds = this.getOrCreateHistogram({
+      name: 'cross_functional_friction_resolution_time_seconds',
+      help: 'SBA γ-3 — время от created до resolved для CrossFunctionalFrictionReport (секунды).',
+      labelNames: ['tenant_top'] as const,
+      buckets: [3600, 86_400, 7 * 86_400, 30 * 86_400, 90 * 86_400, 180 * 86_400],
+    });
+
     // ── SBA β-5 — Probe-Agent + Ideas Collector ──
     this.probeEventsTotal = this.getOrCreateCounter({
       name: 'probe_events_total',
@@ -822,6 +1056,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_expired_total',
       help: 'SBA β-5 — сколько probe-событий истекло без ответа.',
       labelNames: [] as const,
+    });
+    this.probeClosedTotal = this.getOrCreateCounter({
+      name: 'probe_closed_total',
+      help: 'SBA β-5 (closing-loop) — сколько probe-уведомлений было закрыто ответом пользователя (tenant_top × source).',
+      labelNames: ['tenant_top', 'source'] as const,
     });
     this.probeRecipientEngagementRate = this.getOrCreateGauge({
       name: 'probe_recipient_engagement_rate',
@@ -868,6 +1107,34 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['reason'] as const,
     });
 
+    // ── dialog-layer (SBA α-5) ───────────────────────────────────────
+    this.answerCacheHitTotal = this.getOrCreateCounter({
+      name: 'answer_cache_hit_total',
+      help: 'SBA α-5 dialog-layer — AnswerCache hit (tenant_top). Cache hit = 0 LLM calls.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.retrievalCacheHitTotal = this.getOrCreateCounter({
+      name: 'retrieval_cache_hit_total',
+      help: 'SBA α-5 dialog-layer — RetrievalCache hit (tenant_top). Cache hit = пропускаем cosine+BM25+граф.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.dialogProcessingDurationSeconds = this.getOrCreateHistogram({
+      name: 'dialog_processing_duration_seconds',
+      help: 'SBA α-5 dialog-layer — длительность шагов препроцессора (step ∈ contextualize|confidence|classify|multi-query|summarize|total).',
+      labelNames: ['step'] as const,
+      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8, 16],
+    });
+    this.conversationSummaryTotal = this.getOrCreateCounter({
+      name: 'conversation_summary_total',
+      help: 'SBA α-5 dialog-layer — сколько раз ConversationSummarizerCron сжал диалог в summary (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.dialogConfidenceLowTotal = this.getOrCreateCounter({
+      name: 'dialog_confidence_low_total',
+      help: 'SBA α-5 dialog-layer — сколько раз confidence < порога → fallback на raw userMessage (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+
     // ── SBA γ-1 — SkillProfile + ExecutablePersona + Clone API ──────
     this.skillProfilesActiveTotal = this.getOrCreateGauge({
       name: 'skill_profiles_active_total',
@@ -905,6 +1172,356 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'clone_ask_by_owner_total',
       help: 'SBA γ-1 — сколько раз носитель спросил своего же клона (engagement).',
       labelNames: [] as const,
+    });
+
+    // ── SBA γ-1 доделки — SkillTraitCategory + hybrid versioning ──
+    this.skillCategoriesTotal = this.getOrCreateGauge({
+      name: 'skill_categories_total',
+      help: 'SBA γ-1 доделки — количество активных (deletedAt IS NULL) SkillTraitCategory (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.skillTraitCategorizedRatio = this.getOrCreateGauge({
+      name: 'skill_trait_categorized_ratio',
+      help: 'SBA γ-1 доделки — доля SkillTrait с заполненным categoryId (0..1) per tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.executablePersonaSnapshotsTotal = this.getOrCreateCounter({
+      name: 'executable_persona_snapshots_total',
+      help: 'SBA γ-1 доделки — сколько ExecutablePersona snapshot создано (trigger: scheduled|threshold|critical|manual|on_demand).',
+      labelNames: ['tenant_top', 'trigger'] as const,
+    });
+    this.executablePersonaSnapshotLagSeconds = this.getOrCreateGauge({
+      name: 'executable_persona_snapshot_lag_seconds',
+      help: 'SBA γ-1 доделки — лаг (секунды) от триггерного события до создания snapshot (последнее значение per tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
+    this.axisLabelsTotal = this.getOrCreateCounter({
+      name: 'axis_labels_total',
+      help: 'SBA α-3 wave 3 — axis-метки, проставленные AxisClassifierService (tenant_top × axis × source). axis ∈ who|functional|contextual|temporal; source ∈ static|llm|manual. tenant_top — top-100 + "other" для контроля cardinality.',
+      labelNames: ['tenant_top', 'axis', 'source'] as const,
+    });
+    this.routerFallbackCallsTotal = this.getOrCreateCounter({
+      name: 'router_fallback_calls_total',
+      help: 'SBA α-3 wave 3 — вызовы LLM-fallback роутера для unmatched signalType (tenant_top × result). result ∈ matched|no_match|llm_error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+    this.routerFallbackCacheHitTotal = this.getOrCreateCounter({
+      name: 'router_fallback_cache_hit_total',
+      help: 'SBA α-3 wave 3 — попадание в Redis-кэш LLM-fallback (tenant_top). Cache hit = 0 LLM calls.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.axisClassifyDurationSeconds = this.getOrCreateHistogram({
+      name: 'axis_classify_duration_seconds',
+      help: 'SBA α-3 wave 3 — длительность одного LLM-вызова axis-classify (секунды) per axis ∈ functional|temporal.',
+      labelNames: ['axis'] as const,
+      buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+    });
+
+    // ── SBA α-9 wave 3 — Company Foundation ──
+    this.maturityScoreAvg = this.getOrCreateGauge({
+      name: 'maturity_score_avg',
+      help: 'SBA α-9 — средний maturityScore (0..1) по scope ∈ {role|department|company}. tenant_top — top-100 или other.',
+      labelNames: ['tenant_top', 'scope'] as const,
+    });
+    this.domainsTotal = this.getOrCreateGauge({
+      name: 'domains_total',
+      help: 'SBA α-9 — количество активных FunctionalDomain в тенанте (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.departmentsTotal = this.getOrCreateGauge({
+      name: 'departments_total',
+      help: 'SBA α-9 — количество активных Department в тенанте (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.companyProfileCompleteness = this.getOrCreateGauge({
+      name: 'company_profile_completeness',
+      help: 'SBA α-9 — completeness CompanyProfile (0..1) по тенанту (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.domainExpanderCreatedTotal = this.getOrCreateCounter({
+      name: 'domain_expander_created_total',
+      help: 'SBA α-9 — сколько новых FunctionalDomain создано domain-expander cron-job (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.maturityScorerDurationSeconds = this.getOrCreateHistogram({
+      name: 'maturity_scorer_duration_seconds',
+      help: 'SBA α-9 — длительность пересчёта MaturityScorer (по scope).',
+      labelNames: ['scope'] as const,
+      buckets: [0.1, 0.5, 1, 5, 15, 60, 180, 600],
+    });
+
+    // ── SBA α-8 wave 3 — Appointment + KPI ──
+    this.appointmentsTotal = this.getOrCreateGauge({
+      name: 'appointments_total',
+      help: 'SBA α-8 wave 3 — число Appointment в каждой Org × status (tenant_top × status). tenant_top: top-100 + "other" для контроля cardinality.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.kpiMeasurementsTotal = this.getOrCreateCounter({
+      name: 'kpi_measurements_total',
+      help: 'SBA α-8 wave 3 — счётчик PATCH /kpi/:id/measurement (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.kpiOverdueMeasurementsTotal = this.getOrCreateGauge({
+      name: 'kpi_overdue_measurements_total',
+      help: 'SBA α-8 wave 3 — KPI с lastMeasuredAt вне frequency-окна (tenant_top × frequency). Считается cron-job\'ом (если включён) или ad-hoc.',
+      labelNames: ['tenant_top', 'frequency'] as const,
+    });
+    this.personRoleToAppointmentMigrationProgress = this.getOrCreateGauge({
+      name: 'person_role_to_appointment_migration_progress',
+      help: 'SBA α-8 wave 3 — доля PersonRole, у которых уже есть Appointment с тем же (personId,roleId,validFrom) (0..1; tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA β-7 — Brand Voice Curator ──
+    this.brandVoiceProfileCompleteness = this.getOrCreateGauge({
+      name: 'brand_voice_profile_completeness',
+      help: 'SBA β-7 — completeness BrandVoiceProfile (0..1) на тенант (tenant_top). 0 = профиля нет или корпус ниже порога.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.brandVoiceExtractorRunsTotal = this.getOrCreateCounter({
+      name: 'brand_voice_extractor_runs_total',
+      help: 'SBA β-7 — запуски daily-cron BrandVoiceExtractor (result: built | skipped_disabled | skipped_low_corpus | llm_error | db_error).',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+    this.brandVoiceCorpusSize = this.getOrCreateGauge({
+      name: 'brand_voice_corpus_size',
+      help: 'SBA β-7 — число документов с useCases includes "brand_corpus" на тенант (tenant_top). Обновляется внутри extractor.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA β-6 — Experiment Tracker ──
+    // Cardinality-safe: tenant_top (top-100 + 'other'), status ограничен
+    // 5 значениями (hypothesis|running|completed|dropped|paused).
+    this.experimentsTotal = this.getOrCreateGauge({
+      name: 'experiments_total',
+      help: 'SBA β-6 — число экспериментов в каждой Org × status (tenant_top × status). 5 status: hypothesis|running|completed|dropped|paused.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.experimentsRunningDurationDays = this.getOrCreateHistogram({
+      name: 'experiments_running_duration_days',
+      help: 'SBA β-6 — длительность running-экспериментов (дни от startedAt до now или completedAt). Используется для probe «running_too_long».',
+      labelNames: ['tenant_top'] as const,
+      buckets: [1, 3, 7, 14, 30, 60, 90, 180, 365],
+    });
+    this.experimentsLessonsExtractedTotal = this.getOrCreateCounter({
+      name: 'experiments_lessons_extracted_total',
+      help: 'SBA β-6 — сколько уроков (lessonsJson entries) извлечено из завершённых экспериментов (tenant_top).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.experimentDetectorRunsTotal = this.getOrCreateCounter({
+      name: 'experiment_detector_runs_total',
+      help: 'SBA β-6 — итог одного запуска experiment-detector worker (tenant_top × result). result: created | updated | skipped | error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+
+    // ── SBA α-8 wave 4 — Role Map builder + completeness cron ──
+    this.roleMapCompletenessAvg = this.getOrCreateGauge({
+      name: 'role_map_completeness_avg',
+      help: 'SBA α-8 wave 4 — средняя completeness Role Map (0..1) по всем активным Role тенанта.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.roleMapBuilderRunsTotal = this.getOrCreateCounter({
+      name: 'role_map_builder_runs_total',
+      help: 'SBA α-8 wave 4 — запуски RoleMapBuilderWorker (один flush батча = один inc). result ∈ built|skipped_below_threshold|skipped_disabled|llm_error|db_error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+    this.roleMapExtractDurationSeconds = this.getOrCreateHistogram({
+      name: 'role_map_extract_duration_seconds',
+      help: 'SBA α-8 wave 4 — длительность одного LLM-вызова role-map-extract (секунды).',
+      buckets: [0.5, 1, 2, 5, 10, 30, 60, 120],
+    });
+    this.rolesWithNormalizedDataRatio = this.getOrCreateGauge({
+      name: 'roles_with_normalized_data_ratio',
+      help: 'SBA α-8 wave 4 — доля Role тенанта, у которых completeness ≥ 0.55 (т.е. заполнены минимум 5 из 9 слотов).',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA β-8 — DailyCheckIn + Operations + PersonalRelation ──
+    this.dailyCheckinsCompletedTotal = this.getOrCreateCounter({
+      name: 'daily_checkins_completed_total',
+      help: 'SBA β-8 — фактически закрытые daily check-in (kind ∈ morning|evening).',
+      labelNames: ['tenant_top', 'kind'] as const,
+    });
+    this.dailyCheckinsSkippedTotal = this.getOrCreateCounter({
+      name: 'daily_checkins_skipped_total',
+      help: 'SBA β-8 — пропуски prompt-cron (reason ∈ already_completed|outside_window|disabled|no_channel|no_person|low_confidence).',
+      labelNames: ['tenant_top', 'kind', 'reason'] as const,
+    });
+    this.operationsBlockersTotal = this.getOrCreateGauge({
+      name: 'operations_blockers_total',
+      help: 'SBA β-8 — снапшот активных блокеров (signalType=blocker) на момент пересчёта OperationsDashboardService.',
+      labelNames: ['tenant_top', 'severity'] as const,
+    });
+    this.teamFrictionsTotal = this.getOrCreateGauge({
+      name: 'team_frictions_total',
+      help: 'SBA β-8 — снапшот активных team_friction EntityLink на момент пересчёта дашборда.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.goalCascadeMissesTotal = this.getOrCreateCounter({
+      name: 'goal_cascade_misses_total',
+      help: 'SBA β-8 — счётчик выставленных cascadeMissed=true (один ребёнок parent в abandoned = один inc).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.personalRelationBuilderRunsTotal = this.getOrCreateCounter({
+      name: 'personal_relation_builder_runs_total',
+      help: 'SBA β-8 — результат запуска PersonalRelationBuilderWorker. result ∈ link_created|link_updated|skipped_low_confidence|skipped_no_pair|error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+
+    // ── SBA γ-2 — Concierge Agent ─────────────────────────────────────
+    this.conciergeMessagesTotal = this.getOrCreateCounter({
+      name: 'concierge_messages_total',
+      help: 'SBA γ-2 — сколько user-сообщений принял Concierge Agent. Cardinality-safe: tenant_top bucket.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.conciergeToolCallsTotal = this.getOrCreateCounter({
+      name: 'concierge_tool_calls_total',
+      help: 'SBA γ-2 — выполненные tool calls (status ∈ ok|error|forbidden). tool — имя whitelist tool ServiceMap.',
+      labelNames: ['tenant_top', 'tool', 'status'] as const,
+    });
+    this.conciergeUndoTotal = this.getOrCreateCounter({
+      name: 'concierge_undo_total',
+      help: 'SBA γ-2 — успешные откаты tool calls через POST /concierge/undo/:logId.',
+      labelNames: ['tenant_top', 'tool'] as const,
+    });
+    this.conciergeQuotaExceededTotal = this.getOrCreateCounter({
+      name: 'concierge_quota_exceeded_total',
+      help: 'SBA γ-2 — попытки сверх лимита (scope ∈ daily|monthly).',
+      labelNames: ['tenant_top', 'scope'] as const,
+    });
+
+    // ── SBA δ-1 — Orchestrator ────────────────────────────────────────
+    this.orchestratorRunsTotal = this.getOrCreateCounter({
+      name: 'orchestrator_runs_total',
+      help: 'SBA δ-1 — кол-во запусков Orchestrator-а (multi-agent research). status ∈ done|failed|timeout|cancelled.',
+      labelNames: ['status'] as const,
+    });
+    this.orchestratorSubagentsTotal = this.getOrCreateCounter({
+      name: 'orchestrator_subagents_total',
+      help: 'SBA δ-1 — кол-во запущенных subagent-ов. agent_type ∈ entity_research|comparison|topic_summary|timeline_construction; result ∈ done|failed|low_confidence.',
+      labelNames: ['agent_type', 'result'] as const,
+    });
+    this.orchestratorRunDurationSeconds = this.getOrCreateHistogram({
+      name: 'orchestrator_run_duration_seconds',
+      help: 'SBA δ-1 — длительность Orchestrator-run целиком (от planning до done/failed).',
+      labelNames: [] as const,
+      buckets: [5, 10, 30, 60, 120, 300, 600, 900, 1500],
+    });
+    this.orchestratorVerificationLowConfidenceTotal = this.getOrCreateCounter({
+      name: 'orchestrator_verification_low_confidence_total',
+      help: 'SBA δ-1 — сколько раз verification вернул confidence < 0.6 (после которого запускается retry max 1 раз).',
+      labelNames: [] as const,
+    });
+
+    // ── SBA δ-3 — VoiceChannelAdapter (TTS + ASR REST) ───────────────
+    this.voiceAsrRequestsTotal = this.getOrCreateCounter({
+      name: 'voice_asr_requests_total',
+      help: 'SBA δ-3 — REST-вызов /api/v1/voice/transcribe (счётчик по provider × tenant_top bucket).',
+      labelNames: ['tenant_top', 'provider'] as const,
+    });
+    this.voiceAsrDurationSeconds = this.getOrCreateHistogram({
+      name: 'voice_asr_duration_seconds',
+      help: 'SBA δ-3 — длительность ASR-вызова через VoiceChannelAdapter (Vox submit+poll, секунды). Cardinality-safe: только provider, без tenant.',
+      labelNames: ['provider'] as const,
+      buckets: [0.5, 1, 3, 5, 10, 20, 40, 60, 120, 300],
+    });
+    this.voiceTtsRequestsTotal = this.getOrCreateCounter({
+      name: 'voice_tts_requests_total',
+      help: 'SBA δ-3 — REST-вызов /api/v1/voice/synthesize (счётчик по provider × tenant_top).',
+      labelNames: ['tenant_top', 'provider'] as const,
+    });
+    this.voiceTtsCharsTotal = this.getOrCreateCounter({
+      name: 'voice_tts_chars_total',
+      help: 'SBA δ-3 — суммарное количество символов, отправленных в TTS (для cost-tracking). Cardinality-safe: только tenant_top, без provider/voice.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA α-10 wave 3 — Admin LLM + Unit Economics ────────────────
+    this.aiCostUsdLabeledTotal = this.getOrCreateCounter({
+      name: 'ai_cost_usd_total_labeled',
+      help: 'SBA α-10 wave 3 — суммарная стоимость AI-вызовов USD (tenant_top × task_type × provider × model).',
+      labelNames: ['tenant_top', 'task_type', 'provider', 'model'] as const,
+    });
+    this.aiCostRubLabeledTotal = this.getOrCreateCounter({
+      name: 'ai_cost_rub_total',
+      help: 'SBA α-10 wave 3 — суммарная стоимость AI-вызовов RUB (через CurrencyRate snapshot).',
+      labelNames: ['tenant_top', 'task_type', 'provider', 'model'] as const,
+    });
+    this.aiCallsLabeledTotal = this.getOrCreateCounter({
+      name: 'ai_calls_total',
+      help: 'SBA α-10 wave 3 — количество вызовов AI (tenant_top × task_type × provider × model × success).',
+      labelNames: [
+        'tenant_top',
+        'task_type',
+        'provider',
+        'model',
+        'success',
+      ] as const,
+    });
+    this.orgBudgetUtilizationPercent = this.getOrCreateGauge({
+      name: 'org_budget_utilization_percent',
+      help: 'SBA α-10 wave 3 — текущее использование бюджета Org в % от monthlyCapRub.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.providerSmokeTestSuccess = this.getOrCreateGauge({
+      name: 'provider_smoke_test_success',
+      help: 'SBA α-10 wave 3 — последний результат smoke-теста провайдера (1=success, 0=fail).',
+      labelNames: ['provider'] as const,
+    });
+    this.providerSmokeTestDurationSeconds = this.getOrCreateHistogram({
+      name: 'provider_smoke_test_duration_seconds',
+      help: 'SBA α-10 wave 3 — длительность smoke-теста провайдера, секунды.',
+      labelNames: ['provider'] as const,
+      buckets: [0.1, 0.5, 1, 3, 5, 10, 30, 60],
+    });
+    this.currencyRateUsdRub = this.getOrCreateGauge({
+      name: 'currency_rate_usd_rub',
+      help: 'SBA α-10 wave 3 — текущий курс USD/RUB от ЦБ РФ (или fallback).',
+    });
+    this.currencyRateSyncTotal = this.getOrCreateCounter({
+      name: 'currency_rate_sync_total',
+      help: 'SBA α-10 wave 3 — попытки sync курса (result ∈ success|fallback|failed).',
+      labelNames: ['result'] as const,
+    });
+    this.dailyCostAggregatorRunsTotal = this.getOrCreateCounter({
+      name: 'daily_cost_aggregator_runs_total',
+      help: 'SBA α-10 wave 3 — запуски DailyCostAggregatorCron (result ∈ success|failed).',
+      labelNames: ['result'] as const,
+    });
+    this.orgEconomicsRunsTotal = this.getOrCreateCounter({
+      name: 'org_economics_runs_total',
+      help: 'SBA α-10 wave 3 — запуски OrgEconomicsCron (result ∈ success|failed).',
+      labelNames: ['result'] as const,
+    });
+    this.budgetAlertSentTotal = this.getOrCreateCounter({
+      name: 'budget_alert_sent_total',
+      help: 'SBA α-10 wave 3 — отправленные budget alerts (threshold ∈ 50|80|95|100|...).',
+      labelNames: ['threshold'] as const,
+    });
+
+    // ── SBA δ-2 — ProactiveWatcher ─────────────────────────────────────
+    this.proactiveNotificationsEmittedTotal = this.getOrCreateCounter({
+      name: 'proactive_notifications_emitted_total',
+      help: 'SBA δ-2 — отправленные ProactiveNotification (rule × severity).',
+      labelNames: ['rule', 'severity'] as const,
+    });
+    this.proactiveNotificationsDismissedTotal = this.getOrCreateCounter({
+      name: 'proactive_notifications_dismissed_total',
+      help: 'SBA δ-2 — пользователь нажал «Скрыть» на ProactiveNotification.',
+      labelNames: ['rule'] as const,
+    });
+    this.proactiveNotificationsDedupSkippedTotal = this.getOrCreateCounter({
+      name: 'proactive_notifications_dedup_skipped_total',
+      help: 'SBA δ-2 — сколько раз anti-spam dedup отбросил ProactiveNotification (Redis SETNX hit).',
+      labelNames: [] as const,
+    });
+    this.proactiveWatcherDurationSeconds = this.getOrCreateHistogram({
+      name: 'proactive_watcher_duration_seconds',
+      help: 'SBA δ-2 — длительность обработки одного правила ProactiveWatcher (секунды).',
+      labelNames: ['rule'] as const,
+      buckets: [0.1, 0.5, 1, 3, 5, 10, 30, 60],
     });
   }
 
@@ -1474,6 +2091,47 @@ export class BusinessMetricsService implements OnModuleInit {
     this.maxBotWebhookReceivedTotal.inc({ type: args.type });
   }
 
+  // ────────────────────── zero-button bot inbound (β-1 rip-out) ──────
+
+  /** Нормализованный inbound в Telegram/MAX-боты (по типу контента). */
+  incBotInbound(args: {
+    channel: 'telegram_bot' | 'max_bot';
+    kind:
+      | 'text'
+      | 'voice'
+      | 'document'
+      | 'start_command'
+      | 'link_code'
+      | 'other';
+  }): void {
+    this.botInboundTotal.inc({ channel: args.channel, kind: args.kind });
+  }
+
+  /** Длительность ASR для voice-сообщения, отправленного боту. */
+  observeBotVoiceAsrDuration(args: {
+    channel: 'telegram_bot' | 'max_bot';
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.botVoiceAsrDurationSeconds.observe(
+      { channel: args.channel },
+      args.seconds,
+    );
+  }
+
+  /** Результат intent-классификации входящего текста бота (LLM или эвристика). */
+  incBotIntentClassified(args: {
+    channel: 'telegram_bot' | 'max_bot';
+    intent: 'chat_query' | 'free_note';
+    source: 'llm' | 'heuristic';
+  }): void {
+    this.botIntentClassifiedTotal.inc({
+      channel: args.channel,
+      intent: args.intent,
+      source: args.source,
+    });
+  }
+
   // ────────────────────── core router (SBA α-3) ──────────────────────
 
   /** Один блок диспатчился в одного специалиста — счётчик инкрементируется. */
@@ -1543,6 +2201,30 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Карточка-кандидат на stale (probe владельцу). */
   incCurationStale(args: { resourceType: string }): void {
     this.curationStaleDetectedTotal.inc({ resource_type: args.resourceType });
+  }
+
+  // ────────────────────── curation wave 2 (SBA α-4 wave 2) ────────────
+
+  /** Установить текущее число открытых слотов (gauge) для конкретного card_type. */
+  setCompletenessSlotsOpen(args: { cardType: string; value: number }): void {
+    if (args.value < 0) return;
+    this.completenessSlotsOpenTotal.set({ card_type: args.cardType }, args.value);
+  }
+
+  /** Counter: слот закрыт (auto или manual). */
+  incCompletenessSlotsFilled(args: { cardType: string }): void {
+    this.completenessSlotsFilledTotal.inc({ card_type: args.cardType });
+  }
+
+  /** Counter: ConsistencyChecker нашёл нарушение (rule ∈ R1..R6). */
+  incConsistencyViolation(args: { rule: string }): void {
+    this.consistencyViolationsTotal.inc({ rule: args.rule });
+  }
+
+  /** Histogram: длительность прохода ConsistencyCheckerCron, секунды. */
+  observeConsistencyCheckerDuration(seconds: number): void {
+    if (seconds < 0) return;
+    this.consistencyCheckerDurationSeconds.observe(seconds);
   }
 
   // ────────────────────── specialists (SBA α-6) ────────────────────────
@@ -1622,6 +2304,100 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  /**
+   * SBA α-7 wave 2 — выставить gauge `process_templates_total{tenant_top, status}`.
+   * tenant_top — нормализованный (top-100 + 'other'), нормализация на caller'е.
+   */
+  setProcessTemplatesTotal(args: {
+    tenantTop: string;
+    status: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.processTemplatesTotal.set(
+      { tenant_top: args.tenantTop, status: args.status },
+      args.value,
+    );
+  }
+
+  /** SBA α-7 wave 2 — выставить gauge среднего completeness активных templates в Org. */
+  setProcessTemplateCompletenessAvg(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (args.value < 0 || args.value > 1) return;
+    this.processTemplateCompletenessAvg.set(
+      { tenant_top: args.tenantTop },
+      args.value,
+    );
+  }
+
+  /**
+   * SBA α-7 wave 2 — инкремент счётчика результата extract-батча
+   * process-detector. result ∈ new | updated | skipped.
+   */
+  incProcessDetectorExtraction(args: {
+    tenantTop: string;
+    result: 'new' | 'updated' | 'skipped';
+  }): void {
+    this.processDetectorExtractionsTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  /** SBA α-7 wave 2 — наблюдение длительности одного LLM-extract-вызова. */
+  observeProcessTemplateExtractDuration(seconds: number): void {
+    if (seconds < 0) return;
+    this.processTemplateExtractDurationSeconds.observe(seconds);
+  }
+
+  /**
+   * SBA γ-3 — выставить gauge `cross_functional_processes_total{tenant_top}`.
+   * tenant_top нормализован (top-100 + 'other'), нормализация на caller'е.
+   */
+  setCrossFunctionalProcessesTotal(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.crossFunctionalProcessesTotal.set(
+      { tenant_top: args.tenantTop },
+      args.value,
+    );
+  }
+
+  /**
+   * SBA γ-3 — выставить gauge `cross_functional_friction_active_total{tenant_top, severity}`.
+   * severity ∈ 'low' | 'medium' | 'high' (cardinality-safe).
+   */
+  setCrossFunctionalFrictionActiveTotal(args: {
+    tenantTop: string;
+    severity: 'low' | 'medium' | 'high';
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.crossFunctionalFrictionActiveTotal.set(
+      { tenant_top: args.tenantTop, severity: args.severity },
+      args.value,
+    );
+  }
+
+  /**
+   * SBA γ-3 — observe время от created до resolved для CrossFunctionalFrictionReport.
+   * Используется при POST friction/:id/resolve.
+   */
+  observeCrossFunctionalFrictionResolutionTime(args: {
+    tenantTop: string;
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.crossFunctionalFrictionResolutionTimeSeconds.observe(
+      { tenant_top: args.tenantTop },
+      args.seconds,
+    );
+  }
+
   /** SBA β-3 — evolving-конфликт (специалист 3.3 нашёл supersede-связку). */
   incCoreSpecialistConflictEvolving(args: { type: string }): void {
     this.coreSpecialistConflictEvolvingTotal.inc({ type: args.type });
@@ -1655,6 +2431,59 @@ export class BusinessMetricsService implements OnModuleInit {
   }): void {
     if (args.value < 0) return;
     this.insightsDynamicLabelCount.set({ label: args.label }, args.value);
+  }
+
+  // ────────────────────── experiments (SBA β-6) ──────────────────────
+
+  /**
+   * SBA β-6 — выставить gauge числа экспериментов на (tenant_top × status).
+   * Вызывается из `experiment-status-resolver.cron` после прохода по Org.
+   */
+  setExperimentsTotal(args: {
+    tenantTop: string;
+    status: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.experimentsTotal.set(
+      { tenant_top: args.tenantTop, status: args.status },
+      args.value,
+    );
+  }
+
+  /** SBA β-6 — наблюдение длительности running-эксперимента в днях. */
+  observeExperimentRunningDurationDays(args: {
+    tenantTop: string;
+    days: number;
+  }): void {
+    if (args.days < 0) return;
+    this.experimentsRunningDurationDays.observe(
+      { tenant_top: args.tenantTop },
+      args.days,
+    );
+  }
+
+  /** SBA β-6 — инкремент счётчика извлечённых уроков. */
+  incExperimentLessonsExtracted(args: {
+    tenantTop: string;
+    count: number;
+  }): void {
+    if (args.count <= 0) return;
+    this.experimentsLessonsExtractedTotal.inc(
+      { tenant_top: args.tenantTop },
+      args.count,
+    );
+  }
+
+  /** SBA β-6 — итог одного прогона experiment-detector worker. */
+  incExperimentDetectorRun(args: {
+    tenantTop: string;
+    result: 'created' | 'updated' | 'skipped' | 'error';
+  }): void {
+    this.experimentDetectorRunsTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
   }
 
   // ────────────────────── probe-agent + ideas (SBA β-5) ────────────────
@@ -1718,6 +2547,19 @@ export class BusinessMetricsService implements OnModuleInit {
     this.probeExpiredTotal.inc();
   }
 
+  /**
+   * SBA β-5 closing-loop — probe закрыт ответом пользователя.
+   * `source` ∈ {in_app|telegram_bot|max_bot|email_smtp|api|unknown}.
+   * `tenant_top` — top-100 тенантов либо `other` для контроля cardinality
+   * (нормализация — на стороне caller'а).
+   */
+  incProbeClosed(args: { tenantTop: string; source: string }): void {
+    this.probeClosedTotal.inc({
+      tenant_top: args.tenantTop,
+      source: args.source,
+    });
+  }
+
   /** Установить engagement rate для пользователя (cron-обновляемый gauge). */
   setProbeRecipientEngagementRate(args: {
     userId: string;
@@ -1770,6 +2612,49 @@ export class BusinessMetricsService implements OnModuleInit {
     this.chatV2ConversationsArchivedTotal.inc({ reason: args.reason });
   }
 
+  // ────────────────────── dialog-layer (SBA α-5) ───────────────────────
+
+  /** SBA α-5 dialog-layer — AnswerCache HIT. tenant_top нормализован caller'ом. */
+  incAnswerCacheHit(args: { tenantTop: string }): void {
+    this.answerCacheHitTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** SBA α-5 dialog-layer — RetrievalCache HIT. tenant_top нормализован caller'ом. */
+  incRetrievalCacheHit(args: { tenantTop: string }): void {
+    this.retrievalCacheHitTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * SBA α-5 dialog-layer — длительность одного шага препроцессора.
+   * step ∈ contextualize | confidence | classify | multi-query | summarize | total.
+   */
+  observeDialogProcessingDuration(args: {
+    step:
+      | 'contextualize'
+      | 'confidence'
+      | 'classify'
+      | 'multi-query'
+      | 'summarize'
+      | 'total';
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.dialogProcessingDurationSeconds.observe(
+      { step: args.step },
+      args.seconds,
+    );
+  }
+
+  /** SBA α-5 dialog-layer — успешная компрессия диалога в summary. */
+  incConversationSummary(args: { tenantTop: string }): void {
+    this.conversationSummaryTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** SBA α-5 dialog-layer — confidence ниже порога → fallback на raw userMessage. */
+  incDialogConfidenceLow(args: { tenantTop: string }): void {
+    this.dialogConfidenceLowTotal.inc({ tenant_top: args.tenantTop });
+  }
+
   // ────────────────────── SBA γ-1 (Skill + Persona + Clone) ────────────
 
   /** SBA γ-1 — установить gauge активных SkillProfile. */
@@ -1811,6 +2696,638 @@ export class BusinessMetricsService implements OnModuleInit {
   /** SBA γ-1 — counter вызовов клона носителем (engagement). */
   incCloneAskByOwner(): void {
     this.cloneAskByOwnerTotal.inc();
+  }
+
+  // ────────────────────── SBA γ-1 доделки (SkillTraitCategory + versioning) ──
+
+  /** SBA γ-1 доделки — установить gauge числа активных SkillTraitCategory per tenant_top. */
+  setSkillCategoriesTotal(args: { tenantTop: string; value: number }): void {
+    if (args.value < 0) return;
+    this.skillCategoriesTotal.set({ tenant_top: args.tenantTop }, args.value);
+  }
+
+  /** SBA γ-1 доделки — установить gauge доли SkillTrait с заполненным categoryId per tenant_top. */
+  setSkillTraitCategorizedRatio(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.skillTraitCategorizedRatio.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /**
+   * SBA γ-1 доделки — counter созданных ExecutablePersona snapshot.
+   * `trigger ∈ {scheduled|threshold|critical|manual|on_demand}`.
+   */
+  incExecutablePersonaSnapshot(args: {
+    tenantTop: string;
+    trigger: 'scheduled' | 'threshold' | 'critical' | 'manual' | 'on_demand';
+  }): void {
+    this.executablePersonaSnapshotsTotal.inc({
+      tenant_top: args.tenantTop,
+      trigger: args.trigger,
+    });
+  }
+
+  /**
+   * SBA γ-1 доделки — gauge лага (секунды) от триггерного события до snapshot.
+   * Хранит последнее значение per tenant_top.
+   */
+  setExecutablePersonaSnapshotLag(args: {
+    tenantTop: string;
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.executablePersonaSnapshotLagSeconds.set(
+      { tenant_top: args.tenantTop },
+      args.seconds,
+    );
+  }
+
+  // ────────────────────── SBA α-9 wave 3 (Company Foundation) ──────────
+
+  /**
+   * Установить gauge maturity_score_avg{tenant_top,scope}.
+   * `tenantTop` — нормализуется на стороне caller'а (top-100 + 'other').
+   */
+  setMaturityScoreAvg(args: {
+    tenantTop: string;
+    scope: 'role' | 'department' | 'company';
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.maturityScoreAvg.set(
+      { tenant_top: args.tenantTop, scope: args.scope },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /** Установить gauge domains_total{tenant_top}. */
+  setDomainsTotal(args: { tenantTop: string; value: number }): void {
+    if (args.value < 0) return;
+    this.domainsTotal.set({ tenant_top: args.tenantTop }, args.value);
+  }
+
+  /** Установить gauge departments_total{tenant_top}. */
+  setDepartmentsTotal(args: { tenantTop: string; value: number }): void {
+    if (args.value < 0) return;
+    this.departmentsTotal.set({ tenant_top: args.tenantTop }, args.value);
+  }
+
+  /** Установить gauge company_profile_completeness{tenant_top}. */
+  setCompanyProfileCompleteness(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.companyProfileCompleteness.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /** Counter — сколько новых FunctionalDomain создал domain-expander. */
+  incDomainExpanderCreated(args: { tenantTop: string; count: number }): void {
+    if (args.count <= 0) return;
+    this.domainExpanderCreatedTotal.inc({ tenant_top: args.tenantTop }, args.count);
+  }
+
+  /**
+   * Старт таймера для гистограммы maturity_scorer_duration_seconds{scope}.
+   * Возвращает завершающую функцию (вызвать в конце операции).
+   */
+  startMaturityScorerTimer(args: { scope: string }): () => void {
+    return this.maturityScorerDurationSeconds.startTimer({ scope: args.scope });
+  }
+
+  // ────────────────────── SBA α-8 wave 3 (Appointment + KPI) ───────────
+
+  /**
+   * Установить gauge `appointments_total{tenant_top, status}`. tenant_top
+   * нормализуется на caller'е (top-100 + 'other').
+   */
+  setAppointmentsTotal(args: {
+    tenantTop: string;
+    status: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.appointmentsTotal.set(
+      { tenant_top: args.tenantTop, status: args.status },
+      args.value,
+    );
+  }
+
+  /** Counter — успешный PATCH /kpi/:id/measurement. */
+  incKpiMeasurement(args: { tenantTop: string }): void {
+    this.kpiMeasurementsTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Gauge — число KPI с просроченным lastMeasuredAt (по frequency-окну).
+   * Расширяется cron-job'ом (если включён) или ad-hoc.
+   */
+  setKpiOverdueMeasurementsTotal(args: {
+    tenantTop: string;
+    frequency: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.kpiOverdueMeasurementsTotal.set(
+      { tenant_top: args.tenantTop, frequency: args.frequency },
+      args.value,
+    );
+  }
+
+  /**
+   * Gauge — доля PersonRole, мигрированных в Appointment (0..1). Выставляется
+   * patch-script'ом и admin-эндпоинтом «прогресс миграции».
+   */
+  setPersonRoleToAppointmentMigrationProgress(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.personRoleToAppointmentMigrationProgress.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  // ────────────────────── SBA β-7 (Brand Voice Curator) ───────────────
+
+  /**
+   * Gauge `brand_voice_profile_completeness{tenant_top}`. Значение клампится
+   * в [0,1]. Tenant_top — top-100 bucket из `brandVoiceTenantTop(tenantId)`,
+   * чтобы не взорвать cardinality на масштабе тысячи Org.
+   */
+  setBrandVoiceProfileCompleteness(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.brandVoiceProfileCompleteness.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /**
+   * Counter `brand_voice_extractor_runs_total{tenant_top, result}`. Один
+   * вызов — один запуск daily-cron на один тенант. result ∈
+   * `built | skipped_disabled | skipped_low_corpus | llm_error | db_error`.
+   */
+  incBrandVoiceExtractorRun(args: {
+    tenantTop: string;
+    result: string;
+  }): void {
+    this.brandVoiceExtractorRunsTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  /**
+   * Gauge `brand_voice_corpus_size{tenant_top}`. Сколько Document'ов с
+   * useCases includes 'brand_corpus' лежит в тенанте на момент cron-прохода.
+   */
+  setBrandVoiceCorpusSize(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.brandVoiceCorpusSize.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.floor(args.value)),
+    );
+  }
+
+  // ────────────────────── SBA α-3 wave 3 (AxisClassifier + LLM fallback) ─
+
+  /**
+   * Counter — одна axis-метка проставлена (insert новой записи в
+   * IdeaBlockAxisLabel; уже-существующие upsert'ы НЕ инкрементируют).
+   * axis ∈ who|functional|contextual|temporal; source ∈ static|llm|manual.
+   */
+  incAxisLabel(args: {
+    tenantTop: string;
+    axis: string;
+    source: string;
+  }): void {
+    this.axisLabelsTotal.inc({
+      tenant_top: args.tenantTop,
+      axis: args.axis,
+      source: args.source,
+    });
+  }
+
+  /**
+   * Counter — вызов LLM-fallback роутера. result ∈ matched|no_match|llm_error.
+   */
+  incRouterFallbackCall(args: {
+    tenantTop: string;
+    result: 'matched' | 'no_match' | 'llm_error';
+  }): void {
+    this.routerFallbackCallsTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  /** Counter — попадание в Redis-кэш LLM-fallback (cache hit). */
+  incRouterFallbackCacheHit(args: { tenantTop: string }): void {
+    this.routerFallbackCacheHitTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Histogram — длительность одного LLM-вызова axis-classify per axis.
+   * Caller вызывает ОДИН раз per LLM-call (т.е. для одного txn — оба axis).
+   */
+  observeAxisClassifyDuration(args: { axis: string; seconds: number }): void {
+    if (args.seconds < 0) return;
+    this.axisClassifyDurationSeconds.observe({ axis: args.axis }, args.seconds);
+  }
+
+  // ────────────────────── SBA α-8 wave 4 (Role Map) ──────────────────
+
+  /** Установить gauge `role_map_completeness_avg{tenant_top}`. */
+  setRoleMapCompletenessAvg(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.roleMapCompletenessAvg.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /** Counter — один flush батча RoleMapBuilderWorker. */
+  incRoleMapBuilderRun(args: { tenantTop: string; result: string }): void {
+    this.roleMapBuilderRunsTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  /**
+   * Старт таймера для гистограммы `role_map_extract_duration_seconds`.
+   * Возвращает завершающую функцию (вызвать в конце операции).
+   */
+  startRoleMapExtractTimer(): () => void {
+    return this.roleMapExtractDurationSeconds.startTimer();
+  }
+
+  /** Gauge `roles_with_normalized_data_ratio{tenant_top}`. */
+  setRolesWithNormalizedDataRatio(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (Number.isNaN(args.value)) return;
+    this.rolesWithNormalizedDataRatio.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  // ────────────────────── SBA β-8 (DailyCheckIn + Operations + PersonalRelation) ────────
+
+  /** Counter `daily_checkins_completed_total{tenant_top, kind}`. */
+  incDailyCheckinCompleted(args: {
+    tenantTop: string;
+    kind: 'morning' | 'evening';
+  }): void {
+    this.dailyCheckinsCompletedTotal.inc({
+      tenant_top: args.tenantTop,
+      kind: args.kind,
+    });
+  }
+
+  /**
+   * Counter `daily_checkins_skipped_total{tenant_top, kind, reason}`.
+   * reason ∈ already_completed|outside_window|disabled|no_channel|no_person|low_confidence.
+   */
+  incDailyCheckinSkipped(args: {
+    tenantTop: string;
+    kind: 'morning' | 'evening';
+    reason: string;
+  }): void {
+    this.dailyCheckinsSkippedTotal.inc({
+      tenant_top: args.tenantTop,
+      kind: args.kind,
+      reason: args.reason,
+    });
+  }
+
+  /** Gauge `operations_blockers_total{tenant_top, severity}`. */
+  setOperationsBlockersTotal(args: {
+    tenantTop: string;
+    severity: 'low' | 'medium' | 'high' | 'unknown';
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.operationsBlockersTotal.set(
+      { tenant_top: args.tenantTop, severity: args.severity },
+      Math.max(0, Math.floor(args.value)),
+    );
+  }
+
+  /** Gauge `team_frictions_total{tenant_top}`. */
+  setTeamFrictionsTotal(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.teamFrictionsTotal.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.floor(args.value)),
+    );
+  }
+
+  /** Counter `goal_cascade_misses_total{tenant_top}`. */
+  incGoalCascadeMisses(args: { tenantTop: string; count?: number }): void {
+    const inc = args.count ?? 1;
+    if (inc <= 0) return;
+    this.goalCascadeMissesTotal.inc({ tenant_top: args.tenantTop }, inc);
+  }
+
+  /** Counter `personal_relation_builder_runs_total{tenant_top, result}`. */
+  incPersonalRelationBuilderRun(args: {
+    tenantTop: string;
+    result: string;
+  }): void {
+    this.personalRelationBuilderRunsTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  // ────────────────────── SBA δ-3 — VoiceChannelAdapter ───────────────
+
+  /**
+   * Один REST-вызов `/api/v1/voice/transcribe`. provider — ASR-провайдер
+   * (vox / gigaam / openai / ...). tenantTop — top-100 bucket.
+   */
+  incVoiceAsrRequest(args: { tenantTop: string; provider: string }): void {
+    this.voiceAsrRequestsTotal.inc({
+      tenant_top: args.tenantTop,
+      provider: args.provider,
+    });
+  }
+
+  /**
+   * Длительность ASR-вызова в секундах (Vox submit+poll или эквивалент).
+   * Cardinality-safe: только provider в label.
+   */
+  observeVoiceAsrDuration(args: { provider: string; seconds: number }): void {
+    if (!Number.isFinite(args.seconds) || args.seconds < 0) return;
+    this.voiceAsrDurationSeconds.observe(
+      { provider: args.provider },
+      args.seconds,
+    );
+  }
+
+  /**
+   * Один REST-вызов `/api/v1/voice/synthesize`. provider — TTS-провайдер.
+   */
+  incVoiceTtsRequest(args: { tenantTop: string; provider: string }): void {
+    this.voiceTtsRequestsTotal.inc({
+      tenant_top: args.tenantTop,
+      provider: args.provider,
+    });
+  }
+
+  /**
+   * Сколько символов отправлено в TTS — для оценки стоимости (OpenAI TTS
+   * биллит за 1M chars). tenantTop — top-100 bucket.
+   */
+  addVoiceTtsChars(args: { tenantTop: string; chars: number }): void {
+    if (!Number.isFinite(args.chars) || args.chars <= 0) return;
+    this.voiceTtsCharsTotal.inc(
+      { tenant_top: args.tenantTop },
+      Math.floor(args.chars),
+    );
+  }
+
+  // ────────────────────── SBA γ-2 (Concierge Agent) ────────────────────
+
+  /** Counter `concierge_messages_total{tenant_top}`. */
+  incConciergeMessage(args: { tenantTop: string }): void {
+    this.conciergeMessagesTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Counter `concierge_tool_calls_total{tenant_top, tool, status}`. status ∈
+   * `ok|error|forbidden`. tool — имя whitelist tool ServiceMap'а (ограниченный
+   * фиксированный набор).
+   */
+  incConciergeToolCall(args: {
+    tenantTop: string;
+    tool: string;
+    status: 'ok' | 'error' | 'forbidden';
+  }): void {
+    this.conciergeToolCallsTotal.inc({
+      tenant_top: args.tenantTop,
+      tool: args.tool,
+      status: args.status,
+    });
+  }
+
+  /** Counter `concierge_undo_total{tenant_top, tool}` — успешные откаты. */
+  incConciergeUndo(args: { tenantTop: string; tool: string }): void {
+    this.conciergeUndoTotal.inc({
+      tenant_top: args.tenantTop,
+      tool: args.tool,
+    });
+  }
+
+  /** Counter `concierge_quota_exceeded_total{tenant_top, scope}`. */
+  incConciergeQuotaExceeded(args: {
+    tenantTop: string;
+    scope: 'daily' | 'monthly';
+  }): void {
+    this.conciergeQuotaExceededTotal.inc({
+      tenant_top: args.tenantTop,
+      scope: args.scope,
+    });
+  }
+
+  // ────────────────────── SBA δ-1 (Orchestrator) ─────────────────────
+
+  /** Counter `orchestrator_runs_total{status}`. status ∈ done|failed|timeout|cancelled. */
+  incOrchestratorRun(args: {
+    status: 'done' | 'failed' | 'timeout' | 'cancelled';
+  }): void {
+    this.orchestratorRunsTotal.inc({ status: args.status });
+  }
+
+  /** Counter `orchestrator_subagents_total{agent_type, result}`. */
+  incOrchestratorSubagent(args: {
+    agentType: string;
+    result: 'done' | 'failed' | 'low_confidence';
+  }): void {
+    this.orchestratorSubagentsTotal.inc({
+      agent_type: args.agentType,
+      result: args.result,
+    });
+  }
+
+  /** Histogram `orchestrator_run_duration_seconds`. */
+  observeOrchestratorRunDurationSeconds(seconds: number): void {
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    this.orchestratorRunDurationSeconds.observe(seconds);
+  }
+
+  /** Counter `orchestrator_verification_low_confidence_total`. */
+  incOrchestratorVerificationLowConfidence(): void {
+    this.orchestratorVerificationLowConfidenceTotal.inc();
+  }
+
+  // ────────────────────── SBA α-10 wave 3 — Admin LLM + Economics ─────
+
+  addAiCostUsdLabeled(args: {
+    tenantTop: string;
+    taskType: string;
+    provider: string;
+    model: string;
+    amount: number;
+  }): void {
+    if (!Number.isFinite(args.amount) || args.amount <= 0) return;
+    this.aiCostUsdLabeledTotal.inc(
+      {
+        tenant_top: args.tenantTop,
+        task_type: args.taskType,
+        provider: args.provider,
+        model: args.model,
+      },
+      args.amount,
+    );
+  }
+
+  addAiCostRub(args: {
+    tenantTop: string;
+    taskType: string;
+    provider: string;
+    model: string;
+    amount: number;
+  }): void {
+    if (!Number.isFinite(args.amount) || args.amount <= 0) return;
+    this.aiCostRubLabeledTotal.inc(
+      {
+        tenant_top: args.tenantTop,
+        task_type: args.taskType,
+        provider: args.provider,
+        model: args.model,
+      },
+      args.amount,
+    );
+  }
+
+  incAiCallsLabeled(args: {
+    tenantTop: string;
+    taskType: string;
+    provider: string;
+    model: string;
+    success: boolean;
+    count?: number;
+  }): void {
+    const inc = args.count ?? 1;
+    if (inc <= 0) return;
+    this.aiCallsLabeledTotal.inc(
+      {
+        tenant_top: args.tenantTop,
+        task_type: args.taskType,
+        provider: args.provider,
+        model: args.model,
+        success: args.success ? 'true' : 'false',
+      },
+      inc,
+    );
+  }
+
+  setOrgBudgetUtilizationPercent(args: {
+    tenantTop: string;
+    percent: number;
+  }): void {
+    if (!Number.isFinite(args.percent) || args.percent < 0) return;
+    this.orgBudgetUtilizationPercent.set(
+      { tenant_top: args.tenantTop },
+      args.percent,
+    );
+  }
+
+  setProviderSmokeTestSuccess(args: {
+    provider: string;
+    success: boolean;
+  }): void {
+    this.providerSmokeTestSuccess.set(
+      { provider: args.provider },
+      args.success ? 1 : 0,
+    );
+  }
+
+  observeProviderSmokeTestDuration(args: {
+    provider: string;
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.providerSmokeTestDurationSeconds.observe(
+      { provider: args.provider },
+      args.seconds,
+    );
+  }
+
+  setCurrencyRateUsdRub(rate: number): void {
+    if (!Number.isFinite(rate) || rate <= 0) return;
+    this.currencyRateUsdRub.set(rate);
+  }
+
+  incCurrencyRateSync(result: 'success' | 'fallback' | 'failed'): void {
+    this.currencyRateSyncTotal.inc({ result });
+  }
+
+  incDailyCostAggregatorRun(result: 'success' | 'failed'): void {
+    this.dailyCostAggregatorRunsTotal.inc({ result });
+  }
+
+  incOrgEconomicsRun(result: 'success' | 'failed'): void {
+    this.orgEconomicsRunsTotal.inc({ result });
+  }
+
+  incBudgetAlertSent(threshold: number): void {
+    this.budgetAlertSentTotal.inc({ threshold: String(threshold) });
+  }
+
+  // ────────────────────── SBA δ-2 — ProactiveWatcher ────────────────
+
+  /** Создан и отправлен ProactiveNotification (rule × severity). */
+  incProactiveEmitted(args: {
+    rule: string;
+    severity: 'low' | 'medium' | 'high';
+  }): void {
+    this.proactiveNotificationsEmittedTotal.inc({
+      rule: args.rule,
+      severity: args.severity,
+    });
+  }
+
+  /** Пользователь нажал «Скрыть» на ProactiveNotification. */
+  incProactiveDismissed(args: { rule: string }): void {
+    this.proactiveNotificationsDismissedTotal.inc({ rule: args.rule });
+  }
+
+  /** Anti-spam dedup отбросил ProactiveNotification (Redis SETNX hit). */
+  incProactiveDedupSkipped(): void {
+    this.proactiveNotificationsDedupSkippedTotal.inc();
+  }
+
+  /** Длительность обработки одного правила ProactiveWatcher (секунды). */
+  observeProactiveRuleDuration(args: {
+    rule: string;
+    seconds: number;
+  }): void {
+    if (args.seconds < 0) return;
+    this.proactiveWatcherDurationSeconds.observe(
+      { rule: args.rule },
+      args.seconds,
+    );
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

@@ -3,7 +3,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type Insight,
   type InsightDynamic,
@@ -47,7 +49,15 @@ import type {
 export class InsightsService {
   private readonly logger = new Logger(InsightsService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    /**
+     * SBA α-5 dialog-layer — эмит `card-version.created` для cache invalidation.
+     */
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events: EventEmitter2 | null = null,
+  ) {}
 
   // ───────────────────────────── list ─────────────────────────────
 
@@ -436,6 +446,20 @@ export class InsightsService {
       where: { id: args.insight.id },
       data: { currentVersionId: created.id },
     });
+    // SBA α-5 dialog-layer — эмит для CacheInvalidationService (best-effort).
+    try {
+      this.events?.emit('card-version.created', {
+        tenantId: args.tenantId,
+        cardVersionId: created.id,
+        resourceType: 'insight',
+        resourceId: args.insight.id,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'card-version.created emit failed (handled inside)',
+      );
+    }
   }
 
   private startOfWeek(d: Date): Date {

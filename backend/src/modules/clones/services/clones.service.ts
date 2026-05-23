@@ -22,6 +22,7 @@ import {
   CLONE_RESPOND_USER_TEMPLATE,
 } from '../../knowledge-core/prompts/clone-respond.prompt';
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
+import { ExecutablePersonaVersioningService } from '../../knowledge-core/services/executable-persona-versioning.service';
 import { RbacService } from '../../rbac/rbac.service';
 
 import type {
@@ -62,6 +63,8 @@ export class ClonesService {
     private readonly metrics: BusinessMetricsService,
     @Inject(ExecutablePersonaBuildService)
     private readonly personaBuilder: ExecutablePersonaBuildService,
+    @Inject(ExecutablePersonaVersioningService)
+    private readonly personaVersioning: ExecutablePersonaVersioningService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -613,6 +616,68 @@ export class ClonesService {
       },
     });
     this.metrics.incSkillTraitsMarkedMisleading({ category: trait.category });
+  }
+
+  /**
+   * SBA γ-1 доделки — manual snapshot rebuild для ExecutablePersona.
+   * Только owner Person'а или admin/owner Org. Bypass'ит idempotency-замок
+   * (manual всегда работает).
+   */
+  async triggerManualPersonaSnapshot(args: {
+    tenantId: string;
+    requesterUserId: string;
+    personId: string;
+  }): Promise<{
+    built: boolean;
+    personaId: string | null;
+    reason: string | null;
+  }> {
+    const access = await this.canAccessPersonClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      personId: args.personId,
+    });
+    if (!access.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Нет доступа к навыковому профилю этого сотрудника',
+        },
+      });
+    }
+    if (access.relation !== 'owner_admin' && access.relation !== 'self') {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden_manual_snapshot',
+          message:
+            'Manual snapshot может запросить только сам носитель или admin/owner Org',
+        },
+      });
+    }
+    const profile = await this.prisma.skillProfile.findUnique({
+      where: { personId: args.personId },
+      select: { id: true, tenantId: true },
+    });
+    if (!profile || profile.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'skill_profile_not_found',
+          message: 'Навыковый профиль не найден',
+        },
+      });
+    }
+    const result = await this.personaVersioning.triggerRebuild({
+      profileId: profile.id,
+      reason: 'manual',
+      triggerEventAt: new Date(),
+      bypassLock: true,
+    });
+    return result.built
+      ? { built: true, personaId: result.personaId, reason: null }
+      : { built: false, personaId: null, reason: result.reason };
   }
 
   private serializeTrait(t: {

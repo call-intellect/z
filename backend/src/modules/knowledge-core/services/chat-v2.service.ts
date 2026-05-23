@@ -40,6 +40,39 @@ export interface ChatV2Input {
    * пары. Подмешивается в systemPrompt как Q/A блок.
    */
   history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+  /**
+   * SBA α-5 dialog-layer — Conversation.summary (сжатая старая часть).
+   * Если задано — подмешивается в systemPrompt ДО списка последних сообщений.
+   */
+  conversationSummary?: string | null;
+  /**
+   * SBA α-5 dialog-layer — массив запросов для retrieval (multi-query
+   * expansion). Если задан и .length > 1 — fetchCandidates вызывается для
+   * каждого, blockIds объединяются (dedup + max-score).
+   * Если не задан — используется query как единственный запрос.
+   */
+  queries?: ReadonlyArray<string>;
+  /**
+   * SBA α-5 dialog-layer — temporal queries. Если задан — фильтр
+   * `IdeaBlock.createdAt <= validAt` (см. ChatV2RetrievalService).
+   */
+  validAt?: Date | null;
+  /**
+   * SBA α-5 dialog-layer — заранее посчитанные blockIds (RetrievalCache hit).
+   * Если задан — retrieval НЕ запускается, сразу loadContextBlocks.
+   */
+  precomputedBlockIds?: ReadonlyArray<string>;
+  /**
+   * SBA α-5 dialog-layer — intent для metrics и (опц.) для будущего
+   * tuning'а retrieval-параметров (например, topK по intent).
+   */
+  intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
+  /**
+   * SBA α-5 dialog-layer — override BASE_SYSTEM_PROMPT для mode-specific
+   * ответа. Mode-prompts заданы в `chat-v2/prompts/{factual|synthetic|clone-style}.prompt.ts`.
+   * Если не задан — используется BASE_SYSTEM_PROMPT (default).
+   */
+  systemPromptOverride?: string | null;
 }
 
 export interface ChatV2Citation {
@@ -117,19 +150,58 @@ export class ChatV2Service {
     const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
 
     // 1) Retrieval blockId'ов под scope.
-    const ranked: RankedBlockId[] = await this.retrieval.fetchCandidates({
-      tenantId,
-      scope,
-      scopeId: scopeId ?? null,
-      query,
-      limit: topK,
-      graphHops,
-    });
+    //
+    // SBA α-5 dialog-layer:
+    //  - precomputedBlockIds (RetrievalCache HIT) → пропускаем fetchCandidates.
+    //  - queries[] (multi-query expansion) → fetchCandidates по каждой,
+    //    blockIds объединяются с приоритетом первого запроса.
+    //  - validAt → temporal-фильтр на pool + graph (см. ChatV2RetrievalService).
+    let rankedBlockIds: string[];
+    if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
+      rankedBlockIds = [...input.precomputedBlockIds].slice(0, topK);
+    } else {
+      const queries: string[] =
+        input.queries && input.queries.length > 0
+          ? [...input.queries]
+          : [query];
+      // Per-query topK берём поменьше для multi-query expansion'а, чтобы
+      // total после merge ≈ topK * 1.5 (не раздувать LLM-контекст).
+      const perQueryLimit =
+        queries.length > 1
+          ? Math.max(4, Math.ceil(topK / queries.length) + 2)
+          : topK;
+      const merged = new Map<string, number>();
+      for (let i = 0; i < queries.length; i++) {
+        const q = queries[i] ?? '';
+        if (!q || q.length === 0) continue;
+        const ranked: RankedBlockId[] = await this.retrieval.fetchCandidates({
+          tenantId,
+          scope,
+          scopeId: scopeId ?? null,
+          query: q,
+          limit: perQueryLimit,
+          graphHops,
+          validAt: input.validAt ?? null,
+        });
+        // Приоритет первой query (originalOrStandalone): её score
+        // повышается за счёт rank-boost'а.
+        const boost = i === 0 ? 0.05 : 0;
+        for (const r of ranked) {
+          const prev = merged.get(r.blockId) ?? -Infinity;
+          const adj = r.score + boost;
+          if (adj > prev) merged.set(r.blockId, adj);
+        }
+      }
+      rankedBlockIds = [...merged.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, topK)
+        .map(([id]) => id);
+    }
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
     const contextBlocks = await this.loadContextBlocks(
       tenantId,
-      ranked.map((r) => r.blockId),
+      rankedBlockIds,
     );
 
     // 3) Если контекст пуст — отвечаем без LLM.
@@ -147,16 +219,24 @@ export class ChatV2Service {
 
     // 4) Готовим prompt.
     const scopeAddon = await this.buildScopeAddon(scope, scopeId, tenantId);
-    const systemPrompt = this.buildSystemPrompt(scopeAddon, input.history);
+    const systemPrompt = this.buildSystemPrompt(
+      scopeAddon,
+      input.history,
+      input.conversationSummary ?? null,
+      input.systemPromptOverride ?? null,
+    );
     const userMessage = this.buildUserMessage(query, contextBlocks);
 
     this.logger.debug(
       {
         scope,
         scopeId,
-        rankedCount: ranked.length,
+        rankedCount: rankedBlockIds.length,
         contextCount: contextBlocks.length,
         graphHops,
+        validAt: input.validAt ?? null,
+        intent: input.intent ?? null,
+        multiQueryCount: input.queries?.length ?? 0,
       },
       'chat-v2 ask: starting llm call',
     );
@@ -349,14 +429,29 @@ export class ChatV2Service {
   }
 
   /**
-   * Собирает system prompt: базовая инструкция + scope-addon + история (если есть).
-   * История — последние 6 сообщений (3 user + 3 assistant).
+   * Собирает system prompt: базовая инструкция (или override) + scope-addon
+   * + conversation summary (если есть) + history (если есть).
+   *
+   * SBA α-5 dialog-layer:
+   *  - `systemPromptOverride` — mode-specific (factual / synthetic / clone_style).
+   *    Если null — используется BASE_SYSTEM_PROMPT.
+   *  - `conversationSummary` — сжатая старая часть диалога (от
+   *    ConversationSummarizerCron). Подмешивается ДО последних 6 messages.
    */
   private buildSystemPrompt(
     scopeAddon: string,
     history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>,
+    conversationSummary?: string | null,
+    systemPromptOverride?: string | null,
   ): string {
-    const parts: string[] = [BASE_SYSTEM_PROMPT, '', scopeAddon];
+    const base =
+      systemPromptOverride && systemPromptOverride.length > 0
+        ? systemPromptOverride
+        : BASE_SYSTEM_PROMPT;
+    const parts: string[] = [base, '', scopeAddon];
+    if (conversationSummary && conversationSummary.length > 0) {
+      parts.push('', 'Контекст диалога (сжато):', conversationSummary);
+    }
     if (history && history.length > 0) {
       const last = history.slice(-6);
       parts.push('', 'Предыдущие сообщения диалога:');

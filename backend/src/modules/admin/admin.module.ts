@@ -3,6 +3,19 @@ import { Global, Module } from '@nestjs/common';
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AdminAiModelsController } from './ai-models/ai-models.controller';
 import { AdminAiModelsService } from './ai-models/ai-models.service';
+import { AdminEconomicsController } from './economics/admin-economics.controller';
+import { AdminLlmModelsController } from './economics/admin-llm-models.controller';
+import { AdminLlmModelsService } from './economics/admin-llm-models.service';
+import { AdminLlmProvidersController } from './economics/admin-llm-providers.controller';
+import { AdminLlmProvidersService } from './economics/admin-llm-providers.service';
+import { BudgetAlertCron } from './economics/budget-alert.cron';
+import { CurrencyRateService } from './economics/currency-rate.service';
+import { CurrencyRateSyncCron } from './economics/currency-rate-sync.cron';
+import { DailyCostAggregatorCron } from './economics/daily-cost-aggregator.cron';
+import { OrgEconomicsController } from './economics/org-economics.controller';
+import { OrgEconomicsCron } from './economics/org-economics.cron';
+import { ProviderSmokeTestCron } from './economics/provider-smoke-test.cron';
+import { UnitEconomicsService } from './economics/unit-economics.service';
 import { AiUsageAdminController } from './ai-usage.controller';
 import { AdminExperimentsController } from './controllers/admin-experiments.controller';
 import { AdminFunctionsController } from './controllers/admin-functions.controller';
@@ -66,6 +79,11 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminOrgsController,
     AdminHealthController,
     OrgAdminKnowledgeController,
+    // SBA α-10 wave 3 — Admin LLM + Unit Economics.
+    AdminLlmProvidersController,
+    AdminLlmModelsController,
+    AdminEconomicsController,
+    OrgEconomicsController,
   ],
   providers: [
     AdminAuditInterceptor,
@@ -84,6 +102,16 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminOrgsService,
     AdminHealthService,
     OrgAdminKnowledgeService,
+    // SBA α-10 wave 3 — services + cron'ы.
+    AdminLlmProvidersService,
+    AdminLlmModelsService,
+    UnitEconomicsService,
+    CurrencyRateService,
+    DailyCostAggregatorCron,
+    OrgEconomicsCron,
+    BudgetAlertCron,
+    CurrencyRateSyncCron,
+    ProviderSmokeTestCron,
   ],
   exports: [
     AdminAuditInterceptor,
@@ -98,6 +126,16 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     OrgAdminKnowledgeService,
     PromptExperimentsService,
     AiResultFeedbackService,
+    // SBA α-10 wave 3.
+    AdminLlmProvidersService,
+    AdminLlmModelsService,
+    UnitEconomicsService,
+    CurrencyRateService,
+    DailyCostAggregatorCron,
+    OrgEconomicsCron,
+    BudgetAlertCron,
+    CurrencyRateSyncCron,
+    ProviderSmokeTestCron,
   ],
 })
 export class AdminModule {}

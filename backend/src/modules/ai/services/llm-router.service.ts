@@ -8,6 +8,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { DataClass, LlmRouteTier, LlmTaskRoute } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -24,6 +25,8 @@ import { MinimaxService } from './minimax.service';
 import { calcCostUsd, MODEL_PRICES } from './model-prices';
 import { OllamaService } from './ollama.service';
 import { OpenAiProxyService } from './openai-proxy.service';
+import { LlmProtocolAdapterRegistry } from './protocol-adapter/llm-protocol-adapter.registry';
+import { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver';
 
 /**
  * Семейство задач, для которых LlmRouter определяет провайдера.
@@ -86,6 +89,10 @@ export type LlmTaskType =
   | 'regulation-extract'
   | 'regulation-dedupe'
   | 'process-steps-extract'
+  // SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector.
+  // 'process-template-extract' — батч IdeaBlock'ов (signalType=process_step|methodology_step)
+  // → массив кандидатов ProcessTemplate (name + summary + steps).
+  | 'process-template-extract'
   // SBA β-2 — Specialist 3.2 (Knowledge Clone).
   // 'knowledge-clone-extract' — из набора блоков сотрудника → черновик
   //   knowledgeProfile (категории + опыт).
@@ -130,7 +137,90 @@ export type LlmTaskType =
   | 'skill-trait-detect'
   | 'skill-trait-merge'
   | 'executable-persona-compile'
-  | 'clone-respond';
+  | 'clone-respond'
+  // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
+  // Classifier / MultiQuery / Summarizer). См.
+  // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
+  // - dialog-contextualize: восстановление standalone-вопроса из истории.
+  // - dialog-confidence: бинарная оценка качества контекстуализации.
+  // - dialog-classify: intent ∈ {factual|exploratory|analytical|clone-roleplay}.
+  // - dialog-multi-query: 3 переформулировки (синонимы/перспективы/конкретизация).
+  // - dialog-summarize: сжатие старой части диалога (>12 сообщений) в summary.
+  | 'dialog-contextualize'
+  | 'dialog-confidence'
+  | 'dialog-classify'
+  | 'dialog-multi-query'
+  | 'dialog-summarize'
+  // SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector.
+  // 'process-template-extract' — батч IdeaBlock'ов
+  //   (signalType=process_step|methodology_step) → массив кандидатов
+  //   ProcessTemplate (name + summary + steps).
+  | 'process-template-extract'
+  // SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router.
+  // 'axis-classify' — классификация IdeaBlock'а по 4 осям (who/functional/
+  //   contextual/temporal). Дешёвый, частый — primary Ollama qwen3.5:9b.
+  // 'router-fallback' — fallback роутер: для unmatched signalType
+  //   определяем специалистов через LLM. Тот же провайдер-профиль.
+  | 'axis-classify'
+  | 'router-fallback'
+  // SBA β-7 — Brand Voice Curator (Specialist 3.10).
+  // 'brand-voice-extract' — daily-cron сборка BrandVoiceProfile из brand_corpus
+  //   документов + brand_principle блоков → структурированный профиль
+  //   (tone/values/taboos). Нужна высокая точность (стиль бренда — критичный
+  //   контент), поэтому primary = gpt-4o.
+  | 'brand-voice-extract'
+  // SBA γ-3 — Cross-Functional Process + Handoff Tracker.
+  // 'cross-functional-friction-summary' — короткое summary cross-functional
+  //   friction-отчёта: на входе template + process_friction блоки + handoffs
+  //   с slaViolations → описание (что тормозит) + recommendedAction.
+  | 'cross-functional-friction-summary'
+  // SBA α-8 wave 4 — Role Map builder + completeness rationale.
+  // 'role-map-extract' — батч IdeaBlock'ов одной роли (signalType=expertise|
+  //   competence|methodology_step|decision_basis|process_step) → массив
+  //   нормализованных wave-2 элементов (responsibilities, authority, knowledge,
+  //   decisions, interactions). См. plans/tz/2026-05-23-sba-alpha-8-wave4-*.md.
+  // 'role-completeness-rationale' — короткое (1-3 предложения) объяснение для
+  //   tooltip, почему такая completeness и что заполнить.
+  | 'role-map-extract'
+  | 'role-completeness-rationale'
+  // SBA β-6 — Experiment Tracker (Specialist 3.9).
+  // 'experiment-extract' — из IdeaBlock (signalType=hypothesis|result|lesson)
+  //   → черновик Experiment (name, hypothesisText, currentResult?, lessons[],
+  //   status, confidence). JSON Schema strict.
+  // 'experiment-summarize-lessons' — digest-агрегатор уроков по серии
+  //   завершённых экспериментов (используется в γ+ дайджестах; зарезервирован).
+  | 'experiment-extract'
+  | 'experiment-summarize-lessons'
+  // SBA γ-2 — Concierge Agent (sквозной UX-слой через tool-use).
+  // 'concierge-respond' — главный LLM-вызов: тoоl-use loop с whitelist tools.
+  //   Primary = openai-via-proxy/gpt-4o (нужна качественная поддержка tool-use).
+  // 'concierge-toolcall-validate' — валидация параметров tool call перед
+  //   выполнением (lightweight). Primary = ollama/qwen3.5:9b.
+  | 'concierge-respond'
+  | 'concierge-toolcall-validate'
+  // SBA β-8 — DailyCheckIn + OperationsDashboard.
+  // 'checkin-parse' — из сырого ответа пользователя (морнинг/ивнинг) →
+  //   структурированный { plans[], dones[], blockers[] } + confidence.
+  //   < 0.6 → raw + curatorReview=true (см. DailyCheckInService).
+  // 'operations-summary' — короткий narrative summary («пульс компании
+  //   сейчас») поверх агрегата OperationsDashboardService. Используется
+  //   COO dashboard'ом (на β-8 — опционально, фронт может не показывать).
+  | 'checkin-parse'
+  | 'operations-summary'
+  // SBA δ-1 — Orchestrator (multi-agent research).
+  // 'orchestrator-plan'        — план шагов: primary gpt-4o (важно качество reasoning).
+  // 'orchestrator-subagent'    — универсальный subagent-call: primary deepseek (массово+дёшево).
+  // 'orchestrator-synthesize'  — финальный синтез результатов: primary gpt-4o.
+  // 'orchestrator-verify'      — верификация synthesis: primary ollama (быстро+локально).
+  | 'orchestrator-plan'
+  | 'orchestrator-subagent'
+  | 'orchestrator-synthesize'
+  | 'orchestrator-verify'
+  // SBA δ-2 — ProactiveWatcher.
+  // 'proactive-message-craft' — короткое friendly-сообщение по сработавшему
+  //   правилу (не «АЛЕРТ», а «привет, заметил X — может посмотришь?»).
+  //   Primary = ollama qwen3.5:9b (дёшево, локально, частые вызовы).
+  | 'proactive-message-craft';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -194,6 +284,37 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'skill-trait-merge',
   'executable-persona-compile',
   'clone-respond',
+  // SBA α-5 dialog-layer
+  'dialog-contextualize',
+  'dialog-confidence',
+  'dialog-classify',
+  'dialog-multi-query',
+  'dialog-summarize',
+  // SBA α-7 wave 2
+  'process-template-extract',
+  // SBA α-3 wave 3
+  'axis-classify',
+  'router-fallback',
+  // SBA β-7
+  'brand-voice-extract',
+  // SBA γ-3
+  'cross-functional-friction-summary',
+  // SBA α-8 wave 4 — Role Map
+  'role-map-extract',
+  'role-completeness-rationale',
+  // SBA γ-2 — Concierge Agent
+  'concierge-respond',
+  'concierge-toolcall-validate',
+  // SBA β-8 — DailyCheckIn + Operations
+  'checkin-parse',
+  'operations-summary',
+  // SBA δ-1 — Orchestrator
+  'orchestrator-plan',
+  'orchestrator-subagent',
+  'orchestrator-synthesize',
+  'orchestrator-verify',
+  // SBA δ-2 — ProactiveWatcher
+  'proactive-message-craft',
 ] as const;
 
 /**
@@ -457,6 +578,17 @@ export class LlmRouterService implements OnModuleInit {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    // SBA α-10 wave 3 — Adapter Registry (feature-flag). Optional, чтобы тесты
+    // без DI на регистре продолжали работать.
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(LlmProtocolAdapterRegistry)
+    private readonly adapterRegistry?: LlmProtocolAdapterRegistry,
+    @Optional()
+    @Inject(ProviderInfoResolver)
+    private readonly providerInfo?: ProviderInfoResolver,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -874,6 +1006,23 @@ export class LlmRouterService implements OnModuleInit {
         ? { reasoningEffort: params.reasoningEffort }
         : {}),
     };
+    // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
+    // false (default, production safety) → legacy switch ниже.
+    // true → LlmProtocolAdapterRegistry резолвит protocolKind из LlmProvider/ENV.
+    const useRegistry =
+      this.cfg?.budget?.useProtocolAdapterRegistry === true &&
+      this.adapterRegistry !== undefined &&
+      this.providerInfo !== undefined;
+    if (useRegistry) {
+      const resolved = await this.providerInfo!.resolveByName(entry.provider);
+      if (resolved) {
+        const adapter = this.adapterRegistry!.resolve(resolved.protocolKind);
+        return adapter.complete({ provider: resolved.info, input });
+      }
+      this.logger.warn(
+        `LlmRouter: ProviderInfoResolver не нашёл провайдера ${entry.provider}; fallback на legacy switch`,
+      );
+    }
     switch (entry.provider) {
       case 'anthropic':
         return this.anthropic.complete(input);

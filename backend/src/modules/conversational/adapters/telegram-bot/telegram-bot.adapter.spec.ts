@@ -1,9 +1,14 @@
 import type { Channel, ChannelBinding } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../../common/config/index';
 import type { CryptoService } from '../../../../common/crypto/crypto.service';
 import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
+import type { RedisService } from '../../../../common/redis/redis.service';
+import type { VoxService } from '../../../ai/services/vox.service';
+import type { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
+import type { DocumentsService } from '../../../documents/documents.service';
 import type { ChannelRegistry } from '../../channel-registry';
 import type { ConversationalLinkCodeService } from '../../link-code.service';
 
@@ -12,17 +17,18 @@ import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import type { TelegramUpdate } from './telegram.types';
 
 /**
- * Unit-тесты `TelegramBotChannelAdapter.ingestUpdate` — основной парсер
- * inbound Telegram Update. Покрываются ключевые сценарии:
- *   - `/link <code>` ok / fail,
- *   - `/ask <q>` → InboundMessage{type:'chat_query'},
- *   - callback_query → InboundMessage{type:'response'},
- *   - свободный текст → InboundMessage{type:'free_note'},
- *   - voice message → null + reply best-effort,
- *   - сообщение от незалинкованного пользователя → null + reply.
+ * Unit-тесты zero-button `TelegramBotChannelAdapter.ingestUpdate`
+ * (SBA β-1 rip-out, 2026-05-23). Покрывают:
+ *   - `/start <token>` deep-link (валидный/невалидный код),
+ *   - голый код привязки регексом (12-hex),
+ *   - voice → ASR → intent classify → free_note|chat_query,
+ *   - document → DocumentsService.upload,
+ *   - свободный текст с классификацией (chat_query vs free_note),
+ *   - анти-spam voice rate-limit,
+ *   - незалинкованный юзер.
  *
  * Все зависимости мокаются через `vi.fn()` и cast to type — паттерн,
- * принятый в проекте (см. `hmac.service.spec.ts`).
+ * принятый в проекте.
  */
 
 function makeChannel(): Channel {
@@ -44,20 +50,31 @@ function makeChannel(): Channel {
   } as Channel;
 }
 
-function makeAdapter() {
+function makeAdapter(opts: {
+  voiceEnabled?: boolean;
+  documentEnabled?: boolean;
+  intentClassifierEnabled?: boolean;
+  classifyIntent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
+  classifyThrows?: boolean;
+  rateLimitCount?: number;
+} = {}) {
   const registry = { register: vi.fn() } as unknown as ChannelRegistry;
   const prisma = {
     channelBinding: {
       findFirst: vi.fn(),
       upsert: vi.fn(),
     },
-    notification: {
-      findUnique: vi.fn(),
-    },
-    notificationDelivery: {
-      findFirst: vi.fn(),
-    },
+    notification: { findUnique: vi.fn() },
+    notificationDelivery: { findFirst: vi.fn() },
+    channel: { findMany: vi.fn().mockResolvedValue([]) },
+    person: { findFirst: vi.fn() },
   } as unknown as PrismaService;
+
+  const incr = vi.fn().mockResolvedValue(opts.rateLimitCount ?? 1);
+  const expire = vi.fn().mockResolvedValue(1);
+  const redis = {
+    client: { incr, expire },
+  } as unknown as RedisService;
 
   const crypto = {
     isEncrypted: vi.fn().mockReturnValue(false),
@@ -66,30 +83,81 @@ function makeAdapter() {
 
   const api = {
     sendMessage: vi.fn().mockResolvedValue({ messageId: 999, chatId: 100 }),
-    answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+    setMyCommands: vi.fn().mockResolvedValue(undefined),
+    getFile: vi
+      .fn()
+      .mockResolvedValue({ file_id: 'f1', file_path: 'voice/file.ogg' }),
+    downloadFile: vi.fn().mockResolvedValue(Buffer.from('audio-bytes')),
   } as unknown as TelegramApiClient;
 
-  const linkCode = {
-    consume: vi.fn(),
-  } as unknown as ConversationalLinkCodeService;
+  const linkCode = { consume: vi.fn() } as unknown as ConversationalLinkCodeService;
 
   const metrics = {
     incTelegramBotWebhookReceived: vi.fn(),
     incTelegramBotApiError: vi.fn(),
+    incBotInbound: vi.fn(),
+    observeBotVoiceAsrDuration: vi.fn(),
+    incBotIntentClassified: vi.fn(),
   } as unknown as BusinessMetricsService;
+
+  const vox = {
+    submit: vi.fn().mockResolvedValue({ taskId: 't1' }),
+    poll: vi.fn().mockResolvedValue({
+      status: 'COMPLETED',
+      transcriptText: 'Какой бюджет на четвёртый квартал?',
+      durationSeconds: 5,
+    }),
+  } as unknown as VoxService;
+
+  const documents = {
+    upload: vi.fn().mockResolvedValue({ id: 'doc-1', status: 'uploaded' }),
+  } as unknown as DocumentsService;
+
+  const classifier = {
+    classify: opts.classifyThrows
+      ? vi.fn().mockRejectedValue(new Error('llm down'))
+      : vi.fn().mockResolvedValue({
+          intent: opts.classifyIntent ?? 'factual',
+          source: 'llm',
+          durationSeconds: 0.1,
+        }),
+  } as unknown as QueryClassifierService;
+
+  const cfg = {
+    bot: {
+      voiceEnabled: opts.voiceEnabled ?? true,
+      documentEnabled: opts.documentEnabled ?? true,
+      intentClassifierEnabled: opts.intentClassifierEnabled ?? true,
+    },
+  } as unknown as TypedConfigService;
 
   const adapter = new TelegramBotChannelAdapter(
     registry,
     prisma,
+    redis,
     crypto,
     api,
     linkCode,
     metrics,
+    vox,
+    documents,
+    classifier,
+    cfg,
   );
-  return { adapter, registry, prisma, crypto, api, linkCode, metrics };
+  return { adapter, registry, prisma, redis, crypto, api, linkCode, metrics, vox, documents, classifier };
 }
 
-describe('TelegramBotChannelAdapter.ingestUpdate', () => {
+const verifiedBinding = (id = 'binding-1'): ChannelBinding =>
+  ({
+    id,
+    userId: 'user-42',
+    channelId: 'channel-1',
+    externalId: '100',
+    verifiedAt: new Date(),
+    preferences: {},
+  }) as unknown as ChannelBinding;
+
+describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
   let mocks: ReturnType<typeof makeAdapter>;
   let channel: Channel;
 
@@ -98,15 +166,13 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
     channel = makeChannel();
   });
 
-  it('/link <code>: при валидном коде создаёт binding и шлёт приветствие', async () => {
+  // ─────────── /start <token> ───────────
+
+  it('/start <token>: при валидном коде создаёт binding и шлёт приветствие', async () => {
     vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
-    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue({
-      id: 'binding-1',
-      userId: 'user-42',
-      channelId: channel.id,
-      externalId: '100',
-      verifiedAt: new Date(),
-    } as unknown as ChannelBinding);
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
+      verifiedBinding(),
+    );
 
     const update: TelegramUpdate = {
       update_id: 1,
@@ -115,7 +181,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
         date: 1700000000,
         chat: { id: 100 },
         from: { id: 100, username: 'user' },
-        text: '/link ABCDEF123456',
+        text: '/start ABCDEF123456',
       },
     };
     const result = await mocks.adapter.ingestUpdate({
@@ -130,14 +196,12 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
     });
     expect(mocks.prisma.channelBinding.upsert).toHaveBeenCalled();
     expect(mocks.api.sendMessage).toHaveBeenCalled();
-    // должно содержать «привязан»
-    const callArgs = vi.mocked(mocks.api.sendMessage).mock.calls[0]![0];
-    expect(callArgs.text).toContain('привязан');
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toContain('привязан');
   });
 
-  it('/link <code>: при невалидном коде не создаёт binding и шлёт «код невалиден»', async () => {
-    vi.mocked(mocks.linkCode.consume).mockResolvedValue(null);
-
+  it('/start без аргумента: шлёт приветствие, binding не создаёт', async () => {
     const update: TelegramUpdate = {
       update_id: 2,
       message: {
@@ -145,7 +209,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
         date: 1700000000,
         chat: { id: 100 },
         from: { id: 100 },
-        text: '/link BADCODE',
+        text: '/start',
       },
     };
     const result = await mocks.adapter.ingestUpdate({
@@ -154,21 +218,21 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
       channel,
     });
     expect(result).toBeNull();
-    expect(mocks.prisma.channelBinding.upsert).not.toHaveBeenCalled();
+    expect(mocks.linkCode.consume).not.toHaveBeenCalled();
     expect(mocks.api.sendMessage).toHaveBeenCalled();
     expect(
       vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/невалид|истёк/i);
+    ).toMatch(/Добро пожаловать|код|канал/i);
   });
 
-  it('/ask <вопрос>: для залинкованного юзера возвращает InboundMessage{type:"chat_query"}', async () => {
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue({
-      id: 'binding-2',
-      userId: 'user-42',
-      channelId: channel.id,
-      externalId: '100',
-      verifiedAt: new Date(),
-    } as unknown as ChannelBinding);
+  // ─────────── голый код привязки ───────────
+
+  it('голый 12-hex код: для незалинкованного юзера прожигает код и создаёт binding', async () => {
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
+    vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
+      verifiedBinding(),
+    );
 
     const update: TelegramUpdate = {
       update_id: 3,
@@ -177,7 +241,65 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
         date: 1700000000,
         chat: { id: 100 },
         from: { id: 100 },
-        text: '/ask Какой бюджет на Q4?',
+        text: 'a1b2c3d4e5f6',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(mocks.linkCode.consume).toHaveBeenCalledWith({
+      kind: 'telegram_bot',
+      code: 'a1b2c3d4e5f6',
+    });
+  });
+
+  it('голый 6-digit код: для незалинкованного юзера тоже прожигает', async () => {
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
+    vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 4,
+      message: {
+        message_id: 13,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '123456',
+      },
+    };
+    await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(mocks.linkCode.consume).toHaveBeenCalledWith({
+      kind: 'telegram_bot',
+      code: '123456',
+    });
+  });
+
+  // ─────────── свободный текст с классификацией ───────────
+
+  it('свободный текст (factual через LLM): возвращает chat_query', async () => {
+    mocks = makeAdapter({ classifyIntent: 'factual' });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 5,
+      message: {
+        message_id: 14,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'Какой бюджет на Q4?',
       },
     };
     const result = await mocks.adapter.ingestUpdate({
@@ -190,27 +312,24 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
       userId: 'user-42',
       tenantId: 'org-1',
       question: 'Какой бюджет на Q4?',
-      originChannelBindingId: 'binding-2',
+      originChannelBindingId: 'binding-1',
     });
   });
 
-  it('свободный текст: для залинкованного юзера возвращает InboundMessage{type:"free_note"}', async () => {
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue({
-      id: 'binding-3',
-      userId: 'user-42',
-      channelId: channel.id,
-      externalId: '100',
-      verifiedAt: new Date(),
-    } as unknown as ChannelBinding);
+  it('свободный текст (LLM throw → эвристика): возвращает free_note для утверждения', async () => {
+    mocks = makeAdapter({ classifyThrows: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
 
     const update: TelegramUpdate = {
-      update_id: 4,
+      update_id: 6,
       message: {
-        message_id: 13,
+        message_id: 15,
         date: 1700000000,
         chat: { id: 100 },
         from: { id: 100 },
-        text: 'Просто заметка без команды',
+        text: 'Просто заметка без знака вопроса',
       },
     };
     const result = await mocks.adapter.ingestUpdate({
@@ -222,115 +341,27 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
       type: 'free_note',
       userId: 'user-42',
       tenantId: 'org-1',
-      text: 'Просто заметка без команды',
-      originChannelBindingId: 'binding-3',
+      text: 'Просто заметка без знака вопроса',
+      originChannelBindingId: 'binding-1',
     });
   });
 
-  it('callback_query: возвращает InboundMessage{type:"response"} с notificationId из callback_data', async () => {
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue({
-      id: 'binding-4',
-      userId: 'user-42',
-      channelId: channel.id,
-      externalId: '100',
-      verifiedAt: new Date(),
-    } as unknown as ChannelBinding);
-    vi.mocked(mocks.prisma.notification.findUnique).mockResolvedValue({
-      id: 'notif-1',
-      payload: { question: 'Q', options: ['Да', 'Нет'] },
-    } as unknown as Awaited<
-      ReturnType<typeof mocks.prisma.notification.findUnique>
-    >);
+  // ─────────── voice ───────────
 
-    const update: TelegramUpdate = {
-      update_id: 5,
-      callback_query: {
-        id: 'cb-1',
-        from: { id: 100 },
-        data: 'pq:notif-1:0',
-      },
-    };
-    const result = await mocks.adapter.ingestUpdate({
-      update,
-      tenantId: 'org-1',
-      channel,
-    });
-    expect(result).toEqual({
-      type: 'response',
-      userId: 'user-42',
-      tenantId: 'org-1',
-      notificationId: 'notif-1',
-      payload: { kind: 'option', optionIndex: 0, optionText: 'Да' },
-      originChannelBindingId: 'binding-4',
-    });
-    expect(mocks.api.answerCallbackQuery).toHaveBeenCalled();
-  });
-
-  it('voice-сообщение: игнорируется, отправляется уведомление «не поддерживается»', async () => {
-    const update: TelegramUpdate = {
-      update_id: 6,
-      message: {
-        message_id: 14,
-        date: 1700000000,
-        chat: { id: 100 },
-        from: { id: 100 },
-        voice: { duration: 3 },
-      },
-    };
-    const result = await mocks.adapter.ingestUpdate({
-      update,
-      tenantId: 'org-1',
-      channel,
-    });
-    expect(result).toBeNull();
-    expect(mocks.api.sendMessage).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/голос/i);
-  });
-
-  it('сообщение от незалинкованного юзера: возвращает null и шлёт «привяжите»', async () => {
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
+  it('voice: getFile → ASR → classify → chat_query', async () => {
+    mocks = makeAdapter({ classifyIntent: 'factual' });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
 
     const update: TelegramUpdate = {
       update_id: 7,
-      message: {
-        message_id: 15,
-        date: 1700000000,
-        chat: { id: 100 },
-        from: { id: 100 },
-        text: '/ask вопрос',
-      },
-    };
-    const result = await mocks.adapter.ingestUpdate({
-      update,
-      tenantId: 'org-1',
-      channel,
-    });
-    expect(result).toBeNull();
-    expect(mocks.api.sendMessage).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/привяжите|привязан/i);
-  });
-
-  it('/status: для залинкованного юзера возвращает InboundMessage{type:"command", commandName:"status"}', async () => {
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue({
-      id: 'binding-5',
-      userId: 'user-42',
-      channelId: channel.id,
-      externalId: '100',
-      verifiedAt: new Date(),
-    } as unknown as ChannelBinding);
-
-    const update: TelegramUpdate = {
-      update_id: 8,
       message: {
         message_id: 16,
         date: 1700000000,
         chat: { id: 100 },
         from: { id: 100 },
-        text: '/status',
+        voice: { file_id: 'voice-file-id-1' },
       },
     };
     const result = await mocks.adapter.ingestUpdate({
@@ -338,12 +369,188 @@ describe('TelegramBotChannelAdapter.ingestUpdate', () => {
       tenantId: 'org-1',
       channel,
     });
+    expect(mocks.api.getFile).toHaveBeenCalledWith({
+      token: 'plain-token',
+      fileId: 'voice-file-id-1',
+    });
+    expect(mocks.vox.submit).toHaveBeenCalled();
+    expect(mocks.vox.poll).toHaveBeenCalled();
     expect(result).toEqual({
-      type: 'command',
+      type: 'chat_query',
       userId: 'user-42',
       tenantId: 'org-1',
-      commandName: 'status',
-      originChannelBindingId: 'binding-5',
+      question: 'Какой бюджет на четвёртый квартал?',
+      originChannelBindingId: 'binding-1',
     });
+  });
+
+  it('voice: при rate-limit (>10 за час) — null + reply', async () => {
+    mocks = makeAdapter({ rateLimitCount: 11 });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 8,
+      message: {
+        message_id: 17,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        voice: { file_id: 'voice-rl' },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(mocks.vox.submit).not.toHaveBeenCalled();
+    expect(mocks.api.sendMessage).toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/много голосовых|позже/i);
+  });
+
+  it('voice: при BOT_VOICE_ENABLED=false — null + reply «недоступны»', async () => {
+    mocks = makeAdapter({ voiceEnabled: false });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 9,
+      message: {
+        message_id: 18,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        voice: { file_id: 'voice-disabled' },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(mocks.vox.submit).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/недоступны/i);
+  });
+
+  // ─────────── document ───────────
+
+  it('document: getFile → DocumentsService.upload', async () => {
+    mocks = makeAdapter();
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.person.findFirst).mockResolvedValue({
+      id: 'person-1',
+    } as unknown as Awaited<
+      ReturnType<typeof mocks.prisma.person.findFirst>
+    >);
+
+    const update: TelegramUpdate = {
+      update_id: 10,
+      message: {
+        message_id: 19,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        document: {
+          file_id: 'doc-file-id-1',
+          file_name: 'plan.pdf',
+          mime_type: 'application/pdf',
+          file_size: 12_345,
+        },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(mocks.api.getFile).toHaveBeenCalledWith({
+      token: 'plain-token',
+      fileId: 'doc-file-id-1',
+    });
+    expect(mocks.documents.upload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'org-1',
+        uploaderPersonId: 'person-1',
+        file: expect.objectContaining({
+          originalName: 'plan.pdf',
+          mimeType: 'application/pdf',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/принят/i);
+  });
+
+  it('document: больше 20 МБ — reply «слишком большой», upload не вызывается', async () => {
+    mocks = makeAdapter();
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 11,
+      message: {
+        message_id: 20,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        document: {
+          file_id: 'too-big',
+          file_name: 'huge.pdf',
+          mime_type: 'application/pdf',
+          file_size: 25 * 1024 * 1024,
+        },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(mocks.documents.upload).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/слишком большой|20\s*МБ/i);
+  });
+
+  // ─────────── незалинкованный юзер ───────────
+
+  it('текст от незалинкованного юзера (не похожий на код): возвращает null и шлёт «привяжите»', async () => {
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
+
+    const update: TelegramUpdate = {
+      update_id: 12,
+      message: {
+        message_id: 21,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'Привет, бот. Помоги.',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(mocks.api.sendMessage).toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/Аккаунт не привязан|код|канал/i);
   });
 });

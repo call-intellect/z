@@ -117,6 +117,28 @@ export class ClonesController {
     });
   }
 
+  @Post('persons/:personId/persona/snapshot')
+  @ApiOperation({
+    summary:
+      'SBA γ-1 доделки — manual snapshot ExecutablePersona (носитель или admin/owner Org)',
+  })
+  async triggerManualPersonaSnapshot(
+    @Param('personId') personId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{
+    built: boolean;
+    personaId: string | null;
+    reason: string | null;
+  }> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.triggerManualPersonaSnapshot({
+      tenantId: t,
+      requesterUserId: user.id,
+      personId,
+    });
+  }
+
   @Post('skill-traits/:traitId/mark-misleading')
   @ApiOperation({
     summary: 'Пометить черту в навыковом профиле как неверную',

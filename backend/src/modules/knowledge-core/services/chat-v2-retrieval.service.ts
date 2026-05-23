@@ -31,6 +31,13 @@ export interface RetrievalInput {
   query: string;
   limit: number;
   graphHops: number;
+  /**
+   * SBA α-5 dialog-layer — temporal queries («что мы знали тогда»).
+   * Если задан — фильтруем pool блоков по `IdeaBlock.createdAt <= validAt`
+   * (берём только то, что существовало на момент Х).
+   * NULL = `now()` (без temporal-фильтра).
+   */
+  validAt?: Date | null;
 }
 
 export interface RankedBlockId {
@@ -75,8 +82,19 @@ export class ChatV2RetrievalService {
     }
 
     // 1) Собираем pool кандидатов в зависимости от scope.
-    const poolBlockIds = await this.collectPool(input);
+    let poolBlockIds = await this.collectPool(input);
     if (poolBlockIds.length === 0) return [];
+
+    // SBA α-5 dialog-layer — temporal-фильтр: оставляем только блоки,
+    // существовавшие на момент `validAt`. NULL/undefined = `now()` (no-op).
+    if (input.validAt) {
+      poolBlockIds = await this.filterByValidAt(
+        input.tenantId,
+        poolBlockIds,
+        input.validAt,
+      );
+      if (poolBlockIds.length === 0) return [];
+    }
 
     // 2) Ранжируем по cosine (если есть qvec) или возвращаем top по recency.
     const ranked = await this.rankByCosineOrRecency({
@@ -96,10 +114,34 @@ export class ChatV2RetrievalService {
             seedBlockIds: ranked.map((r) => r.blockId),
             knownIds: new Set(ranked.map((r) => r.blockId)),
             extraLimit: input.graphHops * 5,
+            validAt: input.validAt ?? null,
           })
         : [];
 
     return [...ranked, ...graphAdded];
+  }
+
+  /**
+   * SBA α-5 dialog-layer — temporal-фильтр пула блоков.
+   * Оставляет только блоки, у которых `createdAt <= validAt` (т.е.
+   * существовавшие на момент Х). Возвращает отфильтрованный массив id'ов.
+   */
+  private async filterByValidAt(
+    tenantId: string,
+    blockIds: string[],
+    validAt: Date,
+  ): Promise<string[]> {
+    if (blockIds.length === 0) return [];
+    const rows = await this.prisma.ideaBlock.findMany({
+      where: {
+        id: { in: blockIds },
+        tenantId,
+        status: 'canonical',
+        createdAt: { lte: validAt },
+      },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   // ─────────────────────────── pool по scope ───────────────────────────
@@ -365,8 +407,9 @@ export class ChatV2RetrievalService {
     seedBlockIds: string[];
     knownIds: Set<string>;
     extraLimit: number;
+    validAt: Date | null;
   }): Promise<RankedBlockId[]> {
-    const { tenantId, seedBlockIds, knownIds, extraLimit } = args;
+    const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
 
     const linksFrom = await this.prisma.ideaBlockLink.findMany({
@@ -416,13 +459,16 @@ export class ChatV2RetrievalService {
       .sort((a, b) => b[1] - a[1])
       .slice(0, extraLimit);
 
-    // Берём блоки только canonical и в нужном тенанте.
+    // Берём блоки только canonical и в нужном тенанте. + temporal-фильтр
+    // (если validAt задан) — graph-expansion тоже не должен возвращать
+    // блоки из будущего относительно момента запроса.
     const blockIds = sorted.map(([id]) => id);
     const canonical = await this.prisma.ideaBlock.findMany({
       where: {
         id: { in: blockIds },
         tenantId,
         status: 'canonical',
+        ...(validAt ? { createdAt: { lte: validAt } } : {}),
       },
       select: { id: true },
     });

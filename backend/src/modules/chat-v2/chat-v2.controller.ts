@@ -19,6 +19,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CacheInvalidationService } from '../dialog-layer/services/cache-invalidation.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -56,6 +57,8 @@ export class ChatV2Controller {
     @Inject(ChatV2ConversationsService)
     private readonly conversations: ChatV2ConversationsService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(CacheInvalidationService)
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   // ──────────────────────────── messages ──────────────────────────────
@@ -75,6 +78,8 @@ export class ChatV2Controller {
     citations: unknown[];
     uncertaintyNote: string | null;
     mode: string;
+    /** SBA α-5 dialog-layer — true, если ответ из AnswerCache. */
+    cacheHit: boolean;
   }> {
     const t = this.requireTenant(tenantId);
     await this.requireWriteOwn(user.id, t);
@@ -89,6 +94,36 @@ export class ChatV2Controller {
       asOf: body.asOf,
       channelKindOrigin: 'web',
     });
+  }
+
+  /**
+   * SBA α-5 dialog-layer — очистить cache (AnswerCache + RetrievalCache)
+   * по диалогу. Pessimistic flush по tenantId+userId (см. ТЗ §7).
+   * Доступно владельцу диалога (RBAC: chat_v2_conversation/write на свой).
+   */
+  @Post('conversations/:id/clear-cache')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Очистить AnswerCache+RetrievalCache по диалогу (owner/admin)',
+  })
+  async clearCache(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{
+    answerDeleted: number;
+    retrievalDeleted: number;
+  }> {
+    const t = this.requireTenant(tenantId);
+    // Проверка владения (404 если чужой). RBAC: используем тот же
+    // chat_v2_conversation/write, что и для ask.
+    const conv = await this.conversations.getById({
+      tenantId: t,
+      userId: user.id,
+      conversationId: id,
+    });
+    await this.requireWriteOwn(user.id, t);
+    return this.cacheInvalidation.invalidateUser(t, conv.userId);
   }
 
   // ──────────────────────────── conversations ────────────────────────

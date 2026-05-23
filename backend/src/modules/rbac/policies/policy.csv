@@ -269,6 +269,25 @@ p, owner, *, *, probe_event, delete
 p, admin, *, *, probe_event, read
 p, admin, *, *, probe_event, write
 
+# ──────────────────────────── SBA β-6 — Experiment Tracker (Specialist 3.9) ────────────────────────────
+# experiment: эксперименты компании (гипотеза → выполнение → результат → урок).
+# Shared knowledge: owner/admin — r/w/d; admin — r/w/d. manager open — r/w
+# (могут создавать/обновлять эксперименты, как и идеи). manager strict — read self.
+# `manage` (action) — force-transition / bypass-confidence для curator-функции
+# (ТЗ §10 называет это `experiment.admin`; в RBAC Z action 'admin' нет — используем
+# `manage`).
+p, owner, *, *, experiment, read
+p, owner, *, *, experiment, write
+p, owner, *, *, experiment, delete
+p, owner, *, *, experiment, manage
+p, admin, *, *, experiment, read
+p, admin, *, *, experiment, write
+p, admin, *, *, experiment, delete
+p, admin, *, *, experiment, manage
+p, manager, open, *, experiment, read
+p, manager, open, *, experiment, write
+p, manager, *, self, experiment, read
+
 # ──────────────────────────── SBA β-4 — Insights Radar ────────────────────────────
 # insight: повторяющиеся проблемы / риски / блокеры / неэффективности. Shared
 # knowledge компании. owner/admin — r/w/d; manager open — r/w (write нужен для
@@ -376,6 +395,18 @@ p, admin, *, *, curator_assignment, read
 p, admin, *, *, curator_assignment, write
 p, admin, *, *, curator_assignment, delete
 
+# SBA α-4 wave 2 — completeness_slot — слоты «незаполненных полей» нормативных карточек.
+# owner/admin Org — r/w (read очереди, write = mark-filled). manager — read всех слотов
+# Org (для прозрачности «что в компании не описано»); write только своих карточек (через self).
+p, owner, *, *, completeness_slot, read
+p, owner, *, *, completeness_slot, write
+p, owner, *, *, completeness_slot, delete
+p, admin, *, *, completeness_slot, read
+p, admin, *, *, completeness_slot, write
+p, admin, *, *, completeness_slot, delete
+p, manager, *, *, completeness_slot, read
+p, manager, *, self, completeness_slot, write
+
 # ──────────────────────────── Фаза A.2 — Prompt Templates ────────────────────────────
 # ResourceType: prompt_template.
 # super_admin — bypass. owner+admin Org — read системных + полный доступ к своим Org-шаблонам;
@@ -426,6 +457,143 @@ p, admin, *, *, clone_persona, read
 p, manager, open, *, clone_persona, read
 p, manager, strict, self, clone_persona, read
 
+# SBA γ-1 доделки — skill_category: эмерджентная категория SkillTrait. Read —
+# всем member'ам (словарь категорий компании, как skill); write/delete — owner/admin.
+# `merge_categories` идёт через CurationDecision (см. α-4 wave 2 enum-value), но
+# само право на инициирование требует skill_category, write — выдаём owner/admin
+# и manager (curator-функция: manager-куратор тоже может слить дубли). manager
+# strict — read-only.
+p, owner, *, *, skill_category, read
+p, owner, *, *, skill_category, write
+p, owner, *, *, skill_category, delete
+p, admin, *, *, skill_category, read
+p, admin, *, *, skill_category, write
+p, admin, *, *, skill_category, delete
+p, manager, open, *, skill_category, read
+p, manager, open, *, skill_category, write
+p, manager, strict, *, skill_category, read
+
+# ──────────────────────────── SBA α-7 wave 2 — ProcessTemplate (Specialist 3.1) ────────────────────────────
+# process_template: библиотечный шаблон процесса (canonical как-должно-быть).
+# Включает ProcessTemplateVersion, DecisionPoint, ProcessHandoff. Shared
+# knowledge компании: owner/admin — r/w/d; manager — read всех template'ов Org;
+# write/delete только admin/owner. `manage` (force-activate, hard-delete) — super_admin.
+p, owner, *, *, process_template, read
+p, owner, *, *, process_template, write
+p, owner, *, *, process_template, delete
+p, owner, *, *, process_template, manage
+p, admin, *, *, process_template, read
+p, admin, *, *, process_template, write
+p, admin, *, *, process_template, delete
+p, manager, *, *, process_template, read
+
+# ──────────────────────────── SBA α-9 wave 3 — Company Foundation ────────────────────────────
+# company_profile — 1:1 на Org-запись идентичности компании.
+# read — все members; write/delete — owner/admin (mission/vision/strategy — owner-territory).
+p, owner, *, *, company_profile, read
+p, owner, *, *, company_profile, write
+p, owner, *, *, company_profile, delete
+p, admin, *, *, company_profile, read
+p, admin, *, *, company_profile, write
+p, manager, *, *, company_profile, read
+
+# functional_domain — функциональная область + дерево.
+# read — все members; write/delete — owner/admin; manage — для seed-template (per-industry).
+p, owner, *, *, functional_domain, read
+p, owner, *, *, functional_domain, write
+p, owner, *, *, functional_domain, delete
+p, owner, *, *, functional_domain, manage
+p, admin, *, *, functional_domain, read
+p, admin, *, *, functional_domain, write
+p, admin, *, *, functional_domain, delete
+p, admin, *, *, functional_domain, manage
+p, manager, *, *, functional_domain, read
+
+# maturity — сводка зрелости (Role/Department/Company).
+# read — все members (shared knowledge); manage — admin/owner (rebuild).
+p, owner, *, *, maturity, read
+p, owner, *, *, maturity, manage
+p, admin, *, *, maturity, read
+p, admin, *, *, maturity, manage
+p, manager, *, *, maturity, read
+
+# ──────────────────────────── SBA α-8 wave 3 — Appointment + KPI ────────────────────────────
+# appointment — назначение Person на Role (+departmentId, +loadPercent, +status).
+# Read — все members компании (видят оргструктуру); write/delete — owner/admin (HR-функция).
+p, owner, *, *, appointment, read
+p, owner, *, *, appointment, write
+p, owner, *, *, appointment, delete
+p, admin, *, *, appointment, read
+p, admin, *, *, appointment, write
+p, admin, *, *, appointment, delete
+p, manager, *, *, appointment, read
+
+# kpi — Metric с заполненным attachedTo*Id. Read — все members; write/delete — owner/admin.
+# `manage` — owner/admin для PATCH /kpi/:id/measurement (атомарное обновление
+# currentValue + lastMeasuredAt). В будущем появится role 'kpi_owner' (отдельный sub-ТЗ).
+p, owner, *, *, kpi, read
+p, owner, *, *, kpi, write
+p, owner, *, *, kpi, delete
+p, owner, *, *, kpi, manage
+p, admin, *, *, kpi, read
+p, admin, *, *, kpi, write
+p, admin, *, *, kpi, delete
+p, admin, *, *, kpi, manage
+p, manager, *, *, kpi, read
+
+# ──────────────────────────── SBA β-7 — Brand Voice Curator (Specialist 3.10) ────────────────────────────
+# brand_voice — общекомпанийный «голос бренда» (1:1 с Org). Read — все
+# member'ы Org (видят tone/values/taboos, чтобы писать в фирменном стиле).
+# Write — owner/admin + manager-marketing (через role в RBAC; пока выдаём
+# manager open). Rebuild (`act=manage`) — только owner/admin (LLM-стоимость).
+#
+# Marketing role hint: когда появится отдельная роль 'marketing' (γ+), её
+# права на brand_voice будут такими же, как у manager open сейчас.
+p, owner, *, *, brand_voice, read
+p, owner, *, *, brand_voice, write
+p, owner, *, *, brand_voice, delete
+p, owner, *, *, brand_voice, manage
+p, admin, *, *, brand_voice, read
+p, admin, *, *, brand_voice, write
+p, admin, *, *, brand_voice, delete
+p, admin, *, *, brand_voice, manage
+p, manager, open, *, brand_voice, read
+p, manager, open, *, brand_voice, write
+p, manager, strict, *, brand_voice, read
+
+# ──────────────────────────── SBA γ-2 — Concierge Agent ────────────────────────────
+# ResourceType: concierge — sквозной AI-помощник кабинета (tool-use).
+#   read  — посмотреть свои диалоги/историю/квоту.
+#   write — отправлять сообщения и выполнять tool-use loop. Сам tool-call
+#           внутри проверяет permissions на вызываемом ресурсе отдельно
+#           (concierge НЕ bypassит RBAC цели — см. ToolRouterService).
+#   manage — admin-функция (просмотр OrgConciergeQuota, чужих диалогов).
+# super_admin — bypass.
+p, owner, *, *, concierge, read
+p, owner, *, *, concierge, write
+p, owner, *, *, concierge, manage
+p, admin, *, *, concierge, read
+p, admin, *, *, concierge, write
+p, admin, *, *, concierge, manage
+p, manager, *, self, concierge, read
+p, manager, *, self, concierge, write
+
+# ──────────────────────────── SBA δ-1 — Orchestrator (multi-agent research) ────────────────────────────
+# ResourceType: orchestrator — multi-agent deep research для сложных запросов.
+#   read   — посмотреть свой run (status + результат).
+#   write  — запустить новый run (orchestrator.run). Manager — write self.
+#   manage — admin-функция (orchestrator.admin: видеть/убивать чужие runs).
+# super_admin — bypass. Feature-flag ORCHESTRATOR_ENABLED проверяется
+# дополнительно в сервисе (даже разрешённый RBAC не даст запустить если флаг off).
+p, owner, *, *, orchestrator, read
+p, owner, *, *, orchestrator, write
+p, owner, *, *, orchestrator, manage
+p, admin, *, *, orchestrator, read
+p, admin, *, *, orchestrator, write
+p, admin, *, *, orchestrator, manage
+p, manager, *, self, orchestrator, read
+p, manager, *, self, orchestrator, write
+
 # ──────────────────────────── SBA α-5 — Layer 5 Chat-v2 Omnichannel ────────────────────────────
 # ResourceType: chat_v2_conversation — диалог пользователя с AI-чатом.
 # Каждый user управляет только своими диалогами (self). owner/admin Org
@@ -439,6 +607,98 @@ p, owner, *, self, chat_v2_conversation, write
 p, owner, *, self, chat_v2_conversation, delete
 p, admin, *, self, chat_v2_conversation, write
 p, admin, *, self, chat_v2_conversation, delete
+
+# ──────────────────────────── SBA β-8 — COO (Operations Dashboard + DailyCheckIn) ────────────────────────────
+# coo — операционный директор. Read на operations dashboard + agg-эндпоинты;
+# нет write на org/meeting/card/task (это не админ). Может читать appointments
+# / maturity / kpi (видит загрузку команды и пульс). Видит daily_checkin всех
+# (для оперативного контроля), но write — только own.
+# Personal-relation видит read (но запись — internal worker, без человеческого API).
+p, coo, *, *, org, read
+p, coo, *, *, meeting, read
+p, coo, *, *, card, read
+p, coo, *, *, task, read
+p, coo, *, *, chapter, read
+p, coo, *, *, highlight, read
+p, coo, *, *, chat-message, read
+p, coo, *, *, tag, read
+p, coo, *, *, block, read
+p, coo, *, *, entity, read
+p, coo, *, *, theme, read
+p, coo, *, *, goal, read
+p, coo, *, *, person, read
+p, coo, *, *, department, read
+p, coo, *, *, role, read
+p, coo, *, *, process, read
+p, coo, *, *, process_template, read
+p, coo, *, *, regulation, read
+p, coo, *, *, policy, read
+p, coo, *, *, decision, read
+p, coo, *, *, insight, read
+p, coo, *, *, idea, read
+p, coo, *, *, experiment, read
+p, coo, *, *, appointment, read
+p, coo, *, *, kpi, read
+p, coo, *, *, maturity, read
+p, coo, *, *, company_profile, read
+p, coo, *, *, functional_domain, read
+p, coo, *, *, skill_profile, read
+p, coo, *, *, knowledge_profile, read
+# β-8 — новые ресурсы (см. ниже dashboard_operations / daily_checkin / personal_relation).
+p, coo, *, *, dashboard_operations, read
+p, coo, *, *, daily_checkin, read
+p, coo, *, self, daily_checkin, write
+p, coo, *, *, personal_relation, read
+
+# ──────────────────────────── SBA β-8 — Dashboard + DailyCheckIn + PersonalRelation ────────────────────────────
+# dashboard_operations — агрегат пульса операций (`GET /dashboard/operations/*`).
+# Только read: для admin/owner/coo/super_admin (bypass). Manager НЕ видит.
+p, owner, *, *, dashboard_operations, read
+p, admin, *, *, dashboard_operations, read
+
+# daily_checkin — личный чек-ин Person'а. Самостоятельно — write только свои
+# (через /me/check-ins). admin/owner — read всех (для мониторинга/HR), write self.
+# coo — read all (см. блок coo выше).
+p, owner, *, *, daily_checkin, read
+p, owner, *, self, daily_checkin, write
+p, owner, *, *, daily_checkin, delete
+p, admin, *, *, daily_checkin, read
+p, admin, *, self, daily_checkin, write
+p, manager, *, self, daily_checkin, read
+p, manager, *, self, daily_checkin, write
+
+# personal_relation — типизированная EntityLink (manages / collaborates_with /
+# mentors / conflicted_with / transfers_result_to / escalates_to / reports_to)
+# между Person'ами. Read — admin/owner/coo (граф взаимодействий). Write —
+# только internal worker (personal-relation-builder); ручного API write нет.
+p, owner, *, *, personal_relation, read
+p, admin, *, *, personal_relation, read
+p, manager, *, self, personal_relation, read
+
+# ──────────────────────────── SBA δ-2 — ProactiveWatcher ────────────────────────────
+# proactive_notification — инициативное уведомление от Watcher'а (8 правил).
+# read   — свои; write (dismiss) — свои; manage — admin (видит все для аналитики).
+# Любой member может смотреть свои ProactiveNotification — это его UX.
+p, owner, *, *, proactive_notification, read
+p, owner, *, *, proactive_notification, write
+p, owner, *, *, proactive_notification, manage
+p, admin, *, *, proactive_notification, read
+p, admin, *, *, proactive_notification, write
+p, admin, *, *, proactive_notification, manage
+p, manager, *, self, proactive_notification, read
+p, manager, *, self, proactive_notification, write
+
+# ──────────────────────────── SBA δ-3 — VoiceChannelAdapter ────────────────────────────
+# voice — синтез/распознавание речи (TTS + ASR REST endpoints).
+# Маппинг: read = `voice.transcribe` (ASR), write = `voice.synthesize` (TTS).
+# Все member'ы Org (включая manager strict) могут пользоваться своим голосом —
+# это базовый функционал ассистента, без него concierge не работает.
+p, owner, *, *, voice, read
+p, owner, *, *, voice, write
+p, admin, *, *, voice, read
+p, admin, *, *, voice, write
+p, manager, *, *, voice, read
+p, manager, *, *, voice, write
 
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read

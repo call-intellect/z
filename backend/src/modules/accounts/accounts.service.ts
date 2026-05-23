@@ -64,7 +64,7 @@ export interface PublicUserDto {
    * `null` если пользователь не в Org. Используется фронтом для гейта
    * раздела «Админка Org» (`/settings/admin/*`). (Фаза 7)
    */
-  currentOrgRole: 'owner' | 'admin' | 'manager' | null;
+  currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo' | null;
   /** ID первой Org (для удобства фронта). null если не в Org. (Фаза 7) */
   currentOrgId: string | null;
 }

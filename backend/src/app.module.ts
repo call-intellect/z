@@ -41,10 +41,15 @@ import { UsersModule } from './modules/users/users.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 // M3c — cross-cutting ai-workspace модули.
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { BrandVoiceModule } from './modules/brand-voice/brand-voice.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { CompanyFoundationModule } from './modules/company-foundation/company-foundation.module';
+import { ConciergeModule } from './modules/concierge/concierge.module';
 import { ChatV2Module } from './modules/chat-v2/chat-v2.module';
+import { DialogLayerModule } from './modules/dialog-layer/dialog-layer.module';
 import { ConversationalModule } from './modules/conversational/conversational.module';
 import { CoreQueueModule } from './modules/core-queue/core-queue.module';
 import { CurationModule } from './modules/curation/curation.module';
@@ -53,6 +58,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { JobDescriptionsModule } from './modules/job-descriptions/job-descriptions.module';
+import { KpiModule } from './modules/kpi/kpi.module';
 import { MeModule } from './modules/me/me.module';
 import { PersonsModule } from './modules/persons/persons.module';
 import { RoleProfilesModule } from './modules/role-profiles/role-profiles.module';
@@ -79,6 +85,7 @@ import { OrgsModule } from './modules/orgs/orgs.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { RoleMapModule } from './modules/role-map/role-map.module';
 import { RoleProfilesAgentModule } from './modules/role-profiles/role-profiles-agent.module';
 import { SecurityModule } from './modules/security/security.module';
 import { SourcesModule } from './modules/sources/sources.module';
@@ -86,11 +93,17 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 // SBA α-3 — категория A онтологии: поставщики и события.
 import { EventsModule } from './modules/events/events.module';
 import { RegulationsModule } from './modules/regulations/regulations.module';
+import { ProcessesModule } from './modules/processes/processes.module';
 import { DecisionsModule } from './modules/decisions/decisions.module';
 import { InsightsModule } from './modules/insights/insights.module';
+import { ExperimentsModule } from './modules/experiments/experiments.module';
 import { IdeasModule } from './modules/ideas/ideas.module';
 import { ProbeModule } from './modules/probe/probe.module';
+import { OperationsModule } from './modules/operations/operations.module';
+import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
+import { ProactiveModule } from './modules/proactive/proactive.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
+import { VoiceModule } from './modules/voice/voice.module';
 
 @Module({
   imports: [
@@ -278,12 +291,23 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     // AiModule (LlmRouterService).
     RoleProfilesAgentModule,
 
+    // SBA α-8 wave 4 — Role Map module (5 CRUD-сервисов wave-2 + builder
+    // worker + completeness cron + REST `/api/v1/roles/:id/{map,maturity,
+    // responsibilities,authority,knowledge,decision-policies,interactions}`).
+    // Зависит от @Global Prisma / Rbac / Auth / Audit / Metrics / Redis / Ai
+    // (LlmRouterService) / ScheduleModule. Регистрируется после WorkersModule
+    // и AppointmentsModule (Role + RoleProfile + Metric — связи в schema готовы).
+    RoleMapModule,
+
     // Phase 0a (группа А) — CRUD структуры компании: отделы, должности,
     // сотрудники, должностные инструкции, компетенции + карта должности
     // (read + stub rebuild). Зависят от @Global Prisma / Rbac / Auth / Audit.
     DepartmentsModule,
     RolesDomainModule,
     PersonsModule,
+    // SBA α-8 wave 3 — Appointment (replacement для PersonRole) + KPI (Metric ext).
+    AppointmentsModule,
+    KpiModule,
     JobDescriptionsModule,
     SkillsModule,
     RoleProfilesModule,
@@ -291,6 +315,10 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     // Phase 0a.3 — структурные агрегаты + γ-счётчики
     // (/api/v1/structure/summary + /processes/count, /regulations/count, …).
     StructureModule,
+
+    // SBA α-9 wave 3 — Company Foundation. CompanyProfile / FunctionalDomain /
+    // DepartmentDomainLink / MaturityScorer + 4 cron'а.
+    CompanyFoundationModule,
 
     // Phase 0a.3 — GET /api/v1/me/profile (Person + Role + Department +
     // RoleProfile в контексте текущей Org).
@@ -313,6 +341,14 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     // куратора, stale-detection cron. Должен быть ПОСЛЕ ConversationalModule
     // (использует sendNotification).
     CurationModule,
+
+    // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
+    // Classifier / MultiQuery / Summarizer + AnswerCache/RetrievalCache).
+    // @Global — DialogService инъектируется в SynthesisService и
+    // ChatV2OrchestrationService. Зависит от @Global AiModule (LlmRouterService),
+    // RedisModule, PrismaModule, EventEmitterModule. Должен идти ДО ChatV2Module.
+    // См. plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md.
+    DialogLayerModule,
 
     // SBA α-5 — Layer 5 Chat-v2 Omnichannel. Новый модуль chat-v2/ с
     // conversation history (ChatV2Conversation + ChatV2Message) и
@@ -339,6 +375,13 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     // существующие `regulation` / `process` / `policy` ResourceType.
     RegulationsModule,
 
+    // SBA α-7 wave 2 — REST API `/api/v1/processes/*` (ProcessTemplate +
+    // ProcessTemplateVersion + DecisionPoint + ProcessHandoff). RBAC через
+    // `process_template` ResourceType. Должен идти ПОСЛЕ KnowledgeCoreModule
+    // (использует LlmRouterService через @Global Ai) и ConversationalModule
+    // (probe-service fallback).
+    ProcessesModule,
+
     // SBA β-2 — регистрация специалиста 3.2 (Knowledge Clone) в
     // CardSpecialistRegistry chat-v2. Должен идти ПОСЛЕ ChatV2Module
     // (использует CardSpecialistRegistry).
@@ -359,6 +402,11 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     // SBA β-4 — REST API `/api/v1/insights` (master-detail радара сигналов).
     // RBAC через `insight` ResourceType (см. policy.csv).
     InsightsModule,
+
+    // SBA β-6 — REST API `/api/v1/experiments` (master-detail Experiment Tracker'а:
+    // институциональная память «что попробовали и что вышло»). RBAC через
+    // `experiment` ResourceType (см. policy.csv).
+    ExperimentsModule,
 
     // SBA β-5 — Layer 6 Probe-Agent (@Global). ProbeService.suggest вызывают
     // все Specialist3X-probe сервисы (через @Optional inject — fallback на
@@ -388,6 +436,52 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     // Должен идти ПОСЛЕ KnowledgeCoreModule (ExecutablePersonaBuildService)
     // и ChatV2Module (через SynthesisService подтягивает ClonesService).
     ClonesModule,
+
+    // SBA β-7 — Brand Voice Curator (Specialist 3.10). Exports
+    // BrandVoiceService — chat-v2 SynthesisService опционально подмешивает
+    // профиль в systemPrompt при mode='clone_style' scope='org'. Должен
+    // идти ПОСЛЕ ChatV2Module, чтобы SynthesisService мог инжектить
+    // BrandVoiceService через @Optional.
+    BrandVoiceModule,
+
+    // SBA γ-2 — Concierge Agent. REST API `/api/v1/concierge/*` (SSE stream
+    // + polling fallback + conversations + undo + quota). Tool-use loop через
+    // whitelist REST tools (ServiceMapGeneratorService). 3 cron'а:
+    // daily/monthly quota reset, conversation summarizer. Должен идти ПОСЛЕ
+    // ChatV2Module / KnowledgeCoreModule / всех Spec*Module, чтобы ToolRouter
+    // мог дёргать их REST tools через internal loopback.
+    ConciergeModule,
+
+    // SBA δ-3 — VoiceChannelAdapter. REST API `/api/v1/voice/transcribe|synthesize`
+    // (ASR через Vox + TTS через OpenAI). Reusable `VoiceChannelAdapter` для
+    // Telegram/MAX-адаптеров и будущего concierge voice WS-handler'а (γ-2).
+    // Зависит от @Global AiModule (VoxService) и @Global MetricsModule.
+    VoiceModule,
+
+    // SBA β-8 — PersonalRelation + COO Operations Dashboard + DailyCheckIn.
+    // Содержит REST `/api/v1/dashboard/operations/*`, `/api/v1/me/check-ins`,
+    // `/api/v1/personal-relations` + DailyCheckInPromptCron + CheckinResponseHandler
+    // + GoalCascadeService. Должен идти ПОСЛЕ ConversationalModule (cron
+    // зовёт sendNotification) и AiModule (CheckinParserService инжектит
+    // LlmRouterService).
+    OperationsModule,
+
+    // SBA δ-1 — Orchestrator (multi-agent deep research). REST API
+    // `/api/v1/orchestrator/*` (SSE stream + JSON polling + cancel).
+    // 4 шага: plan → spawn subagents → synthesize → verify. BullMQ-очередь
+    // `orchestrator.subagents` живёт ВНУТРИ модуля. Hard limits: depth=1,
+    // max 5 subagents, 15-min timeout, feature-flag ORCHESTRATOR_ENABLED
+    // default false. Должен идти ПОСЛЕ KnowledgeCoreModule (использует
+    // ChatV2RetrievalService через subagent-стратегии).
+    OrchestratorModule,
+
+    // SBA δ-2 — ProactiveWatcher: каждые 6 часов обходит 8 deterministic-
+    // правил над графом (Decision/Insight/Experiment/Process/Role/...) и
+    // отправляет инициативные friendly-уведомления через ConversationalService.
+    // REST `/api/v1/me/proactive-notifications` (list + dismiss). Anti-spam —
+    // max 1 per user per day через Redis SETNX. Должен идти ПОСЛЕ
+    // ConversationalModule (sendNotification) и AiModule (LlmRouter).
+    ProactiveModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

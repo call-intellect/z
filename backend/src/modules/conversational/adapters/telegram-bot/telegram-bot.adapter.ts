@@ -13,9 +13,14 @@ import type {
   NotificationDelivery,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import { RedisService } from '../../../../common/redis/redis.service';
+import { VoxService } from '../../../ai/services/vox.service';
+import { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
+import { DocumentsService } from '../../../documents/documents.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
 import type {
@@ -27,36 +32,35 @@ import type {
 import { TelegramApiClient, TelegramApiError } from './telegram-api-client';
 import type {
   TelegramBotChannelConfig,
-  TelegramInlineKeyboardMarkup,
   TelegramMessage,
   TelegramUpdate,
 } from './telegram.types';
 
 /**
- * Telegram Bot ChannelAdapter (SBA β-1).
+ * Telegram Bot ChannelAdapter (SBA β-1, zero-button rip-out 2026-05-23).
+ *
+ * **Zero-button:** бот не показывает inline-кнопок, не принимает callback_query,
+ * не обрабатывает slash-команды (кроме `/start <token>` для deep-link
+ * привязки). Telegram menu-хамбургер очищается через `setMyCommands([])` в
+ * `onModuleInit`.
  *
  * Outbound:
  *   - расшифровывает per-tenant `botToken` из `Channel.config`;
- *   - формирует HTML-сообщение + inline-кнопки (если `payload.options`);
+ *   - формирует HTML-сообщение (без `reply_markup`);
  *   - вызывает `sendMessage` через `TelegramApiClient`;
  *   - возвращает `<chatId>:<messageId>` как `externalMessageId` для
  *     trace'а и для последующего матчинга reply'ев.
  *
  * Inbound:
  *   - принимает `TelegramUpdate` из webhook controller'а;
+ *   - распознаёт `/start <token>` и голый код привязки (regex
+ *     `/^[a-f0-9]{6,32}$/i` — покрывает текущий формат
+ *     `randomBytes(6).toString('hex')` = 12 hex и потенциальный 6-digit);
  *   - извлекает `from.id` → ищет `ChannelBinding` (verified);
- *   - если нет binding'а — обрабатывает `/link <code>` (через
- *     `ConversationalLinkCodeService`) или мягко просит привязаться;
- *   - если есть binding — маршрутизирует:
- *       `/ask <q>`     → `InboundMessage{type:'chat_query'}`,
- *       `/note <t>`    → `{type:'free_note'}`,
- *       `/idea <t>`    → `{type:'free_note', metadata:{tag:'idea'}}`,
- *       `/status`      → `{type:'command', commandName:'status'}`,
- *       `/myideas`     → `{type:'command', commandName:'myideas'}`,
- *       `/help`        → `{type:'command', commandName:'help'}`,
- *       callback_query → `{type:'response', notificationId, payload}`,
- *       reply на наше outbound-сообщение → попытка `parseResponse`,
- *       свободный текст → `{type:'free_note'}` (по умолчанию).
+ *   - voice → `getFile` → ASR (Vox) → intent classify → `free_note`|`chat_query`;
+ *   - document → `getFile` → DocumentsService.upload (document.adapter pipeline);
+ *   - reply на наше outbound-сообщение → попытка `tryMatchReplyToProbe`;
+ *   - свободный текст → intent classify → `free_note`|`chat_query`.
  *
  * `maxDataClass='internal'` — Telegram внешний канал, sensitive/private
  * payload'ы туда не уходят (правило фильтрации в routing'е).
@@ -70,22 +74,67 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
   readonly kind: ChannelKind = 'telegram_bot';
   readonly maxDataClass: DataClass = 'internal';
 
-  /** Префикс callback_data для probe-вариантов: `pq:<notifId>:<idx>`. */
-  static readonly PROBE_CALLBACK_PREFIX = 'pq';
+  /** Лимит размера документа inbound — 20 MB (Telegram Bot API hard limit). */
+  static readonly MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+
+  /** Anti-spam: сколько voice / час / user пропускаем без 429. */
+  static readonly VOICE_PER_HOUR_PER_USER = 10;
+
+  /** Regex linking-кода: гибкий, поддерживает 6-digit и 12-hex форматы. */
+  static readonly LINK_CODE_REGEX = /^[a-f0-9]{6,32}$/i;
 
   constructor(
     @Inject(ChannelRegistry) private readonly registry: ChannelRegistry,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(TelegramApiClient) private readonly api: TelegramApiClient,
     @Inject(ConversationalLinkCodeService)
     private readonly linkCode: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(VoxService) private readonly vox: VoxService,
+    @Inject(DocumentsService) private readonly documents: DocumentsService,
+    @Inject(QueryClassifierService)
+    private readonly classifier: QueryClassifierService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.registry.register(this);
+    // setMyCommands([]) для всех активных Telegram-каналов: чтобы Telegram
+    // очистил menu хамбургер после удаления slash-команд. Best-effort —
+    // не падаем, если какой-то токен невалиден (логируем).
+    await this.clearMyCommandsForAllChannels().catch((err) => {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'telegram setMyCommands([]) bulk clear failed',
+      );
+    });
+  }
+
+  private async clearMyCommandsForAllChannels(): Promise<void> {
+    const channels = await this.prisma.channel.findMany({
+      where: { kind: 'telegram_bot', status: 'active' },
+    });
+    for (const channel of channels) {
+      try {
+        const config = this.readChannelConfig(channel);
+        if (!config.botToken) continue;
+        await this.api.setMyCommands({ token: config.botToken, commands: [] });
+        this.logger.log(
+          `telegram setMyCommands([]) ok channelId=${channel.id} tenantId=${channel.tenantId}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          {
+            channelId: channel.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'telegram setMyCommands([]) failed для канала',
+        );
+      }
+    }
   }
 
   // ─────────────────────────────── send ────────────────────────────
@@ -111,7 +160,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     }
 
     const text = this.renderText(args.notification);
-    const replyMarkup = this.renderInlineKeyboard(args.notification);
     const replyToMessageId = this.maybeReplyToMessageId(args.delivery);
 
     try {
@@ -120,7 +168,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         chatId,
         text,
         parseMode: 'HTML',
-        replyMarkup,
         replyToMessageId,
       });
       return { externalMessageId: `${rcvChatId}:${messageId}` };
@@ -128,7 +175,9 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       if (err instanceof TelegramApiError && !err.transient) {
         // Final fail — выбрасываем как Error, чтобы worker сразу пометил
         // delivery=failed без retry (TelegramApiError содержит описание).
-        throw new Error(`telegram_final:${err.code}:${err.message}`);
+        throw new Error(`telegram_final:${err.code}:${err.message}`, {
+          cause: err,
+        });
       }
       throw err;
     }
@@ -140,8 +189,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
    * `IChannel.ingest` для совместимости. Telegram-адаптеру нужен `tenantId`
    * + `channel` (per-tenant config), которых нет в этой сигнатуре —
    * поэтому webhook controller вызывает напрямую `ingestUpdate(...)`.
-   * Этот же метод оставлен «на крайний случай» и просто бросает явную
-   * ошибку, чтобы случайный вызов был заметен.
    */
   async ingest(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -155,7 +202,8 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
   /**
    * Главный inbound-метод для webhook controller'а. Принимает Update
    * + tenantId (резолвится из URL). Возвращает InboundMessage или null
-   * (например, voice → null + сам адаптер отправит уведомление).
+   * (если адаптер сам обработал сообщение — например, привязка, voice
+   * пошёл в ASR-pipeline или document отправлен в DocumentsService).
    */
   async ingestUpdate(args: {
     update: TelegramUpdate;
@@ -165,19 +213,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     const { update, tenantId, channel } = args;
     const config = this.readChannelConfig(channel);
 
-    // 1. callback_query (нажатие inline-кнопки) — самый ценный inbound.
-    if (update.callback_query) {
-      this.metrics.incTelegramBotWebhookReceived({ type: 'callback_query' });
-      return this.handleCallbackQuery({
-        callbackQuery: update.callback_query,
-        tenantId,
-        channel,
-        config,
-      });
-    }
-
-    // 2. message / edited_message — текст. edited_message трактуем как
-    // новое сообщение (бот не показывает «отредактированные» отдельно).
     const msg = update.message ?? update.edited_message;
     if (!msg) {
       this.metrics.incTelegramBotWebhookReceived({ type: 'unknown' });
@@ -189,26 +224,107 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       type: update.edited_message ? 'edited_message' : 'message',
     });
 
-    // 2a. Voice / audio / photo / document — пока не поддерживаются.
-    if (msg.voice || msg.audio) {
-      // Tell user we don't support voice yet. Best-effort, не падаем.
-      await this.replyToUserBestEffort({
-        config,
+    const tgUserId = msg.from?.id;
+    if (!tgUserId) {
+      this.logger.debug(
+        { chatId: msg.chat.id },
+        'telegram inbound: нет from.id (channel post?) — игнор',
+      );
+      return null;
+    }
+
+    // 1. /start <token> — единственный разрешённый slash. Без аргумента —
+    //    приветствие. С аргументом — попытка прожечь как link-code.
+    const text = (msg.text ?? '').trim();
+    const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?$/i);
+    if (startMatch) {
+      this.metrics.incBotInbound({
+        channel: 'telegram_bot',
+        kind: 'start_command',
+      });
+      const code = startMatch[1]?.trim();
+      await this.handleStart({
+        code,
+        tgUserId: String(tgUserId),
         chatId: msg.chat.id,
-        text:
-          'Голосовые сообщения пока не поддерживаются. Пожалуйста, отправьте текст. Доступные команды: /ask, /note, /idea, /status, /myideas, /help.',
+        tenantId,
+        channel,
+        config,
       });
       return null;
     }
-    if (msg.photo || msg.document) {
+
+    // 2. Voice → ASR pipeline (до проверки binding'а — мы и так дальше
+    //    проверим, но voice без binding'а смысла не имеет; ниже binding
+    //    обязателен).
+    const voice = msg.voice ?? msg.audio;
+    if (voice) {
+      this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'voice' });
+      const binding = await this.requireVerifiedBinding({
+        tgUserId: String(tgUserId),
+        channelId: channel.id,
+        chatId: msg.chat.id,
+        config,
+      });
+      if (!binding) return null;
+      if (!this.cfg.bot.voiceEnabled) {
+        await this.replyToUserBestEffort({
+          config,
+          chatId: msg.chat.id,
+          text: 'Голосовые сообщения сейчас недоступны. Напишите текстом.',
+        });
+        return null;
+      }
+      return this.handleVoice({
+        voice,
+        binding,
+        msg,
+        tenantId,
+        channel,
+        config,
+      });
+    }
+
+    // 3. Document → DocumentsService.upload pipeline.
+    if (msg.document) {
+      this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'document' });
+      const binding = await this.requireVerifiedBinding({
+        tgUserId: String(tgUserId),
+        channelId: channel.id,
+        chatId: msg.chat.id,
+        config,
+      });
+      if (!binding) return null;
+      if (!this.cfg.bot.documentEnabled) {
+        await this.replyToUserBestEffort({
+          config,
+          chatId: msg.chat.id,
+          text: 'Загрузка файлов сейчас выключена.',
+        });
+        return null;
+      }
+      await this.handleDocument({
+        document: msg.document,
+        binding,
+        chatId: msg.chat.id,
+        tenantId,
+        channel,
+        config,
+      });
+      // Если есть caption — продолжаем как текст (см. далее).
+      if (!msg.caption || !msg.caption.trim()) return null;
+    }
+
+    // 4. Photo — не поддерживаем zero-button (только текст / voice / document).
+    if (msg.photo && !msg.caption) {
+      this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'other' });
       await this.replyToUserBestEffort({
         config,
         chatId: msg.chat.id,
         text:
-          'Файлы и картинки пока не поддерживаются. Используйте текст или подпись к файлу.',
+          'Изображения пока не поддерживаются. Отправьте текст, голос или документ (PDF/DOCX/MD/TXT).',
       });
-      // Если есть текст-подпись — продолжим как обычное сообщение.
-      if (!msg.caption) return null;
+      return null;
     }
 
     const rawText = (msg.text ?? msg.caption ?? '').trim();
@@ -220,64 +336,45 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
-    // 3. Resolve binding (telegram user_id ↔ ChannelBinding).
-    const tgUserId = msg.from?.id;
-    if (!tgUserId) {
-      this.logger.debug(
-        { chatId: msg.chat.id },
-        'telegram inbound: нет from.id (channel post?) — игнор',
-      );
-      return null;
-    }
-
-    // 3a. /link <code> — единственная команда, доступная БЕЗ binding'а.
-    const linkMatch = rawText.match(/^\/link(?:@\w+)?(?:\s+(.+))?$/i);
-    if (linkMatch) {
-      this.metrics.incTelegramBotWebhookReceived({ type: 'command' });
-      const code = linkMatch[1]?.trim();
-      await this.handleLink({
-        code,
-        tgUserId: String(tgUserId),
-        chatId: msg.chat.id,
-        tenantId,
-        channel,
-        config,
+    // 5. Голый 6-знач/hex код — link-code flow (если binding'а ещё нет).
+    if (TelegramBotChannelAdapter.LINK_CODE_REGEX.test(rawText)) {
+      const existing = await this.prisma.channelBinding.findFirst({
+        where: { channelId: channel.id, externalId: String(tgUserId) },
       });
-      return null;
+      if (!existing || !existing.verifiedAt) {
+        this.metrics.incBotInbound({
+          channel: 'telegram_bot',
+          kind: 'link_code',
+        });
+        await this.handleLinkCode({
+          code: rawText,
+          tgUserId: String(tgUserId),
+          chatId: msg.chat.id,
+          tenantId,
+          channel,
+          config,
+        });
+        return null;
+      }
+      // Иначе fall through — может быть случайное совпадение «12-hex», но
+      // юзер уже залинкован; обрабатываем как обычный free_note/chat_query.
     }
 
-    // 3b. Все остальные команды/тексты требуют binding'а.
-    const binding = await this.prisma.channelBinding.findFirst({
-      where: {
-        channelId: channel.id,
-        externalId: String(tgUserId),
-      },
+    // 6. Резолв binding'а (для текстовых сообщений после линка).
+    const binding = await this.requireVerifiedBinding({
+      tgUserId: String(tgUserId),
+      channelId: channel.id,
+      chatId: msg.chat.id,
+      config,
     });
-    if (!binding || !binding.verifiedAt) {
-      await this.replyToUserBestEffort({
-        config,
-        chatId: msg.chat.id,
-        text:
-          'Аккаунт не привязан. Зайдите в личный кабинет, получите код привязки и отправьте сюда: /link &lt;код&gt;.',
-      });
-      return null;
-    }
+    if (!binding) return null;
 
-    // 4. Slash-commands.
-    if (rawText.startsWith('/')) {
-      this.metrics.incTelegramBotWebhookReceived({ type: 'command' });
-      return this.parseSlashCommand({
-        rawText,
-        binding,
-        tenantId,
-      });
-    }
+    this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'text' });
 
-    // 5. reply_to_message — попытка трактовать как probe-response.
+    // 7. reply_to_message — попытка матчинга с открытым probe.
     if (msg.reply_to_message) {
       const probeMatch = await this.tryMatchReplyToProbe({
         reply: msg.reply_to_message,
-        currentText: rawText,
         binding,
       });
       if (probeMatch) {
@@ -290,10 +387,25 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           originChannelBindingId: binding.id,
         };
       }
-      // не нашли probe → fall through к free_note
+      // fall through
     }
 
-    // 6. Default → free_note.
+    // 8. Intent classification (LLM + fallback на эвристики).
+    const intent = await this.classifyIntent({
+      text: rawText,
+      tenantId,
+      userId: binding.userId,
+    });
+
+    if (intent === 'chat_query') {
+      return {
+        type: 'chat_query',
+        userId: binding.userId,
+        tenantId,
+        question: rawText,
+        originChannelBindingId: binding.id,
+      };
+    }
     return {
       type: 'free_note',
       userId: binding.userId,
@@ -304,15 +416,8 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     };
   }
 
-  // ─────────────────────────────── parseResponse ────────────────────
+  // ─────────────────────────────── parseResponse (stub) ─────────────
 
-  /**
-   * Используется выше уровнем (в нашем случае — internally) для попытки
-   * матчинга reply на open probe. Сейчас матчинг делается напрямую в
-   * `ingestUpdate.tryMatchReplyToProbe` (через `NotificationDelivery
-   * .externalMessageId`), поэтому здесь stub: возвращаем `null`, чтобы
-   * IChannel-контракт был выполнен.
-   */
   async parseResponse(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _args: {
@@ -323,98 +428,13 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     return null;
   }
 
-  // ─────────────────────────────── internal handlers ────────────────
+  // ─────────────────────────────── handlers ─────────────────────────
 
-  private async handleCallbackQuery(args: {
-    callbackQuery: NonNullable<TelegramUpdate['callback_query']>;
-    tenantId: string;
-    channel: Channel;
-    config: TelegramBotChannelConfig;
-  }): Promise<InboundMessage | null> {
-    const { callbackQuery, tenantId, channel, config } = args;
-    const data = callbackQuery.data;
-    if (!data) {
-      await this.api
-        .answerCallbackQuery({
-          token: config.botToken,
-          callbackQueryId: callbackQuery.id,
-        })
-        .catch((err) =>
-          this.logger.warn(
-            { err: err instanceof Error ? err.message : String(err) },
-            'telegram answerCallbackQuery failed',
-          ),
-        );
-      return null;
-    }
-
-    // Сразу отвечаем callback'у — закрываем «крутилку».
-    await this.api
-      .answerCallbackQuery({
-        token: config.botToken,
-        callbackQueryId: callbackQuery.id,
-        text: 'Принято',
-      })
-      .catch((err) =>
-        this.logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          'telegram answerCallbackQuery failed',
-        ),
-      );
-
-    // Формат: `pq:<notificationId>:<optionIndex>`.
-    const parts = data.split(':');
-    if (parts[0] !== TelegramBotChannelAdapter.PROBE_CALLBACK_PREFIX) {
-      this.logger.debug({ data }, 'telegram callback: неизвестный prefix — игнор');
-      return null;
-    }
-    const notificationId = parts[1];
-    const optionIndex = Number(parts[2]);
-    if (!notificationId || !Number.isFinite(optionIndex)) {
-      this.logger.debug({ data }, 'telegram callback: невалидный data — игнор');
-      return null;
-    }
-
-    // Резолвим binding (получатель callback'а ОДИН — это от.id).
-    const tgUserId = callbackQuery.from.id;
-    const binding = await this.prisma.channelBinding.findFirst({
-      where: { channelId: channel.id, externalId: String(tgUserId) },
-    });
-    if (!binding) {
-      this.logger.debug(
-        { tgUserId, channelId: channel.id },
-        'telegram callback: binding не найден — игнор',
-      );
-      return null;
-    }
-
-    // Резолвим option-text из notification.payload.options[index].
-    const notification = await this.prisma.notification.findUnique({
-      where: { id: notificationId },
-    });
-    let optionText: string | null = null;
-    if (notification?.payload && typeof notification.payload === 'object') {
-      const options = (notification.payload as { options?: string[] }).options;
-      if (Array.isArray(options) && options[optionIndex]) {
-        optionText = options[optionIndex];
-      }
-    }
-
-    return {
-      type: 'response',
-      userId: binding.userId,
-      tenantId,
-      notificationId,
-      payload: {
-        kind: 'option',
-        optionIndex,
-        optionText,
-      },
-      originChannelBindingId: binding.id,
-    };
-  }
-
-  private async handleLink(args: {
+  /**
+   * `/start` без аргумента — приветствие. `/start <token>` — пытается
+   * прожечь как link-code (deep-link флоу: ссылка `https://t.me/<bot>?start=<token>`).
+   */
+  private async handleStart(args: {
     code: string | undefined;
     tgUserId: string;
     chatId: number;
@@ -422,138 +442,420 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     channel: Channel;
     config: TelegramBotChannelConfig;
   }): Promise<void> {
-    const { code, tgUserId, chatId, tenantId, channel, config } = args;
-    if (!code) {
+    if (!args.code) {
       await this.replyToUserBestEffort({
-        config,
-        chatId,
+        config: args.config,
+        chatId: args.chatId,
         text:
-          'Использование: <code>/link &lt;код&gt;</code>. Код берётся в личном кабинете — раздел «Каналы».',
+          'Добро пожаловать. Чтобы привязать аккаунт, получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
       });
       return;
     }
-    const userId = await this.linkCode.consume({ kind: 'telegram_bot', code });
+    await this.handleLinkCode({
+      code: args.code,
+      tgUserId: args.tgUserId,
+      chatId: args.chatId,
+      tenantId: args.tenantId,
+      channel: args.channel,
+      config: args.config,
+    });
+  }
+
+  private async handleLinkCode(args: {
+    code: string;
+    tgUserId: string;
+    chatId: number;
+    tenantId: string;
+    channel: Channel;
+    config: TelegramBotChannelConfig;
+  }): Promise<void> {
+    const userId = await this.linkCode.consume({
+      kind: 'telegram_bot',
+      code: args.code,
+    });
     if (!userId) {
-      this.metrics.incTelegramBotWebhookReceived({ type: 'command' });
       await this.replyToUserBestEffort({
-        config,
-        chatId,
+        config: args.config,
+        chatId: args.chatId,
         text: 'Код невалиден или истёк. Получите новый в личном кабинете.',
       });
       return;
     }
-
-    // upsert ChannelBinding
     await this.prisma.channelBinding.upsert({
       where: {
         channelId_externalId: {
-          channelId: channel.id,
-          externalId: tgUserId,
+          channelId: args.channel.id,
+          externalId: args.tgUserId,
         },
       },
       update: { userId, verifiedAt: new Date() },
       create: {
         userId,
-        channelId: channel.id,
-        externalId: tgUserId,
+        channelId: args.channel.id,
+        externalId: args.tgUserId,
         verifiedAt: new Date(),
       },
     });
-
     this.logger.log(
-      `telegram /link: tenantId=${tenantId} userId=${userId} tgUserId=${tgUserId}`,
+      `telegram link: tenantId=${args.tenantId} userId=${userId} tgUserId=${args.tgUserId}`,
     );
-
     await this.replyToUserBestEffort({
-      config,
-      chatId,
+      config: args.config,
+      chatId: args.chatId,
       text:
-        'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. ' +
-        'Доступные команды: /ask, /note, /idea, /status, /myideas, /help.',
+        'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. Просто напишите текст, голос или пришлите документ.',
     });
   }
 
-  private parseSlashCommand(args: {
-    rawText: string;
+  /**
+   * Voice → getFile → downloadFile → Vox ASR → intent classify →
+   * InboundMessage. Если ASR падает / превышен rate-limit / голос
+   * слишком длинный — best-effort reply и `null`.
+   */
+  private async handleVoice(args: {
+    voice: NonNullable<TelegramMessage['voice']>;
     binding: ChannelBinding;
+    msg: TelegramMessage;
     tenantId: string;
-  }): InboundMessage | null {
-    const { rawText, binding, tenantId } = args;
-    // Извлекаем `/<cmd>(@bot)? <tail>?`.
-    const match = rawText.match(/^\/(\w+)(?:@\w+)?(?:\s+([\s\S]+))?$/);
-    if (!match) return null;
-    const cmd = match[1]!.toLowerCase();
-    const tail = match[2]?.trim() ?? '';
+    channel: Channel;
+    config: TelegramBotChannelConfig;
+  }): Promise<InboundMessage | null> {
+    // Anti-spam: max VOICE_PER_HOUR_PER_USER через Redis SETNX-bucket.
+    const allowed = await this.checkVoiceRateLimit({
+      userId: args.binding.userId,
+    });
+    if (!allowed) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text:
+          'Слишком много голосовых сообщений за час. Попробуйте чуть позже.',
+      });
+      return null;
+    }
 
-    if (cmd === 'ask') {
-      if (!tail) {
-        // Нет вопроса — мягко подсказать.
-        return {
-          type: 'command',
-          userId: binding.userId,
-          tenantId,
-          commandName: 'help',
-          originChannelBindingId: binding.id,
-        };
+    let buffer: Buffer;
+    try {
+      const file = await this.api.getFile({
+        token: args.config.botToken,
+        fileId: args.voice.file_id,
+      });
+      if (!file.file_path) {
+        throw new Error('getFile вернул пустой file_path');
       }
+      buffer = await this.api.downloadFile({
+        token: args.config.botToken,
+        filePath: file.file_path,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          fileId: args.voice.file_id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram voice: download failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text: 'Не удалось получить голосовое сообщение. Попробуйте ещё раз.',
+      });
+      return null;
+    }
+
+    // ASR через Vox.
+    const startedAt = Date.now();
+    let transcript: string;
+    try {
+      const submitted = await this.vox.submit(buffer);
+      const result = await this.vox.poll(submitted.taskId);
+      transcript = result.transcriptText.trim();
+    } catch (err) {
+      this.metrics.observeBotVoiceAsrDuration({
+        channel: 'telegram_bot',
+        seconds: (Date.now() - startedAt) / 1000,
+      });
+      this.logger.warn(
+        {
+          fileId: args.voice.file_id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram voice: ASR failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text:
+          'Не удалось распознать голос. Попробуйте отправить текст или повторите голосовое.',
+      });
+      return null;
+    }
+
+    this.metrics.observeBotVoiceAsrDuration({
+      channel: 'telegram_bot',
+      seconds: (Date.now() - startedAt) / 1000,
+    });
+
+    if (!transcript) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text: 'Голос распознан как пустой. Попробуйте ещё раз — чуть громче.',
+      });
+      return null;
+    }
+
+    const intent = await this.classifyIntent({
+      text: transcript,
+      tenantId: args.tenantId,
+      userId: args.binding.userId,
+    });
+
+    if (intent === 'chat_query') {
       return {
         type: 'chat_query',
-        userId: binding.userId,
-        tenantId,
-        question: tail,
-        originChannelBindingId: binding.id,
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        question: transcript,
+        originChannelBindingId: args.binding.id,
       };
     }
-    if (cmd === 'note') {
-      if (!tail) return null;
-      return {
-        type: 'free_note',
-        userId: binding.userId,
-        tenantId,
-        text: tail,
-        metadata: { source: 'telegram_bot', command: 'note' },
-        originChannelBindingId: binding.id,
-      };
-    }
-    if (cmd === 'idea') {
-      if (!tail) return null;
-      return {
-        type: 'free_note',
-        userId: binding.userId,
-        tenantId,
-        text: tail,
-        metadata: { source: 'telegram_bot', command: 'idea', tag: 'idea' },
-        originChannelBindingId: binding.id,
-      };
-    }
-    if (cmd === 'status' || cmd === 'myideas' || cmd === 'help' || cmd === 'start') {
-      return {
-        type: 'command',
-        userId: binding.userId,
-        tenantId,
-        commandName: cmd === 'start' ? 'help' : cmd,
-        args: tail || undefined,
-        originChannelBindingId: binding.id,
-      };
-    }
-    // Неизвестная команда → как help.
     return {
-      type: 'command',
-      userId: binding.userId,
-      tenantId,
-      commandName: 'help',
-      originChannelBindingId: binding.id,
+      type: 'free_note',
+      userId: args.binding.userId,
+      tenantId: args.tenantId,
+      text: transcript,
+      metadata: {
+        source: 'telegram_bot',
+        kind: 'voice',
+        chatId: args.msg.chat.id,
+      },
+      originChannelBindingId: args.binding.id,
     };
   }
 
   /**
-   * Попытка сопоставить reply с открытым probe-ом. Сохраняем
-   * `externalMessageId='<chatId>:<messageId>'` при отправке, поэтому
-   * матчим reply_to_message по той же паре.
+   * Document → getFile → downloadFile → DocumentsService.upload
+   * (внутри ставит job в document.adapter pipeline). Если файл больше
+   * 20 MB — reply «слишком большой файл».
+   */
+  private async handleDocument(args: {
+    document: NonNullable<TelegramMessage['document']>;
+    binding: ChannelBinding;
+    chatId: number;
+    tenantId: string;
+    channel: Channel;
+    config: TelegramBotChannelConfig;
+  }): Promise<void> {
+    const sizeBytes = args.document.file_size ?? 0;
+    if (
+      sizeBytes > 0 &&
+      sizeBytes > TelegramBotChannelAdapter.MAX_DOCUMENT_BYTES
+    ) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Файл слишком большой (>20 МБ). Загрузите его через веб-кабинет.',
+      });
+      return;
+    }
+
+    // Резолвим Person для tenant'а+user'а — DocumentsService.upload требует
+    // uploaderPersonId.
+    const person = await this.prisma.person.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        userId: args.binding.userId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!person) {
+      this.logger.warn(
+        { userId: args.binding.userId, tenantId: args.tenantId },
+        'telegram document: у user нет привязанного Person — отказ',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Не удалось привязать файл к профилю сотрудника. Обратитесь к админу.',
+      });
+      return;
+    }
+
+    let buffer: Buffer;
+    try {
+      const file = await this.api.getFile({
+        token: args.config.botToken,
+        fileId: args.document.file_id,
+      });
+      if (!file.file_path) throw new Error('getFile вернул пустой file_path');
+      buffer = await this.api.downloadFile({
+        token: args.config.botToken,
+        filePath: file.file_path,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          fileId: args.document.file_id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram document: download failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: 'Не удалось получить документ. Попробуйте ещё раз.',
+      });
+      return;
+    }
+
+    try {
+      const result = await this.documents.upload({
+        tenantId: args.tenantId,
+        uploaderPersonId: person.id,
+        file: {
+          buffer,
+          originalName: args.document.file_name ?? 'telegram-document',
+          mimeType: args.document.mime_type ?? 'application/octet-stream',
+          size: buffer.byteLength,
+        },
+      });
+      this.logger.log(
+        {
+          documentId: result.id,
+          tenantId: args.tenantId,
+          userId: args.binding.userId,
+        },
+        'telegram document: upload ok',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Документ принят. Я разберу его и подключу к знаниям компании.',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { tenantId: args.tenantId, err: message },
+        'telegram document: upload failed',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text: `Не удалось принять документ: ${humanizeError(message)}`,
+      });
+    }
+  }
+
+  // ─────────────────────────────── helpers ──────────────────────────
+
+  /**
+   * Anti-spam: max VOICE_PER_HOUR_PER_USER через Redis-bucket. Окно — час
+   * с round-down (`Math.floor(epochMs / 3_600_000)`).
+   */
+  private async checkVoiceRateLimit(args: {
+    userId: string;
+  }): Promise<boolean> {
+    const hour = Math.floor(Date.now() / 3_600_000);
+    const key = `bot:voice:rl:${args.userId}:${hour}`;
+    const count = await this.redis.client.incr(key);
+    if (count === 1) {
+      // первый — выставим TTL 2 часа (с запасом, на случай гранулярного окна).
+      await this.redis.client.expire(key, 7200);
+    }
+    return count <= TelegramBotChannelAdapter.VOICE_PER_HOUR_PER_USER;
+  }
+
+  /**
+   * Резолв verified binding'а. Если нет — best-effort reply и null.
+   */
+  private async requireVerifiedBinding(args: {
+    tgUserId: string;
+    channelId: string;
+    chatId: number;
+    config: TelegramBotChannelConfig;
+  }): Promise<ChannelBinding | null> {
+    const binding = await this.prisma.channelBinding.findFirst({
+      where: { channelId: args.channelId, externalId: args.tgUserId },
+    });
+    if (!binding || !binding.verifiedAt) {
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Аккаунт не привязан. Получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
+      });
+      return null;
+    }
+    return binding;
+  }
+
+  /**
+   * Intent classify через QueryClassifierService (если включён) с fallback
+   * на эвристику. Эвристика: вопросительный знак или start-with «как/что/
+   * почему/кто/где/когда/сколько» → chat_query; иначе free_note.
+   */
+  private async classifyIntent(args: {
+    text: string;
+    tenantId: string;
+    userId: string;
+  }): Promise<'chat_query' | 'free_note'> {
+    if (this.cfg.bot.intentClassifierEnabled) {
+      try {
+        const result = await this.classifier.classify({
+          tenantId: args.tenantId,
+          userId: args.userId,
+          question: args.text,
+          conversationId: null,
+        });
+        // Маппим DialogIntent на наш бинарный inbound-intent.
+        // factual / exploratory / analytical / clone_roleplay → chat_query.
+        // QueryClassifierService возвращает 'fallback' только при LLM-fail,
+        // когда intent=factual — это нормально.
+        const intent: 'chat_query' | 'free_note' =
+          result.intent === 'factual' ||
+          result.intent === 'exploratory' ||
+          result.intent === 'analytical' ||
+          result.intent === 'clone_roleplay'
+            ? 'chat_query'
+            : 'free_note';
+        // Дополнительная sanity-проверка: если LLM сказал chat_query на
+        // явно нечитаемое утверждение без знака вопроса и не похожее на
+        // вопрос — оставим chat_query (LLM лучше эвристики).
+        const source: 'llm' | 'heuristic' =
+          result.source === 'heuristic' ? 'heuristic' : 'llm';
+        this.metrics.incBotIntentClassified({
+          channel: 'telegram_bot',
+          intent,
+          source,
+        });
+        return intent;
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'telegram classify: LLM упал — fallback на эвристики',
+        );
+        // ниже — heuristic fallback
+      }
+    }
+    const intent = heuristicTextIntent(args.text);
+    this.metrics.incBotIntentClassified({
+      channel: 'telegram_bot',
+      intent,
+      source: 'heuristic',
+    });
+    return intent;
+  }
+
+  /**
+   * Попытка сопоставить reply с открытым probe-ом.
    */
   private async tryMatchReplyToProbe(args: {
     reply: TelegramMessage;
-    currentText: string;
     binding: ChannelBinding;
   }): Promise<{ notificationId: string } | null> {
     const { reply, binding } = args;
@@ -582,7 +884,11 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const head = '<b>Кора уточняет</b>';
         const body = escapeHtml(q);
         const tail = ctx ? `\n\n<i>${escapeHtml(ctx)}</i>` : '';
-        return `${head}\n\n${body}${tail}`.slice(0, 4000);
+        // β-1 zero-button: даём подсказку «ответьте текстом» — кнопок нет.
+        return `${head}\n\n${body}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(
+          0,
+          4000,
+        );
       }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';
@@ -610,28 +916,8 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     }
   }
 
-  private renderInlineKeyboard(
-    notification: Notification,
-  ): TelegramInlineKeyboardMarkup | undefined {
-    const payload = notification.payload as Record<string, unknown> | null;
-    if (!payload) return undefined;
-    const options = payload['options'];
-    if (!Array.isArray(options) || options.length === 0) return undefined;
-    // Каждая опция — отдельная строка (Telegram callback_data ≤ 64 байт).
-    const rows = options.slice(0, 8).map((opt, idx) => [
-      {
-        text: String(opt).slice(0, 64),
-        callback_data: `${TelegramBotChannelAdapter.PROBE_CALLBACK_PREFIX}:${notification.id}:${idx}`,
-      },
-    ]);
-    return { inline_keyboard: rows };
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private maybeReplyToMessageId(_delivery: NotificationDelivery): number | undefined {
-    // На β-1 не используем reply chains (это сделает worker позже,
-    // когда будет conversation thread). Возвращаем undefined всегда —
-    // зарезервировано на будущее.
     return undefined;
   }
 
@@ -701,4 +987,46 @@ function escapeHtml(s: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Эвристика intent: вопросительный знак или start-with «как/что/почему/
+ * кто/где/когда/сколько/зачем» → chat_query; иначе free_note.
+ *
+ * Эвристика грубая, но безопасная: на сомнениях скатывается в free_note
+ * (всегда сохраняется как заметка). chat_query инициирует LLM-ответ —
+ * стоит дороже, выдаём только при явных признаках вопроса.
+ */
+function heuristicTextIntent(text: string): 'chat_query' | 'free_note' {
+  if (text.includes('?')) return 'chat_query';
+  const lower = text.trim().toLowerCase();
+  const questionStarts = [
+    'как ',
+    'что ',
+    'почему',
+    'зачем',
+    'кто ',
+    'где ',
+    'когда',
+    'сколько',
+    'какой',
+    'какая',
+    'какое',
+    'какие',
+  ];
+  for (const q of questionStarts) {
+    if (lower.startsWith(q)) return 'chat_query';
+  }
+  return 'free_note';
+}
+
+/** Превращает технический message DocumentsService в user-friendly. */
+function humanizeError(message: string): string {
+  if (message.includes('document_too_large')) {
+    return 'файл слишком большой';
+  }
+  if (message.includes('document_empty')) {
+    return 'файл пустой';
+  }
+  return 'попробуйте ещё раз';
 }

@@ -17,7 +17,7 @@ import { TypedConfigService } from './typed-config.service';
     NestConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      validate: (raw) => {
+      validate: (raw: Record<string, unknown>) => {
         try {
           return parseEnv(raw);
         } catch (err) {

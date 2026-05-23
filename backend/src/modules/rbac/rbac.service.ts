@@ -93,6 +93,12 @@ export type ResourceType =
   | 'conflict_item'
   | 'card_version'
   | 'curator_assignment'
+  // ── SBA α-4 wave 2 — CompletenessSlot ──
+  // 'completeness_slot' — слот «незаполненного поля» нормативной карточки
+  // (regulation / process / role / company_profile). Создаётся
+  // CompletenessScannerCron'ом. owner/admin Org — r/w/d; manager — read всех
+  // Org-слотов (карта пробелов компании), write self (закрытие своих слотов).
+  | 'completeness_slot'
   // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
   // 'chat_v2_conversation' — диалог пользователя с AI-чатом. Owner — сам
   // пользователь; admin/owner Org могут читать для отладки.
@@ -123,7 +129,88 @@ export type ResourceType =
   // 'clone_persona' — ExecutablePersona (snapshot для clone API). Read = тем же,
   // кто имеет read на skill_profile того же Person'а.
   | 'skill_profile'
-  | 'clone_persona';
+  | 'clone_persona'
+  // ── SBA γ-1 доделки — SkillTraitCategory ──
+  // 'skill_category' — эмерджентная категория SkillTrait. Видимость:
+  // employee — read (видит словарь категорий компании); admin/owner — write/delete;
+  // merge_categories идёт через CurationDecision (см. α-4 wave 2 enum-value).
+  | 'skill_category'
+  // ── SBA α-7 wave 2 — ProcessTemplate (Specialist 3.1) ──
+  // 'process_template' — библиотечный шаблон процесса (`ProcessTemplate` +
+  // `ProcessTemplateVersion` + `DecisionPoint` + `ProcessHandoff`). Shared
+  // knowledge компании: owner/admin — r/w/d; manager — read всех template'ов
+  // Org (чтобы видеть схемы процессов). Write/delete — только admin/owner;
+  // `manage` (force-activate version, hard-delete без archived) — super_admin
+  // через RbacService bypass.
+  | 'process_template'
+  // ── SBA α-9 wave 3 — Company Foundation ──
+  // 'company_profile' — 1:1 на Org-запись идентичности компании
+  // (mission/vision/strategy/stage). read — все members; write/delete —
+  // owner/admin (это owner-territory).
+  // 'functional_domain' — функциональная область + дерево. read — все members;
+  // write/delete — owner/admin; manage — для seed-template (per-industry).
+  // 'maturity' — сводка зрелости (Role/Department/Company). read — все members
+  // (shared knowledge); manage — admin/owner (rebuild).
+  | 'company_profile'
+  | 'functional_domain'
+  | 'maturity'
+  // ── SBA α-8 wave 3 — Appointment + KPI ──
+  // 'appointment' — назначение Person на Role в конкретном Department с
+  // loadPercent / status / valid-интервалом. Read — все members; write/delete —
+  // owner/admin (HR-функция).
+  // 'kpi' — Metric с заполненным attachedTo*Id. Read — все members (видят
+  // KPI компании); write/delete — owner/admin. measurement (PATCH currentValue)
+  // — owner/admin (kpi_owner role появится отдельно позже).
+  | 'appointment'
+  | 'kpi'
+  // ── SBA β-7 — Brand Voice Curator (Specialist 3.10) ──
+  // 'brand_voice' — 1:1 на Org «голос бренда» (tone/values/taboos). Read — все
+  // members (нужен всем, кто пишет контент). Write — owner/admin (manage —
+  // rebuild через `act=manage`). Marketing-role hint: manager open получает
+  // write, чтобы команда маркетинга могла править tone/taboos без owner-эскалации.
+  | 'brand_voice'
+  // ── SBA β-6 — Experiment Tracker (Specialist 3.9) ──
+  // 'experiment' — эксперименты компании (гипотеза → выполнение → результат →
+  // урок). First-class сущность (не подкатегория Decision/Insight). owner/admin —
+  // r/w/d + manage (force-transition); manager open — r/w (могут заводить и
+  // править эксперименты, как идеи); manager strict — read self.
+  | 'experiment'
+  // ── SBA β-8 — Operations Dashboard + DailyCheckIn + PersonalRelation ──
+  // 'dashboard_operations' — COO pulse-агрегат (`GET /dashboard/operations`).
+  // Read — owner/admin/coo. Manager → 403.
+  // 'daily_checkin' — личный чек-ин (морнинг/ивнинг) Person'а.
+  // 'personal_relation' — EntityLink между Person'ами (manages /
+  // collaborates_with / mentors / ...). Read для admin/coo; write — internal worker.
+  | 'dashboard_operations'
+  | 'daily_checkin'
+  | 'personal_relation'
+  // ── SBA δ-3 — VoiceChannelAdapter ──
+  // 'voice' — синтез/распознавание речи (TTS + ASR REST endpoints).
+  // Маппинг действий: read = `voice.transcribe` (ASR), write = `voice.synthesize`
+  // (TTS). Employee-доступ: любой member может транскрибировать своё аудио и
+  // синтезировать короткий ответ (≤500 chars). Tenant-scope обязателен.
+  | 'voice'
+  // ── SBA γ-2 — Concierge Agent ──
+  // 'concierge' — sквозной AI-помощник кабинета (tool-use). read — свои
+  // диалоги; write — отправлять сообщения / выполнять tool-use loop. Внутри
+  // ToolRouter дополнительно проверяются permissions на ресурс самого
+  // tool'а (например, create_meeting требует write на 'meeting'). Manage —
+  // admin-функция (просмотр OrgConciergeQuota, чужих диалогов).
+  | 'concierge'
+  // ── SBA δ-1 — Orchestrator (multi-agent research) ──
+  // 'orchestrator' — multi-agent deep research для сложных запросов
+  // («составь отчёт по X», «сравни Y и Z»). read — свои runs + статусы;
+  // write (act='write') = orchestrator.run — запустить новый research-run
+  // (employee с feature-flag). manage (act='manage') = orchestrator.admin —
+  // admin-видение всех runs организации (наблюдение и kill).
+  | 'orchestrator'
+  // ── SBA δ-2 — ProactiveWatcher (2026-05-23) ──
+  // 'proactive_notification' — инициативное уведомление от Watcher'а
+  // («заметил X — может, посмотришь?»). read — свои (employee); write
+  // (PATCH /me/proactive-notifications/:id/dismiss — пометка как
+  // «не показывать») — self. manage — admin (видит все ProactiveNotification
+  // компании для аналитики качества правил).
+  | 'proactive_notification';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -238,6 +325,23 @@ export class RbacService implements OnModuleInit {
     if (ctx === null) return false;
     if (ctx.isSuperAdmin) return true;
     return ctx.role === 'owner' || ctx.role === 'admin';
+  }
+
+  /**
+   * SBA β-8 — может ли пользователь видеть COO operations dashboard
+   * (`GET /api/v1/dashboard/operations/*`). Доступ: owner / admin / coo /
+   * super_admin (bypass). Manager — нет (видит только свой манагерский /me).
+   */
+  async canViewOperationsDashboard(
+    userId: string,
+    orgId: string,
+  ): Promise<boolean> {
+    const ctx = await this.loadContext(userId, orgId);
+    if (ctx === null) return false;
+    if (ctx.isSuperAdmin) return true;
+    return (
+      ctx.role === 'owner' || ctx.role === 'admin' || ctx.role === 'coo'
+    );
   }
 
   /**
@@ -428,6 +532,13 @@ function isResourceType(s: string): s is ResourceType {
     // SBA β-5 — Ideas Collector + Probe-Agent.
     'idea',
     'probe_event',
+    // SBA γ-1 доделки — SkillTraitCategory.
+    'skill_category',
+    // SBA α-8 wave 3 — Appointment + KPI.
+    'appointment',
+    'kpi',
+    // SBA β-7 — Brand Voice Curator.
+    'brand_voice',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

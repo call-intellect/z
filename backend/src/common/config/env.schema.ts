@@ -650,10 +650,31 @@ const TelegramBotChannelSchema = z.object({
  *     держим pessimistic 25).
  *
  * Per-tenant accessToken / webhookSecret лежат в `Channel.config` (encrypted).
+ *
+ * SBA β-1 zero-button (2026-05-23): master-флаги bot inbound добавлены в
+ * эту же схему (BOT_VOICE_ENABLED / BOT_DOCUMENT_ENABLED /
+ * BOT_INTENT_CLASSIFIER_ENABLED), чтобы не превысить лимит TS на глубину
+ * `.merge()`-цепочки (TS2589) — см. аналогичный приём в PersonaSchema
+ * (Company Foundation). Логически независимы — отдельный геттер
+ * `cfg.bot` в TypedConfigService.
+ *
+ *   - BOT_VOICE_ENABLED — приём voice-сообщений (getFile → ASR → classify
+ *     → free_note|chat_query). При false — голос игнорируется с reply
+ *     «голос временно недоступен».
+ *   - BOT_DOCUMENT_ENABLED — приём документов (PDF/DOCX/MD/TXT → upload
+ *     через DocumentsService → document.adapter pipeline). При false —
+ *     reply «загрузка файлов сейчас выключена».
+ *   - BOT_INTENT_CLASSIFIER_ENABLED — LLM-классификатор intent
+ *     (QueryClassifierService). При false → fallback на эвристики.
+ *     Также fallback срабатывает, если LLM throw.
  */
 const MaxBotChannelSchema = z.object({
   MAX_BOT_API_BASE: z.string().url().default('https://platform-api.max.ru'),
   MAX_BOT_GLOBAL_RPS: z.coerce.number().int().positive().default(25),
+  // SBA β-1 zero-button (2026-05-23). Master-flags inbound поведений.
+  BOT_VOICE_ENABLED: zBool(true),
+  BOT_DOCUMENT_ENABLED: zBool(true),
+  BOT_INTENT_CLASSIFIER_ENABLED: zBool(true),
 });
 
 /**
@@ -793,6 +814,100 @@ const SkillSchema = z.object({
 });
 
 /**
+ * SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector + completeness.
+ *
+ *   - PROCESS_DETECTOR_BATCH_SIZE — порог числа блоков, при достижении которого
+ *     батч process-detector сбрасывается на LLM-извлечение (default 10).
+ *   - PROCESS_DETECTOR_BATCH_TIMEOUT_SECONDS — таймаут окна (default 300 = 5 мин);
+ *     если за окно блоков накопилось меньше batchSize — всё равно flush.
+ *   - PROCESS_TEMPLATE_COMPLETENESS_CRON — расписание ежедневного пересчёта
+ *     completeness для всех ProcessTemplate (default 03:00 UTC).
+ *   - PROCESS_TEMPLATE_DEDUPE_THRESHOLD — cosine similarity порог склейки
+ *     при extract'е (>= порога → новая ProcessTemplateVersion existing template'а).
+ */
+const ProcessTemplateSchema = z.object({
+  PROCESS_DETECTOR_BATCH_SIZE: z.coerce.number().int().positive().default(10),
+  PROCESS_DETECTOR_BATCH_TIMEOUT_SECONDS: z
+    .coerce.number()
+    .int()
+    .positive()
+    .default(300),
+  PROCESS_TEMPLATE_COMPLETENESS_CRON: z.string().min(1).default('0 3 * * *'),
+  PROCESS_TEMPLATE_DEDUPE_THRESHOLD: z
+    .coerce.number()
+    .min(0)
+    .max(1)
+    .default(0.85),
+  /// SBA γ-3 — мастер-флаг детектора cross-functional. False → детектор
+  /// не пересчитывает score / не выставляет isCrossFunctional при create/update.
+  CROSS_FUNCTIONAL_DETECTOR_ENABLED: zBool(true),
+  /// SBA γ-3 — порог `unique_departments / total_steps`. >= порога →
+  /// `isCrossFunctional=true`.
+  CROSS_FUNCTIONAL_SCORE_THRESHOLD: z
+    .coerce.number()
+    .min(0)
+    .max(1)
+    .default(0.5),
+});
+
+/**
+ * SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
+ * Classifier / MultiQuery / Summarizer + AnswerCache/RetrievalCache).
+ * См. plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §13.
+ *
+ *   - DIALOG_LAYER_ENABLED — master-флаг. False → fallback на raw userMessage.
+ *   - ANSWER_CACHE_TTL_SECONDS — TTL финального ответа (24h по умолчанию).
+ *   - RETRIEVAL_CACHE_TTL_SECONDS — TTL blockIds (1h по умолчанию).
+ *   - CONTEXTUALIZER_CONFIDENCE_MIN — порог confidence ниже которого
+ *     fallback на raw userMessage.
+ *   - SUMMARIZER_MESSAGE_THRESHOLD — порог числа messages, при котором
+ *     ConversationSummarizerCron сжимает старую часть в summary.
+ *   - MULTI_QUERY_EXPANSION_ENABLED — мастер-флаг 3-way query expansion
+ *     (для exploratory/analytical intent).
+ *   - DIALOG_SUMMARIZER_CRON — cron для запуска summarizer'а (по умолчанию
+ *     каждые 30 минут).
+ *   - DIALOG_SUMMARIZER_KEEP_LAST — сколько последних сообщений оставлять
+ *     "сырыми" (после summary).
+ *   - DIALOG_SUMMARIZER_STALENESS_HOURS — через сколько часов summary
+ *     считается устаревшим и пересчитывается.
+ */
+const DialogLayerSchema = z.object({
+  DIALOG_LAYER_ENABLED: zBool(true),
+  ANSWER_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  RETRIEVAL_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
+  CONTEXTUALIZER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.5),
+  SUMMARIZER_MESSAGE_THRESHOLD: z.coerce.number().int().positive().default(12),
+  MULTI_QUERY_EXPANSION_ENABLED: zBool(true),
+  DIALOG_SUMMARIZER_CRON: z.string().min(1).default('*/30 * * * *'),
+  DIALOG_SUMMARIZER_KEEP_LAST: z.coerce.number().int().positive().default(6),
+  DIALOG_SUMMARIZER_STALENESS_HOURS: z.coerce.number().int().positive().default(12),
+});
+
+/**
+ * SBA β-6 — Experiment Tracker (Specialist 3.9).
+ *
+ *   - EXPERIMENT_AUTO_STATUS_TRANSITION_ENABLED — мастер-флаг автоперевода
+ *     статусов экспериментов в `experiment-status-resolver.cron`. При false —
+ *     cron работает в no-op режиме (только метрики, без UPDATE). По умолчанию
+ *     true (см. β-6 §13).
+ *   - EXPERIMENT_RUNNING_PROBE_THRESHOLD_DAYS — порог дней без результата для
+ *     probe `experiment.running_too_long`. По умолчанию 30 (см. β-6 §2).
+ *
+ * Группа добавлена отдельно (β-6 §13). Параметры читаются через
+ * `TypedConfigService.experiments` (см. typed-config.ts).
+ *
+ * NB: SBA γ-2 (Concierge) ENV-ключи добавлены в ту же группу через
+ * .merge() ниже — отдельный геттер `cfg.concierge`. Это снижает глубину
+ * .merge цепочки EnvSchema (см. NB про TS2589 выше).
+ */
+const ExperimentSchema = z.object({
+  // EXPERIMENT_* keys и CONCIERGE_* keys (SBA γ-2) теперь живут в PersonaSchema
+  // ниже — это снижает глубину .merge цепочки и помогает обходить TS2589
+  // (см. NB перед EnvSchema). Эта схема сохранена пустой как placeholder для
+  // возможного будущего расширения.
+});
+
+/**
  * SBA γ-1 — ExecutablePersona build cron + параметры компиляции.
  *
  *   - PERSONA_BUILD_CRON — расписание сборки snapshots (по умолчанию воскресенье 06:00).
@@ -803,12 +918,195 @@ const PersonaSchema = z.object({
   PERSONA_BUILD_CRON: z.string().min(1).default('0 6 * * SUN'),
   PERSONA_MIN_TRAITS: z.coerce.number().int().positive().default(3),
   PERSONA_ROLE_AGG_MIN_PERSONS: z.coerce.number().int().positive().default(2),
+  /// SBA γ-1 доделки — мастер-тумблер weekly snapshot. true = собирается
+  /// каждый понедельник 06:00 (или по PERSONA_BUILD_CRON). false = только
+  /// trigger-based и manual snapshot.
+  EXECUTABLE_PERSONA_SCHEDULED_REBUILD_ENABLED: zBool(true),
+  /// SBA γ-1 доделки — порог числа новых active traits с момента последнего
+  /// snapshot, при достижении которого trigger-watcher cron инициирует rebuild.
+  EXECUTABLE_PERSONA_THRESHOLD_TRAITS_COUNT: z.coerce.number().int().positive().default(3),
+  /// SBA γ-1 доделки — минимальный интервал (минуты) между двумя rebuild'ами
+  /// одной persona. Защита от дёрганья: если уже собрали < N минут назад — skip.
+  EXECUTABLE_PERSONA_MIN_REBUILD_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
+
+  // SBA α-9 wave 3 — Company Foundation (DomainExpander / MaturityScorer).
+  // Сложены в PersonaSchema, чтобы не превысить лимит TS на глубину типов
+  // (см. комментарий перед EnvSchema). Логически независимы — см.
+  // typed-config.ts (`cfg.companyFoundation`).
+  DOMAIN_EXPANDER_ENABLED: zBool(true),
+  DOMAIN_EXPANDER_MIN_CLUSTER_SIZE: z.coerce.number().int().positive().default(10),
+  DOMAIN_EXPANDER_MAX_NEW_PER_RUN: z.coerce.number().int().positive().default(5),
+  MATURITY_SCORER_ENABLED: zBool(true),
+
+  // SBA β-7 — Brand Voice Curator (Specialist 3.10).
+  // Сложены в PersonaSchema по той же причине (TS2589 при ≥30 .merge цепочках).
+  // Логически независимы — см. typed-config.ts (`cfg.brandVoice`).
+  //
+  //   - BRAND_VOICE_EXTRACTOR_ENABLED — мастер-флаг daily-cron'а извлечения
+  //     профиля. False → cron работает в no-op режиме (для прода первой
+  //     недели после деплоя).
+  //   - BRAND_VOICE_MIN_CORPUS_SIZE — минимум документов с useCases includes
+  //     'brand_corpus', ниже которого экстрактор пропускает Org (anti-noise).
+  BRAND_VOICE_EXTRACTOR_ENABLED: zBool(true),
+  BRAND_VOICE_MIN_CORPUS_SIZE: z.coerce.number().int().positive().default(5),
+
+  // SBA β-6 — Experiment Tracker (Specialist 3.9).
+  // Сложены в PersonaSchema по той же причине (TS2589 при ≥30 .merge цепочках).
+  // Логически независимы — см. typed-config.ts (`cfg.experiments`).
+  //
+  //   - EXPERIMENT_AUTO_STATUS_TRANSITION_ENABLED — мастер-флаг автоперевода
+  //     статусов в `experiment-status-resolver.cron`. При false — cron только
+  //     считает метрики и эмитит probe, без UPDATE статусов.
+  //   - EXPERIMENT_RUNNING_PROBE_THRESHOLD_DAYS — порог дней без результата
+  //     для probe `experiment.running_too_long`.
+  EXPERIMENT_AUTO_STATUS_TRANSITION_ENABLED: zBool(true),
+  EXPERIMENT_RUNNING_PROBE_THRESHOLD_DAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30),
+
+  // SBA γ-2 — Concierge Agent. CONCIERGE_* ENV-ключи НЕ добавлены в
+  // EnvSchema (избегаем углубления .merge цепочки → TS2589). Читаются
+  // через process.env в TypedConfigService.concierge с runtime-fallback на
+  // defaults (100/3000/15s) и `CONCIERGE_ENABLED!==false`. См.
+  // plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md §13.
+
+});
+
+/**
+ * SBA β-8 (2026-05-23) — DailyCheckIn + OperationsDashboard.
+ *
+ *   - DAILY_CHECKIN_ENABLED — мастер-флаг cron'а. False → cron работает в
+ *     no-op режиме (для прода первой недели после деплоя или временного
+ *     отключения с минимальным риском кэшей).
+ *   - DAILY_CHECKIN_MORNING_LOCAL_HOUR / DAILY_CHECKIN_EVENING_LOCAL_HOUR
+ *     — час локальной TZ Person'а, при достижении которого cron инициирует
+ *     morning / evening check-in (default 9 / 18). Окно ±30 мин — внутри
+ *     воркера; cron сам тикает каждый час (`0 * * * *`).
+ *   - OPERATIONS_DASHBOARD_CACHE_TTL_SECONDS — TTL Redis-кэша COO-агрегата
+ *     `/api/v1/dashboard/operations/overview` (default 300с = 5 мин).
+ *
+ * Логически независимая группа, но регистрируется отдельным `.merge()`-вызовом
+ * (т.к. parseEnv возвращает Record<string, unknown> — TS2589 не триггерится).
+ * См. typed-config.ts (`cfg.betaOps`).
+ */
+const BetaOpsSchema = z.object({
+  DAILY_CHECKIN_ENABLED: zBool(true),
+  DAILY_CHECKIN_MORNING_LOCAL_HOUR: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(23)
+    .default(9),
+  DAILY_CHECKIN_EVENING_LOCAL_HOUR: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(23)
+    .default(18),
+  OPERATIONS_DASHBOARD_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300),
+
+  // ── SBA δ-3 — VoiceChannelAdapter (voice inbound + TTS outbound) ─────
+  // См. plans/tz/2026-05-23-sba-delta-3-voice-channel-adapter.md §13.
+  // Сложены в BetaOpsSchema (а не отдельной .merge цепочкой), чтобы не
+  // удлинять `.merge` цепочку EnvSchema — TS2589 на ней уже за пределом
+  // (это deferred-tax от других параллельных групп; см. typed-config.ts).
+  // Логически независимы — `cfg.voice`.
+  //
+  //   - TTS_PROVIDER — `openai` (default) | `yandex` (опц., MVP не активен;
+  //     требует отдельного ENV YANDEX_SPEECHKIT_API_KEY).
+  //   - TTS_VOICE — дефолтный голос для OpenAI TTS (alloy / echo / fable /
+  //     onyx / nova / shimmer). Per-call можно override.
+  //   - VOICE_WS_ENABLED — мастер-флаг WS endpoint'а concierge voice.
+  //     На δ-3 фактический WS-handler не создан (γ-2 Concierge модуль в
+  //     работе). Флаг зарезервирован.
+  // NB: TTS_PROVIDER — z.string() (а не z.enum), runtime-валидация в
+  // `TtsService.synthesize`, чтобы не наращивать литералы в z.infer<Env>.
+  TTS_PROVIDER: z.string().min(1).default('openai'),
+  TTS_VOICE: z.string().min(1).default('alloy'),
+  VOICE_WS_ENABLED: zBool(true),
+
+  // ── SBA δ-2 — ProactiveWatcher (2026-05-23) ─────────────────────────
+  // См. plans/tz/2026-05-23-sba-delta-2-proactive-watcher.md §13.
+  // Сложены в BetaOpsSchema, чтобы не удлинять .merge цепочку EnvSchema
+  // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.proactive`.
+  //
+  //   - PROACTIVE_WATCHER_ENABLED — мастер-флаг cron'а. False → no-op.
+  //   - PROACTIVE_WATCHER_ANTI_SPAM_TTL_HOURS — TTL Redis dedup-key (default 24).
+  //   - PROACTIVE_RULE_*_ENABLED — per-rule тумблер (admin может отключать
+  //     отдельные правила без рестарта).
+  PROACTIVE_WATCHER_ENABLED: zBool(true),
+  PROACTIVE_WATCHER_ANTI_SPAM_TTL_HOURS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24),
+  PROACTIVE_RULE_DECISION_NO_OWNER_ENABLED: zBool(true),
+  PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED: zBool(true),
+  PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED: zBool(true),
+  PROACTIVE_RULE_PROCESS_STALE_REVIEW_ENABLED: zBool(true),
+  PROACTIVE_RULE_ROLE_LOW_COMPLETENESS_ENABLED: zBool(true),
+  PROACTIVE_RULE_DEPARTMENT_NO_DOMAIN_ENABLED: zBool(true),
+  PROACTIVE_RULE_INSIGHTS_SILOED_IN_DOMAIN_ENABLED: zBool(true),
+  PROACTIVE_RULE_PLAN_ITEM_OVERDUE_ENABLED: zBool(true),
+});
+
+/**
+ * SBA α-10 wave 3 — Admin LLM + Unit Economics ENV (budget alerts, currency
+ * sync from ЦБ РФ, provider smoke-tests, LLM adapter registry feature-flag).
+ * Логически независимая группа, регистрируется отдельным `.merge()`-вызовом
+ * (см. `cfg.budget` в typed-config.ts).
+ */
+const BudgetSchema = z.object({
+  BUDGET_ALERT_ENABLED: zBool(true),
+  /** Список порогов % через запятую, например "50,80,100". */
+  BUDGET_ALERT_THRESHOLD_PERCENTS: z.string().default('80,100'),
+  CURRENCY_RATE_API_URL: z
+    .string()
+    .url()
+    .default('https://www.cbr-xml-daily.ru/daily_json.js'),
+  CURRENCY_RATE_FALLBACK_USD_RUB: z.coerce.number().positive().default(90),
+  PROVIDER_SMOKE_TEST_ENABLED: zBool(true),
+  PROVIDER_SMOKE_TEST_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30),
+  /** Количество подряд провалов до алерта on-call. */
+  PROVIDER_SMOKE_TEST_FAIL_THRESHOLD: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3),
+  /**
+   * Feature-flag: false → legacy switch(provider) в LlmRouterService.dispatch()
+   * (default, production safety). true → LlmProtocolAdapterRegistry.
+   * См. plans/tz/2026-05-23-sba-alpha-10-wave3-admin-llm-economics.md §3.5.
+   */
+  USE_PROTOCOL_ADAPTER_REGISTRY: zBool(false),
 });
 
 /**
  * Полная схема — слияние всех групп.
+ *
+ * NB (cardinality / TS2589): TypeScript падает на бесконечной глубине типов
+ * при ≥30 `.merge()`-вызовах. Поэтому новые ENV-ключи Company Foundation
+ * (DOMAIN_EXPANDER_*, MATURITY_SCORER_*) добавлены прямо в PersonaSchema
+ * выше, а не отдельной схемой. Это снижает глубину типа Env. После γ-1
+ * `parseEnv` возвращает `Record<string, unknown>` — поэтому короткая цепочка
+ * `.merge(BetaOpsSchema)` ниже безопасна.
  */
-export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(DatabaseSchema)
   .merge(RedisSchema)
   .merge(AuthSchema)
   .merge(ArgonSchema)
@@ -852,15 +1150,27 @@ export const EnvSchema = RuntimeSchema.merge(DatabaseSchema)
   .merge(IdeasSchema)
   .merge(ProbeSchema)
   .merge(SkillSchema)
-  .merge(PersonaSchema);
+  .merge(PersonaSchema)
+  .merge(ProcessTemplateSchema)
+  .merge(DialogLayerSchema)
+  // NB (TS2589): объединяем BetaOps + Voice в один merge-шаг, чтобы
+  // не наращивать длину `.merge` цепочки EnvSchema. Логически независимы
+  // (`cfg.betaOps`, `cfg.voice`, `cfg.roleMap`).
+  .merge(BetaOpsSchema)
+  .merge(BudgetSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 
 /**
  * Парсер ENV. Используется в `ConfigModule.forRoot({ validate })`.
  * При ошибке — формирует читаемое сообщение и пробрасывает.
+ *
+ * NB: возвращаемый тип — `Record<string, unknown>` (а не `Env`), чтобы
+ * NestConfigModule.forRoot.validate не триггерил TS2589 на длинной
+ * .merge-цепочке EnvSchema (~50 разделов). Типизация значений — на уровне
+ * `TypedConfigService.get` через runtime-cast.
  */
-export function parseEnv(raw: Record<string, unknown>): Env {
+export function parseEnv(raw: Record<string, unknown>): Record<string, unknown> {
   const result = EnvSchema.safeParse(raw);
   if (!result.success) {
     const issues = result.error.issues
@@ -870,5 +1180,5 @@ export function parseEnv(raw: Record<string, unknown>): Env {
       `Невалидная конфигурация ENV. Проверь .env (см. .env.example).\n${issues}`,
     );
   }
-  return result.data;
+  return result.data as unknown as Record<string, unknown>;
 }

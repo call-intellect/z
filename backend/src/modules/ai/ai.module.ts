@@ -16,11 +16,19 @@ import { MinimaxService } from './services/minimax.service';
 import { OllamaService } from './services/ollama.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
 import { PromptResolverService } from './services/prompt-resolver.service';
+import { AnthropicMessagesProtocolAdapter } from './services/protocol-adapter/adapters/anthropic-messages.adapter';
+import { CustomHttpProtocolAdapter } from './services/protocol-adapter/adapters/custom-http.adapter';
+import { OllamaNativeProtocolAdapter } from './services/protocol-adapter/adapters/ollama-native.adapter';
+import { OpenAiChatProtocolAdapter } from './services/protocol-adapter/adapters/openai-chat.adapter';
+import { OpenAiResponsesProtocolAdapter } from './services/protocol-adapter/adapters/openai-responses.adapter';
+import { LlmProtocolAdapterRegistry } from './services/protocol-adapter/llm-protocol-adapter.registry';
+import { ProviderInfoResolver } from './services/protocol-adapter/provider-info.resolver';
 import { RegenerateService } from './services/regenerate.service';
 import { RetryService } from './services/retry.service';
 import { TaskExtractionService } from './services/task-extraction.service';
 import { TranscriptCleanLlmRefineService } from './services/transcript-clean-llm-refine.service';
 import { TranscriptCleaningService } from './services/transcript-cleaning.service';
+import { VoxService } from './services/vox.service';
 
 /**
  * Глобальный AI-модуль для HTTP-процесса.
@@ -58,6 +66,16 @@ import { TranscriptCleaningService } from './services/transcript-cleaning.servic
     OllamaService,
     // Маршрутизация и регенерация.
     LlmRouterService,
+    // SBA α-10 wave 3 — LlmProtocolAdapterRegistry (feature-flag через
+    // USE_PROTOCOL_ADAPTER_REGISTRY). Все 5 адаптеров регистрируем сразу —
+    // включение/выключение управляется feature-flag в LlmRouterService.dispatch().
+    OpenAiChatProtocolAdapter,
+    OpenAiResponsesProtocolAdapter,
+    AnthropicMessagesProtocolAdapter,
+    OllamaNativeProtocolAdapter,
+    CustomHttpProtocolAdapter,
+    LlmProtocolAdapterRegistry,
+    ProviderInfoResolver,
     ChapterExtractionService,
     TaskExtractionService,
     RegenerateService,
@@ -72,6 +90,11 @@ import { TranscriptCleaningService } from './services/transcript-cleaning.servic
     // Фаза D — очистка транскрипта (LLM-refine + HTTP-side service для endpoints).
     TranscriptCleanLlmRefineService,
     TranscriptCleaningService,
+    // SBA β-1 zero-button (2026-05-23): VoxService поднят в @Global AiModule,
+    // чтобы HTTP-side адаптеры Telegram/MAX могли инжектить ASR для voice
+    // inbound. Раньше VoxService жил только в WorkersModule (см.
+    // ai/workers.module.ts).
+    VoxService,
     // S3 — нужен RegenerateService (для regenerate-section читает merged).
     S3Service,
   ],
@@ -89,7 +112,12 @@ import { TranscriptCleaningService } from './services/transcript-cleaning.servic
     BehaviorLlmRefineService,
     TranscriptCleanLlmRefineService,
     TranscriptCleaningService,
+    VoxService,
     EmbeddingsModule,
+    // SBA α-10 wave 3 — нужны admin/economics-модулю для smoke-теста и
+    // direct dispatch без LlmRouter.
+    LlmProtocolAdapterRegistry,
+    ProviderInfoResolver,
   ],
 })
 export class AiModule {}

@@ -1,10 +1,16 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { IdeaBlock, SignalType } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { RedisService } from '../../../common/redis/redis.service';
+import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
+
+import { resolveAxisTenantTop } from './tenant-top';
 
 /**
  * RouterService — диспетчер атомов знаний (IdeaBlock) в специалистов Слоя 3.
@@ -46,6 +52,18 @@ export class RouterService {
     SKILL: '3-7-skill',
     PROJECT_CUSTOMER: '3-4-project-customer',
     KNOWLEDGE_CLONE: '3-2-knowledge-clone',
+    // SBA α-7 wave 2 — ProcessTemplate detector (structured pipeline для
+    // process_step / methodology_step параллельно с regulations).
+    PROCESS_DETECTOR: '3-1-process-detector',
+    // SBA β-6 — Experiment Tracker (signalType={hypothesis, result, lesson}).
+    // Работает параллельно со SKILL (тот собирает индивидуальные навыки,
+    // а EXPERIMENT_TRACKER — институциональную память «что попробовали и что вышло»).
+    EXPERIMENT_TRACKER: '3-9-experiments',
+    // SBA β-8 — PersonalRelation builder (team_friction / process_friction +
+    // manages / collaborates_with). Извлекает межличностные EntityLink из
+    // блоков. Параллельно с INSIGHTS (тот собирает текстовый риск/блокер,
+    // а PERSONAL_RELATION — структурированный граф «кто с кем работает»).
+    PERSONAL_RELATION: '3-12-personal-relation',
   } as const;
 
   /**
@@ -61,6 +79,17 @@ export class RouterService {
     [RouterService.SPECIALIST.SKILL]: 5,
     [RouterService.SPECIALIST.PROJECT_CUSTOMER]: 6,
     [RouterService.SPECIALIST.KNOWLEDGE_CLONE]: 7,
+    // SBA α-7 wave 2 — process-detector работает рядом с regulations, держим
+    // близкий приоритет (2.5 = между REGULATIONS и INSIGHTS).
+    [RouterService.SPECIALIST.PROCESS_DETECTOR]: 2.5,
+    // SBA β-6 — experiment tracker имеет средний приоритет (4.5: между ideas
+    // и skill). Эксперименты — стратегическая институциональная память;
+    // важнее ideas, но менее срочные, чем decisions/insights/regulations.
+    [RouterService.SPECIALIST.EXPERIMENT_TRACKER]: 4.5,
+    // SBA β-8 — PersonalRelation чуть менее приоритетен, чем insights (3),
+    // но важнее ideas (4): структурированные межличностные связи важны для COO,
+    // но менее срочные, чем явные риски/проблемы.
+    [RouterService.SPECIALIST.PERSONAL_RELATION]: 3.5,
   };
 
   constructor(
@@ -69,6 +98,12 @@ export class RouterService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(LlmRouterService)
+    private readonly llm?: LlmRouterService,
+    @Optional()
+    @Inject(RedisService)
+    private readonly redis?: RedisService,
   ) {}
 
   /**
@@ -170,8 +205,15 @@ export class RouterService {
         targets.add(RouterService.SPECIALIST.DECISIONS);
         break;
       case 'regulation':
-      case 'process_step':
         targets.add(RouterService.SPECIALIST.REGULATIONS);
+        break;
+      case 'process_step':
+        // SBA α-7 wave 2: process_step идёт ПАРАЛЛЕЛЬНО в regulations
+        // (текстовое описание процесса) и в process-detector (structured
+        // ProcessTemplate). Оба специалиста — разные слои представления
+        // одного и того же сигнала.
+        targets.add(RouterService.SPECIALIST.REGULATIONS);
+        targets.add(RouterService.SPECIALIST.PROCESS_DETECTOR);
         break;
       case 'pain':
       case 'risk':
@@ -224,10 +266,33 @@ export class RouterService {
       case 'expertise':
       case 'experience':
       case 'competence':
-      case 'methodology_step':
+        {
+          const hasEmployeeSubject = await this.hasEmployeeSubject(block.id);
+          if (hasEmployeeSubject) {
+            targets.add(RouterService.SPECIALIST.SKILL);
+          }
+        }
+        break;
       case 'lesson':
       case 'hypothesis':
       case 'result': {
+        // SBA β-6 — Experiment Tracker всегда видит эти 3 сигнала (вне
+        // зависимости от subject): эксперименты — институциональная память,
+        // а не личный навык. SKILL также подключаем, если subject — employee
+        // (тот же блок может одновременно говорить «мы попробовали X» и
+        // «Маша разобралась в Y»).
+        targets.add(RouterService.SPECIALIST.EXPERIMENT_TRACKER);
+        const hasEmployeeSubject = await this.hasEmployeeSubject(block.id);
+        if (hasEmployeeSubject) {
+          targets.add(RouterService.SPECIALIST.SKILL);
+        }
+        break;
+      }
+      case 'methodology_step': {
+        // SBA α-7 wave 2: methodology_step тоже структурный сигнал процесса —
+        // отправляем в process-detector. Параллельно (если есть employee
+        // subject) — в SKILL, как было до wave 2.
+        targets.add(RouterService.SPECIALIST.PROCESS_DETECTOR);
         const hasEmployeeSubject = await this.hasEmployeeSubject(block.id);
         if (hasEmployeeSubject) {
           targets.add(RouterService.SPECIALIST.SKILL);
@@ -235,13 +300,16 @@ export class RouterService {
         break;
       }
       // β-8 / γ-3 friction-сигналы — на α-3 попадают в INSIGHTS (близко к
-      // pain/risk). Когда появятся специалисты β-8 (PersonalRelation, COO) и
-      // γ-3 (CrossFunctional) — добавим их в эти case'ы рядом с INSIGHTS.
+      // pain/risk). С β-8 параллельно идут в PERSONAL_RELATION для team_friction
+      // и process_friction (структурированный граф межличностных связей).
       case 'blocker':
-      case 'team_friction':
-      case 'process_friction':
       case 'resource_gap':
         targets.add(RouterService.SPECIALIST.INSIGHTS);
+        break;
+      case 'team_friction':
+      case 'process_friction':
+        targets.add(RouterService.SPECIALIST.INSIGHTS);
+        targets.add(RouterService.SPECIALIST.PERSONAL_RELATION);
         break;
       // δ-2 / γ-2 / sales — предложения и запросы идут в IDEAS (close to
       // feature_request) до появления специализированных consumer'ов.
@@ -262,15 +330,206 @@ export class RouterService {
         break;
       // Прочие signalType (commitment, mood, drift, metric_change, ...).
       default:
-        // TODO(α-3 wave 3): LLM-fallback router для unmatched signalType.
-        // См. plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier.md.
-        // На текущей фазе оставляем no-op — статический mapping покрывает
-        // важные случаи. Когда появится много новых signalType без явного
-        // потребителя — включить LLM-классификатор поверх этого default.
+        // SBA α-3 wave 3 — LLM-fallback роутер.
+        // Static mapping не нашёл targets'ов для этого signalType — пробуем
+        // через LLM (если фича-флаг включён). См. fallbackToLlm() ниже.
         break;
     }
 
+    // SBA α-3 wave 3 — если статика дала 0 targets, пробуем LLM-fallback.
+    // Контракт: НЕ заменяет static. Если static дал ≥1 target — НЕ вызываем LLM.
+    if (targets.size === 0 && this.isLlmFallbackEnabled()) {
+      try {
+        const llmTargets = await this.fallbackToLlm(block);
+        for (const t of llmTargets) targets.add(t);
+      } catch (err) {
+        // fallbackToLlm уже инкрементит метрику {result=llm_error} и не должен
+        // throw'ить наружу, но на всякий случай — best-effort.
+        this.logger.debug(
+          {
+            blockId: block.id,
+            signalType: block.signalType,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'RouterService.matchSpecialists: LLM-fallback бросил — игнорируем',
+        );
+      }
+    }
+
     return Array.from(targets);
+  }
+
+  // ─────────────────────── SBA α-3 wave 3 — LLM-fallback ───────────────
+
+  /**
+   * LLM-fallback роутер для unmatched signalType. Вызывается ТОЛЬКО когда:
+   *   - статический matchSpecialists вернул 0 targets, И
+   *   - feature-флаг `ROUTER_LLM_FALLBACK_ENABLED=true`.
+   *
+   * Алгоритм:
+   *   1. Redis cache lookup по ключу `routerfallback:<signalType>:<contentHash>`.
+   *      Hit → возвращаем cached list (метрика cache_hit + matched/no_match).
+   *   2. Cache miss → LLM call с whitelist'ом всех специалистов + текстом блока.
+   *      Принимаем только specialist names из SPECIALIST const'ы.
+   *   3. SET в Redis на TTL (default 24h, env ROUTER_FALLBACK_CACHE_TTL_SECONDS).
+   *   4. Метрика router_fallback_calls_total{tenant_top, result}.
+   *      result ∈ matched | no_match | llm_error.
+   *
+   * Best-effort: любая ошибка → warn + пустой массив. Никогда не throw.
+   */
+  private async fallbackToLlm(
+    block: Pick<IdeaBlock, 'id' | 'tenantId' | 'signalType'>,
+  ): Promise<string[]> {
+    if (!this.llm) return [];
+    const tenantTop = resolveAxisTenantTop(block.tenantId);
+
+    // Загружаем содержимое блока для cache-key + промпта.
+    const full = await this.prisma.ideaBlock.findUnique({
+      where: { id: block.id },
+      select: {
+        criticalQuestion: true,
+        trustedAnswer: true,
+        tags: true,
+      },
+    });
+    if (!full) {
+      this.metrics.incRouterFallbackCall({ tenantTop, result: 'no_match' });
+      return [];
+    }
+
+    const cacheKey = this.makeFallbackCacheKey({
+      signalType: block.signalType,
+      criticalQuestion: full.criticalQuestion,
+      trustedAnswer: full.trustedAnswer,
+    });
+
+    // ── Cache lookup ──
+    if (this.redis) {
+      try {
+        const cached = await this.redis.client.get(cacheKey);
+        if (cached != null) {
+          const parsed = parseCachedSpecialists(cached);
+          this.metrics.incRouterFallbackCacheHit({ tenantTop });
+          this.metrics.incRouterFallbackCall({
+            tenantTop,
+            result: parsed.length > 0 ? 'matched' : 'no_match',
+          });
+          return parsed;
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            cacheKey,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'RouterService.fallback: cache read error — пропускаем кэш',
+        );
+      }
+    }
+
+    // ── LLM call ──
+    const whitelist = Object.values(RouterService.SPECIALIST) as string[];
+    const systemPrompt = [
+      'Ты — knowledge-роутер. Тебе дают один IdeaBlock и whitelist специалистов Слоя 3.',
+      'Выбери 0..3 специалистов из whitelist, которым полезно увидеть этот блок. Если ни один не подходит — верни пустой массив.',
+      'Отвечай строго JSON: {"specialists": ["3-3-decisions", ...]}. Никакого комментария.',
+    ].join('\n');
+    const userMessage = [
+      `Блок (signalType=${block.signalType}).`,
+      `Вопрос: ${full.criticalQuestion}`,
+      `Ответ: ${full.trustedAnswer}`,
+      `Теги: ${full.tags.join(', ') || '(нет)'}`,
+      '',
+      `Whitelist специалистов: ${whitelist.join(', ')}`,
+    ].join('\n');
+
+    let llmText: string;
+    try {
+      const result = await this.llm.call({
+        taskType: 'router-fallback',
+        tenantId: block.tenantId,
+        systemPrompt,
+        userMessage,
+        responseFormat: { type: 'json_object' },
+        maxTokens: 200,
+        sourceRef: { type: 'idea_block', id: block.id },
+      });
+      llmText = result.text;
+    } catch (err) {
+      this.metrics.incRouterFallbackCall({ tenantTop, result: 'llm_error' });
+      this.logger.warn(
+        {
+          blockId: block.id,
+          signalType: block.signalType,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'RouterService.fallback: LLM-call упал — возвращаем пусто',
+      );
+      return [];
+    }
+
+    const suggested = parseLlmSpecialists(llmText, whitelist);
+    this.metrics.incRouterFallbackCall({
+      tenantTop,
+      result: suggested.length > 0 ? 'matched' : 'no_match',
+    });
+
+    // ── Cache set ──
+    if (this.redis) {
+      try {
+        const ttl = this.getRouterFallbackTtlSeconds();
+        await this.redis.client.set(
+          cacheKey,
+          JSON.stringify(suggested),
+          'EX',
+          ttl,
+        );
+      } catch (err) {
+        this.logger.debug(
+          {
+            cacheKey,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'RouterService.fallback: cache write error — пропускаем',
+        );
+      }
+    }
+
+    return suggested;
+  }
+
+  private makeFallbackCacheKey(args: {
+    signalType: string;
+    criticalQuestion: string;
+    trustedAnswer: string;
+  }): string {
+    const hash = createHash('sha1')
+      .update(args.criticalQuestion + '\n' + args.trustedAnswer)
+      .digest('hex')
+      .slice(0, 16);
+    return `routerfallback:${args.signalType}:${hash}`;
+  }
+
+  /**
+   * TODO(env-refactor): после фикса TS2589 в EnvSchema перенести в TypedConfig.
+   * Default = false (prod safe). Включается в staging для постепенного rollout'а.
+   */
+  private isLlmFallbackEnabled(): boolean {
+    const raw = process.env['ROUTER_LLM_FALLBACK_ENABLED'];
+    if (raw == null || raw === '') return false;
+    return raw === 'true' || raw === '1';
+  }
+
+  /**
+   * TODO(env-refactor): после фикса TS2589 в EnvSchema перенести в TypedConfig.
+   * Default = 86400 (24h). Защищает от спайков LLM-вызовов.
+   */
+  private getRouterFallbackTtlSeconds(): number {
+    const raw = process.env['ROUTER_FALLBACK_CACHE_TTL_SECONDS'];
+    if (raw == null || raw === '') return 86400;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num <= 0) return 86400;
+    return Math.floor(num);
   }
 
   /**
@@ -359,3 +618,51 @@ export class RouterService {
 // Re-export для удобства потребителей — type-safe whitelist signalType.
 // Дублирует Prisma `SignalType` only ради явной документации в коде RouterService.
 export type RouterSignalType = SignalType;
+
+// ─────────────────────── SBA α-3 wave 3 — helpers ──────────────────────
+
+/**
+ * Парсит сохранённый в Redis JSON-список специалистов. Возвращает [] на любую
+ * ошибку (cache всегда дополнительный — никогда не источник правды).
+ */
+function parseCachedSpecialists(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x): x is string => typeof x === 'string');
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Парсит LLM-ответ формата `{"specialists": ["3-3-decisions", ...]}` и
+ * фильтрует через whitelist. Робастно к лишнему тексту и markdown-fence'ам.
+ */
+function parseLlmSpecialists(text: string, whitelist: string[]): string[] {
+  if (!text) return [];
+  const allowed = new Set(whitelist);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return [];
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch {
+      return [];
+    }
+  }
+  const arr = (parsed as { specialists?: unknown })?.specialists;
+  if (!Array.isArray(arr)) return [];
+  const result: string[] = [];
+  for (const item of arr) {
+    if (typeof item === 'string' && allowed.has(item) && !result.includes(item)) {
+      result.push(item);
+    }
+  }
+  return result;
+}

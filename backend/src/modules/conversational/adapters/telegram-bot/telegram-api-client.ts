@@ -6,11 +6,9 @@ import { RedisService } from '../../../../common/redis/redis.service';
 
 import type {
   TelegramApiResponse,
-  TelegramInlineKeyboardMarkup,
+  TelegramGetFileResponse,
   TelegramSendMessageRequest,
   TelegramSetWebhookRequest,
-  TelegramBotCommand,
-  TelegramAnswerCallbackQueryRequest,
 } from './telegram.types';
 
 /**
@@ -21,18 +19,11 @@ import type {
  *   - Body — application/json.
  *   - Ответ — `{ok: boolean, result?, description?, error_code?}`.
  *
- * Здесь — только `sendMessage`, `setWebhook`, `setMyCommands`,
- * `answerCallbackQuery`, `deleteWebhook`, `getMe`. Этого достаточно для
- * SBA β-1 outbound + setup. Для α-1 в `IngestModule` уже есть свой
- * клиент (`TelegramAdapterService`), но он привязан к Source — мы не
- * можем его переиспользовать без рефакторинга, поэтому делаем свой
- * тонкий клиент именно под conversational-канал.
- *
- * Rate-limit: Bot API лимит ~30 msg/sec global. Перед outbound-вызовами
- * (sendMessage/answerCallbackQuery) проверяем «глобальный» счётчик в
- * Redis (per Z-process — `cfg.telegramBot.globalRps`). Это lightweight
- * throttle: при превышении просто ждём 100мс и пробуем снова — заданная
- * на β-1 «pessimistic» политика (см. sub-ТЗ §12.4).
+ * NB (SBA β-1 rip-out, 2026-05-23): zero-button. Удалён `answerCallbackQuery`
+ * (callback_query больше не приходит). `setMyCommands` оставлен —
+ * `setup-telegram-bot.ts` вызывает его с пустым списком, чтобы Telegram
+ * очистил menu хамбургер. Добавлены `getFile` + `downloadFile` для voice
+ * + document inbound.
  */
 @Injectable()
 export class TelegramApiClient {
@@ -61,12 +52,13 @@ export class TelegramApiClient {
    * (number, как string для единообразия с `externalMessageId`).
    * На ошибку — бросает `TelegramApiError` (caller-у `send` worker'а
    * нужно понять, что это finalable error vs transient).
+   *
+   * Без `reply_markup` — β-1 zero-button.
    */
   async sendMessage(args: {
     token: string;
     chatId: string | number;
     text: string;
-    replyMarkup?: TelegramInlineKeyboardMarkup;
     replyToMessageId?: number;
     parseMode?: 'HTML' | 'MarkdownV2';
   }): Promise<{ messageId: number; chatId: number }> {
@@ -75,7 +67,6 @@ export class TelegramApiClient {
       chat_id: args.chatId,
       text: args.text,
       ...(args.parseMode ? { parse_mode: args.parseMode } : {}),
-      ...(args.replyMarkup ? { reply_markup: args.replyMarkup } : {}),
       ...(args.replyToMessageId
         ? { reply_to_message_id: args.replyToMessageId }
         : {}),
@@ -88,32 +79,19 @@ export class TelegramApiClient {
     return { messageId: res.message_id, chatId: res.chat.id };
   }
 
-  /** answerCallbackQuery — без текста (просто закрыть «крутилку» в UI). */
-  async answerCallbackQuery(args: {
-    token: string;
-    callbackQueryId: string;
-    text?: string;
-  }): Promise<void> {
-    await this.throttle();
-    const body: TelegramAnswerCallbackQueryRequest = {
-      callback_query_id: args.callbackQueryId,
-      ...(args.text ? { text: args.text } : {}),
-    };
-    await this.call<boolean>(args.token, 'answerCallbackQuery', body);
-  }
-
   // ─────────────────────── setup API methods ────────────────────────
 
   async setWebhook(args: {
     token: string;
     url: string;
     secretToken: string;
-    allowedUpdates?: Array<'message' | 'callback_query' | 'edited_message'>;
+    /** β-1 zero-button: callback_query больше не запрашиваем. */
+    allowedUpdates?: Array<'message' | 'edited_message'>;
   }): Promise<void> {
     const body: TelegramSetWebhookRequest = {
       url: args.url,
       secret_token: args.secretToken,
-      allowed_updates: args.allowedUpdates ?? ['message', 'callback_query'],
+      allowed_updates: args.allowedUpdates ?? ['message', 'edited_message'],
       drop_pending_updates: false,
     };
     await this.call<boolean>(args.token, 'setWebhook', body);
@@ -125,12 +103,17 @@ export class TelegramApiClient {
     });
   }
 
+  /**
+   * setMyCommands — β-1 zero-button: вызываем с пустым массивом, чтобы
+   * Telegram убрал menu-хамбургер бота. Если передать commands, Telegram
+   * нарисует их в меню (нам не нужно).
+   */
   async setMyCommands(args: {
     token: string;
-    commands: TelegramBotCommand[];
+    commands?: Array<{ command: string; description: string }>;
   }): Promise<void> {
     await this.call<boolean>(args.token, 'setMyCommands', {
-      commands: args.commands,
+      commands: args.commands ?? [],
     });
   }
 
@@ -142,6 +125,66 @@ export class TelegramApiClient {
       'getMe',
       undefined,
     );
+  }
+
+  // ─────────────────────── files (β-1 zero-button: voice/document) ───
+
+  /**
+   * Получить метаданные файла по `file_id` (Bot API `getFile`).
+   * Возвращает `file_path` — относительный путь, по которому потом качаем
+   * binary content через `downloadFile`. Контекст:
+   * core.telegram.org/bots/api#getfile, context7 verified 2026-05-23.
+   */
+  async getFile(args: {
+    token: string;
+    fileId: string;
+  }): Promise<TelegramGetFileResponse> {
+    return this.call<TelegramGetFileResponse>(args.token, 'getFile', {
+      file_id: args.fileId,
+    });
+  }
+
+  /**
+   * Скачать бинарный контент файла по `file_path` (из ответа `getFile`).
+   * URL: `https://api.telegram.org/file/bot<token>/<file_path>`.
+   * Лимит размера файла Telegram Bot API — 20 MB (см. context7).
+   */
+  async downloadFile(args: {
+    token: string;
+    filePath: string;
+  }): Promise<Buffer> {
+    const base = this.cfg.telegramBot.apiBase;
+    const url = `${base}/file/bot${args.token}/${args.filePath}`;
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.metrics.incTelegramBotApiError({
+        apiMethod: 'downloadFile',
+        code: 'network_error',
+      });
+      throw new TelegramApiError(
+        'downloadFile',
+        0,
+        `network: ${message}`,
+        true,
+      );
+    }
+    if (!res.ok) {
+      this.metrics.incTelegramBotApiError({
+        apiMethod: 'downloadFile',
+        code: `http_${res.status}`,
+      });
+      throw new TelegramApiError(
+        'downloadFile',
+        res.status,
+        `HTTP ${res.status}`,
+        res.status >= 500,
+      );
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   // ─────────────────────── internals ────────────────────────────────

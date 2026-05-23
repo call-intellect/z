@@ -37,17 +37,44 @@ export class ProbePriorityCron {
       );
 
       // 1. Истёкшие ProbeEvent → expired.
-      const expired = await this.prisma.probeEvent.updateMany({
+      // SBA β-5 closing-loop (sub-TZ 2026-05-23): дополнительно фильтруем
+      // probe'ы, у которых dispatchedNotificationId уже отвечен
+      // (`Notification.respondedAt IS NOT NULL`). Так мы избегаем гонки
+      // «истёк по таймеру, хотя ответ только что пришёл» — закрытый probe
+      // не должен пере-помечаться `expired`.
+      const expiredCandidates = await this.prisma.probeEvent.findMany({
         where: {
           status: 'pending',
           expiresAt: { lt: now },
         },
-        data: { status: 'expired' },
+        select: { id: true, dispatchedNotificationId: true },
       });
-      for (let i = 0; i < expired.count; i++) this.metrics.incProbeExpired();
+      const expirableIds: string[] = [];
+      for (const cand of expiredCandidates) {
+        if (cand.dispatchedNotificationId) {
+          const n = await this.prisma.notification.findUnique({
+            where: { id: cand.dispatchedNotificationId },
+            select: { respondedAt: true },
+          });
+          if (n?.respondedAt) continue; // уже закрыт пользователем — пропускаем
+        }
+        expirableIds.push(cand.id);
+      }
+      let expiredCount = 0;
+      if (expirableIds.length > 0) {
+        const expired = await this.prisma.probeEvent.updateMany({
+          where: { id: { in: expirableIds }, status: 'pending' },
+          data: { status: 'expired' },
+        });
+        expiredCount = expired.count;
+        for (let i = 0; i < expired.count; i++) this.metrics.incProbeExpired();
+      }
 
       // 2. engagement_rate per recipient.
       // Считаем по probe-уведомлениям (eventType='probe.question') за 30 дней.
+      // SBA β-5 closing-loop: `respondedAt IS NULL` в знаменателе НЕ
+      // вычитаем — знаменатель = «всего отправлено», числитель = «отвечено»
+      // (`responseStatus='answered'`, что эквивалентно `respondedAt IS NOT NULL`).
       const sent = await this.prisma.notification.groupBy({
         by: ['recipientUserId'],
         where: {
@@ -78,7 +105,7 @@ export class ProbePriorityCron {
       }
 
       this.logger.debug(
-        { expiredCount: expired.count, users: usersDone },
+        { expiredCount, users: usersDone },
         'probe-priority: sweep завершён',
       );
     } catch (err) {

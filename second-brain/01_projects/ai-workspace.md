@@ -55,7 +55,7 @@ updated: 2026-05-09
 - `app/(authenticated)/dashboard/` — главная для залогиненного: 4 виджета + cross-meeting AI-чат
 - `app/(authenticated)/tasks/` — My Tasks с фильтрами/группировкой/inline-edit/bulk
 - `app/(authenticated)/settings/{tags,integrations,api,webhooks,exports}/` — все разделы settings под `(authenticated)/settings/layout.tsx`
-- `app/(admin)/admin/ai-models/` — управление LlmTaskRoute
+- `app/(authenticated)/admin/ai-models/` — управление LlmTaskRoute (унифицировано в Z-Admin shell 2026-05-23)
 - `app/share/[token]/`, `app/share/clip/[token]/` — публичный шеринг (без AppShell)
 
 ### Переписанные

@@ -238,6 +238,31 @@ Per-tenant `botToken` + `webhookSecret` хранятся в `Channel.config` з�
 
 Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты совместимо с `CryptoService` (формат `gcm:v1:...`).
 
+## ⚠ Telegram — два независимых пути (CRIT-5)
+
+В Z есть **две разные интеграции Telegram** с разными целями, моделями и RBAC. Не путать:
+
+| Свойство | Ingest path (legacy) | Conversational path (β-1) |
+|---|---|---|
+| Каталог | `backend/src/modules/ingest/adapters/telegram/` | `backend/src/modules/conversational/adapters/telegram-bot/` |
+| Назначение | Пассивный приём сообщений из чата/канала как **источника знаний** | Двунаправленное общение Кора ↔ пользователь (probe-ответы, /ask, free notes) |
+| Webhook URL | `POST /api/v1/ingest/telegram/:sourceId` | `POST /api/v1/webhooks/telegram-bot/:tenantId` |
+| Persisted as | `Source` (тип `bot`) + `RawEvent` (источник знаний) | `ChannelBinding(userId, channelId)` + `Notification`/`Delivery` |
+| Tenant resolve | `Source.tenantId` (заранее настроен админом) | `:tenantId` в path + `Channel.tenantId` |
+| Auth | `Source.config.botToken` (per-Source) | `Channel.config.botToken` (per-tenant, один бот на Org) |
+| RBAC | `source` ResourceType (источники знаний — admin/manager) | `channel`/`notification` ResourceType (см. выше) |
+| Адресация | Сообщения идут «вообще» в Source — без привязки к конкретному User | Сообщения идут конкретному User через `ChannelBinding.externalId` |
+| Inline-кнопки | Нет (только текст) | Да (probe-ответы, β-1) |
+| LinkCode flow | Нет (привязка делается админом через настройку Source) | Да (`/link <код>` → upsert ChannelBinding) |
+
+**Правило выбора пути для новых фич:**
+- Нужно принять сообщение в общий knowledge-граф без user-привязки → **ingest path**.
+- Нужно общаться с конкретным пользователем (probe-вопрос, ChatV2, проактивные сообщения) → **conversational path**.
+
+**Зависимости в плане v2:**
+- δ-2 (ProactiveWatcher) использует **conversational path** — он отправляет пользователю.
+- δ-3 (Voice channel) ASR-on-voice использует **conversational path** (`message.voice` → ASR → `free_note`/`chat_query`). Ingest path с голосом не работает.
+
 ## Открытые вопросы (решения β-1)
 
 1. **MAX публичная Bot API?** — Да. context7 verified 2026-05-22 (`dev.max.ru/docs-api`). API минималистичная: `POST /messages`, `POST /subscriptions`, `DELETE /subscriptions`, `GET /me`. Авторизация: header `Authorization: <token>`. Inline-кнопки: `attachments[type='inline_keyboard']`. **Формат update'а** зафиксирован defensive-парсером (`update_type`, `sender.user_id`, `chat_id`, `body.text`, `callback.payload`) — после реального smoke на проде поля могут потребовать донастройки.

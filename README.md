@@ -94,6 +94,17 @@ bun run livekit:down       # остановить
 
 ### 1. Backend + Frontend (один docker-compose)
 
+> ⚠ **Предусловие — Postgres-расширения.** Backend требует **двух расширений**:
+> `vector` (pgvector) и `age` (Apache AGE). Они подключаются в `backend/scripts/postgres-init.sql`
+> через `CREATE EXTENSION IF NOT EXISTS …`.
+>
+> - **Self-hosted Postgres (composite-image из репо):** включено в образе — ничего делать не надо.
+> - **Yandex Managed PostgreSQL 16:** оба расширения доступны как managed, но `age`
+>   требует включения `shared_preload_libraries = 'age'` через UI/Terraform кластера + перезапуск.
+>   Без этого `CREATE EXTENSION age` упадёт при первом запуске `apply-postgres-init`.
+> - **Другой managed Postgres:** проверь доступность `age` 1.5.0 для PG16. Если нет — переходи
+>   на self-hosted composite-образ (`infra/postgres/Dockerfile`).
+
 ```bash
 cp .env.example .env
 # Заполни секреты и порты. Сгенерируй ключи:

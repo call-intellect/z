@@ -37,6 +37,31 @@ references:
 - `backend/scripts/postgres-init.sql` — идемпотентный init для prod (запускается через `bun run apply-postgres-init` после `prisma db push`).
 - `docker-compose.yml` — postgres-сервис переведён с `image:` на `build:`.
 
+## Deploy checklist (CRIT-6)
+
+При деплое на свежий Postgres-инстанс обязательно убедиться, что доступны
+**оба расширения** до запуска `bun run apply-postgres-init`:
+
+1. **Composite Docker image (наш `infra/postgres/Dockerfile`):**
+   - `age` 1.5.0 + `pgvector` 0.8.0 уже в образе — действий не нужно.
+2. **Yandex Cloud Managed PostgreSQL 16:**
+   - В настройках кластера в `shared_preload_libraries` добавить `age`.
+   - Применить — кластер перезапустится.
+   - В UI «Расширения» подтвердить, что `age` и `vector` доступны.
+3. **Другой managed Postgres (RDS / Cloud SQL / Selectel):**
+   - Проверить наличие `age` 1.5.0 для PG16 в каталоге расширений.
+   - Если нет — `CREATE EXTENSION age` упадёт с «extension is not available»,
+     и весь knowledge-core (`GraphService.cypher('z_graph', ...)`) перестанет
+     работать **на любом обращении к графу**. Решение — composite-образ.
+
+Проверка после `apply-postgres-init`:
+```sql
+SELECT extname, extversion FROM pg_extension WHERE extname IN ('age', 'vector');
+SELECT name FROM ag_catalog.ag_graph WHERE name = 'z_graph';
+```
+
+Должно вернуть `age`/`vector` и одну строку с `z_graph`.
+
 ## Что дальше
 
 - 0a.1 — Prisma модели + миграция EntityLink на полиморфизм.

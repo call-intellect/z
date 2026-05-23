@@ -775,6 +775,10 @@ model User {
   // ── SBA α-7 wave 2 — Specialist 3.1 (ProcessTemplate) ──
   publishedProcessTemplateVersions ProcessTemplateVersion[] @relation("ProcessTemplateVersionPublishedBy")
 
+  // ── SBA α-10 wave 2 — Admin LLM + Unit Economics ──
+  llmModelPriceChanges  LlmModelPrice[] @relation("LlmModelPriceChangedBy")
+  orgBudgetCapsSet      OrgBudgetCap[]  @relation("OrgBudgetCapSetBy")
+
   @@unique([email, signupSource])
   @@index([email])
   @@index([deletedAt])
@@ -1062,6 +1066,14 @@ model AiUsageLog {
   /// Фаза A.1 (заведено заранее под A.4) — причина срабатывания fallback'а на secondary/tertiary,
   /// например: 'primary_timeout' | 'primary_error' | 'primary_rate_limit' | 'secondary_*' | NULL.
   fallbackReason  String?
+  /// SBA α-10 wave 2 (2026-05-23) — snapshot полей цены и курса на момент вызова.
+  /// Без этого исторические запросы агрегации зависят от текущих LlmModelPrice,
+  /// что некорректно при изменении прайса.
+  inputCostPerMillionTokensSnapshot  Decimal? @db.Decimal(10, 6)
+  outputCostPerMillionTokensSnapshot Decimal? @db.Decimal(10, 6)
+  cachedCostPerMillionTokensSnapshot Decimal? @db.Decimal(10, 6)
+  currencyRateToUsdSnapshot          Decimal? @db.Decimal(12, 6)
+  costRub                            Decimal? @db.Decimal(14, 4)
   createdAt       DateTime @default(now())
 
   @@index([meetingId])
@@ -1521,6 +1533,10 @@ model LlmTaskRoute {
   /// Фаза A.4 — конкретная модель в рамках провайдера (например `deepseek-v4-flash`).
   /// NULL = провайдер выбирает default.
   model        String?
+  /// SBA α-10 wave 2 (2026-05-23) — опц. FK на нормализованные LlmProvider/LlmModel.
+  /// Параллельны providerName/model (строки) для backward-compat.
+  providerId   String?
+  modelId      String?
   /// Фаза A.4 — был ли маршрут вручную отредактирован админом. Используется в
   /// идемпотентном seed'е: если true — seed не перезаписывает запись.
   editedByAdmin Boolean @default(false)
@@ -1857,6 +1873,10 @@ model Org {
   functionalDomains       FunctionalDomain[]
   departmentDomainLinks   DepartmentDomainLink[]
 
+  // ── SBA α-10 wave 2 — Admin LLM + Unit Economics ──
+  aiCostsDaily            AiCostDaily[]
+  budgetCap               OrgBudgetCap?
+
   // ── SBA α-4 — Layer 4 Curation Foundation ──
   curationItems      CurationItem[]
   conflictItems      ConflictItem[]
@@ -1941,17 +1961,197 @@ model LlmModelPrice {
   id                         String    @id @default(cuid())
   provider                   String
   model                      String
+  /// SBA α-10 wave 2 (2026-05-23) — опц. FK на LlmModel (новый реестр).
+  /// Старые `provider`/`model` (строки) остаются для backward-compat.
+  modelId                    String?
   inputCostPerMillionTokens  Decimal   @db.Decimal(10, 6)
   outputCostPerMillionTokens Decimal   @db.Decimal(10, 6)
   /// Цена за 1M кэшированных входных токенов (prompt cache hit). 0 — не поддерживается.
   cachedCostPerMillionTokens Decimal   @default(0) @db.Decimal(10, 6)
+  /// SBA α-10 wave 2 — цена за 1M токенов write-cache (для Anthropic prompt cache create).
+  inputCachedWritePerMillionTokens Decimal? @db.Decimal(10, 6)
+  /// SBA α-10 wave 2 — snapshot курса валюты к USD на момент применения цены
+  /// (для исторических AiUsageLog.costRub вычислений без re-query CurrencyRate).
+  currencyRateToUsdSnapshot  Decimal?  @db.Decimal(12, 6)
   currency                   String    @default("USD")
   effectiveFrom              DateTime  @default(now())
   effectiveTo                DateTime?
+  /// Кто внёс изменение цены (для аудита админ-действий).
+  changedByUserId            String?
   createdAt                  DateTime  @default(now())
 
+  modelRef    LlmModel? @relation("LlmModelPriceModel", fields: [modelId], references: [id], onDelete: SetNull)
+  changedBy   User?     @relation("LlmModelPriceChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+
   @@index([provider, model, effectiveFrom])
+  @@index([modelId, effectiveFrom])
   @@index([effectiveFrom, effectiveTo])
+}
+
+// ──────────────────────────── SBA α-10 wave 2 — Admin LLM + Unit Economics ────────────────────────────
+
+/// LlmProvider — реестр провайдеров LLM (deepseek, openai-proxy, ollama,
+/// anthropic, minimax, …). Управляется из админки `/admin/llm/providers`.
+///
+/// Один provider может иметь несколько LlmModel. Adapter (как вызывать API)
+/// определяется через `protocolKind` — мapping в LlmProtocolAdapterRegistry
+/// (5 типов: openai-chat / openai-responses / anthropic-messages / ollama-native /
+/// custom-http).
+model LlmProvider {
+  id              String     @id @default(cuid())
+  /// Уникальное короткое имя (slug): 'deepseek', 'openai-proxy', 'ollama',
+  /// 'anthropic', 'minimax'. Использовалось в коде до α-10 как `provider` string —
+  /// сохраняем стабильным для backward-compat.
+  name            String     @unique @db.VarChar(60)
+  /// Человекочитаемое имя для UI.
+  displayName     String     @db.VarChar(120)
+  /// Базовый endpoint API.
+  baseUrl         String     @db.VarChar(500)
+  /// Тип протокола: 'openai-chat' | 'openai-responses' | 'anthropic-messages' |
+  /// 'ollama-native' | 'custom-http'.
+  protocolKind    String     @db.VarChar(40)
+  /// Капабилити: 'sensitive' = поддерживает private data; 'public' = только публичные данные.
+  /// Влияет на маршрутизацию dataClass через LlmRouterService.
+  capability      String     @default("public") @db.VarChar(20)
+  /// Зашифрованный AES-256-GCM API-ключ (формат gcm:v1:...). NULL для self-hosted (Ollama).
+  apiKeyEncrypted String?    @db.Text
+  /// Дополнительные headers (например, Anthropic-Version). JSON.
+  defaultHeaders  Json?
+  /// Глобальный rate limit (RPS) для самозащиты. NULL = без лимита.
+  globalRps       Int?
+  /// Активен ли провайдер для маршрутизации.
+  isActive        Boolean    @default(true)
+  /// Последний результат smoke-теста.
+  lastSmokeAt     DateTime?
+  lastSmokeSuccess Boolean?
+  lastSmokeError   String?  @db.Text
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  models LlmModel[]
+
+  @@index([isActive, protocolKind])
+  @@map("llm_providers")
+}
+
+/// LlmModel — конкретная модель LLM в реестре (gpt-5.4-flash, deepseek-v4-pro,
+/// qwen3.5:9b, …). Привязана к LlmProvider.
+///
+/// Используется в LlmTaskRoute.modelId, LlmModelPrice.modelId, LlmModelExperiment.
+model LlmModel {
+  id              String       @id @default(cuid())
+  providerId      String
+  /// Идентификатор модели в API (string передаётся в запросе).
+  modelKey        String       @db.VarChar(120)
+  /// Человекочитаемое имя для UI.
+  displayName     String       @db.VarChar(200)
+  /// Контекстное окно (in tokens).
+  contextWindow   Int?
+  /// Поддерживаются ли json_schema / tool calls. JSON-карта capabilities.
+  capabilitiesJson Json?
+  /// Категория для UI: 'flagship' | 'fast' | 'reasoning' | 'embedding' | 'experimental'.
+  category        String?      @db.VarChar(40)
+  /// Активна ли модель для маршрутизации.
+  isActive        Boolean      @default(true)
+  /// Verified — прошла smoke-тест. NULL = не проверялась.
+  verifiedAt      DateTime?
+  /// Заметка о статусе (например «timeout в KIE при медиане > 30s»).
+  notes           String?      @db.Text
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  provider LlmProvider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  prices   LlmModelPrice[] @relation("LlmModelPriceModel")
+
+  @@unique([providerId, modelKey])
+  @@index([providerId, isActive])
+  @@index([category])
+  @@map("llm_models")
+}
+
+/// AiCostDaily — дневная агрегация затрат AI по (tenant × taskType × provider × model).
+/// Наполняется DailyCostAggregatorCron из AiUsageLog. Хранит сумму costRub/costUsd
+/// для быстрых дашбордов без скана миллионов AiUsageLog.
+model AiCostDaily {
+  id           String   @id @default(cuid())
+  tenantId     String
+  date         DateTime @db.Date
+  taskType     String   @db.VarChar(80)
+  provider     String   @db.VarChar(60)
+  model        String   @db.VarChar(120)
+  /// Сколько вызовов было за день.
+  callsCount   Int      @default(0)
+  /// Сколько успешных (без fallbackReason).
+  callsSuccess Int      @default(0)
+  /// Сумма затрат в USD (по snapshot из LlmModelPrice).
+  costUsd      Decimal  @default(0) @db.Decimal(14, 6)
+  /// Сумма затрат в RUB (по snapshot currencyRateToUsdSnapshot).
+  costRub      Decimal  @default(0) @db.Decimal(14, 4)
+  /// Сумма input/output/cached токенов.
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  cachedTokens Int      @default(0)
+  /// Когда последний раз пересчитывалась эта строка (для idempotency cron).
+  recalculatedAt DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date, taskType, provider, model])
+  @@index([tenantId, date])
+  @@index([date, taskType])
+  @@map("ai_cost_daily")
+}
+
+/// OrgBudgetCap — бюджетные лимиты per Org на AI-расходы. Используется
+/// BudgetAlertCron для уведомлений Org-owner'у при превышении % лимита.
+model OrgBudgetCap {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  /// Месячный лимит в RUB. NULL = без лимита.
+  monthlyCapRub Decimal? @db.Decimal(14, 2)
+  /// Hard-cap или soft-cap (только alert).
+  capKind       String   @default("soft") @db.VarChar(10)
+  /// Пороги для alert'ов в % (например, [50, 80, 95]).
+  alertThresholds Int[]  @default([50, 80, 95])
+  /// Когда был последний alert (для дедупликации).
+  lastAlertAt   DateTime?
+  /// Какой порог триггерил последний alert (для предотвращения повторов на тот же %).
+  lastAlertThreshold Int?
+  /// Кто установил лимит.
+  setByUserId   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org      Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  setBy    User? @relation("OrgBudgetCapSetBy", fields: [setByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@map("org_budget_caps")
+}
+
+/// CurrencyRate — курс валют. Поддерживается CurrencyRateSyncCron из ЦБ РФ
+/// (https://www.cbr-xml-daily.ru). Используется LlmModelPrice/AiUsageLog для
+/// пересчёта USD → RUB.
+model CurrencyRate {
+  id           String   @id @default(cuid())
+  /// Базовая валюта (всегда 'USD' в текущей реализации).
+  baseCurrency String   @db.VarChar(3)
+  /// Котируемая валюта ('RUB', 'EUR', 'CNY', …).
+  quoteCurrency String  @db.VarChar(3)
+  /// Курс: 1 baseCurrency = `rate` quoteCurrency.
+  rate         Decimal  @db.Decimal(14, 6)
+  /// Источник: 'cbr' | 'manual' | 'ecb' | …
+  source       String   @default("cbr") @db.VarChar(20)
+  /// Дата котировки (на конец дня).
+  rateDate     DateTime @db.Date
+  /// Когда скриптовали в БД.
+  fetchedAt    DateTime @default(now())
+
+  @@unique([baseCurrency, quoteCurrency, rateDate, source])
+  @@index([rateDate])
+  @@map("currency_rates")
 }
 
 // ──────────────────────────── knowledge-core: Source / RawEvent (Фаза 1) ────────────────────────────

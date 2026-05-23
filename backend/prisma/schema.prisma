@@ -3477,6 +3477,8 @@ model DecisionPolicy {
   org        Org         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   role       Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
   regulation Regulation? @relation(fields: [regulationId], references: [id], onDelete: SetNull)
+  /// SBA β-3 доделка: Decisions, применившие эту политику.
+  appliedToDecisions Decision[] @relation("DecisionAppliedPolicy")
 
   @@index([tenantId, roleId])
   @@map("decision_policies")
@@ -4131,6 +4133,9 @@ model Decision {
   /// Фактические результаты (заполняется ретроспективно).
   /// probe `decision.outcome_unknown` если implemented + null + > 3 мес.
   actualOutcomes     String?        @db.Text
+  /// SBA β-3 доделка (2026-05-23): FK на DecisionPolicy (α-8 wave 2).
+  /// Если решение применяет конкретную политику — ссылка для аудита соответствия.
+  appliedPolicyId    String?
 
   status             DecisionStatus @default(approved)
   createdAt          DateTime       @default(now())
@@ -4146,6 +4151,7 @@ model Decision {
   supersedes      Decision?     @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy    Decision[]    @relation("DecisionSupersedes")
   currentVersion  CardVersion?  @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  appliedPolicy   DecisionPolicy? @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([tenantId, decidedAt])
@@ -4195,6 +4201,13 @@ model Insight {
   relatedDecisionIds String[]         @default([])
   /// Текстовый план реагирования (в β-4 — текст; структурируем в γ+).
   mitigationPlan     String?          @db.Text
+  /// SBA β-4 доделка (2026-05-23): категория первопричины (LLM ставит,
+  /// curator подтверждает). Строкой для гибкости. Примеры:
+  /// 'process_gap' | 'tooling' | 'role_skill' | 'communication' | 'priority' |
+  /// 'resource_constraint' | 'external' | 'unknown'.
+  /// Используется в δ-2 ProactiveWatcher для приоритизации alert'ов и в
+  /// γ-2 Concierge для агрегации «частые причины проблем».
+  causeCategory      String?          @db.VarChar(40)
 
   /// Первое и последнее упоминание (для probe.no_mitigation_plan по age > 7d).
   firstObservedAt    DateTime         @default(now())

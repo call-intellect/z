@@ -162,81 +162,107 @@ Per-event-type defaults в α-1:
 
 ---
 
-# Conversational Channels β-1 — Telegram + MAX adapters
+# Conversational Channels β-1 — Telegram + MAX adapters (zero-button)
 
-> **Дата:** 2026-05-22. **ТЗ:** `plans/tz/2026-05-21-sba-beta-1-channels-telegram-max.md`.
+> **Дата:** 2026-05-23. **ТЗ:** `plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md`.
+> Предыдущая версия (β-1 с slash-командами и inline-кнопками) — `plans/archive/2026-05-21-sba-beta-1-channels-telegram-max.md` (deprecated 2026-05-23).
 >
-> **Что это.** Первые два внешних канала: Telegram-бот и MAX-бот (mssgr.ru). Покрывают outbound (`Notification → sendMessage`), inbound (slash-commands + callback + free text → `dispatchInbound`), inline-кнопки для probe-ответов, и `/link <код>` linking flow.
+> **Что это.** Первые два внешних канала: Telegram-бот и MAX-бот (mssgr.ru). Бот — **zero-button**: никаких inline-кнопок, никаких slash-команд (кроме hard-coded `/start <token>` для deep-link). Покрывают outbound (`Notification → sendMessage`), inbound (свободный текст + voice через ASR + документы через DocumentsService), `/start <token>` и голый код linking flow.
 
 ## Адаптеры
 
 `backend/src/modules/conversational/adapters/telegram-bot/`:
-- `telegram-bot.adapter.ts` — `IChannel`-адаптер: `send`, `ingestUpdate`, маршрутизация slash-команд.
-- `telegram-api-client.ts` — тонкий клиент Bot API (`sendMessage`, `setWebhook`, `setMyCommands`, `answerCallbackQuery`, `getMe`, `deleteWebhook`) с throttle через Redis-bucket (`cfg.telegramBot.globalRps`).
+- `telegram-bot.adapter.ts` — `IChannel`-адаптер: `send`, `ingestUpdate`, intent classify + Vox ASR + DocumentsService.upload.
+- `telegram-api-client.ts` — тонкий клиент Bot API (`sendMessage`, `setWebhook`, `setMyCommands` (с пустым списком), `getMe`, `deleteWebhook`, `getFile`, `downloadFile`) с throttle через Redis-bucket (`cfg.telegramBot.globalRps`).
 - `telegram-webhooks.controller.ts` — `POST /api/v1/webhooks/telegram-bot/:tenantId` с `X-Telegram-Bot-Api-Secret-Token` timing-safe verification.
-- `telegram.types.ts` — типизированный subset Update / Message / CallbackQuery / SendMessage / InlineKeyboardMarkup.
+- `telegram.types.ts` — типизированный subset Update / Message / Voice / Document / SendMessage. Без `reply_markup`, без `callback_query`, без `BotCommand`.
 - `SMOKE.md` — инструкция ручного smoke на проде.
-- `telegram-bot.adapter.spec.ts` — unit-тесты ключевых сценариев (`/link`, `/ask`, callback, voice, незалинкованный юзер).
+- `telegram-bot.adapter.spec.ts` — unit-тесты (`/start <token>`, голый код, voice → ASR, document → upload, free text classify, rate-limit, незалинкованный юзер).
 
 `backend/src/modules/conversational/adapters/max-bot/` — то же для MAX (api base `https://platform-api.max.ru`):
-- `max-bot.adapter.ts` / `max-api-client.ts` / `max-webhooks.controller.ts` / `max.types.ts` / `SMOKE.md`.
+- `max-bot.adapter.ts` / `max-api-client.ts` (включая `downloadAttachment`) / `max-webhooks.controller.ts` / `max.types.ts` (без MaxCallback и MaxInlineKeyboard*).
 - MAX webhook не использует header-secret → secret встроен в path (`/api/v1/webhooks/max-bot/:tenantId/:secret`).
+- Voice/document вытаскиваются из `body.attachments[]` (defensive-парсинг по `type`, `payload.url`, `payload.duration`, `payload.file_size`).
 
-## CommandHandlerService
+## CommandHandlerService — УДАЛЁН
 
-`backend/src/modules/conversational/command-handler.service.ts` — подписан на `subscribeInbound('command', ...)`. Отвечает:
-- `/status` — `prisma.notification.count(pending probe)`.
-- `/myideas` — placeholder («скоро в β-5»).
-- `/help` — список команд.
-
-Ответ — `sendNotification(eventType='system.message', preferredChannelKinds=[bindingKind], critical=true)`, чтобы ушёл туда же, откуда пришёл вопрос (через `originChannelBindingId`).
+В β-1 zero-button (2026-05-23) `command-handler.service.ts` удалён вместе с типом `'command'` в `InboundMessage`. Slash-команды (`/status`, `/myideas`, `/help`, `/ask`, `/note`, `/idea`, `/link`) больше не существуют. Все запросы от пользователя обрабатываются через intent classification: вопросы (определяются эвристикой/LLM) уходят в `chat_query` → ChatV2, остальные — в `free_note` → `ConversationalIngestAdapter`.
 
 ## Inbound маршрутизация (`TelegramBotChannelAdapter.ingestUpdate`)
 
 | Сценарий | Тип InboundMessage | Дальше |
 |---|---|---|
-| `/link <code>` | `null` (обрабатывается в адаптере) | `linkCode.consume` → upsert `ChannelBinding` |
-| `/ask <q>` | `chat_query` | → ChatV2Service (α-5) |
-| `/note <t>` | `free_note` | → `ConversationalIngestAdapter` |
-| `/idea <t>` | `free_note` с `metadata.tag='idea'` | → `ConversationalIngestAdapter` |
-| `/status`, `/myideas`, `/help` | `command` | → `CommandHandlerService` |
-| `callback_query` (нажата inline-кнопка) | `response` | → `respondToProbe` (handler в α-1) |
-| reply на наше сообщение | `response` (match по `NotificationDelivery.externalMessageId`) | → `respondToProbe` |
-| свободный текст | `free_note` | → `ConversationalIngestAdapter` |
-| voice / audio | `null` + best-effort reply «голос не поддерживается» | — |
+| `/start <code>` (deep-link, hard-coded handler) | `null` (адаптер обрабатывает сам) | `linkCode.consume` → upsert `ChannelBinding` |
+| `/start` без аргумента | `null` | приветствие |
+| голый 6–32 hex/digit код в первом сообщении | `null` | `linkCode.consume` → binding (если binding ещё нет) |
+| voice/audio (`message.voice`) | `chat_query` или `free_note` | `getFile` → `downloadFile` → Vox ASR → intent classify |
+| document (`message.document`, PDF/DOCX/MD/TXT, ≤20 МБ) | `null` | `getFile` → `DocumentsService.upload` → document.adapter pipeline |
+| reply на наше outbound-сообщение | `response` (match по `NotificationDelivery.externalMessageId`) | → `respondToProbe` |
+| свободный текст (вопрос/утверждение) | `chat_query` или `free_note` | `QueryClassifierService.classify` → ChatV2 или ingest |
+| photo без caption | `null` + reply «изображения не поддерживаются» | — |
+| voice spam (>10/час/user) | `null` + reply «слишком много» | Redis-bucket |
+| document >20 МБ | `null` + reply «слишком большой» | — |
 
-## Расширение InboundMessage
+## Intent classification
 
-Добавлен 4-й тип в `backend/src/modules/conversational/types/channel.types.ts`:
+Зависит от `BOT_INTENT_CLASSIFIER_ENABLED`:
+- `true` (default) — вызывает `QueryClassifierService.classify()` (LLM `taskType='dialog-classify'` с эвристическим pre-фильтром). Маппинг `DialogIntent → InboundIntent`: `factual|exploratory|analytical|clone_roleplay → chat_query`, прочее → `free_note`. На LLM throw — fallback на эвристики.
+- `false` — сразу эвристики.
+
+**Эвристика:** вопросительный знак `?` или start-with «как/что/почему/зачем/кто/где/когда/сколько/какой/какая/какое/какие» → `chat_query`. Иначе → `free_note`.
+
+Метрика `bot_intent_classified_total{channel, intent, source}` фиксирует источник решения (`llm` vs `heuristic`).
+
+## InboundMessage в β-1 zero-button
+
+`InboundMessage` сужено до 3 типов (см. `backend/src/modules/conversational/types/channel.types.ts`):
 ```ts
-| { type: 'command'; userId; tenantId; commandName: string; args?: string; originChannelBindingId? }
+type InboundMessage =
+  | { type: 'free_note';  userId; tenantId; text; metadata?; originChannelBindingId? }
+  | { type: 'response';   userId; tenantId; notificationId; payload; originChannelBindingId? }
+  | { type: 'chat_query'; userId; tenantId; question; conversationId?; originChannelBindingId? };
 ```
-Существующие типы (`free_note`/`response`/`chat_query`) расширены полем `originChannelBindingId?` (раньше было только у `chat_query`).
+Удалён тип `'command'` (β-1 rip-out 2026-05-23). Любые prom-конфиги, ENV или другие места, ссылающиеся на `commandName` / `commandHandler` / `subscribeInbound('command', ...)`, тоже удалены.
 
-## ENV (β-1, новое)
+## ENV (β-1, актуальное)
 
 - `TELEGRAM_BOT_API_BASE=https://api.telegram.org`
 - `TELEGRAM_BOT_GLOBAL_RPS=25`
 - `MAX_BOT_API_BASE=https://platform-api.max.ru`
 - `MAX_BOT_GLOBAL_RPS=25`
+- `BOT_VOICE_ENABLED=true`         — master-flag voice inbound (через ASR Vox).
+- `BOT_DOCUMENT_ENABLED=true`      — master-flag document inbound (PDF/DOCX/MD/TXT).
+- `BOT_INTENT_CLASSIFIER_ENABLED=true` — true: LLM + эвристика; false: только эвристика.
 
 Per-tenant `botToken` + `webhookSecret` хранятся в `Channel.config` зашифрованными через `CryptoService.encrypt` (формат `gcm:v1:...`). Setup-скрипты (`bun run setup:telegram-bot` / `setup:max-bot`) шифруют их при upsert'е.
 
-## Метрики (новые)
+## Метрики (β-1 zero-button)
 
-- `telegram_bot_api_errors_total{api_method, code}` — counter
-- `telegram_bot_webhook_received_total{type}` — counter (`message`/`callback_query`/`command`/`edited_message`/`unknown`)
-- `max_bot_api_errors_total{api_method, code}` — counter
-- `max_bot_webhook_received_total{type}` — counter
+Существующие (без изменений):
+- `telegram_bot_api_errors_total{api_method, code}` — counter.
+- `telegram_bot_webhook_received_total{type}` — counter (`message`/`edited_message`/`unknown`).
+- `max_bot_api_errors_total{api_method, code}` — counter.
+- `max_bot_webhook_received_total{type}` — counter.
 
-Базовые `conversational_*` метрики работают автоматически (label `kind='telegram_bot'|'max_bot'`).
+Новые (rip-out 2026-05-23):
+- `bot_inbound_total{channel, kind}` — counter; `channel ∈ telegram_bot|max_bot`; `kind ∈ text|voice|document|start_command|link_code|other`.
+- `bot_voice_asr_duration_seconds{channel}` — histogram; длительность ASR voice от бота.
+- `bot_intent_classified_total{channel, intent, source}` — counter; `intent ∈ chat_query|free_note`; `source ∈ llm|heuristic`.
+
+Базовые `conversational_*` метрики работают автоматически.
+
+## Зависимости модуля
+
+`ConversationalModule` теперь импортирует `DocumentsModule` (для `DocumentsService.upload` из адаптеров). Адаптеры также инжектят:
+- `VoxService` — экспортируется `@Global AiModule` (поднят из WorkersModule в HTTP-side для адаптеров).
+- `QueryClassifierService` — экспортируется `@Global DialogLayerModule`.
 
 ## Setup-скрипты
 
-- `bun run setup:telegram-bot -- --token <BOT_TOKEN> --tenant-id <tenantId> --public-host-url <url> [--webhook-secret <secret>]`
-- `bun run setup:max-bot -- --token <ACCESS_TOKEN> --tenant-id <tenantId> --public-host-url <url> [--webhook-secret <secret>]`
+- `bun run setup:telegram-bot -- --token <BOT_TOKEN> --tenant-id <tenantId> --public-host-url <url> [--webhook-secret <secret>]` — webhook без `callback_query`, `setMyCommands([])` (очищает menu).
+- `bun run setup:max-bot -- --token <ACCESS_TOKEN> --tenant-id <tenantId> --public-host-url <url> [--webhook-secret <secret>]`.
 
-Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты совместимо с `CryptoService` (формат `gcm:v1:...`).
+Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты совместимо с `CryptoService`.
 
 ## ⚠ Telegram — два независимых пути (CRIT-5)
 

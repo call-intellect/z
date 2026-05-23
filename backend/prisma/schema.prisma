@@ -240,17 +240,33 @@ enum SignalType {
   competitor_move
   metric_change
   knowledge_gap
-  // SBA α-2 — расширение Layer 1 разметки.
-  // reasoning — обоснование «почему я так решил» (главный источник для SkillProfile γ-1).
-  // rationale — структурированное обоснование, привязанное к decision.
-  // decision_basis — фрагмент обоснования внутри блока-decision (узкий случай rationale).
-  // regulation — фрагмент регламента / нормативного правила (источник для Specialist 3.1).
-  // process_step — шаг процесса (источник для Specialist 3.1).
+  // SBA α-2 wave 1 — расширение Layer 1 разметки (Regulations + SkillProfile).
   reasoning
   rationale
   decision_basis
   regulation
   process_step
+  // SBA α-2 wave 2 (2026-05-23) — типы для β-6/β-7/β-8/γ-1/γ-3/δ-2.
+  // См. plans/tz/2026-05-23-sba-alpha-2-19-signal-types.md.
+  expertise
+  experience
+  competence
+  methodology_step
+  hypothesis
+  result
+  lesson
+  brand_principle
+  content_artifact
+  commitment_status
+  plan_item
+  done_item
+  blocker
+  team_friction
+  process_friction
+  resource_gap
+  suggestion
+  client_request
+  question
 }
 
 enum IdeaBlockStatus {

@@ -121,4 +121,14 @@ docker-образ `livekit/livekit-server` (и egress) до совместимо
 
 **ESLint-правило** для запрета `cypher(` в файлах вне `common/graph/` — TODO Фазы 0d (через `no-restricted-syntax` или кастомное правило).
 
+## Next.js `.next/types/` после `git mv` route group
+
+После перемещения папки между route group'ами (`(admin)/admin/foo` → `(authenticated)/admin/foo`) Next.js хранит автогенерированные type-shims на старые пути в `.next/types/app/(admin)/admin/foo/page.ts`. Эти файлы включены в `tsconfig.json` через паттерн `.next/types/**/*.ts` — `bun run typecheck` падает с десятком `TS2307: Cannot find module '../../../../../app/(admin)/admin/foo/page.js'`.
+
+**Почему:** `.next/types/` обновляется только при `next dev` / `next build`. Изолированный `tsc --noEmit` без сборки видит устаревший кэш.
+
+**Как обойти:** удалить кэш руками — `Remove-Item -Recurse -Force .next\types` (через **PowerShell**, не Bash — `rm -rf .next/types` блокируется sandbox в Claude Code). Или просто запустить `next dev`/`next build` один раз, чтобы регенерировать.
+
+**Когда возникает:** любая операция `git mv` папки внутри `app/`. Также при переименовании файлов внутри page-сегментов.
+
 [[../index|← index]]

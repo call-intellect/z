@@ -214,12 +214,59 @@ export class RouterService {
         break;
       }
       case 'knowledge_gap':
+      case 'question':
+        // SBA α-2 wave 2 — открытый вопрос без ответа также уходит в
+        // KNOWLEDGE_CLONE (для δ-2 ProactiveWatcher и Clone API).
         targets.add(RouterService.SPECIALIST.KNOWLEDGE_CLONE);
         break;
-      // Прочие signalType (commitment, mood, drift, metric_change, …) —
-      // на α-3 не маршрутизируются. Их специалисты появятся в δ+.
+      // ── SBA α-2 wave 2: новые signalType (2026-05-23) ──
+      // γ-1 SkillProfile — все типы про индивидуальные навыки и кейсы.
+      case 'expertise':
+      case 'experience':
+      case 'competence':
+      case 'methodology_step':
+      case 'lesson':
+      case 'hypothesis':
+      case 'result': {
+        const hasEmployeeSubject = await this.hasEmployeeSubject(block.id);
+        if (hasEmployeeSubject) {
+          targets.add(RouterService.SPECIALIST.SKILL);
+        }
+        break;
+      }
+      // β-8 / γ-3 friction-сигналы — на α-3 попадают в INSIGHTS (близко к
+      // pain/risk). Когда появятся специалисты β-8 (PersonalRelation, COO) и
+      // γ-3 (CrossFunctional) — добавим их в эти case'ы рядом с INSIGHTS.
+      case 'blocker':
+      case 'team_friction':
+      case 'process_friction':
+      case 'resource_gap':
+        targets.add(RouterService.SPECIALIST.INSIGHTS);
+        break;
+      // δ-2 / γ-2 / sales — предложения и запросы идут в IDEAS (close to
+      // feature_request) до появления специализированных consumer'ов.
+      case 'suggestion':
+      case 'client_request':
+        targets.add(RouterService.SPECIALIST.IDEAS);
+        break;
+      // β-6 / β-7 / β-8 — типы для будущих специалистов. На α-3 не
+      // маршрутизируются (consumer ещё не существует — ExperimentTracker
+      // в β-6, BrandVoice в β-7, COO/DailyCheckIn в β-8). См. также LLM-fallback
+      // sub-ТЗ ниже.
+      case 'brand_principle':
+      case 'content_artifact':
+      case 'commitment_status':
+      case 'plan_item':
+      case 'done_item':
+        // no-op до появления специалистов.
+        break;
+      // Прочие signalType (commitment, mood, drift, metric_change, ...).
       default:
-        // no-op
+        // TODO(α-3 wave 3): LLM-fallback router для unmatched signalType.
+        // См. plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier.md.
+        // На текущей фазе оставляем no-op — статический mapping покрывает
+        // важные случаи. Когда появится много новых signalType без явного
+        // потребителя — включить LLM-классификатор поверх этого default.
         break;
     }
 

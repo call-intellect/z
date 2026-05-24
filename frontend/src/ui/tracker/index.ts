@@ -14,6 +14,7 @@ export { IssueSidebar } from './IssueSidebar';
 export { IssueDescription } from './IssueDescription';
 export { IssueActivityFeed } from './IssueActivity';
 export { IssueRelations } from './IssueRelations';
+export { IssueSimilar } from './IssueSimilar';
 export { IssueAttachments } from './IssueAttachments';
 export { StartMeetingButton } from './StartMeetingButton';
 export { IssueChat } from './IssueChat';

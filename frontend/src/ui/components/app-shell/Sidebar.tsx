@@ -19,6 +19,7 @@ import {
   Gauge,
   Home,
   IdCard,
+  Inbox,
   Lightbulb,
   ListChecks,
   Lock,
@@ -65,6 +66,7 @@ import {
 import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useEntitlement } from '@/hooks/useEntitlement';
+import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
 import {
   FEATURE_MIN_TIER,
   tierLabel,
@@ -110,6 +112,12 @@ type NavItem = {
    * с иконкой `Clock4` справа вместо `Lock` (Фаза 0c §5.2).
    */
   comingSoon?: boolean;
+  /**
+   * Phase 3 Sprint 6: число «непрочитанных» рядом с пунктом
+   * (используется в «Входящие» для admin/owner). Значение 0 или
+   * undefined — бейдж скрыт. >99 показывается как «99+».
+   */
+  badgeCount?: number;
 };
 
 type NavGroup = {
@@ -193,6 +201,18 @@ const OPERATIONS_GROUP: NavGroup = {
   ],
 };
 
+/**
+ * Доп. пункт «Входящие» (Phase 3 Sprint 6) — только для owner/admin.
+ * Вставляется в `OPERATIONS_GROUP` динамически в Sidebar (роль приходит
+ * с клиента, поэтому здесь нельзя жёстко прописать в массиве выше).
+ */
+const INTAKE_NAV_ITEM: NavItem = {
+  href: '/intake',
+  label: 'Входящие',
+  icon: Inbox,
+  matchPrefix: '/intake',
+};
+
 const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/settings/templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/settings/templates' },
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
@@ -207,7 +227,15 @@ export function Sidebar({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname() ?? '';
-  const { isSuperAdmin, currentOrgRole } = useAuth();
+  const { isSuperAdmin, currentOrgRole, currentOrgId } = useAuth();
+  // Phase 3 Sprint 6: счётчик pending-intake для бейджа у пункта «Входящие».
+  // Запрос делается ТОЛЬКО для owner/admin (см. enabled).
+  const canTriage =
+    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const { count: intakePendingCount } = useIntakePendingCount(
+    currentOrgId,
+    canTriage,
+  );
 
   // Динамические admin-пункты (Фаза 7) — отдельная подгруппа в «Настройках».
   const adminItems: NavItem[] = [];
@@ -242,7 +270,24 @@ export function Sidebar({
       : {}),
   };
 
-  const groups: NavGroup[] = [COMPANY_GROUP, OPERATIONS_GROUP, settingsGroup];
+  // Phase 3 Sprint 6: для owner/admin добавляем пункт «Входящие» в
+  // «Оперативку» рядом с «Задачами» (логически — пред-этап триажа).
+  // badgeCount тянется из useIntakePendingCount — показывает число
+  // pending-карточек в живом счётчике (обновляется каждые 60 сек).
+  const operationsGroup: NavGroup = canTriage
+    ? (() => {
+        const items = [...OPERATIONS_GROUP.items];
+        const tasksIdx = items.findIndex((i) => i.href === '/tasks');
+        const insertAt = tasksIdx >= 0 ? tasksIdx + 1 : items.length;
+        items.splice(insertAt, 0, {
+          ...INTAKE_NAV_ITEM,
+          badgeCount: intakePendingCount,
+        });
+        return { ...OPERATIONS_GROUP, items };
+      })()
+    : OPERATIONS_GROUP;
+
+  const groups: NavGroup[] = [COMPANY_GROUP, operationsGroup, settingsGroup];
 
   // Собираем все пункты в один плоский массив, чтобы вычислить «победителя»
   // по matchPrefix один раз — поведение, как было в плоском Sidebar (см.
@@ -491,10 +536,32 @@ function SidebarNavLink({
       ? FEATURE_MIN_TIER[item.gateFeature] ?? 'tier_pro'
       : null;
 
+  // Badge непрочитанных (Phase 3 Sprint 6 — для «Входящие»). Скрыт, если
+  // 0/undefined. >99 — рисуем «99+», чтобы не растягивать пункт.
+  const badge =
+    item.badgeCount !== undefined && item.badgeCount > 0
+      ? item.badgeCount > 99
+        ? '99+'
+        : String(item.badgeCount)
+      : null;
+
   const linkContent = (
     <>
       <Icon size={16} strokeWidth={1.75} className={iconClass} />
       <span className="flex-1 truncate">{item.label}</span>
+      {badge && (
+        <span
+          className={cn(
+            'inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none',
+            isActive
+              ? 'bg-accent text-bg-base'
+              : 'bg-accent text-bg-base',
+          )}
+          aria-label={`Непрочитанных: ${item.badgeCount}`}
+        >
+          {badge}
+        </span>
+      )}
       {isComingSoon && (
         <Clock4
           size={12}

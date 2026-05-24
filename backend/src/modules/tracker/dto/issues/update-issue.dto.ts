@@ -24,6 +24,12 @@ export const UpdateIssueSchema = z
     dueDate: z.coerce.date().nullable().optional(),
     cycleId: z.string().max(64).nullable().optional(),
     goalId: z.string().max(64).nullable().optional(),
+    /**
+     * Wave 3 finishing (Sprint 10, 2026-05-24) — то же, что в CreateIssueDto:
+     * учитывать ли праздники при обновлении `dueDate`. Если поле не передано
+     * — default `true` (сдвигаем); если `false` — сохраняем `dueDate` как есть.
+     */
+    respectHolidays: z.boolean().optional(),
   })
   .strict();
 

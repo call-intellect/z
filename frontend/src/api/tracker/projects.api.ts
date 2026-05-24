@@ -36,6 +36,29 @@ export interface CreateProjectRequest {
   teamTemplateId?: string | null;
 }
 
+/**
+ * Тело `POST /api/v1/projects/from-template`.
+ * Контракт: `backend/.../dto/projects/create-from-template.dto.ts`.
+ */
+export interface CreateProjectFromTemplateRequest {
+  templateSlug: string;
+  projectName: string;
+  identifier: string;
+  /** Если не передан — формируется из identifier.toLowerCase(). */
+  slug?: string;
+  withExampleTasks?: boolean;
+}
+
+export interface CreateProjectFromTemplateResponse {
+  projectId: string;
+  identifier: string;
+  slug: string;
+  templateSlug: string;
+  statesCount: number;
+  exampleTasksCount: number;
+  regulationStubsCount: number;
+}
+
 export interface UpdateProjectRequest {
   name?: string;
   description?: string | null;
@@ -71,6 +94,16 @@ export const projectsApi = {
     apiClient.post<ProjectApi>('/api/v1/projects', body, {
       headers: orgHeaders(orgId),
     }),
+
+  createFromTemplate: (
+    orgId: string,
+    body: CreateProjectFromTemplateRequest,
+  ) =>
+    apiClient.post<CreateProjectFromTemplateResponse>(
+      '/api/v1/projects/from-template',
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
 
   update: (orgId: string, projectId: string, body: UpdateProjectRequest) =>
     apiClient.patch<ProjectApi>(

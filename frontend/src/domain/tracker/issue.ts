@@ -52,6 +52,48 @@ export interface IssueApi {
   deletedAt: string | null;
   assigneeUserIds: string[];
   labelIds: string[];
+  /**
+   * Phase 3 part C — AI-подсказки, приходят только из POST `/issues`
+   * с `inferSuggestions=true`. Остальные эндпоинты поле не возвращают
+   * (поэтому optional). Контракт:
+   *   `backend/src/modules/tracker/dto/issues/issue-response.dto.ts`.
+   */
+  aiSuggestions?: IssueAiSuggestionsApi | null;
+}
+
+/** AI-подсказки для свежесозданной задачи (см. IssueApi.aiSuggestions). */
+export interface IssueAiSuggestionsApi {
+  fields: {
+    suggestedAssigneeId: string | null;
+    suggestedDueDate: string | null;
+    suggestedPriority: string | null;
+    suggestedGoalId: string | null;
+    suggestedLabels: string[];
+    confidence: number;
+    meetsThreshold: boolean;
+    reasoning: string | null;
+  } | null;
+  goal: {
+    goalId: string;
+    confidence: number;
+    source: 'knn' | 'llm';
+  } | null;
+}
+
+/**
+ * Phase 3 — DTO «похожей» задачи из `GET /tracker/issues/:id/similar`.
+ * Контракт: `backend/src/modules/tracker/dto/issues/similar-issue.dto.ts`.
+ *
+ * `similarity` ∈ [0, 1] — это `1 - cosine_distance`. Выше = ближе.
+ */
+export interface SimilarIssueApi {
+  id: string;
+  identifier: string;
+  title: string;
+  stateId: string | null;
+  projectId: string;
+  completedAt: string | null;
+  similarity: number;
 }
 
 export interface ListIssuesResponseApi {
@@ -214,6 +256,20 @@ export interface IssueAttachment {
   createdAt: Date;
 }
 
+/**
+ * Доменная модель «похожей» задачи (KNN). `completedAt: Date | null` —
+ * парсим из строки ApiDto. `similarity` сохраняем как есть.
+ */
+export interface SimilarIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  stateId: string | null;
+  projectId: string;
+  completedAt: Date | null;
+  similarity: number;
+}
+
 // ─── Mappers ────────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
@@ -320,11 +376,53 @@ export function issueAttachmentFromApi(api: IssueAttachmentApi): IssueAttachment
   };
 }
 
+export function similarIssueFromApi(api: SimilarIssueApi): SimilarIssue {
+  return {
+    id: api.id,
+    identifier: api.identifier,
+    title: api.title,
+    stateId: api.stateId,
+    projectId: api.projectId,
+    completedAt: parseDate(api.completedAt),
+    similarity: api.similarity,
+  };
+}
+
 // ─── UI helpers ─────────────────────────────────────────────────────────────
 
 /** Форматирует идентификатор задачи (`KORA-123`). */
 export function formatIdentifier(issue: Pick<Issue, 'identifier'>): string {
   return issue.identifier;
+}
+
+/** Форматирует similarity (0..1) как «86% похожа». 0.857 → «86% похожа». */
+export function similarityLabel(similarity: number): string {
+  const pct = Math.round(Math.max(0, Math.min(1, similarity)) * 100);
+  return `${pct}% похожа`;
+}
+
+/**
+ * Относительная дата «вчера» / «3 дн. назад» / «12 июн». Используется в
+ * карточке похожей задачи, чтобы показать, когда её закрыли.
+ */
+export function relativeDateLabel(date: Date | null): string | null {
+  if (!date) return null;
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) {
+    // future — отдаём абсолютную дату; KNN сюда не должна попадать, но
+    // подстраховка от часовых поясов.
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  }
+  if (diffDays === 0) return 'сегодня';
+  if (diffDays === 1) return 'вчера';
+  if (diffDays < 7) return `${diffDays} дн. назад`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} нед. назад`;
+  }
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
 /** Текст «Просрочена на N дн.» / «Срок: завтра» / «Срок: 12 июн». */

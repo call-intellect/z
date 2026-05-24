@@ -25,6 +25,7 @@ import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
+import { HolidayService } from './holiday.service';
 import { IssueEmbedQueueService } from './issue-embed-queue.service';
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
 import { IssueInferFieldsService } from './issue-infer-fields.service';
@@ -72,6 +73,14 @@ export class IssuesService {
     @Optional()
     @Inject(IssueGoalSuggestService)
     private readonly goalSuggestSvc?: IssueGoalSuggestService,
+    // Wave 3 finishing (Sprint 10, 2026-05-24) — учёт производственного
+    // календаря РФ при создании/обновлении задачи. Optional: модуль может
+    // быть собран без HolidayService (unit-тесты, dev-окружение без БД-сидов).
+    // Если сервис недоступен — `dueDate` сохраняется ровно как передал клиент
+    // (никаких сдвигов). Флаг `dto.respectHolidays !== false` — default-on.
+    @Optional()
+    @Inject(HolidayService)
+    private readonly holidayService?: HolidayService,
   ) {}
 
   /**
@@ -89,6 +98,16 @@ export class IssuesService {
     // Если stateId не передан — используем defaultStateId проекта.
     const stateId = dto.stateId ?? project.defaultStateId ?? null;
     if (dto.stateId) await this.requireStateInProject(dto.stateId, projectId);
+
+    // Wave 3 finishing (Sprint 10) — сдвигаем dueDate на ближайший рабочий
+    // день, если попал на праздник/выходной. По умолчанию ВКЛ (default-on);
+    // выключается явным `respectHolidays=false` в DTO. Если HolidayService
+    // не инжектился (Optional) — оставляем `dueDate` как есть.
+    const adjustedDueDate = await this.maybeAdjustDueDate({
+      tenantId,
+      dueDate: dto.dueDate ?? null,
+      respectHolidays: dto.respectHolidays,
+    });
 
     const issue = await this.prisma.$transaction(async (tx) => {
       // Атомарный sequenceId: max+1 per project (узкая зона гонок снимется
@@ -117,7 +136,7 @@ export class IssuesService {
           estimatePoints: dto.estimatePoints ?? null,
           sortOrder: dto.sortOrder,
           startDate: dto.startDate ?? null,
-          dueDate: dto.dueDate ?? null,
+          dueDate: adjustedDueDate,
           cycleId: dto.cycleId ?? null,
           goalId: dto.goalId ?? null,
           externalSource: dto.externalSource ?? null,
@@ -410,6 +429,18 @@ export class IssuesService {
     if (dto.stateId && dto.stateId !== existing.stateId) {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
+    // Wave 3 finishing (Sprint 10) — корректируем `dueDate` ДО формирования
+    // diff'а activity. Если dueDate в dto не передан — не трогаем (undefined
+    // означает «оставить как есть»). Если передан null — это явное снятие,
+    // adjust пропускаем (нечего сдвигать).
+    const adjustedDueDate =
+      dto.dueDate === undefined || dto.dueDate === null
+        ? dto.dueDate
+        : await this.maybeAdjustDueDate({
+            tenantId,
+            dueDate: dto.dueDate,
+            respectHolidays: dto.respectHolidays,
+          });
     const changedFields: string[] = [];
     await this.prisma.$transaction(async (tx) => {
       const data: Prisma.IssueUpdateInput = {};
@@ -445,7 +476,7 @@ export class IssuesService {
       trackField('estimatePoints', dto.estimatePoints ?? undefined);
       trackField('sortOrder', dto.sortOrder);
       trackField('startDate', dto.startDate ?? undefined);
-      trackField('dueDate', dto.dueDate ?? undefined);
+      trackField('dueDate', adjustedDueDate ?? undefined);
       trackField('cycleId', dto.cycleId ?? undefined);
       trackField('goalId', dto.goalId ?? undefined);
 
@@ -1160,6 +1191,45 @@ export class IssuesService {
         { issueId, err: err instanceof Error ? err.message : String(err) },
         'issue-embed: enqueue упал — embedding будет пропущен до следующего апдейта',
       );
+    }
+  }
+
+  /**
+   * Wave 3 finishing (Sprint 10) — корректировка `dueDate` через
+   * `HolidayService.adjustDueDate`. Возвращает:
+   *   - null — если входной `dueDate=null` (нечего сдвигать).
+   *   - исходный Date — если `respectHolidays=false` ИЛИ HolidayService
+   *     недоступен (Optional inject не сработал).
+   *   - скорректированный Date — иначе (если попал на праздник/выходной,
+   *     сдвинется на ближайший рабочий день; если уже рабочий — вернётся
+   *     нормализованным к UTC-midnight).
+   *
+   * Опционально: при ошибке внутри HolidayService — warn-лог + возврат
+   * исходного значения. Не валим create/update из-за календарного сбоя.
+   */
+  private async maybeAdjustDueDate(args: {
+    tenantId: string;
+    dueDate: Date | null;
+    respectHolidays: boolean | undefined;
+  }): Promise<Date | null> {
+    if (args.dueDate === null) return null;
+    if (args.respectHolidays === false) return args.dueDate;
+    if (!this.holidayService) return args.dueDate;
+    try {
+      return await this.holidayService.adjustDueDate({
+        tenantId: args.tenantId,
+        dueDate: args.dueDate,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          dueDate: args.dueDate.toISOString(),
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'IssuesService.maybeAdjustDueDate: HolidayService упал — оставляю dueDate как есть',
+      );
+      return args.dueDate;
     }
   }
 

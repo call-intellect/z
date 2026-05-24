@@ -38,6 +38,10 @@ const KNOWN_EVENT_TYPES: TrackerWsEventType[] = [
   'intake.new_item',
   'intake.triaged',
   'activity_feed.new_item',
+  // Wave 3 / Tracker Phase 5 part 1 — события миграционного wizard'а.
+  'import.progress',
+  'import.completed',
+  'import.failed',
 ];
 
 export interface TrackerWsClient {

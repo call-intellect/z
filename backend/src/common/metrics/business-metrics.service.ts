@@ -149,6 +149,18 @@ export class BusinessMetricsService implements OnModuleInit {
   // source ∈ llm | heuristic. intent ∈ chat_query | free_note.
   private botIntentClassifiedTotal!: Counter<'channel' | 'intent' | 'source'>;
 
+  // ── tracker Phase 4 РФ — Telegram-бот для задач (Wave 3, 2026-05-24) ──
+  // tenant_top — top-100 буцет (хэш % 64) во избежание раздутия cardinality.
+  // status ∈ created | auto_created | failed | intake_only.
+  private telegramTasksCreatedTotal!: Counter<'tenant_top' | 'status'>;
+  // kind ∈ create_task | forward_to_task.
+  private telegramVoiceTranscribedTotal!: Counter<'tenant_top' | 'kind'>;
+  private telegramForwardsTotal!: Counter<'tenant_top' | 'status'>;
+  // result ∈ sent | empty | dedup_skip | error.
+  private telegramDigestSentTotal!: Counter<'tenant_top' | 'result'>;
+  // Reply-classify result: status_command | comment | new_task | unknown.
+  private telegramReplyClassifiedTotal!: Counter<'tenant_top' | 'kind'>;
+
   // ── core router (SBA α-3) ─────────────────────────────────────────
   private coreRouterDispatchedTotal!: Counter<'specialist' | 'signal_type'>;
   private coreRouterFanOut!: Histogram<string>;
@@ -391,9 +403,56 @@ export class BusinessMetricsService implements OnModuleInit {
   private trackerWebhookDeliveryTotal!: Counter<'tenant' | 'event' | 'success'>;
   private trackerWebhookRetryCount!: Counter<'tenant' | 'webhook_id'>;
   private trackerEventsToKnowledgeCoreTotal!: Counter<'tenant' | 'type'>;
+  // Tracker Phase 3 (2026-05-24) — Issue embedding + similar-search.
+  // tenant_top — cardinality-safe label (top-100 bucket через `tenantTopOf`).
+  private trackerIssueEmbedTotal!: Counter<'tenant_top' | 'status'>;
+  private trackerIssueSimilarSearchTotal!: Counter<'tenant_top'>;
+  // Tracker Phase 3 part C (2026-05-24) — AI-suggest при создании задачи.
+  // ai_issue_inferred_total{tenant_top, accepted} — увеличивается на inference
+  //   (accepted='false'); если позже PATCH принимает hint — отдельным вызовом
+  //   с accepted='true' (фронт сообщает через future endpoint).
+  // ai_issue_goal_suggested_total{tenant_top, accepted, source} — KNN vs LLM
+  //   (source='knn'|'llm'|'none'). accepted аналогично.
+  private aiIssueInferredTotal!: Counter<'tenant_top' | 'accepted'>;
+  private aiIssueGoalSuggestedTotal!: Counter<
+    'tenant_top' | 'accepted' | 'source'
+  >;
+  // Tracker Phase 3 part B (2026-05-24) — meeting-extract-actions + auto-triage Intake.
+  // ai_meeting_actions_extracted_total{tenant_top, status} — status='created'|'skipped_idempotent'|'llm_empty'|'llm_error'.
+  //   Caller — `MeetingExtractActionsService`. Каждый вызов = одна метрика.
+  //   count извлечённых задач отдельно через `incBy` (см. ниже).
+  // ai_intake_auto_accepted_total{tenant_top} — IntakeIssue, который IntakeAutoTriageWorker
+  //   автоматически перевёл в accepted (создав Issue). Условие: confidence ≥ 0.92
+  //   + source='meeting' + suggestedAssigneeId != null.
+  // ai_intake_suggested_total{tenant_top, accepted_or_pending} — IntakeIssue, для которого
+  //   worker заполнил suggested* (но не auto-accepted). accepted_or_pending — для
+  //   совместимости с метрикой auto_accepted (легче считать ratio).
+  private aiMeetingActionsExtractedTotal!: Counter<'tenant_top' | 'status'>;
+  private aiIntakeAutoAcceptedTotal!: Counter<'tenant_top'>;
+  private aiIntakeSuggestedTotal!: Counter<'tenant_top' | 'status'>;
+  // Tracker Phase 5 part 1 (2026-05-24) — Import-tracker метрики.
+  // Cardinality-safe: tenant_top — top-100 bucket (паттерн как у остальных
+  // tracker tenant_top-метрик); source — фиксированный enum (trello |
+  // bitrix24 | yandex_tracker); success — 'true'|'false' (паттерн
+  // trackerWebhookDeliveryTotal).
+  private importStartedTotal!: Counter<'tenant_top' | 'source'>;
+  private importCompletedTotal!: Counter<'tenant_top' | 'source' | 'success'>;
+  private importIssuesProcessedTotal!: Counter<'tenant_top' | 'source'>;
   private issuesByStateCount!: Gauge<'tenant' | 'project' | 'state'>;
   private issuesOverdueCount!: Gauge<'tenant' | 'project'>;
   private intakePendingCount!: Gauge<'tenant'>;
+  // Tracker Phase 4 part 2 (Sprint 9, 2026-05-24) — TeamTemplate + HolidayCalendar.
+  // team_template_used_total{tenant_top, slug} — Project создан через
+  //   POST /projects/from-template (инкрементируется одновременно с TeamTemplate.usageCount).
+  // holiday_due_date_adjusted_total{tenant_top} — IssuesService сдвинул dueDate
+  //   на следующий рабочий день из-за попадания на праздник
+  //   (HolidayService.adjustDueDate; интеграция в IssuesService — Sprint 10).
+  private teamTemplateUsedTotal!: Counter<'tenant_top' | 'slug'>;
+  private holidayDueDateAdjustedTotal!: Counter<'tenant_top'>;
+  // Wave 3 finishing (Sprint 10, 2026-05-24) — probe `goal_alignment_low`:
+  // у user'а ≥80% задач за 14д созданы без связи с целью (Goal). Probe
+  // эмитит `GoalAlignmentLowCron` (понедельник 06:00 UTC).
+  private probeGoalAlignmentLowEmittedTotal!: Counter<'tenant_top'>;
 
   // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ────────────────────
   // См. plans/tz/2026-05-23-activity-feeds.md §"Метрики Prometheus".
@@ -869,6 +928,33 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'bot_intent_classified_total',
       help: 'SBA β-1 zero-button — результат intent-классификации входящего текста/voice (intent: chat_query/free_note; source: llm/heuristic).',
       labelNames: ['channel', 'intent', 'source'] as const,
+    });
+
+    // ── tracker Phase 4 РФ — Telegram-бот для задач (Wave 3, 2026-05-24) ──
+    this.telegramTasksCreatedTotal = this.getOrCreateCounter({
+      name: 'telegram_tasks_created_total',
+      help: 'Tracker Phase 4 РФ — задачи, созданные через Telegram-бот (IntakeIssue → Issue). status: created (intake) | auto_created (intake + auto-triage) | failed | intake_only.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.telegramVoiceTranscribedTotal = this.getOrCreateCounter({
+      name: 'telegram_voice_transcribed_total',
+      help: 'Tracker Phase 4 РФ — voice-сообщения боту, успешно транскрибированные. kind: create_task | forward_to_task.',
+      labelNames: ['tenant_top', 'kind'] as const,
+    });
+    this.telegramForwardsTotal = this.getOrCreateCounter({
+      name: 'telegram_forwards_total',
+      help: 'Tracker Phase 4 РФ — forward в бот → IntakeIssue. status: created | failed | intake_only.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.telegramDigestSentTotal = this.getOrCreateCounter({
+      name: 'telegram_digest_sent_total',
+      help: 'Tracker Phase 4 РФ — утренний дайджест задач, отправленный в Telegram. result: sent | empty | dedup_skip | error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+    this.telegramReplyClassifiedTotal = this.getOrCreateCounter({
+      name: 'telegram_reply_classified_total',
+      help: 'Tracker Phase 4 РФ — reply на bot-уведомление классифицирован. kind: status_command | comment | new_task | unknown.',
+      labelNames: ['tenant_top', 'kind'] as const,
     });
 
     // ── core router (SBA α-3) ──────────────────────────────────────
@@ -1605,6 +1691,60 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Tracker → knowledge-core bridge — события, отправленные в core.raw-events (type ∈ task_created|task_status_changed|...).',
       labelNames: ['tenant', 'type'] as const,
     });
+    // Tracker Phase 3 (Sprint 6, 2026-05-24) — Issue.embedding pipeline.
+    this.trackerIssueEmbedTotal = this.getOrCreateCounter({
+      name: 'tracker_issue_embed_total',
+      help: 'Tracker Phase 3 — обработка job-а embedding для Issue (status ∈ ok|skipped|failed). skipped — hash text не изменился; ok — embedding обновлён; failed — провайдер упал.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.trackerIssueSimilarSearchTotal = this.getOrCreateCounter({
+      name: 'tracker_issue_similar_search_total',
+      help: 'Tracker Phase 3 — KNN-поиск похожих задач (GET /tracker/issues/:id/similar). Считает все запросы (с/без результатов).',
+      labelNames: ['tenant_top'] as const,
+    });
+    // Tracker Phase 3 part C — AI-suggest при создании задачи.
+    this.aiIssueInferredTotal = this.getOrCreateCounter({
+      name: 'ai_issue_inferred_total',
+      help: 'Tracker Phase 3 part C — IssueInferFieldsService завершил inference (accepted=false на момент создания; accepted=true когда фронт принимает hint через PATCH).',
+      labelNames: ['tenant_top', 'accepted'] as const,
+    });
+    this.aiIssueGoalSuggestedTotal = this.getOrCreateCounter({
+      name: 'ai_issue_goal_suggested_total',
+      help: 'Tracker Phase 3 part C — IssueGoalSuggestService предложил goalId (source ∈ knn|llm|none; accepted=false на момент инференса).',
+      labelNames: ['tenant_top', 'accepted', 'source'] as const,
+    });
+    // Tracker Phase 3 part B — meeting-extract-actions + auto-triage Intake.
+    this.aiMeetingActionsExtractedTotal = this.getOrCreateCounter({
+      name: 'ai_meeting_actions_extracted_total',
+      help: 'Tracker Phase 3 part B — MeetingExtractActionsService отработал. status ∈ created|skipped_idempotent|llm_empty|llm_error.',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    this.aiIntakeAutoAcceptedTotal = this.getOrCreateCounter({
+      name: 'ai_intake_auto_accepted_total',
+      help: 'Tracker Phase 3 part B — IntakeAutoTriageWorker автоматически принял IntakeIssue (confidence ≥ 0.92 + source=meeting + suggestedAssigneeId).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.aiIntakeSuggestedTotal = this.getOrCreateCounter({
+      name: 'ai_intake_suggested_total',
+      help: 'Tracker Phase 3 part B — IntakeAutoTriageWorker заполнил suggested* (status ∈ auto_accepted|pending|llm_error|skipped_already_triaged).',
+      labelNames: ['tenant_top', 'status'] as const,
+    });
+    // Tracker Phase 5 part 1 (2026-05-24) — Import-tracker.
+    this.importStartedTotal = this.getOrCreateCounter({
+      name: 'import_started_total',
+      help: 'Tracker Phase 5 — запуск импорта (tenant_top × source).',
+      labelNames: ['tenant_top', 'source'] as const,
+    });
+    this.importCompletedTotal = this.getOrCreateCounter({
+      name: 'import_completed_total',
+      help: 'Tracker Phase 5 — финальное завершение импорта (tenant_top × source × success). success="true" для completed, "false" для failed/cancelled.',
+      labelNames: ['tenant_top', 'source', 'success'] as const,
+    });
+    this.importIssuesProcessedTotal = this.getOrCreateCounter({
+      name: 'import_issues_processed_total',
+      help: 'Tracker Phase 5 — количество обработанных Issue (созданных + skip-existing). Инкрементится в strategies.',
+      labelNames: ['tenant_top', 'source'] as const,
+    });
     this.issuesByStateCount = this.getOrCreateGauge({
       name: 'issues_by_state_count',
       help: 'Tracker — snapshot количества задач по состоянию (обновляется cron-ом).',
@@ -1619,6 +1759,26 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'intake_pending_count',
       help: 'Tracker Intake — snapshot количества IntakeIssue.status=pending (обновляется при изменении статуса).',
       labelNames: ['tenant'] as const,
+    });
+
+    // Tracker Phase 4 part 2 — TeamTemplate + HolidayCalendar.
+    this.teamTemplateUsedTotal = this.getOrCreateCounter({
+      name: 'team_template_used_total',
+      help: 'Tracker Phase 4 — POST /projects/from-template создал Project (slug — слаг шаблона: sales|development|installation|...).',
+      labelNames: ['tenant_top', 'slug'] as const,
+    });
+    this.holidayDueDateAdjustedTotal = this.getOrCreateCounter({
+      name: 'holiday_due_date_adjusted_total',
+      help: 'Tracker Phase 4 — HolidayService сдвинул dueDate задачи на следующий рабочий день (попадание на праздник / выходной).',
+      labelNames: ['tenant_top'] as const,
+    });
+    // Wave 3 finishing (Sprint 10, 2026-05-24) — probe-trigger
+    // `goal_alignment_low`: эмит probe-event, если у user ≥5 задач за 14д и
+    // ≥80% без goalId. Cardinality-safe: tenant_top (top-100 + 'other').
+    this.probeGoalAlignmentLowEmittedTotal = this.getOrCreateCounter({
+      name: 'probe_goal_alignment_low_emitted_total',
+      help: 'Wave 3 finishing — emitted probe-events «goal_alignment_low» (≥80% issues пользователя за 14д без связи с Goal).',
+      labelNames: ['tenant_top'] as const,
     });
 
     // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ───────────────────
@@ -2248,6 +2408,63 @@ export class BusinessMetricsService implements OnModuleInit {
       channel: args.channel,
       intent: args.intent,
       source: args.source,
+    });
+  }
+
+  // ────── tracker Phase 4 РФ — Telegram-бот для задач (Wave 3) ────────
+
+  /** Telegram-бот: задача создана (intake или сразу Issue через auto-triage). */
+  incTelegramTasksCreated(args: {
+    tenantTop: string;
+    status: 'created' | 'auto_created' | 'failed' | 'intake_only';
+  }): void {
+    this.telegramTasksCreatedTotal.inc({
+      tenant_top: args.tenantTop,
+      status: args.status,
+    });
+  }
+
+  /** Telegram-бот: voice → ASR → текст для последующего парсинга. */
+  incTelegramVoiceTranscribed(args: {
+    tenantTop: string;
+    kind: 'create_task' | 'forward_to_task';
+  }): void {
+    this.telegramVoiceTranscribedTotal.inc({
+      tenant_top: args.tenantTop,
+      kind: args.kind,
+    });
+  }
+
+  /** Telegram-бот: forward → IntakeIssue. */
+  incTelegramForwards(args: {
+    tenantTop: string;
+    status: 'created' | 'auto_created' | 'failed' | 'intake_only';
+  }): void {
+    this.telegramForwardsTotal.inc({
+      tenant_top: args.tenantTop,
+      status: args.status,
+    });
+  }
+
+  /** Telegram-бот: утренний дайджест задач. */
+  incTelegramDigestSent(args: {
+    tenantTop: string;
+    result: 'sent' | 'empty' | 'dedup_skip' | 'error';
+  }): void {
+    this.telegramDigestSentTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  /** Telegram-бот: reply классифицирован LLM. */
+  incTelegramReplyClassified(args: {
+    tenantTop: string;
+    kind: 'status_command' | 'comment' | 'new_task' | 'unknown';
+  }): void {
+    this.telegramReplyClassifiedTotal.inc({
+      tenant_top: args.tenantTop,
+      kind: args.kind,
     });
   }
 
@@ -3508,6 +3725,106 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  /**
+   * Tracker Phase 3 — обработка embedding-job'а для Issue.
+   *
+   *  - `ok`      — embedding пересчитан и записан;
+   *  - `skipped` — hash text совпал, пересчёт не нужен;
+   *  - `failed`  — провайдер embedding'а упал.
+   *
+   * `tenantTop` нормализуется через `tenantTopOf` (top-100 bucket).
+   */
+  incTrackerIssueEmbed(args: {
+    tenantTop: string;
+    status: 'ok' | 'skipped' | 'failed';
+  }): void {
+    this.trackerIssueEmbedTotal.inc({
+      tenant_top: args.tenantTop,
+      status: args.status,
+    });
+  }
+
+  /**
+   * Tracker Phase 3 — KNN-поиск похожих задач
+   * (`GET /tracker/issues/:id/similar`). Считает все запросы (включая те,
+   * где исходная задача без embedding'а — там результат пустой).
+   */
+  incTrackerIssueSimilarSearch(args: { tenantTop: string }): void {
+    this.trackerIssueSimilarSearchTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Tracker Phase 3 part C — счётчик попыток inference полей задачи.
+   * `accepted` — на момент inference всегда `false`. Если фронт принимает
+   * подсказку через PATCH /issues/:id — вызывается ещё раз с `accepted='true'`.
+   */
+  incAiIssueInferred(args: {
+    tenantTop: string;
+    accepted: 'true' | 'false';
+  }): void {
+    this.aiIssueInferredTotal.inc({
+      tenant_top: args.tenantTop,
+      accepted: args.accepted,
+    });
+  }
+
+  /**
+   * Tracker Phase 3 part C — предложение goalId.
+   * `source` ∈ knn (top-K KNN сходит в одну Goal) | llm (fallback) | none.
+   */
+  incAiIssueGoalSuggested(args: {
+    tenantTop: string;
+    accepted: 'true' | 'false';
+    source: 'knn' | 'llm' | 'none';
+  }): void {
+    this.aiIssueGoalSuggestedTotal.inc({
+      tenant_top: args.tenantTop,
+      accepted: args.accepted,
+      source: args.source,
+    });
+  }
+
+  /**
+   * Tracker Phase 3 part B — MeetingExtractActionsService завершил вызов.
+   * Если count>0 — `incBy` для каждой созданной задачи отдельно (через цикл
+   * у caller'а). Здесь — только агрегатный статус (created / empty / error /
+   * skipped_idempotent).
+   */
+  incAiMeetingActionsExtracted(args: {
+    tenantTop: string;
+    status:
+      | 'created'
+      | 'skipped_idempotent'
+      | 'llm_empty'
+      | 'llm_error';
+    by?: number;
+  }): void {
+    this.aiMeetingActionsExtractedTotal.inc(
+      { tenant_top: args.tenantTop, status: args.status },
+      args.by ?? 1,
+    );
+  }
+
+  /** Tracker Phase 3 part B — IntakeAutoTriage авто-принял IntakeIssue. */
+  incAiIntakeAutoAccepted(args: { tenantTop: string }): void {
+    this.aiIntakeAutoAcceptedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Tracker Phase 3 part B — IntakeAutoTriage заполнил suggested* (или ошибка). */
+  incAiIntakeSuggested(args: {
+    tenantTop: string;
+    status:
+      | 'auto_accepted'
+      | 'pending'
+      | 'llm_error'
+      | 'skipped_already_triaged';
+  }): void {
+    this.aiIntakeSuggestedTotal.inc({
+      tenant_top: args.tenantTop,
+      status: args.status,
+    });
+  }
+
   /** Tracker — snapshot количества задач в данном состоянии (set из cron'а). */
   setIssuesByStateCount(args: {
     tenant: string;
@@ -3536,6 +3853,78 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Tracker Intake — snapshot количества pending intake-карточек. */
   setIntakePendingCount(args: { tenant: string; count: number }): void {
     this.intakePendingCount.set({ tenant: args.tenant }, args.count);
+  }
+
+  /**
+   * Tracker Phase 4 part 2 — Project создан через POST /projects/from-template.
+   * `slug` — слаг шаблона (`sales`|`development`|`installation`|...).
+   */
+  incTeamTemplateUsed(args: { tenantTop: string; slug: string }): void {
+    this.teamTemplateUsedTotal.inc({
+      tenant_top: args.tenantTop,
+      slug: args.slug,
+    });
+  }
+
+  /**
+   * Tracker Phase 4 part 2 — HolidayService.adjustDueDate сдвинул dueDate
+   * задачи на следующий рабочий день (попадание на праздник / выходной).
+   */
+  incHolidayDueDateAdjusted(args: { tenantTop: string }): void {
+    this.holidayDueDateAdjustedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Wave 3 finishing (Sprint 10, 2026-05-24) — probe «goal_alignment_low»
+   * успешно отправлен. Cardinality-safe label `tenant_top` (top-100 + 'other').
+   */
+  incProbeGoalAlignmentLowEmitted(args: { tenantTop: string }): void {
+    this.probeGoalAlignmentLowEmittedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Tracker Phase 5 part 1 (2026-05-24) — Import-tracker:
+   *  - запуск импорта (`import_started_total`).
+   */
+  incImportStarted(args: {
+    tenantTop: string;
+    source: 'trello' | 'bitrix24' | 'yandex_tracker';
+  }): void {
+    this.importStartedTotal.inc({
+      tenant_top: args.tenantTop,
+      source: args.source,
+    });
+  }
+
+  /**
+   * Tracker Phase 5 part 1 (2026-05-24) — финальное завершение импорта.
+   * `success` ∈ 'true' (status='completed') | 'false' (status='failed'|'cancelled').
+   */
+  incImportCompleted(args: {
+    tenantTop: string;
+    source: 'trello' | 'bitrix24' | 'yandex_tracker';
+    success: boolean;
+  }): void {
+    this.importCompletedTotal.inc({
+      tenant_top: args.tenantTop,
+      source: args.source,
+      success: String(args.success),
+    });
+  }
+
+  /**
+   * Tracker Phase 5 part 1 (2026-05-24) — обработан очередной Issue
+   * (либо создан, либо пропущен по идемпотентности).
+   */
+  incImportIssueProcessed(args: {
+    tenantTop: string;
+    source: 'trello' | 'bitrix24' | 'yandex_tracker';
+    by?: number;
+  }): void {
+    this.importIssuesProcessedTotal.inc(
+      { tenant_top: args.tenantTop, source: args.source },
+      args.by ?? 1,
+    );
   }
 
   // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ────────────────────

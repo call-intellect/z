@@ -37,6 +37,20 @@ export const CreateIssueSchema = z
      * передавать DTO без этого поля без TypeScript-ошибок.
      */
     inferSuggestions: z.boolean().optional(),
+    /**
+     * Wave 3 finishing (Sprint 10, 2026-05-24) — учитывать ли праздники
+     * (производственный календарь) при создании задачи.
+     *
+     * Семантика: если `true` или поле не передано (default) И `dueDate` попадает
+     * на праздник/выходной — `IssuesService` сдвигает `dueDate` на следующий
+     * рабочий день через `HolidayService.adjustDueDate`. Если `false` —
+     * сохраняем `dueDate` ровно как передал клиент.
+     *
+     * NB: `HolidayService` инжектится через `@Optional()` — если он недоступен
+     * (модуль не загрузил его, например в unit-тестах), флаг игнорируется и
+     * `dueDate` сохраняется как есть.
+     */
+    respectHolidays: z.boolean().optional(),
   })
   .strict();
 

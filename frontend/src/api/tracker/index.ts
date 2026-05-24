@@ -11,3 +11,4 @@ export * from './comments.api';
 export * from './labels.api';
 export * from './webhooks.api';
 export * from './team-templates.api';
+export * from './imports.api';

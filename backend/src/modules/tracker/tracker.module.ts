@@ -43,6 +43,7 @@ import { WebhooksService } from './services/webhooks.service';
 import { Bitrix24ImportStrategy } from './strategies/bitrix24-import.strategy';
 import { TrelloImportStrategy } from './strategies/trello-import.strategy';
 import { YandexTrackerImportStrategy } from './strategies/yandex-tracker-import.strategy';
+import { GoalAlignmentLowCron } from './workers/goal-alignment-low.cron';
 import { ImportTrackerWorker } from './workers/import-tracker.worker';
 import { IntakeAutoTriageWorker } from './workers/intake-auto-triage.worker';
 import { IssueOverdueDetectorCron } from './workers/issue-overdue-detector.cron';
@@ -128,6 +129,11 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     TrackerEmitterService,
     IssueOverdueDetectorCron,
     IssueStateGaugeCron,
+    // Wave 3 finishing (Sprint 10, 2026-05-24) — probe-trigger «goal_alignment_low».
+    // Каждый понедельник 06:00 UTC: для каждого user'а в Org проверяет долю
+    // задач за 14д без goalId; если ≥80% — эмитит probe через ProbeService.
+    // ProbeService инжектится @Optional() — модуль работает без него (без эмита).
+    GoalAlignmentLowCron,
     // Tracker Phase 3 part C (2026-05-24) — AI-suggest при создании задачи.
     // Зависят от LlmRouterService (@Global AiModule). Inject в IssuesService.create()
     // через @Optional() — фронт получает aiSuggestions только при inferSuggestions=true.

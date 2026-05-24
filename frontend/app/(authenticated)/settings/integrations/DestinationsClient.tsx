@@ -1,8 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
+  ArrowRight,
   AtSign,
+  Download,
   Globe,
   Loader2,
   MessagesSquare,
@@ -149,6 +152,8 @@ export function DestinationsClient() {
 
       {!loading && !error && (
         <div className="space-y-6">
+          <ImportTrackerEntry />
+
           {grouped.map(({ type, items: groupItems }) => {
             const meta = TYPE_META[type];
             const Icon = meta.icon;
@@ -224,6 +229,42 @@ export function DestinationsClient() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Wave 3 / Tracker Phase 5 part 1 — карточка-вход в миграционный wizard.
+ * Отдельная секция над списком destinations: импорт это разовое действие,
+ * а не сохранённая интеграция.
+ */
+function ImportTrackerEntry() {
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
+        <Download size={13} /> Импорт данных
+      </div>
+      <Link
+        href="/integrations/import-tracker"
+        className="group flex items-start gap-3 rounded-lg border border-border-subtle bg-bg-card p-4 transition-colors hover:border-accent/40"
+      >
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-accent-muted text-accent">
+          <Download size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-fg-primary">
+            Импорт задач из других трекеров
+          </div>
+          <div className="mt-0.5 text-xs text-fg-tertiary">
+            Перенос проектов, задач, комментариев и вложений из Trello,
+            Битрикс24 или Яндекс Трекера. Wizard за 4 шага.
+          </div>
+        </div>
+        <ArrowRight
+          size={16}
+          className="mt-1 text-fg-tertiary transition-transform group-hover:translate-x-0.5 group-hover:text-accent"
+        />
+      </Link>
+    </section>
   );
 }
 

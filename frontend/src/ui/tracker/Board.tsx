@@ -49,10 +49,13 @@ import { useStates } from '@/hooks/tracker/useStates';
 import { issuesApi } from '@/api/tracker/issues.api';
 import { useToast } from '@/contexts/toast-context';
 import {
+  ISSUE_PRIORITY_LABELS,
   ISSUE_STATE_CATEGORY_LABELS,
   ISSUE_STATE_CATEGORY_VALUES,
+  parseIssuePriority,
   type Issue,
   type IssueApi,
+  type IssueAiSuggestionsApi,
   type IssueStateCategory,
   type ListIssuesResponseApi,
 } from '@/domain/tracker';
@@ -117,13 +120,28 @@ export function Board({
     async (title: string) => {
       setCreating(true);
       try {
-        await issuesApi.create(orgId, projectId, { title });
+        // Phase 3 part C: просим backend дополнить ответ AI-подсказками.
+        // Они опциональны (только если confidence ≥ 0.7 на стороне сервера).
+        const created = await issuesApi.create(orgId, projectId, {
+          title,
+          inferSuggestions: true,
+        });
         await mutate();
+        // Если backend вернул aiSuggestions с достаточной уверенностью —
+        // показываем toast с действием Accept. Логика поднята в отдельную
+        // функцию, чтобы не загромождать handleCreate.
+        if (created.aiSuggestions) {
+          showAiSuggestionsToasts(created, created.aiSuggestions, {
+            orgId,
+            mutateBoard: mutate,
+            addToast,
+          });
+        }
       } finally {
         setCreating(false);
       }
     },
-    [orgId, projectId, mutate],
+    [orgId, projectId, mutate, addToast],
   );
 
   const issuesById = useMemo(() => {
@@ -579,4 +597,166 @@ function SortableIssueCard({
       <IssueCard issue={issue} />
     </div>
   );
+}
+
+// ─── Phase 3 part C: AI-suggestions toast ───────────────────────────────────
+//
+// Helper, который читает `aiSuggestions` из ответа POST /issues и показывает
+// 1–2 toast'а с действием «Принять». Вынесен в модульную функцию, чтобы
+// `handleCreate` оставался читаемым.
+//
+// Логика принятия (см. ТЗ Phase 3 frontend):
+//   - fields: показываем toast «AI предлагает: исполнитель, срок, цель.
+//     Принять?» если `meetsThreshold === true` ИЛИ `confidence ≥ 0.7`
+//     (двойная защита — backend сам отсекает по threshold, но клиент
+//     перепроверяет на случай регрессии). Кнопка Accept → PATCH с
+//     suggested полями.
+//   - goal: если поле `goal` присутствует отдельно — показываем второй,
+//     более лаконичный toast «Связать с целью? (∼60%)».
+
+type ToastApi = ReturnType<typeof useToast>;
+type AddToastFn = ToastApi['addToast'];
+
+const AI_CONFIDENCE_THRESHOLD = 0.7;
+
+interface ShowSuggestionsCtx {
+  orgId: string;
+  /** SWR-mutate `useIssues` — чтобы после accept лента доски обновилась. */
+  mutateBoard: () => Promise<unknown>;
+  addToast: AddToastFn;
+}
+
+function showAiSuggestionsToasts(
+  issue: IssueApi,
+  suggestions: IssueAiSuggestionsApi,
+  ctx: ShowSuggestionsCtx,
+): void {
+  // 1) fields toast — полный комплект (assignee/dueDate/priority/labels)
+  if (suggestions.fields) {
+    const fields = suggestions.fields;
+    const passesThreshold =
+      fields.meetsThreshold === true ||
+      fields.confidence >= AI_CONFIDENCE_THRESHOLD;
+    if (passesThreshold) {
+      const summary = buildFieldsSummary(fields);
+      if (summary) {
+        ctx.addToast({
+          type: 'info',
+          message: `AI предлагает: ${summary}. Принять?`,
+          durationMs: 12000,
+          action: {
+            label: 'Принять',
+            onClick: async () => {
+              try {
+                await acceptFieldSuggestions(issue.id, fields, ctx);
+                await ctx.mutateBoard();
+                ctx.addToast({
+                  type: 'success',
+                  message: 'Подсказки AI применены.',
+                });
+              } catch (err) {
+                ctx.addToast({
+                  type: 'error',
+                  message: `Не удалось применить подсказки: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+                  durationMs: 5000,
+                });
+              }
+            },
+          },
+        });
+      }
+    }
+  }
+
+  // 2) goal toast — отдельный, более короткий
+  if (suggestions.goal && suggestions.goal.confidence >= AI_CONFIDENCE_THRESHOLD) {
+    const goalId = suggestions.goal.goalId;
+    const pct = Math.round(suggestions.goal.confidence * 100);
+    ctx.addToast({
+      type: 'info',
+      message: `AI предлагает связать с целью (∼${pct}%). Принять?`,
+      durationMs: 12000,
+      action: {
+        label: 'Связать',
+        onClick: async () => {
+          try {
+            await issuesApi.linkGoal(ctx.orgId, issue.id, goalId);
+            await ctx.mutateBoard();
+            ctx.addToast({
+              type: 'success',
+              message: 'Задача связана с целью.',
+            });
+          } catch (err) {
+            ctx.addToast({
+              type: 'error',
+              message: `Не удалось связать с целью: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+              durationMs: 5000,
+            });
+          }
+        },
+      },
+    });
+  }
+}
+
+/** Собирает человекочитаемое summary suggested-полей для toast-сообщения. */
+function buildFieldsSummary(
+  fields: NonNullable<IssueAiSuggestionsApi['fields']>,
+): string | null {
+  const parts: string[] = [];
+  if (fields.suggestedAssigneeId) parts.push('исполнитель');
+  if (fields.suggestedDueDate) {
+    const dt = new Date(fields.suggestedDueDate);
+    if (!Number.isNaN(dt.getTime())) {
+      parts.push(
+        `срок ${dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`,
+      );
+    } else {
+      parts.push('срок');
+    }
+  }
+  if (fields.suggestedPriority) {
+    const prio = parseIssuePriority(fields.suggestedPriority);
+    parts.push(`приоритет «${ISSUE_PRIORITY_LABELS[prio]}»`);
+  }
+  if (fields.suggestedGoalId) parts.push('цель');
+  if (fields.suggestedLabels && fields.suggestedLabels.length > 0) {
+    parts.push(`${fields.suggestedLabels.length} меток`);
+  }
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+/**
+ * Применяет suggested-поля к задаче. Использует PATCH /issues/:id (для
+ * скалярных полей) + POST .../assignees / labels (для коллекций), т.к.
+ * сейчас в `UpdateIssueRequest` нет полей `assigneeUserIds` / `labelIds`.
+ *
+ * Goal-suggestion здесь НЕ применяем — для него отдельный toast (выше).
+ */
+async function acceptFieldSuggestions(
+  issueId: string,
+  fields: NonNullable<IssueAiSuggestionsApi['fields']>,
+  ctx: ShowSuggestionsCtx,
+): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  if (fields.suggestedDueDate) patch.dueDate = fields.suggestedDueDate;
+  if (fields.suggestedPriority) {
+    patch.priority = parseIssuePriority(fields.suggestedPriority);
+  }
+  if (fields.suggestedGoalId) patch.goalId = fields.suggestedGoalId;
+  if (Object.keys(patch).length > 0) {
+    await issuesApi.update(ctx.orgId, issueId, patch);
+  }
+  if (fields.suggestedAssigneeId) {
+    await issuesApi.addAssignee(ctx.orgId, issueId, fields.suggestedAssigneeId);
+  }
+  if (fields.suggestedLabels && fields.suggestedLabels.length > 0) {
+    // Последовательное добавление меток: parallel `Promise.all` тоже
+    // сработает, но при ошибке одного label другие успели бы
+    // примениться — UX хуже. Дополнительный latency на синхронные
+    // вызовы здесь незаметен (1–3 метки максимум).
+    for (const labelId of fields.suggestedLabels) {
+      await issuesApi.addLabel(ctx.orgId, issueId, labelId);
+    }
+  }
 }

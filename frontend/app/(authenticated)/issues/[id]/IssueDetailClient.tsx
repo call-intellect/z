@@ -11,6 +11,7 @@ import {
   IssueHeader,
   IssueRelations,
   IssueSidebar,
+  IssueSimilar,
 } from '@/ui/tracker';
 
 export function IssueDetailClient({ issueId }: { issueId: string }) {
@@ -58,6 +59,11 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             <h2 className="text-sm font-medium text-fg-primary">Связи</h2>
             <IssueRelations orgId={currentOrgId} issueId={issue.id} />
           </section>
+
+          {/* Phase 3 (Sprint 6) — KNN-блок «Похожие задачи».
+              Компонент сам рендерит заголовок и прячет всю секцию,
+              когда backend вернул пустой список. */}
+          <IssueSimilar orgId={currentOrgId} issueId={issue.id} />
 
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Файлы</h2>

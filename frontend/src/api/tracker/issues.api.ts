@@ -18,6 +18,7 @@ import type {
   IssueVersionApi,
   ListIssuesResponseApi,
   MyInboxResponseApi,
+  SimilarIssueApi,
   StartMeetingFromIssueResponseApi,
   IssuePriority,
   IssueStateCategory,
@@ -58,6 +59,13 @@ export interface CreateIssueRequest {
   labelIds?: string[];
   externalSource?: string | null;
   externalId?: string | null;
+  /**
+   * Phase 3 part C — попросить backend заполнить `aiSuggestions` в ответе.
+   * Когда true и `IssueInferFieldsService` доступен, ответ POST содержит
+   * AI-подсказки по assignee/dueDate/priority/goal/labels.
+   * Default (undefined) — никаких LLM-вызовов не делается.
+   */
+  inferSuggestions?: boolean;
 }
 
 export interface UpdateIssueRequest {
@@ -255,6 +263,18 @@ export const issuesApi = {
     apiClient.post<StartMeetingFromIssueResponseApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/start-meeting`,
       body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // ── Phase 3: KNN similar issues ──
+  /**
+   * Возвращает похожие задачи (KNN по pgvector cosine) для данной задачи.
+   * Контракт: `GET /api/v1/tracker/issues/:id/similar`.
+   * threshold/limit берутся с серверной стороны.
+   */
+  getSimilar: (orgId: string, issueId: string) =>
+    apiClient.get<SimilarIssueApi[]>(
+      `/api/v1/tracker/issues/${encodeURIComponent(issueId)}/similar`,
       { headers: orgHeaders(orgId) },
     ),
 

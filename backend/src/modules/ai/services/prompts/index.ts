@@ -10,6 +10,8 @@ import * as interview from './type-interview';
 import * as partner from './type-partner';
 import * as planFact from './type-plan_fact';
 import * as project from './type-project';
+import * as retrospective from './type-retrospective';
+import * as review from './type-review';
 import * as sales from './type-sales';
 import * as standup from './type-standup';
 import * as team from './type-team';
@@ -85,11 +87,32 @@ const REGISTRY: Record<MeetingType, PromptDescriptor> = {
     toolName: customerSuccess.TOOL_NAME,
     schema: customerSuccess.SCHEMA,
   },
-  // Фаза 0a — новые типы встреч review/retrospective. Промпт ещё не написан,
-  // используем `team` как разумный default (обзорная и retro близки к командной
-  // структуре). Замена на специализированные промпты — в Фазе γ.
-  review: { buildPrompt: team.buildPrompt, tool: team.TOOL, toolName: team.TOOL_NAME, schema: team.SCHEMA },
-  retrospective: { buildPrompt: team.buildPrompt, tool: team.TOOL, toolName: team.TOOL_NAME, schema: team.SCHEMA },
+  // CRIT-2 fix 2026-05-24 (Sprint 1, тикет B2-1.3): review/retrospective
+  // получили собственные промпты, отвечающие смыслу типа встречи. До этого
+  // оба fallback'ились на `team.buildPrompt`, что искажало AI-отчёт.
+  // См. plans/analysis/2026-05-22-code-reality-deltas.md §CRIT-2.
+  review: {
+    buildPrompt: review.buildPrompt,
+    tool: review.TOOL,
+    toolName: review.TOOL_NAME,
+    schema: review.SCHEMA,
+  },
+  retrospective: {
+    buildPrompt: retrospective.buildPrompt,
+    tool: retrospective.TOOL,
+    toolName: retrospective.TOOL_NAME,
+    schema: retrospective.SCHEMA,
+  },
+  // Tracker Phase 1 (2026-05-24): встреча, запущенная из задачи трекера
+  // (`POST /issues/:id/start-meeting`). До отдельного «task_discussion»
+  // промпта (план Sprint 3) — переиспользуем team-формат: задачи / решения /
+  // блокеры / next step. Это близко по смыслу к обсуждению задачи.
+  task_discussion: {
+    buildPrompt: team.buildPrompt,
+    tool: team.TOOL,
+    toolName: team.TOOL_NAME,
+    schema: team.SCHEMA,
+  },
 };
 
 export function getPromptForType(type: MeetingType): PromptDescriptor {

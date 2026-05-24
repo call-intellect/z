@@ -35,6 +35,7 @@ const ALL_MEETING_TYPES = {
   customer_success: true,
   review: true,
   retrospective: true,
+  task_discussion: true,
 } satisfies Record<MeetingType, true>;
 
 describe('Prompts registry — все типы MeetingType покрыты', () => {
@@ -92,6 +93,54 @@ describe('Prompts registry — все типы MeetingType покрыты', () =
     };
     const result = d.schema.safeParse(sample);
     expect(result.success).toBe(true);
+  });
+
+  // CRIT-2 fix (2026-05-24): review/retrospective получили собственные
+  // промпты. Тесты ниже фиксируют контракт нового JSON.
+  it('review — schema валидирует ожидаемый JSON', () => {
+    const d = getPromptForType('review');
+    const sample = {
+      subject: 'Фича X — обзор перед релизом',
+      went_well: ['покрытие тестами 90%'],
+      to_improve: ['UI на мобильных требует доработки'],
+      risks: ['нагрузочное тестирование не проводилось'],
+      next_steps: ['прогнать load test до пятницы'],
+      verdict: 'принято с замечаниями',
+    };
+    const result = d.schema.safeParse(sample);
+    expect(result.success).toBe(true);
+  });
+
+  it('retrospective — schema валидирует ожидаемый JSON', () => {
+    const d = getPromptForType('retrospective');
+    const sample = {
+      what_worked: ['ежедневные standup'],
+      what_did_not_work: ['эстимация затянутая'],
+      action_items: [
+        { title: 'попробовать planning poker', assignee: 'Алиса', dueDate: null },
+      ],
+      experiments: ['разбить таск-доску по эпикам'],
+      kudos: ['Боб героически выкатил релиз'],
+      team_mood: 'mixed',
+      mood_notes: 'усталость после релиза, но настроение рабочее',
+    };
+    const result = d.schema.safeParse(sample);
+    expect(result.success).toBe(true);
+  });
+
+  it('retrospective — team_mood enum проверяется', () => {
+    const d = getPromptForType('retrospective');
+    const bad = {
+      what_worked: [],
+      what_did_not_work: [],
+      action_items: [],
+      experiments: [],
+      kudos: [],
+      team_mood: 'awesome', // не в enum
+      mood_notes: null,
+    };
+    const result = d.schema.safeParse(bad);
+    expect(result.success).toBe(false);
   });
 
   it('typeNeedsFollowUp / typeNeedsTasks', () => {

@@ -17,6 +17,7 @@ import {
   type FormEvent,
   type ReactElement,
 } from 'react';
+import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
 import { chatV2Api } from '@/api/chat-v2.api';
@@ -44,7 +45,19 @@ import {
  * (заголовок встречи + timestamp + snippet).
  */
 export function ChatV2Client(): ReactElement {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  // Deep-link `/chat-v2?conversationId=...` (Wave 2 finishing) — позволяет
+  // CommandPalette и другим местам вести напрямую в нужный диалог. Захватываем
+  // ровно один раз на mount: если параметр пришёл — preselect; пользователь
+  // дальше может свободно переключаться по списку.
+  const initialConversationId = useMemo(
+    () => searchParams?.get('conversationId') ?? null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialConversationId,
+  );
   const [statusFilter, setStatusFilter] = useState<ChatV2ConversationStatus>(
     'active',
   );
@@ -58,7 +71,19 @@ export function ChatV2Client(): ReactElement {
     };
   });
 
-  // Auto-select первый диалог при загрузке.
+  // Если конкретный conversationId пришёл по deep-link, но он лежит в архиве —
+  // переключаем фильтр, чтобы запись была видна в master-списке. Делаем это
+  // лениво: пробуем active, если не нашли — переключаемся на archived.
+  useEffect(() => {
+    if (!initialConversationId) return;
+    if (!list.data) return;
+    const found = list.data.items.some((c) => c.id === initialConversationId);
+    if (!found && statusFilter === 'active') {
+      setStatusFilter('archived');
+    }
+  }, [initialConversationId, list.data, statusFilter]);
+
+  // Auto-select первый диалог при загрузке (только если deep-link не задал).
   useEffect(() => {
     if (!selectedId && list.data && list.data.items.length > 0) {
       setSelectedId(list.data.items[0]!.id);

@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Brain,
   Building2,
   Calendar,
+  Clock,
   ExternalLink,
   FileText,
   FolderKanban,
@@ -15,9 +16,13 @@ import {
   ListChecks,
   Loader2,
   MessageCircle,
+  Mic,
   Network,
+  Pin,
+  PinOff,
   Settings,
   Sparkles,
+  Square,
   UserRound,
   type LucideIcon,
 } from 'lucide-react';
@@ -25,8 +30,10 @@ import {
 import { searchApi, type SearchResponse } from '@/api/search.api';
 import { conciergeApi } from '@/api/concierge.api';
 import { chatV2Api, type ChatV2AskResponseApi } from '@/api/chat-v2.api';
+import { voiceApi } from '@/api/voice.api';
 import { ApiError } from '@/api/api-error';
 import { useToast } from '@/contexts/toast-context';
+import { useAuth } from '@/contexts/auth-context';
 import {
   CommandEmpty,
   CommandGroup,
@@ -39,6 +46,13 @@ import { Dialog, DialogContent } from '@/ui/shadcn/dialog';
 import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { useCommandPalette } from './CommandPaletteProvider';
+import {
+  loadPinned,
+  loadRecent,
+  pushRecent,
+  togglePinned,
+  type PaletteRecentItem,
+} from './recent-storage';
 
 /**
  * Глобальная командная палитра. Хоткей: ⌘K (mac) / Ctrl+K (win/linux).
@@ -63,6 +77,7 @@ export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
   const { addToast } = useToast();
+  const { currentOrgId } = useAuth();
   const {
     isOpen,
     initialQuery,
@@ -83,6 +98,16 @@ export function CommandPalette() {
     null,
   );
   const [isMobile, setIsMobile] = useState(false);
+  // Recent / Pinned (Wave 2 finishing task 4).
+  const [recent, setRecent] = useState<PaletteRecentItem[]>([]);
+  const [pinned, setPinned] = useState<PaletteRecentItem[]>([]);
+  // Голосовой ввод (Wave 2 finishing task 3) — MediaRecorder + voiceApi.transcribe.
+  const [voiceState, setVoiceState] = useState<
+    'idle' | 'recording' | 'transcribing'
+  >('idle');
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<BlobPart[]>([]);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
 
   const trimmed = query.trim();
   const isCommandMode = trimmed.startsWith('>');
@@ -164,9 +189,164 @@ export function CommandPalette() {
     };
   }, [trimmed, isSearchMode]);
 
+  // Перезагружаем Recent / Pinned при каждом открытии палитры — другая
+  // вкладка / другая сессия могла поменять localStorage.
+  useEffect(() => {
+    if (!isOpen) return;
+    setRecent(loadRecent());
+    setPinned(loadPinned());
+  }, [isOpen]);
+
+  // Cleanup для микрофона на размонтирование и закрытие палитры.
+  useEffect(() => {
+    if (!isOpen && voiceState !== 'idle') {
+      // Аккуратно прерываем запись если палитра закрылась во время её ведения.
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        // ignore
+      }
+      stopAllTracks(voiceStreamRef.current);
+      voiceStreamRef.current = null;
+      mediaRecorderRef.current = null;
+      voiceChunksRef.current = [];
+      setVoiceState('idle');
+    }
+  }, [isOpen, voiceState]);
+
+  useEffect(() => {
+    return () => {
+      stopAllTracks(voiceStreamRef.current);
+    };
+  }, []);
+
+  const startVoice = useCallback(async () => {
+    if (!currentOrgId) {
+      addToast({ type: 'error', message: 'Нет активной организации' });
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      addToast({
+        type: 'error',
+        message: 'Браузер не поддерживает запись микрофона',
+      });
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      voiceChunksRef.current = [];
+      const mime = pickSupportedMimeType();
+      const recorder = mime
+        ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (ev: BlobEvent) => {
+        if (ev.data && ev.data.size > 0) voiceChunksRef.current.push(ev.data);
+      };
+      recorder.start();
+      setVoiceState('recording');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.name === 'NotAllowedError'
+          ? 'Доступ к микрофону запрещён в настройках браузера'
+          : err instanceof Error
+            ? err.message
+            : 'Не удалось включить микрофон';
+      addToast({ type: 'error', message });
+    }
+  }, [currentOrgId, addToast]);
+
+  const stopVoice = useCallback(async () => {
+    if (!currentOrgId) return;
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return;
+    setVoiceState('transcribing');
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      try {
+        recorder.stop();
+      } catch {
+        resolve();
+      }
+    });
+    stopAllTracks(voiceStreamRef.current);
+    voiceStreamRef.current = null;
+    mediaRecorderRef.current = null;
+
+    const blobMime = recorder.mimeType || 'audio/webm';
+    const blob = new Blob(voiceChunksRef.current, { type: blobMime });
+    voiceChunksRef.current = [];
+    if (blob.size === 0) {
+      setVoiceState('idle');
+      addToast({ type: 'error', message: 'Пустая запись — попробуйте ещё раз' });
+      return;
+    }
+    try {
+      const ext = blobMime.includes('ogg') ? 'ogg' : 'webm';
+      const res = await voiceApi.transcribe({
+        orgId: currentOrgId,
+        audio: blob,
+        filename: `voice.${ext}`,
+      });
+      const transcript = res.text.trim();
+      setVoiceState('idle');
+      if (!transcript) {
+        addToast({
+          type: 'error',
+          message: 'Не удалось распознать — попробуйте чуть громче',
+        });
+        return;
+      }
+      // Дописываем к существующему запросу — пользователь мог начать печатать.
+      setQuery((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    } catch (err) {
+      setVoiceState('idle');
+      const message =
+        err instanceof ApiError ? err.message : 'Не удалось распознать голос';
+      addToast({ type: 'error', message });
+    }
+  }, [currentOrgId, addToast]);
+
+  /** Записать факт использования команды в Recent (max 10, дедуп). */
+  const trackRecent = useCallback(
+    (item: Omit<PaletteRecentItem, 'lastUsedAt'>) => {
+      pushRecent(item);
+      setRecent(loadRecent());
+    },
+    [],
+  );
+
+  const handlePinToggle = useCallback(
+    (item: Omit<PaletteRecentItem, 'lastUsedAt'>) => {
+      const { pinned: nowPinned } = togglePinned(item);
+      setPinned(loadPinned());
+      addToast({
+        type: 'success',
+        message: nowPinned ? 'Закреплено' : 'Откреплено',
+      });
+    },
+    [addToast],
+  );
+
   function go(href: string): void {
     close();
     router.push(href);
+  }
+
+  /** Запустить ранее сохранённую запись из Recent / Pinned. */
+  function runRecentItem(item: PaletteRecentItem): void {
+    trackRecent({
+      id: item.id,
+      label: item.label,
+      subtitle: item.subtitle,
+      action: item.action,
+    });
+    if (item.action.kind === 'navigate') {
+      go(item.action.value);
+    } else {
+      setQuery(item.action.value);
+    }
   }
 
   /** SBA γ-2 — Concierge tool calls (action-режим, `>` префикс). */
@@ -290,21 +470,138 @@ export function CommandPalette() {
       shouldFilter={false}
       className="flex h-full w-full flex-col overflow-hidden rounded-md bg-bg-card text-fg-primary [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-fg-tertiary [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4"
     >
-      <CommandInput
-        placeholder="Поиск, ? — спросить AI, > — действие Concierge"
-        value={query}
-        onValueChange={setQuery}
-      />
+      <div className="relative">
+        <CommandInput
+          placeholder="Поиск, ? — спросить AI, > — действие Concierge"
+          value={query}
+          onValueChange={setQuery}
+        />
+        {/* Голосовой ввод — Wave 2 finishing task 3. Иконка справа в инпуте;
+            не блокирует клавиатурный ввод. */}
+        <button
+          type="button"
+          onClick={() =>
+            voiceState === 'recording' ? void stopVoice() : void startVoice()
+          }
+          disabled={voiceState === 'transcribing' || !currentOrgId}
+          className={cn(
+            'absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary disabled:opacity-50',
+            voiceState === 'recording' && 'bg-danger/15 text-danger hover:bg-danger/20',
+          )}
+          aria-label={
+            voiceState === 'recording'
+              ? 'Остановить запись'
+              : voiceState === 'transcribing'
+                ? 'Распознаю…'
+                : 'Голосовой ввод'
+          }
+          title={
+            voiceState === 'recording'
+              ? 'Остановить запись'
+              : voiceState === 'transcribing'
+                ? 'Распознаю…'
+                : 'Голосовой ввод'
+          }
+        >
+          {voiceState === 'transcribing' ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : voiceState === 'recording' ? (
+            <Square size={14} />
+          ) : (
+            <Mic size={14} />
+          )}
+        </button>
+      </div>
       <CommandList className="max-h-[60vh] md:max-h-[420px]">
-        {/* idle: «Перейти к» + подсказки */}
+        {/* idle: «Закреплено» (если есть) → «Недавнее» (если есть) →
+            «Перейти к» + подсказки. Wave 2 finishing task 4. */}
         {isIdle && (
           <>
+            {pinned.length > 0 && (
+              <CommandGroup heading="Закреплено">
+                {pinned.map((item) => (
+                  <CommandItem
+                    key={`pinned-${item.id}`}
+                    value={`pinned-${item.id}-${item.label}`}
+                    onSelect={() => runRecentItem(item)}
+                  >
+                    <ResultRow
+                      icon={Pin}
+                      title={item.label}
+                      subtitle={item.subtitle ?? 'Закреплённая команда'}
+                      rightSlot={
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePinToggle(item);
+                          }}
+                          className="rounded p-1 text-fg-tertiary hover:bg-bg-overlay hover:text-fg-primary"
+                          aria-label="Открепить"
+                          title="Открепить"
+                        >
+                          <PinOff size={12} />
+                        </button>
+                      }
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {recent.length > 0 && (
+              <CommandGroup heading="Недавнее">
+                {recent.slice(0, 5).map((item) => {
+                  const isItemPinned = pinned.some((p) => p.id === item.id);
+                  return (
+                    <CommandItem
+                      key={`recent-${item.id}`}
+                      value={`recent-${item.id}-${item.label}`}
+                      onSelect={() => runRecentItem(item)}
+                    >
+                      <ResultRow
+                        icon={Clock}
+                        title={item.label}
+                        subtitle={item.subtitle ?? 'Использовано недавно'}
+                        rightSlot={
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePinToggle(item);
+                            }}
+                            className="rounded p-1 text-fg-tertiary hover:bg-bg-overlay hover:text-fg-primary"
+                            aria-label={
+                              isItemPinned ? 'Открепить' : 'Закрепить'
+                            }
+                            title={isItemPinned ? 'Открепить' : 'Закрепить'}
+                          >
+                            {isItemPinned ? (
+                              <PinOff size={12} />
+                            ) : (
+                              <Pin size={12} />
+                            )}
+                          </button>
+                        }
+                      />
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            )}
             <CommandGroup heading="Перейти к">
               {quickNav.map((nav) => (
                 <CommandItem
                   key={`nav-${nav.href}`}
                   value={`nav-${nav.href}-${nav.label}`}
-                  onSelect={() => go(nav.href)}
+                  onSelect={() => {
+                    trackRecent({
+                      id: `nav:${nav.href}`,
+                      label: nav.label,
+                      subtitle: nav.subtitle,
+                      action: { kind: 'navigate', value: nav.href },
+                    });
+                    go(nav.href);
+                  }}
                 >
                   <ResultRow
                     icon={nav.icon}
@@ -317,7 +614,15 @@ export function CommandPalette() {
             <CommandGroup heading="AI помощник">
               <CommandItem
                 value="ai-open-prompt"
-                onSelect={() => setQuery('? ')}
+                onSelect={() => {
+                  trackRecent({
+                    id: 'mode:ai',
+                    label: 'Спросить AI компании…',
+                    subtitle: 'Q&A по памяти компании',
+                    action: { kind: 'set-query', value: '? ' },
+                  });
+                  setQuery('? ');
+                }}
               >
                 <ResultRow
                   icon={Sparkles}
@@ -327,7 +632,15 @@ export function CommandPalette() {
               </CommandItem>
               <CommandItem
                 value="concierge-open-prompt"
-                onSelect={() => setQuery('> ')}
+                onSelect={() => {
+                  trackRecent({
+                    id: 'mode:concierge',
+                    label: 'Дать команду Concierge…',
+                    subtitle: 'Действие',
+                    action: { kind: 'set-query', value: '> ' },
+                  });
+                  setQuery('> ');
+                }}
               >
                 <ResultRow
                   icon={MessageCircle}
@@ -741,19 +1054,26 @@ function ResultRow({
   iconClassName,
   title,
   subtitle,
+  rightSlot,
 }: {
   icon: LucideIcon;
   iconClassName?: string;
   title: string;
   subtitle: string;
+  rightSlot?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex w-full items-center gap-2.5">
       <Icon size={14} className={cn('text-fg-tertiary', iconClassName)} />
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{title}</span>
         <span className="truncate text-xs text-fg-tertiary">{subtitle}</span>
       </div>
+      {rightSlot ? (
+        <div className="ml-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+          {rightSlot}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -767,4 +1087,36 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+// ─────────────────────── voice helpers (Wave 2 finishing) ────────────────
+
+function stopAllTracks(stream: MediaStream | null): void {
+  if (!stream) return;
+  for (const track of stream.getTracks()) {
+    try {
+      track.stop();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function pickSupportedMimeType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/mp4',
+  ];
+  for (const t of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(t)) return t;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
 }

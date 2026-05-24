@@ -24,13 +24,22 @@
  *     нестабильно в Edge/Firefox/Safari, в проде у нас Vox/GigaAM.
  */
 
-import { Loader2, MessageCircle, Mic, Send, Square } from 'lucide-react';
+import {
+  Loader2,
+  MessageCircle,
+  Mic,
+  Send,
+  Square,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { chatV2Api } from '@/api/chat-v2.api';
 import { voiceApi } from '@/api/voice.api';
 import { ApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
+import { useToast } from '@/contexts/toast-context';
 import {
   chatV2ModeLabel,
   formatTimestamp,
@@ -67,19 +76,126 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
   );
   const [rec, setRec] = useState<RecState>({ kind: 'idle' });
   const [recError, setRecError] = useState<string | null>(null);
+  // TTS: какое сообщение сейчас озвучивается / загружается.
+  const [ttsState, setTtsState] = useState<{
+    messageId: string | null;
+    status: 'idle' | 'loading' | 'playing';
+  }>({ messageId: null, status: 'idle' });
+  const { addToast } = useToast();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  // TTS: текущий audio-элемент и blob-URL, чтобы revoke при остановке.
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsUrlRef = useRef<string | null>(null);
 
-  // Cleanup на размонтирование — освобождаем микрофон, если запись активна.
+  // Cleanup на размонтирование — освобождаем микрофон, если запись активна,
+  // а также останавливаем TTS-воспроизведение и revoke blob-URL.
   useEffect(() => {
     return () => {
       stopAllTracks(streamRef.current);
       streamRef.current = null;
       mediaRecorderRef.current = null;
+      const audio = ttsAudioRef.current;
+      if (audio) {
+        try {
+          audio.pause();
+        } catch {
+          // ignore
+        }
+      }
+      revokeTtsUrl(ttsUrlRef.current);
+      ttsUrlRef.current = null;
     };
   }, []);
+
+  const speakMessage = useCallback(
+    async (msg: LocalMessage) => {
+      // Toggle: повторный клик по тому же сообщению — остановить.
+      if (
+        ttsState.messageId === msg.id &&
+        (ttsState.status === 'playing' || ttsState.status === 'loading')
+      ) {
+        const audio = ttsAudioRef.current;
+        if (audio) {
+          try {
+            audio.pause();
+            audio.currentTime = 0;
+          } catch {
+            // ignore
+          }
+        }
+        revokeTtsUrl(ttsUrlRef.current);
+        ttsUrlRef.current = null;
+        setTtsState({ messageId: null, status: 'idle' });
+        return;
+      }
+
+      // Остановить предыдущее воспроизведение, если было.
+      const prevAudio = ttsAudioRef.current;
+      if (prevAudio) {
+        try {
+          prevAudio.pause();
+        } catch {
+          // ignore
+        }
+      }
+      revokeTtsUrl(ttsUrlRef.current);
+      ttsUrlRef.current = null;
+
+      setTtsState({ messageId: msg.id, status: 'loading' });
+
+      // Backend имеет лимит 500 символов на TTS — обрезаем длинный ответ
+      // и пользователь увидит это как чуть укороченную озвучку (без ошибки).
+      const text = msg.text.length > 480 ? `${msg.text.slice(0, 480)}…` : msg.text;
+
+      try {
+        const result = await voiceApi.synthesize({
+          orgId,
+          input: { text, format: 'mp3' },
+        });
+        const url = URL.createObjectURL(result.audio);
+        ttsUrlRef.current = url;
+        const audio = new Audio(url);
+        ttsAudioRef.current = audio;
+        audio.onended = () => {
+          revokeTtsUrl(ttsUrlRef.current);
+          ttsUrlRef.current = null;
+          setTtsState({ messageId: null, status: 'idle' });
+        };
+        audio.onerror = () => {
+          revokeTtsUrl(ttsUrlRef.current);
+          ttsUrlRef.current = null;
+          setTtsState({ messageId: null, status: 'idle' });
+          addToast({
+            type: 'error',
+            message: 'Не удалось воспроизвести озвучку',
+          });
+        };
+        setTtsState({ messageId: msg.id, status: 'playing' });
+        await audio.play();
+      } catch (err) {
+        revokeTtsUrl(ttsUrlRef.current);
+        ttsUrlRef.current = null;
+        setTtsState({ messageId: null, status: 'idle' });
+        // Грейсфул-фолбэк: если backend `/voice/synthesize` отсутствует
+        // (404) или TTS не сконфигурирован (tts_failed) — показываем
+        // мягкое сообщение, без красного стектрейса.
+        const apiCode = err instanceof ApiError ? err.code : null;
+        const friendly =
+          apiCode === 'http_404'
+            ? 'TTS пока недоступен'
+            : apiCode === 'tts_failed'
+              ? 'Не удалось озвучить'
+              : apiCode === 'text_too_long'
+                ? 'Ответ слишком длинный для озвучки'
+                : 'Не удалось озвучить';
+        addToast({ type: 'error', message: friendly });
+      }
+    },
+    [orgId, ttsState, addToast],
+  );
 
   const askQuestion = useCallback(
     async (question: string) => {
@@ -235,7 +351,14 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
         ) : null}
 
         {messages.map((m) => (
-          <ChatBubble key={m.id} message={m} />
+          <ChatBubble
+            key={m.id}
+            message={m}
+            ttsStatus={
+              ttsState.messageId === m.id ? ttsState.status : 'idle'
+            }
+            onSpeak={speakMessage}
+          />
         ))}
 
         {loading ? (
@@ -329,7 +452,15 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
   );
 }
 
-function ChatBubble({ message }: { message: LocalMessage }) {
+function ChatBubble({
+  message,
+  ttsStatus,
+  onSpeak,
+}: {
+  message: LocalMessage;
+  ttsStatus: 'idle' | 'loading' | 'playing';
+  onSpeak: (msg: LocalMessage) => void | Promise<void>;
+}) {
   const isUser = message.role === 'user';
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -346,6 +477,45 @@ function ChatBubble({ message }: { message: LocalMessage }) {
           </div>
         ) : null}
         <div>{message.text}</div>
+        {!isUser ? (
+          <button
+            type="button"
+            onClick={() => void onSpeak(message)}
+            disabled={ttsStatus === 'loading'}
+            className="mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-fg-tertiary hover:bg-bg-overlay hover:text-fg-primary disabled:opacity-60"
+            aria-label={
+              ttsStatus === 'playing'
+                ? 'Остановить озвучку'
+                : ttsStatus === 'loading'
+                  ? 'Озвучивается'
+                  : 'Озвучить ответ'
+            }
+            title={
+              ttsStatus === 'playing'
+                ? 'Остановить'
+                : ttsStatus === 'loading'
+                  ? 'Озвучивается…'
+                  : 'Озвучить'
+            }
+          >
+            {ttsStatus === 'loading' ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                Озвучивается…
+              </>
+            ) : ttsStatus === 'playing' ? (
+              <>
+                <VolumeX size={12} />
+                Остановить
+              </>
+            ) : (
+              <>
+                <Volume2 size={12} />
+                Озвучить
+              </>
+            )}
+          </button>
+        ) : null}
         {!isUser && message.uncertaintyNote ? (
           <div className="mt-2 rounded bg-warning/10 px-2 py-1 text-[11px] text-warning">
             {message.uncertaintyNote}
@@ -387,6 +557,15 @@ function stopAllTracks(stream: MediaStream | null): void {
     } catch {
       // ignore
     }
+  }
+}
+
+function revokeTtsUrl(url: string | null): void {
+  if (!url) return;
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // ignore
   }
 }
 

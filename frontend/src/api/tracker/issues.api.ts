@@ -171,6 +171,25 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
+  /**
+   * Меняет `sortOrder` задачи внутри колонки канбана. Эндпоинт пока на
+   * стороне backend в работе (Wave 2 finishing) — если вернётся 404, frontend
+   * сохраняет оптимистичный порядок до следующего refresh.
+   *
+   * Контракт (предполагаемый):
+   *   `PATCH /api/v1/issues/:id/sortOrder` body `{ sortOrder: number }`
+   *
+   * Альтернатива через uniform `update`-endpoint работает уже сейчас:
+   * сервер принимает `sortOrder` в `UpdateIssueRequest`. Используем её как
+   * стабильный путь, оставляя сноску для будущего dedicated-endpoint'а.
+   */
+  reorder: (orgId: string, issueId: string, sortOrder: number) =>
+    apiClient.patch<IssueApi>(
+      `/api/v1/issues/${encodeURIComponent(issueId)}`,
+      { sortOrder },
+      { headers: orgHeaders(orgId) },
+    ),
+
   // ── assignees ──
   addAssignee: (orgId: string, issueId: string, userId: string) =>
     apiClient.post<{ ok: true }>(

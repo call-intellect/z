@@ -30,13 +30,18 @@ import {
   PointerSensor,
   TouchSensor,
   pointerWithin,
-  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
 import { useSWRConfig } from 'swr';
 
 import { useIssues } from '@/hooks/tracker/useIssues';
@@ -145,34 +150,138 @@ export function Board({
       if (!over) return;
 
       const issueId = parseCardId(String(active.id));
-      const targetStateId = parseColId(String(over.id));
-      if (!issueId || !targetStateId) return;
+      if (!issueId) return;
 
       const issue = issuesById.get(issueId);
       if (!issue) return;
 
-      // Если перетащили в ту же колонку — переход не нужен.
+      const overCardId = parseCardId(String(over.id));
+      const overColId = parseColId(String(over.id));
+
+      // Случай 1: dropped на другую карточку — это reorder/перенос на её позицию.
+      // Вычисляем целевую колонку по тому, в какой колонке находится карточка-цель.
+      if (overCardId && overCardId !== issueId) {
+        const overIssue = issuesById.get(overCardId);
+        if (!overIssue) return;
+        const targetStateIdFromCard = overIssue.stateId;
+        // Reorder внутри той же колонки — обновляем sortOrder.
+        if (
+          issue.stateId === targetStateIdFromCard &&
+          targetStateIdFromCard
+        ) {
+          setPendingTransitionIssueId(issueId);
+          try {
+            await mutate(
+              async () => {
+                // Считаем новый порядок локально в той же колонке.
+                const sameCol = issues
+                  .filter((i) => i.stateId === targetStateIdFromCard)
+                  .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+                const ids = sameCol.map((i) => i.id);
+                const fromIdx = ids.indexOf(issueId);
+                const toIdx = ids.indexOf(overCardId);
+                if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) {
+                  return undefined;
+                }
+                const reorderedIds = arrayMove(ids, fromIdx, toIdx);
+                const newSortOrder = reorderedIds.indexOf(issueId) * 1000;
+                try {
+                  await issuesApi.reorder(orgId, issueId, newSortOrder);
+                } catch (err) {
+                  // 404 — endpoint ещё нет: молча оставляем оптимистичный UI
+                  // до следующего refresh. Любая другая ошибка — пробрасываем.
+                  const status =
+                    err && typeof err === 'object' && 'status' in err
+                      ? Number((err as { status?: unknown }).status)
+                      : null;
+                  if (status !== 404) throw err;
+                }
+                return undefined;
+              },
+              {
+                optimisticData: (
+                  current: ListIssuesResponseApi | undefined,
+                ): ListIssuesResponseApi => {
+                  if (!current) {
+                    return { items: [], total: 0, page: 1, limit: 100 };
+                  }
+                  const sameColItems = current.items
+                    .filter((it) => it.stateId === targetStateIdFromCard)
+                    .sort(
+                      (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+                    );
+                  const ids = sameColItems.map((it) => it.id);
+                  const fromIdx = ids.indexOf(issueId);
+                  const toIdx = ids.indexOf(overCardId);
+                  if (fromIdx < 0 || toIdx < 0) return current;
+                  const reorderedIds = arrayMove(ids, fromIdx, toIdx);
+                  const orderMap = new Map<string, number>();
+                  reorderedIds.forEach((id, idx) => orderMap.set(id, idx * 1000));
+                  return {
+                    ...current,
+                    items: current.items.map((it: IssueApi): IssueApi => {
+                      const nextOrder = orderMap.get(it.id);
+                      return nextOrder !== undefined
+                        ? { ...it, sortOrder: nextOrder }
+                        : it;
+                    }),
+                  };
+                },
+                rollbackOnError: true,
+                revalidate: false,
+                populateCache: false,
+              },
+            );
+          } catch (err) {
+            addToast({
+              type: 'error',
+              message: `Не удалось переставить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+              durationMs: 5000,
+            });
+            console.error(err);
+          } finally {
+            setPendingTransitionIssueId(null);
+          }
+          return;
+        }
+        // Если карточка дропнута на карточку из ДРУГОЙ колонки — обрабатываем
+        // как переход в эту колонку (логика ниже).
+        if (targetStateIdFromCard && issue.stateId !== targetStateIdFromCard) {
+          await runTransition(issueId, targetStateIdFromCard);
+        }
+        return;
+      }
+
+      const targetStateId = overColId;
+      if (!targetStateId) return;
+
+      // Если перетащили в ту же колонку без конкретной target-карточки —
+      // переход не нужен (это просто промах мимо других карточек).
       if (issue.stateId === targetStateId) return;
 
-      // Optimistic update: подменяем stateId в локальном кэше.
+      await runTransition(issueId, targetStateId);
+    },
+    // runTransition уже зависит от needed-сalls, но указываем явные деп-сы
+    // через useCallback ниже.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [issuesById, issues, orgId, mutate, globalMutate, addToast],
+  );
+
+  const runTransition = useCallback(
+    async (issueId: string, targetStateId: string) => {
       setPendingTransitionIssueId(issueId);
       try {
         await mutate(
           async () => {
-            // Сервер — источник правды для completedAt/updatedAt.
             await issuesApi.transition(orgId, issueId, {
               stateId: targetStateId,
             });
-            // Возврат undefined → SWR сам сделает ревалидацию по ключу.
             return undefined;
           },
           {
             optimisticData: (
               current: ListIssuesResponseApi | undefined,
             ): ListIssuesResponseApi => {
-              // SWR требует non-undefined результат — если кэш пустой,
-              // возвращаем «пустой» ответ (этого случая не должно быть, мы
-              // редактируем уже отрендеренный список).
               if (!current) {
                 return { items: [], total: 0, page: 1, limit: 100 };
               }
@@ -189,8 +298,6 @@ export function Board({
             populateCache: false,
           },
         );
-        // Раз stateId сменился — связанные ключи (single issue, activity)
-        // тоже устарели. Триггерим ре-валидацию по префиксам.
         void globalMutate(
           (key: unknown) =>
             Array.isArray(key) &&
@@ -202,10 +309,6 @@ export function Board({
           { revalidate: true },
         );
       } catch (err) {
-        // SWR уже откатил `optimisticData` благодаря rollbackOnError.
-        // Wave 2 A6: уведомляем пользователя об ошибке перехода — карточка
-        // визуально вернулась в исходную колонку, но без toast'а это
-        // выглядит как «ничего не произошло».
         addToast({
           type: 'error',
           message: `Не удалось переместить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
@@ -216,7 +319,7 @@ export function Board({
         setPendingTransitionIssueId(null);
       }
     },
-    [issuesById, orgId, mutate, globalMutate, addToast],
+    [orgId, mutate, globalMutate, addToast],
   );
 
   // ─── States: если backend ещё не отдал states или их нет — fallback на
@@ -393,14 +496,19 @@ function BoardColumn({
         <span className="text-[11px] text-fg-tertiary">{issues.length}</span>
       </div>
       <div className="flex flex-col gap-2">
-        {issues.map((issue) => (
-          <DraggableIssueCard
-            key={issue.id}
-            issue={issue}
-            disabled={!column.accept}
-            pending={pendingIssueId === issue.id}
-          />
-        ))}
+        <SortableContext
+          items={issues.map((i) => cardId(i.id))}
+          strategy={verticalListSortingStrategy}
+        >
+          {issues.map((issue) => (
+            <SortableIssueCard
+              key={issue.id}
+              issue={issue}
+              disabled={!column.accept}
+              pending={pendingIssueId === issue.id}
+            />
+          ))}
+        </SortableContext>
       </div>
       {quickAdd}
     </div>
@@ -428,9 +536,12 @@ function BoardColumnSkeleton({ title }: { title: string }) {
   );
 }
 
-// ─── Draggable wrapper для карточки ─────────────────────────────────────────
+// ─── Sortable wrapper для карточки ──────────────────────────────────────────
+// useSortable объединяет useDraggable + useDroppable: карточка одновременно
+// может быть и драг-источником, и drop-target (для соседа в той же колонке —
+// reorder). Drop в саму колонку остаётся через `useDroppable` на колонке.
 
-function DraggableIssueCard({
+function SortableIssueCard({
   issue,
   disabled,
   pending,
@@ -440,13 +551,12 @@ function DraggableIssueCard({
   pending?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform } =
-    useDraggable({
+    useSortable({
       id: cardId(issue.id),
       disabled,
     });
 
-  // Перевод в CSS — без `@dnd-kit/utilities` зависимости, чтобы не тянуть
-  // лишний импорт (хотя пакет установлен). Простой translate3d.
+  // Без `@dnd-kit/utilities` — простой translate3d (так уже было в проекте).
   const style: React.CSSProperties = transform
     ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,

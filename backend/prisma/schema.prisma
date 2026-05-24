@@ -6582,6 +6582,33 @@ model TeamTemplate {
   @@unique([tenantId, slug])
 }
 
+/// ImportLog — лог импорта задач из внешних трекеров (Битрикс24 / Trello / Я.Трекер).
+/// Tracker Phase 5 (Sprint 8, 2026-05-24). Каждый импорт — отдельная запись с
+/// progress'ом, итоговой статистикой и (если случилось) массивом ошибок.
+/// Идемпотентность импорта — через Issue.externalSource + externalId.
+model ImportLog {
+  id                String   @id @default(cuid())
+  tenantId          String
+  source            String // 'bitrix24' | 'trello' | 'yandex_tracker'
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  totalProjects     Int      @default(0)
+  totalIssues       Int      @default(0)
+  totalComments     Int      @default(0)
+  totalAttachments  Int      @default(0)
+  processedItems    Int      @default(0) // для progress
+  errors            Json? // массив { stage, externalId?, message } ошибок
+  status            String   @default("running") // 'running' | 'completed' | 'failed' | 'cancelled'
+  /// Параметры запуска — какие проекты выбраны + email-mapping pairs (для replay).
+  paramsJson        Json?
+  /// User-маппинг unmatched email'ов: какие пригласили, какие игнорировали.
+  unmatchedJson     Json?
+  initiatedByUserId String
+
+  @@index([tenantId, startedAt])
+  @@index([tenantId, status])
+}
+
 /// Производственный календарь РФ (или per-tenant override).
 /// Tracker Phase 4 (Sprint 7, 2026-05-24) — учёт праздников в dueDate / cycle.endDate.
 /// Если задача попадает на праздник — авто-перенос на следующий рабочий день.

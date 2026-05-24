@@ -1,0 +1,33 @@
+'use client';
+
+import { useAuth } from '@/contexts/auth-context';
+import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
+import { Board } from '@/ui/tracker';
+
+export function BoardClient({ slug }: { slug: string }) {
+  const { currentOrgId } = useAuth();
+  const { project, isLoading } = useProjectBySlug(currentOrgId, slug);
+
+  if (isLoading) {
+    return (
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        {[...Array(5)].map((_, i) => (
+          <div
+            key={i}
+            className="h-64 w-72 shrink-0 animate-pulse rounded-lg bg-bg-overlay/40 md:w-80"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (!currentOrgId || !project) {
+    return (
+      <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-10 text-center text-sm text-fg-tertiary">
+        Проект не найден.
+      </div>
+    );
+  }
+
+  return <Board orgId={currentOrgId} projectId={project.id} />;
+}

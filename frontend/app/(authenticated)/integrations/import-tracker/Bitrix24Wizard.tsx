@@ -31,7 +31,7 @@ import {
 
 import { ApiError } from '@/api/api-error';
 import { importsApi } from '@/api/tracker/imports.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent } from '@/ui/shadcn/card';
 import { Input } from '@/ui/shadcn/input';
@@ -66,7 +66,6 @@ export function Bitrix24Wizard({
   onCancel: () => void;
 }) {
   const router = useRouter();
-  const { addToast } = useToast();
 
   const [step, setStep] = useState<Step>('connect');
 
@@ -120,16 +119,12 @@ export function Bitrix24Wizard({
             ? parsedMappings.mappings
             : undefined,
       });
-      addToast({ type: 'success', message: 'Импорт из Битрикс24 запущен' });
+      toast.success('Импорт из Битрикс24 запущен');
       router.push(`/integrations/import-tracker/${res.importLogId}`);
     } catch (e) {
-      addToast({
-        type: 'error',
-        message:
-          e instanceof ApiError
+      toast.error(e instanceof ApiError
             ? e.message
-            : 'Не удалось запустить импорт. Попробуйте ещё раз.',
-      });
+            : 'Не удалось запустить импорт. Попробуйте ещё раз.');
       setSubmitting(false);
     }
   };

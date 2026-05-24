@@ -21,6 +21,7 @@ import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
 import { chatV2Api } from '@/api/chat-v2.api';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import {
   chatV2ConversationStatusLabel,
   chatV2ModeLabel,
@@ -235,6 +236,7 @@ function ConversationDetail({
   const [showAdvanced, setShowAdvanced] = useState(false);
   // SBA α-5 dialog-layer — последний ответ был cache hit?
   const [lastCacheHit, setLastCacheHit] = useState<boolean>(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -280,7 +282,11 @@ function ConversationDetail({
 
   async function archive(): Promise<void> {
     if (!detail.data) return;
-    if (!window.confirm('Архивировать этот диалог?')) return;
+    const ok = await ask({
+      title: 'Архивировать этот диалог?',
+      confirmLabel: 'Архивировать',
+    });
+    if (!ok) return;
     await chatV2Api.archiveConversation(detail.data.id);
     onConversationChanged();
   }
@@ -409,6 +415,7 @@ function ConversationDetail({
         </button>
         </div>
       </form>
+      {confirmDialog}
     </>
   );
 }

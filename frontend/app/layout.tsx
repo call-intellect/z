@@ -7,7 +7,6 @@ import '@livekit/components-styles';
 import '@vidstack/react/player/styles/default/theme.css';
 import '@vidstack/react/player/styles/default/layouts/video.css';
 import { AuthProvider } from '@/contexts/auth-context';
-import { ToastProvider } from '@/contexts/toast-context';
 import { PwaInit } from '@/lib/pwa/PwaInit';
 import { ThemeProvider } from '@/ui/components/theme/ThemeProvider';
 import { Toaster } from '@/ui/shadcn/toast';
@@ -50,13 +49,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body className={GeistSans.className} suppressHydrationWarning>
         <ThemeProvider>
-          <AuthProvider>
-            {/*
-              ToastProvider — legacy notifications context. TODO(M5): убрать
-              после миграции всех вызовов на sonner-`toast` из @/ui/shadcn/toast.
-            */}
-            <ToastProvider>{children}</ToastProvider>
-          </AuthProvider>
+          <AuthProvider>{children}</AuthProvider>
           <Toaster />
           <PwaInit />
         </ThemeProvider>

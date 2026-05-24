@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { useIntake } from '@/hooks/tracker/useIntake';
 import { intakeApi } from '@/api/tracker/intake.api';
 import {
@@ -95,7 +95,7 @@ export function IntakeClient() {
     status: 'pending',
     limit: 100,
   });
-  const { addToast } = useToast();
+
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // ─── Состояния для диалогов «Отклонить» / «Отложить» / «Дубликат» ─────
@@ -113,16 +113,9 @@ export function IntakeClient() {
     try {
       await intakeApi.triage(currentOrgId, item.id, body);
       await mutate();
-      addToast({
-        type: 'success',
-        message: triageSuccessMessage(body.decision),
-      });
+      toast.success(triageSuccessMessage(body.decision));
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: `Не удалось выполнить триаж: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`,
-        durationMs: 5000,
-      });
+      toast.error(`Не удалось выполнить триаж: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`, { duration: 5000 });
     } finally {
       setBusyId(null);
     }

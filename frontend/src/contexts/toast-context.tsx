@@ -1,24 +1,24 @@
 'use client';
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
-import clsx from 'clsx';
-import { nanoid } from 'nanoid';
+/**
+ * DEPRECATED: toast-context — теперь это тонкий shim над sonner.
+ *
+ * Используй напрямую:
+ *   import { toast } from 'sonner';
+ *   toast.success('...');
+ *   toast.error('...');
+ *   toast('...', { action: { label, onClick } });
+ *
+ * Этот модуль остаётся ради совместимости с legacy-вызовами через
+ * `useToast()/{ addToast }` (Phase C ТЗ ui-api-modernization 2026-05-24).
+ * Удалить, когда все потребители мигрируют.
+ */
+
+import { useMemo, type ReactNode } from 'react';
+import { toast as sonnerToast } from 'sonner';
 
 export type ToastType = 'success' | 'error' | 'info';
 
-/**
- * Опциональное действие toast'а (SBA γ-2 — для «Готово. Отменить» от
- * Concierge Agent). Если задано — рендерится кнопка справа от message;
- * клик вызывает onClick (toast при этом обычно закрывается через dismiss).
- */
 export type ToastAction = {
   label: string;
   onClick: () => void | Promise<void>;
@@ -28,116 +28,73 @@ export type Toast = {
   id: string;
   type: ToastType;
   message: string;
-  /** SBA γ-2: action toast (например, «Отменить» после tool call). */
   action?: ToastAction;
-  /** Длительность в мс. Default 3000; 0 = не авто-скрывается (для action). */
   durationMs?: number;
 };
 
+type LegacyToastInput = Omit<Toast, 'id'> & { id?: string };
+
 type ToastContextValue = {
   toasts: Toast[];
-  addToast: (toast: Omit<Toast, 'id'>) => void;
+  addToast: (toast: LegacyToastInput) => void;
   dismissToast: (id: string) => void;
 };
 
-const ToastContext = createContext<ToastContextValue | null>(null);
+let deprecationWarned = false;
 
-const DURATION_MS = 3000;
+function warnDeprecated(): void {
+  if (deprecationWarned) return;
+  deprecationWarned = true;
+  if (typeof console !== 'undefined') {
+    console.warn(
+      "[toast-context] useToast/addToast устарели — используйте `import { toast } from 'sonner'`.",
+    );
+  }
+}
 
+function dispatchLegacyToast(input: LegacyToastInput): void {
+  const type: ToastType = input.type ?? 'info';
+  const options: { duration?: number; action?: { label: string; onClick: () => void } } = {};
+  if (typeof input.durationMs === 'number') {
+    options.duration = input.durationMs;
+  }
+  if (input.action) {
+    const action = input.action;
+    options.action = {
+      label: action.label,
+      onClick: () => {
+        void action.onClick();
+      },
+    };
+  }
+  if (type === 'success') {
+    sonnerToast.success(input.message, options);
+  } else if (type === 'error') {
+    sonnerToast.error(input.message, options);
+  } else {
+    sonnerToast(input.message, options);
+  }
+}
+
+/**
+ * Shim-провайдер — НИЧЕГО не оборачивает. Sonner `<Toaster />` уже
+ * подключён в RootLayout. Оставлен только чтобы существующие импорты
+ * `<ToastProvider>` не падали при сборке.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const dismissToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = nanoid(8);
-    setToasts((prev) => [...prev, { ...toast, id }]);
-  }, []);
-
-  const value = useMemo<ToastContextValue>(
-    () => ({ toasts, addToast, dismissToast }),
-    [toasts, addToast, dismissToast],
-  );
-
-  return (
-    <ToastContext.Provider value={value}>
-      {children}
-      <Toaster />
-    </ToastContext.Provider>
-  );
+  return <>{children}</>;
 }
 
 export function useToast(): ToastContextValue {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error('useToast must be used within <ToastProvider>');
-  }
-  return ctx;
-}
-
-function Toaster() {
-  const { toasts, dismissToast } = useToast();
-  return (
-    <div
-      aria-live="polite"
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2"
-    >
-      {toasts.map((t) => (
-        <ToastItem key={t.id} toast={t} onDismiss={dismissToast} />
-      ))}
-    </div>
-  );
-}
-
-function ToastItem({
-  toast,
-  onDismiss,
-}: {
-  toast: Toast;
-  onDismiss: (id: string) => void;
-}) {
-  // SBA γ-2: action toast'ы (с durationMs=0) НЕ авто-скрываются — ждут клика.
-  // Action toast по умолчанию живёт 8 секунд, обычный — 3.
-  const effectiveDuration =
-    toast.durationMs ?? (toast.action ? 8000 : DURATION_MS);
-
-  useEffect(() => {
-    if (effectiveDuration <= 0) return;
-    const timer = setTimeout(() => onDismiss(toast.id), effectiveDuration);
-    return () => clearTimeout(timer);
-  }, [toast.id, onDismiss, effectiveDuration]);
-
-  const handleAction = async () => {
-    if (!toast.action) return;
-    try {
-      await toast.action.onClick();
-    } finally {
-      onDismiss(toast.id);
-    }
-  };
-
-  return (
-    <div
-      role="status"
-      className={clsx(
-        'pointer-events-auto flex items-center gap-3 rounded-md px-4 py-3 text-sm shadow-lg',
-        toast.type === 'success' && 'bg-green-600 text-white',
-        toast.type === 'error' && 'bg-red-600 text-white',
-        toast.type === 'info' && 'bg-slate-800 text-white',
-      )}
-    >
-      <span className="flex-1">{toast.message}</span>
-      {toast.action && (
-        <button
-          type="button"
-          onClick={handleAction}
-          className="rounded border border-white/30 px-2 py-1 text-xs font-medium hover:bg-white/10"
-        >
-          {toast.action.label}
-        </button>
-      )}
-    </div>
+  warnDeprecated();
+  return useMemo<ToastContextValue>(
+    () => ({
+      toasts: [],
+      addToast: dispatchLegacyToast,
+      dismissToast: () => {
+        /* sonner управляет своим жизненным циклом сам */
+      },
+    }),
+    [],
   );
 }

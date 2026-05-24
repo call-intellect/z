@@ -32,7 +32,8 @@ import {
   tierLabel,
   type TaskTypeRouteUi,
 } from '@/domain/admin-ai-model';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 
@@ -41,7 +42,7 @@ interface Props {
 }
 
 export function TaskTypeDetailsClient({ taskType }: Props) {
-  const { addToast } = useToast();
+
   const [route, setRoute] = useState<TaskTypeRouteUi | null>(null);
   const [metrics, setMetrics] = useState<TaskTypeMetricsApi | null>(null);
   const [history, setHistory] = useState<RouteChangeApi[]>([]);
@@ -49,6 +50,7 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
   const [period, setPeriod] = useState<'24h' | '7d' | '30d'>('7d');
   const [error, setError] = useState<string | null>(null);
   const [switchOpen, setSwitchOpen] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -75,16 +77,19 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
   }, [refresh]);
 
   const handleRemoveProvider = async (entry: ProviderInTierApi) => {
-    if (!confirm(`Удалить ${entry.providerName} из tier=${entry.tier}?`)) return;
+    const ok = await ask({
+      title: 'Удалить провайдера?',
+      description: `Удалить ${entry.providerName} из tier=${entry.tier}?`,
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await adminAiModelsApi.removeProvider(taskType, entry.id);
-      addToast({ type: 'success', message: 'Провайдер удалён' });
+      toast.success('Провайдер удалён');
       await refresh();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
     }
   };
 
@@ -238,6 +243,7 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
           }}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }
@@ -298,7 +304,7 @@ function SwitchPrimaryModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
+
   const [providerName, setProviderName] = useState<typeof AI_MODELS_PROVIDERS[number]>(
     'openai-via-proxy',
   );
@@ -310,7 +316,7 @@ function SwitchPrimaryModal({
 
   const submit = async () => {
     if (reason.length < 3) {
-      addToast({ type: 'error', message: 'Опишите причину (минимум 3 символа)' });
+      toast.error('Опишите причину (минимум 3 символа)');
       return;
     }
     setBusy(true);
@@ -321,16 +327,10 @@ function SwitchPrimaryModal({
         reason,
         ...(abPercent < 100 ? { abSplitPercent: abPercent, abDurationDays: days } : {}),
       });
-      addToast({
-        type: 'success',
-        message: abPercent < 100 ? 'A/B-эксперимент запущен' : 'Основная модель переключена',
-      });
+      toast.success(abPercent < 100 ? 'A/B-эксперимент запущен' : 'Основная модель переключена');
       onDone();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось переключить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось переключить');
     } finally {
       setBusy(false);
     }

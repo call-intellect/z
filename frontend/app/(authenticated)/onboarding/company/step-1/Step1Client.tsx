@@ -7,7 +7,7 @@ import { Plus, X } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { departmentsApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
@@ -25,8 +25,6 @@ const NEXT_HREF = '/onboarding/company/step-2';
 export function Step1Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
-
   const [rows, setRows] = useState<string[]>(['']);
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,12 +54,12 @@ export function Step1Client() {
       await Promise.all(
         unique.map((name) => departmentsApi.create(currentOrgId, { name })),
       );
-      addToast({ type: 'success', message: 'Отделы сохранены.' });
+      toast.success('Отделы сохранены.');
       router.push(NEXT_HREF);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.message : 'Не удалось сохранить отделы.';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

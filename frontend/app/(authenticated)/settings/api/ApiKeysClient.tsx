@@ -10,7 +10,10 @@ import {
   type ApiKeyScope,
   type CreateApiKeyApiResponse,
 } from '@/api/api-keys.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Checkbox } from '@/ui/shadcn/checkbox';
@@ -33,12 +36,12 @@ function formatDate(iso: string | null): string {
 }
 
 export function ApiKeysClient() {
-  const { addToast } = useToast();
   const [keys, setKeys] = useState<ApiKeyApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createdKey, setCreatedKey] = useState<CreateApiKeyApiResponse | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetchKeys = useCallback(async () => {
     setLoading(true);
@@ -58,16 +61,19 @@ export function ApiKeysClient() {
   }, [fetchKeys]);
 
   const handleRevoke = async (id: string) => {
-    if (!confirm('Отозвать ключ? Все запросы с ним будут отклоняться.')) return;
+    const ok = await ask({
+      title: 'Отозвать ключ?',
+      description: 'Все запросы с ним будут отклоняться.',
+      confirmLabel: 'Отозвать',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await apiKeysApi.revoke(id);
       setKeys((prev) => prev.filter((k) => k.id !== id));
-      addToast({ type: 'success', message: 'Ключ отозван' });
+      toast.success('Ключ отозван');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось отозвать',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отозвать');
     }
   };
 
@@ -87,25 +93,28 @@ export function ApiKeysClient() {
         </Button>
       </header>
 
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
-          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && keys.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card/40 p-10 text-center text-sm text-fg-secondary">
-          У вас пока нет API-ключей.
-        </div>
-      )}
-
-      {!loading && !error && keys.length > 0 && (
+      <QueryGate
+        isLoading={loading}
+        error={error}
+        isEmpty={keys.length === 0}
+        skeleton={
+          <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+            <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="API-ключей пока нет"
+            description="Создайте первый ключ для доступа к REST API от вашего имени."
+            action={
+              <Button onClick={() => setCreateOpen(true)} size="sm">
+                <Plus size={14} /> Создать ключ
+              </Button>
+            }
+          />
+        }
+        onRetry={() => void fetchKeys()}
+      >
         <ul className="space-y-2">
           {keys.map((k) => (
             <li
@@ -140,7 +149,7 @@ export function ApiKeysClient() {
             </li>
           ))}
         </ul>
-      )}
+      </QueryGate>
 
       {/* Документация */}
       <div className="mt-8 rounded-lg border border-border-subtle bg-bg-card p-4">
@@ -173,6 +182,7 @@ export function ApiKeysClient() {
         result={createdKey}
         onClose={() => setCreatedKey(null)}
       />
+      {confirmDialog}
     </div>
   );
 }
@@ -186,7 +196,6 @@ function CreateKeyDialog({
   onClose: () => void;
   onCreated: (res: CreateApiKeyApiResponse) => void;
 }) {
-  const { addToast } = useToast();
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<ApiKeyScope[]>(['read']);
   const [submitting, setSubmitting] = useState(false);
@@ -211,10 +220,7 @@ function CreateKeyDialog({
       const res = await apiKeysApi.create({ name: name.trim(), scopes });
       onCreated(res);
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось создать',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось создать');
     } finally {
       setSubmitting(false);
     }
@@ -284,14 +290,13 @@ function CreatedKeyDialog({
   result: CreateApiKeyApiResponse | null;
   onClose: () => void;
 }) {
-  const { addToast } = useToast();
   const open = result !== null;
 
   const handleCopy = () => {
     if (!result) return;
     void navigator.clipboard.writeText(result.rawKey).then(
-      () => addToast({ type: 'success', message: 'Скопировано' }),
-      () => addToast({ type: 'error', message: 'Не удалось скопировать' }),
+      () => toast.success('Скопировано'),
+      () => toast.error('Не удалось скопировать'),
     );
   };
 

@@ -6,7 +6,7 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { retentionApi } from '@/api/retention.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import {
   ARCHIVED_BLOCK_ACTIONS,
   RETENTION_LIMITS,
@@ -68,8 +68,6 @@ export function RetentionClient() {
 }
 
 function RetentionForm({ orgId }: { orgId: string }) {
-  const { addToast } = useToast();
-
   const [policy, setPolicy] = useState<OrgRetentionPolicyDomain | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +122,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
       auditLogDays,
     });
     if (ints.error !== null) {
-      addToast({ type: 'error', message: ints.error });
+      toast.error(ints.error);
       return;
     }
 
@@ -148,7 +146,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
     }
 
     if (Object.keys(body).length === 0) {
-      addToast({ type: 'info', message: 'Нет изменений для сохранения' });
+      toast('Нет изменений для сохранения');
       return;
     }
 
@@ -157,12 +155,9 @@ function RetentionForm({ orgId }: { orgId: string }) {
       const dto = await retentionApi.update(orgId, body);
       const domain = retentionPolicyFromApi(dto);
       setPolicy(domain);
-      addToast({ type: 'success', message: 'Политика хранения сохранена' });
+      toast.success('Политика хранения сохранена');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSaving(false);
     }

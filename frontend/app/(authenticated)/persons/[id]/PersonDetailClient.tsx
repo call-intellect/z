@@ -15,7 +15,7 @@ import {
   type PersonDetailApi,
 } from '@/api/persons.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -264,7 +264,6 @@ function ErasePersonDialog({
   onSuccess: () => void;
 }) {
   const router = useRouter();
-  const { addToast } = useToast();
   const [stage, setStage] = useState<Stage>('confirm-name');
   const [typedName, setTypedName] = useState('');
   const [reason, setReason] = useState('');
@@ -282,15 +281,11 @@ function ErasePersonDialog({
         entityId,
         reason.trim(),
       );
-      showEraseToast(report, addToast);
+      showEraseToast(report);
       onSuccess();
       router.push('/persons');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message:
-          e instanceof ApiError ? e.message : 'Не удалось удалить данные',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить данные');
     } finally {
       setSubmitting(false);
     }
@@ -401,21 +396,12 @@ function ErasePersonDialog({
   );
 }
 
-function showEraseToast(
-  report: EraseReportApi,
-  addToast: ReturnType<typeof useToast>['addToast'],
-): void {
+function showEraseToast(report: EraseReportApi): void {
   if (report.alreadyErased) {
-    addToast({
-      type: 'info',
-      message: 'Эта персона уже была обезличена ранее.',
-    });
+    toast('Эта персона уже была обезличена ранее.');
     return;
   }
-  addToast({
-    type: 'success',
-    message: `Удалено: ${report.erasedRawEvents} RawEvent, ${report.deletedEvidences} evidence, ${report.archivedBlocks} ${pluralizeBlocks(report.archivedBlocks)} в архив.`,
-  });
+  toast.success(`Удалено: ${report.erasedRawEvents} RawEvent, ${report.deletedEvidences} evidence, ${report.archivedBlocks} ${pluralizeBlocks(report.archivedBlocks)} в архив.`);
 }
 
 function pluralizeBlocks(n: number): string {

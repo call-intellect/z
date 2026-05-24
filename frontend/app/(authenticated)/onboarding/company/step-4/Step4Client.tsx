@@ -8,7 +8,7 @@ import { ApiError } from '@/api/api-error';
 import { documentsApi } from '@/api/documents.api';
 import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
@@ -31,8 +31,6 @@ interface RowState {
 export function Step4Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
-
   const [roles, setRoles] = useState<RoleDomainApi[] | null>(null);
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
 
@@ -69,7 +67,7 @@ export function Step4Client() {
         ...s,
         [roleId]: { status: 'done', fileName: file.name },
       }));
-      addToast({ type: 'success', message: `«${file.name}» загружено.` });
+      toast.success(`«${file.name}» загружено.`);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.message : 'Не удалось загрузить файл.';
@@ -81,7 +79,7 @@ export function Step4Client() {
           errorMessage: msg,
         },
       }));
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     }
   };
 

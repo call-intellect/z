@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 
 import { cardsApi } from '@/api/cards.api';
 import { ApiError } from '@/api/api-error';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { CARD_KIND_LABELS, type CardKind, cardFromApi } from '@/domain/card';
 import { CardChat } from '@/ui/components/cards/CardChat';
 import { CardThemesSection } from '@/ui/components/cards/CardThemesSection';
@@ -58,6 +59,7 @@ const KIND_ICONS: Record<CardKind, typeof FolderKanban> = {
 export function CardDetailClient({ cardId }: { cardId: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<'overview' | 'chat'>('overview');
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const cardSwr = useSWR(['card', cardId], async () => {
     const api = await cardsApi.get(cardId);
@@ -120,9 +122,13 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
 
   async function deleteCard() {
     if (!card) return;
-    if (!confirm('Удалить карточку? Восстановить можно в течение 30 дней.')) {
-      return;
-    }
+    const ok = await ask({
+      title: 'Удалить карточку?',
+      description: 'Восстановить можно в течение 30 дней.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await cardsApi.remove(card.id);
       toast.success('Карточка удалена');
@@ -336,6 +342,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
           </div>
         </TabsContent>
       </Tabs>
+      {confirmDialog}
     </div>
   );
 }

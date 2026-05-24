@@ -36,7 +36,8 @@ import {
 import { ApiError } from '@/api/api-error';
 import { importsApi } from '@/api/tracker/imports.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { useImportDetail } from '@/hooks/tracker/useImportDetail';
 import {
   importPhaseLabel,
@@ -58,10 +59,11 @@ export function ImportDetailClient({
 }) {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
+
   const [cancelling, setCancelling] = useState(false);
   const [errorsExpanded, setErrorsExpanded] = useState(false);
   const [unmatchedExpanded, setUnmatchedExpanded] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const { importLog, live, error, isLoading, wsConnected, mutate } =
     useImportDetail(currentOrgId, importLogId, {
@@ -73,13 +75,10 @@ export function ImportDetailClient({
         const msg = elapsedSec
           ? `Импорт завершён: ${payload.summary.totalIssues} задач за ${elapsedSec} сек`
           : `Импорт завершён: ${payload.summary.totalIssues} задач`;
-        addToast({ type: 'success', message: msg });
+        toast.success(msg);
       },
       onFailed: (payload) => {
-        addToast({
-          type: 'error',
-          message: `Ошибка импорта: ${payload.error}`,
-        });
+        toast.error(`Ошибка импорта: ${payload.error}`);
       },
     });
 
@@ -106,18 +105,20 @@ export function ImportDetailClient({
   // ── Cancel ─────────────────────────────────────────────────────────
   const handleCancel = async () => {
     if (!currentOrgId || !importLog) return;
-    if (!confirm('Прервать импорт? Уже созданные задачи останутся.')) return;
+    const ok = await ask({
+      title: 'Прервать импорт?',
+      description: 'Уже созданные задачи останутся.',
+      confirmLabel: 'Прервать',
+      destructive: true,
+    });
+    if (!ok) return;
     setCancelling(true);
     try {
       await importsApi.cancel(currentOrgId, importLog.id);
       await mutate();
-      addToast({ type: 'info', message: 'Запрос на отмену отправлен' });
+      toast('Запрос на отмену отправлен');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message:
-          e instanceof ApiError ? e.message : 'Не удалось отменить импорт',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отменить импорт');
     } finally {
       setCancelling(false);
     }
@@ -408,6 +409,7 @@ export function ImportDetailClient({
           </Card>
         )}
       </div>
+      {confirmDialog}
     </Shell>
   );
 }

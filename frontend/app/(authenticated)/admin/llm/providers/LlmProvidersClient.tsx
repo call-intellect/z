@@ -9,7 +9,7 @@ import {
   adminLlmProviderFromApi,
   type AdminLlmProviderDomain,
 } from '@/domain/admin-llm-provider';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 
@@ -27,7 +27,6 @@ import { useAdminQuery } from '../../useAdminQuery';
  */
 export function LlmProvidersClient() {
   const [includeInactive, setIncludeInactive] = useState(false);
-  const { addToast } = useToast();
 
   const q = useAdminQuery(
     `admin-llm-providers:${includeInactive}`,
@@ -41,16 +40,12 @@ export function LlmProvidersClient() {
   const handleSmokeTest = async (id: string, name: string) => {
     try {
       const r = await adminLlmProvidersApi.smokeTest(id);
-      addToast({
-        type: r.success ? 'success' : 'error',
-        message: `${name}: ${r.success ? 'OK' : `провал — ${r.error ?? 'unknown'}`} (${r.durationSeconds.toFixed(2)}s)`,
-      });
+      const message = `${name}: ${r.success ? 'OK' : `провал — ${r.error ?? 'unknown'}`} (${r.durationSeconds.toFixed(2)}s)`;
+      if (r.success) toast.success(message);
+      else toast.error(message);
       q.refetch();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Ошибка smoke-теста',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Ошибка smoke-теста');
     }
   };
 

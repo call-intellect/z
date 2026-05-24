@@ -28,7 +28,7 @@ import {
   scopeLabel,
   statusLabel,
 } from '@/domain/admin-prompt-template';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -40,7 +40,7 @@ import {
 } from '@/ui/shadcn/select';
 
 export function PromptsListClient() {
-  const { addToast } = useToast();
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<PromptTemplateUi[]>([]);
@@ -63,11 +63,11 @@ export function PromptsListClient() {
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить шаблоны';
       setError(msg);
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [scopeFilter, statusFilter, taskTypeFilter, search, addToast]);
+  }, [scopeFilter, statusFilter, taskTypeFilter, search]);
 
   useEffect(() => {
     void fetchData();

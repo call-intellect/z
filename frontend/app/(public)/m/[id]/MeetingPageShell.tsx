@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { meetingsApi, type JoinMeetingApiResponse } from '@/api/meetings.api';
 import { ApiError } from '@/api/api-error';
 import { useMeetingAccess } from '@/hooks/use-meeting-access';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Skeleton } from '@/ui/components/shared/Skeleton';
 import { ErrorState } from '@/ui/components/shared/ErrorState';
 import { Lobby } from '@/ui/components/lobby/Lobby';
@@ -34,7 +34,6 @@ type JoinedState = {
 
 export function MeetingPageShell({ meetingId }: Props) {
   const access = useMeetingAccess(meetingId);
-  const { addToast } = useToast();
   const [joined, setJoined] = useState<JoinedState | null>(null);
   const [autoJoinAttempted, setAutoJoinAttempted] = useState(false);
 
@@ -77,7 +76,7 @@ export function MeetingPageShell({ meetingId }: Props) {
     } catch (e) {
       const message =
         e instanceof ApiError ? e.message : 'Не удалось подключиться.';
-      addToast({ type: 'error', message });
+      toast.error(message);
     }
   };
 

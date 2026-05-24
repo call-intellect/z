@@ -9,7 +9,7 @@ import {
   adminPriceListFromApi,
   type AdminPriceDomain,
 } from '@/domain/admin-price';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -165,7 +165,6 @@ function AddPriceDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { addToast } = useToast();
   const [provider, setProvider] = useState('anthropic');
   const [model, setModel] = useState('');
   const [inputCost, setInputCost] = useState('');
@@ -176,14 +175,14 @@ function AddPriceDialog({
 
   const handleSubmit = async () => {
     if (!provider || !model) {
-      addToast({ type: 'error', message: 'provider/model обязательны' });
+      toast.error('provider/model обязательны');
       return;
     }
     const i = Number(inputCost);
     const o = Number(outputCost);
     const c = Number(cachedCost || '0');
     if (!isFinite(i) || !isFinite(o) || !isFinite(c) || i < 0 || o < 0 || c < 0) {
-      addToast({ type: 'error', message: 'некорректные цены' });
+      toast.error('некорректные цены');
       return;
     }
     setSubmitting(true);
@@ -196,13 +195,10 @@ function AddPriceDialog({
         cachedCostPerMillionTokens: c,
         currency,
       });
-      addToast({ type: 'success', message: 'Цена сохранена' });
+      toast.success('Цена сохранена');
       onSaved();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }

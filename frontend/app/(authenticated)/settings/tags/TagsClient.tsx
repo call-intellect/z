@@ -5,7 +5,10 @@ import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { tagsApi, type TagApi } from '@/api/tags.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -35,11 +38,11 @@ type DialogState =
   | { mode: 'edit'; tag: TagApi };
 
 export function TagsClient() {
-  const { addToast } = useToast();
   const [tags, setTags] = useState<TagApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>({ mode: 'closed' });
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetchTags = useCallback(async () => {
     setLoading(true);
@@ -60,19 +63,22 @@ export function TagsClient() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!confirm('Удалить тег? Он отвяжется от всех встреч.')) return;
+      const ok = await ask({
+        title: 'Удалить тег?',
+        description: 'Он отвяжется от всех встреч.',
+        confirmLabel: 'Удалить',
+        destructive: true,
+      });
+      if (!ok) return;
       try {
         await tagsApi.remove(id);
         setTags((prev) => prev.filter((t) => t.id !== id));
-        addToast({ type: 'success', message: 'Тег удалён' });
+        toast.success('Тег удалён');
       } catch (e) {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
       }
     },
-    [addToast],
+    [ask],
   );
 
   return (
@@ -89,25 +95,28 @@ export function TagsClient() {
         </Button>
       </header>
 
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
-          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && tags.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card/40 p-10 text-center text-sm text-fg-secondary">
-          Тегов пока нет. Создайте первый — и он появится при выборе на встречах.
-        </div>
-      )}
-
-      {!loading && !error && tags.length > 0 && (
+      <QueryGate
+        isLoading={loading}
+        error={error}
+        isEmpty={tags.length === 0}
+        skeleton={
+          <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+            <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="Тегов пока нет"
+            description="Создайте первый — и он появится при выборе на встречах."
+            action={
+              <Button onClick={() => setDialog({ mode: 'create' })} size="sm">
+                <Plus size={14} /> Создать тег
+              </Button>
+            }
+          />
+        }
+        onRetry={() => void fetchTags()}
+      >
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {tags.map((tag) => (
             <li
@@ -143,7 +152,7 @@ export function TagsClient() {
             </li>
           ))}
         </ul>
-      )}
+      </QueryGate>
 
       <TagDialog
         state={dialog}
@@ -160,6 +169,7 @@ export function TagsClient() {
           });
         }}
       />
+      {confirmDialog}
     </div>
   );
 }
@@ -173,7 +183,6 @@ function TagDialog({
   onClose: () => void;
   onSaved: (tag: TagApi) => void;
 }) {
-  const { addToast } = useToast();
   const [name, setName] = useState('');
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [submitting, setSubmitting] = useState(false);
@@ -198,18 +207,15 @@ function TagDialog({
       if (isEdit) {
         const tag = await tagsApi.update(state.tag.id, { name: name.trim(), color });
         onSaved(tag);
-        addToast({ type: 'success', message: 'Тег обновлён' });
+        toast.success('Тег обновлён');
       } else {
         const tag = await tagsApi.create({ name: name.trim(), color });
         onSaved(tag);
-        addToast({ type: 'success', message: 'Тег создан' });
+        toast.success('Тег создан');
       }
       onClose();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }

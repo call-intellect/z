@@ -13,6 +13,8 @@ import {
   type IdeasListResponseApi,
 } from '@/api/ideas.api';
 import { useAuth } from '@/contexts/auth-context';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 
 import {
   AdminError,
@@ -154,7 +156,7 @@ function IdeasContent(): JSX.Element {
         setSelected(fresh);
         await fetchList();
       } catch (e) {
-        alert(`Не удалось изменить статус: ${e instanceof Error ? e.message : String(e)}`);
+        toast.error(`Не удалось изменить статус: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
     [selected, fetchList],
@@ -169,27 +171,31 @@ function IdeasContent(): JSX.Element {
         setSelected(fresh);
         await fetchList();
       } catch (e) {
-        alert(`Не удалось поддержать: ${e instanceof Error ? e.message : String(e)}`);
+        toast.error(`Не удалось поддержать: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
     [selected, fetchList],
   );
 
-  const onWithdraw = useCallback(
-    async (): Promise<void> => {
-      if (!selected) return;
-      if (!confirm('Отозвать вашу идею? Она уйдёт в архив.')) return;
-      try {
-        await ideasApi.withdraw(selected.id);
-        const fresh = await ideasApi.getById(selected.id);
-        setSelected(fresh);
-        await fetchList();
-      } catch (e) {
-        alert(`Не удалось отозвать: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    },
-    [selected, fetchList],
-  );
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+
+  const onWithdraw = useCallback(async (): Promise<void> => {
+    if (!selected) return;
+    setWithdrawOpen(true);
+  }, [selected]);
+
+  const performWithdraw = useCallback(async (): Promise<void> => {
+    if (!selected) return;
+    try {
+      await ideasApi.withdraw(selected.id);
+      const fresh = await ideasApi.getById(selected.id);
+      setSelected(fresh);
+      await fetchList();
+    } catch (e) {
+      toast.error(`Не удалось отозвать: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+  }, [selected, fetchList]);
 
   if (list.forbidden) {
     return (
@@ -314,6 +320,16 @@ function IdeasContent(): JSX.Element {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={withdrawOpen}
+        onOpenChange={setWithdrawOpen}
+        title="Отозвать идею?"
+        description="Идея уйдёт в архив."
+        confirmLabel="Отозвать"
+        destructive
+        onConfirm={performWithdraw}
+      />
     </div>
   );
 }

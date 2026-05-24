@@ -9,7 +9,7 @@ import { clonesApi } from '@/api/clones.api';
 import { knowledgeCloneApi } from '@/api/knowledge-clone.api';
 import { meProfileApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { mapCloneAnswer, type CloneAnswer } from '@/domain/clone';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -32,7 +32,7 @@ import { Textarea } from '@/ui/shadcn/textarea';
  */
 export function MyCloneClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
-  const { addToast } = useToast();
+
   const [question, setQuestion] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<
@@ -68,10 +68,7 @@ export function MyCloneClient() {
     if (!currentOrgId || !personId) return;
     const text = question.trim();
     if (text.length < 3) {
-      addToast({
-        type: 'error',
-        message: 'Вопрос слишком короткий (минимум 3 символа).',
-      });
+      toast.error('Вопрос слишком короткий (минимум 3 символа).');
       return;
     }
     setPending(true);
@@ -102,7 +99,7 @@ export function MyCloneClient() {
         err instanceof ApiError
           ? err.payload?.message ?? err.message
           : 'Не удалось получить ответ от клона. Попробуйте ещё раз.';
-      addToast({ type: 'error', message });
+      toast.error(message);
       setMessages((prev) => prev.filter((m) => m.id !== userMessageId));
     } finally {
       setPending(false);
@@ -110,11 +107,7 @@ export function MyCloneClient() {
   }
 
   function handleMarkWrong(messageId: string) {
-    addToast({
-      type: 'success',
-      message:
-        'Спасибо! Отметка отправлена — мы используем её для улучшения клона.',
-    });
+    toast.success('Спасибо! Отметка отправлена — мы используем её для улучшения клона.');
     // На γ-1 mark-wrong для ответов клона — placeholder. Полноценный CurationItem
     // для clone-output появится в γ+.
     void messageId;

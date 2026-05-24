@@ -6,7 +6,7 @@ import { Brain, Loader2, Send } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { dumpApi } from '@/api/dump.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { generateNonce } from '@/domain/source';
 import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
@@ -24,7 +24,6 @@ const MAX_LEN = 50_000;
  *   - На успех — toast и очистка textarea.
  */
 export function DumpClient() {
-  const { addToast } = useToast();
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
   const [text, setText] = useState('');
@@ -46,28 +45,16 @@ export function DumpClient() {
         nonce,
       });
       if (res.idempotent) {
-        addToast({
-          type: 'info',
-          message: 'Эта мысль уже была сохранена ранее',
-        });
+        toast('Эта мысль уже была сохранена ранее');
       } else {
-        addToast({
-          type: 'success',
-          message: 'Мысль сохранена в память компании',
-        });
+        toast.success('Мысль сохранена в память компании');
       }
       setText('');
     } catch (e) {
       if (e instanceof ApiError && e.code === 'quota_exceeded') {
-        addToast({
-          type: 'error',
-          message: 'Лимит 30 мыслей в день. Попробуйте позже.',
-        });
+        toast.error('Лимит 30 мыслей в день. Попробуйте позже.');
       } else {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
       }
     } finally {
       setSubmitting(false);

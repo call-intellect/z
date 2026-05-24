@@ -7,7 +7,7 @@ import { Brain, Calendar, Flag, History, Loader2, ShieldCheck } from 'lucide-rea
 import { ApiError } from '@/api/api-error';
 import { clonesApi, type SkillProfileApi, type SkillTraitApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -36,7 +36,7 @@ const STATUS_LABEL: Record<string, string> = {
  */
 export function PersonSkillProfileClient({ personId }: { personId: string }) {
   const { currentOrgId, isLoading } = useAuth();
-  const { addToast } = useToast();
+
   const [markingTraitId, setMarkingTraitId] = useState<string | null>(null);
   const [markReason, setMarkReason] = useState('');
   const [markBusy, setMarkBusy] = useState(false);
@@ -50,19 +50,13 @@ export function PersonSkillProfileClient({ personId }: { personId: string }) {
     if (!markingTraitId || !currentOrgId) return;
     const reason = markReason.trim();
     if (reason.length < 5) {
-      addToast({
-        type: 'error',
-        message: 'Опишите, почему черта неверна (минимум 5 символов).',
-      });
+      toast.error('Опишите, почему черта неверна (минимум 5 символов).');
       return;
     }
     setMarkBusy(true);
     try {
       await clonesApi.markTraitMisleading(currentOrgId, markingTraitId, { reason });
-      addToast({
-        type: 'success',
-        message: 'Черта помечена как неверная. Спасибо за обратную связь.',
-      });
+      toast.success('Черта помечена как неверная. Спасибо за обратную связь.');
       setMarkingTraitId(null);
       setMarkReason('');
       if (swrKey) await mutate(swrKey);
@@ -71,7 +65,7 @@ export function PersonSkillProfileClient({ personId }: { personId: string }) {
         err instanceof ApiError
           ? err.payload?.message ?? err.message
           : 'Не удалось пометить черту неверной.';
-      addToast({ type: 'error', message });
+      toast.error(message);
     } finally {
       setMarkBusy(false);
     }

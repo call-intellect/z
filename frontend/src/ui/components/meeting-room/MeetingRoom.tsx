@@ -13,7 +13,7 @@ import useSWR from 'swr';
 
 import { meetingsApi } from '@/api/meetings.api';
 import type { JoinMeetingApiResponse } from '@/api/meetings.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
 import {
   buildAudioCaptureOptions,
@@ -55,7 +55,6 @@ export function MeetingRoom({
   onLeave,
 }: Props) {
   const isHost = role === 'host';
-  const { addToast } = useToast();
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const identityMap = useMemo(
@@ -93,7 +92,7 @@ export function MeetingRoom({
       status === 'ai_processing' ||
       status === 'ai_ready'
     ) {
-      addToast({ type: 'info', message: t('lobby.finished_title') });
+      toast(t('lobby.finished_title'));
       onLeave();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,7 +108,7 @@ export function MeetingRoom({
       data-lk-theme="default"
       onDisconnected={onLeave}
       onError={(e) => {
-        addToast({ type: 'error', message: e.message });
+        toast.error(e.message);
       }}
       style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}
     >

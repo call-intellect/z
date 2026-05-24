@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { orgsApi } from '@/api/orgs.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 
 /**
@@ -22,8 +22,6 @@ import { Button } from '@/ui/shadcn/button';
  */
 export function AcceptInvitationClient({ token }: { token: string }) {
   const router = useRouter();
-  const { addToast } = useToast();
-
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState<{ orgId: string; role: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,13 +32,13 @@ export function AcceptInvitationClient({ token }: { token: string }) {
     try {
       const res = await orgsApi.acceptInvitation(token);
       setAccepted({ orgId: res.orgId, role: res.membership.role });
-      addToast({ type: 'success', message: 'Вы добавлены в организацию' });
+      toast.success('Вы добавлены в организацию');
       // Редирект через 1.5 секунды чтобы юзер увидел подтверждение.
       setTimeout(() => router.push('/dashboard'), 1500);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось принять приглашение';
       setError(msg);
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setAccepting(false);
     }

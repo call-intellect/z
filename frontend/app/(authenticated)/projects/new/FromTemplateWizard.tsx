@@ -13,7 +13,7 @@ import {
 import { ApiError } from '@/api/api-error';
 import { projectsApi } from '@/api/tracker/projects.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import {
   useTeamTemplate,
   useTeamTemplates,
@@ -61,7 +61,6 @@ const TIMEZONES = [
 export function FromTemplateWizard() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
 
   const { templates, isLoading: listLoading, error: listError } =
     useTeamTemplates(currentOrgId);
@@ -128,7 +127,7 @@ export function FromTemplateWizard() {
         withExampleTasks,
         timezone,
       });
-      addToast({ type: 'success', message: 'Проект создан' });
+      toast.success('Проект создан');
       router.push(`/projects/${encodeURIComponent(res.slug)}/board`);
     } catch (err) {
       const message =
@@ -138,7 +137,7 @@ export function FromTemplateWizard() {
             ? err.message
             : 'Не удалось создать проект';
       setSubmitError(message);
-      addToast({ type: 'error', message });
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }

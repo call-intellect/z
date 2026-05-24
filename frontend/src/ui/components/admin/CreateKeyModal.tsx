@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { adminApi } from '@/api/admin.api';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/components/shared/Button';
 import { Modal } from '@/ui/components/shared/Modal';
 import { t } from '@/lib/i18n';
@@ -15,7 +15,6 @@ type Props = {
 };
 
 export function CreateKeyModal({ open, onClose }: Props) {
-  const { addToast } = useToast();
   const [partnerName, setPartnerName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [createdKey, setCreatedKey] = useState<{ id: string; key: string } | null>(null);
@@ -36,10 +35,7 @@ export function CreateKeyModal({ open, onClose }: Props) {
       const res = await adminApi.createKey(partnerName.trim());
       setCreatedKey({ id: res.id, key: res.key });
     } catch (err) {
-      addToast({
-        type: 'error',
-        message: err instanceof ApiError ? err.message : t('errors.unknown'),
-      });
+      toast.error(err instanceof ApiError ? err.message : t('errors.unknown'));
       setSubmitting(false);
     }
   }

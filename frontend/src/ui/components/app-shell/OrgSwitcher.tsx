@@ -36,7 +36,7 @@ import { useSWRConfig } from 'swr';
 
 import { apiClient } from '@/api/api-client';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { useMemberships, type Membership } from '@/hooks/useMemberships';
 import {
   DropdownMenu,
@@ -76,7 +76,6 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
   const router = useRouter();
   const pathname = usePathname() ?? '/dashboard';
   const { mutate } = useSWRConfig();
-  const { addToast } = useToast();
   const [switching, setSwitching] = useState(false);
 
   if (isLoading) {
@@ -163,15 +162,9 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
         { revalidate: true },
       );
       router.replace(pathname);
-      addToast({
-        type: 'success',
-        message: `Переключились в компанию: ${target.name}`,
-      });
+      toast.success(`Переключились в компанию: ${target.name}`);
     } catch {
-      addToast({
-        type: 'error',
-        message: 'Не удалось переключиться, обновите страницу',
-      });
+      toast.error('Не удалось переключиться, обновите страницу');
     } finally {
       setSwitching(false);
     }

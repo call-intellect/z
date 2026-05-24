@@ -6,7 +6,7 @@ import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
 import { departmentsApi, type DepartmentApi } from '@/api/structure.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -40,8 +40,6 @@ export function DepartmentsTab({
   orgId: string;
   canEdit: boolean;
 }) {
-  const { addToast } = useToast();
-
   const { data, error, isLoading, mutate } = useSWR(
     swrKey(orgId),
     async () => departmentsApi.list(orgId),
@@ -165,7 +163,7 @@ export function DepartmentsTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void mutate();
-            addToast({ type: 'success', message: 'Отдел добавлен.' });
+            toast.success('Отдел добавлен.');
           }}
         />
       )}
@@ -177,7 +175,7 @@ export function DepartmentsTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void mutate();
-            addToast({ type: 'success', message: 'Отдел переименован.' });
+            toast.success('Отдел переименован.');
           }}
         />
       )}
@@ -189,7 +187,7 @@ export function DepartmentsTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void mutate();
-            addToast({ type: 'success', message: 'Отдел удалён.' });
+            toast.success('Отдел удалён.');
           }}
         />
       )}
@@ -206,7 +204,6 @@ function CreateDeptDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   return (
@@ -239,11 +236,7 @@ function CreateDeptDialog({
                 await departmentsApi.create(orgId, { name: name.trim() });
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось сохранить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
               } finally {
                 setBusy(false);
               }
@@ -268,7 +261,6 @@ function RenameDeptDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [name, setName] = useState(dept.name);
   const [busy, setBusy] = useState(false);
   useEffect(() => setName(dept.name), [dept]);
@@ -301,11 +293,7 @@ function RenameDeptDialog({
                 });
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось сохранить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
               } finally {
                 setBusy(false);
               }
@@ -330,7 +318,6 @@ function RemoveDeptDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [busy, setBusy] = useState(false);
   const hasContent =
     (dept.rolesCount ?? 0) > 0 || (dept.personsCount ?? 0) > 0;
@@ -358,11 +345,7 @@ function RemoveDeptDialog({
                 await departmentsApi.remove(orgId, dept.id);
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось удалить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
               } finally {
                 setBusy(false);
               }

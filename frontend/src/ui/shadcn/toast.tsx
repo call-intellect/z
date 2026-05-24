@@ -2,9 +2,9 @@
 
 /**
  * Toast — обёртка над `sonner`. Экспортируем `<Toaster>` для подключения
- * в RootLayout и `toast` для вызова. Пока оставлены оба механизма
- * (старый `useToast` из `@/contexts/toast-context` ещё может использоваться
- * legacy-компонентами — будет удалён в M5).
+ * в RootLayout и `toast` для вызова напрямую. После Phase C (ТЗ
+ * ui-api-modernization 2026-05-24) единственный источник toast'ов.
+ * Shim в `@/contexts/toast-context` оставлен только для совместимости.
  */
 
 import { Toaster as SonnerToaster, toast as sonnerToast } from 'sonner';

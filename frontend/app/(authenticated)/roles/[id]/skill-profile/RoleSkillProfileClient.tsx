@@ -7,7 +7,7 @@ import { Bot, Loader2, Send, Sparkles, Users } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { clonesApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { mapCloneAnswer, type CloneAnswer } from '@/domain/clone';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -24,7 +24,6 @@ import { Textarea } from '@/ui/shadcn/textarea';
  */
 export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
   const { currentOrgId, isLoading } = useAuth();
-  const { addToast } = useToast();
 
   const swrKey = currentOrgId ? ['role-skill-profile', currentOrgId, roleId] : null;
   const { data, error, isLoading: loading } = useSWR(swrKey, async () =>
@@ -44,7 +43,7 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
     if (!currentOrgId) return;
     const text = question.trim();
     if (text.length < 3) {
-      addToast({ type: 'error', message: 'Вопрос слишком короткий.' });
+      toast.error('Вопрос слишком короткий.');
       return;
     }
     setPending(true);
@@ -72,7 +71,7 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
         err instanceof ApiError
           ? err.payload?.message ?? err.message
           : 'Не удалось получить ответ от клона роли.';
-      addToast({ type: 'error', message });
+      toast.error(message);
       setMessages((prev) => prev.filter((m) => m.id !== userMessageId));
     } finally {
       setPending(false);

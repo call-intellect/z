@@ -11,7 +11,8 @@ import {
   orgsApi,
 } from '@/api/orgs.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
@@ -38,8 +39,6 @@ import {
  */
 export function OrganizationClient() {
   const { user } = useAuth();
-  const { addToast } = useToast();
-
   const [orgs, setOrgs] = useState<OrgApi[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [members, setMembers] = useState<MembershipApi[]>([]);
@@ -49,6 +48,7 @@ export function OrganizationClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [editName, setEditName] = useState('');
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
   const [editVisibility, setEditVisibility] = useState<'open' | 'strict'>('open');
   const [savingOrg, setSavingOrg] = useState(false);
 
@@ -114,12 +114,9 @@ export function OrganizationClient() {
         visibilityMode: editVisibility,
       });
       setOrgs((prev) => prev.map((o) => (o.id === res.org.id ? res.org : o)));
-      addToast({ type: 'success', message: 'Настройки организации сохранены' });
+      toast.success('Настройки организации сохранены');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSavingOrg(false);
     }
@@ -136,12 +133,9 @@ export function OrganizationClient() {
       });
       setInvitations((prev) => [res.invitation, ...prev]);
       setInviteEmail('');
-      addToast({ type: 'success', message: 'Приглашение отправлено' });
+      toast.success('Приглашение отправлено');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось пригласить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось пригласить');
     } finally {
       setInviting(false);
     }
@@ -149,7 +143,12 @@ export function OrganizationClient() {
 
   const handleRevoke = async (invitationId: string) => {
     if (!activeOrg) return;
-    if (!confirm('Отозвать приглашение?')) return;
+    const ok = await ask({
+      title: 'Отозвать приглашение?',
+      confirmLabel: 'Отозвать',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await orgsApi.revokeInvitation(activeOrg.id, invitationId);
       setInvitations((prev) =>
@@ -157,12 +156,9 @@ export function OrganizationClient() {
           i.id === invitationId ? { ...i, status: 'revoked' as const } : i,
         ),
       );
-      addToast({ type: 'success', message: 'Приглашение отозвано' });
+      toast.success('Приглашение отозвано');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось отозвать',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отозвать');
     }
   };
 
@@ -176,27 +172,26 @@ export function OrganizationClient() {
       setMembers((prev) =>
         prev.map((m) => (m.userId === targetUserId ? res.member : m)),
       );
-      addToast({ type: 'success', message: 'Роль обновлена' });
+      toast.success('Роль обновлена');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось изменить роль',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось изменить роль');
     }
   };
 
   const handleRemoveMember = async (targetUserId: string) => {
     if (!activeOrg) return;
-    if (!confirm('Удалить участника из организации?')) return;
+    const ok = await ask({
+      title: 'Удалить участника из организации?',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await orgsApi.removeMember(activeOrg.id, targetUserId);
       setMembers((prev) => prev.filter((m) => m.userId !== targetUserId));
-      addToast({ type: 'success', message: 'Участник удалён' });
+      toast.success('Участник удалён');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
     }
   };
 
@@ -445,6 +440,7 @@ export function OrganizationClient() {
           )}
         </section>
       ) : null}
+      {confirmDialog}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { ApiError } from '@/api/api-error';
 import { meetingsApi, type JoinMeetingApiResponse } from '@/api/meetings.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/components/shared/Button';
 import { t } from '@/lib/i18n';
 import {
@@ -23,8 +23,6 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
   const [name, setName] = useState('');
   const [pending, setPending] = useState(false);
   const [noiseEnabled, setNoiseEnabled] = useState(true);
-  const { addToast } = useToast();
-
   // Гидратируем чекбокс из localStorage только на клиенте — чтобы SSR-разметка
   // совпадала с серверной (избегаем hydration mismatch).
   useEffect(() => {
@@ -40,7 +38,7 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
-      addToast({ type: 'error', message: 'Введите имя.' });
+      toast.error('Введите имя.');
       return;
     }
     setPending(true);
@@ -54,7 +52,7 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
           : e instanceof Error
             ? e.message
             : t('errors.join_failed');
-      addToast({ type: 'error', message });
+      toast.error(message);
     } finally {
       setPending(false);
     }

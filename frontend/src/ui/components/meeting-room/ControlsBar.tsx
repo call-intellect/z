@@ -24,7 +24,7 @@ import {
 import clsx from 'clsx';
 
 import { useHostControls } from '@/hooks/use-host-controls';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Modal } from '@/ui/components/shared/Modal';
 import { Button } from '@/ui/components/shared/Button';
 import { t } from '@/lib/i18n';
@@ -55,15 +55,14 @@ export function ControlsBar({
     useLocalParticipant();
   const room = useRoomContext();
   const host = useHostControls(meetingId);
-  const { addToast } = useToast();
   const [confirmFinish, setConfirmFinish] = useState(false);
 
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/m/${meetingId}`);
-      addToast({ type: 'success', message: t('meetings.copied') });
+      toast.success(t('meetings.copied'));
     } catch {
-      addToast({ type: 'error', message: t('errors.unknown') });
+      toast.error(t('errors.unknown'));
     }
   };
 

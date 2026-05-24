@@ -8,6 +8,7 @@ import { PROJECT_MEMBER_ROLE_LABELS } from '@/domain/tracker';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { useProjectMembers } from '@/hooks/tracker/useProject';
 import { AssigneeAvatar } from '@/ui/tracker';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
 export function ProjectSettingsClient({ slug }: { slug: string }) {
   const { currentOrgId } = useAuth();
@@ -111,6 +112,7 @@ function EmailInboxSection({
   const [busy, setBusy] = useState<'enable' | 'disable' | 'regen' | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -156,9 +158,12 @@ function EmailInboxSection({
   };
 
   const handleRegenerate = async () => {
-    const ok = window.confirm(
-      'Сгенерировать новый адрес? Старый адрес сразу перестанет работать — письма на него будут отскакивать.',
-    );
+    const ok = await ask({
+      title: 'Сгенерировать новый адрес?',
+      description: 'Старый адрес сразу перестанет работать — письма на него будут отскакивать.',
+      confirmLabel: 'Сгенерировать',
+      destructive: true,
+    });
     if (!ok) return;
     setBusy('regen');
     setError(null);
@@ -311,6 +316,7 @@ function EmailInboxSection({
           </>
         )}
       </div>
+      {confirmDialog}
     </section>
   );
 }

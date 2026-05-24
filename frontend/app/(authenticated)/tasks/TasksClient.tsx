@@ -20,7 +20,9 @@ import {
   type TaskApi,
   type TaskStatus,
 } from '@/api/tasks.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Checkbox } from '@/ui/shadcn/checkbox';
@@ -91,7 +93,6 @@ function fromDateInputValue(value: string): string | null {
 }
 
 export function TasksClient() {
-  const { addToast } = useToast();
   const [tasks, setTasks] = useState<TaskApi[]>([]);
   const [destinations, setDestinations] = useState<DestinationApi[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,13 +163,10 @@ export function TasksClient() {
         const updated = await tasksApi.update(id, patch);
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
       } catch (e) {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Не удалось обновить задачу',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Не удалось обновить задачу');
       }
     },
-    [addToast],
+    [],
   );
 
   const handleDelete = useCallback(
@@ -182,28 +180,22 @@ export function TasksClient() {
           return next;
         });
       } catch (e) {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Не удалось удалить задачу',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить задачу');
       }
     },
-    [addToast],
+    [],
   );
 
   const handleSend = useCallback(
     async (id: string, destinationId: string) => {
       try {
         await tasksApi.send(id, { destinationId });
-        addToast({ type: 'success', message: 'Отправлено' });
+        toast.success('Отправлено');
       } catch (e) {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Не удалось отправить',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Не удалось отправить');
       }
     },
-    [addToast],
+    [],
   );
 
   const handleBulk = useCallback(
@@ -212,20 +204,14 @@ export function TasksClient() {
       try {
         const ids = Array.from(selectedIds);
         const res = await tasksApi.bulk({ ids, action });
-        addToast({
-          type: 'success',
-          message: `Обновлено: ${res.affected}`,
-        });
+        toast.success(`Обновлено: ${res.affected}`);
         setSelectedIds(new Set());
         await fetchTasks();
       } catch (e) {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Bulk-операция не удалась',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Bulk-операция не удалась');
       }
     },
-    [addToast, fetchTasks, selectedIds],
+    [fetchTasks, selectedIds],
   );
 
   const toggleSelected = useCallback((id: string) => {
@@ -318,37 +304,30 @@ export function TasksClient() {
         </div>
       )}
 
-      {/* Состояния */}
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
-          <Loader2 size={16} className="mr-2 animate-spin" />
-          Загружаем задачи...
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="flex items-center gap-2 rounded-md border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
-          <AlertCircle size={16} />
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && tasks.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card/40 p-10 text-center">
-          <p className="text-sm text-fg-secondary">
-            Задачи появятся здесь после прохождения встреч.
-          </p>
-          <Button asChild className="mt-4" size="sm">
-            <Link href="/meetings/create">Создать встречу</Link>
-          </Button>
-        </div>
-      )}
-
-      {/* Группы */}
-      {!loading &&
-        !error &&
-        tasks.length > 0 &&
-        GROUP_ORDER.map((group) => {
+      <QueryGate
+        isLoading={loading}
+        error={error}
+        isEmpty={tasks.length === 0}
+        skeleton={
+          <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+            <Loader2 size={16} className="mr-2 animate-spin" />
+            Загружаем задачи...
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="Пока нет задач"
+            description="Задачи появятся здесь после прохождения встреч."
+            action={
+              <Button asChild size="sm">
+                <Link href="/meetings/create">Создать встречу</Link>
+              </Button>
+            }
+          />
+        }
+        onRetry={() => void fetchTasks()}
+      >
+        {GROUP_ORDER.map((group) => {
           const items = grouped[group];
           if (items.length === 0) return null;
           return (
@@ -379,6 +358,7 @@ export function TasksClient() {
             </section>
           );
         })}
+      </QueryGate>
     </div>
   );
 }

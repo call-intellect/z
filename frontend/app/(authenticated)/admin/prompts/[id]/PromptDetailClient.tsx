@@ -24,7 +24,8 @@ import {
   type PromptTemplateApi,
 } from '@/api/admin-prompt-templates.api';
 import { mapPromptTemplate, type PromptTemplateUi } from '@/domain/admin-prompt-template';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 
@@ -36,7 +37,6 @@ type TabKey = 'editor' | 'versions' | 'preview' | 'usage';
 
 export function PromptDetailClient({ id }: { id: string }) {
   const router = useRouter();
-  const { addToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +44,7 @@ export function PromptDetailClient({ id }: { id: string }) {
   const [rawTpl, setRawTpl] = useState<PromptTemplateApi | null>(null);
   const [tab, setTab] = useState<TabKey>('editor');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -55,11 +56,11 @@ export function PromptDetailClient({ id }: { id: string }) {
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить шаблон';
       setError(msg);
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [id, addToast]);
+  }, [id]);
 
   useEffect(() => {
     void reload();
@@ -67,14 +68,20 @@ export function PromptDetailClient({ id }: { id: string }) {
 
   const onDelete = async () => {
     if (!tpl) return;
-    if (!confirm(`Точно удалить шаблон «${tpl.name}»? Действие можно отменить администратору в течение 30 дней.`)) return;
+    const ok = await ask({
+      title: `Удалить шаблон «${tpl.name}»?`,
+      description: 'Действие можно отменить администратору в течение 30 дней.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await adminPromptTemplatesApi.remove(tpl.id);
-      addToast({ type: 'success', message: 'Шаблон удалён' });
+      toast.success('Шаблон удалён');
       router.push('/admin/prompts');
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось удалить шаблон';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     }
   };
 
@@ -203,6 +210,7 @@ export function PromptDetailClient({ id }: { id: string }) {
         templateId={tpl.id}
         activeVersionId={tpl.activeVersionId}
       />
+      {confirmDialog}
     </div>
   );
 }

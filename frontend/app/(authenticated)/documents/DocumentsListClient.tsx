@@ -13,7 +13,7 @@ import {
 } from '@/api/documents.api';
 import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -67,7 +67,6 @@ export function DocumentsListClient() {
 }
 
 function Content({ orgId }: { orgId: string }) {
-  const { addToast } = useToast();
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const swr = useSWR(
@@ -174,7 +173,7 @@ function Content({ orgId }: { orgId: string }) {
           onDone={() => {
             setUploadOpen(false);
             void swr.mutate();
-            addToast({ type: 'success', message: 'Документ загружен.' });
+            toast.success('Документ загружен.');
           }}
         />
       )}
@@ -246,7 +245,6 @@ function UploadDocumentDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const rolesSwr = useSWR(['upload-roles', orgId], () =>
     rolesDomainApi.list(orgId),
   );
@@ -332,11 +330,7 @@ function UploadDocumentDialog({
                 });
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось загрузить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось загрузить.');
               } finally {
                 setBusy(false);
               }

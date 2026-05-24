@@ -12,7 +12,8 @@ import {
   type AdminExperimentMetricsApi,
 } from '@/domain/admin-experiment';
 import { formatDurationMs, formatUsd } from '@/domain/admin-usage';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -32,9 +33,9 @@ import { useAdminQuery } from '../../useAdminQuery';
 import { ExperimentStartDialog } from '../ExperimentStartDialog';
 
 export function ExperimentClient({ taskType }: { taskType: string }) {
-  const { addToast } = useToast();
   const [showStart, setShowStart] = useState(false);
   const [acting, setActing] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const q = useAdminQuery(
     `admin-exp:${taskType}`,
@@ -46,45 +47,40 @@ export function ExperimentClient({ taskType }: { taskType: string }) {
   );
 
   const finish = async (winner: 'A' | 'B') => {
-    if (
-      !window.confirm(
+    const ok = await ask({
+      title:
         winner === 'B'
           ? 'Перевести функцию на model B и завершить эксперимент?'
           : 'Оставить model A (откатить эксперимент)?',
-      )
-    ) {
-      return;
-    }
+      confirmLabel: winner === 'B' ? 'Перевести' : 'Откатить',
+    });
+    if (!ok) return;
     setActing(true);
     try {
       await adminExperimentsApi.finish(taskType, { winner });
-      addToast({
-        type: 'success',
-        message: winner === 'B' ? 'Перевели на model B' : 'Откатили на model A',
-      });
+      toast.success(winner === 'B' ? 'Перевели на model B' : 'Откатили на model A');
       q.refetch();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось завершить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось завершить');
     } finally {
       setActing(false);
     }
   };
 
   const cancel = async () => {
-    if (!window.confirm('Отменить эксперимент без миграции?')) return;
+    const ok = await ask({
+      title: 'Отменить эксперимент без миграции?',
+      confirmLabel: 'Отменить',
+      destructive: true,
+    });
+    if (!ok) return;
     setActing(true);
     try {
       await adminExperimentsApi.cancel(taskType);
-      addToast({ type: 'success', message: 'Эксперимент отменён' });
+      toast.success('Эксперимент отменён');
       q.refetch();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось отменить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отменить');
     } finally {
       setActing(false);
     }
@@ -234,6 +230,7 @@ export function ExperimentClient({ taskType }: { taskType: string }) {
           }}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

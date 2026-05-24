@@ -48,7 +48,11 @@ export function QueryGate({
   if (error) {
     if (errorView) return <>{errorView}</>;
     const message =
-      error instanceof Error ? error.message : 'Не удалось загрузить данные';
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : 'Не удалось загрузить данные';
     return <ErrorState message={message} onRetry={onRetry} />;
   }
 

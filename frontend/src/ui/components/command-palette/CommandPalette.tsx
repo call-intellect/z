@@ -32,7 +32,7 @@ import { conciergeApi } from '@/api/concierge.api';
 import { chatV2Api, type ChatV2AskResponseApi } from '@/api/chat-v2.api';
 import { voiceApi } from '@/api/voice.api';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/auth-context';
 import {
   CommandEmpty,
@@ -76,7 +76,7 @@ import {
 export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
-  const { addToast } = useToast();
+
   const { currentOrgId } = useAuth();
   const {
     isOpen,
@@ -222,14 +222,11 @@ export function CommandPalette() {
 
   const startVoice = useCallback(async () => {
     if (!currentOrgId) {
-      addToast({ type: 'error', message: 'Нет активной организации' });
+      toast.error('Нет активной организации');
       return;
     }
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      addToast({
-        type: 'error',
-        message: 'Браузер не поддерживает запись микрофона',
-      });
+      toast.error('Браузер не поддерживает запись микрофона');
       return;
     }
     try {
@@ -253,9 +250,9 @@ export function CommandPalette() {
           : err instanceof Error
             ? err.message
             : 'Не удалось включить микрофон';
-      addToast({ type: 'error', message });
+      toast.error(message);
     }
-  }, [currentOrgId, addToast]);
+  }, [currentOrgId]);
 
   const stopVoice = useCallback(async () => {
     if (!currentOrgId) return;
@@ -279,7 +276,7 @@ export function CommandPalette() {
     voiceChunksRef.current = [];
     if (blob.size === 0) {
       setVoiceState('idle');
-      addToast({ type: 'error', message: 'Пустая запись — попробуйте ещё раз' });
+      toast.error('Пустая запись — попробуйте ещё раз');
       return;
     }
     try {
@@ -292,10 +289,7 @@ export function CommandPalette() {
       const transcript = res.text.trim();
       setVoiceState('idle');
       if (!transcript) {
-        addToast({
-          type: 'error',
-          message: 'Не удалось распознать — попробуйте чуть громче',
-        });
+        toast.error('Не удалось распознать — попробуйте чуть громче');
         return;
       }
       // Дописываем к существующему запросу — пользователь мог начать печатать.
@@ -304,9 +298,9 @@ export function CommandPalette() {
       setVoiceState('idle');
       const message =
         err instanceof ApiError ? err.message : 'Не удалось распознать голос';
-      addToast({ type: 'error', message });
+      toast.error(message);
     }
-  }, [currentOrgId, addToast]);
+  }, [currentOrgId]);
 
   /** Записать факт использования команды в Recent (max 10, дедуп). */
   const trackRecent = useCallback(
@@ -321,12 +315,9 @@ export function CommandPalette() {
     (item: Omit<PaletteRecentItem, 'lastUsedAt'>) => {
       const { pinned: nowPinned } = togglePinned(item);
       setPinned(loadPinned());
-      addToast({
-        type: 'success',
-        message: nowPinned ? 'Закреплено' : 'Откреплено',
-      });
+      toast.success(nowPinned ? 'Закреплено' : 'Откреплено');
     },
-    [addToast],
+    [],
   );
 
   function go(href: string): void {
@@ -360,44 +351,36 @@ export function CommandPalette() {
         pageContext: { clientPath: pathname ?? undefined },
       });
       if (res.quotaExceeded) {
-        addToast({
-          type: 'error',
-          message:
-            res.quotaExceeded === 'daily'
+        toast.error(res.quotaExceeded === 'daily'
               ? 'Дневная квота Concierge исчерпана'
-              : 'Месячная квота Concierge исчерпана',
-        });
+              : 'Месячная квота Concierge исчерпана');
       } else if (res.error) {
-        addToast({ type: 'error', message: res.error.message });
+        toast.error(res.error.message);
       } else {
         if (res.text) {
-          addToast({ type: 'info', message: res.text });
+          toast(res.text);
         }
         for (const tc of res.toolCalls) {
           if (tc.undoLogId) {
             const logId = tc.undoLogId;
-            addToast({
-              type: 'success',
-              message: `Готово: ${tc.toolName}`,
-              action: {
+            toast.success(`Готово: ${tc.toolName}`, { action: {
                 label: 'Отменить',
                 onClick: async () => {
                   try {
                     await conciergeApi.undo(logId);
-                    addToast({ type: 'success', message: 'Отменено' });
+                    toast.success('Отменено');
                   } catch {
-                    addToast({ type: 'error', message: 'Не удалось отменить' });
+                    toast.error('Не удалось отменить');
                   }
                 },
-              },
-            });
+              } });
           }
         }
       }
       close();
       setQuery('');
     } catch {
-      addToast({ type: 'error', message: 'Concierge недоступен' });
+      toast.error('Concierge недоступен');
     } finally {
       setCommandBusy(false);
     }

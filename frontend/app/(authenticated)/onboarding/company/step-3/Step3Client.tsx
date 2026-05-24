@@ -11,7 +11,7 @@ import {
   type RoleDomainApi,
 } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
@@ -46,8 +46,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function Step3Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
-
   const [roles, setRoles] = useState<RoleDomainApi[] | null>(null);
   const [rolesError, setRolesError] = useState<string | null>(null);
   const [rows, setRows] = useState<PersonDraft[]>([
@@ -109,12 +107,12 @@ export function Step3Client() {
           }),
         ),
       );
-      addToast({ type: 'success', message: 'Сотрудники сохранены.' });
+      toast.success('Сотрудники сохранены.');
       router.push(NEXT_HREF);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.message : 'Не удалось сохранить сотрудников.';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

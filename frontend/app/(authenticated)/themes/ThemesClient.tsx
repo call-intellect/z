@@ -16,6 +16,8 @@ import {
   type ThemeStatus,
   themeFromApi,
 } from '@/domain/theme';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { EmptyState as SharedEmptyState } from '@/ui/components/shared/EmptyState';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import {
@@ -58,7 +60,7 @@ export function ThemesClient() {
     [branch, q, status],
   );
 
-  const { data, isLoading } = useSWR(swrKey, async () => {
+  const { data, isLoading, error } = useSWR(swrKey, async () => {
     const res = await themesApi.list({
       ...(branch !== 'all' ? { branch } : {}),
       status,
@@ -115,34 +117,23 @@ export function ThemesClient() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="text-fg-tertiary">Загрузка…</div>
-      ) : themes.length === 0 ? (
-        <EmptyState />
-      ) : (
+      <QueryGate
+        isLoading={isLoading}
+        error={error}
+        isEmpty={themes.length === 0}
+        empty={
+          <SharedEmptyState
+            title="Пока нет AI-тем"
+            description="AI ещё не обнаружил темы. Накопится примерно 100 блоков идей из ваших встреч — здесь появятся первые кластеры."
+          />
+        }
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {themes.map((t) => (
             <ThemeListItem key={t.id} theme={t} />
           ))}
         </div>
-      )}
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed border-border-subtle px-6 py-16 text-center">
-      <Sparkles
-        size={42}
-        strokeWidth={1.5}
-        className="mb-3 text-fg-tertiary"
-      />
-      <h3 className="mb-2 text-lg font-medium">Пока нет AI-тем</h3>
-      <p className="max-w-md text-sm text-fg-tertiary">
-        AI ещё не обнаружил темы. Накопится примерно 100 блоков идей из ваших
-        встреч — здесь появятся первые кластеры.
-      </p>
+      </QueryGate>
     </div>
   );
 }

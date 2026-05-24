@@ -4,7 +4,8 @@ import { useState } from 'react';
 
 import { adminApi } from '@/api/admin.api';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Button } from '@/ui/components/shared/Button';
 import { t } from '@/lib/i18n';
 
@@ -14,39 +15,42 @@ type Props = {
 };
 
 export function AdminMeetingActions({ meetingId, onChanged }: Props) {
-  const { addToast } = useToast();
   const [forceFinishLoading, setForceFinishLoading] = useState(false);
   const [retryLoading, setRetryLoading] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   async function handleForceFinish() {
-    if (!confirm(t('admin.meetings.force_finish_confirm'))) return;
+    const ok = await ask({
+      title: t('admin.meetings.force_finish_confirm'),
+      confirmLabel: 'Подтвердить',
+      destructive: true,
+    });
+    if (!ok) return;
     setForceFinishLoading(true);
     try {
       await adminApi.forceFinish(meetingId);
-      addToast({ type: 'success', message: 'OK' });
+      toast.success('OK');
       onChanged?.();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : t('errors.unknown'),
-      });
+      toast.error(e instanceof ApiError ? e.message : t('errors.unknown'));
     } finally {
       setForceFinishLoading(false);
     }
   }
 
   async function handleRetryAi() {
-    if (!confirm(t('admin.meetings.retry_ai_confirm'))) return;
+    const ok = await ask({
+      title: t('admin.meetings.retry_ai_confirm'),
+      confirmLabel: 'Подтвердить',
+    });
+    if (!ok) return;
     setRetryLoading(true);
     try {
       await adminApi.retryAi(meetingId);
-      addToast({ type: 'success', message: 'OK' });
+      toast.success('OK');
       onChanged?.();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : t('errors.unknown'),
-      });
+      toast.error(e instanceof ApiError ? e.message : t('errors.unknown'));
     } finally {
       setRetryLoading(false);
     }
@@ -70,6 +74,7 @@ export function AdminMeetingActions({ meetingId, onChanged }: Props) {
       >
         {t('admin.meetings.retry_ai')}
       </Button>
+      {confirmDialog}
     </div>
   );
 }

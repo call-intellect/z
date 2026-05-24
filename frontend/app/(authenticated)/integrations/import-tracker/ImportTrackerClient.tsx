@@ -33,7 +33,7 @@ import {
 import { ApiError } from '@/api/api-error';
 import { importsApi, type UserMappings } from '@/api/tracker/imports.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent } from '@/ui/shadcn/card';
 import { Checkbox } from '@/ui/shadcn/checkbox';
@@ -384,7 +384,6 @@ function TrelloWizard({
   onCancel: () => void;
 }) {
   const router = useRouter();
-  const { addToast } = useToast();
 
   const [step, setStep] = useState<WizardStep>('upload');
   const [parsed, setParsed] = useState<ParsedTrelloExport | null>(null);
@@ -481,16 +480,12 @@ function TrelloWizard({
         selectedBoardIds: Array.from(selectedBoardIds),
         userMappings,
       });
-      addToast({ type: 'success', message: 'Импорт запущен' });
+      toast.success('Импорт запущен');
       router.push(`/integrations/import-tracker/${res.importLogId}`);
     } catch (e) {
-      addToast({
-        type: 'error',
-        message:
-          e instanceof ApiError
+      toast.error(e instanceof ApiError
             ? e.message
-            : 'Не удалось запустить импорт. Попробуйте ещё раз.',
-      });
+            : 'Не удалось запустить импорт. Попробуйте ещё раз.');
       setSubmitting(false);
     }
   };

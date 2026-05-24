@@ -22,7 +22,8 @@ import {
   type DestinationApi,
   type DestinationType,
 } from '@/api/destinations.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -64,12 +65,12 @@ type DialogState =
   | { mode: 'edit'; dest: DestinationApi };
 
 export function DestinationsClient() {
-  const { addToast } = useToast();
   const [items, setItems] = useState<DestinationApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>({ mode: 'closed' });
   const [testingId, setTestingId] = useState<string | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -89,16 +90,18 @@ export function DestinationsClient() {
   }, [fetchItems]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить интеграцию?')) return;
+    const ok = await ask({
+      title: 'Удалить интеграцию?',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await destinationsApi.remove(id);
       setItems((prev) => prev.filter((d) => d.id !== id));
-      addToast({ type: 'success', message: 'Удалено' });
+      toast.success('Удалено');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
     }
   };
 
@@ -106,12 +109,9 @@ export function DestinationsClient() {
     setTestingId(id);
     try {
       await destinationsApi.test(id);
-      addToast({ type: 'success', message: 'Тест отправлен' });
+      toast.success('Тест отправлен');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Тест не прошёл',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Тест не прошёл');
     } finally {
       setTestingId(null);
     }
@@ -228,6 +228,7 @@ export function DestinationsClient() {
           void fetchItems();
         }}
       />
+      {confirmDialog}
     </div>
   );
 }
@@ -289,7 +290,6 @@ function DestinationDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { addToast } = useToast();
   const [type, setType] = useState<DestinationType>('email');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -321,7 +321,7 @@ function DestinationDialog({
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      addToast({ type: 'error', message: 'Введите название' });
+      toast.error('Введите название');
       return;
     }
     setSubmitting(true);
@@ -341,24 +341,21 @@ function DestinationDialog({
         }
         if (Object.keys(cfg).length > 0) update.config = cfg;
         await destinationsApi.update(state.dest.id, update);
-        addToast({ type: 'success', message: 'Сохранено' });
+        toast.success('Сохранено');
       } else {
         const body = buildCreatePayload(type, name.trim(), { email, url, botToken, chatId });
         if (!body) {
-          addToast({ type: 'error', message: 'Заполните все поля' });
+          toast.error('Заполните все поля');
           setSubmitting(false);
           return;
         }
         await destinationsApi.create(body);
-        addToast({ type: 'success', message: 'Создано' });
+        toast.success('Создано');
       }
       onSaved();
       onClose();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }

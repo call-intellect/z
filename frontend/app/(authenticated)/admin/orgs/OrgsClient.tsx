@@ -17,7 +17,8 @@ import {
   formatUsd,
   type AdminPeriod,
 } from '@/domain/admin-usage';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
@@ -170,71 +171,60 @@ function OrgRow({
   org: AdminOrgRowDomain;
   onChanged: () => void;
 }) {
-  const { addToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const updateTier = async (tier: OrgTier) => {
     setBusy(true);
     try {
       await adminOrgsApi.update(org.id, { tier });
-      addToast({ type: 'success', message: 'Тариф обновлён' });
+      toast.success('Тариф обновлён');
       onChanged();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось обновить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось обновить');
     } finally {
       setBusy(false);
     }
   };
 
   const toggleFreeze = async () => {
-    if (
-      !window.confirm(
-        org.isFrozen
-          ? 'Разморозить Org? Доступ участников будет возвращён.'
-          : 'Заморозить Org? Участники потеряют доступ до разморозки.',
-      )
-    ) {
-      return;
-    }
+    const ok = await ask({
+      title: org.isFrozen
+        ? 'Разморозить Org?'
+        : 'Заморозить Org?',
+      description: org.isFrozen
+        ? 'Доступ участников будет возвращён.'
+        : 'Участники потеряют доступ до разморозки.',
+      confirmLabel: org.isFrozen ? 'Разморозить' : 'Заморозить',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await adminOrgsApi.update(org.id, { freeze: !org.isFrozen });
-      addToast({
-        type: 'success',
-        message: org.isFrozen ? 'Org разморожена' : 'Org заморожена',
-      });
+      toast.success(org.isFrozen ? 'Org разморожена' : 'Org заморожена');
       onChanged();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось');
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async () => {
-    if (
-      !window.confirm(
-        `Удалить Org «${org.name}»? Soft-delete: данные не уничтожаются, но Org становится недоступной.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await ask({
+      title: `Удалить Org «${org.name}»?`,
+      description: 'Soft-delete: данные не уничтожаются, но Org становится недоступной.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await adminOrgsApi.remove(org.id);
-      addToast({ type: 'success', message: 'Org удалена' });
+      toast.success('Org удалена');
       onChanged();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
     } finally {
       setBusy(false);
     }
@@ -307,6 +297,7 @@ function OrgRow({
             <Trash2 size={14} />
           </Button>
         </div>
+        {confirmDialog}
       </td>
     </tr>
   );

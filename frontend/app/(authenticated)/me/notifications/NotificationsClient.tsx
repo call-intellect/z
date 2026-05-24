@@ -27,6 +27,7 @@ import {
   type ProactiveNotification,
 } from '@/domain/proactive';
 import { useAuth } from '@/contexts/auth-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -261,7 +262,7 @@ function NotificationDetail({
       setResponseText('');
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) alert(`Не удалось отправить ответ: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
     } finally {
       setBusy(null);
     }
@@ -273,7 +274,7 @@ function NotificationDetail({
       await dismissNotification(n.id);
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) alert(`Не удалось пропустить: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось пропустить: ${e.message}`);
     } finally {
       setBusy(null);
     }
@@ -403,9 +404,9 @@ function FreeNoteCard({
       await createFreeNote(orgId, text.trim());
       setText('');
       await onCreated();
-      alert('Заметка отправлена в память компании.');
+      toast.success('Заметка отправлена в память компании.');
     } catch (e) {
-      if (e instanceof ApiError) alert(`Не удалось отправить: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить: ${e.message}`);
     } finally {
       setBusy(false);
     }
@@ -527,7 +528,7 @@ function ProactiveRow({
       await dismissProactiveNotification(orgId, item.id);
       onChanged();
     } catch (e) {
-      if (e instanceof ApiError) alert(`Не удалось скрыть: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось скрыть: ${e.message}`);
     } finally {
       setBusy(false);
     }

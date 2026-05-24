@@ -21,6 +21,8 @@ import {
   cardFromApi,
 } from '@/domain/card';
 import { CreateCardDialog } from '@/ui/components/cards/CreateCardDialog';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import {
@@ -63,7 +65,7 @@ export function CardsClient() {
     [kind, q, showArchived],
   );
 
-  const { data, mutate, isLoading } = useSWR(swrKey, async () => {
+  const { data, mutate, isLoading, error } = useSWR(swrKey, async () => {
     const res = await cardsApi.list({
       ...(kind !== 'all' ? { kind } : {}),
       archived: showArchived,
@@ -122,30 +124,37 @@ export function CardsClient() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="text-fg-tertiary">Загрузка…</div>
-      ) : cards.length === 0 ? (
-        <EmptyState onCreate={() => setCreateOpen(true)} />
-      ) : (
-        <>
-          {pinned.length > 0 && (
-            <section className="mb-6">
-              <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
-                Закреплённые
-              </h2>
-              <CardsGrid items={pinned} />
-            </section>
-          )}
-          <section>
-            {pinned.length > 0 && (
-              <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
-                Все
-              </h2>
-            )}
-            <CardsGrid items={others} />
+      <QueryGate
+        isLoading={isLoading}
+        error={error}
+        isEmpty={cards.length === 0}
+        empty={
+          <EmptyState
+            title="Пока нет карточек"
+            description="Создайте карточку клиента, сделки или проекта — и стартуйте встречу прямо из неё. Все встречи карточки будут собираться в её ленту, а AI соберёт сводку."
+            action={
+              <Button onClick={() => setCreateOpen(true)} className="gap-2">
+                <Plus size={16} /> Создать первую карточку
+              </Button>
+            }
+          />
+        }
+      >
+        {pinned.length > 0 && (
+          <section className="mb-6">
+            <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
+              Закреплённые
+            </h2>
+            <CardsGrid items={pinned} />
           </section>
-        </>
-      )}
+        )}
+        <section>
+          {pinned.length > 0 && (
+            <h2 className="mb-3 text-sm font-medium text-fg-tertiary">Все</h2>
+          )}
+          <CardsGrid items={others} />
+        </section>
+      </QueryGate>
 
       <CreateCardDialog
         open={createOpen}
@@ -154,27 +163,6 @@ export function CardsClient() {
           void mutate();
         }}
       />
-    </div>
-  );
-}
-
-function EmptyState({ onCreate }: { onCreate: () => void }) {
-  return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed border-border-subtle px-6 py-16 text-center">
-      <FolderKanban
-        size={42}
-        strokeWidth={1.5}
-        className="mb-3 text-fg-tertiary"
-      />
-      <h3 className="mb-2 text-lg font-medium">Пока нет карточек</h3>
-      <p className="mb-5 max-w-md text-sm text-fg-tertiary">
-        Создайте карточку клиента, сделки или проекта — и стартуйте встречу
-        прямо из неё. Все встречи карточки будут собираться в её ленту, а AI
-        соберёт сводку.
-      </p>
-      <Button onClick={onCreate} className="gap-2">
-        <Plus size={16} /> Создать первую карточку
-      </Button>
     </div>
   );
 }

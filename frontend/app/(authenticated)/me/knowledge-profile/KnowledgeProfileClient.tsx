@@ -7,7 +7,7 @@ import { AlertCircle, Calendar, Flag, Loader2, ShieldCheck } from 'lucide-react'
 import { ApiError } from '@/api/api-error';
 import { knowledgeCloneApi } from '@/api/knowledge-clone.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import {
   KNOWLEDGE_PROFILE_CONFIDENCE_LABEL,
   KNOWLEDGE_PROFILE_CONFIDENCE_SHORT,
@@ -37,7 +37,6 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
  */
 export function KnowledgeProfileClient() {
   const { currentOrgId, isLoading } = useAuth();
-  const { addToast } = useToast();
 
   const swrKey = currentOrgId ? ['my-knowledge-profile', currentOrgId] : null;
   const { data, error, isLoading: loadingProfile } = useSWR(
@@ -69,10 +68,7 @@ export function KnowledgeProfileClient() {
     if (!activeMarkCategory || !currentOrgId) return;
     const reason = markReason.trim();
     if (reason.length < 5) {
-      addToast({
-        type: 'error',
-        message: 'Опишите, почему область неверна (минимум 5 символов).',
-      });
+      toast.error('Опишите, почему область неверна (минимум 5 символов).');
       return;
     }
     setMarkBusy(true);
@@ -81,10 +77,7 @@ export function KnowledgeProfileClient() {
         categoryName: activeMarkCategory.name,
         reason,
       });
-      addToast({
-        type: 'success',
-        message: 'Отправлено на проверку администратору.',
-      });
+      toast.success('Отправлено на проверку администратору.');
       setActiveMarkCategory(null);
       setMarkReason('');
       void mutate(swrKey);
@@ -93,7 +86,7 @@ export function KnowledgeProfileClient() {
         e instanceof ApiError
           ? e.message
           : 'Не удалось отправить заявку — попробуйте ещё раз.';
-      addToast({ type: 'error', message });
+      toast.error(message);
     } finally {
       setMarkBusy(false);
     }

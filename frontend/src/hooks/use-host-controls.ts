@@ -3,8 +3,7 @@
 import { useCallback, useState } from 'react';
 import { meetingsApi } from '@/api/meetings.api';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
-
+import { toast } from 'sonner';
 type AsyncResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 function describeError(e: unknown): string {
@@ -18,7 +17,6 @@ function describeError(e: unknown): string {
  * Возвращает функции, которые показывают toast при ошибке.
  */
 export function useHostControls(meetingId: string) {
-  const { addToast } = useToast();
   const [pending, setPending] = useState<string | null>(null);
 
   const wrap = useCallback(
@@ -30,17 +28,17 @@ export function useHostControls(meetingId: string) {
       setPending(key);
       try {
         const data = await fn();
-        if (successMsg) addToast({ type: 'success', message: successMsg });
+        if (successMsg) toast.success(successMsg);
         return { ok: true, data };
       } catch (e) {
         const message = describeError(e);
-        addToast({ type: 'error', message });
+        toast.error(message);
         return { ok: false, error: message };
       } finally {
         setPending(null);
       }
     },
-    [addToast],
+    [],
   );
 
   return {

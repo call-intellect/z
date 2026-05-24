@@ -19,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
 import { ApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
@@ -75,6 +76,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   const [recomputing, setRecomputing] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [addThemesOpen, setAddThemesOpen] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   if (!currentOrgId) {
     return (
@@ -140,9 +142,13 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
 
   async function handleArchive() {
     if (!currentOrgId || archiving) return;
-    if (!window.confirm('Архивировать цель? Она будет помечена как abandoned.')) {
-      return;
-    }
+    const ok = await ask({
+      title: 'Архивировать цель?',
+      description: 'Она будет помечена как abandoned.',
+      confirmLabel: 'Архивировать',
+      destructive: true,
+    });
+    if (!ok) return;
     setArchiving(true);
     try {
       await goalsApi.archive(currentOrgId, goal.id);
@@ -412,6 +418,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
           }}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

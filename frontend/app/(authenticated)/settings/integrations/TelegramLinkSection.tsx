@@ -24,7 +24,8 @@ import {
   type ChannelEntryApi,
 } from '@/api/conversational.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Button } from '@/ui/shadcn/button';
 
 /**
@@ -40,13 +41,13 @@ import { Button } from '@/ui/shadcn/button';
  */
 export function TelegramLinkSection() {
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
 
   const [items, setItems] = useState<ChannelEntryApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   // Активный wizard.
   const [code, setCode] = useState<string | null>(null);
@@ -102,10 +103,7 @@ export function TelegramLinkSection() {
           (x) => x.channel.kind === 'telegram_bot' && x.binding?.verifiedAt,
         );
         if (telegram) {
-          addToast({
-            type: 'success',
-            message: `Telegram подключён: ${telegram.binding?.externalId ?? ''}`,
-          });
+          toast.success(`Telegram подключён: ${telegram.binding?.externalId ?? ''}`);
           setCode(null);
           setCodeExpiresAt(null);
         }
@@ -118,7 +116,7 @@ export function TelegramLinkSection() {
         pollTimer.current = null;
       }
     };
-  }, [code, fetchChannels, addToast]);
+  }, [code, fetchChannels]);
 
   // ── Tick: пересчёт «осталось ХХ:ХХ» раз в секунду ───────────────────────
   useEffect(() => {
@@ -150,27 +148,27 @@ export function TelegramLinkSection() {
       setCode(newCode);
       setCodeExpiresAt(Date.now() + ttlSec * 1000);
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось получить код',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось получить код');
     } finally {
       setGenerating(false);
     }
   };
 
   const handleUnlink = async (bindingId: string) => {
-    if (!confirm('Отключить Telegram? Бот больше не будет принимать ваши сообщения.')) return;
+    const ok = await ask({
+      title: 'Отключить Telegram?',
+      description: 'Бот больше не будет принимать ваши сообщения.',
+      confirmLabel: 'Отключить',
+      destructive: true,
+    });
+    if (!ok) return;
     setUnlinking(true);
     try {
       await unlinkChannelBinding(bindingId);
-      addToast({ type: 'success', message: 'Telegram отключён' });
+      toast.success('Telegram отключён');
       await fetchChannels();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось отключить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отключить');
     } finally {
       setUnlinking(false);
     }
@@ -180,9 +178,9 @@ export function TelegramLinkSection() {
     if (!code) return;
     try {
       await navigator.clipboard.writeText(`/start ${code}`);
-      addToast({ type: 'success', message: 'Команда скопирована' });
+      toast.success('Команда скопирована');
     } catch {
-      addToast({ type: 'error', message: 'Не удалось скопировать' });
+      toast.error('Не удалось скопировать');
     }
   };
 
@@ -273,6 +271,7 @@ export function TelegramLinkSection() {
       )}
 
       <BotCommandsHelp />
+      {confirmDialog}
     </section>
   );
 }

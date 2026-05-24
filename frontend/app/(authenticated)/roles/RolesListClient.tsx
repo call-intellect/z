@@ -7,15 +7,13 @@ import { Users } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
 import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
-import {
-  AdminEmpty,
-  AdminError,
-  AdminForbidden,
-} from '../admin/AdminStateViews';
+import { AdminEmpty, AdminForbidden } from '../admin/AdminStateViews';
 
 /**
  * `/roles` — список карточек должностей. Каждая ведёт в `/roles/:id`.
@@ -42,49 +40,17 @@ function Content({ orgId }: { orgId: string }) {
     { revalidateOnFocus: false },
   );
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto w-full max-w-6xl px-6 py-8">
-        <header className="mb-6">
-          <Skeleton className="h-7 w-48" />
-          <Skeleton className="mt-2 h-4 w-72" />
-        </header>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    if (error instanceof ApiError && error.code === 'http_404') {
-      return (
-        <div className="mx-auto w-full max-w-6xl px-6 py-8">
-          <AdminEmpty
-            title="Раздел в разработке"
-            description="API должностей ещё не подключён."
-          />
-        </div>
-      );
-    }
-    if (error instanceof ApiError && error.code === 'forbidden') {
-      return (
-        <div className="mx-auto w-full max-w-6xl px-6 py-8">
-          <AdminForbidden />
-        </div>
-      );
-    }
-    return (
-      <div className="mx-auto w-full max-w-6xl px-6 py-8">
-        <AdminError
-          message={error instanceof Error ? error.message : 'Ошибка загрузки'}
-          onRetry={() => void mutate()}
-        />
-      </div>
-    );
-  }
+  // Спец-случай: 404 API ещё нет / 403 forbidden — сохраняем семантику
+  // AdminEmpty/AdminForbidden, остальные ошибки — общий ErrorState внутри QueryGate.
+  const errorView =
+    error instanceof ApiError && error.code === 'http_404' ? (
+      <AdminEmpty
+        title="Раздел в разработке"
+        description="API должностей ещё не подключён."
+      />
+    ) : error instanceof ApiError && error.code === 'forbidden' ? (
+      <AdminForbidden />
+    ) : undefined;
 
   const items = data?.items ?? [];
 
@@ -100,18 +66,32 @@ function Content({ orgId }: { orgId: string }) {
         </p>
       </header>
 
-      {items.length === 0 ? (
-        <AdminEmpty
-          title="Должностей пока нет"
-          description="Создайте первую в разделе «Структура»."
-        />
-      ) : (
+      <QueryGate
+        isLoading={isLoading}
+        error={error}
+        errorView={errorView}
+        onRetry={() => void mutate()}
+        isEmpty={items.length === 0}
+        skeleton={
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-32 w-full" />
+            ))}
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="Должностей пока нет"
+            description="Создайте первую в разделе «Структура»."
+          />
+        }
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((r) => (
             <RoleCard key={r.id} role={r} />
           ))}
         </div>
-      )}
+      </QueryGate>
     </div>
   );
 }

@@ -14,12 +14,12 @@ import {
   adminAiModelsApi,
   type ModelExperimentApi,
 } from '@/api/admin-ai-models.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 
 export function ExperimentsClient() {
-  const { addToast } = useToast();
+
   const [items, setItems] = useState<ModelExperimentApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,26 +44,20 @@ export function ExperimentsClient() {
   const handleStop = async (id: string) => {
     try {
       await adminAiModelsApi.experimentStop(id);
-      addToast({ type: 'success', message: 'Эксперимент остановлен' });
+      toast.success('Эксперимент остановлен');
       await refresh();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось остановить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось остановить');
     }
   };
 
   const handleStart = async (id: string) => {
     try {
       await adminAiModelsApi.experimentStart(id);
-      addToast({ type: 'success', message: 'Эксперимент запущен' });
+      toast.success('Эксперимент запущен');
       await refresh();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось запустить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось запустить');
     }
   };
 

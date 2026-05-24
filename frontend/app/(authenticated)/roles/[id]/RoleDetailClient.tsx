@@ -25,7 +25,7 @@ import {
   type RoleProfileBuildStatusApi,
 } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -225,20 +225,13 @@ function PersonsSection({
   orgId: string;
   onChanged: () => void;
 }) {
-  const { addToast } = useToast();
   const unassign = async (person: PersonDomainApi) => {
     try {
       await personsDomainApi.update(orgId, person.id, { roleId: null });
-      addToast({
-        type: 'success',
-        message: 'Сотрудник снят с должности.',
-      });
+      toast.success('Сотрудник снят с должности.');
       onChanged();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить.',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
     }
   };
   return (
@@ -301,7 +294,6 @@ function JobDescriptionSection({
   orgId: string;
   onUploaded: () => void;
 }) {
-  const { addToast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -315,18 +307,12 @@ function JobDescriptionSection({
         file,
         attachedRoleId: role.id,
       });
-      addToast({
-        type: 'success',
-        message: 'Должностная инструкция загружена.',
-      });
+      toast.success('Должностная инструкция загружена.');
       setDialogOpen(false);
       setFile(null);
       onUploaded();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось загрузить.',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось загрузить.');
     } finally {
       setBusy(false);
     }
@@ -432,7 +418,6 @@ function RoleProfileSection({
   canEdit: boolean;
   onRebuilt: () => void;
 }) {
-  const { addToast } = useToast();
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [buildStatus, setBuildStatus] =
     useState<RoleProfileBuildStatusApi | null>(null);
@@ -486,10 +471,7 @@ function RoleProfileSection({
     try {
       await roleProfilesApi.rebuild(orgId, roleId);
       setBuildStatus({ status: 'queued' });
-      addToast({
-        type: 'success',
-        message: 'Пересборка карты должности запущена.',
-      });
+      toast.success('Пересборка карты должности запущена.');
       onRebuilt();
     } catch (e) {
       if (e instanceof ApiError && (e.code === 'http_409' || e.code === 'conflict')) {
@@ -500,19 +482,12 @@ function RoleProfileSection({
         } catch {
           setBuildStatus({ status: 'queued' });
         }
-        addToast({
-          type: 'info',
-          message: 'Карта уже собирается. Дождитесь окончания.',
-        });
+        toast('Карта уже собирается. Дождитесь окончания.');
         return;
       }
-      addToast({
-        type: 'error',
-        message:
-          e instanceof ApiError
+      toast.error(e instanceof ApiError
             ? e.message
-            : 'Не удалось запустить пересборку.',
-      });
+            : 'Не удалось запустить пересборку.');
     }
   };
 

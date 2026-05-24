@@ -93,6 +93,7 @@ import {
   DropdownMenuTrigger,
 } from '@/ui/shadcn/dropdown-menu';
 import { toast } from '@/ui/shadcn/toast';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 import { FeedbackButton } from './FeedbackButton';
@@ -389,6 +390,7 @@ function MeetingHeader({
 }) {
   const router = useRouter();
   const typeLabel = MEETING_TYPE_LABELS[meeting.type] ?? meeting.type;
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   // Список юзерских и системных шаблонов для regenerate sub-menu.
   const { data: templatesData } = useSWR(
@@ -444,9 +446,13 @@ function MeetingHeader({
   };
 
   const onDelete = async () => {
-    if (!window.confirm('Удалить встречу? Запись будет помечена как удалённая.')) {
-      return;
-    }
+    const ok = await ask({
+      title: 'Удалить встречу?',
+      description: 'Запись будет помечена как удалённая.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await meetingsApi.softDelete(meeting.id);
       toast.success('Встреча удалена');
@@ -577,6 +583,7 @@ function MeetingHeader({
       </div>
 
       <ProcessingBanner meeting={meeting} />
+      {confirmDialog}
     </header>
   );
 }
@@ -907,6 +914,7 @@ function ChaptersTab({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [adding, setAdding] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const onRegenerate = async () => {
     try {
@@ -933,7 +941,12 @@ function ChaptersTab({
   };
 
   const onDelete = async (id: string) => {
-    if (!window.confirm('Удалить главу?')) return;
+    const ok = await ask({
+      title: 'Удалить главу?',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await chaptersApi.remove(id);
       toast.success('Удалено');
@@ -1073,6 +1086,7 @@ function ChaptersTab({
           </article>
         ))
       )}
+      {confirmDialog}
     </div>
   );
 }

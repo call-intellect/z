@@ -13,6 +13,7 @@ import {
   Target,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
 import { ApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
@@ -527,6 +528,7 @@ function EditGoalDialog({
   const [weight, setWeight] = useState(String(goal.weight));
   const [submitting, setSubmitting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   // Сброс на текущие значения при открытии.
   const lastGoalIdRef = useRef<string | null>(null);
@@ -577,9 +579,13 @@ function EditGoalDialog({
 
   async function handleArchive() {
     if (archiving) return;
-    if (!window.confirm('Архивировать цель? Она будет помечена как abandoned.')) {
-      return;
-    }
+    const ok = await ask({
+      title: 'Архивировать цель?',
+      description: 'Она будет помечена как abandoned.',
+      confirmLabel: 'Архивировать',
+      destructive: true,
+    });
+    if (!ok) return;
     setArchiving(true);
     try {
       await goalsApi.archive(orgId, goal.id);
@@ -691,6 +697,7 @@ function EditGoalDialog({
           </DialogFooter>
         </form>
       </DialogContent>
+      {confirmDialog}
     </Dialog>
   );
 }

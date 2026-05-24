@@ -16,7 +16,8 @@ import {
   type OrgAdminLinksDomain,
   type OrgAdminMetricsDomain,
 } from '@/domain/org-admin-knowledge';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -103,7 +104,6 @@ function KnowledgeCoreContent({ orgId }: { orgId: string }) {
 // ─── Workers tab ────────────────────────────────────────────────────────────
 
 function WorkersTab({ orgId }: { orgId: string }) {
-  const { addToast } = useToast();
   const [state, setState] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
@@ -126,17 +126,14 @@ function WorkersTab({ orgId }: { orgId: string }) {
       });
       // Обновляем state из ответа.
       setState((s) => ({ ...s, ...(res.workersEnabled as Record<string, boolean>) }));
-      addToast({ type: 'success', message: 'Сохранено' });
+      toast.success('Сохранено');
     } catch (e) {
       // Откат UI.
       setState((s) => ({ ...s, [worker]: prev ?? true }));
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        addToast({
-          type: 'error',
-          message: e instanceof ApiError ? e.message : 'Не удалось',
-        });
+        toast.error(e instanceof ApiError ? e.message : 'Не удалось');
       }
     } finally {
       setPending(null);
@@ -391,13 +388,13 @@ function LinksTab({
   orgId: string;
   kind: OrgAdminLinkKind;
 }) {
-  const { addToast } = useToast();
   const [data, setData] = useState<OrgAdminLinksDomain | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [minConfidence, setMinConfidence] = useState('');
   const [busy, setBusy] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetch = useCallback(async () => {
     setIsLoading(true);
@@ -424,17 +421,20 @@ function LinksTab({
   }, [fetch]);
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Удалить связь? Soft-delete на 30 дней.')) return;
+    const ok = await ask({
+      title: 'Удалить связь?',
+      description: 'Soft-delete на 30 дней.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await orgAdminKnowledgeApi.deleteLink(orgId, id, kind);
-      addToast({ type: 'success', message: 'Удалено' });
+      toast.success('Удалено');
       void fetch();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось');
     } finally {
       setBusy(false);
     }
@@ -517,6 +517,7 @@ function LinksTab({
           </table>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }
@@ -524,38 +525,32 @@ function LinksTab({
 // ─── Reprocess tab ──────────────────────────────────────────────────────────
 
 function ReprocessTab({ orgId }: { orgId: string }) {
-  const { addToast } = useToast();
   const [rawEventId, setRawEventId] = useState('');
   const [busy, setBusy] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const handleReprocess = async () => {
     if (!rawEventId.trim()) {
-      addToast({ type: 'error', message: 'Введите rawEventId' });
+      toast.error('Введите rawEventId');
       return;
     }
-    if (
-      !window.confirm(
-        'Перезапустить pipeline для этого RawEvent? Существующие idea_blocks будут удалены, потом созданы заново.',
-      )
-    ) {
-      return;
-    }
+    const ok = await ask({
+      title: 'Перезапустить pipeline для этого RawEvent?',
+      description: 'Существующие idea_blocks будут удалены, потом созданы заново.',
+      confirmLabel: 'Перезапустить',
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const res = await orgAdminKnowledgeApi.reprocessRawEvent(
         orgId,
         rawEventId.trim(),
       );
-      addToast({
-        type: 'success',
-        message: `Перезапущено. Удалено блоков: ${res.deletedBlocks}.`,
-      });
+      toast.success(`Перезапущено. Удалено блоков: ${res.deletedBlocks}.`);
       setRawEventId('');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось');
     } finally {
       setBusy(false);
     }
@@ -588,6 +583,7 @@ function ReprocessTab({ orgId }: { orgId: string }) {
           </Button>
         </div>
       </CardContent>
+      {confirmDialog}
     </Card>
   );
 }

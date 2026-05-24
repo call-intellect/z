@@ -12,7 +12,10 @@ import {
   type WebhookEventName,
   type WebhookSubscriptionApi,
 } from '@/api/webhooks-out.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Checkbox } from '@/ui/shadcn/checkbox';
@@ -58,13 +61,13 @@ const STATUS_VARIANT: Record<
 };
 
 export function WebhooksClient() {
-  const { addToast } = useToast();
   const [subs, setSubs] = useState<WebhookSubscriptionApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<CreateWebhookSubscriptionApiResponse | null>(null);
   const [deliveriesFor, setDeliveriesFor] = useState<WebhookSubscriptionApi | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -86,26 +89,25 @@ export function WebhooksClient() {
   const handleTest = async (id: string) => {
     try {
       await webhooksOutApi.test(id);
-      addToast({ type: 'success', message: 'Тест отправлен' });
+      toast.success('Тест отправлен');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Тест не прошёл',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Тест не прошёл');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить подписку?')) return;
+    const ok = await ask({
+      title: 'Удалить подписку?',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await webhooksOutApi.remove(id);
       setSubs((prev) => prev.filter((s) => s.id !== id));
-      addToast({ type: 'success', message: 'Удалено' });
+      toast.success('Удалено');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
     }
   };
 
@@ -123,25 +125,23 @@ export function WebhooksClient() {
         </Button>
       </header>
 
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
-          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && subs.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card/40 p-10 text-center text-sm text-fg-secondary">
-          Подписок пока нет.
-        </div>
-      )}
-
-      {!loading && !error && subs.length > 0 && (
+      <QueryGate
+        isLoading={loading}
+        error={error}
+        isEmpty={subs.length === 0}
+        skeleton={
+          <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+            <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="Подписок пока нет"
+            description="Создайте подписку, чтобы получать webhook-уведомления о событиях."
+          />
+        }
+        onRetry={() => void fetch()}
+      >
         <ul className="space-y-2">
           {subs.map((s) => {
             const statusMeta = STATUS_VARIANT[s.status];
@@ -191,7 +191,7 @@ export function WebhooksClient() {
             );
           })}
         </ul>
-      )}
+      </QueryGate>
 
       <CreateSubscriptionDialog
         open={createOpen}
@@ -209,6 +209,7 @@ export function WebhooksClient() {
         sub={deliveriesFor}
         onClose={() => setDeliveriesFor(null)}
       />
+      {confirmDialog}
     </div>
   );
 }
@@ -222,7 +223,6 @@ function CreateSubscriptionDialog({
   onClose: () => void;
   onCreated: (res: CreateWebhookSubscriptionApiResponse) => void;
 }) {
-  const { addToast } = useToast();
   const [url, setUrl] = useState('');
   const [events, setEvents] = useState<WebhookEventName[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -247,10 +247,7 @@ function CreateSubscriptionDialog({
       const res = await webhooksOutApi.create({ url: url.trim(), events });
       onCreated(res);
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось создать',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось создать');
     } finally {
       setSubmitting(false);
     }
@@ -324,14 +321,13 @@ function CreatedSecretDialog({
   created: CreateWebhookSubscriptionApiResponse | null;
   onClose: () => void;
 }) {
-  const { addToast } = useToast();
   const open = created !== null;
 
   const handleCopy = () => {
     if (!created) return;
     void navigator.clipboard.writeText(created.secret).then(
-      () => addToast({ type: 'success', message: 'Скопировано' }),
-      () => addToast({ type: 'error', message: 'Не удалось скопировать' }),
+      () => toast.success('Скопировано'),
+      () => toast.error('Не удалось скопировать'),
     );
   };
 

@@ -11,6 +11,7 @@ import {
   type ProcessTemplateStatusApi,
 } from '@/api/processes.api';
 import { useAuth } from '@/contexts/auth-context';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import {
   PROCESS_HANDOFF_KIND_LABEL,
   PROCESS_TEMPLATE_STATUS_LABEL,
@@ -132,6 +133,7 @@ function LocalContent() {
   const [activeTab, setActiveTab] = useState<DetailTab>('steps');
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -205,7 +207,12 @@ function LocalContent() {
 
   const handleArchive = useCallback(async () => {
     if (!selectedId) return;
-    if (!window.confirm('Архивировать шаблон процесса?')) return;
+    const ok = await ask({
+      title: 'Архивировать шаблон процесса?',
+      confirmLabel: 'Архивировать',
+      destructive: true,
+    });
+    if (!ok) return;
     setActionMsg(null);
     try {
       await processesApi.remove(selectedId);
@@ -219,7 +226,7 @@ function LocalContent() {
           : 'Не удалось архивировать.',
       );
     }
-  }, [selectedId, load]);
+  }, [ask, selectedId, load]);
 
   const groupedItems = useMemo(() => items, [items]);
 
@@ -407,6 +414,7 @@ function LocalContent() {
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }
@@ -549,6 +557,7 @@ function CrossFunctionalFrictionPanel({
   const [err, setErr] = useState<string | null>(null);
   const [includeResolved, setIncludeResolved] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -571,7 +580,11 @@ function CrossFunctionalFrictionPanel({
 
   const handleResolve = useCallback(
     async (reportId: string) => {
-      if (!window.confirm('Закрыть friction-отчёт?')) return;
+      const ok = await ask({
+        title: 'Закрыть friction-отчёт?',
+        confirmLabel: 'Закрыть',
+      });
+      if (!ok) return;
       setActionMsg(null);
       try {
         await crossFunctionalApi.resolveFriction(reportId);
@@ -586,7 +599,7 @@ function CrossFunctionalFrictionPanel({
         );
       }
     },
-    [load, onResolved],
+    [ask, load, onResolved],
   );
 
   return (
@@ -662,6 +675,7 @@ function CrossFunctionalFrictionPanel({
       {actionMsg ? (
         <p className="text-xs text-fg-secondary">{actionMsg}</p>
       ) : null}
+      {confirmDialog}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { authApi } from '@/api/auth.api';
 import { ApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Skeleton } from '@/ui/components/shared/Skeleton';
 
 import { MeetingPageShell } from './MeetingPageShell';
@@ -28,7 +28,6 @@ type ExchangeStage = 'pending' | 'done';
 export function ExchangeAndRender({ meetingId, deepLinkToken }: Props) {
   const router = useRouter();
   const { refresh } = useAuth();
-  const { addToast } = useToast();
   const [stage, setStage] = useState<ExchangeStage>(
     deepLinkToken ? 'pending' : 'done',
   );
@@ -45,7 +44,7 @@ export function ExchangeAndRender({ meetingId, deepLinkToken }: Props) {
         if (!(e instanceof ApiError) || e.code !== 'unauthorized') {
           // 4xx, отличные от 401 — покажем тостом, но всё равно идём дальше.
           const message = e instanceof Error ? e.message : 'Ошибка обмена токена.';
-          addToast({ type: 'error', message });
+          toast.error(message);
         }
         // 401 — нормальное состояние «токен просрочен, рендерим как гостя».
       } finally {

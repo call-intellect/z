@@ -11,7 +11,7 @@ import {
   type DepartmentApi,
 } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
@@ -44,8 +44,6 @@ const NO_DEPARTMENT_VALUE = '__none__';
 export function Step2Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const { addToast } = useToast();
-
   const [departments, setDepartments] = useState<DepartmentApi[] | null>(null);
   const [departmentsError, setDepartmentsError] = useState<string | null>(null);
   const [rows, setRows] = useState<RoleDraft[]>([
@@ -120,12 +118,12 @@ export function Step2Client() {
           }),
         ),
       );
-      addToast({ type: 'success', message: 'Должности сохранены.' });
+      toast.success('Должности сохранены.');
       router.push(NEXT_HREF);
     } catch (e) {
       const msg =
         e instanceof ApiError ? e.message : 'Не удалось сохранить должности.';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

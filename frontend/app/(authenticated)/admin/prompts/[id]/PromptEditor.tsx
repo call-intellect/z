@@ -19,7 +19,7 @@ import {
 } from '@/api/admin-prompt-templates.api';
 import { outputTypeLabel } from '@/domain/admin-prompt-template';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Select,
@@ -57,7 +57,7 @@ export function PromptEditor({
   onSaved: () => void;
   onOpenPreview: () => void;
 }) {
-  const { addToast } = useToast();
+
   const [systemPrompt, setSystemPrompt] = useState('');
   const [toolName, setToolName] = useState<string>('');
   const [notes, setNotes] = useState('');
@@ -91,7 +91,7 @@ export function PromptEditor({
 
   const addSection = () => {
     if (sections.length >= SECTIONS_MAX) {
-      addToast({ type: 'error', message: `Лимит ${SECTIONS_MAX} разделов` });
+      toast.error(`Лимит ${SECTIONS_MAX} разделов`);
       return;
     }
     setSections((prev) => [...prev, emptySection(prev.length + 1)]);
@@ -126,23 +126,17 @@ export function PromptEditor({
 
   const saveAs = async (activate: boolean) => {
     if (systemPrompt.trim().length < 10) {
-      addToast({ type: 'error', message: 'Системный промпт — минимум 10 символов' });
+      toast.error('Системный промпт — минимум 10 символов');
       return;
     }
     for (const s of sections) {
       if (!s.key || !s.title || s.instruction.length < 10) {
-        addToast({
-          type: 'error',
-          message: 'У каждого раздела должны быть ключ, название и инструкция от 10 символов',
-        });
+        toast.error('У каждого раздела должны быть ключ, название и инструкция от 10 символов');
         return;
       }
     }
     if (overTokens) {
-      addToast({
-        type: 'error',
-        message: `Сумма лимита токенов превышает ${MAX_TOKENS_SUM}`,
-      });
+      toast.error(`Сумма лимита токенов превышает ${MAX_TOKENS_SUM}`);
       return;
     }
     setSaving(true);
@@ -157,15 +151,12 @@ export function PromptEditor({
         notes: notes.trim() || null,
         activate,
       });
-      addToast({
-        type: 'success',
-        message: activate ? 'Версия сохранена и активирована' : 'Версия сохранена',
-      });
+      toast.success(activate ? 'Версия сохранена и активирована' : 'Версия сохранена');
       setNotes('');
       onSaved();
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось сохранить';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setSaving(false);
     }

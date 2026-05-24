@@ -61,6 +61,7 @@ import {
   DropdownMenuTrigger,
 } from '@/ui/shadcn/dropdown-menu';
 import { toast } from '@/ui/shadcn/toast';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 import { fmtDurationCompact } from '@/ui/components/meeting-result-v2/format-utils';
@@ -128,6 +129,7 @@ export function MeetingsJournalReal() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const { data: tagsData } = useSWR('tags-list', () => tagsApi.list(), {
     revalidateOnFocus: false,
@@ -210,7 +212,12 @@ export function MeetingsJournalReal() {
 
   const onBulkDelete = async () => {
     if (checked.size === 0) return;
-    if (!window.confirm(`Удалить ${checked.size} встреч?`)) return;
+    const ok = await ask({
+      title: `Удалить ${checked.size} встреч?`,
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     const ids = [...checked];
     try {
       await Promise.all(ids.map((id) => meetingsApi.softDelete(id)));
@@ -405,6 +412,7 @@ export function MeetingsJournalReal() {
           )}
         </AnimatePresence>
       </div>
+      {confirmDialog}
     </div>
   );
 }

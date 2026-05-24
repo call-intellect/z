@@ -26,6 +26,8 @@ import {
   useMeetingReports,
 } from '@/hooks/use-meeting-reports';
 import { useEntitlement, useQuota } from '@/hooks/useEntitlement';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { Button } from '@/ui/components/shared/Button';
 import { Modal } from '@/ui/components/shared/Modal';
 
@@ -141,6 +143,8 @@ function ReportCard({
 
   const [busy, setBusy] = useState(false);
 
+  const [removeOpen, setRemoveOpen] = useState(false);
+
   const onRegenerate = async () => {
     if (busy) return;
     setBusy(true);
@@ -149,18 +153,19 @@ function ReportCard({
       onMutate();
     } catch (e) {
       console.error('regenerate failed', e);
-      alert('Не удалось запустить регенерацию. Попробуйте позже.');
+      toast.error('Не удалось запустить регенерацию. Попробуйте позже.');
     } finally {
       setBusy(false);
     }
   };
 
-  const onRemove = async () => {
+  const onRemove = () => {
     if (isPrimary) return;
-    const ok = window.confirm(
-      'Удалить отчёт? Это действие нельзя отменить.',
-    );
-    if (!ok) return;
+    if (busy) return;
+    setRemoveOpen(true);
+  };
+
+  const performRemove = async () => {
     if (busy) return;
     setBusy(true);
     try {
@@ -168,7 +173,8 @@ function ReportCard({
       onMutate();
     } catch (e) {
       console.error('remove failed', e);
-      alert('Не удалось удалить отчёт.');
+      toast.error('Не удалось удалить отчёт.');
+      throw e;
     } finally {
       setBusy(false);
     }
@@ -253,6 +259,16 @@ function ReportCard({
           </Button>
         )}
       </footer>
+
+      <ConfirmDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        title="Удалить отчёт?"
+        description="Это действие нельзя отменить."
+        confirmLabel="Удалить"
+        destructive
+        onConfirm={performRemove}
+      />
     </article>
   );
 }

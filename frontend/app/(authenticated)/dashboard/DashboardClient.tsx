@@ -17,7 +17,7 @@ import { chatApi, type ChatCitationApi } from '@/api/chat.api';
 import { meetingsApi } from '@/api/meetings.api';
 import { tasksApi, type TaskApi } from '@/api/tasks.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import type { MeetingSummaryApi } from '@/domain/meeting';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -336,7 +336,6 @@ function Stat({ label, value }: { label: string; value: number }) {
 type CrossChatAnswer = { message: string; citations: ChatCitationApi[] } | null;
 
 function CrossChat() {
-  const { addToast } = useToast();
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [answer, setAnswer] = useState<CrossChatAnswer>(null);
@@ -350,14 +349,11 @@ function CrossChat() {
       setAnswer({ message: res.message, citations: res.citations });
       setMessage('');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Чат недоступен',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Чат недоступен');
     } finally {
       setSubmitting(false);
     }
-  }, [addToast, message]);
+  }, [message]);
 
   return (
     <div className="mt-8 rounded-lg border border-border-subtle bg-bg-card p-4">

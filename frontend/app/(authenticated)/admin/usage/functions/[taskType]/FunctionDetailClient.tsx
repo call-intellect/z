@@ -31,7 +31,7 @@ import {
   adminFunctionDetailFromApi,
   taskTypeLabel,
 } from '@/domain/admin-experiment';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -60,7 +60,6 @@ import { useAdminQuery } from '../../../useAdminQuery';
 import { ExperimentStartDialog } from '../../../experiments/ExperimentStartDialog';
 
 export function FunctionDetailClient({ taskType }: { taskType: string }) {
-  const { addToast } = useToast();
   const [providers, setProviders] = useState<LlmRouteProvider[] | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [dirty, setDirty] = useState(false);
@@ -93,7 +92,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
 
   const handleSave = useCallback(async () => {
     if (!providers || providers.length === 0) {
-      addToast({ type: 'error', message: 'Нужен хотя бы один provider' });
+      toast.error('Нужен хотя бы один provider');
       return;
     }
     setSaving(true);
@@ -102,21 +101,15 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
         providers,
         isActive,
       });
-      addToast({
-        type: 'success',
-        message: 'Сохранено. Применится через ~60 секунд.',
-      });
+      toast.success('Сохранено. Применится через ~60 секунд.');
       setDirty(false);
       detailQ.refetch();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSaving(false);
     }
-  }, [addToast, detailQ, isActive, providers, taskType]);
+  }, [detailQ, isActive, providers, taskType]);
 
   return (
     <div className="space-y-6">

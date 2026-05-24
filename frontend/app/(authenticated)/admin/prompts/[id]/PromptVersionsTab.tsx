@@ -12,7 +12,8 @@ import {
   type PromptVersionApi,
 } from '@/api/admin-prompt-templates.api';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 
@@ -27,24 +28,25 @@ export function PromptVersionsTab({
   activeVersionId: string | null;
   onActivated: () => void;
 }) {
-  const { addToast } = useToast();
+
   const [activating, setActivating] = useState<string | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const activate = async (versionId: string) => {
-    if (
-      !confirm(
-        'Активировать эту версию? Все новые встречи начнут использовать её для генерации отчётов.',
-      )
-    )
-      return;
+    const ok = await ask({
+      title: 'Активировать эту версию?',
+      description: 'Все новые встречи начнут использовать её для генерации отчётов.',
+      confirmLabel: 'Активировать',
+    });
+    if (!ok) return;
     setActivating(versionId);
     try {
       await adminPromptTemplatesApi.activateVersion(templateId, versionId);
-      addToast({ type: 'success', message: 'Версия активирована' });
+      toast.success('Версия активирована');
       onActivated();
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось активировать';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setActivating(null);
     }
@@ -52,9 +54,12 @@ export function PromptVersionsTab({
 
   if (versions.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-        Версий ещё нет. Создайте первую в редакторе.
-      </div>
+      <>
+        <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+          Версий ещё нет. Создайте первую в редакторе.
+        </div>
+        {confirmDialog}
+      </>
     );
   }
 
@@ -113,6 +118,7 @@ export function PromptVersionsTab({
           })}
         </tbody>
       </table>
+      {confirmDialog}
     </div>
   );
 }

@@ -18,7 +18,7 @@ import {
 } from '@/api/admin-prompt-templates.api';
 import { DEMO_MEETING_LABEL } from '@/domain/admin-prompt-template';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -45,7 +45,7 @@ export function PromptPreviewModal({
   templateId: string;
   activeVersionId: string | null;
 }) {
-  const { addToast } = useToast();
+
   const [meetingKey, setMeetingKey] = useState<DemoMeetingKey>('demo-sales');
   const [useDraft, setUseDraft] = useState(false);
   const [running, setRunning] = useState(false);
@@ -64,7 +64,7 @@ export function PromptPreviewModal({
       setResult(res);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Предпросмотр не удался';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setRunning(false);
     }

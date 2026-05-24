@@ -13,6 +13,8 @@ import {
 } from '@/api/conversational.api';
 import { mapChannelEntry } from '@/domain/conversational';
 import { useAuth } from '@/contexts/auth-context';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -44,6 +46,7 @@ export function ChannelsClient() {
   } | null>(null);
   const [linkBusy, setLinkBusy] = useState<LinkCodeKindApi | null>(null);
   const [unlinkBusy, setUnlinkBusy] = useState<string | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<string | null>(null);
 
   if (isLoading) return null;
   if (!currentOrgId) {
@@ -65,23 +68,28 @@ export function ChannelsClient() {
       setCode({ kind, ...result, requestedAt: Date.now() });
     } catch (e) {
       if (e instanceof ApiError) {
-        alert(`Не удалось сгенерировать код: ${e.message}`);
+        toast.error(`Не удалось сгенерировать код: ${e.message}`);
       }
     } finally {
       setLinkBusy(null);
     }
   }
 
-  async function handleUnlink(bindingId: string) {
-    if (!confirm('Отвязать канал? Уведомления туда больше не будут приходить.')) return;
-    setUnlinkBusy(bindingId);
+  function handleUnlink(bindingId: string) {
+    setUnlinkTarget(bindingId);
+  }
+
+  async function performUnlink() {
+    if (!unlinkTarget) return;
+    setUnlinkBusy(unlinkTarget);
     try {
-      await unlinkChannelBinding(bindingId);
+      await unlinkChannelBinding(unlinkTarget);
       await mutate(swrKey);
     } catch (e) {
       if (e instanceof ApiError) {
-        alert(`Не удалось отвязать: ${e.message}`);
+        toast.error(`Не удалось отвязать: ${e.message}`);
       }
+      throw e;
     } finally {
       setUnlinkBusy(null);
     }
@@ -214,6 +222,18 @@ export function ChannelsClient() {
           </CardContent>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={unlinkTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setUnlinkTarget(null);
+        }}
+        title="Отвязать канал?"
+        description="Уведомления туда больше не будут приходить."
+        confirmLabel="Отвязать"
+        destructive
+        onConfirm={performUnlink}
+      />
     </section>
   );
 }

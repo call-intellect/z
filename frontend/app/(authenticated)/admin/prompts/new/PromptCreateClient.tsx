@@ -26,7 +26,7 @@ import {
   taskTypeLabel,
 } from '@/domain/admin-prompt-template';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Select,
@@ -38,7 +38,6 @@ import {
 
 export function PromptCreateClient() {
   const router = useRouter();
-  const { addToast } = useToast();
 
   const [scope, setScope] = useState<PromptTemplateScope>('system');
   const [orgId, setOrgId] = useState('');
@@ -51,15 +50,15 @@ export function PromptCreateClient() {
 
   const submit = async () => {
     if (name.trim().length < 3) {
-      addToast({ type: 'error', message: 'Название — минимум 3 символа' });
+      toast.error('Название — минимум 3 символа');
       return;
     }
     if (key.trim().length < 3) {
-      addToast({ type: 'error', message: 'Ключ — минимум 3 символа' });
+      toast.error('Ключ — минимум 3 символа');
       return;
     }
     if (scope === 'org' && !orgId.trim()) {
-      addToast({ type: 'error', message: 'Для шаблона Org нужен ID организации' });
+      toast.error('Для шаблона Org нужен ID организации');
       return;
     }
     setSaving(true);
@@ -73,11 +72,11 @@ export function PromptCreateClient() {
         taskType,
         ...(meetingType !== 'none' ? { meetingType } : { meetingType: null }),
       });
-      addToast({ type: 'success', message: 'Шаблон создан' });
+      toast.success('Шаблон создан');
       router.push(`/admin/prompts/${encodeURIComponent(res.id)}`);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось создать шаблон';
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setSaving(false);
     }

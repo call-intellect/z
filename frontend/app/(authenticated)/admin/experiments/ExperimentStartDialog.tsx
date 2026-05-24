@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { ApiError } from '@/api/api-error';
 import { adminExperimentsApi } from '@/api/admin-experiments.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -33,7 +33,6 @@ export function ExperimentStartDialog({
   onClose: () => void;
   onStarted: () => void;
 }) {
-  const { addToast } = useToast();
   const [modelB, setModelB] = useState('anthropic:claude-3-5-sonnet-20241022');
   const [splitPercent, setSplitPercent] = useState(50);
   const [durationDays, setDurationDays] = useState(7);
@@ -41,18 +40,15 @@ export function ExperimentStartDialog({
 
   const handleSubmit = async () => {
     if (!PROVIDER_MODEL_RE.test(modelB)) {
-      addToast({
-        type: 'error',
-        message: 'modelB должен быть формата `<provider>:<model>`',
-      });
+      toast.error('modelB должен быть формата `<provider>:<model>`');
       return;
     }
     if (splitPercent < 1 || splitPercent > 99) {
-      addToast({ type: 'error', message: 'split должен быть 1..99' });
+      toast.error('split должен быть 1..99');
       return;
     }
     if (durationDays < 1 || durationDays > 30) {
-      addToast({ type: 'error', message: 'продолжительность 1..30 дней' });
+      toast.error('продолжительность 1..30 дней');
       return;
     }
     setSubmitting(true);
@@ -63,13 +59,10 @@ export function ExperimentStartDialog({
         splitPercent,
         durationDays,
       });
-      addToast({ type: 'success', message: 'Эксперимент запущен' });
+      toast.success('Эксперимент запущен');
       onStarted();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось запустить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось запустить');
     } finally {
       setSubmitting(false);
     }

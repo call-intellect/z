@@ -8,7 +8,7 @@ import type {
   AdminEconomicsOrgApi,
   UpdateOrgBudgetRequest,
 } from '@/domain/admin-economics';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Card,
@@ -30,7 +30,7 @@ import { useAdminQuery } from '../../../useAdminQuery';
  * SBA α-10 wave 3 — /admin/economics/orgs/[id].
  */
 export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
-  const { addToast } = useToast();
+
   const q = useAdminQuery(
     `admin-economics-org:${tenantId}`,
     () => adminEconomicsApi.org(tenantId, { days: 30 }),
@@ -42,14 +42,11 @@ export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
   const onSaveBudget = async (body: UpdateOrgBudgetRequest) => {
     try {
       await adminEconomicsApi.setBudget(tenantId, body);
-      addToast({ type: 'success', message: 'Бюджет сохранён' });
+      toast.success('Бюджет сохранён');
       setEditing(false);
       q.refetch();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     }
   };
 

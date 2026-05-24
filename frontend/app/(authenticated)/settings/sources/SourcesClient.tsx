@@ -21,7 +21,7 @@ import {
 import { ApiError } from '@/api/api-error';
 import { sourcesApi } from '@/api/sources.api';
 import { useAuth } from '@/contexts/auth-context';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import {
   DATA_CLASS_LABELS,
   DATA_CLASS_VALUES,
@@ -40,6 +40,9 @@ import {
   type SourceTestResultApi,
   type SourceUiType,
 } from '@/domain/source';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Checkbox } from '@/ui/shadcn/checkbox';
@@ -77,7 +80,6 @@ function isUiType(t: string): t is SourceUiType {
 
 export function SourcesClient() {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
-  const { addToast } = useToast();
   const canManage =
     currentOrgRole === 'owner' || currentOrgRole === 'admin';
 
@@ -87,6 +89,7 @@ export function SourcesClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<SourceDomain | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetchAll = useCallback(async () => {
     if (!currentOrgId) return;
@@ -113,18 +116,12 @@ export function SourcesClient() {
     try {
       const res = await sourcesApi.test(currentOrgId, s.id);
       if (res.ok) {
-        addToast({ type: 'success', message: `Тест «${s.name}» — успешно` });
+        toast.success(`Тест «${s.name}» — успешно`);
       } else {
-        addToast({
-          type: 'error',
-          message: `Тест не прошёл: ${res.errorMessage ?? 'неизвестная ошибка'}`,
-        });
+        toast.error(`Тест не прошёл: ${res.errorMessage ?? 'неизвестная ошибка'}`);
       }
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Тест не прошёл',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Тест не прошёл');
     } finally {
       setPendingId(null);
     }
@@ -142,15 +139,9 @@ export function SourcesClient() {
           x.id === s.id ? mapSourceDtoToDomain(updated) : x,
         ),
       );
-      addToast({
-        type: 'success',
-        message: updated.isActive ? 'Источник включён' : 'Источник выключен',
-      });
+      toast.success(updated.isActive ? 'Источник включён' : 'Источник выключен');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось обновить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось обновить');
     } finally {
       setPendingId(null);
     }
@@ -158,23 +149,21 @@ export function SourcesClient() {
 
   const handleDelete = async (s: SourceDomain) => {
     if (!currentOrgId) return;
-    if (
-      !confirm(
-        `Отключить источник «${s.name}»? Накопленные события останутся, но новые поступать не будут.`,
-      )
-    )
-      return;
+    const ok = await ask({
+      title: `Отключить источник «${s.name}»?`,
+      description: 'Накопленные события останутся, но новые поступать не будут.',
+      confirmLabel: 'Отключить',
+      destructive: true,
+    });
+    if (!ok) return;
     setPendingId(s.id);
     try {
       await sourcesApi.remove(currentOrgId, s.id);
       // Soft-delete на бэке = isActive=false. Перезагрузим список.
       await fetchAll();
-      addToast({ type: 'success', message: 'Источник отключён' });
+      toast.success('Источник отключён');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось отключить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отключить');
     } finally {
       setPendingId(null);
     }
@@ -221,27 +210,28 @@ export function SourcesClient() {
         </Button>
       </header>
 
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
-          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && items.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card/40 p-10 text-center text-sm text-fg-secondary">
-          Подключённых источников пока нет.
-          <br />
-          Нажмите «Подключить источник», чтобы начать.
-        </div>
-      )}
-
-      {!loading && !error && items.length > 0 && (
+      <QueryGate
+        isLoading={loading}
+        error={error}
+        isEmpty={items.length === 0}
+        skeleton={
+          <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+            <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="Подключённых источников пока нет"
+            description="Нажмите «Подключить источник», чтобы начать."
+            action={
+              <Button onClick={() => setCreateOpen(true)} size="sm">
+                <Plus size={14} /> Подключить источник
+              </Button>
+            }
+          />
+        }
+        onRetry={() => void fetchAll()}
+      >
         <ul className="space-y-2">
           {items.map((s) => (
             <SourceRow
@@ -255,7 +245,7 @@ export function SourcesClient() {
             />
           ))}
         </ul>
-      )}
+      </QueryGate>
 
       <CreateSourceDialog
         open={createOpen}
@@ -276,6 +266,7 @@ export function SourcesClient() {
           await fetchAll();
         }}
       />
+      {confirmDialog}
     </div>
   );
 }
@@ -386,11 +377,10 @@ function SourceRow({
 }
 
 function CopyButton({ text }: { text: string }) {
-  const { addToast } = useToast();
   const handle = () => {
     void navigator.clipboard.writeText(text).then(
-      () => addToast({ type: 'success', message: 'Скопировано' }),
-      () => addToast({ type: 'error', message: 'Не удалось скопировать' }),
+      () => toast.success('Скопировано'),
+      () => toast.error('Не удалось скопировать'),
     );
   };
   return (
@@ -570,7 +560,6 @@ function TelegramForm({
   onCancel,
   onDone,
 }: SourceFormProps) {
-  const { addToast } = useToast();
   const cfg = (existing?.config ?? {}) as Record<string, unknown>;
 
   const [name, setName] = useState(existing?.name ?? '');
@@ -627,7 +616,7 @@ function TelegramForm({
           dataClass,
         });
         setCreatedWebhookUrl(created.webhookUrl ?? null);
-        addToast({ type: 'success', message: 'Telegram-бот подключён' });
+        toast.success('Telegram-бот подключён');
       } else if (existing) {
         const config: Record<string, unknown> = {
           subtype: 'telegram',
@@ -647,14 +636,11 @@ function TelegramForm({
           config,
           dataClass,
         });
-        addToast({ type: 'success', message: 'Сохранено' });
+        toast.success('Сохранено');
       }
       if (mode === 'edit') await onDone();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }
@@ -764,7 +750,6 @@ function MangoForm({
   onCancel,
   onDone,
 }: SourceFormProps) {
-  const { addToast } = useToast();
   const cfg = (existing?.config ?? {}) as Record<string, unknown>;
 
   const [name, setName] = useState(
@@ -806,7 +791,7 @@ function MangoForm({
           dataClass,
         });
         setCreatedWebhookUrl(created.webhookUrl ?? null);
-        addToast({ type: 'success', message: 'Подключение создано' });
+        toast.success('Подключение создано');
       } else if (existing) {
         const config: Record<string, unknown> = {
           subtype: 'mango',
@@ -819,14 +804,11 @@ function MangoForm({
           config,
           dataClass,
         });
-        addToast({ type: 'success', message: 'Сохранено' });
+        toast.success('Сохранено');
       }
       if (mode === 'edit') await onDone();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }
@@ -926,7 +908,6 @@ function ImapForm({
   onCancel,
   onDone,
 }: SourceFormProps) {
-  const { addToast } = useToast();
   const cfg = (existing?.config ?? {}) as Record<string, unknown>;
 
   const [name, setName] = useState(existing?.name ?? '');
@@ -1010,21 +991,18 @@ function ImapForm({
           config: buildConfig(),
           dataClass,
         });
-        addToast({ type: 'success', message: 'IMAP-источник подключён' });
+        toast.success('IMAP-источник подключён');
       } else if (existing) {
         await sourcesApi.update(orgId, existing.id, {
           name: name.trim() || existing.name,
           config: buildConfig(),
           dataClass,
         });
-        addToast({ type: 'success', message: 'Сохранено' });
+        toast.success('Сохранено');
       }
       await onDone();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }
@@ -1060,18 +1038,12 @@ function ImapForm({
       const res = await sourcesApi.test(orgId, sourceId);
       setTestResult(res);
       if (res.ok) {
-        addToast({ type: 'success', message: 'Подключение успешно' });
+        toast.success('Подключение успешно');
       } else {
-        addToast({
-          type: 'error',
-          message: `Не удалось подключиться: ${res.errorMessage ?? 'неизвестная ошибка'}`,
-        });
+        toast.error(`Не удалось подключиться: ${res.errorMessage ?? 'неизвестная ошибка'}`);
       }
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось проверить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось проверить');
     } finally {
       setTesting(false);
     }
@@ -1238,7 +1210,6 @@ function WebFormForm({
   onCancel,
   onDone,
 }: SourceFormProps) {
-  const { addToast } = useToast();
   const [name, setName] = useState(existing?.name ?? 'Дамп мысли');
   const [dataClass, setDataClass] = useState<DataClass>(
     existing?.dataClass ?? 'internal',
@@ -1257,21 +1228,18 @@ function WebFormForm({
           name: name.trim() || 'Дамп мысли',
           dataClass,
         });
-        addToast({ type: 'success', message: 'Web-form подключён' });
+        toast.success('Web-form подключён');
       } else if (existing) {
         await sourcesApi.update(orgId, existing.id, {
           name: name.trim() || existing.name,
           dataClass,
           isActive,
         });
-        addToast({ type: 'success', message: 'Сохранено' });
+        toast.success('Сохранено');
       }
       await onDone();
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось сохранить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
     } finally {
       setSubmitting(false);
     }
@@ -1402,11 +1370,10 @@ function WebhookCreatedView({
   instructions: React.ReactNode;
   onClose: () => void;
 }) {
-  const { addToast } = useToast();
   const handleCopy = () => {
     void navigator.clipboard.writeText(url).then(
-      () => addToast({ type: 'success', message: 'Скопировано' }),
-      () => addToast({ type: 'error', message: 'Не удалось скопировать' }),
+      () => toast.success('Скопировано'),
+      () => toast.error('Не удалось скопировать'),
     );
   };
   return (

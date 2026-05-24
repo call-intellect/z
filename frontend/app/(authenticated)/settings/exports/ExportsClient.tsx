@@ -10,7 +10,10 @@ import {
   type ExportStatus,
   type ExportType,
 } from '@/api/exports.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 
@@ -46,11 +49,11 @@ function formatDate(iso: string | null): string {
 }
 
 export function ExportsClient() {
-  const { addToast } = useToast();
   const [items, setItems] = useState<ExportApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -75,26 +78,25 @@ export function ExportsClient() {
       const res = await exportsApi.download(id);
       window.open(res.url, '_blank', 'noopener,noreferrer');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось получить ссылку',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось получить ссылку');
     } finally {
       setDownloadingId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить экспорт?')) return;
+    const ok = await ask({
+      title: 'Удалить экспорт?',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await exportsApi.remove(id);
       setItems((prev) => prev.filter((e) => e.id !== id));
-      addToast({ type: 'success', message: 'Удалено' });
+      toast.success('Удалено');
     } catch (e) {
-      addToast({
-        type: 'error',
-        message: e instanceof ApiError ? e.message : 'Не удалось удалить',
-      });
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
     }
   };
 
@@ -107,25 +109,23 @@ export function ExportsClient() {
         </p>
       </header>
 
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
-          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
-      {!loading && !error && items.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card/40 p-10 text-center text-sm text-fg-secondary">
-          Здесь будут ваши экспорты. Создайте экспорт со страницы встречи или из журнала.
-        </div>
-      )}
-
-      {!loading && !error && items.length > 0 && (
+      <QueryGate
+        isLoading={loading}
+        error={error}
+        isEmpty={items.length === 0}
+        skeleton={
+          <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+            <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="Экспортов пока нет"
+            description="Здесь будут ваши экспорты. Создайте экспорт со страницы встречи или из журнала."
+          />
+        }
+        onRetry={() => void fetch()}
+      >
         <ul className="space-y-2">
           {items.map((e) => {
             const meta = STATUS_VARIANT[e.status];
@@ -182,7 +182,8 @@ export function ExportsClient() {
             );
           })}
         </ul>
-      )}
+      </QueryGate>
+      {confirmDialog}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import useSWR from 'swr';
 
 import { adminApi, type IntegrationKeyApi } from '@/api/admin.api';
 import { ApiError } from '@/api/api-error';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/components/shared/Button';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
 import { ErrorState } from '@/ui/components/shared/ErrorState';
@@ -16,7 +16,6 @@ import { CreateKeyModal } from './CreateKeyModal';
 import { RevokeKeyConfirm } from './RevokeKeyConfirm';
 
 export function IntegrationKeysTable() {
-  const { addToast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<IntegrationKeyApi | null>(null);
 
@@ -30,17 +29,13 @@ export function IntegrationKeysTable() {
     async (id: string) => {
       try {
         await adminApi.revokeKey(id);
-        addToast({ type: 'success', message: t('admin.integration_keys.status_revoked') });
+        toast.success(t('admin.integration_keys.status_revoked'));
         await mutate();
       } catch (e) {
-        addToast({
-          type: 'error',
-          message:
-            e instanceof ApiError ? e.message : t('errors.unknown'),
-        });
+        toast.error(e instanceof ApiError ? e.message : t('errors.unknown'));
       }
     },
-    [addToast, mutate],
+    [mutate],
   );
 
   return (

@@ -25,7 +25,7 @@ import {
   type AiModelGroup,
 } from '@/api/admin-ai-models.api';
 import { mapTaskTypeRoute, type TaskTypeRouteUi } from '@/domain/admin-ai-model';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -37,7 +37,6 @@ import {
 } from '@/ui/shadcn/select';
 
 export function AiModelsClient() {
-  const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<TaskTypeRouteUi[]>([]);
@@ -56,11 +55,11 @@ export function AiModelsClient() {
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить модели';
       setError(msg);
-      addToast({ type: 'error', message: msg });
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [groupFilter, search, addToast]);
+  }, [groupFilter, search]);
 
   useEffect(() => {
     void fetchData();

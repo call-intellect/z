@@ -19,7 +19,7 @@ import {
   type DepartmentApi,
   type RoleDomainApi,
 } from '@/api/structure.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -62,7 +62,6 @@ export function RolesTab({
   orgId: string;
   canEdit: boolean;
 }) {
-  const { addToast } = useToast();
   const [filter, setFilter] = useState<string>(ALL_DEPT_VALUE);
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
 
@@ -234,7 +233,7 @@ export function RolesTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void rolesSwr.mutate();
-            addToast({ type: 'success', message: 'Должность добавлена.' });
+            toast.success('Должность добавлена.');
           }}
         />
       )}
@@ -247,7 +246,7 @@ export function RolesTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void rolesSwr.mutate();
-            addToast({ type: 'success', message: 'Должность обновлена.' });
+            toast.success('Должность обновлена.');
           }}
         />
       )}
@@ -259,7 +258,7 @@ export function RolesTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void rolesSwr.mutate();
-            addToast({ type: 'success', message: 'Должность удалена.' });
+            toast.success('Должность удалена.');
           }}
         />
       )}
@@ -271,10 +270,7 @@ export function RolesTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void rolesSwr.mutate();
-            addToast({
-              type: 'success',
-              message: 'Должностная инструкция загружена.',
-            });
+            toast.success('Должностная инструкция загружена.');
           }}
         />
       )}
@@ -313,7 +309,6 @@ function RoleEditDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [name, setName] = useState(role?.name ?? '');
   const [departmentId, setDepartmentId] = useState<string | null>(
     role?.departmentId ?? null,
@@ -383,11 +378,7 @@ function RoleEditDialog({
                 }
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось сохранить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
               } finally {
                 setBusy(false);
               }
@@ -412,7 +403,6 @@ function RemoveRoleDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -438,11 +428,7 @@ function RemoveRoleDialog({
                 await rolesDomainApi.remove(orgId, role.id);
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось удалить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
               } finally {
                 setBusy(false);
               }
@@ -467,7 +453,6 @@ function UploadJobDescriptionDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -530,11 +515,7 @@ function UploadJobDescriptionDialog({
                 });
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось загрузить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось загрузить.');
               } finally {
                 setBusy(false);
               }

@@ -13,7 +13,7 @@ import {
   type PersonDomainApi,
   type RoleDomainApi,
 } from '@/api/structure.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -66,7 +66,6 @@ export function PersonsTab({
   orgId: string;
   canEdit: boolean;
 }) {
-  const { addToast } = useToast();
   const [deptFilter, setDeptFilter] = useState<string>(ALL_VALUE);
   const [roleFilter, setRoleFilter] = useState<string>(ALL_VALUE);
   const [statusFilter, setStatusFilter] = useState<string>(ALL_VALUE);
@@ -236,19 +235,12 @@ export function PersonsTab({
                             onClick={async () => {
                               try {
                                 await personsDomainApi.invite(orgId, p.id);
-                                addToast({
-                                  type: 'success',
-                                  message: 'Приглашение отправлено.',
-                                });
+                                toast.success('Приглашение отправлено.');
                                 void personsSwr.mutate();
                               } catch (e) {
-                                addToast({
-                                  type: 'error',
-                                  message:
-                                    e instanceof ApiError
+                                toast.error(e instanceof ApiError
                                       ? e.message
-                                      : 'Не удалось пригласить.',
-                                });
+                                      : 'Не удалось пригласить.');
                               }
                             }}
                           >
@@ -294,7 +286,7 @@ export function PersonsTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void personsSwr.mutate();
-            addToast({ type: 'success', message: 'Сотрудник добавлен.' });
+            toast.success('Сотрудник добавлен.');
           }}
         />
       )}
@@ -308,7 +300,7 @@ export function PersonsTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void personsSwr.mutate();
-            addToast({ type: 'success', message: 'Сотрудник обновлён.' });
+            toast.success('Сотрудник обновлён.');
           }}
         />
       )}
@@ -320,7 +312,7 @@ export function PersonsTab({
           onDone={() => {
             setDialog({ kind: 'none' });
             void personsSwr.mutate();
-            addToast({ type: 'success', message: 'Сотрудник удалён.' });
+            toast.success('Сотрудник удалён.');
           }}
         />
       )}
@@ -357,7 +349,6 @@ function PersonEditDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [fullName, setFullName] = useState(person?.fullName ?? '');
   const [email, setEmail] = useState(person?.email ?? '');
   const [roleId, setRoleId] = useState<string | null>(person?.roleId ?? null);
@@ -470,11 +461,7 @@ function PersonEditDialog({
                 }
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось сохранить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
               } finally {
                 setBusy(false);
               }
@@ -499,7 +486,6 @@ function RemovePersonDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { addToast } = useToast();
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -524,11 +510,7 @@ function RemovePersonDialog({
                 await personsDomainApi.remove(orgId, person.id);
                 onDone();
               } catch (e) {
-                addToast({
-                  type: 'error',
-                  message:
-                    e instanceof ApiError ? e.message : 'Не удалось удалить.',
-                });
+                toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
               } finally {
                 setBusy(false);
               }

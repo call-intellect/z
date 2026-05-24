@@ -79,6 +79,12 @@ function build(opts: BuildOpts) {
   const ollama = {
     complete: opts.ollama ?? vi.fn(async () => makeOutput('ollama', 'qwen3:30b-a3b-instruct-2507')),
   } as unknown as OllamaService;
+  const kie = {
+    complete: vi.fn(async () => makeOutput('kie', 'gemini-3-pro')),
+  } as unknown as import('./kie.service').KieService;
+  const grsai = {
+    complete: vi.fn(async () => makeOutput('grsai', 'gemini-3-pro')),
+  } as unknown as import('./grsai.service').GrsaiService;
 
   const usageRecord = vi.fn();
   const usage = { record: usageRecord } as unknown as AiUsageLogService;
@@ -92,6 +98,8 @@ function build(opts: BuildOpts) {
     openai,
     deepseek,
     ollama,
+    kie,
+    grsai,
     usage,
     metrics,
   );

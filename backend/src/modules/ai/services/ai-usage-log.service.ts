@@ -19,7 +19,9 @@ export type AiProvider =
   | 'minimax'
   | 'openai-via-proxy'
   | 'deepseek'
-  | 'ollama';
+  | 'ollama'
+  | 'kie'
+  | 'grsai';
 
 export interface RecordAiUsageInput {
   /** Org, на которую списывается стоимость. NULL только для глобальных system jobs. */

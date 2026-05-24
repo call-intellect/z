@@ -11,6 +11,8 @@ import { BehaviorMetricsCalculator } from './services/behavior-metrics-calculato
 import { CardRollupService } from './services/card-rollup.service';
 import { ChapterExtractionService } from './services/chapter-extraction.service';
 import { DeepSeekService } from './services/deepseek.service';
+import { GrsaiService } from './services/grsai.service';
+import { KieService } from './services/kie.service';
 import { LlmRouterService } from './services/llm-router.service';
 import { MinimaxService } from './services/minimax.service';
 import { OllamaService } from './services/ollama.service';
@@ -64,6 +66,11 @@ import { VoxService } from './services/vox.service';
     OpenAiProxyService,
     DeepSeekService,
     OllamaService,
+    // KIE (api.kie.ai — Claude/GPT/Gemini) и GRSAI (Gemini через прокси) —
+    // подключены к LlmRouter; модели становятся доступны в /admin/ai-models.
+    // ТЗ: plans/tz/2026-05-24-kie-grsai-llm-router-integration.md.
+    KieService,
+    GrsaiService,
     // Маршрутизация и регенерация.
     LlmRouterService,
     // SBA α-10 wave 3 — LlmProtocolAdapterRegistry (feature-flag через

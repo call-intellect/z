@@ -100,6 +100,12 @@ function build(opts: BuildOpts) {
   const anthropic = {
     complete: opts.anthropic ?? vi.fn(async () => makeOutput('anthropic', 'claude-sonnet-4-6')),
   } as unknown as AnthropicService;
+  const kie = {
+    complete: vi.fn(async () => makeOutput('kie', 'gemini-3-pro')),
+  } as unknown as import('./kie.service').KieService;
+  const grsai = {
+    complete: vi.fn(async () => makeOutput('grsai', 'gemini-3-pro')),
+  } as unknown as import('./grsai.service').GrsaiService;
 
   const usageRecord = vi.fn();
   const usage = { record: usageRecord } as unknown as AiUsageLogService;
@@ -117,6 +123,8 @@ function build(opts: BuildOpts) {
     openai,
     deepseek,
     ollama,
+    kie,
+    grsai,
     usage,
     metrics,
   );

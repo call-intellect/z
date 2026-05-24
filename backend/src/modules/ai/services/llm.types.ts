@@ -72,7 +72,14 @@ export interface LlmCompleteOutput {
    */
   cachedTokens?: number;
   model: string;
-  provider: 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama';
+  provider:
+    | 'anthropic'
+    | 'minimax'
+    | 'openai-via-proxy'
+    | 'deepseek'
+    | 'ollama'
+    | 'kie'
+    | 'grsai';
   toolCalls?: LlmToolCall[];
 }
 

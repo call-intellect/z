@@ -51,6 +51,14 @@ User → channel adapter (telegram_bot/email_smtp/web) → парсит как I
 
 На α-5 mode для chat-ответа всегда `synthetic` (или из `cfg.chatV2.defaultMode`). На β+ можно расширить парсер: `/ask --factual <вопрос>`.
 
+## ChatV2Scope (2026-05-25, расширено T6b)
+
+Enum `ChatV2Scope` (Prisma + DTO):
+- `org` — общеоргвопрос (default).
+- `card` — карточка (Card/Client/Deal/Project).
+- `project` — проект трекера (специалист ProjectCardHandler).
+- `issue` — конкретная задача трекера (добавлено T6b 2026-05-25). До T6b `IssueChat.tsx` использовал workaround `scope='card', scopeRefId=issueId` — теперь нативно через `'issue'`. Маппинг в `SynthesisService.mapScope` подключает IssueCardHandler + ProjectCardHandler.
+
 ## CardSpecialistRegistry (заготовка для α-6+)
 
 Push-pattern: каждый специалист в `onModuleInit` зовёт `registry.register(name, handler)`. На α-5 — пустой реестр с готовым интерфейсом `CardSpecialistHandler.getCardsForQuery(...)`. Первая регистрация — в α-6 (Card-специалист), затем α-7 (Regulation), β-3 (Decision).

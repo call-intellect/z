@@ -264,8 +264,55 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 - `team_template_used_total{slug}`, `holiday_due_date_adjusted_total`.
 - `import_started_total{source}`, `import_completed_total{source,success}`, `import_issues_processed_total{source}`.
 
+## Финальный handoff Wave 1-3 — Email-to-task + Multi-user чат (2026-05-25)
+
+### Email-to-task (T5)
+
+Новый модуль `backend/src/modules/mail-inbound/` — IMAP polling + routing на проекты по уникальному alias.
+
+- Расширение Project: `emailInboxAlias String? @unique` + `emailInboxEnabled Boolean @default(false)`.
+- Новая модель `MailInboundLog` + enum `MailInboundStatus` (см. [`02_architecture/data-model`](../02_architecture/data-model.md) §«MailInboundLog»).
+- Cron `@Cron(MAIL_INBOX_POLL_CRON)` — default каждые 2 минуты (`*/2 * * * *`).
+- Идемпотентность — `MailInboundLog.messageId @unique`.
+- Routing: `To: <alias>@inbox.kora.app` → `Project` → `IntakeIssue` (если intakeViewEnabled) или прямо `Issue`. Attachments → S3 (тот же bucket, MIME whitelist 25 MB).
+- 4 REST endpoint:
+  - `POST /api/v1/projects/:id/email-inbox/enable` — включает + генерирует alias.
+  - `POST /api/v1/projects/:id/email-inbox/disable`.
+  - `POST /api/v1/projects/:id/email-inbox/regenerate-alias`.
+  - `GET /api/v1/projects/:id/email-inbox` — текущее состояние (alias, enabled, поток последних 10 писем).
+- 4 метрики `z_mail_inbound_{received,routed,rejected,duplicates}_total`.
+- UI — секция в `/projects/[slug]/settings`: переключатель + копи-кнопка адреса + кнопка «Сгенерировать новый адрес».
+- 9 новых ENV: `MAIL_IMAP_HOST/PORT/USER/PASSWORD/TLS/MAILBOX`, `MAIL_INBOX_POLL_CRON`, `MAIL_INBOX_DOMAIN`, `MAIL_ATTACHMENT_MAX_BYTES`.
+
+### Multi-user чат в задаче (T8)
+
+Расширение `tracker.gateway.ts` + новый `comments`-flow с @mentions.
+
+- WS events (namespace `/ws/tracker`):
+  - `issue.chat.join { issueId }`, `issue.chat.leave { issueId }`.
+  - `issue.chat.typing { issueId, typing }` (throttle 800ms).
+  - `issue.chat.presence { issueId, users: [{userId, name, since}] }` (broadcast по issue-room).
+- `CommentsService.create` детектит `@mention` (через `IssueMention.create`) → `ConversationalService.sendNotification({ eventType: 'issue.mention', payload })`. Payload schema в `event-payload.registry.ts`.
+- Новый сервис `my-mentions.service.ts` + endpoint `GET /api/v1/me/mentions?cursor=&limit=&issueId=`.
+- Frontend `src/ui/tracker/IssueComments.tsx` переписан (был stub):
+  - Presence widget сверху (аватары + tooltip с last-seen).
+  - Typing indicator («Иван печатает…»).
+  - `<MentionAutocompletePopup>` (комбобокс) на `@` — выпадашка с members проекта.
+  - Live-update через `useTrackerLiveRefresh`.
+- 15 backend + 4 frontend тестов.
+
+### Связь с другими T-тикетами handoff Wave 1-3
+
+| T | Что это значит для tracker |
+|---|---|
+| T1 | `feed/spotlights/page.tsx` теперь интегрирован с RecognitionWidget |
+| T2 | `/admin/helpfulness-overview` использует ту же UI-base, что трекер-админка |
+| T6a | `useMyInboxCount` теперь работает на реальном `/api/v1/me/inbox/count` endpoint (badge цифры в TrackerBottomNav) |
+| T6b | `IssueChat.tsx` использует `scope='issue'` (нативный) вместо workaround `scope='card'` |
+
 ## История реализации
 
+- **2026-05-25 (финальный handoff Wave 1-3):** 7 тикетов закрыто, 11 push-коммитов. Email-to-task + Multi-user чат + KIE/GRSAI providers + Voice WS + Recognition/Helpfulness frontend + Prompts-hardening P1 + SPO discovery. См. [`05_история/2026-05-25-handoff-full-close.md`](../05_история/2026-05-25-handoff-full-close.md) (если создан).
 - **2026-05-24:** Sprint 1 + большая часть Sprint 2 закрыты за 1 сессию оркестрации (9 параллельных subagent'ов, ~10 200 строк). См. [`05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md`](../05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md).
 - **2026-05-24 (Sprint 3 finishing):** B1-3.2 + B1-3.3 + общий IdempotencyService + socket.io-client live refresh закрыты за 3 параллельных subagent'ов (~3 900 строк). См. [`05_история/2026-05-24-sprint3-finishing.md`](../05_история/2026-05-24-sprint3-finishing.md).
 - **2026-05-24 (Wave 2 backend + Phase 2 frontend):** Activity Feeds + Specialist 3.8 Helpfulness + Recognition + Gamification + Phase 2 канбан drag-n-drop + PWA закрыты за 6 параллельных subagent'ов (~13 100 строк, 9 Prisma моделей + 12 cron + 4 worker + 14 controllers + 6 хуков + 188 тестов). Открытие сессии: α-5 DialogService уже полностью был реализован — Agent 18 не запускался. См. [`05_история/2026-05-24-wave2-backend-frontend.md`](../05_история/2026-05-24-wave2-backend-frontend.md).

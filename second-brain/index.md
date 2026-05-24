@@ -112,6 +112,14 @@ _пусто_
 - `plans/tz/2026-05-09-cards.md` — Карточки (CRM-структура) ✅ реализован (2026-05-09): сущность Card (client/deal/project/topic/custom) с одним primary-контактом, Meeting.cardId (one-to-many), AI-сводка по карточке + AI-чат с RAG, ⌘K command palette, Public REST API, webhook events (card.created/updated/deleted, meeting.linked_to_card/unlinked), привязка только явная без LLM-угадывания
 - `plans/tz/2026-05-09-meeting-room-chat.md` — In-meeting чат с persist ✅ реализован (2026-05-09): MeetingRoomMessage модель, POST/GET с идемпотентностью, ChatPanel переписан с history+dedup, 6-й таб «Чат», MeetingShare.allowChat для публичного шеринга, AI-pipeline merger подмешивает roomChat во все 9 типов промптов
 
+## Реестры backend/frontend (living-документы, 2026-05-25)
+
+- [[01_projects/api-layer]] — реестр всех REST endpoints по модулям (создан 2026-05-25)
+- [[01_projects/frontend-pages]] — реестр Next.js App Router страниц (создан 2026-05-25)
+- [[01_projects/ai-jobs]] — реестр LLM-провайдеров, taskType, prompt hardening (создан 2026-05-25)
+- [[01_projects/workers-queues]] — реестр BullMQ-очередей, воркеров, @Cron заданий (создан 2026-05-25)
+- [[01_projects/concierge-voice]] — Concierge + Voice Streaming WS (T4 финального handoff, создан 2026-05-25)
+
 ## Заметки по реализации (2026-05-09)
 - [[01_projects/auth-and-accounts]] — standalone-аккаунты: argon2id, UserSession+jti, mail.hosting.reg.ru SMTP, forced-onboarding (+ Org-хук в register с 2026-05-10)
 - [[01_projects/ai-workspace]] — карта новых модулей (tasks/chapters/highlights/shares/tags/templates/chat/api-keys/webhooks-out/destinations/exports), Public REST API
@@ -173,4 +181,6 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-24 (Tracker Sprint 1: 20 моделей Prisma + 38 файлов tracker модуля + WebSocket gateway + BullMQ webhook delivery + LiveKit RNNoise + γ-1 frontend grouping + 18 новых SignalType + IssueRelation/Attachments/start-meeting + β-4 causeCategory; 10 коммитов, ~10 200 строк за одну сессию через 9 параллельных subagent'ов)._
+_Обновлён: 2026-05-25 (финальный handoff Wave 1-3 Кора v2: 7 тикетов закрыто, 11 push-коммитов. T1 Recognition frontend + T2 Helpfulness frontend + T3 KIE/GRSAI LLM providers + T4 voice WS streaming + T5 email-to-task IMAP + T6 polish (inbox count/ChatV2Scope issue/vitest setup) + T7 prompts-hardening P1 (F1-F5) + T8 multi-user чат в задаче + T9 SPO discovery документ. Создано 5 новых заметок в second-brain (api-layer, frontend-pages, ai-jobs, workers-queues, concierge-voice)._
+
+_Предыдущий: 2026-05-24 (Tracker Sprint 1: 20 моделей Prisma + 38 файлов tracker модуля + WebSocket gateway + BullMQ webhook delivery + LiveKit RNNoise + γ-1 frontend grouping + 18 новых SignalType + IssueRelation/Attachments/start-meeting + β-4 causeCategory; 10 коммитов, ~10 200 строк за одну сессию через 9 параллельных subagent'ов)._

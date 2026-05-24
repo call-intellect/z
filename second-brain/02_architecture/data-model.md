@@ -760,4 +760,62 @@ IssueWebhook 1 ─── N IssueWebhookLog
 TeamTemplate 1 ─── N Project (опц.)
 ```
 
+## Финальный handoff Wave 1-3 (2026-05-25)
+
+7 тикетов из [`plans/sprints/2026-05-25-handoff-full-close.md`](../../plans/sprints/2026-05-25-handoff-full-close.md). Push'нуты 11 коммитов.
+
+### Project — email-to-task (T5)
+
+Расширение модели `Project`:
+- `emailInboxAlias String? @unique` — короткий уникальный псевдоним для входящих писем (адрес `<alias>@inbox.kora.app` или прод-домена). Уникален в рамках всего deployment.
+- `emailInboxEnabled Boolean @default(false)` — флаг включения IMAP polling для проекта.
+
+При создании письма на адрес `<alias>@inbox.kora.app` — IMAP-консумер парсит и создаёт `IntakeIssue` (если включена авто-маршрутизация по `external_inbox`) или сразу `Issue`.
+
+### MailInboundLog (T5)
+
+Журнал всех входящих писем для идемпотентности и audit'а.
+
+```
+MailInboundLog {
+  id                cuid
+  tenantId          String  → Org
+  projectId?        String  → Project           // null если не удалось маршрутизировать
+  toAlias           String                       // email-inbox alias (или RFC822 to-адрес)
+  fromAddress       String
+  subject?          String  @db.Text
+  messageId         String  @unique              // RFC822 Message-ID (для идемпотентности)
+  bodyText?         String  @db.Text             // text/plain часть после mailparser
+  bodyHtmlPreview?  String  @db.Text             // truncated HTML preview
+  status            MailInboundStatus            // received | parsed | routed | rejected | failed | duplicate
+  errorMessage?     String  @db.Text
+  attachmentCount   Int     @default(0)
+  attachmentsJson   Json?                        // [{filename, s3Key, size, mime}]
+  createdIssueId?   String  → Issue              // если status='routed'
+  createdIntakeId?  String  → IntakeIssue        // если попало в triage
+  receivedAt        DateTime @default(now())
+  processedAt?      DateTime
+  @@unique([messageId])
+  @@index([tenantId, status])
+  @@index([tenantId, projectId, receivedAt])
+}
+
+enum MailInboundStatus {
+  received    // принято IMAP-консумером
+  parsed      // mailparser отработал
+  routed      // успешно создан Issue / IntakeIssue
+  rejected    // нет проекта с таким aliasом ИЛИ unsubscribed
+  failed      // ошибка обработки
+  duplicate   // Message-ID уже был
+}
+```
+
+**Идемпотентность** — `@@unique([messageId])`. Повторный IMAP-pull одного и того же письма (после рестарта или re-fetch) ловится по этому ключу и помечается `duplicate` без побочных эффектов.
+
+**Attachments** — каждое вложение мейла загружается в S3 (тот же bucket что и `IssueAttachment`), и потом линкуется к созданному `Issue` через `IssueAttachment`. Лимит и MIME whitelist — те же что и у трекера (25 MB).
+
+### ChatV2Scope — добавлено значение `'issue'` (T6b)
+
+`ChatV2Scope` enum (Prisma + DTO) расширен: значения `org | card | project | issue`. Теперь чат-в-задаче (`IssueChat`) работает на родном scope, а не через workaround scope=`'card'` (как было в Wave 2). Маппинг scope→specialist'ы — в `SynthesisService.mapScope` + новый specialist в `card-specialist-registry.service.ts`.
+
 [[../index|← index]]

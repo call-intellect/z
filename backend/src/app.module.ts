@@ -37,6 +37,7 @@ import { SharesModule } from './modules/shares/shares.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { TemplatesModule } from './modules/templates/templates.module';
+import { TrackerModule } from './modules/tracker/tracker.module';
 import { UsersModule } from './modules/users/users.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 // M3c — cross-cutting ai-workspace модули.
@@ -239,6 +240,13 @@ import { VoiceModule } from './modules/voice/voice.module';
     SharesModule,
     TagsModule,
     TemplatesModule,
+
+    // Tracker (Sprint 1, Phase 1) — PLG-точка входа платформы. Project /
+    // Issue / Cycle / Intake / Comment / Label / Webhook + IssueActivity.
+    // RBAC ResourceType: project / issue / cycle / intake_issue /
+    // team_template / issue_webhook. Регистрируется ПОСЛЕ TasksModule
+    // (legacy) — миграция Task → Issue в Sprint 3.
+    TrackerModule,
 
     // CRM-структура встреч: карточки.
     CardsModule,

@@ -1,0 +1,356 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../auth/decorators/current-user.decorator';
+import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
+import { TenantGuard } from '../../rbac/guards/tenant.guard';
+import { RbacService } from '../../rbac/rbac.service';
+import {
+  CreateIssueSchema,
+  type CreateIssueDto,
+} from '../dto/issues/create-issue.dto';
+import type {
+  IssueActivityDto,
+  IssueResponseDto,
+  IssueVersionDto,
+  ListIssuesResponse,
+} from '../dto/issues/issue-response.dto';
+import {
+  AddAssigneeSchema,
+  type AddAssigneeDto,
+  AddLabelSchema,
+  type AddLabelDto,
+  LinkGoalSchema,
+  type LinkGoalDto,
+  ListIssuesQuerySchema,
+  type ListIssuesQuery,
+} from '../dto/issues/list-issues-query.dto';
+import {
+  TransitionIssueStateSchema,
+  type TransitionIssueStateDto,
+} from '../dto/issues/transition-state.dto';
+import {
+  UpdateIssueSchema,
+  type UpdateIssueDto,
+} from '../dto/issues/update-issue.dto';
+import { IssuesService } from '../services/issues.service';
+
+/**
+ * REST `/api/v1/projects/:projectId/issues` + `/api/v1/issues/:id` —
+ * задачи трекера. RBAC ResourceType='issue'.
+ *
+ * TODO Sprint 2:
+ *   - POST /issues/:id/attachments — multipart upload (S3).
+ *   - POST /issues/:id/start-meeting — создать LiveKit Meeting с linkedIssueId.
+ *   - POST /issues/:id/relations + DELETE — IssueRelation CRUD.
+ *   - Idempotency-Key middleware на POST /issues.
+ */
+@ApiTags('tracker / issues')
+@ApiBearerAuth()
+@Controller('api/v1')
+@UseGuards(CookieAuthGuard, TenantGuard)
+export class IssuesController {
+  constructor(
+    @Inject(IssuesService) private readonly svc: IssuesService,
+    @Inject(RbacService) private readonly rbac: RbacService,
+  ) {}
+
+  // ── list / create / detail / patch / delete ──
+
+  @Get('projects/:projectId/issues')
+  @ApiOperation({ summary: 'Список задач проекта' })
+  async list(
+    @Param('projectId') projectId: string,
+    @Query(new ZodValidationPipe(ListIssuesQuerySchema)) query: ListIssuesQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ListIssuesResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findAll(projectId, t, query);
+  }
+
+  @Post('projects/:projectId/issues')
+  @ApiOperation({ summary: 'Создать задачу в проекте' })
+  async create(
+    @Param('projectId') projectId: string,
+    @Body(new ZodValidationPipe(CreateIssueSchema)) body: CreateIssueDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.create(projectId, body, t, user.id);
+  }
+
+  @Get('issues/:id')
+  @ApiOperation({ summary: 'Получить задачу по id' })
+  async byId(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findById(id, t);
+  }
+
+  @Get('issues/by-identifier/:identifier')
+  @ApiOperation({ summary: 'Получить задачу по identifier (например KORA-123)' })
+  async byIdentifier(
+    @Param('identifier') identifier: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findByIdentifier(identifier, t);
+  }
+
+  @Patch('issues/:id')
+  @ApiOperation({ summary: 'Изменить задачу' })
+  async update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateIssueSchema)) body: UpdateIssueDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.update(id, body, t, user.id);
+  }
+
+  @Delete('issues/:id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Удалить задачу (soft delete)' })
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireDelete(user.id, t);
+    await this.svc.softDelete(id, t, user.id);
+  }
+
+  // ── state transitions ──
+
+  @Post('issues/:id/transitions')
+  @ApiOperation({ summary: 'Сменить статус задачи (status_changed)' })
+  async transition(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(TransitionIssueStateSchema))
+    body: TransitionIssueStateDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.transitionState(id, body, t, user.id);
+  }
+
+  // ── assignees ──
+
+  @Post('issues/:id/assignees')
+  @ApiOperation({ summary: 'Добавить исполнителя' })
+  async addAssignee(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddAssigneeSchema)) body: AddAssigneeDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.addAssignee(id, body.userId, t, user.id);
+  }
+
+  @Delete('issues/:id/assignees/:userId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Удалить исполнителя' })
+  async removeAssignee(
+    @Param('id') id: string,
+    @Param('userId') assigneeUserId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    await this.svc.removeAssignee(id, assigneeUserId, t, user.id);
+  }
+
+  // ── labels ──
+
+  @Post('issues/:id/labels')
+  @ApiOperation({ summary: 'Добавить метку' })
+  async addLabel(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddLabelSchema)) body: AddLabelDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.addLabel(id, body.labelId, t, user.id);
+  }
+
+  @Delete('issues/:id/labels/:labelId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Удалить метку' })
+  async removeLabel(
+    @Param('id') id: string,
+    @Param('labelId') labelId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    await this.svc.removeLabel(id, labelId, t, user.id);
+  }
+
+  // ── subscribe ──
+
+  @Post('issues/:id/subscribe')
+  @ApiOperation({ summary: 'Подписаться на задачу' })
+  async subscribe(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.subscribe(id, user.id, t);
+  }
+
+  @Delete('issues/:id/subscribe')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Отписаться от задачи' })
+  async unsubscribe(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    await this.svc.unsubscribe(id, user.id, t);
+  }
+
+  // ── goal link ──
+
+  @Post('issues/:id/link-goal')
+  @ApiOperation({ summary: 'Связать задачу с целью' })
+  async linkGoal(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(LinkGoalSchema)) body: LinkGoalDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.linkGoal(id, body.goalId, t, user.id);
+  }
+
+  @Delete('issues/:id/link-goal')
+  @ApiOperation({ summary: 'Отвязать задачу от цели' })
+  async unlinkGoal(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.unlinkGoal(id, t, user.id);
+  }
+
+  // ── activity / versions ──
+
+  @Get('issues/:id/activity')
+  @ApiOperation({ summary: 'Лента активности задачи' })
+  async activity(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueActivityDto[]> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.getActivity(id, t);
+  }
+
+  @Get('issues/:id/versions')
+  @ApiOperation({ summary: 'Исторические снимки задачи' })
+  async versions(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueVersionDto[]> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.getVersions(id, t);
+  }
+
+  // ── helpers ──
+
+  private requireTenant(tenantId: string | undefined): string {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Организация не определена' },
+      });
+    }
+    return tenantId;
+  }
+
+  private async requireRead(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.canRead(userId, tenantId, 'issue');
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав на чтение задач' },
+      });
+    }
+  }
+
+  private async requireWrite(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.canWrite(userId, tenantId, 'issue');
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав на изменение задач' },
+      });
+    }
+  }
+
+  private async requireDelete(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.check({
+      userId,
+      tenantId,
+      obj: 'issue',
+      act: 'delete',
+      resourceOwnerId: userId, // позволяет manager:self удалять свои
+    });
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав на удаление задач' },
+      });
+    }
+  }
+}

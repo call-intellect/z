@@ -210,7 +210,23 @@ export type ResourceType =
   // (PATCH /me/proactive-notifications/:id/dismiss — пометка как
   // «не показывать») — self. manage — admin (видит все ProactiveNotification
   // компании для аналитики качества правил).
-  | 'proactive_notification';
+  | 'proactive_notification'
+  // ── Tracker Phase 1 (Sprint 1, B1-1.3) — таск-трекер Z/Кора ──
+  // 'project' — проект трекера (Project). read: project_member; write/delete:
+  // owner/admin Org (создание + архивирование + изменение настроек).
+  // 'issue' — задача трекера (Issue). read: project_member + assignee;
+  // write: assignee + owner/admin Org; delete: creator + admin/owner.
+  // 'cycle' — цикл («спринт»). read: project_member; write/delete: owner/admin.
+  // 'intake_issue' — входящая задача (inbox). read/write: owner/admin Org.
+  // 'team_template' — шаблон команды (системный или Org-level). read: все;
+  // write: owner/admin (создание Org-template'ов).
+  // 'issue_webhook' — исходящий webhook трекера. crud: owner/admin Org.
+  | 'project'
+  | 'issue'
+  | 'cycle'
+  | 'intake_issue'
+  | 'team_template'
+  | 'issue_webhook';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -539,6 +555,13 @@ function isResourceType(s: string): s is ResourceType {
     'kpi',
     // SBA β-7 — Brand Voice Curator.
     'brand_voice',
+    // Tracker Phase 1 (Sprint 1, B1-1.3).
+    'project',
+    'issue',
+    'cycle',
+    'intake_issue',
+    'team_template',
+    'issue_webhook',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

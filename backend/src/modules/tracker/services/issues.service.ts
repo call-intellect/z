@@ -15,8 +15,10 @@ import type {
   IssueResponseDto,
   IssueVersionDto,
   ListIssuesResponse,
+  MyInboxResponseDto,
 } from '../dto/issues/issue-response.dto';
 import type { ListIssuesQuery } from '../dto/issues/list-issues-query.dto';
+import type { MyInboxQuery } from '../dto/issues/my-inbox-query.dto';
 import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto';
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
@@ -215,6 +217,68 @@ export class IssuesService {
       items: items.map((i) => this.toResponseFromInclude(i)),
       total,
       page: query.page,
+      limit: query.limit,
+    };
+  }
+
+  /**
+   * Мой inbox — задачи, в которых currentUser является assignee
+   * (через `IssueAssignee.userId`). Сквозной список по ВСЕМ проектам
+   * текущего tenant'а; tenant-scope гарантирует Issue.tenantId.
+   *
+   * Пагинация: cursor-based. `cursor` — id последней задачи предыдущей
+   * страницы. Сортировка — стабильная по `id desc` (без коллизий с
+   * createdAt/sortOrder, которые могут совпадать у нескольких задач).
+   *
+   * Если задач больше чем `limit` — возвращаем ровно `limit` элементов
+   * и `nextCursor = items[last].id`. Иначе `nextCursor = null`.
+   *
+   * Frontend Wave 2: `useMyInbox`.
+   */
+  async findMyInbox(
+    tenantId: string,
+    userId: string,
+    query: MyInboxQuery,
+  ): Promise<MyInboxResponseDto> {
+    const where: Prisma.IssueWhereInput = {
+      tenantId,
+      assignees: { some: { userId } },
+    };
+    if (!query.includeDeleted) where.deletedAt = null;
+    if (!query.includeArchived) where.archivedAt = null;
+    if (query.stateId) where.stateId = query.stateId;
+    if (query.stateCategory) where.state = { category: query.stateCategory };
+    if (query.priority) where.priority = query.priority;
+    if (query.projectId) where.projectId = query.projectId;
+    if (query.cycleId) where.cycleId = query.cycleId;
+    if (query.labelId) where.labels = { some: { labelId: query.labelId } };
+    if (query.dueBefore || query.dueAfter) {
+      where.dueDate = {
+        ...(query.dueBefore && { lte: query.dueBefore }),
+        ...(query.dueAfter && { gte: query.dueAfter }),
+      };
+    }
+    // Cursor: берём id < cursor (если задан) — пагинация по убыванию id.
+    if (query.cursor) {
+      where.id = { lt: query.cursor };
+    }
+    const rows = await this.prisma.issue.findMany({
+      where,
+      orderBy: [{ id: 'desc' }],
+      take: query.limit + 1, // +1 чтобы определить, есть ли следующая страница
+      include: {
+        assignees: { select: { userId: true } },
+        labels: { select: { labelId: true } },
+      },
+    });
+    const hasMore = rows.length > query.limit;
+    const pageItems = hasMore ? rows.slice(0, query.limit) : rows;
+    const nextCursor = hasMore
+      ? (pageItems[pageItems.length - 1]?.id ?? null)
+      : null;
+    return {
+      items: pageItems.map((i) => this.toResponseFromInclude(i)),
+      nextCursor,
       limit: query.limit,
     };
   }

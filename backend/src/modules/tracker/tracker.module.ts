@@ -8,8 +8,10 @@ import { CyclesController } from './controllers/cycles.controller';
 import { IntakeController } from './controllers/intake.controller';
 import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
+import { MeInboxController } from './controllers/me-inbox.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
+import { StatesController } from './controllers/states.controller';
 import { TeamTemplatesController } from './controllers/team-templates.controller';
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
@@ -23,6 +25,7 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
+import { StatesService } from './services/states.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
@@ -65,6 +68,11 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     TeamTemplatesController,
     RelationsController,
     AttachmentsController,
+    // Sprint 3 Frontend Wave 2 prerequisite:
+    // /api/v1/me/inbox — мои задачи (assignee=me) во всех проектах.
+    // /api/v1/states — справочник IssueState для board + фильтров.
+    MeInboxController,
+    StatesController,
   ],
   providers: [
     ActivityRecorderService,
@@ -78,6 +86,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RelationsService,
     AttachmentsService,
     IssueMeetingsService,
+    // Sprint 3 Frontend Wave 2: read-only справочник статусов.
+    StatesService,
     // Sprint 2: WebSocket + Webhooks delivery.
     TrackerGateway,
     TrackerEventsService,

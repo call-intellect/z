@@ -42,6 +42,19 @@ export interface ListIssuesResponse {
   limit: number;
 }
 
+/**
+ * Ответ `GET /api/v1/me/inbox` — мои задачи во всех проектах
+ * с cursor-based пагинацией.
+ *
+ * `nextCursor` — id последней задачи на странице, передавать в
+ * следующий запрос как `?cursor=...`. null = это последняя страница.
+ */
+export interface MyInboxResponseDto {
+  items: IssueResponseDto[];
+  nextCursor: string | null;
+  limit: number;
+}
+
 export interface IssueActivityDto {
   id: string;
   issueId: string;

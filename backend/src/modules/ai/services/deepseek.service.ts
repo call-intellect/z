@@ -78,12 +78,17 @@ export class DeepSeekService {
   // ─────────────────────────── private ─────────────────────────────────────
 
   private buildParams(input: LlmCompleteInput, model: string): Record<string, unknown> {
+    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}. DeepSeek
+    // не поддерживает Anthropic-style cache_control, поэтому распаковываем в
+    // строку и полагаемся на их автоматический prompt caching (см.
+    // prompt_cache_hit_tokens в mapResponse).
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const params: Record<string, unknown> = {
       model,
       stream: false,
       messages: [
         { role: 'system', content: input.system.text },
-        { role: 'user', content: input.user },
+        { role: 'user', content: userText },
       ],
     };
     if (input.maxTokens !== undefined) {

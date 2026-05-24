@@ -42,11 +42,21 @@ export class LlmFallbackService {
    *
    * При каждом переключении инкрементируется метрика `llm_fallback_total{provider}`,
    * где `provider` — провайдер, на КОТОРЫЙ перешли.
+   *
+   * T7-F3 (prompt caching distribution): автоматически выставляем
+   * `cacheControl: 'ephemeral'` на system, если caller не сделал это явно.
+   * Это даёт parity с `LlmRouterService.dispatch()` (где то же самое уже
+   * делается на каждый вызов). Для не-Anthropic провайдеров cacheControl
+   * молча игнорируется на уровне адаптеров.
    */
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
+    const withCache: LlmCompleteInput =
+      input.system.cacheControl === undefined
+        ? { ...input, system: { ...input.system, cacheControl: 'ephemeral' } }
+        : input;
     // 1. Anthropic.
     try {
-      return await this.anthropic.complete(input);
+      return await this.anthropic.complete(withCache);
     } catch (err) {
       const status = err instanceof LlmError ? err.httpStatus : undefined;
       // Только на 403 переходим к MiniMax. На остальное — пробуем дальше тоже,
@@ -59,14 +69,14 @@ export class LlmFallbackService {
 
     // 2. MiniMax.
     try {
-      return await this.minimax.complete(input);
+      return await this.minimax.complete(withCache);
     } catch (err) {
       this.logger.warn(`Fallback MiniMax→OpenAI-via-proxy: ${errMsg(err)}`);
       this.metrics?.incLlmFallback('openai-via-proxy');
     }
 
     // 3. OpenAI-via-proxy.
-    return this.openai.complete(input);
+    return this.openai.complete(withCache);
   }
 }
 

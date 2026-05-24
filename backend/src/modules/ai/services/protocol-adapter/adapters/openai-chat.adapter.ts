@@ -54,12 +54,15 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     });
     const model = input.model ?? provider.defaultModel ?? 'gpt-4o-mini';
 
+    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
+    // OpenAI-chat compat не имеет Anthropic-style cache_control; распаковываем.
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
       stream: false,
       messages: [
         { role: 'system', content: input.system.text },
-        { role: 'user', content: input.user },
+        { role: 'user', content: userText },
       ],
     };
     if (input.maxTokens !== undefined) body['max_tokens'] = input.maxTokens;

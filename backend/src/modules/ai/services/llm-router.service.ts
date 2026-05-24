@@ -207,8 +207,25 @@ export type LlmTaskType =
   // 'operations-summary' — короткий narrative summary («пульс компании
   //   сейчас») поверх агрегата OperationsDashboardService. Используется
   //   COO dashboard'ом (на β-8 — опционально, фронт может не показывать).
+  // SBA β-8.1 — добивка панели операционного директора.
+  // 'checkin-sentiment' — определить настроение чек-ина (green/yellow/red)
+  //   по тексту вечернего ответа. Дёшевый частый вызов; primary deepseek-chat,
+  //   secondary openai gpt-4o-mini, tertiary ollama qwen3.5:9b.
+  // 'operations-weekly-digest' — собрать связный текст недельной сводки
+  //   (5-7 коротких разделов markdown) поверх агрегата за 7 дней. Один вызов
+  //   в неделю на Org — не критично к скорости. Та же цепочка провайдеров.
   | 'checkin-parse'
   | 'operations-summary'
+  | 'checkin-sentiment'
+  | 'operations-weekly-digest'
+  // SBA β-8.2 — Promise Keeper («Хранитель обещаний»).
+  // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
+  //   (вызов из block-ingest для уточнения если основной prompt не справился).
+  //   Primary deepseek-chat, secondary gpt-4o-mini, tertiary ollama qwen3.5.
+  // 'commitment-extract-status' — разобрать ответ сотрудника на followup
+  //   ('fulfilled' | 'missed' + rationale + blockerText?). Та же цепочка.
+  | 'commitment-extract-dates'
+  | 'commitment-extract-status'
   // SBA δ-1 — Orchestrator (multi-agent research).
   // 'orchestrator-plan'        — план шагов: primary gpt-4o (важно качество reasoning).
   // 'orchestrator-subagent'    — универсальный subagent-call: primary deepseek (массово+дёшево).
@@ -367,6 +384,12 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA β-8 — DailyCheckIn + Operations
   'checkin-parse',
   'operations-summary',
+  // SBA β-8.1 — добивка панели операционного директора
+  'checkin-sentiment',
+  'operations-weekly-digest',
+  // SBA β-8.2 — Promise Keeper
+  'commitment-extract-dates',
+  'commitment-extract-status',
   // SBA δ-1 — Orchestrator
   'orchestrator-plan',
   'orchestrator-subagent',
@@ -869,6 +892,7 @@ export class LlmRouterService implements OnModuleInit {
           status: 'success',
         });
         const cachedTokens = out.cachedTokens ?? 0;
+        const cacheCreationTokens = out.cacheCreationTokens ?? 0;
         const costUsd = await this.computeCostUsd(
           out.provider,
           out.model,
@@ -888,6 +912,7 @@ export class LlmRouterService implements OnModuleInit {
           inputTokens: out.inputTokens,
           outputTokens: out.outputTokens,
           cachedTokens,
+          cacheCreationTokens,
           costUsd,
           durationMs,
           success: true,

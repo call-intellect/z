@@ -38,6 +38,15 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── llm router fallback exhausted (Фаза A.4) ────────────────────────
   private coreLlmNoProviderTotal!: Counter<'task_type'>;
 
+  // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
+  // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
+  // одна точка для router-вызовов и для LlmFallbackService-вызовов.
+  // hit = успешный вызов с cache_read > 0 (cardinality безопасна:
+  // provider × model ≈ 50-100 рядов).
+  private llmCacheHitTotal!: Counter<'provider' | 'model' | 'task_type'>;
+  private llmCacheReadTokensTotal!: Counter<'provider' | 'model'>;
+  private llmCacheCreationTokensTotal!: Counter<'provider' | 'model'>;
+
   // ── admin ai-models (Фаза A.4) ──────────────────────────────────────
   private adminAiModelsRouteChangeTotal!: Counter<'task_type' | 'change_type'>;
   private adminAiModelsExperimentStartedTotal!: Counter<'task_type'>;
@@ -581,6 +590,27 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_llm_no_provider_total',
       help: 'Фаза A.4 — ни один провайдер цепочки primary/secondary/tertiary не отработал для taskType. Должно быть = 0; > 0 → critical alert.',
       labelNames: ['task_type'] as const,
+    });
+
+    // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
+    // объём токенов, экономящихся за счёт кеша Anthropic (cache_read ≈ 0.1×
+    // input price, cache_creation ≈ 1.25× для 5min-TTL). Алёрт: cache_hit
+    // rate резко упал → silent invalidator в системе (timestamp / UUID
+    // в system prompt, недетерминированный JSON и т.п.).
+    this.llmCacheHitTotal = this.getOrCreateCounter({
+      name: 'z_llm_cache_hit_total',
+      help: 'T7-F3 — счётчик LLM-вызовов с cache_read > 0. Делить на общее число успешных вызовов = hit rate.',
+      labelNames: ['provider', 'model', 'task_type'] as const,
+    });
+    this.llmCacheReadTokensTotal = this.getOrCreateCounter({
+      name: 'z_llm_cache_read_tokens_total',
+      help: 'T7-F3 — суммарно токенов, прочитанных из prompt cache (cost ~0.1× input price).',
+      labelNames: ['provider', 'model'] as const,
+    });
+    this.llmCacheCreationTokensTotal = this.getOrCreateCounter({
+      name: 'z_llm_cache_creation_tokens_total',
+      help: 'T7-F3 — суммарно токенов, записанных в prompt cache (cost ~1.25× input price для 5min-TTL). Релевантно только Anthropic-семейству.',
+      labelNames: ['provider', 'model'] as const,
     });
 
     this.adminAiModelsRouteChangeTotal = this.getOrCreateCounter({
@@ -2114,6 +2144,58 @@ export class BusinessMetricsService implements OnModuleInit {
       provider: args.provider,
       status: args.status,
     });
+  }
+
+  /**
+   * T7-F3 — фиксирует один LLM-вызов с попаданием в prompt cache.
+   * Вызывается из AiUsageLogService.record при `cachedTokens > 0`.
+   * `taskType` помогает понять, какой воркер «выигрывает» от кеширования.
+   */
+  incLlmCacheHit(args: {
+    provider: string;
+    model: string;
+    taskType: string;
+  }): void {
+    this.llmCacheHitTotal.inc({
+      provider: args.provider,
+      model: args.model,
+      task_type: args.taskType,
+    });
+  }
+
+  /**
+   * T7-F3 — суммарно прочитано из кеша токенов (cost ~0.1× input). Накапливается
+   * по `provider + model` (без task_type — иначе cardinality взлетает).
+   */
+  addLlmCacheReadTokens(args: {
+    provider: string;
+    model: string;
+    tokens: number;
+  }): void {
+    if (args.tokens <= 0) return;
+    this.llmCacheReadTokensTotal.inc(
+      { provider: args.provider, model: args.model },
+      args.tokens,
+    );
+  }
+
+  /**
+   * T7-F3 — суммарно записано в кеш токенов (cost ~1.25× input для 5min TTL).
+   * Если значение растёт быстрее, чем `cache_read_tokens` — значит кеш постоянно
+   * инвалидируется (silent invalidator) или мы кешируем слишком волатильный
+   * префикс. Слежение за отношением creation / (creation + read) — индикатор
+   * качества кеширования.
+   */
+  addLlmCacheCreationTokens(args: {
+    provider: string;
+    model: string;
+    tokens: number;
+  }): void {
+    if (args.tokens <= 0) return;
+    this.llmCacheCreationTokensTotal.inc(
+      { provider: args.provider, model: args.model },
+      args.tokens,
+    );
   }
 
   /**

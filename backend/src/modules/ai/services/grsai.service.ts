@@ -43,12 +43,15 @@ export class GrsaiService {
     model: string,
   ): Promise<LlmCompleteOutput> {
     const { url, auth } = this.resolveEndpoint();
+    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
+    // GRSAI — внешний прокси без cache_control API; распаковываем в строку.
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
       stream: true,
       messages: [
         { role: 'system', content: input.system.text },
-        { role: 'user', content: input.user },
+        { role: 'user', content: userText },
       ],
     };
     if (input.maxTokens !== undefined) body['max_tokens'] = input.maxTokens;

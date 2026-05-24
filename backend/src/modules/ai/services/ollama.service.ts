@@ -78,12 +78,15 @@ export class OllamaService {
   // ─────────────────────────── private ─────────────────────────────────────
 
   private buildParams(input: LlmCompleteInput, model: string): Record<string, unknown> {
+    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
+    // Ollama (локальный) не имеет prompt caching API; распаковываем в строку.
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const params: Record<string, unknown> = {
       model,
       stream: false,
       messages: [
         { role: 'system', content: input.system.text },
-        { role: 'user', content: input.user },
+        { role: 'user', content: userText },
       ],
     };
     if (input.maxTokens !== undefined) {

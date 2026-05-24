@@ -39,9 +39,29 @@ export type LlmResponseFormat =
 
 export type LlmReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
+/**
+ * Пользовательское сообщение. Поддерживает два формата:
+ *   - `string` — обычный текст (legacy/default).
+ *   - `{ text, cacheControl?: 'ephemeral' }` — оборачиваем в content-блок и
+ *     просим провайдера кэшировать (Anthropic / MiniMax). Для остальных
+ *     провайдеров `cacheControl` молча игнорируется (см. T7-F3 prompt caching).
+ *
+ * Когда оборачивать в `cacheControl: 'ephemeral'`:
+ *   - Транскрипты, retrieval pool, knowledge-блоки > ~1000 символов.
+ *   - Стабильная часть user-сообщения, повторяющаяся между вызовами
+ *     (например, тот же транскрипт через retry).
+ *
+ * Когда НЕ оборачивать:
+ *   - Короткие пользовательские вопросы / запросы (< 500 символов).
+ *   - Уникальный per-request input — кеш всё равно промахнётся.
+ */
+export type LlmUserInput =
+  | string
+  | { text: string; cacheControl?: 'ephemeral' };
+
 export interface LlmCompleteInput {
   system: { text: string; cacheControl?: 'ephemeral' };
-  user: string;
+  user: LlmUserInput;
   /** Если не задан — клиент использует свой default из `cfg.*.model`. */
   model?: string;
   maxTokens?: number;
@@ -67,10 +87,16 @@ export interface LlmCompleteOutput {
   inputTokens: number;
   outputTokens: number;
   /**
-   * Сколько входных токенов попало в prompt cache (cache hit).
+   * Сколько входных токенов попало в prompt cache (cache hit / cache_read).
    * 0 если провайдер не сообщает или модель не кэшировалась.
    */
   cachedTokens?: number;
+  /**
+   * Сколько токенов записано в кеш этим вызовом (cache write / cache_creation).
+   * Релевантно только Anthropic-семейству (Anthropic / MiniMax — anthropic-compat).
+   * Остальные провайдеры не различают create/read.
+   */
+  cacheCreationTokens?: number;
   model: string;
   provider:
     | 'anthropic'

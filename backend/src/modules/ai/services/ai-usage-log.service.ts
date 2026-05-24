@@ -37,6 +37,12 @@ export interface RecordAiUsageInput {
   inputTokens?: number;
   outputTokens?: number;
   cachedTokens?: number;
+  /**
+   * T7-F3 — токенов записано в кеш этим вызовом (Anthropic
+   * `cache_creation_input_tokens`). Только информативно (нет колонки в БД,
+   * нужно только для метрики). 0 для большинства провайдеров.
+   */
+  cacheCreationTokens?: number;
   reasoningTokens?: number | null;
   costUsd: number;
   durationMs: number;
@@ -144,6 +150,34 @@ export class AiUsageLogService {
             tenant: input.tenantId,
             taskType: input.taskType,
             tokens,
+          });
+        }
+      }
+
+      // T7-F3 — prompt caching метрики. Инкрементируем только на успешных
+      // вызовах: failed call с cachedTokens > 0 — нонсенс (cached=0 default
+      // в catch-branch'е router'а).
+      if (input.success) {
+        const cacheRead = input.cachedTokens ?? 0;
+        const cacheCreation = input.cacheCreationTokens ?? 0;
+        const taskTypeLabel = input.taskType ?? 'unknown';
+        if (cacheRead > 0) {
+          this.metrics.incLlmCacheHit({
+            provider: input.provider,
+            model: input.model,
+            taskType: taskTypeLabel,
+          });
+          this.metrics.addLlmCacheReadTokens({
+            provider: input.provider,
+            model: input.model,
+            tokens: cacheRead,
+          });
+        }
+        if (cacheCreation > 0) {
+          this.metrics.addLlmCacheCreationTokens({
+            provider: input.provider,
+            model: input.model,
+            tokens: cacheCreation,
           });
         }
       }

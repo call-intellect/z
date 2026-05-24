@@ -44,12 +44,14 @@ export class CustomHttpProtocolAdapter implements LlmProtocolAdapter {
 
     let resp: Response;
     try {
+      // T7-F3: распаковка LlmUserInput (см. openai-chat.adapter.ts).
+      const userText = typeof input.user === 'string' ? input.user : input.user.text;
       resp = await fetch(provider.baseUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           system: input.system.text,
-          user: input.user,
+          user: userText,
           model,
           maxTokens: input.maxTokens,
         }),

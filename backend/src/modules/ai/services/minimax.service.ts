@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 
 import {
   buildSystemBlocks,
+  buildUserContent,
   mapAnthropicResponseToOutput,
 } from './anthropic.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
@@ -38,7 +39,7 @@ export class MinimaxService {
         max_tokens: input.maxTokens ?? 4096,
         ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
         system: buildSystemBlocks(input.system),
-        messages: [{ role: 'user', content: input.user }],
+        messages: [{ role: 'user', content: buildUserContent(input.user) }],
         ...(input.tools ? { tools: input.tools } : {}),
         stream: false,
       });

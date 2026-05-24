@@ -46,11 +46,15 @@ export class OpenAiProxyService {
       parameters: Record<string, unknown>;
       strict?: boolean;
     };
+    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
+    // OpenAI Responses API не поддерживает Anthropic-style cache_control;
+    // распаковываем в строку (caching работает автоматически на уровне API).
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const params: Record<string, unknown> = {
       model,
       stream: false,
       instructions: input.system.text,
-      input: [{ role: 'user', content: input.user }],
+      input: [{ role: 'user', content: userText }],
     };
     if (input.maxTokens !== undefined) {
       params['max_output_tokens'] = input.maxTokens;

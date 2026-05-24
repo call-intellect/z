@@ -77,6 +77,10 @@ export class KieService {
     model: string,
   ): Promise<LlmCompleteOutput> {
     const url = `${this.baseUrl}/claude/v1/messages`;
+    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
+    // KIE-claude — внешний прокси, prompt caching отдельной API не имеет;
+    // распаковываем в строку.
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body = {
       model,
       max_tokens: input.maxTokens ?? 1024,
@@ -84,7 +88,7 @@ export class KieService {
       messages: [
         {
           role: 'user',
-          content: `${input.system.text}\n\n${input.user}`,
+          content: `${input.system.text}\n\n${userText}`,
         },
       ],
     };
@@ -116,6 +120,8 @@ export class KieService {
     model: string,
   ): Promise<LlmCompleteOutput> {
     const url = `${this.baseUrl}/codex/v1/responses`;
+    // T7-F3: распаковка LlmUserInput (см. completeClaudeFormat выше).
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
       stream: false,
@@ -125,7 +131,7 @@ export class KieService {
           content: [
             {
               type: 'input_text',
-              text: `${input.system.text}\n\n${input.user}`,
+              text: `${input.system.text}\n\n${userText}`,
             },
           ],
         },
@@ -170,6 +176,8 @@ export class KieService {
     model: string,
   ): Promise<LlmCompleteOutput> {
     const url = `${this.baseUrl}/${model}/v1/chat/completions`;
+    // T7-F3: распаковка LlmUserInput (см. completeClaudeFormat выше).
+    const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       stream: false,
       include_thoughts: false,
@@ -179,7 +187,7 @@ export class KieService {
           content: [
             {
               type: 'text',
-              text: `${input.system.text}\n\n${input.user}`,
+              text: `${input.system.text}\n\n${userText}`,
             },
           ],
         },

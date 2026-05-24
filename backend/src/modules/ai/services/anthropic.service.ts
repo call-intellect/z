@@ -79,7 +79,7 @@ export class AnthropicService {
       max_tokens: input.maxTokens ?? 4096,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
       system: buildSystemBlocks(input.system),
-      messages: [{ role: 'user', content: input.user }],
+      messages: [{ role: 'user', content: buildUserContent(input.user) }],
       ...(input.tools ? { tools: input.tools } : {}),
     });
 
@@ -96,7 +96,7 @@ export class AnthropicService {
       max_tokens: input.maxTokens ?? 4096,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
       system: buildSystemBlocks(input.system),
-      messages: [{ role: 'user', content: input.user }],
+      messages: [{ role: 'user', content: buildUserContent(input.user) }],
       ...(input.tools ? { tools: input.tools } : {}),
       stream: false,
     });
@@ -126,8 +126,51 @@ export function buildSystemBlocks(
 }
 
 /**
+ * Собирает user-content для Anthropic Messages API.
+ *
+ * - Если `user` — строка → отдаём как есть (legacy).
+ * - Если `user` — объект с `cacheControl: 'ephemeral'` → оборачиваем в
+ *   один text-блок с `cache_control: { type: 'ephemeral' }`. Это второй
+ *   breakpoint (после system), который позволяет кешировать большие
+ *   user-блоки (транскрипт, retrieval pool, knowledge-блоки).
+ *
+ * Минимум для попадания в кеш — ~1024 токенов (~500 символов) для Sonnet 4.5
+ * и старше, ~4096 токенов для Opus 4+. Короткие блоки силно не кешируются —
+ * см. shared/prompt-caching.md из claude-api skill.
+ *
+ * T7-F3 (prompt caching distribution).
+ */
+export function buildUserContent(
+  user: LlmCompleteInput['user'],
+):
+  | string
+  | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> {
+  if (typeof user === 'string') return user;
+  if (user.cacheControl === 'ephemeral') {
+    return [
+      {
+        type: 'text',
+        text: user.text,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
+  }
+  return user.text;
+}
+
+/**
  * Маппит ответ Anthropic SDK в `LlmCompleteOutput`.
  * Используется и AnthropicService, и MinimaxService (тот же SDK).
+ *
+ * Извлекает prompt-caching токены из `usage`:
+ *  - `cache_read_input_tokens`     → `cachedTokens` (cache hit, ~0.1× input price).
+ *  - `cache_creation_input_tokens` → `cacheCreationTokens` (cache write,
+ *                                    ~1.25× input price для 5-минутного TTL).
+ *  - `input_tokens` от Anthropic'а — это «нетto»: uncached + uncached prefix.
+ *    Чтобы AiUsageLog видел общий объём, прибавляем cached/creation к
+ *    `inputTokens` — иначе billing/quota по `input_tokens_total` занижен.
+ *    Cost-расчёт в LlmRouterService.computeCostUsd корректно вычитает
+ *    `cachedTokens` (cached_per_1M < input_per_1M), так что overcount-а нет.
  */
 export function mapAnthropicResponseToOutput(
   message: Anthropic.Message,
@@ -143,10 +186,25 @@ export function mapAnthropicResponseToOutput(
       toolCalls.push({ name: block.name, input: block.input });
     }
   }
+  // SDK типизация: cache_*_input_tokens могут быть null/undefined у не-кешируемых
+  // моделей. Анализ Usage из @anthropic-ai/sdk показывает поля как `number | null`.
+  const usage = message.usage as unknown as {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  };
+  const baseInput = usage.input_tokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheCreation = usage.cache_creation_input_tokens ?? 0;
   return {
     text,
-    inputTokens: message.usage.input_tokens ?? 0,
-    outputTokens: message.usage.output_tokens ?? 0,
+    // Anthropic усreport'ит input_tokens как «нетto»: фактически новые токены.
+    // Чтобы общий учёт был полным — суммируем все 3 ведра.
+    inputTokens: baseInput + cacheRead + cacheCreation,
+    outputTokens: usage.output_tokens ?? 0,
+    ...(cacheRead > 0 ? { cachedTokens: cacheRead } : {}),
+    ...(cacheCreation > 0 ? { cacheCreationTokens: cacheCreation } : {}),
     model,
     provider,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),

@@ -1,0 +1,348 @@
+/**
+ * RBAC × Tenant матрица (Phase F.3).
+ *
+ * Табличный тест: для каждой пары (role × resource × action) проверяем, что
+ * `RbacService.check` возвращает ожидаемый verdict. Источник правды о
+ * разрешениях — `policies/policy.csv`; здесь мы лишь фиксируем ключевые
+ * сценарии, чтобы изменение policy.csv не сломало контракт незаметно.
+ *
+ * super_admin (User.isSuperAdmin=true) — bypass всех проверок.
+ * Отсутствие membership'а у обычного пользователя — отказ.
+ *
+ * PrismaService мокаем — нас интересует только evaluate(), а не I/O.
+ */
+import { describe, expect, it, vi } from 'vitest';
+
+import { RbacService, type Action, type ResourceType } from './rbac.service';
+
+import type { PrismaService } from '../../common/prisma/prisma.service';
+
+interface MockedMembership {
+  role: 'owner' | 'admin' | 'manager' | 'coo';
+  org: { visibilityMode: 'open' | 'strict' };
+}
+
+function buildRbac(opts: {
+  isSuperAdmin?: boolean;
+  membership?: MockedMembership | null;
+  orgVisibility?: 'open' | 'strict';
+}): RbacService {
+  const prisma = {
+    user: {
+      findUnique: vi.fn(async () => ({
+        isSuperAdmin: opts.isSuperAdmin === true,
+      })),
+    },
+    membership: {
+      findUnique: vi.fn(async () => opts.membership ?? null),
+    },
+    org: {
+      findUnique: vi.fn(async () => ({
+        visibilityMode: opts.orgVisibility ?? 'open',
+      })),
+    },
+  } as unknown as PrismaService;
+
+  const rbac = new RbacService(prisma);
+  // onModuleInit грузит policy.csv с диска — нужно вызвать вручную в тестах.
+  rbac.onModuleInit();
+  return rbac;
+}
+
+describe('RbacService — матрица ролей × ресурсов × действий', () => {
+  // ─────────────────────────── super_admin ──────────────────────────────
+  describe('super_admin (isSuperAdmin=true) — bypass любых ограничений', () => {
+    const superAdminCases: Array<{ obj: ResourceType; act: Action }> = [
+      { obj: 'meeting', act: 'read' },
+      { obj: 'meeting', act: 'delete' },
+      { obj: 'org', act: 'manage' },
+      { obj: 'block', act: 'delete' },
+      { obj: 'audit-log', act: 'read' },
+      { obj: 'person', act: 'erase' },
+    ];
+    it.each(superAdminCases)('$obj.$act → true', async ({ obj, act }) => {
+      const rbac = buildRbac({ isSuperAdmin: true, membership: null });
+      const allowed = await rbac.check({
+        userId: 'super',
+        tenantId: 'any-org',
+        obj,
+        act,
+      });
+      expect(allowed).toBe(true);
+    });
+  });
+
+  // ─────────────────────────── нет membership ───────────────────────────
+  describe('нет membership и не super_admin → false', () => {
+    it('обычный user без membership на любой ресурс → false', async () => {
+      const rbac = buildRbac({ isSuperAdmin: false, membership: null });
+      const allowed = await rbac.check({
+        userId: 'u-1',
+        tenantId: 't-1',
+        obj: 'meeting',
+        act: 'read',
+      });
+      expect(allowed).toBe(false);
+    });
+  });
+
+  // ─────────────────────────── owner ────────────────────────────────────
+  describe('owner — полный доступ на основные ресурсы', () => {
+    const ownerCases: Array<{ obj: ResourceType; act: Action; expected: boolean }> = [
+      { obj: 'meeting', act: 'read', expected: true },
+      { obj: 'meeting', act: 'write', expected: true },
+      { obj: 'meeting', act: 'delete', expected: true },
+      { obj: 'block', act: 'read', expected: true },
+      { obj: 'block', act: 'write', expected: true },
+      { obj: 'block', act: 'delete', expected: true },
+      { obj: 'theme', act: 'read', expected: true },
+      { obj: 'theme', act: 'delete', expected: true },
+      { obj: 'audit-log', act: 'read', expected: true },
+      { obj: 'person', act: 'erase', expected: true },
+    ];
+    it.each(ownerCases)('owner $obj $act → $expected', async ({ obj, act, expected }) => {
+      const rbac = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      const allowed = await rbac.check({
+        userId: 'u-owner',
+        tenantId: 't-1',
+        obj,
+        act,
+        resourceOwnerId: 'u-owner',
+      });
+      expect(allowed).toBe(expected);
+    });
+  });
+
+  // ─────────────────────────── admin ────────────────────────────────────
+  describe('admin — полный доступ на основные ресурсы, но НЕ erase', () => {
+    const adminCases: Array<{ obj: ResourceType; act: Action; expected: boolean }> = [
+      { obj: 'meeting', act: 'read', expected: true },
+      { obj: 'meeting', act: 'delete', expected: true },
+      { obj: 'block', act: 'write', expected: true },
+      { obj: 'theme', act: 'write', expected: true },
+      // admin НЕ может erase персональные данные — только owner.
+      { obj: 'person', act: 'erase', expected: false },
+    ];
+    it.each(adminCases)('admin $obj $act → $expected', async ({ obj, act, expected }) => {
+      const rbac = buildRbac({
+        membership: { role: 'admin', org: { visibilityMode: 'open' } },
+      });
+      const allowed = await rbac.check({
+        userId: 'u-admin',
+        tenantId: 't-1',
+        obj,
+        act,
+        resourceOwnerId: 'u-admin',
+      });
+      expect(allowed).toBe(expected);
+    });
+  });
+
+  // ─────────────────────────── manager OPEN ─────────────────────────────
+  describe('manager (visibility=open) — read всего, write только своих', () => {
+    const cases: Array<{
+      obj: ResourceType;
+      act: Action;
+      isSelf: boolean;
+      expected: boolean;
+    }> = [
+      // Read meetings/cards/tasks — на всё в Org.
+      { obj: 'meeting', act: 'read', isSelf: false, expected: true },
+      { obj: 'card', act: 'read', isSelf: false, expected: true },
+      { obj: 'task', act: 'read', isSelf: false, expected: true },
+      // Write — только свои.
+      { obj: 'meeting', act: 'write', isSelf: true, expected: true },
+      { obj: 'meeting', act: 'write', isSelf: false, expected: false },
+      { obj: 'card', act: 'write', isSelf: true, expected: true },
+      { obj: 'card', act: 'write', isSelf: false, expected: false },
+      // Delete — только свои.
+      { obj: 'meeting', act: 'delete', isSelf: true, expected: true },
+      { obj: 'meeting', act: 'delete', isSelf: false, expected: false },
+      // Knowledge-core shared: read всем member'ам.
+      { obj: 'block', act: 'read', isSelf: false, expected: true },
+      { obj: 'theme', act: 'read', isSelf: false, expected: true },
+      { obj: 'entity', act: 'read', isSelf: false, expected: true },
+      // Manager НЕ имеет write на block / theme / entity.
+      { obj: 'block', act: 'write', isSelf: true, expected: false },
+      { obj: 'block', act: 'delete', isSelf: true, expected: false },
+      // Audit log — только admin/owner.
+      { obj: 'audit-log', act: 'read', isSelf: true, expected: false },
+      // person.erase — только owner.
+      { obj: 'person', act: 'erase', isSelf: true, expected: false },
+    ];
+    it.each(cases)(
+      'manager open $obj $act self=$isSelf → $expected',
+      async ({ obj, act, isSelf, expected }) => {
+        const rbac = buildRbac({
+          membership: { role: 'manager', org: { visibilityMode: 'open' } },
+        });
+        const allowed = await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj,
+          act,
+          resourceOwnerId: isSelf ? 'u-mgr' : 'u-other',
+        });
+        expect(allowed).toBe(expected);
+      },
+    );
+  });
+
+  // ─────────────────────────── manager STRICT ───────────────────────────
+  describe('manager (visibility=strict) — read/write только своих', () => {
+    const cases: Array<{
+      obj: ResourceType;
+      act: Action;
+      isSelf: boolean;
+      expected: boolean;
+    }> = [
+      // Read meetings/cards/tasks ТОЛЬКО свои.
+      { obj: 'meeting', act: 'read', isSelf: true, expected: true },
+      { obj: 'meeting', act: 'read', isSelf: false, expected: false },
+      { obj: 'card', act: 'read', isSelf: true, expected: true },
+      { obj: 'card', act: 'read', isSelf: false, expected: false },
+      { obj: 'task', act: 'write', isSelf: true, expected: true },
+      { obj: 'task', act: 'write', isSelf: false, expected: false },
+      // Knowledge-core (shared) — read всё равно открыт всем member'ам (исключение из strict).
+      { obj: 'block', act: 'read', isSelf: false, expected: true },
+      { obj: 'theme', act: 'read', isSelf: false, expected: true },
+      { obj: 'entity', act: 'read', isSelf: false, expected: true },
+      // Audit-log — нет.
+      { obj: 'audit-log', act: 'read', isSelf: true, expected: false },
+    ];
+    it.each(cases)(
+      'manager strict $obj $act self=$isSelf → $expected',
+      async ({ obj, act, isSelf, expected }) => {
+        const rbac = buildRbac({
+          membership: { role: 'manager', org: { visibilityMode: 'strict' } },
+          orgVisibility: 'strict',
+        });
+        const allowed = await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj,
+          act,
+          resourceOwnerId: isSelf ? 'u-mgr' : 'u-other',
+        });
+        expect(allowed).toBe(expected);
+      },
+    );
+  });
+
+  // ─────────────────────────── shortcuts ────────────────────────────────
+  describe('shortcuts canRead/canWrite/canManageOrg', () => {
+    it('canRead делегирует в check с action=read', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(await rbac.canRead('u-1', 't-1', 'block')).toBe(true);
+    });
+
+    it('canWrite делегирует в check с action=write', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      // manager open не имеет write на block.
+      expect(await rbac.canWrite('u-1', 't-1', 'block', 'u-1')).toBe(false);
+    });
+
+    it('canManageOrg: owner → true, admin → false, super_admin → true', async () => {
+      const owner = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(await owner.canManageOrg('u-o', 't-1')).toBe(true);
+
+      const admin = buildRbac({
+        membership: { role: 'admin', org: { visibilityMode: 'open' } },
+      });
+      expect(await admin.canManageOrg('u-a', 't-1')).toBe(false);
+
+      const sa = buildRbac({
+        isSuperAdmin: true,
+        membership: null,
+      });
+      expect(await sa.canManageOrg('u-s', 't-1')).toBe(true);
+    });
+
+    it('canViewDirectorDashboard: owner/admin → true, manager → false', async () => {
+      const owner = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(await owner.canViewDirectorDashboard('u-o', 't-1')).toBe(true);
+
+      const admin = buildRbac({
+        membership: { role: 'admin', org: { visibilityMode: 'open' } },
+      });
+      expect(await admin.canViewDirectorDashboard('u-a', 't-1')).toBe(true);
+
+      const mgr = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(await mgr.canViewDirectorDashboard('u-m', 't-1')).toBe(false);
+    });
+
+    it('canViewOperationsDashboard: owner/admin/coo → true, manager → false', async () => {
+      const owner = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(await owner.canViewOperationsDashboard('u-o', 't-1')).toBe(true);
+
+      const coo = buildRbac({
+        membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      });
+      expect(await coo.canViewOperationsDashboard('u-c', 't-1')).toBe(true);
+
+      const mgr = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(await mgr.canViewOperationsDashboard('u-m', 't-1')).toBe(false);
+    });
+  });
+
+  // ─────────────────────────── cache ────────────────────────────────────
+  describe('membership cache', () => {
+    it('повторный check одного и того же (user, tenant) не дёргает PrismaService снова', async () => {
+      const findUserMock = vi.fn(async () => ({ isSuperAdmin: false }));
+      const findMembershipMock = vi.fn(async () => ({
+        role: 'owner' as const,
+        org: { visibilityMode: 'open' as const },
+      }));
+      const prisma = {
+        user: { findUnique: findUserMock },
+        membership: { findUnique: findMembershipMock },
+        org: { findUnique: vi.fn() },
+      } as unknown as PrismaService;
+      const rbac = new RbacService(prisma);
+      rbac.onModuleInit();
+
+      await rbac.check({ userId: 'u', tenantId: 't', obj: 'meeting', act: 'read' });
+      await rbac.check({ userId: 'u', tenantId: 't', obj: 'meeting', act: 'write' });
+      await rbac.check({ userId: 'u', tenantId: 't', obj: 'card', act: 'read' });
+
+      expect(findUserMock).toHaveBeenCalledTimes(1);
+      expect(findMembershipMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('invalidate сбрасывает кэш', async () => {
+      const findUserMock = vi.fn(async () => ({ isSuperAdmin: false }));
+      const findMembershipMock = vi.fn(async () => ({
+        role: 'owner' as const,
+        org: { visibilityMode: 'open' as const },
+      }));
+      const prisma = {
+        user: { findUnique: findUserMock },
+        membership: { findUnique: findMembershipMock },
+        org: { findUnique: vi.fn() },
+      } as unknown as PrismaService;
+      const rbac = new RbacService(prisma);
+      rbac.onModuleInit();
+
+      await rbac.check({ userId: 'u', tenantId: 't', obj: 'meeting', act: 'read' });
+      rbac.invalidate('u', 't');
+      await rbac.check({ userId: 'u', tenantId: 't', obj: 'meeting', act: 'read' });
+      expect(findUserMock).toHaveBeenCalledTimes(2);
+    });
+  });
+});

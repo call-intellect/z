@@ -16,6 +16,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "test:unit": "vitest run src",
     "test:integration": "vitest run test/integration",
+    "test:integration:knowledge-core": "vitest run src/modules/knowledge-core/api src/modules/knowledge-core/services/entity-resolution.service.spec.ts",
     "test:e2e": "vitest run test/e2e",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",

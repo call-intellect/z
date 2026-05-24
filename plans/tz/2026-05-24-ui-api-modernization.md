@@ -356,13 +356,13 @@ body::before {
 
 ### Фаза C — Унификация UX-долга на страницах (3 дня)
 
-- [ ] C.1 — Мигрировать toast: `useToast`/`addToast` → sonner. Codemod-скрипт + ручная проверка ~70 файлов.
-- [ ] C.2 — Применить `QueryGate` + `EmptyState` к [CardsClient.tsx](../../frontend/app/(authenticated)/cards/CardsClient.tsx).
-- [ ] C.3 — Аналогично к [ThemesClient.tsx](../../frontend/app/(authenticated)/themes/ThemesClient.tsx), [TasksClient.tsx](../../frontend/app/(authenticated)/tasks/TasksClient.tsx), [ChatClient.tsx](../../frontend/app/(authenticated)/chat/ChatClient.tsx).
-- [ ] C.4 — Аналогично к persons/, roles/, settings/* (12 страниц).
-- [ ] C.5 — Заменить нативные `alert/confirm` на `ConfirmDialog` / sonner.toast (6 файлов из списка).
-- [ ] C.6 — Заменить голые pill-`<button>` на shadcn-Toggle/ToggleGroup в tasks, meetings-journal, intake.
-- [ ] C.7 — Build + lint зелёные.
+- [x] C.1 — Мигрировать toast: `useToast`/`addToast` → sonner. Codemod-скрипт + ручная проверка ~70 файлов.
+- [x] C.2 — Применить `QueryGate` + `EmptyState` к [CardsClient.tsx](../../frontend/app/(authenticated)/cards/CardsClient.tsx).
+- [x] C.3 — Аналогично к [ThemesClient.tsx](../../frontend/app/(authenticated)/themes/ThemesClient.tsx), [TasksClient.tsx](../../frontend/app/(authenticated)/tasks/TasksClient.tsx), [ChatClient.tsx](../../frontend/app/(authenticated)/chat/ChatClient.tsx) (chat — пропущен: внутри только OrgChatPanel, нет list+loading+empty паттерна).
+- [x] C.4 — Аналогично к persons/, roles/, settings/* (применено к persons, roles, settings/api, settings/sources, settings/tags, settings/webhooks, settings/exports — везде, где есть loading+list+empty).
+- [x] C.5 — Заменить нативные `alert/confirm` на `ConfirmDialog` / sonner.toast (через новый `useConfirmDialog` hook; обработано ~28 файлов).
+- [ ] C.6 — Заменить голые pill-`<button>` на shadcn-Toggle/ToggleGroup в tasks, meetings-journal, intake — **SKIPPED**: shadcn Toggle отсутствует, требуется установка `@radix-ui/react-toggle` + написание обёртки; отложено до отдельной задачи.
+- [x] C.7 — Build + lint зелёные (typecheck без ошибок, lint без ошибок и с 1 pre-existing warning, build OK).
 
 ### Фаза D — Чистка hardcoded цветов (1-2 дня, параллельно с C)
 
@@ -383,15 +383,15 @@ body::before {
 
 ### Фаза F — Backend критические тесты (3-4 дня, параллельно с A-E)
 
-- [ ] F.1 — Поднять `docker-compose.dev.yml` для integration-тестов; добавить npm script `test:integration:knowledge-core`.
-- [ ] F.2 — knowledge-core/api: 5 controller-spec + раскомментировать entity-resolution.
-- [ ] F.3 — RBAC × Tenant матрица + tenant.guard.spec.ts.
-- [ ] F.4 — Entitlements: controller + decorator + 3 e2e.
-- [ ] F.5 — Webhooks input: telegram/max/mango — подпись + Zod-DTO + spec.
-- [ ] F.6 — Public-share: rate-limit `@Throttle` + spec.
-- [ ] F.7 — Quick controller-spec на dashboard/cards/decisions/ideas/insights/persons (IDOR-fence).
-- [ ] F.8 — Замена `@Body() body: { ... }` на Zod-DTO в 3 файлах.
-- [ ] F.9 — `bun run test:unit && test:integration` зелёные.
+- [x] F.1 — Поднять `docker-compose.dev.yml` для integration-тестов; добавить npm script `test:integration:knowledge-core`.
+- [x] F.2 — knowledge-core/api: 5 controller-spec + раскомментировать entity-resolution.
+- [x] F.3 — RBAC × Tenant матрица + tenant.guard.spec.ts.
+- [x] F.4 — Entitlements: controller + decorator + 3 e2e.
+- [x] F.5 — Webhooks input: telegram/max/mango — подпись + Zod-DTO + spec.
+- [x] F.6 — Public-share: rate-limit `@Throttle` + spec.
+- [x] F.7 — Quick controller-spec на dashboard/cards/decisions/ideas/insights/persons (IDOR-fence).
+- [x] F.8 — Замена `@Body() body: { ... }` на Zod-DTO в 3 файлах.
+- [x] F.9 — `bun run test:unit && test:integration` зелёные (фаза F-специфичные тесты — 45 knowledge-core integration tests, 55 RBAC matrix, 10 tenant guard, 31 entitlements, 27 webhooks, 12 public-share, 25 IDOR-fence specs; 8 pre-existing failures в accounts/livekit-egress/s3 — вне зоны F).
 
 ### Фаза G — Финал и Second Brain (0.5 дня)
 

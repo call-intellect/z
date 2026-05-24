@@ -20,6 +20,8 @@ import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
 import { DailyCostAggregatorCron } from './daily-cost-aggregator.cron';
 import {
+  AggregateUnitEconomicsBodySchema,
+  type AggregateUnitEconomicsBody,
   UnitEconomicsGlobalQuerySchema,
   type UnitEconomicsGlobalQuery,
   UnitEconomicsOrgQuerySchema,
@@ -67,7 +69,10 @@ export class AdminEconomicsController {
    * Ручной перерасчёт за конкретный день (admin-debug, после починки записи).
    */
   @Post('unit-economics/aggregate')
-  aggregate(@Body() body: { date?: string }) {
+  aggregate(
+    @Body(new ZodValidationPipe(AggregateUnitEconomicsBodySchema))
+    body: AggregateUnitEconomicsBody,
+  ) {
     const date = body.date ? new Date(body.date) : new Date(Date.now() - 86400_000);
     return this.aggregator.runForDate(date);
   }

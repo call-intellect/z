@@ -29,3 +29,17 @@ export const UnitEconomicsOrgQuerySchema = z.object({
 export type UnitEconomicsOrgQuery = z.infer<
   typeof UnitEconomicsOrgQuerySchema
 >;
+
+/**
+ * POST /api/v1/admin/unit-economics/aggregate — body.
+ * Phase F.8: заменяет `@Body() body: { date?: string }` (untyped) на Zod-DTO.
+ * `date` опционален — если не передан, сервис берёт «вчера».
+ */
+export const AggregateUnitEconomicsBodySchema = z
+  .object({
+    date: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+export type AggregateUnitEconomicsBody = z.infer<
+  typeof AggregateUnitEconomicsBodySchema
+>;

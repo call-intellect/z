@@ -25,11 +25,13 @@ import { RbacService } from '../rbac/rbac.service';
 
 import {
   DecideCurationBodySchema,
+  DismissConflictBodySchema,
   ListConflictsQuerySchema,
   ListCurationQueueQuerySchema,
   ResolveConflictBodySchema,
   UpdateCurationSettingsBodySchema,
   type DecideCurationBody,
+  type DismissConflictBody,
   type ListConflictsQuery,
   type ListCurationQueueQuery,
   type ResolveConflictBody,
@@ -186,7 +188,8 @@ export class CurationController {
   @ApiOperation({ summary: 'Отказ от резолюции конфликта (status=dismissed)' })
   async dismissConflict(
     @Param('id') id: string,
-    @Body() body: { reasoning?: string },
+    @Body(new ZodValidationPipe(DismissConflictBodySchema))
+    body: DismissConflictBody,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
   ) {
@@ -202,7 +205,7 @@ export class CurationController {
       tenantId: t,
       conflictId: id,
       reviewerUserId: user.id,
-      reasoning: body?.reasoning,
+      reasoning: body.reasoning,
     });
   }
 

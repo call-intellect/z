@@ -21,8 +21,10 @@ import { TenantGuard } from '../rbac/guards/tenant.guard';
 
 import {
   AskCloneBodySchema,
+  MarkTraitMisleadingBodySchema,
   type AskCloneBody,
   type AskCloneResponseDto,
+  type MarkTraitMisleadingBody,
   type SkillProfileDto,
   type RoleSkillProfileDto,
 } from './dto/clones.dto';
@@ -145,7 +147,8 @@ export class ClonesController {
   })
   async markTraitMisleading(
     @Param('traitId') traitId: string,
-    @Body() body: { reason?: string },
+    @Body(new ZodValidationPipe(MarkTraitMisleadingBodySchema))
+    body: MarkTraitMisleadingBody,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true }> {
@@ -154,7 +157,7 @@ export class ClonesController {
       tenantId: t,
       requesterUserId: user.id,
       traitId,
-      reason: typeof body?.reason === 'string' ? body.reason : '',
+      reason: body.reason ?? '',
     });
     return { ok: true };
   }

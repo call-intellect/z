@@ -112,6 +112,15 @@ export const ResolveConflictBodySchema = z
   });
 export type ResolveConflictBody = z.infer<typeof ResolveConflictBodySchema>;
 
+// ─────────────────────────── Conflict dismiss ─────────────────────
+
+export const DismissConflictBodySchema = z
+  .object({
+    reasoning: z.string().trim().max(4_000).optional(),
+  })
+  .strict();
+export type DismissConflictBody = z.infer<typeof DismissConflictBodySchema>;
+
 // ─────────────────────────── Settings ─────────────────────────────
 
 export const CurationSettingsSchema = z

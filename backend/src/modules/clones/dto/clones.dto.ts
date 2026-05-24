@@ -19,6 +19,17 @@ export const AskCloneBodySchema = z.object({
 });
 export type AskCloneBody = z.infer<typeof AskCloneBodySchema>;
 
+/**
+ * POST /api/v1/clones/skill-traits/:traitId/mark-misleading — body.
+ * Phase F.8: заменяет `@Body() body: { reason?: string }` (untyped) на Zod-DTO.
+ */
+export const MarkTraitMisleadingBodySchema = z
+  .object({
+    reason: z.string().trim().max(2_000).optional(),
+  })
+  .strict();
+export type MarkTraitMisleadingBody = z.infer<typeof MarkTraitMisleadingBodySchema>;
+
 export interface CloneCitationDto {
   blockId: string;
   meetingId?: string;

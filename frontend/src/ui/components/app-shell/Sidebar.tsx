@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
+  Activity,
   AlertTriangle,
+  BarChart3,
   Brain,
   Building2,
   CalendarClock,
@@ -17,6 +19,7 @@ import {
   FlaskConical,
   FolderKanban,
   Gauge,
+  HeartHandshake,
   Home,
   IdCard,
   Inbox,
@@ -198,6 +201,8 @@ const OPERATIONS_GROUP: NavGroup = {
       gateFeature: 'feature.chat_org',
     },
     { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me' },
+    { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
+    { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
   ],
 };
 
@@ -211,6 +216,24 @@ const INTAKE_NAV_ITEM: NavItem = {
   label: 'Входящие',
   icon: Inbox,
   matchPrefix: '/intake',
+};
+
+/**
+ * SBA β-8 / β-8.1 — пункты COO-панели. Видны только owner / admin / coo.
+ * Вставляются в `OPERATIONS_GROUP` динамически (роль приходит из useAuth).
+ */
+const OPERATIONS_DASHBOARD_NAV_ITEM: NavItem = {
+  href: '/dashboard/operations',
+  label: 'Панель операций',
+  icon: Activity,
+  matchPrefix: '/dashboard/operations',
+};
+
+const OPERATIONS_WEEKLY_NAV_ITEM: NavItem = {
+  href: '/dashboard/operations/weekly',
+  label: 'Недельная сводка',
+  icon: BarChart3,
+  matchPrefix: '/dashboard/operations/weekly',
 };
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
@@ -270,22 +293,38 @@ export function Sidebar({
       : {}),
   };
 
+  // SBA β-8 / β-8.1 — для owner/admin/coo показываем пункты COO-панели.
+  const canSeeOperationsCoo =
+    currentOrgRole === 'owner' ||
+    currentOrgRole === 'admin' ||
+    currentOrgRole === 'coo';
+
   // Phase 3 Sprint 6: для owner/admin добавляем пункт «Входящие» в
   // «Оперативку» рядом с «Задачами» (логически — пред-этап триажа).
   // badgeCount тянется из useIntakePendingCount — показывает число
   // pending-карточек в живом счётчике (обновляется каждые 60 сек).
-  const operationsGroup: NavGroup = canTriage
-    ? (() => {
-        const items = [...OPERATIONS_GROUP.items];
-        const tasksIdx = items.findIndex((i) => i.href === '/tasks');
-        const insertAt = tasksIdx >= 0 ? tasksIdx + 1 : items.length;
-        items.splice(insertAt, 0, {
-          ...INTAKE_NAV_ITEM,
-          badgeCount: intakePendingCount,
-        });
-        return { ...OPERATIONS_GROUP, items };
-      })()
-    : OPERATIONS_GROUP;
+  const operationsGroup: NavGroup = (() => {
+    const items: NavItem[] = [...OPERATIONS_GROUP.items];
+
+    // SBA β-8 / β-8.1 — пункты COO-панели в начало группы (для тех, кому видно).
+    if (canSeeOperationsCoo) {
+      items.unshift(
+        OPERATIONS_DASHBOARD_NAV_ITEM,
+        OPERATIONS_WEEKLY_NAV_ITEM,
+      );
+    }
+
+    if (canTriage) {
+      const tasksIdx = items.findIndex((i) => i.href === '/tasks');
+      const insertAt = tasksIdx >= 0 ? tasksIdx + 1 : items.length;
+      items.splice(insertAt, 0, {
+        ...INTAKE_NAV_ITEM,
+        badgeCount: intakePendingCount,
+      });
+    }
+
+    return { ...OPERATIONS_GROUP, items };
+  })();
 
   const groups: NavGroup[] = [COMPANY_GROUP, operationsGroup, settingsGroup];
 

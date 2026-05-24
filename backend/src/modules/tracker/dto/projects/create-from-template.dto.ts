@@ -9,6 +9,9 @@ import { z } from 'zod';
  *   - `identifier` — префикс задач (2-5 заглавных букв; используется в формате PREFIX-123).
  *   - `slug` — короткий уникальный slug per tenant. Опц.: если не передан, формируется из identifier.toLowerCase().
  *   - `withExampleTasks` — создать 3 примера задач из шаблона (`typicalTasks`). По умолчанию `false`.
+ *   - `timezone` — IANA TZ id проекта (например `Europe/Moscow`, `Asia/Yekaterinburg`).
+ *     Опц.: если не передан, используется default `Europe/Moscow`. Frontend (Wave 3
+ *     FromTemplateWizard) уже передаёт значение из `<select>`.
  */
 export const CreateFromTemplateSchema = z
   .object({
@@ -39,6 +42,7 @@ export const CreateFromTemplateSchema = z
       )
       .optional(),
     withExampleTasks: z.boolean().default(false),
+    timezone: z.string().min(1).max(64).optional(),
   })
   .strict();
 

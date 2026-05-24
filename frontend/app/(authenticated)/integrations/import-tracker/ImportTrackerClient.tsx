@@ -2,12 +2,15 @@
 
 /**
  * `/integrations/import-tracker` — миграционный wizard
- * (Wave 3 / Tracker Phase 5 part 1).
+ * (Wave 3 / Tracker Phase 5).
  *
  * Точка входа: выбор источника (Trello / Битрикс24 / Я.Трекер).
- * Trello — live wizard на 4 шага (Подключение → Доски → Маппинг → Preview).
- * Битрикс24 и Я.Трекер — placeholder «Скоро» (backend-заглушки уже есть, но
- * worker сразу падает — UI не пускаем).
+ *   - Trello       — live wizard на 4 шага (Подключение → Доски → Маппинг → Preview),
+ *                    live-логика inline в этом файле.
+ *   - Битрикс24    — отдельный wizard `./Bitrix24Wizard.tsx` (4 шага: webhook → группы → маппинг → preview).
+ *   - Яндекс Трекер — отдельный wizard `./YandexTrackerWizard.tsx` (4 шага: OAuth → очереди → маппинг → preview).
+ *
+ * Общие хелперы и шаги для Bitrix24/Я.Трекер — в `./_shared.tsx`.
  *
  * RBAC: только owner / admin Org (бэкенд проверяет `import_tracker:write`).
  */
@@ -43,6 +46,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/ui/shadcn/select';
+
+import { Bitrix24Wizard } from './Bitrix24Wizard';
+import { YandexTrackerWizard } from './YandexTrackerWizard';
 
 // ─── Сырая структура Trello JSON-export (минимум полей, нужный wizard'у) ────
 
@@ -123,7 +129,7 @@ const SOURCES: SourceCard[] = [
     emoji: '🟦',
     description:
       'REST API через входящий webhook URL. Полная поддержка задач, групп, комментариев.',
-    available: false,
+    available: true,
   },
   {
     id: 'trello',
@@ -139,7 +145,7 @@ const SOURCES: SourceCard[] = [
     emoji: '🟧',
     description:
       'OAuth-токен Яндекс ID. Перенос очередей, задач, комментариев, связей.',
-    available: false,
+    available: true,
   },
 ];
 
@@ -260,6 +266,28 @@ export function ImportTrackerClient() {
     return (
       <Shell>
         <TrelloWizard
+          orgId={currentOrgId}
+          onCancel={() => setActiveSource(null)}
+        />
+      </Shell>
+    );
+  }
+
+  if (activeSource === 'bitrix24') {
+    return (
+      <Shell>
+        <Bitrix24Wizard
+          orgId={currentOrgId}
+          onCancel={() => setActiveSource(null)}
+        />
+      </Shell>
+    );
+  }
+
+  if (activeSource === 'yandex_tracker') {
+    return (
+      <Shell>
+        <YandexTrackerWizard
           orgId={currentOrgId}
           onCancel={() => setActiveSource(null)}
         />

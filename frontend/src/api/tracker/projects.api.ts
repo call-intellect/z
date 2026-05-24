@@ -47,6 +47,8 @@ export interface CreateProjectFromTemplateRequest {
   /** Если не передан — формируется из identifier.toLowerCase(). */
   slug?: string;
   withExampleTasks?: boolean;
+  /** IANA TZ id (например `Europe/Moscow`). Опц., default backend — `Europe/Moscow`. */
+  timezone?: string;
 }
 
 export interface CreateProjectFromTemplateResponse {

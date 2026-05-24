@@ -126,6 +126,7 @@ export function FromTemplateWizard() {
         projectName: projectName.trim(),
         identifier: identifier.trim().toUpperCase(),
         withExampleTasks,
+        timezone,
       });
       addToast({ type: 'success', message: 'Проект создан' });
       router.push(`/projects/${encodeURIComponent(res.slug)}/board`);

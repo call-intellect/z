@@ -117,6 +117,8 @@ export class ProjectsFromTemplateService {
     // 3. Транзакция: Project + IssueState + ProjectMember + Regulations + ExampleTasks.
     const result = await this.prisma.$transaction(async (tx) => {
       // ── Project ──
+      // timezone опц.: если frontend передал IANA TZ id — используем; иначе
+      // default 'Europe/Moscow' (совпадает со schema.prisma default).
       const project = await tx.project.create({
         data: {
           tenantId,
@@ -126,6 +128,7 @@ export class ProjectsFromTemplateService {
           description: template.description,
           ownerId: userId,
           teamTemplateId: template.id,
+          ...(dto.timezone ? { timezone: dto.timezone } : {}),
         },
       });
 

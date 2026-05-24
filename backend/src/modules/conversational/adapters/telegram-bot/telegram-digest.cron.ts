@@ -7,6 +7,10 @@ import { BusinessMetricsService } from '../../../../common/metrics/business-metr
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
 import { tenantTopOf } from '../../../dialog-layer/utils/tenant-top';
+import {
+  getLocalDate,
+  getLocalHour,
+} from '../../../operations/utils/local-date';
 import { ConversationalService } from '../../conversational.service';
 
 import {
@@ -18,10 +22,14 @@ import {
  * Wave 3 / Tracker Phase 4 РФ (2026-05-24) — TelegramDigestCron.
  *
  * Утренний дайджест задач для каждого пользователя с активным
- * Telegram-каналом. Запуск — каждый день в 9:00 UTC (ENV
- * `TELEGRAM_DIGEST_HOUR_UTC` оверрайдит на cron-уровне через переменную
- * среды NestJS-Schedule — на этой фазе оставляем фиксированный
- * `'0 9 * * *'`, оверрайд — vNext через @Cron name + dynamic).
+ * Telegram-каналом.
+ *
+ * Wave 3 finishing (2026-05-24): hourly tick + per-user TZ.
+ *   - Запуск каждый час `@Cron('0 * * * *')`.
+ *   - Для каждого user'а резолвим `Person.timezone` (default `Europe/Moscow`).
+ *   - Если локальный час пользователя == `TELEGRAM_DIGEST_HOUR_LOCAL`
+ *     (ENV, default 9) → отправляем; иначе тихо пропускаем (без метрики).
+ *   - Dedup key теперь по локальной дате (YYYY-MM-DD в TZ user'а), TTL ~25h.
  *
  * Алгоритм:
  *   1. Найти все ChannelBinding с kind=telegram_bot, verifiedAt IS NOT NULL.
@@ -35,7 +43,8 @@ import {
  *        eventType='telegram.digest', preferredChannelKinds=['telegram_bot']).
  *
  * Idempotency: Redis dedup key
- *   `telegram_digest:${userId}:${tenantId}:${YYYY-MM-DD UTC}` с TTL 24h.
+ *   `telegram_digest:${userId}:${tenantId}:${YYYY-MM-DD local}` с TTL ~25h
+ *   (чуть больше суток — покрывает edge-cases с TZ-shift / DST).
  */
 @Injectable()
 export class TelegramDigestCron {
@@ -49,7 +58,11 @@ export class TelegramDigestCron {
 
   /** Redis key prefix + TTL для idempotency. */
   static readonly DEDUP_KEY_PREFIX = 'telegram_digest';
-  static readonly DEDUP_TTL_SEC = 24 * 3600;
+  /** ~25 часов — покрывает TZ-shift и DST-переходы. */
+  static readonly DEDUP_TTL_SEC = 25 * 3600;
+
+  /** Default локальный час отправки дайджеста (если ENV не задан). */
+  static readonly DEFAULT_DIGEST_HOUR_LOCAL = 9;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -64,10 +77,10 @@ export class TelegramDigestCron {
   ) {}
 
   /**
-   * Главный cron. Запуск раз в день — 9:00 UTC.
-   * ENV-override часа реализован vNext (нужен dynamic Cron name).
+   * Главный cron. Запуск каждый час; внутри — фильтр по локальному часу
+   * каждого user'а (`Person.timezone`).
    */
-  @Cron('0 9 * * *')
+  @Cron('0 * * * *')
   async digestTick(): Promise<void> {
     try {
       const stats = await this.run();
@@ -83,14 +96,20 @@ export class TelegramDigestCron {
     }
   }
 
-  /** Публичный метод для тестов / ручного триггера. */
-  async run(): Promise<{
+  /**
+   * Публичный метод для тестов / ручного триггера. Опц. `now` — для unit-тестов
+   * с конкретным временем.
+   */
+  async run(now: Date = new Date()): Promise<{
     candidates: number;
     sent: number;
     empty: number;
     deduped: number;
     errors: number;
+    skippedHour: number;
   }> {
+    const digestHourLocal = this.resolveDigestHourLocal();
+
     // 1. Берём binding'и в активных Telegram-каналах.
     const bindings = await this.prisma.channelBinding.findMany({
       where: {
@@ -101,19 +120,54 @@ export class TelegramDigestCron {
       take: TelegramDigestCron.MAX_USERS_PER_RUN,
     });
     if (bindings.length === 0) {
-      return { candidates: 0, sent: 0, empty: 0, deduped: 0, errors: 0 };
+      return {
+        candidates: 0,
+        sent: 0,
+        empty: 0,
+        deduped: 0,
+        errors: 0,
+        skippedHour: 0,
+      };
     }
+
+    // 2. Batch-резолв Person.timezone для всех (userId, tenantId) пар.
+    //    Person привязан 1:1 к User в рамках tenant'а (Person.userId).
+    //    Если Person нет — fallback Europe/Moscow в getLocalHour.
+    const personRows = await this.prisma.person.findMany({
+      where: {
+        deletedAt: null,
+        userId: { in: bindings.map((b) => b.userId) },
+      },
+      select: { userId: true, tenantId: true, timezone: true },
+    });
+    const timezoneByKey = new Map<string, string | null>();
+    for (const p of personRows) {
+      if (!p.userId) continue;
+      timezoneByKey.set(`${p.userId}:${p.tenantId}`, p.timezone);
+    }
+
     let sent = 0;
     let empty = 0;
     let deduped = 0;
     let errors = 0;
+    let skippedHour = 0;
 
     for (const binding of bindings) {
       const tenantId = binding.channel.tenantId;
       const userId = binding.userId;
       const tenantTop = tenantTopOf(tenantId);
-      const dateLocal = new Date().toISOString().slice(0, 10);
-      const dedupKey = `${TelegramDigestCron.DEDUP_KEY_PREFIX}:${userId}:${tenantId}:${dateLocal}`;
+      const tz = timezoneByKey.get(`${userId}:${tenantId}`) ?? null;
+      const localHour = getLocalHour(now, tz);
+      const localDate = getLocalDate(now, tz);
+
+      // Час пользователя ≠ настроенный → тихий skip без метрики
+      // (метрика считает только реальные tick'и отправки/dedup/empty/error).
+      if (localHour !== digestHourLocal) {
+        skippedHour++;
+        continue;
+      }
+
+      const dedupKey = `${TelegramDigestCron.DEDUP_KEY_PREFIX}:${userId}:${tenantId}:${localDate}`;
 
       try {
         // Dedup: SET NX EX. Если уже выставлено — skip.
@@ -194,7 +248,27 @@ export class TelegramDigestCron {
       empty,
       deduped,
       errors,
+      skippedHour,
     };
+  }
+
+  /**
+   * Резолвит локальный час отправки дайджеста из ENV
+   * `TELEGRAM_DIGEST_HOUR_LOCAL`. Невалидное значение / NaN → default 9.
+   * Паттерн совпадает с `GOAL_ALIGNMENT_LOW_ENABLED` (process.env напрямую).
+   */
+  private resolveDigestHourLocal(): number {
+    const raw = process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
+    if (!raw) return TelegramDigestCron.DEFAULT_DIGEST_HOUR_LOCAL;
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 23) {
+      this.logger.warn(
+        { raw },
+        'telegram-digest-cron: TELEGRAM_DIGEST_HOUR_LOCAL невалиден, fallback 9',
+      );
+      return TelegramDigestCron.DEFAULT_DIGEST_HOUR_LOCAL;
+    }
+    return parsed;
   }
 
   /**

@@ -21,12 +21,14 @@ import type { TelegramTaskParserService } from './telegram-task-parser.service';
 interface PrismaMock {
   channelBinding: { findMany: ReturnType<typeof vi.fn> };
   issue: { findMany: ReturnType<typeof vi.fn> };
+  person: { findMany: ReturnType<typeof vi.fn> };
 }
 
 function makePrisma(): PrismaMock {
   return {
     channelBinding: { findMany: vi.fn().mockResolvedValue([]) },
     issue: { findMany: vi.fn().mockResolvedValue([]) },
+    person: { findMany: vi.fn().mockResolvedValue([]) },
   };
 }
 
@@ -104,6 +106,19 @@ const makeBindingRow = (userId: string, tenantId: string) => ({
   },
 });
 
+/**
+ * 2026-05-24T06:00:00Z = 09:00 Europe/Moscow (UTC+3, без DST). По умолчанию
+ * Person.timezone = 'Europe/Moscow' (или null → fallback тот же),
+ * поэтому в этот момент localHour=9 — дайджест должен отправиться.
+ */
+const NOW_AT_MSK_9 = new Date(Date.UTC(2026, 4, 24, 6, 0, 0));
+
+/**
+ * 2026-05-24T04:00:00Z = 07:00 MSK (slishком рано для MSK), но 09:00 в
+ * Asia/Yekaterinburg (UTC+5).
+ */
+const NOW_AT_YEKB_9 = new Date(Date.UTC(2026, 4, 24, 4, 0, 0));
+
 describe('TelegramDigestCron', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -111,7 +126,7 @@ describe('TelegramDigestCron', () => {
 
   it('нет binding\'ов → candidates=0', async () => {
     const { cron } = makeCron();
-    const stats = await cron.run();
+    const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.candidates).toBe(0);
   });
 
@@ -122,7 +137,7 @@ describe('TelegramDigestCron', () => {
     ]);
     const redis = makeRedis(null); // dedup hit
     const { cron, metrics, parser } = makeCron({ prisma, redis });
-    const stats = await cron.run();
+    const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.deduped).toBe(1);
     expect(stats.sent).toBe(0);
     expect(parser.formulateDigest).not.toHaveBeenCalled();
@@ -139,7 +154,7 @@ describe('TelegramDigestCron', () => {
     ]);
     // По умолчанию issue.findMany возвращает [] — все 3 секции пустые.
     const { cron, metrics, parser, conv } = makeCron({ prisma });
-    const stats = await cron.run();
+    const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.empty).toBe(1);
     expect(stats.sent).toBe(0);
     expect(parser.formulateDigest).not.toHaveBeenCalled();
@@ -173,7 +188,7 @@ describe('TelegramDigestCron', () => {
       '<b>Утро!</b> KORA-1',
     );
     const { cron, conv, metrics } = makeCron({ prisma, parser });
-    const stats = await cron.run();
+    const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.sent).toBe(1);
     expect(conv.sendNotification).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -209,9 +224,233 @@ describe('TelegramDigestCron', () => {
     const parser = makeParser();
     vi.mocked(parser.formulateDigest).mockResolvedValueOnce(null);
     const { cron, conv } = makeCron({ prisma, parser });
-    const stats = await cron.run();
+    const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.empty).toBe(1);
     expect(conv.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('per-user TZ: Europe/Moscow user, now=06:00 UTC (=09:00 MSK) → отправка', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Срочная',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const parser = makeParser();
+    vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>хей</b>');
+    const { cron, conv } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.sent).toBe(1);
+    expect(stats.skippedHour).toBe(0);
+    expect(conv.sendNotification).toHaveBeenCalled();
+  });
+
+  it('per-user TZ: Asia/Yekaterinburg user, now=06:00 UTC (=11:00 YEKB) → skippedHour', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Asia/Yekaterinburg' },
+    ]);
+    const { cron, parser, conv, redis } = makeCron({ prisma });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.skippedHour).toBe(1);
+    expect(stats.sent).toBe(0);
+    expect(parser.formulateDigest).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
+    // Redis не должен быть тронут — экономим лишние SETNX.
+    expect(redis.client.set).not.toHaveBeenCalled();
+  });
+
+  it('per-user TZ: Asia/Yekaterinburg user, now=04:00 UTC (=09:00 YEKB) → отправка', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Asia/Yekaterinburg' },
+    ]);
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Срочная Екб',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const parser = makeParser();
+    vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>Екб!</b>');
+    const { cron, conv } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_YEKB_9);
+    expect(stats.sent).toBe(1);
+    expect(stats.skippedHour).toBe(0);
+    expect(conv.sendNotification).toHaveBeenCalled();
+  });
+
+  it('per-user TZ: нет Person → default Europe/Moscow, now=06:00 UTC → отправка', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    // Person не возвращён вообще.
+    prisma.person.findMany.mockResolvedValueOnce([]);
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Срочная',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const parser = makeParser();
+    vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>x</b>');
+    const { cron, conv } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.sent).toBe(1);
+    expect(conv.sendNotification).toHaveBeenCalled();
+  });
+
+  it('per-user TZ: Person.timezone = null → default Europe/Moscow, now=06:00 UTC → отправка', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: null },
+    ]);
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Без TZ',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const parser = makeParser();
+    vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>y</b>');
+    const { cron } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.sent).toBe(1);
+  });
+
+  it('per-user TZ: dedup key — по локальной дате (повторный run в тот же local-date → deduped)', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    // Redis вернёт null — будто dedup уже стоит за этот local-date.
+    const redis = makeRedis(null);
+    const { cron, parser, conv } = makeCron({ prisma, redis });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.deduped).toBe(1);
+    expect(stats.sent).toBe(0);
+    expect(parser.formulateDigest).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
+    // Проверка формата ключа: содержит локальную дату в TZ user'а.
+    const setCall = vi.mocked(redis.client.set).mock.calls[0];
+    expect(setCall?.[0]).toContain('telegram_digest:user-1:org-1:2026-05-24');
+  });
+
+  it('ENV TELEGRAM_DIGEST_HOUR_LOCAL=11 → user MSK, now 08:00 UTC (=11:00 MSK) → отправка', async () => {
+    const prev = process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
+    process.env.TELEGRAM_DIGEST_HOUR_LOCAL = '11';
+    try {
+      const prisma = makePrisma();
+      prisma.channelBinding.findMany.mockResolvedValueOnce([
+        makeBindingRow('user-1', 'org-1'),
+      ]);
+      prisma.person.findMany.mockResolvedValueOnce([
+        { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+      ]);
+      prisma.issue.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'i-1',
+            identifier: 'KORA-1',
+            title: 'X',
+            dueDate: new Date(),
+            state: { category: 'unstarted' },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      const parser = makeParser();
+      vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>11h</b>');
+      const { cron, conv } = makeCron({ prisma, parser });
+      // 08:00 UTC = 11:00 MSK.
+      const NOW_AT_MSK_11 = new Date(Date.UTC(2026, 4, 24, 8, 0, 0));
+      const stats = await cron.run(NOW_AT_MSK_11);
+      expect(stats.sent).toBe(1);
+      expect(conv.sendNotification).toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
+      else process.env.TELEGRAM_DIGEST_HOUR_LOCAL = prev;
+    }
+  });
+
+  it('ENV TELEGRAM_DIGEST_HOUR_LOCAL невалиден → fallback 9', async () => {
+    const prev = process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
+    process.env.TELEGRAM_DIGEST_HOUR_LOCAL = 'not-a-number';
+    try {
+      const prisma = makePrisma();
+      prisma.channelBinding.findMany.mockResolvedValueOnce([
+        makeBindingRow('user-1', 'org-1'),
+      ]);
+      prisma.person.findMany.mockResolvedValueOnce([
+        { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+      ]);
+      prisma.issue.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'i-1',
+            identifier: 'KORA-1',
+            title: 'X',
+            dueDate: new Date(),
+            state: { category: 'unstarted' },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      const parser = makeParser();
+      vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>fallback</b>');
+      const { cron, conv } = makeCron({ prisma, parser });
+      // 06:00 UTC = 09:00 MSK — должно сработать с default fallback=9.
+      const stats = await cron.run(NOW_AT_MSK_9);
+      expect(stats.sent).toBe(1);
+      expect(conv.sendNotification).toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
+      else process.env.TELEGRAM_DIGEST_HOUR_LOCAL = prev;
+    }
   });
 
   it('sendNotification упал → result=error в метрике, но не throw', async () => {
@@ -236,7 +475,7 @@ describe('TelegramDigestCron', () => {
     const conv = makeConv();
     vi.mocked(conv.sendNotification).mockRejectedValueOnce(new Error('boom'));
     const { cron, metrics } = makeCron({ prisma, parser, conv });
-    const stats = await cron.run();
+    const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.errors).toBe(1);
     expect(metrics.incTelegramDigestSent).toHaveBeenCalledWith({
       tenantTop: expect.any(String),

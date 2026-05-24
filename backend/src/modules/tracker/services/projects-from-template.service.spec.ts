@@ -252,4 +252,33 @@ describe('ProjectsFromTemplateService.createFromTemplate', () => {
     });
     expect(result.templateSlug).toBe('sales');
   });
+
+  it('timezone передан в DTO → попадает в Project.timezone', async () => {
+    const { svc, txCalls } = makeService();
+    await svc.createFromTemplate({
+      tenantId: 'tenant-A',
+      userId: 'user-1',
+      dto: { ...BASE_DTO, timezone: 'Asia/Yekaterinburg' },
+    });
+    expect(txCalls.projectCreate).toHaveBeenCalledTimes(1);
+    const projectCreateArgs = txCalls.projectCreate.mock.calls[0]?.[0] as {
+      data: { timezone?: string };
+    };
+    expect(projectCreateArgs.data.timezone).toBe('Asia/Yekaterinburg');
+  });
+
+  it('timezone не передан → Project создаётся без явного timezone (schema default Europe/Moscow)', async () => {
+    const { svc, txCalls } = makeService();
+    await svc.createFromTemplate({
+      tenantId: 'tenant-A',
+      userId: 'user-1',
+      dto: BASE_DTO,
+    });
+    expect(txCalls.projectCreate).toHaveBeenCalledTimes(1);
+    const projectCreateArgs = txCalls.projectCreate.mock.calls[0]?.[0] as {
+      data: { timezone?: string };
+    };
+    // Поле timezone не задано — Prisma применит schema default 'Europe/Moscow'.
+    expect(projectCreateArgs.data.timezone).toBeUndefined();
+  });
 });

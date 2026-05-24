@@ -19,16 +19,45 @@ knowledge-core pipeline).
 | Webhooks | `/api/v1/tracker/webhooks` + `/test` + `/logs` | `issue_webhook` |
 | Team Templates | `/api/v1/team-templates` (read-only Phase 1) | `team_template` |
 
-## Принцип «трекер = источник для второго мозга»
+## Принцип «трекер = источник для второго мозга» (Sprint 3 B1-3.1 ✅)
 
-Каждое событие трекера (issue.created / status_changed / commented /
-cycle.completed / …) должно эмититься в `tracker.event_occurred` через
-`@nestjs/event-emitter`. `TrackerAdapter` (Sprint 3, `modules/ingest/adapters/tracker/`)
-ловит эти события и создаёт `RawEvent` с `signalType` из 8 новых task_*
-типов (Sprint 1 B2-1.2). Дальше — стандартный knowledge-core pipeline:
-RawEvent → Block → Entity → EntityLink → Theme. См.:
+Каждая мутация Issue / Comment эмитится в шину `tracker.event_occurred`
+через `TrackerEmitterService` (см. `services/tracker-emitter.service.ts`).
+`TrackerAdapter` (`modules/ingest/adapters/tracker/tracker.adapter.ts`)
+ловит события через `@OnEvent` и создаёт `RawEvent` с `signalTypeHint`
+из 8 task_* типов. Дальше — стандартный knowledge-core pipeline:
+RawEvent → IdeaBlock → Entity → EntityLink → Theme.
+
+Маппинг events → signalType:
+
+| TrackerEventType | SignalType |
+|---|---|
+| `issue.created` | `task_created` |
+| `issue.status_changed` | `task_status_changed` |
+| `issue.status_changed_to_blocked` | `task_blocked` |
+| `issue.status_changed_to_done` | `task_completed` |
+| `issue.overdue_detected` | `task_overdue` (от `IssueOverdueDetectorCron`, 09:00 ежедневно, дедуп 7d) |
+| `issue.assignee_changed` | `task_reassigned` |
+| `comment.created` | `task_comment` |
+| `mention.created` | `task_mention` |
+
+`block-ingest.worker` уважает `payload.signalTypeHint` — переопределяет
+LLM-классификацию для первого блока, либо создаёт синтетический блок,
+если LLM не нашёл смыслового контента (например, для `task_blocked`
+без текста). `task_comment` / `task_created` всё равно пропускаются через
+LLM — он может выделить commitments / decisions / ideas внутри текста.
+
+Метрики:
+- `tracker_events_to_knowledge_core_total{tenant, type}` — счётчик.
+- `issues_by_state_count{tenant, project, state}` — gauge, обновляется
+  `IssueStateGaugeCron` (5 мин).
+- `issues_overdue_count{tenant, project}` — gauge, оттуда же.
+- `intake_pending_count{tenant}` — gauge, оттуда же.
+
+См.:
 - `plans/tz/2026-05-23-tracker-phase-1-models-api.md` (§ Ingest)
 - `plans/analysis/2026-05-23-tracker-as-entry-wedge.md`
+- `second-brain/01_projects/tracker.md`
 
 ## Что НЕ реализовано в Sprint 1 (по плану)
 
@@ -41,7 +70,7 @@ RawEvent → Block → Entity → EntityLink → Theme. См.:
 - Multipart upload `POST /issues/:id/attachments` — Sprint 2 (S3 binding).
 - `POST /issues/:id/start-meeting` (LiveKit-интеграция) — Sprint 2.
 - `IssueRelation` CRUD (`/issues/:id/relations`) — Sprint 2.
-- TrackerAdapter (ingest в knowledge-core) — Sprint 3.
+- ~~TrackerAdapter (ingest в knowledge-core) — Sprint 3.~~ ✅ B1-3.1.
 - Migration legacy Task → Issue — Sprint 3.
 - Seed системных TeamTemplate (10–15 команд) + `POST /projects/from-template` —
   Sprint 9 (Phase 4). Сейчас endpoint возвращает 501.

@@ -22,6 +22,7 @@ import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { ProjectsService } from './projects.service';
+import { TrackerEmitterService } from './tracker-emitter.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
@@ -46,6 +47,8 @@ export class IssuesService {
     private readonly events: TrackerEventsService,
     @Inject(WebhookDispatcher)
     private readonly webhooks: WebhookDispatcher,
+    @Inject(TrackerEmitterService)
+    private readonly emitter: TrackerEmitterService,
   ) {}
 
   /**
@@ -150,6 +153,9 @@ export class IssuesService {
     // WS + outgoing webhooks (fire-and-forget; ошибки доставки логируются
     // самим dispatcher/events service'ом, не пропагируются).
     this.events.publishIssueCreated(response, tenantId);
+    // Sprint 3 B1-3.1 — ingest в knowledge-core через event-emitter.
+    // ПОСЛЕ транзакции (issue уже в БД, безопасно эмитить).
+    this.emitter.emitIssueCreated(issue, userId);
     void this.webhooks
       .dispatch(tenantId, 'issue.created', { issue: response })
       .catch((e) => {
@@ -332,6 +338,22 @@ export class IssuesService {
     const response = await this.assemble(id, tenantId);
     if (changedFields.length > 0) {
       this.events.publishIssueUpdated(response, tenantId, changedFields);
+      // Sprint 3 B1-3.1 — ingest в knowledge-core. Если изменился stateId —
+      // эмитим status_changed (+ специфичные blocked/completed).
+      if (changedFields.includes('stateId') && dto.stateId !== undefined) {
+        void this.emitStateChangeIfNeeded({
+          issueId: id,
+          tenantId,
+          userId,
+          oldStateId: existing.stateId,
+          newStateId: dto.stateId,
+        }).catch((e) => {
+          this.logger.warn(
+            { issueId: id, err: e instanceof Error ? e.message : String(e) },
+            'tracker-emitter: emitStateChangeIfNeeded (update) упал — событие в knowledge-core пропущено',
+          );
+        });
+      }
       void this.webhooks
         .dispatch(tenantId, 'issue.updated', {
           issue: response,
@@ -437,6 +459,20 @@ export class IssuesService {
     });
     const response = await this.assemble(id, tenantId);
     this.events.publishIssueUpdated(response, tenantId, ['stateId']);
+    // Sprint 3 B1-3.1 — ingest в knowledge-core (status_changed + спец. blocked/completed).
+    void this.emitStateChangeIfNeeded({
+      issueId: id,
+      tenantId,
+      userId,
+      oldStateId: existing.stateId,
+      newStateId: dto.stateId,
+      reason: dto.reason ?? null,
+    }).catch((e) => {
+      this.logger.warn(
+        { issueId: id, err: e instanceof Error ? e.message : String(e) },
+        'tracker-emitter: emitStateChangeIfNeeded (transition) упал — событие в knowledge-core пропущено',
+      );
+    });
     void this.webhooks
       .dispatch(tenantId, 'issue.updated', {
         issue: response,
@@ -458,7 +494,7 @@ export class IssuesService {
     tenantId: string,
     actorUserId: string,
   ): Promise<{ ok: true }> {
-    await this.requireIssue(issueId, tenantId);
+    const issue = await this.requireIssue(issueId, tenantId);
     const existing = await this.prisma.issueAssignee.findUnique({
       where: { issueId_userId: { issueId, userId: assigneeUserId } },
       select: { id: true },
@@ -486,6 +522,13 @@ export class IssuesService {
         tx,
       });
     });
+    // Sprint 3 B1-3.1 — ingest в knowledge-core (task_reassigned).
+    this.emitter.emitIssueAssigneeChanged({
+      issue,
+      actorUserId,
+      action: 'added',
+      assigneeUserId,
+    });
     return { ok: true };
   }
 
@@ -496,7 +539,7 @@ export class IssuesService {
     tenantId: string,
     actorUserId: string,
   ): Promise<{ ok: true }> {
-    await this.requireIssue(issueId, tenantId);
+    const issue = await this.requireIssue(issueId, tenantId);
     const deleted = await this.prisma.issueAssignee.deleteMany({
       where: { issueId, userId: assigneeUserId },
     });
@@ -516,6 +559,13 @@ export class IssuesService {
       actorType: 'user',
       verb: 'unassigned',
       oldValue: { userId: assigneeUserId },
+    });
+    // Sprint 3 B1-3.1 — ingest в knowledge-core (task_reassigned).
+    this.emitter.emitIssueAssigneeChanged({
+      issue,
+      actorUserId,
+      action: 'removed',
+      assigneeUserId,
     });
     return { ok: true };
   }
@@ -732,6 +782,65 @@ export class IssuesService {
   }
 
   // ── internal ──
+
+  /**
+   * Sprint 3 B1-3.1 — общая логика emit'ов смены статуса в knowledge-core.
+   * Вызывается из `update()` и `transitionState()` ПОСЛЕ транзакции.
+   *
+   * Логика:
+   *   1. Загружаем новое и старое состояние (для определения category).
+   *   2. Всегда эмитим `issue.status_changed` (signalType=task_status_changed).
+   *   3. Дополнительно, если newState.category='blocked' — эмитим
+   *      `issue.status_changed_to_blocked` (signalType=task_blocked).
+   *      Если 'completed' — `issue.status_changed_to_done` (task_completed).
+   *   4. Если новый stateId = null — эмитим только общий status_changed,
+   *      без специфичных (нечего проверять).
+   */
+  private async emitStateChangeIfNeeded(args: {
+    issueId: string;
+    tenantId: string;
+    userId: string;
+    oldStateId: string | null;
+    newStateId: string | null;
+    reason?: string | null;
+  }): Promise<void> {
+    const fresh = await this.prisma.issue.findFirst({
+      where: { id: args.issueId, tenantId: args.tenantId },
+    });
+    if (!fresh) return;
+    const [oldState, newState] = await Promise.all([
+      args.oldStateId
+        ? this.prisma.issueState.findUnique({ where: { id: args.oldStateId } })
+        : Promise.resolve(null),
+      args.newStateId
+        ? this.prisma.issueState.findUnique({ where: { id: args.newStateId } })
+        : Promise.resolve(null),
+    ]);
+    this.emitter.emitIssueStatusChanged({
+      issue: fresh,
+      actorUserId: args.userId,
+      oldStateId: args.oldStateId,
+      newStateId: args.newStateId,
+      oldStateCategory: oldState?.category ?? null,
+      newStateCategory: newState?.category ?? null,
+      reason: args.reason ?? null,
+    });
+    if (newState?.category === 'blocked') {
+      this.emitter.emitIssueBlocked({
+        issue: fresh,
+        actorUserId: args.userId,
+        newState,
+        reason: args.reason ?? null,
+      });
+    }
+    if (newState?.category === 'completed') {
+      this.emitter.emitIssueCompleted({
+        issue: fresh,
+        actorUserId: args.userId,
+        newState,
+      });
+    }
+  }
 
   /** Проверка существования + tenant ownership. */
   async requireIssue(id: string, tenantId: string): Promise<Issue> {

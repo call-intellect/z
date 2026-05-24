@@ -198,6 +198,13 @@ enum SourceType {
   /// `Source(type=conversational)` на Org — создаётся лениво при первой
   /// входящей заметке. См. plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md.
   conversational
+  /// Sprint 3 B1-3.1 (2026-05-24) — события Tracker'а (issue.created /
+  /// status_changed / blocked / completed / overdue / reassigned / comment /
+  /// mention), которые TrackerAdapter преобразует в RawEvent для
+  /// knowledge-core pipeline. По одному `Source(type=tracker_event)` на Org —
+  /// создаётся лениво при первом событии. См.
+  /// plans/tz/2026-05-23-tracker-phase-1-models-api.md раздел "Ingest".
+  tracker_event
 }
 
 enum DataClass {
@@ -6180,6 +6187,12 @@ model Issue {
   startDate   DateTime?
   dueDate     DateTime?
   completedAt DateTime?
+
+  /// Sprint 3 B1-3.1 — момент последнего обнаружения просрочки
+  /// `IssueOverdueDetectorCron`. Используется для дедупликации: не
+  /// эмитим overdue-событие в knowledge-core повторно в течение 7 дней.
+  /// null — никогда не было overdue-эмиссии.
+  lastOverdueDetectedAt DateTime?
 
   // Циклы и модули
   cycleId String?

@@ -3417,6 +3417,95 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
+  // ─── tracker (Sprint 1 B1-1.3 / B1-1.4 / Sprint 3 B1-3.1) ────────────
+
+  /** Tracker — задача создана. source ∈ manual|api|meeting|telegram|email|mobile_voice. */
+  incIssueCreated(args: { tenant: string; project: string; source: string }): void {
+    this.issuesCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+      source: args.source,
+    });
+  }
+
+  /** Tracker — задача переведена в done (штатно закрытая). */
+  incIssueCompleted(args: { tenant: string; project: string }): void {
+    this.issuesCompletedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /** Tracker Intake — обработанная карточка. decision ∈ accepted|rejected|snoozed|duplicate. */
+  incIntakeTriaged(args: { tenant: string; decision: string }): void {
+    this.intakeTriagedTotal.inc({
+      tenant: args.tenant,
+      decision: args.decision,
+    });
+  }
+
+  /** Tracker Webhooks Out — доставка исходящего webhook'а. */
+  incTrackerWebhookDelivery(args: {
+    tenant: string;
+    event: string;
+    success: boolean;
+  }): void {
+    this.trackerWebhookDeliveryTotal.inc({
+      tenant: args.tenant,
+      event: args.event,
+      success: String(args.success),
+    });
+  }
+
+  incTrackerWebhookRetry(args: { tenant: string; webhookId: string }): void {
+    this.trackerWebhookRetryCount.inc({
+      tenant: args.tenant,
+      webhook_id: args.webhookId,
+    });
+  }
+
+  /**
+   * Sprint 3 B1-3.1 — Tracker → knowledge-core bridge: событие отправлено
+   * в core.raw-events. `type` — оригинальный тип события трекера
+   * (issue.created / status_changed_to_blocked / comment.created / …).
+   */
+  incTrackerEventToKnowledgeCore(args: { tenant: string; type: string }): void {
+    this.trackerEventsToKnowledgeCoreTotal.inc({
+      tenant: args.tenant,
+      type: args.type,
+    });
+  }
+
+  /** Tracker — snapshot количества задач в данном состоянии (set из cron'а). */
+  setIssuesByStateCount(args: {
+    tenant: string;
+    project: string;
+    state: string;
+    count: number;
+  }): void {
+    this.issuesByStateCount.set(
+      { tenant: args.tenant, project: args.project, state: args.state },
+      args.count,
+    );
+  }
+
+  /** Tracker — snapshot количества просроченных задач (set из cron'а). */
+  setIssuesOverdueCount(args: {
+    tenant: string;
+    project: string;
+    count: number;
+  }): void {
+    this.issuesOverdueCount.set(
+      { tenant: args.tenant, project: args.project },
+      args.count,
+    );
+  }
+
+  /** Tracker Intake — snapshot количества pending intake-карточек. */
+  setIntakePendingCount(args: { tenant: string; count: number }): void {
+    this.intakePendingCount.set({ tenant: args.tenant }, args.count);
+  }
+
   // ────────────────────── helpers ──────────────────────────────────────
 
   /**

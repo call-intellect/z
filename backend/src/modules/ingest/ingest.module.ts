@@ -7,6 +7,7 @@ import { MangoCallWebhookController } from './adapters/phone-call/mango.controll
 import { MangoAdapterService } from './adapters/phone-call/mango.service';
 import { TelegramWebhookController } from './adapters/telegram/telegram.controller';
 import { TelegramAdapterService } from './adapters/telegram/telegram.service';
+import { TrackerAdapter } from './adapters/tracker/tracker.adapter';
 import { WebFormDumpController } from './adapters/web-form/dump.controller';
 import { DumpService } from './adapters/web-form/dump.service';
 import { IngestTokenGuard } from './guards/ingest-token.guard';
@@ -53,6 +54,11 @@ import { DocumentParserService } from './parsers/document-parser.service';
     // Фаза 0b knowledge-core: парсер документов. Адаптеры (document.adapter /
     // text.adapter) — BullMQ-воркеры — регистрируются в WorkersModule.
     DocumentParserService,
+    // Sprint 3 B1-3.1 — TrackerAdapter слушает `tracker.event_occurred`
+    // (публикуется TrackerEmitterService из TrackerModule) и создаёт RawEvent.
+    // Регистрация именно здесь, чтобы избежать циклической зависимости
+    // IngestModule ↔ TrackerModule. EventEmitter2 — глобальный.
+    TrackerAdapter,
   ],
   exports: [
     IngestService,
@@ -61,6 +67,7 @@ import { DocumentParserService } from './parsers/document-parser.service';
     MangoAdapterService,
     DumpService,
     DocumentParserService,
+    TrackerAdapter,
   ],
 })
 export class IngestModule {}

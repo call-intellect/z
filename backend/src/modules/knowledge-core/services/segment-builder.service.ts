@@ -60,7 +60,28 @@ export class SegmentBuilderService {
     if (meeting) {
       return this.buildFromMeeting(meeting);
     }
+    // Sprint 3 B1-3.1: payload с `fullText` (например, TrackerAdapter:
+    // issue.created или comment.created) — используем его как одиночный
+    // сегмент натурального текста, а не JSON-stringify. Так LLM получит
+    // тот же текст, что увидел бы человек, без шума метаданных.
+    const fullText = this.tryGetFullText(payload);
+    if (fullText) {
+      return [
+        {
+          startMs: 0,
+          endMs: 0,
+          speakers: [],
+          text: fullText,
+        },
+      ];
+    }
     return this.buildFallback(payload);
+  }
+
+  private tryGetFullText(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { fullText?: unknown }).fullText;
+    return typeof v === 'string' && v.trim().length > 0 ? v : null;
   }
 
   // ─────────────────────────── meeting ─────────────────────────────────────

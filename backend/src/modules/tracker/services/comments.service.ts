@@ -13,6 +13,7 @@ import type { UpdateCommentDto } from '../dto/comments/update-comment.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
+import { TrackerEmitterService } from './tracker-emitter.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
@@ -53,6 +54,8 @@ export class CommentsService {
     private readonly events: TrackerEventsService,
     @Inject(WebhookDispatcher)
     private readonly webhooks: WebhookDispatcher,
+    @Inject(TrackerEmitterService)
+    private readonly emitter: TrackerEmitterService,
   ) {}
 
   /** Создать комментарий. Парсит @упоминания (по email-local-part или userId). */
@@ -62,7 +65,7 @@ export class CommentsService {
     tenantId: string,
     userId: string,
   ): Promise<CommentResponseDto> {
-    await this.issues.requireIssue(issueId, tenantId);
+    const issue = await this.issues.requireIssue(issueId, tenantId);
     const mentionTokens = this.extractMentionTokens(
       `${dto.content} ${dto.contentStripped ?? ''}`,
     );
@@ -109,13 +112,28 @@ export class CommentsService {
         },
         tx,
       });
-      // TODO Sprint 2: эмитить tracker.event_occurred → ConversationalService для
-      // уведомлений упомянутым (через @nestjs/event-emitter).
       return created;
     });
 
     const response = await this.assemble(comment.id);
     this.events.publishCommentCreated(response, tenantId);
+    // Sprint 3 B1-3.1 — ingest в knowledge-core: comment.created + mention.created.
+    // ПОСЛЕ транзакции (комментарий уже в БД).
+    this.emitter.emitCommentCreated({
+      issue,
+      comment: response,
+      actorUserId: userId,
+    });
+    const contextText = response.contentStripped ?? response.content;
+    for (const mentionedUserId of response.mentionedUserIds) {
+      this.emitter.emitMentionCreated({
+        issue,
+        actorUserId: userId,
+        mentionedUserId,
+        commentId: response.id,
+        contextText,
+      });
+    }
     void this.webhooks
       .dispatch(tenantId, 'comment.created', { comment: response })
       .catch((e) => {

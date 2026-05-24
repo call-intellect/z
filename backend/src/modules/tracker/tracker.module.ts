@@ -23,10 +23,13 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
+import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
 import { WebhookSigner } from './services/webhook-signer.service';
 import { WebhooksService } from './services/webhooks.service';
+import { IssueOverdueDetectorCron } from './workers/issue-overdue-detector.cron';
+import { IssueStateGaugeCron } from './workers/issue-state-gauge.cron';
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 
 /**
@@ -81,6 +84,12 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     WebhookSigner,
     WebhookDispatcher,
     WebhookDeliveryWorker,
+    // Sprint 3 B1-3.1: TrackerEmitterService — публикация `tracker.event_occurred`
+    // в шину @nestjs/event-emitter; TrackerAdapter (IngestModule) ловит и
+    // создаёт RawEvent. Принцип «трекер = источник для второго мозга».
+    TrackerEmitterService,
+    IssueOverdueDetectorCron,
+    IssueStateGaugeCron,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не
@@ -89,9 +98,12 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     //   - ActivityRecorderService — может пригодиться AI-агентам в Sprint 3
     //     (запись активности от ai_agent при автоматических действиях).
     //   - TrackerEventsService — другие модули могут публиковать live-события.
+    //   - TrackerEmitterService — экспортируем, чтобы другие модули могли
+    //     эмитить от имени трекера (опционально, MVP не использует).
     IssuesService,
     ActivityRecorderService,
     TrackerEventsService,
+    TrackerEmitterService,
   ],
 })
 export class TrackerModule {}

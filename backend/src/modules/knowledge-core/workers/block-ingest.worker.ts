@@ -5,7 +5,12 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { type EntityType, Prisma, type RawEvent } from '@prisma/client';
+import {
+  type EntityType,
+  Prisma,
+  type RawEvent,
+  type SignalType,
+} from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { GraphService } from '../../../common/graph/graph.service';
@@ -19,7 +24,10 @@ import {
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { S3Service } from '../../recordings/s3.service';
-import { ENTITY_TYPE_VALUES } from '../prompts/block-ingest.prompt';
+import {
+  ENTITY_TYPE_VALUES,
+  SIGNAL_TYPE_VALUES,
+} from '../prompts/block-ingest.prompt';
 import {
   BlockExtractionService,
   type ExtractedBlock,
@@ -149,12 +157,31 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         // Фаза 11: dataClass наследуется от RawEvent.
         dataClass: event.dataClass,
       });
-      const { blocksInOrder, typed } = extraction;
+      // Sprint 3 B1-3.1: signalTypeHint override.
+      // Если RawEvent.payload содержит `signalTypeHint` (TrackerAdapter,
+      // в перспективе — другие адаптеры с детерминированным типом события),
+      // принудительно используем его:
+      //   - Если LLM вернул ≥1 блок: переопределяем signalType первого блока
+      //     (наиболее «приоритетного» — обычно главный смысловой блок),
+      //     остальные оставляем как есть (для task_comment LLM может извлечь
+      //     дополнительные decisions/commitments — у них СВОЙ signalType,
+      //     это правильно).
+      //   - Если 0 блоков (компактное событие типа status_changed без
+      //     текста, который LLM смог бы выделить): создаём один синтетический
+      //     блок c hint-ом — чтобы графовая модель знала о факте события.
+      const signalHint = this.tryGetSignalTypeHint(payload);
+      const blocksInOrder = this.applySignalTypeHint(
+        extraction.blocksInOrder,
+        signalHint,
+        payload,
+      );
+      const { typed } = extraction;
       this.logger.log(
         {
           rawEventId,
           segments: segments.length,
           blocks: blocksInOrder.length,
+          signalTypeHint: signalHint,
           typedCounts: {
             processes: typed.processes.length,
             decisions: typed.decisions.length,
@@ -567,6 +594,87 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (typeof payload !== 'object' || payload === null) return undefined;
     const t = (payload as { title?: unknown }).title;
     return typeof t === 'string' && t.length > 0 ? t : undefined;
+  }
+
+  /**
+   * Sprint 3 B1-3.1 — извлечение `signalTypeHint` из payload (TrackerAdapter
+   * проставляет его как явное указание signalType, чтобы worker не зависел
+   * от LLM-классификации для детерминированных событий трекера).
+   * Возвращает null, если поле отсутствует или значение не из enum SignalType.
+   */
+  private tryGetSignalTypeHint(payload: unknown): SignalType | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { signalTypeHint?: unknown }).signalTypeHint;
+    if (typeof v !== 'string') return null;
+    if (!(SIGNAL_TYPE_VALUES as readonly string[]).includes(v)) return null;
+    return v as SignalType;
+  }
+
+  /**
+   * Применить signalTypeHint к результатам LLM-извлечения:
+   *   - 0 блоков + есть hint → создаём один синтетический блок (контекст из
+   *     payload.issue.title / payload.fullText / eventType).
+   *   - ≥1 блок + есть hint → переопределяем signalType ПЕРВОГО блока на
+   *     hint. Остальные оставляем — LLM может выделить decisions/commitments/
+   *     ideas со СВОИМИ signalType (это и есть ценность LLM-прохода для
+   *     task_comment / task_created).
+   *   - hint=null → ничего не меняем.
+   */
+  private applySignalTypeHint(
+    blocks: ExtractedBlock[],
+    hint: SignalType | null,
+    payload: unknown,
+  ): ExtractedBlock[] {
+    if (!hint) return blocks;
+    if (blocks.length === 0) {
+      const synthetic = this.buildSyntheticBlock(hint, payload);
+      return synthetic ? [synthetic] : [];
+    }
+    const overridden = [...blocks];
+    const first = overridden[0];
+    if (first) {
+      overridden[0] = { ...first, signalType: hint };
+    }
+    return overridden;
+  }
+
+  /**
+   * Создаёт минимальный синтетический ExtractedBlock из payload для тех
+   * событий, в которых LLM не нашёл смыслового контента (например,
+   * task_status_changed: «KORA-12 переведена в blocked»). Без LLM —
+   * детерминированно, на основе полей payload.
+   */
+  private buildSyntheticBlock(
+    hint: SignalType,
+    payload: unknown,
+  ): ExtractedBlock | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as {
+      issue?: { identifier?: string; title?: string };
+      eventType?: string;
+      meta?: Record<string, unknown>;
+      fullText?: string;
+    };
+    const identifier = p.issue?.identifier ?? 'task';
+    const title = p.issue?.title ?? '(без заголовка)';
+    const eventType = p.eventType ?? hint;
+    const baseText = p.fullText
+      ? p.fullText
+      : `Задача ${identifier} «${title}» — событие: ${eventType}`;
+    return {
+      name: `${identifier}: ${eventType}`.slice(0, 200),
+      criticalQuestion: `Что произошло с задачей ${identifier} и какие выводы?`,
+      trustedAnswer: baseText.slice(0, 4000),
+      signalType: hint,
+      tags: [],
+      confidence: 0.95,
+      evidenceQuote: baseText.slice(0, 1000),
+      evidenceStartMs: 0,
+      evidenceEndMs: 0,
+      mentionedEntities: [],
+      role_relevant: false,
+      roleHint: undefined,
+    };
   }
 
   /**

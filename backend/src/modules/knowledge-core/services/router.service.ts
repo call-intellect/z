@@ -64,6 +64,10 @@ export class RouterService {
     // блоков. Параллельно с INSIGHTS (тот собирает текстовый риск/блокер,
     // а PERSONAL_RELATION — структурированный граф «кто с кем работает»).
     PERSONAL_RELATION: '3-12-personal-relation',
+    // SBA Wave 2 — Specialist 3.8 (Helpfulness Agent). Извлекает паттерны
+    // помощи / mentoring / поддержки из переписки в задачах, чек-инов,
+    // фрагментов транскриптов. Параллельно с другими специалистами.
+    HELPFULNESS: '3-8-helpfulness',
   } as const;
 
   /**
@@ -90,6 +94,10 @@ export class RouterService {
     // но важнее ideas (4): структурированные межличностные связи важны для COO,
     // но менее срочные, чем явные риски/проблемы.
     [RouterService.SPECIALIST.PERSONAL_RELATION]: 3.5,
+    // SBA Wave 2 — Helpfulness Agent. Приоритет 5.5 — между skill и
+    // project-customer: социальный вклад важнее формальной customer-аналитики,
+    // но менее срочный, чем решения/риски/правила/идеи.
+    [RouterService.SPECIALIST.HELPFULNESS]: 5.5,
   };
 
   constructor(
@@ -327,6 +335,24 @@ export class RouterService {
       case 'plan_item':
       case 'done_item':
         // no-op до появления специалистов.
+        break;
+      // SBA Wave 2 — Specialist 3.8 (Helpfulness Agent). Эти signalType
+      // создаются tracker'ом / ingest'ом или другими специалистами; все 7
+      // helpfulness-типов + 3 gamification-типа + task_comment/task_mention
+      // диспатчатся в helpfulness специалист (он внутри решит, что извлечь).
+      case 'help_provided':
+      case 'proactive_hint':
+      case 'mentoring':
+      case 'emotional_support':
+      case 'constructive_feedback':
+      case 'question_unanswered':
+      case 'question_acknowledged_no_action':
+      case 'helped_by':
+      case 'helped_to':
+      case 'thanks_explicit':
+      case 'task_comment':
+      case 'task_mention':
+        targets.add(RouterService.SPECIALIST.HELPFULNESS);
         break;
       // Прочие signalType (commitment, mood, drift, metric_change, ...).
       default:

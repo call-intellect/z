@@ -395,6 +395,16 @@ export class BusinessMetricsService implements OnModuleInit {
   private issuesOverdueCount!: Gauge<'tenant' | 'project'>;
   private intakePendingCount!: Gauge<'tenant'>;
 
+  // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ────────────────────
+  // См. plans/tz/2026-05-23-activity-feeds.md §"Метрики Prometheus".
+  // Cardinality-safe: tenant — top-100 в Sprint 7 (как и в tracker-метриках);
+  // feed_type ∈ probe_question|insight|decision|task|idea|conflict|knowledge_change
+  // (фиксированный enum); severity ∈ critical|high|normal|low; reaction ∈ thanks|vote.
+  private feedItemsEmittedTotal!: Counter<'tenant' | 'feed_type' | 'severity'>;
+  private feedItemsActionedTotal!: Counter<'tenant' | 'feed_type' | 'status'>;
+  private feedReactionsTotal!: Counter<'tenant' | 'feed_type' | 'reaction'>;
+  private feedItemsExpiredTotal!: Counter<'tenant' | 'feed_type'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -1609,6 +1619,28 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'intake_pending_count',
       help: 'Tracker Intake — snapshot количества IntakeIssue.status=pending (обновляется при изменении статуса).',
       labelNames: ['tenant'] as const,
+    });
+
+    // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ───────────────────
+    this.feedItemsEmittedTotal = this.getOrCreateCounter({
+      name: 'feed_items_emitted_total',
+      help: 'Activity Feeds — публикация записи в ленту (tenant × feed_type × severity).',
+      labelNames: ['tenant', 'feed_type', 'severity'] as const,
+    });
+    this.feedItemsActionedTotal = this.getOrCreateCounter({
+      name: 'feed_items_actioned_total',
+      help: 'Activity Feeds — пользователь произвёл действие над записью (status ∈ seen|delivered|responded|actioned|dismissed).',
+      labelNames: ['tenant', 'feed_type', 'status'] as const,
+    });
+    this.feedReactionsTotal = this.getOrCreateCounter({
+      name: 'feed_reactions_total',
+      help: 'Activity Feeds — реакции пользователей (reaction ∈ thanks|vote).',
+      labelNames: ['tenant', 'feed_type', 'reaction'] as const,
+    });
+    this.feedItemsExpiredTotal = this.getOrCreateCounter({
+      name: 'feed_items_expired_total',
+      help: 'Activity Feeds — записи, истёкшие по expiresAt (probe-вопросы без ответа > 24-72ч и др.).',
+      labelNames: ['tenant', 'feed_type'] as const,
     });
   }
 
@@ -3504,6 +3536,58 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Tracker Intake — snapshot количества pending intake-карточек. */
   setIntakePendingCount(args: { tenant: string; count: number }): void {
     this.intakePendingCount.set({ tenant: args.tenant }, args.count);
+  }
+
+  // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ────────────────────
+
+  /** Activity Feeds — публикация новой записи (ActivityFeedService.publish). */
+  incFeedItemEmitted(args: {
+    tenant: string;
+    feedType: string;
+    severity: string;
+  }): void {
+    this.feedItemsEmittedTotal.inc({
+      tenant: args.tenant,
+      feed_type: args.feedType,
+      severity: args.severity,
+    });
+  }
+
+  /**
+   * Activity Feeds — пользователь произвёл действие над записью
+   * (markSeen / markDelivered / markResponded / markActioned / dismiss).
+   */
+  incFeedItemActioned(args: {
+    tenant: string;
+    feedType: string;
+    status: string;
+  }): void {
+    this.feedItemsActionedTotal.inc({
+      tenant: args.tenant,
+      feed_type: args.feedType,
+      status: args.status,
+    });
+  }
+
+  /** Activity Feeds — реакция пользователя (thanks / vote). */
+  incFeedReaction(args: {
+    tenant: string;
+    feedType: string;
+    reaction: string;
+  }): void {
+    this.feedReactionsTotal.inc({
+      tenant: args.tenant,
+      feed_type: args.feedType,
+      reaction: args.reaction,
+    });
+  }
+
+  /** Activity Feeds — запись истекла по expiresAt (cron). */
+  incFeedItemExpired(args: { tenant: string; feedType: string }): void {
+    this.feedItemsExpiredTotal.inc({
+      tenant: args.tenant,
+      feed_type: args.feedType,
+    });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

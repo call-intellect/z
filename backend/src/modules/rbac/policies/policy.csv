@@ -771,6 +771,88 @@ p, admin, *, *, issue_webhook, read
 p, admin, *, *, issue_webhook, write
 p, admin, *, *, issue_webhook, delete
 
+# ──────────────────────────── Wave 2 — Activity Feeds (2026-05-24) ────────────────────────────
+# activity_feed_item — единая запись ленты активности (probe_question | insight |
+# decision | task | idea | conflict | knowledge_change). Read — все members
+# (visibility-фильтр делает сервис на основе ActivityFeedItem.visibility +
+# visibilityScope). Write — owner/admin (через системные мутации). Manager read.
+p, owner, *, *, activity_feed_item, read
+p, owner, *, *, activity_feed_item, write
+p, owner, *, *, activity_feed_item, manage
+p, admin, *, *, activity_feed_item, read
+p, admin, *, *, activity_feed_item, write
+p, admin, *, *, activity_feed_item, manage
+p, manager, *, *, activity_feed_item, read
+
+# ──────────────────────────── Wave 2 — Specialist 3.8 Helpfulness (2026-05-24) ────────────────────────────
+# helpfulness_trait — единичный сигнал помощи / mentoring / поддержки.
+# Этическая защита: question_unanswered + question_acknowledged_no_action имеют
+# visibility='restricted' (admin + руководитель команды). Сервис фильтрует
+# по visibility перед возвратом. RBAC даёт первый уровень: read — admin/owner/manager;
+# write (для admin team-map + mark-as-misleading) — admin/owner/manager.
+p, owner, *, *, helpfulness_trait, read
+p, owner, *, *, helpfulness_trait, write
+p, owner, *, *, helpfulness_trait, delete
+p, admin, *, *, helpfulness_trait, read
+p, admin, *, *, helpfulness_trait, write
+p, admin, *, *, helpfulness_trait, delete
+p, manager, *, *, helpfulness_trait, read
+p, manager, *, self, helpfulness_trait, write
+
+# social_contribution_profile — агрегат вклада per person. Read — все members
+# (видят темы и счётчики друг друга; contributionScoreCached — НЕ публично,
+# фильтруется в сервисе для не-руководителей). Write — internal cron только.
+p, owner, *, *, social_contribution_profile, read
+p, owner, *, *, social_contribution_profile, write
+p, admin, *, *, social_contribution_profile, read
+p, admin, *, *, social_contribution_profile, write
+p, manager, *, *, social_contribution_profile, read
+
+# helpfulness_spotlight — публичный «спасибо» для ленты. status pending → approved
+# (руководителем) → published. Read — все members published; admin/owner/manager
+# read all (для approve/hide/republish). Write — owner/admin/manager (approve action).
+p, owner, *, *, helpfulness_spotlight, read
+p, owner, *, *, helpfulness_spotlight, write
+p, owner, *, *, helpfulness_spotlight, delete
+p, admin, *, *, helpfulness_spotlight, read
+p, admin, *, *, helpfulness_spotlight, write
+p, manager, *, *, helpfulness_spotlight, read
+p, manager, *, *, helpfulness_spotlight, write
+
+# ──────────────────────────── Wave 2 — Recognition + Gamification (2026-05-24) ────────────────────────────
+# recognition — благодарность / признание от AI (fromUserId=null) или от user-а.
+# Не от руководителя автоматически. Read — owner/admin all; manager — свои.
+# Write — internal worker (нет ручного API); admin может через bridge endpoints.
+p, owner, *, *, recognition, read
+p, owner, *, *, recognition, write
+p, owner, *, *, recognition, manage
+p, admin, *, *, recognition, read
+p, admin, *, *, recognition, write
+p, admin, *, *, recognition, manage
+p, manager, *, self, recognition, read
+
+# badge — каталог бейджей (5 базовых: ideator/expert/helper/aligned/consistent).
+# Read — все members (каталог); write — owner/admin (создание новых badge — редкая
+# admin-функция).
+p, owner, *, *, badge, read
+p, owner, *, *, badge, write
+p, owner, *, *, badge, manage
+p, admin, *, *, badge, read
+p, admin, *, *, badge, write
+p, manager, *, *, badge, read
+
+# user_badge — выданные бейджи. Read — все members (видят бейджи друг друга,
+# но без сравнения / leaderboard). Write — internal cron (BadgeAwarderCron).
+p, owner, *, *, user_badge, read
+p, admin, *, *, user_badge, read
+p, manager, *, *, user_badge, read
+
+# contribution_snapshot — агрегат вклада per user (ideas, thanks, helpfulComments,
+# streak). Read — admin/owner all + manager self. Write — internal cron.
+p, owner, *, *, contribution_snapshot, read
+p, admin, *, *, contribution_snapshot, read
+p, manager, *, self, contribution_snapshot, read
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

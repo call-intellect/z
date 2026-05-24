@@ -111,6 +111,21 @@ export const CORE_QUEUE_NAMES = {
    * сложатся в один отложенный job.
    */
   SKILL_PROFILE_REBUILD: 'core.skill-profile-rebuild',
+  /**
+   * Wave 2 Recognition — формулировка благодарности через LLM. Consumer —
+   * `RecognitionFormulateWorker`. Принимает payload с метаданными
+   * (tenantId, type, contextEntityType/Id, toUserId, fromUserId?), формулирует
+   * message через `recognition-formulate` LLM-task и создаёт `Recognition`.
+   *
+   * Идемпотентность через `jobId`:
+   *   - thanks_comment        — `recognition_thanks_comment_<commentId>_<fromUserId>`
+   *   - thanks_helpfulness    — `recognition_thanks_helpfulness_<spotlightId>_<fromUserId>`
+   *   - idea_shipped          — `recognition_idea_shipped_<ideaId>_<toUserId>`
+   *   - streak_milestone      — `recognition_streak_<userId>_<days>`
+   *   - mention_helped        — `recognition_mention_helped_<blockId>_<toUserId>`
+   *   - weekly_summary        — `recognition_weekly_<userId>_<YYYYWW>`
+   */
+  RECOGNITION_FORMULATE: 'core.recognition-formulate',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -272,4 +287,53 @@ export interface RebuildSkillProfileJobData {
   profileId: string;
   tenantId: string;
   reason?: string;
+}
+
+/**
+ * Wave 2 — payload `core.recognition-formulate`. Воркер
+ * `RecognitionFormulateWorker` формирует message через LLM `recognition-formulate`
+ * и создаёт запись `Recognition`. Если `message` уже передан — LLM-шаг пропускается
+ * (например, для streak milestone — текст фиксированный, не нужен LLM).
+ *
+ * `type` — один из:
+ *   - 'thanks_comment'      — нажатие «спасибо» под комментарием.
+ *   - 'thanks_helpfulness'  — HelpfulnessSpotlight (Specialist 3.8). На 2026-05-24
+ *                              ещё не реализован; контекстный entityId оставляем.
+ *   - 'mention_helped'      — в чек-ине упомянуто «мне помог X» (signalType=helped_by).
+ *   - 'idea_shipped'        — Idea.status стала 'shipped' или 'in_progress'.
+ *   - 'streak_milestone'    — порог чек-инов (7/14/30/60/90/...).
+ *   - 'weekly_summary'      — дайджест от RecognitionWeeklyDigestCron.
+ *
+ * `visibility` определяет, публикуется ли запись в Activity Feed (если 'team'
+ * или 'public_org' — публикуем через ActivityFeedService.publish, который
+ * на 2026-05-24 может быть ещё не готов — тогда воркер оставляет только
+ * Recognition в БД и логирует TODO).
+ */
+export interface RecognitionFormulateJobData {
+  tenantId: string;
+  type:
+    | 'thanks_comment'
+    | 'thanks_helpfulness'
+    | 'mention_helped'
+    | 'idea_shipped'
+    | 'streak_milestone'
+    | 'weekly_summary';
+  toUserId: string;
+  /** Null = от AI / системы; non-null = от другого user'а (например, кто нажал «спасибо»). */
+  fromUserId?: string | null;
+  contextEntityType?:
+    | 'issue_comment'
+    | 'insight'
+    | 'regulation'
+    | 'idea'
+    | 'checkin'
+    | 'helpfulness_spotlight'
+    | null;
+  contextEntityId?: string | null;
+  /** Готовый message (skip LLM). Если null/undefined — формулируем через LLM. */
+  message?: string | null;
+  /** По умолчанию 'private'. Если 'team'/'public_org' — публикуем в Activity Feed. */
+  visibility?: 'private' | 'team' | 'public_org';
+  /** Сериализованный контекст для LLM-промпта (например, аггрегаты weekly_summary). */
+  contextPayload?: Record<string, unknown>;
 }

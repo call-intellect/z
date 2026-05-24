@@ -27,6 +27,7 @@ import {
   type RawEventJobData,
   type RebuildKnowledgeProfileJobData,
   type RebuildSkillProfileJobData,
+  type RecognitionFormulateJobData,
   type RoleProfileJobData,
   type SpecialistRoutingJobData,
   type StrategicAlignmentJobData,
@@ -476,6 +477,56 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('rebuild-skill-profile', payload, { jobId, delay });
     this.logger.debug(
       `enqueue core.skill-profile-rebuild profileId=${args.profileId} delay=${delay}ms reason=${args.reason ?? 'n/a'}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Wave 2 Recognition — публикация `core.recognition-formulate`. Consumer —
+   * `RecognitionFormulateWorker`. jobId формируется из `(type, контекст)` —
+   * идемпотентно: повторный enqueue для той же благодарности (например, повторный
+   * клик «спасибо» уже после unthanks/thanks) не создаст дубль Recognition.
+   *
+   * Маппинг jobId:
+   *   - thanks_comment       — `recognition_thanks_comment_<contextEntityId>_<fromUserId>`
+   *   - thanks_helpfulness   — `recognition_thanks_helpfulness_<contextEntityId>_<fromUserId|ai>`
+   *   - mention_helped       — `recognition_mention_helped_<contextEntityId>_<toUserId>`
+   *   - idea_shipped         — `recognition_idea_shipped_<contextEntityId>_<toUserId>`
+   *   - streak_milestone     — `recognition_streak_<toUserId>_<contextEntityId>` (contextEntityId =
+   *                            `<days>` или `<YYYY-MM-DD>` для уникальности)
+   *   - weekly_summary       — `recognition_weekly_<toUserId>_<contextEntityId>` (contextEntityId =
+   *                            `<YYYY-WW>` от cron'а)
+   */
+  async enqueueRecognitionFormulate(
+    args: RecognitionFormulateJobData,
+  ): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.RECOGNITION_FORMULATE);
+    const ctxKey = args.contextEntityId ?? 'none';
+    const fromKey = args.fromUserId ?? 'ai';
+    let jobId: string;
+    switch (args.type) {
+      case 'thanks_comment':
+        jobId = `recognition_thanks_comment_${ctxKey}_${fromKey}`;
+        break;
+      case 'thanks_helpfulness':
+        jobId = `recognition_thanks_helpfulness_${ctxKey}_${fromKey}`;
+        break;
+      case 'mention_helped':
+        jobId = `recognition_mention_helped_${ctxKey}_${args.toUserId}`;
+        break;
+      case 'idea_shipped':
+        jobId = `recognition_idea_shipped_${ctxKey}_${args.toUserId}`;
+        break;
+      case 'streak_milestone':
+        jobId = `recognition_streak_${args.toUserId}_${ctxKey}`;
+        break;
+      case 'weekly_summary':
+        jobId = `recognition_weekly_${args.toUserId}_${ctxKey}`;
+        break;
+    }
+    await q.add('recognition-formulate', args, { jobId });
+    this.logger.debug(
+      `enqueue core.recognition-formulate type=${args.type} toUserId=${args.toUserId} jobId=${jobId}`,
     );
     return { jobId };
   }

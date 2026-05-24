@@ -226,7 +226,33 @@ export type ResourceType =
   | 'cycle'
   | 'intake_issue'
   | 'team_template'
-  | 'issue_webhook';
+  | 'issue_webhook'
+  // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ──
+  // 'activity_feed_item' — запись в ленте активности (ActivityFeedItem).
+  // read: scope по visibility (public_org / team / role / private) —
+  // финальная фильтрация делается в сервисе, RBAC проверяет только наличие
+  // membership в tenant'е (read по 'activity_feed_item' = «доступ к ленте Org
+  // вообще»). write: только система и AI-агенты (через ActivityFeedService.publish,
+  // не через REST) — owner/admin для admin-овых ручных публикаций; manage —
+  // owner/admin (массовый expire/dismiss, debug). delete не используется
+  // (только dismiss и expire через статусы).
+  | 'activity_feed_item'
+  // ── Wave 2 Поток D — Specialist 3.8 Helpfulness Agent (2026-05-24) ──
+  // 'helpfulness_trait' — сигнал помощи / mentoring / поддержки. read:
+  // owner/admin Org (полный обзор); manager — read всех trait'ов Org для
+  // team-map + unanswered; member — read только своих (визуально, через
+  // /me/social-contribution). write — только worker (нет manual API).
+  // ⚠ Для traitType ∈ {question_unanswered, question_acknowledged_no_action}
+  // visibility='restricted' — отображается только в admin/manager-views,
+  // никогда публично.
+  // 'helpfulness_spotlight' — публичный «спасибо» для ленты. read:
+  // status='published' — все member'ы; status ∈ {pending, approved, hidden} —
+  // owner/admin/manager. write (approve/hide/republish) — owner/admin/manager.
+  // 'social_contribution_profile' — агрегат на person. read: сам user +
+  // owner/admin + manager (на своих). write — только Cron (нет manual API).
+  | 'helpfulness_trait'
+  | 'helpfulness_spotlight'
+  | 'social_contribution_profile';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -562,6 +588,8 @@ function isResourceType(s: string): s is ResourceType {
     'intake_issue',
     'team_template',
     'issue_webhook',
+    // Wave 2 Поток D — Activity Feeds (2026-05-24).
+    'activity_feed_item',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

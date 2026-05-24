@@ -107,6 +107,10 @@ import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { ProactiveModule } from './modules/proactive/proactive.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { VoiceModule } from './modules/voice/voice.module';
+// Wave 2 (2026-05-24) — Activity Feeds + Specialist 3.8 Helpfulness + Recognition.
+import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
+import { Specialist38HelpfulnessModule } from './modules/specialist-3-8-helpfulness/specialist-3-8-helpfulness.module';
+import { RecognitionModule } from './modules/recognition/recognition.module';
 
 @Module({
   imports: [
@@ -418,6 +422,13 @@ import { VoiceModule } from './modules/voice/voice.module';
     // RBAC через `insight` ResourceType (см. policy.csv).
     InsightsModule,
 
+    // Wave 2 (2026-05-24) — Activity Feeds: единая лента активности AI-агентов
+    // и пользователей. @Global ActivityFeedService.publish() вызывают
+    // ProbeAgent, InsightsRadar, DecisionsRegistry, Specialist3.8 Helpfulness,
+    // RecognitionAgent. Должен идти ДО ProbeModule и Specialist38Helpfulness
+    // (они инжектят ActivityFeedService).
+    ActivityFeedModule,
+
     // SBA β-6 — REST API `/api/v1/experiments` (master-detail Experiment Tracker'а:
     // институциональная память «что попробовали и что вышло»). RBAC через
     // `experiment` ResourceType (см. policy.csv).
@@ -439,6 +450,20 @@ import { VoiceModule } from './modules/voice/voice.module';
     // SBA β-5 — REST API `/api/v1/ideas` + `/api/v1/idea-clusters` +
     // `/api/v1/me/ideas`. RBAC через `idea` ResourceType.
     IdeasModule,
+
+    // Wave 2 (2026-05-24) — Specialist 3.8 Helpfulness Agent. Worker подписан на
+    // core.specialist-routing jobName=3-8-helpfulness, 4 cron (profile/spotlight/
+    // decay/probe). Этическая защита: question_unanswered/question_acknowledged
+    // _no_action только private (admin + руководитель). Должен идти ПОСЛЕ
+    // KnowledgeCoreModule (RouterService), AiModule (LlmRouterService), ProbeModule.
+    Specialist38HelpfulnessModule,
+
+    // Wave 2 (2026-05-24) — Recognition + Gamification. Worker
+    // core.recognition-formulate, 4 cron (snapshot/badge-awarder/streak/digest).
+    // Recognition от AI (fromUserId=null), не от руководителя автоматически.
+    // Bridge POST /api/v1/issues/comments/:id/thanks → enqueue thanks_comment.
+    // Должен идти ПОСЛЕ AiModule, CoreQueueModule, ActivityFeedModule.
+    RecognitionModule,
 
     // SBA β-2 — REST API `/api/v1/me/knowledge-profile` и
     // `/api/v1/persons/:id/knowledge-profile` + mark-wrong (CurationItem

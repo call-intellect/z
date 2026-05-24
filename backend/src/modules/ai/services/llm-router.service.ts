@@ -220,7 +220,26 @@ export type LlmTaskType =
   // 'proactive-message-craft' — короткое friendly-сообщение по сработавшему
   //   правилу (не «АЛЕРТ», а «привет, заметил X — может посмотришь?»).
   //   Primary = ollama qwen3.5:9b (дёшево, локально, частые вызовы).
-  | 'proactive-message-craft';
+  | 'proactive-message-craft'
+  // SBA Wave 2 — Specialist 3.8 (Helpfulness Agent).
+  // 'helpfulness-detect' — из IdeaBlock извлекает helpfulness trait'ы
+  //   (help_provided | proactive_hint | mentoring | emotional_support |
+  //    constructive_feedback | question_unanswered | question_acknowledged_no_action).
+  //   Primary = DeepSeek; secondary = OpenAI gpt-4o-mini; tertiary = Ollama qwen3.5:9b.
+  // 'helpfulness-trait-merge' — арбитр merge/keep_separate для KNN-кандидата
+  //   с похожим topicHint. Аналогичная цепочка.
+  // 'helpfulness-spotlight-formulate' — тёплое короткое «спасибо» для публичной
+  //   ленты. Нужна capable модель (DeepSeek pro / gpt-4o), чтобы текст не казённый.
+  | 'helpfulness-detect'
+  | 'helpfulness-trait-merge'
+  | 'helpfulness-spotlight-formulate'
+  // Wave 2 — Recognition Agent.
+  // 'recognition-formulate' — формулировка благодарственного сообщения по
+  //   контексту (thanks/idea_shipped/streak/weekly_summary). Короткое, тёплое,
+  //   без официоза. Primary = deepseek-v4-flash; secondary = openai gpt-5.4-mini;
+  //   tertiary = ollama qwen3.5:9b. Никогда от имени руководителя —
+  //   только от имени AI / системы.
+  | 'recognition-formulate';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -315,6 +334,12 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'orchestrator-verify',
   // SBA δ-2 — ProactiveWatcher
   'proactive-message-craft',
+  // SBA Wave 2 — Specialist 3.8 Helpfulness Agent
+  'helpfulness-detect',
+  'helpfulness-trait-merge',
+  'helpfulness-spotlight-formulate',
+  // Wave 2 — Recognition Agent
+  'recognition-formulate',
 ] as const;
 
 /**

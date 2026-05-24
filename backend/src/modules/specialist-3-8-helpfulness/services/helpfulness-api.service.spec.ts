@@ -1,0 +1,301 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { HelpfulnessApiService } from './helpfulness-api.service';
+
+/**
+ * SBA Wave 2 — unit-тесты для HelpfulnessApiService (mark-as-misleading +
+ * approve/hide spotlight + privacy filtering).
+ *
+ * Используем минимальные in-memory моки PrismaService / BusinessMetricsService.
+ */
+
+interface TraitRecord {
+  id: string;
+  tenantId: string;
+  helperUserId: string;
+  traitType: string;
+  status: string;
+}
+
+interface SpotlightRecord {
+  id: string;
+  tenantId: string;
+  helperUserId: string;
+  topicHint: string | null;
+  message: string;
+  periodFrom: Date;
+  periodTo: Date;
+  helpCount: number;
+  status: string;
+  approvedByUserId: string | null;
+  publishedAt: Date | null;
+  feedItemId: string | null;
+  createdAt: Date;
+  updatedAt?: Date;
+  traitIds?: string[];
+}
+
+function buildMockPrisma(initial: {
+  traits?: TraitRecord[];
+  spotlights?: SpotlightRecord[];
+}): any {
+  const traits = new Map<string, TraitRecord>(
+    (initial.traits ?? []).map((t) => [t.id, { ...t }]),
+  );
+  const spotlights = new Map<string, SpotlightRecord>(
+    (initial.spotlights ?? []).map((s) => [s.id, { ...s }]),
+  );
+
+  return {
+    helpfulnessTrait: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) => {
+        const t = traits.get(where.id);
+        if (!t) return null;
+        if (t.tenantId !== where.tenantId) return null;
+        return t;
+      }),
+      update: vi.fn(
+        async ({ where, data }: { where: { id: string }; data: Partial<TraitRecord> }) => {
+          const t = traits.get(where.id);
+          if (!t) throw new Error('not found');
+          Object.assign(t, data);
+          return t;
+        },
+      ),
+    },
+    helpfulnessSpotlight: {
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string; tenantId: string } }) => {
+          const s = spotlights.get(where.id);
+          if (!s) return null;
+          if (s.tenantId !== where.tenantId) return null;
+          return s;
+        },
+      ),
+      update: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { id: string };
+          data: Partial<SpotlightRecord>;
+        }) => {
+          const s = spotlights.get(where.id);
+          if (!s) throw new Error('not found');
+          Object.assign(s, data);
+          return s;
+        },
+      ),
+    },
+    activityFeedItem: {
+      create: vi.fn(async ({ data }: { data: { tenantId: string } }) => ({
+        id: `feed_${Math.random().toString(36).slice(2, 8)}`,
+        ...data,
+      })),
+    },
+    $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      // Передаём те же mocks в качестве tx (не строго правильно, но достаточно).
+      cb(mockPrisma),
+    ),
+  };
+}
+
+const mockMetrics = {
+  incCoreSpecialistCards: vi.fn(),
+} as unknown as ConstructorParameters<typeof HelpfulnessApiService>[1];
+
+let mockPrisma: ReturnType<typeof buildMockPrisma>;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('HelpfulnessApiService — mark-as-misleading', () => {
+  it('помечает trait как mark_as_misleading, если user — owner', async () => {
+    mockPrisma = buildMockPrisma({
+      traits: [
+        {
+          id: 't1',
+          tenantId: 'org1',
+          helperUserId: 'u1',
+          traitType: 'help_provided',
+          status: 'active',
+        },
+      ],
+    });
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    const res = await svc.markTraitAsMisleading({
+      tenantId: 'org1',
+      traitId: 't1',
+      userId: 'u1',
+    });
+    expect(res.ok).toBe(true);
+    expect(mockPrisma.helpfulnessTrait.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { status: 'mark_as_misleading' },
+    });
+  });
+
+  it('бросает ForbiddenException, если user — не owner', async () => {
+    mockPrisma = buildMockPrisma({
+      traits: [
+        {
+          id: 't1',
+          tenantId: 'org1',
+          helperUserId: 'u1',
+          traitType: 'help_provided',
+          status: 'active',
+        },
+      ],
+    });
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    await expect(
+      svc.markTraitAsMisleading({
+        tenantId: 'org1',
+        traitId: 't1',
+        userId: 'u2_other',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('бросает NotFoundException, если trait не найден', async () => {
+    mockPrisma = buildMockPrisma({});
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    await expect(
+      svc.markTraitAsMisleading({
+        tenantId: 'org1',
+        traitId: 'missing',
+        userId: 'u1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('бросает NotFoundException на cross-tenant trait', async () => {
+    mockPrisma = buildMockPrisma({
+      traits: [
+        {
+          id: 't1',
+          tenantId: 'org_other',
+          helperUserId: 'u1',
+          traitType: 'help_provided',
+          status: 'active',
+        },
+      ],
+    });
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    await expect(
+      svc.markTraitAsMisleading({
+        tenantId: 'org1',
+        traitId: 't1',
+        userId: 'u1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('HelpfulnessApiService — hide / republish / approve invariants', () => {
+  it('hideSpotlight: бросает NotFoundException, если не найден', async () => {
+    mockPrisma = buildMockPrisma({});
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    await expect(
+      svc.hideSpotlight({ tenantId: 'org1', spotlightId: 'missing' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('republishSpotlight: бросает ForbiddenException если status ≠ hidden', async () => {
+    mockPrisma = buildMockPrisma({
+      spotlights: [
+        {
+          id: 's1',
+          tenantId: 'org1',
+          helperUserId: 'u1',
+          topicHint: null,
+          message: 'test',
+          periodFrom: new Date(),
+          periodTo: new Date(),
+          helpCount: 3,
+          status: 'published',
+          approvedByUserId: 'admin',
+          publishedAt: new Date(),
+          feedItemId: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    await expect(
+      svc.republishSpotlight({
+        tenantId: 'org1',
+        spotlightId: 's1',
+        approvedByUserId: 'admin2',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('approveSpotlight: бросает ForbiddenException если status ≠ pending', async () => {
+    mockPrisma = buildMockPrisma({
+      spotlights: [
+        {
+          id: 's1',
+          tenantId: 'org1',
+          helperUserId: 'u1',
+          topicHint: null,
+          message: 'test',
+          periodFrom: new Date(),
+          periodTo: new Date(),
+          helpCount: 3,
+          status: 'published',
+          approvedByUserId: 'admin',
+          publishedAt: new Date(),
+          feedItemId: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    await expect(
+      svc.approveSpotlight({
+        tenantId: 'org1',
+        spotlightId: 's1',
+        approvedByUserId: 'admin2',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('approveSpotlight: на pending переходит в published + создаёт ActivityFeedItem', async () => {
+    mockPrisma = buildMockPrisma({
+      spotlights: [
+        {
+          id: 's1',
+          tenantId: 'org1',
+          helperUserId: 'u1',
+          topicHint: 'безопасность',
+          message: 'Иван 5 раз помог по безопасности',
+          periodFrom: new Date('2026-05-17'),
+          periodTo: new Date('2026-05-24'),
+          helpCount: 5,
+          status: 'pending',
+          approvedByUserId: null,
+          publishedAt: null,
+          feedItemId: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
+    const res = await svc.approveSpotlight({
+      tenantId: 'org1',
+      spotlightId: 's1',
+      approvedByUserId: 'admin1',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.spotlight.status).toBe('published');
+    expect(mockPrisma.activityFeedItem.create).toHaveBeenCalled();
+    const feedCall = mockPrisma.activityFeedItem.create.mock.calls[0]?.[0];
+    expect(feedCall?.data.feedType).toBe('spotlight');
+    expect(feedCall?.data.sourceAgentName).toBe('helpfulness_agent');
+    expect(feedCall?.data.visibility).toBe('public_org');
+  });
+});

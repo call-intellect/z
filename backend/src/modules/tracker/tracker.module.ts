@@ -2,21 +2,26 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
+import { AttachmentsController } from './controllers/attachments.controller';
 import { CommentsController } from './controllers/comments.controller';
 import { CyclesController } from './controllers/cycles.controller';
 import { IntakeController } from './controllers/intake.controller';
 import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { ProjectsController } from './controllers/projects.controller';
+import { RelationsController } from './controllers/relations.controller';
 import { TeamTemplatesController } from './controllers/team-templates.controller';
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { ActivityRecorderService } from './services/activity-recorder.service';
+import { AttachmentsService } from './services/attachments.service';
 import { CommentsService } from './services/comments.service';
 import { CyclesService } from './services/cycles.service';
 import { IntakeService } from './services/intake.service';
+import { IssueMeetingsService } from './services/issue-meetings.service';
 import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { ProjectsService } from './services/projects.service';
+import { RelationsService } from './services/relations.service';
 import { WebhooksService } from './services/webhooks.service';
 
 /**
@@ -47,6 +52,8 @@ import { WebhooksService } from './services/webhooks.service';
     LabelsController,
     TrackerWebhooksController,
     TeamTemplatesController,
+    RelationsController,
+    AttachmentsController,
   ],
   providers: [
     ActivityRecorderService,
@@ -57,6 +64,9 @@ import { WebhooksService } from './services/webhooks.service';
     CommentsService,
     LabelsService,
     WebhooksService,
+    RelationsService,
+    AttachmentsService,
+    IssueMeetingsService,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не

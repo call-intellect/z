@@ -45,6 +45,11 @@ import {
   type ListIssuesQuery,
 } from '../dto/issues/list-issues-query.dto';
 import {
+  StartMeetingFromIssueSchema,
+  type StartMeetingFromIssueDto,
+  type StartMeetingFromIssueResponseDto,
+} from '../dto/issues/start-meeting.dto';
+import {
   TransitionIssueStateSchema,
   type TransitionIssueStateDto,
 } from '../dto/issues/transition-state.dto';
@@ -52,16 +57,19 @@ import {
   UpdateIssueSchema,
   type UpdateIssueDto,
 } from '../dto/issues/update-issue.dto';
+import { IssueMeetingsService } from '../services/issue-meetings.service';
 import { IssuesService } from '../services/issues.service';
 
 /**
  * REST `/api/v1/projects/:projectId/issues` + `/api/v1/issues/:id` —
  * задачи трекера. RBAC ResourceType='issue'.
  *
- * TODO Sprint 2:
- *   - POST /issues/:id/attachments — multipart upload (S3).
- *   - POST /issues/:id/start-meeting — создать LiveKit Meeting с linkedIssueId.
- *   - POST /issues/:id/relations + DELETE — IssueRelation CRUD.
+ * Sprint 2 (закрыто):
+ *   - POST /issues/:id/relations + DELETE → `RelationsController`.
+ *   - POST /issues/:id/attachments + GET/DELETE → `AttachmentsController`.
+ *   - POST /issues/:id/start-meeting → ниже (вызывает `IssueMeetingsService`).
+ *
+ * TODO Sprint 3:
  *   - Idempotency-Key middleware на POST /issues.
  */
 @ApiTags('tracker / issues')
@@ -71,6 +79,8 @@ import { IssuesService } from '../services/issues.service';
 export class IssuesController {
   constructor(
     @Inject(IssuesService) private readonly svc: IssuesService,
+    @Inject(IssueMeetingsService)
+    private readonly issueMeetings: IssueMeetingsService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -278,6 +288,31 @@ export class IssuesController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.unlinkGoal(id, t, user.id);
+  }
+
+  // ── start meeting from issue ──
+
+  @Post('issues/:id/start-meeting')
+  @ApiOperation({
+    summary:
+      'Запустить LiveKit-встречу по задаче (type=task_discussion). ' +
+      'Создаёт Meeting + host-Participant + IssueActivity. Возвращает host JWT.',
+  })
+  async startMeeting(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(StartMeetingFromIssueSchema))
+    body: StartMeetingFromIssueDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<StartMeetingFromIssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.issueMeetings.startMeeting({
+      issueId: id,
+      tenantId: t,
+      userId: user.id,
+      inviteUserIds: body.inviteUserIds,
+    });
   }
 
   // ── activity / versions ──

@@ -48,6 +48,9 @@ enum MeetingType {
   review
   /// Фаза 0 — ретроспектива (retrospective). См. ontology уровень 5 «Учится».
   retrospective
+  /// Tracker Phase 1 (2026-05-24) — встреча, запущенная по задаче трекера
+  /// через `POST /issues/:id/start-meeting`. Linked via `Meeting.linkedIssueId`.
+  task_discussion
 }
 
 enum MeetingStatus {

@@ -213,12 +213,64 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 | [regulations](regulations.md) | Process steps извлекаются из чата задач |
 | [conversational-channels](conversational-channels.md) | Telegram-бот для задач (Phase 4, Sprint 9-10) |
 
+## Wave 3 — Phase 3 (AI) + Phase 4 (РФ) + Phase 5 (импорт) backend (2026-05-24)
+
+7 параллельных subagent'ов в одной сессии оркестрации закрыли почти весь Phase 3+4+5 backend + frontend Wave 2 polish. ~14.5k строк + 162 теста. Главное открытие сессии: **handoff устарел** — β-8 (COO Dashboard), γ-2 (Concierge backend), α-8 (Role Map), α-9 (Company Foundation), δ-1 (Orchestrator), δ-2 (ProactiveWatcher), γ-3 (Cross-Functional) ВСЕ оказались реализованными до этой сессии. Реальный gap = Tracker Phase 3+4+5.
+
+### Phase 3 — AI features (backend)
+
+| Фича | Что реализовано |
+|---|---|
+| **KNN похожие задачи** | `Issue.embedding vector(1536)` + `embeddingHash` (commit 1c49eea). IssueEmbedWorker (sha256-skip). SimilarIssuesService (KNN cosine threshold 0.18). `GET /api/v1/tracker/issues/:id/similar`. HNSW partial-index в postgres-init.sql. |
+| **meeting-extract-actions** | После ai_ready встречи → MeetingExtractActionsService → IntakeIssue с suggested* (assignee/project/dueDate/priority/confidence/sourceQuote). LlmTaskType `meeting-extract-actions`. |
+| **intake-auto-triage** | IntakeAutoTriageWorker (consumer `core.intake-auto-triage`) — confidence ≥ 0.92 + source='meeting' + assigneeId → auto-create Issue. LlmTaskType `intake-auto-triage`. |
+| **issue-infer-fields** | POST /issues с `inferSuggestions: true` → IssueInferFieldsService → `aiSuggestions` inline в response (timeout 8s). LlmTaskType `issue-infer-fields`. |
+| **issue-goal-suggest** | KNN (top-10, distance ≤ 0.20, voting ≥ 60%) → LLM fallback. LlmTaskType `issue-goal-suggest`. |
+| **CardSpecialist для tracker** | IssueCardHandler + ProjectCardHandler в chat-v2 — AI-чат теперь отвечает на «покажи мои просроченные», «что обсуждали по KORA-123». |
+
+### Phase 4 — РФ must-have (backend)
+
+| Фича | Что реализовано |
+|---|---|
+| **Telegram-бот для задач** | TelegramTaskParserService — 4 LlmTaskType. TelegramBotMessageHandler — рутер text/voice/forward/reply, инжектится в TelegramBotChannelAdapter через @Optional. TelegramDigestCron `@Cron('0 9 * * *')` с Redis dedup. ASR через существующий VoxService. |
+| **10 шаблонов команд** | sales / development / installation / marketing / management / customer_support / hr / finance / operations / product + 5 опц. (quality_control / legal / procurement / logistics / events). Системные (tenantId=null). Seed `scripts/seed-team-templates.ts`. |
+| **POST /projects/from-template** | ProjectsFromTemplateService — Project + IssueState + ProjectMember + Regulation-заглушки + опц. примеры задач в транзакции. |
+| **HolidayCalendar модель** | (commit 43253b2) Производственный календарь РФ 2026 (14 праздников). Seed `scripts/seed-holiday-calendar-ru-2026.ts`. HolidayService.isHoliday/nextBusinessDay/adjustDueDate. Интеграция в IssuesService — TODO Sprint 10. |
+
+### Phase 5 — импорт (backend)
+
+| Фича | Что реализовано |
+|---|---|
+| **ImportLog модель** | (commit 4b009cd) progress + errors + paramsJson + unmatchedJson. |
+| **Trello JSON импорт** | TrelloImportStrategy — boards→Project, lists→IssueState, cards→Issue (идемпотент по externalSource+externalId), members→IssueAssignee, comments, attachments→S3 (best-effort). |
+| **Битрикс24/Я.Трекер** | DTO + REST + strategies заглушки (NotImplemented). Реализация — Phase 5 part 2. |
+| **Wizard endpoints** | POST `/api/v1/tracker/imports/{trello,bitrix24,yandex-tracker}` + GET list/`:id` + POST `:id/cancel`. WebSocket events `import.progress/completed/failed`. RBAC `import_tracker` (owner/admin only). |
+
+### Frontend Wave 2 polish (Agent G)
+
+5 быстрых wins:
+1. **TTS озвучка ответа AI в IssueChat** — кнопка «🔊 Озвучить» через `voiceApi.synthesize`.
+2. **/chat-v2?conversationId= deep-link** — `useSearchParams()` preselect + автопереключение архивного фильтра.
+3. **Голосовой ввод в CommandPalette** — иконка-микрофон + `voiceApi.transcribe` → query.
+4. **Recent/Pinned в Cmd+K idle** — localStorage `z:command-palette:recent/pinned` (max 10 each).
+5. **Reorder в канбане** — `@dnd-kit/sortable` SortableContext + `arrayMove` + sortOrder=idx×1000 через PATCH /issues/:id.
+
+### Метрики Prometheus (новые)
+
+- `tracker_issue_embed_total{status}`, `tracker_issue_similar_search_total`.
+- `ai_meeting_actions_extracted_total{status,by}`, `ai_intake_auto_accepted_total`, `ai_intake_suggested_total{status}`.
+- `ai_issue_inferred_total{accepted}`, `ai_issue_goal_suggested_total{accepted,source}`.
+- `telegram_{tasks_created,voice_transcribed,forwards,digest_sent,reply_classified}_total`.
+- `team_template_used_total{slug}`, `holiday_due_date_adjusted_total`.
+- `import_started_total{source}`, `import_completed_total{source,success}`, `import_issues_processed_total{source}`.
+
 ## История реализации
 
 - **2026-05-24:** Sprint 1 + большая часть Sprint 2 закрыты за 1 сессию оркестрации (9 параллельных subagent'ов, ~10 200 строк). См. [`05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md`](../05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md).
 - **2026-05-24 (Sprint 3 finishing):** B1-3.2 + B1-3.3 + общий IdempotencyService + socket.io-client live refresh закрыты за 3 параллельных subagent'ов (~3 900 строк). См. [`05_история/2026-05-24-sprint3-finishing.md`](../05_история/2026-05-24-sprint3-finishing.md).
 - **2026-05-24 (Wave 2 backend + Phase 2 frontend):** Activity Feeds + Specialist 3.8 Helpfulness + Recognition + Gamification + Phase 2 канбан drag-n-drop + PWA закрыты за 6 параллельных subagent'ов (~13 100 строк, 9 Prisma моделей + 12 cron + 4 worker + 14 controllers + 6 хуков + 188 тестов). Открытие сессии: α-5 DialogService уже полностью был реализован — Agent 18 не запускался. См. [`05_история/2026-05-24-wave2-backend-frontend.md`](../05_история/2026-05-24-wave2-backend-frontend.md).
 - **2026-05-24 (Wave 2 finishing + Phase 2 polish):** 8 параллельных subagent'ов закрыли мелкие связки и большие новые модули — Helpfulness→Recognition bridge, Recognition→ActivityFeed publish, HNSW pgvector index, seed helpfulness LlmTaskRoute, backend web-push (PushSubscription модель + endpoints + worker + cron), IssueChat реальный AI-чат с голосовым вводом, Cmd+K CommandPalette с AI ask, Toast/Pagination/Badge мелкие polish. ~3 700 строк, 9 коммитов. См. [`05_история/2026-05-24-wave2-finishing.md`](../05_история/2026-05-24-wave2-finishing.md).
+- **2026-05-24 (Wave 3 — Phase 3+4+5 backend + frontend Wave 2 polish):** 7 параллельных subagent'ов за одну сессию закрыли почти весь Tracker Phase 3 AI features + Phase 4 РФ + Phase 5 импорт + 5 frontend polish wins. Главное открытие — handoff устарел: β-8/α-8/α-9/γ-2/δ-1/δ-2/γ-3 УЖЕ реализованы до этой сессии (см. tracker, conversational, processes, role-map, company-foundation, orchestrator, operations, proactive модули). ~14.5k строк, 7 коммитов, 162 теста passed, оба typecheck зелёные. См. [`05_история/2026-05-24-wave3-phase3-4-5-orchestration-7-agents.md`](../05_история/2026-05-24-wave3-phase3-4-5-orchestration-7-agents.md).
 
 ## Активные планы
 

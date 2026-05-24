@@ -1282,4 +1282,193 @@ frontend/src/hooks/tracker/
 
 Интегрировано в `useIssues`/`useIssue`/`useIssueActivity`/`useCycles` — auto-revalidate при WS events.
 
+## Wave 2 backend + Phase 2 frontend (2026-05-24)
+
+6 параллельных subagent'ов, ~13 100 строк. 9 новых Prisma моделей + 3 новых модуля backend + Phase 2 канбан drag-n-drop + PWA готовность.
+
+### Открытие сессии: α-5 DialogService уже готов
+
+`grep "DialogLayer|ContextualizerService|MultiQueryExpansion" backend/src/` нашёл 44 файла в `backend/src/modules/dialog-layer/` (module + 9 services + 5 prompts + ConversationSummarizerCron + tests). DialogService импортирован в chat-v2.service. Все 9 пунктов sub-ТЗ покрыты. Agent 18 НЕ запускался — 6-й случай за 2 сессии когда разведка через grep экономит часы.
+
+### `backend/src/modules/activity-feed/` — единая лента активности (Wave 2 Поток D)
+
+6 типов лент: probe_question | insight | decision | task | idea | conflict | knowledge_change. Единая точка `ActivityFeedService.publish()` для AI-агентов.
+
+```
+activity-feed/
+  activity-feed.module.ts                              # @Global
+  services/
+    activity-feed.service.ts                           # publish/getFeed/FSM markSeen/markDelivered/markResponded/markActioned/dismiss + react ($transaction + per-user дедуп) + expire
+    activity-feed.service.spec.ts                      # 13 unit-тестов
+  gateways/
+    activity-feed.gateway.ts                           # @WebSocketGateway('/ws/feed'), tenant/team/user rooms
+  controllers/
+    feed.controller.ts                                 # GET /feed + /feed/:type + /feed/:id/{react,seen,respond,dismiss}
+    feed.controller.spec.ts                            # 7 integration-тестов
+    feed-subscriptions.controller.ts                   # CRUD subscriptions
+  cron/
+    feed-expire.cron.ts                                # @Cron('*/15 * * * *')
+    feed-digest.cron.ts                                # daily 09:00 + weekly Mon 09:00 (digest collection; bulk-send через ConversationalService — TODO)
+  dto/{activity-feed,ws-events}.ts
+```
+
+ResourceType: `activity_feed_item`. RBAC: owner/admin r/w/m; manager read.
+
+FSM: emitted → delivered → seen → responded → actioned → dismissed/expired. Идемпотентен, толерантен к backward (markSeen на expired — no-op). Visibility-фильтр в два этапа: SQL `WHERE` + post-фильтр в памяти (Prisma JSON не умеет contains).
+
+Prometheus метрики: feed_items_emitted_total / feed_items_actioned_total / feed_reactions_total / feed_items_expired_total.
+
+### `backend/src/modules/specialist-3-8-helpfulness/` — Specialist 3.8 (Wave 2 Поток D)
+
+```
+specialist-3-8-helpfulness/
+  specialist-3-8-helpfulness.module.ts                 # @Global
+  services/
+    specialist-3-8-helpfulness.service.ts              # detect → embedding → KNN merge (raw SQL <=> через pgvector, cosine > 0.85) → persist
+    specialist-3-8-probe.service.ts                    # 4 probe-trigger
+    helpfulness-api.service.ts                         # REST бизнес-логика
+  workers/
+    specialist-3-8-helpfulness.worker.ts               # consumer core.specialist-routing jobName='3-8-helpfulness'
+  cron/
+    social-contribution-profile.cron.ts                # @Cron('0 5 * * *') агрегат helpProvidedCount/proactiveHintCount/mentoringCount/...
+    helpfulness-spotlight.cron.ts                      # @Cron('0 9 * * 1') формирует HelpfulnessSpotlight (status='pending', ждёт approve)
+    helpfulness-trait-decay.cron.ts                    # @Cron('0 6 * * *') decay 30 days
+    helpfulness-probe.cron.ts                          # @Cron('0 10 * * *') обёртка над 4 probe.suggest()
+  controllers/
+    helpfulness.controller.ts                          # /me/social-contribution + /persons/:id/social-contribution + /feed/spotlights + approve/hide/republish + mark-as-misleading
+    helpfulness-admin.controller.ts                    # /admin/helpfulness/{team-map,unanswered} — manager+admin only
+  prompts/
+    helpfulness.prompts.ts                             # 3 промпта helpfulness-detect/trait-merge/spotlight-formulate
+```
+
+⚠ **Этические защиты (КРИТИЧНО):**
+- `PRIVATE_TRAIT_TYPES` set = {question_unanswered, question_acknowledged_no_action} — `visibility='restricted'`.
+- `persistTrait` принудительно ставит `restricted` для private types.
+- `HelpfulnessSpotlightCron` берёт только `PUBLIC_TRAIT_TYPES` (5 публичных) — private никогда не попадают в spotlight.
+- `getProfileForPerson` фильтрует private traits для коллег.
+- `guardSpotlightStatus` принудительно сбрасывает status на `published` для member'ов без canWrite.
+- Spotlight автопубликации нет: pending → approved (manager) → published.
+
+Расширения в существующих файлах:
+- `ai/services/llm-router.service.ts` — 3 LlmTaskType: helpfulness-detect, helpfulness-trait-merge, helpfulness-spotlight-formulate.
+- `knowledge-core/services/router.service.ts` — `HELPFULNESS='3-8-helpfulness'` specialist + 12 case'ов matchSpecialists (priority 5.5).
+- `rbac/rbac.service.ts` + `policies/policy.csv` — ResourceType helpfulness_trait + social_contribution_profile + helpfulness_spotlight с visibility scope.
+
+### `backend/src/modules/recognition/` — Recognition + Gamification (Wave 2 Поток D)
+
+```
+recognition/
+  recognition.module.ts                                # @Global
+  README.md                                            # документация модуля + TODO
+  services/
+    recognition.service.ts                             # фасад (enqueue + read API)
+    comments-thanks.service.ts                         # toggle thanks для IssueComment (idempotent)
+    badge-conditions.service.ts                        # чистые проверки 5 conditions
+  workers/
+    recognition-formulate.worker.ts                    # consumer core.recognition-formulate + детерминистический fallback + double-idempotency (BullMQ jobId + findFirst)
+  cron/
+    contribution-snapshot.cron.ts                      # @Cron('0 4 * * *') агрегат per user
+    badge-awarder.cron.ts                              # @Cron('0 5 * * *') 5 базовых badges
+    streak-detector.cron.ts                            # @Cron('0 23 * * *') currentCheckinStreak + emit streak_milestone Recognition
+    recognition-weekly-digest.cron.ts                  # @Cron('0 9 * * 1') дайджест для руководителей
+  controllers/
+    contributions.controller.ts                        # /me/contributions + /persons/:id/contributions + /me/recognitions
+    badges.controller.ts                               # /badges (каталог) + /me/badges
+    comments-thanks.controller.ts                      # POST /api/v1/issues/comments/:id/thanks (idempotent toggle)
+    recognition-admin.controller.ts                    # forward-as-self stub (501) + opt-out
+  seed/badge-seed.ts                                   # 5 базовых badges: ideator/expert/helper/aligned/consistent
+  prompts/recognition-formulate.prompt.ts
+```
+
+Standalone seed-скрипты: `backend/scripts/seed-badges.ts` + `backend/scripts/seed-llm-task-routes-recognition.ts`.
+
+⚠ Этические правила: Recognition от AI (fromUserId=null), НЕ от руководителя автоматически. Default visibility='private'. Self-thanks разрешён в массиве но НЕ инкрементит thanksReceived (Recognition не эмитится). Никаких рейтингов/leaderboard.
+
+Расширения:
+- `ai/services/llm-router.service.ts` — LlmTaskType `recognition-formulate`.
+- `core-queue/queues.ts` + `core-queue.service.ts` — очередь `core.recognition-formulate` + метод `enqueueRecognitionFormulate(...)`.
+- `prisma schema` — `IssueComment.thanksUserIds String[] @default([])`.
+- ResourceType: recognition / badge / user_badge / contribution_snapshot.
+
+### `app.module.ts` интеграция
+
+```ts
+imports: [
+  // ...
+  ActivityFeedModule,            // ДО ProbeModule/Specialist38 (они инжектят ActivityFeedService)
+  // ...
+  ProbeModule,
+  // ...
+  Specialist36Module,
+  IdeasModule,
+  Specialist38HelpfulnessModule, // ПОСЛЕ KnowledgeCoreModule (RouterService), AiModule, ProbeModule
+  RecognitionModule,             // ПОСЛЕ AiModule, CoreQueueModule, ActivityFeedModule
+]
+```
+
+### Tracker Phase 2 frontend (Wave 2 F1)
+
+**Канбан drag-n-drop:**
+- `frontend/package.json` — `@dnd-kit/core@6.3.1` + `@dnd-kit/sortable@10` + `@dnd-kit/utilities@3.2.2`.
+- `src/ui/tracker/Board.tsx` — переписан: DndContext + useDraggable/useDroppable, sensors (PointerSensor distance:4, TouchSensor delay:200/tolerance:8, KeyboardSensor для a11y), collision=pointerWithin, DragOverlay (оригинал opacity 0).
+- Optimistic update через SWR `mutate(fetcher, { optimisticData, rollbackOnError:true, revalidate:true })`.
+- Mapping: states (≥1 IssueState) → реальные колонки + drop включён; states пусто → 5 виртуальных колонок по category + drop disabled (backward-compat).
+
+**useStates + useMyInbox + live refresh:**
+- `src/hooks/tracker/useStates.ts` — SWR ключ ['tracker.states', orgId, projectId], API `/api/v1/states`.
+- `src/api/tracker/states.api.ts` + `src/domain/tracker/state.ts` (ApiDto → TrackerState DomainModel + compareStatesForBoard).
+- `src/hooks/tracker/useMyInbox.ts` — переписан: stub удалён, SWR с cursor pagination для `/api/v1/me/inbox`.
+- `src/hooks/tracker/useIssues.ts` — mutate signature расширена до полной `KeyedMutator` для optimisticData.
+- `src/hooks/tracker/useTrackerLiveRefresh.ts` — добавлен префикс `me.inbox` для issue.* + intake.triaged.
+
+**Bottom navigation:**
+- `src/ui/components/app-shell/AppShell.tsx` — `<TrackerBottomNav>` примонтирован (md:hidden, fixed bottom-0). Main получает `pb-16 md:pb-0`.
+- Fix: `src/ui/tracker/TrackerBottomNav.tsx` — путь `/me/checkin` → `/me/check-ins`.
+
+**InboxClient real data:**
+- `app/(authenticated)/me/inbox/InboxClient.tsx` — реальные задачи + loading skeleton + error state.
+
+### Tracker `/me/inbox` + `/states` endpoints (Sprint 2/3 Agent 19)
+
+```
+backend/src/modules/tracker/
+  controllers/
+    me-inbox.controller.ts                             # GET /api/v1/me/inbox cursor-pagination + фильтры
+    states.controller.ts                               # GET /api/v1/states (read-only справочник)
+  services/
+    states.service.ts                                  # filter by projectId, tenant isolation
+    states.service.spec.ts                             # 4 unit-теста
+    issues.my-inbox.service.spec.ts                    # 7 unit-тестов findMyInbox cursor=id desc
+  dto/
+    issues/my-inbox-query.dto.ts                       # MyInboxQuery Zod
+    states/{list-states-query,state-response}.dto.ts
+```
+
+`IssuesService.findMyInbox(tenantId, userId, query)` — cursor по id desc (стабильный cuid order), take=limit+1 для hasMore.
+
+### PWA frontend (Wave 2 F2)
+
+```
+frontend/
+  app/
+    manifest.ts                                        # Next.js MetadataRoute (name «Кора», ru, standalone, productivity)
+    layout.tsx                                         # + applicationName + appleWebApp + icons + <PwaInit/>
+    (authenticated)/settings/
+      SettingsSidebar.tsx                              # + пункт «Уведомления» (icon Bell)
+      notifications/page.tsx                           # PushSubscriptionToggle + iOS-предупреждение
+  public/
+    sw.js                                              # cache-first /_next/static/ + /icons/, network-first /api/* + HTML, stale-while-revalidate images, push + notificationclick
+    icons/
+      icon-192.svg / icon-512.svg / icon-maskable-512.svg / apple-touch-icon.svg  # брендовая «К» mint #5EEAD4 на #0A0E14
+  src/
+    lib/pwa/
+      register-sw.ts                                   # navigator.serviceWorker.register('/sw.js', { updateViaCache:'none' }), dev-guard NEXT_PUBLIC_PWA_ENABLE_IN_DEV
+      PwaInit.tsx                                      # client component с useEffect
+      push.ts                                          # subscribeToPush/unsubscribeFromPush/getExistingSubscription/getPermission/getVapidPublicKey, urlBase64→ArrayBuffer
+    ui/settings/
+      PushSubscriptionToggle.tsx                       # 5 состояний: unsupported / vapid-missing / denied / default / subscribed
+```
+
+VAPID public key — `NEXT_PUBLIC_VAPID_PUBLIC_KEY`. POST/DELETE `/api/v1/me/push-subscriptions` — backend stub (try/catch ApiError.code==='http_404' → console.warn + TODO).
+
 [[../index|← index]]

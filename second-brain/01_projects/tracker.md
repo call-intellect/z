@@ -217,6 +217,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 
 - **2026-05-24:** Sprint 1 + большая часть Sprint 2 закрыты за 1 сессию оркестрации (9 параллельных subagent'ов, ~10 200 строк). См. [`05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md`](../05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md).
 - **2026-05-24 (Sprint 3 finishing):** B1-3.2 + B1-3.3 + общий IdempotencyService + socket.io-client live refresh закрыты за 3 параллельных subagent'ов (~3 900 строк). См. [`05_история/2026-05-24-sprint3-finishing.md`](../05_история/2026-05-24-sprint3-finishing.md).
+- **2026-05-24 (Wave 2 backend + Phase 2 frontend):** Activity Feeds + Specialist 3.8 Helpfulness + Recognition + Gamification + Phase 2 канбан drag-n-drop + PWA закрыты за 6 параллельных subagent'ов (~13 100 строк, 9 Prisma моделей + 12 cron + 4 worker + 14 controllers + 6 хуков + 188 тестов). Открытие сессии: α-5 DialogService уже полностью был реализован — Agent 18 не запускался. См. [`05_история/2026-05-24-wave2-backend-frontend.md`](../05_история/2026-05-24-wave2-backend-frontend.md).
 
 ## Активные планы
 

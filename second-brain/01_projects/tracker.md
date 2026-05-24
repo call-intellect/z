@@ -171,21 +171,24 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 
 ## Что осталось до DoD Phase 1 трекера
 
-| Тикет | Что | Sprint |
-|---|---|---|
-| B1-3.1 | `tracker.adapter.ts` в `modules/ingest/adapters/tracker/` — слушает `tracker.event_occurred` → создаёт RawEvent с правильным signalType (8 task_*) | Sprint 3 |
-| B1-3.2 | Goals integration: расширение `strategic-alignment.cron` (учитывает Issue с goalId), probe-trigger «80% задач не привязаны к целям» | Sprint 3 |
-| B1-3.3 | Миграция legacy `Task` → `Issue` (скрипт `backend/scripts/migrate-task-to-issue.ts` — DRY-RUN + `--apply`) | Sprint 3 |
-| Idempotency middleware на POST | `IdempotencyService` общий для tracker (Redis cache) | Sprint 2 |
-| Notification владельцу при webhook.isActive=false | Через ConversationalService | Sprint 2-3 |
-| Sharp thumbnails для IssueAttachment | Отдельный воркер `attachment-thumbnail` | Sprint 3+ |
-| task_discussion отдельный AI-промпт | Сейчас переиспользует `team` промпт | Sprint 3 |
+| Тикет | Что | Sprint | Статус |
+|---|---|---|---|
+| B1-3.1 | `tracker.adapter.ts` в `modules/ingest/adapters/tracker/` — слушает `tracker.event_occurred` → создаёт RawEvent с правильным signalType (8 task_*) | Sprint 3 | ✅ commit 3c547f7 (2026-05-24) |
+| B1-3.2 | Goals integration: `goals/cron/strategic-alignment.cron.ts` issue-based (06:00 UTC), `StrategicAlignmentIssuesService` + Redis cache + AuditLog, probe-trigger `strategic_misalignment_high` (≥80% задач без goalId за 30д, минимум 5 задач), `GET /goals/:id/alignment-snapshot` cache-first | Sprint 3 | ✅ commit c628f80 (2026-05-24) |
+| B1-3.3 | `backend/scripts/migrate-task-to-issue.ts` идемпотентный CLI (--dry-run/--apply/--org-id), assignee resolution 4 ступени, legacy `/api/v1/tasks` помечен @deprecated | Sprint 3 | ✅ commit 6b83cbb (2026-05-24) |
+| Idempotency middleware на POST | `backend/src/common/idempotency/` — `IdempotencyService` (Redis TTL 86400) + middleware (Idempotency-Key header, кэшируются только 2xx + заголовок Idempotency-Replay: true). Применён к POST /api/v1/projects/:projectId/issues, /api/v1/issues/:id/comments, /api/v1/intake | Sprint 2 | ✅ commit 60def77 (2026-05-24) |
+| WebSocket live refresh (frontend) | `socket.io-client@4.8.3` + `useTrackerLiveRefresh` — auto-revalidate `useIssues`/`useIssue`/`useCycles` через global SWR mutate при WS events (debounce 150ms) | Sprint 2 | ✅ commit 60def77 (2026-05-24) |
+| Notification владельцу при webhook.isActive=false | Через ConversationalService | Sprint 2-3 | TODO |
+| Sharp thumbnails для IssueAttachment | Отдельный воркер `attachment-thumbnail` | Sprint 3+ | TODO |
+| task_discussion отдельный AI-промпт | Сейчас переиспользует `team` промпт | Sprint 3 | TODO |
 
 ## Frontend (F1 — отдельный поток с Sprint 3)
 
 - `app/(authenticated)/projects/`, `/issues/`, `/me/inbox`, `/feed/` — заглушки + DTO-типы.
-- Компоненты `<IssueCard>`, `<KanbanColumn>`, `<QuickAdd>`, `<IssueChat>`, `<CommandPalette>` — mobile-first.
-- Cmd+K — `concierge-parse` LLM через DialogService (после α-5).
+- Компоненты `<IssueCard>`, `<KanbanColumn>`, `<QuickAdd>`, `<IssueChat>`, `<ConciergeFloatingButton>`, `<ConciergeSheet>` — mobile-first.
+- **Концьерж — главный вход через плавающий значок «Кора-помощник»**: на десктопе — правый нижний угол любой страницы; на мобиле — вкладка в bottom navigation. NL-парсинг через `concierge-parse` LLM из DialogService (после α-5).
+- Cmd+K / Ctrl+K — **опциональный** desktop shortcut, открывает то же окно. Не блокирует MVP; ЦА (прорабы, менеджеры объектов, владельцы малого бизнеса) не запоминают горячие клавиши.
+- Кнопки «+ Проект», «+ Задача», FAB «+ Задача» на мобиле — остаются как есть, параллельно с концьержем.
 - PWA — manifest + service worker + web push.
 
 См. [`plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md`](../../plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md).
@@ -213,6 +216,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 ## История реализации
 
 - **2026-05-24:** Sprint 1 + большая часть Sprint 2 закрыты за 1 сессию оркестрации (9 параллельных subagent'ов, ~10 200 строк). См. [`05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md`](../05_история/2026-05-24-tracker-sprint-1-orkestratsiya-9-agentov.md).
+- **2026-05-24 (Sprint 3 finishing):** B1-3.2 + B1-3.3 + общий IdempotencyService + socket.io-client live refresh закрыты за 3 параллельных subagent'ов (~3 900 строк). См. [`05_история/2026-05-24-sprint3-finishing.md`](../05_история/2026-05-24-sprint3-finishing.md).
 
 ## Активные планы
 

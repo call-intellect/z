@@ -1219,4 +1219,67 @@ intake_pending_count{tenant}                           # gauge, обновляе
 
 `frontend/src/lib/livekit/noise-suppression.ts` — buildAudioCaptureOptions + localStorage helper'ы (`kora_noise_suppression_enabled`). Включён по умолчанию во встречах, toggle в `GuestNameForm.tsx` (mobile + desktop). См. [[../01_projects/livekit-noise-cancellation]].
 
+## Tracker Sprint 3 finishing (2026-05-24)
+
+Закрыты B1-3.2 + B1-3.3 + общий IdempotencyService + socket.io-client live refresh. 3 параллельных subagent'а, ~3 900 строк.
+
+### `backend/src/modules/goals/cron/` — strategic-alignment issue-based (B1-3.2)
+
+```
+goals/
+  cron/
+    strategic-alignment.cron.ts                          # @Cron('0 6 * * *') обход active Goal каждой Org
+    strategic-alignment.cron.spec.ts                     # 5 unit-тестов
+  services/
+    strategic-alignment-issues.service.ts                # compute() + Redis cache (TTL 26ч, ключ goal:issue-snapshot:{goalId}) + findMisalignedUsers(threshold=80%, minIssues=5, window=30д)
+    strategic-alignment-issues.service.spec.ts           # 10 unit-тестов
+```
+
+Параллельный, а не replacing — в knowledge-core уже есть LLM-based StrategicAlignmentCron (04:00 UTC, по темам/IdeaBlock-ам). Issue-based cron — второй независимый сигнал alignment. Snapshot хранится в Redis + AuditLog (поле `Goal.progressSnapshot` отсутствует в schema, не добавляли).
+
+Probe-trigger: при ≥80% задач без `goalId` за 30д (минимум 5 задач) → `ProbeService.suggest({type:'strategic_misalignment_high', recipientCandidates:[userId], reason, contextIds:['user:{userId}']})`.
+
+Endpoint: `GET /api/v1/goals/:id/alignment-snapshot` — cache-first + on-the-fly fallback.
+
+### `backend/scripts/migrate-task-to-issue.ts` (B1-3.3)
+
+Идемпотентный CLI-скрипт миграции legacy `Task` → новые `Issue`. Флаги: `--dry-run` (default), `--apply`, `--org-id <id>`. Per Org: upsert виртуальный `Project { slug:'from-meetings', identifier:'MTG', name:'Из встреч' }` (через `@@unique([tenantId, slug])`), создание дефолтных IssueState (если нет). Per Task: `externalSource='meeting_legacy'` + `externalId=task.id` для идемпотентности.
+
+Assignee resolution 4 ступени: `Task.assigneeUserId` FK → email exact (case-insensitive) → email substring → name match (≥3 симв). Fallback: `legacyAssigneeRaw` в `IssueActivity.metadata` для verb=`migrated_from_legacy_task`.
+
+Status mapping: `open→backlog`, `in_progress→started`, `done→completed`, `cancelled→cancelled` (в schema используется `started`, не `in_progress`).
+
+Legacy `/api/v1/tasks/*` помечен `@ApiOperation({ deprecated: true })` на каждом из 7 endpoints (TasksController), endpoints продолжают работать.
+
+### `backend/src/common/idempotency/` — общий IdempotencyService
+
+Cross-cutting middleware для POST endpoints трекера:
+
+```
+common/idempotency/
+  idempotency.service.ts                                 # Redis-store, ключ idempotency:${tenantId ?? 'global'}:${key}, TTL из cfg.tracker.idempotencyKeyTtlSeconds (86400 default), fail-open на ошибках Redis
+  idempotency.middleware.ts                              # NestMiddleware: Idempotency-Key header → HIT отдаёт кэш + Idempotency-Replay: true, MISS оборачивает res.json/send и кэширует только 2xx
+  idempotency.module.ts                                  # @Global() Module, exports IdempotencyService + IdempotencyMiddleware
+  idempotency.service.spec.ts                            # 11 unit-тестов
+```
+
+Подключён в `AppModule.configure()` рядом с `RequestIdMiddleware` для 3 POST роутов:
+- `api/v1/projects/:projectId/issues` (актуальный путь, не `/api/v1/issues` как было в ТЗ)
+- `api/v1/issues/:id/comments`
+- `api/v1/intake`
+
+tenantId resolution: `X-Org-Id` header → `req.user.tenantId` fallback → `null` (ключ префиксуется `global`). Не путать со старым `backend/src/common/interceptors/idempotency.interceptor.ts` — это Crossmark-specific (оставлен как есть).
+
+### Socket.io-client live refresh (frontend)
+
+`socket.io-client@4.8.3` (major-совместимо с backend `socket.io@4.8.1`):
+
+```
+frontend/src/hooks/tracker/
+  useTrackerWebSocket.ts                                 # реальная io('/ws/tracker', { withCredentials:true, auth:{tenantId} }), внутренний EventEmitter Map<eventType, Set<handler>>, subscribe/unsubscribe project/issue через emit+ack 5s timeout
+  useTrackerLiveRefresh.ts                               # wrapper мапит issue.* / comment.* / cycle.* / intake.* / activity_feed.* на global SWR mutate(prefix) с debounce 150ms
+```
+
+Интегрировано в `useIssues`/`useIssue`/`useIssueActivity`/`useCycles` — auto-revalidate при WS events.
+
 [[../index|← index]]

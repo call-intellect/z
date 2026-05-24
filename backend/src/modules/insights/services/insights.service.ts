@@ -21,6 +21,7 @@ import type {
   ChangeInsightStatusBody,
   ChangeSeverityBody,
   ChartInsightsQuery,
+  InsightCauseCategoryDto,
   InsightDetailDto,
   InsightDynamicDto,
   InsightKindDto,
@@ -169,12 +170,17 @@ export class InsightsService {
     tenantId: string;
     query: TopInsightsQuery;
   }): Promise<TopInsightsResponse> {
+    // SBA β-4 wave 2 — фильтр виджета «Топ-5 проблем» по причине.
+    const where: Prisma.InsightWhereInput = {
+      tenantId: args.tenantId,
+      status: { in: ['active', 'mitigating'] },
+    };
+    if (args.query.cause_category) {
+      where.causeCategory = args.query.cause_category;
+    }
     // Приоритет: spike → severity desc → frequencyScore desc.
     const items = await this.prisma.insight.findMany({
-      where: {
-        tenantId: args.tenantId,
-        status: { in: ['active', 'mitigating'] },
-      },
+      where,
       orderBy: [
         { severity: 'desc' },
         { frequencyScore: 'desc' },
@@ -329,6 +335,10 @@ export class InsightsService {
     if (q.affected_entity_id) {
       where.affectedEntityIds = { has: q.affected_entity_id };
     }
+    // SBA β-4 wave 2 — фильтр по категории первопричины.
+    if (q.cause_category) {
+      where.causeCategory = q.cause_category;
+    }
     if (q.q) {
       where.OR = [
         { statement: { contains: q.q, mode: 'insensitive' } },
@@ -350,6 +360,7 @@ export class InsightsService {
       dynamicScore: Number(ins.dynamicScore),
       affectedEntityIds: ins.affectedEntityIds,
       relatedDecisionIds: ins.relatedDecisionIds,
+      causeCategory: (ins.causeCategory as InsightCauseCategoryDto) ?? null,
       firstObservedAt: ins.firstObservedAt.toISOString(),
       lastObservedAt: ins.lastObservedAt.toISOString(),
       sourceBlocksCount: ins.sourceBlockIds.length,

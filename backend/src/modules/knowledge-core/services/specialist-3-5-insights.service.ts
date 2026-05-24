@@ -20,10 +20,12 @@ import {
 import { CurationService } from '../../curation/services/curation.service';
 
 import {
+  INSIGHT_CAUSE_CATEGORIES,
   INSIGHT_EXTRACT_JSON_SCHEMA,
   INSIGHT_EXTRACT_SCHEMA_NAME,
   INSIGHT_EXTRACT_SYSTEM_PROMPT,
   INSIGHT_EXTRACT_USER_TEMPLATE,
+  type InsightCauseCategory,
 } from '../prompts/insight-extract.prompt';
 import {
   INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA,
@@ -148,6 +150,13 @@ export class Specialist35Service {
       // Initial dynamic — для нового всегда 'stable'.
       const dynamicLabel: InsightDynamic = 'stable';
 
+      // SBA β-4 wave 2 (2026-05-23): валидируем causeCategory от LLM.
+      // strict JSON-schema гарантирует enum, но если ответ пришёл от
+      // fallback-tier'а без strict-mode — нормализуем.
+      const causeCategory = Specialist35Service.normalizeCauseCategory(
+        draft.causeCategory,
+      );
+
       const insight = await this.createInsight({
         block,
         kind,
@@ -158,6 +167,7 @@ export class Specialist35Service {
         mitigationPlan: draft.mitigationSuggestion ?? null,
         confidence: draft.confidence,
         dynamicLabel,
+        causeCategory,
       });
 
       // Embedding (best-effort).
@@ -207,6 +217,9 @@ export class Specialist35Service {
           kind: insight.kind,
           statement: insight.statement,
           severity: insight.severity,
+          // SBA β-4 wave 2: причина — в payload триажа, чтобы куратор
+          // подтвердил / отредактировал классификацию LLM.
+          causeCategory: insight.causeCategory,
           affectedEntityIds: insight.affectedEntityIds,
           relatedDecisionIds: insight.relatedDecisionIds,
           mitigationPlan: insight.mitigationPlan,
@@ -703,6 +716,8 @@ export class Specialist35Service {
     mitigationPlan: string | null;
     confidence: number;
     dynamicLabel: InsightDynamic;
+    /** SBA β-4 wave 2 — категория первопричины (LLM-классифицировано). */
+    causeCategory: InsightCauseCategory;
   }): Promise<Insight> {
     return this.prisma.insight.create({
       data: {
@@ -714,6 +729,7 @@ export class Specialist35Service {
         personSubjectIds: args.personSubjectIds,
         sourceBlockIds: [args.block.id],
         mitigationPlan: args.mitigationPlan,
+        causeCategory: args.causeCategory,
         confidence: new Prisma.Decimal(
           Math.max(0, Math.min(1, args.confidence)),
         ),
@@ -728,6 +744,21 @@ export class Specialist35Service {
         status: 'active',
       },
     });
+  }
+
+  /**
+   * SBA β-4 wave 2 — нормализация ответа LLM по causeCategory.
+   * Допускает только значения из INSIGHT_CAUSE_CATEGORIES; при отсутствии или
+   * неизвестном значении возвращает 'unknown' (см. §3 sub-TZ — куратор уточнит).
+   */
+  static normalizeCauseCategory(
+    raw: string | null | undefined,
+  ): InsightCauseCategory {
+    if (!raw) return 'unknown';
+    const v = raw.trim().toLowerCase();
+    return (INSIGHT_CAUSE_CATEGORIES as readonly string[]).includes(v)
+      ? (v as InsightCauseCategory)
+      : 'unknown';
   }
 
   private elevateDataClass(
@@ -885,5 +916,7 @@ interface InsightDraft {
   severity?: 'low' | 'medium' | 'high' | 'critical';
   affectedEntityHints?: Array<{ name: string; type: string }>;
   mitigationSuggestion?: string | null;
+  /** SBA β-4 wave 2 — категория первопричины (LLM-классифицировано). */
+  causeCategory?: string | null;
   confidence: number;
 }

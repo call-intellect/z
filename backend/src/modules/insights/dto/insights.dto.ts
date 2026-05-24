@@ -41,6 +41,26 @@ export const InsightStatusSchema = z.enum([
 ]);
 export type InsightStatusDto = z.infer<typeof InsightStatusSchema>;
 
+/**
+ * SBA β-4 wave 2 (2026-05-23) — категория первопричины.
+ * Дублирует `INSIGHT_CAUSE_CATEGORIES` из knowledge-core промпта (чтобы DTO
+ * не зависел от knowledge-core слоя). Источник правды — schema.prisma
+ * `Insight.causeCategory` (String).
+ */
+export const InsightCauseCategorySchema = z.enum([
+  'process_gap',
+  'tooling',
+  'role_skill',
+  'communication',
+  'priority',
+  'resource_constraint',
+  'external',
+  'unknown',
+]);
+export type InsightCauseCategoryDto = z.infer<
+  typeof InsightCauseCategorySchema
+>;
+
 // ─────────────────────────── Query / Filters ─────────────────────────
 
 export const ListInsightsQuerySchema = z.object({
@@ -50,6 +70,8 @@ export const ListInsightsQuerySchema = z.object({
   status: InsightStatusSchema.optional(),
   dynamic_label: InsightDynamicSchema.optional(),
   affected_entity_id: z.string().min(1).max(60).optional(),
+  /** SBA β-4 wave 2 — фильтр виджета «Топ-5» и master-detail радара. */
+  cause_category: InsightCauseCategorySchema.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -62,6 +84,8 @@ export type ChartInsightsQuery = z.infer<typeof ChartInsightsQuerySchema>;
 
 export const TopInsightsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(5),
+  /** SBA β-4 wave 2 — фильтр Director Dashboard виджета «Топ-5 проблем». */
+  cause_category: InsightCauseCategorySchema.optional(),
 });
 export type TopInsightsQuery = z.infer<typeof TopInsightsQuerySchema>;
 
@@ -97,6 +121,8 @@ export interface InsightListItemDto {
   dynamicScore: number;
   affectedEntityIds: string[];
   relatedDecisionIds: string[];
+  /** SBA β-4 wave 2 — категория первопричины (null = ещё не классифицировано). */
+  causeCategory: InsightCauseCategoryDto | null;
   firstObservedAt: string;
   lastObservedAt: string;
   sourceBlocksCount: number;

@@ -4620,6 +4620,9 @@ model Insight {
   @@index([tenantId, kind])
   @@index([tenantId, dynamicLabel])
   @@index([tenantId, lastObservedAt])
+  // SBA β-4 wave 2 (2026-05-23) — фильтр виджета «Топ-5» Director Dashboard
+  // и master-detail радара по категории первопричины.
+  @@index([tenantId, causeCategory])
   // SBA β-4 — для currentVersionId.
   @@index([currentVersionId])
   @@map("insights")

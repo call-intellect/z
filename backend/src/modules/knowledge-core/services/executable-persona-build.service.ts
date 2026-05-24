@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   type ExecutablePersona,
-  type SkillProfile,
   type SkillTrait,
 } from '@prisma/client';
 

@@ -128,20 +128,29 @@ export function PersonSkillProfileClient({ personId }: { personId: string }) {
       )}
 
       {!data.isEmpty && (
-        <ul className="space-y-3">
-          {data.traits.map((t) => (
-            <li key={t.id}>
-              <TraitCard
-                trait={t}
-                canMark={data.canMarkMisleading}
-                onMarkClick={() => {
-                  setMarkingTraitId(t.id);
-                  setMarkReason('');
-                }}
-              />
-            </li>
+        <div className="space-y-6">
+          {groupTraitsByCategory(data.traits).map(({ category, traits }) => (
+            <div key={category} className="space-y-2">
+              <h2 className="text-base font-semibold text-foreground">
+                {category}
+              </h2>
+              <ul className="space-y-3">
+                {traits.map((t) => (
+                  <li key={t.id}>
+                    <TraitCard
+                      trait={t}
+                      canMark={data.canMarkMisleading}
+                      onMarkClick={() => {
+                        setMarkingTraitId(t.id);
+                        setMarkReason('');
+                      }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
       {data.personaSnapshots.length > 0 && (
@@ -201,6 +210,50 @@ function ProfileMeta({ profile }: { profile: SkillProfileApi }) {
       </span>
     </div>
   );
+}
+
+/**
+ * SBA γ-1 доделки — группировка traits по `category` (frontend-side).
+ * Категории сортируются по алфавиту; traits внутри категории — по
+ * confidence DESC, потом по lastConfirmedAt DESC. Пустая категория
+ * («Без категории») всегда последняя.
+ */
+const CONFIDENCE_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+function groupTraitsByCategory(traits: SkillTraitApi[]): Array<{
+  category: string;
+  traits: SkillTraitApi[];
+}> {
+  const NO_CATEGORY = 'Без категории';
+  const buckets = new Map<string, SkillTraitApi[]>();
+  for (const t of traits) {
+    const key = (t.category && t.category.trim()) || NO_CATEGORY;
+    const list = buckets.get(key);
+    if (list) list.push(t);
+    else buckets.set(key, [t]);
+  }
+  for (const list of buckets.values()) {
+    list.sort((a, b) => {
+      const ca = CONFIDENCE_ORDER[a.confidence] ?? 9;
+      const cb = CONFIDENCE_ORDER[b.confidence] ?? 9;
+      if (ca !== cb) return ca - cb;
+      return (
+        new Date(b.lastConfirmedAt).getTime() -
+        new Date(a.lastConfirmedAt).getTime()
+      );
+    });
+  }
+  const named = [...buckets.entries()]
+    .filter(([k]) => k !== NO_CATEGORY)
+    .sort((a, b) => a[0].localeCompare(b[0], 'ru'))
+    .map(([category, traits]) => ({ category, traits }));
+  if (buckets.has(NO_CATEGORY)) {
+    named.push({
+      category: NO_CATEGORY,
+      traits: buckets.get(NO_CATEGORY)!,
+    });
+  }
+  return named;
 }
 
 function TraitCard({

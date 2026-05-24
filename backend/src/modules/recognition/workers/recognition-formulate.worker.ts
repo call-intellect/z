@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { type Job, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   CORE_QUEUE_NAMES,
@@ -21,6 +23,38 @@ import {
   RECOGNITION_FORMULATE_USER_TEMPLATE,
   recognitionFallbackMessage,
 } from '../prompts/recognition-formulate.prompt';
+
+/**
+ * Wave 2 finishing (A2) — маппинг recognition.type → читаемый title (заголовок
+ * для ActivityFeedItem). Не дублирует message — message формирует LLM или
+ * fallback (большой тёплый текст), title — короткая шапка для UI.
+ */
+function recognitionFeedTitle(type: string): string {
+  switch (type) {
+    case 'thanks_comment':
+      return 'Благодарность за комментарий';
+    case 'thanks_helpfulness':
+      return 'Благодарность за помощь команде';
+    case 'mention_helped':
+      return 'Коллега отметил твою помощь';
+    case 'idea_shipped':
+      return 'Идея взята в работу';
+    case 'streak_milestone':
+      return 'Серия чек-инов';
+    case 'weekly_summary':
+      return 'Итоги недели';
+    default:
+      return 'Благодарность';
+  }
+}
+
+function recognitionFeedIcon(
+  type: string,
+): 'bulb' | 'check' | 'thumbs' {
+  if (type === 'idea_shipped') return 'bulb';
+  if (type === 'streak_milestone' || type === 'weekly_summary') return 'check';
+  return 'thumbs';
+}
 
 /**
  * Wave 2 — RecognitionFormulateWorker.
@@ -51,6 +85,9 @@ export class RecognitionFormulateWorker
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Optional()
+    @Inject(ActivityFeedService)
+    private readonly feed: ActivityFeedService | null = null,
   ) {}
 
   onModuleInit(): void {
@@ -136,13 +173,41 @@ export class RecognitionFormulateWorker
     );
 
     // 4. Публикация в Activity Feed (если visibility > private).
+    //    Wave 2 A2: best-effort — Recognition уже сохранён, упавший publish не
+    //    ломает worker (warn-лог, BullMQ не повторяет job).
     if (visibility !== 'private') {
-      // TODO(wave2-activity-feeds): подключить ActivityFeedService.publish
-      //   после готовности Agent 14/15 параллельного модуля. Сейчас
-      //   ActivityFeedService отсутствует — оставляем заметку в логах.
-      this.logger.debug(
-        `recognition needs ActivityFeed publish: id=${created.id} visibility=${visibility} — пока заметка (TODO wave2-activity-feeds)`,
-      );
+      if (!this.feed) {
+        this.logger.debug(
+          `recognition skip feed publish: ActivityFeedService недоступен (id=${created.id})`,
+        );
+        return;
+      }
+      try {
+        await this.feed.publish({
+          tenantId: data.tenantId,
+          feedType: 'recognition',
+          sourceType: 'ai_agent',
+          sourceAgentName: 'recognition_agent',
+          relatedEntityType: 'recognition',
+          relatedEntityId: created.id,
+          title: recognitionFeedTitle(data.type),
+          summary: message,
+          iconType: recognitionFeedIcon(data.type),
+          severity: 'normal',
+          visibility,
+          targetUserId: data.toUserId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            recognitionId: created.id,
+            type: data.type,
+            visibility,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'recognition: ActivityFeed publish упал — Recognition сохранён, лента best-effort',
+        );
+      }
     }
   }
 

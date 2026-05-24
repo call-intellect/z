@@ -27,6 +27,7 @@ export const FeedTypeSchema = z.enum([
   'idea',
   'conflict',
   'knowledge_change',
+  'recognition',
 ]);
 export type FeedTypeDto = z.infer<typeof FeedTypeSchema>;
 

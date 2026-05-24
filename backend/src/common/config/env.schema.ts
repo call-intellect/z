@@ -293,6 +293,18 @@ const AiFeatureFlagsSchema = z.object({
    * оценок (B DoD §11).
    */
   BEHAVIOR_METRICS_LLM_REFINE_ENABLED: zBool(false),
+  /**
+   * ТЗ 2026-05-24 §4 (F1 prompt-injection guard) — мастер-флаг защиты от
+   * prompt-injection. При `true` (default):
+   *   - customPrompt идёт в `user` внутри маркеров `<<<USER_DATA_BEGIN>>>...`;
+   *   - в `system` подмешана `INJECTION_GUARD_NOTE`;
+   *   - sanitize считает срабатывания regex → метрика
+   *     `z_prompt_injection_attempt_total`.
+   * При `false` — старое поведение (customPrompt как system без обёрток) для
+   * быстрого rollback (см. §13 ТЗ). После уверенного прохода в проде неделю+
+   * флаг убираем — поведение становится дефолтом.
+   */
+  PROMPT_INJECTION_GUARD_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */
@@ -391,6 +403,23 @@ const EmailFetchSchema = z.object({
   EMAIL_FETCH_ENABLED: zBool(false),
   EMAIL_FETCH_CRON: z.string().min(1).default('*/5 * * * *'),
   EMAIL_FETCH_MAX_PER_RUN: z.coerce.number().int().positive().default(50),
+
+  // Tracker Phase 4 (Email-to-task, T5) — общий IMAP-ящик `inbox.kora.app`.
+  // Поллинг через `ImapPollCron` → routing по `To:`-alias → IssuesService.create().
+  // ENV здесь (а не отдельной MailInboxSchema) — чтобы не наращивать длину
+  // `.merge` цепочки EnvSchema (TS2589).
+  MAIL_INBOX_ENABLED: zBool(false), // глобальный kill-switch (по умолчанию выкл.)
+  MAIL_INBOX_DOMAIN: z.string().min(1).default('inbox.kora.app'),
+  MAIL_INBOX_IMAP_HOST: z.string().optional(),
+  MAIL_INBOX_IMAP_PORT: z.coerce.number().int().positive().default(993),
+  MAIL_INBOX_IMAP_USER: z.string().optional(),
+  MAIL_INBOX_IMAP_PASS: z.string().optional(),
+  MAIL_INBOX_IMAP_TLS: zBool(true),
+  MAIL_INBOX_IMAP_FOLDER: z.string().min(1).default('INBOX'),
+  MAIL_INBOX_POLL_CRON: z.string().min(1).default('*/2 * * * *'),
+  MAIL_INBOX_MAX_PER_RUN: z.coerce.number().int().positive().default(50),
+  // Если письмо пришло на alias другого tenant'а — это нормальный bounce.
+  // tenantId определяется из `Project.tenantId` найденного по alias (alias unique).
 });
 
 /**
@@ -1014,6 +1043,60 @@ const BetaOpsSchema = z.object({
     .int()
     .positive()
     .default(300),
+
+  // SBA β-8.1 — добивка панели операционного директора.
+  //   - COO_SENTIMENT_ENABLED — мастер-флаг анализа настроения чек-ина.
+  //   - COO_WEEKLY_DIGEST_ENABLED — мастер-флаг недельной сводки.
+  //   - COO_WEEKLY_DIGEST_LOCAL_HOUR — час понедельника в локальной TZ Org'а
+  //     (default 8). Cron тикает каждый час; фильтр по часу — внутри.
+  //   - COO_WEEKLY_DIGEST_LOCAL_DAY — день недели (0=воскресенье,
+  //     1=понедельник, default 1).
+  COO_SENTIMENT_ENABLED: zBool(true),
+  COO_WEEKLY_DIGEST_ENABLED: zBool(true),
+  COO_WEEKLY_DIGEST_LOCAL_HOUR: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(23)
+    .default(8),
+  COO_WEEKLY_DIGEST_LOCAL_DAY: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(6)
+    .default(1),
+
+  // SBA β-8.2 — «Хранитель обещаний».
+  //   - COMMITMENT_FOLLOWUP_ENABLED — мастер-флаг cron'а.
+  //   - COMMITMENT_FOLLOWUP_LOCAL_HOUR — час локальной TZ Org'а (default 9).
+  //   - COMMITMENT_FALLBACK_DUE_WORKDAYS — fallback срок если не извлечён
+  //     LLM из текста обещания (default 5 рабочих дней).
+  //   - COMMITMENT_ESCALATION_DAYS — через сколько дней молчания эскалировать
+  //     COO/owner (default 3 календарных дня).
+  //   - COMMITMENT_MAX_RETRIES — сколько раз спрашивать одного человека
+  //     (default 2, фактически: первый probe + один retry; дальше эскалация).
+  COMMITMENT_FOLLOWUP_ENABLED: zBool(true),
+  COMMITMENT_FOLLOWUP_LOCAL_HOUR: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(23)
+    .default(9),
+  COMMITMENT_FALLBACK_DUE_WORKDAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5),
+  COMMITMENT_ESCALATION_DAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3),
+  COMMITMENT_MAX_RETRIES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(2),
 
   // ── SBA δ-3 — VoiceChannelAdapter (voice inbound + TTS outbound) ─────
   // См. plans/tz/2026-05-23-sba-delta-3-voice-channel-adapter.md §13.

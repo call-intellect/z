@@ -468,6 +468,8 @@ enum IdeaBlockLinkType {
   shares_topic
   shares_entity
   question_answered_by
+  /// SBA β-8.2 — `commitment_status` блок закрывает (resolves) исходный `commitment`.
+  resolves
 }
 
 /// Тип типизированной связи между сущностями. С Фазы 0 — также все
@@ -2377,6 +2379,21 @@ model IdeaBlock {
   roleRelevant     Boolean                      @default(false)
   /// Опц. связь блока с Role (бизнес-должность). NULL — общий блок.
   roleId           String?
+  /// SBA β-8.2 — поля «Хранителя обещаний». Заполняются ТОЛЬКО для
+  /// блоков с signalType='commitment'. Для остальных типов всегда NULL.
+  ///
+  /// `commitmentDueDate` — срок исполнения (00:00 UTC соответствующей даты).
+  /// Извлекается из текста промптом `block-distill` (`commitmentDueDateGuess`).
+  /// Если не извлечён — backfill-скрипт ставит `createdAt + 5 рабочих дней`.
+  commitmentDueDate           DateTime?
+  /// 'open' | 'asked' | 'fulfilled' | 'missed' | 'cancelled' | 'superseded'.
+  commitmentStatus            String?    @db.VarChar(20)
+  /// Адресат обещания (Person той же Org). NULL если не извлечён.
+  commitmentRecipientPersonId String?
+  /// Когда последний раз ушёл probe «выполнил ли?».
+  commitmentAskedAt           DateTime?
+  /// Когда эскалировали при молчании (probe ушёл COO + owner).
+  commitmentEscalatedAt       DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
 
@@ -2397,11 +2414,18 @@ model IdeaBlock {
   /// проставленные AxisClassifierService после router.dispatch.
   /// См. plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md.
   axisLabels IdeaBlockAxisLabel[]
+  /// SBA β-8.2 — адресат обещания (для блоков signalType='commitment').
+  commitmentRecipient Person? @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
   @@index([tenantId, mergedIntoId])
   @@index([tenantId, roleRelevant, roleId])
+  /// SBA β-8.2 — выборка «висящих обещаний к сроку» (cron Хранителя обещаний).
+  @@index([tenantId, signalType, commitmentStatus, commitmentDueDate])
+  /// SBA β-8.2 — личный кабинет «Мои обещания» (по personId через
+  /// `Person.userId`, фильтр по статусу).
+  @@index([tenantId, signalType, commitmentStatus])
 }
 
 /// IdeaBlockAxisLabel — fan-out IdeaBlock по 4 осям знания
@@ -3440,6 +3464,9 @@ model Person {
   skillProfile          SkillProfile?     @relation("SkillProfilePerson")
   /// SBA β-8 — DailyCheckIn записи сотрудника.
   dailyCheckIns         DailyCheckIn[]    @relation("DailyCheckInPerson")
+  /// SBA β-8.2 — обратная связь для обещаний, адресованных этому человеку
+  /// (`IdeaBlock.commitmentRecipientPersonId`).
+  commitmentsToMe       IdeaBlock[]       @relation("CommitmentRecipient")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6148,6 +6175,13 @@ model Project {
   gantViewEnabled     Boolean @default(false)
   timeTrackingEnabled Boolean @default(false)
 
+  // Tracker Phase 4 (Email-to-task, T5) — уникальный alias для приёма писем.
+  // Полный адрес = `${emailInboxAlias}@${MAIL_INBOX_DOMAIN}`.
+  // - emailInboxAlias: nullable + @unique (одноимённый alias невозможен в принципе).
+  // - emailInboxEnabled: kill-switch на проект (по умолчанию выключено).
+  emailInboxAlias   String?  @unique
+  emailInboxEnabled Boolean  @default(false)
+
   // Шаблон команды, из которого создан
   teamTemplateId String?
   teamTemplate   TeamTemplate? @relation(fields: [teamTemplateId], references: [id], onDelete: SetNull)
@@ -6159,11 +6193,12 @@ model Project {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  members ProjectMember[]
-  issues  Issue[]
-  cycles  Cycle[]
-  states  IssueState[]
-  labels  Label[]
+  members         ProjectMember[]
+  issues          Issue[]
+  cycles          Cycle[]
+  states          IssueState[]
+  labels          Label[]
+  mailInboundLogs MailInboundLog[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
@@ -6326,6 +6361,10 @@ model Issue {
   /// Встречи, запущенные из этой задачи (см. `Meeting.linkedIssueId`).
   meetingsFromIssue Meeting[] @relation("MeetingLinkedIssue")
 
+  /// Tracker Phase 4 (Email-to-task, T5) — логи входящих писем,
+  /// из которых была создана эта задача. Обычно ≤1 запись на Issue.
+  mailInboundLogs MailInboundLog[]
+
   @@unique([projectId, sequenceId])
   @@unique([tenantId, identifier])
   @@index([tenantId, stateId, deletedAt])
@@ -6479,6 +6518,43 @@ model IssueLink {
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([issueId])
+}
+
+/// Tracker Phase 4 (Email-to-task, T5) — лог обработки входящих писем
+/// в общем IMAP-ящике `MAIL_INBOX_*`. Используется для:
+///   - идемпотентности по `messageId` (уникальный RFC822 Message-ID);
+///   - аудита bounce/failed для отладки и UI «последние входящие письма»;
+///   - связи Issue ← письмо (issueId nullable: bounce/failed).
+enum MailInboundStatus {
+  received // принято к обработке
+  bounced // alias не найден / проект выключен
+  failed // ошибка обработки (S3, Issue.create и т.п.)
+  created // успешно создан Issue
+}
+
+model MailInboundLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  /// RFC822 Message-ID письма (с угловыми скобками снят). Идемпотентность —
+  /// повторная обработка того же письма даёт `findUnique`-hit и skip.
+  messageId String @unique
+
+  fromEmail String
+  subject   String
+
+  status MailInboundStatus
+  reason String? // human-readable код для bounced/failed
+
+  issueId String?
+  issue   Issue?  @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, status, createdAt])
+  @@index([projectId, createdAt])
 }
 
 /// Связь между задачами: blocks / blocked_by / duplicates / relates_to.

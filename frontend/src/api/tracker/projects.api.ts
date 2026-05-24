@@ -79,6 +79,30 @@ export interface AddProjectMemberRequest {
   role?: 5 | 15 | 20;
 }
 
+/**
+ * Tracker Phase 4 (Email-to-task, T5) — DTO ответа REST-а
+ * `/api/v1/projects/:id/email-inbox`.
+ * Контракт: backend/src/modules/mail/inbound/project-email-inbox.service.ts.
+ */
+export interface MailInboundLogApi {
+  id: string;
+  messageId: string;
+  fromEmail: string;
+  subject: string;
+  status: 'received' | 'bounced' | 'failed' | 'created';
+  reason: string | null;
+  issueId: string | null;
+  createdAt: string;
+}
+
+export interface ProjectEmailInboxApi {
+  projectId: string;
+  enabled: boolean;
+  alias: string | null;
+  fullAddress: string | null;
+  recentLogs: MailInboundLogApi[];
+}
+
 export const projectsApi = {
   list: (orgId: string, req: ListProjectsRequest = {}) =>
     apiClient.get<ListProjectsResponseApi>(
@@ -151,6 +175,34 @@ export const projectsApi = {
       `/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(
         memberUserId,
       )}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // ── Tracker Phase 4 (Email-to-task, T5) ──
+  getEmailInbox: (orgId: string, projectId: string) =>
+    apiClient.get<ProjectEmailInboxApi>(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/email-inbox`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  enableEmailInbox: (orgId: string, projectId: string) =>
+    apiClient.post<ProjectEmailInboxApi>(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/email-inbox/enable`,
+      undefined,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  disableEmailInbox: (orgId: string, projectId: string) =>
+    apiClient.post<ProjectEmailInboxApi>(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/email-inbox/disable`,
+      undefined,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  regenerateEmailInboxAlias: (orgId: string, projectId: string) =>
+    apiClient.post<ProjectEmailInboxApi>(
+      `/api/v1/projects/${encodeURIComponent(projectId)}/email-inbox/regenerate-alias`,
+      undefined,
       { headers: orgHeaders(orgId) },
     ),
 };

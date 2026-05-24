@@ -300,6 +300,13 @@ export class TypedConfigService {
        * в воркере `ai.behavior-metrics`. По умолчанию false.
        */
       behaviorMetricsLlmRefine: this.get('BEHAVIOR_METRICS_LLM_REFINE_ENABLED'),
+      /**
+       * ТЗ 2026-05-24 §4 (F1) — мастер-флаг защиты от prompt-injection.
+       * При true (default) customPrompt идёт в user внутри маркеров +
+       * INJECTION_GUARD_NOTE в system. При false — legacy-поведение
+       * (customPrompt напрямую в system) для быстрого rollback.
+       */
+      promptInjectionGuardEnabled: this.get('PROMPT_INJECTION_GUARD_ENABLED'),
     } as const;
   }
 
@@ -347,6 +354,29 @@ export class TypedConfigService {
       enabled: this.get('EMAIL_FETCH_ENABLED'),
       cron: this.get('EMAIL_FETCH_CRON'),
       maxPerRun: this.get('EMAIL_FETCH_MAX_PER_RUN'),
+    } as const;
+  }
+
+  // ─────────────────────────── mail-inbox (Tracker Phase 4, T5) ──
+  /**
+   * Общий IMAP-ящик `inbox.kora.app` для приёма писем на per-project
+   * alias'ы (Email-to-task). Поллер: `ImapPollCron` → `ProjectInboxService`.
+   *
+   * `enabled=false` (default) полностью отключает cron — на dev'е писем не
+   * подтягиваем (избегаем стука в продовый ящик при локальной разработке).
+   */
+  get mailInbox() {
+    return {
+      enabled: this.get('MAIL_INBOX_ENABLED'),
+      domain: this.get('MAIL_INBOX_DOMAIN'),
+      imapHost: this.get('MAIL_INBOX_IMAP_HOST'),
+      imapPort: this.get('MAIL_INBOX_IMAP_PORT'),
+      imapUser: this.get('MAIL_INBOX_IMAP_USER'),
+      imapPass: this.get('MAIL_INBOX_IMAP_PASS'),
+      imapTls: this.get('MAIL_INBOX_IMAP_TLS'),
+      imapFolder: this.get('MAIL_INBOX_IMAP_FOLDER'),
+      pollCron: this.get('MAIL_INBOX_POLL_CRON'),
+      maxPerRun: this.get('MAIL_INBOX_MAX_PER_RUN'),
     } as const;
   }
 
@@ -851,6 +881,24 @@ export class TypedConfigService {
       operationsDashboardCacheTtlSeconds: Number(
         this.get('OPERATIONS_DASHBOARD_CACHE_TTL_SECONDS') ?? 300,
       ),
+      // SBA β-8.1 — добивка панели операционного директора.
+      sentimentEnabled: this.get('COO_SENTIMENT_ENABLED') !== false,
+      weeklyDigestEnabled: this.get('COO_WEEKLY_DIGEST_ENABLED') !== false,
+      weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
+      weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),
+      // SBA β-8.2 — «Хранитель обещаний».
+      commitmentFollowupEnabled:
+        this.get('COMMITMENT_FOLLOWUP_ENABLED') !== false,
+      commitmentFollowupLocalHour: Number(
+        this.get('COMMITMENT_FOLLOWUP_LOCAL_HOUR') ?? 9,
+      ),
+      commitmentFallbackDueWorkdays: Number(
+        this.get('COMMITMENT_FALLBACK_DUE_WORKDAYS') ?? 5,
+      ),
+      commitmentEscalationDays: Number(
+        this.get('COMMITMENT_ESCALATION_DAYS') ?? 3,
+      ),
+      commitmentMaxRetries: Number(this.get('COMMITMENT_MAX_RETRIES') ?? 2),
     } as const;
   }
 

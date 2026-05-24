@@ -48,6 +48,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private promptResolverTotal!: Counter<'source'>;
   private promptResolverFallbackTotal!: Counter<'reason'>;
 
+  // ── prompt injection guard (ТЗ 2026-05-24 §4) ──────────────────────
+  // source ∈ custom_prompt | transcript | chat (откуда пришёл подозрительный текст).
+  // pattern — стабильный id regex'а из sanitize-custom-prompt.FORBIDDEN_PATTERNS.
+  private promptInjectionAttemptTotal!: Counter<'source' | 'pattern'>;
+
   // ── prompt templates admin (Фаза A.2) ───────────────────────────────
   private promptTemplateActiveCount!: Gauge<'scope'>;
   private promptTemplatePreviewTotal!: Counter<'result'>;
@@ -320,6 +325,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private voiceTtsRequestsTotal!: Counter<'tenant_top' | 'provider'>;
   private voiceTtsCharsTotal!: Counter<'tenant_top'>;
 
+  // ── T4 / δ-3 — VoiceStreamGateway (WS chunk streaming) ───────────────
+  // Cardinality-safe: только outcome label. Без tenant — счётчик внутренний,
+  // нагрузка считается по chunks/ASR-latency.
+  private voiceWsSessionTotal!: Counter<'outcome'>;
+  private voiceWsChunkTotal!: Counter<never>;
+  private voiceWsAsrLatencyMs!: Histogram<never>;
+
   // ── SBA β-8 — DailyCheckIn + Operations + PersonalRelation ─────────
   // Cardinality-safe: tenant_top — top-100 bucket; kind ограничен
   // 'morning'|'evening'; severity — 'low'|'medium'|'high'|'unknown'.
@@ -329,6 +341,24 @@ export class BusinessMetricsService implements OnModuleInit {
   private teamFrictionsTotal!: Gauge<'tenant_top'>;
   private goalCascadeMissesTotal!: Counter<'tenant_top'>;
   private personalRelationBuilderRunsTotal!: Counter<'tenant_top' | 'result'>;
+
+  // ── SBA β-8.1 — добивка панели операционного директора ────────────
+  // Cardinality-safe: tenant_top — top-100 bucket; sentiment — 'green'|'yellow'|'red'.
+  private cooSentimentAnalyzedTotal!: Counter<'tenant_top' | 'sentiment'>;
+  private cooSentimentFailedTotal!: Counter<'tenant_top'>;
+  private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
+  private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
+
+  // ── SBA β-8.2 — Promise Keeper («Хранитель обещаний») ──────────────
+  // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
+  // whitelist причин («llm_failed', 'parse_failed', 'no_block', 'exception').
+  private commitmentsOpenTotal!: Gauge<'tenant_top'>;
+  private commitmentsAskedTotal!: Counter<'tenant_top'>;
+  private commitmentsFulfilledTotal!: Counter<'tenant_top'>;
+  private commitmentsMissedTotal!: Counter<'tenant_top'>;
+  private commitmentsEscalatedTotal!: Counter<'tenant_top'>;
+  private commitmentsExtractFailedTotal!: Counter<'tenant_top' | 'reason'>;
 
   // ── SBA γ-2 — Concierge Agent ──────────────────────────────────────
   // Cardinality-safe: `tenant_top` — top-100 bucket (hash mod 100);
@@ -449,6 +479,17 @@ export class BusinessMetricsService implements OnModuleInit {
   //   (HolidayService.adjustDueDate; интеграция в IssuesService — Sprint 10).
   private teamTemplateUsedTotal!: Counter<'tenant_top' | 'slug'>;
   private holidayDueDateAdjustedTotal!: Counter<'tenant_top'>;
+  // Tracker Phase 4 (Email-to-task, T5, 2026-05-24) — поллинг общего IMAP-ящика
+  // (`inbox.kora.app`) → routing по To:-alias → IssuesService.create().
+  // Cardinality-safe: project — id (десятки/сотни на tenant; в проде следить).
+  //   - z_mail_inbound_received_total{project_id, status} — все обработанные письма.
+  //   - z_mail_inbound_issues_created_total — Issue.create() удалось.
+  //   - z_mail_inbound_bounce_total{reason} — alias не найден / выключен / etc.
+  //   - z_mail_inbound_attachment_uploaded_total — вложение пушнули в S3.
+  private mailInboundReceivedTotal!: Counter<'project_id' | 'status'>;
+  private mailInboundIssuesCreatedTotal!: Counter<string>;
+  private mailInboundBounceTotal!: Counter<'reason'>;
+  private mailInboundAttachmentUploadedTotal!: Counter<string>;
   // Wave 3 finishing (Sprint 10, 2026-05-24) — probe `goal_alignment_low`:
   // у user'а ≥80% задач за 14д созданы без связи с целью (Goal). Probe
   // эмитит `GoalAlignmentLowCron` (понедельник 06:00 UTC).
@@ -576,6 +617,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_prompt_resolver_fallback_total',
       help: 'Срабатывания code-fallback в PromptResolver (Фаза A.1): db_empty / db_error.',
       labelNames: ['reason'] as const,
+    });
+
+    this.promptInjectionAttemptTotal = this.getOrCreateCounter({
+      name: 'z_prompt_injection_attempt_total',
+      help: 'Попытки prompt-injection (ТЗ 2026-05-24 §4): сработавший regex-паттерн в пользовательском вводе. Сама попытка не блокирует — структурный слой обернёт текст в маркеры. Метрика для observability/alertов.',
+      labelNames: ['source', 'pattern'] as const,
     });
 
     this.promptTemplateActiveCount = this.getOrCreateGauge({
@@ -1494,6 +1541,65 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['tenant_top', 'result'] as const,
     });
 
+    // ── SBA β-8.1 — добивка панели операционного директора ──
+    this.cooSentimentAnalyzedTotal = this.getOrCreateCounter({
+      name: 'coo_sentiment_analyzed_total',
+      help: 'SBA β-8.1 — итоги анализа настроения чек-ина (sentiment ∈ green|yellow|red).',
+      labelNames: ['tenant_top', 'sentiment'] as const,
+    });
+    this.cooSentimentFailedTotal = this.getOrCreateCounter({
+      name: 'coo_sentiment_failed_total',
+      help: 'SBA β-8.1 — счётчик отказов LLM при анализе настроения чек-ина.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooWeeklyDigestGeneratedTotal = this.getOrCreateCounter({
+      name: 'coo_weekly_digest_generated_total',
+      help: 'SBA β-8.1 — успешно сгенерированный недельный дайджест операционного директора.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooWeeklyDigestFailedTotal = this.getOrCreateCounter({
+      name: 'coo_weekly_digest_failed_total',
+      help: 'SBA β-8.1 — провал генерации недельного дайджеста (reason ∈ llm_failed|aggregation_failed|notify_failed|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.cooTeamTemperatureRedShare = this.getOrCreateGauge({
+      name: 'coo_team_temperature_red_share',
+      help: 'SBA β-8.1 — доля красных чек-инов за 7 дней (0..1). Тревога Grafana при > 0.3.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA β-8.2 — Promise Keeper («Хранитель обещаний») ──
+    this.commitmentsOpenTotal = this.getOrCreateGauge({
+      name: 'commitments_open_total',
+      help: 'SBA β-8.2 — снапшот висящих обещаний (commitmentStatus="open"|"asked").',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.commitmentsAskedTotal = this.getOrCreateCounter({
+      name: 'commitments_asked_total',
+      help: 'SBA β-8.2 — сколько раз cron Хранителя обещаний отправил followup probe.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.commitmentsFulfilledTotal = this.getOrCreateCounter({
+      name: 'commitments_fulfilled_total',
+      help: 'SBA β-8.2 — подтверждённые «сделано» по обещаниям.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.commitmentsMissedTotal = this.getOrCreateCounter({
+      name: 'commitments_missed_total',
+      help: 'SBA β-8.2 — подтверждённые «не сделано» по обещаниям.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.commitmentsEscalatedTotal = this.getOrCreateCounter({
+      name: 'commitments_escalated_total',
+      help: 'SBA β-8.2 — счётчик эскалаций (probe COO + owner) при молчании сотрудника N дней.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.commitmentsExtractFailedTotal = this.getOrCreateCounter({
+      name: 'commitments_extract_failed_total',
+      help: 'SBA β-8.2 — провал LLM-разбора ответа сотрудника на followup (reason ∈ llm_failed|parse_failed|no_block|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+
     // ── SBA γ-2 — Concierge Agent ─────────────────────────────────────
     this.conciergeMessagesTotal = this.getOrCreateCounter({
       name: 'concierge_messages_total',
@@ -1560,6 +1666,24 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'voice_tts_chars_total',
       help: 'SBA δ-3 — суммарное количество символов, отправленных в TTS (для cost-tracking). Cardinality-safe: только tenant_top, без provider/voice.',
       labelNames: ['tenant_top'] as const,
+    });
+
+    // ── T4 / δ-3 — VoiceStreamGateway (WS chunk streaming) ────────────
+    this.voiceWsSessionTotal = this.getOrCreateCounter({
+      name: 'z_voice_ws_session_total',
+      help: 'T4 δ-3 — завершение voice WS-сессии в ConciergeVoice; outcome ∈ completed|cancelled|error|timeout.',
+      labelNames: ['outcome'] as const,
+    });
+    this.voiceWsChunkTotal = this.getOrCreateCounter({
+      name: 'z_voice_ws_chunk_total',
+      help: 'T4 δ-3 — приём audio-chunk в voice WS gateway (timeslice 200ms). Cardinality-safe: без labels.',
+      labelNames: [] as const,
+    });
+    this.voiceWsAsrLatencyMs = this.getOrCreateHistogram({
+      name: 'z_voice_ws_asr_latency_ms',
+      help: 'T4 δ-3 — задержка от voice:end до voice:transcribed (ASR submit+poll) в миллисекундах.',
+      labelNames: [] as const,
+      buckets: [200, 500, 1000, 2000, 5000, 10000],
     });
 
     // ── SBA α-10 wave 3 — Admin LLM + Unit Economics ────────────────
@@ -1772,6 +1896,25 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Tracker Phase 4 — HolidayService сдвинул dueDate задачи на следующий рабочий день (попадание на праздник / выходной).',
       labelNames: ['tenant_top'] as const,
     });
+    // Tracker Phase 4 (Email-to-task, T5, 2026-05-24).
+    this.mailInboundReceivedTotal = this.getOrCreateCounter({
+      name: 'z_mail_inbound_received_total',
+      help: 'Tracker Phase 4 (Email-to-task) — каждое письмо, прошедшее через IMAP-polling (status ∈ received|bounced|failed|created).',
+      labelNames: ['project_id', 'status'] as const,
+    });
+    this.mailInboundIssuesCreatedTotal = this.getOrCreateCounter({
+      name: 'z_mail_inbound_issues_created_total',
+      help: 'Tracker Phase 4 — Issue успешно создан из входящего письма.',
+    });
+    this.mailInboundBounceTotal = this.getOrCreateCounter({
+      name: 'z_mail_inbound_bounce_total',
+      help: 'Tracker Phase 4 — bounce при routing письма (reason ∈ alias_not_found|disabled|tenant_mismatch|parse_error).',
+      labelNames: ['reason'] as const,
+    });
+    this.mailInboundAttachmentUploadedTotal = this.getOrCreateCounter({
+      name: 'z_mail_inbound_attachment_uploaded_total',
+      help: 'Tracker Phase 4 — вложение из письма успешно сохранено в S3 (создан IssueAttachment).',
+    });
     // Wave 3 finishing (Sprint 10, 2026-05-24) — probe-trigger
     // `goal_alignment_low`: эмит probe-event, если у user ≥5 задач за 14д и
     // ≥80% без goalId. Cardinality-safe: tenant_top (top-100 + 'other').
@@ -1882,6 +2025,30 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incPromptResolverFallback(args: { reason: 'db_empty' | 'db_error' }): void {
     this.promptResolverFallbackTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * Prompt-injection guard (ТЗ 2026-05-24 §4): инкрементирует счётчик при
+   * каждом срабатывании regex-паттерна в пользовательском вводе.
+   *
+   *   - source = 'custom_prompt' (Meeting.customPrompt)
+   *             | 'transcript'  (turns после ASR/диаризации)
+   *             | 'chat'        (room chat сообщения).
+   *   - pattern — стабильный id паттерна из `FORBIDDEN_PATTERNS`
+   *     (например, 'ignore_prev', 'forget_prev_ru'). Cardinality ограничена
+   *     числом паттернов × 3 source — безопасно для Prometheus.
+   *
+   * Не блокирует: после инкремента LLM получит текст в маркерах данных и по
+   * системному правилу проигнорирует команды. Метрика — для алертов и UI.
+   */
+  incPromptInjectionAttempt(args: {
+    source: 'custom_prompt' | 'transcript' | 'chat';
+    pattern: string;
+  }): void {
+    this.promptInjectionAttemptTotal.inc({
+      source: args.source,
+      pattern: args.pattern,
+    });
   }
 
   /**
@@ -3395,6 +3562,94 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  // ────────────────────── SBA β-8.1 (COO добивка) ──────────────────────
+
+  /** Counter `coo_sentiment_analyzed_total{tenant_top, sentiment}`. */
+  incCooSentimentAnalyzed(args: {
+    tenantTop: string;
+    sentiment: 'green' | 'yellow' | 'red';
+  }): void {
+    this.cooSentimentAnalyzedTotal.inc({
+      tenant_top: args.tenantTop,
+      sentiment: args.sentiment,
+    });
+  }
+
+  /** Counter `coo_sentiment_failed_total{tenant_top}`. */
+  incCooSentimentFailed(args: { tenantTop: string }): void {
+    this.cooSentimentFailedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `coo_weekly_digest_generated_total{tenant_top}`. */
+  incCooWeeklyDigestGenerated(args: { tenantTop: string }): void {
+    this.cooWeeklyDigestGeneratedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `coo_weekly_digest_failed_total{tenant_top, reason}`. */
+  incCooWeeklyDigestFailed(args: {
+    tenantTop: string;
+    reason: string;
+  }): void {
+    this.cooWeeklyDigestFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Gauge `coo_team_temperature_red_share{tenant_top}` (0..1). */
+  setCooTeamTemperatureRedShare(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.cooTeamTemperatureRedShare.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  // ────────────────────── SBA β-8.2 — Promise Keeper ──────────────────
+
+  /** Gauge `commitments_open_total{tenant_top}`. */
+  setCommitmentsOpenTotal(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.commitmentsOpenTotal.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.floor(args.value)),
+    );
+  }
+
+  /** Counter `commitments_asked_total{tenant_top}`. */
+  incCommitmentsAsked(args: { tenantTop: string }): void {
+    this.commitmentsAskedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `commitments_fulfilled_total{tenant_top}`. */
+  incCommitmentsFulfilled(args: { tenantTop: string }): void {
+    this.commitmentsFulfilledTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `commitments_missed_total{tenant_top}`. */
+  incCommitmentsMissed(args: { tenantTop: string }): void {
+    this.commitmentsMissedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `commitments_escalated_total{tenant_top}`. */
+  incCommitmentsEscalated(args: { tenantTop: string }): void {
+    this.commitmentsEscalatedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Counter `commitments_extract_failed_total{tenant_top, reason}`.
+   * reason ∈ llm_failed|parse_failed|no_block|exception.
+   */
+  incCommitmentsExtractFailed(args: { tenantTop: string; reason: string }): void {
+    this.commitmentsExtractFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
   // ────────────────────── SBA δ-3 — VoiceChannelAdapter ───────────────
 
   /**
@@ -3440,6 +3695,36 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.floor(args.chars),
     );
+  }
+
+  // ────────────────────── T4 / δ-3 — VoiceStreamGateway ───────────────
+
+  /**
+   * Один завершённый WS-сценарий voice-стриминга (Concierge микрофон).
+   * outcome:
+   *   - `completed` — пришёл voice:end + ASR вернул текст;
+   *   - `cancelled` — клиент послал voice:cancel или disconnect до end;
+   *   - `error` — ошибка (auth, buffer_overflow, ASR upstream и т.п.);
+   *   - `timeout` — TTL guard убил незавершённую сессию (> 60 сек).
+   */
+  incVoiceWsSession(outcome: 'completed' | 'cancelled' | 'error' | 'timeout'): void {
+    this.voiceWsSessionTotal.inc({ outcome });
+  }
+
+  /** Один принятый audio-chunk (timeslice 200ms). */
+  incVoiceWsChunk(): void {
+    this.voiceWsChunkTotal.inc();
+  }
+
+  /**
+   * Задержка от `voice:end` до `voice:transcribed` (включая ASR submit+poll).
+   * Cardinality-safe: без labels. Vox даёт ≥ 2 сек из-за poll-модели —
+   * histogram это покажет; миграция на streaming ASR (Whisper realtime)
+   * должна снизить p50 до 200-500 ms.
+   */
+  observeVoiceWsAsrLatency(ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) return;
+    this.voiceWsAsrLatencyMs.observe(ms);
   }
 
   // ────────────────────── SBA γ-2 (Concierge Agent) ────────────────────
@@ -3872,6 +4157,41 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incHolidayDueDateAdjusted(args: { tenantTop: string }): void {
     this.holidayDueDateAdjustedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Tracker Phase 4 (Email-to-task, T5) — каждое письмо, прошедшее через
+   * IMAP-polling. `status` ∈ received | bounced | failed | created.
+   *
+   * `projectId` может быть пустой строкой, если письмо bounced (alias не
+   * найден); для bounced дополнительно зовётся `incMailInboundBounce`.
+   */
+  incMailInboundReceived(args: {
+    projectId: string;
+    status: 'received' | 'bounced' | 'failed' | 'created';
+  }): void {
+    this.mailInboundReceivedTotal.inc({
+      project_id: args.projectId,
+      status: args.status,
+    });
+  }
+
+  /** Tracker Phase 4 (Email-to-task, T5) — Issue.create() удалось. */
+  incMailInboundIssueCreated(): void {
+    this.mailInboundIssuesCreatedTotal.inc();
+  }
+
+  /**
+   * Tracker Phase 4 (Email-to-task, T5) — письмо ушло в bounce.
+   * `reason` ∈ alias_not_found | disabled | parse_error | no_project_member.
+   */
+  incMailInboundBounce(args: { reason: string }): void {
+    this.mailInboundBounceTotal.inc({ reason: args.reason });
+  }
+
+  /** Tracker Phase 4 (Email-to-task, T5) — вложение из письма сохранено в S3. */
+  incMailInboundAttachmentUploaded(): void {
+    this.mailInboundAttachmentUploadedTotal.inc();
   }
 
   /**

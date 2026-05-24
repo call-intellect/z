@@ -29,6 +29,7 @@ import { EntitlementGuard } from './modules/entitlements/entitlement.guard';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
 import { MailModule } from './modules/mail/mail.module';
+import { MailInboundModule } from './modules/mail/inbound/mail-inbound.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
@@ -259,6 +260,11 @@ import { PushModule } from './modules/push/push.module';
     // team_template / issue_webhook. Регистрируется ПОСЛЕ TasksModule
     // (legacy) — миграция Task → Issue в Sprint 3.
     TrackerModule,
+
+    // Tracker Phase 4 (T5, 2026-05-24) — email-to-task через общий IMAP-ящик
+    // inbox.kora.app + routing по per-project alias. Cron каждые 2 мин
+    // (управляется MAIL_INBOX_ENABLED + MAIL_INBOX_POLL_CRON).
+    MailInboundModule,
 
     // CRM-структура встреч: карточки.
     CardsModule,

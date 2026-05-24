@@ -42,6 +42,7 @@ import { useSWRConfig } from 'swr';
 import { useIssues } from '@/hooks/tracker/useIssues';
 import { useStates } from '@/hooks/tracker/useStates';
 import { issuesApi } from '@/api/tracker/issues.api';
+import { useToast } from '@/contexts/toast-context';
 import {
   ISSUE_STATE_CATEGORY_LABELS,
   ISSUE_STATE_CATEGORY_VALUES,
@@ -88,6 +89,7 @@ export function Board({
   });
   const { states, isLoading: statesLoading } = useStates(orgId, projectId);
   const { mutate: globalMutate } = useSWRConfig();
+  const { addToast } = useToast();
   const [creating, setCreating] = useState(false);
   const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
   const [pendingTransitionIssueId, setPendingTransitionIssueId] = useState<
@@ -199,14 +201,22 @@ export function Board({
           undefined,
           { revalidate: true },
         );
-      } catch {
+      } catch (err) {
         // SWR уже откатил `optimisticData` благодаря rollbackOnError.
-        // TODO: показать toast «Не удалось перенести задачу».
+        // Wave 2 A6: уведомляем пользователя об ошибке перехода — карточка
+        // визуально вернулась в исходную колонку, но без toast'а это
+        // выглядит как «ничего не произошло».
+        addToast({
+          type: 'error',
+          message: `Не удалось переместить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          durationMs: 5000,
+        });
+        console.error(err);
       } finally {
         setPendingTransitionIssueId(null);
       }
     },
-    [issuesById, orgId, mutate, globalMutate],
+    [issuesById, orgId, mutate, globalMutate, addToast],
   );
 
   // ─── States: если backend ещё не отдал states или их нет — fallback на

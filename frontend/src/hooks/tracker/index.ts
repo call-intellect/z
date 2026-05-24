@@ -14,6 +14,7 @@ export { useCycles } from './useCycles';
 export { useCycle, useCycleIssues } from './useCycle';
 export { useIntake } from './useIntake';
 export { useMyInbox } from './useMyInbox';
+export { useMyInboxCount } from './useMyInboxCount';
 export { useTeamTemplates, useTeamTemplate } from './useTeamTemplates';
 export { useLabels } from './useLabels';
 export { useWebhooks } from './useWebhooks';

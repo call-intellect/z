@@ -1471,4 +1471,106 @@ frontend/
 
 VAPID public key — `NEXT_PUBLIC_VAPID_PUBLIC_KEY`. POST/DELETE `/api/v1/me/push-subscriptions` — backend stub (try/catch ApiError.code==='http_404' → console.warn + TODO).
 
+## Wave 2 finishing + Phase 2 polish (2026-05-24, вечер)
+
+8 параллельных subagent'ов закрыли связки и оставшиеся модули после основного Wave 2 push. 9 коммитов, ~3 700 строк.
+
+### Backend — мелкие связки
+
+**A1 — HelpfulnessSpotlight → Recognition bridge:**
+- `specialist-3-8-helpfulness/services/helpfulness-api.service.ts.approveSpotlight()` — после публикации spotlight в ActivityFeedItem (status pending → published) дополнительно `recognitionService.enqueueFormulate({type:'thanks_helpfulness', contextEntityType:'helpfulness_spotlight', visibility:'team'})` — персональное уведомление helper'у параллельно с публичным spotlight.
+- @Optional() @Inject(RecognitionService) — defense-in-depth.
+- Двойная идемпотентность: FSM-guard (повторный approve → Forbidden) + BullMQ jobId `recognition_thanks_helpfulness_<spotlightId>_ai`.
+- try/catch: enqueue fail → warn, approve успешен (best-effort).
+
+**A2 — RecognitionFormulateWorker → ActivityFeedService.publish:**
+- TODO(wave2-activity-feeds) в worker заменён на реальный publish при `visibility ∈ {team, public_org}`.
+- В `activity-feed/dto/activity-feed.dto.ts` `FeedTypeSchema` добавлен `'recognition'` (DTO whitelist; feedType в schema.prisma String — миграция не требуется).
+- Маппинг recognition.type → title + iconType (6 типов: thanks_comment/thumbs, thanks_helpfulness/thumbs, mention_helped/thumbs, idea_shipped/bulb, streak_milestone/check, weekly_summary/check).
+- @Optional() @Inject(ActivityFeedService) + try/catch best-effort: Recognition уже сохранён, упавший publish → warn без проброса в BullMQ.
+
+**A3 — Seed LlmTaskRoute helpfulness (3 taskType):**
+- `backend/scripts/seed-llm-task-routes-helpfulness.ts` — копия паттерна seed-llm-task-routes-recognition.ts.
+- 3 taskType: helpfulness-detect, helpfulness-trait-merge, helpfulness-spotlight-formulate. Цепочка одна: primary deepseek-v4-flash → secondary openai-via-proxy/gpt-5.4-mini → tertiary ollama/qwen3.5:9b.
+- Без этого скрипта `LlmRouterService.call({taskType:'helpfulness-*'})` упал бы — taskType зарегистрированы в LlmRouterService (Sprint 1 commit 22f8ffc), но маршруты к провайдерам отсутствовали.
+
+**A4 — HNSW pgvector index для HelpfulnessTrait.embedding:**
+- В `backend/scripts/postgres-init.sql` идемпотентный блок `CREATE INDEX IF NOT EXISTS helpfulness_trait_embedding_hnsw ON "HelpfulnessTrait" USING hnsw (embedding vector_cosine_ops)`.
+- Без HNSW: KNN merge через `<=>` cosine distance в Specialist 3.8 worker делает seq-scan → деградация на >10k записей.
+- GIN на topicHint НЕ добавлен (use-cases только IS NOT NULL и GROUP BY, GIN не помогает).
+
+### Backend — A5 Web Push (новый модуль)
+
+**`backend/src/modules/push/`** — полноценный backend для PWA push subscription:
+
+```
+push/
+  push.module.ts                                       # @Global
+  services/
+    push-subscriptions.service.ts                      # subscribe/unsubscribe/listMine/listForUser/markFailure/markSuccess/toView
+    web-push-sender.service.ts                         # sendToUser с graceful no-VAPID fallback
+  controllers/
+    push-subscriptions.controller.ts                   # POST/DELETE/GET /api/v1/me/push-subscriptions
+  workers/
+    push-sender.worker.ts                              # consumer core.push-send, concurrency 5
+  cron/
+    push-cleanup.cron.ts                               # @Cron('0 3 * * *') удаляет subscriptions с failureCount >= PUSH_MAX_FAILURES
+  dto/push-subscription.dto.ts
+```
+
+**Prisma модель** `PushSubscription { id, tenantId, userId, endpoint @db.Text, p256dh, auth, userAgent?, expiresAt?, lastSeenAt, failureCount, createdAt }` с `@@unique([userId, endpoint])` (idempotent upsert) + `@@index([tenantId, userId])`.
+
+**Зависимости:** `web-push@3.6.7` + `@types/web-push@3.6.4`.
+
+**ENV (graceful):** `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (без них isSendEnabled=false, warn один раз, persistence работает) / `VAPID_SUBJECT` (default mailto:noreply@kora.app) / `PUSH_MAX_FAILURES` (default 5). Через `typed-config.service.ts.get push()` с дефолтами через `this.get(...)` (без отдельной PushSchema — упрощение чтобы избежать TS2589 на длинной merge цепочке env.schema).
+
+**CoreQueue:** queue `core.push-send` + `PushSendJobData{tenantId, userId, title, body, icon?, data?}` + `coreQueue.enqueuePushSend(data)` с детерминированным jobId `push_<userId>_<fnv1a(title+body)>_<bucketMin>` (минутный bucket дедупит одинаковые уведомления).
+
+**Идемпотентность:** subscribe через `upsert` по @@unique([userId, endpoint]) — повторный POST не плодит дубль; unsubscribe через `deleteMany` (HTTP DELETE идемпотентен — отсутствующая запись 200 + `{deleted: 0}`).
+
+**Failure handling (RFC 8030 §7.3):** 410 Gone / 404 Not Found → markFailure (incrementing failureCount), удаление при `>= PUSH_MAX_FAILURES`. 5xx и network errors → log-warn без markFailure (push-сервис временно лежит, не выбрасываем рабочие подписки).
+
+**RBAC:** `push_subscription` ResourceType добавлен в `policy.csv` для будущих admin-операций. На MVP self-операции работают БЕЗ RBAC (только CookieAuthGuard + TenantGuard — user управляет только своими устройствами).
+
+### Frontend — B1 IssueChat real
+
+**`frontend/src/ui/tracker/IssueChat.tsx`** — stub «появится в Sprint 5» заменён на работающий AI-чат:
+
+- Поверх `chatV2Api.ask({ scope: 'card', scopeRefId: issueId, mode: 'synthetic' })`. scope='card' — backend chat-v2 не имеет 'issue' в enum (TODO: добавить + завести трекер-специалиста в card-specialist-registry).
+- Своя обёртка (не ChatPanel) — ChatPanel держит input в своём state без props для управления.
+- **Голос:** MediaRecorder API → blob → voiceApi.transcribe (POST /api/v1/voice/transcribe — production Vox/GigaAM). НЕ Web Speech API. UX: idle → recording (Square) → transcribing (Loader2) → idle. Транскрипт дописывается к input.
+- IssueDetailClient.tsx: пропс `orgId={currentOrgId}` в `<IssueChat>` для voiceApi tenant scope.
+
+### Frontend — B2 Cmd+K CommandPalette
+
+**`frontend/src/ui/components/command-palette/`** — глобальная палитра:
+
+```
+command-palette/
+  CommandPaletteProvider.tsx                            # @react context, Cmd+K (Mac) / Ctrl+K (Win/Linux) global listener, open/close/toggle с initialQuery/initialMode
+  CommandPaletteTrigger.tsx                             # переиспользуемая кнопка «Поиск или команда… ⌘K» для desktop topbar (subtle / compact)
+  CommandPalette.tsx                                    # рефакторинг — listener переехал в Provider, новые секции «Перейти к» (8 пунктов) + «AI помощник» (`?` префикс)
+  index.ts                                              # barrel
+```
+
+Mount в `AppShell.tsx` через `<CommandPaletteProvider>`.
+
+**Два канала:**
+- `>` (concierge) — императив: создать задачу, перенести встречу, undo-toast (γ-2 conciergeApi.askOnce).
+- `?` (chat-v2) — вопрос-ответ по памяти компании через chatV2Api.ask({scope:'org', mode:'synthetic'}). Ответ остаётся в палитре + цитаты + кнопка «Открыть полный чат» (deep-link `/chat-v2?conversationId=...`).
+
+Mobile bottom-sheet через Radix Sheet (side='bottom', h-85vh, rounded-t-xl), desktop — Dialog (sm:max-w-2xl). Detect через matchMedia('(max-width: 767px)').
+
+### Frontend — A6+A7+A8 polish
+
+**A6 — Toast при ошибке transition (Board.tsx):** catch блок drag-end → `toast.addToast({type:'error', message: 'Не удалось переместить задачу: ...', durationMs:5000})`.
+
+**A7 — Pagination UI инбокса (InboxClient.tsx + useMyInbox.ts):**
+- useMyInbox расширен: `isLoadingMore` + `loadMore()`. Локальный аккумулятор `extraItems` + `tailCursor`, авто-сброс при перезагрузке первой страницы.
+- InboxClient: кнопка «Загрузить ещё» + футер «Это всё» когда hasMore=false.
+
+**A8 — Badge непрочитанных в TrackerBottomNav:**
+- `useMyInboxCount.ts` (новый): SWR ключ `['me.inbox.count', orgId]`, делает `myInbox({limit:1})` (workaround — backend не возвращает total в /api/v1/me/inbox). Возвращает count ∈ {0, 1} + hasUnread.
+- TrackerBottomNav: badge `absolute -right-1.5 -top-1 bg-accent` с символом «·» (не цифра — backend не считает реальный total; aria-label с честным числом). Live revalidate через useTrackerLiveRefresh.
+
 [[../index|← index]]

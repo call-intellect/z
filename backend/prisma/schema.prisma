@@ -6347,6 +6347,9 @@ model IssueComment {
   voiceDuration   Int? // секунды
   voiceTranscript String? @db.Text // транскрипт от Vox/GigaAM
 
+  // Gamification (Wave 2): кто нажал «спасибо»
+  thanksUserIds String[] @default([])
+
   createdAt DateTime  @default(now())
   editedAt  DateTime?
   deletedAt DateTime?
@@ -6569,4 +6572,255 @@ model TeamTemplate {
   projects Project[]
 
   @@unique([tenantId, slug])
+}
+
+// ──────────────────────────── Wave 2: Activity Feeds (2026-05-24) ────────────────────────────
+// Sub-ТЗ: plans/tz/2026-05-23-activity-feeds.md
+// Единая модель ленты активности — live-канал между AI-агентами и людьми.
+
+/// Запись в ленте активности. Источник: AI-агент / пользователь / система.
+/// 6 типов лент: probe_question | insight | decision | task | idea | conflict | knowledge_change.
+model ActivityFeedItem {
+  id       String @id @default(cuid())
+  tenantId String
+
+  feedType String // probe_question | insight | decision | task | idea | conflict | knowledge_change
+
+  sourceType      String // ai_agent | system | user
+  sourceAgentName String? // 'probe_agent' | 'insights_radar' | 'decisions_registry' | 'helpfulness_agent' | ...
+  sourceUserId    String?
+
+  relatedEntityType String? // probe_event | insight | decision | issue | idea | conflict_item | helpfulness_spotlight
+  relatedEntityId   String?
+
+  title    String
+  summary  String? @db.Text
+  iconType String? // question | bulb | check | warning | flame | thumbs
+  severity String? @default("normal") // critical | high | normal | low
+
+  status String // emitted | delivered | seen | responded | actioned | dismissed | expired
+
+  visibility      String // public_org | team | role | private
+  visibilityScope Json? // { teamIds: [], roleIds: [], userIds: [] }
+
+  targetUserId  String?
+  targetChannel String? // in_app | telegram | email | mobile_push
+
+  teamId    String?
+  projectId String?
+  goalId    String?
+
+  reactions Json? // { thanks: [userId, ...], votes: [userId, ...] }
+
+  expiresAt DateTime?
+
+  emittedAt   DateTime  @default(now())
+  deliveredAt DateTime?
+  seenAt      DateTime?
+  respondedAt DateTime?
+  actionedAt  DateTime?
+
+  @@index([tenantId, feedType, emittedAt])
+  @@index([tenantId, targetUserId, status])
+  @@index([tenantId, teamId, emittedAt])
+  @@index([tenantId, visibility, emittedAt])
+  @@index([tenantId, expiresAt])
+}
+
+/// Подписка пользователя на конкретный тип ленты с фильтрами и режимом дайджеста.
+model ActivityFeedSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  feedType   String
+  filters    Json // { teamIds, projectIds, severities, ... }
+  digestMode String   @default("realtime") // realtime | daily_digest | weekly_digest | off
+  channels   String[] @default(["in_app"])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, feedType])
+}
+
+// ──────────────────────────── Wave 2: Specialist 3.8 Helpfulness (2026-05-24) ────────────────────────────
+// Sub-ТЗ: plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md
+// Этическая защита: question_unanswered + question_acknowledged_no_action — только private (admin + руководитель), никогда публично.
+
+/// Сигнал помощи / mentoring / поддержки, извлечённый из IdeaBlock-ов.
+/// 7 типов traitType: help_provided | proactive_hint | mentoring | emotional_support |
+/// constructive_feedback | question_unanswered | question_acknowledged_no_action.
+/// Последние два — visibility='restricted' (только админ + руководитель).
+model HelpfulnessTrait {
+  id       String @id @default(cuid())
+  tenantId String
+
+  helperUserId    String
+  recipientUserId String?
+
+  traitType String // help_provided | proactive_hint | mentoring | emotional_support | constructive_feedback | question_unanswered | question_acknowledged_no_action
+  intensity Decimal @db.Decimal(4, 3) // 0..1
+
+  topicHint String?
+
+  sourceBlockIds String[]
+  evidenceQuote  String? @db.Text
+
+  contextEntityType String? // issue_comment | meeting_transcript_chunk | checkin
+  contextEntityId   String?
+
+  embedding Unsupported("vector(1536)")?
+
+  confidence Decimal @db.Decimal(4, 3)
+
+  visibility String @default("internal") // public_team | internal | restricted
+
+  lastObservedAt DateTime
+  decayedAt      DateTime?
+  status         String    @default("active") // active | decayed | mark_as_misleading
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, helperUserId])
+  @@index([tenantId, recipientUserId])
+  @@index([tenantId, traitType, status])
+  @@index([tenantId, status, lastObservedAt])
+}
+
+/// Агрегат вклада в команду per person. Пересчитывается SocialContributionProfileCron (05:00 UTC).
+/// contributionScoreCached — НЕ публично, НЕ как рейтинг. Только для дашборда руководителя.
+model SocialContributionProfile {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+
+  helpProvidedCount     Int @default(0)
+  proactiveHintCount    Int @default(0)
+  mentoringCount        Int @default(0)
+  emotionalSupportCount Int @default(0)
+
+  expertiseTopics String[] @default([])
+
+  socialRoles String[] @default([]) // mentor | connector | problem_solver | mood_keeper | trainer
+
+  lastWeekHelpCount  Int @default(0)
+  lastMonthHelpCount Int @default(0)
+
+  contributionScoreCached Decimal? @db.Decimal(6, 3)
+
+  buildVersion Int      @default(1)
+  lastBuiltAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+}
+
+/// Публичный «спасибо» для ленты — формулирует LLM на основе HelpfulnessTrait-ов за период.
+/// Status: pending → approved (руководителем) → published. Hidden = скрыто.
+model HelpfulnessSpotlight {
+  id       String @id @default(cuid())
+  tenantId String
+
+  helperUserId String
+  topicHint    String?
+  message      String  @db.Text
+
+  periodFrom DateTime
+  periodTo   DateTime
+
+  helpCount Int
+
+  traitIds String[] @default([])
+
+  status           String  @default("pending") // pending | approved | published | hidden
+  approvedByUserId String?
+
+  publishedAt DateTime?
+  feedItemId  String? // ссылка на ActivityFeedItem
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([helperUserId, periodFrom])
+}
+
+// ──────────────────────────── Wave 2: Recognition + Gamification (2026-05-24) ────────────────────────────
+// Sub-ТЗ: plans/tz/2026-05-23-gamification-and-motivation.md
+// Никаких рейтингов «топ-10», никаких очков-валюты. Бейджи без сравнения между людьми.
+
+/// Благодарность / признание от AI или от пользователя.
+/// types: thanks_comment | thanks_helpfulness | mention_helped | idea_shipped | streak_milestone | weekly_summary.
+model Recognition {
+  id       String @id @default(cuid())
+  tenantId String
+
+  fromUserId String? // null если от AI / системы
+  toUserId   String
+
+  type String
+
+  contextEntityType String? // issue_comment | insight | regulation | idea | checkin | helpfulness_spotlight
+  contextEntityId   String?
+
+  message String? @db.Text
+
+  visibility String @default("private") // private | team | public_org
+
+  createdAt DateTime @default(now())
+
+  @@index([toUserId, createdAt])
+  @@index([tenantId, type])
+  @@index([tenantId, toUserId, visibility])
+}
+
+/// Каталог бейджей. 5 базовых: ideator | expert | helper | aligned | consistent.
+model Badge {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String  @db.Text
+  iconUrl     String?
+  condition   Json // { type: 'ideas_in_dev', threshold: 5 } и т.д.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userBadges UserBadge[]
+}
+
+/// M2M user ↔ badge. Бейдж выдаётся один раз.
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  awardedAt DateTime @default(now())
+
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId, awardedAt])
+}
+
+/// Агрегированные показатели вклада per user — обновляются ContributionSnapshotCron (04:00 UTC).
+model ContributionSnapshot {
+  id     String @id @default(cuid())
+  userId String
+
+  ideasInDevelopment Int @default(0)
+  ideasShipped       Int @default(0)
+  thanksReceived     Int @default(0)
+  thanksReceivedWeek Int @default(0)
+
+  currentCheckinStreak Int @default(0)
+  longestCheckinStreak Int @default(0)
+
+  helpfulComments        Int @default(0)
+  probeQuestionsAnswered Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId])
 }

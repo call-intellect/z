@@ -853,6 +853,21 @@ p, owner, *, *, contribution_snapshot, read
 p, admin, *, *, contribution_snapshot, read
 p, manager, *, self, contribution_snapshot, read
 
+# ──────────────────────────── Wave 2 finishing — Web Push Subscriptions (2026-05-24) ────────────────────────────
+# push_subscription — браузерная push-подписка user'а (Push API + VAPID).
+# Self-операции POST/DELETE/GET /me/push-subscriptions работают БЕЗ RBAC
+# (только CookieAuthGuard + TenantGuard). Эти строки нужны для будущих
+# admin-операций (например, «удалить все подписки user'а X» через org-admin).
+p, owner, *, *, push_subscription, read
+p, owner, *, *, push_subscription, write
+p, owner, *, *, push_subscription, delete
+p, admin, *, *, push_subscription, read
+p, admin, *, *, push_subscription, write
+p, admin, *, *, push_subscription, delete
+p, manager, *, self, push_subscription, read
+p, manager, *, self, push_subscription, write
+p, manager, *, self, push_subscription, delete
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

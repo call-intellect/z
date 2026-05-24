@@ -107,10 +107,11 @@ import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { ProactiveModule } from './modules/proactive/proactive.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { VoiceModule } from './modules/voice/voice.module';
-// Wave 2 (2026-05-24) — Activity Feeds + Specialist 3.8 Helpfulness + Recognition.
+// Wave 2 (2026-05-24) — Activity Feeds + Specialist 3.8 Helpfulness + Recognition + Web Push.
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
 import { Specialist38HelpfulnessModule } from './modules/specialist-3-8-helpfulness/specialist-3-8-helpfulness.module';
 import { RecognitionModule } from './modules/recognition/recognition.module';
+import { PushModule } from './modules/push/push.module';
 
 @Module({
   imports: [
@@ -464,6 +465,14 @@ import { RecognitionModule } from './modules/recognition/recognition.module';
     // Bridge POST /api/v1/issues/comments/:id/thanks → enqueue thanks_comment.
     // Должен идти ПОСЛЕ AiModule, CoreQueueModule, ActivityFeedModule.
     RecognitionModule,
+
+    // Wave 2 finishing (2026-05-24) — backend web-push (VAPID).
+    // POST/DELETE/GET /api/v1/me/push-subscriptions + consumer core.push-send +
+    // PushCleanupCron (03:00 UTC). @Global — для интеграции с
+    // ActivityFeedService/RecognitionService через CoreQueueService.enqueuePushSend.
+    // Без VAPID ENV (VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY) физическая отправка
+    // отключена с warn, persistence подписок работает.
+    PushModule,
 
     // SBA β-2 — REST API `/api/v1/me/knowledge-profile` и
     // `/api/v1/persons/:id/knowledge-profile` + mark-wrong (CurationItem

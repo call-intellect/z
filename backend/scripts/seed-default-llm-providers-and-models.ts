@@ -68,6 +68,29 @@ const PROVIDERS: ProviderSeed[] = [
     protocolKind: 'anthropic-messages',
     capability: 'internal',
   },
+  // ТЗ 2026-05-24-kie-grsai-llm-router-integration §3.
+  // KIE — мульти-формат hub (Claude/GPT/Gemini под одним host'ом). KieService
+  // внутри сам диспатчит по префиксу модели; для реестра здесь — один LlmProvider.
+  // protocolKind='custom-http' — потому что три разных URL-формата под одним
+  // baseUrl, ни один стандартный адаптер не покрывает; вызовы идут через
+  // выделенный KieService, а не через LlmProtocolAdapterRegistry.
+  {
+    name: 'kie',
+    displayName: 'KIE (api.kie.ai — Claude/GPT/Gemini hub)',
+    baseUrl: 'https://api.kie.ai',
+    protocolKind: 'custom-http',
+    capability: 'internal',
+  },
+  // GRSAI — Gemini через наш прокси (proxy.agent-lia.ru/grsai/...). Под капотом
+  // OpenAI chat/completions, но обязательный SSE — потому отдельный GrsaiService,
+  // не openai-chat адаптер.
+  {
+    name: 'grsai',
+    displayName: 'GRSAI (Gemini через proxy.agent-lia.ru)',
+    baseUrl: 'https://proxy.agent-lia.ru/v1',
+    protocolKind: 'custom-http',
+    capability: 'internal',
+  },
 ];
 
 interface ModelSeed {
@@ -122,6 +145,68 @@ const MODELS: ModelSeed[] = [
     displayName: 'Claude Opus 4.7',
     contextWindow: 200_000,
     category: 'reasoning',
+  },
+  // ТЗ 2026-05-24-kie-grsai-llm-router-integration §3:
+  // verified-каналы из smoke-llm-providers.ts. Цены — в model-prices.ts.
+  // KIE: Claude / GPT / Gemini под одним host'ом; диспатч по префиксу model.
+  {
+    providerName: 'kie',
+    modelKey: 'claude-opus-4-7',
+    displayName: 'Claude Opus 4.7 (через KIE)',
+    contextWindow: 200_000,
+    category: 'reasoning',
+    notes: 'KIE Claude-format → /claude/v1/messages.',
+  },
+  {
+    providerName: 'kie',
+    modelKey: 'gpt-5-4',
+    displayName: 'GPT-5.4 (через KIE)',
+    contextWindow: 200_000,
+    category: 'flagship',
+    notes:
+      'KIE GPT-format → /codex/v1/responses (OpenAI Responses-style). Цена TBD.',
+  },
+  {
+    providerName: 'kie',
+    modelKey: 'gemini-3-pro',
+    displayName: 'Gemini 3 Pro (через KIE)',
+    contextWindow: 1_000_000,
+    category: 'flagship',
+    notes: 'KIE Gemini-format → /${model}/v1/chat/completions.',
+  },
+  {
+    providerName: 'kie',
+    modelKey: 'gemini-3.1-pro',
+    displayName: 'Gemini 3.1 Pro (через KIE)',
+    contextWindow: 1_000_000,
+    category: 'flagship',
+    notes: 'KIE Gemini-format → /${model}/v1/chat/completions.',
+  },
+  {
+    providerName: 'kie',
+    modelKey: 'gemini-3-flash',
+    displayName: 'Gemini 3 Flash (через KIE)',
+    contextWindow: 1_000_000,
+    category: 'fast',
+    notes:
+      'KIE Gemini-format → /${model}/v1/chat/completions. Кандидат на A/B с deepseek-v4-flash. Цена TBD.',
+  },
+  // GRSAI: Gemini через прокси (OpenAI chat/completions SSE).
+  {
+    providerName: 'grsai',
+    modelKey: 'gemini-3-pro',
+    displayName: 'Gemini 3 Pro (через GRSAI)',
+    contextWindow: 1_000_000,
+    category: 'flagship',
+    notes: 'GRSAI SSE через proxy.agent-lia.ru/grsai/v1/chat/completions.',
+  },
+  {
+    providerName: 'grsai',
+    modelKey: 'gemini-3.1-pro',
+    displayName: 'Gemini 3.1 Pro (через GRSAI)',
+    contextWindow: 1_000_000,
+    category: 'flagship',
+    notes: 'GRSAI SSE через proxy.agent-lia.ru/grsai/v1/chat/completions.',
   },
 ];
 

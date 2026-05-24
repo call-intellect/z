@@ -61,6 +61,12 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   // Gemini (через grsai/kie, A/B-кандидаты)
   'gemini-3-pro': { inputPer1M: 0.5, outputPer1M: 3.5 },
   'gemini-3.1-pro': { inputPer1M: 0.5, outputPer1M: 3.5 },
+  // TODO(2026-05-24): сверить цены `gemini-3-flash` и `gpt-5-4` на kie.ai
+  // pricing page. До сверки — 0; calcCostUsd вернёт 0, AiUsageLog покажет
+  // нулевую стоимость — это явный сигнал «цена не заполнена» в дашборде.
+  // ТЗ: plans/tz/2026-05-24-kie-grsai-llm-router-integration.md §3.
+  'gemini-3-flash': { inputPer1M: 0, outputPer1M: 0 },
+  'gpt-5-4': { inputPer1M: 0, outputPer1M: 0 },
 };
 
 export function calcCostUsd(

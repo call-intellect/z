@@ -308,3 +308,45 @@ cd ../frontend && bun run build
 ---
 
 _Sergey's session report 2: Wave 3 полностью закрыт (12 параллельных subagent'ов в 2 волнах за одну сессию, ~22.3k строк, 9 коммитов, 173/173 финальных тестов, оба typecheck зелёные)._
+
+## Iteration 3 — Bitrix24 + Wizard branches + Mini-tasks
+
+После handoff'а пользователь спросил «а почему мы это не заканчиваем?». Запустил третью волну — 3 параллельных агента закрыли последние Wave 3 finishing-блоки.
+
+| Agent | Задача | Тестов |
+|---|---|---|
+| M | Bitrix24ImportStrategy реальная реализация (заглушка → REST через webhook + retry/backoff + двухпроходный импорт parent/relations) | 4/4 |
+| N | Frontend Bitrix24Wizard + YandexTrackerWizard ветки + _shared.tsx helpers | typecheck ✅ |
+| O | timezone в CreateFromTemplate DTO + TelegramDigestCron per-user TZ (hourly tick + Person.timezone batch resolve) | 22/22 |
+
+**Объём:** ~3.6k строк, 1 коммит `c4a7d3a`, push в `origin/dev`.
+
+### Дополнительные уроки iteration 3
+
+#### 11. Bitrix24 application errors в HTTP 200 — особенный паттерн
+
+Битрикс24 REST возвращает 200 OK даже на `INVALID_TOKEN` / `QUERY_LIMIT_EXCEEDED` / `INSUFFICIENT_RIGHTS` — ошибка в `body.error`. Agent M распарсил это и сделал маппинг `mapBitrixErrorToStatus()` который переводит body errors в HTTP-like статус (401/403/429/500) → единый retry/backoff механизм работает корректно. Это **отдельный паттерн** который надо учитывать для всех REST-API с XMLRPC-наследием.
+
+#### 12. Общие wizard helpers через _shared.tsx — frontend DRY
+
+Agent N вынес `parseUserMappings`, `maskWebhookUrl`, `isLikelyBitrixWebhook`, `validateQueueKeys`, `<WizardSteps>`, `<FreeTextMappingStep>`, `<SummaryTile>` в общий `_shared.tsx`. Это позволило Bitrix24 и Я.Трекер wizards переиспользовать ~50% UI кода. **Правило для будущих 3+ похожих wizards в одной фиче — выносить shared helpers сразу.**
+
+#### 13. Hourly cron + per-user TZ filter — паттерн масштабируемых scheduled tasks
+
+Agent O преобразовал TelegramDigestCron из `@Cron('0 9 * * *')` UTC в `@Cron('0 * * * *')` (каждый час) с фильтром `localHour !== digestHourLocal → skip`. Это даёт корректную доставку digest'ов для тенантов в разных TZ (Moscow / Yekaterinburg / Vladivostok) без 24 разных cron'ов. **Этот паттерн надо применить ко всем notification scheduled tasks с локальным временем** (например `DailyCheckInPromptCron` тоже работает аналогично).
+
+### Финальный score Wave 3 (3 итерации)
+
+| Метрика | Iter 1 | Iter 2 | Iter 3 | Total |
+|---|---|---|---|---|
+| Параллельных subagent'ов | 7 | 5 | 3 | **15** |
+| Коммитов | 8 | 1 | 1 | 10 |
+| Строк кода | ~14 500 | ~7 800 | ~3 600 | **~25 900** |
+| Тестов passed (per-agent) | 162 | 49 | 26 | **237** |
+| Tests passed (final regression) | 150/150 | 23/23 | 26/26 | **199/199** |
+
+### Финальная установка для следующего оркестратора
+
+См. `plans/sprints/2026-05-25-handoff-after-wave3-complete.md` — там 7 готовых промптов по priority (α-10 wave3 frontend, α-7 ProcessTemplate finishing, α-3 axis-classifier, δ-3 TTS-в-Concierge, β-1 cleanup, Wave 2 polish мелочи, multi-user chat) + полный inventory + workflow оркестрации + prod-операции.
+
+Wave 3 закрыт на **~99%**. Осталось ~3-4 дня work на P1/P2 тикеты + внешне-блокированный Tracker Mobile native.

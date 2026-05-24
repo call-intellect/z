@@ -81,8 +81,8 @@ to: next-orchestrator
 | Phase 4 — РФ must-have (Telegram-бот для задач, 10 templates seed, HolidayCalendar + HolidayService, from-template) | ✅ | ✅ | ✅ Wave 3 |
 | **Phase 5 — Импорт** | | | |
 | — Trello JSON | ✅ | ✅ wizard | ✅ |
-| — Я.Трекер OAuth | ✅ | ✅ wizard (Agent N) | ✅ |
-| — Bitrix24 webhook | ✅ (Agent M) | ✅ wizard (Agent N) | ✅ |
+| — Я.Трекер OAuth | ✅ | ✅ wizard | ✅ |
+| — Bitrix24 webhook | ✅ | ✅ wizard | ✅ |
 | **Mobile native** — React Native + Expo SDK 51+ | — | ❌ | ❌ **внешний блокер** |
 
 ### 2.2. 21 sub-ТЗ Кора v2 — статус

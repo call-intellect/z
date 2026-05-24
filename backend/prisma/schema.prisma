@@ -271,6 +271,31 @@ enum SignalType {
   suggestion
   client_request
   question
+  // SBA α-2 wave 3 (2026-05-24) — типы для tracker ingest (Phase 1 трекера).
+  // См. plans/tz/2026-05-23-tracker-phase-1-models-api.md (раздел "Ingest в knowledge-core").
+  task_created
+  task_status_changed
+  task_blocked
+  task_completed
+  task_overdue
+  task_reassigned
+  task_comment
+  task_mention
+  // SBA α-2 wave 3 (2026-05-24) — типы для Specialist 3.8 Helpfulness.
+  // См. plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md.
+  // ВАЖНО: question_unanswered и question_acknowledged_no_action — только для приватного админ-доступа.
+  // НЕ публиковать в публичных лентах. Этическая защита.
+  help_provided
+  proactive_hint
+  mentoring
+  emotional_support
+  constructive_feedback
+  question_unanswered
+  question_acknowledged_no_action
+  // SBA α-2 wave 3 (2026-05-24) — типы для Gamification Recognition.
+  helped_by
+  helped_to
+  thanks_explicit
 }
 
 enum IdeaBlockStatus {
@@ -924,11 +949,18 @@ model Meeting {
   /// (one-to-one). См. plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md.
   customReports    MeetingReport[]
 
+  /// Tracker Phase 1 (2026-05-24) — встреча могла быть запущена из задачи трекера.
+  /// См. plans/tz/2026-05-23-tracker-phase-1-models-api.md (endpoint `POST /issues/:id/start-meeting`).
+  /// NULL для встреч, не связанных с задачей.
+  linkedIssueId    String?
+  linkedIssue      Issue?        @relation("MeetingLinkedIssue", fields: [linkedIssueId], references: [id], onDelete: SetNull)
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
   @@index([cardId, createdAt])
   @@index([tenantId])
+  @@index([linkedIssueId])
 }
 
 model Participant {
@@ -3083,6 +3115,10 @@ model Goal {
 
   themes    GoalTheme[]
   snapshots GoalAlignmentSnapshot[]
+
+  /// Tracker Phase 1 (2026-05-24) — задачи трекера, привязанные к этой цели
+  /// через `Issue.goalId`. См. plans/tz/2026-05-23-tracker-phase-1-models-api.md.
+  linkedIssues Issue[] @relation("IssueGoal")
 
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])
@@ -5992,4 +6028,526 @@ model OrchestratorSubagentJob {
   @@index([runId, stepIndex])
   @@index([status])
   @@map("orchestrator_subagent_jobs")
+}
+
+// ──────────────────────────── tracker: Phase 1 (Sprint 1, 2026-05-24) ────────────────────────────
+// Полноценный таск-трекер Z/Кора поверх legacy `Task`. См. план:
+// plans/tz/2026-05-23-tracker-phase-1-models-api.md.
+//
+// Все модели имеют `tenantId String` (multi-tenancy), `createdAt`, `updatedAt`
+// (где нужно), soft-delete через `deletedAt` (для основных сущностей).
+// `entityId String?` — связь с графом знаний (Entity) — opt.
+// НЕ добавляем embedding pgvector в Issue — это Phase 3 (Sprint 6).
+
+/// Проект трекера. Каждый проект имеет короткий идентификатор (префикс задач
+/// `KORA-`, `SALES-` и т.д.) и slug, уникальные в рамках org.
+model Project {
+  id                String   @id @default(cuid())
+  tenantId          String
+  slug              String   // короткий уникальный slug per tenant
+  identifier        String   // префикс задач: PROJ, SALES, DEV (до 5 симв.)
+  name              String
+  description       String?  @db.Text
+  ownerId           String
+  defaultAssigneeId String?
+  defaultStateId    String?
+  network           Int      @default(0) // 0=Private, 2=Public-внутри-org
+  archivedAt        DateTime?
+  timezone          String   @default("Europe/Moscow")
+
+  // Feature flags per project
+  cycleViewEnabled    Boolean @default(true)
+  intakeViewEnabled   Boolean @default(true)
+  gantViewEnabled     Boolean @default(false)
+  timeTrackingEnabled Boolean @default(false)
+
+  // Шаблон команды, из которого создан
+  teamTemplateId String?
+  teamTemplate   TeamTemplate? @relation(fields: [teamTemplateId], references: [id], onDelete: SetNull)
+
+  // Связь с графом
+  entityId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  members ProjectMember[]
+  issues  Issue[]
+  cycles  Cycle[]
+  states  IssueState[]
+  labels  Label[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, archivedAt])
+  @@index([tenantId, identifier])
+}
+
+/// M:M между User и Project. Роль числовая: 20=Admin, 15=Member, 5=Guest.
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  role      Int      // 20=Admin, 15=Member, 5=Guest
+  joinedAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+/// Статус задачи в проекте (Backlog / In Progress / Done / Cancelled и пр.).
+/// Каждый проект имеет свой набор статусов с порядком (`sequence`) и категорией.
+model IssueState {
+  id        String  @id @default(cuid())
+  tenantId  String
+  projectId String
+  name      String  // «Бэклог», «В работе», «Готово»
+  color     String  @default("#94A3B8")
+  category  String  // backlog | unstarted | started | completed | cancelled
+  sequence  Int
+  isDefault Boolean @default(false)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  Issue[]
+
+  @@index([projectId, sequence])
+  @@index([tenantId])
+}
+
+/// Цикл — «неделя работы» / спринт. Снимок прогресса обновляется cron'ом.
+model Cycle {
+  id          String   @id @default(cuid())
+  tenantId    String
+  projectId   String
+  name        String   // «Неделя 23», «Спринт продаж — июнь»
+  startDate   DateTime
+  endDate     DateTime
+  ownedById   String?
+  description String?  @db.Text
+
+  /// Снимок прогресса (агрегированный, обновляется cron'ом).
+  /// Формат: { total: N, completed: M, inProgress: K, ... }
+  progressSnapshot Json?
+
+  version  Int    @default(1)
+  timezone String @default("Europe/Moscow")
+
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  Issue[]
+
+  @@index([projectId, startDate])
+  @@index([tenantId])
+}
+
+/// Задача трекера. Расширение legacy `Task`. Самореферентная иерархия через
+/// `parentId` (подзадачи). `identifier` уникален в рамках tenant (например
+/// `KORA-123`), `sequenceId` — внутренний порядковый номер в проекте.
+///
+/// Embedding pgvector НЕ добавляем здесь — это Phase 3 (Sprint 6).
+model Issue {
+  id         String @id @default(cuid())
+  tenantId   String
+  projectId  String
+  identifier String // PROJ-123 (уникален per tenant)
+  sequenceId Int    // 123 — внутренний порядковый номер per project
+
+  title               String  // ранее name
+  description         String? @db.Text // rich-text JSON через TipTap
+  descriptionHtml     String? @db.Text
+  descriptionStripped String? @db.Text // plain text для поиска / индексации AI
+
+  priority String  @default("none") // urgent | high | medium | low | none
+  stateId  String?
+
+  parentId String? // для иерархии подзадач
+
+  estimatePoints Int?
+  sortOrder      Int @default(0)
+
+  startDate   DateTime?
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  // Циклы и модули
+  cycleId String?
+
+  // СВЯЗИ С ДРУГИМИ СИСТЕМАМИ — критично для второго мозга
+  goalId           String?  // связь с Goal! (FK opt.)
+  meetingId        String?  // legacy compatibility
+  linkedMeetingIds String[] // видеовстречи из задачи
+
+  // AI metadata
+  sourceBlockIds  String[] // если задача создана AI — откуда вытащил
+  confidence      Decimal? @db.Decimal(4, 3)
+  createdManually Boolean  @default(true)
+
+  // Внешний источник
+  externalSource String? // email | telegram | checkin | meeting | api | manual
+  externalId     String?
+
+  // Граф знаний
+  entityId String?
+
+  // RBAC и owner
+  createdById String
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  deletedAt  DateTime?
+
+  project  Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  state    IssueState? @relation(fields: [stateId], references: [id], onDelete: SetNull)
+  cycle    Cycle?      @relation(fields: [cycleId], references: [id], onDelete: SetNull)
+  goal     Goal?       @relation("IssueGoal", fields: [goalId], references: [id], onDelete: SetNull)
+  parent   Issue?      @relation("IssueSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
+  children Issue[]     @relation("IssueSubtasks")
+
+  assignees    IssueAssignee[]
+  labels       IssueLabel[]
+  subscribers  IssueSubscriber[]
+  mentions     IssueMention[]
+  comments     IssueComment[]
+  attachments  IssueAttachment[]
+  links        IssueLink[]
+  relationsOut IssueRelation[]  @relation("IssueRelationSource")
+  relationsIn  IssueRelation[]  @relation("IssueRelationTarget")
+  activities   IssueActivity[]
+  versions     IssueVersion[]
+
+  /// Встречи, запущенные из этой задачи (см. `Meeting.linkedIssueId`).
+  meetingsFromIssue Meeting[] @relation("MeetingLinkedIssue")
+
+  @@unique([projectId, sequenceId])
+  @@unique([tenantId, identifier])
+  @@index([tenantId, stateId, deletedAt])
+  @@index([tenantId, dueDate])
+  @@index([tenantId, goalId])
+  @@index([tenantId, cycleId])
+  @@index([tenantId, projectId, deletedAt])
+  @@index([parentId])
+}
+
+/// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
+model IssueAssignee {
+  id           String   @id @default(cuid())
+  issueId      String
+  userId       String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, userId])
+  @@index([userId])
+}
+
+/// Метка (label). `projectId` null — глобальная метка организации.
+model Label {
+  id        String  @id @default(cuid())
+  tenantId  String
+  projectId String? // null = глобальная метка организации
+  name      String
+  color     String
+
+  project Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  IssueLabel[]
+
+  @@index([projectId])
+  @@index([tenantId])
+}
+
+/// M:M задача↔метка.
+model IssueLabel {
+  id      String @id @default(cuid())
+  issueId String
+  labelId String
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, labelId])
+  @@index([labelId])
+}
+
+/// Подписчик на задачу — получает уведомления об изменениях.
+model IssueSubscriber {
+  id           String   @id @default(cuid())
+  issueId      String
+  userId       String
+  subscribedAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, userId])
+  @@index([userId])
+}
+
+/// @-упоминание пользователя (в описании задачи или комментарии).
+/// `commentId` — если упоминание в комментарии; иначе null (упоминание в самой задаче).
+model IssueMention {
+  id                String   @id @default(cuid())
+  issueId           String
+  commentId         String?  // упоминание в комментарии
+  mentionedUserId   String
+  mentionedByUserId String
+  createdAt         DateTime @default(now())
+
+  issue   Issue         @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  comment IssueComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([mentionedUserId])
+  @@index([issueId])
+  @@index([commentId])
+}
+
+/// Комментарий к задаче. Rich-text JSON + опц. голосовое сообщение.
+/// Поддерживает треды через `parentCommentId`. Гость может оставлять
+/// комментарии типа `external`.
+model IssueComment {
+  id              String  @id @default(cuid())
+  issueId         String
+  authorId        String
+  parentCommentId String? // для тредов
+
+  content         String  @db.Text // rich-text JSON
+  contentHtml     String? @db.Text
+  contentStripped String? @db.Text // plain для поиска / AI
+
+  access String @default("internal") // internal | external (гость)
+
+  // Голосовое сообщение
+  voiceUrl        String?
+  voiceDuration   Int? // секунды
+  voiceTranscript String? @db.Text // транскрипт от Vox/GigaAM
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  issue       Issue          @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  parent      IssueComment?  @relation("IssueCommentThread", fields: [parentCommentId], references: [id], onDelete: SetNull)
+  children    IssueComment[] @relation("IssueCommentThread")
+  mentions    IssueMention[]
+  attachments IssueAttachment[]
+
+  @@index([issueId, createdAt])
+  @@index([authorId])
+  @@index([parentCommentId])
+}
+
+/// Вложение к задаче или комментарию.
+model IssueAttachment {
+  id           String   @id @default(cuid())
+  issueId      String
+  commentId    String?  // если приложен к комментарию
+  uploaderId   String
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+  thumbnailUrl String?  // для картинок
+  createdAt    DateTime @default(now())
+
+  issue   Issue         @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  comment IssueComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
+  @@index([commentId])
+}
+
+/// Внешняя ссылка на задаче (URL + title).
+model IssueLink {
+  id        String   @id @default(cuid())
+  issueId   String
+  title     String
+  url       String
+  addedById String
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
+}
+
+/// Связь между задачами: blocks / blocked_by / duplicates / relates_to.
+model IssueRelation {
+  id            String   @id @default(cuid())
+  sourceIssueId String
+  targetIssueId String
+  relationType  String   // blocks | blocked_by | duplicates | duplicated_by | relates_to
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  source Issue @relation("IssueRelationSource", fields: [sourceIssueId], references: [id], onDelete: Cascade)
+  target Issue @relation("IssueRelationTarget", fields: [targetIssueId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceIssueId, targetIssueId, relationType])
+  @@index([targetIssueId])
+}
+
+/// Audit-trail задачи. `epoch` — микросекунды для строгой сортировки.
+/// `actorType`: user | ai_agent | system. `agentName` заполнен только когда
+/// `actorType='ai_agent'`.
+model IssueActivity {
+  id          String  @id @default(cuid())
+  tenantId    String
+  issueId     String
+  actorUserId String?
+  actorType   String  // user | ai_agent | system
+  agentName   String? // если actor — AI, какой именно
+
+  verb     String  // created | updated | status_changed | assigned | commented | linked | ...
+  field    String? // если updated — какое поле
+  oldValue Json?
+  newValue Json?
+
+  metadata Json?   // доп. контекст (например, кто упомянут)
+  epoch    BigInt  // микросекунды для сортировки
+
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId, epoch])
+  @@index([tenantId, createdAt])
+}
+
+/// Исторический снимок задачи (полный snapshot Json + связи на момент версии).
+/// Создаётся при ключевых изменениях.
+model IssueVersion {
+  id              String   @id @default(cuid())
+  issueId         String
+  versionNumber   Int
+  snapshot        Json     // полный снимок Issue + связей на момент версии
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, versionNumber])
+}
+
+/// Входящая задача (inbox) перед триажем. AI-предложения по проекту,
+/// исполнителю, цели, приоритету, дедлайну.
+model IntakeIssue {
+  id        String  @id @default(cuid())
+  tenantId  String
+  projectId String? // если уже определён, иначе AI suggest
+
+  status         String  @default("pending") // pending | snoozed | accepted | rejected | duplicate
+  source         String  // in_app | email | telegram | checkin | meeting | api | concierge
+  sourceEmail    String?
+  externalSource String?
+  externalId     String?
+
+  rawContent           String  @db.Text // исходный текст
+  extractedTitle       String?
+  extractedDescription String? @db.Text
+
+  // AI-предложения
+  suggestedProjectId  String?
+  suggestedAssigneeId String?
+  suggestedGoalId     String?
+  suggestedPriority   String?
+  suggestedDueDate    DateTime?
+  suggestedLabels     String[]
+
+  confidence Decimal? @db.Decimal(4, 3)
+
+  // Триаж
+  triagedByUserId String?
+  triagedAt       DateTime?
+  rejectedReason  String?
+  snoozedUntil    DateTime?
+
+  // Если принят — создаётся Issue
+  createdIssueId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([source, createdAt])
+}
+
+/// Исходящий webhook для внешних интеграций. `secretKey` хранится с префиксом
+/// `kora_wh_` + 32 случайных байта. Доставка через очередь с exp backoff.
+model IssueWebhook {
+  id        String  @id @default(cuid())
+  tenantId  String
+  name      String
+  url       String
+  secretKey String  // с префиксом `kora_wh_` + 32 байта
+
+  events String[] // issue.created, issue.updated, comment.created, cycle.completed, ...
+
+  isActive   Boolean @default(true)
+  isInternal Boolean @default(false)
+  version    Int     @default(1)
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  logs IssueWebhookLog[]
+
+  @@index([tenantId, isActive])
+}
+
+/// Лог доставки исходящего webhook'а. Используется для аудита и retry.
+model IssueWebhookLog {
+  id        String @id @default(cuid())
+  webhookId String
+  eventType String
+
+  requestMethod  String
+  requestUrl     String
+  requestHeaders Json
+  requestBody    Json
+
+  responseStatus Int?
+  responseBody   String? @db.Text
+  responseTime   Int?    // мс
+
+  retryCount   Int     @default(0)
+  success      Boolean
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  webhook IssueWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+}
+
+/// Шаблон команды (sales / development / installation / marketing / management / …).
+/// `tenantId=null` — системный (платформенный) шаблон. `definition` — Json со
+/// структурой { roles[], states[], laneTemplates[], typicalTasks[],
+/// regulationStubs[], kpiTemplates[] }.
+model TeamTemplate {
+  id          String  @id @default(cuid())
+  tenantId    String? // null = системный шаблон (платформенный)
+  slug        String  // sales | development | installation | marketing | management | ...
+  name        String  // «Команда продаж», «Команда разработки», ...
+  description String  @db.Text
+  category    String
+
+  definition Json    // { roles[], states[], laneTemplates[], typicalTasks[], regulationStubs[], kpiTemplates[] }
+
+  isPublic   Boolean @default(true)
+  usageCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+
+  @@unique([tenantId, slug])
 }

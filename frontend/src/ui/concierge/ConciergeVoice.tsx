@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useVoiceStream } from '../../hooks/concierge/useVoiceStream';
 import { voiceApi } from '../../api/voice.api';
 import { ApiError } from '../../api/api-error';
 import { Button } from '../components/shared/Button';
+import { pickSupportedMimeType } from './audio-mime';
 
 type State =
   | { kind: 'idle' }
@@ -30,9 +32,22 @@ export interface ConciergeVoiceProps {
    * Опц. — если задано, после транскрипта тут же синтезируем озвучку
    * этого текста (например, ответ ассистента). Включать только когда есть
    * текст ответа. На δ-3 — без auto-loop; γ-2 свяжет.
+   *
+   * NB: Concierge сам по правилу отвечает ТОЛЬКО текстом — этот prop
+   * НЕ используется для ответов AI-помощника, только для технических
+   * сценариев (например, демо TTS в админке).
    */
   reply?: string | null;
   className?: string;
+  /**
+   * Использовать WebSocket-стриминг (T4 / δ-3). По умолчанию `true`.
+   * При недоступности WS (disconnect / unsupported) хук падает на 'error'/
+   * 'unavailable' и компонент сам делает graceful degradation: REST upload
+   * через `voiceApi.transcribe`.
+   *
+   * Тесты могут передать `false` чтобы заставить REST-flow.
+   */
+  useWebSocket?: boolean;
 }
 
 /**
@@ -55,6 +70,7 @@ export function ConciergeVoice({
   onTranscribed,
   reply,
   className,
+  useWebSocket = true,
 }: ConciergeVoiceProps) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -62,6 +78,41 @@ export function ConciergeVoice({
   const streamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+
+  // ── T4 / δ-3 — WebSocket-стриминг voice ввода ─────────────────────
+  // Hook сам управляет коннектом и реконнектом. Если useWebSocket=false
+  // или коннект упал — fallback на REST flow ниже (не удалён, остаётся
+  // как graceful degradation, см. docstring компонента).
+  const voiceWs = useVoiceStream(orgId, useWebSocket);
+  // Признак «надо ли пробовать WS прямо сейчас». Если хук в error/unavailable
+  // — переходим на REST flow при следующем нажатии (без UI-флага юзеру).
+  const wsActive =
+    useWebSocket && voiceWs.state !== 'unavailable' && voiceWs.connected;
+
+  // Прокидываем transcript из WS hook'а в локальный state + onTranscribed.
+  // useRef для onTranscribed чтобы не пересоздавать эффект при ре-рендере.
+  const onTranscribedRef = useRef(onTranscribed);
+  onTranscribedRef.current = onTranscribed;
+  useEffect(() => {
+    if (voiceWs.state === 'idle' && voiceWs.transcript) {
+      const t = voiceWs.transcript.trim();
+      if (t.length === 0) {
+        setState({
+          kind: 'error',
+          message: 'Не удалось распознать — попробуйте чуть громче',
+        });
+        return;
+      }
+      setState({ kind: 'ready', transcript: t });
+      onTranscribedRef.current?.(t);
+      // Сбросить, чтобы повторный transcript=== тот же не залип.
+      voiceWs.reset();
+    } else if (voiceWs.state === 'transcribing') {
+      setState({ kind: 'processing' });
+    } else if (voiceWs.state === 'error' && voiceWs.error) {
+      setState({ kind: 'error', message: voiceWs.error });
+    }
+  }, [voiceWs.state, voiceWs.transcript, voiceWs.error, voiceWs]);
 
   // Cleanup на размонтирование: stop stream и revoke URL.
   useEffect(() => {
@@ -97,7 +148,28 @@ export function ConciergeVoice({
     };
   }, [orgId, reply]);
 
+  /**
+   * Начать запись. Приоритет — WebSocket-стриминг (T4 / δ-3). Если WS не
+   * подключен (initial state / disconnect / unsupported) — fallback на REST
+   * flow ниже (запись локально → POST /voice/transcribe в `stopRecording`).
+   *
+   * Mobile Safari quirk: `audio/webm` не поддерживается, fallback на
+   * `audio/mp4` обрабатывается внутри `pickSupportedMimeType`.
+   */
   const startRecording = useCallback(async () => {
+    if (wsActive) {
+      // WS-flow: вся работа в хуке, локальный state синхронизируется через
+      // useEffect выше.
+      await voiceWs.start();
+      // Если хук сразу свалился в error — продолжим в локальном state,
+      // следующее нажатие может попробовать REST fallback.
+      if (voiceWs.state !== 'error') {
+        setState({ kind: 'recording', startedAt: Date.now() });
+      }
+      return;
+    }
+
+    // ── REST fallback (graceful degradation) ───────────────────────
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setState({
@@ -127,9 +199,18 @@ export function ConciergeVoice({
     } catch (err) {
       setState({ kind: 'error', message: humanizeError(err) });
     }
-  }, []);
+  }, [wsActive, voiceWs]);
 
   const stopRecording = useCallback(async () => {
+    if (wsActive) {
+      // WS-flow: hook поднимет transcript через WS event listener.
+      // useEffect выше переведёт state в 'processing' → 'ready'.
+      setState({ kind: 'processing' });
+      await voiceWs.stop();
+      return;
+    }
+
+    // ── REST fallback ──────────────────────────────────────────────
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === 'inactive') return;
 
@@ -177,7 +258,7 @@ export function ConciergeVoice({
     } catch (err) {
       setState({ kind: 'error', message: humanizeError(err) });
     }
-  }, [orgId, onTranscribed]);
+  }, [orgId, onTranscribed, wsActive, voiceWs]);
 
   return (
     <div className={className}>
@@ -282,13 +363,13 @@ function stateLabel(s: State): string {
     case 'recording':
       return 'Идёт запись…';
     case 'processing':
-      return 'Распознаю…';
+      return 'Распознаю речь…';
     case 'ready':
       return 'Распознано';
     case 'speaking':
       return 'Озвучиваю ответ…';
     case 'error':
-      return 'Ошибка';
+      return 'Ошибка распознавания';
     default:
       return '';
   }
@@ -303,27 +384,6 @@ function stopAllTracks(stream: MediaStream | null): void {
       // ignore
     }
   }
-}
-
-function pickSupportedMimeType(): string | null {
-  // Браузерная поддержка: Chrome/Edge — webm;codecs=opus, Safari/iOS —
-  // ogg или нативный AAC. Запросим в порядке предпочтения.
-  if (typeof MediaRecorder === 'undefined') return null;
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/ogg',
-    'audio/mp4',
-  ];
-  for (const t of candidates) {
-    try {
-      if (MediaRecorder.isTypeSupported(t)) return t;
-    } catch {
-      // ignore
-    }
-  }
-  return null;
 }
 
 function playAudio(

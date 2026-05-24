@@ -8,8 +8,7 @@ import {
   type ConciergePageContextApi,
   type ConciergeStreamEvent,
 } from '@/api/concierge.api';
-import { useToast } from '@/contexts/toast-context';
-
+import { toast } from 'sonner';
 /**
  * SBA γ-2 — ConciergeChat.
  *
@@ -48,7 +47,7 @@ export function ConciergeChat({
   className,
   onConversationStarted,
 }: ConciergeChatProps) {
-  const { addToast } = useToast();
+
   const [rows, setRows] = useState<ChatRow[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,18 +68,15 @@ export function ConciergeChat({
       try {
         const res = await conciergeApi.undo(logId);
         if (res.ok) {
-          addToast({ type: 'success', message: 'Действие отменено' });
+          toast.success('Действие отменено');
         } else {
-          addToast({
-            type: 'error',
-            message: res.message ?? 'Не удалось отменить',
-          });
+          toast.error(res.message ?? 'Не удалось отменить');
         }
       } catch {
-        addToast({ type: 'error', message: 'Ошибка отмены' });
+        toast.error('Ошибка отмены');
       }
     },
-    [addToast],
+    [],
   );
 
   const send = useCallback(async () => {
@@ -124,15 +120,11 @@ export function ConciergeChat({
           ...(pageContext ? { pageContext } : {}),
         });
         if (r.quotaExceeded) {
-          addToast({
-            type: 'error',
-            message:
-              r.quotaExceeded === 'daily'
+          toast.error(r.quotaExceeded === 'daily'
                 ? 'Дневная квота Concierge исчерпана'
-                : 'Месячная квота Concierge исчерпана',
-          });
+                : 'Месячная квота Concierge исчерпана');
         } else if (r.error) {
-          addToast({ type: 'error', message: r.error.message });
+          toast.error(r.error.message);
         } else {
           if (!currentConv && r.conversationId) {
             setCurrentConv(r.conversationId);
@@ -153,11 +145,7 @@ export function ConciergeChat({
               },
             ]);
             if (tc.undoLogId) {
-              addToast({
-                type: 'success',
-                message: `Готово: ${tc.toolName}`,
-                action: { label: 'Отменить', onClick: () => handleUndo(tc.undoLogId!) },
-              });
+              toast.success(`Готово: ${tc.toolName}`, { action: { label: 'Отменить', onClick: () => handleUndo(tc.undoLogId!) } });
             }
           }
           if (r.text) {
@@ -172,7 +160,7 @@ export function ConciergeChat({
           }
         }
       } catch {
-        addToast({ type: 'error', message: 'Concierge временно недоступен' });
+        toast.error('Concierge временно недоступен');
       }
     }
 
@@ -213,11 +201,7 @@ export function ConciergeChat({
             },
           ]);
           if (ev.undoLogId) {
-            addToast({
-              type: 'success',
-              message: `Готово: ${ev.toolName}`,
-              action: { label: 'Отменить', onClick: () => handleUndo(ev.undoLogId!) },
-            });
+            toast.success(`Готово: ${ev.toolName}`, { action: { label: 'Отменить', onClick: () => handleUndo(ev.undoLogId!) } });
           }
           break;
         case 'message':
@@ -227,16 +211,12 @@ export function ConciergeChat({
           ]);
           break;
         case 'quota_exceeded':
-          addToast({
-            type: 'error',
-            message:
-              ev.scope === 'daily'
+          toast.error(ev.scope === 'daily'
                 ? 'Дневная квота Concierge исчерпана'
-                : 'Месячная квота Concierge исчерпана',
-          });
+                : 'Месячная квота Concierge исчерпана');
           break;
         case 'error':
-          addToast({ type: 'error', message: ev.message });
+          toast.error(ev.message);
           break;
         case 'thinking':
         case 'done':
@@ -244,15 +224,7 @@ export function ConciergeChat({
           break;
       }
     }
-  }, [
-    input,
-    busy,
-    currentConv,
-    pageContext,
-    addToast,
-    handleUndo,
-    onConversationStarted,
-  ]);
+  }, [input, busy, currentConv, pageContext, handleUndo, onConversationStarted]);
 
   return (
     <div

@@ -318,7 +318,7 @@ function MarkWrongDialog({
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <div className="rounded-md bg-chip-warning-bg p-3 text-sm text-chip-warning-fg">
             <p className="flex items-start gap-2">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>

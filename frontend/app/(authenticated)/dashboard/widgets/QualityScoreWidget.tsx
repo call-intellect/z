@@ -69,10 +69,10 @@ export function QualityScoreWidget() {
   const color = qualityScoreColor(Math.round(averageScore));
   const colorClass =
     color === 'red'
-      ? 'text-red-600'
+      ? 'text-danger'
       : color === 'yellow'
-        ? 'text-amber-600'
-        : 'text-emerald-600';
+        ? 'text-warning'
+        : 'text-success';
 
   return (
     <Card>
@@ -102,7 +102,7 @@ export function QualityScoreWidget() {
               <ul className="space-y-1 text-sm">
                 {byType.slice(0, 3).map((b) => (
                   <li key={b.type} className="flex justify-between">
-                    <span className="text-neutral-700">{b.type}</span>
+                    <span className="text-fg-secondary">{b.type}</span>
                     <span className="tabular-nums font-medium">{b.avg}</span>
                   </li>
                 ))}

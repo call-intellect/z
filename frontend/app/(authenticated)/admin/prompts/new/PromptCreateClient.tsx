@@ -84,14 +84,14 @@ export function PromptCreateClient() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-1 text-2xl font-semibold tracking-tight text-slate-900">
+      <h1 className="mb-1 text-2xl font-semibold tracking-tight text-fg-primary">
         Новый шаблон промпта
       </h1>
-      <p className="mb-6 text-sm text-slate-600">
+      <p className="mb-6 text-sm text-fg-secondary">
         После создания вы попадёте в редактор: добавите разделы отчёта и активируете шаблон.
       </p>
 
-      <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+      <div className="space-y-4 rounded-lg border border-border-subtle bg-white p-5">
         <Field label="Область">
           <Select value={scope} onValueChange={(v) => setScope(v as PromptTemplateScope)}>
             <SelectTrigger className="h-9 bg-white text-sm">
@@ -114,7 +114,7 @@ export function PromptCreateClient() {
               value={orgId}
               onChange={(e) => setOrgId(e.target.value)}
               placeholder="org-cxxxxxxxxxxxxxx"
-              className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+              className="h-9 w-full rounded-md border border-border-subtle bg-white px-3 text-sm"
             />
           </Field>
         )}
@@ -125,7 +125,7 @@ export function PromptCreateClient() {
             value={key}
             onChange={(e) => setKey(e.target.value)}
             placeholder="type-custom-sales"
-            className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+            className="h-9 w-full rounded-md border border-border-subtle bg-white px-3 text-sm"
           />
         </Field>
 
@@ -135,7 +135,7 @@ export function PromptCreateClient() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Например: Углублённый разбор продажи"
-            className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+            className="h-9 w-full rounded-md border border-border-subtle bg-white px-3 text-sm"
           />
         </Field>
 
@@ -145,7 +145,7 @@ export function PromptCreateClient() {
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             maxLength={1000}
-            className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm"
+            className="w-full rounded-md border border-border-subtle bg-white p-2 text-sm"
           />
         </Field>
 
@@ -208,9 +208,9 @@ function Field({
 }) {
   return (
     <label className="block">
-      <div className="mb-1 text-xs font-medium text-slate-700">{label}</div>
+      <div className="mb-1 text-xs font-medium text-fg-secondary">{label}</div>
       {children}
-      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+      {hint && <div className="mt-1 text-xs text-fg-secondary">{hint}</div>}
     </label>
   );
 }

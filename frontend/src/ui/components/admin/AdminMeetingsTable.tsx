@@ -39,11 +39,11 @@ export function AdminMeetingsTable() {
   return (
     <section className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">{t('admin.meetings.title')}</h1>
+        <h1 className="text-2xl font-semibold text-fg-primary">{t('admin.meetings.title')}</h1>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
-        <label className="flex flex-col gap-1 text-xs text-slate-600">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-white p-3">
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.meetings.filter_status')}</span>
           <select
             value={status}
@@ -51,7 +51,7 @@ export function AdminMeetingsTable() {
               setStatus(e.target.value as MeetingStatus | '');
               setPage(1);
             }}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-border px-2 py-1.5 text-sm"
           >
             <option value="">{t('admin.meetings.filter_all')}</option>
             {MEETING_STATUSES.map((s) => (
@@ -61,7 +61,7 @@ export function AdminMeetingsTable() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-600">
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.meetings.filter_type')}</span>
           <select
             value={type}
@@ -69,7 +69,7 @@ export function AdminMeetingsTable() {
               setType(e.target.value as MeetingType | '');
               setPage(1);
             }}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-border px-2 py-1.5 text-sm"
           >
             <option value="">{t('admin.meetings.filter_all')}</option>
             {MEETING_TYPES.map((tp) => (
@@ -79,7 +79,7 @@ export function AdminMeetingsTable() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-600">
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.meetings.filter_owner')}</span>
           <input
             type="text"
@@ -88,7 +88,7 @@ export function AdminMeetingsTable() {
               setOwnerId(e.target.value.trim());
               setPage(1);
             }}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-border px-2 py-1.5 text-sm"
             placeholder="user-id"
           />
         </label>
@@ -100,7 +100,7 @@ export function AdminMeetingsTable() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
@@ -108,9 +108,9 @@ export function AdminMeetingsTable() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('meetings.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-600">
+            <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>
                 <th className="px-3 py-2">{t('admin.meetings.th_id')}</th>
                 <th className="px-3 py-2">{t('admin.meetings.th_title')}</th>
@@ -123,19 +123,19 @@ export function AdminMeetingsTable() {
             </thead>
             <tbody>
               {data.items.map((m) => (
-                <tr key={m.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 font-mono text-xs text-slate-500">{m.id}</td>
-                  <td className="px-3 py-2 text-slate-900">{m.title}</td>
-                  <td className="px-3 py-2 text-slate-700">{m.type}</td>
-                  <td className="px-3 py-2 text-slate-700">{m.status}</td>
-                  <td className="px-3 py-2 text-slate-700">{m.ownerEmail}</td>
-                  <td className="px-3 py-2 text-slate-600">
+                <tr key={m.id} className="border-t border-border-subtle">
+                  <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{m.id}</td>
+                  <td className="px-3 py-2 text-fg-primary">{m.title}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{m.type}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{m.status}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{m.ownerEmail}</td>
+                  <td className="px-3 py-2 text-fg-secondary">
                     {new Date(m.createdAt).toLocaleString('ru-RU')}
                   </td>
                   <td className="px-3 py-2">
                     <Link
                       href={`/admin/meetings/${encodeURIComponent(m.id)}`}
-                      className="text-blue-700 hover:underline"
+                      className="text-info hover:underline"
                     >
                       {t('admin.meetings.details')}
                     </Link>
@@ -148,7 +148,7 @@ export function AdminMeetingsTable() {
       )}
 
       <footer className="flex items-center justify-between">
-        <span className="text-sm text-slate-600">
+        <span className="text-sm text-fg-secondary">
           {data ? `${page} ${t('meetings.pagination_of')} ${totalPages}` : ''}
         </span>
         <div className="flex gap-2">

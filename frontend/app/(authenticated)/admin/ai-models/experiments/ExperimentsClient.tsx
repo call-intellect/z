@@ -66,27 +66,27 @@ export function ExperimentsClient() {
       <header className="mb-6">
         <Link
           href="/admin/ai-models"
-          className="mb-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+          className="mb-2 inline-flex items-center gap-1 text-xs text-fg-secondary hover:text-fg-secondary"
         >
           <ArrowLeft size={12} /> К моделям агентов
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
           A/B-эксперименты моделей
         </h1>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-fg-secondary">
           Сравнение control vs variant на части трафика. Запуск — со страницы
           конкретного агента, через «Переключить основную модель» с долей &lt; 100%.
         </p>
       </header>
 
       {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+        <div className="flex items-center justify-center py-16 text-sm text-fg-secondary">
           <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
         </div>
       )}
-      {error && <div className="text-sm text-red-700">{error}</div>}
+      {error && <div className="text-sm text-chip-danger-fg">{error}</div>}
       {!loading && items.length === 0 && (
-        <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
           Нет активных экспериментов.
         </div>
       )}
@@ -95,10 +95,10 @@ export function ExperimentsClient() {
         {items.map((exp) => (
           <div
             key={exp.id}
-            className="rounded-lg border border-slate-200 bg-white p-4"
+            className="rounded-lg border border-border-subtle bg-white p-4"
           >
             <div className="mb-2 flex items-center gap-3">
-              <code className="font-mono text-xs text-slate-700">{exp.taskType}</code>
+              <code className="font-mono text-xs text-fg-secondary">{exp.taskType}</code>
               <Badge variant="outline" className="text-[10px]">
                 {exp.status === 'draft'
                   ? 'черновик'
@@ -123,19 +123,19 @@ export function ExperimentsClient() {
             </div>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <div className="text-slate-500">Контроль</div>
-                <div className="font-medium text-slate-900">
+                <div className="text-fg-secondary">Контроль</div>
+                <div className="font-medium text-fg-primary">
                   {exp.controlProvider} / {exp.controlModel}
                 </div>
               </div>
               <div>
-                <div className="text-slate-500">Вариант ({exp.splitPercent}% трафика)</div>
-                <div className="font-medium text-slate-900">
+                <div className="text-fg-secondary">Вариант ({exp.splitPercent}% трафика)</div>
+                <div className="font-medium text-fg-primary">
                   {exp.variantProvider} / {exp.variantModel}
                 </div>
               </div>
             </div>
-            {exp.notes && <div className="mt-2 text-xs text-slate-600">{exp.notes}</div>}
+            {exp.notes && <div className="mt-2 text-xs text-fg-secondary">{exp.notes}</div>}
           </div>
         ))}
       </div>

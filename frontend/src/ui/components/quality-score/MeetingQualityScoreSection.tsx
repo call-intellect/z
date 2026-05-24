@@ -89,12 +89,12 @@ export function MeetingQualityScoreSection({
   return (
     <section
       data-testid="meeting-quality-score-section"
-      className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-5"
+      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-5"
     >
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-neutral-900">Оценка качества встречи</h2>
-          <p className="text-xs text-neutral-500">
+          <h2 className="text-lg font-semibold text-fg-primary">Оценка качества встречи</h2>
+          <p className="text-xs text-fg-secondary">
             Видна только организатору и администраторам организации.
           </p>
         </div>
@@ -114,20 +114,20 @@ export function MeetingQualityScoreSection({
           }}
           disabled={regenerating}
           title="Можно вызывать не чаще 3 раз в час"
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {regenerating ? 'Перезапуск…' : 'Перезапустить оценку'}
         </button>
       </header>
 
       {regenError ? (
-        <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-lg bg-chip-warning-bg px-3 py-2 text-sm text-chip-warning-fg">
           {regenError}
         </div>
       ) : null}
 
       {score.degradedMode ? (
-        <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded-lg bg-chip-warning-bg px-3 py-2 text-xs text-chip-warning-fg">
           Оценка построена на локальной модели — точность может быть ниже обычной.
         </div>
       ) : null}
@@ -146,10 +146,10 @@ function OverallScoreBlock({ value }: { value: number }) {
   const color = qualityScoreColor(value);
   const colorClass =
     color === 'red'
-      ? 'text-red-700 bg-red-50 border-red-200'
+      ? 'text-chip-danger-fg bg-chip-danger-bg border-chip-danger-bg'
       : color === 'yellow'
-        ? 'text-amber-700 bg-amber-50 border-amber-200'
-        : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+        ? 'text-chip-warning-fg bg-chip-warning-bg border-chip-warning-bg'
+        : 'text-chip-success-fg bg-chip-success-bg border-chip-success-bg';
   return (
     <div className={`flex items-center gap-4 rounded-xl border p-4 ${colorClass}`}>
       <div className="text-5xl font-bold tabular-nums">{value}</div>
@@ -175,20 +175,20 @@ function CategoriesBlock({
   ];
   return (
     <div className="space-y-2">
-      <div className="text-sm font-medium text-neutral-800">Категории</div>
+      <div className="text-sm font-medium text-fg-primary">Категории</div>
       <div className="space-y-2">
         {order.map((cat) => {
           const v = categories[cat];
           const color = qualityScoreColor(v);
           const barColor =
-            color === 'red' ? 'bg-red-500' : color === 'yellow' ? 'bg-amber-400' : 'bg-emerald-500';
+            color === 'red' ? 'bg-danger' : color === 'yellow' ? 'bg-warning' : 'bg-success';
           return (
             <div key={cat}>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-neutral-700">{qualityScoreCategoryLabel(cat)}</span>
-                <span className="font-medium tabular-nums text-neutral-900">{v}</span>
+                <span className="text-fg-secondary">{qualityScoreCategoryLabel(cat)}</span>
+                <span className="font-medium tabular-nums text-fg-primary">{v}</span>
               </div>
-              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-bg-subtle">
                 <div
                   className={`h-full ${barColor}`}
                   style={{ width: `${Math.max(0, Math.min(100, v))}%` }}
@@ -210,17 +210,17 @@ function RecommendationsBlock({
   if (recommendations.length === 0) return null;
   return (
     <div className="space-y-2">
-      <div className="text-sm font-medium text-neutral-800">Рекомендации</div>
+      <div className="text-sm font-medium text-fg-primary">Рекомендации</div>
       <ul className="space-y-2">
         {recommendations.map((r, idx) => (
           <li
             key={`${r.category}-${idx}`}
-            className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3"
+            className="flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3"
           >
             <SeverityIcon severity={r.severity} />
             <div className="text-sm">
-              <div className="text-neutral-900">{r.text}</div>
-              <div className="text-xs text-neutral-500">
+              <div className="text-fg-primary">{r.text}</div>
+              <div className="text-xs text-fg-secondary">
                 {qualityScoreCategoryLabel(r.category)} ·{' '}
                 {qualityScoreSeverityLabel(r.severity)}
               </div>
@@ -236,12 +236,12 @@ function StrengthsBlock({ strengths }: { strengths: string[] }) {
   if (strengths.length === 0) return null;
   return (
     <div className="space-y-2">
-      <div className="text-sm font-medium text-neutral-800">Что было хорошо</div>
+      <div className="text-sm font-medium text-fg-primary">Что было хорошо</div>
       <ul className="space-y-1">
         {strengths.map((s, idx) => (
           <li
             key={idx}
-            className="flex items-start gap-2 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-900"
+            className="flex items-start gap-2 rounded-lg bg-chip-success-bg p-2 text-sm text-chip-success-fg"
           >
             <span aria-hidden>✓</span>
             <span>{s}</span>
@@ -254,9 +254,9 @@ function StrengthsBlock({ strengths }: { strengths: string[] }) {
 
 function SeverityIcon({ severity }: { severity: QualityScoreSeverity }) {
   const map: Record<QualityScoreSeverity, { label: string; cls: string }> = {
-    info: { label: 'i', cls: 'bg-neutral-200 text-neutral-700' },
-    warning: { label: '!', cls: 'bg-amber-200 text-amber-800' },
-    critical: { label: '!', cls: 'bg-red-200 text-red-800' },
+    info: { label: 'i', cls: 'bg-bg-overlay text-fg-secondary' },
+    warning: { label: '!', cls: 'bg-chip-warning-bg text-chip-warning-fg' },
+    critical: { label: '!', cls: 'bg-chip-danger-bg text-chip-danger-fg' },
   };
   const { label, cls } = map[severity];
   return (
@@ -275,13 +275,13 @@ function PendingSkeleton() {
   return (
     <section
       data-testid="meeting-quality-score-section-loading"
-      className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-3"
+      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-neutral-900">Оценка качества встречи</h2>
-      <p className="text-sm text-neutral-500">Считаем AI-оценку. Обычно занимает 1–2 минуты.</p>
-      <div className="h-20 animate-pulse rounded-lg bg-neutral-100" />
-      <div className="h-3 w-3/4 animate-pulse rounded bg-neutral-100" />
-      <div className="h-3 w-1/2 animate-pulse rounded bg-neutral-100" />
+      <h2 className="text-lg font-semibold text-fg-primary">Оценка качества встречи</h2>
+      <p className="text-sm text-fg-secondary">Считаем AI-оценку. Обычно занимает 1–2 минуты.</p>
+      <div className="h-20 animate-pulse rounded-lg bg-bg-subtle" />
+      <div className="h-3 w-3/4 animate-pulse rounded bg-bg-subtle" />
+      <div className="h-3 w-1/2 animate-pulse rounded bg-bg-subtle" />
     </section>
   );
 }
@@ -298,16 +298,16 @@ function FailedBox({
   return (
     <section
       data-testid="meeting-quality-score-section-failed"
-      className="rounded-2xl border border-red-200 bg-red-50 p-6 space-y-3"
+      className="rounded-2xl border border-chip-danger-bg bg-chip-danger-bg p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-red-800">Оценка качества встречи</h2>
-      <p className="text-sm text-red-700">Не удалось рассчитать. Попробуйте перезапустить.</p>
-      {error ? <p className="text-xs text-red-700">{error}</p> : null}
+      <h2 className="text-lg font-semibold text-chip-danger-fg">Оценка качества встречи</h2>
+      <p className="text-sm text-chip-danger-fg">Не удалось рассчитать. Попробуйте перезапустить.</p>
+      {error ? <p className="text-xs text-chip-danger-fg">{error}</p> : null}
       <button
         type="button"
         onClick={onRetry}
         disabled={busy}
-        className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+        className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
       >
         {busy ? 'Перезапуск…' : 'Перезапустить оценку'}
       </button>
@@ -319,14 +319,14 @@ function ErrorBox({ onRetry }: { onRetry: () => void }) {
   return (
     <section
       data-testid="meeting-quality-score-section-error"
-      className="rounded-2xl border border-amber-200 bg-amber-50 p-6 space-y-3"
+      className="rounded-2xl border border-chip-warning-bg bg-chip-warning-bg p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-amber-900">Оценка качества встречи</h2>
-      <p className="text-sm text-amber-800">Ошибка загрузки. Попробуйте обновить.</p>
+      <h2 className="text-lg font-semibold text-chip-warning-fg">Оценка качества встречи</h2>
+      <p className="text-sm text-chip-warning-fg">Ошибка загрузки. Попробуйте обновить.</p>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+        className="rounded-lg bg-warning px-3 py-2 text-sm font-medium text-white hover:opacity-90"
       >
         Обновить
       </button>

@@ -9,6 +9,7 @@ import {
   type ListPersonsResultApi,
 } from '@/api/persons.api';
 import { useAuth } from '@/contexts/auth-context';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
 import { Input } from '@/ui/shadcn/input';
 
 import {
@@ -91,7 +92,14 @@ function PersonsListContent({ orgId }: { orgId: string }) {
       </div>
 
       {data.items.length === 0 ? (
-        <p className="text-sm text-fg-tertiary">Персон не найдено.</p>
+        <EmptyState
+          title="Персон не найдено"
+          description={
+            q.trim()
+              ? 'Попробуйте изменить запрос.'
+              : 'Персоны появятся после первых встреч.'
+          }
+        />
       ) : (
         <ul className="divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-card">
           {data.items.map((p) => {

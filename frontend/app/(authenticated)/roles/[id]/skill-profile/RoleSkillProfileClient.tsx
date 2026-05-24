@@ -186,7 +186,7 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
             решениям.
           </p>
           {!data.hasRolePersona && (
-            <p className="text-sm text-amber-600 dark:text-amber-400">
+            <p className="text-sm text-warning">
               Клон роли пока не собран — нужно минимум 2 сотрудника с активным
               профилем. Снапшот собирается воскресенье 06:00.
             </p>

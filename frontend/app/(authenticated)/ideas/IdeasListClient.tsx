@@ -222,7 +222,7 @@ function IdeasContent(): JSX.Element {
             type="button"
             className={`rounded-md border px-3 py-1.5 text-sm ${
               tab === t
-                ? 'border-blue-500 bg-blue-50 font-medium text-blue-700'
+                ? 'border-accent bg-chip-info-bg font-medium text-chip-info-fg'
                 : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
             }`}
             onClick={() => {
@@ -275,7 +275,7 @@ function IdeasContent(): JSX.Element {
                 <li
                   key={i.id}
                   className={`cursor-pointer p-3 hover:bg-neutral-50 ${
-                    selected?.id === i.id ? 'bg-blue-50' : ''
+                    selected?.id === i.id ? 'bg-chip-info-bg' : ''
                   }`}
                   onClick={() => void selectIdea(i)}
                 >
@@ -413,7 +413,7 @@ function IdeaDetailPane(props: {
           <button
             type="button"
             onClick={() => void onSupport()}
-            className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+            className="rounded-md border border-chip-info-bg bg-chip-info-bg px-3 py-1.5 text-sm font-medium text-chip-info-fg hover:opacity-90"
           >
             Поддержать
           </button>
@@ -430,7 +430,7 @@ function IdeaDetailPane(props: {
       </div>
 
       <div className="border-t border-neutral-100 pt-3 text-xs text-neutral-500">
-        Кластер: {idea.clusterId ? <Link href={`/idea-clusters/${idea.clusterId}`} className="text-blue-600 underline">{idea.clusterId.slice(0, 8)}</Link> : '—'}
+        Кластер: {idea.clusterId ? <Link href={`/idea-clusters/${idea.clusterId}`} className="text-info underline">{idea.clusterId.slice(0, 8)}</Link> : '—'}
         {' · '}Источников: {idea.sourceBlockIds.length}
         {' · '}Уверенность: {(idea.confidence * 100).toFixed(0)}%
       </div>

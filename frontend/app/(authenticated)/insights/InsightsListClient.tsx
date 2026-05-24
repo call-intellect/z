@@ -423,14 +423,14 @@ function Badge({
 }) {
   const cls =
     tone === 'danger'
-      ? 'bg-red-500/15 text-red-500'
+      ? 'bg-chip-danger-bg text-chip-danger-fg'
       : tone === 'warning'
-        ? 'bg-amber-500/15 text-amber-600'
+        ? 'bg-chip-warning-bg text-chip-warning-fg'
         : tone === 'success'
-          ? 'bg-emerald-500/15 text-emerald-600'
+          ? 'bg-chip-success-bg text-chip-success-fg'
           : tone === 'info'
-            ? 'bg-blue-500/15 text-blue-600'
-            : 'bg-fg-tertiary/15 text-fg-secondary';
+            ? 'bg-chip-info-bg text-chip-info-fg'
+            : 'bg-bg-subtle text-fg-secondary';
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}
@@ -613,7 +613,7 @@ function InsightDetailView({
               <Link
                 key={id}
                 href={`/decisions/${id}`}
-                className="rounded bg-blue-500/10 px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-500/20"
+                className="rounded bg-chip-info-bg px-2 py-0.5 text-xs text-chip-info-fg hover:opacity-90"
               >
                 Решение {id.slice(0, 8)}
               </Link>

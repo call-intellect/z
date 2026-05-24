@@ -103,7 +103,7 @@ export function ParticipantsPanel({
                       {isLocal ? ' (вы)' : ''}
                     </span>
                     {isHostRow ? (
-                      <span className="rounded bg-blue-600/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-blue-200">
+                      <span className="rounded bg-info/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-info">
                         host
                       </span>
                     ) : null}
@@ -135,7 +135,7 @@ export function ParticipantsPanel({
                         onClick={() => {
                           void host.kick(internalId);
                         }}
-                        className="rounded bg-red-600/80 px-2 py-1 text-xs text-white hover:bg-red-700"
+                        className="rounded bg-danger/80 px-2 py-1 text-xs text-white hover:opacity-90"
                       >
                         {t('room.host_actions.kick')}
                       </button>

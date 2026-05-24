@@ -277,23 +277,23 @@ export function ConciergeVoice({
             {state.kind === 'processing' ? 'Распознаю…' : 'Записать голос'}
           </Button>
         )}
-        <span className="text-sm text-slate-600">{stateLabel(state)}</span>
+        <span className="text-sm text-fg-secondary">{stateLabel(state)}</span>
       </div>
 
       {state.kind === 'ready' && (
-        <p className="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-800">
+        <p className="mt-2 rounded bg-bg-subtle p-2 text-sm text-fg-primary">
           {state.transcript}
         </p>
       )}
 
       {state.kind === 'speaking' && (
-        <p className="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-800">
+        <p className="mt-2 rounded bg-bg-subtle p-2 text-sm text-fg-primary">
           {state.transcript}
         </p>
       )}
 
       {state.kind === 'error' && (
-        <p className="mt-2 rounded bg-red-50 p-2 text-sm text-red-700">
+        <p className="mt-2 rounded bg-chip-danger-bg p-2 text-sm text-chip-danger-fg">
           {state.message}
         </p>
       )}
@@ -323,12 +323,12 @@ export function ConciergeFloatingButton({ orgId }: { orgId: string }) {
         </Button>
       )}
       {open && (
-        <div className="w-80 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+        <div className="w-80 rounded-lg border border-border-subtle bg-white p-3 shadow-lg">
           <div className="mb-2 flex items-center justify-between">
-            <span className="font-medium text-slate-900">Кора</span>
+            <span className="font-medium text-fg-primary">Кора</span>
             <button
               type="button"
-              className="text-slate-500 hover:text-slate-700"
+              className="text-fg-secondary hover:text-fg-secondary"
               onClick={() => setOpen(false)}
               aria-label="Закрыть"
             >
@@ -340,7 +340,7 @@ export function ConciergeFloatingButton({ orgId }: { orgId: string }) {
             onTranscribed={(t) => setLastTranscript(t)}
           />
           {lastTranscript && (
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 text-xs text-fg-secondary">
               Распознано: «{lastTranscript}»
               <br />
               <span className="italic">

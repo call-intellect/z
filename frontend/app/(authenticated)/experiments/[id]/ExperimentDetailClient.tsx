@@ -23,11 +23,11 @@ import {
 } from '../../admin/AdminStateViews';
 
 const TONE_TO_CLASS: Record<string, string> = {
-  info: 'bg-blue-100 text-blue-800',
-  warning: 'bg-amber-100 text-amber-800',
-  success: 'bg-emerald-100 text-emerald-800',
-  neutral: 'bg-slate-100 text-slate-800',
-  danger: 'bg-red-100 text-red-800',
+  info: 'bg-chip-info-bg text-chip-info-fg',
+  warning: 'bg-chip-warning-bg text-chip-warning-fg',
+  success: 'bg-chip-success-bg text-chip-success-fg',
+  neutral: 'bg-bg-subtle text-fg-secondary',
+  danger: 'bg-chip-danger-bg text-chip-danger-fg',
 };
 
 const TRANSITION_OPTIONS: ReadonlyArray<{
@@ -113,7 +113,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
 
   return (
     <article className="mx-auto max-w-3xl space-y-6">
-      <nav className="text-xs text-slate-500">
+      <nav className="text-xs text-fg-secondary">
         <Link href="/experiments" className="hover:underline">
           ← К списку экспериментов
         </Link>
@@ -130,7 +130,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
             {EXPERIMENT_STATUS_LABEL[detail.status]}
           </span>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-fg-secondary">
           ID: <code className="font-mono">{detail.id}</code>
           {detail.entityId ? (
             <>
@@ -140,24 +140,24 @@ export function ExperimentDetailClient({ id }: { id: string }) {
         </p>
       </header>
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-slate-700">Гипотеза</h2>
-        <p className="mt-2 text-sm text-slate-800 whitespace-pre-wrap">
+      <section className="rounded-md border border-border-subtle bg-white p-4">
+        <h2 className="text-sm font-medium text-fg-secondary">Гипотеза</h2>
+        <p className="mt-2 text-sm text-fg-primary whitespace-pre-wrap">
           {detail.hypothesisText}
         </p>
       </section>
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-slate-700">Текущий результат</h2>
-        <p className="mt-2 text-sm text-slate-800 whitespace-pre-wrap">
+      <section className="rounded-md border border-border-subtle bg-white p-4">
+        <h2 className="text-sm font-medium text-fg-secondary">Текущий результат</h2>
+        <p className="mt-2 text-sm text-fg-primary whitespace-pre-wrap">
           {detail.currentResult ?? 'Результат пока не зафиксирован.'}
         </p>
       </section>
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-slate-700">Уроки</h2>
+      <section className="rounded-md border border-border-subtle bg-white p-4">
+        <h2 className="text-sm font-medium text-fg-secondary">Уроки</h2>
         {detail.lessons.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">Уроков ещё нет.</p>
+          <p className="mt-2 text-sm text-fg-secondary">Уроков ещё нет.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {detail.lessons.map((l, idx) => {
@@ -165,7 +165,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
               return (
                 <li
                   key={`${l.type}-${idx}`}
-                  className="rounded-md border border-slate-200 p-3"
+                  className="rounded-md border border-border-subtle p-3"
                 >
                   <span
                     className={`rounded px-2 py-0.5 text-[11px] font-medium ${
@@ -174,7 +174,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
                   >
                     {EXPERIMENT_LESSON_TYPE_LABEL[l.type]}
                   </span>
-                  <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+                  <p className="mt-1 text-sm text-fg-primary whitespace-pre-wrap">
                     {l.text}
                   </p>
                 </li>
@@ -184,35 +184,35 @@ export function ExperimentDetailClient({ id }: { id: string }) {
         )}
       </section>
 
-      <section className="grid grid-cols-2 gap-3 text-xs text-slate-600 sm:grid-cols-4">
-        <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="font-medium text-slate-700">Начат</div>
+      <section className="grid grid-cols-2 gap-3 text-xs text-fg-secondary sm:grid-cols-4">
+        <div className="rounded border border-border-subtle bg-bg-subtle p-3">
+          <div className="font-medium text-fg-secondary">Начат</div>
           <div>
             {detail.startedAt
               ? new Date(detail.startedAt).toLocaleString('ru-RU')
               : '—'}
           </div>
         </div>
-        <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="font-medium text-slate-700">Завершён</div>
+        <div className="rounded border border-border-subtle bg-bg-subtle p-3">
+          <div className="font-medium text-fg-secondary">Завершён</div>
           <div>
             {detail.completedAt
               ? new Date(detail.completedAt).toLocaleString('ru-RU')
               : '—'}
           </div>
         </div>
-        <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="font-medium text-slate-700">Длительность</div>
+        <div className="rounded border border-border-subtle bg-bg-subtle p-3">
+          <div className="font-medium text-fg-secondary">Длительность</div>
           <div>{days !== null ? `${days} дн.` : '—'}</div>
         </div>
-        <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="font-medium text-slate-700">Уверенность</div>
+        <div className="rounded border border-border-subtle bg-bg-subtle p-3">
+          <div className="font-medium text-fg-secondary">Уверенность</div>
           <div>{Math.round(detail.confidence * 100)}%</div>
         </div>
       </section>
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-medium text-slate-700">Действия</h2>
+      <section className="rounded-md border border-border-subtle bg-white p-4">
+        <h2 className="text-sm font-medium text-fg-secondary">Действия</h2>
         <div className="mt-2 flex flex-wrap gap-2">
           {TRANSITION_OPTIONS.map((opt) => (
             <button
@@ -220,7 +220,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
               type="button"
               disabled={busy || opt.to === detail.status}
               onClick={() => void onTransition(opt.to)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-border bg-white px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {opt.label}
             </button>

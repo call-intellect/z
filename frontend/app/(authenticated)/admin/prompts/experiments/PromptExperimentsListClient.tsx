@@ -34,10 +34,10 @@ const STATUS_LABELS: Record<ExperimentStatusApi, string> = {
 };
 
 const STATUS_BADGE_CLASS: Record<ExperimentStatusApi, string> = {
-  draft: 'bg-slate-100 text-slate-700',
-  running: 'bg-emerald-100 text-emerald-700',
-  stopped: 'bg-amber-100 text-amber-700',
-  completed: 'bg-slate-100 text-slate-600',
+  draft: 'bg-bg-subtle text-fg-secondary',
+  running: 'bg-chip-success-bg text-chip-success-fg',
+  stopped: 'bg-chip-warning-bg text-chip-warning-fg',
+  completed: 'bg-bg-subtle text-fg-secondary',
 };
 
 export function PromptExperimentsListClient() {
@@ -71,10 +71,10 @@ export function PromptExperimentsListClient() {
     <div className="mx-auto max-w-5xl">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             A/B-эксперименты по промптам
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-fg-secondary">
             Сравните две версии шаблона на реальных встречах и выберите лучшую.
           </p>
         </div>
@@ -102,7 +102,7 @@ export function PromptExperimentsListClient() {
       </div>
 
       {error ? (
-        <div className="rounded-md border border-rose-300 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
           {error}
           <Button variant="outline" size="sm" className="ml-3" onClick={() => void fetchData()}>
             Повторить
@@ -111,9 +111,9 @@ export function PromptExperimentsListClient() {
       ) : null}
 
       {loading ? (
-        <div className="text-sm text-slate-500">Загрузка эксперементов…</div>
+        <div className="text-sm text-fg-secondary">Загрузка эксперементов…</div>
       ) : items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-fg-secondary">
           Пока нет ни одного эксперимента. Создайте первый, чтобы сравнить
           две версии шаблона.
         </div>
@@ -122,14 +122,14 @@ export function PromptExperimentsListClient() {
           {items.map((e) => (
             <li
               key={e.id}
-              className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
+              className="rounded-md border border-border-subtle bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/admin/prompts/experiments/${e.id}`}
-                      className="text-base font-semibold text-slate-900 hover:underline"
+                      className="text-base font-semibold text-fg-primary hover:underline"
                     >
                       Эксперимент {e.id.slice(0, 8)}
                     </Link>
@@ -137,12 +137,12 @@ export function PromptExperimentsListClient() {
                       {STATUS_LABELS[e.status]}
                     </Badge>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">
+                  <div className="mt-1 text-xs text-fg-secondary">
                     Доля трафика на группу B: {e.splitPercent}% ·{' '}
                     {e.orgId ? `Org ${e.orgId.slice(0, 8)}` : 'Глобальный'}
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-1 text-xs text-slate-500">
+                <div className="flex flex-col items-end gap-1 text-xs text-fg-secondary">
                   <div>Создан: {new Date(e.createdAt).toLocaleString('ru-RU')}</div>
                   {e.startedAt ? (
                     <div>Запущен: {new Date(e.startedAt).toLocaleString('ru-RU')}</div>

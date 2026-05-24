@@ -28,7 +28,7 @@ export function AdminRouteGuard({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-500">
+      <div className="flex min-h-screen items-center justify-center text-fg-secondary">
         {t('app.loading')}
       </div>
     );
@@ -37,10 +37,10 @@ export function AdminRouteGuard({ children }: { children: ReactNode }) {
   if (!user || user.role !== 'admin') {
     return (
       <div className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-3 px-6 text-center">
-        <h1 className="text-2xl font-semibold text-slate-900">
+        <h1 className="text-2xl font-semibold text-fg-primary">
           {t('admin.forbidden_title')}
         </h1>
-        <p className="text-slate-600">{t('admin.forbidden_description')}</p>
+        <p className="text-fg-secondary">{t('admin.forbidden_description')}</p>
       </div>
     );
   }

@@ -77,12 +77,12 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
   }, [experimentId, fetchData]);
 
   if (loading) {
-    return <div className="text-sm text-slate-500">Загрузка эксперимента…</div>;
+    return <div className="text-sm text-fg-secondary">Загрузка эксперимента…</div>;
   }
 
   if (error || !analytics) {
     return (
-      <div className="rounded-md border border-rose-300 bg-rose-50 p-4 text-sm text-rose-800">
+      <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
         {error ?? 'Эксперимент не найден'}
         <Link href="/admin/prompts/experiments" className="ml-2 underline">
           К списку
@@ -101,22 +101,22 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
         <div>
           <Link
             href="/admin/prompts/experiments"
-            className="text-sm text-slate-500 hover:underline"
+            className="text-sm text-fg-secondary hover:underline"
           >
             ← К списку экспериментов
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-fg-primary">
             Эксперимент {e.id.slice(0, 8)}
           </h1>
           <div className="mt-2 flex items-center gap-2">
             <Badge>{statusLabel(e.status)}</Badge>
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-fg-secondary">
               Доля трафика на группу B: {e.splitPercent}%
             </span>
             {e.orgId ? (
-              <span className="text-sm text-slate-500">Org: {e.orgId.slice(0, 8)}</span>
+              <span className="text-sm text-fg-secondary">Org: {e.orgId.slice(0, 8)}</span>
             ) : (
-              <span className="text-sm text-slate-500">Глобальный</span>
+              <span className="text-sm text-fg-secondary">Глобальный</span>
             )}
           </div>
         </div>
@@ -145,8 +145,8 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
 
       {e.notes ? (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">Комментарии</h2>
-          <pre className="whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs text-slate-700">
+          <h2 className="mb-2 text-sm font-semibold text-fg-secondary">Комментарии</h2>
+          <pre className="whitespace-pre-wrap rounded-md bg-bg-subtle p-3 text-xs text-fg-secondary">
             {e.notes}
           </pre>
         </section>
@@ -187,9 +187,9 @@ function GroupCard({
 }) {
   if (!groupAnalytics) {
     return (
-      <div className="rounded-md border border-slate-200 bg-white p-4">
-        <div className="text-sm font-medium text-slate-700">{label}</div>
-        <div className="mt-2 text-xs text-slate-500">Нет данных</div>
+      <div className="rounded-md border border-border-subtle bg-white p-4">
+        <div className="text-sm font-medium text-fg-secondary">{label}</div>
+        <div className="mt-2 text-xs text-fg-secondary">Нет данных</div>
       </div>
     );
   }
@@ -197,9 +197,9 @@ function GroupCard({
   const positiveRatio =
     total > 0 ? (groupAnalytics.positiveFeedback / total) * 100 : null;
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4">
-      <div className="text-sm font-medium text-slate-700">{label}</div>
-      <div className="mt-1 text-xs text-slate-500">
+    <div className="rounded-md border border-border-subtle bg-white p-4">
+      <div className="text-sm font-medium text-fg-secondary">{label}</div>
+      <div className="mt-1 text-xs text-fg-secondary">
         Версия: {groupAnalytics.versionId.slice(0, 8)}
       </div>
       <dl className="mt-3 space-y-1 text-sm">
@@ -218,8 +218,8 @@ function GroupCard({
 function Row({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex items-baseline justify-between">
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="font-medium text-slate-800">{value}</dd>
+      <dt className="text-xs text-fg-secondary">{label}</dt>
+      <dd className="font-medium text-fg-primary">{value}</dd>
     </div>
   );
 }

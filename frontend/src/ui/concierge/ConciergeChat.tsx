@@ -249,8 +249,8 @@ export function ConciergeChat({
               row.role === 'user'
                 ? 'rounded-md bg-bg-overlay p-2'
                 : row.role === 'assistant'
-                  ? 'rounded-md bg-emerald-900/20 p-2'
-                  : 'rounded-md bg-slate-800/30 p-2 text-xs text-fg-tertiary'
+                  ? 'rounded-md bg-chip-success-bg p-2'
+                  : 'rounded-md bg-bg-subtle p-2 text-xs text-fg-tertiary'
             }
           >
             {row.text}
@@ -278,7 +278,7 @@ export function ConciergeChat({
         <button
           type="submit"
           disabled={busy || !input.trim()}
-          className="rounded-md bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50"
+          className="rounded-md bg-accent px-3 py-2 text-sm text-accent-fg disabled:opacity-50"
         >
           Отправить
         </button>

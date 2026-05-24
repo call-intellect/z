@@ -163,8 +163,8 @@ export function MySocialContributionClient() {
 
 function EthicsBanner() {
   return (
-    <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30">
-      <CardContent className="flex gap-3 p-4 text-sm text-amber-900 dark:text-amber-200">
+    <Card className="border-chip-warning-bg bg-chip-warning-bg">
+      <CardContent className="flex gap-3 p-4 text-sm text-chip-warning-fg">
         <ShieldAlert size={18} className="mt-0.5 shrink-0" />
         <div className="space-y-1">
           <p className="font-medium">Прозрачность для вас</p>

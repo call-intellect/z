@@ -207,7 +207,7 @@ function EmailInboxSection({
                 Статус
               </span>
               {data.enabled ? (
-                <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300">
+                <span className="rounded-full bg-chip-success-bg px-2 py-0.5 text-xs font-medium text-chip-success-fg">
                   Включён
                 </span>
               ) : (
@@ -272,7 +272,7 @@ function EmailInboxSection({
             )}
 
             {error ? (
-              <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+              <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg px-3 py-2 text-xs text-chip-danger-fg">
                 {error}
               </div>
             ) : null}
@@ -334,9 +334,9 @@ function MailStatusBadge({
   };
   const colors: Record<typeof status, string> = {
     received: 'bg-bg-subtle text-fg-secondary',
-    bounced: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300',
-    failed: 'bg-red-500/15 text-red-700 dark:text-red-300',
-    created: 'bg-green-500/15 text-green-700 dark:text-green-300',
+    bounced: 'bg-chip-warning-bg text-chip-warning-fg',
+    failed: 'bg-chip-danger-bg text-chip-danger-fg',
+    created: 'bg-chip-success-bg text-chip-success-fg',
   };
   return (
     <span

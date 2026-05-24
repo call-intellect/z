@@ -55,7 +55,7 @@ export function PromptVersionsTab({
   if (versions.length === 0) {
     return (
       <>
-        <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
           Версий ещё нет. Создайте первую в редакторе.
         </div>
         {confirmDialog}
@@ -64,9 +64,9 @@ export function PromptVersionsTab({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+        <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
           <tr>
             <th className="px-3 py-2 text-left font-medium">Версия</th>
             <th className="px-3 py-2 text-left font-medium">Дата</th>
@@ -78,27 +78,27 @@ export function PromptVersionsTab({
           {versions.map((v) => {
             const isActive = v.id === activeVersionId;
             return (
-              <tr key={v.id} className="border-t border-slate-100">
+              <tr key={v.id} className="border-t border-border-subtle">
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-900">Версия №{v.versionNumber}</span>
+                    <span className="font-medium text-fg-primary">Версия №{v.versionNumber}</span>
                     {isActive && (
                       <Badge
                         variant="outline"
-                        className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                        className="border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
                       >
                         <CheckCircle2 size={10} className="mr-1" /> Активная
                       </Badge>
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2 text-slate-600">
+                <td className="px-3 py-2 text-fg-secondary">
                   {new Date(v.createdAt).toLocaleString('ru-RU')}
                 </td>
-                <td className="px-3 py-2 text-slate-600">{v.notes ?? '—'}</td>
+                <td className="px-3 py-2 text-fg-secondary">{v.notes ?? '—'}</td>
                 <td className="px-3 py-2 text-right">
                   {isActive ? (
-                    <span className="text-xs text-slate-500">текущая</span>
+                    <span className="text-xs text-fg-secondary">текущая</span>
                   ) : (
                     <Button
                       variant="secondary"

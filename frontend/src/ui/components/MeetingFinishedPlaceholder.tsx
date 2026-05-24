@@ -10,17 +10,17 @@ type Props = {
 
 export function MeetingFinishedPlaceholder({ meetingId, isHost }: Props) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 py-12 text-center">
-      <h1 className="text-2xl font-semibold text-slate-900">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg-subtle px-4 py-12 text-center">
+      <h1 className="text-2xl font-semibold text-fg-primary">
         {t('lobby.finished_title')}
       </h1>
-      <p className="max-w-md text-sm text-slate-600">
+      <p className="max-w-md text-sm text-fg-secondary">
         {t('lobby.finished_description')}
       </p>
       {isHost ? (
         <Link
           href={`/meetings/${meetingId}/result`}
-          className="inline-flex items-center justify-center rounded-md bg-blue-600 px-5 py-2.5 text-base font-medium text-white transition-colors hover:bg-blue-700"
+          className="inline-flex items-center justify-center rounded-md bg-accent px-5 py-2.5 text-base font-medium text-accent-fg transition-colors hover:bg-accent-hover"
         >
           {t('lobby.open_result')}
         </Link>

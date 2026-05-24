@@ -35,10 +35,10 @@ export function BehaviorTeamCard(): JSX.Element {
     return (
       <section
         data-testid="behavior-team-card-loading"
-        className="rounded-2xl border border-neutral-200 bg-white p-6"
+        className="rounded-2xl border border-border-subtle bg-white p-6"
       >
-        <h3 className="text-base font-semibold text-neutral-900">Поведение команды</h3>
-        <p className="mt-2 text-sm text-neutral-500">Загружаем…</p>
+        <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
+        <p className="mt-2 text-sm text-fg-secondary">Загружаем…</p>
       </section>
     );
   }
@@ -47,10 +47,10 @@ export function BehaviorTeamCard(): JSX.Element {
     return (
       <section
         data-testid="behavior-team-card-error"
-        className="rounded-2xl border border-amber-200 bg-amber-50 p-6"
+        className="rounded-2xl border border-chip-warning-bg bg-chip-warning-bg p-6"
       >
-        <h3 className="text-base font-semibold text-amber-900">Поведение команды</h3>
-        <p className="mt-2 text-sm text-amber-800">
+        <h3 className="text-base font-semibold text-chip-warning-fg">Поведение команды</h3>
+        <p className="mt-2 text-sm text-chip-warning-fg">
           Не удалось загрузить агрегированные метрики.
         </p>
       </section>
@@ -59,9 +59,9 @@ export function BehaviorTeamCard(): JSX.Element {
 
   if (data.meetingsCount === 0) {
     return (
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6">
-        <h3 className="text-base font-semibold text-neutral-900">Поведение команды</h3>
-        <p className="mt-2 text-sm text-neutral-500">
+      <section className="rounded-2xl border border-border-subtle bg-white p-6">
+        <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
+        <p className="mt-2 text-sm text-fg-secondary">
           За выбранный период встреч с метриками поведения пока нет.
         </p>
       </section>
@@ -73,10 +73,10 @@ export function BehaviorTeamCard(): JSX.Element {
     .slice(0, 3);
 
   return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-4">
+    <section className="rounded-2xl border border-border-subtle bg-white p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-neutral-900">Поведение команды</h3>
-        <span className="text-xs text-neutral-500">за 30 дней</span>
+        <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
+        <span className="text-xs text-fg-secondary">за 30 дней</span>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -88,17 +88,17 @@ export function BehaviorTeamCard(): JSX.Element {
       </div>
 
       <div>
-        <div className="text-sm font-medium text-neutral-800">Топ доминирующих</div>
+        <div className="text-sm font-medium text-fg-primary">Топ доминирующих</div>
         <ol className="mt-2 space-y-1">
           {top3.map((p, i) => (
             <li
               key={p.userId ?? `g-${i}`}
               className="flex items-center justify-between text-sm"
             >
-              <span className="text-neutral-700">
+              <span className="text-fg-secondary">
                 {i + 1}. {p.displayName}
               </span>
-              <span className="text-neutral-500">
+              <span className="text-fg-secondary">
                 {p.avgSpeakingPercent.toFixed(0)} %
               </span>
             </li>
@@ -111,9 +111,9 @@ export function BehaviorTeamCard(): JSX.Element {
 
 function Tile({ title, value }: { title: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-      <div className="text-xs text-neutral-500">{title}</div>
-      <div className="mt-1 text-lg font-semibold text-neutral-900">{value}</div>
+    <div className="rounded-xl border border-border-subtle bg-bg-subtle p-3">
+      <div className="text-xs text-fg-secondary">{title}</div>
+      <div className="mt-1 text-lg font-semibold text-fg-primary">{value}</div>
     </div>
   );
 }

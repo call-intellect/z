@@ -23,11 +23,11 @@ export function ExpiringRecordingsTable() {
   return (
     <section className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">{t('admin.expiring.title')}</h1>
+        <h1 className="text-2xl font-semibold text-fg-primary">{t('admin.expiring.title')}</h1>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
-        <label className="flex flex-col gap-1 text-xs text-slate-600">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-white p-3">
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.expiring.within_hours')}</span>
           <input
             type="number"
@@ -35,7 +35,7 @@ export function ExpiringRecordingsTable() {
             max={720}
             value={withinHours}
             onChange={(e) => setWithinHours(Math.max(1, Number(e.target.value) || 48))}
-            className="w-32 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="w-32 rounded-md border border-border px-2 py-1.5 text-sm"
           />
         </label>
         <Button size="sm" onClick={() => setApplied(withinHours)}>
@@ -49,7 +49,7 @@ export function ExpiringRecordingsTable() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-8 w-full" />
           ))}
@@ -57,9 +57,9 @@ export function ExpiringRecordingsTable() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('admin.expiring.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-600">
+            <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>
                 <th className="px-3 py-2">{t('admin.expiring.th_meeting')}</th>
                 <th className="px-3 py-2">{t('admin.expiring.th_status')}</th>
@@ -71,25 +71,25 @@ export function ExpiringRecordingsTable() {
             </thead>
             <tbody>
               {data.items.map((row) => (
-                <tr key={row.id} className="border-t border-slate-100">
+                <tr key={row.id} className="border-t border-border-subtle">
                   <td className="px-3 py-2">
                     <a
                       href={`/admin/meetings/${encodeURIComponent(row.meetingId)}`}
-                      className="text-blue-700 hover:underline"
+                      className="text-info hover:underline"
                     >
                       {row.meetingTitle}
                     </a>
-                    <div className="font-mono text-xs text-slate-500">{row.meetingId}</div>
+                    <div className="font-mono text-xs text-fg-secondary">{row.meetingId}</div>
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{row.status}</td>
-                  <td className="px-3 py-2 text-slate-700">
+                  <td className="px-3 py-2 text-fg-secondary">{row.status}</td>
+                  <td className="px-3 py-2 text-fg-secondary">
                     {new Date(row.expiresAt).toLocaleString('ru-RU')}
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{row.retentionDays}</td>
-                  <td className="px-3 py-2 text-slate-700">
+                  <td className="px-3 py-2 text-fg-secondary">{row.retentionDays}</td>
+                  <td className="px-3 py-2 text-fg-secondary">
                     {row.durationSeconds !== null ? `${row.durationSeconds} s` : '—'}
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{row.bytesTotal ?? '—'}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{row.bytesTotal ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

@@ -72,11 +72,11 @@ const TRANSITION_OPTIONS: ReadonlyArray<{
 ];
 
 const TONE_TO_CLASS: Record<string, string> = {
-  info: 'bg-blue-100 text-blue-800',
-  warning: 'bg-amber-100 text-amber-800',
-  success: 'bg-emerald-100 text-emerald-800',
-  neutral: 'bg-slate-100 text-slate-800',
-  danger: 'bg-red-100 text-red-800',
+  info: 'bg-chip-info-bg text-chip-info-fg',
+  warning: 'bg-chip-warning-bg text-chip-warning-fg',
+  success: 'bg-chip-success-bg text-chip-success-fg',
+  neutral: 'bg-bg-subtle text-fg-secondary',
+  danger: 'bg-chip-danger-bg text-chip-danger-fg',
 };
 
 function ExperimentsListContent() {
@@ -184,7 +184,7 @@ function ExperimentsListContent() {
       <section className="space-y-4">
         <header className="space-y-2">
           <h1 className="text-2xl font-semibold">Эксперименты</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-fg-secondary">
             Институциональная память компании: что попробовали, что вышло, чему
             научились.
           </p>
@@ -201,7 +201,7 @@ function ExperimentsListContent() {
             onChange={(e) =>
               setStatusFilter(e.target.value as 'all' | ExperimentStatusApi)
             }
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="rounded-md border border-border bg-white px-3 py-2 text-sm"
           >
             {STATUS_FILTERS.map((f) => (
               <option key={f.value} value={f.value}>
@@ -212,7 +212,7 @@ function ExperimentsListContent() {
         </div>
         <div className="space-y-2">
           {items.length === 0 ? (
-            <div className="rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+            <div className="rounded-md border border-dashed border-border p-6 text-sm text-fg-secondary">
               Пока нет экспериментов. Они появятся автоматически, как только в
               ваших встречах прозвучат гипотезы и результаты.
             </div>
@@ -227,12 +227,12 @@ function ExperimentsListContent() {
                   onClick={() => setSelectedId(item.id)}
                   className={`w-full rounded-md border p-3 text-left text-sm transition ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-slate-200 bg-white hover:border-slate-400'
+                      ? 'border-accent bg-chip-info-bg'
+                      : 'border-border-subtle bg-bg-card hover:border-border-strong'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium text-slate-900">
+                    <div className="font-medium text-fg-primary">
                       {item.name}
                     </div>
                     <span
@@ -243,10 +243,10 @@ function ExperimentsListContent() {
                       {EXPERIMENT_STATUS_LABEL[item.status]}
                     </span>
                   </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-slate-600">
+                  <div className="mt-1 line-clamp-2 text-xs text-fg-secondary">
                     {item.hypothesisText}
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-fg-secondary">
                     <span>Уроков: {item.lessonsCount}</span>
                     <span>Блоков: {item.sourceBlocksCount}</span>
                     <span>
@@ -261,9 +261,9 @@ function ExperimentsListContent() {
       </section>
 
       {/* Right: detail */}
-      <section className="rounded-md border border-slate-200 bg-white p-5">
+      <section className="rounded-md border border-border-subtle bg-white p-5">
         {!detail && !detailLoading ? (
-          <div className="text-sm text-slate-500">Выберите эксперимент слева.</div>
+          <div className="text-sm text-fg-secondary">Выберите эксперимент слева.</div>
         ) : detailLoading ? (
           <AdminLoading rows={6} />
         ) : (
@@ -308,32 +308,32 @@ function ExperimentDetailView({
         </div>
         <Link
           href={`/experiments/${detail.id}`}
-          className="text-xs text-blue-600 hover:underline"
+          className="text-xs text-info hover:underline"
         >
           Открыть отдельной страницей →
         </Link>
       </header>
 
       <section>
-        <h3 className="text-sm font-medium text-slate-700">Гипотеза</h3>
-        <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+        <h3 className="text-sm font-medium text-fg-secondary">Гипотеза</h3>
+        <p className="mt-1 text-sm text-fg-primary whitespace-pre-wrap">
           {detail.hypothesisText}
         </p>
       </section>
 
       {detail.currentResult && (
         <section>
-          <h3 className="text-sm font-medium text-slate-700">Текущий результат</h3>
-          <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+          <h3 className="text-sm font-medium text-fg-secondary">Текущий результат</h3>
+          <p className="mt-1 text-sm text-fg-primary whitespace-pre-wrap">
             {detail.currentResult}
           </p>
         </section>
       )}
 
       <section>
-        <h3 className="text-sm font-medium text-slate-700">Уроки</h3>
+        <h3 className="text-sm font-medium text-fg-secondary">Уроки</h3>
         {detail.lessons.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-fg-secondary">
             Уроки ещё не зафиксированы.
           </p>
         ) : (
@@ -343,7 +343,7 @@ function ExperimentDetailView({
               return (
                 <li
                   key={`${l.type}-${idx}`}
-                  className="rounded-md border border-slate-200 p-3"
+                  className="rounded-md border border-border-subtle p-3"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span
@@ -354,7 +354,7 @@ function ExperimentDetailView({
                       {EXPERIMENT_LESSON_TYPE_LABEL[l.type]}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">
+                  <p className="mt-1 text-sm text-fg-primary whitespace-pre-wrap">
                     {l.text}
                   </p>
                 </li>
@@ -364,13 +364,13 @@ function ExperimentDetailView({
         )}
       </section>
 
-      <section className="grid grid-cols-2 gap-3 text-xs text-slate-600">
+      <section className="grid grid-cols-2 gap-3 text-xs text-fg-secondary">
         <div>
-          <div className="font-medium text-slate-700">Начат</div>
+          <div className="font-medium text-fg-secondary">Начат</div>
           <div>{detail.startedAt ? new Date(detail.startedAt).toLocaleString('ru-RU') : '—'}</div>
         </div>
         <div>
-          <div className="font-medium text-slate-700">Завершён</div>
+          <div className="font-medium text-fg-secondary">Завершён</div>
           <div>
             {detail.completedAt
               ? new Date(detail.completedAt).toLocaleString('ru-RU')
@@ -378,17 +378,17 @@ function ExperimentDetailView({
           </div>
         </div>
         <div>
-          <div className="font-medium text-slate-700">Длительность</div>
+          <div className="font-medium text-fg-secondary">Длительность</div>
           <div>{days !== null ? `${days} дн.` : '—'}</div>
         </div>
         <div>
-          <div className="font-medium text-slate-700">Блоков-источников</div>
+          <div className="font-medium text-fg-secondary">Блоков-источников</div>
           <div>{detail.sourceBlockIds.length}</div>
         </div>
       </section>
 
       <section>
-        <h3 className="text-sm font-medium text-slate-700">Действия</h3>
+        <h3 className="text-sm font-medium text-fg-secondary">Действия</h3>
         <div className="mt-2 flex flex-wrap gap-2">
           {TRANSITION_OPTIONS.map((opt) => (
             <button
@@ -396,7 +396,7 @@ function ExperimentDetailView({
               type="button"
               disabled={busy || opt.to === detail.status}
               onClick={() => void onTransition(opt.to)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-border bg-white px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {opt.label}
             </button>

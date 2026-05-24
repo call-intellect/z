@@ -164,17 +164,17 @@ export function PromptEditor({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">Системный промпт</h2>
+      <section className="rounded-lg border border-border-subtle bg-white p-5">
+        <h2 className="mb-3 text-sm font-semibold text-fg-primary">Системный промпт</h2>
         <textarea
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
           rows={6}
           maxLength={40000}
           placeholder="Опиши общую роль ИИ-аналитика и контекст. Этот текст ставится в начало system-message."
-          className="w-full rounded-md border border-slate-200 bg-white p-2 font-mono text-xs"
+          className="w-full rounded-md border border-border-subtle bg-white p-2 font-mono text-xs"
         />
-        <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <div className="mt-2 flex items-center justify-between text-xs text-fg-secondary">
           <label className="flex items-center gap-2">
             <span>Имя tool-функции (необязательно)</span>
             <input
@@ -182,20 +182,20 @@ export function PromptEditor({
               value={toolName}
               onChange={(e) => setToolName(e.target.value)}
               placeholder="extract_sales"
-              className="h-7 w-48 rounded border border-slate-200 bg-white px-2 font-mono text-xs"
+              className="h-7 w-48 rounded border border-border-subtle bg-white px-2 font-mono text-xs"
             />
           </label>
           <span>{systemPrompt.length} символов</span>
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
+      <section className="rounded-lg border border-border-subtle bg-white p-5">
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">
+          <h2 className="text-sm font-semibold text-fg-primary">
             Разделы отчёта ({sections.length} / {SECTIONS_MAX})
           </h2>
           <div className="flex items-center gap-3 text-xs">
-            <span className={overTokens ? 'text-red-600' : 'text-slate-500'}>
+            <span className={overTokens ? 'text-danger' : 'text-fg-secondary'}>
               Сумма лимита токенов: {sumMaxTokens} / {MAX_TOKENS_SUM}
             </span>
             <Button variant="secondary" size="sm" onClick={addSection}>
@@ -205,16 +205,16 @@ export function PromptEditor({
         </header>
 
         {sections.length === 0 && (
-          <div className="rounded border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+          <div className="rounded border border-dashed border-border-subtle p-6 text-center text-sm text-fg-secondary">
             Пока нет разделов. Добавьте хотя бы один — он будет одним из полей итогового отчёта.
           </div>
         )}
 
         <div className="space-y-3">
           {sections.map((s, idx) => (
-            <div key={idx} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div key={idx} className="rounded-md border border-border-subtle bg-bg-subtle p-3">
               <div className="mb-2 flex items-center gap-2">
-                <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-mono text-slate-700">
+                <span className="rounded bg-bg-overlay px-2 py-0.5 text-xs font-mono text-fg-secondary">
                   №{idx + 1}
                 </span>
                 <input
@@ -222,7 +222,7 @@ export function PromptEditor({
                   value={s.title}
                   onChange={(e) => updateSection(idx, { title: e.target.value })}
                   placeholder="Название раздела"
-                  className="h-8 flex-1 rounded border border-slate-200 bg-white px-2 text-sm"
+                  className="h-8 flex-1 rounded border border-border-subtle bg-white px-2 text-sm"
                   maxLength={160}
                 />
                 <input
@@ -230,7 +230,7 @@ export function PromptEditor({
                   value={s.key}
                   onChange={(e) => updateSection(idx, { key: e.target.value })}
                   placeholder="ключ_для_JSON"
-                  className="h-8 w-40 rounded border border-slate-200 bg-white px-2 font-mono text-xs"
+                  className="h-8 w-40 rounded border border-border-subtle bg-white px-2 font-mono text-xs"
                   maxLength={80}
                 />
                 <Button
@@ -257,7 +257,7 @@ export function PromptEditor({
                   variant="ghost"
                   size="sm"
                   onClick={() => removeSection(idx)}
-                  className="h-7 w-7 p-0 text-red-600"
+                  className="h-7 w-7 p-0 text-danger"
                   aria-label="Удалить"
                 >
                   <Trash2 size={14} />
@@ -269,9 +269,9 @@ export function PromptEditor({
                 rows={3}
                 maxLength={4000}
                 placeholder="Инструкция для ИИ: что именно писать в этом разделе."
-                className="w-full rounded border border-slate-200 bg-white p-2 text-xs"
+                className="w-full rounded border border-border-subtle bg-white p-2 text-xs"
               />
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-fg-secondary">
                 <label className="flex items-center gap-1">
                   <span>Тип вывода:</span>
                   <Select
@@ -310,29 +310,29 @@ export function PromptEditor({
                         maxTokens: e.target.value ? Number(e.target.value) : null,
                       })
                     }
-                    className="h-7 w-20 rounded border border-slate-200 bg-white px-2 text-xs"
+                    className="h-7 w-20 rounded border border-border-subtle bg-white px-2 text-xs"
                   />
                 </label>
-                <span className="text-slate-500">{s.instruction.length} / 4000</span>
+                <span className="text-fg-secondary">{s.instruction.length} / 4000</span>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="mb-2 text-sm font-semibold text-slate-900">Заметка к версии</h2>
+      <section className="rounded-lg border border-border-subtle bg-white p-5">
+        <h2 className="mb-2 text-sm font-semibold text-fg-primary">Заметка к версии</h2>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
           maxLength={2000}
           placeholder="Что изменилось в этой версии. Будет видно в истории."
-          className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm"
+          className="w-full rounded-md border border-border-subtle bg-white p-2 text-sm"
         />
       </section>
 
-      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-white p-3">
         <Button variant="ghost" size="sm" onClick={onOpenPreview} disabled={saving}>
           Предпросмотр на демо-встрече
         </Button>

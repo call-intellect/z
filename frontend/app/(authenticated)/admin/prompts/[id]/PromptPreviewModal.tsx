@@ -78,7 +78,7 @@ export function PromptPreviewModal({
         </DialogHeader>
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs text-slate-700">
+            <label className="flex flex-col gap-1 text-xs text-fg-secondary">
               <span>Демо-встреча</span>
               <Select
                 value={meetingKey}
@@ -96,7 +96,7 @@ export function PromptPreviewModal({
                 </SelectContent>
               </Select>
             </label>
-            <label className="mb-2 inline-flex items-center gap-1 text-xs text-slate-700">
+            <label className="mb-2 inline-flex items-center gap-1 text-xs text-fg-secondary">
               <input
                 type="checkbox"
                 checked={useDraft}
@@ -111,21 +111,21 @@ export function PromptPreviewModal({
           </div>
 
           {result && (
-            <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+            <div className="space-y-3 rounded-lg border border-border-subtle bg-bg-subtle p-4">
+              <div className="flex flex-wrap items-center gap-4 text-xs text-fg-secondary">
                 <span>
-                  Модель: <span className="font-mono text-slate-900">{result.modelUsed}</span>
+                  Модель: <span className="font-mono text-fg-primary">{result.modelUsed}</span>
                 </span>
                 <span>
                   Длительность: <span className="font-mono">{result.durationMs} мс</span>
                 </span>
                 <span>
                   Стоимость:{' '}
-                  <span className={result.costOverBudget ? 'font-mono text-red-600' : 'font-mono'}>
+                  <span className={result.costOverBudget ? 'font-mono text-danger' : 'font-mono'}>
                     ${result.costUsd.toFixed(5)}
                   </span>
                   {result.costOverBudget && (
-                    <span className="ml-1 text-red-600">(превышен лимит)</span>
+                    <span className="ml-1 text-danger">(превышен лимит)</span>
                   )}
                 </span>
                 <span>
@@ -133,11 +133,11 @@ export function PromptPreviewModal({
                   <span className="font-mono">{result.outputTokens}</span>
                 </span>
               </div>
-              <details className="rounded border border-slate-200 bg-white" open>
-                <summary className="cursor-pointer p-2 text-sm font-medium text-slate-900">
+              <details className="rounded border border-border-subtle bg-white" open>
+                <summary className="cursor-pointer p-2 text-sm font-medium text-fg-primary">
                   Ответ ИИ
                 </summary>
-                <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-3 text-xs text-slate-800">
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-3 text-xs text-fg-primary">
                   {result.text}
                 </pre>
               </details>

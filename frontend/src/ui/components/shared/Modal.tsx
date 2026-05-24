@@ -36,7 +36,7 @@ export function Modal({ open, onClose, title, children, className }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={title ?? 'Диалог'}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay p-4"
       onClick={onClose}
     >
       <div
@@ -47,7 +47,7 @@ export function Modal({ open, onClose, title, children, className }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         {title ? (
-          <h2 className="mb-4 text-lg font-semibold text-slate-900">{title}</h2>
+          <h2 className="mb-4 text-lg font-semibold text-fg-primary">{title}</h2>
         ) : null}
         {children}
       </div>

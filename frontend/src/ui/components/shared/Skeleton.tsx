@@ -7,7 +7,7 @@ export function Skeleton({ className, ...rest }: Props) {
   return (
     <div
       aria-hidden="true"
-      className={clsx('animate-pulse rounded bg-slate-200', className)}
+      className={clsx('animate-pulse rounded bg-bg-subtle', className)}
       {...rest}
     />
   );

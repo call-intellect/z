@@ -63,17 +63,17 @@ export function AiUsageDashboard() {
   return (
     <section className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">{t('admin.ai_usage.title')}</h1>
+        <h1 className="text-2xl font-semibold text-fg-primary">{t('admin.ai_usage.title')}</h1>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-white p-3">
         <DateRangePicker from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
-        <label className="flex flex-col gap-1 text-xs text-slate-600">
+        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.ai_usage.group_by')}</span>
           <select
             value={groupBy}
             onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-border px-2 py-1.5 text-sm"
           >
             <option value="day">{t('admin.ai_usage.group_day')}</option>
             <option value="model">{t('admin.ai_usage.group_model')}</option>
@@ -94,7 +94,7 @@ export function AiUsageDashboard() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-6 w-full" />
           ))}
@@ -102,9 +102,9 @@ export function AiUsageDashboard() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('admin.ai_usage.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-600">
+            <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>
                 <th className="px-3 py-2">{t('admin.ai_usage.th_key')}</th>
                 <th className="px-3 py-2">{t('admin.ai_usage.th_count')}</th>
@@ -113,10 +113,10 @@ export function AiUsageDashboard() {
             </thead>
             <tbody>
               {data.items.map((row) => (
-                <tr key={row.key} className="border-t border-slate-100">
-                  <td className="px-3 py-2 font-mono text-xs text-slate-700">{row.key}</td>
-                  <td className="px-3 py-2 text-slate-900">{row.count}</td>
-                  <td className="px-3 py-2 text-slate-900">{row.costUsd.toFixed(4)}</td>
+                <tr key={row.key} className="border-t border-border-subtle">
+                  <td className="px-3 py-2 font-mono text-xs text-fg-secondary">{row.key}</td>
+                  <td className="px-3 py-2 text-fg-primary">{row.count}</td>
+                  <td className="px-3 py-2 text-fg-primary">{row.costUsd.toFixed(4)}</td>
                 </tr>
               ))}
             </tbody>

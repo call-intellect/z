@@ -84,7 +84,7 @@ export function ControlsBar({
           source={Track.Source.Microphone}
           className={clsx(
             'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
-            isMicrophoneEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-600 hover:bg-red-500',
+            isMicrophoneEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-danger hover:opacity-90',
           )}
         >
           {isMicrophoneEnabled
@@ -97,7 +97,7 @@ export function ControlsBar({
           source={Track.Source.Camera}
           className={clsx(
             'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
-            isCameraEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-600 hover:bg-red-500',
+            isCameraEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-danger hover:opacity-90',
           )}
         >
           {isCameraEnabled
@@ -110,7 +110,7 @@ export function ControlsBar({
           source={Track.Source.ScreenShare}
           className={clsx(
             'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
-            isScreenShareEnabled ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-700 hover:bg-slate-600',
+            isScreenShareEnabled ? 'bg-info hover:opacity-90' : 'bg-slate-700 hover:bg-slate-600',
           )}
         >
           {isScreenShareEnabled
@@ -146,7 +146,7 @@ export function ControlsBar({
                 }
                 label={isRecording ? 'Стоп' : 'Запись'}
                 active={isRecording}
-                activeClass="bg-red-600 hover:bg-red-500"
+                activeClass="bg-danger hover:opacity-90"
                 disabled={host.pending === 'record-start' || host.pending === 'record-stop'}
                 onClick={() => {
                   if (isRecording) { void host.stopRecording(); }
@@ -158,7 +158,7 @@ export function ControlsBar({
             <button
               type="button"
               onClick={() => setConfirmFinish(true)}
-              className="flex flex-col items-center gap-1 rounded-xl bg-red-600 px-4 py-2 text-[10px] font-medium text-white transition-colors hover:bg-red-500"
+              className="flex flex-col items-center gap-1 rounded-xl bg-danger px-4 py-2 text-[10px] font-medium text-white transition-colors hover:opacity-90"
             >
               <PhoneOff size={20} strokeWidth={1.75} />
               <span>Завершить</span>
@@ -186,7 +186,7 @@ export function ControlsBar({
         onClose={() => setConfirmFinish(false)}
         title={t('room.finish_confirm_title')}
       >
-        <p className="mb-6 text-sm text-slate-700">{t('room.finish_confirm_description')}</p>
+        <p className="mb-6 text-sm text-fg-secondary">{t('room.finish_confirm_description')}</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setConfirmFinish(false)}>
             {t('common.cancel')}
@@ -223,7 +223,7 @@ function IconBtn({
       className={clsx(
         'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors disabled:opacity-50',
         active
-          ? (activeClass ?? 'bg-amber-500 hover:bg-amber-400')
+          ? (activeClass ?? 'bg-warning hover:opacity-90')
           : 'bg-slate-700 hover:bg-slate-600',
       )}
     >

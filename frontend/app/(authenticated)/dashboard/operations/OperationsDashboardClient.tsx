@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from 'react';
 
+import Link from 'next/link';
+
+import { ApiError } from '@/api/api-error';
+import { commitmentsApi, type OpenCommitmentsListApi } from '@/api/commitments.api';
 import {
   operationsDashboardApi,
   type OperationsOverviewApi,
+  type OperationsTeamTemperatureSummaryApi,
 } from '@/api/operations-dashboard.api';
-import { ApiError } from '@/api/api-error';
 
 /**
  * SBA β-8 — клиентский COO-дашборд.
@@ -24,17 +28,22 @@ import { ApiError } from '@/api/api-error';
  */
 export function OperationsDashboardClient() {
   const [data, setData] = useState<OperationsOverviewApi | null>(null);
+  const [commitments, setCommitments] =
+    useState<OpenCommitmentsListApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    operationsDashboardApi
-      .getOverview()
-      .then((res) => {
+    Promise.all([
+      operationsDashboardApi.getOverview(),
+      commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
+    ])
+      .then(([overview, openCommitments]) => {
         if (cancelled) return;
-        setData(res);
+        setData(overview);
+        setCommitments(openCommitments);
         setError(null);
       })
       .catch((err: unknown) => {
@@ -56,27 +65,27 @@ export function OperationsDashboardClient() {
   }, []);
 
   if (loading) {
-    return <div className="p-6 text-sm text-gray-500">Загрузка дашборда…</div>;
+    return <div className="p-6 text-sm text-fg-secondary">Загрузка дашборда…</div>;
   }
   if (error) {
     return (
       <div className="p-6">
         <h1 className="mb-2 text-2xl font-semibold">Операции</h1>
-        <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <p className="rounded border border-chip-danger-bg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
           {error}
         </p>
       </div>
     );
   }
   if (!data) {
-    return <div className="p-6 text-sm text-gray-500">Нет данных</div>;
+    return <div className="p-6 text-sm text-fg-secondary">Нет данных</div>;
   }
 
   return (
     <div className="p-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Операции — пульс компании</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-fg-secondary">
           Обновлено {new Date(data.generatedAt).toLocaleString('ru-RU')}
         </p>
       </header>
@@ -108,10 +117,14 @@ export function OperationsDashboardClient() {
         />
       </div>
 
+      <TeamTemperatureWidget summary={data.teamTemperature} />
+
+      {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
+
       <section className="mt-8">
         <h2 className="mb-3 text-lg font-semibold">Свежие блокеры</h2>
         {data.topRecentBlockers.length === 0 ? (
-          <p className="text-sm text-gray-500">Сейчас активных блокеров нет.</p>
+          <p className="text-sm text-fg-secondary">Сейчас активных блокеров нет.</p>
         ) : (
           <ul className="divide-y rounded border bg-white">
             {data.topRecentBlockers.map((b) => (
@@ -120,7 +133,7 @@ export function OperationsDashboardClient() {
                   <span className="flex-1">{b.text}</span>
                   <SeverityBadge severity={b.severity} />
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-xs text-fg-secondary">
                   {b.ownerPersonName ?? 'без владельца'} ·{' '}
                   {new Date(b.createdAt).toLocaleString('ru-RU')}
                 </div>
@@ -133,7 +146,7 @@ export function OperationsDashboardClient() {
       <section className="mt-8">
         <h2 className="mb-3 text-lg font-semibold">Свежие конфликты</h2>
         {data.topRecentTeamFrictions.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-fg-secondary">
             На текущий момент конфликтов в команде не зафиксировано.
           </p>
         ) : (
@@ -142,13 +155,13 @@ export function OperationsDashboardClient() {
               <li key={f.id} className="p-3 text-sm">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <strong>{f.fromPersonName ?? 'неизвестный'}</strong>
-                  <span className="text-gray-400">↔</span>
+                  <span className="text-fg-tertiary">↔</span>
                   <strong>{f.toPersonName ?? 'неизвестный'}</strong>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-fg-secondary">
                     ({Math.round(f.confidence * 100)}% уверенности)
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-gray-600">{f.explanation}</p>
+                <p className="mt-1 text-xs text-fg-secondary">{f.explanation}</p>
               </li>
             ))}
           </ul>
@@ -166,20 +179,174 @@ function Card(props: {
 }) {
   const colour =
     props.accent === 'red'
-      ? 'border-red-300 bg-red-50'
+      ? 'border-chip-danger-bg bg-chip-danger-bg'
       : props.accent === 'amber'
-        ? 'border-amber-300 bg-amber-50'
-        : 'border-emerald-300 bg-emerald-50';
+        ? 'border-chip-warning-bg bg-chip-warning-bg'
+        : 'border-chip-success-bg bg-chip-success-bg';
   return (
     <div className={`rounded border p-4 ${colour}`}>
-      <div className="text-xs uppercase tracking-wide text-gray-500">
+      <div className="text-xs uppercase tracking-wide text-fg-secondary">
         {props.title}
       </div>
       <div className="mt-1 text-3xl font-bold">{props.value}</div>
       {props.subtitle ? (
-        <div className="mt-1 text-xs text-gray-600">{props.subtitle}</div>
+        <div className="mt-1 text-xs text-fg-secondary">{props.subtitle}</div>
       ) : null}
     </div>
+  );
+}
+
+function TeamTemperatureWidget(props: {
+  summary: OperationsTeamTemperatureSummaryApi;
+}) {
+  const s = props.summary;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const greenW = Math.round(s.greenShare * 100);
+  const yellowW = Math.round(s.yellowShare * 100);
+  const redW = Math.round(s.redShare * 100);
+
+  const deltaLabel = (() => {
+    if (s.redShareDelta == null) return null;
+    const delta = Math.round(s.redShareDelta * 100);
+    if (delta === 0) return 'без изменений';
+    if (delta > 0) return `красных +${delta}% к прошлой неделе`;
+    return `красных ${delta}% к прошлой неделе`;
+  })();
+
+  return (
+    <section className="mt-8 rounded border bg-white p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">
+          Температура команды (последние {s.days} дн.)
+        </h2>
+        <Link
+          href="/dashboard/operations/weekly"
+          className="text-xs text-info hover:underline"
+        >
+          Открыть недельную сводку →
+        </Link>
+      </div>
+      {s.totalCheckIns === 0 ? (
+        <p className="mt-2 text-sm text-fg-secondary">
+          За последние {s.days} дней нет чек-инов с проанализированным
+          настроением. Когда сотрудники начнут отвечать на вечерние чек-ины
+          — здесь появится распределение зелёный / жёлтый / красный.
+        </p>
+      ) : (
+        <>
+          <p className="mt-1 text-sm text-fg-secondary">
+            Всего чек-инов: {s.totalCheckIns}
+            {deltaLabel ? `; ${deltaLabel}.` : '.'}
+          </p>
+          <div className="mt-3 flex h-6 overflow-hidden rounded border">
+            {greenW > 0 ? (
+              <div
+                className="bg-success"
+                style={{ width: `${greenW}%` }}
+                title={`зелёных ${pct(s.greenShare)}`}
+              />
+            ) : null}
+            {yellowW > 0 ? (
+              <div
+                className="bg-warning"
+                style={{ width: `${yellowW}%` }}
+                title={`жёлтых ${pct(s.yellowShare)}`}
+              />
+            ) : null}
+            {redW > 0 ? (
+              <div
+                className="bg-danger"
+                style={{ width: `${redW}%` }}
+                title={`красных ${pct(s.redShare)}`}
+              />
+            ) : null}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-fg-secondary">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-3 w-3 rounded bg-success" />
+              зелёных {pct(s.greenShare)}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-3 w-3 rounded bg-warning" />
+              жёлтых {pct(s.yellowShare)}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-3 w-3 rounded bg-danger" />
+              красных {pct(s.redShare)}
+            </span>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
+  const { items, total } = props.data;
+  // Группируем по автору, чтобы COO видел «кто сколько висит».
+  const groups = new Map<string, OpenCommitmentsListApi['items']>();
+  for (const c of items) {
+    const key = c.authorPersonName ?? 'без автора';
+    const list = groups.get(key) ?? [];
+    list.push(c);
+    groups.set(key, list);
+  }
+  const groupList = Array.from(groups.entries()).sort(
+    (a, b) => b[1].length - a[1].length,
+  );
+  return (
+    <section className="mt-8 rounded border bg-white p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-lg font-semibold">
+          Открытые обещания за 14 дней
+        </h2>
+        <span className="text-sm text-fg-secondary">всего: {total}</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-fg-secondary">
+          Висящих обещаний нет — все закрыты или сроки ещё не наступили.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {groupList.map(([author, list]) => (
+            <li key={author} className="py-2">
+              <div className="text-sm font-medium">
+                {author}
+                <span className="ml-2 text-xs text-fg-secondary">
+                  ({list.length})
+                </span>
+              </div>
+              <ul className="mt-1 ml-3 list-disc text-xs text-fg-secondary">
+                {list.slice(0, 5).map((c) => (
+                  <li key={c.id} className="py-0.5">
+                    {c.text}
+                    {c.dueDate ? (
+                      <span className="ml-1 text-fg-tertiary">
+                        (срок {new Date(c.dueDate).toLocaleDateString('ru-RU')})
+                      </span>
+                    ) : null}
+                    {c.escalatedAt ? (
+                      <span className="ml-1 rounded bg-chip-danger-bg px-1.5 py-0.5 text-[10px] text-chip-danger-fg">
+                        давно молчит
+                      </span>
+                    ) : c.askedAt ? (
+                      <span className="ml-1 rounded bg-chip-warning-bg px-1.5 py-0.5 text-[10px] text-chip-warning-fg">
+                        спросили
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+                {list.length > 5 ? (
+                  <li className="py-0.5 text-fg-tertiary">
+                    …и ещё {list.length - 5}
+                  </li>
+                ) : null}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -196,12 +363,12 @@ function SeverityBadge(props: {
           : 'неизв.';
   const colour =
     props.severity === 'high'
-      ? 'bg-red-100 text-red-700'
+      ? 'bg-chip-danger-bg text-chip-danger-fg'
       : props.severity === 'medium'
-        ? 'bg-amber-100 text-amber-700'
+        ? 'bg-chip-warning-bg text-chip-warning-fg'
         : props.severity === 'low'
-          ? 'bg-blue-100 text-blue-700'
-          : 'bg-gray-100 text-gray-600';
+          ? 'bg-chip-info-bg text-chip-info-fg'
+          : 'bg-bg-subtle text-fg-secondary';
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-medium ${colour}`}>
       {label}

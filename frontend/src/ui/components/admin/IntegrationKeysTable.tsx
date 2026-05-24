@@ -41,7 +41,7 @@ export function IntegrationKeysTable() {
   return (
     <section className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">
+        <h1 className="text-2xl font-semibold text-fg-primary">
           {t('admin.integration_keys.title')}
         </h1>
         <Button onClick={() => setCreateOpen(true)}>
@@ -57,7 +57,7 @@ export function IntegrationKeysTable() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
@@ -65,9 +65,9 @@ export function IntegrationKeysTable() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('admin.integration_keys.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-600">
+            <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>
                 <th className="px-3 py-2">{t('admin.integration_keys.th_partner')}</th>
                 <th className="px-3 py-2">{t('admin.integration_keys.th_created')}</th>
@@ -77,18 +77,18 @@ export function IntegrationKeysTable() {
             </thead>
             <tbody>
               {data.items.map((k) => (
-                <tr key={k.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-slate-900">{k.partnerName}</td>
-                  <td className="px-3 py-2 text-slate-600">
+                <tr key={k.id} className="border-t border-border-subtle">
+                  <td className="px-3 py-2 text-fg-primary">{k.partnerName}</td>
+                  <td className="px-3 py-2 text-fg-secondary">
                     {new Date(k.createdAt).toLocaleString('ru-RU')}
                   </td>
                   <td className="px-3 py-2">
                     {k.revokedAt ? (
-                      <span className="rounded bg-slate-200 px-2 py-0.5 text-xs text-slate-700">
+                      <span className="rounded bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary">
                         {t('admin.integration_keys.status_revoked')}
                       </span>
                     ) : (
-                      <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">
+                      <span className="rounded bg-chip-success-bg px-2 py-0.5 text-xs text-chip-success-fg">
                         {t('admin.integration_keys.status_active')}
                       </span>
                     )}

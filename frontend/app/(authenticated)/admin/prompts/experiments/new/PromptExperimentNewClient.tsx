@@ -59,14 +59,14 @@ export function PromptExperimentNewClient() {
     <div className="mx-auto max-w-2xl space-y-4">
       <Link
         href="/admin/prompts/experiments"
-        className="text-sm text-slate-500 hover:underline"
+        className="text-sm text-fg-secondary hover:underline"
       >
         ← К списку экспериментов
       </Link>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+      <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
         Новый эксперимент
       </h1>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-fg-secondary">
         Эксперимент сравнивает две версии шаблона. После создания — нужно
         запустить кнопкой «Запустить» на странице эксперимента.
       </p>
@@ -128,7 +128,7 @@ export function PromptExperimentNewClient() {
             value={endsAt}
             onChange={(e) => setEndsAt(e.target.value)}
           />
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-fg-secondary">
             Пусто = эксперимент остановится только вручную.
           </p>
         </div>
@@ -144,7 +144,7 @@ export function PromptExperimentNewClient() {
         </div>
 
         {errorMsg ? (
-          <div className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+          <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
             {errorMsg}
           </div>
         ) : null}

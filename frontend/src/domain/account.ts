@@ -16,7 +16,7 @@ import type { UserRole } from './enums';
 
 export type SignupSource = SignupSourceApi;
 
-export type CurrentOrgRole = 'owner' | 'admin' | 'manager' | null;
+export type CurrentOrgRole = 'owner' | 'admin' | 'manager' | 'coo' | null;
 
 export interface AccountUser {
   id: string;

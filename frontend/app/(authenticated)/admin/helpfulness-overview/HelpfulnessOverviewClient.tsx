@@ -359,15 +359,15 @@ function UnansweredSection() {
   const rows: UnansweredQuestionRow[] = data ?? [];
 
   return (
-    <Card className="border-amber-300/60 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20">
+    <Card className="border-chip-warning-bg bg-chip-warning-bg">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base text-amber-900 dark:text-amber-200">
+        <CardTitle className="flex items-center gap-2 text-base text-chip-warning-fg">
           <ShieldAlert size={16} />
           Приватные сигналы: вопросы без ответа
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <div className="flex items-start gap-2 rounded-md border border-amber-200/60 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
+        <div className="flex items-start gap-2 rounded-md border border-chip-warning-bg bg-chip-warning-bg p-3 text-xs text-chip-warning-fg">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span>
             Эти данные видны только администратору и руководителю команды. Они

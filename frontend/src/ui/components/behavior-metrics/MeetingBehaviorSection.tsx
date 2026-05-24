@@ -39,12 +39,12 @@ export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProp
   return (
     <section
       data-testid="meeting-behavior-section"
-      className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-4"
+      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-4"
     >
       <header className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-neutral-900">Поведение участников</h2>
+        <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
         {lowConfidence ? (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs text-amber-800">
+          <span className="rounded-full bg-chip-warning-bg px-3 py-1 text-xs text-chip-warning-fg">
             Метрики ориентировочные: качество диаризации низкое
           </span>
         ) : null}
@@ -63,11 +63,11 @@ function PendingSkeleton(): JSX.Element {
   return (
     <section
       data-testid="meeting-behavior-section-loading"
-      className="rounded-2xl border border-neutral-200 bg-white p-6 space-y-3"
+      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-neutral-900">Поведение участников</h2>
-      <p className="text-sm text-neutral-500">Метрики считаются. Это занимает обычно 1–2 минуты.</p>
-      <div className="h-24 animate-pulse rounded-lg bg-neutral-100" />
+      <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
+      <p className="text-sm text-fg-secondary">Метрики считаются. Это занимает обычно 1–2 минуты.</p>
+      <div className="h-24 animate-pulse rounded-lg bg-bg-subtle" />
     </section>
   );
 }
@@ -76,14 +76,14 @@ function FailedBox({ onRetry }: { onRetry: () => void }): JSX.Element {
   return (
     <section
       data-testid="meeting-behavior-section-failed"
-      className="rounded-2xl border border-red-200 bg-red-50 p-6 space-y-3"
+      className="rounded-2xl border border-chip-danger-bg bg-chip-danger-bg p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-red-800">Поведение участников</h2>
-      <p className="text-sm text-red-700">Метрики не удалось рассчитать.</p>
+      <h2 className="text-lg font-semibold text-chip-danger-fg">Поведение участников</h2>
+      <p className="text-sm text-chip-danger-fg">Метрики не удалось рассчитать.</p>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+        className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white hover:opacity-90"
       >
         Обновить
       </button>
@@ -95,14 +95,14 @@ function ErrorBox({ onRetry }: { onRetry: () => void }): JSX.Element {
   return (
     <section
       data-testid="meeting-behavior-section-error"
-      className="rounded-2xl border border-amber-200 bg-amber-50 p-6 space-y-3"
+      className="rounded-2xl border border-chip-warning-bg bg-chip-warning-bg p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-amber-900">Поведение участников</h2>
-      <p className="text-sm text-amber-800">Ошибка загрузки метрик. Попробуйте обновить.</p>
+      <h2 className="text-lg font-semibold text-chip-warning-fg">Поведение участников</h2>
+      <p className="text-sm text-chip-warning-fg">Ошибка загрузки метрик. Попробуйте обновить.</p>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+        className="rounded-lg bg-warning px-3 py-2 text-sm font-medium text-white hover:opacity-90"
       >
         Обновить
       </button>
@@ -130,9 +130,9 @@ function MeetingMetricsCards({ data }: { data: BehaviorMetricsDomain }): JSX.Ele
 
 function MetricCard({ title, value }: { title: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-      <div className="text-xs text-neutral-500">{title}</div>
-      <div className="mt-1 text-lg font-semibold text-neutral-900">{value}</div>
+    <div className="rounded-xl border border-border-subtle bg-bg-subtle p-3">
+      <div className="text-xs text-fg-secondary">{title}</div>
+      <div className="mt-1 text-lg font-semibold text-fg-primary">{value}</div>
     </div>
   );
 }
@@ -147,8 +147,8 @@ function ParticipantsBar({
     participants.reduce((sum, p) => sum + p.speakingTimePercent, 0) || 1;
   return (
     <div data-testid="participants-bar" className="space-y-1">
-      <div className="text-sm font-medium text-neutral-800">Доля времени говорения</div>
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-neutral-100">
+      <div className="text-sm font-medium text-fg-primary">Доля времени говорения</div>
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-bg-subtle">
         {participants.map((p, idx) => (
           <div
             key={p.participantId ?? `g-${idx}`}
@@ -173,7 +173,7 @@ function ParticipantsTable({
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full border-collapse text-sm">
-        <thead className="text-left text-neutral-500">
+        <thead className="text-left text-fg-secondary">
           <tr>
             <th className="px-2 py-2">Участник</th>
             <th className="px-2 py-2">Время</th>
@@ -188,11 +188,11 @@ function ParticipantsTable({
         </thead>
         <tbody>
           {participants.map((p, idx) => (
-            <tr key={p.participantId ?? `g-${idx}`} className="border-t border-neutral-100">
-              <td className="px-2 py-2 font-medium text-neutral-900">
+            <tr key={p.participantId ?? `g-${idx}`} className="border-t border-border-subtle">
+              <td className="px-2 py-2 font-medium text-fg-primary">
                 {p.displayName}
                 {p.isGuest ? (
-                  <span className="ml-2 rounded bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-600">
+                  <span className="ml-2 rounded bg-bg-overlay px-1.5 py-0.5 text-xs text-fg-secondary">
                     Гость
                   </span>
                 ) : null}

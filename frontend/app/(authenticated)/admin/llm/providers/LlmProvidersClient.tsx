@@ -128,9 +128,9 @@ function ProvidersTable({
                 {p.lastSmokeAt ? (
                   <span className="flex items-center gap-1">
                     {p.lastSmokeSuccess ? (
-                      <CheckCircle2 size={12} className="text-green-600" />
+                      <CheckCircle2 size={12} className="text-success" />
                     ) : (
-                      <XCircle size={12} className="text-red-600" />
+                      <XCircle size={12} className="text-danger" />
                     )}
                     {p.lastSmokeAt.toLocaleString('ru-RU')}
                   </span>

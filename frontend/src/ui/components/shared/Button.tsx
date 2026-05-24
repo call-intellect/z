@@ -16,13 +16,13 @@ type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> & {
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300 focus:ring-blue-500',
+    'bg-accent text-accent-fg hover:bg-accent-hover disabled:opacity-50 focus:ring-accent',
   secondary:
-    'bg-slate-100 text-slate-900 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 focus:ring-slate-400',
+    'bg-bg-subtle text-fg-primary hover:bg-bg-overlay disabled:opacity-50 disabled:text-fg-tertiary focus:ring-border-strong',
   danger:
-    'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 focus:ring-red-500',
+    'bg-danger text-white hover:opacity-90 disabled:opacity-50 focus:ring-danger',
   ghost:
-    'bg-transparent text-slate-700 hover:bg-slate-100 disabled:text-slate-300 focus:ring-slate-300',
+    'bg-transparent text-fg-secondary hover:bg-bg-subtle disabled:text-fg-tertiary focus:ring-border',
 };
 
 const sizeClasses: Record<Size, string> = {

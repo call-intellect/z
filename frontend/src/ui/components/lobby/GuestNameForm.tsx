@@ -61,9 +61,9 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
   return (
     <form
       onSubmit={onSubmit}
-      className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+      className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border-subtle bg-white p-6 shadow-sm"
     >
-      <h2 className="text-lg font-semibold text-slate-900">
+      <h2 className="text-lg font-semibold text-fg-primary">
         {t('lobby.name_label')}
       </h2>
       <input
@@ -75,20 +75,20 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
         maxLength={80}
         autoFocus
         required
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-full rounded-md border border-border px-3 py-2 text-base focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
       />
-      <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+      <label className="flex cursor-pointer items-start gap-2 text-sm text-fg-secondary">
         <input
           type="checkbox"
           checked={noiseEnabled}
           onChange={(e) => onNoiseChange(e.target.checked)}
-          className="mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          className="mt-0.5 h-4 w-4 cursor-pointer rounded border-border text-accent focus:ring-accent"
         />
         <span className="flex flex-col">
-          <span className="font-medium text-slate-900">
+          <span className="font-medium text-fg-primary">
             {t('lobby.noise_suppression_label')}
           </span>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-fg-secondary">
             {t('lobby.noise_suppression_hint')}
           </span>
         </span>

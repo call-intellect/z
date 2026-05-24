@@ -19,11 +19,11 @@ export function RevokeKeyConfirm({ target, onClose, onConfirm }: Props) {
       title={t('admin.integration_keys.revoke_confirm_title')}
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-fg-secondary">
           {t('admin.integration_keys.revoke_confirm_description')}
         </p>
         {target ? (
-          <div className="rounded-md bg-slate-50 p-3 text-sm">
+          <div className="rounded-md bg-bg-subtle p-3 text-sm">
             <span className="font-medium">{target.partnerName}</span>
           </div>
         ) : null}

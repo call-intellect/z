@@ -104,7 +104,7 @@ export function ChatPanel(props: ChatPanelProps): ReactElement {
           <div className="text-fg-tertiary text-sm italic">AI печатает ответ...</div>
         ) : null}
         {error ? (
-          <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded bg-chip-danger-bg px-3 py-2 text-sm text-chip-danger-fg">
             Ошибка: {error}
           </div>
         ) : null}
@@ -149,7 +149,7 @@ function ChatBubble({ message }: { message: LocalMessage }): ReactElement {
         ) : null}
         <div>{message.text}</div>
         {!isUser && message.uncertaintyNote ? (
-          <div className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+          <div className="mt-2 rounded bg-chip-warning-bg px-2 py-1 text-xs text-chip-warning-fg">
             {message.uncertaintyNote}
           </div>
         ) : null}

@@ -31,7 +31,7 @@ export function AdminMeetingDetails({ meetingId }: Props) {
   }
   if (isLoading || !data) {
     return (
-      <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+      <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-6 w-full" />
         ))}
@@ -45,8 +45,8 @@ export function AdminMeetingDetails({ meetingId }: Props) {
     <section className="flex flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{m.title}</h1>
-          <p className="mt-1 text-xs text-slate-500">
+          <h1 className="text-2xl font-semibold text-fg-primary">{m.title}</h1>
+          <p className="mt-1 text-xs text-fg-secondary">
             <span className="font-mono">{m.id}</span>
           </p>
         </div>
@@ -78,10 +78,10 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
       <Card title={t('admin.meetings.participants')}>
         {data.participants.length === 0 ? (
-          <p className="text-sm text-slate-500">—</p>
+          <p className="text-sm text-fg-secondary">—</p>
         ) : (
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase text-slate-500">
+            <thead className="text-left text-xs uppercase text-fg-secondary">
               <tr>
                 <th className="py-1 pr-4">name</th>
                 <th className="py-1 pr-4">role</th>
@@ -92,14 +92,14 @@ export function AdminMeetingDetails({ meetingId }: Props) {
             </thead>
             <tbody>
               {data.participants.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100">
-                  <td className="py-1 pr-4 text-slate-900">{p.name}</td>
-                  <td className="py-1 pr-4 text-slate-700">{p.role}</td>
-                  <td className="py-1 pr-4 font-mono text-xs text-slate-600">{p.livekitIdentity}</td>
-                  <td className="py-1 pr-4 text-slate-600">
+                <tr key={p.id} className="border-t border-border-subtle">
+                  <td className="py-1 pr-4 text-fg-primary">{p.name}</td>
+                  <td className="py-1 pr-4 text-fg-secondary">{p.role}</td>
+                  <td className="py-1 pr-4 font-mono text-xs text-fg-secondary">{p.livekitIdentity}</td>
+                  <td className="py-1 pr-4 text-fg-secondary">
                     {p.joinedAt ? new Date(p.joinedAt).toLocaleTimeString('ru-RU') : '—'}
                   </td>
-                  <td className="py-1 pr-4 text-slate-600">
+                  <td className="py-1 pr-4 text-fg-secondary">
                     {p.leftAt ? new Date(p.leftAt).toLocaleTimeString('ru-RU') : '—'}
                   </td>
                 </tr>
@@ -111,7 +111,7 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
       <Card title={t('admin.meetings.recording')}>
         {!data.recording ? (
-          <p className="text-sm text-slate-500">{t('admin.meetings.no_recording')}</p>
+          <p className="text-sm text-fg-secondary">{t('admin.meetings.no_recording')}</p>
         ) : (
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <KeyValue k="status" v={data.recording.status} />
@@ -137,15 +137,15 @@ export function AdminMeetingDetails({ meetingId }: Props) {
               mono
             />
             <div className="md:col-span-2">
-              <h3 className="mt-2 text-xs font-semibold uppercase text-slate-500">
+              <h3 className="mt-2 text-xs font-semibold uppercase text-fg-secondary">
                 audioTracks
               </h3>
               {data.recording.audioTracks.length === 0 ? (
-                <p className="text-sm text-slate-500">—</p>
+                <p className="text-sm text-fg-secondary">—</p>
               ) : (
                 <ul className="mt-1 space-y-1 text-xs">
                   {data.recording.audioTracks.map((t) => (
-                    <li key={t.id} className="font-mono text-slate-700">
+                    <li key={t.id} className="font-mono text-fg-secondary">
                       {t.livekitIdentity} → {t.audioUrl} ({t.durationSeconds}s,{' '}
                       {t.bytes ?? '—'} bytes)
                     </li>
@@ -159,7 +159,7 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
       <Card title={t('admin.meetings.transcript')}>
         {!data.transcript ? (
-          <p className="text-sm text-slate-500">{t('admin.meetings.no_transcript')}</p>
+          <p className="text-sm text-fg-secondary">{t('admin.meetings.no_transcript')}</p>
         ) : (
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <KeyValue k="rawIndexS3Url" v={data.transcript.rawIndexS3Url} mono multiline />
@@ -175,7 +175,7 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
       <Card title={t('admin.meetings.ai_result')}>
         {!data.aiResult ? (
-          <p className="text-sm text-slate-500">{t('admin.meetings.no_ai_result')}</p>
+          <p className="text-sm text-fg-secondary">{t('admin.meetings.no_ai_result')}</p>
         ) : (
           <div className="flex flex-col gap-3 text-sm">
             <KeyValue k="modelUsed" v={data.aiResult.modelUsed} />
@@ -184,15 +184,15 @@ export function AdminMeetingDetails({ meetingId }: Props) {
               v={new Date(data.aiResult.createdAt).toLocaleString('ru-RU')}
             />
             <div>
-              <h3 className="text-xs font-semibold uppercase text-slate-500">summary</h3>
-              <p className="whitespace-pre-wrap text-slate-800">{data.aiResult.summary}</p>
+              <h3 className="text-xs font-semibold uppercase text-fg-secondary">summary</h3>
+              <p className="whitespace-pre-wrap text-fg-primary">{data.aiResult.summary}</p>
             </div>
             {data.aiResult.followUpEmail ? (
               <div>
-                <h3 className="text-xs font-semibold uppercase text-slate-500">
+                <h3 className="text-xs font-semibold uppercase text-fg-secondary">
                   followUpEmail
                 </h3>
-                <p className="whitespace-pre-wrap text-slate-800">
+                <p className="whitespace-pre-wrap text-fg-primary">
                   {data.aiResult.followUpEmail}
                 </p>
               </div>
@@ -203,16 +203,16 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
       <Card title={t('admin.meetings.events')}>
         {data.events.length === 0 ? (
-          <p className="text-sm text-slate-500">{t('admin.meetings.no_events')}</p>
+          <p className="text-sm text-fg-secondary">{t('admin.meetings.no_events')}</p>
         ) : (
           <ul className="space-y-1 text-xs">
             {data.events.map((e) => (
-              <li key={e.id} className="font-mono text-slate-700">
-                <span className="text-slate-500">
+              <li key={e.id} className="font-mono text-fg-secondary">
+                <span className="text-fg-secondary">
                   {new Date(e.receivedAt).toLocaleString('ru-RU')}
                 </span>
                 {' — '}
-                <span className="text-slate-900">{e.eventType}</span>
+                <span className="text-fg-primary">{e.eventType}</span>
               </li>
             ))}
           </ul>
@@ -224,8 +224,8 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <article className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+    <article className="rounded-md border border-border-subtle bg-white p-4 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-secondary">
         {title}
       </h2>
       {children}
@@ -246,10 +246,10 @@ function KeyValue({
 }) {
   return (
     <div className="flex flex-col gap-0.5 text-sm">
-      <span className="text-xs uppercase text-slate-500">{k}</span>
+      <span className="text-xs uppercase text-fg-secondary">{k}</span>
       <span
         className={[
-          mono ? 'font-mono text-xs' : 'text-slate-900',
+          mono ? 'font-mono text-xs' : 'text-fg-primary',
           multiline ? 'whitespace-pre-wrap break-all' : 'truncate',
         ].join(' ')}
       >

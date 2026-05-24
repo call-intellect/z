@@ -99,7 +99,7 @@ export function MyCheckInsClient() {
     <div className="p-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Мои чек-ины</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-fg-secondary">
           Утренние и вечерние короткие отчёты — планы, что сделано, блокеры.
         </p>
       </header>
@@ -136,12 +136,12 @@ export function MyCheckInsClient() {
             type="button"
             onClick={submit}
             disabled={submitting}
-            className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded bg-info px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? 'Сохраняем…' : 'Сохранить'}
           </button>
           {submitMsg ? (
-            <span className="text-xs text-gray-600">{submitMsg}</span>
+            <span className="text-xs text-fg-secondary">{submitMsg}</span>
           ) : null}
         </div>
       </section>
@@ -149,13 +149,13 @@ export function MyCheckInsClient() {
       <section>
         <h2 className="mb-3 text-lg font-semibold">История за 30 дней</h2>
         {loading ? (
-          <p className="text-sm text-gray-500">Загрузка…</p>
+          <p className="text-sm text-fg-secondary">Загрузка…</p>
         ) : error ? (
-          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p className="rounded border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
             {error}
           </p>
         ) : items.length === 0 ? (
-          <p className="text-sm text-gray-500">Пока чек-инов нет.</p>
+          <p className="text-sm text-fg-secondary">Пока чек-инов нет.</p>
         ) : (
           <ul className="divide-y rounded border bg-white">
             {items.map((c) => (
@@ -164,9 +164,9 @@ export function MyCheckInsClient() {
                   <span className="font-medium">
                     {c.kind === 'morning' ? 'Утро' : 'Вечер'}
                   </span>
-                  <span className="text-xs text-gray-500">{c.dateLocal}</span>
+                  <span className="text-xs text-fg-secondary">{c.dateLocal}</span>
                   {c.curatorReview ? (
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                    <span className="rounded bg-chip-warning-bg px-2 py-0.5 text-xs text-chip-warning-fg">
                       требует проверки
                     </span>
                   ) : null}
@@ -199,9 +199,9 @@ function CheckInBody({ dto }: { dto: DailyCheckInApi }) {
 function ListBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <div className="text-gray-500">{title}:</div>
+      <div className="text-fg-secondary">{title}:</div>
       {items.length === 0 ? (
-        <div className="text-gray-400">—</div>
+        <div className="text-fg-tertiary">—</div>
       ) : (
         <ul className="list-disc pl-4">
           {items.map((t, i) => (

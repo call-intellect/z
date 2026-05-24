@@ -64,7 +64,7 @@ export function ExchangeAndRender({ meetingId, deepLinkToken }: Props) {
 
   if (stage === 'pending') {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <main className="flex min-h-screen items-center justify-center bg-bg-subtle p-6">
         <div className="w-full max-w-sm space-y-3">
           <Skeleton className="h-6 w-3/4" />
           <Skeleton className="h-4 w-full" />

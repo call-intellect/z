@@ -537,9 +537,9 @@ function CompletenessBreakdownSection({
           >
             <div className="flex items-center gap-2">
               {f.value > 0 ? (
-                <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="inline-flex h-2 w-2 rounded-full bg-success" />
               ) : (
-                <AlertCircle size={14} className="text-amber-500" />
+                <AlertCircle size={14} className="text-warning" />
               )}
               <span className="text-fg-primary">{f.label}</span>
             </div>

@@ -63,9 +63,9 @@ const SEVERITY_LABEL: Record<'low' | 'medium' | 'high', string> = {
 };
 
 const SEVERITY_COLOR: Record<'low' | 'medium' | 'high', string> = {
-  low: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  medium: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  high: 'bg-red-500/15 text-red-700 dark:text-red-300',
+  low: 'bg-chip-success-bg text-chip-success-fg',
+  medium: 'bg-chip-warning-bg text-chip-warning-fg',
+  high: 'bg-chip-danger-bg text-chip-danger-fg',
 };
 
 export function ProcessTemplatesClient() {
@@ -516,7 +516,7 @@ function CrossFunctionalContent() {
                         </div>
                       </div>
                       {t.activeFrictionCount > 0 ? (
-                        <span className="rounded bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
+                        <span className="rounded bg-chip-danger-bg px-2 py-0.5 text-xs font-medium text-chip-danger-fg">
                           {t.activeFrictionCount}
                         </span>
                       ) : null}

@@ -100,7 +100,7 @@ export function FeedbackButton({ meetingId, className }: FeedbackButtonProps) {
           onClick={() => void handleReact('positive')}
           className={`inline-flex items-center justify-center rounded-md border px-2.5 py-1 text-sm transition-colors disabled:opacity-50 ${
             feedback?.reaction === 'positive'
-              ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+              ? 'border-success bg-chip-success-bg text-chip-success-fg'
               : 'border-border bg-background hover:bg-muted'
           }`}
         >
@@ -113,7 +113,7 @@ export function FeedbackButton({ meetingId, className }: FeedbackButtonProps) {
           onClick={() => void handleReact('negative')}
           className={`inline-flex items-center justify-center rounded-md border px-2.5 py-1 text-sm transition-colors disabled:opacity-50 ${
             feedback?.reaction === 'negative'
-              ? 'border-rose-500 bg-rose-50 text-rose-700'
+              ? 'border-danger bg-chip-danger-bg text-chip-danger-fg'
               : 'border-border bg-background hover:bg-muted'
           }`}
         >

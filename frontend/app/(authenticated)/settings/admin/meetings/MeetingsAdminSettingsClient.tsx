@@ -51,7 +51,7 @@ export function MeetingsAdminSettingsClient() {
   }, [swr.data, disabled]);
 
   if (swr.isLoading && !swr.data) {
-    return <div className="text-sm text-neutral-500">Загрузка настроек…</div>;
+    return <div className="text-sm text-fg-secondary">Загрузка настроек…</div>;
   }
 
   if (swr.error) {
@@ -61,7 +61,7 @@ export function MeetingsAdminSettingsClient() {
           <CardTitle className="text-base">Настройки встреч</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-amber-700">
+          <p className="text-sm text-chip-warning-fg">
             Не удалось загрузить настройки. Доступ есть только у владельца и
             администраторов организации.
           </p>
@@ -102,8 +102,8 @@ export function MeetingsAdminSettingsClient() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-xl font-semibold text-neutral-900">Встречи</h1>
-        <p className="text-sm text-neutral-600">
+        <h1 className="text-xl font-semibold text-fg-primary">Встречи</h1>
+        <p className="text-sm text-fg-secondary">
           Настройки AI-оценки качества встреч для организации.
         </p>
       </header>
@@ -113,7 +113,7 @@ export function MeetingsAdminSettingsClient() {
           <CardTitle className="text-base">Считать оценку для типов встреч</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-fg-secondary">
             Снимите галочку с типов, для которых AI-оценка качества не нужна
             (например, custdev — это исследование, а не управленческая встреча).
           </p>
@@ -127,9 +127,9 @@ export function MeetingsAdminSettingsClient() {
                     id={`mt-${t.value}`}
                     checked={checked}
                     onChange={() => toggle(t.value)}
-                    className="h-4 w-4 rounded border-neutral-300 text-accent focus:ring-accent"
+                    className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
                   />
-                  <label htmlFor={`mt-${t.value}`} className="text-sm text-neutral-800">
+                  <label htmlFor={`mt-${t.value}`} className="text-sm text-fg-primary">
                     {t.label}
                   </label>
                 </li>
@@ -137,10 +137,10 @@ export function MeetingsAdminSettingsClient() {
             })}
           </ul>
           {error ? (
-            <p className="text-sm text-red-700">{error}</p>
+            <p className="text-sm text-chip-danger-fg">{error}</p>
           ) : null}
           {success ? (
-            <p className="text-sm text-emerald-700">{success}</p>
+            <p className="text-sm text-chip-success-fg">{success}</p>
           ) : null}
           <button
             type="button"

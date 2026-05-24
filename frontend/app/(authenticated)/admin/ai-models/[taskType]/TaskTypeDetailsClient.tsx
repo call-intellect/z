@@ -95,13 +95,13 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
 
   if (loading && !route) {
     return (
-      <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+      <div className="flex items-center justify-center py-16 text-sm text-fg-secondary">
         <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
       </div>
     );
   }
   if (error) {
-    return <div className="text-sm text-red-700">{error}</div>;
+    return <div className="text-sm text-chip-danger-fg">{error}</div>;
   }
   if (!route) return null;
 
@@ -110,52 +110,52 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
       <header className="mb-6">
         <Link
           href="/admin/ai-models"
-          className="mb-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+          className="mb-2 inline-flex items-center gap-1 text-xs text-fg-secondary hover:text-fg-primary"
         >
           <ArrowLeft size={12} /> Назад к списку
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
           <code className="font-mono">{route.taskType}</code>
         </h1>
-        <p className="text-sm text-slate-600">{route.groupLabel}</p>
+        <p className="text-sm text-fg-secondary">{route.groupLabel}</p>
       </header>
 
       {/* Цепочка моделей */}
-      <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
+      <section className="mb-6 rounded-lg border border-border-subtle bg-bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">Цепочка моделей</h2>
+          <h2 className="text-base font-semibold text-fg-primary">Цепочка моделей</h2>
           <Button size="sm" onClick={() => setSwitchOpen(true)}>
             Переключить основную
           </Button>
         </div>
         <div className="space-y-2">
           {route.chain.length === 0 && (
-            <div className="text-xs text-slate-500">Пусто — примените seed дефолтов.</div>
+            <div className="text-xs text-fg-secondary">Пусто — примените seed дефолтов.</div>
           )}
           {route.chain.map((entry) => (
             <div
               key={entry.id}
-              className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 p-3"
+              className="flex items-center gap-3 rounded-md border border-border-subtle bg-bg-subtle p-3"
             >
               <Badge
                 variant="outline"
                 className={`w-fit ${
                   entry.tierColor === 'green'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
                     : entry.tierColor === 'orange'
-                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                      : 'border-slate-200 bg-slate-100 text-slate-600'
+                      ? 'border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg'
+                      : 'border-border-subtle bg-bg-subtle text-fg-secondary'
                 }`}
               >
                 {tierLabel(entry.tier)}
               </Badge>
-              <span className="text-sm font-medium text-slate-900">
+              <span className="text-sm font-medium text-fg-primary">
                 {entry.providerLabel}
               </span>
               {entry.model && (
-                <span className="text-xs text-slate-500">/ {entry.model}</span>
+                <span className="text-xs text-fg-secondary">/ {entry.model}</span>
               )}
-              <span className="text-[10px] text-slate-400">priority={entry.priority}</span>
+              <span className="text-[10px] text-fg-tertiary">priority={entry.priority}</span>
               {entry.editedByAdmin && (
                 <Badge variant="secondary" className="text-[10px]">
                   ручная правка
@@ -164,7 +164,7 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
               <Button
                 size="sm"
                 variant="ghost"
-                className="ml-auto text-xs text-red-600 hover:bg-red-50"
+                className="ml-auto text-xs text-danger hover:bg-chip-danger-bg"
                 onClick={() => void handleRemoveProvider(entry)}
               >
                 Удалить
@@ -175,9 +175,9 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
       </section>
 
       {/* Метрики per-tier */}
-      <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
+      <section className="mb-6 rounded-lg border border-border-subtle bg-bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">Метрики</h2>
+          <h2 className="text-base font-semibold text-fg-primary">Метрики</h2>
           <div className="flex gap-1">
             {(['24h', '7d', '30d'] as const).map((p) => (
               <button
@@ -186,8 +186,8 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
                 onClick={() => setPeriod(p)}
                 className={`rounded px-2 py-1 text-xs ${
                   period === p
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-fg-primary text-bg-card'
+                    : 'bg-bg-subtle text-fg-secondary hover:bg-bg-overlay'
                 }`}
               >
                 {p === '24h' ? '24ч' : p === '7d' ? '7 дней' : '30 дней'}
@@ -198,34 +198,34 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
         {metrics ? (
           <MetricsTable metrics={metrics} />
         ) : (
-          <div className="text-xs text-slate-500">Нет данных за выбранный период.</div>
+          <div className="text-xs text-fg-secondary">Нет данных за выбранный период.</div>
         )}
       </section>
 
       {/* Audit log */}
-      <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-3 text-base font-semibold text-slate-900">История изменений</h2>
+      <section className="mb-6 rounded-lg border border-border-subtle bg-bg-card p-4">
+        <h2 className="mb-3 text-base font-semibold text-fg-primary">История изменений</h2>
         {history.length === 0 ? (
-          <div className="text-xs text-slate-500">История пуста.</div>
+          <div className="text-xs text-fg-secondary">История пуста.</div>
         ) : (
           <ul className="space-y-2">
             {history.map((h) => (
               <li
                 key={h.id}
-                className="rounded-md border border-slate-100 bg-slate-50 p-2 text-xs"
+                className="rounded-md border border-border-subtle bg-bg-subtle p-2 text-xs"
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-slate-500">
+                  <span className="font-mono text-[10px] text-fg-secondary">
                     {new Date(h.createdAt).toLocaleString('ru-RU')}
                   </span>
                   <Badge variant="outline" className="text-[10px]">
                     {h.changeType}
                   </Badge>
                   {h.tier && (
-                    <span className="text-[10px] text-slate-500">{tierLabel(h.tier as AiModelTier)}</span>
+                    <span className="text-[10px] text-fg-secondary">{tierLabel(h.tier as AiModelTier)}</span>
                   )}
                 </div>
-                {h.reason && <div className="mt-1 text-slate-700">{h.reason}</div>}
+                {h.reason && <div className="mt-1 text-fg-secondary">{h.reason}</div>}
               </li>
             ))}
           </ul>
@@ -250,9 +250,9 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
 
 function MetricsTable({ metrics }: { metrics: TaskTypeMetricsApi }) {
   return (
-    <div className="overflow-hidden rounded border border-slate-100">
+    <div className="overflow-hidden rounded border border-border-subtle">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+        <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
           <tr>
             <th className="px-3 py-2 text-left font-medium">Уровень</th>
             <th className="px-3 py-2 text-right font-medium">Вызовов</th>
@@ -265,7 +265,7 @@ function MetricsTable({ metrics }: { metrics: TaskTypeMetricsApi }) {
           {(['primary', 'secondary', 'tertiary'] as const).map((t) => {
             const row = metrics.perTier[t];
             return (
-              <tr key={t} className="border-t border-slate-100">
+              <tr key={t} className="border-t border-border-subtle">
                 <td className="px-3 py-2">{tierLabel(t)}</td>
                 <td className="px-3 py-2 text-right">{row.calls}</td>
                 <td className="px-3 py-2 text-right">{formatPercent(row.successRate)}</td>
@@ -274,7 +274,7 @@ function MetricsTable({ metrics }: { metrics: TaskTypeMetricsApi }) {
               </tr>
             );
           })}
-          <tr className="border-t-2 border-slate-200 bg-slate-50 font-medium">
+          <tr className="border-t-2 border-border-subtle bg-bg-subtle font-medium">
             <td className="px-3 py-2">Итого</td>
             <td className="px-3 py-2 text-right">{metrics.totals.calls}</td>
             <td className="px-3 py-2 text-right">
@@ -282,7 +282,7 @@ function MetricsTable({ metrics }: { metrics: TaskTypeMetricsApi }) {
                 ? formatPercent(metrics.totals.successCalls / metrics.totals.calls)
                 : '—'}
             </td>
-            <td className="px-3 py-2 text-right text-xs text-slate-500">
+            <td className="px-3 py-2 text-right text-xs text-fg-secondary">
               fallback: {formatPercent(metrics.totals.fallbackRate)}
             </td>
             <td className="px-3 py-2 text-right">{formatCostRub(metrics.totals.totalCostUsd)}</td>
@@ -337,23 +337,23 @@ function SwitchPrimaryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
-        <h3 className="mb-3 text-base font-semibold text-slate-900">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay">
+      <div className="w-full max-w-md rounded-lg bg-bg-card p-5 shadow-modal">
+        <h3 className="mb-3 text-base font-semibold text-fg-primary">
           Переключить основную модель
         </h3>
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-3 text-xs text-fg-secondary">
           Текущая: <code className="font-mono">{currentPrimary ?? '— не задана —'}</code>
         </p>
         <div className="space-y-3">
           <label className="block">
-            <span className="text-xs text-slate-700">Провайдер</span>
+            <span className="text-xs text-fg-secondary">Провайдер</span>
             <select
               value={providerName}
               onChange={(e) =>
                 setProviderName(e.target.value as typeof AI_MODELS_PROVIDERS[number])
               }
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
             >
               {AI_MODELS_PROVIDERS.map((p) => (
                 <option key={p} value={p}>
@@ -363,48 +363,48 @@ function SwitchPrimaryModal({
             </select>
           </label>
           <label className="block">
-            <span className="text-xs text-slate-700">Модель</span>
+            <span className="text-xs text-fg-secondary">Модель</span>
             <input
               type="text"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
             />
           </label>
           <label className="block">
-            <span className="text-xs text-slate-700">Доля трафика на новую модель, %</span>
+            <span className="text-xs text-fg-secondary">Доля трафика на новую модель, %</span>
             <input
               type="number"
               min={1}
               max={100}
               value={abPercent}
               onChange={(e) => setAbPercent(Math.max(1, Math.min(100, Number(e.target.value))))}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
             />
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[10px] text-fg-secondary">
               Если меньше 100 — будет создан A/B-эксперимент.
             </span>
           </label>
           {abPercent < 100 && (
             <label className="block">
-              <span className="text-xs text-slate-700">Длительность A/B-эксперимента, дней</span>
+              <span className="text-xs text-fg-secondary">Длительность A/B-эксперимента, дней</span>
               <input
                 type="number"
                 min={1}
                 max={30}
                 value={days}
                 onChange={(e) => setDays(Math.max(1, Math.min(30, Number(e.target.value))))}
-                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
               />
             </label>
           )}
           <label className="block">
-            <span className="text-xs text-slate-700">Причина переключения*</span>
+            <span className="text-xs text-fg-secondary">Причина переключения*</span>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm"
+              className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
               placeholder="Например: DeepSeek превысил лимит → переключаем на GPT-5.5"
             />
           </label>

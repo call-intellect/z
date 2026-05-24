@@ -56,7 +56,7 @@ export function HelpRequestsWidget({ orgId, limit = 5 }: Props) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle size={16} className="text-amber-500" />
+          <AlertTriangle size={16} className="text-warning" />
           Открытые вопросы без ответа
         </CardTitle>
         <Link

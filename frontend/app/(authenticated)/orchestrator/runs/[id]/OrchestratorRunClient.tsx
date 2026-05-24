@@ -65,7 +65,7 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
   if (error) {
     return (
       <div className="mx-auto max-w-3xl p-6 text-fg-primary">
-        <div className="rounded-md border border-red-500 bg-red-950 p-3 text-sm text-red-200">
+        <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           Ошибка: {error}
         </div>
       </div>
@@ -94,7 +94,7 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-red-700 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950"
+            className="rounded-md border border-chip-danger-bg px-3 py-1.5 text-sm text-chip-danger-fg hover:bg-chip-danger-bg"
           >
             Отменить
           </button>
@@ -179,14 +179,14 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
             <span
               className={
                 run.verificationJson.confidence >= 0.6
-                  ? 'font-bold text-emerald-400'
-                  : 'font-bold text-amber-400'
+                  ? 'font-bold text-success'
+                  : 'font-bold text-warning'
               }
             >
               {run.verificationJson.confidence.toFixed(2)}
             </span>
             {run.verificationJson.retried && (
-              <span className="ml-2 text-xs text-amber-300">(retried)</span>
+              <span className="ml-2 text-xs text-warning">(retried)</span>
             )}
           </p>
           <p className="mt-2 text-xs text-fg-tertiary">
@@ -196,7 +196,7 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
       )}
 
       {run.errorMessage && (
-        <section className="rounded-md border border-red-700 bg-red-950 p-3 text-sm text-red-200">
+        <section className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           Ошибка: {run.errorMessage}
         </section>
       )}
@@ -213,12 +213,12 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
 function StatusBadge({ status }: { status: string }): ReactElement {
   const cls =
     status === 'done'
-      ? 'bg-emerald-900 text-emerald-200'
+      ? 'bg-chip-success-bg text-chip-success-fg'
       : status === 'failed'
-        ? 'bg-red-900 text-red-200'
+        ? 'bg-chip-danger-bg text-chip-danger-fg'
         : status === 'running'
-          ? 'bg-amber-900 text-amber-200 animate-pulse'
-          : 'bg-zinc-800 text-zinc-300';
+          ? 'bg-chip-warning-bg text-chip-warning-fg animate-pulse'
+          : 'bg-bg-subtle text-fg-secondary';
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-mono ${cls}`}>
       {status}

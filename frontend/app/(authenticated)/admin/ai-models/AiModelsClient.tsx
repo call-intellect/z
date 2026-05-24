@@ -79,10 +79,10 @@ export function AiModelsClient() {
     <div className="mx-auto max-w-6xl">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Модели агентов
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-fg-secondary">
             Цепочка моделей primary → secondary → tertiary для каждого AI-агента.
             Источник дефолтов — playbook §2.1.
           </p>
@@ -96,13 +96,13 @@ export function AiModelsClient() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative">
-          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-tertiary" />
           <input
             type="text"
             placeholder="Поиск по taskType"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-64 rounded-md border border-slate-200 bg-white pl-7 pr-3 text-sm"
+            className="h-9 w-64 rounded-md border border-border-subtle bg-white pl-7 pr-3 text-sm"
           />
         </div>
         <Select
@@ -128,21 +128,21 @@ export function AiModelsClient() {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+        <div className="flex items-center justify-center py-16 text-sm text-fg-secondary">
           <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
         </div>
       )}
 
       {error && !loading && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           {error}
         </div>
       )}
 
       {!loading && !error && items.length === 0 && (
-        <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
           Пока нет ни одной записи. Запустите{' '}
-          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">
+          <code className="rounded bg-bg-subtle px-1 py-0.5 font-mono">
             bun run scripts/seed-llm-task-routes-default.ts
           </code>{' '}
           на проде, чтобы применить дефолтные цепочки из playbook §2.1.
@@ -151,15 +151,15 @@ export function AiModelsClient() {
 
       {grouped.map(([group, list]) => (
         <section key={group} className="mb-8">
-          <h2 className="mb-3 text-base font-semibold text-slate-900">
+          <h2 className="mb-3 text-base font-semibold text-fg-primary">
             {list[0]?.groupLabel ?? group}
-            <span className="ml-2 text-xs font-normal text-slate-500">
+            <span className="ml-2 text-xs font-normal text-fg-secondary">
               {list.length} агентов
             </span>
           </h2>
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Задача</th>
                   <th className="px-3 py-2 text-left font-medium">Основная</th>
@@ -170,9 +170,9 @@ export function AiModelsClient() {
               </thead>
               <tbody>
                 {list.map((row) => (
-                  <tr key={row.taskType} className="border-t border-slate-100">
+                  <tr key={row.taskType} className="border-t border-border-subtle">
                     <td className="px-3 py-2">
-                      <code className="font-mono text-xs text-slate-700">{row.taskType}</code>
+                      <code className="font-mono text-xs text-fg-secondary">{row.taskType}</code>
                     </td>
                     <td className="px-3 py-2">
                       <TierBadge color="green" label="primary" entry={row.primary} />
@@ -186,7 +186,7 @@ export function AiModelsClient() {
                     <td className="px-3 py-2 text-right">
                       <Link
                         href={`/admin/ai-models/${encodeURIComponent(row.taskType)}`}
-                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-info hover:underline"
                       >
                         Подробно <ExternalLink size={11} />
                       </Link>
@@ -213,24 +213,24 @@ function TierBadge({
 }) {
   if (!entry) {
     return (
-      <span className="text-xs text-slate-400">— не задана —</span>
+      <span className="text-xs text-fg-tertiary">— не задана —</span>
     );
   }
   const colorClass =
     color === 'green'
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      ? 'bg-chip-success-bg text-chip-success-fg border-chip-success-bg'
       : color === 'orange'
-        ? 'bg-amber-50 text-amber-700 border-amber-200'
-        : 'bg-slate-100 text-slate-600 border-slate-200';
+        ? 'bg-chip-warning-bg text-chip-warning-fg border-chip-warning-bg'
+        : 'bg-bg-subtle text-fg-secondary border-border-subtle';
   return (
     <div className="flex flex-col gap-1">
       <Badge variant="outline" className={`w-fit border ${colorClass} text-[10px]`}>
         {label}
       </Badge>
       <div className="text-xs">
-        <span className="font-medium text-slate-900">{entry.providerLabel}</span>
+        <span className="font-medium text-fg-primary">{entry.providerLabel}</span>
         {entry.model && (
-          <span className="ml-1 text-slate-500">/ {entry.model}</span>
+          <span className="ml-1 text-fg-secondary">/ {entry.model}</span>
         )}
       </div>
     </div>

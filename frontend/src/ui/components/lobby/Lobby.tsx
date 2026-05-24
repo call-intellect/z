@@ -22,8 +22,8 @@ type Props = {
  */
 export function Lobby({ meetingId, meetingTitle, waitingForHost, onJoined }: Props) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-50 px-4 py-12">
-      <h1 className="text-center text-2xl font-semibold text-slate-900">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-bg-subtle px-4 py-12">
+      <h1 className="text-center text-2xl font-semibold text-fg-primary">
         {meetingTitle}
       </h1>
       {waitingForHost ? <WaitingHost /> : null}

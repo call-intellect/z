@@ -63,7 +63,7 @@ export function InsightsTopWidget() {
                         className={
                           it.dynamicLabel === 'spike' ||
                           it.dynamicLabel === 'growing'
-                            ? 'text-red-500'
+                            ? 'text-danger'
                             : ''
                         }
                       >

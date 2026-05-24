@@ -87,14 +87,14 @@ export function PromptDetailClient({ id }: { id: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+      <div className="flex items-center justify-center py-16 text-sm text-fg-secondary">
         <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
       </div>
     );
   }
   if (error || !tpl || !rawTpl) {
     return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+      <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
         {error ?? 'Шаблон не найден'}
       </div>
     );
@@ -104,16 +104,16 @@ export function PromptDetailClient({ id }: { id: string }) {
     <div className="mx-auto max-w-5xl">
       <Link
         href="/admin/prompts"
-        className="mb-3 inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900"
+        className="mb-3 inline-flex items-center gap-1 text-xs text-fg-secondary hover:text-fg-primary"
       >
         <ArrowLeft size={12} /> Назад к списку
       </Link>
       <header className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             {tpl.name}
           </h1>
-          <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+          <div className="mt-1 flex items-center gap-2 text-xs text-fg-secondary">
             <span className="font-mono">{tpl.key}</span>
             <span>·</span>
             <span>{tpl.taskTypeLabel}</span>
@@ -125,7 +125,7 @@ export function PromptDetailClient({ id }: { id: string }) {
             )}
           </div>
           {tpl.description && (
-            <p className="mt-2 max-w-2xl text-sm text-slate-600">{tpl.description}</p>
+            <p className="mt-2 max-w-2xl text-sm text-fg-secondary">{tpl.description}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -133,26 +133,26 @@ export function PromptDetailClient({ id }: { id: string }) {
             variant="outline"
             className={
               tpl.statusColor === 'green'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
                 : tpl.statusColor === 'amber'
-                  ? 'border-amber-200 bg-amber-50 text-amber-700'
-                  : 'border-slate-200 bg-slate-100 text-slate-600'
+                  ? 'border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg'
+                  : 'border-border-subtle bg-bg-subtle text-fg-secondary'
             }
           >
             {tpl.statusLabel}
           </Badge>
-          <Badge variant="outline" className="border-slate-200 bg-white text-slate-700">
+          <Badge variant="outline" className="border-border-subtle bg-white text-fg-secondary">
             {tpl.scopeLabel}
           </Badge>
           {tpl.scope === 'org' && (
-            <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-600">
+            <Button variant="ghost" size="sm" onClick={onDelete} className="text-danger">
               Удалить
             </Button>
           )}
         </div>
       </header>
 
-      <div className="mb-4 border-b border-slate-200">
+      <div className="mb-4 border-b border-border-subtle">
         <nav className="flex gap-4 text-sm">
           <TabBtn active={tab === 'editor'} onClick={() => setTab('editor')}>
             Редактор
@@ -188,8 +188,8 @@ export function PromptDetailClient({ id }: { id: string }) {
       )}
 
       {tab === 'preview' && (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <p className="mb-3 text-slate-700">
+        <div className="rounded-lg border border-border-subtle bg-white p-5 text-sm">
+          <p className="mb-3 text-fg-secondary">
             Сгенерируйте предпросмотр отчёта на демо-встрече, чтобы увидеть, как шаблон выглядит в работе.
           </p>
           <Button size="sm" onClick={() => setPreviewOpen(true)}>
@@ -199,7 +199,7 @@ export function PromptDetailClient({ id }: { id: string }) {
       )}
 
       {tab === 'usage' && (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
+        <div className="rounded-lg border border-border-subtle bg-white p-5 text-sm text-fg-secondary">
           Статистика использования (количество встреч, средняя оценка качества) появится после фазы A.3.
         </div>
       )}
@@ -230,8 +230,8 @@ function TabBtn({
       onClick={onClick}
       className={`-mb-px border-b-2 px-1 pb-3 ${
         active
-          ? 'border-slate-900 font-semibold text-slate-900'
-          : 'border-transparent text-slate-600 hover:text-slate-900'
+          ? 'border-fg-primary font-semibold text-fg-primary'
+          : 'border-transparent text-fg-secondary hover:text-fg-primary'
       }`}
     >
       {children}

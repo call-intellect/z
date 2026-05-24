@@ -22,7 +22,7 @@ export function ConciergeFloatingButton() {
           type="button"
           aria-label="Открыть Concierge"
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg hover:bg-emerald-600"
+          className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg hover:bg-accent-hover"
         >
           <MessageCircle size={22} />
         </button>

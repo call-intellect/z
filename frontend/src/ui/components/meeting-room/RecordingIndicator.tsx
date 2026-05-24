@@ -14,7 +14,7 @@ export function RecordingIndicator({ active }: Props) {
       role="status"
       aria-label={t('room.recording_indicator')}
       className={clsx(
-        'inline-flex items-center gap-2 rounded-full bg-red-600/95 px-3 py-1 text-xs font-medium text-white shadow',
+        'inline-flex items-center gap-2 rounded-full bg-danger/95 px-3 py-1 text-xs font-medium text-white shadow',
       )}
     >
       <span className="relative inline-block h-2 w-2">

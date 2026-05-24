@@ -11,6 +11,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardList,
@@ -203,6 +204,8 @@ const OPERATIONS_GROUP: NavGroup = {
     { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me' },
     { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
     { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
+    // SBA β-8.2 — «Мои обещания».
+    { href: '/me/promises', label: 'Мои обещания', icon: CheckCircle2, matchPrefix: '/me/promises' },
   ],
 };
 

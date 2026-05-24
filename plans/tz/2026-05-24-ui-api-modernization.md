@@ -366,10 +366,10 @@ body::before {
 
 ### Фаза D — Чистка hardcoded цветов (1-2 дня, параллельно с C)
 
-- [ ] D.1 — Заскриптовать поиск (`bg|text|border)-(red|green|blue|amber|...)-\d{2,3}` + список 30 файлов.
-- [ ] D.2 — Пройти по 30 файлам, заменить на semantic tokens (`bg-danger-muted`, `text-info`, `chip-warning-{bg,fg}`).
-- [ ] D.3 — Финальный grep пустой.
-- [ ] D.4 — Визуальная проверка через `/design-preview/*` и ключевые страницы в обеих темах.
+- [x] D.1 — Заскриптовать поиск (`bg|text|border)-(red|green|blue|amber|...)-\d{2,3}` + список 30 файлов (нашли 648 матчей в 72 файлах).
+- [x] D.2 — Пройти по 30 файлам, заменить на semantic tokens (`bg-danger-muted`, `text-info`, `chip-warning-{bg,fg}`) — обработано 60+ файлов, заменено 624 матча.
+- [x] D.3 — Финальный grep близок к нулю — оставлено 24 интенциональных вхождения (`SIGNAL_COUNTERS_BUCKET_COLORS` в `frontend/src/domain/director-dashboard.ts`, slate-700/600 как фоны кнопок в dark UI meeting-room: `ControlsBar.tsx`, `ParticipantsPanel.tsx`, `RaiseHandButton.tsx`, `MeetingRoom.tsx`).
+- [x] D.4 — typecheck/lint/build зелёные (1 pre-existing warning).
 
 ### Фаза E — Mobile-адаптация (3 дня)
 

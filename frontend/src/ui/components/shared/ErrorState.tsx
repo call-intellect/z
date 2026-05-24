@@ -16,10 +16,10 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="flex flex-col items-center justify-center rounded-lg border border-red-200 bg-red-50 px-6 py-8 text-center"
+      className="flex flex-col items-center justify-center rounded-lg border border-chip-danger-bg bg-chip-danger-bg px-6 py-8 text-center"
     >
-      <h3 className="mb-1 text-base font-semibold text-red-900">{title}</h3>
-      <p className="mb-4 max-w-md text-sm text-red-700">{message}</p>
+      <h3 className="mb-1 text-base font-semibold text-chip-danger-fg">{title}</h3>
+      <p className="mb-4 max-w-md text-sm text-chip-danger-fg">{message}</p>
       {onRetry ? (
         <Button variant="secondary" size="sm" onClick={onRetry}>
           Повторить

@@ -86,9 +86,9 @@ export function OrgEconomicsCurrentClient() {
                     <div
                       className={
                         q.data.budget.utilizationPercent >= 100
-                          ? 'h-full rounded bg-red-600'
+                          ? 'h-full rounded bg-danger'
                           : q.data.budget.utilizationPercent >= 80
-                            ? 'h-full rounded bg-amber-500'
+                            ? 'h-full rounded bg-warning'
                             : 'h-full rounded bg-accent'
                       }
                       style={{

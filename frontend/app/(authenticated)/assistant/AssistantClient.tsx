@@ -50,7 +50,7 @@ export function AssistantClient() {
         <div className="p-3">
           <button
             type="button"
-            className="w-full rounded-md bg-emerald-700 px-3 py-2 text-sm text-white hover:bg-emerald-600"
+            className="w-full rounded-md bg-accent px-3 py-2 text-sm text-accent-fg hover:bg-accent-hover"
             onClick={() => setActiveConv(undefined)}
           >
             + Новый диалог

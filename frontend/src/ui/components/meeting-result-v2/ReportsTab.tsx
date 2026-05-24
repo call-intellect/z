@@ -61,7 +61,7 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-slate-900">Отчёты</h3>
+        <h3 className="text-base font-semibold text-fg-primary">Отчёты</h3>
         <span title={addTooltip}>
           <Button
             variant="primary"
@@ -75,7 +75,7 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
       </div>
 
       {!featureEnabled && !entLoading && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="rounded-md border border-chip-warning-bg bg-chip-warning-bg px-3 py-2 text-sm text-chip-warning-fg">
           На вашем тарифе ({tier}) доступен только основной отчёт.{' '}
           <Link href="/settings/billing" className="font-medium underline">
             Перейти на Pro
@@ -85,9 +85,9 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
       )}
 
       {isLoading && reports.length === 0 ? (
-        <div className="text-sm text-slate-500">Загружаем отчёты…</div>
+        <div className="text-sm text-fg-secondary">Загружаем отчёты…</div>
       ) : reports.length === 0 ? (
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-6 text-center text-sm text-fg-secondary">
           У этой встречи пока нет отчётов.
         </div>
       ) : (
@@ -181,31 +181,31 @@ function ReportCard({
   };
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="rounded-lg border border-border-subtle bg-white p-4 shadow-sm">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="truncate text-sm font-semibold text-slate-900">
+            <h4 className="truncate text-sm font-semibold text-fg-primary">
               {report.templateName}
             </h4>
             {isPrimary && (
               <span
                 title="Сгенерирован автоматически по типу встречи"
-                className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-xs font-medium text-chip-info-fg"
               >
                 Основной
               </span>
             )}
           </div>
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="mt-1 text-xs text-fg-secondary">
             {formatDate(report.createdAt)} ·{' '}
             <span
               className={
                 isFailed
-                  ? 'text-red-600'
+                  ? 'text-danger'
                   : isInProgress
-                    ? 'text-amber-600'
-                    : 'text-slate-500'
+                    ? 'text-warning'
+                    : 'text-fg-secondary'
               }
             >
               {reportStatusLabel(report.status)}
@@ -215,12 +215,12 @@ function ReportCard({
       </header>
 
       {report.outputPreview && (
-        <p className="mt-3 line-clamp-3 text-sm text-slate-700">
+        <p className="mt-3 line-clamp-3 text-sm text-fg-secondary">
           {report.outputPreview}
         </p>
       )}
       {isFailed && report.errorMessage && (
-        <p className="mt-3 text-sm text-red-600">
+        <p className="mt-3 text-sm text-danger">
           {report.errorMessage === 'cost_limit'
             ? 'Отчёт получился слишком дорогим — генерация прервана.'
             : `Ошибка: ${report.errorMessage}`}
@@ -329,14 +329,14 @@ function AddReportDialog({
       title="Выберите шаблон для нового отчёта"
       className="max-w-2xl"
     >
-      <div className="mb-3 flex gap-2 border-b border-slate-200">
+      <div className="mb-3 flex gap-2 border-b border-border-subtle">
         <button
           type="button"
           onClick={() => setTab('system')}
           className={
             tab === 'system'
-              ? 'border-b-2 border-blue-600 px-3 py-1.5 text-sm font-medium text-blue-700'
-              : 'border-b-2 border-transparent px-3 py-1.5 text-sm text-slate-500 hover:text-slate-900'
+              ? 'border-b-2 border-accent px-3 py-1.5 text-sm font-medium text-accent'
+              : 'border-b-2 border-transparent px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary'
           }
         >
           Системные
@@ -346,8 +346,8 @@ function AddReportDialog({
           onClick={() => setTab('org')}
           className={
             tab === 'org'
-              ? 'border-b-2 border-blue-600 px-3 py-1.5 text-sm font-medium text-blue-700'
-              : 'border-b-2 border-transparent px-3 py-1.5 text-sm text-slate-500 hover:text-slate-900'
+              ? 'border-b-2 border-accent px-3 py-1.5 text-sm font-medium text-accent'
+              : 'border-b-2 border-transparent px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary'
           }
         >
           Мои шаблоны
@@ -356,11 +356,11 @@ function AddReportDialog({
 
       <div className="max-h-[400px] overflow-y-auto">
         {isLoading ? (
-          <div className="py-6 text-center text-sm text-slate-500">
+          <div className="py-6 text-center text-sm text-fg-secondary">
             Загружаем шаблоны…
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-6 text-center text-sm text-slate-500">
+          <div className="py-6 text-center text-sm text-fg-secondary">
             {tab === 'org'
               ? 'У вашей организации пока нет своих шаблонов.'
               : 'Системные шаблоны не найдены.'}
@@ -374,19 +374,19 @@ function AddReportDialog({
                   onClick={() => setSelectedId(t.id)}
                   className={
                     selectedId === t.id
-                      ? 'w-full rounded-md border-2 border-blue-500 bg-blue-50 p-3 text-left'
-                      : 'w-full rounded-md border border-slate-200 bg-white p-3 text-left hover:border-slate-300'
+                      ? 'w-full rounded-md border-2 border-accent bg-chip-info-bg p-3 text-left'
+                      : 'w-full rounded-md border border-border-subtle bg-bg-card p-3 text-left hover:border-border'
                   }
                 >
-                  <div className="text-sm font-semibold text-slate-900">
+                  <div className="text-sm font-semibold text-fg-primary">
                     {t.name}
                   </div>
                   {t.description && (
-                    <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                    <div className="mt-1 line-clamp-2 text-xs text-fg-secondary">
                       {t.description}
                     </div>
                   )}
-                  <div className="mt-2 text-xs text-slate-400">
+                  <div className="mt-2 text-xs text-fg-tertiary">
                     {t.meetingType
                       ? `для типа ${t.meetingType}`
                       : 'универсальный'}
@@ -399,7 +399,7 @@ function AddReportDialog({
       </div>
 
       {error && (
-        <div className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mt-3 rounded-md bg-chip-danger-bg px-3 py-2 text-sm text-chip-danger-fg">
           {error}
         </div>
       )}
@@ -475,11 +475,11 @@ function ReportDetailDialog({
       className="max-w-3xl"
     >
       {loading ? (
-        <div className="py-6 text-center text-sm text-slate-500">
+        <div className="py-6 text-center text-sm text-fg-secondary">
           Загружаем отчёт…
         </div>
       ) : !data ? (
-        <div className="py-6 text-center text-sm text-slate-500">
+        <div className="py-6 text-center text-sm text-fg-secondary">
           Не удалось загрузить отчёт.
         </div>
       ) : (
@@ -504,20 +504,20 @@ function ReportDetailDialog({
  */
 function ReportOutputRenderer({ output }: { output: unknown | null }) {
   if (output === null || output === undefined) {
-    return <div className="text-sm text-slate-500">Пустой отчёт.</div>;
+    return <div className="text-sm text-fg-secondary">Пустой отчёт.</div>;
   }
   if (typeof output !== 'object') {
-    return <p className="text-sm text-slate-700">{String(output)}</p>;
+    return <p className="text-sm text-fg-secondary">{String(output)}</p>;
   }
   const entries = Object.entries(output as Record<string, unknown>);
   if (entries.length === 0) {
-    return <div className="text-sm text-slate-500">Пустой отчёт.</div>;
+    return <div className="text-sm text-fg-secondary">Пустой отчёт.</div>;
   }
   return (
     <div className="flex flex-col gap-4">
       {entries.map(([key, value]) => (
         <section key={key}>
-          <h5 className="mb-1 text-sm font-semibold text-slate-900">{key}</h5>
+          <h5 className="mb-1 text-sm font-semibold text-fg-primary">{key}</h5>
           {renderValue(value)}
         </section>
       ))}
@@ -527,20 +527,20 @@ function ReportOutputRenderer({ output }: { output: unknown | null }) {
 
 function renderValue(value: unknown) {
   if (value === null || value === undefined) {
-    return <p className="text-sm text-slate-400">—</p>;
+    return <p className="text-sm text-fg-tertiary">—</p>;
   }
   if (typeof value === 'string') {
-    return <p className="whitespace-pre-wrap text-sm text-slate-700">{value}</p>;
+    return <p className="whitespace-pre-wrap text-sm text-fg-secondary">{value}</p>;
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
-    return <p className="text-sm text-slate-700">{String(value)}</p>;
+    return <p className="text-sm text-fg-secondary">{String(value)}</p>;
   }
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      return <p className="text-sm text-slate-400">пусто</p>;
+      return <p className="text-sm text-fg-tertiary">пусто</p>;
     }
     return (
-      <ul className="list-inside list-disc text-sm text-slate-700">
+      <ul className="list-inside list-disc text-sm text-fg-secondary">
         {value.map((v, i) => (
           <li key={i}>
             {typeof v === 'string' || typeof v === 'number' ? (
@@ -556,7 +556,7 @@ function renderValue(value: unknown) {
     );
   }
   return (
-    <pre className="overflow-x-auto rounded bg-slate-50 p-2 text-xs text-slate-700">
+    <pre className="overflow-x-auto rounded bg-bg-subtle p-2 text-xs text-fg-secondary">
       {JSON.stringify(value, null, 2)}
     </pre>
   );

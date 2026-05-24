@@ -20,8 +20,8 @@ export interface AccountUserApi {
   createdAt: string;
   /** Фаза 7: super_admin (Z-Admin). */
   isSuperAdmin: boolean;
-  /** Фаза 7: роль в первой Org или null. */
-  currentOrgRole: 'owner' | 'admin' | 'manager' | null;
+  /** Фаза 7: роль в первой Org или null. SBA β-8 добавила 'coo'. */
+  currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo' | null;
   /** Фаза 7: id первой Org или null. */
   currentOrgId: string | null;
 }

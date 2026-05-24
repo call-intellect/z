@@ -77,10 +77,10 @@ export function PromptsListClient() {
     <div className="mx-auto max-w-6xl">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Шаблоны промптов
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-fg-secondary">
             Конструктор промптов для AI-отчётов. Системные поставляются с Z, свои создаются под Org.
           </p>
         </div>
@@ -100,13 +100,13 @@ export function PromptsListClient() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative">
-          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-tertiary" />
           <input
             type="text"
             placeholder="Поиск по названию или ключу"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-64 rounded-md border border-slate-200 bg-white pl-7 pr-3 text-sm"
+            className="h-9 w-64 rounded-md border border-border-subtle bg-white pl-7 pr-3 text-sm"
           />
         </div>
         <Select
@@ -160,27 +160,27 @@ export function PromptsListClient() {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+        <div className="flex items-center justify-center py-16 text-sm text-fg-secondary">
           <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
         </div>
       )}
 
       {error && !loading && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           {error}
         </div>
       )}
 
       {!loading && !error && items.length === 0 && (
-        <div className="rounded-md border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
           У вас нет шаблонов под выбранные фильтры. Скопируйте системный или создайте с нуля.
         </div>
       )}
 
       {!loading && items.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Название</th>
                 <th className="px-3 py-2 text-left font-medium">Вид</th>
@@ -192,18 +192,18 @@ export function PromptsListClient() {
             </thead>
             <tbody>
               {items.map((tpl) => (
-                <tr key={tpl.id} className="border-t border-slate-100">
+                <tr key={tpl.id} className="border-t border-border-subtle">
                   <td className="px-3 py-2">
                     <Link
                       href={`/admin/prompts/${encodeURIComponent(tpl.id)}`}
-                      className="font-medium text-slate-900 hover:underline"
+                      className="font-medium text-fg-primary hover:underline"
                     >
                       {tpl.name}
                     </Link>
-                    <div className="text-xs text-slate-500">{tpl.key}</div>
+                    <div className="text-xs text-fg-secondary">{tpl.key}</div>
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{tpl.taskTypeLabel}</td>
-                  <td className="px-3 py-2 text-slate-700">
+                  <td className="px-3 py-2 text-fg-secondary">{tpl.taskTypeLabel}</td>
+                  <td className="px-3 py-2 text-fg-secondary">
                     {tpl.meetingTypeLabel ?? '—'}
                   </td>
                   <td className="px-3 py-2">
@@ -211,20 +211,20 @@ export function PromptsListClient() {
                       variant="outline"
                       className={
                         tpl.statusColor === 'green'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
                           : tpl.statusColor === 'amber'
-                            ? 'border-amber-200 bg-amber-50 text-amber-700'
-                            : 'border-slate-200 bg-slate-100 text-slate-600'
+                            ? 'border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg'
+                            : 'border-border-subtle bg-bg-subtle text-fg-secondary'
                       }
                     >
                       {tpl.statusLabel}
                     </Badge>
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{tpl.scopeLabel}</td>
+                  <td className="px-3 py-2 text-fg-secondary">{tpl.scopeLabel}</td>
                   <td className="px-3 py-2 text-right">
                     <Link
                       href={`/admin/prompts/${encodeURIComponent(tpl.id)}`}
-                      className="text-xs text-blue-600 hover:underline"
+                      className="text-xs text-info hover:underline"
                     >
                       Открыть
                     </Link>

@@ -83,7 +83,7 @@ export function MeetingPageShell({ meetingId }: Props) {
   // ─── render ────────────────────────────────────────────
   if (access.state === 'loading') {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <main className="flex min-h-screen items-center justify-center bg-bg-subtle p-6">
         <div className="w-full max-w-sm space-y-3">
           <Skeleton className="h-6 w-3/4" />
           <Skeleton className="h-4 w-full" />
@@ -95,7 +95,7 @@ export function MeetingPageShell({ meetingId }: Props) {
 
   if (access.state === 'error') {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <main className="flex min-h-screen items-center justify-center bg-bg-subtle p-6">
         <ErrorState message={access.error} onRetry={() => access.mutate()} />
       </main>
     );
@@ -153,9 +153,9 @@ export function MeetingPageShell({ meetingId }: Props) {
   // role === host или guest, но joined ещё не выставлено (автоjoin в полёте) —
   // показываем «загрузка комнаты».
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+    <main className="flex min-h-screen items-center justify-center bg-bg-subtle p-6">
       <div className="w-full max-w-sm space-y-3 text-center">
-        <p className="text-slate-700">{t('app.loading')}</p>
+        <p className="text-fg-secondary">{t('app.loading')}</p>
         <Skeleton className="h-32 w-full" />
       </div>
     </main>

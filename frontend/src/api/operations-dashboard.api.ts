@@ -57,6 +57,36 @@ export interface OperationsOverviewApi {
   capacityOverloadedCount: number;
   topRecentBlockers: OperationsBlockerApi[];
   topRecentTeamFrictions: OperationsTeamFrictionApi[];
+  // SBA β-8.1 — компактный блок «Температура команды» за 7 дней.
+  teamTemperature: OperationsTeamTemperatureSummaryApi;
+}
+
+export interface OperationsTeamTemperatureSummaryApi {
+  days: number;
+  totalCheckIns: number;
+  greenShare: number;
+  yellowShare: number;
+  redShare: number;
+  redShareDelta: number | null;
+}
+
+export interface OperationsTeamTemperaturePersonApi {
+  personId: string;
+  personName: string | null;
+  green: number;
+  yellow: number;
+  red: number;
+  total: number;
+}
+
+export interface OperationsTeamTemperatureApi {
+  days: number;
+  totalCheckIns: number;
+  greenShare: number;
+  yellowShare: number;
+  redShare: number;
+  redShareDelta: number | null;
+  byPerson: OperationsTeamTemperaturePersonApi[];
 }
 
 export interface OperationsCapacityListApi {
@@ -105,4 +135,12 @@ export const operationsDashboardApi = {
       `/api/v1/personal-relations${suffix ? `?${suffix}` : ''}`,
     );
   },
+  /**
+   * SBA β-8.1 — `GET /dashboard/operations/team-temperature?days=7`.
+   * Полный разрез настроений по людям.
+   */
+  getTeamTemperature: (days = 7) =>
+    apiClient.get<OperationsTeamTemperatureApi>(
+      `/api/v1/dashboard/operations/team-temperature?days=${days}`,
+    ),
 };

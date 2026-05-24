@@ -133,7 +133,7 @@ export function ChatV2Client(): ReactElement {
               <Loader2 className="animate-spin" />
             </div>
           ) : list.error ? (
-            <div className="p-3 text-sm text-red-600">
+            <div className="p-3 text-sm text-danger">
               Не удалось загрузить список диалогов.
             </div>
           ) : !list.data || list.data.items.length === 0 ? (
@@ -339,7 +339,7 @@ function ConversationDetail({
             <Loader2 className="animate-spin" />
           </div>
         ) : detail.error ? (
-          <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded bg-chip-danger-bg px-3 py-2 text-sm text-chip-danger-fg">
             Ошибка загрузки диалога
           </div>
         ) : (
@@ -349,13 +349,13 @@ function ConversationDetail({
           <div className="text-sm italic text-fg-tertiary">AI печатает ответ...</div>
         ) : null}
         {lastCacheHit ? (
-          <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 self-start">
+          <div className="inline-flex items-center gap-1 rounded-full bg-chip-success-bg px-2 py-0.5 text-xs text-chip-success-fg self-start">
             <span aria-hidden>•</span>
             <span>Ответ из кэша (мгновенно)</span>
           </div>
         ) : null}
         {error ? (
-          <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded bg-chip-danger-bg px-3 py-2 text-sm text-chip-danger-fg">
             Ошибка: {error}
           </div>
         ) : null}

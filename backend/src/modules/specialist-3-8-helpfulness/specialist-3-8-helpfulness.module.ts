@@ -27,6 +27,11 @@ import { Specialist38HelpfulnessWorker } from './workers/specialist-3-8-helpfuln
  *     - RbacModule — для контроллеров.
  *     - LlmRouterService (AiModule), KnowledgeEmbeddingService
  *       (KnowledgeCoreModule) — глобальные.
+ *     - RecognitionService (RecognitionModule @Global, опциональный) —
+ *       Wave 2 A1 bridge: HelpfulnessApiService.approveSpotlight enqueue
+ *       Recognition type='thanks_helpfulness'. Инжектится через
+ *       @Optional() @Inject(RecognitionService) — приложение продолжает
+ *       работать, если RecognitionModule выключен/не подключён.
  *
  * AppModule должен подключить этот модуль (см. README модуля и отчёт).
  *

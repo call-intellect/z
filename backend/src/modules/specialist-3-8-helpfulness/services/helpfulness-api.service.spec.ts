@@ -2,6 +2,8 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RecognitionService } from '../../recognition/services/recognition.service';
+
 import { HelpfulnessApiService } from './helpfulness-api.service';
 
 /**
@@ -105,6 +107,14 @@ function buildMockPrisma(initial: {
 const mockMetrics = {
   incCoreSpecialistCards: vi.fn(),
 } as unknown as ConstructorParameters<typeof HelpfulnessApiService>[1];
+
+function buildMockRecognition(): {
+  enqueueFormulate: ReturnType<typeof vi.fn>;
+} {
+  return {
+    enqueueFormulate: vi.fn().mockResolvedValue({ jobId: 'job-mock' }),
+  };
+}
 
 let mockPrisma: ReturnType<typeof buildMockPrisma>;
 
@@ -297,5 +307,129 @@ describe('HelpfulnessApiService — hide / republish / approve invariants', () =
     expect(feedCall?.data.feedType).toBe('spotlight');
     expect(feedCall?.data.sourceAgentName).toBe('helpfulness_agent');
     expect(feedCall?.data.visibility).toBe('public_org');
+  });
+});
+
+describe('HelpfulnessApiService — approveSpotlight → Recognition bridge', () => {
+  function pendingSpotlight(): SpotlightRecord {
+    return {
+      id: 's1',
+      tenantId: 'org1',
+      helperUserId: 'u1',
+      topicHint: 'безопасность',
+      message: 'Иван 5 раз помог по безопасности',
+      periodFrom: new Date('2026-05-17'),
+      periodTo: new Date('2026-05-24'),
+      helpCount: 5,
+      status: 'pending',
+      approvedByUserId: null,
+      publishedAt: null,
+      feedItemId: null,
+      createdAt: new Date(),
+    };
+  }
+
+  it('после publish вызывает recognitionService.enqueueFormulate с правильными аргументами', async () => {
+    mockPrisma = buildMockPrisma({ spotlights: [pendingSpotlight()] });
+    const recognition = buildMockRecognition();
+    const svc = new HelpfulnessApiService(
+      mockPrisma as any,
+      mockMetrics as any,
+      recognition as unknown as RecognitionService,
+    );
+    const res = await svc.approveSpotlight({
+      tenantId: 'org1',
+      spotlightId: 's1',
+      approvedByUserId: 'admin1',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.spotlight.status).toBe('published');
+    expect(recognition.enqueueFormulate).toHaveBeenCalledTimes(1);
+    const args = recognition.enqueueFormulate.mock.calls[0]?.[0] as {
+      tenantId: string;
+      type: string;
+      toUserId: string;
+      contextEntityType: string;
+      contextEntityId: string;
+      visibility: string;
+      contextPayload: { topicHint: string | null; helpCount: number; message: string };
+    };
+    expect(args.tenantId).toBe('org1');
+    expect(args.type).toBe('thanks_helpfulness');
+    expect(args.toUserId).toBe('u1');
+    expect(args.contextEntityType).toBe('helpfulness_spotlight');
+    expect(args.contextEntityId).toBe('s1');
+    expect(args.visibility).toBe('team');
+    expect(args.contextPayload).toEqual({
+      topicHint: 'безопасность',
+      helpCount: 5,
+      message: 'Иван 5 раз помог по безопасности',
+    });
+  });
+
+  it('идемпотентно: повторный approve уже опубликованного spotlight отбрасывается до bridge (no second enqueue)', async () => {
+    mockPrisma = buildMockPrisma({ spotlights: [pendingSpotlight()] });
+    const recognition = buildMockRecognition();
+    const svc = new HelpfulnessApiService(
+      mockPrisma as any,
+      mockMetrics as any,
+      recognition as unknown as RecognitionService,
+    );
+    await svc.approveSpotlight({
+      tenantId: 'org1',
+      spotlightId: 's1',
+      approvedByUserId: 'admin1',
+    });
+    expect(recognition.enqueueFormulate).toHaveBeenCalledTimes(1);
+    // Повторный approve — status уже 'published', FSM-guard кидает Forbidden,
+    // bridge не вызывается → суммарно один enqueue. На уровне BullMQ jobId
+    // = `recognition_thanks_helpfulness_s1_ai` (Wave 2 спецификация
+    // CoreQueueService.enqueueRecognitionFormulate) — даже если по какой-то
+    // причине approve пройдёт дважды, очередь дедуплицирует.
+    await expect(
+      svc.approveSpotlight({
+        tenantId: 'org1',
+        spotlightId: 's1',
+        approvedByUserId: 'admin2',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(recognition.enqueueFormulate).toHaveBeenCalledTimes(1);
+  });
+
+  it('graceful: если RecognitionService недоступен (null) — publish успешен без падений', async () => {
+    mockPrisma = buildMockPrisma({ spotlights: [pendingSpotlight()] });
+    const svc = new HelpfulnessApiService(
+      mockPrisma as any,
+      mockMetrics as any,
+      // recognition не передан — @Optional fallback на null
+    );
+    const res = await svc.approveSpotlight({
+      tenantId: 'org1',
+      spotlightId: 's1',
+      approvedByUserId: 'admin1',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.spotlight.status).toBe('published');
+    expect(mockPrisma.activityFeedItem.create).toHaveBeenCalled();
+  });
+
+  it('graceful: enqueueFormulate бросает — approve всё равно возвращает ok (publish уже сделан)', async () => {
+    mockPrisma = buildMockPrisma({ spotlights: [pendingSpotlight()] });
+    const recognition = {
+      enqueueFormulate: vi.fn().mockRejectedValue(new Error('queue down')),
+    };
+    const svc = new HelpfulnessApiService(
+      mockPrisma as any,
+      mockMetrics as any,
+      recognition as unknown as RecognitionService,
+    );
+    const res = await svc.approveSpotlight({
+      tenantId: 'org1',
+      spotlightId: 's1',
+      approvedByUserId: 'admin1',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.spotlight.status).toBe('published');
+    expect(recognition.enqueueFormulate).toHaveBeenCalledTimes(1);
   });
 });

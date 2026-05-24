@@ -4,11 +4,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { RecognitionService } from '../../recognition/services/recognition.service';
 
 import type {
   HelpfulnessSpotlightDto,
@@ -46,6 +48,9 @@ export class HelpfulnessApiService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(RecognitionService)
+    private readonly recognition: RecognitionService | null = null,
   ) {}
 
   // ─────────────────────────── SocialContribution ───────────────────────
@@ -226,6 +231,43 @@ export class HelpfulnessApiService {
       type: Specialist38HelpfulnessService.METRIC_TYPE,
       status: 'spotlight_published',
     });
+
+    // Wave 2 A1 bridge — после успешного publish enqueue Recognition
+    // type='thanks_helpfulness'. Идемпотентность гарантирует BullMQ jobId
+    // (`recognition_thanks_helpfulness_<spotlightId>_ai`), повторный approve
+    // (теоретически невозможный — отсекается status≠'pending' выше) тоже
+    // не создаст дубль. Best-effort: ошибка enqueue не валит approve —
+    // ActivityFeedItem уже опубликован, spotlight в 'published'.
+    if (this.recognition) {
+      try {
+        await this.recognition.enqueueFormulate({
+          tenantId: args.tenantId,
+          type: 'thanks_helpfulness',
+          toUserId: updated.helperUserId,
+          contextEntityType: 'helpfulness_spotlight',
+          contextEntityId: updated.id,
+          contextPayload: {
+            topicHint: updated.topicHint,
+            helpCount: updated.helpCount,
+            message: updated.message,
+          },
+          visibility: 'team',
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            spotlightId: updated.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'approveSpotlight: enqueue Recognition fail (publish уже выполнен)',
+        );
+      }
+    } else {
+      this.logger.debug(
+        { spotlightId: updated.id },
+        'approveSpotlight: RecognitionService недоступен, bridge пропущен',
+      );
+    }
 
     return { ok: true, spotlight: toSpotlightDto(updated, null) };
   }

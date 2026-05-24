@@ -197,4 +197,114 @@ cd ../frontend && bun run build
 
 ---
 
-_Sergeу's session report: Wave 3 готов, push в origin/dev сделан. Следующий виток — Phase 3+4+5 frontend + part 2 импорта._
+## Iteration 2 (та же сессия) — Phase 3 frontend + Phase 5 wizard + Я.Трекер + HolidayService
+
+После завершения первой 7-агентной волны пользователь сказал «не останавливайся». Запустил вторую волну на 5 параллельных потоков — finishing Wave 3.
+
+| Agent | Задача | Тестов |
+|---|---|---|
+| H | Phase 3 frontend: KNN similar блок + AI-suggest toast в Board + /intake глобальный триаж | 14/14 |
+| I | Phase 5 import wizard: 4-шаговый Trello wizard + детальная страница с WS live progress | typecheck ✅ |
+| J | Phase 5 part 2 backend: реальная YandexTrackerImportStrategy (REST + OAuth + retry/backoff) | 3/3 |
+| K | HolidayService интеграция в IssuesService + GoalAlignmentLowCron probe-trigger | 18/18 |
+| L | Phase 4 frontend: FromTemplateWizard в /projects/new + TelegramLinkSection в /settings/integrations | typecheck ✅ |
+
+**Объём:** ~7.8k строк, 1 коммит `7c036b0`, push в origin/dev.
+
+### Дополнительные уроки iteration 2
+
+#### 8. Domain layer типизация — ключевой паттерн чистоты frontend
+
+Agent L расширил TeamTemplate domain типизацией definition (roles/states/typicalTasks/regulationStubs/kpiTemplates). Это позволило wizard'у строить preview через **типизированный** проход вместо `JSON.parse + as any`. Дополнительно — helper'ы `teamTemplateEmoji(slug)` и `teamTemplateCategoryLabel(category)` — единая точка для UI-локализации.
+
+**Правило:** при добавлении новой backend модели — НЕ оставлять `unknown` в domain. Один раз закрыть типизацией → 5 мест в UI станут typesafe.
+
+#### 9. Conditional polling + WS overlay — паттерн live-страницы
+
+Agent I реализовал `useImportDetail` так: SWR polling 2s **только при status='running'**, плюс подписка на `useTrackerWebSocket` для live overlay processedItems/phase. Полная отказоустойчивость: если WS не подключен — polling подхватывает; если WS работает — overlay реалтайм на progress bar.
+
+Этот паттерн надо использовать везде, где есть «процесс с прогрессом» (импорт, ai-pipeline analyze, regen, и т.п.).
+
+#### 10. Pre-session обогащение через @Optional() — golden chain
+
+В iteration 2 paths по @Optional проходят через 3 модуля:
+- TrackerModule.imports = none (только PrismaModule)
+- TrackerModule.exports = IntakeService/CommentsService/IntakeAutoTriageQueueService/IssuesService (для Conversational/AnalyzeWorker)
+- ConversationalModule.imports = TrackerModule
+- ConversationalModule.providers = TelegramBotMessageHandler с @Optional inject
+
+Это значит: **каждый агент может разработать модуль независимо**, оркестратор делает wiring как финальный шаг. Изменения в одном модуле НЕ блокируют другие — каждый сдаёт degradedly-работающий код, который оживает при cross-module wire-up.
+
+### Финальный score обеих волн
+
+| Метрика | Wave 3 iteration 1 (7 agents) | Wave 3 iteration 2 (5 agents) | Total |
+|---|---|---|---|
+| Коммитов в сессии | 8 | 1 | 9 |
+| Строк кода | ~14 500 | ~7 800 | ~22 300 |
+| Тестов passed (per-agent) | 162 | 49 | 211 |
+| Tests passed (final regression) | 150/150 | 23/23 | 173/173 |
+| typecheck (backend + frontend) | ✅ ✅ | ✅ ✅ | ✅ |
+
+## Активные планы (after iteration 2)
+
+### Что ОСТАЛОСЬ незакрытым
+
+| Тикет | Что | Кому |
+|---|---|---|
+| **Phase 5 part 2 — Битрикс24** | BitrixImportStrategy реальная реализация (REST через webhook URL) | Backend (следующая сессия) |
+| **Phase 5 wizard — Bitrix24/Я.Трекер ветки** | UI для webhookUrl / oauthToken вместо файла | Frontend (следующая сессия) |
+| **TimeZone в from-template DTO** | Расширить StartProjectFromTemplateSchema поле `timezone?: string` | Backend mini-task |
+| **Probe-trigger Telegram digest опции** | Pause / time-of-day per-user через /me/settings | Backend mini-task |
+| **Tracker Mobile native (R1)** | React Native + Expo + RuStore — ждёт RN-среды | Owner |
+
+## Финальная prod-инструкция (для владельца)
+
+```bash
+git pull origin dev
+cd backend && bun install
+cd ../frontend && bun install
+
+# Применить Prisma изменения (3 новые модели):
+cd ../backend && bun run prisma:push
+bun run prisma:generate
+
+# Применить HNSW индекс для Issue.embedding:
+bun run apply-postgres-init
+
+# Запустить 5 seed-скриптов:
+bun run scripts/seed-llm-task-routes-tracker-phase3.ts
+bun run scripts/seed-llm-task-routes-tracker-phase3-c.ts
+bun run scripts/seed-llm-task-routes-tracker-phase4-telegram.ts
+bun run scripts/seed-team-templates.ts
+bun run scripts/seed-holiday-calendar-ru-2026.ts
+
+# Frontend ENV (опционально):
+# В frontend/.env.production добавить:
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=<username бота без @>
+# (для deep-link `https://t.me/${bot}?start=${code}` в /settings/integrations)
+
+# Пересобрать:
+bun run build
+cd ../frontend && bun run build
+
+# Перезапустить:
+# - Backend HTTP процесс
+# - Backend worker процесс (новые cron'ы автоматически зарегистрируются:
+#   - IssueEmbedWorker (Phase 3 KNN)
+#   - IntakeAutoTriageWorker
+#   - ImportTrackerWorker (Phase 5)
+#   - TelegramDigestCron @9:00 UTC
+#   - GoalAlignmentLowCron @понедельник 06:00 UTC
+# - Frontend Next.js
+```
+
+### Грабли prod (известные)
+
+- `apply-postgres-init` упадёт на `age` extension в dev — для prod нужен managed Postgres с Apache AGE.
+- Telegram digest — UTC time fixed 09:00. vNext: per-user TZ из Person.timezone.
+- VAPID keys для web-push (Wave 2) — нужны на prod если ещё не сгенерированы (Bun web-push: `bunx web-push generate-vapid-keys`).
+- `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` — без неё Telegram link wizard показывает «уточните у администратора» без deep-link.
+
+---
+
+_Sergey's session report 2: Wave 3 полностью закрыт (12 параллельных subagent'ов в 2 волнах за одну сессию, ~22.3k строк, 9 коммитов, 173/173 финальных тестов, оба typecheck зелёные)._

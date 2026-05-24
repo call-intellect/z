@@ -645,4 +645,119 @@ erDiagram
 - `GraphService` в `backend/src/common/graph/` — единая точка двойной записи Postgres EntityLink + AGE.
 - Запрет прямого Cypher — см. [[code-pitfalls]].
 
+## Tracker модуль (2026-05-24, Sprint 1)
+
+Полное описание модуля и API: [[../01_projects/tracker]]. Модели Prisma (20 новых, в конце `backend/prisma/schema.prisma` после строки 6044).
+
+### Project
+- `id String @id @default(cuid())`, `tenantId String`, `slug String` (unique per tenant), `identifier String` (короткий префикс задач: PROJ, SALES — до 5 симв.), `name`, `description? @db.Text`, `ownerId`, `defaultAssigneeId?`, `defaultStateId?`, `network Int @default(0)` (0=Private, 2=Public-внутри-org), `archivedAt?`, `timezone @default("Europe/Moscow")`.
+- Feature-flags: `cycleViewEnabled`, `intakeViewEnabled`, `gantViewEnabled @default(false)`, `timeTrackingEnabled @default(false)`.
+- `teamTemplateId?` FK на TeamTemplate (создан из шаблона).
+- `entityId?` для графа знаний.
+- Soft-delete `deletedAt?`.
+
+### ProjectMember (M2M)
+- `projectId, userId, role Int` (20=Admin, 15=Member, 5=Guest), `joinedAt`.
+
+### IssueState (статусы задач)
+- `tenantId, projectId, name, color, category` (backlog/unstarted/started/completed/cancelled), `sequence Int`, `isDefault`.
+
+### Cycle (недели работы)
+- `tenantId, projectId, name, startDate, endDate, ownedById?, description?`.
+- `progressSnapshot Json?` — агрегированный снимок (обновляется cron'ом).
+- `version Int @default(1)`, `timezone`, `completedAt?`.
+
+### Issue (расширение функционала задачи)
+- `tenantId, projectId, identifier String` (KORA-123, unique per tenant), `sequenceId Int` (123, unique per project).
+- `title, description? @db.Text` (rich-text JSON), `descriptionHtml?`, `descriptionStripped?` (plain text для поиска / индексации AI).
+- `priority @default("none")` (urgent/high/medium/low/none), `stateId?`.
+- `parentId?` — иерархия подзадач (self-relation IssueSubtasks).
+- `estimatePoints Int?`, `sortOrder Int @default(0)`.
+- `startDate?, dueDate?, completedAt?, cycleId?`.
+- Связи с другими системами: `goalId?` (FK на Goal), `meetingId?` (legacy), `linkedMeetingIds String[]` (видеовстречи из задачи).
+- AI metadata: `sourceBlockIds String[]`, `confidence Decimal(4,3)?`, `createdManually @default(true)`.
+- Внешний источник: `externalSource?` (email/telegram/checkin/meeting/api/manual), `externalId?`.
+- `entityId?` для графа, `createdById String`, soft-delete `deletedAt?`.
+
+### IssueAssignee (M2M), IssueSubscriber, IssueMention (с commentId? FK), Label (per-project или global), IssueLabel
+- Стандартные M2M структуры, см. schema.prisma.
+
+### IssueComment
+- `issueId, authorId, parentCommentId?` (threading).
+- `content @db.Text` (rich-text JSON), `contentHtml?, contentStripped?` (plain для AI).
+- `access @default("internal")` (internal/external для гостя).
+- Voice: `voiceUrl?, voiceDuration Int? (секунды), voiceTranscript? @db.Text` (от Vox/GigaAM ASR).
+- `editedAt?, deletedAt?` (soft).
+
+### IssueAttachment
+- `issueId, commentId?` (если приложен к комментарию), `uploaderId, fileName, fileUrl, fileSize Int, mimeType, thumbnailUrl?` (для картинок).
+
+### IssueLink
+- Внешние ссылки: `issueId, title, url, addedById`.
+
+### IssueRelation
+- `sourceIssueId, targetIssueId, relationType` (blocks/blocked_by/duplicates/duplicated_by/relates_to), `createdById`.
+- Уникальность: `@@unique([sourceIssueId, targetIssueId, relationType])`.
+- Автоматически создаётся обратная relation в RelationsService.create (blocks ↔ blocked_by, duplicates ↔ duplicated_by, relates_to ↔ relates_to).
+
+### IssueActivity (audit-trail)
+- `tenantId, issueId, actorUserId?, actorType` (user/ai_agent/system), `agentName?` (если actor — AI).
+- `verb` (created/updated/status_changed/assigned/commented/linked/related/unrelated/meeting_started/...), `field?` (если updated), `oldValue Json?, newValue Json?, metadata Json?`.
+- `epoch BigInt` — микросекунды для сортировки (`BigInt(Date.now() * 1000)`).
+
+### IssueVersion (исторические снимки)
+- `issueId, versionNumber, snapshot Json` (полный снимок Issue + связей), `createdByUserId`.
+
+### IntakeIssue (входящие задачи перед триажем)
+- `tenantId, projectId?` (если уже определён, иначе AI suggest).
+- `status @default("pending")` (pending/snoozed/accepted/rejected/duplicate), `source` (in_app/email/telegram/checkin/meeting/api/concierge/mobile_voice), `sourceEmail?, externalSource?, externalId?`.
+- `rawContent @db.Text` (исходный текст), `extractedTitle?, extractedDescription?`.
+- AI-предложения: `suggestedProjectId?, suggestedAssigneeId?, suggestedGoalId?, suggestedPriority?, suggestedDueDate?, suggestedLabels String[], confidence Decimal(4,3)?`.
+- Триаж: `triagedByUserId?, triagedAt?, rejectedReason?, snoozedUntil?`.
+- Если accept — создаётся Issue, ссылка в `createdIssueId?`.
+
+### IssueWebhook (исходящие webhooks для внешних интеграций)
+- `tenantId, name, url, secretKey String` (с префиксом `kora_wh_` + 32 байта random).
+- `events String[]` (issue.created, issue.updated, comment.created, cycle.completed, ...).
+- `isActive @default(true)`, `isInternal @default(false)`, `version Int @default(1)`.
+
+### IssueWebhookLog
+- `webhookId, eventType, requestMethod, requestUrl, requestHeaders Json, requestBody Json`.
+- `responseStatus?, responseBody? @db.Text` (truncate 10KB), `responseTime Int?` (ms).
+- `retryCount Int @default(0)`, `success Boolean`, `errorMessage?`.
+
+### TeamTemplate (10 шаблонов команд)
+- `tenantId?` (null = системный платформенный шаблон), `slug` (sales/development/installation/marketing/management/customer_support/hr/finance/operations/product), `name, description @db.Text, category`.
+- `definition Json` — { roles[], states[], laneTemplates[], typicalTasks[], regulationStubs[], kpiTemplates[] }.
+- `isPublic @default(true), usageCount Int @default(0)`.
+
+### Расширения существующих моделей
+- `Meeting.linkedIssueId String?` + relation `linkedIssue Issue? @relation("MeetingLinkedIssue", ...)` — для `POST /issues/:id/start-meeting`.
+- `Goal.linkedIssues Issue[] @relation("IssueGoal")` — стратегическое согласование с Фазы 1.
+- `MeetingType.task_discussion` — новое значение enum.
+
+### SignalType (расширение 38 → 56)
+- 8 task_*: для tracker.adapter в knowledge-core (Sprint 3 B1-3.1).
+- 7 helpfulness: для Specialist 3.8 Helpfulness Agent (Wave 2). `question_unanswered` и `question_acknowledged_no_action` — only-private-to-admin (этическая защита).
+- 3 gamification: для Recognition Agent (Wave 2) — helped_by, helped_to, thanks_explicit.
+
+### ER-связи tracker
+```
+Project 1 ─── N ProjectMember N ─── 1 User
+Project 1 ─── N Issue N ─── M Goal
+Project 1 ─── N Cycle 1 ─── N Issue
+Issue 1 ─── N IssueComment 1 ─── N IssueAttachment
+Issue 1 ─── N IssueActivity
+Issue 1 ─── N IssueVersion
+Issue N ─── M Label (через IssueLabel)
+Issue N ─── M User (через IssueAssignee)
+Issue 1 ─── N IssueSubscriber
+Issue 1 ─── N IssueLink
+Issue N ─── N Issue (через IssueRelation с relationType + auto-обратная)
+Issue 1 ─── N MeetingLinkedIssue (Meeting)
+IntakeIssue → Issue (созданная)
+IssueWebhook 1 ─── N IssueWebhookLog
+TeamTemplate 1 ─── N Project (опц.)
+```
+
 [[../index|← index]]

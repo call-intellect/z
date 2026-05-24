@@ -1116,4 +1116,107 @@ PERSONA_ROLE_AGG_MIN_PERSONS=2
 
 Подробности: [[../01_projects/skill-and-clone|01_projects/skill-and-clone.md]].
 
+## Tracker — задачный модуль (2026-05-24, Sprint 1)
+
+Полный backend модуля `tracker/` создан Sprint 1 (10 коммитов, 9 параллельных subagent'ов, ~10 200 строк). Полное описание: [[../01_projects/tracker]].
+
+### `backend/src/modules/tracker/`
+
+```
+tracker/
+  tracker.module.ts                                    # экспорт IssuesService, ActivityRecorderService, TrackerEventsService
+  README.md
+  queues.ts                                            # TRACKER_QUEUE_NAMES.WEBHOOK_DELIVERY = 'tracker.webhook-delivery'
+  controllers/
+    projects.controller.ts                             # CRUD + archive/unarchive + members
+    issues.controller.ts                               # CRUD + transitions + assignees/labels/subscribe + link-goal + activity/versions + start-meeting
+    cycles.controller.ts                               # CRUD + complete (auto-rollover)
+    intake.controller.ts                               # CRUD + triage (accept/reject/snooze/duplicate)
+    comments.controller.ts                             # CRUD + threading + voice
+    labels.controller.ts
+    webhooks.controller.ts                             # CRUD + logs + test (202 enqueued)
+    relations.controller.ts                            # IssueRelation CRUD с auto-парной обратной
+    attachments.controller.ts                          # S3 multipart + presigned URL
+    team-templates.controller.ts                       # read-only (seed контента — Phase 4)
+  services/
+    projects.service.ts                                # create с default IssueState + owner ProjectMember
+    issues.service.ts                                  # CRUD + transitions + assignees + labels + subscribe + goal-link + WS publish + webhook dispatch
+    cycles.service.ts                                  # CRUD + complete с auto-rollover
+    intake.service.ts                                  # CRUD + triage
+    comments.service.ts                                # CRUD + @-упоминания → IssueMention
+    labels.service.ts                                  # CRUD
+    webhooks.service.ts                                # CRUD + secretKey `kora_wh_` + enqueueTest
+    relations.service.ts                               # CRUD с auto-обратной (blocks↔blocked_by, etc.)
+    attachments.service.ts                             # S3.putObject + Prisma create + presignGet + delete
+    issue-meetings.service.ts                          # Meeting.task_discussion + LiveKit JWT
+    activity-recorder.service.ts                       # запись IssueActivity (epoch BigInt, $transaction(tx))
+    tracker-events.service.ts                          # WS publish (issue/comment/cycle/intake)
+    webhook-dispatcher.service.ts                      # queue.add для active webhooks per event
+    webhook-signer.service.ts                          # HMAC SHA256
+  workers/
+    webhook-delivery.worker.ts                         # in-process BullMQ worker, attempts:5, exp backoff 60s→300s→1500s→7500s→37500s
+  gateways/
+    tracker.gateway.ts                                 # @nestjs/websockets namespace /ws/tracker, tenant rooms
+  dto/
+    projects/{create,update,project-response,list-projects-query}.dto.ts
+    issues/{create,update,transition-state,issue-response,list-issues-query,create-relation,start-meeting}.dto.ts
+    cycles/{create,update,cycle-response}.dto.ts
+    intake/{create,triage}.dto.ts
+    comments/{create,update}.dto.ts
+    labels/{create}.dto.ts
+    webhooks/{create,update}.dto.ts
+    ws-events.ts                                       # WsEventDto<T>
+```
+
+### Зависимости (импорты)
+
+- `PrismaService` (через PrismaModule)
+- `RbacService` (через RbacModule) — 6 ResourceType: project, issue, cycle, intake_issue, team_template, issue_webhook
+- `S3Service` (Global, из RecordingsModule) — для attachments
+- `LivekitService` (Global) — для start-meeting JWT
+- `BullMQ` через TYPED_QUEUES + Redis-connection — для tracker.webhook-delivery queue
+- `@nestjs/websockets` + `@nestjs/platform-socket.io` + `socket.io@4.8` (новые зависимости backend/package.json)
+
+### Потоки данных
+
+1. **Создание задачи через REST:**
+   - POST /api/v1/projects/:projectId/issues → IssuesController.create
+   - IssuesService.create в $transaction: Issue + assignees + labels + IssueActivity verb='created'
+   - После tx: TrackerEventsService.publishIssueCreated → emit `issue.created` на tenant:${tenantId} + project:${projectId} rooms
+   - WebhookDispatcher.dispatch(tenantId, 'issue.created', payload) → queue jobs для active webhooks с events.includes('issue.created')
+   - WebhookDeliveryWorker берёт job → HMAC sign → fetch URL с timeout 30s → IssueWebhookLog запись → retry или success
+   - **Sprint 3:** EventEmitter `tracker.event_occurred` → TrackerAdapter → RawEvent с signalType='task_created' → core.raw-events очередь → knowledge-core pipeline (block-ingest → распознавание сущностей → специалисты)
+
+2. **Цикл (Cycle) complete:**
+   - POST /api/v1/cycles/:id/complete → CyclesService.complete
+   - В транзакции: для каждой Issue с cycleId=id и state.category !== 'completed' → move в следующий Cycle + IssueActivity verb='moved_from_cycle'
+   - Publish `cycle.progressUpdated` + `cycle.completed` через WS
+   - Webhook event `cycle.completed`
+
+3. **Видеовстреча из задачи:**
+   - POST /api/v1/issues/:id/start-meeting → IssueMeetingsService
+   - В транзакции: Meeting (type='task_discussion', linkedIssueId=id) + host MeetingParticipant + filtered guest Participants
+   - LivekitService.ensureRoom + generateHostToken
+   - IssueActivity verb='meeting_started' с metadata={meetingId}
+   - Возврат { meetingId, meetingUrl, token } клиенту
+
+### Метрики Prometheus (business-metrics.service.ts)
+
+```
+issues_created_total{tenant, project, source}
+issues_completed_total{tenant, project}
+intake_triaged_total{tenant, decision}
+tracker_webhook_delivery_total{tenant, event, success}
+tracker_webhook_retry_count{tenant, webhook_id}        # ⚠ cardinality risk Sprint 7
+tracker_events_to_knowledge_core_total{tenant, type}
+
+issues_by_state_count{tenant, project, state}          # gauge, cron-обновление
+issues_overdue_count{tenant, project}                  # gauge, cron-обновление
+intake_pending_count{tenant}                           # gauge, обновляется при IntakeIssue.status change
+```
+
+### LiveKit RNNoise активация (frontend)
+
+`frontend/src/lib/livekit/noise-suppression.ts` — buildAudioCaptureOptions + localStorage helper'ы (`kora_noise_suppression_enabled`). Включён по умолчанию во встречах, toggle в `GuestNameForm.tsx` (mobile + desktop). См. [[../01_projects/livekit-noise-cancellation]].
+
 [[../index|← index]]

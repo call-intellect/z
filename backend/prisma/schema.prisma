@@ -6582,6 +6582,24 @@ model TeamTemplate {
   @@unique([tenantId, slug])
 }
 
+/// Производственный календарь РФ (или per-tenant override).
+/// Tracker Phase 4 (Sprint 7, 2026-05-24) — учёт праздников в dueDate / cycle.endDate.
+/// Если задача попадает на праздник — авто-перенос на следующий рабочий день.
+/// `tenantId = null` — глобальный платформенный календарь.
+/// `isWorking = true` — для перенесённых рабочих суббот (производственный календарь РФ).
+model HolidayCalendar {
+  id        String   @id @default(cuid())
+  tenantId  String? // null = глобальный РФ-календарь
+  date      DateTime // YYYY-MM-DD (хранится как DateTime, но логически date-only)
+  name      String // «Новый год», «8 марта», «Перенесённая суббота 04.05»
+  isWorking Boolean  @default(false) // true для перенесённых рабочих суббот
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, date])
+  @@index([date])
+}
+
 // ──────────────────────────── Wave 2: Activity Feeds (2026-05-24) ────────────────────────────
 // Sub-ТЗ: plans/tz/2026-05-23-activity-feeds.md
 // Единая модель ленты активности — live-канал между AI-агентами и людьми.

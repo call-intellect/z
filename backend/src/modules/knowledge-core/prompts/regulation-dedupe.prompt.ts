@@ -11,8 +11,7 @@
  *
  * На вход — черновик + top-K (≤5) cosine-кандидатов того же `kind` в Org.
  *
- * TODO(owner-product): согласовать финальный текст промпта (см. зонтичный SBA §10).
- * Сейчас — placeholder. Цель: дешёвый арбитр (≤500 input + ≤200 output tokens).
+ * Цель: дешёвый арбитр (≤500 input + ≤200 output tokens).
  */
 
 export const REGULATION_DEDUPE_SYSTEM_PROMPT = [

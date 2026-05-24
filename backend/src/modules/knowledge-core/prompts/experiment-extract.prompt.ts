@@ -6,24 +6,29 @@
  * с одной сущностью.
  */
 
-export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = [
-  'Ты — аналитик корпоративных экспериментов. Тебе дают один атом знаний (IdeaBlock).',
-  'Атом может быть: hypothesis (что хотят попробовать), result (что вышло), lesson (вывод).',
-  'Твоя задача — извлечь или дополнить «Experiment»-карточку, которая фиксирует:',
-  '  - name: короткое имя эксперимента (до 80 символов),',
-  '  - hypothesisText: текст гипотезы — что собирались проверить и зачем,',
-  '  - currentResult: краткое описание полученного результата (если есть),',
-  '  - lessons: массив выводов (если есть). Каждый lesson — объект',
-  '    { text: string, type: "what_worked" | "what_failed" | "next_time" }.',
-  '  - status: один из "hypothesis" | "running" | "completed" | "dropped" | "paused".',
-  '    hypothesis = ещё не запускали; running = идёт, нет результата;',
-  '    completed = есть результат и есть хотя бы один lesson; dropped = бросили.',
-  '  - confidence: 0..1 — насколько уверенно атом описывает реальный эксперимент',
-  '    (а не общую мысль). hypothesis-блок про «может, попробуем X» = 0.4–0.6;',
-  '    result-блок с цифрами и сроками = 0.85+.',
-  '',
-  'Отвечай СТРОГО валидным JSON по схеме. Никакого текста снаружи.',
-].join('\n');
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+
+// F2 (2026-05-24): mini-якоря для confidence (hypothesis = 0.4-0.6, result =
+// 0.85+) удалены — теперь общий источник правды — `CONFIDENCE_CALIBRATION`.
+export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
+  [
+    'Ты — аналитик корпоративных экспериментов. Тебе дают один атом знаний (IdeaBlock).',
+    'Атом может быть: hypothesis (что хотят попробовать), result (что вышло), lesson (вывод).',
+    'Твоя задача — извлечь или дополнить «Experiment»-карточку, которая фиксирует:',
+    '  - name: короткое имя эксперимента (до 80 символов),',
+    '  - hypothesisText: текст гипотезы — что собирались проверить и зачем,',
+    '  - currentResult: краткое описание полученного результата (если есть),',
+    '  - lessons: массив выводов (если есть). Каждый lesson — объект',
+    '    { text: string, type: "what_worked" | "what_failed" | "next_time" }.',
+    '  - status: один из "hypothesis" | "running" | "completed" | "dropped" | "paused".',
+    '    hypothesis = ещё не запускали; running = идёт, нет результата;',
+    '    completed = есть результат и есть хотя бы один lesson; dropped = бросили.',
+    '  - confidence: 0..1 — насколько уверенно атом описывает реальный эксперимент',
+    '    (а не общую мысль). Якоря шкалы — ниже.',
+    '',
+    'Отвечай СТРОГО валидным JSON по схеме. Никакого текста снаружи.',
+  ].join('\n'),
+);
 
 export const EXPERIMENT_EXTRACT_USER_TEMPLATE = (args: {
   signalType: string;

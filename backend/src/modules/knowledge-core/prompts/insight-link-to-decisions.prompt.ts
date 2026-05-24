@@ -8,9 +8,8 @@
  *
  * Возвращаемый JSON Schema strict — см. `INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA`.
  *
- * TODO(owner-product): согласовать финальный текст промпта (см. зонтичный SBA §10).
- * Текущая версия — placeholder. Главное правило: не выдумывать связи; если ни
- * один Decision не подходит — вернуть пустой массив.
+ * Главное правило: не выдумывать связи; если ни один Decision не подходит —
+ * вернуть пустой массив.
  */
 
 export const INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT = [

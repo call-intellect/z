@@ -4,8 +4,6 @@
  * LLM-промпт `probe-formulate` — берёт probe-event (reason + payload +
  * suggestedActions) и формирует короткий, понятный вопрос (≤ 200 символов)
  * с 2–4 inline-options. UI / Telegram inline-keyboard рисуют их кнопками.
- *
- * TODO(owner-product): согласовать финальный текст промпта.
  */
 
 export const PROBE_FORMULATE_SYSTEM_PROMPT = [

@@ -13,8 +13,8 @@
  *
  * На вход — черновик + top-K (≤5) cosine-кандидатов того же Org.
  *
- * TODO(owner-product): согласовать финальный текст промпта (см. зонтичный SBA §10).
- * Сейчас — placeholder. Цель: дешёвый арбитр (≤700 input + ≤300 output tokens).
+ * Контракт verdict-only: confidence в схеме нет — для аудита достаточно
+ * поля `reasoning`. Цель: дешёвый арбитр (≤700 input + ≤300 output tokens).
  */
 
 export const DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT = [

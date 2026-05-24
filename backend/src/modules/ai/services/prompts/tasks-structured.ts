@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { type DialogTurn, turnsToText } from './common';
+import { type DialogTurn } from './common';
+import { buildTasksPromptUnified } from './tasks-unified';
 
 /**
  * Промпт для извлечения action items с расширенными полями (для модели `Task`):
@@ -8,11 +9,20 @@ import { type DialogTurn, turnsToText } from './common';
  * confidence-оценка.
  *
  * Это НЕ замена `prompts/tasks.ts` (там legacy-формат для AiResult.tasks).
- * Здесь — новый формат для AI-pipeline фазы M3 (модели `Task` + `MeetingHighlight`).
+ * Здесь — формат для AI-pipeline фазы M3 (модели `Task` + `MeetingHighlight`).
+ *
+ * F5 (ТЗ 2026-05-24): builder теперь — тонкая обёртка над
+ * `buildTasksPromptUnified` (единый источник правды). Сохраняем экспорты
+ * `TaskExtractedSchema`/`TasksExtractedArraySchema` для caller'ов
+ * (`TaskExtractionService` парсит ответ через них).
  */
 export const TASKS_STRUCTURED_TASK_TYPE = 'tasks';
 export const TASKS_STRUCTURED_PROMPT_NAME = 'tasks_structured_v1';
 
+/**
+ * Zod-схема одной извлечённой задачи в structured-формате.
+ * Контракт совпадает с моделью `Task` (`backend/prisma/schema.prisma`).
+ */
 export const TaskExtractedSchema = z
   .object({
     title: z.string().min(1).max(300),
@@ -29,38 +39,51 @@ export type TaskExtracted = z.infer<typeof TaskExtractedSchema>;
 
 export const TasksExtractedArraySchema = z.array(TaskExtractedSchema);
 
-const TASKS_STRUCTURED_SYSTEM = `Ты — деловой ассистент. Извлеки из встречи список action items (задач, которые были поставлены или зафиксированы).
-
-Правила:
-- Извлекай только реальные задачи. Если задач не было — верни пустой массив [].
-- "title" — краткая формулировка задачи (на русском, императив).
-- "description" — расширенное описание, если в разговоре есть детали (или null).
-- "assigneeRaw" — ФИО, ник или роль ответственного, как было сказано в разговоре (или null).
-- "dueDate" — срок: ISO-8601 (YYYY-MM-DD) или относительная фраза («к концу недели», «до пятницы»). null — если срока нет.
-- "sourceStartMs", "sourceEndMs" — миллисекунды от начала встречи: фрагмент, где задача была сформулирована.
-- "sourceQuote" — точная цитата из разговора (1-3 предложения), на основании которой извлечена задача.
-- "confidence" — твоя уверенность от 0 до 1, что это действительно задача (а не пустое обсуждение). Минимум 0.5 для серьёзных задач.
-
-Формат ответа: ТОЛЬКО валидный JSON-массив. Без текста до или после, без markdown-обёрток.`;
-
 export interface TasksStructuredPromptInput {
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
 }
 
+/**
+ * Legacy builder для `TaskExtractionService` → `Task`-модель.
+ *
+ * F5 (ТЗ 2026-05-24): тонкая обёртка над `buildTasksPromptUnified` с
+ * опциями structured-пути:
+ *   - `useAssigneeRaw: true`  → поля `assigneeRaw` + `description` вместо `assignee`.
+ *   - `withFragmentBounds: true` → поля `sourceStartMs` / `sourceEndMs`.
+ *   - `withSourceQuote: true` → обязательная цитата.
+ *   - `withConfidence: true`  → обязательное число 0..1 (с шкалой).
+ *   - `responseAsBareArray: true` → ответ голым JSON-массивом
+ *     (`TaskExtractionService` парсит через `JSON.parse(result.text)`
+ *     при `responseFormat: { type: 'json_object' }`).
+ *
+ * `tasks-unified` builder возвращает `{ system, user }` под унифицированный
+ * tool-flow (объект `{ tasks: [...] }`). В structured-пути caller ждёт
+ * голый JSON-массив, поэтому здесь оборачиваем user-вывод так, чтобы
+ * сохранить исторический контракт: убираем строку «Тип встречи / Заголовок»
+ * не нужно — она уже есть в unified; добавляем явную инструкцию
+ * вернуть массив (это делает `responseAsBareArray: true` внутри builder'а).
+ */
 export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
   system: string;
   user: string;
 } {
-  const dialog = turnsToText(input.dialog);
-  return {
-    system: TASKS_STRUCTURED_SYSTEM,
-    user: `Тип встречи: ${input.meeting.type}
-Заголовок: ${input.meeting.title}
-
-Диалог (timestamps в формате [mm:ss-mm:ss]):
-${dialog}
-
-Верни JSON-массив задач. Reply with valid JSON only.`,
-  };
+  return buildTasksPromptUnified(
+    {
+      meeting: {
+        id: input.meeting.id,
+        title: input.meeting.title,
+        type: input.meeting.type,
+      },
+      dialog: input.dialog,
+    },
+    {
+      enriched: false,
+      useAssigneeRaw: true,
+      withFragmentBounds: true,
+      withSourceQuote: true,
+      withConfidence: true,
+      responseAsBareArray: true,
+    },
+  );
 }

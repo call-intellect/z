@@ -3,8 +3,6 @@
  *
  * LLM-промпт `idea-status-summarize` — для closing-loop нотификаций
  * supporter'ам идеи при изменении статуса. Возвращает короткий title + body.
- *
- * TODO(owner-product): согласовать финальный текст промпта.
  */
 
 export const IDEA_STATUS_SUMMARIZE_SYSTEM_PROMPT = [
@@ -26,6 +24,7 @@ export const IDEA_STATUS_SUMMARIZE_USER_TEMPLATE = (args: {
     `Новый статус: ${args.newStatus}.`,
   ];
   if (args.reason) lines.push(`Причина: ${args.reason}`);
+  lines.push('', 'Если actionUrl передан — упомяни в body, что детали доступны по ссылке.');
   lines.push('', 'Верни JSON по схеме `idea_status_summarize_v1`.');
   return lines.join('\n');
 };

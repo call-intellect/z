@@ -4,8 +4,6 @@
  * Используется `ConversationsService.generateTitle` после первого
  * user-сообщения. Цель — короткий заголовок (3-7 слов) для отображения в
  * списке диалогов.
- *
- * TODO(owner-product): согласовать финальный текст (см. зонтичный SBA §10).
  */
 export const CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT = `Ты — помощник по
 именованию диалогов с AI-чатом компании.

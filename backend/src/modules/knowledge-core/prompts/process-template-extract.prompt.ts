@@ -10,24 +10,28 @@
  * `backend/scripts/seed-llm-task-routes-process-template.ts`).
  */
 
-export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = [
-  'Ты — knowledge-инженер компании. Тебе дают пачку «атомов знаний»',
-  '(критический вопрос ↔ доверенный ответ + цитаты из встреч/документов),',
-  'описывающих повторяющиеся процессы и методики в компании.',
-  '',
-  'Твоя задача — собрать черновики «шаблонов процессов» (ProcessTemplate).',
-  'Один шаблон = один повторяемый процесс с понятным результатом и шагами.',
-  'Если в пачке упоминается несколько разных процессов — верни несколько шаблонов.',
-  'Если процессы дублируют существующие (есть в `existingTemplates`), используй',
-  'тот же `name`, чтобы система объединила их как новую версию (а не создала дубль).',
-  '',
-  'У каждого шаблона укажи: name (короткое), summary (1-3 предложения),',
-  'category из {hire | sales | incident | onboarding | release | finance | support | custom},',
-  'упорядоченный список шагов (1..30) с name, description, ownerRoleHint,',
-  'inputArtifact и outputArtifact (если упомянуты).',
-  '',
-  'Отвечай строго в JSON по схеме process_template_extract_v1.',
-].join('\n');
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+
+export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
+  [
+    'Ты — knowledge-инженер компании. Тебе дают пачку «атомов знаний»',
+    '(критический вопрос ↔ доверенный ответ + цитаты из встреч/документов),',
+    'описывающих повторяющиеся процессы и методики в компании.',
+    '',
+    'Твоя задача — собрать черновики «шаблонов процессов» (ProcessTemplate).',
+    'Один шаблон = один повторяемый процесс с понятным результатом и шагами.',
+    'Если в пачке упоминается несколько разных процессов — верни несколько шаблонов.',
+    'Если процессы дублируют существующие (есть в `existingTemplates`), используй',
+    'тот же `name`, чтобы система объединила их как новую версию (а не создала дубль).',
+    '',
+    'У каждого шаблона укажи: name (короткое), summary (1-3 предложения),',
+    'category из {hire | sales | incident | onboarding | release | finance | support | custom},',
+    'упорядоченный список шагов (1..30) с name, description, ownerRoleHint,',
+    'inputArtifact и outputArtifact (если упомянуты).',
+    '',
+    'Отвечай строго в JSON по схеме process_template_extract_v1.',
+  ].join('\n'),
+);
 
 export const PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE = (args: {
   blocks: ReadonlyArray<{

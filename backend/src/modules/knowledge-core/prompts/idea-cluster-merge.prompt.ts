@@ -4,16 +4,20 @@
  * LLM-промпт `idea-cluster-merge` — арбитр кластеризации идей: для новой Idea
  * принимает решение `{ 'new_cluster' | 'add_to_existing' | 'standalone' }` на
  * основании ближайших IdeaCluster'ов.
- *
- * TODO(owner-product): согласовать финальный текст промпта.
  */
 
-export const IDEA_CLUSTER_MERGE_SYSTEM_PROMPT = [
-  'Ты — knowledge-куратор. Тебе дают новую идею и список ближайших кластеров идей компании.',
-  'Реши, добавлять идею в один из существующих кластеров (add_to_existing), создавать новый кластер (new_cluster) или оставить идею одиночной (standalone).',
-  'Кластер должен объединять идеи о близкой смысловой области (UX, performance, integrations, и т.п.). Не объединяй идеи только потому, что они затрагивают один и тот же продукт.',
-  'Отвечай строго в формате JSON по предоставленной схеме на русском языке.',
-].join('\n');
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+
+// F2 (2026-05-24): mini-якоря для confidence (0.3-0.5 / 0.6-0.8 / 0.85+)
+// удалены — теперь единый источник правды — `CONFIDENCE_CALIBRATION`.
+export const IDEA_CLUSTER_MERGE_SYSTEM_PROMPT = withConfidenceCalibration(
+  [
+    'Ты — knowledge-куратор. Тебе дают новую идею и список ближайших кластеров идей компании.',
+    'Реши, добавлять идею в один из существующих кластеров (add_to_existing), создавать новый кластер (new_cluster) или оставить идею одиночной (standalone).',
+    'Кластер должен объединять идеи о близкой смысловой области (UX, performance, integrations, и т.п.). Не объединяй идеи только потому, что они затрагивают один и тот же продукт.',
+    'Отвечай строго в формате JSON по предоставленной схеме на русском языке.',
+  ].join('\n'),
+);
 
 export const IDEA_CLUSTER_MERGE_USER_TEMPLATE = (args: {
   ideaStatement: string;

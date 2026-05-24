@@ -1,3 +1,4 @@
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
 import type { Segment } from '../services/segment-builder.service';
 
 /**
@@ -190,6 +191,8 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
           'mentionedEntities',
           'role_relevant',
           'roleHint',
+          'commitmentDueDateGuess',
+          'commitmentRecipientNameGuess',
         ],
         properties: {
           name: { type: 'string', maxLength: 200 },
@@ -224,6 +227,21 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
           role_relevant: { type: 'boolean' },
           /** Имя должности из контекста, если упомянуто. null если нет. */
           roleHint: { type: ['string', 'null'] },
+          /**
+           * SBA β-8.2 — для блоков signalType='commitment': срок исполнения
+           * в формате YYYY-MM-DD, если упомянут в тексте («к пятнице»,
+           * «до конца месяца», «к 25 числу»). Модель сама конвертирует
+           * относительные выражения в дату исходя из «сегодня». null если
+           * не упомянут или signalType≠'commitment'.
+           */
+          commitmentDueDateGuess: { type: ['string', 'null'] },
+          /**
+           * SBA β-8.2 — для блоков signalType='commitment': имя адресата
+           * обещания (кому пообещали), как звучит в тексте. Сопоставление
+           * с Person выполняется в обработчике. null если не упомянут
+           * или signalType≠'commitment'.
+           */
+          commitmentRecipientNameGuess: { type: ['string', 'null'] },
         },
       },
     },
@@ -350,7 +368,7 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-const SYSTEM_PROMPT = `Ты — извлекатель структурированного знания из расшифровки встречи или текста документа.
+const SYSTEM_PROMPT = withConfidenceCalibration(`Ты — извлекатель структурированного знания из расшифровки встречи или текста документа.
 Получаешь список сегментов диалога/текста и возвращаешь JSON со структурами знания.
 
 Возвращай ТРИ группы данных в одном ответе:
@@ -460,6 +478,8 @@ const SYSTEM_PROMPT = `Ты — извлекатель структуриров�
   Если сущностей нет — передай пустой массив.
 - role_relevant: true ТОЛЬКО если блок имеет прямое отношение к конкретной должности — описывает выполнение её функций, навыки, типичные решения, грабли. Если блок про общую тему/клиента/продукт без должностной привязки — false.
 - roleHint: строка с именем должности из контекста (например «Менеджер по продажам», «РОП», «Главный бухгалтер»). null, если в сегментах должность не упоминалась явно.
+- commitmentDueDateGuess: для блоков с signalType='commitment' — срок в формате YYYY-MM-DD, если в тексте есть указание («к пятнице», «до конца месяца», «к 25 числу», «через две недели»). Сама конвертируй относительные выражения в дату исходя из «сегодняшней даты разговора» (как правило это дата встречи). Для остальных signalType и при отсутствии срока — null. Никогда не выдумывай срок — лучше null, чем ошибочный.
+- commitmentRecipientNameGuess: для блоков с signalType='commitment' — имя адресата (кому пообещали что-то сделать), как звучит в тексте: «Маше», «клиенту Z», «руководителю». Для остальных signalType и когда адресат не указан — null.
 
 # Типизированные сущности группы Б
 
@@ -495,7 +515,7 @@ links[] — опциональные типизированные рёбра м�
 - evidenceStartMs ≤ evidenceEndMs.
 - Все строки — на русском.
 - confidence < 0.5 для типизированных сущностей — лучше не возвращать сущность вообще.
-`;
+`);
 
 interface BuildArgs {
   meetingTitle?: string | undefined;

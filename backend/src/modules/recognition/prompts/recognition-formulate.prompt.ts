@@ -14,8 +14,6 @@
  *   - Если фактов мало — лучше ничего не выдумывать (вернуть короткое
  *     общее «спасибо», без deepfake-благодарности). LLM может вернуть
  *     пустую строку — тогда воркер использует deterministic-fallback.
- *
- * TODO(owner-product): согласовать финальный текст промпта и тон.
  */
 
 export const RECOGNITION_FORMULATE_SYSTEM_PROMPT = [

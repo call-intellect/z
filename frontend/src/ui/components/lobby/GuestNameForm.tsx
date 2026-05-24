@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import { ApiError } from '@/api/api-error';
 import { meetingsApi, type JoinMeetingApiResponse } from '@/api/meetings.api';
 import { useToast } from '@/contexts/toast-context';
 import { Button } from '@/ui/components/shared/Button';
 import { t } from '@/lib/i18n';
+import {
+  getNoiseSuppressionEnabled,
+  setNoiseSuppressionEnabled,
+} from '@/lib/livekit/noise-suppression';
 
 type Props = {
   meetingId: string;
@@ -18,7 +22,19 @@ type Props = {
 export function GuestNameForm({ meetingId, onJoined }: Props) {
   const [name, setName] = useState('');
   const [pending, setPending] = useState(false);
+  const [noiseEnabled, setNoiseEnabled] = useState(true);
   const { addToast } = useToast();
+
+  // Гидратируем чекбокс из localStorage только на клиенте — чтобы SSR-разметка
+  // совпадала с серверной (избегаем hydration mismatch).
+  useEffect(() => {
+    setNoiseEnabled(getNoiseSuppressionEnabled());
+  }, []);
+
+  const onNoiseChange = (next: boolean) => {
+    setNoiseEnabled(next);
+    setNoiseSuppressionEnabled(next);
+  };
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -63,6 +79,22 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
         required
         className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
+      <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={noiseEnabled}
+          onChange={(e) => onNoiseChange(e.target.checked)}
+          className="mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span className="flex flex-col">
+          <span className="font-medium text-slate-900">
+            {t('lobby.noise_suppression_label')}
+          </span>
+          <span className="text-xs text-slate-500">
+            {t('lobby.noise_suppression_hint')}
+          </span>
+        </span>
+      </label>
       <Button type="submit" loading={pending} disabled={pending}>
         {pending ? t('lobby.joining') : t('lobby.join')}
       </Button>

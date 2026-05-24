@@ -119,6 +119,9 @@ export const ru = {
     failed_title: 'Встреча не состоялась',
     failed_description: 'Что-то пошло не так. Свяжитесь с организатором.',
     open_result: 'Открыть результат',
+    noise_suppression_label: 'Шумоподавление микрофона',
+    noise_suppression_hint:
+      'Убирает фоновый шум, эхо и резкие звуки. Рекомендуем оставить включённым.',
   },
   room: {
     controls: {

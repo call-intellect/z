@@ -15,6 +15,10 @@ import { meetingsApi } from '@/api/meetings.api';
 import type { JoinMeetingApiResponse } from '@/api/meetings.api';
 import { useToast } from '@/contexts/toast-context';
 import { t } from '@/lib/i18n';
+import {
+  buildAudioCaptureOptions,
+  getNoiseSuppressionEnabled,
+} from '@/lib/livekit/noise-suppression';
 import type { MeetingStatus, MeetingType } from '@/domain/enums';
 
 import { ChatPanel } from './ChatPanel';
@@ -59,6 +63,15 @@ export function MeetingRoom({
     [identityToParticipantId],
   );
 
+  // Шумоподавление: читаем настройку один раз при монтировании комнаты.
+  // Менять «на лету» не даём — LiveKit применяет AudioCaptureOptions при
+  // создании трека (`enableMicrophone`), и переключение потребовало бы
+  // пересоздать трек. Изменить можно из Lobby/PreJoin до входа.
+  const audioCaptureOptions = useMemo(
+    () => buildAudioCaptureOptions(getNoiseSuppressionEnabled()),
+    [],
+  );
+
   const { data: accessData } = useSWR(
     ['room-access', meetingId],
     async () => meetingsApi.access(meetingId),
@@ -91,7 +104,7 @@ export function MeetingRoom({
       token={livekit.token}
       serverUrl={livekit.url}
       connect={true}
-      audio={true}
+      audio={audioCaptureOptions}
       video={true}
       data-lk-theme="default"
       onDisconnected={onLeave}

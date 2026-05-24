@@ -101,8 +101,74 @@ covers: реестр всех страниц Next.js App Router
 - `/decisions`, `/insights`, `/ideas`, `/regulations` — реестры специалистов.
 - `/curation` — кураторская очередь.
 
+## UI/API Modernization 2026-05-25 (фазы A-G ТЗ `ui-api-modernization`)
+
+### Новые design-preview страницы
+
+| Путь | Назначение |
+|---|---|
+| `(design-preview)/light-theme` | Галерея компонентов в светлой теме (sage `#7CA890`): swatches, типографика, кнопки, Chip × 6 вариантов, StatCard default+dark+sparkline, Sparkline bar+line, EmptyState, ConfirmDialog, sonner toast. |
+| `(design-preview)/dark-theme` | То же в тёмной теме (warm-mint `#6FEAC8`). |
+
+Тема задаётся через `data-theme="light|dark"` + `style={{colorScheme:'...'}}` на оборачивающем `<div>`. Внутри — единый `DesignPreviewGallery.tsx`.
+
+### Новые shared-компоненты (`frontend/src/ui/components/shared/`)
+
+| Компонент | Назначение |
+|---|---|
+| `StatCard.tsx` | Бордерлесс-карточка KPI: label/value/delta/sparkline. `variant: 'default'\|'dark'` — dark как визуальный якорь в KPI strip даже в светлой теме. |
+| `Sparkline.tsx` | Pure-SVG bar/line, без recharts. Props: `data: number[]`, `variant: 'bar'\|'line'`, `color?`, `width?`, `height?`. |
+| `Chip.tsx` | Семантический pill: `variant: success\|warning\|danger\|info\|lavender\|sand`, `size: 'sm'\|'md'`. Использует `bg-chip-*-bg` / `text-chip-*-fg`. |
+| `QueryGate.tsx` | Универсальная обёртка `loading \| error \| empty \| content` поверх SWR. Принимает `skeleton?`, `empty?`, `errorView?`. |
+| `ConfirmDialog.tsx` | Замена нативного `confirm()`. Controlled через `open`/`onOpenChange`, `destructive?`, Russian-defaults. |
+| `useConfirmDialog.tsx` | Hook promise-based: `const { ask, dialog } = useConfirmDialog(); if (!(await ask({...}))) return; /* render */ {dialog}`. |
+| `EmptyState.tsx` (fix) | Hardcoded `bg-white/slate-*` → токены `bg-bg-subtle / border-border-subtle / text-fg-*`. |
+
+### Новые hooks (`frontend/src/hooks/`)
+
+| Hook | Назначение |
+|---|---|
+| `useSwrWithToast.ts` | Обёртка над `useSWR`: на error автоматически вызывает `sonner.toast.error(message)`. Тот же интерфейс что у `useSWR`. |
+| `useMediaQuery.ts` | `useMediaQuery(query)` + helper `useIsMobile()` (`max-width: 768px`). Vanilla `matchMedia`, SSR-safe (mount-guard). |
+
+### Дизайн-токены `frontend/src/ui/tokens.css`
+
+Полностью переписан на OKLCH. Light = sage `oklch(0.62 0.07 155)`, dark = warm-mint `oklch(0.84 0.13 168)`. Семантика pastel-чипов 6 семейств. Тёплый off-white фон `oklch(0.985 0.005 85)` вместо `#FFFFFF`. Film-grain noise overlay через `body::before` SVG-фильтр (отключается `@media (prefers-reduced-motion)`). Новая шкала radii (xs=6 → 2xl=28). Двойная мягкая тень `--shadow-card-{soft,raised}` + `--shadow-accent-focus`.
+
+### Tailwind config (`frontend/tailwind.config.ts`)
+
+Добавлены utility-классы: `bg-bg-surface`, `bg-bg-subtle`, `bg-accent-active`, `text-fg-disabled`, `bg-chip-*-{bg,fg}` (6 вариантов), `shadow-card-{soft,raised}`, `shadow-accent-focus`. Legacy `glow`/`glow-mint`/`soft`/`elevated` оставлены как alias на новые токены (для не-сломанного обратно совместимого кода). Inline plugin `.scrollbar-none` (без npm-зависимостей).
+
+### Sidebar (`frontend/src/ui/components/app-shell/Sidebar.tsx`)
+
+- Убран `shadow-glow-mint` с логотипа.
+- В light — `bg-bg-surface` (светлее контента) вместо `bg-bg-elevated`.
+- Active nav-item: 6px dot-маркер слева (absolute span) + `dark:shadow-accent-focus`.
+
+### Dashboard CEO (`frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx`)
+
+- KPI strip из 5 `<StatCard>` сверху (`grid-cols-1 md:grid-cols-3 xl:grid-cols-5`).
+- «Активные темы» — `variant="dark"` (визуальный якорь).
+- Sticky header: `sticky top-0 backdrop-blur-glass bg-bg-base/72` с responsive `-mx-4 md:-mx-6`.
+- Error banner: `bg-chip-danger-bg text-chip-danger-fg shadow-card-soft` (вместо hardcoded red-50/red-700).
+
+### Toast — sonner единственный
+
+- `frontend/app/layout.tsx`: `<ToastProvider>` удалён, sonner `<Toaster />` смонтирован один раз.
+- `frontend/src/contexts/toast-context.tsx`: остался как deprecated shim (proxy на sonner) — для обратной совместимости любых забытых импортов.
+- 67 файлов мигрировано через одноразовый codemod (`frontend/scripts/migrate-toast.mjs` — не закоммичен, throwaway).
+
+### Mobile master-detail
+
+`/meetings` — list+detail на desktop, push в `/meetings/[id]/result` на mobile (через `useIsMobile`). `/cards`, `/themes`, `/goals` уже на grid+Link, mobile стакается из коробки.
+
+Admin-таблицы (`/admin/llm-prices`, `/admin/usage/users`, `/admin/usage/functions`) — `hidden md:block` для `<table>` + `md:hidden` card-list. `/settings/sources`, `/settings/webhooks` — `flex-col md:flex-row`.
+
+Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pills) — горизонтальный `overflow-x-auto scrollbar-none snap-x` на mobile, `flex-wrap` на desktop.
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.
+- **2026-05-25 (UI/API modernization):** добавлена секция про design-preview / 7 новых shared-компонентов / 2 hooks / OKLCH-токены / sonner-миграцию / mobile-адаптацию.
 
 [[../index|← index]]

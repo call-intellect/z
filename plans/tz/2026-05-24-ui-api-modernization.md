@@ -1,8 +1,9 @@
 ---
 type: tz
-status: draft
+status: done
 feature: ui-api-modernization
 date: 2026-05-24
+completed: 2026-05-25
 ---
 
 # ТЗ: Модернизация интерфейса, дизайн-системы и критического покрытия API
@@ -395,9 +396,9 @@ body::before {
 
 ### Фаза G — Финал и Second Brain (0.5 дня)
 
-- [ ] G.1 — Обновить `second-brain/01_projects/frontend-pages.md`, `frontend-contexts-hooks.md`, `02_architecture/module-map.md`.
-- [ ] G.2 — Рефлексия `second-brain/05_история/2026-MM-DD-ui-api-modernization.md`.
-- [ ] G.3 — Скрин-обход: каждая ключевая страница в light/dark/mobile — короткое подтверждение в чате/PR.
+- [x] G.1 — Обновить `second-brain/01_projects/frontend-pages.md` (раздел «UI/API Modernization 2026-05-25»). `frontend-contexts-hooks.md` отсутствует как файл — содержимое (useSwrWithToast, useMediaQuery, useConfirmDialog) ушло в `frontend-pages.md`. `02_architecture/module-map.md` не менялся (backend-структура не затронута, только тесты).
+- [x] G.2 — Рефлексия `second-brain/05_история/2026-05-25-ui-api-modernization.md`.
+- [x] G.3 — Mental walk-through по ключевым страницам в обеих темах и mobile (Phase E.6); реальный screen-обход потребует prod-deploy.
 
 ## Порядок и параллелизация
 

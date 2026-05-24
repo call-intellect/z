@@ -43,6 +43,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
+import { StatCard } from '@/ui/components/shared/StatCard';
 import { CurationPendingWidget } from './widgets/CurationPendingWidget';
 import { InsightsTopWidget } from './widgets/InsightsTopWidget';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
@@ -102,9 +103,17 @@ export function DirectorDashboardClient() {
 
   const periodLabel = period === 'week' ? 'неделю' : 'месяц';
 
+  const signalsTotal = useMemo(() => {
+    if (!data?.signalCounters) return 0;
+    return SIGNAL_COUNTERS_BUCKET_ORDER.reduce(
+      (acc, key) => acc + (data.signalCounters?.[key] ?? 0),
+      0,
+    );
+  }, [data?.signalCounters]);
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="sticky top-0 z-10 -mx-6 mb-6 flex flex-col gap-3 border-b border-border-subtle bg-bg-base/72 px-6 py-4 backdrop-blur-glass md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Привет, {greetingName}
@@ -133,11 +142,45 @@ export function DirectorDashboardClient() {
       </header>
 
       {error && (
-        <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+        <div className="mb-6 flex items-center gap-2 rounded-xl bg-chip-danger-bg p-3 text-sm text-chip-danger-fg shadow-card-soft">
           <AlertCircle size={16} />
           {error}
         </div>
       )}
+
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <StatCard
+          label="Новые темы"
+          value={data?.newThemes.length ?? 0}
+          sparkline={[2, 3, 4, 5, 4, 6, 8]}
+          sparklineVariant="line"
+        />
+        <StatCard
+          label="Новые сигналы"
+          value={data?.newSignals.length ?? 0}
+          sparkline={[3, 2, 5, 4, 6, 5, 7]}
+          sparklineVariant="bar"
+        />
+        <StatCard
+          label="Сигналы клиентов"
+          value={signalsTotal}
+          sparkline={[4, 5, 3, 6, 7, 5, 8]}
+          sparklineVariant="line"
+        />
+        <StatCard
+          variant="dark"
+          label="Активные темы"
+          value={data?.activeThemes.length ?? 0}
+          sparkline={[5, 6, 7, 6, 8, 9, 10]}
+          sparklineVariant="line"
+        />
+        <StatCard
+          label="Открытые вопросы"
+          value={data?.openQuestions.length ?? 0}
+          sparkline={[2, 3, 2, 4, 3, 5, 4]}
+          sparklineVariant="bar"
+        />
+      </div>
 
       <div className="mb-6">
         <IntroWizardWidget />

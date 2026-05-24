@@ -317,7 +317,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'flex h-full w-sb shrink-0 flex-col border-r border-border-subtle bg-bg-elevated',
+        'flex h-full w-sb shrink-0 flex-col border-r border-border-subtle bg-bg-surface',
         className,
       )}
     >
@@ -329,7 +329,7 @@ export function Sidebar({
           className="flex items-center gap-2"
           aria-label="На главную"
         >
-          <div className="grid h-7 w-7 place-items-center rounded-md bg-accent font-mono text-sm font-bold text-accent-fg shadow-glow-mint">
+          <div className="grid h-7 w-7 place-items-center rounded-md bg-accent font-mono text-sm font-bold text-accent-fg">
             Z
           </div>
           <span className="text-lg font-semibold tracking-tight text-fg-primary">Z</span>
@@ -501,11 +501,11 @@ function SidebarNavLink({
   const locked = gateActive && !gate.loading && !gate.enabled;
 
   const baseClass =
-    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors';
+    'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors';
 
   let stateClass: string;
   if (isActive) {
-    stateClass = 'bg-accent-muted font-medium text-accent';
+    stateClass = 'bg-accent-muted font-medium text-accent dark:shadow-accent-focus';
   } else if (isComingSoon) {
     stateClass =
       'text-fg-tertiary opacity-60 hover:bg-bg-overlay/60 hover:text-fg-secondary hover:opacity-100';
@@ -547,6 +547,12 @@ function SidebarNavLink({
 
   const linkContent = (
     <>
+      {isActive && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-0 top-1/2 h-1.5 w-1.5 -translate-x-1 -translate-y-1/2 rounded-full bg-accent"
+        />
+      )}
       <Icon size={16} strokeWidth={1.75} className={iconClass} />
       <span className="flex-1 truncate">{item.label}</span>
       {badge && (

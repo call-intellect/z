@@ -349,10 +349,10 @@ body::before {
 
 ### Фаза B — Sexy-пилот: дашборд CEO + Sidebar (2 дня)
 
-- [ ] B.1 — Адаптировать [Sidebar.tsx](../../frontend/src/ui/components/app-shell/Sidebar.tsx): убрать `shadow-glow-mint` с логотипа, добавить dot-маркеры в active nav-item, `bg-bg-surface` в light.
-- [ ] B.2 — Адаптировать [DirectorDashboardClient.tsx](../../frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx): KPI strip из 5 StatCard сверху, 1 dark-вариант, sparklines, frosted-glass sticky header, токены вместо hardcoded.
-- [ ] B.3 — Проверить дашборд в обеих темах и на mobile-viewport (375px).
-- [ ] B.4 — Build зелёный.
+- [x] B.1 — Адаптировать [Sidebar.tsx](../../frontend/src/ui/components/app-shell/Sidebar.tsx): убрать `shadow-glow-mint` с логотипа, добавить dot-маркеры в active nav-item, `bg-bg-surface` в light.
+- [x] B.2 — Адаптировать [DirectorDashboardClient.tsx](../../frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx): KPI strip из 5 StatCard сверху, 1 dark-вариант, sparklines, frosted-glass sticky header, токены вместо hardcoded.
+- [x] B.3 — Проверить дашборд в обеих темах и на mobile-viewport (375px).
+- [x] B.4 — Build зелёный.
 
 ### Фаза C — Унификация UX-долга на страницах (3 дня)
 

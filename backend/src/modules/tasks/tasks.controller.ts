@@ -12,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
@@ -36,7 +37,13 @@ import {
 import { TasksService } from './tasks.service';
 
 /**
- * Внутренний API задач (action items).
+ * @deprecated Sprint 3 B1-3.3 — legacy API задач (action items из встреч).
+ *
+ * Эти эндпоинты остаются для обратной совместимости старого фронтенда (1-2 фазы),
+ * но новый код должен использовать трекерный API: `/api/v1/projects/:projectId/issues`
+ * и `/api/v1/issues/:id`. Миграция legacy `Task` → `Issue` выполняется скриптом
+ * `backend/scripts/migrate-task-to-issue.ts` (виртуальный проект «Из встреч» per Org,
+ * `externalSource='meeting_legacy'`).
  *
  *   `GET /api/v1/tasks`                          — все задачи юзера
  *   `GET /api/v1/meetings/:meetingId/tasks`      — задачи одной встречи
@@ -46,12 +53,19 @@ import { TasksService } from './tasks.service';
  *   `POST /api/v1/tasks/:id/send`                — отправить в IntegrationDestination
  *   `POST /api/v1/tasks/bulk`                    — массовая операция
  */
+@ApiTags('legacy / tasks (deprecated)')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
 export class TasksController {
   constructor(@Inject(TasksService) private readonly tasks: TasksService) {}
 
   @Get('tasks')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — список задач пользователя',
+    description:
+      'Используй `GET /api/v1/projects/:projectId/issues` (трекер). Эндпоинт остаётся для legacy фронтенда.',
+  })
   async listAll(
     @Query(new ZodValidationPipe(ListTasksQuerySchema)) query: ListTasksQuery,
     @CurrentUser() user: CurrentUserPayload,
@@ -71,6 +85,12 @@ export class TasksController {
   }
 
   @Get('meetings/:meetingId/tasks')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — задачи одной встречи',
+    description:
+      'Используй `GET /api/v1/issues?linkedMeetingId=:meetingId` (трекер).',
+  })
   async listByMeeting(
     @Param('meetingId') meetingId: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -81,6 +101,12 @@ export class TasksController {
 
   @Post('meetings/:meetingId/tasks')
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — ручное создание задачи в контексте встречи',
+    description:
+      'Используй `POST /api/v1/projects/:projectId/issues` с `linkedMeetingIds=[meetingId]` (трекер).',
+  })
   async create(
     @Param('meetingId') meetingId: string,
     @Body(new ZodValidationPipe(CreateTaskSchema)) body: CreateTaskDto,
@@ -91,6 +117,11 @@ export class TasksController {
   }
 
   @Patch('tasks/:id')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — обновление задачи',
+    description: 'Используй `PATCH /api/v1/issues/:id` (трекер).',
+  })
   async update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateTaskSchema)) body: UpdateTaskDto,
@@ -102,6 +133,11 @@ export class TasksController {
 
   @Delete('tasks/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — удаление задачи',
+    description: 'Используй `DELETE /api/v1/issues/:id` (soft-delete в трекере).',
+  })
   async delete(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -111,6 +147,12 @@ export class TasksController {
 
   @Post('tasks/:id/send')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — отправка задачи во внешнюю интеграцию',
+    description:
+      'В трекере отправка во внешние системы реализуется через webhooks `/api/v1/tracker/webhooks/*`.',
+  })
   async send(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(SendTaskSchema)) body: SendTaskDto,
@@ -121,6 +163,11 @@ export class TasksController {
 
   @Post('tasks/bulk')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    deprecated: true,
+    summary: 'DEPRECATED — массовая операция над задачами',
+    description: 'В трекере массовые операции — `POST /api/v1/issues/bulk` (Sprint 3+).',
+  })
   async bulk(
     @Body(new ZodValidationPipe(BulkTasksSchema)) body: BulkTasksDto,
     @CurrentUser() user: CurrentUserPayload,

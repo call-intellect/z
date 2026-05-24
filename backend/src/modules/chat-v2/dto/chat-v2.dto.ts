@@ -13,6 +13,14 @@ export const ChatV2ScopeEnum = z.enum([
   'theme',
   'entity',
   'personal',
+  // Wave 2 polish T6-6b — добавлен 'issue' как первоклассный scope для
+  // чат-в-задаче (IssueChat). До этого фронт слал `scope: 'card'` как
+  // workaround, что мешало аналитике/маршрутизации и было плохо читаемо.
+  // Маппинг scope → knowledge-core retrieval scope живёт в
+  // `SynthesisService.mapScope` ('issue' → 'card', т.к. retrieval blocks
+  // одинаковый, а IssueCardHandler в CardSpecialistRegistry уже умеет
+  // подтягивать конкретную Issue по scopeRefId).
+  'issue',
 ]);
 export type ChatV2ScopeDto = z.infer<typeof ChatV2ScopeEnum>;
 
@@ -44,7 +52,8 @@ export const PostChatV2MessageBodySchema = z
       return typeof val.scopeRefId === 'string' && val.scopeRefId.length > 0;
     },
     {
-      message: 'scopeRefId обязателен для scope=meeting/card/theme/entity',
+      message:
+        'scopeRefId обязателен для scope=meeting/card/theme/entity/issue',
       path: ['scopeRefId'],
     },
   );

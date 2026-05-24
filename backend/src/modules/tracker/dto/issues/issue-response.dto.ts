@@ -90,6 +90,25 @@ export interface MyInboxResponseDto {
   limit: number;
 }
 
+/**
+ * Ответ `GET /api/v1/me/inbox/count` — счётчик задач в личном инбоксе.
+ *
+ * `total` — общее число задач, в которых currentUser является assignee
+ * (без учёта архивных и удалённых, в любом статусе).
+ * `unread` — число «непрочитанных»; модели IssueRead на текущий момент нет
+ * (Wave 2 polish T6-6a), поэтому возвращаем то же значение что `total`.
+ * Когда появится IssueRead — заполним отдельно, без изменения контракта.
+ *
+ * Frontend Wave 2 A8: используется хуком `useMyInboxCount` для бейджа на
+ * иконке «Инбокс» в `TrackerBottomNav`. Раньше хук эмулировал ответ через
+ * `/me/inbox?limit=1` (видел только «есть/нет» — точное число было
+ * недоступно).
+ */
+export interface MyInboxCountDto {
+  total: number;
+  unread: number;
+}
+
 export interface IssueActivityDto {
   id: string;
   issueId: string;

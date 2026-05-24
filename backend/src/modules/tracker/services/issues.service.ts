@@ -17,6 +17,7 @@ import type {
   IssueResponseDto,
   IssueVersionDto,
   ListIssuesResponse,
+  MyInboxCountDto,
   MyInboxResponseDto,
 } from '../dto/issues/issue-response.dto';
 import type { ListIssuesQuery } from '../dto/issues/list-issues-query.dto';
@@ -389,6 +390,34 @@ export class IssuesService {
       nextCursor,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Wave 2 polish T6-6a — счётчик задач в моём инбоксе (без пагинации/выборки).
+   *
+   * Используется фронтом для бейджа на иконке «Инбокс» в `TrackerBottomNav`,
+   * чтобы не дёргать тяжёлый `findMyInbox` ради одного числа.
+   *
+   * Контракт фильтрации эквивалентен `findMyInbox` БЕЗ опциональных query-
+   * фильтров: считаем все задачи tenant'а, где user — assignee, исключая
+   * deletedAt и archivedAt. На текущей модели данных «непрочитанные»
+   * совпадают с «всеми» (модели IssueRead нет), поэтому `unread = total`.
+   */
+  async countMyInbox(
+    tenantId: string,
+    userId: string,
+  ): Promise<MyInboxCountDto> {
+    const where: Prisma.IssueWhereInput = {
+      tenantId,
+      assignees: { some: { userId } },
+      deletedAt: null,
+      archivedAt: null,
+    };
+    const total = await this.prisma.issue.count({ where });
+    // Модели IssueRead на сейчас нет — unread временно совпадает с total.
+    // Когда появится IssueRead с `readAt` — заменим на отдельный count
+    // с фильтром `reads: { none: { userId } }`.
+    return { total, unread: total };
   }
 
   /** Найти задачу по id (глобальный id) + проверка tenant. */

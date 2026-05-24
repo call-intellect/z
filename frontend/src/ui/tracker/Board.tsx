@@ -47,7 +47,7 @@ import { useSWRConfig } from 'swr';
 import { useIssues } from '@/hooks/tracker/useIssues';
 import { useStates } from '@/hooks/tracker/useStates';
 import { issuesApi } from '@/api/tracker/issues.api';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import {
   ISSUE_PRIORITY_LABELS,
   ISSUE_STATE_CATEGORY_LABELS,
@@ -97,7 +97,6 @@ export function Board({
   });
   const { states, isLoading: statesLoading } = useStates(orgId, projectId);
   const { mutate: globalMutate } = useSWRConfig();
-  const { addToast } = useToast();
   const [creating, setCreating] = useState(false);
   const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
   const [pendingTransitionIssueId, setPendingTransitionIssueId] = useState<
@@ -134,14 +133,13 @@ export function Board({
           showAiSuggestionsToasts(created, created.aiSuggestions, {
             orgId,
             mutateBoard: mutate,
-            addToast,
           });
         }
       } finally {
         setCreating(false);
       }
     },
-    [orgId, projectId, mutate, addToast],
+    [orgId, projectId, mutate],
   );
 
   const issuesById = useMemo(() => {
@@ -251,11 +249,7 @@ export function Board({
               },
             );
           } catch (err) {
-            addToast({
-              type: 'error',
-              message: `Не удалось переставить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
-              durationMs: 5000,
-            });
+            toast.error(`Не удалось переставить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
             console.error(err);
           } finally {
             setPendingTransitionIssueId(null);
@@ -282,7 +276,7 @@ export function Board({
     // runTransition уже зависит от needed-сalls, но указываем явные деп-сы
     // через useCallback ниже.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [issuesById, issues, orgId, mutate, globalMutate, addToast],
+    [issuesById, issues, orgId, mutate, globalMutate],
   );
 
   const runTransition = useCallback(
@@ -327,17 +321,13 @@ export function Board({
           { revalidate: true },
         );
       } catch (err) {
-        addToast({
-          type: 'error',
-          message: `Не удалось переместить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
-          durationMs: 5000,
-        });
+        toast.error(`Не удалось переместить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
         console.error(err);
       } finally {
         setPendingTransitionIssueId(null);
       }
     },
-    [orgId, mutate, globalMutate, addToast],
+    [orgId, mutate, globalMutate],
   );
 
   // ─── States: если backend ещё не отдал states или их нет — fallback на
@@ -614,16 +604,12 @@ function SortableIssueCard({
 //   - goal: если поле `goal` присутствует отдельно — показываем второй,
 //     более лаконичный toast «Связать с целью? (∼60%)».
 
-type ToastApi = ReturnType<typeof useToast>;
-type AddToastFn = ToastApi['addToast'];
-
 const AI_CONFIDENCE_THRESHOLD = 0.7;
 
 interface ShowSuggestionsCtx {
   orgId: string;
   /** SWR-mutate `useIssues` — чтобы после accept лента доски обновилась. */
   mutateBoard: () => Promise<unknown>;
-  addToast: AddToastFn;
 }
 
 function showAiSuggestionsToasts(
@@ -640,30 +626,18 @@ function showAiSuggestionsToasts(
     if (passesThreshold) {
       const summary = buildFieldsSummary(fields);
       if (summary) {
-        ctx.addToast({
-          type: 'info',
-          message: `AI предлагает: ${summary}. Принять?`,
-          durationMs: 12000,
-          action: {
+        toast(`AI предлагает: ${summary}. Принять?`, { duration: 12000, action: {
             label: 'Принять',
             onClick: async () => {
               try {
                 await acceptFieldSuggestions(issue.id, fields, ctx);
                 await ctx.mutateBoard();
-                ctx.addToast({
-                  type: 'success',
-                  message: 'Подсказки AI применены.',
-                });
+                toast.success('Подсказки AI применены.');
               } catch (err) {
-                ctx.addToast({
-                  type: 'error',
-                  message: `Не удалось применить подсказки: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
-                  durationMs: 5000,
-                });
+                toast.error(`Не удалось применить подсказки: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
               }
             },
-          },
-        });
+          } });
       }
     }
   }
@@ -672,30 +646,18 @@ function showAiSuggestionsToasts(
   if (suggestions.goal && suggestions.goal.confidence >= AI_CONFIDENCE_THRESHOLD) {
     const goalId = suggestions.goal.goalId;
     const pct = Math.round(suggestions.goal.confidence * 100);
-    ctx.addToast({
-      type: 'info',
-      message: `AI предлагает связать с целью (∼${pct}%). Принять?`,
-      durationMs: 12000,
-      action: {
+    toast(`AI предлагает связать с целью (∼${pct}%). Принять?`, { duration: 12000, action: {
         label: 'Связать',
         onClick: async () => {
           try {
             await issuesApi.linkGoal(ctx.orgId, issue.id, goalId);
             await ctx.mutateBoard();
-            ctx.addToast({
-              type: 'success',
-              message: 'Задача связана с целью.',
-            });
+            toast.success('Задача связана с целью.');
           } catch (err) {
-            ctx.addToast({
-              type: 'error',
-              message: `Не удалось связать с целью: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
-              durationMs: 5000,
-            });
+            toast.error(`Не удалось связать с целью: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
           }
         },
-      },
-    });
+      } });
   }
 }
 

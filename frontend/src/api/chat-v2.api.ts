@@ -18,7 +18,10 @@ export type ChatV2ScopeApi =
   | 'card'
   | 'theme'
   | 'entity'
-  | 'personal';
+  | 'personal'
+  // Wave 2 polish T6-6b — первоклассный scope для чат-в-задаче (IssueChat).
+  // Backend маппит 'issue' → 'card' для retrieval (см. SynthesisService.mapScope).
+  | 'issue';
 
 export type ChatV2ModeApi = 'factual' | 'synthetic' | 'clone_style';
 

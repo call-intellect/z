@@ -68,6 +68,8 @@ const SCOPE_LABEL: Record<ChatV2Scope, string> = {
   theme: 'Тема',
   entity: 'Сущность',
   personal: 'Личный',
+  // Wave 2 polish T6-6b — чат в задаче.
+  issue: 'Задача',
 };
 
 const MODE_LABEL: Record<ChatV2Mode, string> = {

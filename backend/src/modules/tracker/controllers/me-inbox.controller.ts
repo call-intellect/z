@@ -18,7 +18,10 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import type { MyInboxResponseDto } from '../dto/issues/issue-response.dto';
+import type {
+  MyInboxCountDto,
+  MyInboxResponseDto,
+} from '../dto/issues/issue-response.dto';
 import {
   MyInboxQuerySchema,
   type MyInboxQuery,
@@ -69,6 +72,39 @@ export class MeInboxController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.svc.findMyInbox(t, user.id, query);
+  }
+
+  /**
+   * Wave 2 polish T6-6a — счётчик задач в моём инбоксе для бейджа в
+   * `TrackerBottomNav`. Чем легче запрос — тем меньше нагрузка при каждом
+   * фокусе вкладки (SWR revalidateOnFocus). Возвращаем сразу пару
+   * total/unread, чтобы фронт не делал второй запрос.
+   *
+   * До T6-6a фронт делал `GET /me/inbox?limit=1` и видел только «есть/нет»;
+   * теперь backend отдаёт точное число.
+   */
+  @Get('me/inbox/count')
+  @ApiOperation({
+    summary: 'Счётчик задач в моём инбоксе (total + unread)',
+    description:
+      'Возвращает { total, unread } — число задач, в которых currentUser ' +
+      'является assignee (без архивных/удалённых). На данной версии модели ' +
+      'IssueRead нет, поэтому unread = total. Контракт фиксированный — ' +
+      'когда IssueRead появится, цифры разойдутся без изменения формата.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Структура { total: number, unread: number }',
+  })
+  @ApiResponse({ status: 400, description: 'tenant_required' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на чтение задач' })
+  async inboxCount(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MyInboxCountDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.countMyInbox(t, user.id);
   }
 
   // ── helpers ──

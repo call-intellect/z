@@ -171,6 +171,18 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
+  /**
+   * Wave 2 polish T6-6a — точный счётчик задач в моём инбоксе.
+   * До этого фронт эмулировал ответ через `myInbox({ limit: 1 })` и видел
+   * только «есть/нет». Теперь backend отдаёт { total, unread } напрямую.
+   * Контракт: `backend/src/modules/tracker/controllers/me-inbox.controller.ts#inboxCount`.
+   */
+  myInboxCount: (orgId: string) =>
+    apiClient.get<{ total: number; unread: number }>(
+      `/api/v1/me/inbox/count`,
+      { headers: orgHeaders(orgId) },
+    ),
+
   // ── state transition ──
   transition: (orgId: string, issueId: string, body: TransitionIssueRequest) =>
     apiClient.post<IssueApi>(

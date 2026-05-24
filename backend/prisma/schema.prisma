@@ -1867,6 +1867,12 @@ model Org {
   /// на Org по консистентности с `transcriptCleaningAuto` (отдельной OrgSettings
   /// в проекте нет).
   qualityScoreDisabledForTypes MeetingType[]     @default([])
+  /// SBA β-8.1 — IANA-таймзона организации. Используется в
+  /// `operations-weekly-digest.cron` для определения «понедельник 08:00
+  /// локального времени» при отправке недельной сводки. Default
+  /// 'Europe/Moscow' (соответствует поведению других модулей, см.
+  /// `local-date.ts:DEFAULT_TIMEZONE`).
+  timezone                     String?           @default("Europe/Moscow")
   createdAt                    DateTime          @default(now())
   deletedAt                    DateTime?
 
@@ -1937,6 +1943,9 @@ model Org {
 
   // ── SBA β-8 — DailyCheckIn ──
   dailyCheckIns DailyCheckIn[]
+
+  // ── SBA β-8.1 — Weekly operations digest для операционного директора ──
+  weeklyOperationsDigests WeeklyOperationsDigest[]
 
   // ── SBA α-3 — Layer 2 ontology extension ──
   vendors  Vendor[]
@@ -5275,8 +5284,23 @@ model DailyCheckIn {
   /// прошёл успешно. NULL = чек-ин «пустой» (cron поставил, но человек не
   /// ответил до конца суток).
   completedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+
+  /// SBA β-8.1 — настроение чек-ина (определяет LLM по тексту вечернего
+  /// ответа). 'green' | 'yellow' | 'red'. NULL = анализ ещё не запускался
+  /// или модель упала. Видимость поля — только для роли coo/owner/admin
+  /// (фильтр в DTO-маппере; не показывается сотруднику в /me/check-ins).
+  sentiment             String?   @db.VarChar(10)
+  /// Короткое обоснование от LLM («почему зелёный/жёлтый/красный»). Для
+  /// прозрачности перед админом.
+  sentimentRationale    String?   @db.Text
+  /// Версия промпта/модели, которой определили настроение. Формат свободный
+  /// (например, `prompt-v1+deepseek-chat`).
+  sentimentVersion      String?   @db.VarChar(120)
+  /// Когда настроение было проставлено (после анализа).
+  sentimentDeterminedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   person Person @relation("DailyCheckInPerson", fields: [personId], references: [id], onDelete: Cascade)
   tenant Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -5285,7 +5309,52 @@ model DailyCheckIn {
   @@index([tenantId, personId, dateLocal])
   @@index([tenantId, kind, dateLocal])
   @@index([tenantId, curatorReview])
+  /// SBA β-8.1 — индекс для виджета «Температура команды».
+  @@index([tenantId, sentiment, dateLocal])
   @@map("daily_check_ins")
+}
+
+/// SBA β-8.1 — WeeklyOperationsDigest. Готовый недельный дайджест для
+/// операционного директора. Источник: plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md §5.
+///
+/// Генерируется `operations-weekly-digest.cron` каждый понедельник в 08:00
+/// локального времени каждой Org (через фильтр по `Org.timezone`).
+/// `WeeklyDigestService.generate` собирает агрегаты за 7 дней (чек-ины,
+/// блокеры, инсайты, цели, висящие решения) и одним LLM-вызовом
+/// `operations-weekly-digest` собирает связный текст комментария.
+///
+/// `metricsJson` — структурированные показатели (для виджетов на странице
+/// /dashboard/operations/weekly). `sourcesJson` — провенанс: id блокеров,
+/// инсайтов, целей, решений, использованных в дайджесте.
+///
+/// Идемпотентность — `@@unique([tenantId, weekStart])`. Если за неделю
+/// дайджест уже сгенерирован — повторный запуск cron'а не создаёт второй.
+model WeeklyOperationsDigest {
+  id             String   @id @default(cuid())
+  tenantId       String
+  /// YYYY-MM-DD, понедельник недели в локальной TZ Org'а.
+  weekStart      String   @db.VarChar(10)
+  /// YYYY-MM-DD, воскресенье недели (weekStart + 6).
+  weekEnd        String   @db.VarChar(10)
+  /// Связный текст комментария от LLM. Markdown (5-7 коротких разделов).
+  /// При неудаче LLM сохраняется «сухой» вариант со структурой без связного текста.
+  bodyMarkdown   String   @db.Text
+  /// Структурированные показатели для виджетов. Свободный JSON
+  /// (greenShare/yellowShare/redShare/totalCheckIns/topBlockers/...).
+  metricsJson    Json
+  /// Провенанс: id блокеров, инсайтов, целей, решений, использованных
+  /// в дайджесте. Для drill-down из UI.
+  sourcesJson    Json
+  /// Идентификатор маршрута/модели LLM (или `prompt-v1+<model>`), который
+  /// реально отработал. NULL если LLM упал и сохранён «сухой» вариант.
+  llmTaskRouteId String?
+  createdAt      DateTime @default(now())
+
+  tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, weekStart])
+  @@index([tenantId, weekStart])
+  @@map("weekly_operations_digests")
 }
 
 // ──────────────────────────── SBA δ-2 — ProactiveWatcher (2026-05-23) ────────────────────────────
@@ -5563,6 +5632,10 @@ model ChatV2Message {
 /// 5 «обычных» scope (org/meeting/card/theme/entity) + 'personal' — личный
 /// диалог пользователя с AI без жёсткой привязки. Personal заведено для
 /// γ-1 (Employee Clone), на α-5 — общий org-доступ через retrieval.
+/// Wave 2 polish T6-6b — добавлен `issue` как первоклассный scope для
+/// чат-в-задаче (IssueChat). Маппинг на retrieval scope knowledge-core —
+/// в `SynthesisService.mapScope` (issue → card, чтобы переиспользовать
+/// существующий card-retrieval + CardSpecialistRegistry/IssueCardHandler).
 enum ChatV2Scope {
   org
   meeting
@@ -5570,6 +5643,7 @@ enum ChatV2Scope {
   theme
   entity
   personal
+  issue
 }
 
 enum ChatV2MessageRole {

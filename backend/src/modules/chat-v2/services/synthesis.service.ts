@@ -260,11 +260,16 @@ export class SynthesisService {
 
   /**
    * Маппинг scope нашей α-5 модели → scope knowledge-core ChatV2Service.
-   * 'personal' пока маппится в 'org' (нет персонального индекса блоков
-   * до γ-1).
+   * - 'personal' пока маппится в 'org' (нет персонального индекса блоков
+   *   до γ-1).
+   * - 'issue' (Wave 2 polish T6-6b) маппится в 'card', чтобы переиспользовать
+   *   существующий card-retrieval. Сам Issue подтягивается отдельно через
+   *   `IssueCardHandler` (CardSpecialistRegistry), для него scopeRefId
+   *   остаётся issueId без изменений.
    */
   private mapScope(scope: ChatV2Scope): KnowledgeChatV2Scope {
     if (scope === 'personal') return 'org';
+    if (scope === 'issue') return 'card';
     return scope;
   }
 

@@ -8,12 +8,13 @@
  * ввода через серверный ASR `/api/v1/voice/transcribe`.
  *
  * Архитектурные решения:
- *   - scope = 'card' — в chat-v2 enum нет 'issue'; ближайший
- *     семантический аналог — карточка в knowledge-core. scopeRefId = issueId.
- *     Backend (synthesis.service) сам подтягивает контекст по scopeRefId;
- *     если в графе ещё нет знаний по этому id, synthetic-режим честно
- *     ответит «недостаточно контекста». TODO: расширить enum в backend
- *     значением 'issue' и завести трекер-специалиста в card-specialist-registry.
+ *   - scope = 'issue' (Wave 2 polish T6-6b): первоклассный scope в chat-v2,
+ *     scopeRefId = issueId. На стороне backend `SynthesisService.mapScope`
+ *     маппит issue → card для retrieval'а блоков; саму задачу подтягивает
+ *     `IssueCardHandler` через `CardSpecialistRegistry`. До T6-6b фронт
+ *     слал `scope: 'card'` как workaround — это мешало аналитике/копи и
+ *     было плохо читаемо. Если в графе ещё нет знаний по этой задаче,
+ *     synthetic-режим честно ответит «недостаточно контекста».
  *   - mode = 'synthetic' — задаче чаще нужен синтез/совет, а не дословные цитаты.
  *   - ChatPanel не используем напрямую: нужна кнопка микрофона рядом с input,
  *     а ChatPanel держит input в своём state без props для управления извне.
@@ -39,7 +40,7 @@ import { chatV2Api } from '@/api/chat-v2.api';
 import { voiceApi } from '@/api/voice.api';
 import { ApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
-import { useToast } from '@/contexts/toast-context';
+import { toast } from 'sonner';
 import {
   chatV2ModeLabel,
   formatTimestamp,
@@ -81,8 +82,6 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
     messageId: string | null;
     status: 'idle' | 'loading' | 'playing';
   }>({ messageId: null, status: 'idle' });
-  const { addToast } = useToast();
-
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -168,10 +167,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
           revokeTtsUrl(ttsUrlRef.current);
           ttsUrlRef.current = null;
           setTtsState({ messageId: null, status: 'idle' });
-          addToast({
-            type: 'error',
-            message: 'Не удалось воспроизвести озвучку',
-          });
+          toast.error('Не удалось воспроизвести озвучку');
         };
         setTtsState({ messageId: msg.id, status: 'playing' });
         await audio.play();
@@ -191,10 +187,10 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
               : apiCode === 'text_too_long'
                 ? 'Ответ слишком длинный для озвучки'
                 : 'Не удалось озвучить';
-        addToast({ type: 'error', message: friendly });
+        toast.error(friendly);
       }
     },
-    [orgId, ttsState, addToast],
+    [orgId, ttsState],
   );
 
   const askQuestion = useCallback(
@@ -210,7 +206,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
         const response = await chatV2Api.ask({
           question,
           conversationId,
-          scope: 'card',
+          scope: 'issue',
           scopeRefId: issueId,
           mode: 'synthetic',
         });

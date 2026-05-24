@@ -70,7 +70,7 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
 
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Чат</h2>
-            <IssueChat issueId={issue.id} />
+            <IssueChat issueId={issue.id} orgId={currentOrgId} />
           </section>
 
           <section className="flex flex-col gap-2">

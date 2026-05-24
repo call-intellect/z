@@ -107,14 +107,20 @@ export function useTrackerLiveRefresh(
       handlers.push(off);
     };
 
-    // issue.*
-    subscribe('issue.created', ['tracker.issues']);
+    // issue.* — обновляем list/single/activity ПЛЮС me.inbox (это плоский
+    // список «мои задачи во всех проектах», его триггерят те же события).
+    subscribe('issue.created', ['tracker.issues', 'me.inbox']);
     subscribe('issue.updated', [
       'tracker.issues',
       'tracker.issue',
       'tracker.issue.activity',
+      'me.inbox',
     ]);
-    subscribe('issue.deleted', ['tracker.issues', 'tracker.issue']);
+    subscribe('issue.deleted', [
+      'tracker.issues',
+      'tracker.issue',
+      'me.inbox',
+    ]);
 
     // comment.*
     subscribe('comment.created', [
@@ -134,7 +140,11 @@ export function useTrackerLiveRefresh(
 
     // intake.*
     subscribe('intake.new_item', ['tracker.intake']);
-    subscribe('intake.triaged', ['tracker.intake', 'tracker.issues']);
+    subscribe('intake.triaged', [
+      'tracker.intake',
+      'tracker.issues',
+      'me.inbox',
+    ]);
 
     // activity_feed.*  (опц., если когда-то появится хук)
     subscribe('activity_feed.new_item', ['tracker.activity-feed']);

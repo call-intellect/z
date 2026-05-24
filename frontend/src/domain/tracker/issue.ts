@@ -61,6 +61,18 @@ export interface ListIssuesResponseApi {
   limit: number;
 }
 
+/**
+ * Ответ `GET /api/v1/me/inbox` — cursor-based пагинация.
+ *
+ * `nextCursor` — `id` последней задачи в `items`. Для следующей страницы
+ * передать как `?cursor=...`. `nextCursor=null` означает последнюю страницу.
+ */
+export interface MyInboxResponseApi {
+  items: IssueApi[];
+  nextCursor: string | null;
+  limit: number;
+}
+
 export interface IssueActivityApi {
   id: string;
   issueId: string;

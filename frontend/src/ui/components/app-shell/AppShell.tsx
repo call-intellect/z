@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar';
 import { MobileHeader } from './Header';
 import { CommandPalette } from '@/ui/components/command-palette/CommandPalette';
 import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton';
+import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
 
 /**
  * AppShell — основной layout для авторизованного кабинета.
@@ -30,7 +31,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Mobile header (only on small) */}
       <MobileHeader />
 
-      <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+      {/* `pb-16` на мобильных — чтобы контент не закрывался TrackerBottomNav
+          (~56px); на md+ bottom-nav скрыт и padding не нужен. */}
+      <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
+        {children}
+      </main>
+
+      {/* Mobile bottom navigation (≤md). На desktop bottom-nav скрыт —
+          навигация идёт через sidebar. */}
+      <TrackerBottomNav />
 
       {/* Глобальная ⌘K палитра. */}
       <CommandPalette />

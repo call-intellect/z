@@ -7,6 +7,7 @@
 export * from './enums';
 export * from './project';
 export * from './issue';
+export * from './state';
 export * from './cycle';
 export * from './intake';
 export * from './comment';

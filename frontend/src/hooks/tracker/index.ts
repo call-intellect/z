@@ -6,6 +6,7 @@ export { useProjects } from './useProjects';
 export { useProject, useProjectMembers } from './useProject';
 export { useProjectBySlug } from './useProjectBySlug';
 export { useIssues } from './useIssues';
+export { useStates } from './useStates';
 export { useIssue, useIssueActivity } from './useIssue';
 export { useIssueRelations } from './useIssueRelations';
 export { useIssueComments } from './useIssueComments';

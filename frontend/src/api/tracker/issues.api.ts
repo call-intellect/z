@@ -17,6 +17,7 @@ import type {
   IssueRelationApi,
   IssueVersionApi,
   ListIssuesResponseApi,
+  MyInboxResponseApi,
   StartMeetingFromIssueResponseApi,
   IssuePriority,
   IssueStateCategory,
@@ -80,6 +81,29 @@ export interface TransitionIssueRequest {
   reason?: string | null;
 }
 
+/**
+ * Query-параметры `GET /api/v1/me/inbox` — фильтры и cursor-пагинация.
+ * Контракт: `backend/src/modules/tracker/dto/issues/my-inbox-query.dto.ts`.
+ */
+export interface MyInboxRequest {
+  stateCategory?: IssueStateCategory;
+  stateId?: string;
+  priority?: IssuePriority;
+  projectId?: string;
+  labelId?: string;
+  cycleId?: string;
+  /** ISO-дата. dueDate <= dueBefore. */
+  dueBefore?: string;
+  /** ISO-дата. dueDate >= dueAfter. */
+  dueAfter?: string;
+  includeArchived?: boolean;
+  includeDeleted?: boolean;
+  /** id последней задачи предыдущей страницы. */
+  cursor?: string;
+  /** 1..100, default 50. */
+  limit?: number;
+}
+
 export interface CreateRelationRequest {
   targetIssueId: string;
   relationType: IssueRelationType;
@@ -131,6 +155,13 @@ export const issuesApi = {
     apiClient.del<void>(`/api/v1/issues/${encodeURIComponent(issueId)}`, {
       headers: orgHeaders(orgId),
     }),
+
+  // ── my inbox (assignee=me across all projects) ──
+  myInbox: (orgId: string, req: MyInboxRequest = {}) =>
+    apiClient.get<MyInboxResponseApi>(
+      `/api/v1/me/inbox${buildQuery({ ...req })}`,
+      { headers: orgHeaders(orgId) },
+    ),
 
   // ── state transition ──
   transition: (orgId: string, issueId: string, body: TransitionIssueRequest) =>

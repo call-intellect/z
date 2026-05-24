@@ -22,7 +22,7 @@ const ITEMS = [
   { href: '/me/inbox', label: 'Инбокс', icon: Inbox },
   { href: '/projects', label: 'Проекты', icon: FolderKanban },
   { href: '/feed', label: 'Лента', icon: Newspaper },
-  { href: '/me/checkin', label: 'Чек-ин', icon: CheckCircle2 },
+  { href: '/me/check-ins', label: 'Чек-ин', icon: CheckCircle2 },
   { href: '/me', label: 'Профиль', icon: User },
 ] as const;
 

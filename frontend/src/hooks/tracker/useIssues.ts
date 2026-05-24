@@ -1,10 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
-import useSWR from 'swr';
+import useSWR, { type KeyedMutator } from 'swr';
 
-import { issuesApi, type ListIssuesRequest } from '@/api/tracker/issues.api';
-import { issueFromApi, type Issue } from '@/domain/tracker';
+import {
+  issuesApi,
+  type ListIssuesRequest,
+} from '@/api/tracker/issues.api';
+import {
+  issueFromApi,
+  type Issue,
+  type ListIssuesResponseApi,
+} from '@/domain/tracker';
 
 import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
 
@@ -26,7 +33,12 @@ export function useIssues(
   limit: number;
   error: unknown;
   isLoading: boolean;
-  mutate: () => Promise<unknown>;
+  /**
+   * Полная SWR-`mutate` для этого ключа — поддерживает optimistic update,
+   * rollback и кастомный fetcher. Сигнатура совпадает с `KeyedMutator`
+   * SWR — это нужно `Board.tsx` для drag-and-drop transition.
+   */
+  mutate: KeyedMutator<ListIssuesResponseApi>;
 } {
   const key =
     orgId && projectId
@@ -75,6 +87,6 @@ export function useIssues(
     limit: swr.data?.limit ?? 50,
     error: swr.error,
     isLoading: swr.isLoading,
-    mutate: () => swr.mutate(),
+    mutate: swr.mutate,
   };
 }

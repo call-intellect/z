@@ -19,6 +19,8 @@ import type {
   WebhookLogsQuery,
 } from '../dto/webhooks/update-webhook.dto';
 
+import { WebhookDispatcher } from './webhook-dispatcher.service';
+
 export interface WebhookResponseDto {
   id: string;
   tenantId: string;
@@ -63,6 +65,19 @@ export interface WebhookTestResult {
   bodySnippet: string | null;
 }
 
+/**
+ * Async-вариант test-результата (Sprint 2). Test'ы теперь идут через
+ * `tracker.webhook-delivery` очередь — клиент получает `jobId` сразу и
+ * смотрит результат через `/webhooks/:id/logs`.
+ */
+export interface WebhookTestEnqueueResult {
+  ok: boolean;
+  jobId: string | null;
+  /** Куда смотреть результат. */
+  logsUrl: string;
+  message: string;
+}
+
 const SECRET_PREFIX = 'kora_wh_';
 
 /**
@@ -74,7 +89,11 @@ const SECRET_PREFIX = 'kora_wh_';
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(WebhookDispatcher)
+    private readonly dispatcher: WebhookDispatcher,
+  ) {}
 
   /** Создать webhook. secretKey генерируется автоматически и возвращается клиенту ОДИН раз. */
   async create(
@@ -143,6 +162,14 @@ export class WebhooksService {
   ): Promise<WebhookLogsResponse> {
     await this.requireWebhook(id, tenantId);
     const where: Prisma.IssueWebhookLogWhereInput = { webhookId: id };
+    if (query.success !== undefined) where.success = query.success;
+    if (query.eventType) where.eventType = query.eventType;
+    if (query.since || query.until) {
+      where.createdAt = {
+        ...(query.since && { gte: query.since }),
+        ...(query.until && { lte: query.until }),
+      };
+    }
     const [items, total] = await Promise.all([
       this.prisma.issueWebhookLog.findMany({
         where,
@@ -161,56 +188,34 @@ export class WebhooksService {
   }
 
   /**
-   * Отправить тестовый POST на URL webhook'а. Timeout 5s. Возвращает результат
-   * без записи в IssueWebhookLog (test-вызовы не должны засорять production-логи).
-   * Полноценная BullMQ-доставка + HMAC-подпись — Sprint 2.
+   * Поставить тестовую доставку в очередь `tracker.webhook-delivery`.
+   * Возвращает 202-style result с jobId и ссылкой на логи.
+   * Sprint 2 (B1-2.2): single attempt, HMAC + полная запись в IssueWebhookLog.
    */
-  async test(id: string, tenantId: string): Promise<WebhookTestResult> {
+  async enqueueTest(
+    id: string,
+    tenantId: string,
+  ): Promise<WebhookTestEnqueueResult> {
     const webhook = await this.requireWebhook(id, tenantId);
-    const startedAt = Date.now();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5_000);
-    try {
-      const response = await fetch(webhook.url, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-kora-event': 'webhook.test',
-        },
-        body: JSON.stringify({
-          event: 'webhook.test',
-          tenantId,
-          webhookId: webhook.id,
-          message: 'Тестовая отправка из админки трекера',
-          timestamp: new Date().toISOString(),
-        }),
-        signal: controller.signal,
-      });
-      const text = await response.text().catch(() => '');
-      return {
-        ok: response.ok,
-        status: response.status,
-        durationMs: Date.now() - startedAt,
-        errorMessage: response.ok ? null : `HTTP ${response.status}`,
-        bodySnippet: text.slice(0, 500),
-      };
-    } catch (e) {
-      const isAbort =
-        e instanceof Error && (e.name === 'AbortError' || e.name === 'TimeoutError');
+    if (!webhook.isActive) {
       return {
         ok: false,
-        status: null,
-        durationMs: Date.now() - startedAt,
-        errorMessage: isAbort
-          ? 'timeout 5s'
-          : e instanceof Error
-            ? e.message
-            : 'unknown error',
-        bodySnippet: null,
+        jobId: null,
+        logsUrl: `/api/v1/tracker/webhooks/${webhook.id}/logs`,
+        message: 'Webhook не активен — активируйте его перед тестом.',
       };
-    } finally {
-      clearTimeout(timeoutId);
     }
+    const jobId = await this.dispatcher.dispatchTest({
+      webhookId: webhook.id,
+      tenantId,
+    });
+    return {
+      ok: true,
+      jobId,
+      logsUrl: `/api/v1/tracker/webhooks/${webhook.id}/logs`,
+      message:
+        'Тестовая доставка поставлена в очередь. Результат — в логах через 1–10 секунд.',
+    };
   }
 
   private async requireWebhook(

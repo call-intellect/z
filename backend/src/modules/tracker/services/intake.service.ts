@@ -19,6 +19,8 @@ import type {
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
 import { IssuesService } from './issues.service';
+import { TrackerEventsService } from './tracker-events.service';
+import { WebhookDispatcher } from './webhook-dispatcher.service';
 
 export interface IntakeResponseDto {
   id: string;
@@ -73,6 +75,10 @@ export class IntakeService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(TrackerEventsService)
+    private readonly events: TrackerEventsService,
+    @Inject(WebhookDispatcher)
+    private readonly webhooks: WebhookDispatcher,
   ) {}
 
   /** Создать intake-карточку. Не требует userId — может вызвать webhook-адаптер. */
@@ -103,7 +109,17 @@ export class IntakeService {
             : null,
       },
     });
-    return this.toResponse(created);
+    const response = this.toResponse(created);
+    this.events.publishIntakeNewItem(created.id, tenantId);
+    void this.webhooks
+      .dispatch(tenantId, 'intake.created', { intake: response })
+      .catch((e) => {
+        this.logger.warn(
+          { intakeId: created.id, err: e instanceof Error ? e.message : String(e) },
+          'intake.created webhook dispatch failed',
+        );
+      });
+    return response;
   }
 
   /** Список intake-карточек. Доступ: admin / project_manager. */
@@ -300,7 +316,29 @@ export class IntakeService {
       },
     });
 
-    return { intake: this.toResponse(updated), createdIssue };
+    const result: TriageIntakeResult = {
+      intake: this.toResponse(updated),
+      createdIssue,
+    };
+    this.events.publishIntakeTriaged({
+      intakeId: id,
+      tenantId,
+      decision: dto.decision,
+      createdIssueId: createdIssue?.id ?? null,
+    });
+    void this.webhooks
+      .dispatch(tenantId, 'intake.triaged', {
+        intake: result.intake,
+        decision: dto.decision,
+        createdIssueId: createdIssue?.id ?? null,
+      })
+      .catch((e) => {
+        this.logger.warn(
+          { intakeId: id, err: e instanceof Error ? e.message : String(e) },
+          'intake.triaged webhook dispatch failed',
+        );
+      });
+    return result;
   }
 
   private async requireIntake(

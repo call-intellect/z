@@ -37,7 +37,7 @@ import {
 import type {
   WebhookLogsResponse,
   WebhookResponseDto,
-  WebhookTestResult,
+  WebhookTestEnqueueResult,
 } from '../services/webhooks.service';
 import { WebhooksService } from '../services/webhooks.service';
 
@@ -119,15 +119,19 @@ export class TrackerWebhooksController {
   }
 
   @Post('webhooks/:id/test')
-  @ApiOperation({ summary: 'Тестовая отправка (POST с timeout 5s, без записи в логи)' })
+  @HttpCode(202)
+  @ApiOperation({
+    summary:
+      'Поставить тестовую доставку в очередь webhook-delivery (HMAC + лог). 202 Accepted',
+  })
   async test(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
-  ): Promise<WebhookTestResult> {
+  ): Promise<WebhookTestEnqueueResult> {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
-    return this.svc.test(id, t);
+    return this.svc.enqueueTest(id, t);
   }
 
   private requireTenant(tenantId: string | undefined): string {

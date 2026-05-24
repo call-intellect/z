@@ -19,6 +19,8 @@ import type { ListIssuesResponse } from '../dto/issues/issue-response.dto';
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
+import { TrackerEventsService } from './tracker-events.service';
+import { WebhookDispatcher } from './webhook-dispatcher.service';
 
 /**
  * CyclesService — циклы («неделя работы» / спринт). Поддерживает
@@ -35,6 +37,10 @@ export class CyclesService {
     private readonly activity: ActivityRecorderService,
     @Inject(ProjectsService) private readonly projects: ProjectsService,
     @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(TrackerEventsService)
+    private readonly events: TrackerEventsService,
+    @Inject(WebhookDispatcher)
+    private readonly webhooks: WebhookDispatcher,
   ) {}
 
   /** Создать цикл в проекте. Доступ: project_admin / project_manager. */
@@ -57,7 +63,17 @@ export class CyclesService {
         timezone: dto.timezone,
       },
     });
-    return this.toResponse(cycle);
+    const response = this.toResponse(cycle);
+    this.events.publishCycleCreated(response, tenantId);
+    void this.webhooks
+      .dispatch(tenantId, 'cycle.created', { cycle: response })
+      .catch((e) => {
+        this.logger.warn(
+          { cycleId: cycle.id, err: e instanceof Error ? e.message : String(e) },
+          'cycle.created webhook dispatch failed',
+        );
+      });
+    return response;
   }
 
   /** Список циклов проекта. */
@@ -168,6 +184,32 @@ export class CyclesService {
       });
       return rolledOverTo ? incompleteIssues.length : 0;
     });
+
+    // Перечитать чтобы взять свежий completedAt + progressSnapshot.
+    const updated = await this.prisma.cycle.findUnique({ where: { id } });
+    if (updated) {
+      const updatedResponse = this.toResponse(updated);
+      this.events.publishCycleProgressUpdated(updatedResponse, tenantId);
+      this.events.publishCycleCompleted({
+        cycleId: id,
+        projectId: cycle.projectId,
+        tenantId,
+        movedIssueCount,
+        rolledOverTo,
+      });
+      void this.webhooks
+        .dispatch(tenantId, 'cycle.completed', {
+          cycle: updatedResponse,
+          movedIssueCount,
+          rolledOverTo,
+        })
+        .catch((e) => {
+          this.logger.warn(
+            { cycleId: id, err: e instanceof Error ? e.message : String(e) },
+            'cycle.completed webhook dispatch failed',
+          );
+        });
+    }
 
     return { cycleId: id, movedIssueCount, rolledOverTo };
   }

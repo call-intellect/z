@@ -22,6 +22,8 @@ import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { ProjectsService } from './projects.service';
+import { TrackerEventsService } from './tracker-events.service';
+import { WebhookDispatcher } from './webhook-dispatcher.service';
 
 /**
  * IssuesService — ядро трекера. Создание / обновление / переходы статусов /
@@ -40,6 +42,10 @@ export class IssuesService {
     @Inject(ActivityRecorderService)
     private readonly activity: ActivityRecorderService,
     @Inject(ProjectsService) private readonly projects: ProjectsService,
+    @Inject(TrackerEventsService)
+    private readonly events: TrackerEventsService,
+    @Inject(WebhookDispatcher)
+    private readonly webhooks: WebhookDispatcher,
   ) {}
 
   /**
@@ -140,7 +146,19 @@ export class IssuesService {
       return created;
     });
 
-    return this.assemble(issue.id, tenantId);
+    const response = await this.assemble(issue.id, tenantId);
+    // WS + outgoing webhooks (fire-and-forget; ошибки доставки логируются
+    // самим dispatcher/events service'ом, не пропагируются).
+    this.events.publishIssueCreated(response, tenantId);
+    void this.webhooks
+      .dispatch(tenantId, 'issue.created', { issue: response })
+      .catch((e) => {
+        this.logger.warn(
+          { issueId: response.id, err: e instanceof Error ? e.message : String(e) },
+          'issue.created webhook dispatch failed',
+        );
+      });
+    return response;
   }
 
   /** Список задач проекта с фильтрами. */
@@ -233,6 +251,7 @@ export class IssuesService {
     if (dto.stateId && dto.stateId !== existing.stateId) {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
+    const changedFields: string[] = [];
     await this.prisma.$transaction(async (tx) => {
       const data: Prisma.IssueUpdateInput = {};
       const activities: Array<{
@@ -288,7 +307,8 @@ export class IssuesService {
       }
       await tx.issue.update({ where: { id }, data });
       for (const a of activities) {
-        await this.activity.record({
+        if (a.field) changedFields.push(a.field);
+        const activityId = await this.activity.record({
           tenantId,
           issueId: id,
           actorUserId: userId,
@@ -299,9 +319,32 @@ export class IssuesService {
           newValue: a.newValue,
           tx,
         });
+        // WS активити-фид (emit fire-and-forget — даже до commit'а БД безопасно,
+        // т.к. клиент всё равно дойдёт до этой записи через REST при reload).
+        this.events.publishActivity({
+          tenantId,
+          activityId,
+          issueId: id,
+          verb: a.verb,
+        });
       }
     });
-    return this.assemble(id, tenantId);
+    const response = await this.assemble(id, tenantId);
+    if (changedFields.length > 0) {
+      this.events.publishIssueUpdated(response, tenantId, changedFields);
+      void this.webhooks
+        .dispatch(tenantId, 'issue.updated', {
+          issue: response,
+          changedFields,
+        })
+        .catch((e) => {
+          this.logger.warn(
+            { issueId: id, err: e instanceof Error ? e.message : String(e) },
+            'issue.updated webhook dispatch failed',
+          );
+        });
+    }
+    return response;
   }
 
   /** Soft-delete через deletedAt. Пишет IssueActivity verb='deleted'. */
@@ -321,6 +364,18 @@ export class IssuesService {
         tx,
       });
     });
+    this.events.publishIssueDeleted(existing.id, tenantId, existing.projectId);
+    void this.webhooks
+      .dispatch(tenantId, 'issue.deleted', {
+        issueId: existing.id,
+        projectId: existing.projectId,
+      })
+      .catch((e) => {
+        this.logger.warn(
+          { issueId: existing.id, err: e instanceof Error ? e.message : String(e) },
+          'issue.deleted webhook dispatch failed',
+        );
+      });
     return { ok: true };
   }
 
@@ -361,7 +416,7 @@ export class IssuesService {
         data.completedAt = null;
       }
       await tx.issue.update({ where: { id }, data });
-      await this.activity.record({
+      const activityId = await this.activity.record({
         tenantId,
         issueId: id,
         actorUserId: userId,
@@ -373,8 +428,27 @@ export class IssuesService {
         metadata: dto.reason ? { reason: dto.reason } : null,
         tx,
       });
+      this.events.publishActivity({
+        tenantId,
+        activityId,
+        issueId: id,
+        verb: 'status_changed',
+      });
     });
-    return this.assemble(id, tenantId);
+    const response = await this.assemble(id, tenantId);
+    this.events.publishIssueUpdated(response, tenantId, ['stateId']);
+    void this.webhooks
+      .dispatch(tenantId, 'issue.updated', {
+        issue: response,
+        changedFields: ['stateId'],
+      })
+      .catch((e) => {
+        this.logger.warn(
+          { issueId: id, err: e instanceof Error ? e.message : String(e) },
+          'issue.updated (transition) webhook dispatch failed',
+        );
+      });
+    return response;
   }
 
   /** Добавить исполнителя. IssueActivity verb='assigned'. */

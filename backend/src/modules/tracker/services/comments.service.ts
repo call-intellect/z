@@ -13,6 +13,8 @@ import type { UpdateCommentDto } from '../dto/comments/update-comment.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
+import { TrackerEventsService } from './tracker-events.service';
+import { WebhookDispatcher } from './webhook-dispatcher.service';
 
 export interface CommentResponseDto {
   id: string;
@@ -47,6 +49,10 @@ export class CommentsService {
     @Inject(ActivityRecorderService)
     private readonly activity: ActivityRecorderService,
     @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(TrackerEventsService)
+    private readonly events: TrackerEventsService,
+    @Inject(WebhookDispatcher)
+    private readonly webhooks: WebhookDispatcher,
   ) {}
 
   /** Создать комментарий. Парсит @упоминания (по email-local-part или userId). */
@@ -108,7 +114,17 @@ export class CommentsService {
       return created;
     });
 
-    return this.assemble(comment.id);
+    const response = await this.assemble(comment.id);
+    this.events.publishCommentCreated(response, tenantId);
+    void this.webhooks
+      .dispatch(tenantId, 'comment.created', { comment: response })
+      .catch((e) => {
+        this.logger.warn(
+          { commentId: response.id, err: e instanceof Error ? e.message : String(e) },
+          'comment.created webhook dispatch failed',
+        );
+      });
+    return response;
   }
 
   /** PATCH комментария. Только автор. Проставляет editedAt. */
@@ -137,7 +153,17 @@ export class CommentsService {
         editedAt: new Date(),
       },
     });
-    return this.assemble(commentId);
+    const response = await this.assemble(commentId);
+    this.events.publishCommentUpdated(response, tenantId);
+    void this.webhooks
+      .dispatch(tenantId, 'comment.updated', { comment: response })
+      .catch((e) => {
+        this.logger.warn(
+          { commentId, err: e instanceof Error ? e.message : String(e) },
+          'comment.updated webhook dispatch failed',
+        );
+      });
+    return response;
   }
 
   /** Soft-delete комментария (deletedAt). Доступ: автор или admin Org. */
@@ -161,6 +187,18 @@ export class CommentsService {
       where: { id: commentId },
       data: { deletedAt: new Date() },
     });
+    this.events.publishCommentDeleted(commentId, tenantId, existing.issueId);
+    void this.webhooks
+      .dispatch(tenantId, 'comment.deleted', {
+        commentId,
+        issueId: existing.issueId,
+      })
+      .catch((e) => {
+        this.logger.warn(
+          { commentId, err: e instanceof Error ? e.message : String(e) },
+          'comment.deleted webhook dispatch failed',
+        );
+      });
     return { ok: true };
   }
 

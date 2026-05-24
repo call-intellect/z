@@ -31,6 +31,11 @@ export interface ProjectMemberDto {
   userId: string;
   role: number;
   joinedAt: string;
+  // T8 (2026-05-24) — для @-mention autocomplete'а в IssueComments:
+  // фронт показывает displayName + локальную часть email, поэтому
+  // расширили listMembers, не ломая обратной совместимости (поля nullable).
+  displayName: string | null;
+  email: string | null;
 }
 
 export interface ListProjectsResponse {

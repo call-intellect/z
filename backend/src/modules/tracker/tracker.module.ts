@@ -11,6 +11,7 @@ import { IntakeController } from './controllers/intake.controller';
 import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
+import { MyMentionsController } from './controllers/my-mentions.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
 import { StatesController } from './controllers/states.controller';
@@ -31,6 +32,7 @@ import { IssueMeetingsService } from './services/issue-meetings.service';
 import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
+import { MyMentionsService } from './services/my-mentions.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
@@ -93,6 +95,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // /api/v1/me/inbox — мои задачи (assignee=me) во всех проектах.
     // /api/v1/states — справочник IssueState для board + фильтров.
     MeInboxController,
+    // T8 (2026-05-24): мои @-упоминания (список + счётчик + read).
+    MyMentionsController,
     StatesController,
   ],
   providers: [
@@ -117,6 +121,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssueMeetingsService,
     // Sprint 3 Frontend Wave 2: read-only справочник статусов.
     StatesService,
+    // T8 (2026-05-24): мои @-упоминания (читает IssueMention, write — markRead).
+    MyMentionsService,
     // Sprint 2: WebSocket + Webhooks delivery.
     TrackerGateway,
     TrackerEventsService,
@@ -187,6 +193,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IntakeService,
     CommentsService,
     IntakeAutoTriageQueueService,
+    // SBA β-8.2 — «Хранитель обещаний» использует HolidayService для расчёта
+    // «N рабочих дней» (fallback срок) и «следующий рабочий день после
+    // commitmentDueDate» (фильтр cron'а).
+    HolidayService,
   ],
 })
 export class TrackerModule {}

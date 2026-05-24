@@ -35,6 +35,9 @@ export interface ProjectMemberApi {
   userId: string;
   role: number;
   joinedAt: string;
+  // T8 (2026-05-24): для @-mention autocomplete'а в IssueComments.
+  displayName?: string | null;
+  email?: string | null;
 }
 
 export interface ListProjectsResponseApi {
@@ -76,6 +79,10 @@ export interface ProjectMember {
   /** Числовая роль (5/15/20). */
   role: number;
   joinedAt: Date;
+  // T8 (2026-05-24): User.name для отображения в @-mention popup'е;
+  // email — для fallback'ового локального псевдонима (anna@org → @anna).
+  displayName: string | null;
+  email: string | null;
 }
 
 // ─── Mappers ────────────────────────────────────────────────────────────────
@@ -115,7 +122,31 @@ export function projectMemberFromApi(api: ProjectMemberApi): ProjectMember {
     userId: api.userId,
     role: api.role,
     joinedAt: new Date(api.joinedAt),
+    displayName: api.displayName ?? null,
+    email: api.email ?? null,
   };
+}
+
+/**
+ * Локальная часть email (часть до '@'). Используется как fallback-handle
+ * для @-mention'ов, если у юзера не задан displayName.
+ */
+export function memberHandle(member: ProjectMember): string {
+  if (member.email) {
+    const localPart = member.email.split('@')[0];
+    if (localPart) return localPart;
+  }
+  return member.userId;
+}
+
+/** Человекочитаемое имя — name, затем email-local, затем хвост userId. */
+export function memberDisplayName(member: ProjectMember): string {
+  if (member.displayName?.trim()) return member.displayName.trim();
+  if (member.email) {
+    const localPart = member.email.split('@')[0];
+    if (localPart) return localPart;
+  }
+  return member.userId.slice(0, 8);
 }
 
 // ─── UI helpers ─────────────────────────────────────────────────────────────

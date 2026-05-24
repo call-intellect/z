@@ -89,6 +89,13 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // По дефолту in_app + telegram/max для friendly-каналов. Email — нет
   // (это «нытик в почту», что обесценивает proactive-режим).
   'proactive.notification': ['in_app', 'telegram_bot', 'max_bot'],
+  // SBA β-8.1: недельная сводка операционного директора. Email уместен
+  // (понедельник утром — типичное окно для разбора почты), in_app — fallback.
+  'operations.weekly_digest': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
+  // T8 (2026-05-24): @-упоминание в комментарии задачи. in-app (бейдж в UI)
+  // обязателен; telegram/max — для мгновенных пушей. Email скучен — оставляем
+  // как fallback в дайджест-режиме (не в этом event-type'е).
+  'issue.mention': ['in_app', 'telegram_bot', 'max_bot'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

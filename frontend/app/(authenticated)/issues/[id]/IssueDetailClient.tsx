@@ -81,7 +81,11 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
 
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Комментарии</h2>
-            <IssueComments orgId={currentOrgId} issueId={issue.id} />
+            <IssueComments
+              orgId={currentOrgId}
+              issueId={issue.id}
+              projectId={issue.projectId}
+            />
           </section>
 
           <section className="flex flex-col gap-2">

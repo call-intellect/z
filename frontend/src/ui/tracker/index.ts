@@ -19,6 +19,7 @@ export { IssueAttachments } from './IssueAttachments';
 export { StartMeetingButton } from './StartMeetingButton';
 export { IssueChat } from './IssueChat';
 export { IssueComments } from './IssueComments';
+export { MentionAutocompletePopup } from './MentionAutocompletePopup';
 export { CycleProgress } from './CycleProgress';
 export { IntakeBoard } from './IntakeBoard';
 export { TrackerBottomNav } from './TrackerBottomNav';

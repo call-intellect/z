@@ -158,6 +158,48 @@ const ProactiveNotificationPayloadSchema = z
   })
   .strict();
 
+/**
+ * T8 (2026-05-24) — @-упоминание пользователя в комментарии задачи.
+ *
+ * Payload отправляемого `Notification(eventType='issue.mention')`. Recipient —
+ * userId упомянутого. Каналы по умолчанию (in_app, telegram_bot, max_bot) —
+ * заданы политикой ниже; вызывающий может передать `preferredChannelKinds`.
+ *
+ * `snippet` — обрезанный текст комментария (до 200 символов), для предпросмотра
+ * в push/inbox без открытия задачи. Полный текст доступен через
+ * `GET /api/v1/issues/:issueId/comments`.
+ */
+const IssueMentionPayloadSchema = z
+  .object({
+    issueId: z.string().min(1).max(80),
+    commentId: z.string().min(1).max(80),
+    byUserId: z.string().min(1).max(80),
+    snippet: z.string().min(1).max(500),
+    /** Опц. — для UI бейджа «упомянул @user в TKR-123». */
+    issueIdentifier: z.string().max(40).optional(),
+    issueTitle: z.string().max(500).optional(),
+  })
+  .strict();
+
+/**
+ * SBA β-8.1 — недельная сводка операционного директора.
+ *
+ * Payload `Notification(eventType='operations.weekly_digest')`. Recipient —
+ * userId роли coo/owner Org'а. `digestId` ссылается на
+ * `WeeklyOperationsDigest.id` (для drill-down из канала на страницу
+ * `/dashboard/operations/weekly`).
+ */
+const OperationsWeeklyDigestPayloadSchema = z
+  .object({
+    digestId: z.string().min(1).max(80),
+    weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    weekEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(4_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
@@ -171,6 +213,10 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['checkin.prompt', CheckinPromptPayloadSchema],
   // SBA δ-2 — ProactiveWatcher (инициативное сообщение).
   ['proactive.notification', ProactiveNotificationPayloadSchema],
+  // SBA β-8.1 — недельная сводка операционного директора.
+  ['operations.weekly_digest', OperationsWeeklyDigestPayloadSchema],
+  // T8 (2026-05-24) — @-упоминание в комментарии задачи трекера.
+  ['issue.mention', IssueMentionPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

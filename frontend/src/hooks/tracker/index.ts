@@ -21,5 +21,6 @@ export { useLabels } from './useLabels';
 export { useWebhooks } from './useWebhooks';
 export { useTrackerWebSocket } from './useTrackerWebSocket';
 export { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+export { useIssueChatPresence } from './useIssueChatPresence';
 export { useImports } from './useImports';
 export { useImportDetail } from './useImportDetail';

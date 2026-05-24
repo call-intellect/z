@@ -222,7 +222,21 @@ export class ProjectsService {
       where: { projectId },
       orderBy: { joinedAt: 'asc' },
     });
-    return members.map((m) => this.toMemberResponse(m));
+    // T8 (2026-05-24) — догружаем User.name/email для @-mention autocomplete'а.
+    // Не делаем include через relation (его нет на ProjectMember → User), поэтому
+    // батчевый findMany одним запросом.
+    const userIds = members.map((m) => m.userId);
+    const users = userIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+    const byId = new Map(users.map((u) => [u.id, u]));
+    return members.map((m) => {
+      const u = byId.get(m.userId);
+      return this.toMemberResponse(m, u?.name ?? null, u?.email ?? null);
+    });
   }
 
   /** Добавить участника. role: 20=Admin, 15=Member, 5=Guest. */
@@ -328,13 +342,19 @@ export class ProjectsService {
     };
   }
 
-  private toMemberResponse(m: ProjectMember): ProjectMemberDto {
+  private toMemberResponse(
+    m: ProjectMember,
+    displayName: string | null = null,
+    email: string | null = null,
+  ): ProjectMemberDto {
     return {
       id: m.id,
       projectId: m.projectId,
       userId: m.userId,
       role: m.role,
       joinedAt: m.joinedAt.toISOString(),
+      displayName,
+      email,
     };
   }
 }

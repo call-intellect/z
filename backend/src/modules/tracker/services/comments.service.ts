@@ -4,10 +4,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { type IssueComment } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ConversationalService } from '../../conversational/conversational.service';
 import type { CreateCommentDto } from '../dto/comments/create-comment.dto';
 import type { UpdateCommentDto } from '../dto/comments/update-comment.dto';
 
@@ -56,6 +58,15 @@ export class CommentsService {
     private readonly webhooks: WebhookDispatcher,
     @Inject(TrackerEmitterService)
     private readonly emitter: TrackerEmitterService,
+    /**
+     * T8 (2026-05-24) — @-mention уведомления через ConversationalService.
+     * Optional: ConversationalModule @Global, но в unit-тестах его обычно
+     * не подключают. Без него мы просто пропускаем notification (всё прочее
+     * — IssueMention в БД, WS event, активность — работает).
+     */
+    @Optional()
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService | null = null,
   ) {}
 
   /** Создать комментарий. Парсит @упоминания (по email-local-part или userId). */
@@ -133,6 +144,40 @@ export class CommentsService {
         commentId: response.id,
         contextText,
       });
+      // T8: in-app/telegram нотификация — лично упомянутому. Само себя
+      // не нотифицируем (если автор @упомянул сам себя — это спам).
+      if (
+        this.conversational !== null &&
+        mentionedUserId !== userId
+      ) {
+        const snippet = (contextText ?? response.content).slice(0, 200);
+        void this.conversational
+          .sendNotification({
+            tenantId,
+            recipientUserId: mentionedUserId,
+            eventType: 'issue.mention',
+            payload: {
+              issueId: issue.id,
+              commentId: response.id,
+              byUserId: userId,
+              snippet,
+              issueIdentifier: issue.identifier,
+              issueTitle: issue.title,
+            },
+            dataClass: 'internal',
+            preferredChannelKinds: ['in_app', 'telegram_bot', 'max_bot'],
+          })
+          .catch((e) => {
+            this.logger.warn(
+              {
+                commentId: response.id,
+                mentionedUserId,
+                err: e instanceof Error ? e.message : String(e),
+              },
+              'issue.mention notification failed',
+            );
+          });
+      }
     }
     void this.webhooks
       .dispatch(tenantId, 'comment.created', { comment: response })

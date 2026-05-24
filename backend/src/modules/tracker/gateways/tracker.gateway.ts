@@ -19,6 +19,17 @@ interface SocketContext {
   email: string;
   /** Текущий выбранный tenantId. Per-tenant room — главная подписка. */
   tenantId: string;
+  /**
+   * T8 (2026-05-24). Для отображения «N онлайн» в чате задачи нужно
+   * человекочитаемое имя. Сохраняем при handshake, чтобы не дёргать БД на
+   * каждый presence-event.
+   */
+  displayName: string;
+  /**
+   * T8. Set issueId'ов, в чьи presence-rooms сокет вступил.
+   * Нужен для авточистки на disconnect и для presence query.
+   */
+  presenceIssueIds: Set<string>;
 }
 
 /**
@@ -69,6 +80,9 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
         client.disconnect(true);
         return;
       }
+      // Гарантируем валидный presenceIssueIds (если authenticate не задал —
+      // подстраховка от рассинхрона типов).
+      if (!ctx.presenceIssueIds) ctx.presenceIssueIds = new Set();
       this.socketContext.set(client.id, ctx);
       await client.join(this.tenantRoom(ctx.tenantId));
       this.logger.log(
@@ -91,6 +105,14 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   handleDisconnect(client: Socket): void {
     const ctx = this.socketContext.get(client.id);
+    // T8: при дисконнекте — broadcast presence:user_left во все presence rooms,
+    // в которых сокет состоял. socket.io сам уберёт сокет из rooms, но другие
+    // клиенты должны узнать, что человек ушёл.
+    if (ctx) {
+      for (const issueId of ctx.presenceIssueIds) {
+        this.broadcastPresenceLeave(client, issueId, ctx);
+      }
+    }
     this.socketContext.delete(client.id);
     this.logger.log(
       { socketId: client.id, userId: ctx?.userId, tenantId: ctx?.tenantId },
@@ -169,6 +191,108 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true, t: Date.now() };
   }
 
+  // ── T8: presence/typing для multi-user чата задачи ───────────────────
+
+  /**
+   * Подписаться на presence-room задачи. Возвращает текущий список online
+   * пользователей в room (включая запрашивающего, без дублей по userId).
+   *
+   * Отличается от `subscribe.issue` тем, что:
+   *   - room другой (`presence:issue:${issueId}`) — узкая шина только для
+   *     присутствия/typing, не зашумляет основной канал событиями;
+   *   - после join'а — broadcast другим членам room'а `presence:user_joined`;
+   *   - отслеживается в SocketContext.presenceIssueIds для авточистки.
+   */
+  @SubscribeMessage('issue.chat.join')
+  async onChatJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { issueId: string },
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    onlineUsers?: Array<{ userId: string; displayName: string }>;
+  }> {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx) return { ok: false, error: 'not_authenticated' };
+    if (!body?.issueId || typeof body.issueId !== 'string') {
+      return { ok: false, error: 'invalid_issue_id' };
+    }
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: body.issueId, tenantId: ctx.tenantId },
+      select: { id: true },
+    });
+    if (!issue) return { ok: false, error: 'issue_not_found' };
+
+    const room = this.presenceRoom(body.issueId);
+    const wasAlreadyIn = ctx.presenceIssueIds.has(body.issueId);
+    await client.join(room);
+    ctx.presenceIssueIds.add(body.issueId);
+
+    // Broadcast только если действительно зашли впервые (защита от
+    // повторных join'ов с того же сокета).
+    if (!wasAlreadyIn) {
+      client.to(room).emit('presence:user_joined', {
+        issueId: body.issueId,
+        userId: ctx.userId,
+        displayName: ctx.displayName,
+      });
+    }
+
+    const onlineUsers = this.collectPresence(body.issueId);
+    return { ok: true, onlineUsers };
+  }
+
+  @SubscribeMessage('issue.chat.leave')
+  async onChatLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { issueId: string },
+  ): Promise<{ ok: boolean }> {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx || !body?.issueId) return { ok: false };
+    if (!ctx.presenceIssueIds.has(body.issueId)) return { ok: true };
+    this.broadcastPresenceLeave(client, body.issueId, ctx);
+    await client.leave(this.presenceRoom(body.issueId));
+    ctx.presenceIssueIds.delete(body.issueId);
+    return { ok: true };
+  }
+
+  /**
+   * Typing-indicator. Server — простой relay, дебаунс — на клиенте. Не пишем
+   * в БД, не валидируем повторение: «потерянное» событие безболезненно.
+   */
+  @SubscribeMessage('issue.chat.typing')
+  onChatTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { issueId: string; isTyping: boolean },
+  ): { ok: boolean } {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx || !body?.issueId) return { ok: false };
+    if (!ctx.presenceIssueIds.has(body.issueId)) {
+      // Не подписан на presence-room — игнорируем, чтобы не было утечки
+      // typing-сигналов между задачами.
+      return { ok: false };
+    }
+    const room = this.presenceRoom(body.issueId);
+    client.to(room).emit('presence:user_typing', {
+      issueId: body.issueId,
+      userId: ctx.userId,
+      displayName: ctx.displayName,
+      isTyping: Boolean(body.isTyping),
+    });
+    return { ok: true };
+  }
+
+  /** Снимок текущего онлайн-состава presence-room (для UI после переподключения). */
+  @SubscribeMessage('issue.chat.presence')
+  onChatPresence(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { issueId: string },
+  ): { ok: boolean; onlineUsers: Array<{ userId: string; displayName: string }> } {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx || !body?.issueId) return { ok: false, onlineUsers: [] };
+    return { ok: true, onlineUsers: this.collectPresence(body.issueId) };
+  }
+
   // ── server-side helpers (используются TrackerEventsService) ──────────
 
   /** Имя room для tenant'а. */
@@ -182,6 +306,57 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   issueRoom(issueId: string): string {
     return `issue:${issueId}`;
+  }
+
+  /** T8: room для presence/typing в чате задачи. Не пересекается с issueRoom. */
+  presenceRoom(issueId: string): string {
+    return `presence:issue:${issueId}`;
+  }
+
+  /**
+   * Собрать unique online-юзеров (по userId), которые сейчас в presence-room
+   * указанной задачи. Источник истины — наш socketContext, а не socket.io
+   * adapter.rooms (тот не различает userId, только socketId).
+   */
+  private collectPresence(
+    issueId: string,
+  ): Array<{ userId: string; displayName: string }> {
+    const seen = new Map<string, string>();
+    for (const ctx of this.socketContext.values()) {
+      if (ctx.presenceIssueIds.has(issueId)) {
+        if (!seen.has(ctx.userId)) seen.set(ctx.userId, ctx.displayName);
+      }
+    }
+    return [...seen.entries()].map(([userId, displayName]) => ({
+      userId,
+      displayName,
+    }));
+  }
+
+  /**
+   * Broadcast `presence:user_left` в presence-room. Эмитим только если это
+   * был ПОСЛЕДНИЙ сокет этого юзера в room'е (у юзера могло быть открыто
+   * несколько вкладок — он не «ушёл», пока остаётся хоть один коннект).
+   */
+  private broadcastPresenceLeave(
+    client: Socket,
+    issueId: string,
+    ctx: SocketContext,
+  ): void {
+    let remaining = 0;
+    for (const [socketId, c] of this.socketContext.entries()) {
+      if (socketId === client.id) continue;
+      if (c.userId === ctx.userId && c.presenceIssueIds.has(issueId)) {
+        remaining += 1;
+        break;
+      }
+    }
+    if (remaining > 0) return;
+    client.to(this.presenceRoom(issueId)).emit('presence:user_left', {
+      issueId,
+      userId: ctx.userId,
+      displayName: ctx.displayName,
+    });
   }
 
   /**
@@ -265,7 +440,25 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       return null;
     }
 
-    return { userId: session.sub, email: session.email, tenantId };
+    // T8 (2026-05-24): подтянем displayName для presence/typing. Берём User.name,
+    // fallback — email (или хвост userId, если ничего нет).
+    const user = await this.prisma.user.findUnique({
+      where: { id: session.sub },
+      select: { name: true, email: true },
+    });
+    const displayName =
+      user?.name?.trim() ||
+      user?.email?.trim() ||
+      session.email ||
+      session.sub.slice(0, 8);
+
+    return {
+      userId: session.sub,
+      email: session.email,
+      tenantId,
+      displayName,
+      presenceIssueIds: new Set<string>(),
+    };
   }
 
   /**

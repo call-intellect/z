@@ -54,6 +54,14 @@ export interface TrackerWsClient {
   unsubscribeIssue: (issueId: string) => Promise<void>;
   /** Закрыть соединение. */
   close: () => void;
+  /**
+   * T8 (2026-05-24): сырой socket для узких потребителей (presence/typing
+   * в IssueComments). Через него можно emit'ить кастомные имена событий
+   * (`issue.chat.join` и т.п.), не расширяя «типизированный» API клиента
+   * для каждого нового сценария. Не использовать для основных событий
+   * (`issue.*` / `comment.*` и т.п.) — для них есть on/subscribeIssue.
+   */
+  __socket: Socket;
 }
 
 /**
@@ -217,6 +225,7 @@ export function useTrackerWebSocket(
       close() {
         socket.disconnect();
       },
+      __socket: socket,
     };
 
     clientRef.current = client;

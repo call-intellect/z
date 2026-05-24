@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import plugin from 'tailwindcss/plugin';
 import animate from 'tailwindcss-animate';
 
 /**
@@ -134,7 +135,22 @@ const config: Config = {
       },
     },
   },
-  plugins: [animate],
+  plugins: [
+    animate,
+    // Утилита `scrollbar-none` — скрываем скроллбар, но скролл остаётся
+    // (для горизонтальных pill-фильтров на mobile).
+    plugin(({ addUtilities }) => {
+      addUtilities({
+        '.scrollbar-none': {
+          'scrollbar-width': 'none',
+          '-ms-overflow-style': 'none',
+        },
+        '.scrollbar-none::-webkit-scrollbar': {
+          display: 'none',
+        },
+      });
+    }),
+  ],
 };
 
 export default config;

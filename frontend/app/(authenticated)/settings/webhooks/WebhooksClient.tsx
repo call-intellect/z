@@ -148,11 +148,13 @@ export function WebhooksClient() {
             return (
               <li
                 key={s.id}
-                className="flex items-start gap-3 rounded-lg border border-border-subtle bg-bg-card p-3"
+                className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 md:flex-row md:items-start"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <code className="truncate text-sm text-fg-primary">{s.url}</code>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="block min-w-0 max-w-full truncate text-sm text-fg-primary">
+                      {s.url}
+                    </code>
                     <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -166,7 +168,7 @@ export function WebhooksClient() {
                     Последняя доставка: {formatDate(s.lastDeliveryAt)}
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   <Button size="sm" variant="ghost" onClick={() => void handleTest(s.id)}>
                     <Send size={12} /> Тест
                   </Button>

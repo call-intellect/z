@@ -112,8 +112,8 @@ export function DirectorDashboardClient() {
   }, [data?.signalCounters]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="sticky top-0 z-10 -mx-6 mb-6 flex flex-col gap-3 border-b border-border-subtle bg-bg-base/72 px-6 py-4 backdrop-blur-glass md:flex-row md:items-center md:justify-between">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+      <header className="sticky top-0 z-10 -mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle bg-bg-base/72 px-4 py-4 backdrop-blur-glass md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Привет, {greetingName}

@@ -296,49 +296,51 @@ function SourceRow({
   return (
     <li
       className={cn(
-        'flex items-start gap-3 rounded-lg border p-3 transition-colors',
+        'flex flex-col gap-3 rounded-lg border p-3 transition-colors md:flex-row md:items-start',
         source.isActive
           ? 'border-border-subtle bg-bg-card'
           : 'border-border-subtle bg-bg-card/50 opacity-70',
       )}
     >
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle bg-bg-overlay text-fg-secondary">
-        <Icon size={16} strokeWidth={1.75} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-fg-primary">
-            {source.name}
-          </span>
-          <Badge variant="secondary" className="text-[10px]">
-            {typeLabel}
-          </Badge>
-          <Badge
-            variant={dataClassBadgeVariant(source.dataClass)}
-            className="text-[10px]"
-          >
-            {DATA_CLASS_LABELS[source.dataClass]}
-          </Badge>
-          {!source.isActive && (
+      <div className="flex items-start gap-3 md:flex-1 md:min-w-0">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle bg-bg-overlay text-fg-secondary">
+          <Icon size={16} strokeWidth={1.75} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium text-fg-primary">
+              {source.name}
+            </span>
             <Badge variant="secondary" className="text-[10px]">
-              Отключён
+              {typeLabel}
             </Badge>
+            <Badge
+              variant={dataClassBadgeVariant(source.dataClass)}
+              className="text-[10px]"
+            >
+              {DATA_CLASS_LABELS[source.dataClass]}
+            </Badge>
+            {!source.isActive && (
+              <Badge variant="secondary" className="text-[10px]">
+                Отключён
+              </Badge>
+            )}
+          </div>
+          <div className="mt-1 text-[11px] text-fg-tertiary">
+            Последнее событие: {relativeTime(source.lastEventAt)}
+          </div>
+          {source.webhookUrl && (
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-fg-tertiary">
+              <span>Webhook:</span>
+              <code className="block min-w-0 max-w-full truncate rounded bg-bg-overlay px-1.5 py-0.5 font-mono">
+                {source.webhookUrl}
+              </code>
+              <CopyButton text={source.webhookUrl} />
+            </div>
           )}
         </div>
-        <div className="mt-1 text-[11px] text-fg-tertiary">
-          Последнее событие: {relativeTime(source.lastEventAt)}
-        </div>
-        {source.webhookUrl && (
-          <div className="mt-1 flex items-center gap-1 text-[11px] text-fg-tertiary">
-            <span>Webhook:</span>
-            <code className="truncate rounded bg-bg-overlay px-1.5 py-0.5 font-mono">
-              {source.webhookUrl}
-            </code>
-            <CopyButton text={source.webhookUrl} />
-          </div>
-        )}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         <Switch
           checked={source.isActive}
           onCheckedChange={onToggleActive}

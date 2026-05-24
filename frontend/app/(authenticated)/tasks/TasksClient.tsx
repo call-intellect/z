@@ -241,38 +241,40 @@ export function TasksClient() {
       </header>
 
       {/* Фильтры */}
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        {STATUS_FILTER_ORDER.map((s) => {
-          const active = filterStatuses.includes(s);
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() => toggleStatus(s)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                active
-                  ? 'border-accent-border bg-accent-muted text-accent'
-                  : 'border-border-subtle bg-bg-card text-fg-secondary hover:bg-bg-overlay',
-              )}
-            >
-              {STATUS_LABEL[s]}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setThisWeekOnly((v) => !v)}
-          className={cn(
-            'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-            thisWeekOnly
-              ? 'border-accent-border bg-accent-muted text-accent'
-              : 'border-border-subtle bg-bg-card text-fg-secondary hover:bg-bg-overlay',
-          )}
-        >
-          Срок: на этой неделе
-        </button>
-        <div className="relative ml-auto w-full max-w-xs">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-2">
+        <div className="-mx-1 flex items-center gap-2 overflow-x-auto scrollbar-none snap-x px-1 md:mx-0 md:flex-wrap md:overflow-visible md:snap-none md:px-0">
+          {STATUS_FILTER_ORDER.map((s) => {
+            const active = filterStatuses.includes(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => toggleStatus(s)}
+                className={cn(
+                  'shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                  active
+                    ? 'border-accent-border bg-accent-muted text-accent'
+                    : 'border-border-subtle bg-bg-card text-fg-secondary hover:bg-bg-overlay',
+                )}
+              >
+                {STATUS_LABEL[s]}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setThisWeekOnly((v) => !v)}
+            className={cn(
+              'shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              thisWeekOnly
+                ? 'border-accent-border bg-accent-muted text-accent'
+                : 'border-border-subtle bg-bg-card text-fg-secondary hover:bg-bg-overlay',
+            )}
+          >
+            Срок: на этой неделе
+          </button>
+        </div>
+        <div className="relative w-full md:ml-auto md:max-w-xs">
           <Search
             size={14}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-tertiary"

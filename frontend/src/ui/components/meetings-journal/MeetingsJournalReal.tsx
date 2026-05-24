@@ -34,6 +34,7 @@ import { exportsApi } from '@/api/exports.api';
 import { ApiError } from '@/api/api-error';
 import { meetingSummaryFromApi, meetingDurationSeconds } from '@/domain/meeting';
 import { tagFromApi, type TagDomain } from '@/domain/tag';
+import { useIsMobile } from '@/hooks/useMediaQuery';
 import {
   MEETING_STATUSES,
   MEETING_TYPES,
@@ -120,6 +121,7 @@ export function MeetingsJournalReal() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedId = searchParams.get('selected');
+  const isMobile = useIsMobile();
 
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 250);
@@ -183,6 +185,13 @@ export function MeetingsJournalReal() {
   }, [items]);
 
   const onSelect = (id: string) => {
+    if (isMobile) {
+      // На мобильном detail-панель не помещается рядом со списком — открываем
+      // полноценную страницу результата встречи. Кнопка «Назад» возвращает к
+      // списку.
+      router.push(`/meetings/${encodeURIComponent(id)}/result`);
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set('selected', id);
     router.replace(`/meetings?${params.toString()}`);
@@ -393,8 +402,8 @@ export function MeetingsJournalReal() {
         </div>
       </div>
 
-      {/* Detail */}
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-bg-base">
+      {/* Detail — на mobile скрыт, выбор открывает /meetings/[id]/result */}
+      <div className="hidden h-full min-h-0 flex-col overflow-hidden bg-bg-base lg:flex">
         <AnimatePresence mode="wait">
           {selectedId ? (
             <motion.div
@@ -538,13 +547,13 @@ function FilterChips({
   const dateActive = Boolean(dateFrom || dateTo);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto scrollbar-none snap-x px-1 md:mx-0 md:flex-wrap md:overflow-visible md:snap-none md:px-0">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
               typeActive
                 ? 'border-accent-border bg-accent-muted text-accent'
                 : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
@@ -585,7 +594,7 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
               statusActive
                 ? 'border-accent-border bg-accent-muted text-accent'
                 : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
@@ -626,7 +635,7 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
               dateActive
                 ? 'border-accent-border bg-accent-muted text-accent'
                 : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
@@ -671,7 +680,7 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
               tagActive
                 ? 'border-accent-border bg-accent-muted text-accent'
                 : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',

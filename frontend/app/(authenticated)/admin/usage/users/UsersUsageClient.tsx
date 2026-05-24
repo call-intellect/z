@@ -118,58 +118,108 @@ export function UsersUsageClient() {
             description="За выбранный период никто не делал LLM-вызовов."
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border-subtle">
-            <table className="w-full text-sm">
-              <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
-                <tr>
-                  <th className="px-3 py-2 text-left">Пользователь</th>
-                  <th className="px-3 py-2 text-left">Org</th>
-                  <th className="px-3 py-2 text-right">Вызовов</th>
-                  <th className="px-3 py-2 text-right">Расход</th>
-                  <th className="px-3 py-2 text-left">Топ функций</th>
-                </tr>
-              </thead>
-              <tbody>
-                {q.data.items.map((u) => (
-                  <tr
-                    key={u.userId}
-                    className="border-t border-border-subtle hover:bg-bg-overlay"
-                  >
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{u.userName || '—'}</div>
-                      <div className="text-xs text-fg-tertiary">{u.userEmail}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      {u.tenantName ? (
-                        <span className="text-fg-secondary">{u.tenantName}</span>
-                      ) : (
-                        <span className="text-fg-tertiary">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {u.totalCalls.toLocaleString('ru-RU')}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {formatUsd(u.totalCostUsd)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1.5 text-xs">
-                        {u.byTaskType.slice(0, 3).map((t) => (
-                          <Link
-                            key={t.taskType}
-                            href={`/admin/usage/functions/${encodeURIComponent(t.taskType)}`}
-                            className="rounded-full bg-bg-overlay px-2 py-0.5 hover:bg-accent-muted"
-                          >
-                            {t.taskType}: {formatUsd(t.costUsd)}
-                          </Link>
-                        ))}
-                      </div>
-                    </td>
+          <>
+            {/* Desktop: таблица. */}
+            <div className="hidden overflow-x-auto rounded-lg border border-border-subtle md:block">
+              <table className="w-full text-sm">
+                <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Пользователь</th>
+                    <th className="px-3 py-2 text-left">Org</th>
+                    <th className="px-3 py-2 text-right">Вызовов</th>
+                    <th className="px-3 py-2 text-right">Расход</th>
+                    <th className="px-3 py-2 text-left">Топ функций</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {q.data.items.map((u) => (
+                    <tr
+                      key={u.userId}
+                      className="border-t border-border-subtle hover:bg-bg-overlay"
+                    >
+                      <td className="px-3 py-2">
+                        <div className="font-medium">{u.userName || '—'}</div>
+                        <div className="text-xs text-fg-tertiary">{u.userEmail}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        {u.tenantName ? (
+                          <span className="text-fg-secondary">{u.tenantName}</span>
+                        ) : (
+                          <span className="text-fg-tertiary">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {u.totalCalls.toLocaleString('ru-RU')}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">
+                        {formatUsd(u.totalCostUsd)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1.5 text-xs">
+                          {u.byTaskType.slice(0, 3).map((t) => (
+                            <Link
+                              key={t.taskType}
+                              href={`/admin/usage/functions/${encodeURIComponent(t.taskType)}`}
+                              className="rounded-full bg-bg-overlay px-2 py-0.5 hover:bg-accent-muted"
+                            >
+                              {t.taskType}: {formatUsd(t.costUsd)}
+                            </Link>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile: card-view fallback. */}
+            <ul className="space-y-2 md:hidden">
+              {q.data.items.map((u) => (
+                <li
+                  key={u.userId}
+                  className="rounded-lg border border-border-subtle bg-bg-card p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-fg-primary">
+                        {u.userName || '—'}
+                      </div>
+                      <div className="truncate text-xs text-fg-tertiary">
+                        {u.userEmail}
+                      </div>
+                      {u.tenantName && (
+                        <div className="mt-0.5 truncate text-xs text-fg-secondary">
+                          {u.tenantName}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-medium tabular-nums text-fg-primary">
+                        {formatUsd(u.totalCostUsd)}
+                      </div>
+                      <div className="text-[11px] tabular-nums text-fg-tertiary">
+                        {u.totalCalls.toLocaleString('ru-RU')} вызовов
+                      </div>
+                    </div>
+                  </div>
+                  {u.byTaskType.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+                      {u.byTaskType.slice(0, 3).map((t) => (
+                        <Link
+                          key={t.taskType}
+                          href={`/admin/usage/functions/${encodeURIComponent(t.taskType)}`}
+                          className="rounded-full bg-bg-overlay px-2 py-0.5 hover:bg-accent-muted"
+                        >
+                          {t.taskType}: {formatUsd(t.costUsd)}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
         ))}
 
       <p className="text-xs text-fg-tertiary">

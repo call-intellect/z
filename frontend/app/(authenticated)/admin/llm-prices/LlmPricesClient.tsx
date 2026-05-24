@@ -105,56 +105,111 @@ export function LlmPricesClient() {
 
 function PricesTable({ items }: { items: AdminPriceDomain[] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border-subtle">
-      <table className="w-full text-sm">
-        <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
-          <tr>
-            <th className="px-3 py-2 text-left">Provider</th>
-            <th className="px-3 py-2 text-left">Model</th>
-            <th className="px-3 py-2 text-right">Input / 1M</th>
-            <th className="px-3 py-2 text-right">Output / 1M</th>
-            <th className="px-3 py-2 text-right">Cached / 1M</th>
-            <th className="px-3 py-2 text-left">Currency</th>
-            <th className="px-3 py-2 text-left">Effective</th>
-            <th className="px-3 py-2 text-left">Статус</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((p) => (
-            <tr
-              key={p.id}
-              className="border-t border-border-subtle hover:bg-bg-overlay"
-            >
-              <td className="px-3 py-2 font-mono text-xs">{p.provider}</td>
-              <td className="px-3 py-2 font-mono text-xs">{p.model}</td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {p.inputCostPerMillionTokens.toFixed(2)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {p.outputCostPerMillionTokens.toFixed(2)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {p.cachedCostPerMillionTokens.toFixed(2)}
-              </td>
-              <td className="px-3 py-2 text-xs">{p.currency}</td>
-              <td className="px-3 py-2 text-xs text-fg-tertiary">
-                {p.effectiveFrom.toLocaleDateString('ru-RU')}
-                {p.effectiveTo
-                  ? ` — ${p.effectiveTo.toLocaleDateString('ru-RU')}`
-                  : ' — сейчас'}
-              </td>
-              <td className="px-3 py-2">
-                {p.isActive ? (
-                  <Badge variant="default">активна</Badge>
-                ) : (
-                  <Badge variant="secondary">архив</Badge>
-                )}
-              </td>
+    <>
+      {/* Десктоп — табличный вид. На mobile скрыт. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-border-subtle md:block">
+        <table className="w-full text-sm">
+          <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
+            <tr>
+              <th className="px-3 py-2 text-left">Provider</th>
+              <th className="px-3 py-2 text-left">Model</th>
+              <th className="px-3 py-2 text-right">Input / 1M</th>
+              <th className="px-3 py-2 text-right">Output / 1M</th>
+              <th className="px-3 py-2 text-right">Cached / 1M</th>
+              <th className="px-3 py-2 text-left">Currency</th>
+              <th className="px-3 py-2 text-left">Effective</th>
+              <th className="px-3 py-2 text-left">Статус</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {items.map((p) => (
+              <tr
+                key={p.id}
+                className="border-t border-border-subtle hover:bg-bg-overlay"
+              >
+                <td className="px-3 py-2 font-mono text-xs">{p.provider}</td>
+                <td className="px-3 py-2 font-mono text-xs">{p.model}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {p.inputCostPerMillionTokens.toFixed(2)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {p.outputCostPerMillionTokens.toFixed(2)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {p.cachedCostPerMillionTokens.toFixed(2)}
+                </td>
+                <td className="px-3 py-2 text-xs">{p.currency}</td>
+                <td className="px-3 py-2 text-xs text-fg-tertiary">
+                  {p.effectiveFrom.toLocaleDateString('ru-RU')}
+                  {p.effectiveTo
+                    ? ` — ${p.effectiveTo.toLocaleDateString('ru-RU')}`
+                    : ' — сейчас'}
+                </td>
+                <td className="px-3 py-2">
+                  {p.isActive ? (
+                    <Badge variant="default">активна</Badge>
+                  ) : (
+                    <Badge variant="secondary">архив</Badge>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile — карточный вид. Показывает важнейшие поля. */}
+      <ul className="space-y-2 md:hidden">
+        {items.map((p) => (
+          <li
+            key={p.id}
+            className="rounded-lg border border-border-subtle bg-bg-card p-3"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-xs text-fg-primary">
+                  {p.provider} / {p.model}
+                </div>
+                <div className="mt-1 text-[11px] text-fg-tertiary">
+                  {p.effectiveFrom.toLocaleDateString('ru-RU')}
+                  {p.effectiveTo
+                    ? ` — ${p.effectiveTo.toLocaleDateString('ru-RU')}`
+                    : ' — сейчас'}
+                </div>
+              </div>
+              {p.isActive ? (
+                <Badge variant="default">активна</Badge>
+              ) : (
+                <Badge variant="secondary">архив</Badge>
+              )}
+            </div>
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <dt className="text-fg-tertiary">Input</dt>
+                <dd className="tabular-nums text-fg-primary">
+                  {p.inputCostPerMillionTokens.toFixed(2)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-fg-tertiary">Output</dt>
+                <dd className="tabular-nums text-fg-primary">
+                  {p.outputCostPerMillionTokens.toFixed(2)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-fg-tertiary">Cached</dt>
+                <dd className="tabular-nums text-fg-primary">
+                  {p.cachedCostPerMillionTokens.toFixed(2)}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-2 text-[11px] text-fg-tertiary">
+              Валюта: {p.currency}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

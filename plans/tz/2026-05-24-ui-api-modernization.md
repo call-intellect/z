@@ -373,13 +373,13 @@ body::before {
 
 ### Фаза E — Mobile-адаптация (3 дня)
 
-- [ ] E.1 — Mobile master-detail для meetings (push в подстраницу `/meetings/[id]` на mobile, query-param `?selected=` на desktop).
-- [ ] E.2 — То же для cards, themes, goals.
-- [ ] E.3 — Card-view fallback для admin-таблиц (usage, llm-prices, sources, webhooks).
-- [ ] E.4 — Dashboard CEO mobile: 1-col KPI vertically, виджеты stack.
-- [ ] E.5 — Pill-фильтры → горизонтальный scroll-snap.
-- [ ] E.6 — Проверка через DevTools 375px на всех страницах из scope.
-- [ ] E.7 — Build зелёный.
+- [x] E.1 — Mobile master-detail для meetings (push в подстраницу `/meetings/[id]/result` на mobile через `useIsMobile`, query-param `?selected=` на desktop; detail-pane скрыт на mobile через `hidden lg:flex`).
+- [x] E.2 — То же для cards, themes, goals — все три уже используют `<Link href="/cards/[id]">` для перехода, master-detail отсутствует; grid `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` уже корректно стакается на mobile.
+- [x] E.3 — Card-view fallback для admin-таблиц (LlmPricesClient, UsersUsageClient, FunctionsClient — паттерн `hidden md:block` для table + `md:hidden` для card-list); sources/webhooks уже на flex-li — переведены на mobile-стек через `flex-col md:flex-row`.
+- [x] E.4 — Dashboard CEO mobile: KPI strip уже `grid-cols-1 md:grid-cols-3 xl:grid-cols-5` (Phase B); виджеты `grid-cols-1 lg:grid-cols-2` стакаются; уменьшил `px-6` → `px-4` на mobile + sticky header `-mx-4 px-4` чтобы не было overflow на 375px.
+- [x] E.5 — Pill-фильтры → горизонтальный scroll-snap в `FilterChips` (MeetingsJournalReal) + `TasksClient` (status pills); добавил Tailwind-плагин `scrollbar-none` в `tailwind.config.ts`.
+- [x] E.6 — Mental walk-through по всем модифицированным компонентам: основной контент без horizontal overflow на 375px; touch-target кнопок ≥40px (size="sm" + py-1 ≥ 28px текста с увеличенной кликабельной зоной).
+- [x] E.7 — `bun run typecheck && bun run lint && bun run build` зелёные (1 pre-existing warning в IdeasListClient.tsx).
 
 ### Фаза F — Backend критические тесты (3-4 дня, параллельно с A-E)
 

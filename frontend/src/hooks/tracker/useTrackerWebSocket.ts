@@ -3,26 +3,45 @@
 /**
  * useTrackerWebSocket — подписка на live-события трекера (`/ws/tracker`).
  *
- * Backend использует socket.io (см. `backend/src/modules/tracker/gateways/
- * tracker.gateway.ts`), но в frontend нет `socket.io-client` в зависимостях,
- * а правила Sprint 2 запрещают добавлять зависимости без явной нужды.
+ * Backend: см. `backend/src/modules/tracker/gateways/tracker.gateway.ts`
+ * (socket.io namespace `/ws/tracker`, события называются как `event.type`:
+ * `issue.created`, `issue.updated`, `comment.created` и т.д.).
  *
- * ⚠ TODO Sprint 3: подключить socket.io-client и реализовать:
- *   - handshake с `auth.token = cookie z_session` (для server-side cookies
- *     передаём через `withCredentials: true` + handshake.auth.tenantId).
- *   - подписка на rooms `project:${id}` и `issue:${id}` через subscribe.project
- *     / subscribe.issue.
- *   - EventEmitter / Subject — внешним подписчикам отдаём поток `TrackerWsEvent`.
- *   - heartbeat / reconnect: socket.io уже умеет.
+ * Контракт frontend:
+ *   - one connection per orgId (хук пересоздаёт socket при смене tenant);
+ *   - withCredentials: true — отправляем cookie `z_session`;
+ *   - handshake.auth.tenantId = orgId — гейт-вэй ставит клиента в
+ *     основной room `tenant:<tenantId>`;
+ *   - subscribeProject / subscribeIssue — дополнительный server-side join
+ *     в room проекта/задачи (через emit + ack);
+ *   - on(eventType, handler) — внутренний EventEmitter; возвращает unsubscribe.
  *
- * Сейчас хук возвращает no-op объект, чтобы UI можно было собрать.
+ * Heartbeat и reconnect — встроенные в socket.io.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
+
 import type { TrackerWsEventType } from '@/domain/tracker';
 
+/** Все известные имена событий (зеркало backend `TrackerWsEvent.type`). */
+const KNOWN_EVENT_TYPES: TrackerWsEventType[] = [
+  'issue.created',
+  'issue.updated',
+  'issue.deleted',
+  'comment.created',
+  'comment.updated',
+  'comment.deleted',
+  'cycle.created',
+  'cycle.progress_updated',
+  'cycle.completed',
+  'intake.new_item',
+  'intake.triaged',
+  'activity_feed.new_item',
+];
+
 export interface TrackerWsClient {
-  /** Подписаться на конкретный тип события (после соединения). */
+  /** Подписаться на конкретный тип события. Возвращает unsubscribe. */
   on: (eventType: TrackerWsEventType, handler: (payload: unknown) => void) => () => void;
   /** Подписаться на room проекта (server-side join). */
   subscribeProject: (projectId: string) => Promise<void>;
@@ -33,31 +52,188 @@ export interface TrackerWsClient {
   close: () => void;
 }
 
+/**
+ * Базовый URL WebSocket-соединения.
+ * Если задан `NEXT_PUBLIC_WS_URL` — используем его (например, для прод
+ * настроек или dev на другой машине). Иначе — относительный (same-origin),
+ * `io('/ws/tracker', ...)` сам определит host из window.location.
+ */
+function resolveWsUrl(): string {
+  const fromEnv =
+    typeof process !== 'undefined' &&
+    (process.env.NEXT_PUBLIC_WS_URL ?? '').trim();
+  // Backend slушает на 3000, frontend dev — на 3001. В dev по умолчанию
+  // обращаемся напрямую на API, чтобы избежать proxy. В prod проксируется
+  // nginx'ом, поэтому same-origin — норма.
+  if (fromEnv && fromEnv.length > 0) {
+    return fromEnv.replace(/\/+$/, '') + '/ws/tracker';
+  }
+  if (typeof window !== 'undefined') {
+    // Same-origin — namespace добавляется io вторым шагом через path.
+    return '/ws/tracker';
+  }
+  return '/ws/tracker';
+}
+
 export function useTrackerWebSocket(
-  _orgId: string | null | undefined,
-  _enabled: boolean = true,
-): { client: TrackerWsClient | null; connected: boolean; todo: true } {
+  orgId: string | null | undefined,
+  enabled: boolean = true,
+): { client: TrackerWsClient | null; connected: boolean } {
+  // Внешний state — для UI индикатора «онлайн».
+  const [connected, setConnected] = useState(false);
+  // Стабильная ссылка на client (пере-создаётся при смене orgId).
   const clientRef = useRef<TrackerWsClient | null>(null);
+  const [, setClientVersion] = useState(0);
 
   useEffect(() => {
-    // TODO Sprint 3 — реальное socket.io подключение.
-    clientRef.current = {
-      on: () => () => undefined,
-      subscribeProject: async () => undefined,
-      unsubscribeProject: async () => undefined,
-      subscribeIssue: async () => undefined,
-      unsubscribeIssue: async () => undefined,
-      close: () => undefined,
-    };
-    return () => {
-      clientRef.current?.close();
+    if (!enabled || !orgId || typeof window === 'undefined') {
       clientRef.current = null;
-    };
-  }, []);
+      setConnected(false);
+      return;
+    }
 
-  return {
-    client: clientRef.current,
-    connected: false,
-    todo: true,
-  };
+    const url = resolveWsUrl();
+
+    // namespace = '/ws/tracker'. Передаём через путь URL.
+    // `withCredentials` — гарантирует, что браузер пошлёт cookie `z_session`
+    // (HTTP-only, ставит backend при логине).
+    const socket: Socket = io(url, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      auth: { tenantId: orgId },
+      reconnection: true,
+      reconnectionAttempts: Number.POSITIVE_INFINITY,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10_000,
+    });
+
+    // ── EventEmitter поверх Socket ────────────────────────────────────
+    // Внутренние подписчики: Map<eventType, Set<handler>>.
+    const subscribers = new Map<
+      TrackerWsEventType,
+      Set<(payload: unknown) => void>
+    >();
+
+    // Шину делаем «толстой»: подписываемся на все известные имена событий
+    // и фанаутом раздаём подписчикам. Так UI-хуки могут регистрироваться
+    // даже ДО первого реального события, без race-condition.
+    const fanout = (eventType: TrackerWsEventType) => (payload: unknown) => {
+      const set = subscribers.get(eventType);
+      if (!set || set.size === 0) return;
+      for (const handler of set) {
+        try {
+          handler(payload);
+        } catch (err) {
+          console.warn(`[tracker-ws] handler for ${eventType} threw:`, err);
+        }
+      }
+    };
+
+    for (const eventType of KNOWN_EVENT_TYPES) {
+      socket.on(eventType, fanout(eventType));
+    }
+
+    // ── lifecycle ─────────────────────────────────────────────────────
+    socket.on('connect', () => {
+      setConnected(true);
+    });
+    socket.on('disconnect', () => {
+      setConnected(false);
+    });
+    socket.on('connect_error', (err: Error) => {
+      console.warn('[tracker-ws] connect_error:', err.message);
+    });
+
+    // ── client API ────────────────────────────────────────────────────
+    const emitWithAck = <T>(eventName: string, body: unknown): Promise<T> =>
+      new Promise<T>((resolve, reject) => {
+        const TIMEOUT_MS = 5000;
+        let settled = false;
+        const t = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(new Error(`ack timeout for ${eventName}`));
+        }, TIMEOUT_MS);
+        socket.emit(eventName, body, (ack: T) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(t);
+          resolve(ack);
+        });
+      });
+
+    const client: TrackerWsClient = {
+      on(eventType, handler) {
+        let set = subscribers.get(eventType);
+        if (!set) {
+          set = new Set();
+          subscribers.set(eventType, set);
+        }
+        set.add(handler);
+        return () => {
+          set?.delete(handler);
+        };
+      },
+      async subscribeProject(projectId) {
+        try {
+          await emitWithAck<{ ok: boolean; error?: string }>(
+            'subscribe.project',
+            { projectId },
+          );
+        } catch (err) {
+          console.warn('[tracker-ws] subscribeProject failed:', err);
+        }
+      },
+      async unsubscribeProject(projectId) {
+        try {
+          await emitWithAck<{ ok: boolean }>('unsubscribe.project', {
+            projectId,
+          });
+        } catch {
+          /* fire-and-forget */
+        }
+      },
+      async subscribeIssue(issueId) {
+        try {
+          await emitWithAck<{ ok: boolean; error?: string }>(
+            'subscribe.issue',
+            { issueId },
+          );
+        } catch (err) {
+          console.warn('[tracker-ws] subscribeIssue failed:', err);
+        }
+      },
+      async unsubscribeIssue(issueId) {
+        try {
+          await emitWithAck<{ ok: boolean }>('unsubscribe.issue', { issueId });
+        } catch {
+          /* fire-and-forget */
+        }
+      },
+      close() {
+        socket.disconnect();
+      },
+    };
+
+    clientRef.current = client;
+    // Сообщаем потребителям, что client появился (иначе они увидят null,
+    // пока не произойдёт следующий render).
+    setClientVersion((v) => v + 1);
+
+    return () => {
+      subscribers.clear();
+      socket.removeAllListeners();
+      socket.disconnect();
+      clientRef.current = null;
+      setConnected(false);
+    };
+  }, [orgId, enabled]);
+
+  // useMemo не использует clientRef.current напрямую (ref не вызывает
+  // ре-рендер), но за счёт setClientVersion компонент уже перерендерился.
+  return useMemo(
+    () => ({ client: clientRef.current, connected }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connected, clientRef.current],
+  );
 }

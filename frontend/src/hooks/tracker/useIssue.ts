@@ -11,7 +11,12 @@ import {
   type IssueActivity,
 } from '@/domain/tracker';
 
-/** Одна задача по ID. */
+import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+
+/**
+ * Одна задача по ID. Подписывается на live-события issue.* / comment.* —
+ * любое изменение задачи и любые комментарии триггерят SWR-revalidate.
+ */
 export function useIssue(
   orgId: string | null | undefined,
   issueId: string | null | undefined,
@@ -31,6 +36,10 @@ export function useIssue(
     },
     { revalidateOnFocus: false },
   );
+
+  // Узкая подписка на issue room — backend гарантирует, что в `issue:<id>`
+  // прилетают только события этой задачи.
+  useTrackerLiveRefresh(orgId, { issueId: issueId ?? null }, Boolean(orgId && issueId));
 
   const issue = useMemo<Issue | null>(
     () => (swr.data ? issueFromApi(swr.data) : null),
@@ -66,6 +75,9 @@ export function useIssueActivity(
     },
     { revalidateOnFocus: false },
   );
+
+  // Live: issue.updated / comment.* → activity feed нужно ре-валидировать.
+  useTrackerLiveRefresh(orgId, { issueId: issueId ?? null }, Boolean(orgId && issueId));
 
   const activity = useMemo<IssueActivity[]>(
     () => (swr.data ? swr.data.map(issueActivityFromApi) : []),

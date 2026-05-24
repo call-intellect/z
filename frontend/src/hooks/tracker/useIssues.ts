@@ -6,8 +6,14 @@ import useSWR from 'swr';
 import { issuesApi, type ListIssuesRequest } from '@/api/tracker/issues.api';
 import { issueFromApi, type Issue } from '@/domain/tracker';
 
+import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+
 /**
  * Список задач проекта с фильтрами state/assignee/label/cycle/goal/priority.
+ *
+ * Подписывается на live-события трекера (issue.*, intake.triaged) через
+ * `useTrackerLiveRefresh` — на любое событие нужного типа SWR ре-валидирует
+ * этот список.
  */
 export function useIssues(
   orgId: string | null | undefined,
@@ -52,6 +58,10 @@ export function useIssues(
     },
     { revalidateOnFocus: false },
   );
+
+  // Live-обновление: подписка на issue.* и intake.triaged. Project room
+  // прицельно — чтобы получать только события своего проекта.
+  useTrackerLiveRefresh(orgId, { projectId: projectId ?? null }, Boolean(orgId && projectId));
 
   const issues = useMemo<Issue[]>(
     () => (swr.data?.items ? swr.data.items.map(issueFromApi) : []),

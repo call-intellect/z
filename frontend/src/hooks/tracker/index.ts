@@ -17,3 +17,4 @@ export { useTeamTemplates, useTeamTemplate } from './useTeamTemplates';
 export { useLabels } from './useLabels';
 export { useWebhooks } from './useWebhooks';
 export { useTrackerWebSocket } from './useTrackerWebSocket';
+export { useTrackerLiveRefresh } from './useTrackerLiveRefresh';

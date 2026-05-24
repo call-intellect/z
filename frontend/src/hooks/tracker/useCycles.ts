@@ -6,6 +6,8 @@ import useSWR from 'swr';
 import { cyclesApi } from '@/api/tracker/cycles.api';
 import { cycleFromApi, type Cycle } from '@/domain/tracker';
 
+import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+
 export function useCycles(
   orgId: string | null | undefined,
   projectId: string | null | undefined,
@@ -27,6 +29,9 @@ export function useCycles(
     },
     { revalidateOnFocus: false },
   );
+
+  // Live: cycle.* (created/progress_updated/completed).
+  useTrackerLiveRefresh(orgId, { projectId: projectId ?? null }, Boolean(orgId && projectId));
 
   const cycles = useMemo<Cycle[]>(
     () => (swr.data?.items ? swr.data.items.map(cycleFromApi) : []),

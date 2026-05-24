@@ -1,4 +1,4 @@
-import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
+import { Module, RequestMethod, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -8,6 +8,8 @@ import { ConfigModule } from './common/config/index';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { GraphModule } from './common/graph/graph.module';
+import { IdempotencyMiddleware } from './common/idempotency/idempotency.middleware';
+import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { MetricsModule } from './common/metrics/metrics.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './common/prisma/prisma.module';
@@ -141,6 +143,11 @@ import { VoiceModule } from './modules/voice/voice.module';
     // Глобальные модули инфраструктуры.
     PrismaModule,
     RedisModule,
+
+    // Общий Idempotency-Key store (Redis) для tracker-эндпоинтов. Подключается
+    // через middleware ниже (см. configure). Должен идти ПОСЛЕ RedisModule
+    // (инжектит RedisService).
+    IdempotencyModule,
 
     // Глобальный GraphService (Фаза 0a) — единая точка работы с графом
     // Postgres EntityLink + Apache AGE (`z_graph`). Должен быть ДО любых
@@ -515,5 +522,18 @@ export class AppModule implements NestModule {
     // `express.json({ verify })` в `main.ts`. Это нужно для проверки HMAC-
     // подписей Crossmark-интеграции и LiveKit-вебхуков. Парсинг `req.body`
     // продолжает работать как раньше.
+
+    // Idempotency-Key для tracker-эндпоинтов. Покрывает три «создающих» POST'а,
+    // где двойная отправка с одинаковым ключом должна вернуть тот же ответ
+    // вместо нового ресурса. Полные пути контроллеров — `api/v1/issues`,
+    // `api/v1/issues/:id/comments`, `api/v1/intake` (см. @Controller('api/v1')
+    // в tracker/controllers/*).
+    consumer
+      .apply(IdempotencyMiddleware)
+      .forRoutes(
+        { path: 'api/v1/projects/:projectId/issues', method: RequestMethod.POST },
+        { path: 'api/v1/issues/:id/comments', method: RequestMethod.POST },
+        { path: 'api/v1/intake', method: RequestMethod.POST },
+      );
   }
 }

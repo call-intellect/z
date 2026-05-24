@@ -6,7 +6,8 @@ import animate from 'tailwindcss-animate';
  * на utility-классы. Цвета — через `var(--*)`, чтобы переключение темы
  * работало автоматически.
  *
- * Дизайн-источник: plans/analysis/2026-05-09-ai-meeting-workspace-design.md
+ * OKLCH-палитра + sage/warm-mint introduced in Phase A of
+ * plans/tz/2026-05-24-ui-api-modernization.md.
  */
 const config: Config = {
   darkMode: ['class', '[data-theme="dark"]'],
@@ -19,6 +20,8 @@ const config: Config = {
           base: 'var(--bg-base)',
           elevated: 'var(--bg-elevated)',
           card: 'var(--bg-card)',
+          surface: 'var(--bg-surface)',
+          subtle: 'var(--bg-subtle)',
           overlay: 'var(--bg-overlay)',
         },
         border: {
@@ -31,14 +34,30 @@ const config: Config = {
           primary: 'var(--text-primary)',
           secondary: 'var(--text-secondary)',
           tertiary: 'var(--text-tertiary)',
+          disabled: 'var(--text-disabled)',
         },
         accent: {
           DEFAULT: 'var(--accent)',
           hover: 'var(--accent-hover)',
+          active: 'var(--accent-active)',
           muted: 'var(--accent-muted)',
           'muted-strong': 'var(--accent-muted-strong)',
           border: 'var(--accent-border)',
           fg: 'var(--accent-fg)',
+        },
+        chip: {
+          'success-bg': 'var(--chip-success-bg)',
+          'success-fg': 'var(--chip-success-fg)',
+          'warning-bg': 'var(--chip-warning-bg)',
+          'warning-fg': 'var(--chip-warning-fg)',
+          'danger-bg': 'var(--chip-danger-bg)',
+          'danger-fg': 'var(--chip-danger-fg)',
+          'info-bg': 'var(--chip-info-bg)',
+          'info-fg': 'var(--chip-info-fg)',
+          'lavender-bg': 'var(--chip-lavender-bg)',
+          'lavender-fg': 'var(--chip-lavender-fg)',
+          'sand-bg': 'var(--chip-sand-bg)',
+          'sand-fg': 'var(--chip-sand-fg)',
         },
         success: 'var(--success)',
         warning: 'var(--warning)',
@@ -69,11 +88,16 @@ const config: Config = {
         '2xl': 'var(--radius-2xl)',
       },
       boxShadow: {
-        soft: 'var(--shadow-soft)',
-        elevated: 'var(--shadow-elevated)',
+        // Новая шкала Phase A
+        'card-soft': 'var(--shadow-card-soft)',
+        'card-raised': 'var(--shadow-card-raised)',
+        'accent-focus': 'var(--shadow-accent-focus)',
         modal: 'var(--shadow-modal)',
-        glow: 'var(--shadow-glow-mint)',
-        'glow-mint': 'var(--shadow-glow-mint)',
+        // Legacy aliases — Phase B/D почистят
+        soft: 'var(--shadow-card-soft)',
+        elevated: 'var(--shadow-card-raised)',
+        glow: 'var(--shadow-accent-focus)',
+        'glow-mint': 'var(--shadow-accent-focus)',
       },
       backdropBlur: {
         glass: '12px',

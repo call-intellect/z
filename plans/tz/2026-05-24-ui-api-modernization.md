@@ -334,18 +334,18 @@ body::before {
 
 ### Фаза A — Дизайн-токены и UI scaffold (3 дня)
 
-- [ ] A.1 — Переписать [frontend/src/ui/tokens.css](../../frontend/src/ui/tokens.css) на OKLCH (light sage + dark warm-mint).
-- [ ] A.2 — Обновить [frontend/tailwind.config.ts](../../frontend/tailwind.config.ts) — добавить `bg-surface`, `bg-subtle`, `chip-*`, `shadow-card-{soft,raised}`, `shadow-accent-focus`, новую radii-шкалу.
-- [ ] A.3 — Создать [frontend/src/hooks/useSwrWithToast.ts](../../frontend/src/hooks/useSwrWithToast.ts).
-- [ ] A.4 — Создать [frontend/src/ui/components/shared/QueryGate.tsx](../../frontend/src/ui/components/shared/QueryGate.tsx).
-- [ ] A.5 — Создать [frontend/src/ui/components/shared/Sparkline.tsx](../../frontend/src/ui/components/shared/Sparkline.tsx) (SVG, props: `data: number[]`, `variant: 'bar'|'line'`, `color?: string`).
-- [ ] A.6 — Создать [frontend/src/ui/components/shared/StatCard.tsx](../../frontend/src/ui/components/shared/StatCard.tsx) (`variant: 'default'|'dark'`, slots: label / value / delta / sparkline).
-- [ ] A.7 — Создать [frontend/src/ui/components/shared/Chip.tsx](../../frontend/src/ui/components/shared/Chip.tsx).
-- [ ] A.8 — Создать [frontend/src/ui/components/shared/ConfirmDialog.tsx](../../frontend/src/ui/components/shared/ConfirmDialog.tsx).
-- [ ] A.9 — Починить [frontend/src/ui/components/shared/EmptyState.tsx](../../frontend/src/ui/components/shared/EmptyState.tsx) — на токены.
-- [ ] A.10 — Создать [frontend/app/(design-preview)/light-theme/page.tsx](../../frontend/app/(design-preview)/light-theme/page.tsx) — галерея: палитра (swatches), типографика, кнопки, чипы, карточки, StatCard, Sparkline, EmptyState, ConfirmDialog, форма, toast.
-- [ ] A.11 — Создать [frontend/app/(design-preview)/dark-theme/page.tsx](../../frontend/app/(design-preview)/dark-theme/page.tsx) — то же.
-- [ ] A.12 — `bun run typecheck && bun run lint && bun run build` зелёные.
+- [x] A.1 — Переписать [frontend/src/ui/tokens.css](../../frontend/src/ui/tokens.css) на OKLCH (light sage + dark warm-mint).
+- [x] A.2 — Обновить [frontend/tailwind.config.ts](../../frontend/tailwind.config.ts) — добавить `bg-surface`, `bg-subtle`, `chip-*`, `shadow-card-{soft,raised}`, `shadow-accent-focus`, новую radii-шкалу.
+- [x] A.3 — Создать [frontend/src/hooks/useSwrWithToast.ts](../../frontend/src/hooks/useSwrWithToast.ts).
+- [x] A.4 — Создать [frontend/src/ui/components/shared/QueryGate.tsx](../../frontend/src/ui/components/shared/QueryGate.tsx).
+- [x] A.5 — Создать [frontend/src/ui/components/shared/Sparkline.tsx](../../frontend/src/ui/components/shared/Sparkline.tsx) (SVG, props: `data: number[]`, `variant: 'bar'|'line'`, `color?: string`).
+- [x] A.6 — Создать [frontend/src/ui/components/shared/StatCard.tsx](../../frontend/src/ui/components/shared/StatCard.tsx) (`variant: 'default'|'dark'`, slots: label / value / delta / sparkline).
+- [x] A.7 — Создать [frontend/src/ui/components/shared/Chip.tsx](../../frontend/src/ui/components/shared/Chip.tsx).
+- [x] A.8 — Создать [frontend/src/ui/components/shared/ConfirmDialog.tsx](../../frontend/src/ui/components/shared/ConfirmDialog.tsx).
+- [x] A.9 — Починить [frontend/src/ui/components/shared/EmptyState.tsx](../../frontend/src/ui/components/shared/EmptyState.tsx) — на токены.
+- [x] A.10 — Создать [frontend/app/(design-preview)/light-theme/page.tsx](../../frontend/app/(design-preview)/light-theme/page.tsx) — галерея: палитра (swatches), типографика, кнопки, чипы, карточки, StatCard, Sparkline, EmptyState, ConfirmDialog, форма, toast.
+- [x] A.11 — Создать [frontend/app/(design-preview)/dark-theme/page.tsx](../../frontend/app/(design-preview)/dark-theme/page.tsx) — то же.
+- [x] A.12 — `bun run typecheck && bun run lint && bun run build` зелёные.
 
 ### Фаза B — Sexy-пилот: дашборд CEO + Sidebar (2 дня)
 

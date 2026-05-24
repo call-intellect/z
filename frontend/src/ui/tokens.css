@@ -1,61 +1,90 @@
 /**
- * Design tokens for Z — AI meeting workspace.
- * Source of truth: plans/analysis/2026-05-09-ai-meeting-workspace-design.md
+ * Design tokens for Z — память компании.
+ * Source: plans/tz/2026-05-24-ui-api-modernization.md (Phase A)
  *
- * Two themes via [data-theme="dark|light"] on <html>. Default = dark.
- * Mint accent #5EEAD4 (dark) / #14B8A6 (light) — узнаваемый brand-color.
+ * Темы через [data-theme="dark|light"] на <html>. Default = dark.
+ * Brand: light = sage #7CA890 (oklch 0.62/0.07/155),
+ *        dark  = warm-mint #6FEAC8 (oklch 0.84/0.13/168).
  */
 
 :root,
 :root[data-theme='dark'] {
-  /* Backgrounds — глубина через слои, не через тени (в dark теней нет) */
-  --bg-base: #0a0e14;
-  --bg-elevated: #11161e;
-  --bg-card: #161d26;
-  --bg-overlay: #1b232e;
-
-  /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.18);
+  /* Surfaces — tonal warm-shift */
+  --bg-base: oklch(0.16 0.012 250);
+  --bg-elevated: oklch(0.19 0.014 250);
+  --bg-card: oklch(0.22 0.016 250);
+  --bg-surface: oklch(0.20 0.014 250);
+  --bg-subtle: oklch(0.24 0.018 250);
+  --bg-overlay: oklch(0.10 0.01 250 / 0.72);
 
   /* Text */
-  --text-primary: #e8eaed;
-  --text-secondary: #a0a6b0;
-  --text-tertiary: #6b7280;
+  --text-primary: oklch(0.93 0.005 250);
+  --text-secondary: oklch(0.72 0.008 250);
+  --text-tertiary: oklch(0.55 0.012 250);
+  --text-disabled: oklch(0.40 0.012 250);
 
-  /* Accent — mint */
-  --accent: #5eead4;
-  --accent-hover: #7cf2dd;
-  --accent-muted: rgba(94, 234, 212, 0.12);
-  --accent-muted-strong: rgba(94, 234, 212, 0.2);
-  --accent-border: rgba(94, 234, 212, 0.28);
-  --accent-glow: 0 0 32px rgba(94, 234, 212, 0.35);
-  --accent-fg: #0a0e14;
+  /* Borders (tinted) */
+  --border-subtle: oklch(0.93 0.005 250 / 0.05);
+  --border: oklch(0.93 0.005 250 / 0.09);
+  --border-strong: oklch(0.93 0.005 250 / 0.16);
+  --ring-edge-top: inset 0 1px 0 oklch(1 0 0 / 0.05);
 
-  /* Status */
-  --success: #4ade80;
-  --warning: #fbbf24;
-  --danger: #f87171;
-  --info: #60a5fa;
+  /* Accent — warm-mint */
+  --accent: oklch(0.84 0.13 168);
+  --accent-hover: oklch(0.88 0.13 168);
+  --accent-active: oklch(0.80 0.13 168);
+  --accent-muted: oklch(0.84 0.13 168 / 0.12);
+  --accent-muted-strong: oklch(0.84 0.13 168 / 0.20);
+  --accent-border: oklch(0.84 0.13 168 / 0.28);
+  --accent-fg: oklch(0.18 0.02 168);
+  /* Legacy alias — Phase B уберёт зависимость */
+  --accent-glow: 0 0 32px oklch(0.84 0.13 168 / 0.35);
 
-  /* Radius */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-2xl: 32px;
+  /* Pastel — приглушённые версии для dark */
+  --chip-success-bg: oklch(0.30 0.06 150 / 0.40);
+  --chip-success-fg: oklch(0.82 0.13 150);
+  --chip-warning-bg: oklch(0.30 0.07 55 / 0.40);
+  --chip-warning-fg: oklch(0.82 0.13 75);
+  --chip-danger-bg: oklch(0.30 0.08 22 / 0.40);
+  --chip-danger-fg: oklch(0.82 0.13 22);
+  --chip-info-bg: oklch(0.30 0.06 235 / 0.40);
+  --chip-info-fg: oklch(0.82 0.13 235);
+  --chip-lavender-bg: oklch(0.30 0.06 295 / 0.40);
+  --chip-lavender-fg: oklch(0.82 0.13 295);
+  --chip-sand-bg: oklch(0.30 0.02 80 / 0.40);
+  --chip-sand-fg: oklch(0.82 0.03 80);
 
-  /* Shadows (используются точечно, в light — основные) */
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.12);
-  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.4);
-  --shadow-glow-mint: 0 0 24px rgba(94, 234, 212, 0.3);
+  /* Status (для inline-error, banners) */
+  --success: oklch(0.78 0.16 150);
+  --warning: oklch(0.82 0.16 75);
+  --danger: oklch(0.72 0.18 22);
+  --info: oklch(0.78 0.15 235);
+
+  /* Shadows — coloured */
+  --shadow-card-soft: 0 1px 2px oklch(0 0 0 / 0.4),
+    inset 0 1px 0 oklch(1 0 0 / 0.04);
+  --shadow-card-raised: 0 8px 24px oklch(0 0 0 / 0.4),
+    0 2px 8px oklch(0.84 0.13 168 / 0.06),
+    inset 0 1px 0 oklch(1 0 0 / 0.05);
+  --shadow-modal: 0 24px 48px oklch(0 0 0 / 0.5);
+  --shadow-accent-focus: 0 0 0 3px oklch(0.84 0.13 168 / 0.28),
+    0 0 24px oklch(0.84 0.13 168 / 0.18);
+  /* Legacy aliases — Phase B/D очистят */
+  --shadow-soft: var(--shadow-card-soft);
+  --shadow-elevated: var(--shadow-card-raised);
+  --shadow-glow-mint: 0 0 24px oklch(0.84 0.13 168 / 0.30);
 
   /* Blur */
   --blur-glass: blur(12px) saturate(1.4);
   --blur-modal: blur(8px);
+
+  /* Radius — обновлённая шкала (Phase A) */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
 
   /* Spacing */
   --space-1: 4px;
@@ -69,7 +98,7 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* Fonts (set via next/font in layout, эти как fallback) */
+  /* Fonts (set via next/font в layout, эти как fallback) */
   --font-sans:
     'Geist', 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
     system-ui, sans-serif;
@@ -86,38 +115,80 @@
 }
 
 :root[data-theme='light'] {
-  --bg-base: #ffffff;
-  --bg-elevated: #f8fafb;
-  --bg-card: #ffffff;
-  --bg-overlay: #f3f4f6;
+  /* Surfaces */
+  --bg-base: oklch(0.985 0.005 85);
+  --bg-elevated: oklch(1.000 0 0);
+  --bg-card: oklch(1.000 0 0);
+  --bg-surface: oklch(0.975 0.006 85);
+  --bg-subtle: oklch(0.955 0.008 85);
+  --bg-overlay: oklch(0.20 0.01 85 / 0.45);
 
-  --border-subtle: rgba(0, 0, 0, 0.05);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-strong: rgba(0, 0, 0, 0.18);
+  /* Text */
+  --text-primary: oklch(0.22 0.01 60);
+  --text-secondary: oklch(0.45 0.012 70);
+  --text-tertiary: oklch(0.62 0.012 75);
+  --text-disabled: oklch(0.78 0.008 75);
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-tertiary: #94a3b8;
+  /* Borders (tinted) */
+  --border-subtle: oklch(0.22 0.01 60 / 0.05);
+  --border: oklch(0.22 0.01 60 / 0.09);
+  --border-strong: oklch(0.22 0.01 60 / 0.18);
 
-  --accent: #14b8a6;
-  --accent-hover: #0d9488;
-  --accent-muted: rgba(20, 184, 166, 0.1);
-  --accent-muted-strong: rgba(20, 184, 166, 0.18);
-  --accent-border: rgba(20, 184, 166, 0.28);
-  --accent-glow: 0 0 24px rgba(20, 184, 166, 0.25);
-  --accent-fg: #ffffff;
+  /* Accent — sage */
+  --accent: oklch(0.62 0.07 155);
+  --accent-hover: oklch(0.54 0.07 155);
+  --accent-active: oklch(0.45 0.06 155);
+  --accent-muted: oklch(0.62 0.07 155 / 0.10);
+  --accent-muted-strong: oklch(0.62 0.07 155 / 0.18);
+  --accent-border: oklch(0.62 0.07 155 / 0.28);
+  --accent-fg: oklch(0.22 0.035 155);
+  --accent-glow: 0 0 24px oklch(0.62 0.07 155 / 0.22);
 
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --info: #2563eb;
+  /* Pastel (фон+текст одного hue, L≈0.92-0.93 / L≈0.42-0.45) */
+  --chip-success-bg: oklch(0.93 0.04 150);
+  --chip-success-fg: oklch(0.40 0.08 150);
+  --chip-warning-bg: oklch(0.93 0.045 60);
+  --chip-warning-fg: oklch(0.45 0.10 55);
+  --chip-danger-bg: oklch(0.92 0.04 22);
+  --chip-danger-fg: oklch(0.45 0.13 22);
+  --chip-info-bg: oklch(0.93 0.035 235);
+  --chip-info-fg: oklch(0.45 0.10 235);
+  --chip-lavender-bg: oklch(0.92 0.04 295);
+  --chip-lavender-fg: oklch(0.45 0.10 295);
+  --chip-sand-bg: oklch(0.93 0.015 80);
+  --chip-sand-fg: oklch(0.42 0.025 75);
 
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-modal: 0 24px 48px rgba(15, 23, 42, 0.18);
-  --shadow-glow-mint: 0 0 24px rgba(20, 184, 166, 0.25);
+  /* Status (на 1 ступень насыщеннее chip) */
+  --success: oklch(0.55 0.13 150);
+  --warning: oklch(0.65 0.15 55);
+  --danger: oklch(0.55 0.18 22);
+  --info: oklch(0.55 0.13 235);
+
+  /* Shadows */
+  --shadow-card-soft: 0 1px 2px oklch(0.22 0.01 60 / 0.04),
+    0 1px 3px oklch(0.22 0.01 60 / 0.06);
+  --shadow-card-raised: 0 2px 4px oklch(0.22 0.01 60 / 0.04),
+    0 8px 24px oklch(0.22 0.01 60 / 0.08);
+  --shadow-modal: 0 12px 28px oklch(0.22 0.01 60 / 0.10),
+    0 32px 64px oklch(0.22 0.01 60 / 0.16);
+  --shadow-accent-focus: 0 0 0 3px oklch(0.62 0.07 155 / 0.22);
+  --shadow-soft: var(--shadow-card-soft);
+  --shadow-elevated: var(--shadow-card-raised);
+  --shadow-glow-mint: 0 0 24px oklch(0.62 0.07 155 / 0.22);
 
   color-scheme: light;
+}
+
+/* Film-grain noise overlay — 1 раз на body */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9'/></filter><rect width='200' height='200' filter='url(%23n)' opacity='0.5'/></svg>");
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  z-index: 9999;
 }
 
 /* Базовые стили — применяются после tailwind base */
@@ -143,9 +214,12 @@ html {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  body::before {
+    display: none;
+  }
 }
 
-/* Scrollbar — тонкий dark в dark-режиме */
+/* Scrollbar — тонкий, через токены */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -179,7 +253,7 @@ html {
   background: linear-gradient(
     90deg,
     var(--bg-card) 0%,
-    var(--bg-overlay) 50%,
+    var(--bg-subtle) 50%,
     var(--bg-card) 100%
   );
   background-size: 1200px 100%;

@@ -1,6 +1,6 @@
 ---
 title: Интеграция KIE и GRSAI в LlmRouter — все модели через админку
-status: draft
+status: partial
 created: 2026-05-24
 owner: backend
 priority: high
@@ -142,20 +142,20 @@ backend/src/common/config/
 
 ### Фаза 1 — `KieService` + регистрация в роутере (8–10 ч)
 
-- [ ] Создать `backend/src/modules/ai/services/kie.service.ts` с тремя методами под 3 формата + универсальный `complete(params)` с диспатчем по модели.
-- [ ] Добавить `'kie'` в `LlmProviderName`, `ALL_PROVIDERS`, `PROVIDER_CAPABILITY`.
-- [ ] Инжектировать `KieService` в `LlmRouterService` (конструктор + `dispatchByProvider`).
+- [x] Создать `backend/src/modules/ai/services/kie.service.ts` с тремя методами под 3 формата + универсальный `complete(params)` с диспатчем по модели.
+- [x] Добавить `'kie'` в `LlmProviderName`, `ALL_PROVIDERS`, `PROVIDER_CAPABILITY`.
+- [x] Инжектировать `KieService` в `LlmRouterService` (конструктор + `dispatchByProvider`).
 - [ ] Покрыть unit-тестом 3 happy-path (Claude-format, GPT-format, Gemini-format) с моком `fetch` — по образцу `deep-seek.service.spec.ts`, если такой есть; иначе по vitest-паттерну `ai/services/*.spec.ts`.
-- [ ] `bun run typecheck` + `bun run lint` в `backend/` — без ошибок.
+- [x] `bun run typecheck` + `bun run lint` в `backend/` — без ошибок.
 - [ ] Smoke: `bun scripts/smoke-llm-providers.ts --only=kie-claude,kie-gpt,kie-gemini-direct,kie-gemini` — все ✓.
 
 DoD фазы: код собирается, тесты зелёные, smoke проходит, но провайдер ещё не в админке.
 
 ### Фаза 2 — `GrsaiService` (3–4 ч)
 
-- [ ] Создать `backend/src/modules/ai/services/grsai.service.ts` с одним методом `complete(params)` (SSE-парсинг).
-- [ ] Добавить `'grsai'` в `LlmProviderName`, `ALL_PROVIDERS`, `PROVIDER_CAPABILITY`.
-- [ ] Инжектировать в `LlmRouter`, добавить ветку диспатча.
+- [x] Создать `backend/src/modules/ai/services/grsai.service.ts` с одним методом `complete(params)` (SSE-парсинг).
+- [x] Добавить `'grsai'` в `LlmProviderName`, `ALL_PROVIDERS`, `PROVIDER_CAPABILITY`.
+- [x] Инжектировать в `LlmRouter`, добавить ветку диспатча.
 - [ ] Unit-тест happy-path с моком SSE.
 - [ ] Smoke: `bun scripts/smoke-llm-providers.ts --only=grsai-gemini` — ✓.
 
@@ -222,3 +222,22 @@ _(заполнить после выполнения)_
 - Что осталось: **TBD**
 - Ссылка на коммиты: **TBD**
 - Ссылка на рефлексию: **TBD**
+
+## Ревизия от 2026-05-24
+
+**Статус:** partial
+**Реализовано:**
+- Фаза 1: `backend/src/modules/ai/services/kie.service.ts` с диспатчем по префиксу модели (claude-/gpt-/gemini-) и retry [500/1000/2000] на 429/5xx; зарегистрирован в `ai.module.ts` как provider.
+- Фаза 2: `backend/src/modules/ai/services/grsai.service.ts` (SSE-парсер через прокси с fallback на direct grsaiapi.com).
+- Enum + capability в `llm-router.service.ts`: `'kie'`/`'grsai'` добавлены в `LlmProviderName` (стр. 406-407), `ALL_PROVIDERS` (стр. 415-416), `PROVIDER_CAPABILITY` (`maxDataClass='internal'`), dispatch ветки case (стр. 1123-1125).
+- Цены частично: `claude-opus-4-7` ($15/$75), `gemini-3-pro` ($0.5/$3.5), `gemini-3.1-pro` ($0.5/$3.5) в `model-prices.ts`.
+- ENV ключи KIE_API_KEY/KIE_BASE_URL/GRSAI_API_KEY/PROXY_BASE_URL в `env.schema.ts`.
+- Коммит pre-session (унаследован): `73a0fa0 chore(ai): inherited pre-session — KIE + GRSAI`.
+
+**Осталось:**
+- Фаза 1: unit-тесты `kie.service.spec.ts` (3 happy-path: claude/gpt/gemini форматы) и smoke-прогон `--only=kie-*` после ENV-конфига.
+- Фаза 2: unit-тест `grsai.service.spec.ts` (SSE mock) и smoke `--only=grsai-gemini`.
+- Фаза 3: seed-скрипты `seed-llm-providers.ts` / `seed-llm-models.ts` не дополнены записями `LlmProvider{name:'kie'}` и `LlmProvider{name:'grsai'}` + связанными `LlmModel` (поиск по slug 'kie'/'grsai' в backend/scripts/ ничего не нашёл). Без них админка `/admin/llm/providers` не покажет новые провайдеры.
+- Фаза 3: цены `gemini-3-flash`, `gpt-5-4` в `MODEL_PRICES` отсутствуют — `AiUsageLog` будет писать $0 для этих SKU.
+- Фаза 4: `backend/scripts/seed-llm-task-routes-kie-grsai-ab.ts` не создан — нет примера A/B для `dialog-multi-query`. Без него ручной end-to-end через админку не проверить.
+- Фаза 5: документация `second-brain/01_projects/llm-providers-verified.md` не обновлена (раздел B → A), правило №8 не удалено; рефлексия не написана.

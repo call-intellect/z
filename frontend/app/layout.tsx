@@ -8,17 +8,32 @@ import '@vidstack/react/player/styles/default/theme.css';
 import '@vidstack/react/player/styles/default/layouts/video.css';
 import { AuthProvider } from '@/contexts/auth-context';
 import { ToastProvider } from '@/contexts/toast-context';
+import { PwaInit } from '@/lib/pwa/PwaInit';
 import { ThemeProvider } from '@/ui/components/theme/ThemeProvider';
 import { Toaster } from '@/ui/shadcn/toast';
 
 export const metadata: Metadata = {
   title: 'Z — память компании',
   description: 'Память вашей компании. То, что было сказано, решено и сделано — теперь не теряется.',
+  applicationName: 'Кора',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Кора',
+  },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
+      { url: '/icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
+    ],
+    apple: [{ url: '/icons/apple-touch-icon.svg', sizes: '180x180' }],
+  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5,
   themeColor: '#0A0E14',
 };
 
@@ -43,6 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <ToastProvider>{children}</ToastProvider>
           </AuthProvider>
           <Toaster />
+          <PwaInit />
         </ThemeProvider>
       </body>
     </html>

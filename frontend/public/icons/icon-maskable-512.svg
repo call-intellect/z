@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Кора">
+  <!-- maskable: значимая часть в safe-zone (центр 80%), фон заполняет весь холст -->
+  <rect width="512" height="512" fill="#0A0E14"/>
+  <text x="256" y="316"
+        font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="240"
+        font-weight="700"
+        text-anchor="middle"
+        fill="#5EEAD4"
+        letter-spacing="-10">К</text>
+</svg>

@@ -38,6 +38,7 @@ const ITEMS: Item[] = [
   { href: '/settings/organization', label: 'Организация', icon: Building2 },
   { href: '/settings/tags', label: 'Теги', icon: Tag },
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug },
+  { href: '/settings/notifications', label: 'Уведомления', icon: Bell },
   { href: '/settings/api', label: 'API ключи', icon: KeyRound },
   { href: '/settings/webhooks', label: 'Webhooks', icon: Bell },
   { href: '/settings/exports', label: 'Экспорты', icon: Download },

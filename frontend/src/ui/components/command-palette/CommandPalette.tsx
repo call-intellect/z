@@ -1,15 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
+  Brain,
   Building2,
   Calendar,
+  ExternalLink,
   FileText,
   FolderKanban,
+  Home,
   IdCard,
+  Inbox,
   ListChecks,
+  Loader2,
   MessageCircle,
+  Network,
+  Settings,
   Sparkles,
   UserRound,
   type LucideIcon,
@@ -17,63 +24,110 @@ import {
 
 import { searchApi, type SearchResponse } from '@/api/search.api';
 import { conciergeApi } from '@/api/concierge.api';
+import { chatV2Api, type ChatV2AskResponseApi } from '@/api/chat-v2.api';
+import { ApiError } from '@/api/api-error';
 import { useToast } from '@/contexts/toast-context';
 import {
-  CommandDialog,
   CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
 } from '@/ui/shadcn/command';
+import { Command as CommandPrimitive } from 'cmdk';
+import { Dialog, DialogContent } from '@/ui/shadcn/dialog';
+import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
+import { cn } from '@/ui/shadcn/lib/utils';
+import { useCommandPalette } from './CommandPaletteProvider';
 
 /**
  * Глобальная командная палитра. Хоткей: ⌘K (mac) / Ctrl+K (win/linux).
+ * Открытие/закрытие — через `useCommandPalette()` (Wave 2 B2 Provider).
  *
- * Два режима (SBA γ-2 — Concierge):
- *   - Search (default): поиск по карточкам/встречам/задачам через `/api/v1/search`.
- *   - Command: пользователь ввёл запрос, начинающийся с `>` → запрос
- *     отправляется в Concierge Agent (polling endpoint `messages/once`).
- *     Результат показывается toast'ом, при tool_calls — action toast «Отменить».
+ * Режимы:
+ *   - **Поиск (default)** — ввод → debounce 200мс → search.api по
+ *     карточкам/встречам/задачам/ролям/отделам/людям/документам.
+ *   - **Команда Concierge** — ввод начинается с `>` → запрос идёт в
+ *     `conciergeApi.askOnce` (SBA γ-2). Результат — toast с возможным
+ *     undo (action-toast). Параллельный γ-2 проект — не дублируем UX.
+ *   - **AI помощник (Wave 2 B2)** — ввод начинается с `?` ИЛИ пользователь
+ *     выбрал пункт «Спросить AI» в пустом списке → запрос идёт в
+ *     `chatV2Api.ask({ scope:'org', mode:'synthetic' })`. Ответ
+ *     показывается inline в палитре с цитатами и кнопкой «Открыть полный
+ *     чат» (deep-link на `/chat-v2?conversationId=...`).
+ *
+ * Mobile (≤md): рендерится как bottom-sheet (Radix Sheet side="bottom"),
+ * а не центрированный диалог. На md+ — обычный CommandDialog.
  */
 export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
   const { addToast } = useToast();
-  const [open, setOpen] = useState(false);
+  const {
+    isOpen,
+    initialQuery,
+    initialMode,
+    close,
+    open: openPalette,
+    consumeInitial,
+  } = useCommandPalette();
+
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [commandBusy, setCommandBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<ChatV2AskResponseApi | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [lastAskedQuestion, setLastAskedQuestion] = useState<string | null>(
+    null,
+  );
+  const [isMobile, setIsMobile] = useState(false);
 
-  const isCommandMode = query.trim().startsWith('>');
+  const trimmed = query.trim();
+  const isCommandMode = trimmed.startsWith('>');
+  const isAiMode = trimmed.startsWith('?');
+  const isSearchMode = !isCommandMode && !isAiMode && trimmed.length > 0;
+  const isIdle = trimmed.length === 0;
 
-  // Hotkey: ⌘K (mac) / Ctrl+K (others).
+  // Mobile-detect (Tailwind `md` = 768px). Без сторонних хуков, чтобы не
+  // тянуть зависимости — слушаем matchMedia.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const isCmdK = e.key === 'k' && (e.metaKey || e.ctrlKey);
-      if (isCmdK) {
-        e.preventDefault();
-        setOpen((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    if (typeof window === 'undefined' || !('matchMedia' in window)) return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const apply = (): void => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
   }, []);
+
+  // Применяем initialQuery/initialMode из Provider'а при открытии.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialQuery !== null) {
+      const prefix = initialMode === 'ai' ? '? ' : '';
+      setQuery(prefix + initialQuery);
+      consumeInitial();
+    } else if (initialMode === 'ai' && trimmed.length === 0) {
+      setQuery('? ');
+      consumeInitial();
+    }
+  }, [isOpen, initialQuery, initialMode, consumeInitial, trimmed.length]);
 
   // Сбрасываем стейт при закрытии.
   useEffect(() => {
-    if (!open) {
+    if (!isOpen) {
       setQuery('');
       setResults(null);
+      setAiAnswer(null);
+      setAiError(null);
+      setLastAskedQuestion(null);
     }
-  }, [open]);
+  }, [isOpen]);
 
-  // Debounce-поиск (только в Search-режиме). В Command-режиме поиск не
-  // запускается — отправка идёт по Enter.
+  // Debounce-поиск (только в Search-режиме).
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed || isCommandMode) {
+    if (!isSearchMode) {
       setResults(null);
       setLoading(false);
       return;
@@ -108,16 +162,16 @@ export function CommandPalette() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [query, isCommandMode]);
+  }, [trimmed, isSearchMode]);
 
   function go(href: string): void {
-    setOpen(false);
+    close();
     router.push(href);
   }
 
-  /** SBA γ-2 — отправить запрос в Concierge (Command-режим). */
+  /** SBA γ-2 — Concierge tool calls (action-режим, `>` префикс). */
   async function runCommand(): Promise<void> {
-    const text = query.trim().replace(/^>+\s*/, '');
+    const text = trimmed.replace(/^>+\s*/, '');
     if (!text || commandBusy) return;
     setCommandBusy(true);
     try {
@@ -160,12 +214,41 @@ export function CommandPalette() {
           }
         }
       }
-      setOpen(false);
+      close();
       setQuery('');
     } catch {
       addToast({ type: 'error', message: 'Concierge недоступен' });
     } finally {
       setCommandBusy(false);
+    }
+  }
+
+  /**
+   * Wave 2 B2 — Q&A через chat-v2 (`?` префикс или кнопка «Спросить AI»).
+   * Ответ остаётся внутри палитры — не закрываем и не делаем toast.
+   */
+  async function runAiAsk(rawQuestion?: string): Promise<void> {
+    const text = (rawQuestion ?? trimmed.replace(/^\?+\s*/, '')).trim();
+    if (!text || aiBusy) return;
+    setAiBusy(true);
+    setAiError(null);
+    setAiAnswer(null);
+    setLastAskedQuestion(text);
+    try {
+      const res = await chatV2Api.ask({
+        question: text,
+        scope: 'org',
+        mode: 'synthetic',
+      });
+      setAiAnswer(res);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : 'Не удалось получить ответ от AI';
+      setAiError(message);
+    } finally {
+      setAiBusy(false);
     }
   }
 
@@ -179,6 +262,7 @@ export function CommandPalette() {
   const roleProfiles = results?.roleProfiles ?? [];
   const empty =
     !loading &&
+    isSearchMode &&
     results !== null &&
     cards.length === 0 &&
     meetings.length === 0 &&
@@ -189,200 +273,483 @@ export function CommandPalette() {
     documents.length === 0 &&
     roleProfiles.length === 0;
 
-  return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+  const quickNav = useMemo(() => QUICK_NAV_ITEMS, []);
+
+  const onOpenChange = (next: boolean): void => {
+    if (next) {
+      openPalette();
+    } else {
+      close();
+    }
+  };
+
+  const body = (
+    <CommandPrimitive
+      // Отключаем встроенную cmdk-фильтрацию: у нас собственный search.api
+      // и список целиком формируется снаружи.
+      shouldFilter={false}
+      className="flex h-full w-full flex-col overflow-hidden rounded-md bg-bg-card text-fg-primary [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-fg-tertiary [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4"
+    >
       <CommandInput
-        placeholder="Поиск (или начните с > для команды Concierge)…"
+        placeholder="Поиск, ? — спросить AI, > — действие Concierge"
         value={query}
         onValueChange={setQuery}
       />
-      <CommandList>
-        {!query && (
-          <div className="px-4 py-6 text-center text-xs text-fg-tertiary">
-            Начните вводить название карточки, встречи или задачи.
-            <br />
-            Подсказка: <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">⌘K</kbd>
-            {' / '}
-            <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">Ctrl+K</kbd>{' '}
-            открывает поиск. Начните с <code>&gt;</code> чтобы попросить Concierge выполнить действие.
-          </div>
+      <CommandList className="max-h-[60vh] md:max-h-[420px]">
+        {/* idle: «Перейти к» + подсказки */}
+        {isIdle && (
+          <>
+            <CommandGroup heading="Перейти к">
+              {quickNav.map((nav) => (
+                <CommandItem
+                  key={`nav-${nav.href}`}
+                  value={`nav-${nav.href}-${nav.label}`}
+                  onSelect={() => go(nav.href)}
+                >
+                  <ResultRow
+                    icon={nav.icon}
+                    title={nav.label}
+                    subtitle={nav.subtitle}
+                  />
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandGroup heading="AI помощник">
+              <CommandItem
+                value="ai-open-prompt"
+                onSelect={() => setQuery('? ')}
+              >
+                <ResultRow
+                  icon={Sparkles}
+                  title="Спросить AI компании…"
+                  subtitle="? — задать вопрос ассистенту по второму мозгу"
+                />
+              </CommandItem>
+              <CommandItem
+                value="concierge-open-prompt"
+                onSelect={() => setQuery('> ')}
+              >
+                <ResultRow
+                  icon={MessageCircle}
+                  title="Дать команду Concierge…"
+                  subtitle="> — действие (создать задачу, перенести встречу и т.п.)"
+                />
+              </CommandItem>
+            </CommandGroup>
+            <div className="px-4 py-3 text-center text-xs text-fg-tertiary">
+              Подсказка:{' '}
+              <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">
+                ⌘K
+              </kbd>{' '}
+              /{' '}
+              <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">
+                Ctrl+K
+              </kbd>{' '}
+              открывает палитру в любой момент.
+            </div>
+          </>
         )}
+
+        {/* AI режим */}
+        {isAiMode && (
+          <CommandGroup heading="AI помощник компании">
+            <CommandItem
+              value="ai-ask-execute"
+              onSelect={() => void runAiAsk()}
+              disabled={aiBusy}
+            >
+              <ResultRow
+                icon={aiBusy ? Loader2 : Sparkles}
+                iconClassName={aiBusy ? 'animate-spin' : undefined}
+                title={
+                  aiBusy
+                    ? 'AI ищет ответ…'
+                    : `Спросить AI: «${trimmed.replace(/^\?+\s*/, '')}»`
+                }
+                subtitle="Enter — отправить (chat-v2 · org · synthetic)"
+              />
+            </CommandItem>
+          </CommandGroup>
+        )}
+
+        {/* Command (Concierge) режим */}
         {isCommandMode && (
-          <CommandGroup heading="Concierge">
+          <CommandGroup heading="Concierge — действие">
             <CommandItem
               value="concierge-execute"
               onSelect={() => void runCommand()}
               disabled={commandBusy}
             >
               <ResultRow
-                icon={MessageCircle}
+                icon={commandBusy ? Loader2 : MessageCircle}
+                iconClassName={commandBusy ? 'animate-spin' : undefined}
                 title={
                   commandBusy
                     ? 'Concierge выполняет…'
-                    : `Спросить Concierge: «${query.trim().replace(/^>+\s*/, '')}»`
+                    : `Спросить Concierge: «${trimmed.replace(/^>+\s*/, '')}»`
                 }
                 subtitle="Enter — отправить"
               />
             </CommandItem>
           </CommandGroup>
         )}
-        {loading && query && !isCommandMode && (
+
+        {/* AI ответ inline */}
+        {(aiAnswer || aiError) && (
+          <CommandGroup heading="Ответ AI">
+            <div className="px-3 py-3">
+              {lastAskedQuestion && (
+                <div className="mb-2 text-xs text-fg-tertiary">
+                  Вопрос: «{lastAskedQuestion}»
+                </div>
+              )}
+              {aiError && (
+                <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+                  <div className="mb-2">{aiError}</div>
+                  <button
+                    type="button"
+                    onClick={() => void runAiAsk(lastAskedQuestion ?? undefined)}
+                    className="rounded border border-danger/40 px-2 py-1 text-xs hover:bg-danger/20"
+                  >
+                    Повторить
+                  </button>
+                </div>
+              )}
+              {aiAnswer && (
+                <div className="space-y-2">
+                  <div className="whitespace-pre-wrap text-sm text-fg-primary">
+                    {aiAnswer.text}
+                  </div>
+                  {aiAnswer.uncertaintyNote && (
+                    <div className="text-xs text-fg-tertiary">
+                      {aiAnswer.uncertaintyNote}
+                    </div>
+                  )}
+                  {aiAnswer.citations.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-fg-tertiary">
+                        Источники:
+                      </div>
+                      <ul className="space-y-1">
+                        {aiAnswer.citations.slice(0, 5).map((c, idx) => (
+                          <li
+                            key={`${c.meetingId}-${idx}`}
+                            className="rounded border border-border-subtle bg-bg-overlay/40 px-2 py-1 text-xs"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                go(
+                                  `/meetings/${encodeURIComponent(
+                                    c.meetingId,
+                                  )}/result`,
+                                )
+                              }
+                              className="block w-full text-left hover:text-fg-primary"
+                            >
+                              <div className="truncate font-medium text-fg-secondary">
+                                {c.meetingTitle}
+                              </div>
+                              <div className="truncate text-fg-tertiary">
+                                {c.snippet}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-1">
+                    {aiAnswer.cacheHit && (
+                      <span className="text-[10px] uppercase tracking-wider text-fg-tertiary">
+                        из кэша
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        go(
+                          `/chat-v2?conversationId=${encodeURIComponent(
+                            aiAnswer.conversationId,
+                          )}`,
+                        )
+                      }
+                      className="ml-auto inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-elevated px-2 py-1 text-xs text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary"
+                    >
+                      Открыть полный чат
+                      <ExternalLink size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CommandGroup>
+        )}
+
+        {loading && isSearchMode && (
           <div className="px-4 py-3 text-xs text-fg-tertiary">Поиск…</div>
         )}
         {empty && <CommandEmpty>Ничего не найдено</CommandEmpty>}
-        {cards.length > 0 && (
-          <CommandGroup heading="Карточки">
-            {cards.map((c) => (
+
+        {/* Search-результаты — рендерятся только в search-режиме */}
+        {isSearchMode && (
+          <>
+            {/* Подсказка: «Спросить AI про <query>» — параллельно поиску */}
+            <CommandGroup heading="AI помощник">
               <CommandItem
-                key={c.id}
-                value={`card-${c.id}-${c.name}`}
-                onSelect={() => go(`/cards/${encodeURIComponent(c.id)}`)}
+                value={`ai-ask-fallback-${trimmed}`}
+                onSelect={() => void runAiAsk(trimmed)}
+                disabled={aiBusy}
               >
                 <ResultRow
-                  icon={FolderKanban}
-                  title={c.name}
-                  subtitle={`${c.kind} · ${c.meetingCount} встреч`}
+                  icon={aiBusy ? Loader2 : Sparkles}
+                  iconClassName={aiBusy ? 'animate-spin' : undefined}
+                  title={`Спросить AI: «${trimmed}»`}
+                  subtitle="Ответ из второго мозга компании"
                 />
               </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {meetings.length > 0 && (
-          <CommandGroup heading="Встречи">
-            {meetings.map((m) => (
-              <CommandItem
-                key={m.id}
-                value={`meeting-${m.id}-${m.title}`}
-                onSelect={() => go(`/meetings/${encodeURIComponent(m.id)}/result`)}
-              >
-                <ResultRow
-                  icon={Calendar}
-                  title={m.title}
-                  subtitle={`${m.type} · ${formatDate(m.createdAt)}`}
-                />
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {tasks.length > 0 && (
-          <CommandGroup heading="Задачи">
-            {tasks.map((t) => (
-              <CommandItem
-                key={t.id}
-                value={`task-${t.id}-${t.title}`}
-                onSelect={() =>
-                  go(`/meetings/${encodeURIComponent(t.meetingId)}/result`)
-                }
-              >
-                <ResultRow
-                  icon={ListChecks}
-                  title={t.title}
-                  subtitle={`${t.status}`}
-                />
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {roles.length > 0 && (
-          <CommandGroup heading="Должности">
-            {roles.map((r) => (
-              <CommandItem
-                key={`role-${r.id}`}
-                value={`role-${r.id}-${r.name}`}
-                onSelect={() => go(`/roles/${encodeURIComponent(r.id)}`)}
-              >
-                <ResultRow
-                  icon={IdCard}
-                  title={r.name}
-                  subtitle={r.departmentName ?? 'Без отдела'}
-                />
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {departments.length > 0 && (
-          <CommandGroup heading="Отделы">
-            {departments.map((d) => (
-              <CommandItem
-                key={`dept-${d.id}`}
-                value={`dept-${d.id}-${d.name}`}
-                onSelect={() => go('/structure?tab=departments')}
-              >
-                <ResultRow icon={Building2} title={d.name} subtitle="Отдел" />
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {persons.length > 0 && (
-          <CommandGroup heading="Сотрудники">
-            {persons.map((p) => (
-              <CommandItem
-                key={`person-${p.id}`}
-                value={`person-${p.id}-${p.fullName}`}
-                onSelect={() => go('/structure?tab=persons')}
-              >
-                <ResultRow
-                  icon={UserRound}
-                  title={p.fullName}
-                  subtitle={p.roleName ?? 'Без должности'}
-                />
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {documents.length > 0 && (
-          <CommandGroup heading="Документы">
-            {documents.map((d) => (
-              <CommandItem
-                key={`doc-${d.id}`}
-                value={`doc-${d.id}-${d.name}`}
-                onSelect={() => go(`/documents/${encodeURIComponent(d.id)}`)}
-              >
-                <ResultRow
-                  icon={FileText}
-                  title={d.name}
-                  subtitle={d.kind ?? 'документ'}
-                />
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {roleProfiles.length > 0 && (
-          <CommandGroup heading="Карты должностей">
-            {roleProfiles.map((rp) => (
-              <CommandItem
-                key={`rp-${rp.roleId}`}
-                value={`rp-${rp.roleId}-${rp.roleName}`}
-                onSelect={() =>
-                  go(`/roles/${encodeURIComponent(rp.roleId)}`)
-                }
-              >
-                <ResultRow
-                  icon={Sparkles}
-                  title={rp.roleName}
-                  subtitle="карта должности"
-                />
-              </CommandItem>
-            ))}
-          </CommandGroup>
+            </CommandGroup>
+            {cards.length > 0 && (
+              <CommandGroup heading="Карточки">
+                {cards.map((c) => (
+                  <CommandItem
+                    key={c.id}
+                    value={`card-${c.id}-${c.name}`}
+                    onSelect={() => go(`/cards/${encodeURIComponent(c.id)}`)}
+                  >
+                    <ResultRow
+                      icon={FolderKanban}
+                      title={c.name}
+                      subtitle={`${c.kind} · ${c.meetingCount} встреч`}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {meetings.length > 0 && (
+              <CommandGroup heading="Встречи">
+                {meetings.map((m) => (
+                  <CommandItem
+                    key={m.id}
+                    value={`meeting-${m.id}-${m.title}`}
+                    onSelect={() =>
+                      go(`/meetings/${encodeURIComponent(m.id)}/result`)
+                    }
+                  >
+                    <ResultRow
+                      icon={Calendar}
+                      title={m.title}
+                      subtitle={`${m.type} · ${formatDate(m.createdAt)}`}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {tasks.length > 0 && (
+              <CommandGroup heading="Задачи">
+                {tasks.map((t) => (
+                  <CommandItem
+                    key={t.id}
+                    value={`task-${t.id}-${t.title}`}
+                    onSelect={() =>
+                      go(`/meetings/${encodeURIComponent(t.meetingId)}/result`)
+                    }
+                  >
+                    <ResultRow
+                      icon={ListChecks}
+                      title={t.title}
+                      subtitle={`${t.status}`}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {roles.length > 0 && (
+              <CommandGroup heading="Должности">
+                {roles.map((r) => (
+                  <CommandItem
+                    key={`role-${r.id}`}
+                    value={`role-${r.id}-${r.name}`}
+                    onSelect={() => go(`/roles/${encodeURIComponent(r.id)}`)}
+                  >
+                    <ResultRow
+                      icon={IdCard}
+                      title={r.name}
+                      subtitle={r.departmentName ?? 'Без отдела'}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {departments.length > 0 && (
+              <CommandGroup heading="Отделы">
+                {departments.map((d) => (
+                  <CommandItem
+                    key={`dept-${d.id}`}
+                    value={`dept-${d.id}-${d.name}`}
+                    onSelect={() => go('/structure?tab=departments')}
+                  >
+                    <ResultRow icon={Building2} title={d.name} subtitle="Отдел" />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {persons.length > 0 && (
+              <CommandGroup heading="Сотрудники">
+                {persons.map((p) => (
+                  <CommandItem
+                    key={`person-${p.id}`}
+                    value={`person-${p.id}-${p.fullName}`}
+                    onSelect={() => go('/structure?tab=persons')}
+                  >
+                    <ResultRow
+                      icon={UserRound}
+                      title={p.fullName}
+                      subtitle={p.roleName ?? 'Без должности'}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {documents.length > 0 && (
+              <CommandGroup heading="Документы">
+                {documents.map((d) => (
+                  <CommandItem
+                    key={`doc-${d.id}`}
+                    value={`doc-${d.id}-${d.name}`}
+                    onSelect={() => go(`/documents/${encodeURIComponent(d.id)}`)}
+                  >
+                    <ResultRow
+                      icon={FileText}
+                      title={d.name}
+                      subtitle={d.kind ?? 'документ'}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {roleProfiles.length > 0 && (
+              <CommandGroup heading="Карты должностей">
+                {roleProfiles.map((rp) => (
+                  <CommandItem
+                    key={`rp-${rp.roleId}`}
+                    value={`rp-${rp.roleId}-${rp.roleName}`}
+                    onSelect={() => go(`/roles/${encodeURIComponent(rp.roleId)}`)}
+                  >
+                    <ResultRow
+                      icon={Sparkles}
+                      title={rp.roleName}
+                      subtitle="карта должности"
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </>
         )}
       </CommandList>
-    </CommandDialog>
+    </CommandPrimitive>
+  );
+
+  if (isMobile) {
+    return (
+      <Sheet open={isOpen} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          className={cn(
+            // Сбрасываем дефолтный padding (Sheet — `p-6`), чтобы Command
+            // занимал всю ширину. Высота — до 85vh, чтобы оставить hint
+            // на закрытие свайпом/тапом по overlay.
+            'h-[85vh] max-h-[85vh] rounded-t-xl border-t border-border-subtle p-0',
+          )}
+        >
+          {body}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="overflow-hidden p-0 shadow-modal sm:max-w-2xl">
+        {body}
+      </DialogContent>
+    </Dialog>
   );
 }
 
+type QuickNavItem = {
+  href: string;
+  label: string;
+  subtitle: string;
+  icon: LucideIcon;
+};
+
+const QUICK_NAV_ITEMS: QuickNavItem[] = [
+  {
+    href: '/dashboard',
+    label: 'Главная',
+    subtitle: 'Дашборд компании',
+    icon: Home,
+  },
+  {
+    href: '/me',
+    label: 'Мой день',
+    subtitle: 'Личный инбокс и задачи',
+    icon: Inbox,
+  },
+  {
+    href: '/projects',
+    label: 'Проекты',
+    subtitle: 'Все проекты трекера',
+    icon: FolderKanban,
+  },
+  {
+    href: '/feed',
+    label: 'Лента',
+    subtitle: 'События и сигналы',
+    icon: Network,
+  },
+  {
+    href: '/meetings',
+    label: 'Встречи',
+    subtitle: 'Календарь и история встреч',
+    icon: Calendar,
+  },
+  {
+    href: '/dump',
+    label: 'Дамп',
+    subtitle: 'Быстрая запись мысли',
+    icon: Brain,
+  },
+  {
+    href: '/chat-v2',
+    label: 'AI-чат компании',
+    subtitle: 'Полноценный диалог с памятью компании',
+    icon: Sparkles,
+  },
+  {
+    href: '/settings',
+    label: 'Настройки',
+    subtitle: 'Профиль, интеграции, тариф',
+    icon: Settings,
+  },
+];
+
 function ResultRow({
   icon: Icon,
+  iconClassName,
   title,
   subtitle,
 }: {
   icon: LucideIcon;
+  iconClassName?: string;
   title: string;
   subtitle: string;
 }) {
   return (
     <div className="flex items-center gap-2.5">
-      <Icon size={14} className="text-fg-tertiary" />
+      <Icon size={14} className={cn('text-fg-tertiary', iconClassName)} />
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm">{title}</span>
         <span className="truncate text-xs text-fg-tertiary">{subtitle}</span>

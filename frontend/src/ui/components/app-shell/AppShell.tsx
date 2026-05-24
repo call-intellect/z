@@ -3,7 +3,10 @@
 import type { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { MobileHeader } from './Header';
-import { CommandPalette } from '@/ui/components/command-palette/CommandPalette';
+import {
+  CommandPalette,
+  CommandPaletteProvider,
+} from '@/ui/components/command-palette';
 import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton';
 import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
 
@@ -22,30 +25,34 @@ import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-bg-base text-fg-primary md:flex-row">
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex md:h-screen md:flex-none md:sticky md:top-0">
-        <Sidebar />
+    <CommandPaletteProvider>
+      <div className="flex min-h-screen flex-col bg-bg-base text-fg-primary md:flex-row">
+        {/* Desktop sidebar */}
+        <div className="hidden md:flex md:h-screen md:flex-none md:sticky md:top-0">
+          <Sidebar />
+        </div>
+
+        {/* Mobile header (only on small) */}
+        <MobileHeader />
+
+        {/* `pb-16` на мобильных — чтобы контент не закрывался TrackerBottomNav
+            (~56px); на md+ bottom-nav скрыт и padding не нужен. */}
+        <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
+          {children}
+        </main>
+
+        {/* Mobile bottom navigation (≤md). На desktop bottom-nav скрыт —
+            навигация идёт через sidebar. */}
+        <TrackerBottomNav />
+
+        {/* Глобальная ⌘K палитра. Wave 2 B2: рендерится внутри Provider'а,
+            keyboard listener живёт в Provider'е, открытие — из любого
+            места через useCommandPalette(). */}
+        <CommandPalette />
+
+        {/* SBA γ-2 — sквозной floating Concierge. */}
+        <ConciergeFloatingButton />
       </div>
-
-      {/* Mobile header (only on small) */}
-      <MobileHeader />
-
-      {/* `pb-16` на мобильных — чтобы контент не закрывался TrackerBottomNav
-          (~56px); на md+ bottom-nav скрыт и padding не нужен. */}
-      <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
-        {children}
-      </main>
-
-      {/* Mobile bottom navigation (≤md). На desktop bottom-nav скрыт —
-          навигация идёт через sidebar. */}
-      <TrackerBottomNav />
-
-      {/* Глобальная ⌘K палитра. */}
-      <CommandPalette />
-
-      {/* SBA γ-2 — sквозной floating Concierge. */}
-      <ConciergeFloatingButton />
-    </div>
+    </CommandPaletteProvider>
   );
 }

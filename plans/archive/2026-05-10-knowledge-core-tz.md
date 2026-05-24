@@ -1,9 +1,10 @@
 ---
 type: tz
-status: draft
+status: done
 feature: единое информационное ядро Z (knowledge core) — переустройство фундамента продукта
 date: 2026-05-10
 supersedes: plans/archive/2026-05-10-z-second-brain-integration-superseded.md
+supersededBy: plans/tz/2026-05-22-final-roadmap.md
 references:
   - delivery/ (концепции «Второго мозга компании», заимствуем без копирования кода)
   - https://github.com/iternal-technologies-partners/blockify-agentic-data-optimization (концепции IdeaBlock и pipeline ingest→distill→retrieve)
@@ -1501,3 +1502,20 @@ _Заполняется по ходу реализации фаз._
 - [x] Фаза 10 — telegram/mango/imap/web-form адаптеры + Sources (закрыта 2026-05-10)
 - [x] Фаза 11 — retention + 152-ФЗ + dataClass routing + observability (закрыта 2026-05-10)
 - [x] Фаза 12 — тарифы и entitlements (закрыта 2026-05-10)
+
+## Ревизия от 2026-05-24
+
+**Статус:** done (база knowledge core) + superseded (последующая эволюция Кора v2)
+**Реализовано:**
+- Org/Membership/RBAC: `backend/src/modules/orgs/` (orgs.service, orgs.controller, org-invitations.service) + Casbin-совместимый `backend/src/modules/rbac/` + `TenantGuard`. Модели Org, Membership, OrgInvitation в `backend/prisma/schema.prisma`.
+- Универсальный ingest + Source/RawEvent + meeting-adapter + сторонние адаптеры (Telegram, MAX, email, document) в `backend/src/modules/ingest/` и `backend/src/modules/conversational/`.
+- Pipeline IdeaBlock + Entity + Theme: `backend/src/modules/knowledge-core/services/{block-extraction,block-merge,block-link,clustering,embedding,entity-resolution,entity-merge,entity-graph,theme-classification}.service.ts` + воркеры `block-distill.worker`, `entity-resolver.worker`, `theme-clusterer.cron`, `block-linker.worker`, `reframing.cron`.
+- 7 специалистов (3-1 Regulations, 3-2 Knowledge Clone, 3-3 Decisions, 3-4 Project/Customer, 3-5 Insights, 3-6 Ideas+Probe, 3-7 Skill+Persona) + 3.8 Helpfulness, 3.9 Experiments, 3.10 Brand Voice — все в `backend/src/modules/knowledge-core/{services,workers,prompts}/`.
+- DialogService + chat-v2 + AnswerCache/RetrievalCache: `backend/src/modules/chat/` + α-5 артефакты.
+- Z-Admin / Org-Admin: `frontend/app/(authenticated)/admin/*` (ai-models, ai-usage, llm-prices, experiments, orgs, integration-keys, recordings).
+- Дашборд директора + COO Operations Dashboard: `backend/src/modules/dashboard/director-dashboard.controller.ts` + `frontend/app/(authenticated)/dashboard/page.tsx`.
+- Goals + strategic-alignment: `frontend/app/(authenticated)/goals/*` + `knowledge-core/workers/strategic-alignment.worker.ts`.
+- Entitlements + tarifs: `backend/src/modules/entitlements/`.
+- LlmRouter с обязательной записью в AiUsageLog + A/B-эксперименты: `backend/src/modules/ai/services/llm-router.service.ts` + admin UI.
+
+**Заменён на:** [plans/tz/2026-05-22-final-roadmap.md](2026-05-22-final-roadmap.md) — зонтичный ТЗ Коры v2 (24 sub-ТЗ α/β/γ/δ), который продолжает развитие ядра: Orchestrator, ProactiveWatcher, CrossFunctionalProcess, Concierge Agent, Voice Channel, CompletenessSlot, Appointment, CompanyProfile, FunctionalDomain.

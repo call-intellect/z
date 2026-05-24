@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: δ-1 — Orchestrator + OrgKnowledgeIndex (multi-agent research для сложных запросов)
 phase: delta-1
 date: 2026-05-23
@@ -159,12 +159,12 @@ model OrchestratorSubagentJob {
 
 ## 15. DoD
 
-- [ ] 2 модели + service-layer.
-- [ ] 4 этапа run работают.
-- [ ] OrgKnowledgeIndex cache + cron.
-- [ ] REST + SSE + UI.
-- [ ] LlmTaskType + RBAC + Metrics.
-- [ ] typecheck/lint/tests.
+- [x] 2 модели + service-layer.
+- [x] 4 этапа run работают.
+- [x] OrgKnowledgeIndex cache + cron.
+- [x] REST + SSE + UI.
+- [x] LlmTaskType + RBAC + Metrics.
+- [x] typecheck/lint/tests.
 
 ## 16. Тесты
 
@@ -176,3 +176,16 @@ model OrchestratorSubagentJob {
 - **Cost-runaway** — depth=1, max 5 subagents per run, 15-min timeout, feature-flag default off.
 - **Schema merge** — 2 модели; кодер аккуратно.
 - **`.next/types/`** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- 2 модели: `OrchestratorRun` (schema.prisma:5994) + `OrchestratorSubagentJob`.
+- `OrchestratorModule` (`backend/src/modules/orchestrator/`): 6 сервисов (planning, subagent-spawner, synthesis, verification, orchestrator, org-knowledge-index) + 4 стратегии (EntityResearch, Comparison, TopicSummary, TimelineConstruction).
+- Worker `orchestrator-subagent.worker.ts` + cron `org-knowledge-index-builder.cron.ts` (daily 03:00).
+- REST + SSE через `orchestrator.controller.ts` + DTO.
+- Hard limits: depth=1, max 5 subagents, 15-min timeout, ORCHESTRATOR_ENABLED default false.
+- Frontend: `/orchestrator` request page + `/orchestrator/runs/[id]` live view с SSE; API client `orchestrator.api.ts`.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-orchestrator.ts`.
+- RBAC `orchestrator` ResourceType (policy.csv:588-595).

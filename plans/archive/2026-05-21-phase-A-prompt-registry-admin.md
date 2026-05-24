@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза A — Prompt Registry + Admin-конструктор шаблонов AI-отчёта + per-agent цепочка моделей
 date: 2026-05-21
 parent_tz: tz/2026-05-21-competitor-parity.md
@@ -790,3 +790,19 @@ _Заполняется по факту, когда A.1–A.3 закрыты._
 - **Что осталось:** _TBD_
 - **Side-by-side тест 20 встреч пройден:** _TBD_
 - **Ссылка на рефлексию:** _TBD_
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- A.1: Prisma-модели `PromptTemplate` (schema.prisma:4809), `PromptTemplateVersion` (:4853), `PromptTemplateSection` (:4889), `PromptExperiment`, `AiResultFeedback` (:4945) + расширение `AiResult.promptTemplateVersionId` и `AiUsageLog.tier/fallbackReason`.
+- `PromptResolverService` + spec + experiment.spec (`backend/src/modules/ai/services/prompt-resolver.{service,types}.ts`).
+- Seed системных шаблонов: `backend/scripts/seed-prompt-templates.ts`.
+- A.2: Admin API + UI — `backend/src/modules/admin/prompt-templates/{prompt-templates,prompt-experiments,ai-result-feedback,prompt-templates-preview,admin-feedback,meeting-result-feedback}.{service,controller}.ts` + RBAC spec; frontend `frontend/app/(authenticated)/admin/prompts/{page,new,[id],[id]/PromptEditor,[id]/PromptVersionsTab,[id]/PromptPreviewModal,experiments/*}.tsx`.
+- A.3: PromptExperiment + feedback-кнопка реализованы.
+- A.4: модели `LlmTaskRouteChange` (schema.prisma:1651), `LlmModelExperiment` (:1678), enum tier'ов. Модуль `backend/src/modules/admin/ai-models/{ai-models.service,ai-models.controller,dto/ai-models.dto}.ts` + seed-script `seed-llm-task-routes-default.ts`. Frontend `frontend/app/(authenticated)/admin/ai-models/{page,AiModelsClient,[taskType]/{page,TaskTypeDetailsClient},experiments/*}.tsx`.
+- Все фазы B/C/D/E/прочие зарегистрировали свои taskType через 30+ `seed-llm-task-routes-*.ts` скриптов (видно в backend/scripts/).
+- Полный Economics стек (был в Phase 7 ревизии) — `backend/src/modules/admin/economics/*` с 5 cron'ами и UI.
+
+**Осталось:** только документация (рефлексия в second-brain). Side-by-side тест 20 встреч — не верифицирован формально.

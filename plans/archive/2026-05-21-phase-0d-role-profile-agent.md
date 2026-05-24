@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза 0d — RoleProfileAgent (BullMQ-воркер + cron + on-demand rebuild)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-phase-0-roles-and-onboarding.md
@@ -475,3 +475,19 @@ _Заполняется по факту, когда 0d.1–0d.3 закрыты._
 - **Реализовано полностью / частично:** _TBD_
 - **Что осталось:** _TBD_
 - **Ссылка на рефлексию:** _TBD_
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- BullMQ-воркер: `backend/src/modules/knowledge-core/workers/role-profile.worker.ts` (живёт под knowledge-core, не отдельной директорией — архитектурное упрощение от ТЗ).
+- Cron: `backend/src/modules/knowledge-core/workers/role-profile.cron.ts` — `@Cron('0 */4 * * *')` для builds + `@Cron('0 * * * *')` для stale-detection (полностью соответствует §7.1/§7.2 ТЗ).
+- ContextBuilder через GraphService: `backend/src/modules/role-profiles/services/context-builder.service.ts`.
+- Бизнес-логика сборки: `backend/src/modules/role-profiles/services/role-profile.service.ts` (отдельно от CRUD `role-profiles.service.ts`).
+- Промпт: `backend/src/modules/knowledge-core/prompts/role-profile-build.prompt.ts` (с code fallback).
+- LLM-вызов: через `LlmRouterService` с `taskType='role-profile-build'`.
+- On-demand rebuild с 409: `backend/src/modules/role-profiles/role-profiles.controller.ts` + `role-profiles-agent.module.ts`; есть `role-profiles-crud.spec.ts`.
+- В shipping-report 2026-05-23 α-8 wave 4 явно зафиксировано: «role-map-builder.worker + role-profile-build.prompt перенастроен под 9 слотов» — RoleProfileAgent эволюционировал дальше Phase 0d scope.
+
+**Осталось:** —

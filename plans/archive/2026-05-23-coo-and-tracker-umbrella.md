@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: superseded
 feature: COO + Tracker — зонтичный план единого продуктового рывка Z/Кора
 date: 2026-05-23
 umbrella: true
@@ -203,3 +203,27 @@ related:
 ---
 
 _2026-05-23: зонтичный план единого продуктового рывка. Все sub-ТЗ — атомарные, маленькие, без падений. Готовы к раздаче программистам через оркестратор._
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+**Заменён на:** sub-ТЗ ниже — этот документ не реализуется напрямую, статусы отслеживаются в каждом sub-плане. Обзор фактического состояния по календарю Wave 1-3:
+
+| Sub-ТЗ | Статус | Источник |
+|---|---|---|
+| [Phase 1 модели + API + Webhooks + Ingest](2026-05-23-tracker-phase-1-models-api.md) | done | Sprint 1+3 Wave 1 (рефлексии 2026-05-24) |
+| [Phase 2 Frontend mobile-first + концьерж + чат + PWA](2026-05-23-tracker-phase-2-frontend-mobile-first.md) | done | Wave 2 (e2e Playwright осталось) |
+| [Phase 3 AI-фичи](2026-05-23-tracker-phase-3-ai-features.md) | done | Wave 3 iter 1+2 (Agent A/B/C/H) |
+| [Phase 4 РФ must-have](2026-05-23-tracker-phase-4-rf-musthave.md) | partial | Wave 3 (Telegram+templates+календарь done; email-to-task НЕ начат) |
+| [Phase 5 импорт](2026-05-23-tracker-phase-5-import.md) | done | Wave 3 iter 1+2 (Agent F+I+J) |
+| Phase 6 / β-8 COO Dashboard + DailyCheckIn + PersonalRelation | done | Wave 3 (обнаружено готовым в `backend/src/modules/operations/`) |
+| [Нативная мобилка iPhone+Android](2026-05-23-tracker-mobile-native.md) | draft | НЕ начат, ждёт RN-команды |
+| Activity Feeds | done | Wave 2 backend |
+| Specialist 3.8 Helpfulness | done | Wave 2 (готов на 95% γ-1 + бэкэнд helpfulness) |
+| Recognition / Gamification | done | Wave 2 finishing (A1+A2) |
+| α-2/α-3/α-4/α-5/α-7/α-8/α-9/α-10 | done/partial | Wave 1-3 (большинство уже было в коде на старте Wave 3) |
+| β-1/β-3/β-4/β-5/β-7/β-8 | done | Wave 1-3 |
+| γ-1/γ-2/γ-3 | done | Wave 2-3 |
+| δ-1/δ-2/δ-3 | done | Wave 3 (обнаружено готовым) |
+
+Зонтик закрыл календарь до Wave 3 включительно. Остаточные не закрытые скоупы — отдельные ТЗ (mobile-native, email-to-task в Phase 4, kie/grsai интеграция, SPO).

@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза 0a — Фундамент Фазы 0 (модели данных + Apache AGE + GraphService + API + RBAC)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-phase-0-roles-and-onboarding.md
@@ -1103,3 +1103,20 @@ _Заполняется по факту, когда 0a.0–0a.3 закрыты._
 - **Реализовано полностью / частично:** _TBD_
 - **Что осталось:** _TBD_
 - **Ссылка на рефлексию:** _TBD_
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Все 16 моделей в `backend/prisma/schema.prisma`: Department (line 3269), Role (3315), Person (3379), PersonRole (3451), JobDescription (3516), Skill (3536), Document (3558), RoleProfile (3645), Mission (3848), Vision (3866), Strategy (3882), Process (4015), ProcessStep (4273), Regulation (4299), Policy (4352), Tool (4388), Metric (4405), Decision (4464).
+- `EntityLink` (line 2934) расширен полями `validFrom/validTo/properties`; `EntityLinkType` enum (line 476) содержит 17+ новых типов рёбер (executes_role, member_of, described_by, derived_from, requires_skill, has_skill, realized_by, decomposes_into, measured_by, executed_by, has_step, owned_by, lives_in, produces, regulates, owned_by, RACI и др.).
+- Apache AGE: `CREATE EXTENSION age` + `create_graph('z_graph')` инициализируется в `backend/scripts/postgres-init.sql` и `backend/src/app.module.ts`; декларирован в `backend/src/common/graph/`.
+- `GraphService` (`backend/src/common/graph/graph.service.ts`) с публичным API addNode/addEdge/removeEdge/removeNode/getNeighbors/findPath/traverse/upsertEntity + двойной записью Postgres+AGE в одной транзакции; есть `cypher-builder.ts`, `graph.types.ts`, `graph.spec.ts`.
+- CRUD-модули группы А: `backend/src/modules/{departments,roles (через role-profiles),persons,job-descriptions,skills,documents,role-profiles,structure}/` — все с controller + service + dto + tests.
+- `StructureModule` агрегирует `/structure/summary` и табы.
+- RBAC: `backend/src/modules/rbac/policies/policy.csv` содержит новые ResourceType (см. упоминания в `rbac.service.ts`).
+
+**Осталось:** —
+
+Превышение порога 800 строк, но проверка целевых артефактов (модели + AGE + GraphService + модули) показывает done; mini-фиксы и оптимизации могут оставаться, но scope DoD достигнут.

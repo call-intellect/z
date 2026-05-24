@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: β-6 — Experiment Tracker (Specialist 3.9)
 phase: beta-6
 date: 2026-05-23
@@ -161,13 +161,13 @@ model ExperimentVersion {
 
 ## 15. DoD
 
-- [ ] 2 модели + relations.
-- [ ] Worker детектит + создаёт Experiment.
-- [ ] 2 cron'а работают.
-- [ ] 3 probe-trigger'а эмитят.
-- [ ] REST + UI работают.
-- [ ] §5 контракт пройден.
-- [ ] typecheck/lint/tests зелёные.
+- [x] 2 модели + relations.
+- [x] Worker детектит + создаёт Experiment.
+- [x] 2 cron'а работают.
+- [x] 3 probe-trigger'а эмитят.
+- [x] REST + UI работают.
+- [x] §5 контракт пройден.
+- [x] typecheck/lint/tests зелёные.
 
 ## 16. Тесты
 
@@ -179,3 +179,16 @@ model ExperimentVersion {
 - **Schema merge с другими wave-3** — добавляем 2 модели в конец schema; кодер проверяет, что параллельный coder не добавил Experiment/ExperimentVersion.
 - **False-positive auto-transition** — confidence threshold 0.7; ниже — оставляем + probe.
 - **`.next/types/` кэш** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модели `Experiment` + `ExperimentVersion` в `backend/prisma/schema.prisma` (строки 5811, 5861).
+- REST CRUD: `backend/src/modules/experiments/experiments.controller.ts` + `services/experiments.service.ts` + `dto/experiments.dto.ts`.
+- Worker `experiment-detector.worker.ts` + 2 cron'а (`experiment-status-resolver.cron.ts` + `experiment-transitions.cron.ts`) в `backend/src/modules/knowledge-core/workers/`.
+- 3 probe-trigger'а через `Specialist39ExperimentProbeService` (`backend/src/modules/knowledge-core/services/specialist-3-9-experiment-probe.service.ts`): no-owner, running-too-long, result-without-lesson.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-experiments.ts`.
+- RBAC `experiment` ResourceType в `policy.csv` (read/write/delete/manage для owner/admin, manager open).
+- Frontend: `frontend/app/(authenticated)/experiments/page.tsx` + `[id]/page.tsx` (master-detail с tabs hypothesis/result/lessons), API client `frontend/src/api/experiments.api.ts`.
+- Prompt: `backend/src/modules/knowledge-core/prompts/experiment-extract.prompt.ts`.

@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: standalone-product
 date: 2026-05-09
 ---
@@ -190,13 +190,13 @@ model UserSession {
 
 ## Фазы реализации
 
-- [ ] **Фаза 1 — Дизайн-система и AppShell**
+- [x] **Фаза 1 — Дизайн-система и AppShell**
   - shadcn/ui init, токены через скилл `frontend-design`.
   - AppShell (Sidebar + Header), единый layout `(authenticated)/`.
   - Эталонная страница: журнал встреч (master-detail) — на ней утверждаем стиль.
   - Замена общих primitives (`Button`, `Modal`, `EmptyState`, `ErrorState`, `Skeleton`).
 
-- [ ] **Фаза 2 — Backend: accounts-модуль и схема БД**
+- [x] **Фаза 2 — Backend: accounts-модуль и схема БД**
   - Изменения `User` (`passwordHash`, `mustChangePassword`, `signupSource`) + новые таблицы `UserVerificationToken`, `UserSession`.
   - Endpoints register (lead-style) / login / logout / forgot / reset / me / change-password.
   - `MailService` поверх `nodemailer` + SMTP `mail.hosting.reg.ru`. Шаблоны `register-temp-password`, `password-reset`.
@@ -204,29 +204,29 @@ model UserSession {
   - Throttler на `/register`, `/login`, `/password/forgot`, `/password/reset`.
   - Юнит и e2e тесты (реальный SMTP в e2e не дёргаем — мокаем `MailService`).
 
-- [ ] **Фаза 3 — Frontend: auth-страницы и forced-onboarding**
+- [x] **Фаза 3 — Frontend: auth-страницы и forced-onboarding**
   - `/signup`, `/login` (единый для user и admin), `/forgot-password`, `/reset-password`.
   - `/onboarding/change-password` + guard в `(authenticated)/layout.tsx`: если `mustChangePassword=true` — форсированно редиректим сюда.
   - Перевод `auth-context` на новые поля (`mustChangePassword`, `signupSource`).
   - Обновление `middleware.ts` (публичные роуты).
   - Уведомления (тосты) на ошибках/успехах.
 
-- [ ] **Фаза 4 — Журнал встреч (master-detail)**
+- [x] **Фаза 4 — Журнал встреч (master-detail)**
   - Переработка `/meetings` в двухколоночный layout.
   - Группировка («Сегодня / На неделе / Ранее»), фильтры (тип, статус, диапазон дат, поиск по title).
   - URL-sync `?selected=<id>`.
   - `MeetingDetailPane` (preview отчёта, кнопки скачать/открыть полную страницу).
   - Backend: расширение `GET /api/v1/meetings` под фильтры.
 
-- [ ] **Фаза 5 — Кабинет: настройки и интеграции**
+- [x] **Фаза 5 — Кабинет: настройки и интеграции**
   - `/settings` (профиль + смена пароля).
   - `/integrations` (только если есть API-ключи) — переиспользует админский `IntegrationKeysTable`, режим read-only.
 
-- [ ] **Фаза 6 — Главная и онбординг**
+- [x] **Фаза 6 — Главная и онбординг**
   - `/` — лендинг для гостей с CTA, редирект для залогиненных.
   - Создание встречи (`/meetings/create`) — адаптация под новый shell, кнопка «Скопировать ссылку» после создания.
 
-- [ ] **Фаза 7 — Регрессии, доки, smoke-test**
+- [x] **Фаза 7 — Регрессии, доки, smoke-test**
   - Crossmark-flow (deep-link → cookie → /m/[id]) — ручной прогон.
   - Гостевой вход — ручной прогон.
   - Admin-login и админка — ручной прогон.
@@ -247,3 +247,16 @@ model UserSession {
 ## Итог
 
 _Заполняется по факту: реализовано целиком или нет, что осталось._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модуль accounts с полным набором: `backend/src/modules/accounts/{accounts.controller,accounts.service,password.service,session.service,accounts.repository}.ts` + DTO (register / login / forgot-password / reset-password / change-password / update-profile).
+- Lead-style регистрация с временным паролем (argon2id), forced password change, восстановление пароля через `UserVerificationToken`, сессии через `UserSession.revokedAt`.
+- SMTP через `nodemailer` + шаблоны писем (включая `register-temp-password`, `password-reset`).
+- Дизайн-система shadcn/ui + AppShell (Sidebar + Header) — `frontend/src/ui/components/app-shell/*`.
+- Все auth-страницы: `frontend/app/signup`, `/login`, `/forgot-password`, `/reset-password`, `/(authenticated)/onboarding/change-password`.
+- Журнал встреч в master-detail с фильтрами/поиском/тегами + меню `/settings` — `frontend/app/(authenticated)/meetings/page.tsx`, `frontend/app/(authenticated)/settings/page.tsx`.
+- Crossmark-flow и гостевой вход (`/m/[id]`) сохранены и работают.
+- Onboarding company-wizard (5 шагов) — выходит за рамки этого ТЗ, добавлен позже (`frontend/app/(authenticated)/onboarding/company/step-1..5`).

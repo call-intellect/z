@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: γ-3 — CrossFunctionalProcess + Handoff Tracker
 phase: gamma-3
 date: 2026-05-23
@@ -127,11 +127,11 @@ model CrossFunctionalFrictionReport {
 
 ## 15. DoD
 
-- [ ] schema-изменения.
-- [ ] Worker + cron работают.
-- [ ] REST + UI tabs.
-- [ ] LlmTaskType + RBAC + Metrics.
-- [ ] typecheck/lint/tests.
+- [x] schema-изменения.
+- [x] Worker + cron работают.
+- [x] REST + UI tabs.
+- [x] LlmTaskType + RBAC + Metrics.
+- [x] typecheck/lint/tests.
 
 ## 16. Тесты
 
@@ -144,3 +144,15 @@ model CrossFunctionalFrictionReport {
 - **Двойной счёт friction** — `@@unique` constraint по `(tenantId, processTemplateId, sourceBlockIds[0])`.
 - **Schema merge с α-7 wave 2** — кодер сначала проверяет, что ProcessTemplate уже содержит новые поля; если α-7 wave 2 закрыт, добавление isCrossFunctional как отдельный schema-edit.
 - **`.next/types/`** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `CrossFunctionalFrictionReport` (schema.prisma:4140) + `ProcessTemplate.isCrossFunctional` / `crossFunctionalScore`.
+- `CrossFunctionalDetectorService` + `CrossFunctionalFrictionService` + `ProcessHandoffService` в `backend/src/modules/processes/services/`.
+- Cron `cross-functional-friction-aggregator.cron.ts` (daily 05:00).
+- REST `cross-functional.controller.ts` + DTO `cross-functional.dto.ts`.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-cross-functional.ts`.
+- Frontend: `/processes` страница с tabs (см. `ProcessTemplatesClient.tsx`).
+- Spec: `cross-functional-detector.service.spec.ts`.

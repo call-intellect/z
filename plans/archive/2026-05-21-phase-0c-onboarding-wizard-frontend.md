@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза 0c — Мастер знакомства + личный кабинет (frontend)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-phase-0-roles-and-onboarding.md
@@ -796,3 +796,18 @@ _Заполняется по факту, когда 0c.1–0c.4 закрыты._
 - **Реализовано полностью / частично:** _TBD_
 - **Что осталось:** _TBD_
 - **Ссылка на рефлексию:** _TBD_
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Wizard 5 шагов: `frontend/app/(authenticated)/onboarding/company/{step-1..step-5}/` + `WizardShell.tsx`, `WizardStepNav.tsx`, `layout.tsx` (без AppShell).
+- Каркас ЛК: `frontend/src/ui/components/app-shell/Sidebar.tsx` (группы + comingSoon), `OrgSwitcher.tsx`, `Header.tsx`, `useMemberships.ts`.
+- 5 рабочих страниц: `/structure` (DepartmentsTab/RolesTab/PersonsTab + StructureClient), `/documents` + `[id]/`, `/roles` + `[id]/`, `/me` (MeClient + sub-routes channels/check-ins/clone/dashboard/inbox/knowledge-profile/notifications), `/dump` (DumpClient).
+- 4 preview-страницы: `frontend/app/(authenticated)/{processes,regulations,policies,metrics}/page.tsx` — реальные (ProcessTemplatesClient, RegulationsListClient уже работают, не stub).
+- `<ComingSoonPage>` компонент: `frontend/src/ui/components/coming-soon/ComingSoonPage.tsx`.
+
+**Осталось:** —
+
+Примечание: 4 «coming-soon» секции фактически уже превратились в реальный UI (γ-фаза в коде запущена), что превышает scope 0c — но MVP-задача (доступность preview по ссылке) выполнена.

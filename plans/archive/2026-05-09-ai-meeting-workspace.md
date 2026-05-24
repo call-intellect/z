@@ -1,8 +1,9 @@
 ---
 type: tz
-status: draft
+status: done
 feature: ai-meeting-workspace
 date: 2026-05-09
+supersededBy: plans/tz/2026-05-22-final-roadmap.md
 ---
 
 # ТЗ: AI Meeting Workspace — расширенный кабинет и страница результата встречи
@@ -1291,3 +1292,19 @@ model AuditLog {
 ## Итог
 
 _Заполняется по факту: реализовано целиком или нет, что осталось._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done (база workspace) + superseded (дальнейшее развитие)
+**Реализовано:**
+- Модули: `backend/src/modules/{tasks,chapters,highlights,shares,tags,exports,api-keys,webhooks,dashboard,chat,embeddings,destinations}/` — все эндпоинты, сервисы, воркеры, репозитории.
+- `LlmRouter` поверх `LlmFallbackService` с маршрутизацией по `taskType` через админку: `backend/src/modules/ai/services/llm-fallback.service.ts` + `prompt-resolver.service.ts`; admin UI — `frontend/app/(authenticated)/admin/ai-models/*`.
+- EmbeddingService с pgvector + `transcript-index.worker.ts`; модели `MeetingTranscriptChunk` (`@deprecated`, заменён на IdeaBlock через Кору v2).
+- Все Prisma-модели: Task (L1233), MeetingChapter (L1269), MeetingHighlight (L1293), MeetingShare (L1322), Tag (L1375), MeetingChatMessage (L1403), ApiKey (L1467), WebhookSubscription (L1494), Export (L1554), UserTemplate (L1575), LlmTaskRoute (L1595) — в `backend/prisma/schema.prisma`.
+- Frontend-страницы: `tasks`, `settings/tags`, `settings/api`, `settings/webhooks`, `settings/exports`, `chat`, `dashboard`, `meetings/[id]/result`, `share/[token]`, `share/clip/[token]`, `admin/ai-models/*`, `admin/ai-usage`.
+- Vidstack-плеер с маркерами глав/клипов: `frontend/src/ui/components/meeting-result/*`.
+- ClipRenderWorker (ffmpeg), ExportZipWorker, WebhookDeliverWorker — в `backend/src/modules/ai/workers/clip-render.worker.ts`, `backend/src/modules/exports/exports.worker.ts`, `backend/src/modules/webhooks/`.
+- Destinations: email, slack, telegram, generic webhook — `backend/src/modules/destinations/senders/*`.
+- Public REST API + API-key auth + outgoing webhooks с HMAC — `BearerAuthGuard`.
+
+**Заменён на:** [plans/tz/2026-05-22-final-roadmap.md](2026-05-22-final-roadmap.md) — workspace стал базисом для Коры v2; новые продуктовые поверхности (специалисты 3-1..3-7, Concierge, Orchestrator, ProactiveWatcher, DialogService, Director Dashboard, COO) строятся поверх knowledge-core.

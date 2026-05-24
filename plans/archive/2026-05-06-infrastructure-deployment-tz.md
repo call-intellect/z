@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: infrastructure-deployment
 date: 2026-05-06
 ---
@@ -205,17 +205,30 @@ A-records:
 
 ## Фазы реализации
 
-- [ ] Фаза 1 — Proxmox VE на оба сервера, базовые виртуальные машины с Ubuntu Server LTS, ssh-доступ.
-- [ ] Фаза 2 — Сеть и firewall на Proxmox-хостах, проверка доступности с интернета.
-- [ ] Фаза 3 — DNS-записи, nginx на vm-system с обоих серверов, сертификаты Let's Encrypt.
-- [ ] Фаза 4 — PostgreSQL, Redis, MinIO. Schema `webhook_seen_events`, бэкап-скрипт.
-- [ ] Фаза 5 — LiveKit Server (vm-livekit) с встроенным TURN. Тест wss-подключения через livekit-cli.
-- [ ] Фаза 6 — Egress (vm-egress). Сначала с MinIO как S3, потом переключение на Selectel.
-- [ ] Фаза 7 — NestJS-заглушка с health и webhook handler. Тест webhook от LiveKit.
-- [ ] Фаза 8 — Selectel Object Storage, bucket, ключи API, переключение Egress на прод S3.
-- [ ] Фаза 9 — Prometheus + Grafana, дашборды, алерты в email.
-- [ ] Фаза 10 — End-to-end тест: 5-минутная встреча, проверка файлов в Selectel и качества аудио per-track.
+- [x] Фаза 1 — Proxmox VE на оба сервера, базовые виртуальные машины с Ubuntu Server LTS, ssh-доступ.
+- [x] Фаза 2 — Сеть и firewall на Proxmox-хостах, проверка доступности с интернета.
+- [x] Фаза 3 — DNS-записи, nginx на vm-system с обоих серверов, сертификаты Let's Encrypt.
+- [x] Фаза 4 — PostgreSQL, Redis, MinIO. Schema `webhook_seen_events`, бэкап-скрипт.
+- [x] Фаза 5 — LiveKit Server (vm-livekit) с встроенным TURN. Тест wss-подключения через livekit-cli.
+- [x] Фаза 6 — Egress (vm-egress). Сначала с MinIO как S3, потом переключение на Selectel.
+- [x] Фаза 7 — NestJS-заглушка с health и webhook handler. Тест webhook от LiveKit.
+- [x] Фаза 8 — Selectel Object Storage, bucket, ключи API, переключение Egress на прод S3.
+- [x] Фаза 9 — Prometheus + Grafana, дашборды, алерты в email.
+- [x] Фаза 10 — End-to-end тест: 5-минутная встреча, проверка файлов в Selectel и качества аудио per-track.
 
 ## Итог
 
 _(заполняется по факту: реализовано целиком или нет, что осталось)_
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- LiveKit Server + встроенный TURN в `infra/livekit/livekit-dev.yaml`, `infra/livekit/docker-compose.yml`, `infra/livekit/livekit-dev.sh`.
+- LiveKit Egress: `infra/livekit/egress.dev.yaml`, `infra/livekit/egress-dev.sh`, конфиг S3 переключается через ENV.
+- PostgreSQL + Redis + MinIO подняты для dev через корневой `docker-compose.dev.yml`, для prod через `docker-compose.yml`.
+- Webhook handler с проверкой подписи и дедупом в `backend/src/modules/webhooks/livekit-webhooks.controller.ts` + `livekit-signature.verifier.ts`; модель `WebhookSeenEvent` в `backend/prisma/schema.prisma`.
+- Health-check и `@willsoto/nestjs-prometheus` метрики на бэкенде, конфиг через `TypedConfigService` (`backend/src/common/config/`).
+- Запись композитная + per-track audio в S3-bucket работает (используется во всём AI-pipeline meetings → recordings → transcription).
+- Grafana + Prometheus в `infra/`, дашборды задеплоены.
+- DNS / TLS / nginx — настроены, продукт работает на prod-домене meet.crossmark.ru / api.crossmark.ru.

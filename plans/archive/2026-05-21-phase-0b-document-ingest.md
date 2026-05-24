@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза 0b — Document-ingest pipeline + text.adapter + расширение extraction
 date: 2026-05-21
 parent_tz: tz/2026-05-21-phase-0-roles-and-onboarding.md
@@ -497,3 +497,17 @@ z_dump_created_total
 - Изменены: `backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts`, `backend/src/modules/knowledge-core/services/block-extraction.service.ts`, `backend/src/modules/knowledge-core/services/entity-resolution.service.ts`, `backend/src/modules/knowledge-core/workers/block-ingest.worker.ts`, `backend/src/modules/documents/documents.controller.ts`, `backend/src/modules/documents/documents.service.ts`, `backend/src/modules/documents/dto/documents.dto.ts`, `backend/src/common/config/env.schema.ts`, `backend/src/common/config/typed-config.service.ts`, `backend/src/common/metrics/business-metrics.service.ts`.
 - Созданы: `backend/scripts/patch-prompt-block-ingest-v2-fase0b.ts`, `backend/src/modules/knowledge-core/services/block-extraction.service.spec.ts`, `backend/src/modules/knowledge-core/services/entity-resolution.service.spec.ts`, `backend/src/modules/documents/documents.detail.spec.ts`.
 - **Ссылка на рефлексию:** _TBD (зафиксировать после прогонов typecheck/lint оркестратором)._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:** scope полностью закрыт — в самом ТЗ §15 уже задокументирован блок «Реализовано полностью» от 2026-05-21 (BlockExtractionService.extractFull, EntityResolutionService для группы Б, block-ingest.worker с idempotent Decision, document detail с extractedEntities + RBAC, ENV-флаги). Ключевые файлы:
+- `backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts` — JSON Schema v2 с типизированными сущностями группы Б.
+- `backend/src/modules/knowledge-core/services/block-extraction.service.ts` — `extractFull(...)`.
+- `backend/src/modules/knowledge-core/services/entity-resolution.service.ts` — `resolveRoleByHint/resolvePersonByHint/resolveTypedEntity/linkPersonEntity`.
+- `backend/src/modules/knowledge-core/workers/block-ingest.worker.ts` — провенанс + Decision-параллельное создание + derived_from-рёбра через GraphService.
+- `backend/src/modules/ingest/adapters/{document,text}/` — оба адаптера живут (см. `ls backend/src/modules/ingest/adapters/`).
+- `backend/src/modules/documents/documents.controller.ts` + `documents.service.ts` — GET `/api/v1/documents/:id` с extractedEntities; есть `documents.detail.spec.ts`.
+
+**Осталось (TODO, зафиксированы в §15):** LLM-arbiter в коридоре cosine 0.78..0.92 (сейчас точное совпадение + pg_trgm); эксперимент A vs B отложен (дефолт A); embeddings для моделей группы Б; Mission/Vision/Strategy автоизвлечение под фичефлагом — не блокеры DoD.

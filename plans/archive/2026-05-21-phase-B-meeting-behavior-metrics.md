@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза B — Метрики поведения участников встречи
 date: 2026-05-21
 parent_tz: tz/2026-05-21-competitor-parity.md
@@ -513,3 +513,16 @@ z_behavior_metrics_llm_refine_cost_usd
 ## 14. Итог
 
 _TBD после реализации._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Prisma-модели `MeetingBehaviorMetrics` (schema.prisma:5353) и `MeetingParticipantBehavior` (:5392) + расширение `Meeting.behaviorMetricsStatus`.
+- `BehaviorMetricsCalculator` pure-функция + spec (`backend/src/modules/ai/services/behavior-metrics-calculator.{ts,spec.ts}`).
+- LLM-refine: `backend/src/modules/ai/services/behavior-llm-refine.ts` + промпт `prompts/behavior-refine.ts`.
+- Воркер `backend/src/modules/ai/workers/behavior-metrics.worker.ts` + spec.
+- API-сервис: `backend/src/modules/behavior-metrics/behavior-metrics.service.ts`.
+- LLM-route: `backend/scripts/seed-llm-task-routes-phase-B.ts` (3 tier: openai-via-proxy/deepseek/ollama).
+- Frontend: `frontend/src/ui/components/behavior-metrics/{MeetingBehaviorSection,BehaviorTeamCard}.tsx` — секция на странице результата + org-дашборд карточка.

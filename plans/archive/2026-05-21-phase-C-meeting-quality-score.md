@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза C — AI-оценка качества встречи + рекомендации руководителю
 date: 2026-05-21
 parent_tz: tz/2026-05-21-competitor-parity.md
@@ -440,3 +440,15 @@ z_quality_score_llm_cost_usd
 ## 13. Итог
 
 _TBD после реализации._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Prisma-модель `MeetingQualityScore` (schema.prisma:5446) + расширение `Meeting.qualityScoreStatus` + `OrgSettings.qualityScoreDisabledForTypes`.
+- Воркер `backend/src/modules/ai/workers/quality-score.worker.ts` + spec.
+- API-сервис: `backend/src/modules/quality-score/quality-score.service.ts`.
+- LLM-route: `backend/scripts/seed-llm-task-routes-phase-C.ts` (3 tier: deepseek-pro/openai-via-proxy/ollama).
+- Frontend: `frontend/src/ui/components/quality-score/MeetingQualityScoreSection.tsx` + дашборд-виджет `dashboard/widgets/QualityScoreWidget.tsx`.
+- Org-настройка: `frontend/app/(authenticated)/settings/admin/meetings/MeetingsAdminSettingsClient.tsx`.

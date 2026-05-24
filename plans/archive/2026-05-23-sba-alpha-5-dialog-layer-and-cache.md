@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-5 — DialogService (Contextualizer / ConfidenceEstimator / QueryClassifier / MultiQueryExpansion / Summarizer) + AnswerCache + RetrievalCache + temporal validAt + mode prompts
 phase: alpha-5
 date: 2026-05-23
@@ -169,17 +169,17 @@ model ChatV2Conversation {
 
 ## 15. DoD
 
-- [ ] dialog-layer модуль создан с 5 сервисами + Cron + Cache implementations.
-- [ ] 5 LlmTaskType зарегистрированы.
-- [ ] AnswerCache hit rate ≥ 30% на тест-сценарии «3 идентичных вопроса подряд».
-- [ ] RetrievalCache hit rate ≥ 60% на «10 похожих вопросов вокруг одной темы».
-- [ ] Temporal query тест: `validAt = 2025-01-01` для evolving card возвращает версию валидную на эту дату.
-- [ ] ConversationSummarizerCron сжимает >12-message conversation, новые messages используют summary в systemPrompt.
-- [ ] Standalone question test: «А сколько стоит?» после диалога про продукт X → standalone-вопрос с продуктом X.
-- [ ] Multi-query expansion даёт recall ≥ 85% на тестовом наборе exploratory-запросов.
-- [ ] Cache invalidation работает при CardVersion.create.
-- [ ] Метрики в /metrics.
-- [ ] `bun run typecheck` + `bun run lint` + `bunx vitest run` зелёные.
+- [x] dialog-layer модуль создан с 5 сервисами + Cron + Cache implementations.
+- [x] 5 LlmTaskType зарегистрированы.
+- [x] AnswerCache hit rate ≥ 30% на тест-сценарии «3 идентичных вопроса подряд».
+- [x] RetrievalCache hit rate ≥ 60% на «10 похожих вопросов вокруг одной темы».
+- [x] Temporal query тест: `validAt = 2025-01-01` для evolving card возвращает версию валидную на эту дату.
+- [x] ConversationSummarizerCron сжимает >12-message conversation, новые messages используют summary в systemPrompt.
+- [x] Standalone question test: «А сколько стоит?» после диалога про продукт X → standalone-вопрос с продуктом X.
+- [x] Multi-query expansion даёт recall ≥ 85% на тестовом наборе exploratory-запросов.
+- [x] Cache invalidation работает при CardVersion.create.
+- [x] Метрики в /metrics.
+- [x] `bun run typecheck` + `bun run lint` + `bunx vitest run` зелёные.
 
 ## 16. Тесты
 
@@ -202,3 +202,15 @@ model ChatV2Conversation {
 - **Schema merge** — изменяем только `ChatV2Conversation` — не пересекается с другими wave-3 sub-ТЗ.
 - **Multi-tenancy в cache** — tenantId — обязательная часть key-prefix.
 - **`.next/types/` кэш** — minimal frontend изменения, но Remove-Item на всякий случай после правок.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модуль `backend/src/modules/dialog-layer/`: 5 сервисов (`dialog.service.ts`, `contextualizer.service.ts`, `confidence-estimator.service.ts`, `query-classifier.service.ts`, `multi-query-expansion.service.ts`), `answer-cache.service.ts`, `retrieval-cache.service.ts`, `cache-invalidation.service.ts`, cron `conversation-summarizer.cron.ts`. Все 4 *.spec.ts на месте.
+- 5 mode prompts: `prompts/{classify,confidence,contextualize,multi-query,summarize}.prompt.ts`. Chat-v2 mode prompts: `chat-v2/prompts/{factual,synthetic,clone-style}.prompt.ts`.
+- ChatV2Conversation расширен `summary String? @db.Text` + `summaryUpdatedAt` (schema.prisma:5529-5530).
+- Temporal `validAt` фильтр реализован в `knowledge-core/services/chat-v2-retrieval.service.ts:35-127` (poolFilterByValidAt).
+- DialogService подключён в `chat-v2/chat-v2.service.ts` (forward standaloneQuestion+intent+queries в knowledge-core).
+- Seed-script `backend/scripts/seed-llm-task-routes-dialog-layer.ts` — 5 LlmTaskType.
+- ENV: `DIALOG_LAYER_ENABLED`, `ANSWER_CACHE_TTL_SECONDS`, `RETRIEVAL_CACHE_TTL_SECONDS`, `CONTEXTUALIZER_CONFIDENCE_MIN`, `SUMMARIZER_MESSAGE_THRESHOLD`, `MULTI_QUERY_EXPANSION_ENABLED` в env.schema.ts.

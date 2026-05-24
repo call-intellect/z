@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: β-7 — Brand Voice Curator (Specialist 3.10)
 phase: beta-7
 date: 2026-05-23
@@ -129,11 +129,11 @@ model BrandVoiceProfile {
 
 ## 15. DoD
 
-- [ ] 2 schema-изменения.
-- [ ] cron работает + corpus collection.
-- [ ] REST + UI.
-- [ ] chat-v2 `scope=company` инжектит BrandVoiceProfile.
-- [ ] typecheck/lint/tests.
+- [x] 2 schema-изменения.
+- [x] cron работает + corpus collection.
+- [x] REST + UI.
+- [x] chat-v2 `scope=company` инжектит BrandVoiceProfile.
+- [x] typecheck/lint/tests.
 
 ## 16. Тесты
 
@@ -145,3 +145,17 @@ model BrandVoiceProfile {
 - **Минимум корпуса** — если <5 brand_corpus документов — extractor skip, completeness=0.
 - **Schema merge** — изменения в Document + новая BrandVoiceProfile; кодер проверяет, что параллельные coders Document не трогают.
 - **`.next/types/` кэш** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `BrandVoiceProfile` (schema.prisma:3623) + `Document.useCases` поле.
+- `BrandVoiceModule` с `BrandVoiceService`, `BrandVoiceExtractorService`, `BrandVoiceExtractorCron` (daily 08:00).
+- REST `/api/v1/brand-voice` + `/api/v1/documents/:id/use-cases` (2 контроллера).
+- Frontend: `frontend/app/(authenticated)/brand-voice/page.tsx` + `BrandVoiceClient.tsx`, API client `frontend/src/api/brand-voice.api.ts`.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-brand-voice.ts`.
+- Patch script: `backend/scripts/patch-document-use-cases-default.ts`.
+- Prompt: `backend/src/modules/brand-voice/prompts/brand-voice-extract.prompt.ts`.
+- RBAC `brand_voice` ResourceType (policy.csv:552-562).
+- chat-v2 интеграция через scope='org' (см. shipping-report §2.12).

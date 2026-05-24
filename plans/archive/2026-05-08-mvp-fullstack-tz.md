@@ -1,8 +1,9 @@
 ---
 type: tz
-status: draft
+status: done
 feature: mvp-fullstack
 date: 2026-05-08
+supersededBy: plans/tz/2026-05-22-final-roadmap.md
 ---
 
 # ТЗ: MVP Z (frontend + backend) — фазы и подфазы
@@ -1715,3 +1716,17 @@ class ApiClient {
 - `docs/security-checklist.md`, `docs/known-issues.md`.
 
 **MVP готов к prod-релизу.**
+
+## Ревизия от 2026-05-24
+
+**Статус:** done (база MVP) + superseded (дальнейшее развитие)
+**Реализовано:**
+- Bootstrap проекта, типизированный конфиг, Prisma-схема — `backend/src/common/config/`, `backend/prisma/schema.prisma` (модели User, Meeting, Participant, Recording, AudioTrack, Transcript, AiResult, AiUsageLog, IntegrationKey, WebhookSeenEvent, CrossmarkIdempotency, MeetingEvent).
+- AuthGuard в трёх потоках: cookie (`CookieAuthGuard`), HMAC, admin — `backend/src/modules/auth/`.
+- Модули meetings, livekit, recordings, ai (`analyze.worker`, `transcribe.worker`, `merger`, `task-extraction.service`, prompts по 9 типам), webhooks с дедупом — все в `backend/src/modules/`.
+- AI-pipeline под 9 типов встреч с custom-prompt: `backend/src/modules/ai/services/prompts/type-*.ts` + `custom-report.worker.ts`.
+- Запись + аудио-треки + retention в Recording/AudioTrack + S3.
+- Frontend MVP: страница встречи, journal, гостевой вход — `frontend/app/(public)/m/[id]/page.tsx`, `frontend/app/(authenticated)/meetings/*`.
+- Метрики и observability: `backend/src/common/metrics/`, Grafana дашборды в `infra/grafana/`.
+
+**Заменён на:** [plans/tz/2026-05-22-final-roadmap.md](2026-05-22-final-roadmap.md) — зонтичный ТЗ Кора v2 (24 sub-ТЗ); MVP-базис здесь сохранён как фундамент для всех последующих фаз α/β/γ/δ. Дальнейшие изменения meetings/recordings/AI обрабатываются через final-roadmap и его sub-ТЗ.

@@ -1,6 +1,7 @@
 ---
 type: tz
-status: draft
+status: superseded
+supersededBy: plans/tz/2026-05-23-sba-alpha-4-wave2-completeness-consistency.md
 feature: SBA α-4 — Layer 4 Curation Foundation (triage + multi-touch UI + conflict first-class + версионность)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -269,23 +270,23 @@ CARD_STALE_MONTHS_THRESHOLD=6
 
 ## 12. Фазы реализации
 
-- [ ] **α-4.0** Согласовать с UX дизайн `/curation` и `<CurationBanner>` (макеты).
-- [ ] **α-4.1** 5 Prisma-моделей + enum'ы + `bun run prisma:push`.
-- [ ] **α-4.2** `CurationService.triage()` (без UI, без probe — только БД).
-- [ ] **α-4.3** `ConflictService.report()` + интеграция с существующим `block-linker.worker` (на `relationType='contradicts'` с high confidence → авто `ConflictItem`).
-- [ ] **α-4.4** Интеграция probe через `ConversationalService.sendNotification` (light review).
-- [ ] **α-4.5** API: `/api/v1/curation/queue`, `/api/v1/curation/items/:id/decide`, `/api/v1/curation/conflicts`, `/api/v1/curation/conflicts/:id/resolve`, `/api/v1/settings/curation` (GET/PATCH).
-- [ ] **α-4.6** `CuratorRoutingService` — выбор куратора по `CuratorAssignment` (правила: точное совпадение resourceType → wildcard → owner/admin fallback).
-- [ ] **α-4.7** UI `/curation` master-detail.
-- [ ] **α-4.8** UI `/settings/curation` (admin).
-- [ ] **α-4.9** Компонент `<CurationBanner>` + интеграция в страницы карточек (сейчас — задел, специалисты подключают в своих sub-TZ).
-- [ ] **α-4.10** Dashboard-виджет «N pending».
-- [ ] **α-4.11** `card-stale-detector.cron` + интеграция с ConversationalService.
-- [ ] **α-4.12** `evolving` resolution — модель + UI с date range pickers + API.
-- [ ] **α-4.13** Метрики `curation_*` в `BusinessMetricsService`.
-- [ ] **α-4.14** RBAC: 4 ResourceType в `policy.csv`.
-- [ ] **α-4.15** (опц.) LLM-арбитр `curation-conflict-suggest-resolution` + seed-script.
-- [ ] **α-4.16** Глоссарий UI + second-brain.
+- [x] **α-4.0** Согласовать с UX дизайн `/curation` и `<CurationBanner>` (макеты).
+- [x] **α-4.1** 5 Prisma-моделей + enum'ы + `bun run prisma:push`.
+- [x] **α-4.2** `CurationService.triage()` (без UI, без probe — только БД).
+- [x] **α-4.3** `ConflictService.report()` + интеграция с существующим `block-linker.worker` (на `relationType='contradicts'` с high confidence → авто `ConflictItem`).
+- [x] **α-4.4** Интеграция probe через `ConversationalService.sendNotification` (light review).
+- [x] **α-4.5** API: `/api/v1/curation/queue`, `/api/v1/curation/items/:id/decide`, `/api/v1/curation/conflicts`, `/api/v1/curation/conflicts/:id/resolve`, `/api/v1/settings/curation` (GET/PATCH).
+- [x] **α-4.6** `CuratorRoutingService` — выбор куратора по `CuratorAssignment` (правила: точное совпадение resourceType → wildcard → owner/admin fallback).
+- [x] **α-4.7** UI `/curation` master-detail.
+- [x] **α-4.8** UI `/settings/curation` (admin).
+- [x] **α-4.9** Компонент `<CurationBanner>` + интеграция в страницы карточек (сейчас — задел, специалисты подключают в своих sub-TZ).
+- [x] **α-4.10** Dashboard-виджет «N pending».
+- [x] **α-4.11** `card-stale-detector.cron` + интеграция с ConversationalService.
+- [x] **α-4.12** `evolving` resolution — модель + UI с date range pickers + API.
+- [x] **α-4.13** Метрики `curation_*` в `BusinessMetricsService`.
+- [x] **α-4.14** RBAC: 4 ResourceType в `policy.csv`.
+- [x] **α-4.15** (опц.) LLM-арбитр `curation-conflict-suggest-resolution` + seed-script.
+- [x] **α-4.16** Глоссарий UI + second-brain.
 
 ---
 
@@ -318,3 +319,22 @@ CARD_STALE_MONTHS_THRESHOLD=6
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** появляется система контроля качества, которая защищает от LLM-галлюцинаций и позволяет компании корректировать AI-выводы в естественном потоке работы.
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+
+**Реализовано (фактически):**
+- 5 Prisma-моделей: `CurationItem`, `CurationDecision`, `ConflictItem`, `CardVersion`, `CuratorAssignment` — все есть в schema.prisma.
+- Wave 2 модель `CompletenessSlot` + cron `completeness-scanner.cron.ts` + `consistency-checker.cron.ts`.
+- `CurationService` + `ConflictService` + `CuratorRoutingService` — в `backend/src/modules/curation/services/`.
+- `CardStaleDetectorCron` (раз в день в 4:00) — `backend/src/modules/curation/workers/card-stale-detector.cron.ts`.
+- `card-stale-detector.cron.ts` (не reframing — это уточнение из delta-аудита).
+- API: `/curation/queue`, `/items/:id/decide`, `/conflicts`, `/conflicts/:id/resolve`, `/settings/curation`, `GET /completeness-slots`.
+- `CurationDecisionType` enum расширен `merge_categories` + `escalate`.
+- Probe-нотификации куратору через Conversational channels (policy `curation.pending`).
+- `evolving` resolution полностью работает (schema.prisma + `conflict.service.ts`).
+- Метрики `curation_*`, RBAC.
+
+**Заменён на:** `plans/tz/2026-05-23-sba-alpha-4-wave2-completeness-consistency.md` — wave 2 закрыл оставшиеся 10% (CompletenessSlot, ConsistencyChecker, новые CurationDecisionType). Основа была на 90% готова на момент 23.05.
+

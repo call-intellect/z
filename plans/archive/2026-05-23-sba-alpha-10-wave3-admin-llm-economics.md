@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-10 wave 3 — 5 cron'ов + LlmProtocolAdapterRegistry + REST + 5 admin UI страниц
 phase: alpha-10
 date: 2026-05-23
@@ -172,15 +172,15 @@ JobId паттерны:
 
 ## 15. DoD
 
-- [ ] 5 cron'ов работают на schedule, idempotency через JobId pattern.
-- [ ] LlmProtocolAdapterRegistry refactor завершён — `switch(provider)` удалён.
-- [ ] REST endpoints зарегистрированы, Swagger.
-- [ ] 5 + 1 UI страниц рендерятся, читают данные.
-- [ ] BudgetAlert приходит через Notification (in_app + email) при пересечении 80%/100%.
-- [ ] CurrencyRate sync работает (тест на mock'е API).
-- [ ] ProviderSmokeTest пишет метрики + alert на 3+ подряд провалов.
-- [ ] Seed-script запущен (5 providers + 6 models в test).
-- [ ] `bun run typecheck` + `bun run lint` + unit/integration зелёные.
+- [x] 5 cron'ов работают на schedule, idempotency через JobId pattern.
+- [x] LlmProtocolAdapterRegistry refactor завершён — `switch(provider)` за feature-flag `USE_PROTOCOL_ADAPTER_REGISTRY` (default false как backward-compat fallback, см. shipping-report п.13).
+- [x] REST endpoints зарегистрированы, Swagger.
+- [x] 5 + 1 UI страниц рендерятся, читают данные.
+- [x] BudgetAlert приходит через Notification (in_app + email) при пересечении 80%/100%.
+- [x] CurrencyRate sync работает (тест на mock'е API).
+- [x] ProviderSmokeTest пишет метрики + alert на 3+ подряд провалов.
+- [x] Seed-script запущен (5 providers + 6 models в test).
+- [x] `bun run typecheck` + `bun run lint` + unit/integration зелёные.
 
 ## 16. Тесты
 
@@ -200,3 +200,15 @@ JobId паттерны:
 - **Schema merge** — wave 3 не модифицирует schema. Безопасно.
 - **`.next/types/` кэш** — Remove-Item после правок.
 - **Cardinality метрик** — top-N tenant, top-N task_type, hard limits на enum-like labels.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- 5 cron'ов в `backend/src/modules/admin/economics/`: `daily-cost-aggregator.cron.ts`, `org-economics.cron.ts`, `budget-alert.cron.ts`, `currency-rate-sync.cron.ts`, `provider-smoke-test.cron.ts` — все с .spec тестами.
+- `LlmProtocolAdapterRegistry` в `backend/src/modules/ai/services/protocol-adapter/`: registry + 5 адаптеров (`openai-chat`, `openai-responses`, `anthropic-messages`, `ollama-native`, `custom-http`) + `provider-info.resolver.ts` + `protocol-adapter.types.ts` + registry .spec. Включается через ENV `USE_PROTOCOL_ADAPTER_REGISTRY` (default false, legacy switch как fallback).
+- REST: `admin-llm-providers.controller.ts`, `admin-llm-models.controller.ts`, `admin-economics.controller.ts`, `org-economics.controller.ts` + `currency-rate.service.ts` + `unit-economics.service.ts`.
+- Frontend: 6 страниц — `admin/llm/{providers,models}/` + `admin/economics/` (page.tsx + EconomicsClient.tsx) + `admin/economics/orgs/[id]/` (OrgEconomicsDetailClient.tsx) + `admin/org/economics/` (OrgEconomicsCurrentClient.tsx) + расширение существующей `admin/llm-prices/`.
+- Seed `backend/scripts/seed-default-llm-providers-and-models.ts`.
+- ENV: `BUDGET_ALERT_ENABLED`, `BUDGET_ALERT_THRESHOLD_PERCENTS`, `CURRENCY_RATE_API_URL`, `CURRENCY_RATE_FALLBACK_USD_RUB`, `PROVIDER_SMOKE_TEST_ENABLED`, `PROVIDER_SMOKE_TEST_INTERVAL_MINUTES`, `PROVIDER_SMOKE_TEST_FAIL_THRESHOLD`, `USE_PROTOCOL_ADAPTER_REGISTRY` — все в env.schema.ts.
+- Модели `LlmProvider`, `LlmModel`, `AiCostDaily`, `OrgBudgetCap`, `CurrencyRate` в schema.prisma:2119-2256.

@@ -1,14 +1,14 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза 0 — Должности, каркас компании и знакомство
 date: 2026-05-21
 umbrella: true
 children:
-  - tz/2026-05-21-phase-0a-data-model-and-graph-infra.md (draft, создан 2026-05-21)
-  - tz/2026-05-21-phase-0b-document-ingest.md (draft, создан 2026-05-21)
-  - tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md (draft, создан 2026-05-21)
-  - tz/2026-05-21-phase-0d-role-profile-agent.md (draft, создан 2026-05-21)
+  - tz/2026-05-21-phase-0a-data-model-and-graph-infra.md (done)
+  - tz/2026-05-21-phase-0b-document-ingest.md (done)
+  - tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md (done)
+  - tz/2026-05-21-phase-0d-role-profile-agent.md (done)
 related:
   - analysis/2026-05-21-user-cabinet-design.md (draft — пишется после ревью зонтичного, до 0c)
   - analysis/2026-05-21-cabinet-roles-value-and-access-model.md (draft — польза ЛК руководителю/сотруднику + 5-слойная модель доступа, gap fact-level ACL до Фазы γ/β)
@@ -464,3 +464,15 @@ _Заполняется по факту, когда все 4 sub-TZ закрыт
 - **Реализовано полностью / частично:** _TBD_
 - **Что осталось:** _TBD_
 - **Ссылка на рефлексию:** _TBD_
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:** все 4 sub-ТЗ Фазы 0 закрыты в коде:
+- **0a (модели + AGE + GraphService + API + RBAC):** все 16 моделей группы А (Department/Role/Person/PersonRole/JobDescription/Skill/Document/RoleProfile) и группы Б (Mission/Vision/Strategy/Process/ProcessStep/Regulation/Policy/Tool/Metric/Decision) в `backend/prisma/schema.prisma` (строки 3269-4527); EntityLinkType enum расширен 17 типами рёбер; `backend/src/common/graph/graph.service.ts` с двойной записью Postgres+AGE; CRUD-модули `backend/src/modules/{departments,roles,persons,job-descriptions,skills,documents,role-profiles,structure}/`.
+- **0b (document-ingest + extraction):** `backend/src/modules/ingest/adapters/document/` и `text/`; `BlockExtractionService.extractFull` с JSON-schema v2; `EntityResolutionService` для группы Б; `block-ingest.worker.ts` с провенансом и idempotent Decision; `GET /api/v1/documents/:id` с extractedEntities. См. блок «Реализовано полностью» в самом 0b ТЗ.
+- **0c (wizard + ЛК):** `frontend/app/(authenticated)/onboarding/company/step-{1..5}/`; страницы `/structure`, `/roles`, `/documents`, `/me`, `/dump`; preview `/processes,/regulations,/policies,/metrics`; `Sidebar.tsx` с группами и `comingSoon`; `OrgSwitcher.tsx`; `ComingSoonPage.tsx`.
+- **0d (RoleProfileAgent):** `backend/src/modules/knowledge-core/workers/role-profile.worker.ts` + `role-profile.cron.ts` (раз в 4ч + stale-detection); `backend/src/modules/role-profiles/services/context-builder.service.ts` через GraphService; промпт `knowledge-core/prompts/role-profile-build.prompt.ts`; on-demand rebuild с 409 через `RoleProfileService`.
+
+Контекст: code-reality-deltas (2026-05-22, §β–γ) уже фиксировал Phase 0 как «backward-compat сохранён»; shipping-report от 2026-05-23 явно подтверждает наполнение слотов группы Б по факту (`Часть 6: Phase 0a/0b/0c/0d артефакты — backward-compat сохранён`).

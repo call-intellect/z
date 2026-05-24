@@ -1,6 +1,7 @@
 ---
 type: tz
-status: draft
+status: superseded
+supersededBy: plans/tz/2026-05-23-sba-alpha-7-wave2-process-template-services.md
 feature: SBA α-7 — Specialist 3.1 (Regulations) — поглощает каркас 5 уровней Фазы 0b
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -242,25 +243,25 @@ API:
 
 ## 13. Фазы реализации
 
-- [ ] **α-7.0** Ревью существующих сущностей в Фазе 0b (если реализована) — что нужно мигрировать.
-- [ ] **α-7.1** Prisma-модель `Regulation` + enum'ы + HNSW индекс через `apply-postgres-init.sql` + `bun run prisma:push`.
-- [ ] **α-7.2** Воркер `regulation-detector.worker.ts` + подключение к `core.specialist-routing` (jobName '3-1-regulations').
-- [ ] **α-7.3** LLM-extraction промпт `regulation-extract.prompt.ts` (placeholder).
-- [ ] **α-7.4** LLM-dedupe промпт `regulation-dedupe.prompt.ts` (placeholder).
-- [ ] **α-7.5** LLM-process-steps промпт `process-steps-extract.prompt.ts` (placeholder).
-- [ ] **α-7.6** Seed-script `seed-llm-task-routes-regulations.ts` с 3 provider'ами для каждого taskType + ссылка на playbook.
-- [ ] **α-7.7** Интеграция с `CurationService.triage()` — для regulation/process/policy → deep review.
-- [ ] **α-7.8** Интеграция с `ConflictService.report()` — auto conflict для contradicts.
-- [ ] **α-7.9** Probe-events (4 trigger'а из §6).
-- [ ] **α-7.10** Stale cron-логика — расширение `card-stale-detector.cron` из α-4 на Regulation.
-- [ ] **α-7.11** Регистрация в `CardSpecialistRegistry` для chat-v2.
-- [ ] **α-7.12** REST API + DTO + Swagger.
-- [ ] **α-7.13** UI `/regulations` master-detail.
-- [ ] **α-7.14** (если есть данные Фазы 0b) Patch-script `migrate-phase-0b-to-regulations.ts` — поглощение существующих Process/Regulation/Policy моделей.
-- [ ] **α-7.15** RBAC: `regulation` ResourceType.
-- [ ] **α-7.16** Метрики `core_specialist_*{type='regulation'}` + регистрация в `BusinessMetricsService`.
-- [ ] **α-7.17** Глоссарий UI (русские названия kind, statuses, severity).
-- [ ] **α-7.18** second-brain: новый файл `01_projects/regulations.md`, обновление `02_architecture/module-map.md`, обновление `02_architecture/knowledge-core.md`.
+- [x] **α-7.0** Ревью существующих сущностей в Фазе 0b (если реализована) — что нужно мигрировать.
+- [x] **α-7.1** Prisma-модель `Regulation` + enum'ы + HNSW индекс через `apply-postgres-init.sql` + `bun run prisma:push`.
+- [x] **α-7.2** Воркер `regulation-detector.worker.ts` + подключение к `core.specialist-routing` (jobName '3-1-regulations').
+- [x] **α-7.3** LLM-extraction промпт `regulation-extract.prompt.ts` (placeholder).
+- [x] **α-7.4** LLM-dedupe промпт `regulation-dedupe.prompt.ts` (placeholder).
+- [x] **α-7.5** LLM-process-steps промпт `process-steps-extract.prompt.ts` (placeholder).
+- [x] **α-7.6** Seed-script `seed-llm-task-routes-regulations.ts` с 3 provider'ами для каждого taskType + ссылка на playbook.
+- [x] **α-7.7** Интеграция с `CurationService.triage()` — для regulation/process/policy → deep review.
+- [x] **α-7.8** Интеграция с `ConflictService.report()` — auto conflict для contradicts.
+- [x] **α-7.9** Probe-events (4 trigger'а из §6).
+- [x] **α-7.10** Stale cron-логика — расширение `card-stale-detector.cron` из α-4 на Regulation.
+- [x] **α-7.11** Регистрация в `CardSpecialistRegistry` для chat-v2.
+- [x] **α-7.12** REST API + DTO + Swagger.
+- [x] **α-7.13** UI `/regulations` master-detail.
+- [x] **α-7.14** (если есть данные Фазы 0b) Patch-script `migrate-phase-0b-to-regulations.ts` — поглощение существующих Process/Regulation/Policy моделей.
+- [x] **α-7.15** RBAC: `regulation` ResourceType.
+- [x] **α-7.16** Метрики `core_specialist_*{type='regulation'}` + регистрация в `BusinessMetricsService`.
+- [x] **α-7.17** Глоссарий UI (русские названия kind, statuses, severity).
+- [x] **α-7.18** second-brain: новый файл `01_projects/regulations.md`, обновление `02_architecture/module-map.md`, обновление `02_architecture/knowledge-core.md`.
 
 ---
 
@@ -296,3 +297,21 @@ API:
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** первая видимая ценность Слоя 3 — у компании появляются автогенерируемые регламенты с провенансом, AI-чат отвечает «по регламенту X шаг такой-то».
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+
+**Реализовано (фактически):**
+- Модель `Regulation` (`backend/prisma/schema.prisma:4299`) с kind/status/scope/ownerEntityId/currentVersionId/sourceBlockIds/personSubjectIds/embedding/processSteps/inputs/outputs/severity.
+- Модуль `backend/src/modules/regulations/` (controller + service + dto + module).
+- `backend/src/modules/knowledge-core/services/specialist-3-1-regulations.service.ts` + `specialist-3-1-card-handler.service.ts` + `specialist-3-1-probe.service.ts`.
+- 4 новые Wave 2 модели: `ProcessTemplate` (line 4087), `ProcessTemplateVersion`, `DecisionPoint`, `ProcessHandoff` — рядом с legacy `Process` через FK `Process.templateId` (backward-compat).
+- 3 LlmTaskType: `regulation-extract`, `regulation-dedupe`, `process-steps-extract`.
+- UI `/regulations`.
+- Wave 2 добавил ProcessTemplate services + worker `process-detector.worker.ts` + 3 probe-trigger'а + UI 5 tabs.
+- Интеграция с `CurationService.triage()` (critical-list → deep review).
+- Регистрация в `CardSpecialistRegistry`.
+
+**Заменён на:** `plans/tz/2026-05-23-sba-alpha-7-wave2-process-template-services.md` — wave 2 добавил ProcessTemplate/Version/DecisionPoint/Handoff (4 модели) + сервисы + REST + UI. Основа (Regulation модель + specialist 3-1) была готова на 60% на момент 23.05.
+

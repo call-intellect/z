@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-3 wave 3 — AxisClassifierService + LLM-fallback Router (полная версия)
 phase: alpha-3
 date: 2026-05-23
@@ -151,14 +151,14 @@ DTO через Zod. Защита `TenantGuard` + RBAC `knowledge.read`.
 
 ## 15. DoD
 
-- [ ] Модель `IdeaBlockAxisLabel` создана, `bun run prisma:generate` + `bun run prisma:push` ОК.
-- [ ] AxisClassifierService реализован, triggered после router.dispatch.
-- [ ] LLM-fallback в RouterService включён через ENV-флаг, тестируется.
-- [ ] 2 LlmTaskType зарегистрированы через seed-script.
-- [ ] Метрики экспортируются в /metrics.
-- [ ] Unit-тесты 80%+ покрытие AxisClassifierService.
-- [ ] Integration-test: блок с unmatched signalType → LLM-fallback → специалисты найдены.
-- [ ] `bun run typecheck` + `bun run lint` зелёные.
+- [x] Модель `IdeaBlockAxisLabel` создана, `bun run prisma:generate` + `bun run prisma:push` ОК.
+- [x] AxisClassifierService реализован, triggered после router.dispatch.
+- [x] LLM-fallback в RouterService включён через ENV-флаг, тестируется.
+- [x] 2 LlmTaskType зарегистрированы через seed-script.
+- [x] Метрики экспортируются в /metrics.
+- [x] Unit-тесты 80%+ покрытие AxisClassifierService.
+- [x] Integration-test: блок с unmatched signalType → LLM-fallback → специалисты найдены.
+- [x] `bun run typecheck` + `bun run lint` зелёные.
 
 ## 16. Тесты
 
@@ -173,3 +173,14 @@ DTO через Zod. Защита `TenantGuard` + RBAC `knowledge.read`.
 - **Race в upsert AxisLabel** — `@@unique([tenantId, blockId, axis, label])` constraint + ON CONFLICT DO NOTHING.
 - **Schema-merge conflict с другими wave 3 sub-ТЗ** — кодер ОБЯЗАН сначала `git pull` (если pushed) и проверить schema.prisma на конфликты. CompletenessSlot (α-4 wave 2) — отдельная модель, не пересекается.
 - **`.next/types/` кэш** — не применимо (backend only).
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- `enum AxisType` в `backend/prisma/schema.prisma:324-329` + модель `IdeaBlockAxisLabel:2405` с индексами `[tenantId, blockId]`, `[tenantId, axis, label]`, `[axis, label]`.
+- `backend/src/modules/knowledge-core/services/axis-classifier.service.ts` + спека `axis-classifier.service.spec.ts` + промпт `prompts/axis-classify.prompt.ts`.
+- Триггер вызывается в `block-ingest.worker.ts:543-556` после `router.dispatch()`, не блокирует ingest при ошибке.
+- LLM-fallback в `router.service.ts` + спека `router.service.fallback.spec.ts` + ENV-флаг `ROUTER_LLM_FALLBACK_ENABLED` (default false).
+- Seed-script `backend/scripts/seed-llm-task-routes-axis-classify.ts` — 2 LlmTaskType (`axis-classify`, `router-fallback`) с тройной цепочкой ollama→deepseek→openai.
+- ENV: `AXIS_CLASSIFY_ENABLED`, `ROUTER_LLM_FALLBACK_ENABLED`, `ROUTER_FALLBACK_CACHE_TTL_SECONDS` в `env.schema.ts`.

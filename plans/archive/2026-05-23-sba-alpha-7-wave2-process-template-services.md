@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-7 wave 2 — ProcessTemplate services + worker + REST + UI
 phase: alpha-7
 date: 2026-05-23
@@ -160,17 +160,17 @@ Wave 1 (data model) закрыт: модели `ProcessTemplate`, `ProcessTempla
 
 ## 15. DoD
 
-- [ ] 4 сервиса (ProcessTemplateService, DecisionPointService, ProcessHandoffService, ProcessExtractionService) реализованы.
-- [ ] worker `process-detector.worker` — JobId idempotent, обрабатывает signalType=process_step/methodology_step.
-- [ ] 3 probe-trigger'а эмитят probe-events.
-- [ ] cron completeness работает.
-- [ ] REST API endpoints зарегистрированы, Swagger genertes схему.
-- [ ] UI `/processes` master-detail с 5 tabs работает (CRUD + extract action).
-- [ ] LlmTaskType зарегистрирован через seed-script.
-- [ ] RBAC permissions в policy.csv.
-- [ ] Метрики в /metrics.
-- [ ] `bun run typecheck` + `bun run lint` + `bun run test:unit` зелёные в backend и frontend.
-- [ ] `Remove-Item -Recurse -Force .next\types` после frontend правок (PowerShell).
+- [x] 4 сервиса (ProcessTemplateService, DecisionPointService, ProcessHandoffService, ProcessExtractionService) реализованы.
+- [x] worker `process-detector.worker` — JobId idempotent, обрабатывает signalType=process_step/methodology_step.
+- [x] 3 probe-trigger'а эмитят probe-events.
+- [x] cron completeness работает.
+- [x] REST API endpoints зарегистрированы, Swagger genertes схему.
+- [x] UI `/processes` master-detail с 5 tabs работает (CRUD + extract action).
+- [x] LlmTaskType зарегистрирован через seed-script.
+- [x] RBAC permissions в policy.csv.
+- [x] Метрики в /metrics.
+- [x] `bun run typecheck` + `bun run lint` + `bun run test:unit` зелёные в backend и frontend.
+- [x] `Remove-Item -Recurse -Force .next\types` после frontend правок (PowerShell).
 
 ## 16. Тесты
 
@@ -188,3 +188,17 @@ Wave 1 (data model) закрыт: модели `ProcessTemplate`, `ProcessTempla
 - **Conflict с specialist-3-1-regulations existing extraction** — координировать: regulations отвечает за тексты регламентов; ProcessTemplate — за structured pipeline. signalType=`regulation` остаётся на regulations, signalType=`process_step` — новый owner (process-detector).
 - **`.next/types/` кэш** после правки frontend — Remove-Item через PowerShell.
 - **DTO Zod несовместимость с существующими nestjs-zod версиями** — кодер проверяет существующие DTO в `regulations.controller.ts` как образец, использует тот же паттерн.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- 4 сервиса в `backend/src/modules/processes/services/`: `process-template.service.ts`, `decision-point.service.ts`, `process-handoff.service.ts`, `process-extraction.service.ts` + `process-template-completeness.service.ts` + `.spec`.
+- Worker `backend/src/modules/knowledge-core/workers/process-detector.worker.ts` + cron `process-template-completeness.cron.ts` (вторая копия cron в `knowledge-core/workers/`).
+- 3 probe-trigger'а в `processes/services/process-template-probe.service.ts` (missing_input_artifact / missing_output_artifact / step_without_owner).
+- REST `processes/processes.controller.ts` + DTO `dto/processes.dto.ts`.
+- Frontend `app/(authenticated)/processes/` (page.tsx + ProcessTemplatesClient.tsx, 5 tabs внутри).
+- Seed `backend/scripts/seed-llm-task-routes-process-template.ts` (1 LlmTaskType `process-template-extract`).
+- Promпт `knowledge-core/prompts/process-template-extract.prompt.ts`.
+- ENV `PROCESS_DETECTOR_BATCH_SIZE`, `PROCESS_DETECTOR_BATCH_TIMEOUT_SECONDS` в env.schema.ts.
+- Бонус: γ-3 cross-functional process (`processes/cross-functional.controller.ts` + service + cron) — заложен дополнительно сверх scope.

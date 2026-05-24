@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-8 wave 4 — role-map-builder.worker + 5 services + REST + UI for Role Map (Specialist 3.8)
 phase: alpha-8
 date: 2026-05-23
@@ -116,15 +116,15 @@ Wave 2 (нормализованные модели) + wave 3 (Appointment + KPI
 
 ## 15. DoD
 
-- [ ] 5 сервисов + RoleMapBuilderService реализованы.
-- [ ] Worker работает (батчевый, идемпотентный).
-- [ ] cron completeness.
-- [ ] role-profile-build.prompt.ts перенастроен под 9 слотов.
-- [ ] REST endpoints.
-- [ ] 2 UI страницы рендерятся.
-- [ ] LlmTaskType + RBAC + Метрики.
-- [ ] typecheck/lint/tests зелёные.
-- [ ] Remove `.next\types`.
+- [x] 5 сервисов + RoleMapBuilderService реализованы.
+- [x] Worker работает (батчевый, идемпотентный).
+- [x] cron completeness.
+- [x] role-profile-build.prompt.ts перенастроен под 9 слотов.
+- [x] REST endpoints.
+- [x] 2 UI страницы рендерятся.
+- [x] LlmTaskType + RBAC + Метрики.
+- [x] typecheck/lint/tests зелёные.
+- [x] Remove `.next\types`.
 
 ## 16. Тесты
 
@@ -138,3 +138,15 @@ Wave 2 (нормализованные модели) + wave 3 (Appointment + KPI
 - **Worker schedule conflict с phase-0d role-profile cron** — координируй через @Cron expression: phase-0d на 4 утра, role-map на 5 утра.
 - **Schema merge** — нет.
 - **`.next/types/`** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модуль `backend/src/modules/role-map/`: 5 сервисов (`responsibility-element.service.ts`, `authority-boundary.service.ts`, `required-knowledge.service.ts`, `decision-policy.service.ts`, `interaction.service.ts`) + `role-map-builder.service.ts` + .spec.
+- Worker `role-map/workers/role-map-builder.worker.ts` + cron `role-map-completeness.cron.ts` (батч-окно через ENV).
+- Промпт `role-map/prompts/role-map-extract.prompt.ts` (новый, 9 слотов). Старый `knowledge-core/prompts/role-profile-build.prompt.ts` тоже обновлён под 9 слотов.
+- REST `role-map.controller.ts` + DTO `dto/role-map.dto.ts` + module `role-map.module.ts`.
+- Frontend: `app/(authenticated)/roles/[id]/map/page.tsx` + `RoleMapClient.tsx`; `persons/[id]/appointments/` (timeline из wave 3).
+- Seed `backend/scripts/seed-llm-task-routes-role-map.ts` (2 LlmTaskType: `role-map-extract`, `role-completeness-rationale`).
+- ENV `ROLE_MAP_BUILDER_ENABLED`, `ROLE_MAP_BATCH_TIMEOUT_SECONDS`.

@@ -419,3 +419,18 @@ Master-detail:
 - Closing-loop для customer supporters через `Customer.responsibleUserId` — модели Customer как отдельной таблицы нет (только Entity{type=customer}), fallback на admin.
 
 **Что меняет в продукте:** замкнутая петля самообучения работает — компания учится у себя через каналы, идеи сотрудников не теряются («мой голос виден»), пробелы знаний закрываются точечными вопросами в Telegram.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Модели `Idea`, `IdeaCluster`, `ProbeEvent`: `backend/prisma/schema.prisma:4689,4738,4766`.
+- Ideas worker + cluster cron: `backend/src/modules/knowledge-core/workers/specialist-3-6-ideas.worker.ts`, `idea-clusterer.cron.ts` + сервисы `specialist-3-6-{ideas,card-handler,probe}.service.ts`.
+- Probe-модуль: `backend/src/modules/probe/{probe.service,probe-dispatcher.worker,probe-priority.cron,probe-response.handler}.ts` + integration spec `probe-priority-cron.integration.spec.ts`.
+- Промпты: `idea-extract`, `idea-cluster-merge`, `probe-formulate`, `idea-status-summarize`.
+- Seed: `backend/scripts/seed-llm-task-routes-ideas-and-probe.ts` (4 LlmTaskType).
+- REST + UI: `backend/src/modules/ideas/{controller,service}` + `frontend/app/(authenticated)/ideas/page.tsx`.
+- Closing loop: добавлен RawEvent от ответа на probe-нотификацию + фильтр в probe-priority cron (см. shipping-report β-5 closing-loop, 12/12 тестов).
+
+**Осталось:** —

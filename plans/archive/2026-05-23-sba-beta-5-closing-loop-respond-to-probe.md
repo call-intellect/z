@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: β-5 доделки — closing-loop RawEvent от ответа на probe
 phase: beta-5
 date: 2026-05-23
@@ -94,12 +94,12 @@ related:
 
 ## 15. DoD
 
-- [ ] При ответе на probe через любой канал создаётся `RawEvent` с `metaJson.respondsToNotificationId = notificationId`.
-- [ ] `Notification.respondedAt` проставлен.
-- [ ] `probe-priority.cron` не выбирает закрытые probe-events повторно (тест: probe → ответ → следующий запуск cron'а не эмитит тот же probe).
-- [ ] Метрика `probe_closed_total` инкрементируется.
-- [ ] `bun run typecheck` + `bun run lint` зелёные.
-- [ ] Integration-тест проходит.
+- [x] При ответе на probe через любой канал создаётся `RawEvent` с `metaJson.respondsToNotificationId = notificationId`.
+- [x] `Notification.respondedAt` проставлен.
+- [x] `probe-priority.cron` не выбирает закрытые probe-events повторно (тест: probe → ответ → следующий запуск cron'а не эмитит тот же probe).
+- [x] Метрика `probe_closed_total` инкрементируется.
+- [x] `bun run typecheck` + `bun run lint` зелёные.
+- [x] Integration-тест проходит.
 
 ## 16. Тесты
 
@@ -111,3 +111,13 @@ related:
 - **Race condition** при двойном ответе — решается WHERE `respondedAt IS NULL` в UPDATE.
 - **Конфликт с уже существующей логикой** в probe-response.handler — кодер ОБЯЗАН прочитать существующий handler через vexp перед правками; если респ. handler уже создаёт RawEvent, изменить только metaJson-поле, не дублировать.
 - **`.next/types/` кэш** — не применимо (only backend).
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- `backend/src/modules/conversational/adapters/conversational-ingest.adapter.ts:73-102` — создаёт `RawEvent` с `payload.kind = 'notification_response'` + `respondsToNotificationId`.
+- `backend/src/modules/probe/probe-response.handler.ts:20-63` — handler для `notification.responded` event с closing-loop логикой (RawEvent + probe_closed_total).
+- Метрика `probe_closed_total` в `backend/src/common/metrics/business-metrics.service.ts:1185`.
+- Тесты: `conversational-ingest.adapter.spec.ts` (проверяет payload.kind/respondsToNotificationId) + `probe-priority-cron.integration.spec.ts` (handler + dedup в cron).
+- Schema не менялась (использован payload.kind в RawEvent payload).

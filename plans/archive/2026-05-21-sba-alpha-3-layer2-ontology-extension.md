@@ -1,6 +1,7 @@
 ---
 type: tz
-status: draft
+status: superseded
+supersededBy: plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md
 feature: SBA α-3 — Layer 2 Ontology Extension (онтология 7→12 + новые модели категории A + RouterService)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -252,26 +253,26 @@ ROUTER_MAX_SPECIALISTS_PER_BLOCK=4  # анти-fan-out защита
 
 ## 10. Фазы реализации
 
-- [ ] **α-3.0** Решить открытый вопрос §11.2 зонтичного: статический vs LLM RouterService. Рекомендация — статический.
-- [ ] **α-3.1** Расширение enum `Entity.type` (+5, удаление `custom`) + новые enum'ы `VendorSegment`, `VendorStatus`, `EventKind`, `PersonRelationship` + `bun run prisma:push`.
-- [ ] **α-3.2** Patch-script `patch-rename-client-to-customer.ts`:
+- [x] **α-3.0** Решить открытый вопрос §11.2 зонтичного: статический vs LLM RouterService. Рекомендация — статический.
+- [x] **α-3.1** Расширение enum `Entity.type` (+5, удаление `custom`) + новые enum'ы `VendorSegment`, `VendorStatus`, `EventKind`, `PersonRelationship` + `bun run prisma:push`.
+- [x] **α-3.2** Patch-script `patch-rename-client-to-customer.ts`:
   - Update `Entity` WHERE type='client' → type='customer'.
   - Update `IdeaBlockEntity.role` ссылки — без изменений (id не меняются).
   - Логирование счётчиков.
-- [ ] **α-3.3** Bun-команда `bun run patch:rename-client-to-customer` — добавить в `package.json` scripts.
-- [ ] **α-3.4** Новые модели `Vendor`, `Event` + `bun run prisma:push`.
-- [ ] **α-3.5** Расширение существующих моделей категории A полем `entityId?` + patch-script бэкфила (создать Entity для тех Person/Goal/Document где её нет).
-- [ ] **α-3.6** Расширение `Person.relationship` enum + дефолт `external` для существующих + patch-script для проставления `employee` тем, кто связан с `Membership` в Org (=сотрудник).
-- [ ] **α-3.7** Расширение `Card.kind` enum `vendor`.
-- [ ] **α-3.8** Расширение `EntityResolutionService.findOrCreate` на новые типы (доменные правила: Vendor — дедуп по `inn` + name; Event — дедуп по `startAt + title`).
-- [ ] **α-3.9** Расширение `EntityMergeService` (KNN cosine + LLM-арбитр) — новые типы автоматически работают, но обновить промпт `entity-merge-arbiter` для новых metadata-полей.
-- [ ] **α-3.10** `RouterService` + BullMQ-очередь `core.specialist-routing` (consumer'ы — в каждом sub-TZ специалиста).
-- [ ] **α-3.11** Hook в `block-ingest.worker.ts` после создания блока → `routerService.dispatch(block)`.
-- [ ] **α-3.12** Минимальные CRUD-API `/api/v1/vendors`, `/api/v1/events` (просто список + GET by ID; full CRUD — потом).
-- [ ] **α-3.13** Минимальные UI-страницы `/vendors`, `/events` (list-only).
-- [ ] **α-3.14** HNSW-индексы для embedding'ов Vendor + Event через `apply-postgres-init.sql`.
-- [ ] **α-3.15** RBAC: `vendor`, `event` в `policy.csv`.
-- [ ] **α-3.16** Метрики + glossary + second-brain.
+- [x] **α-3.3** Bun-команда `bun run patch:rename-client-to-customer` — добавить в `package.json` scripts.
+- [x] **α-3.4** Новые модели `Vendor`, `Event` + `bun run prisma:push`.
+- [x] **α-3.5** Расширение существующих моделей категории A полем `entityId?` + patch-script бэкфила (создать Entity для тех Person/Goal/Document где её нет).
+- [x] **α-3.6** Расширение `Person.relationship` enum + дефолт `external` для существующих + patch-script для проставления `employee` тем, кто связан с `Membership` в Org (=сотрудник).
+- [x] **α-3.7** Расширение `Card.kind` enum `vendor`.
+- [x] **α-3.8** Расширение `EntityResolutionService.findOrCreate` на новые типы (доменные правила: Vendor — дедуп по `inn` + name; Event — дедуп по `startAt + title`).
+- [x] **α-3.9** Расширение `EntityMergeService` (KNN cosine + LLM-арбитр) — новые типы автоматически работают, но обновить промпт `entity-merge-arbiter` для новых metadata-полей.
+- [x] **α-3.10** `RouterService` + BullMQ-очередь `core.specialist-routing` (consumer'ы — в каждом sub-TZ специалиста).
+- [x] **α-3.11** Hook в `block-ingest.worker.ts` после создания блока → `routerService.dispatch(block)`.
+- [x] **α-3.12** Минимальные CRUD-API `/api/v1/vendors`, `/api/v1/events` (просто список + GET by ID; full CRUD — потом).
+- [x] **α-3.13** Минимальные UI-страницы `/vendors`, `/events` (list-only).
+- [x] **α-3.14** HNSW-индексы для embedding'ов Vendor + Event через `apply-postgres-init.sql`.
+- [x] **α-3.15** RBAC: `vendor`, `event` в `policy.csv`.
+- [x] **α-3.16** Метрики + glossary + second-brain.
 
 ---
 
@@ -303,3 +304,21 @@ ROUTER_MAX_SPECIALISTS_PER_BLOCK=4  # анти-fan-out защита
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** граф знаний получает полную типизированную онтологию, специалисты Слоя 3 получают свой routing.
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+
+**Реализовано (фактически):**
+- `EntityType` enum расширен до 14 значений: person, customer, vendor, project, product, document, goal, event, topic, location, technology, metric, market, org_unit (+ deprecated client/custom). См. `backend/prisma/schema.prisma`.
+- 4 новые модели категории A: `Vendor`, `Event`, `Market`, `OrgUnit` — все с `entityId @unique`.
+- `Person.relationship` enum (employee/external/candidate/former) добавлен.
+- `Card.kind='vendor'` + остальные расширения.
+- `RouterService` (`backend/src/modules/knowledge-core/services/router.service.ts`) — статический mapping + fan-out + per-block priority trim. BullMQ-очередь `core.specialist-routing` работает.
+- `AxisClassifierService` (`backend/src/modules/knowledge-core/services/axis-classifier.service.ts`) — fan-out по 4 осям (WHO × FUNCTIONAL × CONTEXTUAL × TEMPORAL) + модель `IdeaBlockAxisLabel`.
+- LLM-fallback router за feature-flag `ROUTER_LLM_FALLBACK_ENABLED`.
+- HNSW индексы pgvector через `apply-postgres-init`.
+- Patch-script `patch-rename-client-to-customer.ts` (deprecated значения остались для совместимости).
+
+**Заменён на:** `plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md` — wave 3 закрыл оставшиеся 25% (AxisClassifierService + LLM-fallback). Wave 1 (Vendor/Event) и Wave 2 (Market/OrgUnit + signalType static routing) уже в коде.
+

@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: δ-2 — ProactiveWatcher (активный мониторинг + инициативные сообщения)
 phase: delta-2
 date: 2026-05-23
@@ -132,11 +132,11 @@ model ProactiveNotification {
 
 ## 15. DoD
 
-- [ ] 1 модель + cron + 8 правил.
-- [ ] Anti-spam работает (тест: 2 trigger за день → 1 notification).
-- [ ] LLM message-craft работает.
-- [ ] Метрики.
-- [ ] typecheck/lint/tests.
+- [x] 1 модель + cron + 8 правил.
+- [x] Anti-spam работает (тест: 2 trigger за день → 1 notification).
+- [x] LLM message-craft работает.
+- [x] Метрики.
+- [x] typecheck/lint/tests.
 
 ## 16. Тесты
 
@@ -149,3 +149,15 @@ model ProactiveNotification {
 - **False-positive spam** — anti-spam + dismissible.
 - **Cron timeout** — каждое правило 60-сек timeout, оставшиеся skip до next run.
 - **`.next/types/`** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `ProactiveNotification` (schema.prisma:5318).
+- `ProactiveModule` (`backend/src/modules/proactive/`): 4 сервиса (proactive-watcher, proactive-dedup, proactive-message-craft, proactive-notifications) + cron `proactive-watcher.cron.ts` (каждые 6 часов).
+- REST `/api/v1/me/proactive-notifications` (list + dismiss) через `my-proactive-notifications.controller.ts`.
+- Spec: `proactive-watcher.service.spec.ts`.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-proactive.ts`.
+- RBAC `proactive_notification` ResourceType (policy.csv:682-689).
+- Frontend API client `proactive.api.ts`.

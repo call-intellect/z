@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: SBA α-1 — Conversational Channels Foundation (двунаправленный омниканальный слой)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -321,3 +321,20 @@ docker compose up -d --build backend
 ```
 
 RBAC policy подхватывается автоматически из обновлённого `policy.csv` при старте.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- `backend/src/modules/conversational/conversational.service.ts` + `conversational.module.ts` — публичный API (sendNotification / subscribeInbound / respondToProbe / linkChannel / generateLinkCode).
+- 4 Prisma-модели в `backend/prisma/schema.prisma`: `Channel`, `ChannelBinding`, `Notification`, `NotificationDelivery` (model Channel: line 5106) + enum'ы `ChannelKind` (in_app, email_smtp, email_imap, telegram_bot, max_bot), `ChannelDirection`, `ChannelStatus`, `NotificationStatus`, `NotificationResponseStatus`, `NotificationDeliveryStatus`.
+- 4 адаптера в `backend/src/modules/conversational/adapters/`: `in-app.adapter.ts`, `email-smtp.adapter.ts`, `telegram-bot/telegram-bot.adapter.ts`, `max-bot/max-bot.adapter.ts` (последние два пришли в β-1, но slot уже был зарезервирован в α-1).
+- BullMQ outbound queue: `conversational-queue.ts` + `conversational-send.worker.ts`.
+- Linking flow: `link-code.service.ts` (Redis TTL 6-hex кода).
+- REST `/me/channels`, `/me/notifications` + `conversational.controller.ts`.
+- Frontend `frontend/src/api/conversational.api.ts` + `frontend/src/domain/conversational.ts` + страницы `/me/channels`, `/me/notifications`.
+- ConversationalIngestAdapter — free-note → RawEvent (Source.type='conversational').
+- Метрики `conversational_*` в BusinessMetricsService, RBAC `channel` / `notification` в policy.csv.
+- В коде уже есть все 4 ChannelKind, dataClass-фильтр, universal linking, in-app + email отправка.
+

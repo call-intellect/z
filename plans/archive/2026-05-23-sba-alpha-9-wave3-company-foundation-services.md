@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-9 wave 3 — Company Foundation services + crons + seed + 4 UI pages
 phase: alpha-9
 date: 2026-05-23
@@ -189,17 +189,17 @@ Wave 2 (data model) закрыт: модели `CompanyProfile`, `FunctionalDoma
 
 ## 15. DoD
 
-- [ ] 4 сервиса реализованы + IOrganizationalUnit interface.
-- [ ] 4 cron/worker'а работают + idempotency.
-- [ ] Seed-script запущен (8 базовых доменов в test-tenant).
-- [ ] Patch-script мигрировал данные Mission/Vision/Strategy в CompanyProfile (idempotent).
-- [ ] 4 REST endpoints отрисованы в Swagger.
-- [ ] 4 UI страницы работают, читают данные через API-клиент.
-- [ ] LlmTaskType зарегистрированы.
-- [ ] RBAC policies в csv.
-- [ ] Метрики экспортируются.
-- [ ] `bun run typecheck` + `bun run lint` + `bun run test:unit` зелёные.
-- [ ] `Remove-Item -Recurse -Force .next\types` после правок frontend (PowerShell).
+- [x] 4 сервиса реализованы + IOrganizationalUnit interface.
+- [x] 4 cron/worker'а работают + idempotency.
+- [x] Seed-script запущен (8 базовых доменов в test-tenant).
+- [x] Patch-script мигрировал данные Mission/Vision/Strategy в CompanyProfile (idempotent).
+- [x] 4 REST endpoints отрисованы в Swagger.
+- [x] 4 UI страницы работают, читают данные через API-клиент.
+- [x] LlmTaskType зарегистрированы.
+- [x] RBAC policies в csv.
+- [x] Метрики экспортируются.
+- [x] `bun run typecheck` + `bun run lint` + `bun run test:unit` зелёные.
+- [x] `Remove-Item -Recurse -Force .next\types` после правок frontend (PowerShell).
 
 ## 16. Тесты
 
@@ -217,3 +217,18 @@ Wave 2 (data model) закрыт: модели `CompanyProfile`, `FunctionalDoma
 - **Schema merge** — нет (не модифицируем schema).
 - **`.next/types/` кэш** — Remove-Item.
 - **Conflict с existing /structure** — не трогать /structure UI, только добавлять cross-link в navigation.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модели `CompanyProfile`, `FunctionalDomain`, `DepartmentDomainLink` в `schema.prisma:3907-4000`.
+- Модуль `backend/src/modules/company-foundation/`: 4 сервиса (`company-profile.service.ts`, `functional-domain.service.ts`, `department-domain-link.service.ts`, `maturity-scorer.service.ts`) + 2 .spec файла.
+- Интерфейс `interfaces/organizational-unit.interface.ts`.
+- 4 cron/worker: `company-profile-builder.cron.ts`, `department-detector.cron.ts`, `domain-expander.cron.ts`, `maturity-scorer.cron.ts` (все в `workers/`).
+- 4 REST controllers: `company.controller.ts`, `domains.controller.ts`, `department-domains.controller.ts`, `maturity.controller.ts`.
+- Seed `backend/scripts/seed-functional-domains.ts` + sub-сервис `functional-domain.seeds.ts`.
+- Patch-script `backend/scripts/patch-migrate-mvs-to-company-profile.ts` (dry-run по умолчанию, idempotent, safe-seed правила).
+- Frontend: `app/(authenticated)/company/`, `/departments/`, `/domains/`, `/maturity/` — все 4 страницы (page.tsx + *Client.tsx).
+- Seed `backend/scripts/seed-llm-task-routes-company-foundation.ts` (3 LlmTaskType: `department-extract`, `domain-expand`, `maturity-rationale`).
+- ENV `DOMAIN_EXPANDER_ENABLED`, `DOMAIN_EXPANDER_MIN_CLUSTER_SIZE`, `DOMAIN_EXPANDER_MAX_NEW_PER_RUN`, `MATURITY_SCORER_ENABLED` в env.schema.ts.

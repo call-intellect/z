@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: β-1 — Telegram/MAX zero-button rip-out + voice/document inbound + intent classification
 phase: beta-1
 date: 2026-05-23
@@ -118,17 +118,17 @@ related:
 
 ## 15. DoD
 
-- [ ] command-handler.service.ts удалён.
-- [ ] inline_keyboard / callback_query / BotCommand типы удалены.
-- [ ] `'command'` type удалён из InboundMessage union.
-- [ ] Voice inbound работает (тест: отправить voice в Telegram → транскрипт в RawEvent).
-- [ ] Document inbound работает (PDF в RawEvent → document.adapter pipeline).
-- [ ] `/start <token>` deep-link работает, голый 6-знач код работает.
-- [ ] Удалены тесты на удалённые feature'ы. Новые тесты добавлены.
-- [ ] `setMyCommands([])` отрабатывает при startup.
-- [ ] typecheck/lint зелёные.
-- [ ] `bunx vitest run` затронутых модулей зелёный.
-- [ ] Документация: `second-brain/01_projects/conversational-channels.md` обновлён; старые ТЗ помечены deprecated/archived.
+- [x] command-handler.service.ts удалён.
+- [x] inline_keyboard / callback_query / BotCommand типы удалены.
+- [x] `'command'` type удалён из InboundMessage union.
+- [x] Voice inbound работает (тест: отправить voice в Telegram → транскрипт в RawEvent).
+- [x] Document inbound работает (PDF в RawEvent → document.adapter pipeline).
+- [x] `/start <token>` deep-link работает, голый 6-знач код работает.
+- [x] Удалены тесты на удалённые feature'ы. Новые тесты добавлены.
+- [x] `setMyCommands([])` отрабатывает при startup.
+- [x] typecheck/lint зелёные.
+- [x] `bunx vitest run` затронутых модулей зелёный.
+- [x] Документация: `second-brain/01_projects/conversational-channels.md` обновлён; старые ТЗ помечены deprecated/archived.
 
 ## 16. Тесты
 
@@ -145,3 +145,15 @@ related:
 - **Document size limit** — 20 MB hard limit per file; если больше — reply «слишком большой файл, загрузи через web».
 - **Schema merge** — нет.
 - **`.next/types/`** — не применимо.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- `command-handler.service.ts` удалён (отсутствует в `backend/src/modules/conversational/`).
+- `telegram-bot.adapter.ts` переписан как zero-button: только `/start <token>` (regex `^/start(?:@\w+)?(?:\s+(\S+))?$/i`) + голый 12-hex код для linking. Handlers `handleVoice` (line 550) и `handleDocument` (line 677) реализованы.
+- `telegram-api-client.ts` — удалён `answerCallbackQuery`, `setMyCommands` оставлен и вызывается с пустым массивом при startup (telegram-bot.adapter.ts:113-142, bulk clear для всех каналов).
+- `max-bot.adapter.ts` — удалены `MaxInlineKeyboardAttachment`, `MaxCallback`, attachments из sendMessage. MAX не имеет setMyCommands (нет menu).
+- Тесты `telegram-bot.adapter.spec.ts`, `telegram-bot-message.handler.spec.ts` обновлены под новые branches (voice/document/start).
+- `SMOKE.md` в обоих adapter-папках с инструкциями верификации.
+- ENV `BOT_VOICE_ENABLED`, `BOT_DOCUMENT_ENABLED`, `BOT_INTENT_CLASSIFIER_ENABLED` в env.schema.ts.

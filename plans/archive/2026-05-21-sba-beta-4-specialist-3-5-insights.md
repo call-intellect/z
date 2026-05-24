@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: SBA β-4 — Specialist 3.5 Insights Radar (повторяющиеся проблемы, риски, блокеры)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -216,20 +216,20 @@ API:
 
 ## 12. Фазы реализации
 
-- [ ] **β-4.1** Prisma-модель `Insight` + enum'ы + HNSW + `bun run prisma:push`.
-- [ ] **β-4.2** Воркер `insight-detector.worker`.
-- [ ] **β-4.3** Cron `insight-clusterer.cron` (frequency + dynamic recalc).
-- [ ] **β-4.4** Промпты `insight-extract.prompt.ts`, `insight-link-to-decisions.prompt.ts` (placeholder + TODO).
-- [ ] **β-4.5** Seed `seed-llm-task-routes-insights.ts` с 3 provider'ами + playbook.
-- [ ] **β-4.6** CurationService.triage интеграция (severity='critical' → deep review).
-- [ ] **β-4.7** Probe-events (4 trigger'а).
-- [ ] **β-4.8** Связывание с Decisions через `IdeaBlockLink relationType='consequences_of'` (если уже есть в графе) + LLM для непокрытых случаев.
-- [ ] **β-4.9** Регистрация в `CardSpecialistRegistry`.
-- [ ] **β-4.10** API + DTO + Swagger (включая chart-data endpoint).
-- [ ] **β-4.11** UI `/insights` master-detail + chart.
-- [ ] **β-4.12** Director Dashboard widget «Топ-5 повторяющихся проблем».
-- [ ] **β-4.13** RBAC: `insight` ResourceType.
-- [ ] **β-4.14** Метрики + glossary + second-brain (новый файл `01_projects/insights.md`).
+- [x] **β-4.1** Prisma-модель `Insight` + enum'ы + HNSW + `bun run prisma:push`.
+- [x] **β-4.2** Воркер `insight-detector.worker`.
+- [x] **β-4.3** Cron `insight-clusterer.cron` (frequency + dynamic recalc).
+- [x] **β-4.4** Промпты `insight-extract.prompt.ts`, `insight-link-to-decisions.prompt.ts` (placeholder + TODO).
+- [x] **β-4.5** Seed `seed-llm-task-routes-insights.ts` с 3 provider'ами + playbook.
+- [x] **β-4.6** CurationService.triage интеграция (severity='critical' → deep review).
+- [x] **β-4.7** Probe-events (4 trigger'а).
+- [x] **β-4.8** Связывание с Decisions через `IdeaBlockLink relationType='consequences_of'` (если уже есть в графе) + LLM для непокрытых случаев.
+- [x] **β-4.9** Регистрация в `CardSpecialistRegistry`.
+- [x] **β-4.10** API + DTO + Swagger (включая chart-data endpoint).
+- [x] **β-4.11** UI `/insights` master-detail + chart.
+- [x] **β-4.12** Director Dashboard widget «Топ-5 повторяющихся проблем».
+- [x] **β-4.13** RBAC: `insight` ResourceType.
+- [x] **β-4.14** Метрики + glossary + second-brain (новый файл `01_projects/insights.md`).
 
 ---
 
@@ -263,3 +263,18 @@ API:
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** компания видит свои повторяющиеся проблемы и риски в реальном времени, директор получает виджет «топ-5 болей» с динамикой.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Модель `Insight` + `causeCategory String?` (доставлено отдельным расширением, 8 категорий, см. коммит 31fd270): `backend/prisma/schema.prisma:4560-4632`.
+- Worker + cron: `backend/src/modules/knowledge-core/workers/specialist-3-5-insights.worker.ts`, `insight-clusterer.cron.ts`.
+- Сервисы: `specialist-3-5-{insights,card-handler,probe}.service.ts` + spec `specialist-3-5-insights.normalize-cause-category.spec.ts`.
+- Промпты: `knowledge-core/prompts/insight-extract.prompt.ts`, `insight-link-to-decisions.prompt.ts`.
+- Seed: `backend/scripts/seed-llm-task-routes-insights.ts`.
+- REST + UI: `backend/src/modules/insights/{controller,service}` + `frontend/app/(authenticated)/insights/page.tsx` + `feed/insights/page.tsx` + Director Dashboard widget.
+- EntityTransitionCron = `ExperimentTransitionsCron` из β-6 (`backend/src/modules/knowledge-core/workers/experiment-transitions.cron.ts:10`).
+
+**Осталось:** —

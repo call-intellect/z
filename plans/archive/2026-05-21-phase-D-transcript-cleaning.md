@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза D — Очистка транскрипта от слов-паразитов и повторов
 date: 2026-05-21
 parent_tz: tz/2026-05-21-competitor-parity.md
@@ -435,3 +435,15 @@ z_transcript_cleaning_llm_cost_usd                # counter
 ## 14. Итог
 
 _TBD после реализации._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Расширение Prisma `Transcript.cleanedS3Url/cleaningStatus/cleaningStats/cleanedAt` + `OrgSettings.transcriptCleaningAuto`.
+- Сервисы: `backend/src/modules/ai/services/transcript-cleaning.service.ts` (детерминистский уровень 1) + `transcript-clean-llm-refine.service.ts` (уровень 2).
+- Воркер: `backend/src/modules/ai/workers/transcript-clean.worker.ts` + `.spec.ts` + `.regression.spec.ts`.
+- Промпт `prompts/transcript-clean-refine.ts`.
+- LLM-route: `backend/scripts/seed-llm-task-routes-phase-D.ts` (3 tier: gpt-5.4-nano/deepseek-flash/ollama).
+- Frontend toggle для cleaned-режима — есть в meeting-result-v2 (через `MeetingResultPageReal`).

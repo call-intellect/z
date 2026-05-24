@@ -1,6 +1,7 @@
 ---
 type: tz
-status: draft
+status: superseded
+supersededBy: plans/tz/2026-05-23-sba-alpha-2-19-signal-types.md
 feature: SBA α-2 — Layer 1 Marking Extension (расширение signalType + reasoning-extractor)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -186,16 +187,16 @@ REASONING_DETECT_CONFIDENCE_THRESHOLD=0.65
 
 ## 12. Фазы реализации
 
-- [ ] **α-2.0** Решить открытый вопрос §13: один проход (расширенный block-ingest) vs два прохода (block-ingest + reasoning-detect).
-- [ ] **α-2.1** Расширение enum `SignalType` +5 значений + `bun run prisma:push`.
-- [ ] **α-2.2** Обновление JSON Schema strict в `block-extraction.service.ts`.
-- [ ] **α-2.3** Обновление промпта `block-ingest.prompt.ts` (placeholder + TODO).
-- [ ] **α-2.4** Обновление seed `seed-llm-task-routes-knowledge-core.ts` — пересмотр цепочки provider'ов с тремя уровнями.
-- [ ] **α-2.5** (если выбран second pass) Новый воркер `reasoning-detect.worker.ts` + cron-инициатор + новый `LlmTaskType` + seed-script.
-- [ ] **α-2.6** (опц.) Patch-script `backfill-reasoning-signaltype.ts` — пробег по существующим блокам, второй проход reasoning-detect.
-- [ ] **α-2.7** Smoke-тест: одна реальная встреча → block-ingest → проверить наличие хотя бы 2 reasoning-блоков (если их в встрече было обсуждение «почему»).
-- [ ] **α-2.8** Обновление [delivery/13-glossary.md](../../delivery/13-glossary.md) — добавить русские термины для 5 новых signalType.
-- [ ] **α-2.9** Обновление [knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md) — раздел про расширение Слоя 1.
+- [x] **α-2.0** Решено: один проход (расширенный block-ingest), без отдельного reasoning-detect воркера.
+- [x] **α-2.1** Расширение enum `SignalType` +5 значений (фактически в коде 19+7 — закрыто преемником).
+- [x] **α-2.2** Обновление JSON Schema strict в `block-extraction.service.ts`.
+- [x] **α-2.3** Обновление промпта `block-ingest.prompt.ts` (SIGNAL_TYPE_VALUES + ENTITY_TYPE_VALUES синхронизированы).
+- [x] **α-2.4** Обновление seed `seed-llm-task-routes-knowledge-core.ts` — три уровня provider'ов.
+- [ ] **α-2.5** (опц., не выбран) Отдельный reasoning-detect воркер — решено не делать.
+- [ ] **α-2.6** (опц., не выбран) Patch-script backfill — решено не делать (новые блоки получают reasoning из коробки).
+- [x] **α-2.7** Smoke на реальных данных — пройден в Wave 2.
+- [x] **α-2.8** Обновление [delivery/13-glossary.md](../../delivery/13-glossary.md).
+- [x] **α-2.9** Обновление [knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md).
 
 ---
 
@@ -231,3 +232,17 @@ REASONING_DETECT_CONFIDENCE_THRESHOLD=0.65
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** появляется типизированный сигнал «обоснование» в атомах, что становится фундаментом для γ-1 (Skill).
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+
+**Реализовано (фактически в коде, и из этого ТЗ, и из преемника):**
+- 5 signalType из исходного scope (`reasoning`, `rationale`, `decision_basis`, `regulation`, `process_step`) добавлены в enum `SignalType` (`backend/prisma/schema.prisma`).
+- 19 дополнительных signalType из wave 2 (`expertise`, `experience`, `competence`, `methodology_step`, `hypothesis`, `result`, `lesson`, `brand_principle`, `content_artifact`, `commitment_status`, `plan_item`, `done_item`, `blocker`, `team_friction`, `process_friction`, `resource_gap`, `suggestion`, `client_request`, `question`) — реализованы преемником.
+- Wave 3 (tracker ingest) добавил ещё 7 signalType (`task_*`).
+- `SIGNAL_TYPE_VALUES` и `ENTITY_TYPE_VALUES` в `backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts` синхронизированы с Prisma enum (CRIT-1 bug-fix закрыт).
+- BlockExtractionService использует расширенный JSON Schema strict.
+
+**Заменён на:** `plans/tz/2026-05-23-sba-alpha-2-19-signal-types.md` — этот документ расширяет первоначальный scope с 5 до 19 (+7 tracker) signalType и закрывает работу.
+

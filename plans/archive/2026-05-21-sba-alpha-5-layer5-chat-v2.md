@@ -1,6 +1,7 @@
 ---
 type: tz
-status: draft
+status: superseded
+supersededBy: plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md
 feature: SBA α-5 — Layer 5 Chat-v2 Omnichannel (AI-чат компании поверх knowledge-core, доступный через все каналы)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -237,21 +238,21 @@ CHAT_V2_DEFAULT_MODE=synthetic
 
 ## 13. Фазы реализации
 
-- [ ] **α-5.0** Ревью существующего `chat/` модуля. Решение: новый модуль или переписать? Рекомендация — новый (см. §11.8 зонтичного открытый вопрос).
-- [ ] **α-5.1** Prisma-модели `ChatV2Conversation`, `ChatV2Message` + enum'ы + `bun run prisma:push`.
-- [ ] **α-5.2** `RetrievalService` — переиспользует существующий `SearchService` + графовый обход + чтение карточек через registry (заготовка registry, регистрации придут от других специалистов).
-- [ ] **α-5.3** `CardSpecialistRegistry` — pluggable интерфейс.
-- [ ] **α-5.4** `CitationService` — сборка citations из `IdeaBlockEvidence`.
-- [ ] **α-5.5** `SynthesisService` — LLM-вызов с тремя provider'ами в цепочке (seed-script `seed-llm-task-routes-chat-v2.ts`).
-- [ ] **α-5.6** Промпт `chat-v2-synthesize.prompt.ts` (placeholder + TODO согласовать).
-- [ ] **α-5.7** Промпт `chat-v2-cite-select.prompt.ts` (placeholder + TODO согласовать).
-- [ ] **α-5.8** `ConversationsService` + хранение history (заголовок генерируется LLM из первого сообщения).
-- [ ] **α-5.9** API + DTO + Swagger.
-- [ ] **α-5.10** UI `/chat` (master-detail conversations) + компонент `<ChatPanel>`.
-- [ ] **α-5.11** Регистрация в `ConversationalService.subscribeInbound('chat_query')`.
-- [ ] **α-5.12** Расширение `ConversationalService.sendChatReply` (или новый метод).
-- [ ] **α-5.13** Метрики, RBAC, glossary, second-brain.
-- [ ] **α-5.14** Пометка старого `chat/` модуля `@deprecated` в README; план миграции — отдельный sub-TZ позже.
+- [x] **α-5.0** Ревью существующего `chat/` модуля. Решение: новый модуль или переписать? Рекомендация — новый (см. §11.8 зонтичного открытый вопрос).
+- [x] **α-5.1** Prisma-модели `ChatV2Conversation`, `ChatV2Message` + enum'ы + `bun run prisma:push`.
+- [x] **α-5.2** `RetrievalService` — переиспользует существующий `SearchService` + графовый обход + чтение карточек через registry (заготовка registry, регистрации придут от других специалистов).
+- [x] **α-5.3** `CardSpecialistRegistry` — pluggable интерфейс.
+- [x] **α-5.4** `CitationService` — сборка citations из `IdeaBlockEvidence`.
+- [x] **α-5.5** `SynthesisService` — LLM-вызов с тремя provider'ами в цепочке (seed-script `seed-llm-task-routes-chat-v2.ts`).
+- [x] **α-5.6** Промпт `chat-v2-synthesize.prompt.ts` (placeholder + TODO согласовать).
+- [x] **α-5.7** Промпт `chat-v2-cite-select.prompt.ts` (placeholder + TODO согласовать).
+- [x] **α-5.8** `ConversationsService` + хранение history (заголовок генерируется LLM из первого сообщения).
+- [x] **α-5.9** API + DTO + Swagger.
+- [x] **α-5.10** UI `/chat` (master-detail conversations) + компонент `<ChatPanel>`.
+- [x] **α-5.11** Регистрация в `ConversationalService.subscribeInbound('chat_query')`.
+- [x] **α-5.12** Расширение `ConversationalService.sendChatReply` (или новый метод).
+- [x] **α-5.13** Метрики, RBAC, glossary, second-brain.
+- [x] **α-5.14** Пометка старого `chat/` модуля `@deprecated` в README; план миграции — отдельный sub-TZ позже.
 
 ---
 
@@ -284,3 +285,24 @@ CHAT_V2_DEFAULT_MODE=synthetic
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** появляется AI-чат компании, доступный через любой канал, с честным цитированием и заделом под clone-style ответы в γ.
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+
+**Реализовано (фактически):**
+- Модуль `backend/src/modules/chat-v2/` (chat-v2.service.ts + chat-v2.module.ts + chat-v2.controller.ts + synthesis.service.ts + conversations.service.ts + card-specialist-registry.service.ts).
+- Модели `ChatV2Conversation` + `ChatV2Message` + `ChatV2ConversationParticipant` в schema.prisma.
+- Mode-specific prompts: `factual.prompt.ts`, `synthetic.prompt.ts`, `clone-style.prompt.ts` (раньше был один base prompt — wave-5 разделил).
+- `CardSpecialistRegistry` с registered card-handlers (issue + project + 3-1/3-2/3-3/3-4/3-5/3-6).
+- `ChatV2CleanupCron` (auto-archive).
+- Полный модуль `backend/src/modules/dialog-layer/`:
+  - `DialogService` (фасад) + `ContextualizerService` + `ConfidenceEstimatorService` + `QueryClassifierService` + `MultiQueryExpansionService` + `ConversationSummarizerCron`.
+  - `AnswerCacheService` (Redis TTL 24h) + `RetrievalCacheService` (Redis TTL 1h) + `CacheInvalidationService`.
+  - Все 5 промптов: `contextualize.prompt.ts`, `confidence.prompt.ts`, `classify.prompt.ts`, `multi-query.prompt.ts`, `summarize.prompt.ts`.
+- Temporal `validAt` filter реализован.
+- Omnichannel bridge через `ChatV2OmnichannelBridge` (subscribeInbound `chat_query`).
+- 5+3 LlmTaskType зарегистрированы.
+
+**Заменён на:** `plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md` — wave 5 закрыл оставшиеся 70% (dialog-layer + cache + temporal + mode prompts), оставив chat-v2 ядро как препроцессор.
+

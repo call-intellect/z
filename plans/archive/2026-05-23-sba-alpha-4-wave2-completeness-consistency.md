@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-4 wave 2 — CompletenessSlot + ConsistencyCheckerCron + расширение CurationDecisionType
 phase: alpha-4
 date: 2026-05-23
@@ -172,13 +172,13 @@ Swagger: документация через `@ApiOperation` + Zod DTO чере�
 
 ## 15. DoD
 
-- [ ] `CompletenessSlot` модель в schema.prisma, `bun run prisma:generate` + `bun run prisma:push` ОК.
-- [ ] `CompletenessScannerCron` работает, заполняет slot'ы для тестовой Regulation/Process.
-- [ ] `ConsistencyCheckerCron` детектит 6 правил, эмитит probe-events.
-- [ ] Endpoint `GET /api/v1/curation/completeness-slots` возвращает данные с фильтрами.
-- [ ] `merge_categories` и `escalate` decision-type работают через POST decide.
-- [ ] UI в `/curation`: колонка/вкладка отображает CompletenessSlot.
-- [ ] `bun run typecheck` + `bun run lint` + `bun run test:unit` зелёные.
+- [x] `CompletenessSlot` модель в schema.prisma, `bun run prisma:generate` + `bun run prisma:push` ОК.
+- [x] `CompletenessScannerCron` работает, заполняет slot'ы для тестовой Regulation/Process.
+- [x] `ConsistencyCheckerCron` детектит 6 правил, эмитит probe-events.
+- [x] Endpoint `GET /api/v1/curation/completeness-slots` возвращает данные с фильтрами.
+- [x] `merge_categories` и `escalate` decision-type работают через POST decide.
+- [x] UI в `/curation`: колонка/вкладка отображает CompletenessSlot.
+- [x] `bun run typecheck` + `bun run lint` + `bun run test:unit` зелёные.
 
 ## 16. Тесты
 
@@ -193,3 +193,14 @@ Swagger: документация через `@ApiOperation` + Zod DTO чере�
 - **Probe-spam** при первом запуске ConsistencyChecker — Redis SETNX dedup TTL 4ч уже описан; дополнительно — soft-cap «не более 50 probe в час на тенант».
 - **Schema-конфликт** с другими wave-3 sub-ТЗ — кодер сначала проверяет, что enum `CurationDecisionType` ещё не содержит новых значений.
 - **Frontend `.next/types/` кэш** — после правки страницы `/curation` запустить `Remove-Item -Recurse -Force .next\types` (PowerShell, Windows).
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `CompletenessSlot` в `backend/prisma/schema.prisma:2840` с `@@unique([tenantId, parentCardType, parentCardId, slotName])` и индексами.
+- `enum CurationDecisionType` (schema.prisma:432-442) расширен `merge_categories` + `escalate`.
+- 2 cron'а: `backend/src/modules/curation/workers/completeness-scanner.cron.ts` (SLOT_DEFINITIONS внутри) и `consistency-checker.cron.ts` (6 правил).
+- Endpoint `GET /api/v1/curation/completeness-slots` — отдельный `completeness.controller.ts` рядом с `curation.controller.ts`.
+- `merge_categories`/`escalate` обрабатываются в `curation.service.ts` через `decide()`.
+- ENV `COMPLETENESS_SCANNER_ENABLED`, `CONSISTENCY_CHECKER_ENABLED`, `CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS` в env.schema.ts.

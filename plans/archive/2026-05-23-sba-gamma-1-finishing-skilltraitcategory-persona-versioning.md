@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: γ-1 доделки — SkillTraitCategory модель + гибрид-версионирование ExecutablePersona
 phase: gamma-1
 date: 2026-05-23
@@ -163,13 +163,13 @@ model SkillTrait {
 
 ## 15. DoD
 
-- [ ] SkillTraitCategory модель + миграция legacy category строк.
-- [ ] Merge endpoint + integration с CurationService.decide(merge_categories).
-- [ ] Triggered build для ExecutablePersona при threshold/critical.
-- [ ] Weekly cron работает.
-- [ ] Метрики в /metrics.
-- [ ] `bun run typecheck` + `bun run lint` + `bunx vitest run` зелёные.
-- [ ] Patch-script запущен на test-data, идемпотентен.
+- [x] SkillTraitCategory модель + миграция legacy category строк.
+- [x] Merge endpoint + integration с CurationService.decide(merge_categories).
+- [x] Triggered build для ExecutablePersona при threshold/critical.
+- [x] Weekly cron работает.
+- [x] Метрики в /metrics.
+- [x] `bun run typecheck` + `bun run lint` + `bunx vitest run` зелёные.
+- [x] Patch-script запущен на test-data, идемпотентен.
 
 ## 16. Тесты
 
@@ -185,3 +185,14 @@ model SkillTrait {
 - **Patch-script на больших tenant'ах** — обработка батчами по 100 traits.
 - **Schema merge с другими wave-3 sub-ТЗ** — изменяем только SkillTrait+новый SkillTraitCategory, не пересекаются с другими.
 - **`.next/types/` кэш** — Remove-Item после frontend правок.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `SkillTraitCategory` (schema.prisma:5725) + FK `SkillTrait.categoryId` (legacy `category` string помечен deprecated).
+- `SkillTraitCategoriesService` + контроллер `skill-trait-categories.controller.ts` в `backend/src/modules/skills/` (с merge endpoint + интеграция в CurationService.decide).
+- `ExecutablePersonaVersioningService` (`backend/src/modules/knowledge-core/services/`).
+- Cron `executable-persona-trigger-watcher.cron.ts` (15-min, threshold ≥3 + critical) + spec.
+- Patch script: `backend/scripts/patch-skill-trait-categories-from-strings.ts`.
+- CurationService.decide расширен на `merge_categories` (см. CurationService grep).

@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 phase: 8
 feature: дашборд директора (owner-вид) — срез знаний компании за период с виджетами и AI-чатом
 date: 2026-05-10
@@ -408,12 +408,26 @@ export const dashboardApi = {
 
 ## Итог (заполняется агентом)
 
-- [ ] Шаг 1 — модуль + сервис + контроллер.
-- [ ] Шаг 2 — narrativeSummary LLM.
-- [ ] Шаг 3 — frontend domain + api.
-- [ ] Шаг 4 — split + DirectorDashboardClient.
-- [ ] Шаг 5 — OrgChatPanel общий компонент.
+- [x] Шаг 1 — модуль + сервис + контроллер.
+- [x] Шаг 2 — narrativeSummary LLM.
+- [x] Шаг 3 — frontend domain + api.
+- [x] Шаг 4 — split + DirectorDashboardClient.
+- [x] Шаг 5 — OrgChatPanel общий компонент.
 - [ ] Шаг 6 — документация + execution-план.
 - [ ] Создан `phase-8-execution.md` со `status: completed`.
 - [ ] Обновлён `decisions-log.md`.
 - [ ] Обновлён `second-brain/`.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Модуль `backend/src/modules/dashboard/`: `dashboard.module.ts`, `services/director-dashboard.service.ts`, `director-dashboard.controller.ts`, `dto/director-dashboard.dto.ts`, `prompts/dashboard-summary.prompt.ts`.
+- Frontend split логика: `frontend/app/(authenticated)/dashboard/page.tsx` + `DashboardRouter.tsx` → `DashboardClient.tsx` (manager) или `DirectorDashboardClient.tsx` (owner).
+- Виджеты дашборда расширены: `widgets/{StrategicAlignmentWidget,QualityScoreWidget,InsightsTopWidget,CurationPendingWidget,StructureSummaryWidget,IntroWizardWidget}.tsx` — больше чем 5 базовых из ТЗ.
+- `RbacService.canViewDirectorDashboard` — реализован.
+- COO Operations Dashboard в `dashboard/operations/` (β-8 расширение).
+- `strategicAlignment` блок интегрирован (через Phase 9).
+
+**Осталось:** только документация (execution-план, decisions-log, second-brain).

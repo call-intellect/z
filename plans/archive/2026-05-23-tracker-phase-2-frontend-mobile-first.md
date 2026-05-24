@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Таск-трекер Z/Кора — Фаза 2 — Frontend mobile-first + концьерж (плавающий значок + опц. Cmd+K) + чат-в-задаче + PWA
 date: 2026-05-23
 phase: 2 / 6
@@ -319,20 +319,20 @@ app/
 
 ## DoD
 
-- [ ] Все ~20 страниц созданы, открываются, проходят typecheck/lint/build (`bun run typecheck` + `bun run lint` + `bun run build`)
-- [ ] Mobile-first: все страницы корректно отображаются на ширине 320px-2560px
-- [ ] Bottom navigation работает на ≤md
-- [ ] FAB «+ Задача» работает на мобиле
-- [ ] Swipe-actions на карточках задач (mark_done / snooze)
-- [ ] Плавающий значок «Кора-помощник» виден на каждой странице (desktop) + вкладка в bottom nav (mobile), AI-парсинг через `concierge-parse` LLM
-- [ ] _(опц.)_ Cmd+K (Ctrl+K) на десктопе открывает то же окно — не блокирует MVP
-- [ ] Inline-создание задачи по Enter в столбце доски + AI-парсинг даты/исполнителя
-- [ ] Чат-в-задаче работает: текст + голос (с ASR) + упоминания + файлы + WebSocket realtime
-- [ ] Видеовстреча из задачи: кнопка → LiveKit-комната → после AI-отчёт в чате задачи
-- [ ] PWA manifest + service worker + offline-кэш + web push установлены
-- [ ] Все строки на русском, без английских терминов
-- [ ] Виджеты лент встроены на ключевых дашбордах
-- [ ] Все мутации — без модалок, через inline / drawer / toast с отменой
+- [x] Все ~20 страниц созданы, открываются, проходят typecheck/lint/build (`bun run typecheck` + `bun run lint` + `bun run build`)
+- [x] Mobile-first: все страницы корректно отображаются на ширине 320px-2560px
+- [x] Bottom navigation работает на ≤md
+- [x] FAB «+ Задача» работает на мобиле
+- [x] Swipe-actions на карточках задач (mark_done / snooze)
+- [x] Плавающий значок «Кора-помощник» виден на каждой странице (desktop) + вкладка в bottom nav (mobile), AI-парсинг через `concierge-parse` LLM
+- [x] _(опц.)_ Cmd+K (Ctrl+K) на десктопе открывает то же окно — не блокирует MVP
+- [x] Inline-создание задачи по Enter в столбце доски + AI-парсинг даты/исполнителя
+- [x] Чат-в-задаче работает: текст + голос (с ASR) + упоминания + файлы + WebSocket realtime
+- [x] Видеовстреча из задачи: кнопка → LiveKit-комната → после AI-отчёт в чате задачи
+- [x] PWA manifest + service worker + offline-кэш + web push установлены
+- [x] Все строки на русском, без английских терминов
+- [x] Виджеты лент встроены на ключевых дашбордах
+- [x] Все мутации — без модалок, через inline / drawer / toast с отменой
 - [ ] E2E-тесты (Playwright): создание проекта, создание задачи, чат, видеовстреча, концьерж через плавающий значок
 
 ## Срок
@@ -346,3 +346,22 @@ app/
 ---
 
 _2026-05-23: фронтенд трекера mobile-first, чат-в-задаче, концьерж (плавающий значок + опц. Cmd+K), PWA._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- ~20 страниц в `frontend/app/(authenticated)/projects/*`, `/issues/[id]`, `/me/inbox`, `/intake`, `/feed` (Board/List/Calendar/Gantt/Cycles/Settings + FromTemplateWizard).
+- Канбан-доска с DnD (`@dnd-kit/*`), inline QuickAdd, swipe-actions, FAB; компоненты в `frontend/src/ui/tracker/*` (Board, IssueCard, IssueDetail, KnnSimilar и др.).
+- Концьерж: плавающий значок `frontend/src/ui/concierge/ConciergeFloatingButton.tsx`, bottom-nav вкладка, голосовой ввод `ConciergeVoice.tsx`, `concierge-parse` LLM-парсер на backend.
+- Cmd+K palette: `frontend/src/ui/components/command-palette/{CommandPaletteProvider,Trigger,CommandPalette}.tsx` с двумя каналами `>` (action) / `?` (chat-v2 ask), Recent/Pinned, голос.
+- IssueChat: `frontend/src/ui/tracker/IssueChat.tsx` через chat-v2 (scope='card' fallback) + голос через `voiceApi.transcribe` (ASR Vox/GigaAM) + TTS.
+- Видеовстреча из задачи: `IssueMeetingsService` + `start-meeting` endpoint + LiveKit JWT + `<LivekitMeetingRoom>`.
+- PWA: `frontend/app/manifest.ts` + `frontend/public/sw.js` + web-push module `backend/src/modules/push/*` (PushSubscription, VAPID, RFC 8030 failure handling, BullMQ sender).
+- Локализация — все строки на русском, словарь применён.
+- WebSocket live-refresh через `useTrackerWebSocket` (socket.io-client) — 12 типов событий.
+
+**Осталось:**
+- E2E-тесты Playwright по 5 сценариям (создание проекта/задачи, чат, видеовстреча, концьерж) — не написаны.
+
+**Коммиты:** 7c036b0, f0d0bd5, 26da6fe, a85815e, 8c1088a, 788ede0, 60def77.

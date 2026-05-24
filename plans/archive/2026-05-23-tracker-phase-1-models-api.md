@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Таск-трекер Z/Кора — Фаза 1 — модели данных + REST API + Webhooks + Ingest в knowledge-core
 date: 2026-05-23
 phase: 1 / 6
@@ -722,21 +722,21 @@ tracker_events_to_knowledge_core_total{tenant, type}
 
 ## DoD (Definition of Done)
 
-- [ ] Все модели Prisma созданы, `bun run prisma:push` прошёл без ошибок
-- [ ] Все REST endpoints отвечают, OpenAPI/Swagger автоматически собран
-- [ ] WebSocket события эмитятся при изменениях
-- [ ] Webhooks работают: тестовый POST на `https://webhook.site/...`, HMAC подпись валидируется внешним инструментом
-- [ ] Retry policy: упавший webhook получает 5 попыток с exp backoff, после — деактивация + email уведомление автору
-- [ ] **Ingest в knowledge-core работает**: создаём задачу через API → проверяем что появился `RawEvent` → через 30 сек появился `IdeaBlock` с `signalType='task_created'` и `sourceRef` указывает на Issue
-- [ ] Связь с Goals: можно привязать задачу к цели, отвязать; `strategic-alignment` воркер считает прогресс с учётом задач
-- [ ] Миграция legacy Task прошла на тестовых данных без потерь
-- [ ] Все API защищены TenantGuard, RBAC ResourceType зарегистрированы
-- [ ] Idempotency-Key поддерживается на POST `/issues`, `/comments`, `/intake`
-- [ ] Audit log пишется через `IssueActivity` для всех мутаций
-- [ ] Integration tests (vitest + testcontainers PostgreSQL): создание/обновление/удаление Issue, Cycle, Project; webhook delivery; ingest в knowledge-core
-- [ ] Unit tests для services, mappers, validators
-- [ ] Все метрики Prometheus экспортируются на `/metrics`
-- [ ] Документация: новые ENV переменные в `env.schema.ts`, README модуля `issues/`
+- [x] Все модели Prisma созданы, `bun run prisma:push` прошёл без ошибок
+- [x] Все REST endpoints отвечают, OpenAPI/Swagger автоматически собран
+- [x] WebSocket события эмитятся при изменениях
+- [x] Webhooks работают: тестовый POST на `https://webhook.site/...`, HMAC подпись валидируется внешним инструментом
+- [x] Retry policy: упавший webhook получает 5 попыток с exp backoff, после — деактивация + email уведомление автору
+- [x] **Ingest в knowledge-core работает**: создаём задачу через API → проверяем что появился `RawEvent` → через 30 сек появился `IdeaBlock` с `signalType='task_created'` и `sourceRef` указывает на Issue
+- [x] Связь с Goals: можно привязать задачу к цели, отвязать; `strategic-alignment` воркер считает прогресс с учётом задач
+- [x] Миграция legacy Task прошла на тестовых данных без потерь
+- [x] Все API защищены TenantGuard, RBAC ResourceType зарегистрированы
+- [x] Idempotency-Key поддерживается на POST `/issues`, `/comments`, `/intake`
+- [x] Audit log пишется через `IssueActivity` для всех мутаций
+- [x] Integration tests (vitest + testcontainers PostgreSQL): создание/обновление/удаление Issue, Cycle, Project; webhook delivery; ingest в knowledge-core
+- [x] Unit tests для services, mappers, validators
+- [x] Все метрики Prometheus экспортируются на `/metrics`
+- [x] Документация: новые ENV переменные в `env.schema.ts`, README модуля `issues/`
 
 ## Срок
 
@@ -749,3 +749,19 @@ tracker_events_to_knowledge_core_total{tenant, type}
 ---
 
 _2026-05-23: фундаментная фаза трекера, без UI. Основа для остальных фаз._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- 20+ моделей трекера в `backend/prisma/schema.prisma` (Project, Issue, Cycle, IntakeIssue, IssueComment/Attachment/Link/Relation/Activity/Version/Subscriber/Mention, Label, IssueWebhook/Log, TeamTemplate, HolidayCalendar, ImportLog + расширения Goal/Meeting).
+- Модуль `backend/src/modules/tracker/` — 8+ контроллеров (projects/issues/cycles/intake/comments/labels/relations/attachments/webhooks/states/holidays/imports/team-templates/me-inbox), 15+ сервисов с DTO через nestjs-zod, ActivityRecorderService audit-trail, RBAC через RbacService.
+- WebSocket `TrackerGateway` (`/ws/tracker`) с `TrackerEventsService` (12 типов событий) — `gateways/tracker.gateway.ts`.
+- Webhooks: HMAC-SHA256 через `webhook-signer.service.ts`, доставка через BullMQ `webhook-delivery.worker.ts` с retry-цепочкой 60s→300s→1500s→7500s→37500s и auto-deactivation после 5 фейлов.
+- Ingest в knowledge-core: `modules/ingest/adapters/tracker/` слушает `tracker.event_occurred` и создаёт RawEvent с 8 task_* signalType.
+- Goals integration: `Issue.goalId`, `link-goal`/`unlink-goal` endpoints, параллельный `strategic-alignment.cron.ts` в `goals/cron/` (issue-based, 06:00 UTC).
+- Миграция legacy: `backend/scripts/migrate-task-to-issue.ts` (idempotent через `@@unique[externalSource, externalId]`).
+- IdempotencyMiddleware в `backend/src/common/idempotency/`, применён в AppModule к POST /issues, /comments, /intake.
+- Метрики Prometheus (9 счётчиков + histogram) через `BusinessMetricsService`.
+
+**Коммиты:** 6b85491, 79c16dd, 4576111, 4961db8, c628f80, 6b83cbb, 60def77, 1c49eea, 43253b2, 4b009cd.

@@ -1,7 +1,7 @@
 ---
 type: tz
 phase: alpha-3
-status: planned
+status: superseded
 related:
   - plans/analysis/2026-05-22-code-reality-deltas.md §α-3 п.2,3
   - plans/analysis/2026-05-22-unified-product-architecture.md (4 оси знания)
@@ -79,3 +79,8 @@ Wave 1+2 — это «backward-compat и фундамент». Существу�
 - γ-2 Concierge — требует AxisClassifier для query «найди всё про X на оси Y».
 - δ-1 Orchestrator — требует AxisClassifier для cross-axis joins.
 - Любая фаза, добавляющая >5 новых signalType без статического mapping — должна включить LLM-fallback feature-флагом.
+
+## Ревизия от 2026-05-24
+
+**Статус:** superseded
+**Заменён на:** `plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md` — расширенная версия (full) выпущена в тот же день, содержит подробные §1-17 (data model, ENV, метрики, тесты, риски). Этот сокращённый файл — ранний черновик scope-секции, который был развёрнут в полное ТЗ. Реализация выполнена по `-full.md` (см. ревизию там).

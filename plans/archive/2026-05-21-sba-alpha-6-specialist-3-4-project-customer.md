@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: SBA α-6 — Specialist 3.4 (Project/Customer Context) — эталонный референс контракта специалиста
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -239,20 +239,20 @@ CARD_ROLLUP_V2_DEBOUNCE_MS=60000   # уже есть
 
 ## 11. Фазы реализации
 
-- [ ] **α-6.0** Ревью существующего `card-rollup-v2.worker.ts` — понять, что переиспользуется, что меняется.
-- [ ] **α-6.1** Подключение к `core.specialist-routing` очереди (jobName '3-4-project-customer').
-- [ ] **α-6.2** Расширение `Card` моделей полями: `sourceBlockIds[]`, `confidence`, `currentVersionId?`, `personSubjectIds[]` + `bun run prisma:push`.
-- [ ] **α-6.3** Интеграция с `CurationService.triage()` перед канонизацией.
-- [ ] **α-6.4** Интеграция с `ConflictService.report()` для card-level conflicts.
-- [ ] **α-6.5** Probe-events: реализация 4 trigger'ов из §5.
-- [ ] **α-6.6** Регистрация в `CardSpecialistRegistry` (для chat-v2).
-- [ ] **α-6.7** Обновление промптов `card-rollup-v2-*.prompt.ts` (5 файлов, placeholder + TODO).
-- [ ] **α-6.8** Добавление нового промпта `card-rollup-v2-vendor.prompt.ts`.
-- [ ] **α-6.9** Обновление seed `seed-llm-task-routes-knowledge-core.ts` — три уровня provider'ов для `card-rollup-v2`.
-- [ ] **α-6.10** Переименование метрик `core_card_rollup_*` → `core_specialist_*{type='card'}`.
-- [ ] **α-6.11** UI: на странице `/cards/:id` интегрировать `<CurationBanner>` для pending state.
-- [ ] **α-6.12** Smoke на реальной встрече: блок → роутер → 3.4 → rollup → CardVersion (если auto) или CurationItem (если pending).
-- [ ] **α-6.13** Глоссарий + second-brain (обновить [knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md) — описать что 3.4 теперь специалист по §5).
+- [x] **α-6.0** Ревью существующего `card-rollup-v2.worker.ts` — понять, что переиспользуется, что меняется.
+- [x] **α-6.1** Подключение к `core.specialist-routing` очереди (jobName '3-4-project-customer').
+- [x] **α-6.2** Расширение `Card` моделей полями: `sourceBlockIds[]`, `confidence`, `currentVersionId?`, `personSubjectIds[]` + `bun run prisma:push`.
+- [x] **α-6.3** Интеграция с `CurationService.triage()` перед канонизацией.
+- [x] **α-6.4** Интеграция с `ConflictService.report()` для card-level conflicts.
+- [x] **α-6.5** Probe-events: реализация 4 trigger'ов из §5.
+- [x] **α-6.6** Регистрация в `CardSpecialistRegistry` (для chat-v2).
+- [x] **α-6.7** Обновление промптов `card-rollup-v2-*.prompt.ts` (5 файлов, placeholder + TODO).
+- [x] **α-6.8** Добавление нового промпта `card-rollup-v2-vendor.prompt.ts`.
+- [x] **α-6.9** Обновление seed `seed-llm-task-routes-knowledge-core.ts` — три уровня provider'ов для `card-rollup-v2`.
+- [x] **α-6.10** Переименование метрик `core_card_rollup_*` → `core_specialist_*{type='card'}`.
+- [x] **α-6.11** UI: на странице `/cards/:id` интегрировать `<CurationBanner>` для pending state.
+- [x] **α-6.12** Smoke на реальной встрече: блок → роутер → 3.4 → rollup → CardVersion (если auto) или CurationItem (если pending).
+- [x] **α-6.13** Глоссарий + second-brain (обновить [knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md) — описать что 3.4 теперь специалист по §5).
 
 ---
 
@@ -288,3 +288,22 @@ CARD_ROLLUP_V2_DEBOUNCE_MS=60000   # уже есть
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** существующий механизм card-rollup приведён к единому контракту, становится reference-имплементацией для остальных 6 специалистов Слоя 3.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- `backend/src/modules/knowledge-core/services/card-rollup-v2.service.ts` — эталон §5 контракта.
+- `backend/src/modules/knowledge-core/services/specialist-3-4-card-handler.service.ts` + `specialist-3-4-probe.service.ts`.
+- Worker `specialist-3-4-project-customer.worker.ts` подключён к `core.specialist-routing` очереди (jobName '3-4-project-customer').
+- `Card` модель расширена `sourceBlockIds[]`, `confidence`, `currentVersionId`, `personSubjectIds[]`, `lastConfirmedAt` (`backend/prisma/schema.prisma:1802-1809`).
+- `Card.kind='vendor'` добавлен; миграция `Card.kind='custom'` → `topic` через patch-script.
+- Интеграция с `CurationService.triage()` + `ConflictService.report()`.
+- 4 probe-trigger из §5 (missing_owner, missing_deadline, merge_suggestion, outdated_summary).
+- Регистрация в `CardSpecialistRegistry` для chat-v2 (`backend/src/modules/chat-v2/specialists/project-card-handler.service.ts`).
+- Метрики `core_specialist_*{type='card'}`.
+- 5 промптов `card-rollup-v2-{client,deal,project,topic,vendor}.prompt.ts`.
+
+Этот ТЗ — reference-имплементация для остальных специалистов (3-1, 3-2, 3-3, 3-5, 3-6, 3-7, 3-9), все из них работают по §5 контракту.
+

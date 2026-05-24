@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: SBA γ-1 — Specialist 3.7 SkillProfile + ExecutablePersona + Clone API + try-my-clone UI
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -337,27 +337,27 @@ Seed `seed-llm-task-routes-skill-and-clone.ts` со ссылкой на playbook
 
 ## 14. Фазы реализации
 
-- [ ] **γ-1.0** Прочитать §3.4 зонтичного целиком всей командой. Согласовать концепцию.
-- [ ] **γ-1.1** Prisma-модели `SkillProfile`, `SkillTrait`, `ExecutablePersona` + enum'ы + HNSW + `bun run prisma:push`.
-- [ ] **γ-1.2** Воркер `skill-trait-detector.worker` + два process handler'а (route + rebuild).
-- [ ] **γ-1.3** Cron `skill-profile-recalibrate.cron` (daily decay).
-- [ ] **γ-1.4** Cron `executable-persona-build.cron` (weekly snapshots, person + role).
-- [ ] **γ-1.5** 4 промпта placeholder + TODO. `skill-trait-detect` — особо тщательно прописать инструкцию про гипотезные формулировки и эмерджентные категории.
-- [ ] **γ-1.6** Seed `seed-llm-task-routes-skill-and-clone.ts` с 3 provider'ами для каждого + комментарии playbook.
-- [ ] **γ-1.7** CurationService интеграция — не pre-approval, но `mark_as_misleading` через CurationDecision.
-- [ ] **γ-1.8** Probe-events (2 trigger'а).
-- [ ] **γ-1.9** Clone API `POST /clones/persons/:id/ask` + `POST /clones/roles/:id/ask`.
-- [ ] **γ-1.10** Расширение chat-v2 mode `clone-style` (вызов clonesService).
-- [ ] **γ-1.11** UI `/me/clone` (обязательно для DoD).
-- [ ] **γ-1.12** UI `/persons/:id/skill-profile` (manager).
-- [ ] **γ-1.13** UI `/roles/:id/skill-profile` (агрегат).
-- [ ] **γ-1.14** Manager weekly digest через ConversationalService.
-- [ ] **γ-1.15** Жизненный цикл: hook на `Person.relationship` смене → SkillProfile.status='archived'.
-- [ ] **γ-1.16** RBAC: `skill_profile`, `clone_persona`.
-- [ ] **γ-1.17** Метрики `skill_*`, `persona_*`, `clone_*`.
-- [ ] **γ-1.18** Глоссарий UI: «клон», «попробовать клона», «навыковый профиль» (для manager).
-- [ ] **γ-1.19** second-brain: новый файл `01_projects/skill-and-clone.md` + обновление `06_marketing/positioning.md` (Employee Clones теперь есть).
-- [ ] **γ-1.20** Финальный smoke на 3 dev-сотрудниках с разным объёмом данных:
+- [x] **γ-1.0** Прочитать §3.4 зонтичного целиком всей командой. Согласовать концепцию.
+- [x] **γ-1.1** Prisma-модели `SkillProfile`, `SkillTrait`, `ExecutablePersona` + enum'ы + HNSW + `bun run prisma:push`.
+- [x] **γ-1.2** Воркер `skill-trait-detector.worker` + два process handler'а (route + rebuild).
+- [x] **γ-1.3** Cron `skill-profile-recalibrate.cron` (daily decay).
+- [x] **γ-1.4** Cron `executable-persona-build.cron` (weekly snapshots, person + role).
+- [x] **γ-1.5** 4 промпта placeholder + TODO. `skill-trait-detect` — особо тщательно прописать инструкцию про гипотезные формулировки и эмерджентные категории.
+- [x] **γ-1.6** Seed `seed-llm-task-routes-skill-and-clone.ts` с 3 provider'ами для каждого + комментарии playbook.
+- [x] **γ-1.7** CurationService интеграция — не pre-approval, но `mark_as_misleading` через CurationDecision.
+- [x] **γ-1.8** Probe-events (2 trigger'а).
+- [x] **γ-1.9** Clone API `POST /clones/persons/:id/ask` + `POST /clones/roles/:id/ask`.
+- [x] **γ-1.10** Расширение chat-v2 mode `clone-style` (вызов clonesService).
+- [x] **γ-1.11** UI `/me/clone` (обязательно для DoD).
+- [x] **γ-1.12** UI `/persons/:id/skill-profile` (manager).
+- [x] **γ-1.13** UI `/roles/:id/skill-profile` (агрегат).
+- [x] **γ-1.14** Manager weekly digest через ConversationalService.
+- [x] **γ-1.15** Жизненный цикл: hook на `Person.relationship` смене → SkillProfile.status='archived'.
+- [x] **γ-1.16** RBAC: `skill_profile`, `clone_persona`.
+- [x] **γ-1.17** Метрики `skill_*`, `persona_*`, `clone_*`.
+- [x] **γ-1.18** Глоссарий UI: «клон», «попробовать клона», «навыковый профиль» (для manager).
+- [x] **γ-1.19** second-brain: новый файл `01_projects/skill-and-clone.md` + обновление `06_marketing/positioning.md` (Employee Clones теперь есть).
+- [x] **γ-1.20** Финальный smoke на 3 dev-сотрудниках с разным объёмом данных:
   - Сотрудник с 100+ reasoning-блоков → ожидаем 5-10 trait категорий
   - Сотрудник с 10 reasoning-блоков → 0-2 категории (или вообще без профиля если <5)
   - Новый сотрудник без reasoning → нет профиля
@@ -403,3 +403,22 @@ Seed `seed-llm-task-routes-skill-and-clone.ts` со ссылкой на playbook
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** появляются полноценные клоны сотрудников — главная маркетинговая ценность «memory layer для команды». Знания компании остаются после ухода ключевых людей.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Модели `SkillProfile`, `SkillTrait`, `ExecutablePersona`, `SkillTraitCategory` (доделки γ-1): `backend/prisma/schema.prisma:5648,5673,5755,5725`. `SkillTrait.categoryId` FK с гибрид-режимом (legacy `category` оставлен @deprecated).
+- Worker + cron: `backend/src/modules/knowledge-core/workers/specialist-3-7-skill.worker.ts`, `skill-profile-rebuild.worker.ts`, `skill-profile-recalibrate.cron.ts`, `executable-persona-build.cron.ts` + триггер-watcher `executable-persona-trigger-watcher.cron.ts` (внеочередной rebuild по threshold + critical, каждые 15 мин).
+- Сервисы: `specialist-3-7-skill.service.ts`, `specialist-3-7-skill-probe.service.ts`, `executable-persona-build.service.ts`, `executable-persona-versioning.service.ts`.
+- Промпты: `skill-trait-detect`, `skill-trait-merge`, `executable-persona-compile`, `clone-respond`.
+- Seed: `backend/scripts/seed-llm-task-routes-skill-and-clone.ts`.
+- Patch: `backend/scripts/patch-skill-trait-categories-from-strings.ts` (миграция legacy string→FK).
+- Clone API: `backend/src/modules/clones/clones.controller.ts` (askPerson, askRole) + `clones/services/clones.service.ts` (RBAC, on-demand persona build, ChatV2Conversation log с mode='clone_style').
+- chat-v2 интеграция: `backend/src/modules/chat-v2/services/synthesis.service.ts:98-139` — mode='clone_style' + scope='card' → вызов ClonesService.askPerson + fallback на synthetic.
+- UI: `frontend/app/(authenticated)/me/clone/page.tsx`, `persons/[id]/skill-profile/page.tsx`, `roles/[id]/skill-profile/page.tsx`.
+- Skill-trait-categories админка: `backend/src/modules/skills/skill-trait-categories.controller.ts` + service + spec.
+
+**Осталось:** —
+**Заменён на:** доделки git диффом в `plans/tz/2026-05-23-sba-gamma-1-finishing-skilltraitcategory-persona-versioning.md` (SkillTraitCategory + гибрид-версионирование) — закрыты в одной сессии, основа + доделки выполнены целиком.

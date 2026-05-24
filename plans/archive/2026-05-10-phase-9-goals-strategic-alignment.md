@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 phase: 9
 feature: Цели компании (Goal) + стратегический согласователь — индикатор «движемся ли к цели»
 date: 2026-05-10
@@ -574,15 +574,31 @@ goalLinks  GoalTheme[]
 
 ## Итог (заполняется агентом)
 
-- [ ] Шаг 1 — schema + db push.
-- [ ] Шаг 2 — RBAC + Quota.
-- [ ] Шаг 3 — модуль goals (CRUD).
-- [ ] Шаг 4 — strategic-alignment worker + cron + prompt.
-- [ ] Шаг 5 — recompute endpoint.
-- [ ] Шаг 6 — DirectorDashboardService.strategicAlignment.
-- [ ] Шаг 7 — frontend /goals.
-- [ ] Шаг 8 — frontend /goals/[id] + дашборд индикатор.
+- [x] Шаг 1 — schema + db push.
+- [x] Шаг 2 — RBAC + Quota.
+- [x] Шаг 3 — модуль goals (CRUD).
+- [x] Шаг 4 — strategic-alignment worker + cron + prompt.
+- [x] Шаг 5 — recompute endpoint.
+- [x] Шаг 6 — DirectorDashboardService.strategicAlignment.
+- [x] Шаг 7 — frontend /goals.
+- [x] Шаг 8 — frontend /goals/[id] + дашборд индикатор.
 - [ ] Шаг 9 — документация + execution-план.
 - [ ] Создан `phase-9-execution.md` со `status: completed`.
 - [ ] Обновлён `decisions-log.md`.
 - [ ] Обновлён `second-brain/`.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Prisma-модели: `Goal` (schema.prisma:3081), `GoalTheme` (:3141), `GoalAlignmentSnapshot` (:3159) + enum'ы `GoalStatus`, `GoalThemeSource`, расширение `Org.strategicAlignmentWindowDays`.
+- Модуль `backend/src/modules/goals/`: `goals.module.ts`, `services/goals.service.ts`, `services/strategic-alignment-issues.service.ts`, `goals.controller.ts`, `dto/goals.dto.ts`, `cron/strategic-alignment.cron.ts`.
+- Воркер + cron: `backend/src/modules/knowledge-core/workers/strategic-alignment.worker.ts` + `.cron.ts` + промпт `prompts/goal-alignment.prompt.ts`.
+- Очередь `core.strategic-alignment` + `enqueueStrategicAlignment` в `core-queue.service.ts`.
+- `DirectorDashboardService.strategicAlignment` блок реализован (`backend/src/modules/dashboard/services/director-dashboard.service.ts`).
+- Frontend: `frontend/app/(authenticated)/goals/{page,GoalsClient,[id]/page,[id]/GoalDetailClient}.tsx`.
+- Дашборд-виджет: `frontend/app/(authenticated)/dashboard/widgets/StrategicAlignmentWidget.tsx`.
+- Дополнительно (за рамками ТЗ): `tracker/workers/goal-alignment-low.cron.ts` — alert по low alignment в трекере.
+
+**Осталось:** только документация и `phase-9-execution.md`.

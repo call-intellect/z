@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: partial
 feature: δ-3 — VoiceChannelAdapter (voice inbound через все каналы → ASR → текст; outbound через TTS → mp3)
 phase: delta-3
 date: 2026-05-23
@@ -96,11 +96,11 @@ ASR (Vox+GigaAM) уже работает для встреч. β-1 добави�
 
 ## 15. DoD
 
-- [ ] VoiceChannelAdapter сервис.
-- [ ] TTS service + REST endpoints.
-- [ ] Concierge voice WS работает.
-- [ ] Метрики.
-- [ ] typecheck/lint/tests.
+- [x] VoiceChannelAdapter сервис.
+- [x] TTS service + REST endpoints.
+- [ ] Concierge voice WS работает.  <!-- REST /voice/transcribe + /synthesize реализованы; WebSocket для concierge не вписан (см. shipping-report TODO #6) -->
+- [x] Метрики.
+- [x] typecheck/lint/tests.
 
 ## 16. Тесты
 
@@ -113,3 +113,17 @@ ASR (Vox+GigaAM) уже работает для встреч. β-1 добави�
 - **TTS cost** — short messages only (<500 chars), reject longer.
 - **WS connection drops** — auto-reconnect client.
 - **`.next/types/`** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** partial
+**Реализовано:**
+- `VoiceModule` (`backend/src/modules/voice/`): `VoiceChannelAdapter`, `TtsService` (OpenAI primary), `VoiceController` с `/voice/transcribe` + `/voice/synthesize`.
+- Spec'и: `tts.service.spec.ts` + `voice-channel-adapter.service.spec.ts`.
+- Frontend: `voice.api.ts` + `ConciergeVoice.tsx` (MediaRecorder с серверным ASR через voiceApi.transcribe — file upload паттерн, не WS).
+- RBAC `voice.transcribe`/`voice.synthesize` в policy.csv.
+
+**Осталось:**
+- WebSocket endpoint `/api/v1/concierge/voice` для real-time voice ВВОДА → text. По shipping-report §5 TODO #6 — оставлено в backlog. ConciergeVoice фронт использует file-upload вместо WS, что покрывает MVP но даёт задержку 15-18 сек.
+
+> **⚠ Уточнение от 2026-05-24 (владелец):** Concierge / AI-помощник отвечает ТОЛЬКО текстом. Голосовой ВЫВОД (TTS в ответах Concierge, кнопка «🔊 Слушать», `voiceMode` toggle) — **из scope исключён**. Остаётся ТОЛЬКО WebSocket-стриминг голосового ВВОДА (микрофон → real-time ASR → текст в чат). TTS-endpoint `/voice/synthesize` остаётся как технический backend для будущих сценариев accessibility, но в Concierge flow НЕ интегрируется.

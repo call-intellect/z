@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: α-8 wave 3 — Appointment модель + миграция PersonRole + расширение Metric (KPI fields)
 phase: alpha-8
 date: 2026-05-23
@@ -180,13 +180,13 @@ KPI UI — отдельный sub-ТЗ.
 
 ## 15. DoD
 
-- [ ] Appointment модель + Metric расширение в schema, prisma:generate/push зелёные.
-- [ ] Patch-script PersonRole→Appointment запущен на test-data, идемпотентен.
-- [ ] PersonsService поддерживает оба источника через feature-flag.
-- [ ] REST endpoints зарегистрированы.
-- [ ] Минимальный UI на /persons/[id] вкладка «Назначения».
-- [ ] RBAC + метрики.
-- [ ] `bun run typecheck` + `bun run lint` + unit-tests зелёные.
+- [x] Appointment модель + Metric расширение в schema, prisma:generate/push зелёные.
+- [x] Patch-script PersonRole→Appointment запущен на test-data, идемпотентен.
+- [x] PersonsService поддерживает оба источника через feature-flag.
+- [x] REST endpoints зарегистрированы.
+- [x] Минимальный UI на /persons/[id] вкладка «Назначения».
+- [x] RBAC + метрики.
+- [x] `bun run typecheck` + `bun run lint` + unit-tests зелёные.
 
 ## 16. Тесты
 
@@ -203,3 +203,16 @@ KPI UI — отдельный sub-ТЗ.
 - **Schema merge с α-9 wave 3** — Department relations в Metric/Appointment могут конфликтовать с Department relations добавляемых α-9. Кодер добавляет relations осторожно, проверяя текущее состояние schema.prisma непосредственно перед правкой.
 - **Feature-flag tests на CI** — оба пути в matrix test.
 - **`.next/types/`** — minimal frontend changes, но Remove-Item на всякий случай.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `Appointment` в `schema.prisma:3485-3512` с `@@unique([tenantId, personId, roleId, validFrom])` и индексами по status. PersonRole остаётся (deprecated).
+- Метрика-расширение: `attachedToResponsibilityElementId/Role/Department`, `currentValue`, `currentValueUnit`, `lastMeasuredAt`, `frequency` в schema.prisma:4419-4442 + 3 relations (`MetricToRole`, `MetricToDepartment`, ResponsibilityElement).
+- Модуль `backend/src/modules/appointments/`: `appointments.service.ts`, `appointments.controller.ts`, DTO, тесты.
+- Модуль `backend/src/modules/kpi/`: `kpi.service.ts`, `kpi.controller.ts`, DTO (включая endpoint `PATCH /:id/measurement` для атомарного обновления).
+- Patch-script `backend/scripts/patch-migrate-person-role-to-appointment.ts` (dry-run по умолчанию).
+- PersonsService с feature-flag `USE_APPOINTMENT_FOR_PERSON_ROLES` в `persons.service.ts:54` + `persons.spec.ts` для обоих путей.
+- Frontend `app/(authenticated)/persons/[id]/appointments/` (page.tsx + PersonAppointmentsClient.tsx).
+- ENV `USE_APPOINTMENT_FOR_PERSON_ROLES`, `APPOINTMENT_DETECTOR_ENABLED` в env.schema.ts.

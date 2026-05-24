@@ -1,7 +1,7 @@
 ---
 type: tz
 phase: alpha-2
-status: in_progress
+status: done
 related:
   - plans/analysis/2026-05-22-code-reality-deltas.md §α-2
   - plans/tz/2026-05-22-final-roadmap.md
@@ -60,3 +60,12 @@ date: 2026-05-23
 
 - **Не трогать** multi-target extraction (block + processes + decisions + regulations + policies + metrics + tools в одном проходе) — это работающий contract.
 - LLM-провайдер ничего не знает про значения signalType — он получает enum в JSON-schema и описание в SYSTEM_PROMPT. Расширение enum — backward-compat для существующих блоков.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- `enum SignalType` в `backend/prisma/schema.prisma:242-283` содержит все 19 новых типов wave 2 (expertise, experience, competence, methodology_step, hypothesis, result, lesson, brand_principle, content_artifact, commitment_status, plan_item, done_item, blocker, team_friction, process_friction, resource_gap, suggestion, client_request, question) — суммарно 33 типа (14 базовых + 5 wave 1 + 19 wave 2; позже Sprint 1 wave 3 добавил ещё 6 трекерных типов).
+- `SIGNAL_TYPE_VALUES` в `backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts:7-57` синхронизирован с enum.
+- `ENTITY_TYPE_VALUES` в том же файле (строки 89-106) тоже синхронизирован — добавлены `market` и `org_unit` для α-3 wave 2.
+- DoD-чек-боксы: все 7 пунктов отмечены `[x]`.

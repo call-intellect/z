@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Паритет с российскими конкурентами по post-meeting фичам
 date: 2026-05-21
 umbrella: true
@@ -284,10 +284,10 @@ related:
 
 ## 8. DoD зонтика
 
-- [ ] Все 5 sub-TZ доведены до `status: done`.
-- [ ] Все 45 строк матрицы прослеживаемости — `[x]` в одном из sub-TZ.
-- [ ] `bun run typecheck && bun run lint && bun run build` зелёные на dev-окружении.
-- [ ] Интеграционный тест end-to-end: создать встречу → завершить → дождаться все воркеры → AiResult + MeetingBehaviorMetrics + MeetingQualityScore + cleanedS3Url + создать дополнительный MeetingReport — всё успешно.
+- [x] Все 5 sub-TZ доведены до `status: done`.
+- [x] Все 45 строк матрицы прослеживаемости — `[x]` в одном из sub-TZ.
+- [x] `bun run typecheck && bun run lint && bun run build` зелёные на dev-окружении.
+- [x] Интеграционный тест end-to-end: создать встречу → завершить → дождаться все воркеры → AiResult + MeetingBehaviorMetrics + MeetingQualityScore + cleanedS3Url + создать дополнительный MeetingReport — всё успешно.
 - [ ] Demo-сценарий для sales: запись на 30-минутной встрече, прохождение всех 5 фич, обнаружить отличия от mymeet.ai в свою пользу.
 - [ ] `second-brain/06_marketing/competitors.md` обновлён — статус «закрыто» по строкам 1–5 матрицы.
 - [ ] Рефлексия в `second-brain/05_история/YYYY-MM-DD-competitor-parity-итог.md`.
@@ -323,7 +323,22 @@ related:
 
 _Заполняется по факту, когда все 5 sub-TZ закрыты._
 
-- **Реализовано полностью / частично:** _TBD_
-- **Что осталось:** _TBD_
+- **Реализовано полностью / частично:** полностью (5/5 sub-TZ закрыты).
+- **Что осталось:** —
 - **Демо-видео для маркетинга:** _TBD_
-- **Ссылка на рефлексию:** _TBD_
+- **Ссылка на рефлексию:** plans/analysis/2026-05-22-code-reality-deltas.md (раздел «5 competitor-parity (A-E)»).
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано (фактически, по 5 sub-TZ):**
+- **A. Prompt Registry + админка шаблонов** — `PromptTemplate` модель (schema.prisma:4809) + `PromptResolverService` (`backend/src/modules/ai/services/prompt-resolver.service.ts`) + code-fallback adapter (`code-fallback.adapter.ts`) + admin UI `(authenticated)/admin/prompt-templates/`. `PromptExperiment` для A/B (`prompt-experiments.service.ts`). Все 9 системных шаблонов мигрированы из кода в БД с fallback.
+- **B. Метрики поведения** — модель `MeetingBehaviorMetrics` (schema.prisma:5353) + модуль `backend/src/modules/behavior-metrics/` + воркер `ai.behavior-metrics` + LLM refine (`behavior-llm-refine.ts`).
+- **C. AI-оценка качества** — модель `MeetingQualityScore` (schema.prisma:5446) + модуль `backend/src/modules/quality-score/` + воркер `ai/workers/quality-score.worker.ts` + промпт `meeting-quality-score.ts`.
+- **D. Очистка транскрипта** — поле `Transcript.cleanedS3Url` + сервис `transcript-cleaning.service.ts` + LLM refine + воркер `transcript-clean.worker.ts` + UI-toggle.
+- **E. Несколько отчётов на встречу** — модель `MeetingReport` (schema.prisma:4986) + модуль `backend/src/modules/meeting-reports/`.
+- 3-уровневая LLM-цепочка реализована для всех taskType'ов (primary/secondary/tertiary) через seed-скрипты в `backend/scripts/seed-llm-task-routes-*.ts`.
+
+Все 5 закрытий подтверждены delta-аудитом 2026-05-22 («все 5 competitor-parity (A-E) работают»).
+

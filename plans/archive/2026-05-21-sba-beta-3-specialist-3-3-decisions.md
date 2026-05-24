@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: SBA β-3 — Specialist 3.3 Decisions Registry (реестр решений с rationale, supersedes, evolving)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -242,22 +242,22 @@ API:
 
 ## 13. Фазы реализации
 
-- [ ] **β-3.0** Решить: collective decision view ([декомпозиция родитель-потомок]) — UI tree или линейно? Рекомендация — табличный список + tooltip preview supersedes-цепочки, дерево — γ+.
-- [ ] **β-3.1** Prisma-модель `Decision` + enum'ы + HNSW + tsvector + `bun run prisma:push` + `apply-postgres-init.sql`.
-- [ ] **β-3.2** Воркер `decision-detector.worker` + подключение к `core.specialist-routing`.
-- [ ] **β-3.3** Промпт `decision-extract.prompt.ts` (placeholder).
-- [ ] **β-3.4** Промпт `decision-supersede-detect.prompt.ts` (placeholder).
-- [ ] **β-3.5** Seed-script `seed-llm-task-routes-decisions.ts` с 3 provider'ами + playbook.
-- [ ] **β-3.6** Дедуп через KNN + LLM-арбитр.
-- [ ] **β-3.7** CurationService.triage интеграция (critical-type → deep review).
-- [ ] **β-3.8** ConflictService.report с evolving suggestion.
-- [ ] **β-3.9** Probe-events (5 trigger'ов из §6).
-- [ ] **β-3.10** Stale cron — расширение `card-stale-detector` (alphas) на Decision (overdue reminder).
-- [ ] **β-3.11** Регистрация в `CardSpecialistRegistry`.
-- [ ] **β-3.12** API + DTO + Swagger.
-- [ ] **β-3.13** UI `/decisions` master-detail.
-- [ ] **β-3.14** RBAC: `decision` ResourceType.
-- [ ] **β-3.15** Метрики + glossary + second-brain (новый файл `01_projects/decisions.md`).
+- [x] **β-3.0** Решить: collective decision view ([декомпозиция родитель-потомок]) — UI tree или линейно? Рекомендация — табличный список + tooltip preview supersedes-цепочки, дерево — γ+.
+- [x] **β-3.1** Prisma-модель `Decision` + enum'ы + HNSW + tsvector + `bun run prisma:push` + `apply-postgres-init.sql`.
+- [x] **β-3.2** Воркер `decision-detector.worker` + подключение к `core.specialist-routing`.
+- [x] **β-3.3** Промпт `decision-extract.prompt.ts` (placeholder).
+- [x] **β-3.4** Промпт `decision-supersede-detect.prompt.ts` (placeholder).
+- [x] **β-3.5** Seed-script `seed-llm-task-routes-decisions.ts` с 3 provider'ами + playbook.
+- [x] **β-3.6** Дедуп через KNN + LLM-арбитр.
+- [x] **β-3.7** CurationService.triage интеграция (critical-type → deep review).
+- [x] **β-3.8** ConflictService.report с evolving suggestion.
+- [x] **β-3.9** Probe-events (5 trigger'ов из §6).
+- [x] **β-3.10** Stale cron — расширение `card-stale-detector` (alphas) на Decision (overdue reminder).
+- [x] **β-3.11** Регистрация в `CardSpecialistRegistry`.
+- [x] **β-3.12** API + DTO + Swagger.
+- [x] **β-3.13** UI `/decisions` master-detail.
+- [x] **β-3.14** RBAC: `decision` ResourceType.
+- [x] **β-3.15** Метрики + glossary + second-brain (новый файл `01_projects/decisions.md`).
 - [ ] **β-3.16** Дашборд-виджет «Overdue decisions» (опц.).
 
 ---
@@ -293,3 +293,18 @@ API:
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** реестр решений с rationale — самая ценная для бизнеса сущность («почему мы так решили»), знания компании перестают теряться при кадровой ротации.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Модель `Decision` со всеми полями TЗ + `appliedPolicyId FK → DecisionPolicy` (доставлено в α-7 wave 2): `backend/prisma/schema.prisma:4464+`, `DecisionPolicy:3780`.
+- Worker: `backend/src/modules/knowledge-core/workers/specialist-3-3-decisions.worker.ts` + сервисы `specialist-3-3-{decisions,card-handler,probe}.service.ts`.
+- Промпты: `knowledge-core/prompts/decision-extract.prompt.ts`, `decision-supersede-detect.prompt.ts`.
+- Seed: `backend/scripts/seed-llm-task-routes-decisions.ts` (2 LlmTaskType с tier-fallback).
+- REST + UI: `backend/src/modules/decisions/{controller,service}` + `frontend/app/(authenticated)/decisions/page.tsx`.
+- Probe-trigger'ы (5 шт.) + ConflictService с evolving — реализованы.
+
+**Осталось:**
+- β-3.16 dashboard-виджет «Overdue decisions» — опциональный, не реализован.

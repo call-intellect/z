@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 phase: 7
 feature: Z-Admin (super_admin) + Org-Admin (owner/admin) — отладка, наблюдение, аналитика стоимости, управление LLM-моделями, A/B
 date: 2026-05-10
@@ -559,15 +559,29 @@ model SuperAdminAccessLog {
 
 ## Итог (заполняется агентом по ходу)
 
-- [ ] Шаг 1 — schema + db push.
-- [ ] Шаг 2 — guards + interceptor.
-- [ ] Шаг 3 — AdminUsageService + endpoints.
-- [ ] Шаг 4 — AdminFunctionsService + LlmRoutes расширение.
-- [ ] Шаг 5 — AdminExperimentsService.
-- [ ] Шаг 6 — Prices/Orgs/Health.
-- [ ] Шаг 7 — Org-Admin knowledge-core debug.
-- [ ] Шаг 8 — AdminCacheService.
-- [ ] Шаг 9 — Frontend.
+- [x] Шаг 1 — schema + db push.
+- [x] Шаг 2 — guards + interceptor.
+- [x] Шаг 3 — AdminUsageService + endpoints.
+- [x] Шаг 4 — AdminFunctionsService + LlmRoutes расширение.
+- [x] Шаг 5 — AdminExperimentsService.
+- [x] Шаг 6 — Prices/Orgs/Health.
+- [x] Шаг 7 — Org-Admin knowledge-core debug.
+- [x] Шаг 8 — AdminCacheService.
+- [x] Шаг 9 — Frontend.
 - [ ] Создан `phase-7-execution.md` со статусом `completed`.
 - [ ] Обновлён `decisions-log.md`.
 - [ ] Обновлён `second-brain/`.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- `SuperAdminGuard` + `OrgAdminGuard` + `SuperAdminAuditInterceptor` — `backend/src/modules/auth/guards/super-admin.guard.ts`, `org-admin.guard.ts`, `backend/src/modules/admin/super-admin.audit.interceptor.ts`.
+- 7 admin-сервисов и контроллеров: `backend/src/modules/admin/services/{admin-usage,admin-functions,admin-experiments,admin-prices,admin-orgs,admin-health,admin-cache,org-admin-knowledge}.service.ts` + `backend/src/modules/admin/controllers/{admin-usage,admin-functions,admin-experiments,admin-prices,admin-orgs,admin-health,org-admin-knowledge,org-admin-usage}.controller.ts`.
+- Prisma-модели: `SuperAdminAccessLog` (schema.prisma:3061), `Org.workersEnabled`, расширение `AiUsageLog`. Plus Phase α-10 Economics — `LlmProvider`, `LlmModel`, `AiCostDaily`, `OrgBudgetCap`, `CurrencyRate` (`backend/src/modules/admin/economics/*`, 5 cron'ов + 4 контроллера).
+- Frontend Z-Admin страницы все 8: `frontend/app/(authenticated)/admin/{page,usage/users,usage/functions,usage/functions/[taskType],experiments/[taskType],llm-prices,orgs,health}/*` + AdminShell + Sidebar.
+- Frontend Org-Admin: `frontend/app/(authenticated)/settings/admin/{usage,knowledge-core,meetings}/*`.
+- CSV-экспорт: `backend/src/modules/admin/controllers/admin-usage.csv.ts`.
+
+**Осталось:** только документация (`phase-7-execution.md`, `decisions-log.md`, second-brain). Сам функционал готов и явно превышает изначальный scope (добавлен полный economics-стек α-10).

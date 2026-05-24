@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: β-8 — PersonalRelation + COO + DailyCheckIn + Goal каскад
 phase: beta-8
 date: 2026-05-23
@@ -176,13 +176,13 @@ model Person {
 
 ## 15. DoD
 
-- [ ] 3 model изменения (DailyCheckIn new, Goal.parentGoalId, Person.timezone).
-- [ ] 1 worker + 2 cron'а + 1 service работают.
-- [ ] Goal cascade тестируется (completed children → parent completed).
-- [ ] COO role в policy.csv.
-- [ ] REST + 2 UI страницы.
-- [ ] typecheck/lint/tests.
-- [ ] Remove `.next\types`.
+- [x] 3 model изменения (DailyCheckIn new, Goal.parentGoalId, Person.timezone).
+- [x] 1 worker + 2 cron'а + 1 service работают.
+- [x] Goal cascade тестируется (completed children → parent completed).
+- [x] COO role в policy.csv.
+- [x] REST + 2 UI страницы.
+- [x] typecheck/lint/tests.
+- [x] Remove `.next\types`.
 
 ## 16. Тесты
 
@@ -199,3 +199,15 @@ model Person {
 - **EntityLink дубли** — `@@unique([sourceEntityId, targetEntityId, relationType])` constraint.
 - **Schema merge** — Goal/Person changes малы; кодер аккуратно.
 - **`.next/types/` кэш** — Remove-Item.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- Модель `DailyCheckIn` (schema.prisma:5249), `Goal.parentGoalId`, `Person.timezone`.
+- `OperationsModule` (`backend/src/modules/operations/`): 3 контроллера (operations-dashboard, my-check-ins, personal-relations) + 5 сервисов (daily-checkin, personal-relation, goal-cascade, operations-dashboard, checkin-parser/response) + 2 worker'а (daily-checkin-prompt.cron, personal-relation-builder.worker).
+- Spec'и: 4 unit-теста (operations-dashboard, daily-checkin-prompt, goal-cascade, personal-relation-builder).
+- RBAC роль `coo` + ресурсы `dashboard_operations`/`daily_checkin`/`personal_relation` (policy.csv:617-688).
+- Patch script: `backend/scripts/patch-person-timezone-default.ts`.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-beta-8.ts`.
+- Frontend: `/dashboard/operations` (COO виджеты), `/me/check-ins` (history + manual create); API clients `operations-dashboard.api.ts` + `my-check-ins.api.ts`.

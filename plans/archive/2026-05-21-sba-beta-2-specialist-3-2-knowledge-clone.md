@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: SBA β-2 — Specialist 3.2 Knowledge Clone (что человек знает — facts, expertise, experience)
 date: 2026-05-21
 parent_tz: tz/2026-05-21-second-brain-agents-umbrella.md
@@ -217,23 +217,23 @@ Seed-script `seed-llm-task-routes-knowledge-clone.ts` с playbook-коммент
 
 ## 12. Фазы реализации
 
-- [ ] **β-2.0** Решить порог `MIN_BLOCKS_FOR_PROFILE` (10 — стартово).
-- [ ] **β-2.1** Расширение `Person` полями `knowledgeProfile Json?`, `lastProfileBuildAt`, `profileBuildVersion` + `bun run prisma:push`.
-- [ ] **β-2.2** Воркер `knowledge-clone.worker` + подключение к `core.specialist-routing` + второй процесс для rebuild.
-- [ ] **β-2.3** Cron `knowledge-clone-rebuild.cron`.
-- [ ] **β-2.4** Промпты `knowledge-clone-extract.prompt.ts`, `knowledge-clone-merge.prompt.ts` (placeholder + TODO).
-- [ ] **β-2.5** Seed-script `seed-llm-task-routes-knowledge-clone.ts` с 3 provider'ами + playbook-ссылка.
-- [ ] **β-2.6** Интеграция с `CurationService.triage()` (НЕ critical-type, auto-canonical при high).
-- [ ] **β-2.7** Probe-events (2 trigger'а из §6).
-- [ ] **β-2.8** Conflict-events интеграция.
-- [ ] **β-2.9** Регистрация в `CardSpecialistRegistry` (для chat-v2).
-- [ ] **β-2.10** API `GET /me/knowledge-profile`, `GET /persons/:id/knowledge-profile`.
-- [ ] **β-2.11** UI `/me/knowledge-profile` (preview, кнопка «помечу неверным» → CurationItem).
-- [ ] **β-2.12** UI расширение `/persons/:id` вкладкой.
+- [x] **β-2.0** Решить порог `MIN_BLOCKS_FOR_PROFILE` (10 — стартово).
+- [x] **β-2.1** Расширение `Person` полями `knowledgeProfile Json?`, `lastProfileBuildAt`, `profileBuildVersion` + `bun run prisma:push`.
+- [x] **β-2.2** Воркер `knowledge-clone.worker` + подключение к `core.specialist-routing` + второй процесс для rebuild.
+- [x] **β-2.3** Cron `knowledge-clone-rebuild.cron`.
+- [x] **β-2.4** Промпты `knowledge-clone-extract.prompt.ts`, `knowledge-clone-merge.prompt.ts` (placeholder + TODO).
+- [x] **β-2.5** Seed-script `seed-llm-task-routes-knowledge-clone.ts` с 3 provider'ами + playbook-ссылка.
+- [x] **β-2.6** Интеграция с `CurationService.triage()` (НЕ critical-type, auto-canonical при high).
+- [x] **β-2.7** Probe-events (2 trigger'а из §6).
+- [x] **β-2.8** Conflict-events интеграция.
+- [x] **β-2.9** Регистрация в `CardSpecialistRegistry` (для chat-v2).
+- [x] **β-2.10** API `GET /me/knowledge-profile`, `GET /persons/:id/knowledge-profile`.
+- [x] **β-2.11** UI `/me/knowledge-profile` (preview, кнопка «помечу неверным» → CurationItem).
+- [x] **β-2.12** UI расширение `/persons/:id` вкладкой.
 - [ ] **β-2.13** (опц.) Dashboard-виджет.
-- [ ] **β-2.14** RBAC: `knowledge_profile`.
-- [ ] **β-2.15** Метрики `core_specialist_*{type='knowledge_profile'}` + два специфичных.
-- [ ] **β-2.16** Глоссарий + second-brain (новый файл `01_projects/knowledge-clone.md`).
+- [x] **β-2.14** RBAC: `knowledge_profile`.
+- [x] **β-2.15** Метрики `core_specialist_*{type='knowledge_profile'}` + два специфичных.
+- [x] **β-2.16** Глоссарий + second-brain (новый файл `01_projects/knowledge-clone.md`).
 
 ---
 
@@ -267,3 +267,18 @@ Seed-script `seed-llm-task-routes-knowledge-clone.ts` с playbook-коммент
 **Что осталось:** вся реализация.
 
 **Что меняет в продукте:** AI-чат начинает корректно отвечать «кто знает Y», у каждого сотрудника есть профиль знаний, фундамент для skill-профиля (γ).
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- `Person.knowledgeProfile/lastProfileBuildAt/profileBuildVersion` в Prisma (`backend/prisma/schema.prisma:3397-3401`).
+- Worker + cron: `backend/src/modules/knowledge-core/workers/specialist-3-2-knowledge-clone.worker.ts`, `knowledge-clone-rebuild.worker.ts`, `knowledge-clone-rebuild.cron.ts`.
+- Сервис специалиста: `backend/src/modules/knowledge-core/services/specialist-3-2-knowledge-clone.service.ts`.
+- Промпты: `knowledge-core/prompts/knowledge-clone-extract.prompt.ts`, `knowledge-clone-merge.prompt.ts`.
+- Seed: `backend/scripts/seed-llm-task-routes-knowledge-clone.ts` (2 LlmTaskType).
+- REST + UI: `backend/src/modules/knowledge-clone/{controller,service}` + `frontend/app/(authenticated)/me/knowledge-profile/page.tsx` + `persons/[id]/knowledge-profile/page.tsx`.
+
+**Осталось:**
+- β-2.13 dashboard-виджет «Топ-5 людей с самыми богатыми профилями знаний» — опциональный, не реализован.

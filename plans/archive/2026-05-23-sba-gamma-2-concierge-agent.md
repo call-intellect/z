@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-for-code
+status: done
 feature: γ-2 — Concierge Agent (sквозной UX-слой через tool-use)
 phase: gamma-2
 date: 2026-05-23
@@ -209,16 +209,16 @@ model OrgConciergeQuota {
 
 ## 15. DoD
 
-- [ ] 4 модели в schema.
-- [ ] 5 сервисов backend.
-- [ ] REST + SSE endpoint.
-- [ ] Frontend UI components: `ConciergeFloatingButton` (обязательно), `ConciergeSlot`, `ConciergeChat`, страница `/assistant`. Расширение CommandPalette — опционально, не блокирует MVP.
-- [ ] Floating button виден на каждой странице кабинета (desktop + mobile).
-- [ ] Tool-use loop работает (тест: «создай встречу с темой X» через значок концьержа).
-- [ ] Undo работает.
-- [ ] Quota enforcement.
-- [ ] LlmTaskType + RBAC + Metrics.
-- [ ] typecheck/lint/tests.
+- [x] 4 модели в schema.
+- [x] 5 сервисов backend.
+- [x] REST + SSE endpoint.
+- [x] Frontend UI components: `ConciergeFloatingButton` (обязательно), `ConciergeSlot`, `ConciergeChat`, страница `/assistant`. Расширение CommandPalette — опционально, не блокирует MVP.
+- [x] Floating button виден на каждой странице кабинета (desktop + mobile).
+- [x] Tool-use loop работает (тест: «создай встречу с темой X» через значок концьержа).
+- [x] Undo работает.
+- [x] Quota enforcement.
+- [x] LlmTaskType + RBAC + Metrics.
+- [x] typecheck/lint/tests.
 
 ## 16. Тесты
 
@@ -234,3 +234,15 @@ model OrgConciergeQuota {
 - **Schema merge** — большой добавляемый объём; кодер аккуратно.
 - **`.next/types/`** — Remove-Item.
 - **ToastContext breaking change** — если existing code сильно зависит от текущего API ToastContext — рассмотри миграцию на Sonner как cleaner solution.
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+**Реализовано:**
+- 4 модели в schema.prisma: `ConciergeConversation` (5897) + `ConciergeMessage` + `ConciergeUndoLog` + `OrgConciergeQuota`.
+- `ConciergeModule` (`backend/src/modules/concierge/`): 6 сервисов (ConciergeService, ToolRouterService, ServiceMapGeneratorService, ConciergeContextBuilderService, ConciergeUndoLogService, ConciergeQuotaService) + `@ConciergeTool` decorator + 2 cron'а (quota-reset, conversation-summarizer).
+- REST `/api/v1/concierge` с SSE через `ConciergeController`.
+- Frontend: `ConciergeFloatingButton.tsx` (подключён в `AppShell.tsx`), `ConciergeSlot.tsx`, `ConciergeChat.tsx`, страница `/assistant` + `AssistantClient.tsx`; API client `concierge.api.ts`.
+- LlmTaskType seed: `backend/scripts/seed-llm-task-routes-concierge.ts`.
+- RBAC `concierge` ResourceType (policy.csv:572-579).
+- Wave 2 finishing (commit 8c1088a) — CommandPalette расширен режимами `>` (concierge action) и `?` (chat-v2 ask).

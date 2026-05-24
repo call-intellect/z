@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: done
 feature: Фаза E — Несколько AI-отчётов на одну встречу
 date: 2026-05-21
 parent_tz: tz/2026-05-21-competitor-parity.md
@@ -455,3 +455,14 @@ z_meeting_report_count_per_meeting (histogram, для аналитики "ско
 ## 13. Итог
 
 _TBD после реализации._
+
+## Ревизия от 2026-05-24
+
+**Статус:** done
+
+**Реализовано:**
+- Prisma-модель `MeetingReport` (schema.prisma:4986) + enum `MeetingReportStatus`.
+- Модуль `backend/src/modules/meeting-reports/`: `meeting-reports.{module,service,controller}.ts` + `dto/meeting-reports.dto.ts` + `meeting-reports.service.spec.ts`.
+- Воркер `backend/src/modules/ai/workers/custom-report.worker.ts` + spec.
+- LLM-route: `backend/scripts/seed-llm-task-routes-phase-E.ts` (3 tier: deepseek-flash/gpt-5.4-mini/ollama, taskType=`custom-report`).
+- Frontend: `frontend/src/ui/components/meeting-result-v2/ReportsTab.tsx` — вкладка «Отчёты» с primary + additional, в `MeetingResultPageReal`.

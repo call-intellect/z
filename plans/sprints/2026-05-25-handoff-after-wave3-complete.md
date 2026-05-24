@@ -1,6 +1,8 @@
 ---
 type: handoff
-status: ready-for-pickup
+status: superseded
+supersededBy: plans/sprints/2026-05-25-handoff-full-close.md
+supersededReason: ревизия 2026-05-24 показала что 4 из 7 тикетов этого handoff'а (α-10 wave3 frontend, α-7 ProcessTemplate finishing, α-3 AxisClassifier full, β-1 rip-out) — уже done в коде. Актуальный inventory — в full-close handoff
 date: 2026-05-25
 supersedes: plans/sprints/2026-05-24-handoff-wave3-and-finishing.md
 from: claude-orchestrator (Opus 4.7) — Wave 3 finish, 12 параллельных subagent'ов в 3 итерациях за 2026-05-24

@@ -6163,7 +6163,9 @@ model Cycle {
 /// `parentId` (подзадачи). `identifier` уникален в рамках tenant (например
 /// `KORA-123`), `sequenceId` — внутренний порядковый номер в проекте.
 ///
-/// Embedding pgvector НЕ добавляем здесь — это Phase 3 (Sprint 6).
+/// Phase 3 (Sprint 6, 2026-05-24): добавлен `embedding vector(1536)` для
+/// KNN-поиска похожих задач + LLM-suggest goalId по семантике. HNSW-индекс
+/// создаётся через `backend/scripts/postgres-init.sql` (cosine ops).
 model Issue {
   id         String @id @default(cuid())
   tenantId   String
@@ -6206,6 +6208,12 @@ model Issue {
   sourceBlockIds  String[] // если задача создана AI — откуда вытащил
   confidence      Decimal? @db.Decimal(4, 3)
   createdManually Boolean  @default(true)
+
+  /// Phase 3 — pgvector embedding (text-embedding-3-small, 1536 dim).
+  /// Генерируется `issue-embed.worker` на create/update title+description.
+  /// HNSW-индекс (cosine) создаётся через postgres-init.sql.
+  embedding       Unsupported("vector(1536)")?
+  embeddingHash   String? // sha256(title + description) — чтобы не пересчитывать без изменений
 
   // Внешний источник
   externalSource String? // email | telegram | checkin | meeting | api | manual

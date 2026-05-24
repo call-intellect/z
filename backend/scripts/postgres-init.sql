@@ -366,3 +366,25 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Tracker Phase 3 (Sprint 6, 2026-05-24) — Issue.embedding.
+--   HNSW индекс (cosine) для KNN «похожие задачи» в GET /tracker/issues/:id/similar
+--   + issue-goal-suggest LLM (KNN по embedding среди закрытых задач с goalId).
+--   Без индекса — seq-scan по всем Issue в tenant'е. С индексом — O(log n).
+--   Порог cosine_distance < 0.18 (≈ cosine_similarity ≥ 0.82) — из ТЗ Phase 3.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Issue'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Issue_embedding_hnsw_cosine_idx"
+      ON "Issue" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;

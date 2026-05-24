@@ -345,3 +345,24 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Wave 2 — Specialist 3.8 (HelpfulnessTrait).
+--   HNSW индекс на HelpfulnessTrait.embedding для KNN-merge через cosine.
+--   Без индекса worker делает seq-scan; HNSW обеспечивает O(log n) recall
+--   на >10к записей. KNN merge порог в коде: cosine_distance < 0.15.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'HelpfulnessTrait'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS helpfulness_trait_embedding_hnsw
+      ON "HelpfulnessTrait"
+      USING hnsw (embedding vector_cosine_ops)
+    $sql$;
+  END IF;
+END $$;

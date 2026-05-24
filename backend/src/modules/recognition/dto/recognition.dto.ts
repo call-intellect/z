@@ -129,3 +129,56 @@ export interface ToggleThanksResponseDto {
   /** `true` если текущий user сейчас «лайкнул» комментарий. */
   thankedByMe: boolean;
 }
+
+// ─────────────────────────── Team Spotlight ────────────────────────────────
+
+/**
+ * T1 (2026-05-23) — недельный спотлайт команды для COO/руководителя.
+ *
+ * Принципы (см. plans/tz/2026-05-23-gamification-and-motivation.md §«Что НЕ делаем»):
+ *   - Никакого «топ-1» — только список 3-5 человек, каждый со своей причиной отметки.
+ *   - Никаких очков-валюты — только сырые счётчики Recognition.
+ *   - Алгоритм отбора (MVP): top по сумме Recognition (toUserId) за 7 дней.
+ *     Если у user есть запись в `PersonRecognitionPreference.publicVisible=false`
+ *     (модели пока НЕТ — TODO), он исключается. См. отчёт T1.
+ */
+export interface TeamSpotlightPersonDto {
+  personId: string | null;
+  userId: string;
+  name: string;
+  avatar: string | null;
+  /** Короткая причина отметки. Пример: «3 благодарности за помощь коллегам». */
+  highlightReason: string;
+  recognitionCount: number;
+  thanksReceived: number;
+}
+
+export interface TeamSpotlightResponseDto {
+  period: {
+    /** ISO 8601 — нижняя граница (включительно). */
+    from: string;
+    /** ISO 8601 — верхняя граница (включительно). */
+    to: string;
+  };
+  persons: TeamSpotlightPersonDto[];
+}
+
+// ─────────────────────────── Recognition Opt-Out ───────────────────────────
+
+/**
+ * T1 (2026-05-23) — body для POST /me/recognition-optout.
+ *
+ * `publicVisible=false` → user скрывает свои Recognition / счётчики для команды
+ * (TeamSpotlight, дашборды коллег). Сам user видит свой `/me/contributions`
+ * как обычно.
+ */
+export const RecognitionOptOutBodySchema = z.object({
+  publicVisible: z.boolean(),
+});
+export type RecognitionOptOutBody = z.infer<typeof RecognitionOptOutBodySchema>;
+
+export interface RecognitionOptOutResponseDto {
+  publicVisible: boolean;
+  /** ISO 8601 — момент последнего изменения настройки. */
+  updatedAt: string;
+}

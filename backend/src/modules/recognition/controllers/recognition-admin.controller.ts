@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
+  Get,
   Inject,
   NotImplementedException,
   Param,
@@ -10,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -18,26 +21,37 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
+import {
+  type RecognitionOptOutBody,
+  RecognitionOptOutBodySchema,
+  type RecognitionOptOutResponseDto,
+} from '../dto/recognition.dto';
+import { RecognitionPreferenceService } from '../services/recognition-preference.service';
 
 /**
- * Wave 2 — Recognition admin actions (stubs).
+ * Wave 2 — Recognition admin actions + T1 (2026-05-23) — opt-out.
  *
  *   POST /api/v1/recognitions/:id/forward-as-self — руководитель пересылает
  *     благодарность от своего имени (stub: реализация в Sprint 4).
  *
- *   POST /api/v1/me/settings/notifications/recognition — опт-аут (заметка
- *     для пользователя; реальная настройка — через me/notification-preferences,
- *     которая ещё не подключена). Сейчас возвращает 200 + TODO в логах.
+ *   POST /api/v1/me/settings/notifications/recognition — legacy stub
+ *     («настройка сохранена» без 404).
  *
- * Эти endpoint'ы зарезервированы под этическую защиту (ТЗ §8). На MVP они
- * возвращают `501 Not Implemented` либо no-op `200`, чтобы фронт не падал.
+ *   POST /api/v1/me/recognition-optout — T1: реальная настройка видимости
+ *     своих Recognition для команды (Redis-backed; см. отчёт T1 про
+ *     миграцию на Prisma-модель).
+ *   GET  /api/v1/me/recognition-optout — текущее состояние видимости.
  */
 @ApiTags('recognition / admin')
 @ApiBearerAuth()
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class RecognitionAdminController {
-  constructor(@Inject(RbacService) private readonly rbac: RbacService) {}
+  constructor(
+    @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(RecognitionPreferenceService)
+    private readonly pref: RecognitionPreferenceService,
+  ) {}
 
   @Post('recognitions/:id/forward-as-self')
   @ApiOperation({
@@ -81,20 +95,71 @@ export class RecognitionAdminController {
   @Post('me/settings/notifications/recognition')
   @ApiOperation({
     summary:
-      'Опт-аут уведомлений Recognition Agent (stub: noop, реальная настройка в me/notification-preferences)',
+      'Опт-аут уведомлений Recognition Agent (legacy stub: noop, для совместимости фронта)',
   })
-  async optOutRecognition(
+  async optOutRecognitionLegacy(
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true; note: string }> {
     this.requireTenant(tenantId);
     // TODO(sprint-4): подключить к me/notification-preferences (когда появится
-    //   таблица настроек). Пока — возвращаем заметку, чтобы фронт мог
-    //   отрисовать «настройка сохранена» без 404.
+    //   таблица настроек уведомлений). Эта ручка отделена от T1
+    //   `recognition-optout` (та про публичную видимость, эта про канал доставки).
     return {
       ok: true,
-      note: `TODO sprint-4: подключить опт-аут к notification-preferences (userId=${user.id})`,
+      note: `TODO sprint-4: подключить опт-аут уведомлений к notification-preferences (userId=${user.id})`,
     };
+  }
+
+  // ────────────────────── T1 (2026-05-23) — public-visibility ──────────────
+
+  /**
+   * POST /api/v1/me/recognition-optout
+   *
+   * `publicVisible=false` → user скрывает свои Recognition / счётчики от
+   * команды (TeamSpotlight, дашборды коллег). Свой `/me/contributions` user
+   * видит как обычно.
+   *
+   * MVP-хранение: Redis (см. `RecognitionPreferenceService`). TODO — мигрировать
+   * на Prisma-модель `PersonRecognitionPreference` (см. отчёт T1).
+   */
+  @Post('me/recognition-optout')
+  @ApiOperation({
+    summary: 'Установить видимость моих Recognition для команды (opt-out)',
+  })
+  async setRecognitionOptOut(
+    @Body(new ZodValidationPipe(RecognitionOptOutBodySchema))
+    body: RecognitionOptOutBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<RecognitionOptOutResponseDto> {
+    const t = this.requireTenant(tenantId);
+    if (!user?.id) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'auth_required', message: 'Требуется авторизация' },
+      });
+    }
+    return this.pref.set(t, user.id, body.publicVisible);
+  }
+
+  /** GET /api/v1/me/recognition-optout — текущее состояние видимости. */
+  @Get('me/recognition-optout')
+  @ApiOperation({
+    summary: 'Текущая настройка видимости моих Recognition для команды',
+  })
+  async getRecognitionOptOut(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<RecognitionOptOutResponseDto> {
+    const t = this.requireTenant(tenantId);
+    if (!user?.id) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'auth_required', message: 'Требуется авторизация' },
+      });
+    }
+    return this.pref.get(t, user.id);
   }
 
   private requireTenant(tenantId: string | undefined): string {

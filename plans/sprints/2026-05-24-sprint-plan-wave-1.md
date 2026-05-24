@@ -661,7 +661,7 @@ Phase 1 трекера (Wave 1) ──→ Phase 2 фронт ──→ Phase 3 A
                           ├─→ Specialist 3.8 (нужна α-2 wave-2 sigtypes + Phase 1 события)
                           └─→ Recognition Agent (нужны Issue Comment thanks)
 
-α-5 DialogService — не зависит от трекера, но **разблокирует Cmd+K AI-парсинг** в Фазе 2
+α-5 DialogService — не зависит от трекера, но **разблокирует NL-парсинг концьержа** (плавающий значок + опц. Cmd+K) в Фазе 2
 
 α-10 admin унификация (Sprint 7) — независимо
 
@@ -676,7 +676,7 @@ Phase 1 трекера (Wave 1) ──→ Phase 2 фронт ──→ Phase 3 A
 
 α-9 CompanyProfile ──→ CEO Dashboard виджеты
 γ-3 CrossFunctionalProcess ──→ зависит от α-7
-γ-2 Concierge ──→ зависит от α-5 DialogService (для NL-парсинга в Cmd+K)
+γ-2 Concierge ──→ зависит от α-5 DialogService (для NL-парсинга концьержа в плавающем значке и опц. Cmd+K)
 δ-2 ProactiveWatcher ──→ паттерн уже есть (skill-manager-digest.cron)
 δ-1 Orchestrator ──→ опц., расширяет chat-v2 CardSpecialistRegistry
 δ-3 Voice Channel TTS ──→ опц., для AI-звонков
@@ -684,7 +684,7 @@ Phase 1 трекера (Wave 1) ──→ Phase 2 фронт ──→ Phase 3 A
 
 ### Критический путь (longest chain)
 ```
-α-2 wave-1 → α-2 wave-2 (8 task_*) → Фаза 1 трекера ingest → Фаза 2 (UI + чат + Cmd+K) → Фаза 3 (AI) → Фаза 4 РФ → Фаза 5 импорт → Фаза 6 / β-8 COO
+α-2 wave-1 → α-2 wave-2 (8 task_*) → Фаза 1 трекера ingest → Фаза 2 (UI + чат + концьерж) → Фаза 3 (AI) → Фаза 4 РФ → Фаза 5 импорт → Фаза 6 / β-8 COO
 ~1.5 нед   +   1 нед              +   6 нед             +   7 нед                    +   4 нед   +   4 нед     +   3 нед     +   5 нед
 
 ИТОГО CRITICAL PATH: ~31.5 нед = ~8 месяцев непрерывной работы 1 backend.
@@ -692,7 +692,7 @@ Phase 1 трекера (Wave 1) ──→ Phase 2 фронт ──→ Phase 3 A
 ```
 
 ### Топ-3 рискованных sub-ТЗ (начинать как можно раньше)
-1. **α-5 DialogService** (30% done, большой scope, 5 сервисов + 6 LlmTaskType + AnswerCache + temporal validAt) — **разблокирует Cmd+K AI и AI-чат компании**. Start: Sprint 4.
+1. **α-5 DialogService** (30% done, большой scope, 5 сервисов + 6 LlmTaskType + AnswerCache + temporal validAt) — **разблокирует NL-парсинг концьержа (плавающий значок + опц. Cmd+K) и AI-чат компании**. Start: Sprint 4.
 2. **α-10 Admin LLM + Economics** (5% done, требует ДО старта унификации двух admin-групп `(admin)/admin/*` vs `(authenticated)/admin/*`). Start: Sprint 7. Без унификации в Wave 2 — плодим третью группу.
 3. **α-8 Role Map нормализация** (35% done, миграция `PersonRole → Appointment` + `Metric → KPI` + 5 новых моделей, требует осторожности из-за PersonsService + EntityLink `executes_role`). Start: Sprint 8 (Wave 2 буфер) или Sprint 9 (Wave 3 первый).
 

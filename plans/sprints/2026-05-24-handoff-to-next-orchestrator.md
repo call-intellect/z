@@ -137,7 +137,7 @@ to: next-orchestrator
 
 **Поток A — Phase 2 frontend полностью** (Sprint 4-7):
 - Чат-в-задаче (`<IssueChat>`) поверх `chat-v2` с голосовыми + ASR Vox/GigaAM.
-- Cmd+K AI-парсинг через `concierge-parse` LlmTaskType (Sprint 6 — зависит от α-5 готовности).
+- Концьерж в трекере (плавающий значок + опц. Cmd+K), NL-парсинг через `concierge-parse` LlmTaskType (Sprint 6 — зависит от α-5 готовности). Главный вход — плавающая кнопка на каждой странице и вкладка в bottom nav на мобиле, Cmd+K — опц. desktop shortcut.
 - PWA manifest + service worker + web push.
 - Bottom navigation активация (mount `<TrackerBottomNav>` в layout).
 - Optimistic updates для всех мутаций.

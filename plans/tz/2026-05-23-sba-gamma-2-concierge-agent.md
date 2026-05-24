@@ -16,6 +16,8 @@ related:
 
 Сквозной UX-слой кабинета: floating button в AppShell + страница `/assistant` + `<ConciergeSlot>` компонент на каждой странице. Понимает context страницы, имеет доступ к whitelist REST-эндпоинтам через tool-use, может выполнить действие за пользователя. Поддерживает Undo через ConciergeUndoLog.
 
+**Главный вход — постоянно видимая плавающая кнопка** (`ConciergeFloatingButton` в AppShell + bottom-nav вкладка на мобильных). ЦА Z — не разработчики (владельцы малого бизнеса, COO, прорабы, менеджеры объектов), keyboard shortcuts они не знают и не запоминают. Cmd+K / Ctrl+K — **опциональный** desktop shortcut для power-users, не часть основного UX и не блокирует MVP. В user-guide и копи мессаджей Cmd+K **не позиционируется** как «главный способ» — главный способ всегда «нажать на значок Коры справа внизу или написать боту в Telegram».
+
 ## 2. Scope
 
 **Входит:**
@@ -32,10 +34,10 @@ related:
   - `OrgConciergeQuota` (tenantId @unique, dailyMessagesLimit, monthlyMessagesLimit, currentDailyCount, currentMonthlyCount, resetAt).
 - REST `/api/v1/concierge/*` + SSE endpoint.
 - Frontend:
-  - Расширение `CommandPalette.tsx` двумя режимами Search/Command (если она есть — extend; не replace).
-  - Floating button в AppShell.
-  - Страница `/assistant`.
-  - `<ConciergeSlot context={...}>` компонент.
+  - **Floating button в AppShell** (главный вход, всегда виден на desktop и mobile).
+  - Страница `/assistant` (full-screen для длинных исследовательских запросов).
+  - `<ConciergeSlot context={...}>` компонент (drop-in per page).
+  - Расширение `CommandPalette.tsx` двумя режимами Search/Command — **опциональный desktop shortcut**, не блокирует MVP. Существующая палитра в Cards остаётся как глобальный поиск; режим Command — для тех, кто привык к Cmd+K.
 - 2 LlmTaskType: `concierge-respond`, `concierge-toolcall-validate`.
 - ToastContext extension (or Sonner migration) для action toast'ов «Готово. Отменить».
 - RBAC + Метрики.
@@ -169,15 +171,24 @@ model OrgConciergeQuota {
 
 ## 12. Frontend
 
+**Иерархия входов (по приоритету реализации):**
+
+1. **`ConciergeFloatingButton.tsx`** — главный вход. Постоянно виден в правом нижнем углу на каждой странице. На мобильных — дополнительная вкладка в bottom navigation. Текст значка: «Кора-помощник». Это **обязательно для MVP**.
+2. **`/assistant` страница** — full-screen режим для длинных исследовательских запросов с историей сессии.
+3. **`<ConciergeSlot context={...}>`** — drop-in per page компонент для встраивания концьержа в конкретные страницы с контекстом.
+4. _Опционально_ — **расширение `CommandPalette.tsx` режимом Command** для desktop power-users (Cmd+K/Ctrl+K). Не блокирует MVP, можно отложить. Существующая палитра в Cards (глобальный поиск) остаётся как есть.
+
+Файлы:
+
 - `frontend/src/ui/concierge/`:
   - `ConciergeFloatingButton.tsx`.
   - `ConciergeSlot.tsx` (drop-in per page).
   - `ConciergeChat.tsx` (с SSE handler).
-  - Расширение `CommandPalette.tsx` с режимом Command.
+  - _(опционально)_ Расширение `CommandPalette.tsx` с режимом Command.
 - `frontend/app/(authenticated)/assistant/page.tsx`.
 - API client `concierge.api.ts` с SSE support.
 - Domain mapper.
-- AppShell: floating button.
+- AppShell: floating button + (на мобильных) bottom-nav вкладка.
 - ToastContext extension: добавить optional `action: { label, onClick }` для action toast'ов.
 - `Remove-Item -Recurse -Force .next\types`.
 
@@ -201,8 +212,9 @@ model OrgConciergeQuota {
 - [ ] 4 модели в schema.
 - [ ] 5 сервисов backend.
 - [ ] REST + SSE endpoint.
-- [ ] 4 frontend UI components + страница /assistant.
-- [ ] Tool-use loop работает (тест: «создай встречу с темой X» через concierge).
+- [ ] Frontend UI components: `ConciergeFloatingButton` (обязательно), `ConciergeSlot`, `ConciergeChat`, страница `/assistant`. Расширение CommandPalette — опционально, не блокирует MVP.
+- [ ] Floating button виден на каждой странице кабинета (desktop + mobile).
+- [ ] Tool-use loop работает (тест: «создай встречу с темой X» через значок концьержа).
 - [ ] Undo работает.
 - [ ] Quota enforcement.
 - [ ] LlmTaskType + RBAC + Metrics.

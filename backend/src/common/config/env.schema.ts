@@ -1096,6 +1096,41 @@ const BudgetSchema = z.object({
 });
 
 /**
+ * Tracker (Sprint 1 — 2026-05-23-tracker-phase-1-models-api.md §"Метрики
+ * Prometheus" + §"Webhooks Out").
+ *
+ *   - WEBHOOK_HMAC_PREFIX — префикс, который добавляется к base64-секрету
+ *     при генерации webhook'а трекера. Через ENV — чтобы при ротации
+ *     префикса (например `kora_wh_` → `kora2_wh_`) старые webhook'и
+ *     остались валидны до миграции.
+ *   - TRACKER_INGEST_QUEUE — имя BullMQ-очереди, в которую tracker
+ *     публикует события (`task_created`, `task_status_changed`, ...) для
+ *     ingest'а в knowledge-core. Должно совпадать с consumer'ом в
+ *     knowledge-core (по умолчанию `core.raw-events`).
+ *   - IDEMPOTENCY_KEY_TTL_SECONDS — TTL Redis-кэша Idempotency-Key для
+ *     POST /api/v1/tracker/* (default 24ч, по RFC draft idempotency-keys).
+ *   - TRACKER_WEBHOOK_MAX_RETRIES — потолок повторов доставки webhook'а
+ *     трекера. После исчерпания — `WebhookDelivery.status='failed'`.
+ *   - TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS — начальная задержка перед
+ *     первым retry (последующие — экспоненциально, фактор задаёт consumer).
+ *
+ * Логически независимая группа, регистрируется отдельным `.merge()`-вызовом
+ * (см. typed-config.ts → `cfg.tracker`). Короткие schemas с `parseEnv:
+ * Record<string, unknown>` TS2589 не триггерят (см. NB перед EnvSchema).
+ */
+const TrackerSchema = z.object({
+  WEBHOOK_HMAC_PREFIX: z.string().min(1).default('kora_wh_'),
+  TRACKER_INGEST_QUEUE: z.string().min(1).default('core.raw-events'),
+  IDEMPOTENCY_KEY_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  TRACKER_WEBHOOK_MAX_RETRIES: z.coerce.number().int().positive().default(5),
+  TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+});
+
+/**
  * Полная схема — слияние всех групп.
  *
  * NB (cardinality / TS2589): TypeScript падает на бесконечной глубине типов
@@ -1157,7 +1192,8 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   // не наращивать длину `.merge` цепочки EnvSchema. Логически независимы
   // (`cfg.betaOps`, `cfg.voice`, `cfg.roleMap`).
   .merge(BetaOpsSchema)
-  .merge(BudgetSchema);
+  .merge(BudgetSchema)
+  .merge(TrackerSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

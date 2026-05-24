@@ -1006,6 +1006,30 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── tracker (Sprint 1) ────────────────────
+  /**
+   * Параметры tracker-модуля (Issues / Intake / Webhooks Out / событий в
+   * knowledge-core). См. plans/tz/2026-05-23-tracker-phase-1-models-api.md
+   * §"Webhooks Out" и §"Метрики Prometheus".
+   *
+   *   - `webhookHmacPrefix` — префикс secret'а webhook'а (для ротации).
+   *   - `ingestQueue` — имя BullMQ-очереди ingest'а tracker → knowledge-core.
+   *   - `idempotencyKeyTtlSeconds` — TTL Idempotency-Key в Redis.
+   *   - `webhookMaxRetries` — потолок ретраев доставки webhook'а.
+   *   - `webhookRetryBackoffInitialMs` — начальная задержка retry, ms.
+   */
+  get tracker() {
+    return {
+      webhookHmacPrefix: this.get('WEBHOOK_HMAC_PREFIX'),
+      ingestQueue: this.get('TRACKER_INGEST_QUEUE'),
+      idempotencyKeyTtlSeconds: this.get('IDEMPOTENCY_KEY_TTL_SECONDS'),
+      webhookMaxRetries: this.get('TRACKER_WEBHOOK_MAX_RETRIES'),
+      webhookRetryBackoffInitialMs: this.get(
+        'TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS',
+      ),
+    } as const;
+  }
+
   // Удобный шорткат для main.ts
   get port(): number {
     return this.runtime.port;

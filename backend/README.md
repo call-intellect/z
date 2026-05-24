@@ -47,6 +47,20 @@ NestJS 10 + Prisma 5 + PostgreSQL + Redis + BullMQ + LiveKit Server SDK + S3 + A
 | `bun run test:integration` | Интеграционные тесты                             |
 | `bun run test:e2e`         | E2E-тесты                                        |
 
+## ENV / Конфигурация
+
+Все ENV-переменные описаны в `src/common/config/env.schema.ts` (Zod-схема) и читаются через `TypedConfigService`. Шаблон значений — в `../​.env.example` (корневой) и `.env.example` (этот каталог).
+
+Tracker-модуль (Sprint 1):
+
+| Переменная | Default | Назначение |
+|---|---|---|
+| `WEBHOOK_HMAC_PREFIX` | `kora_wh_` | Префикс для secret webhook'ов трекера (для ротации). |
+| `TRACKER_INGEST_QUEUE` | `core.raw-events` | Имя BullMQ-очереди ingest'а tracker → knowledge-core. |
+| `IDEMPOTENCY_KEY_TTL_SECONDS` | `86400` | TTL Idempotency-Key (24ч) в Redis для POST /api/v1/tracker/*. |
+| `TRACKER_WEBHOOK_MAX_RETRIES` | `5` | Макс. попыток доставки tracker webhook'а. |
+| `TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS` | `60000` | Начальная задержка retry, ms (далее — экспоненциально). |
+
 ## Правила
 
 - Только `prisma db push`, никогда `prisma migrate*` — см. `.claude/skills/prisma-db-push-rules`.

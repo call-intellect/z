@@ -367,6 +367,34 @@ export class BusinessMetricsService implements OnModuleInit {
   private orgEconomicsRunsTotal!: Counter<'result'>;
   private budgetAlertSentTotal!: Counter<'threshold'>;
 
+  // ── Tracker (Sprint 1 — D-1.2) ──────────────────────────────────────
+  // См. plans/tz/2026-05-23-tracker-phase-1-models-api.md §"Метрики
+  // Prometheus" и plans/sprints/2026-05-24-sprint-plan-wave-1.md (D-1.2).
+  //
+  // TODO (cardinality, Sprint 7 — Grafana onboarding): label `tenant`
+  //    разрастается на масштабе сотен Org. Нормализация в `tenant_top`
+  //    (top-100 hash bucket + 'other') — паттерн из остальных tenant_top-
+  //    метрик. На Sprint 1 принимаем как `tenant` для прямой связки с
+  //    `Issue.tenantId`/`IntakeIssue.tenantId`/`Webhook.tenantId`; downgrade
+  //    к `tenant_top` сделаем в Sprint 7 одновременно с подключением
+  //    recording rule в Prometheus. То же про `project` (label на UUID).
+  //    Реально `.inc()` НЕ вызывается ни одним сервисом на Sprint 1 — это
+  //    делают tracker-сервисы на Sprint 2+. До этого момента series пустые.
+  //
+  // TODO (cardinality, Sprint 7): `webhook_id` в `webhook_retry_count` —
+  //    high-cardinality (UUID per webhook). Альтернатива: counter без
+  //    `webhook_id` + аналитика retries по `webhook_id` через event-log
+  //    в БД. Решим вместе с командой DevOps при подключении Grafana.
+  private issuesCreatedTotal!: Counter<'tenant' | 'project' | 'source'>;
+  private issuesCompletedTotal!: Counter<'tenant' | 'project'>;
+  private intakeTriagedTotal!: Counter<'tenant' | 'decision'>;
+  private trackerWebhookDeliveryTotal!: Counter<'tenant' | 'event' | 'success'>;
+  private trackerWebhookRetryCount!: Counter<'tenant' | 'webhook_id'>;
+  private trackerEventsToKnowledgeCoreTotal!: Counter<'tenant' | 'type'>;
+  private issuesByStateCount!: Gauge<'tenant' | 'project' | 'state'>;
+  private issuesOverdueCount!: Gauge<'tenant' | 'project'>;
+  private intakePendingCount!: Gauge<'tenant'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -1522,6 +1550,65 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA δ-2 — длительность обработки одного правила ProactiveWatcher (секунды).',
       labelNames: ['rule'] as const,
       buckets: [0.1, 0.5, 1, 3, 5, 10, 30, 60],
+    });
+
+    // ── Tracker (Sprint 1 — D-1.2) ────────────────────────────────────
+    // Только определения; `.inc()` / `.set()` НЕ вызывается на Sprint 1 —
+    // tracker-сервисы (issues / intake / webhooks-out / events bridge)
+    // делают это на Sprint 2+. См. plans/sprints/2026-05-24-sprint-plan-wave-1.md.
+    this.issuesCreatedTotal = this.getOrCreateCounter({
+      name: 'issues_created_total',
+      help: 'Tracker — созданные задачи (source ∈ manual|api|meeting|telegram|email|mobile_voice).',
+      labelNames: ['tenant', 'project', 'source'] as const,
+    });
+    this.issuesCompletedTotal = this.getOrCreateCounter({
+      name: 'issues_completed_total',
+      help: 'Tracker — задачи, переведённые в done (закрытые штатно).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.intakeTriagedTotal = this.getOrCreateCounter({
+      name: 'intake_triaged_total',
+      help: 'Tracker Intake — обработанные кандидаты (decision ∈ accepted|rejected|snoozed|duplicate).',
+      labelNames: ['tenant', 'decision'] as const,
+    });
+    // NB: имена `tracker_webhook_*` (а не `webhook_*`), потому что
+    // `webhook_delivery_total` уже зарегистрирован выше для общего ai-workspace
+    // webhooks-пайплайна с label'ами (event, status). Регистрация одного имени
+    // с разным набором label'ов = runtime-ошибка prom-client. ТЗ ссылается на
+    // `webhook_delivery_total{tenant, event, success}` (см. plans/tz/
+    // 2026-05-23-tracker-phase-1-models-api.md §"Метрики Prometheus"), но
+    // для tracker'а используем префикс `tracker_*` — это сохраняет
+    // backwards-compatibility legacy webhooks-метрики (Grafana dashboards
+    // на проде).
+    this.trackerWebhookDeliveryTotal = this.getOrCreateCounter({
+      name: 'tracker_webhook_delivery_total',
+      help: 'Tracker Webhooks Out — доставки исходящих webhook-событий (success ∈ true|false).',
+      labelNames: ['tenant', 'event', 'success'] as const,
+    });
+    this.trackerWebhookRetryCount = this.getOrCreateCounter({
+      name: 'tracker_webhook_retry_count',
+      help: 'Tracker Webhooks Out — суммарное число retry-попыток на webhook (счётчик, НЕ histogram).',
+      labelNames: ['tenant', 'webhook_id'] as const,
+    });
+    this.trackerEventsToKnowledgeCoreTotal = this.getOrCreateCounter({
+      name: 'tracker_events_to_knowledge_core_total',
+      help: 'Tracker → knowledge-core bridge — события, отправленные в core.raw-events (type ∈ task_created|task_status_changed|...).',
+      labelNames: ['tenant', 'type'] as const,
+    });
+    this.issuesByStateCount = this.getOrCreateGauge({
+      name: 'issues_by_state_count',
+      help: 'Tracker — snapshot количества задач по состоянию (обновляется cron-ом).',
+      labelNames: ['tenant', 'project', 'state'] as const,
+    });
+    this.issuesOverdueCount = this.getOrCreateGauge({
+      name: 'issues_overdue_count',
+      help: 'Tracker — snapshot количества просроченных задач (dueAt < now AND state != done; обновляется cron-ом).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.intakePendingCount = this.getOrCreateGauge({
+      name: 'intake_pending_count',
+      help: 'Tracker Intake — snapshot количества IntakeIssue.status=pending (обновляется при изменении статуса).',
+      labelNames: ['tenant'] as const,
     });
   }
 

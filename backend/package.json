@@ -59,6 +59,7 @@
     "@nestjs/websockets": "^11.1.21",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@types/web-push": "^3.6.4",
     "@willsoto/nestjs-prometheus": "^6.1.0",
     "archiver": "^8.0.0",
     "argon2": "^0.44.0",
@@ -92,6 +93,7 @@
     "socket.io": "^4.8.1",
     "swagger-ui-express": "^5.0.1",
     "ulid": "^3.0.2",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {

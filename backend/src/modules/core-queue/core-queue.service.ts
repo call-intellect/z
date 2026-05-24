@@ -24,6 +24,7 @@ import {
   type IdeaClustererJobData,
   type MeetingAnalyzeV2JobData,
   type ProbeEventJobData,
+  type PushSendJobData,
   type RawEventJobData,
   type RebuildKnowledgeProfileJobData,
   type RebuildSkillProfileJobData,
@@ -527,6 +528,35 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('recognition-formulate', args, { jobId });
     this.logger.debug(
       `enqueue core.recognition-formulate type=${args.type} toUserId=${args.toUserId} jobId=${jobId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Wave 2 — публикация `core.push-send`. Consumer — `PushSenderWorker`.
+   *
+   * jobId = `push_<userId>_<sha1(title+body).slice(0,12)>_<bucketMinute>`
+   *   — повторный enqueue той же благодарности/уведомления в ту же минуту
+   *   на того же user'а не создаст дубль push'а.
+   *
+   * NB: BullMQ 5.x запрещает `:` в Custom Id; используем `_`.
+   */
+  async enqueuePushSend(data: PushSendJobData): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.PUSH_SEND);
+    const bucket = Math.floor(Date.now() / 60_000);
+    const hashSrc = `${data.title}\n${data.body}`;
+    // sha1 короткий и достаточен для дедупа в минутном окне; без crypto
+    // import'а — пишем простой FNV-1a 32-бит для cheap-dedupKey.
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < hashSrc.length; i++) {
+      hash ^= hashSrc.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    const hashHex = hash.toString(16).padStart(8, '0').slice(0, 12);
+    const jobId = `push_${data.userId}_${hashHex}_${bucket}`;
+    await q.add('push-send', data, { jobId });
+    this.logger.debug(
+      `enqueue core.push-send userId=${data.userId} jobId=${jobId}`,
     );
     return { jobId };
   }

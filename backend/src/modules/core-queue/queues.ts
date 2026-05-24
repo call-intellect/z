@@ -126,6 +126,16 @@ export const CORE_QUEUE_NAMES = {
    *   - weekly_summary        — `recognition_weekly_<userId>_<YYYYWW>`
    */
   RECOGNITION_FORMULATE: 'core.recognition-formulate',
+  /**
+   * Wave 2 — Web Push (2026-05-24). Consumer — `PushSenderWorker` (PushModule).
+   * Принимает `PushSendJobData` и отправляет web-push на все активные
+   * PushSubscription'ы пользователя через npm `web-push` с VAPID.
+   *
+   * Идемпотентность через `jobId = push_<userId>_<sha1(title+body)>_<bucketMin>`
+   * — повторный enqueue той же благодарности/уведомления в ту же минуту
+   * на того же user'а не создаст дубль push'а. Reuters / DAU-минута — окно.
+   */
+  PUSH_SEND: 'core.push-send',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -309,6 +319,27 @@ export interface RebuildSkillProfileJobData {
  * на 2026-05-24 может быть ещё не готов — тогда воркер оставляет только
  * Recognition в БД и логирует TODO).
  */
+/**
+ * Wave 2 — payload `core.push-send`. Consumer — `PushSenderWorker` отправляет
+ * web-push всем активным `PushSubscription` указанного user в указанном tenant.
+ *
+ *   - `tenantId`/`userId` — целевой получатель.
+ *   - `title`/`body` — текст уведомления (рендерится в ServiceWorker'е).
+ *   - `icon` — опциональный URL иконки 192x192 (если null — берётся /icon-192.png).
+ *   - `data` — произвольный JSON-словарь, пробрасывается в `event.data` SW.
+ *     Договорённое поле — `url` (на клик ServiceWorker открывает или фокусирует
+ *     вкладку с этим URL). Остальные поля свободные, для будущих фич (badge,
+ *     deep-link, аналитика).
+ */
+export interface PushSendJobData {
+  tenantId: string;
+  userId: string;
+  title: string;
+  body: string;
+  icon?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface RecognitionFormulateJobData {
   tenantId: string;
   type:

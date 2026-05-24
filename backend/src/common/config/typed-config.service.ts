@@ -1030,6 +1030,26 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── push (Wave 2 — web-push) ──────────────
+  /**
+   * Web Push (VAPID) — параметры отправки браузерных уведомлений.
+   * Если хотя бы один из VAPID-ключей пустой, отправка отключается
+   * (WebPushSender уходит в no-op + warn); persistence (создание подписок)
+   * продолжает работать. См. plans/tz перед стартом Wave 2 backend-web-push.
+   */
+  get push() {
+    const publicKey = String(this.get('VAPID_PUBLIC_KEY') ?? '').trim();
+    const privateKey = String(this.get('VAPID_PRIVATE_KEY') ?? '').trim();
+    return {
+      vapidPublicKey: publicKey.length > 0 ? publicKey : undefined,
+      vapidPrivateKey: privateKey.length > 0 ? privateKey : undefined,
+      vapidSubject: String(this.get('VAPID_SUBJECT') ?? 'mailto:noreply@kora.app'),
+      maxFailures: Number(this.get('PUSH_MAX_FAILURES') ?? 5),
+      /** true если оба ключа заданы и можно физически отправлять push'и. */
+      isSendEnabled: publicKey.length > 0 && privateKey.length > 0,
+    } as const;
+  }
+
   // Удобный шорткат для main.ts
   get port(): number {
     return this.runtime.port;

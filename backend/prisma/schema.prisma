@@ -6824,3 +6824,25 @@ model ContributionSnapshot {
 
   @@unique([userId])
 }
+
+// ──────────────────────────── Wave 2 finishing — Web Push (2026-05-24) ────────────────────────────
+// PushSubscription — подписка браузера на push (Push API + VAPID).
+// Frontend через navigator.serviceWorker.pushManager.subscribe() получает
+// { endpoint, keys: { p256dh, auth } }; backend хранит для отправки notifications.
+// failureCount накапливается при 410/404 (RFC 8030 §7.3) → удаление после PUSH_MAX_FAILURES.
+model PushSubscription {
+  id           String    @id @default(cuid())
+  tenantId     String
+  userId       String
+  endpoint     String    @db.Text
+  p256dh       String
+  auth         String
+  userAgent    String?
+  expiresAt    DateTime?
+  lastSeenAt   DateTime  @default(now())
+  failureCount Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@unique([userId, endpoint])
+  @@index([tenantId, userId])
+}

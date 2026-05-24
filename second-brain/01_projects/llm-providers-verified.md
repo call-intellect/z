@@ -1,8 +1,8 @@
 ---
 title: LLM-провайдеры и модели — verified
 status: actual
-verified_at: 2026-05-21
-updated: 2026-05-21
+verified_at: 2026-05-24
+updated: 2026-05-24
 ---
 
 # LLM-провайдеры Z — verified карта
@@ -22,27 +22,47 @@ updated: 2026-05-21
 - Дописываешь fallback-цепочку.
 - Сомневаешься, какой канал выбрать для конкретной задачи.
 
-## Verified-таблица (прогон от 2026-05-21)
+## Verified-таблица (последний прогон от 2026-05-24)
 
-| Канал (provider) | Модель | Статус | Latency | Где использовать |
+> Колонка **«В LlmRouter»** показывает, подключён ли канал к `LlmTaskRoute` /
+> админке `/admin/ai-models`. Если ✗ — модель проверена smoke-вызовом, но
+> переключить её на agent через админку **нельзя**, пока не реализовано ТЗ
+> [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md).
+
+### A. Каналы в продакшен-роутере (доступны через админку)
+
+| Канал (provider) | Модель | Статус | В LlmRouter | Latency | Где использовать |
+|---|---|---|---|---|---|
+| **deepseek** | `deepseek-v4-flash` | ✓ verified | ✓ | ~1.3s | Primary для большинства задач: block-ingest/distill/linker, chat-v2, card-rollup-v2, task-extract-v2, chapter-extract-v2, dashboard-summary |
+| **deepseek** | `deepseek-v4-pro` | ✓ verified | ✓ | ~3.2s | Тяжёлый reasoning: summary-v2, goal-alignment |
+| **deepseek** | `deepseek-chat` | ✓ verified | ✓ | ~0.8s | Лёгкие/быстрые ответы; legacy alias |
+| **openai-via-proxy** | `gpt-5.5` | ✓ verified | ✓ | ~3.0s | Top-intelligence fallback для summary-v2 |
+| **openai-via-proxy** | `gpt-5.4` | ✓ verified | ✓ | ~1.4s | Универсальный fallback для chat-v2 (сложные запросы) |
+| **openai-via-proxy** | `gpt-5.4-mini` | ✓ verified | ✓ | ~1.2s | Primary fallback общего потока |
+| **openai-via-proxy** | `gpt-5.4-nano` | ✓ verified | ✓ | ~1.5s | Primary для коротких классификаторов: theme-classify, entity-resolver |
+| **openai-via-proxy** | `gpt-5-mini` | ✓ verified | ✓ | ~0.9s | Лёгкий быстрый канал, legacy дефолт `OpenAiProxyService` |
+| **openai-via-proxy** | `gpt-4.1-mini` | ✓ verified | ✓ | ~3.4s | Не-reasoning fallback (нужен `temperature`) |
+| **openai-via-proxy** | `gpt-4o-mini` | ✓ verified | ✓ | ~1.7s | Не-reasoning fallback (нужен `temperature`) |
+| **openai-via-proxy** | `gpt-4o` | ✓ verified | ✓ | ~2.5s | concierge-respond, brand-voice-extract, orchestrator-plan/synthesize. ⚠ нет в `MODEL_PRICES` — стоимость считается как 0 |
+| **minimax** | `MiniMax-M2.5` | ✓ verified | ✗ (seed нет) | ~1.8s | Anthropic-совместимый fallback, A/B-кандидат на summary-v2 |
+| **minimax** | `MiniMax-M2.7` | ✓ verified | ✓ | ~2.9s | Свежая M2.7, A/B-кандидат на summary-v2 |
+| **ollama** (`ollama.agent-lia.ru`) | `qwen3.5:9b` | ✓ verified | ✓ | ~8.0s | Self-hosted secondary fallback; единственная chat-модель, реально установленная на нашем Ollama |
+| **embeddings** (openai-via-proxy) | `text-embedding-3-small` | ✓ verified | (отдельный pipeline) | ~1.4s | **Единственный verified канал embeddings.** dim=1536 |
+
+### B. Каналы проверенные smoke-тестом, но НЕ в LlmRouter (через админку недоступны)
+
+Эти каналы реально дёргались с production-ключей и отвечают, но провайдер-сервиса в `LlmRouter` нет, в `LlmTaskRoute` посадить нельзя. Чтобы подключить — см. ТЗ [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md).
+
+| Канал | URL-формат | Модель | Статус smoke (2026-05-24) | Latency |
 |---|---|---|---|---|
-| **deepseek** | `deepseek-v4-flash` | ✓ verified | ~1.3s | Primary для большинства задач: block-ingest/distill/linker, chat-v2, card-rollup-v2, task-extract-v2, chapter-extract-v2, dashboard-summary |
-| **deepseek** | `deepseek-v4-pro` | ✓ verified | ~3.2s | Тяжёлый reasoning: summary-v2, goal-alignment |
-| **deepseek** | `deepseek-chat` | ✓ verified | ~0.8s | Лёгкие/быстрые ответы; legacy alias |
-| **openai-via-proxy** | `gpt-5.5` | ✓ verified | ~3.0s | Top-intelligence fallback для summary-v2 |
-| **openai-via-proxy** | `gpt-5.4` | ✓ verified | ~1.4s | Универсальный fallback для chat-v2 (сложные запросы) |
-| **openai-via-proxy** | `gpt-5.4-mini` | ✓ verified | ~1.2s | Primary fallback общего потока |
-| **openai-via-proxy** | `gpt-5.4-nano` | ✓ verified | ~1.5s | Primary для коротких классификаторов: theme-classify, entity-resolver |
-| **openai-via-proxy** | `gpt-5-mini` | ✓ verified | ~0.9s | Лёгкий быстрый канал, legacy дефолт `OpenAiProxyService` |
-| **openai-via-proxy** | `gpt-4.1-mini` | ✓ verified | ~3.4s | Не-reasoning fallback (нужен `temperature`) |
-| **openai-via-proxy** | `gpt-4o-mini` | ✓ verified | ~1.7s | Не-reasoning fallback (нужен `temperature`) |
-| **minimax** | `MiniMax-M2.5` | ✓ verified | ~1.8s | Anthropic-совместимый fallback, A/B-кандидат на summary-v2 |
-| **minimax** | `MiniMax-M2.7` | ✓ verified | ~2.9s | Свежая M2.7, A/B-кандидат на summary-v2 |
-| **ollama** (`ollama.agent-lia.ru`) | `qwen3.5:9b` | ✓ verified | ~8.0s | Self-hosted secondary fallback; единственная chat-модель, реально установленная на нашем Ollama |
-| **grsai-gemini** (через прокси) | `gemini-3-pro` | ✓ verified | ~10.5s | Gemini A/B-канал, SSE-стрим |
-| **grsai-gemini** (через прокси) | `gemini-3.1-pro` | ✓ verified | ~9.5s | Gemini свежая, A/B-канал |
-| **kie-gemini** (через прокси) | `gemini-3-pro` | ⚠ unstable | timeout 60s в последнем прогоне (раньше ~9s) | Резерв; KIE нестабилен, нужна длинная retry-лестница `[3000, 6000, 10000, 15000]ms` (см. [llm-models-playbook.md §9](../../docs/reference/llm-models-playbook.md)) |
-| **embeddings** (openai-via-proxy) | `text-embedding-3-small` | ✓ verified | ~1.4s | **Единственный verified канал embeddings.** dim=1536 |
+| **grsai-gemini** | `proxy.agent-lia.ru/grsai/v1/chat/completions` (SSE) | `gemini-3-pro` | ✓ verified | ~10.5s |
+| **grsai-gemini** | (то же) | `gemini-3.1-pro` | ✓ verified | ~9.5s |
+| **kie-claude** | `api.kie.ai/claude/v1/messages` (Anthropic-compat) | `claude-opus-4-7` | ✓ verified | TBD |
+| **kie-gpt** | `api.kie.ai/codex/v1/responses` (OpenAI Responses) | `gpt-5-4` (через дефис) | ✓ verified | TBD |
+| **kie-gemini-direct** | `api.kie.ai/${model}/v1/chat/completions` (модель в URL) | `gemini-3-flash` | ✓ verified | TBD |
+| **kie-gemini** | `proxy.agent-lia.ru/kie/${model}/v1/chat/completions` | `gemini-3-pro` | ⚠ unstable (timeout 60s, раньше ~9s) | TBD |
+
+Latency для KIE-каналов — TBD (зависит от прогона); внести после следующего полного smoke-запуска (`bun scripts/smoke-llm-providers.ts --only=kie-claude,kie-gpt,kie-gemini-direct,kie-gemini,grsai-gemini`).
 
 ## Каналы, которые НЕ работают / не используем
 
@@ -64,6 +84,7 @@ updated: 2026-05-21
    - `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5` — **только** `'none'|'low'|'medium'|'high'` (без `'minimal'` — `OpenAiProxyService` сейчас шлёт `'medium'` по умолчанию, для smoke было поправлено).
 6. **Anthropic-провайдеры (`anthropic`) не добавлять в дефолты.** В коде сервис есть, но любой `LlmTaskRoute.providers` со строкой `'anthropic'` будет ронять задачу с 401.
 7. **Embeddings → только `text-embedding-3-small` через прокси.** Никакого `bge-m3`.
+8. **KIE / GRSAI пока через `LlmRouter` НЕ ходят.** Модели в разделе B доступны только из smoke-скрипта. Если кому-то нужно дёргать Gemini/Claude через KIE из прод-кода — это запрещено до выполнения ТЗ [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md). После выполнения ТЗ — переключать через `/admin/ai-models/[taskType]`.
 
 ## Готовые образцы вызова (для копи-пейста)
 

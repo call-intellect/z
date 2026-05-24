@@ -674,7 +674,19 @@ export class IssuesService {
     return { ok: true };
   }
 
-  /** Связать задачу с целью (Goal). IssueActivity verb='goal_linked'. */
+  /**
+   * Связать задачу с целью (Goal).
+   *
+   * - $transaction: Issue.update + IssueActivity verb='goal_linked' с
+   *   metadata={goalId}.
+   * - WS-событие через `TrackerEventsService.publishIssueUpdated` (паттерн
+   *   как у других мутаций) + `publishActivity` для feed'а.
+   *
+   * Sprint 3 B1-3.2 — после линковки strategic-alignment.cron (см.
+   * goals/cron/strategic-alignment-issues.cron.ts) подхватит задачу в
+   * следующем проходе. Эмитить сюда специальное knowledge-core событие
+   * пока не нужно — связь читается напрямую через Issue.goalId.
+   */
   async linkGoal(
     issueId: string,
     goalId: string,
@@ -692,9 +704,10 @@ export class IssuesService {
         error: { code: 'goal_not_found', message: 'Цель не найдена' },
       });
     }
+    let activityId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       await tx.issue.update({ where: { id: issueId }, data: { goalId } });
-      await this.activity.record({
+      activityId = await this.activity.record({
         tenantId,
         issueId,
         actorUserId,
@@ -703,13 +716,25 @@ export class IssuesService {
         field: 'goalId',
         oldValue: existing.goalId,
         newValue: goalId,
+        metadata: { goalId },
         tx,
       });
     });
-    return this.assemble(issueId, tenantId);
+    const response = await this.assemble(issueId, tenantId);
+    // WS — задача обновилась + новая запись в activity-feed.
+    this.events.publishIssueUpdated(response, tenantId, ['goalId']);
+    if (activityId) {
+      this.events.publishActivity({
+        tenantId,
+        activityId,
+        issueId,
+        verb: 'goal_linked',
+      });
+    }
+    return response;
   }
 
-  /** Отвязать задачу от цели. */
+  /** Отвязать задачу от цели. См. linkGoal — симметричная семантика. */
   async unlinkGoal(
     issueId: string,
     tenantId: string,
@@ -717,21 +742,34 @@ export class IssuesService {
   ): Promise<IssueResponseDto> {
     const existing = await this.requireIssue(issueId, tenantId);
     if (!existing.goalId) return this.assemble(issueId, tenantId);
+    const oldGoalId = existing.goalId;
+    let activityId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       await tx.issue.update({ where: { id: issueId }, data: { goalId: null } });
-      await this.activity.record({
+      activityId = await this.activity.record({
         tenantId,
         issueId,
         actorUserId,
         actorType: 'user',
         verb: 'goal_unlinked',
         field: 'goalId',
-        oldValue: existing.goalId,
+        oldValue: oldGoalId,
         newValue: null,
+        metadata: { goalId: oldGoalId },
         tx,
       });
     });
-    return this.assemble(issueId, tenantId);
+    const response = await this.assemble(issueId, tenantId);
+    this.events.publishIssueUpdated(response, tenantId, ['goalId']);
+    if (activityId) {
+      this.events.publishActivity({
+        tenantId,
+        activityId,
+        issueId,
+        verb: 'goal_unlinked',
+      });
+    }
+    return response;
   }
 
   /** Список IssueActivity для задачи (DESC по epoch). */

@@ -14,7 +14,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -35,6 +35,7 @@ import {
   type AddThemesDto,
   type CreateGoalDto,
   type GoalDetailDto,
+  type GoalIssueProgressSnapshotDto,
   type GoalListItemDto,
   type ListGoalsQuery,
   type UpdateGoalDto,
@@ -169,6 +170,27 @@ export class GoalsController {
       goalId: id,
       themeId,
     });
+  }
+
+  @Get(':id/alignment-snapshot')
+  @ApiOperation({
+    summary:
+      'Sprint 3 B1-3.2 — issue-based snapshot (totalLinked/completed/blocked/timeProgress/alignmentScore)',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Snapshot из Redis-кэша (fromCache=true) или посчитанный on-the-fly (fromCache=false).',
+  })
+  @ApiResponse({ status: 404, description: 'Цель не найдена в Org.' })
+  async issueAlignmentSnapshot(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<GoalIssueProgressSnapshotDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.goals.getIssueAlignmentSnapshot({ tenantId: t, goalId: id });
   }
 
   @Post(':id/recompute')

@@ -102,3 +102,30 @@ export interface GoalDetailDto extends GoalListItemDto {
   /** Последние ≤30 snapshots по убыванию `createdAt`. Для timeline UI. */
   timeline: GoalAlignmentSnapshotDto[];
 }
+
+/**
+ * Sprint 3 B1-3.2 — issue-based snapshot из Tracker-задач, привязанных к
+ * Goal через `Issue.goalId`. Считается cron'ом
+ * `goals/cron/strategic-alignment.cron.ts` (06:00 ежедневно) и кэшируется
+ * в Redis. Endpoint `GET /goals/:id/alignment-snapshot` отдаёт его быстро,
+ * а при cache miss считает on-the-fly.
+ *
+ * Это ОТДЕЛЬНЫЙ snapshot от LLM-based `GoalAlignmentSnapshotDto` (там —
+ * движение по знаниям, здесь — counted-метрики по задачам).
+ */
+export interface GoalIssueProgressSnapshotDto {
+  goalId: string;
+  tenantId: string;
+  totalLinkedIssues: number;
+  completedIssues: number;
+  blockedIssues: number;
+  recentlyUpdatedIssues: number;
+  /** Доля прошедшего времени между createdAt и targetDate в %, null если нет targetDate. */
+  timeProgressPct: number | null;
+  /** 0..100; формула: 50%*completion + 50%*recency (≤7д). */
+  alignmentScore: number;
+  /** ISO 8601 UTC, когда снапшот был посчитан. */
+  computedAt: string;
+  /** true — отдано из Redis-кэша, false — посчитано on-the-fly. */
+  fromCache: boolean;
+}

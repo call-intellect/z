@@ -16,10 +16,13 @@ import type {
   CreateGoalDto,
   GoalAlignmentSnapshotDto,
   GoalDetailDto,
+  GoalIssueProgressSnapshotDto,
   GoalListItemDto,
   GoalThemeLinkDto,
   UpdateGoalDto,
 } from '../dto/goals.dto';
+
+import { StrategicAlignmentIssuesService } from './strategic-alignment-issues.service';
 
 const TIMELINE_LIMIT = 30;
 
@@ -43,7 +46,43 @@ export class GoalsService {
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(QuotaService) private readonly quotas: QuotaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(StrategicAlignmentIssuesService)
+    private readonly issuesAlignment: StrategicAlignmentIssuesService,
   ) {}
+
+  // ─────────────────────────── issue-based snapshot ────────────────────
+
+  /**
+   * Sprint 3 B1-3.2 — отдать issue-based snapshot. cache-first: пробуем
+   * Redis, при cache miss считаем on-the-fly и пишем в Redis для
+   * последующих запросов до следующего cron-прогона.
+   */
+  async getIssueAlignmentSnapshot(args: {
+    tenantId: string;
+    goalId: string;
+  }): Promise<GoalIssueProgressSnapshotDto> {
+    // Сначала проверяем, что Goal существует и принадлежит tenant'у.
+    const exists = await this.prisma.goal.findFirst({
+      where: { id: args.goalId, tenantId: args.tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'goal_not_found', message: 'Цель не найдена' },
+      });
+    }
+    const cached = await this.issuesAlignment.getCached(args.goalId);
+    if (cached) {
+      return { ...cached, fromCache: true };
+    }
+    const fresh = await this.issuesAlignment.compute({
+      tenantId: args.tenantId,
+      goalId: args.goalId,
+    });
+    await this.issuesAlignment.setCached(fresh);
+    return { ...fresh, fromCache: false };
+  }
 
   // ─────────────────────────── list / get ───────────────────────────
 

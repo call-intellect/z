@@ -189,6 +189,22 @@ export const TaskItemSchema = z
     title: z.string(),
     assignee: z.string().nullable(),
     dueDate: z.string().nullable(),
+    // Wave 3 / Tracker Phase 3 part B — расширенные поля для
+    // meeting-extract-actions. Все опциональные/nullable — обратная
+    // совместимость с legacy `tasks`-агентом (старые модели ничего не
+    // возвращают для этих полей; zod пропустит без ошибки благодаря
+    // `.optional()`).
+    suggestedAssigneeHint: z.string().nullable().optional(),
+    suggestedDueDate: z.string().nullable().optional(),
+    suggestedPriority: z
+      .enum(['urgent', 'high', 'medium', 'low'])
+      .nullable()
+      .optional(),
+    // Wave 3 — НЕ ограничиваем .min/.max строго: defensive против
+    // галлюцинаций LLM, который может вернуть 1.0001 или -0.05. Caller
+    // обязан clamp'ить в [0,1] перед сохранением в БД (Decimal(4,3)).
+    confidence: z.number().optional(),
+    sourceQuote: z.string().optional(),
   })
   .strict();
 export type TaskItem = z.infer<typeof TaskItemSchema>;

@@ -10,6 +10,9 @@ import type {
   CycleCompletedEvent,
   CycleCreatedEvent,
   CycleProgressUpdatedEvent,
+  ImportCompletedEvent,
+  ImportFailedEvent,
+  ImportProgressEvent,
   IntakeNewItemEvent,
   IntakeTriagedEvent,
   IssueCreatedEvent,
@@ -243,6 +246,63 @@ export class TrackerEventsService {
       this.gateway.tenantRoom(args.tenantId),
       this.gateway.issueRoom(args.issueId),
     ]);
+  }
+
+  // ── imports (Tracker Phase 5 part 1, 2026-05-24) ──────────────────────
+
+  /**
+   * `import.progress` — прогресс импорта. Эмитим ~раз в 5 секунд из
+   * ImportTrackerWorker (точечно, после батчей по 50 items).
+   */
+  publishImportProgress(args: {
+    tenantId: string;
+    importLogId: string;
+    processed: number;
+    total: number;
+    phase: string;
+  }): void {
+    const event: ImportProgressEvent = {
+      type: 'import.progress',
+      tenantId: args.tenantId,
+      importLogId: args.importLogId,
+      processed: args.processed,
+      total: args.total,
+      phase: args.phase,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
+  }
+
+  /** `import.completed` — финальное событие успешного завершения импорта. */
+  publishImportCompleted(args: {
+    tenantId: string;
+    importLogId: string;
+    summary: ImportCompletedEvent['summary'];
+  }): void {
+    const event: ImportCompletedEvent = {
+      type: 'import.completed',
+      tenantId: args.tenantId,
+      importLogId: args.importLogId,
+      summary: args.summary,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
+  }
+
+  /** `import.failed` — финальное событие неуспешного завершения импорта. */
+  publishImportFailed(args: {
+    tenantId: string;
+    importLogId: string;
+    error: string;
+  }): void {
+    const event: ImportFailedEvent = {
+      type: 'import.failed',
+      tenantId: args.tenantId,
+      importLogId: args.importLogId,
+      error: args.error,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
   }
 
   // ── internal ──────────────────────────────────────────────────────────

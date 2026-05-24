@@ -15,6 +15,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AiUsageLogService } from './ai-usage-log.service';
 import { AnthropicService } from './anthropic.service';
 import { DeepSeekService } from './deepseek.service';
+import { GrsaiService } from './grsai.service';
+import { KieService } from './kie.service';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
@@ -239,7 +241,45 @@ export type LlmTaskType =
   //   без официоза. Primary = deepseek-v4-flash; secondary = openai gpt-5.4-mini;
   //   tertiary = ollama qwen3.5:9b. Никогда от имени руководителя —
   //   только от имени AI / системы.
-  | 'recognition-formulate';
+  | 'recognition-formulate'
+  // Wave 3 / Tracker Phase 3 part C — AI-suggest при создании задачи.
+  // 'issue-infer-fields' — LLM по title+description+project-context →
+  //   { suggestedAssigneeId?, suggestedDueDate?, suggestedPriority?,
+  //     suggestedGoalId?, suggestedLabels?, confidence }.
+  // 'issue-goal-suggest' — fallback после KNN: LLM выбирает Goal из списка
+  //   активных целей tenant'а под title+description задачи.
+  // Primary = deepseek; secondary = openai gpt-4o-mini; tertiary = ollama qwen3.5:9b.
+  | 'issue-infer-fields'
+  | 'issue-goal-suggest'
+  // Wave 3 / Tracker Phase 3 part B — автозадачи из встреч + auto-triage Intake.
+  // 'meeting-extract-actions' — извлекает структурированные задачи из
+  //   транскрипта встречи (title + suggestedAssigneeHint + suggestedDueDate +
+  //   suggestedPriority + confidence + sourceQuote). Capable модель;
+  //   primary = deepseek-chat, secondary = openai gpt-4o-mini, tertiary = qwen3.5:9b.
+  // 'intake-auto-triage' — для нового IntakeIssue заполняет suggested*
+  //   поля + confidence. При confidence ≥ 0.92 + source='meeting' +
+  //   suggestedAssigneeId IS NOT NULL → IntakeAutoTriageWorker создаёт
+  //   Issue автоматически. Те же три уровня цепочки.
+  | 'meeting-extract-actions'
+  | 'intake-auto-triage'
+  // Wave 3 / Tracker Phase 4 РФ part 1 — Telegram-бот для задач.
+  // 'telegram-create-task' — парсер «одной фразы»: пользователь пишет боту
+  //   в личке, LLM извлекает title + suggestedAssigneeHint + suggestedDueDate +
+  //   suggestedProjectHint + confidence + sourceQuote. Primary = deepseek,
+  //   secondary = openai gpt-4o-mini, tertiary = ollama qwen3.5:9b.
+  // 'telegram-forward-to-task' — forward стороннего сообщения боту: то же
+  //   извлечение, но из чужого текста (форварды длиннее, sourceQuote — целая
+  //   цитата). Та же цепочка.
+  // 'telegram-reply-classify' — короткая классификация reply на bot-уведомление
+  //   (status_command | comment | new_task). Primary = ollama (дёшево +
+  //   локально), secondary = deepseek, tertiary = openai gpt-4o-mini.
+  // 'telegram-digest-formulate' — утренний дайджест: на входе агрегат
+  //   { urgentToday, inProgress, overdue }, на выходе тёплый markdown.
+  //   Primary = deepseek, secondary = openai gpt-4o-mini, tertiary = ollama.
+  | 'telegram-create-task'
+  | 'telegram-forward-to-task'
+  | 'telegram-reply-classify'
+  | 'telegram-digest-formulate';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -340,6 +380,17 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'helpfulness-spotlight-formulate',
   // Wave 2 — Recognition Agent
   'recognition-formulate',
+  // Wave 3 / Tracker Phase 3 part C — AI-suggest при создании задачи
+  'issue-infer-fields',
+  'issue-goal-suggest',
+  // Wave 3 / Tracker Phase 3 part B
+  'meeting-extract-actions',
+  'intake-auto-triage',
+  // Wave 3 / Tracker Phase 4 РФ part 1 — Telegram-бот для задач
+  'telegram-create-task',
+  'telegram-forward-to-task',
+  'telegram-reply-classify',
+  'telegram-digest-formulate',
 ] as const;
 
 /**
@@ -351,7 +402,9 @@ export type LlmProviderName =
   | 'minimax'
   | 'openai-via-proxy'
   | 'deepseek'
-  | 'ollama';
+  | 'ollama'
+  | 'kie'
+  | 'grsai';
 
 const ALL_PROVIDERS: LlmProviderName[] = [
   'anthropic',
@@ -359,6 +412,8 @@ const ALL_PROVIDERS: LlmProviderName[] = [
   'openai-via-proxy',
   'deepseek',
   'ollama',
+  'kie',
+  'grsai',
 ];
 
 /**
@@ -384,6 +439,10 @@ const PROVIDER_CAPABILITY: Record<
   'openai-via-proxy': { maxDataClass: 'internal', localOnly: false },
   deepseek: { maxDataClass: 'internal', localOnly: false },
   ollama: { maxDataClass: 'private', localOnly: true },
+  // KIE / GRSAI — внешние мульти-провайдер прокси (Claude/GPT/Gemini).
+  // Пропускаем только internal-данные; sensitive/private — никогда.
+  kie: { maxDataClass: 'internal', localOnly: false },
+  grsai: { maxDataClass: 'internal', localOnly: false },
 };
 
 /**
@@ -599,6 +658,8 @@ export class LlmRouterService implements OnModuleInit {
     @Inject(OpenAiProxyService) private readonly openai: OpenAiProxyService,
     @Inject(DeepSeekService) private readonly deepseek: DeepSeekService,
     @Inject(OllamaService) private readonly ollama: OllamaService,
+    @Inject(KieService) private readonly kie: KieService,
+    @Inject(GrsaiService) private readonly grsai: GrsaiService,
     @Inject(AiUsageLogService) private readonly usage: AiUsageLogService,
     @Optional()
     @Inject(BusinessMetricsService)
@@ -1059,6 +1120,10 @@ export class LlmRouterService implements OnModuleInit {
         return this.deepseek.complete(input);
       case 'ollama':
         return this.ollama.complete(input);
+      case 'kie':
+        return this.kie.complete(input);
+      case 'grsai':
+        return this.grsai.complete(input);
       default: {
         const _exhaustive: never = entry.provider;
         throw new Error(`LlmRouter: неизвестный провайдер ${String(_exhaustive)}`);
@@ -1155,7 +1220,14 @@ export class LlmRouterService implements OnModuleInit {
 
   private providerNameToUsageProvider(
     p: LlmProviderName,
-  ): 'anthropic' | 'minimax' | 'openai-via-proxy' | 'deepseek' | 'ollama' {
+  ):
+    | 'anthropic'
+    | 'minimax'
+    | 'openai-via-proxy'
+    | 'deepseek'
+    | 'ollama'
+    | 'kie'
+    | 'grsai' {
     return p;
   }
 

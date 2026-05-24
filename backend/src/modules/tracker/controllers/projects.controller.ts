@@ -25,6 +25,10 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import {
+  CreateFromTemplateSchema,
+  type CreateFromTemplateDto,
+} from '../dto/projects/create-from-template.dto';
+import {
   CreateProjectSchema,
   type CreateProjectDto,
 } from '../dto/projects/create-project.dto';
@@ -43,6 +47,10 @@ import {
   UpdateProjectSchema,
   type UpdateProjectDto,
 } from '../dto/projects/update-project.dto';
+import {
+  ProjectsFromTemplateService,
+  type CreateFromTemplateResult,
+} from '../services/projects-from-template.service';
 import { ProjectsService } from '../services/projects.service';
 
 /**
@@ -60,6 +68,8 @@ import { ProjectsService } from '../services/projects.service';
 export class ProjectsController {
   constructor(
     @Inject(ProjectsService) private readonly svc: ProjectsService,
+    @Inject(ProjectsFromTemplateService)
+    private readonly fromTemplate: ProjectsFromTemplateService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -87,6 +97,28 @@ export class ProjectsController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.create(body, t, user.id);
+  }
+
+  @Post('projects/from-template')
+  @ApiOperation({
+    summary: 'Создать проект из шаблона команды (Phase 4 / Sprint 9)',
+    description:
+      'Создаёт Project на основе TeamTemplate: статусы (IssueState), ProjectMember (admin), ' +
+      'опционально 2-3 примера задач и Regulation-заглушки. Метрика team_template_used_total.',
+  })
+  async createFromTemplate(
+    @Body(new ZodValidationPipe(CreateFromTemplateSchema))
+    body: CreateFromTemplateDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CreateFromTemplateResult> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.fromTemplate.createFromTemplate({
+      tenantId: t,
+      userId: user.id,
+      dto: body,
+    });
   }
 
   @Get('projects/:id')

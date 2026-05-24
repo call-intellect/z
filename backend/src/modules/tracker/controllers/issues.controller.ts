@@ -44,6 +44,7 @@ import {
   ListIssuesQuerySchema,
   type ListIssuesQuery,
 } from '../dto/issues/list-issues-query.dto';
+import type { SimilarIssueDto } from '../dto/issues/similar-issue.dto';
 import {
   StartMeetingFromIssueSchema,
   type StartMeetingFromIssueDto,
@@ -59,6 +60,7 @@ import {
 } from '../dto/issues/update-issue.dto';
 import { IssueMeetingsService } from '../services/issue-meetings.service';
 import { IssuesService } from '../services/issues.service';
+import { SimilarIssuesService } from '../services/similar-issues.service';
 
 /**
  * REST `/api/v1/projects/:projectId/issues` + `/api/v1/issues/:id` —
@@ -81,6 +83,8 @@ export class IssuesController {
     @Inject(IssuesService) private readonly svc: IssuesService,
     @Inject(IssueMeetingsService)
     private readonly issueMeetings: IssueMeetingsService,
+    @Inject(SimilarIssuesService)
+    private readonly similar: SimilarIssuesService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -339,6 +343,28 @@ export class IssuesController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.svc.getVersions(id, t);
+  }
+
+  // ── Phase 3 (2026-05-24) — KNN similar issues ──
+
+  @Get('tracker/issues/:id/similar')
+  @ApiOperation({
+    summary:
+      'Похожие задачи (KNN cosine по pgvector embedding). ' +
+      'Используется правой панелью карточки задачи для подсказки ' +
+      '«похожие проблемы» / «уже решено». RBAC: issue.read.',
+  })
+  async similarIssues(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SimilarIssueDto[]> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    // Сначала проверим, что исходная задача существует и доступна в этом
+    // tenant'е (защита от cross-tenant probe через KNN).
+    await this.svc.requireIssue(id, t);
+    return this.similar.findSimilar({ tenantId: t, issueId: id });
   }
 
   // ── helpers ──

@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, type IntakeIssue } from '@prisma/client';
 
@@ -18,6 +19,7 @@ import type {
 } from '../dto/intake/triage-intake.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
+import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
@@ -79,6 +81,12 @@ export class IntakeService {
     private readonly events: TrackerEventsService,
     @Inject(WebhookDispatcher)
     private readonly webhooks: WebhookDispatcher,
+    // Wave 3 / Tracker Phase 3 part B — best-effort enqueue auto-triage.
+    // @Optional, чтобы существующие unit-тесты IntakeService не упали
+    // (там DI без Redis). В рантайме провайдер инжектится через TrackerModule.
+    @Optional()
+    @Inject(IntakeAutoTriageQueueService)
+    private readonly autoTriageQueue?: IntakeAutoTriageQueueService,
   ) {}
 
   /** Создать intake-карточку. Не требует userId — может вызвать webhook-адаптер. */
@@ -119,6 +127,21 @@ export class IntakeService {
           'intake.created webhook dispatch failed',
         );
       });
+    // Wave 3 / Tracker Phase 3 part B — best-effort enqueue auto-triage.
+    // Если auto-triage queue не подключена (например, в тестах) — пропускаем.
+    if (this.autoTriageQueue) {
+      void this.autoTriageQueue
+        .enqueue({ tenantId, intakeIssueId: created.id })
+        .catch((e) => {
+          this.logger.warn(
+            {
+              intakeId: created.id,
+              err: e instanceof Error ? e.message : String(e),
+            },
+            'intake-auto-triage enqueue failed (best-effort)',
+          );
+        });
+    }
     return response;
   }
 

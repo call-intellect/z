@@ -868,6 +868,15 @@ p, manager, *, self, push_subscription, read
 p, manager, *, self, push_subscription, write
 p, manager, *, self, push_subscription, delete
 
+# ──────────────────────────── Tracker Phase 5 part 1 (2026-05-24) ────────────────────────────
+# import_tracker — миграционный wizard (Trello / Bitrix24 / Я.Трекер).
+# read: список + детали ImportLog; write: запуск + cancel. Только owner / admin Org
+# (админская функция миграции). Manager НЕ видит чужие импорты.
+p, owner, *, *, import_tracker, read
+p, owner, *, *, import_tracker, write
+p, admin, *, *, import_tracker, read
+p, admin, *, *, import_tracker, write
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

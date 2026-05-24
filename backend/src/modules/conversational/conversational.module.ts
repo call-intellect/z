@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { DocumentsModule } from '../documents/documents.module';
+import { TrackerModule } from '../tracker/tracker.module';
 
 import { ConversationalIngestAdapter } from './adapters/conversational-ingest.adapter';
 import { EmailSmtpChannelAdapter } from './adapters/email-smtp.adapter';
@@ -9,7 +10,10 @@ import { MaxApiClient } from './adapters/max-bot/max-api-client';
 import { MaxBotChannelAdapter } from './adapters/max-bot/max-bot.adapter';
 import { MaxWebhooksController } from './adapters/max-bot/max-webhooks.controller';
 import { TelegramApiClient } from './adapters/telegram-bot/telegram-api-client';
+import { TelegramBotMessageHandler } from './adapters/telegram-bot/telegram-bot-message.handler';
 import { TelegramBotChannelAdapter } from './adapters/telegram-bot/telegram-bot.adapter';
+import { TelegramDigestCron } from './adapters/telegram-bot/telegram-digest.cron';
+import { TelegramTaskParserService } from './adapters/telegram-bot/telegram-task-parser.service';
 import { TelegramWebhooksController } from './adapters/telegram-bot/telegram-webhooks.controller';
 import { ChannelRegistry } from './channel-registry';
 import { ConversationalController } from './conversational.controller';
@@ -53,6 +57,12 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // SBA β-1 zero-button — Telegram/MAX-адаптеры инжектят DocumentsService
     // для document inbound. DocumentsModule НЕ @Global, нужно импортировать.
     DocumentsModule,
+    // Wave 3 / Tracker Phase 4 РФ (2026-05-24) — TelegramBotMessageHandler
+    // инжектит IntakeService/CommentsService/IssuesService/IntakeAutoTriageQueueService
+    // через @Optional() для 4 сценариев бота для задач (text/voice/forward/reply).
+    // TrackerModule не импортирует Conversational напрямую (ConversationalService @Global) —
+    // циклической зависимости нет.
+    TrackerModule,
   ],
   controllers: [
     ConversationalController,
@@ -72,6 +82,19 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // SBA β-1 — Telegram bot.
     TelegramApiClient,
     TelegramBotChannelAdapter,
+    // Wave 3 / Tracker Phase 4 РФ (2026-05-24) — «Telegram-бот для задач».
+    // TelegramTaskParserService — LLM-уровень (4 LlmTaskType).
+    // TelegramBotMessageHandler — рутер сценариев (text/voice/forward/reply),
+    //   инжектится в TelegramBotChannelAdapter через @Optional() и
+    //   перехватывает text/voice ДО старого free_note/chat_query pipeline.
+    // TelegramDigestCron — @Cron('0 9 * * *') утренний дайджест задач.
+    // Tracker-зависимости (IntakeService через intakeIssue.create в parser,
+    // IssuesService/CommentsService/IntakeAutoTriageQueueService в handler) —
+    // через @Optional(). Полная интеграция: добавить в exports tracker.module:
+    // IntakeService, CommentsService, IntakeAutoTriageQueueService.
+    TelegramTaskParserService,
+    TelegramBotMessageHandler,
+    TelegramDigestCron,
     // SBA β-1 — MAX bot.
     MaxApiClient,
     MaxBotChannelAdapter,

@@ -27,7 +27,10 @@ export type TrackerWsEventType =
   | 'cycle.completed'
   | 'intake.new_item'
   | 'intake.triaged'
-  | 'activity_feed.new_item';
+  | 'activity_feed.new_item'
+  | 'import.progress'
+  | 'import.completed'
+  | 'import.failed';
 
 interface BaseTrackerWsEvent<T extends TrackerWsEventType> {
   type: T;
@@ -104,6 +107,37 @@ export interface ActivityFeedNewItemEvent
   verb: string;
 }
 
+/**
+ * Wave 3 / Tracker Phase 5 part 1 (2026-05-24) — события импорта.
+ *
+ * `phase` — текущая стадия для UI: 'boards' | 'states' | 'labels' |
+ * 'issues' | 'comments' | 'attachments' | 'finalizing' | 'cancelled'.
+ *
+ * Эмитятся из `ImportTrackerWorker` (~ каждые 5 секунд во время прогрессии).
+ */
+export interface ImportProgressEvent extends BaseTrackerWsEvent<'import.progress'> {
+  importLogId: string;
+  processed: number;
+  total: number;
+  phase: string;
+}
+
+export interface ImportCompletedEvent extends BaseTrackerWsEvent<'import.completed'> {
+  importLogId: string;
+  summary: {
+    totalProjects: number;
+    totalIssues: number;
+    totalComments: number;
+    totalAttachments: number;
+    errors: number;
+  };
+}
+
+export interface ImportFailedEvent extends BaseTrackerWsEvent<'import.failed'> {
+  importLogId: string;
+  error: string;
+}
+
 export type TrackerWsEvent =
   | IssueCreatedEvent
   | IssueUpdatedEvent
@@ -116,4 +150,7 @@ export type TrackerWsEvent =
   | CycleCompletedEvent
   | IntakeNewItemEvent
   | IntakeTriagedEvent
-  | ActivityFeedNewItemEvent;
+  | ActivityFeedNewItemEvent
+  | ImportProgressEvent
+  | ImportCompletedEvent
+  | ImportFailedEvent;

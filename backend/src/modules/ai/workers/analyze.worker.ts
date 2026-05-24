@@ -8,6 +8,11 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { MeetingsService } from '../../meetings/meetings.service';
+// Wave 3 / Tracker Phase 3 part B — best-effort вызов meeting-extract-actions
+// после ai_ready. Optional injection (старые тесты analyze.worker не сломаются).
+// Импорт оставлен type-only, чтобы не тащить tracker в граф ai/workers — DI
+// резолвит провайдер по строковому токену, type здесь только для @Inject.
+import { MeetingExtractActionsService } from '../../tracker/services/meeting-extract-actions.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 
@@ -80,6 +85,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(PromptResolverService)
     private readonly promptResolver?: PromptResolverService,
+    // Wave 3 / Tracker Phase 3 part B — после ai_ready вызываем
+    // meeting-extract-actions для извлечения структурированных IntakeIssue.
+    // @Optional: старые тесты analyze.worker (где DI без tracker) продолжают
+    // работать без изменений. Best-effort: ошибка не валит analyze.
+    @Optional()
+    @Inject(MeetingExtractActionsService)
+    private readonly meetingExtractActions?: MeetingExtractActionsService,
   ) {}
 
   onModuleInit(): void {
@@ -376,6 +388,28 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           `analyze: enqueueQualityScore упал: ${err instanceof Error ? err.message : String(err)}`,
         ),
       );
+
+    // 14. Wave 3 / Tracker Phase 3 part B — meeting-extract-actions.
+    //     Извлекаем структурированные «автозадачи» из транскрипта и
+    //     создаём IntakeIssue (status='pending', source='meeting'). Дальше
+    //     IntakeAutoTriageWorker при confidence ≥ 0.92 примет автоматически.
+    //     Best-effort: если сервис не подключён или упал — analyze не валим.
+    if (this.meetingExtractActions && meeting.tenantId) {
+      try {
+        await this.meetingExtractActions.extract({
+          tenantId: meeting.tenantId,
+          meetingId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            meetingId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'analyze: meeting-extract-actions упал (best-effort) — продолжаем',
+        );
+      }
+    }
 
     this.logger.log(
       { meetingId, type: meeting.type, model: aiResult.modelUsed, cardId: meeting.cardId ?? null },

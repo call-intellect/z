@@ -26,6 +26,17 @@ export const CreateIssueSchema = z
     labelIds: z.array(z.string().min(1).max(64)).max(32).default([]),
     externalSource: z.string().max(40).nullable().optional(),
     externalId: z.string().max(200).nullable().optional(),
+    /**
+     * Tracker Phase 3 part C — флаг включения AI-suggest при создании задачи.
+     * Если true и `IssueInferFieldsService` доступен — в ответе POST /issues
+     * будет дополнительное поле `aiSuggestions` с подсказками полей и цели.
+     * По умолчанию (undefined / false) никаких LLM-вызовов не делается.
+     *
+     * Оставлено optional БЕЗ default'а, чтобы внутренние caller'ы трекера
+     * (IntakeService.accept, IntakeAutoTriageWorker) могли продолжать
+     * передавать DTO без этого поля без TypeScript-ошибок.
+     */
+    inferSuggestions: z.boolean().optional(),
   })
   .strict();
 

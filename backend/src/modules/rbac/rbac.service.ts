@@ -227,6 +227,11 @@ export type ResourceType =
   | 'intake_issue'
   | 'team_template'
   | 'issue_webhook'
+  // Tracker Phase 5 part 1 (2026-05-24) — миграционный wizard.
+  // 'import_tracker' — административная операция импорта задач из внешних
+  // трекеров (Trello / Битрикс24 / Я.Трекер). read: список + детали; write:
+  // запуск + cancel. Только owner / admin Org (HR/админская функция).
+  | 'import_tracker'
   // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ──
   // 'activity_feed_item' — запись в ленте активности (ActivityFeedItem).
   // read: scope по visibility (public_org / team / role / private) —
@@ -588,6 +593,8 @@ function isResourceType(s: string): s is ResourceType {
     'intake_issue',
     'team_template',
     'issue_webhook',
+    // Tracker Phase 5 part 1 (2026-05-24).
+    'import_tracker',
     // Wave 2 Поток D — Activity Feeds (2026-05-24).
     'activity_feed_item',
   ].includes(s);

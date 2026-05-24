@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { CurationModule } from '../curation/curation.module';
 import { ProcessesModule } from '../processes/processes.module';
+import { TrackerModule } from '../tracker/tracker.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -81,6 +82,10 @@ import { VoxService } from './services/vox.service';
     // инжектируют ProcessExtractionService / ProcessTemplateProbeService /
     // ProcessTemplateCompletenessService из ProcessesModule.
     ProcessesModule,
+    // Wave 3 / Tracker Phase 3 part B — AnalyzeWorker инжектит
+    // MeetingExtractActionsService (через @Optional()) для извлечения
+    // автозадач из встречи. Импорт нужен, чтобы провайдер был виден в DI.
+    TrackerModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).

@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, type Issue } from '@prisma/client';
 
@@ -12,6 +13,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
+  IssueAiSuggestionsDto,
   IssueResponseDto,
   IssueVersionDto,
   ListIssuesResponse,
@@ -23,6 +25,9 @@ import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
+import { IssueEmbedQueueService } from './issue-embed-queue.service';
+import { IssueGoalSuggestService } from './issue-goal-suggest.service';
+import { IssueInferFieldsService } from './issue-infer-fields.service';
 import { ProjectsService } from './projects.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
 import { TrackerEventsService } from './tracker-events.service';
@@ -51,6 +56,22 @@ export class IssuesService {
     private readonly webhooks: WebhookDispatcher,
     @Inject(TrackerEmitterService)
     private readonly emitter: TrackerEmitterService,
+    // Tracker Phase 3 (Sprint 6, 2026-05-24) — best-effort enqueue в
+    // `core.issue-embed`. Optional: позволяет unit-тестам сервиса работать
+    // без Redis/BullMQ и не падать, если очередь временно не инжектится.
+    @Optional()
+    @Inject(IssueEmbedQueueService)
+    private readonly embedQueue?: IssueEmbedQueueService,
+    // Tracker Phase 3 part C (2026-05-24) — AI-suggest. Optional: модуль может
+    // быть инициализирован без LLM-зависимостей (unit-тесты, dev-окружение
+    // без LlmRouter). Если сервисы не инжектятся — `inferSuggestions=true`
+    // просто не вернёт `aiSuggestions`, основной flow продолжает работать.
+    @Optional()
+    @Inject(IssueInferFieldsService)
+    private readonly inferFieldsSvc?: IssueInferFieldsService,
+    @Optional()
+    @Inject(IssueGoalSuggestService)
+    private readonly goalSuggestSvc?: IssueGoalSuggestService,
   ) {}
 
   /**
@@ -158,6 +179,10 @@ export class IssuesService {
     // Sprint 3 B1-3.1 — ingest в knowledge-core через event-emitter.
     // ПОСЛЕ транзакции (issue уже в БД, безопасно эмитить).
     this.emitter.emitIssueCreated(issue, userId);
+    // Phase 3 (2026-05-24) — best-effort enqueue embedding pipeline.
+    // Не блокирует основной flow; ошибка enqueue → warn, embedding
+    // появится при следующем update текста.
+    void this.enqueueEmbed(tenantId, issue.id, null);
     void this.webhooks
       .dispatch(tenantId, 'issue.created', { issue: response })
       .catch((e) => {
@@ -166,7 +191,71 @@ export class IssuesService {
           'issue.created webhook dispatch failed',
         );
       });
+
+    // Tracker Phase 3 part C — AI-suggest по флагу `inferSuggestions`.
+    // Best-effort: ошибки/таймаут не блокируют создание задачи; в этом случае
+    // `aiSuggestions` остаётся `null`/отсутствует. Goal-suggest требует
+    // embedding'а для KNN — он генерируется асинхронно, поэтому первый
+    // вызов goalSuggest вернёт результат только если embedding уже успел
+    // посчитаться (или сработает LLM-fallback).
+    if (dto.inferSuggestions) {
+      const aiSuggestions = await this.collectAiSuggestions(
+        issue.id,
+        tenantId,
+      );
+      if (aiSuggestions) {
+        return { ...response, aiSuggestions };
+      }
+    }
     return response;
+  }
+
+  /**
+   * Tracker Phase 3 part C — параллельный сбор AI-подсказок: поля задачи
+   * (IssueInferFieldsService) и связь с целью (IssueGoalSuggestService).
+   * Сервисы Optional — если хотя бы один доступен, возвращаем структуру
+   * с null для недоступного; если оба недоступны — null (caller отдаст
+   * IssueResponseDto без aiSuggestions).
+   */
+  private async collectAiSuggestions(
+    issueId: string,
+    tenantId: string,
+  ): Promise<IssueAiSuggestionsDto | null> {
+    if (!this.inferFieldsSvc && !this.goalSuggestSvc) {
+      return null;
+    }
+    const [fieldsResult, goalResult] = await Promise.all([
+      this.inferFieldsSvc
+        ? this.inferFieldsSvc.inferFields({ tenantId, issueId })
+        : Promise.resolve(null),
+      this.goalSuggestSvc
+        ? this.goalSuggestSvc.suggestGoal({ tenantId, issueId })
+        : Promise.resolve(null),
+    ]);
+    if (!fieldsResult && !goalResult) {
+      return null;
+    }
+    return {
+      fields: fieldsResult
+        ? {
+            suggestedAssigneeId: fieldsResult.suggestedAssigneeId,
+            suggestedDueDate: fieldsResult.suggestedDueDate,
+            suggestedPriority: fieldsResult.suggestedPriority,
+            suggestedGoalId: fieldsResult.suggestedGoalId,
+            suggestedLabels: fieldsResult.suggestedLabels,
+            confidence: fieldsResult.confidence,
+            meetsThreshold: fieldsResult.meetsThreshold,
+            reasoning: fieldsResult.reasoning,
+          }
+        : null,
+      goal: goalResult
+        ? {
+            goalId: goalResult.goalId,
+            confidence: goalResult.confidence,
+            source: goalResult.source,
+          }
+        : null,
+    };
   }
 
   /** Список задач проекта с фильтрами. */
@@ -402,6 +491,18 @@ export class IssuesService {
     const response = await this.assemble(id, tenantId);
     if (changedFields.length > 0) {
       this.events.publishIssueUpdated(response, tenantId, changedFields);
+      // Phase 3 (2026-05-24) — пересчёт embedding'а, если изменились
+      // текстовые поля (title / description / descriptionStripped). Hash
+      // защитит от лишних пересчётов, если описание тривиально перетёрли
+      // тем же значением через ?? — но дешевле скипать по hash в воркере,
+      // чем дублировать проверку здесь.
+      const textChanged =
+        changedFields.includes('title') ||
+        changedFields.includes('description') ||
+        changedFields.includes('descriptionStripped');
+      if (textChanged) {
+        void this.enqueueEmbed(tenantId, id, null);
+      }
       // Sprint 3 B1-3.1 — ingest в knowledge-core. Если изменился stateId —
       // эмитим status_changed (+ специфичные blocked/completed).
       if (changedFields.includes('stateId') && dto.stateId !== undefined) {
@@ -1037,6 +1138,29 @@ export class IssuesService {
       assigneeUserIds: issue.assignees.map((a) => a.userId),
       labelIds: issue.labels.map((l) => l.labelId),
     };
+  }
+
+  /**
+   * Phase 3 (2026-05-24) — best-effort enqueue в `core.issue-embed`.
+   *
+   * Не блокирует caller'а: всегда ловит exception (warn-log), потому что
+   * embedding — вспомогательная фича (similar-issues / issue-goal-suggest),
+   * и Redis-проблемы не должны валить основной create/update.
+   */
+  private async enqueueEmbed(
+    tenantId: string,
+    issueId: string,
+    embeddingHash: string | null,
+  ): Promise<void> {
+    if (!this.embedQueue) return;
+    try {
+      await this.embedQueue.enqueue({ tenantId, issueId, embeddingHash });
+    } catch (err) {
+      this.logger.warn(
+        { issueId, err: err instanceof Error ? err.message : String(err) },
+        'issue-embed: enqueue упал — embedding будет пропущен до следующего апдейта',
+      );
+    }
   }
 
   /** Сравнение значений «как в Prisma» — Date через timestamp, остальное ===. */

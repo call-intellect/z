@@ -2,12 +2,9 @@ import {
   BadRequestException,
   Controller,
   Get,
-  HttpException,
-  HttpStatus,
   Inject,
   NotFoundException,
   Param,
-  Post,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -20,12 +17,13 @@ import { TenantGuard } from '../../rbac/guards/tenant.guard';
 /**
  * REST `/api/v1/team-templates` — публичные шаблоны команд.
  *
- * Phase 1: read-only. Seed системных шаблонов (10–15 команд: sales /
- * development / installation / marketing / management / …) — Sprint 9
- * (Phase 4). До seed'а endpoint возвращает пустой массив или системные
- * шаблоны если они уже загружены.
+ * Read-only список + чтение по slug. Seed системных шаблонов
+ * (10 + 5 опц.: sales / development / installation / marketing / management
+ * / customer_support / hr / finance / operations / product / ...) —
+ * `backend/scripts/seed-team-templates.ts`.
  *
- * `POST /projects/from-template` — заглушка (501 Not Implemented) до Phase 4.
+ * `POST /projects/from-template` — реализован в `ProjectsController`
+ * (см. `backend/src/modules/tracker/controllers/projects.controller.ts`).
  */
 @ApiTags('tracker / team-templates')
 @ApiBearerAuth()
@@ -121,22 +119,4 @@ export class TeamTemplatesController {
     };
   }
 
-  @Post('projects/from-template')
-  @ApiOperation({
-    summary: 'Создать проект из шаблона команды (Phase 4 / Sprint 9)',
-  })
-  fromTemplate(): never {
-    // Реализация — Sprint 9 (Phase 4 трекера). Сейчас 501.
-    throw new HttpException(
-      {
-        ok: false,
-        error: {
-          code: 'not_implemented',
-          message:
-            'Создание проекта из шаблона команды появится в Sprint 9 (Phase 4 трекера)',
-        },
-      },
-      HttpStatus.NOT_IMPLEMENTED,
-    );
-  }
 }

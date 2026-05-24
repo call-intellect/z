@@ -33,6 +33,41 @@ export interface IssueResponseDto {
   deletedAt: string | null;
   assigneeUserIds: string[];
   labelIds: string[];
+  /**
+   * Tracker Phase 3 part C — AI-подсказки, заполняется только при создании
+   * с `inferSuggestions=true`. На остальных эндпоинтах поле отсутствует
+   * (для совместимости с типизированными клиентами поле опциональное).
+   */
+  aiSuggestions?: IssueAiSuggestionsDto | null;
+}
+
+/**
+ * Tracker Phase 3 part C — структура AI-подсказок, возвращаемых POST /issues.
+ *
+ *   - `fields` — результат `IssueInferFieldsService` (assignee/priority/...);
+ *     `null` если LLM не уверен (confidence < 0.7) или сервис недоступен.
+ *   - `goal` — результат `IssueGoalSuggestService` (источник 'knn'|'llm');
+ *     `null` если ни KNN, ни LLM не нашли уверенного кандидата.
+ *
+ * Фронт может показать `aiSuggestions.fields` как inline-карточку «Принять / Отклонить»
+ * и `aiSuggestions.goal` как чип «Связать с целью X (∼60%)».
+ */
+export interface IssueAiSuggestionsDto {
+  fields: {
+    suggestedAssigneeId: string | null;
+    suggestedDueDate: string | null;
+    suggestedPriority: string | null;
+    suggestedGoalId: string | null;
+    suggestedLabels: string[];
+    confidence: number;
+    meetsThreshold: boolean;
+    reasoning: string | null;
+  } | null;
+  goal: {
+    goalId: string;
+    confidence: number;
+    source: 'knn' | 'llm';
+  } | null;
 }
 
 export interface ListIssuesResponse {

@@ -14,6 +14,8 @@ import { ChatV2OrchestrationService } from './chat-v2.service';
 import { CardSpecialistRegistry } from './services/card-specialist-registry.service';
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
+import { IssueCardHandler } from './specialists/issue-card-handler.service';
+import { ProjectCardHandler } from './specialists/project-card-handler.service';
 import { ChatV2CleanupCron } from './workers/chat-v2-cleanup.cron';
 
 /**
@@ -108,11 +110,21 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
     CardSpecialistRegistry,
     ChatV2CleanupCron,
     ChatV2OmnichannelBridge,
+    // Tracker Phase 3 part C (Wave 3, 2026-05-24) — Issue/Project как
+    // источники для retrieval'а chat-v2. Регистрируются автоматически в
+    // CardSpecialistRegistry через onModuleInit (паттерн как
+    // Specialist31/34CardHandler из knowledge-core).
+    IssueCardHandler,
+    ProjectCardHandler,
   ],
   exports: [
     ChatV2OrchestrationService,
     ChatV2ConversationsService,
     CardSpecialistRegistry,
+    // Export'им helper-сервисы, чтобы будущий расширенный ChatV2RetrievalService
+    // мог вызывать getCitations / formatForChat напрямую.
+    IssueCardHandler,
+    ProjectCardHandler,
   ],
 })
 export class ChatV2Module {}

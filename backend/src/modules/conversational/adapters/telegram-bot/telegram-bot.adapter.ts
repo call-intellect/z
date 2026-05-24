@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleInit,
 } from '@nestjs/common';
 import type {
@@ -30,6 +31,7 @@ import type {
 } from '../../types/channel.types';
 
 import { TelegramApiClient, TelegramApiError } from './telegram-api-client';
+import { TelegramBotMessageHandler } from './telegram-bot-message.handler';
 import type {
   TelegramBotChannelConfig,
   TelegramMessage,
@@ -98,6 +100,12 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     @Inject(QueryClassifierService)
     private readonly classifier: QueryClassifierService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // Wave 3 / Tracker Phase 4 РФ (2026-05-24): task-flow handler. @Optional —
+    // если TelegramBotMessageHandler не зарегистрирован в DI (например, в
+    // существующих unit-тестах адаптера), fallback на старый pipeline.
+    @Optional()
+    @Inject(TelegramBotMessageHandler)
+    private readonly taskHandler?: TelegramBotMessageHandler,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -275,6 +283,18 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         });
         return null;
       }
+      // Wave 3 / Tracker Phase 4 РФ — если task-handler доступен, делегируем
+      // ему обработку voice (он сам сделает ASR + parseCreateTask). Если
+      // handler решит, что это не task — fallback на старый handleVoice.
+      if (this.taskHandler) {
+        const handled = await this.taskHandler.tryHandle({
+          msg,
+          binding,
+          tenantId,
+          config,
+        });
+        if (handled) return null;
+      }
       return this.handleVoice({
         voice,
         binding,
@@ -388,6 +408,21 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         };
       }
       // fall through
+    }
+
+    // 7.5. Wave 3 / Tracker Phase 4 РФ — попытка обработать через task-flow
+    //      (создание задачи / forward / reply на bot-уведомление о задаче).
+    //      Если handler вернул true — сообщение уже обработано (бот сам ответил
+    //      пользователю), адаптер выходит и НЕ передаёт сообщение дальше как
+    //      free_note/chat_query. Если false — обычный pipeline (intent classify).
+    if (this.taskHandler) {
+      const handled = await this.taskHandler.tryHandle({
+        msg,
+        binding,
+        tenantId,
+        config,
+      });
+      if (handled) return null;
     }
 
     // 8. Intent classification (LLM + fallback на эвристики).

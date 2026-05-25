@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { type OrgTier, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -19,6 +19,63 @@ export interface AdminOrgRow {
   callsInPeriod: number;
   deletedAt: string | null;
   createdAt: string;
+}
+
+/** Admin-redesign Фаза 4 — карточки вкладок страницы `/admin/orgs/[id]`. */
+
+export interface OrgOverview {
+  id: string;
+  name: string;
+  slug: string;
+  tier: OrgTier;
+  createdAt: Date;
+  ownerEmail: string | null;
+  membersCount: number;
+  meetingsCount: number;
+  /** Сумма costUsd за последние 30 дней (по AiUsageLog). */
+  totalSpendUsd: number;
+  /** Заполнено `totalRevenueRub`, если есть Plan + monthlyPriceRub. */
+  totalRevenueRub: number | null;
+  isFrozen: boolean;
+}
+
+export interface OrgMemberItem {
+  userId: string;
+  email: string | null;
+  name: string;
+  role: string;
+  joinedAt: Date;
+  lastSeenAt: Date | null;
+}
+
+export interface OrgSourceItem {
+  /** "channel" | "webhook_subscription". */
+  kind: string;
+  /** Технический тип (telegram_bot/email_smtp/url/...). */
+  type: string;
+  id: string;
+  status: string;
+  createdAt: Date;
+}
+
+export interface OrgAuditItem {
+  id: string;
+  superAdminUserId: string;
+  superAdminEmail: string | null;
+  route: string;
+  method: string;
+  reason: string | null;
+  createdAt: Date;
+}
+
+interface OrgAuditCursorPayload {
+  createdAt: string;
+  id: string;
+}
+
+interface OrgMembersCursorPayload {
+  joinedAt: string;
+  id: string;
 }
 
 /**
@@ -121,6 +178,236 @@ export class AdminOrgsService {
       data: { deletedAt: new Date() },
     });
     return { ok: true };
+  }
+
+  // ─────────────────────────── Admin-redesign Фаза 4 ───────────────────────
+  //
+  // Вкладки страницы `/admin/orgs/[id]`: overview / members / sources / audit.
+  // Каждая вкладка — отдельный GET-эндпоинт, чтобы UI грузил их параллельно.
+
+  async getOrgOverview(orgId: string): Promise<OrgOverview> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      include: {
+        owner: { select: { email: true } },
+        _count: { select: { memberships: true, meetings: true } },
+      },
+    });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: `Org id="${orgId}" не найдена` },
+      });
+    }
+
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - 30);
+    const usage = await this.prisma.aiUsageLog.aggregate({
+      where: { tenantId: orgId, createdAt: { gte: since } },
+      _sum: { costUsd: true },
+    });
+    const totalSpendUsd = decimalToNumber(usage._sum.costUsd);
+
+    // totalRevenueRub: если активная Plan + monthlyPriceRub → берём цену плана.
+    // Иначе null (бесплатный тариф или Plan без цены).
+    let totalRevenueRub: number | null = null;
+    const ent = await this.prisma.orgEntitlement.findUnique({
+      where: { tenantId: orgId },
+      select: { tier: true },
+    });
+    const tier = ent?.tier ?? null;
+    if (tier) {
+      const plan = await this.prisma.plan.findUnique({
+        where: { id: tier },
+        select: { monthlyPriceRub: true },
+      });
+      if (plan?.monthlyPriceRub !== undefined && plan?.monthlyPriceRub !== null) {
+        totalRevenueRub = plan.monthlyPriceRub;
+      }
+    }
+
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      tier: org.tier,
+      createdAt: org.createdAt,
+      ownerEmail: org.owner?.email ?? null,
+      membersCount: org._count.memberships,
+      meetingsCount: org._count.meetings,
+      totalSpendUsd,
+      totalRevenueRub,
+      isFrozen: org.deletedAt !== null,
+    };
+  }
+
+  async getOrgMembers(
+    orgId: string,
+    args: { cursor?: string; limit: number },
+  ): Promise<{ items: OrgMemberItem[]; nextCursor: string | null }> {
+    const where: Prisma.MembershipWhereInput = { orgId };
+    const decoded = args.cursor ? this.decodeMembersCursor(args.cursor) : null;
+    if (decoded) {
+      const cursorDate = new Date(decoded.joinedAt);
+      const orConditions: Prisma.MembershipWhereInput[] = [
+        { joinedAt: { lt: cursorDate } },
+        { joinedAt: cursorDate, id: { lt: decoded.id } },
+      ];
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        { OR: orConditions },
+      ];
+    }
+
+    const rows = await this.prisma.membership.findMany({
+      where,
+      orderBy: [{ joinedAt: 'desc' }, { id: 'desc' }],
+      take: args.limit + 1,
+      include: {
+        user: {
+          select: { id: true, email: true, name: true, lastSeenAt: true },
+        },
+      },
+    });
+    const hasMore = rows.length > args.limit;
+    const slice = hasMore ? rows.slice(0, args.limit) : rows;
+    const items: OrgMemberItem[] = slice.map((r) => ({
+      userId: r.userId,
+      email: r.user?.email ?? null,
+      name: r.user?.name ?? '',
+      role: r.role,
+      joinedAt: r.joinedAt,
+      lastSeenAt: r.user?.lastSeenAt ?? null,
+    }));
+    const last = hasMore ? slice[slice.length - 1] : null;
+    const nextCursor = last
+      ? this.encodeMembersCursor({
+          joinedAt: last.joinedAt.toISOString(),
+          id: last.id,
+        })
+      : null;
+    return { items, nextCursor };
+  }
+
+  async getOrgSources(orgId: string): Promise<{ items: OrgSourceItem[] }> {
+    const [channels, webhooks] = await Promise.all([
+      this.prisma.channel.findMany({
+        where: { tenantId: orgId },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.webhookSubscription.findMany({
+        where: { tenantId: orgId },
+        select: {
+          id: true,
+          url: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    const items: OrgSourceItem[] = [
+      ...channels.map((c) => ({
+        kind: 'channel',
+        type: c.kind as string,
+        id: c.id,
+        status: c.status as string,
+        createdAt: c.createdAt,
+      })),
+      ...webhooks.map((w) => ({
+        kind: 'webhook_subscription',
+        type: 'url',
+        id: w.id,
+        status: w.status as string,
+        createdAt: w.createdAt,
+      })),
+    ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return { items };
+  }
+
+  async getOrgAudit(
+    orgId: string,
+    args: { cursor?: string; limit: number },
+  ): Promise<{ items: OrgAuditItem[]; nextCursor: string | null }> {
+    const where: Prisma.SuperAdminAccessLogWhereInput = { accessedTenantId: orgId };
+    const decoded = args.cursor ? this.decodeAuditCursor(args.cursor) : null;
+    if (decoded) {
+      const cursorDate = new Date(decoded.createdAt);
+      const orConditions: Prisma.SuperAdminAccessLogWhereInput[] = [
+        { createdAt: { lt: cursorDate } },
+        { createdAt: cursorDate, id: { lt: decoded.id } },
+      ];
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        { OR: orConditions },
+      ];
+    }
+
+    const rows = await this.prisma.superAdminAccessLog.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: args.limit + 1,
+      include: { superAdmin: { select: { email: true } } },
+    });
+    const hasMore = rows.length > args.limit;
+    const slice = hasMore ? rows.slice(0, args.limit) : rows;
+    const items: OrgAuditItem[] = slice.map((r) => ({
+      id: r.id,
+      superAdminUserId: r.superAdminUserId,
+      superAdminEmail: r.superAdmin?.email ?? null,
+      route: r.route,
+      method: r.method,
+      reason: r.reason,
+      createdAt: r.createdAt,
+    }));
+    const last = hasMore ? slice[slice.length - 1] : null;
+    const nextCursor = last
+      ? this.encodeAuditCursor({
+          createdAt: last.createdAt.toISOString(),
+          id: last.id,
+        })
+      : null;
+    return { items, nextCursor };
+  }
+
+  // ─────────────────────────── private cursor helpers ─────────────────────
+
+  private encodeAuditCursor(p: OrgAuditCursorPayload): string {
+    return Buffer.from(JSON.stringify(p), 'utf8').toString('base64');
+  }
+
+  private decodeAuditCursor(cursor: string): OrgAuditCursorPayload | null {
+    try {
+      const json = Buffer.from(cursor, 'base64').toString('utf8');
+      const data = JSON.parse(json) as { createdAt?: unknown; id?: unknown };
+      if (typeof data.createdAt !== 'string' || typeof data.id !== 'string') return null;
+      if (Number.isNaN(new Date(data.createdAt).getTime())) return null;
+      return { createdAt: data.createdAt, id: data.id };
+    } catch {
+      return null;
+    }
+  }
+
+  private encodeMembersCursor(p: OrgMembersCursorPayload): string {
+    return Buffer.from(JSON.stringify(p), 'utf8').toString('base64');
+  }
+
+  private decodeMembersCursor(cursor: string): OrgMembersCursorPayload | null {
+    try {
+      const json = Buffer.from(cursor, 'base64').toString('utf8');
+      const data = JSON.parse(json) as { joinedAt?: unknown; id?: unknown };
+      if (typeof data.joinedAt !== 'string' || typeof data.id !== 'string') return null;
+      if (Number.isNaN(new Date(data.joinedAt).getTime())) return null;
+      return { joinedAt: data.joinedAt, id: data.id };
+    } catch {
+      return null;
+    }
   }
 }
 

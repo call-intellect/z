@@ -7,6 +7,7 @@ import { AdminAiModelsService } from './ai-models/ai-models.service';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
 import { AdminCronsModule } from './crons/admin-crons.module';
+import { AdminEntitlementsModule } from './entitlements/entitlements.module';
 import { AdminIncidentsModule } from './incidents/admin-incidents.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
 import { AdminLlmModelsController } from './economics/admin-llm-models.controller';
@@ -30,6 +31,7 @@ import { AdminPricesController } from './controllers/admin-prices.controller';
 import { AdminUsageController } from './controllers/admin-usage.controller';
 import { OrgAdminKnowledgeController } from './controllers/org-admin-knowledge.controller';
 import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
+import { AdminPlansModule } from './plans/plans.module';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
 import { LlmRoutesController } from './llm-routes/llm-routes.controller';
 import { LlmRoutesService } from './llm-routes/llm-routes.service';
@@ -80,6 +82,10 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AnalyticsModule,
     // Admin-redesign Фаза 3 — AI smoke-test endpoints.
     AdminAiModule,
+    // Admin-redesign Фаза 4 — Plans (CRUD планов продукта) и Entitlements
+    // (глобальный обзор overrides + per-org мутации).
+    AdminPlansModule,
+    AdminEntitlementsModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

@@ -1093,6 +1093,7 @@ function ChaptersTab({
 
 function TranscriptTab({ meetingId }: { meetingId: string }) {
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const [copied, setCopied] = useState(false);
 
   const { data, error, isLoading } = useSWR(
     ['transcript', meetingId],
@@ -1105,6 +1106,21 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
     () => meetingsApi.audioTracks(meetingId),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
+
+  const onCopyTranscript = async () => {
+    const turns = data?.turns ?? [];
+    if (turns.length === 0) return;
+    const text = turns
+      .map((t) => `[${formatSec(t.startSec)}] ${t.speaker}: ${t.text}`)
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error('Не удалось скопировать');
+    }
+  };
 
   const seekTo = (sec: number, speaker: string) => {
     const tracks = tracksData?.tracks ?? [];
@@ -1179,11 +1195,22 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
             <h3 className="text-sm font-semibold text-fg-primary">
               Транскрипт · {data!.turns.length} реплик
             </h3>
-            {data!.durationSeconds && (
-              <span className="font-mono text-xs text-fg-tertiary">
-                {Math.round(data!.durationSeconds / 60)} мин
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {data!.durationSeconds && (
+                <span className="font-mono text-xs text-fg-tertiary">
+                  {Math.round(data!.durationSeconds / 60)} мин
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onCopyTranscript}
+                aria-label="Скопировать транскрипт"
+                title={copied ? 'Скопировано' : 'Скопировать транскрипт'}
+              >
+                {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+              </Button>
+            </div>
           </div>
           <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto">
             {data!.turns.map((turn, i) => (

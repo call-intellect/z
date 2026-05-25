@@ -45,6 +45,45 @@ export interface OperationsCapacityApi {
   appointmentsCount: number;
 }
 
+/**
+ * SBA β-8.3 Wave 2 — агрегат insights по `causeCategory` за 7 дней
+ * (severity ≥ medium). 8 ключей, гарантированно непустой объект.
+ */
+export type InsightCauseCategoryKey =
+  | 'process_gap'
+  | 'tooling'
+  | 'role_skill'
+  | 'communication'
+  | 'priority'
+  | 'resource_constraint'
+  | 'external'
+  | 'unknown';
+
+export type InsightCauseCategoryAggregateApi = Record<
+  InsightCauseCategoryKey,
+  number
+>;
+
+export interface MaturitySnapshotDomainApi {
+  slug: string;
+  name: string;
+  completeness: number;
+}
+
+/**
+ * SBA β-8.3 Wave 3 — снапшот зрелости компании для COO-дашборда.
+ *
+ * Контракт: `backend/src/modules/operations/dto/operations-dashboard.dto.ts:MaturitySnapshotDto`.
+ * `score=null` → cron ещё не отработал, показываем заглушку.
+ */
+export interface MaturitySnapshotApi {
+  score: number | null;
+  lastCalcAt: string | null;
+  stage: string | null;
+  weakestDomains: MaturitySnapshotDomainApi[];
+  topDomains: MaturitySnapshotDomainApi[];
+}
+
 export interface OperationsOverviewApi {
   tenantId: string;
   generatedAt: string;
@@ -59,6 +98,10 @@ export interface OperationsOverviewApi {
   topRecentTeamFrictions: OperationsTeamFrictionApi[];
   // SBA β-8.1 — компактный блок «Температура команды» за 7 дней.
   teamTemperature: OperationsTeamTemperatureSummaryApi;
+  /** SBA β-8.3 Wave 2 — агрегат insights по causeCategory (7 дней, severity ≥ medium). */
+  insightsByCauseCategory: InsightCauseCategoryAggregateApi;
+  /** SBA β-8.3 Wave 3 — снапшот зрелости компании. */
+  maturity: MaturitySnapshotApi;
 }
 
 export interface OperationsTeamTemperatureSummaryApi {

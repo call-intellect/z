@@ -30,6 +30,7 @@ import {
   LogOut,
   MessageCircle,
   Network,
+  Newspaper,
   Palette,
   Plug,
   Plus,
@@ -222,14 +223,23 @@ const INTAKE_NAV_ITEM: NavItem = {
 };
 
 /**
- * SBA β-8 / β-8.1 — пункты COO-панели. Видны только owner / admin / coo.
+ * SBA β-8 / β-8.1 / β-8.3 — пункты COO-панели. Видны только owner / admin / coo.
  * Вставляются в `OPERATIONS_GROUP` динамически (роль приходит из useAuth).
+ *
+ * Порядок (Wave 1, 2026-05-25): Панель → Ежедневный отчёт → Недельная сводка.
  */
 const OPERATIONS_DASHBOARD_NAV_ITEM: NavItem = {
   href: '/dashboard/operations',
   label: 'Панель операций',
   icon: Activity,
   matchPrefix: '/dashboard/operations',
+};
+
+const OPERATIONS_DAILY_NAV_ITEM: NavItem = {
+  href: '/dashboard/operations/daily',
+  label: 'Ежедневный отчёт',
+  icon: Newspaper,
+  matchPrefix: '/dashboard/operations/daily',
 };
 
 const OPERATIONS_WEEKLY_NAV_ITEM: NavItem = {
@@ -309,10 +319,12 @@ export function Sidebar({
   const operationsGroup: NavGroup = (() => {
     const items: NavItem[] = [...OPERATIONS_GROUP.items];
 
-    // SBA β-8 / β-8.1 — пункты COO-панели в начало группы (для тех, кому видно).
+    // SBA β-8 / β-8.1 / β-8.3 — пункты COO-панели в начало группы
+    // (для тех, кому видно). Порядок: Панель → Ежедневный отчёт → Недельная сводка.
     if (canSeeOperationsCoo) {
       items.unshift(
         OPERATIONS_DASHBOARD_NAV_ITEM,
+        OPERATIONS_DAILY_NAV_ITEM,
         OPERATIONS_WEEKLY_NAV_ITEM,
       );
     }

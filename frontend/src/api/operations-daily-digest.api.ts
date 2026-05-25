@@ -1,0 +1,118 @@
+import { apiClient } from './api-client';
+
+/**
+ * SBA β-8.3 Wave 1 — API-клиент ежедневного отчёта операционного директора.
+ *
+ *   GET  /api/v1/dashboard/operations/daily-digest?date=YYYY-MM-DD
+ *   GET  /api/v1/dashboard/operations/daily-digest/latest
+ *   POST /api/v1/dashboard/operations/daily-digest/generate?date=YYYY-MM-DD
+ *
+ * Контракт DTO зеркалит `backend/src/modules/operations/dto/daily-digest.dto.ts`
+ * (`DailyOperationsDigestDto`).
+ *
+ * Доступ:
+ *   - read (GET) — coo / owner / admin / super_admin (через
+ *     `RbacService.canViewOperationsDashboard`).
+ *   - write (POST /generate) — admin / super_admin.
+ *
+ * Поведение API: при 404 (отчёт за дату ещё не сгенерирован) бэк отдаёт
+ * `error.code === 'digest_not_found'`. Здесь мы перехватываем эту ситуацию
+ * и возвращаем `null`, чтобы вызывающая сторона могла легко отличить
+ * «нет отчёта» от настоящей ошибки сети / прав.
+ */
+
+import { ApiError } from './api-error';
+
+/** Зеркало `DailyDigestMetricsDto` из backend. */
+export interface DailyDigestMetricsApi {
+  totalCheckIns: number;
+  greenShare: number;
+  yellowShare: number;
+  redShare: number;
+  topRedCheckIns: Array<{
+    checkInId: string;
+    personName: string | null;
+    excerpt: string;
+  }>;
+  newBlockers: Array<{
+    blockId: string;
+    name: string;
+    confidence: number;
+  }>;
+  overdueCommitments: Array<{
+    blockId: string;
+    name: string;
+    dueDate: string | null;
+    recipientPersonId: string | null;
+  }>;
+  goals: {
+    completed: number;
+    failed: number;
+    activated: number;
+    completedIds: string[];
+    failedIds: string[];
+  };
+  newHighInsights: Array<{
+    insightId: string;
+    statement: string;
+    kind: string;
+    causeCategory: string | null;
+  }>;
+  decisions: Array<{
+    decisionId: string;
+    statement: string;
+    status: string;
+  }>;
+}
+
+export interface DailyDigestSourcesApi {
+  checkInIds: string[];
+  blockerIds: string[];
+  commitmentIds: string[];
+  goalIds: string[];
+  insightIds: string[];
+  decisionIds: string[];
+}
+
+export interface DailyDigestApi {
+  id: string;
+  tenantId: string;
+  /** YYYY-MM-DD в МСК. */
+  dateLocal: string;
+  bodyMarkdown: string;
+  shortSummary: string | null;
+  metrics: DailyDigestMetricsApi;
+  sources: DailyDigestSourcesApi;
+  llmTaskRouteId: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+/** Обёртка-helper: ловит digest_not_found и превращает в `null`. */
+async function tolerantGet(path: string): Promise<DailyDigestApi | null> {
+  try {
+    return await apiClient.get<DailyDigestApi>(path);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'digest_not_found') {
+      return null;
+    }
+    throw e;
+  }
+}
+
+export const operationsDailyDigestApi = {
+  /** Получить дайджест за конкретную дату (YYYY-MM-DD в МСК) или null. */
+  getByDate: (date: string) =>
+    tolerantGet(`/api/v1/dashboard/operations/daily-digest?date=${date}`),
+
+  /** Последний доступный дайджест (по dateLocal DESC) или null. */
+  getLatest: () =>
+    tolerantGet('/api/v1/dashboard/operations/daily-digest/latest'),
+
+  /** Принудительно пересобрать дайджест (admin / super_admin). */
+  generate: (date: string) =>
+    apiClient.post<DailyDigestApi>(
+      `/api/v1/dashboard/operations/daily-digest/generate?date=${date}`,
+      undefined,
+    ),
+};

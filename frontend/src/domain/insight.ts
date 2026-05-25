@@ -8,6 +8,7 @@
  */
 
 import type {
+  InsightCauseCategoryApi,
   InsightDetailApi,
   InsightDynamicApi,
   InsightKindApi,
@@ -20,6 +21,8 @@ export type InsightKind = InsightKindApi;
 export type InsightSeverity = InsightSeverityApi;
 export type InsightDynamic = InsightDynamicApi;
 export type InsightStatus = InsightStatusApi;
+/** SBA β-8.3 Wave 2 — категория первопричины Insight. */
+export type InsightCauseCategory = InsightCauseCategoryApi;
 
 export const INSIGHT_KIND_LABEL: Record<InsightKind, string> = {
   problem: 'Проблема',
@@ -83,16 +86,19 @@ export const INSIGHT_STATUS_TONE: Record<
 
 export interface InsightListItem extends InsightListItemApi {
   // domain-level — пока совпадает с api dto.
+  /** SBA β-8.3 Wave 2 — категория первопричины (null = ещё не классифицировано). */
+  causeCategory: InsightCauseCategory | null;
 }
 
 export interface InsightDetail extends InsightDetailApi {
   // domain-level — пока совпадает с api dto.
+  causeCategory: InsightCauseCategory | null;
 }
 
 export function mapInsightListItem(dto: InsightListItemApi): InsightListItem {
-  return { ...dto };
+  return { ...dto, causeCategory: dto.causeCategory ?? null };
 }
 
 export function mapInsightDetail(dto: InsightDetailApi): InsightDetail {
-  return { ...dto };
+  return { ...dto, causeCategory: dto.causeCategory ?? null };
 }

@@ -3,14 +3,25 @@
 import { useEffect, useState } from 'react';
 
 import Link from 'next/link';
+import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
 import { commitmentsApi, type OpenCommitmentsListApi } from '@/api/commitments.api';
 import {
   operationsDashboardApi,
-  type OperationsOverviewApi,
   type OperationsTeamTemperatureSummaryApi,
 } from '@/api/operations-dashboard.api';
+import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
+import {
+  fromDailyDigestApi,
+  type DailyDigestDomain,
+} from '@/domain/operations-daily-digest';
+import {
+  fromOperationsOverviewApi,
+  type OperationsOverviewDomain,
+} from '@/domain/operations-dashboard';
+import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
+import { MaturityWidget } from './widgets/MaturityWidget';
 
 /**
  * SBA β-8 — клиентский COO-дашборд.
@@ -27,11 +38,22 @@ import {
  * в `package.json` — переделаем на BarChart / PieChart.
  */
 export function OperationsDashboardClient() {
-  const [data, setData] = useState<OperationsOverviewApi | null>(null);
+  const [data, setData] = useState<OperationsOverviewDomain | null>(null);
   const [commitments, setCommitments] =
     useState<OpenCommitmentsListApi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // SBA β-8.3 Wave 1 — блок «Вчерашний отчёт». Через SWR независимо от
+  // основного overview, чтобы провал ежедневного отчёта не валил весь дашборд.
+  const dailyDigestSwr = useSWR(
+    ['operations-daily-digest-latest'],
+    async () => operationsDailyDigestApi.getLatest(),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const dailyDigestDomain: DailyDigestDomain | null = dailyDigestSwr.data
+    ? fromDailyDigestApi(dailyDigestSwr.data)
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +64,7 @@ export function OperationsDashboardClient() {
     ])
       .then(([overview, openCommitments]) => {
         if (cancelled) return;
-        setData(overview);
+        setData(fromOperationsOverviewApi(overview));
         setCommitments(openCommitments);
         setError(null);
       })
@@ -86,11 +108,20 @@ export function OperationsDashboardClient() {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Операции — пульс компании</h1>
         <p className="text-sm text-fg-secondary">
-          Обновлено {new Date(data.generatedAt).toLocaleString('ru-RU')}
+          Обновлено {data.generatedAt.toLocaleString('ru-RU')}
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <YesterdayDigestCard
+        loading={dailyDigestSwr.isLoading}
+        digest={dailyDigestDomain}
+      />
+
+      <div className="mt-6">
+        <MaturityWidget maturity={data.maturity} />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card
           title="Активные блокеры"
           value={data.blockersCount}
@@ -118,6 +149,12 @@ export function OperationsDashboardClient() {
       </div>
 
       <TeamTemperatureWidget summary={data.teamTemperature} />
+
+      <div className="mt-6">
+        <CauseCategoryMapWidget
+          insightsByCauseCategory={data.insightsByCauseCategory}
+        />
+      </div>
 
       {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
 
@@ -373,5 +410,72 @@ function SeverityBadge(props: {
     <span className={`rounded px-2 py-0.5 text-xs font-medium ${colour}`}>
       {label}
     </span>
+  );
+}
+
+/**
+ * SBA β-8.3 Wave 1 — карточка «Вчерашний отчёт» на главной COO-дашборда.
+ *
+ * Берёт latest daily-digest (через SWR в родителе). Поля: дата отчёта (формат
+ * DD.MM.YYYY), короткая выжимка (max 3-4 строки), ссылка на полную страницу.
+ *
+ * Empty state — когда отчёта ещё нет (новый tenant / cron не отработал).
+ */
+function YesterdayDigestCard(props: {
+  loading: boolean;
+  digest: DailyDigestDomain | null;
+}) {
+  if (props.loading) {
+    return (
+      <section className="rounded border border-border-subtle bg-bg-surface p-4 text-sm text-fg-secondary">
+        Загрузка ежедневного отчёта…
+      </section>
+    );
+  }
+  if (!props.digest) {
+    return (
+      <section className="rounded border border-border-subtle bg-bg-surface p-4">
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Ежедневный отчёт
+        </h2>
+        <p className="mt-1 text-sm text-fg-secondary">
+          Отчёт ещё не сгенерирован, проверьте после 01:00 МСК.
+        </p>
+        <Link
+          href="/dashboard/operations/daily"
+          className="mt-2 inline-block text-xs text-accent hover:underline"
+        >
+          Открыть страницу ежедневного отчёта →
+        </Link>
+      </section>
+    );
+  }
+
+  const d = props.digest;
+  const [y, m, dd] = d.dateLocal.split('-');
+  const dateLabel = y && m && dd ? `${dd}.${m}.${y}` : d.dateLocal;
+  return (
+    <section className="rounded border border-accent/30 bg-accent/5 p-4">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Вчерашний отчёт ·{' '}
+          <span className="text-fg-secondary">{dateLabel}</span>
+        </h2>
+        <Link
+          href={`/dashboard/operations/daily?date=${d.dateLocal}`}
+          className="text-xs text-accent hover:underline"
+        >
+          Открыть полный отчёт →
+        </Link>
+      </div>
+      {d.shortSummary ? (
+        <p className="line-clamp-4 text-sm text-fg-primary">{d.shortSummary}</p>
+      ) : (
+        <p className="text-sm text-fg-secondary">
+          Связный текст не собран. Откройте полный отчёт, чтобы увидеть
+          структурированные показатели.
+        </p>
+      )}
+    </section>
   );
 }

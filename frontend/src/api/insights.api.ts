@@ -30,6 +30,20 @@ export type InsightStatusApi =
   | 'archived'
   | 'false_alarm';
 
+/**
+ * SBA β-8.3 Wave 2 — категория первопричины Insight (8 значений).
+ * Контракт с backend — `insights.dto.ts:InsightCauseCategorySchema`.
+ */
+export type InsightCauseCategoryApi =
+  | 'process_gap'
+  | 'tooling'
+  | 'role_skill'
+  | 'communication'
+  | 'priority'
+  | 'resource_constraint'
+  | 'external'
+  | 'unknown';
+
 export interface InsightListItemApi {
   id: string;
   kind: InsightKindApi;
@@ -41,6 +55,8 @@ export interface InsightListItemApi {
   dynamicScore: number;
   affectedEntityIds: string[];
   relatedDecisionIds: string[];
+  /** SBA β-8.3 Wave 2 — категория первопричины (null = ещё не классифицировано). */
+  causeCategory: InsightCauseCategoryApi | null;
   firstObservedAt: string;
   lastObservedAt: string;
   sourceBlocksCount: number;
@@ -85,7 +101,19 @@ export type ListInsightsRequest = {
   status?: InsightStatusApi;
   dynamic_label?: InsightDynamicApi;
   affected_entity_id?: string;
+  /** SBA β-8.3 Wave 2 — фильтр по категории первопричины. */
+  cause_category?: InsightCauseCategoryApi;
   q?: string;
+};
+
+/**
+ * SBA β-8.3 Wave 2 — параметры виджета «Топ-5».
+ * Используется `insightsApi.top` для опционального сужения по category
+ * (например, кликом на бэйдж в карте причин на COO-дашборде).
+ */
+export type TopInsightsRequest = {
+  limit?: number;
+  cause_category?: InsightCauseCategoryApi;
 };
 
 function buildQuery(filters?: Record<string, string | number | undefined>): string {
@@ -110,10 +138,18 @@ export const insightsApi = {
       `/api/v1/insights/chart${buildQuery({ days })}`,
     ),
 
-  top: (limit = 5) =>
-    apiClient.get<TopInsightsResponseApi>(
-      `/api/v1/insights/top${buildQuery({ limit })}`,
-    ),
+  top: (req: number | TopInsightsRequest = 5) => {
+    // Backward-compat: позволяем передавать просто limit числом.
+    const args: TopInsightsRequest =
+      typeof req === 'number' ? { limit: req } : req;
+    const query = buildQuery({
+      limit: args.limit ?? 5,
+      cause_category: args.cause_category,
+    });
+    return apiClient.get<TopInsightsResponseApi>(
+      `/api/v1/insights/top${query}`,
+    );
+  },
 
   get: (id: string) =>
     apiClient.get<InsightDetailApi>(

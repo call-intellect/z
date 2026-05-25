@@ -99,9 +99,14 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
       this.subscriber.on('message', (channel: string, payload: string) => {
         if (channel !== CHANNEL) return;
         try {
-          const data = JSON.parse(payload) as { key?: unknown };
+          const data = JSON.parse(payload) as { key?: unknown; value?: unknown };
           if (typeof data.key === 'string' && data.key.length > 0) {
             this.cache.delete(data.key);
+            // value может быть undefined в payload'ах от старых процессов до
+            // обновления — в этом случае applySync(key, undefined) выкинет
+            // ключ из cacheMap, и следующий resolveSync пересчитается через
+            // ENV. Безопасный fallback.
+            this.cfg.applySync(data.key, data.value);
           }
         } catch (err) {
           this.logger.warn(
@@ -269,7 +274,8 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.cache.delete(key);
-    await this.publishInvalidate(key);
+    this.cfg.applySync(key, value);
+    await this.publishInvalidate(key, value);
   }
 
   /**
@@ -412,9 +418,9 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async publishInvalidate(key: string): Promise<void> {
+  private async publishInvalidate(key: string, value: unknown): Promise<void> {
     try {
-      const payload = JSON.stringify({ key });
+      const payload = JSON.stringify({ key, value });
       await this.redis.client.publish(CHANNEL, payload);
     } catch (err) {
       // Pub/sub publish сбой — не блокируем set(), кэш в других процессах

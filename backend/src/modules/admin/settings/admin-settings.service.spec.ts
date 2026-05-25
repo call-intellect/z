@@ -19,6 +19,27 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
+/**
+ * Мок ioredis: ловит обработчик 'message', чтобы в тесте эмулировать
+ * приход pub/sub payload'а и проверить, что AdminSettingsService.subscriber
+ * вызывает cfg.applySync(key, value).
+ */
+const mockHandlers: Array<(channel: string, payload: string) => void> = [];
+vi.mock('ioredis', () => {
+  class FakeRedis {
+    connect = vi.fn(async () => undefined);
+    subscribe = vi.fn(async () => undefined);
+    quit = vi.fn(async () => undefined);
+    on(event: string, cb: (...args: unknown[]) => void): this {
+      if (event === 'message') {
+        mockHandlers.push(cb as (channel: string, payload: string) => void);
+      }
+      return this;
+    }
+  }
+  return { default: FakeRedis };
+});
+
 import { AdminSettingsService } from './admin-settings.service';
 
 interface MockStore {
@@ -39,6 +60,7 @@ function buildService(): {
   svc: AdminSettingsService;
   store: MockStore;
   publish: ReturnType<typeof vi.fn>;
+  applySync: ReturnType<typeof vi.fn>;
 } {
   const store: MockStore = {
     settings: new Map(),
@@ -51,6 +73,7 @@ function buildService(): {
     store.publishes.push(`${channel}:${payload}`);
     return 1;
   });
+  const applySync = vi.fn();
 
   type AdminSettingRow = {
     key: string;
@@ -167,10 +190,11 @@ function buildService(): {
 
   const cfg = {
     redis: { url: 'redis://localhost:6379' },
+    applySync,
   } as unknown as TypedConfigService;
 
   const svc = new AdminSettingsService(prisma, redis, cfg);
-  return { svc, store, publish };
+  return { svc, store, publish, applySync };
 }
 
 describe('AdminSettingsService', () => {
@@ -265,5 +289,49 @@ describe('AdminSettingsService', () => {
 
     await svc.set('limits.x', 99, { userId: 'u' });
     expect(await svc.get<number>('limits.x')).toBe(99);
+  });
+
+  it('set() вызывает cfg.applySync(key, value)', async () => {
+    const { svc, applySync } = buildService();
+    await svc.set('limits.foo', 123, { userId: 'u' });
+    expect(applySync).toHaveBeenCalledWith('limits.foo', 123);
+  });
+
+  it('publishInvalidate шлёт payload с { key, value }, а не только { key }', async () => {
+    const { svc, store } = buildService();
+    await svc.set('limits.bar', { a: 1, b: 'x' }, { userId: 'u' });
+    expect(store.publishes.length).toBe(1);
+    // Формат store.publishes: `${channel}:${payload}`. channel сам содержит
+    // двоеточия (`admin:setting:invalidate`) — режем по полному префиксу.
+    const raw = store.publishes[0] ?? '';
+    const channelPrefix = 'admin:setting:invalidate:';
+    expect(raw.startsWith(channelPrefix)).toBe(true);
+    const payload = raw.slice(channelPrefix.length);
+    const parsed = JSON.parse(payload) as { key?: string; value?: unknown };
+    expect(parsed.key).toBe('limits.bar');
+    expect(parsed.value).toEqual({ a: 1, b: 'x' });
+  });
+});
+
+describe('AdminSettingsService — subscriber callback', () => {
+  it('при получении { key, value } по pub/sub вызывает cfg.applySync(key, value)', async () => {
+    mockHandlers.length = 0;
+    const { svc, applySync } = buildService();
+    await svc.onModuleInit();
+    expect(mockHandlers.length).toBeGreaterThan(0);
+    const handler = mockHandlers[mockHandlers.length - 1]!;
+    handler('admin:setting:invalidate', JSON.stringify({ key: 'limits.x', value: 42 }));
+    expect(applySync).toHaveBeenCalledWith('limits.x', 42);
+    await svc.onModuleDestroy();
+  });
+
+  it('при получении { key } без value вызывает applySync(key, undefined) — fallback на ENV', async () => {
+    mockHandlers.length = 0;
+    const { svc, applySync } = buildService();
+    await svc.onModuleInit();
+    const handler = mockHandlers[mockHandlers.length - 1]!;
+    handler('admin:setting:invalidate', JSON.stringify({ key: 'limits.y' }));
+    expect(applySync).toHaveBeenCalledWith('limits.y', undefined);
+    await svc.onModuleDestroy();
   });
 });

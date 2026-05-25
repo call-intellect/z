@@ -50,6 +50,8 @@ describe('OperationsDashboardService', () => {
     const metrics = {
       setOperationsBlockersTotal: vi.fn(),
       setTeamFrictionsTotal: vi.fn(),
+      // SBA β-8.1 — getOverview теперь вызывает setCooTeamTemperatureRedShare.
+      setCooTeamTemperatureRedShare: vi.fn(),
     };
     const svc = new OperationsDashboardService(
       prisma as never,

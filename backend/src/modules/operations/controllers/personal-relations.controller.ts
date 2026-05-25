@@ -17,8 +17,13 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-
+import {
+  PersonCommitmentsQuerySchema,
+  type PersonCommitmentsQuery,
+  type CommitmentDto,
+} from '../dto/commitments.dto';
 import type { PersonalRelationListDto } from '../dto/operations-dashboard.dto';
+import { CommitmentsService } from '../services/commitments.service';
 import { PersonalRelationService } from '../services/personal-relation.service';
 
 const ListQuerySchema = z
@@ -45,6 +50,8 @@ export class PersonalRelationsController {
     @Inject(PersonalRelationService)
     private readonly svc: PersonalRelationService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(CommitmentsService)
+    private readonly commitments: CommitmentsService,
   ) {}
 
   @Get()
@@ -67,6 +74,34 @@ export class PersonalRelationsController {
       tenantId: tenantId!,
       personId: q.personId,
       relationType: q.relationType,
+      limit: q.limit,
+    });
+  }
+
+  /**
+   * SBA β-8.2 — Обещания человека (исходящие + входящие).
+   * Доступ — admin/coo/owner (через RBAC commitment.read).
+   */
+  @Get('commitments')
+  @ApiOperation({ summary: 'Обещания человека (исходящие + входящие)' })
+  async commitmentsForPerson(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(PersonCommitmentsQuerySchema))
+    q: PersonCommitmentsQuery,
+  ): Promise<{ outgoing: CommitmentDto[]; incoming: CommitmentDto[] }> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    const allowed = await this.rbac.canRead(uid, tenantId!, 'commitment');
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Нет прав на обещания' },
+      });
+    }
+    return this.commitments.listForPerson({
+      tenantId: tenantId!,
+      personId: q.personId,
       limit: q.limit,
     });
   }

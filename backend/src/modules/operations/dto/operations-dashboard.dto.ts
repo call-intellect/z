@@ -64,6 +64,56 @@ export interface OperationsDashboardOverviewDto {
   topRecentBlockers: OperationsDashboardBlockerDto[];
   /** Топ-5 свежих team_friction. */
   topRecentTeamFrictions: OperationsDashboardTeamFrictionDto[];
+  /**
+   * SBA β-8.1 — компактный блок «Температура команды» за последние 7 дней.
+   * Подробный разрез (по людям/командам) — через `GET /team-temperature`.
+   */
+  teamTemperature: OperationsTeamTemperatureSummaryDto;
+}
+
+/**
+ * SBA β-8.1 — Сводка «Температуры команды» за период.
+ *
+ * `byPerson` — разрез по сотрудникам (для виджета с горизонтальными
+ * столбиками). Содержит только тех, у кого был хотя бы один чек-ин с
+ * проставленным sentiment.
+ */
+export interface OperationsTeamTemperatureSummaryDto {
+  /** Окно в днях (по умолчанию 7). */
+  days: number;
+  /** Всего чек-инов с проставленным sentiment за период. */
+  totalCheckIns: number;
+  /** Доля «зелёных» (0..1). */
+  greenShare: number;
+  /** Доля «жёлтых» (0..1). */
+  yellowShare: number;
+  /** Доля «красных» (0..1). */
+  redShare: number;
+  /**
+   * Динамика: дельта доли красных к предыдущему такому же окну.
+   * Положительное = команде стало хуже; null = недостаточно данных за
+   * предыдущий период.
+   */
+  redShareDelta: number | null;
+}
+
+export interface OperationsTeamTemperaturePersonDto {
+  personId: string;
+  personName: string | null;
+  green: number;
+  yellow: number;
+  red: number;
+  total: number;
+}
+
+export interface OperationsTeamTemperatureDto {
+  days: number;
+  totalCheckIns: number;
+  greenShare: number;
+  yellowShare: number;
+  redShare: number;
+  redShareDelta: number | null;
+  byPerson: OperationsTeamTemperaturePersonDto[];
 }
 
 export interface OperationsDashboardBlockersListDto {

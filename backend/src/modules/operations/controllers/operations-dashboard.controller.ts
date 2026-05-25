@@ -4,23 +4,35 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
+import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-
+import {
+  OpenCommitmentsQuerySchema,
+  type OpenCommitmentsQuery,
+  type OpenCommitmentsListDto,
+} from '../dto/commitments.dto';
 import type {
   OperationsDashboardBlockersListDto,
   OperationsDashboardCapacityListDto,
   OperationsDashboardOverviewDto,
   OperationsDashboardTeamFrictionsListDto,
+  OperationsTeamTemperatureDto,
 } from '../dto/operations-dashboard.dto';
+import {
+  TeamTemperatureQuerySchema,
+  type TeamTemperatureQuery,
+} from '../dto/weekly-digest.dto';
+import { CommitmentsService } from '../services/commitments.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
 
 /**
@@ -37,6 +49,8 @@ export class OperationsDashboardController {
     @Inject(OperationsDashboardService)
     private readonly svc: OperationsDashboardService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(CommitmentsService)
+    private readonly commitments: CommitmentsService,
   ) {}
 
   @Get('overview')
@@ -82,6 +96,50 @@ export class OperationsDashboardController {
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
     return this.svc.getCapacity({ tenantId: tenantId! });
+  }
+
+  /**
+   * SBA β-8.1 — Температура команды за окно (default 7 дней).
+   * Доступ — coo/owner/admin (как остальные эндпоинты дашборда).
+   */
+  @Get('team-temperature')
+  @ApiOperation({
+    summary: 'COO operations dashboard — температура команды (зелёный/жёлтый/красный)',
+  })
+  async teamTemperature(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(TeamTemperatureQuerySchema))
+    q: TeamTemperatureQuery,
+  ): Promise<OperationsTeamTemperatureDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.svc.getTeamTemperature({ tenantId: tenantId!, days: q.days });
+  }
+
+  /**
+   * SBA β-8.2 — Открытые обещания за окно (default 14 дней).
+   * Доступ — coo/owner/admin (как остальные эндпоинты дашборда).
+   */
+  @Get('open-commitments')
+  @ApiOperation({
+    summary: 'COO operations dashboard — открытые обещания (с именами)',
+  })
+  async openCommitments(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(OpenCommitmentsQuerySchema))
+    q: OpenCommitmentsQuery,
+  ): Promise<OpenCommitmentsListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.commitments.listOpenForTenant({
+      tenantId: tenantId!,
+      days: q.days,
+      limit: q.limit,
+    });
   }
 
   private requireUser(req: Request): string {

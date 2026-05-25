@@ -51,6 +51,16 @@ export interface ExtractedBlock {
   role_relevant: boolean;
   /** Фаза 0b — имя должности из контекста, если упомянуто. */
   roleHint?: string | undefined;
+  /**
+   * SBA β-8.2 — для signalType='commitment': срок в формате YYYY-MM-DD,
+   * извлечённый LLM из текста. null если не извлечён или не commitment.
+   */
+  commitmentDueDateGuess?: string | null | undefined;
+  /**
+   * SBA β-8.2 — имя адресата обещания, как звучит в тексте. null если
+   * не извлечён или не commitment. Сопоставление с Person — в worker'е.
+   */
+  commitmentRecipientNameGuess?: string | null | undefined;
 }
 
 /**
@@ -157,6 +167,10 @@ const ExtractedBlockSchema = z.object({
   // дефолты, чтобы старые промпты/модели не валили парсинг.
   role_relevant: z.boolean().optional().default(false),
   roleHint: z.string().nullable().optional(),
+  // SBA β-8.2 — два поля для signalType='commitment'. Опциональные —
+  // старые модели/промпты могут не возвращать.
+  commitmentDueDateGuess: z.string().nullable().optional(),
+  commitmentRecipientNameGuess: z.string().nullable().optional(),
 });
 
 const ExtractedProcessSchema = z.object({
@@ -417,6 +431,8 @@ export class BlockExtractionService {
       mentionedEntities: b.mentionedEntities,
       role_relevant: b.role_relevant ?? false,
       roleHint: b.roleHint ?? undefined,
+      commitmentDueDateGuess: b.commitmentDueDateGuess ?? null,
+      commitmentRecipientNameGuess: b.commitmentRecipientNameGuess ?? null,
     }));
     return {
       blocks,

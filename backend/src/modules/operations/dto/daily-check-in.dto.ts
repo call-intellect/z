@@ -79,4 +79,49 @@ export interface DailyCheckInDto {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * SBA β-8.1 — настроение чек-ина (определяет LLM). Видимость: только
+   * coo/owner/admin/super_admin (фильтр в маппере, см. `stripSentimentForRole`).
+   * Для сотрудника в /me/check-ins поле всегда `undefined` (его «убирает» маппер).
+   */
+  sentiment?: 'green' | 'yellow' | 'red' | null;
+  sentimentRationale?: string | null;
+  sentimentVersion?: string | null;
+  sentimentDeterminedAt?: string | null;
+}
+
+/**
+ * SBA β-8.1 — роли, которым разрешено видеть поля настроения чек-ина.
+ * Источник: plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md §10.
+ *
+ * Фильтр работает на уровне DTO-маппера (не RBAC-гварда), чтобы:
+ *   1. /me/check-ins сотрудника НЕ выдавал поле даже теоретически;
+ *   2. ошибка в RBAC-конфиге не привела к утечке поля наружу.
+ */
+export const SENTIMENT_VISIBLE_ROLES = new Set([
+  'owner',
+  'admin',
+  'coo',
+  'super_admin',
+]);
+
+/**
+ * Снимает с DTO поля настроения, если роль не из whitelist'а. Не мутирует
+ * исходный объект — возвращает копию.
+ *
+ * `null` для super_admin / coo / owner / admin — корректно (анализ ещё
+ * не запущен или модель упала). `undefined` для остальных ролей —
+ * сигнал «поле отсутствует», JSON.stringify его пропустит.
+ */
+export function stripSentimentForRole(
+  dto: DailyCheckInDto,
+  role: string | null,
+): DailyCheckInDto {
+  if (role && SENTIMENT_VISIBLE_ROLES.has(role)) return dto;
+  const { sentiment, sentimentRationale, sentimentVersion, sentimentDeterminedAt, ...rest } = dto;
+  void sentiment;
+  void sentimentRationale;
+  void sentimentVersion;
+  void sentimentDeterminedAt;
+  return rest as DailyCheckInDto;
 }

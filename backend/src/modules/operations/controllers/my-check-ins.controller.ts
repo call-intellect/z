@@ -26,6 +26,7 @@ import {
   type HistoryCheckInsQuery,
   ListCheckInsQuerySchema,
   type ListCheckInsQuery,
+  stripSentimentForRole,
 } from '../dto/daily-check-in.dto';
 import { DailyCheckInService } from '../services/daily-checkin.service';
 
@@ -68,7 +69,10 @@ export class MyCheckInsController {
       date: q.date,
       kind: q.kind,
     });
-    return { items };
+    // SBA β-8.1 — `/me/check-ins` всегда отдаётся без полей `sentiment*`.
+    // Маппер вызываем с role=null (не из whitelist'а) — гарантирует, что
+    // сотрудник никогда не увидит своё настроение.
+    return { items: items.map((it) => stripSentimentForRole(it, null)) };
   }
 
   @Post()
@@ -85,12 +89,13 @@ export class MyCheckInsController {
       tenantId: tenantId!,
       userId: uid,
     });
-    return this.svc.createOrUpsertManual({
+    const dto = await this.svc.createOrUpsertManual({
       tenantId: tenantId!,
       personId: person.id,
       personTimezone: person.timezone,
       input: body,
     });
+    return stripSentimentForRole(dto, null);
   }
 
   @Get('history')
@@ -112,7 +117,7 @@ export class MyCheckInsController {
       personId: person.id,
       days: q.days,
     });
-    return { items };
+    return { items: items.map((it) => stripSentimentForRole(it, null)) };
   }
 
   private requireUser(req: Request): string {

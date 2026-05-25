@@ -14,6 +14,9 @@ import type {
   OperationsDashboardOverviewDto,
   OperationsDashboardTeamFrictionDto,
   OperationsDashboardTeamFrictionsListDto,
+  OperationsTeamTemperatureDto,
+  OperationsTeamTemperaturePersonDto,
+  OperationsTeamTemperatureSummaryDto,
 } from '../dto/operations-dashboard.dto';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
@@ -60,12 +63,15 @@ export class OperationsDashboardService {
     const cached = await this.cacheGet<OperationsDashboardOverviewDto>(cacheKey);
     if (cached) return cached;
 
-    const [blockers, goalsAgg, frictions, capacity] = await Promise.all([
-      this.fetchBlockers(args.tenantId, 100),
-      this.fetchGoalsAgg(args.tenantId),
-      this.fetchTeamFrictions(args.tenantId, 100),
-      this.fetchCapacity(args.tenantId),
-    ]);
+    const [blockers, goalsAgg, frictions, capacity, temperature] =
+      await Promise.all([
+        this.fetchBlockers(args.tenantId, 100),
+        this.fetchGoalsAgg(args.tenantId),
+        this.fetchTeamFrictions(args.tenantId, 100),
+        this.fetchCapacity(args.tenantId),
+        // SBA β-8.1 — Температура команды за 7 дней.
+        this.fetchTeamTemperature(args.tenantId, 7),
+      ]);
 
     const blockersBySeverity: Record<Severity, number> = {
       low: 0,
@@ -76,6 +82,15 @@ export class OperationsDashboardService {
     for (const b of blockers) {
       blockersBySeverity[b.severity] += 1;
     }
+
+    const teamTemperatureSummary: OperationsTeamTemperatureSummaryDto = {
+      days: temperature.days,
+      totalCheckIns: temperature.totalCheckIns,
+      greenShare: temperature.greenShare,
+      yellowShare: temperature.yellowShare,
+      redShare: temperature.redShare,
+      redShareDelta: temperature.redShareDelta,
+    };
 
     const dto: OperationsDashboardOverviewDto = {
       tenantId: args.tenantId,
@@ -89,11 +104,26 @@ export class OperationsDashboardService {
       capacityOverloadedCount: capacity.overloadedCount,
       topRecentBlockers: blockers.slice(0, 5),
       topRecentTeamFrictions: frictions.slice(0, 5),
+      teamTemperature: teamTemperatureSummary,
     };
 
     await this.cacheSet(cacheKey, dto);
     this.publishMetricsSnapshot(args.tenantId, blockersBySeverity, frictions.length);
+    this.metrics.setCooTeamTemperatureRedShare({
+      tenantTop: resolveOperationsTenantTop(args.tenantId),
+      value: temperature.redShare,
+    });
     return dto;
+  }
+
+  /**
+   * SBA β-8.1 — `GET /team-temperature?days=7`. Полный разрез по людям.
+   */
+  async getTeamTemperature(args: {
+    tenantId: string;
+    days: number;
+  }): Promise<OperationsTeamTemperatureDto> {
+    return this.fetchTeamTemperature(args.tenantId, args.days);
   }
 
   /** `GET /api/v1/dashboard/operations/blockers`. */
@@ -279,6 +309,102 @@ export class OperationsDashboardService {
     });
   }
 
+  /**
+   * SBA β-8.1 — агрегат настроений за окно `days`. Возвращает доли
+   * green/yellow/red + дельту redShare к предыдущему такому же окну.
+   * Используется и в overview (summary), и в `/team-temperature` (полный
+   * разрез по людям).
+   */
+  private async fetchTeamTemperature(
+    tenantId: string,
+    days: number,
+  ): Promise<OperationsTeamTemperatureDto> {
+    const sinceCurrent = isoDateDaysAgo(days);
+    const sincePrev = isoDateDaysAgo(days * 2);
+
+    // Берём чек-ины за два окна одним запросом — фильтр по dateLocal (строка).
+    const rows = await this.prisma.dailyCheckIn.findMany({
+      where: {
+        tenantId,
+        sentiment: { in: ['green', 'yellow', 'red'] },
+        dateLocal: { gte: sincePrev },
+      },
+      select: {
+        sentiment: true,
+        dateLocal: true,
+        personId: true,
+        person: { select: { name: true } },
+      },
+    });
+
+    let currG = 0;
+    let currY = 0;
+    let currR = 0;
+    let prevG = 0;
+    let prevY = 0;
+    let prevR = 0;
+    const byPersonMap = new Map<
+      string,
+      OperationsTeamTemperaturePersonDto
+    >();
+
+    for (const row of rows) {
+      const isCurrent = row.dateLocal >= sinceCurrent;
+      const sentiment = row.sentiment;
+      if (sentiment === 'green') {
+        if (isCurrent) currG++;
+        else prevG++;
+      } else if (sentiment === 'yellow') {
+        if (isCurrent) currY++;
+        else prevY++;
+      } else if (sentiment === 'red') {
+        if (isCurrent) currR++;
+        else prevR++;
+      }
+
+      if (isCurrent) {
+        const existing = byPersonMap.get(row.personId);
+        if (existing) {
+          if (sentiment === 'green') existing.green++;
+          else if (sentiment === 'yellow') existing.yellow++;
+          else if (sentiment === 'red') existing.red++;
+          existing.total++;
+        } else {
+          byPersonMap.set(row.personId, {
+            personId: row.personId,
+            personName: row.person?.name ?? null,
+            green: sentiment === 'green' ? 1 : 0,
+            yellow: sentiment === 'yellow' ? 1 : 0,
+            red: sentiment === 'red' ? 1 : 0,
+            total: 1,
+          });
+        }
+      }
+    }
+
+    const currTotal = currG + currY + currR;
+    const prevTotal = prevG + prevY + prevR;
+    const greenShare = currTotal > 0 ? currG / currTotal : 0;
+    const yellowShare = currTotal > 0 ? currY / currTotal : 0;
+    const redShare = currTotal > 0 ? currR / currTotal : 0;
+    const redShareDelta =
+      prevTotal > 0 ? redShare - prevR / prevTotal : null;
+
+    const byPerson = Array.from(byPersonMap.values()).sort(
+      (a, b) => b.red - a.red || b.total - a.total,
+    );
+
+    return {
+      days,
+      totalCheckIns: currTotal,
+      greenShare,
+      yellowShare,
+      redShare,
+      redShareDelta,
+      byPerson,
+    };
+  }
+
   private async fetchCapacity(
     tenantId: string,
   ): Promise<OperationsDashboardCapacityListDto> {
@@ -380,4 +506,21 @@ export class OperationsDashboardService {
 function normalizeSeverity(value: string | undefined): Severity {
   if (value === 'low' || value === 'medium' || value === 'high') return value;
   return 'unknown';
+}
+
+/**
+ * SBA β-8.1 — вернуть YYYY-MM-DD (UTC), N дней назад от сегодня. Используется
+ * для фильтра DailyCheckIn.dateLocal в `fetchTeamTemperature`.
+ *
+ * NB: используем UTC-дату как нижнюю границу — это даёт небольшую погрешность
+ * на сменах суток в разных таймзонах (±1 день), но не критично для
+ * 7/14/30-дневных окон агрегата.
+ */
+function isoDateDaysAgo(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }

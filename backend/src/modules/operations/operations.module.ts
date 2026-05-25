@@ -1,17 +1,27 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
-
+import { ProbeModule } from '../probe/probe.module';
+import { TrackerModule } from '../tracker/tracker.module';
 import { MyCheckInsController } from './controllers/my-check-ins.controller';
+import { MyPromisesController } from './controllers/my-promises.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
+import { WeeklyDigestController } from './controllers/weekly-digest.controller';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
+import { CommitmentResponseHandler } from './services/commitment-response.handler';
+import { CommitmentsService } from './services/commitments.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonalRelationService } from './services/personal-relation.service';
+import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
+import { WeeklyDigestService } from './services/weekly-digest.service';
+import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
+import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
+import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
 
 /**
  * SBA β-8 — OperationsModule.
@@ -42,11 +52,21 @@ import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
  * его при ручной смене статуса Goal.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    // SBA β-8.2 — Хранитель обещаний использует ProbeService (followup +
+    // escalation) и HolidayService (расчёт «следующего рабочего дня»).
+    ProbeModule,
+    TrackerModule,
+  ],
   controllers: [
     OperationsDashboardController,
     MyCheckInsController,
     PersonalRelationsController,
+    // SBA β-8.1 — новый endpoint недельного дайджеста.
+    WeeklyDigestController,
+    // SBA β-8.2 — `/me/promises`.
+    MyPromisesController,
   ],
   providers: [
     DailyCheckInService,
@@ -56,6 +76,15 @@ import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
     CheckinParserService,
     CheckinResponseHandler,
     DailyCheckInPromptCron,
+    // SBA β-8.1 — voiceless над основными сервисами β-8.
+    WeeklyDigestService,
+    OperationsWeeklyDigestCron,
+    CheckinSentimentAnalyzerWorker,
+    // SBA β-8.2 — Хранитель обещаний.
+    CommitmentsService,
+    Specialist39PromiseKeeperService,
+    CommitmentFollowupCron,
+    CommitmentResponseHandler,
   ],
   exports: [
     GoalCascadeService,
@@ -63,6 +92,10 @@ import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
     OperationsDashboardService,
     PersonalRelationService,
     CheckinParserService,
+    WeeklyDigestService,
+    // SBA β-8.2 — экспортируем для тестов / повторного использования.
+    CommitmentsService,
+    Specialist39PromiseKeeperService,
   ],
 })
 export class OperationsModule {}

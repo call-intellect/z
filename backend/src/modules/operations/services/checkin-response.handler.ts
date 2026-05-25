@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -42,6 +42,9 @@ export class CheckinResponseHandler {
     private readonly dashboard: OperationsDashboardService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   @OnEvent('notification.responded')
@@ -95,7 +98,7 @@ export class CheckinResponseHandler {
         rawText,
       });
 
-      await this.checkinService.upsertFromParser({
+      const checkIn = await this.checkinService.upsertFromParser({
         tenantId: event.tenantId,
         personId,
         kind,
@@ -114,6 +117,27 @@ export class CheckinResponseHandler {
           kind,
           reason: 'low_confidence',
         });
+      }
+
+      // SBA β-8.1 — после успешной сборки чек-ина эмитим событие, на которое
+      // подписан `CheckinSentimentAnalyzerWorker`. Best-effort: ошибки
+      // EventEmitter не ломают основной flow.
+      try {
+        this.eventEmitter?.emit('checkin.created', {
+          tenantId: event.tenantId,
+          checkInId: checkIn.id,
+          personId,
+          kind,
+          rawText,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            checkInId: checkIn.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'CheckinResponseHandler: EventEmitter.emit failed — продолжаю',
+        );
       }
 
       await this.dashboard.invalidateCache(event.tenantId);

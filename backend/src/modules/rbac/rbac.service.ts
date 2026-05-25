@@ -182,6 +182,12 @@ export type ResourceType =
   // 'personal_relation' — EntityLink между Person'ами (manages /
   // collaborates_with / mentors / ...). Read для admin/coo; write — internal worker.
   | 'dashboard_operations'
+  // ── SBA β-8.1 — добивка панели операционного директора ──
+  // 'dashboard_operations_temperature' — `GET /dashboard/operations/team-temperature`.
+  // 'dashboard_operations_weekly' — `GET /dashboard/operations/weekly-digest`.
+  // Те же роли, что и dashboard_operations (owner/admin/coo/super_admin).
+  | 'dashboard_operations_temperature'
+  | 'dashboard_operations_weekly'
   | 'daily_checkin'
   | 'personal_relation'
   // ── SBA δ-3 — VoiceChannelAdapter ──
@@ -257,7 +263,14 @@ export type ResourceType =
   // owner/admin + manager (на своих). write — только Cron (нет manual API).
   | 'helpfulness_trait'
   | 'helpfulness_spotlight'
-  | 'social_contribution_profile';
+  | 'social_contribution_profile'
+  // ── SBA β-8.2 — Promise Keeper (Specialist 3.9 Хранитель обещаний) ──
+  // 'commitment' — обещание сотрудника (IdeaBlock signalType='commitment').
+  // read — owner/admin/coo (карта обещаний по команде); self — сам автор
+  // (через `/me/promises`, проверяется в сервисе по personId.userId);
+  // write — только сам автор (POST /me/promises/:blockId/mark) или
+  // internal handler. Manager strict — read self.
+  | 'commitment';
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -597,6 +610,8 @@ function isResourceType(s: string): s is ResourceType {
     'import_tracker',
     // Wave 2 Поток D — Activity Feeds (2026-05-24).
     'activity_feed_item',
+    // SBA β-8.2 — Promise Keeper.
+    'commitment',
   ].includes(s);
 }
 function isAction(s: string): s is Action {

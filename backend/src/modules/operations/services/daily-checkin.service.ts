@@ -5,7 +5,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -43,6 +45,9 @@ export class DailyCheckInService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   /**
@@ -89,7 +94,7 @@ export class DailyCheckInService {
     const dateLocal =
       args.input.dateLocal ?? getLocalDate(now, args.personTimezone);
 
-    return this.upsertInternal({
+    const dto = await this.upsertInternal({
       tenantId: args.tenantId,
       personId: args.personId,
       kind: args.input.kind,
@@ -103,6 +108,28 @@ export class DailyCheckInService {
       curatorReview: false,
       completed: true,
     });
+
+    // SBA β-8.1 — эмитим событие, на которое подписан
+    // CheckinSentimentAnalyzerWorker. Best-effort, ошибки не ломают flow.
+    try {
+      this.eventEmitter?.emit('checkin.created', {
+        tenantId: args.tenantId,
+        checkInId: dto.id,
+        personId: args.personId,
+        kind: args.input.kind,
+        rawText: args.input.rawText ?? null,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          checkInId: dto.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'createOrUpsertManual: EventEmitter.emit failed — продолжаю',
+      );
+    }
+
+    return dto;
   }
 
   /**
@@ -357,11 +384,21 @@ export class DailyCheckInService {
     completedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
+    sentiment?: string | null;
+    sentimentRationale?: string | null;
+    sentimentVersion?: string | null;
+    sentimentDeterminedAt?: Date | null;
   }): DailyCheckInDto {
     const confidence =
       row.parseConfidence == null
         ? null
         : Number((row.parseConfidence as { toString(): string }).toString());
+    const sentiment =
+      row.sentiment === 'green' ||
+      row.sentiment === 'yellow' ||
+      row.sentiment === 'red'
+        ? row.sentiment
+        : null;
     return {
       id: row.id,
       tenantId: row.tenantId,
@@ -379,6 +416,12 @@ export class DailyCheckInService {
       completedAt: row.completedAt ? row.completedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      sentiment,
+      sentimentRationale: row.sentimentRationale ?? null,
+      sentimentVersion: row.sentimentVersion ?? null,
+      sentimentDeterminedAt: row.sentimentDeterminedAt
+        ? row.sentimentDeterminedAt.toISOString()
+        : null,
     };
   }
 }

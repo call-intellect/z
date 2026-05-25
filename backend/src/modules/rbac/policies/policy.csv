@@ -649,12 +649,23 @@ p, coo, *, *, dashboard_operations, read
 p, coo, *, *, daily_checkin, read
 p, coo, *, self, daily_checkin, write
 p, coo, *, *, personal_relation, read
+# β-8.1 — добивка панели операционного директора.
+p, coo, *, *, dashboard_operations_temperature, read
+p, coo, *, *, dashboard_operations_weekly, read
 
 # ──────────────────────────── SBA β-8 — Dashboard + DailyCheckIn + PersonalRelation ────────────────────────────
 # dashboard_operations — агрегат пульса операций (`GET /dashboard/operations/*`).
 # Только read: для admin/owner/coo/super_admin (bypass). Manager НЕ видит.
 p, owner, *, *, dashboard_operations, read
 p, admin, *, *, dashboard_operations, read
+
+# β-8.1 — Температура команды (`GET /dashboard/operations/team-temperature`)
+# и Недельная сводка (`GET /dashboard/operations/weekly-digest`).
+# Те же роли, что и dashboard_operations.
+p, owner, *, *, dashboard_operations_temperature, read
+p, admin, *, *, dashboard_operations_temperature, read
+p, owner, *, *, dashboard_operations_weekly, read
+p, admin, *, *, dashboard_operations_weekly, read
 
 # daily_checkin — личный чек-ин Person'а. Самостоятельно — write только свои
 # (через /me/check-ins). admin/owner — read всех (для мониторинга/HR), write self.
@@ -876,6 +887,24 @@ p, owner, *, *, import_tracker, read
 p, owner, *, *, import_tracker, write
 p, admin, *, *, import_tracker, read
 p, admin, *, *, import_tracker, write
+
+# ──────────────────────────── SBA β-8.2 — Promise Keeper (commitment) ────────────────────────────
+# commitment — обещание сотрудника (IdeaBlock signalType='commitment').
+# read — owner/admin/coo (карта обещаний по команде, имена видны открыто).
+# write — только сам автор обещания (POST /me/promises/:blockId/mark) или
+# internal handler (commitment-response.handler). Manager strict — read self.
+# Self-проверка делается в сервисе через `Person.userId == currentUserId`
+# (через personId блока).
+p, owner, *, *, commitment, read
+p, owner, *, *, commitment, write
+p, owner, *, *, commitment, delete
+p, admin, *, *, commitment, read
+p, admin, *, *, commitment, write
+p, admin, *, *, commitment, delete
+p, coo, *, *, commitment, read
+p, manager, open, *, commitment, read
+p, manager, strict, self, commitment, read
+p, manager, *, self, commitment, write
 
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read

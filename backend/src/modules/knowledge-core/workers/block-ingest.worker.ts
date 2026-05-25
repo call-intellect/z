@@ -691,6 +691,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   }): Promise<string | null> {
     const { event, block, embedding, roleRelevant, roleId } = args;
     try {
+      // SBA β-8.2 — для блоков обещаний сразу выставляем commitmentStatus и
+      // (опц.) commitmentDueDate из LLM-подсказки. Адресата вычисляем
+      // после блока — fuzzy match не должен ронять persist основного блока.
+      const isCommitment = block.signalType === 'commitment';
+      const commitmentDueDate = isCommitment
+        ? this.parseGuessedDueDate(block.commitmentDueDateGuess)
+        : null;
+
       const blockId = await this.prisma.$transaction(async (tx) => {
         const ideaBlock = await tx.ideaBlock.create({
           data: {
@@ -706,6 +714,12 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             evidenceCount: 1,
             roleRelevant,
             roleId,
+            ...(isCommitment
+              ? {
+                  commitmentStatus: 'open',
+                  commitmentDueDate: commitmentDueDate ?? null,
+                }
+              : {}),
           },
         });
         if (embedding && embedding.length > 0) {
@@ -748,6 +762,25 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
               err: err instanceof Error ? err.message : String(err),
             },
             'block-ingest: сущность не привязалась — пропуск',
+          );
+        });
+      }
+
+      // SBA β-8.2 — для commitment пытаемся сопоставить адресата с Person
+      // через fuzzy match. Best-effort: ошибка не валит persist.
+      if (isCommitment && block.commitmentRecipientNameGuess) {
+        await this.linkCommitmentRecipient({
+          tenantId: event.tenantId,
+          blockId,
+          nameGuess: block.commitmentRecipientNameGuess,
+        }).catch((err) => {
+          this.logger.warn(
+            {
+              blockId,
+              nameGuess: block.commitmentRecipientNameGuess,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-ingest: commitmentRecipient не сопоставлен — пропуск',
           );
         });
       }
@@ -804,6 +837,85 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
   private toVectorLiteral(vec: number[]): string {
     return `[${vec.join(',')}]`;
+  }
+
+  /**
+   * SBA β-8.2 — парсинг `commitmentDueDateGuess` из LLM. Принимаем строго
+   * YYYY-MM-DD; всё прочее (null/пусто/мусор) → null, чтобы Хранитель
+   * обещаний поставил fallback (createdAt + 5 рабочих дней).
+   */
+  private parseGuessedDueDate(input: string | null | undefined): Date | null {
+    if (typeof input !== 'string') return null;
+    const trimmed = input.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+    const d = new Date(`${trimmed}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  }
+
+  /**
+   * SBA β-8.2 — попытка сопоставить `commitmentRecipientNameGuess` с
+   * конкретным Person в той же Org через простой нечёткий поиск:
+   *   1. exact match по полному name (case-insensitive).
+   *   2. iLIKE по первому слову guess'а (имя «Маша» → Person.name iLIKE 'Маша%').
+   *   3. iLIKE подстрокой если предыдущий шаг ничего не дал.
+   * Множественные совпадения → пропускаем (неоднозначно, лучше пусто).
+   */
+  private async linkCommitmentRecipient(args: {
+    tenantId: string;
+    blockId: string;
+    nameGuess: string;
+  }): Promise<void> {
+    const guess = args.nameGuess.trim();
+    if (guess.length < 2 || guess.length > 100) return;
+
+    // 1. Exact match.
+    let candidates = await this.prisma.person.findMany({
+      where: {
+        tenantId: args.tenantId,
+        deletedAt: null,
+        name: { equals: guess, mode: 'insensitive' },
+      },
+      select: { id: true },
+      take: 2,
+    });
+    if (candidates.length === 0) {
+      // 2. Prefix по первому слову.
+      const firstWord = guess.split(/\s+/)[0];
+      if (firstWord && firstWord.length >= 2) {
+        candidates = await this.prisma.person.findMany({
+          where: {
+            tenantId: args.tenantId,
+            deletedAt: null,
+            name: { startsWith: firstWord, mode: 'insensitive' },
+          },
+          select: { id: true },
+          take: 2,
+        });
+      }
+    }
+    if (candidates.length === 0) {
+      // 3. Contains.
+      candidates = await this.prisma.person.findMany({
+        where: {
+          tenantId: args.tenantId,
+          deletedAt: null,
+          name: { contains: guess, mode: 'insensitive' },
+        },
+        select: { id: true },
+        take: 2,
+      });
+    }
+    if (candidates.length !== 1) {
+      // Либо ноль (никого), либо ≥2 (неоднозначно) — оставляем null.
+      return;
+    }
+    const personId = candidates[0]?.id;
+    if (!personId) return;
+    await this.prisma.ideaBlock.update({
+      where: { id: args.blockId },
+      data: { commitmentRecipientPersonId: personId },
+    });
   }
 
   private async onJobFailed(

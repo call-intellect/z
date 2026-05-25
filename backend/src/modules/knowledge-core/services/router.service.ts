@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { IdeaBlock, SignalType } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -112,6 +113,9 @@ export class RouterService {
     @Optional()
     @Inject(RedisService)
     private readonly redis?: RedisService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   /**
@@ -331,10 +335,30 @@ export class RouterService {
       // sub-ТЗ ниже.
       case 'brand_principle':
       case 'content_artifact':
-      case 'commitment_status':
       case 'plan_item':
       case 'done_item':
         // no-op до появления специалистов.
+        break;
+      // SBA β-8.2 — commitment_status больше не no-op: эмиттим событие
+      // `commitment.status_received`, на которое подписан CommitmentResponseHandler
+      // (operations модуль). Внутри handler найдёт исходный commitment-блок и
+      // обновит его статус + создаст ребро resolves.
+      case 'commitment_status':
+        try {
+          this.eventEmitter?.emit('commitment.status_received', {
+            tenantId: block.tenantId,
+            blockId: block.id,
+            signalType: block.signalType,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              blockId: block.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'RouterService: emit commitment.status_received failed — продолжаем без эмита',
+          );
+        }
         break;
       // SBA Wave 2 — Specialist 3.8 (Helpfulness Agent). Эти signalType
       // создаются tracker'ом / ingest'ом или другими специалистами; все 7

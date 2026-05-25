@@ -1,9 +1,12 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { EconomicsClient } from './EconomicsClient';
-
-export const metadata: Metadata = { title: 'Z-Admin — Юнит-экономика' };
-
-export default function EconomicsPage() {
-  return <EconomicsClient />;
+/**
+ * Фаза 2 редизайна админки — миграция URL.
+ *
+ * `/admin/economics` переехал в `/admin/analytics/economics`. Drill-down
+ * `/admin/economics/orgs/[id]` остаётся на месте — это управление, не аналитика.
+ * Сам клиент `EconomicsClient` оставлен в файле рядом — на случай переиспользования.
+ */
+export default function Page() {
+  redirect('/admin/analytics/economics');
 }

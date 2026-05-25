@@ -1,14 +1,17 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { FunctionDetailClient } from './FunctionDetailClient';
-
-export const metadata: Metadata = { title: 'Z-Admin — Функция LLM' };
-
-export default async function FunctionDetailPage({
+/**
+ * Фаза 2 редизайна админки — миграция URL.
+ *
+ * `/admin/usage/functions/[taskType]` переехал в
+ * `/admin/analytics/functions/[taskType]`. Сам клиент `FunctionDetailClient`
+ * оставлен в файле рядом — на случай переиспользования.
+ */
+export default async function Page({
   params,
 }: {
   params: Promise<{ taskType: string }>;
 }) {
   const { taskType } = await params;
-  return <FunctionDetailClient taskType={taskType} />;
+  redirect(`/admin/analytics/functions/${encodeURIComponent(taskType)}`);
 }

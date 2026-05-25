@@ -120,19 +120,43 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
     label: 'Аналитика',
     icon: BarChart3,
     items: [
-      // Существующие пути usage остаются — миграция в analytics/* в Фазе 2.
-      { href: '/admin/usage/users', label: 'Пользователи', icon: Users },
+      // Фаза 2 редизайна: все маршруты переехали под /admin/analytics/*.
+      // Старые `/admin/usage/*` и `/admin/economics` редиректят сюда.
       {
-        href: '/admin/usage/functions',
-        label: 'Функции LLM',
-        icon: ListTree,
-        matchPrefix: '/admin/usage/functions',
+        href: '/admin/analytics/orgs',
+        label: 'Org и пользователи',
+        icon: Users,
+        matchPrefix: '/admin/analytics/orgs',
       },
       {
-        href: '/admin/economics',
+        href: '/admin/analytics/functions',
+        label: 'Функции LLM',
+        icon: ListTree,
+        matchPrefix: '/admin/analytics/functions',
+      },
+      {
+        href: '/admin/analytics/economics',
         label: 'Юнит-экономика',
         icon: TrendingUp,
-        matchPrefix: '/admin/economics',
+        matchPrefix: '/admin/analytics/economics',
+      },
+      {
+        href: '/admin/analytics/meetings',
+        label: 'Встречи',
+        icon: Calendar,
+        matchPrefix: '/admin/analytics/meetings',
+      },
+      {
+        href: '/admin/analytics/knowledge',
+        label: 'Knowledge-Core',
+        icon: Network,
+        matchPrefix: '/admin/analytics/knowledge',
+      },
+      {
+        href: '/admin/analytics/concierge',
+        label: 'Concierge и AI-чат',
+        icon: Telescope,
+        matchPrefix: '/admin/analytics/concierge',
       },
       {
         href: '/admin/org/economics',
@@ -143,20 +167,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         href: '/admin/ai-usage',
         label: 'AI-вызовы (legacy)',
         icon: Bot,
-      },
-      {
-        href: '/admin/analytics/knowledge',
-        label: 'Knowledge-Core',
-        icon: Network,
-        matchPrefix: '/admin/analytics/knowledge',
-        isComingSoon: true,
-      },
-      {
-        href: '/admin/analytics/concierge',
-        label: 'Concierge и AI-чат',
-        icon: Telescope,
-        matchPrefix: '/admin/analytics/concierge',
-        isComingSoon: true,
       },
     ],
   },

@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AdminAiModelsController } from './ai-models/ai-models.controller';
 import { AdminAiModelsService } from './ai-models/ai-models.service';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
 import { AdminCronsModule } from './crons/admin-crons.module';
 import { AdminIncidentsModule } from './incidents/admin-incidents.module';
@@ -74,6 +75,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     // Admin-redesign Фаза 1 — журнал super_admin и инциденты (BullMQ failed-jobs).
     AdminAuditModule,
     AdminIncidentsModule,
+    // Admin-redesign Фаза 2 — read-only аналитика (knowledge + concierge).
+    AnalyticsModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

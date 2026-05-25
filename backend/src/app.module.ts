@@ -83,6 +83,7 @@ import { SearchModule } from './modules/search/search.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { ExportsModule } from './modules/exports/exports.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 import { IngestEmailModule } from './modules/ingest/adapters/email/ingest-email.module';
 import { IngestModule } from './modules/ingest/ingest.module';
 import { OrgsModule } from './modules/orgs/orgs.module';
@@ -541,6 +542,14 @@ import { PushModule } from './modules/push/push.module';
     // max 1 per user per day через Redis SETNX. Должен идти ПОСЛЕ
     // ConversationalModule (sendNotification) и AiModule (LlmRouter).
     ProactiveModule,
+
+    // User Feedback with AI Clustering (2026-05-25) — канал «Ваши предложения»
+    // для аутентифицированных пользователей. POST/GET /api/v1/feedback +
+    // SUPER-ADMIN CRUD /api/v1/admin/feedback. Ночной digest 01:00 UTC
+    // регистрируется в WorkersModule (Фаза 5). Зависит от @Global Prisma /
+    // Redis и AuthModule (Cookie/SuperAdmin guards). См.
+    // plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
+    FeedbackModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

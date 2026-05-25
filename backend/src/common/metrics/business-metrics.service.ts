@@ -350,6 +350,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private chatV2NoEvidenceTotal!: Counter<'mode'>;
   private chatV2UncertaintyMarkedTotal!: Counter<'mode'>;
   private chatV2ConversationsArchivedTotal!: Counter<'reason'>;
+  // KC-Temporal W3.2 (2026-05-25) — счётчик подмешанных reasoning chain'ов.
+  private chatV2ReasoningChainsAttachedTotal!: Counter<'depth'>;
+  // KC-Temporal W3.3 (2026-05-25) — гистограмма «сколько contradicting блоков
+  // попало в контекст ответа Chat-v2».
+  private chatV2ContradictingBlocksInContext!: Histogram<string>;
 
   // ── dialog-layer (SBA α-5 dialog-layer) ──────────────────────────
   private answerCacheHitTotal!: Counter<'tenant_top'>;
@@ -1562,6 +1567,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'chat_v2_conversations_archived_total',
       help: 'SBA α-5 — chat-v2: количество архивированных диалогов (reason: ttl/manual).',
       labelNames: ['reason'] as const,
+    });
+    // KC-Temporal W3.2 (2026-05-25) — сколько раз подмешали reasoning chain
+    // в LLM-контекст ответа.
+    this.chatV2ReasoningChainsAttachedTotal = this.getOrCreateCounter({
+      name: 'chat_v2_reasoning_chains_attached_total',
+      help: 'KC-Temporal W3.2 — сколько reasoning chain подмешано в контекст ответа Chat-v2 (label depth=1|2).',
+      labelNames: ['depth'] as const,
+    });
+    // KC-Temporal W3.3 (2026-05-25) — гистограмма числа contradicting блоков
+    // в LLM-контексте каждого ответа Chat-v2.
+    this.chatV2ContradictingBlocksInContext = this.getOrCreateHistogram({
+      name: 'chat_v2_contradicting_blocks_in_context',
+      help: 'KC-Temporal W3.3 — число contradicting блоков в LLM-контексте ответа Chat-v2 (за один ask).',
+      labelNames: [] as const,
+      buckets: [0, 1, 2, 3, 5, 8, 12],
     });
 
     // ── dialog-layer (SBA α-5) ───────────────────────────────────────
@@ -3743,6 +3763,27 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incChatV2ConversationArchived(args: { reason: string }): void {
     this.chatV2ConversationsArchivedTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * KC-Temporal W3.2 (2026-05-25) — каждый раз, когда в LLM-контекст Chat-v2
+   * подмешан reasoning chain top-N source-блоков.
+   * `depth` — фактическая глубина BFS ('1' или '2' — string-label
+   * Prometheus-стилем; budget-fallback с 2 на 1 учитывается).
+   */
+  incChatV2ReasoningChainsAttached(args: { depth: 1 | 2 }): void {
+    this.chatV2ReasoningChainsAttachedTotal.inc({
+      depth: String(args.depth),
+    });
+  }
+
+  /**
+   * KC-Temporal W3.3 (2026-05-25) — observe общее число contradicting блоков
+   * в LLM-контексте одного ответа Chat-v2 (0..N).
+   */
+  observeChatV2ContradictingBlocksInContext(count: number): void {
+    if (count < 0) return;
+    this.chatV2ContradictingBlocksInContext.observe({}, count);
   }
 
   // ────────────────────── dialog-layer (SBA α-5) ───────────────────────

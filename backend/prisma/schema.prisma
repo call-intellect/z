@@ -3256,6 +3256,19 @@ model EntityLink {
   recordedAt   DateTime       @default(now())
   /// Произвольные свойства связи (cosine score, RACI-флаги, observed_at и т.д.).
   properties   Json           @default("{}")
+  /// KC-Temporal W3.1 (2026-05-25) — семантически богатые rich-edge атрибуты,
+  /// извлекаемые LLM (`entity-graph-builder`): `{role: 'CEO', share: 0.5,
+  /// since: '2022-01', intensity: 0.8, ...}`. Семантически отличается от
+  /// `properties` (там — технические метрики: cosine score / RACI-флаги).
+  /// NULL — атрибутов нет. При update merge'ится плоско (новые ключи +
+  /// перезапись существующих) — см. `EntityLinkService.upsertRichEdge`.
+  attributes   Json?
+  /// KC-Temporal W3.1 (2026-05-25) — IdeaBlock-источники, на основе которых
+  /// LLM построил это ребро. При повторном upsert (другой батч блоков
+  /// подтвердил то же ребро) — union. Используется для трассировки и
+  /// `confidence`-калибровки. GIN-индекс для поиска «какие рёбра поддерживает
+  /// этот блок».
+  sourceBlockIds String[]     @default([])
   /// Soft-delete: записывается при удалении из Org-Admin (Фаза 7).
   /// Hard-delete после 30 дней (Фаза 11).
   deletedAt    DateTime?
@@ -5021,6 +5034,9 @@ enum ProbeStatus {
   dropped_rate_limit
   expired
   dropped_cold_start
+  /// W4.3 — outbound canEmit заблокировал доставку (и in_app fallback тоже rejected).
+  /// Видно в `/admin/policy/dataclass` → «История нарушений».
+  dropped_dataclass_gate
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.
@@ -5501,6 +5517,12 @@ model ChannelBinding {
   /// Preferences пользователя per-binding: quiet hours, rate limits,
   /// фильтры eventType. См. ChannelBindingPreferences (zod-схема).
   preferences Json      @default("{}")
+  /// W4.3 (KC-Temporal) — потолок чувствительности per-binding (per-user-per-channel).
+  /// Заполняется пользователем в `/me/channels` («макс. чувствительность»:
+  /// public / internal / sensitive). `private` через UI недоступен — личные
+  /// факты доставляются только в `in_app` и только subject'у. Эффективный
+  /// потолок = `min(Channel.maxDataClass, ChannelBinding.maxDataClass)`.
+  maxDataClass DataClass @default(internal)
   linkedAt    DateTime  @default(now())
   /// Заполняется после проверки кода/верификации. Для in_app — равен
   /// `linkedAt` (auto-verified).
@@ -7121,6 +7143,11 @@ model IssueWebhook {
   secretKey String // с префиксом `kora_wh_` + 32 байта
 
   events String[] // issue.created, issue.updated, comment.created, cycle.completed, ...
+
+  /// W4.3 (KC-Temporal) — какие классы данных webhook'у разрешено принимать.
+  /// Пустой массив трактуется как `['public','internal']` (default). `sensitive`/`private`
+  /// не уходят в outbound webhook без явного opt-in админом.
+  allowedDataClasses DataClass[] @default([public, internal])
 
   isActive   Boolean @default(true)
   isInternal Boolean @default(false)

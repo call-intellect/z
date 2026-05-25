@@ -5,9 +5,10 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -18,11 +19,14 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
+import { ReasoningChainService } from '../services/reasoning-chain.service';
 
 import type { BlockDetailDto } from './dto/block.dto';
-import type {
-  BlockLinkItemDto,
-  BlockLinksResultDto,
+import {
+  ReasoningChainQuerySchema,
+  type BlockLinkItemDto,
+  type BlockLinksResultDto,
+  type ReasoningChainResultDto,
 } from './dto/graph.dto';
 import type {
   BlockSearchItemDto,
@@ -43,6 +47,10 @@ export class KnowledgeBlocksController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    // KC-Temporal W3.2 (2026-05-25) — BFS-обход reasoning-link'ов для
+    // GET /blocks/:id/reasoning-chain.
+    @Inject(ReasoningChainService)
+    private readonly reasoningChain: ReasoningChainService,
   ) {}
 
   @Get('blocks/:id')
@@ -225,6 +233,73 @@ export class KnowledgeBlocksController {
           },
         }),
       ),
+    };
+  }
+
+  /**
+   * KC-Temporal W3.2 (2026-05-25) — reasoning-chain вокруг блока.
+   * BFS по `IdeaBlockLink` (status='active') по белому списку relationType'ов
+   * (causes/consequences_of/develops/question_answered_by). Защита: max 50
+   * узлов, depth ∈ [1,3].
+   *
+   * RBAC: `block:read` (как у других block-эндпоинтов).
+   */
+  @Get('blocks/:id/reasoning-chain')
+  @ApiOperation({
+    summary: 'Reasoning chain блока (BFS по логическим связям)',
+  })
+  @ApiQuery({
+    name: 'depth',
+    required: false,
+    description: 'Глубина BFS, 1..3 (default 2)',
+  })
+  async reasoningChainEndpoint(
+    @Param('id') id: string,
+    @Query() query: unknown,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ReasoningChainResultDto> {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Org не определена' },
+      });
+    }
+    const allowed = await this.rbac.canRead(user.id, tenantId, 'block');
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Недостаточно прав' },
+      });
+    }
+    const block = await this.prisma.ideaBlock.findUnique({
+      where: { id },
+      select: { id: true, tenantId: true },
+    });
+    if (!block || block.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_found', message: 'Блок не найден' },
+      });
+    }
+    const q = ReasoningChainQuerySchema.parse(query ?? {});
+    const chain = await this.reasoningChain.buildChain(id, q.depth);
+    return {
+      depth: q.depth,
+      nodes: chain.nodes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        signalType: n.signalType,
+        criticalQuestion: n.criticalQuestion,
+        trustedAnswer: n.trustedAnswer,
+        depth: n.depth,
+      })),
+      edges: chain.edges.map((e) => ({
+        fromBlockId: e.fromBlockId,
+        toBlockId: e.toBlockId,
+        relationType: e.relationType,
+        confidence: e.confidence,
+      })),
     };
   }
 

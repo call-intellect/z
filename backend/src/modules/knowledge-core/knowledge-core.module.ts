@@ -18,6 +18,7 @@ import { ChatV2Service } from './services/chat-v2.service';
 import { ClusteringService } from './services/clustering.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
+import { EntityLinkService } from './services/entity-link.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
@@ -49,6 +50,8 @@ import { TaskAssigneeResolverService } from './services/task-assignee-resolver.s
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
+// KC-Temporal волна 3 (W3.1 + W3.2, 2026-05-25).
+import { ReasoningChainService } from './services/reasoning-chain.service';
 // W2.2 + W2.3 + W2.4 + G.2 + W4.2 KC-Temporal (2026-05-25).
 import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
@@ -189,6 +192,15 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
     TemporalProbeCron,
     SignalTypeStatsCron,
     DataClassAuditSnapshotCron,
+    // ── KC-Temporal волна 3 (W3.1 + W3.2, 2026-05-25) ──
+    // EntityLinkService.upsertRichEdge — единая точка merge'а
+    // sourceBlockIds/attributes/confidence на EntityLink.
+    EntityLinkService,
+    // ReasoningChainService.buildChain — BFS по reasoning-link'ам
+    // (causes/consequences_of/develops/question_answered_by). Используется
+    // Chat-v2 для подмешивания цепочки рассуждения и API
+    // GET /blocks/:id/reasoning-chain.
+    ReasoningChainService,
   ],
   exports: [
     SegmentBuilderService,
@@ -272,6 +284,12 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
     ConfidenceCalibrationService,
     PreferenceDatasetService,
     TemporalProbeService,
+    // ── KC-Temporal волна 3 (W3.1 + W3.2, 2026-05-25) ──
+    // EntityLinkService — экспорт для воркеров (entity-graph-builder.cron в
+    // WorkersModule) и будущих специалистов. ReasoningChainService —
+    // экспорт для blocks.controller (HTTP) и Chat-v2 hook'а.
+    EntityLinkService,
+    ReasoningChainService,
   ],
 })
 export class KnowledgeCoreModule {}

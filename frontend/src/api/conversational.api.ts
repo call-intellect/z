@@ -24,6 +24,8 @@ export type ChannelBindingApi = {
   externalId: string;
   verifiedAt: string | null;
   preferences: ChannelBindingPreferencesApi | null;
+  /** W4.3 — потолок чувствительности per-binding (radio в /me/channels). */
+  maxDataClass: DataClassApi;
 };
 
 export type ChannelBindingPreferencesApi = {
@@ -127,6 +129,20 @@ export async function updateBindingPreferences(
 
 export async function unlinkChannelBinding(bindingId: string): Promise<void> {
   await apiClient.del<void>(`/api/v1/me/channels/bindings/${bindingId}`);
+}
+
+/**
+ * W4.3 — обновить потолок чувствительности привязки.
+ * `private` через UI недоступен (см. §W4.3 ТЗ).
+ */
+export async function updateBindingMaxDataClass(
+  bindingId: string,
+  maxDataClass: 'public' | 'internal' | 'sensitive',
+): Promise<{ id: string; maxDataClass: DataClassApi }> {
+  return apiClient.patch<{ id: string; maxDataClass: DataClassApi }>(
+    `/api/v1/me/channels/bindings/${bindingId}/max-data-class`,
+    { maxDataClass },
+  );
 }
 
 export async function listMyNotifications(

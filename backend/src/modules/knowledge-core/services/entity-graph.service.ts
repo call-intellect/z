@@ -21,11 +21,20 @@ import {
  * Результат LLM-арбитра для пары сущностей.
  *   - `'none'` → relationType = null.
  *   - Иначе — конкретный тип из enum'а EntityLinkType.
+ *
+ * KC-Temporal W3.1 (2026-05-25) — Rich edges:
+ *   - `validFromHint` / `validUntilHint` — ISO-даты, если LLM смог извлечь
+ *     временные рамки из контекста блоков (или null, если непонятно).
+ *   - `attributes` — извлечённые семантические свойства ребра (role / share /
+ *     since / ...). null, если непонятно.
  */
 export interface EntityRelationVerdict {
   relationType: EntityLinkType | null;
   confidence: number;
   explanation: string;
+  validFromHint?: string | null;
+  validUntilHint?: string | null;
+  attributes?: Record<string, string | number | boolean | null> | null;
 }
 
 export interface CoMentionedPair {
@@ -45,8 +54,19 @@ const ENTITY_LINK_TYPES: EntityLinkType[] = [
 
 const ENTITY_LINK_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
+  // KC-Temporal W3.1: новые поля validFromHint/validUntilHint/attributes —
+  // опциональные. Оставляем additionalProperties:false и required:
+  // [relationType, confidence, explanation] (как было), новые поля LLM ставит
+  // через nullable.
   additionalProperties: false,
-  required: ['relationType', 'confidence', 'explanation'],
+  required: [
+    'relationType',
+    'confidence',
+    'explanation',
+    'validFromHint',
+    'validUntilHint',
+    'attributes',
+  ],
   properties: {
     relationType: {
       type: 'string',
@@ -54,6 +74,28 @@ const ENTITY_LINK_JSON_SCHEMA: Record<string, unknown> = {
     },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
     explanation: { type: 'string', maxLength: 500 },
+    // KC-Temporal W3.1 — временные рамки ребра (если явно указано в блоках).
+    validFromHint: { type: ['string', 'null'], maxLength: 40 },
+    validUntilHint: { type: ['string', 'null'], maxLength: 40 },
+    // KC-Temporal W3.1 — семантические атрибуты ребра. Плоский объект
+    // примитивов (LLM иногда возвращает вложенные структуры — entity-link
+    // сервис их отбросит).
+    attributes: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: {
+            anyOf: [
+              { type: 'string' },
+              { type: 'number' },
+              { type: 'boolean' },
+              { type: 'null' },
+            ],
+          },
+        },
+      ],
+    },
   },
 };
 
@@ -69,6 +111,18 @@ const EntityLinkResponseSchema = z.object({
   ]),
   confidence: z.number().min(0).max(1),
   explanation: z.string().max(500),
+  // KC-Temporal W3.1: новые опц. поля. `.nullable().optional()` — старые ответы
+  // (LLM без апдейта промпта) тоже валидны.
+  validFromHint: z.string().max(40).nullable().optional(),
+  validUntilHint: z.string().max(40).nullable().optional(),
+  // KC-Temporal W3.1 — Zod 4: z.record(keySchema, valueSchema).
+  attributes: z
+    .record(
+      z.string(),
+      z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    )
+    .nullable()
+    .optional(),
 });
 
 const ENTITY_LINK_SYSTEM_PROMPT = `Ты — эксперт по связям между сущностями (клиенты, люди, проекты, продукты, темы).
@@ -89,6 +143,8 @@ const ENTITY_LINK_SYSTEM_PROMPT = `Ты — эксперт по связям м�
 - Если из контекста блоков НЕ видно явного отношения, ставь "none". "mentions_with" — последний резерв, когда ясно, что они связаны, но как именно — непонятно.
 - "confidence" ∈ [0,1]. 0.9+ только если связь прямо названа в блоках.
 - "explanation" — 1-2 короткие фразы на русском.
+- "validFromHint" / "validUntilHint" — ISO-дата (YYYY-MM-DD или YYYY-MM или YYYY), если в блоках явно указано «с такого-то момента» / «до такого-то момента». Иначе null. Не выдумывай.
+- "attributes" — плоский объект с дополнительными свойствами связи (role, share, since, intensity и т.п.), если они явно названы в блоках. Иначе null. Только примитивы (строки/числа/булевы). Не выдумывай.
 - Ответ — строго JSON по схеме. Никакого markdown.`;
 
 /**
@@ -280,6 +336,7 @@ export class EntityGraphService {
     }
     const parsed = EntityLinkResponseSchema.safeParse(raw);
     if (!parsed.success) return null;
+    // KC-Temporal W3.1: для 'none' rich-edge данные не нужны (ребро не создаём).
     if (parsed.data.relationType === 'none') {
       return {
         relationType: null,
@@ -291,6 +348,9 @@ export class EntityGraphService {
       relationType: parsed.data.relationType,
       confidence: parsed.data.confidence,
       explanation: parsed.data.explanation,
+      validFromHint: parsed.data.validFromHint ?? null,
+      validUntilHint: parsed.data.validUntilHint ?? null,
+      attributes: parsed.data.attributes ?? null,
     };
   }
 

@@ -20,6 +20,7 @@ import {
   type RankedBlockId,
 } from './chat-v2-retrieval.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
+import { ReasoningChainService } from './reasoning-chain.service';
 
 /**
  * ChatV2Service — единый AI-чат поверх IdeaBlock'ов (Фаза 6 knowledge-core).
@@ -124,6 +125,42 @@ interface ContextBlock {
 
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
+/**
+ * KC-Temporal W3.2 (2026-05-25) — бюджет символов на ВСЕ reasoning chain'ы
+ * вместе (3 чейна по 3 узла depth=2). При превышении — fallback на depth=1.
+ * 4000 символов ≈ 1000 токенов — допустимо при общем prompt-бюджете 8-16K.
+ */
+const CHAIN_CHARS_BUDGET = 4000;
+
+/**
+ * KC-Temporal W3.2 — отрендеренный reasoning chain (готов к подмешиванию в
+ * user message).
+ */
+interface RenderedReasoningChain {
+  seedBlockId: string;
+  depth: 1 | 2;
+  nodes: ReadonlyArray<{
+    id: string;
+    name: string;
+    signalType: string;
+    criticalQuestion: string;
+    trustedAnswer: string;
+    depth: number;
+  }>;
+}
+
+/**
+ * KC-Temporal W3.3 — отрендеренный counter-evidence блок.
+ */
+interface RenderedContradictingBlock {
+  id: string;
+  name: string;
+  signalType: string;
+  trustedAnswer: string;
+  /** id того seed-блока, которому этот блок противоречит. */
+  contradictsBlockId: string;
+}
+
 const BASE_SYSTEM_PROMPT = `Ты — AI-аналитик компании, работаешь на знании из её встреч и переписок.
 
 Правила:
@@ -131,7 +168,9 @@ const BASE_SYSTEM_PROMPT = `Ты — AI-аналитик компании, ра�
 - Опирайся ТОЛЬКО на блоки из раздела «Контекст» ниже. Если данных нет — честно скажи "Недостаточно данных" и НЕ выдумывай.
 - Когда ссылаешься на конкретный блок — обязательно ставь маркер вида [BLOCK:<id>] прямо в тексте, рядом с фактом. Можно несколько маркеров на одно утверждение.
 - Если блоки противоречат друг другу — упомяни это и сошлись на оба ([BLOCK:<id1>] vs [BLOCK:<id2>]).
-- Не выдумывай blockId, которых нет в контексте.`;
+- Не выдумывай blockId, которых нет в контексте.
+- KC-Temporal W3.2 — если в контексте есть блок с тегом [REASONING CHAIN FOR BLOCK <id>] — это цепочка обоснований (decision ← rationale ← факты) вокруг исходного блока. Используй её, чтобы дать развёрнутый ответ «почему», но цитируй маркером [BLOCK:<id>] только сам исходный блок, не каждый узел цепочки.
+- KC-Temporal W3.3 — если в контексте есть блоки с тегом [CONTRADICTING BLOCK] — это блоки, противоречащие основным. Обязательно скажи про конфликт мнений или фактов, не игнорируй; предложи пользователю уточнить, какое утверждение актуально. Не выбирай «правильное» сам.`;
 
 @Injectable()
 export class ChatV2Service {
@@ -149,6 +188,12 @@ export class ChatV2Service {
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
+    // KC-Temporal W3.2 (2026-05-25) — reasoning chain hook. @Optional —
+    // старые тесты, которые мокают только обязательные deps, продолжают
+    // работать (без service hook просто не подмешиваем chain).
+    @Optional()
+    @Inject(ReasoningChainService)
+    private readonly reasoningChain?: ReasoningChainService,
   ) {}
 
   /**
@@ -243,6 +288,25 @@ export class ChatV2Service {
       };
     }
 
+    // KC-Temporal W3.2 (2026-05-25) — reasoning chain hook.
+    // Для top-3 source-блоков строим BFS depth=2 по reasoning-link'ам.
+    // Если общий бюджет токенов цепочки превышает порог (см. константу
+    // CHAIN_CHARS_BUDGET) — пересобираем depth=1 (fallback). Метрика
+    // `chat_v2_reasoning_chains_attached_total{depth}` инкрементируется
+    // по факту прикрепления.
+    const reasoningChains = await this.buildReasoningChains(
+      contextBlocks,
+    );
+
+    // KC-Temporal W3.3 (2026-05-25) — counter-evidence.
+    // Для каждого блока ищем ребра `contradicts` (active) и подгружаем
+    // другой конец (max 3 на блок). Метрика
+    // `chat_v2_contradicting_blocks_in_context` фиксирует общее число.
+    const contradictingBlocks = await this.loadContradictingBlocks(
+      tenantId,
+      contextBlocks,
+    );
+
     // 4) Готовим prompt.
     const scopeAddon = await this.buildScopeAddon(scope, scopeId, tenantId);
     const systemPrompt = this.buildSystemPrompt(
@@ -251,7 +315,12 @@ export class ChatV2Service {
       input.conversationSummary ?? null,
       input.systemPromptOverride ?? null,
     );
-    const userMessage = this.buildUserMessage(query, contextBlocks);
+    const userMessage = this.buildUserMessage(
+      query,
+      contextBlocks,
+      reasoningChains,
+      contradictingBlocks,
+    );
 
     this.logger.debug(
       {
@@ -536,11 +605,20 @@ export class ChatV2Service {
   }
 
   /**
-   * Собирает user message: вопрос + блок «Контекст:» с блоками.
+   * Собирает user message: вопрос + блок «Контекст:» с блоками + (если
+   * есть) reasoning chain'ы + (если есть) contradicting блоки.
+   *
+   * KC-Temporal W3.2: каждый chain рендерится секцией
+   * `[REASONING CHAIN FOR BLOCK <id>] depth=N nodes=K\n  - <name>: <answer>\n  ...`.
+   *
+   * KC-Temporal W3.3: contradicting блоки рендерятся отдельным разделом
+   * `[CONTRADICTING BLOCK] ...` после основного «Контекст:».
    */
   private buildUserMessage(
     query: string,
     blocks: ReadonlyArray<ContextBlock>,
+    reasoningChains: ReadonlyArray<RenderedReasoningChain>,
+    contradictingBlocks: ReadonlyArray<RenderedContradictingBlock>,
   ): string {
     const parts: string[] = ['Контекст:'];
     for (const b of blocks) {
@@ -553,8 +631,209 @@ export class ChatV2Service {
         );
       }
     }
+
+    // KC-Temporal W3.2 — reasoning chains.
+    for (const chain of reasoningChains) {
+      parts.push('');
+      parts.push(
+        `[REASONING CHAIN FOR BLOCK ${chain.seedBlockId}] depth=${chain.depth} nodes=${chain.nodes.length}`,
+      );
+      for (const n of chain.nodes) {
+        // Пропускаем сам seed (он уже в основном контексте).
+        if (n.id === chain.seedBlockId) continue;
+        const indent = '  '.repeat(Math.max(1, n.depth));
+        parts.push(`${indent}- (${n.signalType}) ${n.name}: ${n.trustedAnswer}`);
+      }
+    }
+
+    // KC-Temporal W3.3 — counter-evidence.
+    if (contradictingBlocks.length > 0) {
+      parts.push('');
+      parts.push('Противоречия (counter-evidence):');
+      for (const c of contradictingBlocks) {
+        parts.push(
+          `[CONTRADICTING BLOCK] (противоречит [BLOCK:${c.contradictsBlockId}]) [BLOCK:${c.id}] ${c.name} (${c.signalType}): ${c.trustedAnswer}`,
+        );
+      }
+    }
+
     parts.push('', 'Вопрос:', query);
     return parts.join('\n');
+  }
+
+  /**
+   * KC-Temporal W3.2 (2026-05-25) — для top-3 source-блоков строит reasoning
+   * chain. При превышении CHAR-бюджета (защита от token-overflow) делает
+   * fallback на depth=1.
+   */
+  private async buildReasoningChains(
+    blocks: ReadonlyArray<ContextBlock>,
+  ): Promise<RenderedReasoningChain[]> {
+    if (!this.reasoningChain) return [];
+    if (blocks.length === 0) return [];
+    const topBlocks = blocks.slice(0, 3);
+
+    // Шаг 1: пробуем depth=2 для каждого top-блока.
+    const depth2Chains: RenderedReasoningChain[] = [];
+    let totalChars = 0;
+    for (const b of topBlocks) {
+      try {
+        const chain = await this.reasoningChain.buildChain(b.id, 2);
+        if (chain.nodes.length <= 1) continue; // только seed — не интересно.
+        const rendered = {
+          seedBlockId: b.id,
+          depth: 2 as const,
+          nodes: chain.nodes,
+        };
+        depth2Chains.push(rendered);
+        totalChars += this.estimateChainChars(rendered);
+      } catch (err) {
+        this.logger.warn(
+          { blockId: b.id, err: err instanceof Error ? err.message : String(err) },
+          'chat-v2 reasoning-chain: buildChain depth=2 упал, пропускаем',
+        );
+      }
+    }
+    // Если все depth=2 цепочки помещаются — отдаём их.
+    if (totalChars <= CHAIN_CHARS_BUDGET) {
+      for (const _c of depth2Chains) {
+        this.metrics.incChatV2ReasoningChainsAttached({ depth: 2 });
+      }
+      return depth2Chains;
+    }
+
+    // Шаг 2 (fallback): depth=1.
+    const depth1Chains: RenderedReasoningChain[] = [];
+    for (const b of topBlocks) {
+      try {
+        const chain = await this.reasoningChain.buildChain(b.id, 1);
+        if (chain.nodes.length <= 1) continue;
+        depth1Chains.push({
+          seedBlockId: b.id,
+          depth: 1 as const,
+          nodes: chain.nodes,
+        });
+      } catch {
+        // best-effort, уже залогировано выше при depth=2.
+      }
+    }
+    for (const _c of depth1Chains) {
+      this.metrics.incChatV2ReasoningChainsAttached({ depth: 1 });
+    }
+    return depth1Chains;
+  }
+
+  /**
+   * Грубая оценка размера chain'а в символах — без token-counter'а.
+   * 1 узел ≈ name + trustedAnswer + indent + signalType ≈ ~200 символов.
+   */
+  private estimateChainChars(chain: RenderedReasoningChain): number {
+    let total = 0;
+    for (const n of chain.nodes) {
+      total += n.name.length + n.trustedAnswer.length + n.signalType.length + 20;
+    }
+    return total;
+  }
+
+  /**
+   * KC-Temporal W3.3 (2026-05-25) — counter-evidence. Для каждого блока
+   * ищет `IdeaBlockLink.relationType='contradicts'` (active), подгружает
+   * другой конец (canonical, того же tenant'а). Max 3 contradicting на блок.
+   * Дедуп по `contradicting block id` — один блок не показывается дважды
+   * (даже если противоречит сразу нескольким основным).
+   *
+   * Метрика `chat_v2_contradicting_blocks_in_context` (histogram) — общее
+   * число (после дедупа) на один ответ.
+   */
+  private async loadContradictingBlocks(
+    tenantId: string,
+    blocks: ReadonlyArray<ContextBlock>,
+  ): Promise<RenderedContradictingBlock[]> {
+    if (blocks.length === 0) {
+      this.metrics.observeChatV2ContradictingBlocksInContext(0);
+      return [];
+    }
+    const blockIds = blocks.map((b) => b.id);
+    // Все contradicts-связи, где один из концов — наш блок.
+    const links = await this.prisma.ideaBlockLink.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        relationType: 'contradicts',
+        OR: [
+          { fromBlockId: { in: blockIds } },
+          { toBlockId: { in: blockIds } },
+        ],
+      },
+      select: {
+        fromBlockId: true,
+        toBlockId: true,
+        confidence: true,
+      },
+      // Сортировка по confidence — берём более «уверенные» противоречия.
+      orderBy: { confidence: 'desc' },
+      // 3 contradicting на блок × max blocks ~ 16 — лимит на пул 48.
+      take: 64,
+    });
+
+    // Считаем «другой конец» для каждой связи + лимитируем по 3 на блок.
+    const seenContradicting = new Set<string>();
+    const perSeedCount = new Map<string, number>();
+    type ContradictingPair = { seedId: string; otherId: string };
+    const pairs: ContradictingPair[] = [];
+    const seenSeeds = new Set(blockIds);
+    for (const l of links) {
+      const seedIsFrom = seenSeeds.has(l.fromBlockId);
+      const seedId = seedIsFrom ? l.fromBlockId : l.toBlockId;
+      const otherId = seedIsFrom ? l.toBlockId : l.fromBlockId;
+      // Самопротиворечие (fromBlockId=toBlockId) — пропускаем.
+      if (seedId === otherId) continue;
+      // Если other тоже из набора blocks — это «внутренний» конфликт, не
+      // counter-evidence. UI Chat-v2 уже обращает на это внимание через
+      // BASE_SYSTEM_PROMPT. Пропускаем.
+      if (seenSeeds.has(otherId)) continue;
+      const count = perSeedCount.get(seedId) ?? 0;
+      if (count >= 3) continue;
+      if (seenContradicting.has(otherId)) continue;
+      seenContradicting.add(otherId);
+      perSeedCount.set(seedId, count + 1);
+      pairs.push({ seedId, otherId });
+    }
+    if (pairs.length === 0) {
+      this.metrics.observeChatV2ContradictingBlocksInContext(0);
+      return [];
+    }
+
+    // Подгружаем сами contradicting blocks (canonical, того же tenant'а).
+    const fetched = await this.prisma.ideaBlock.findMany({
+      where: {
+        id: { in: pairs.map((p) => p.otherId) },
+        tenantId,
+        status: 'canonical',
+      },
+      select: {
+        id: true,
+        name: true,
+        signalType: true,
+        trustedAnswer: true,
+      },
+    });
+    const byId = new Map(fetched.map((b) => [b.id, b]));
+
+    const out: RenderedContradictingBlock[] = [];
+    for (const p of pairs) {
+      const b = byId.get(p.otherId);
+      if (!b) continue;
+      out.push({
+        id: b.id,
+        name: b.name,
+        signalType: b.signalType,
+        trustedAnswer: b.trustedAnswer,
+        contradictsBlockId: p.seedId,
+      });
+    }
+    this.metrics.observeChatV2ContradictingBlocksInContext(out.length);
+    return out;
   }
 
   /**

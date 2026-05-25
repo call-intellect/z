@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataClass } from '@prisma/client';
-import { Counter, register } from 'prom-client';
+import { Counter, Histogram, register } from 'prom-client';
 
 import { TypedConfigService } from '../../../common/config/index';
 
@@ -83,6 +83,9 @@ const DEFAULT_FLOORS: Record<DerivedKind, DataClass> = {
 const METRIC_SHADOW_DIFF = 'kc_dataclass_shadow_diff_total';
 const METRIC_DERIVED = 'kc_dataclass_derived_total';
 const METRIC_FLOOR_LIFTED = 'kc_dataclass_floor_lifted_total';
+// W4.3 — outbound gating.
+const METRIC_VIOLATION_BLOCKED = 'kc_dataclass_violation_blocked_total';
+const METRIC_CAN_EMIT_LATENCY = 'kc_dataclass_canEmit_latency_ms';
 
 /** Ключ AdminSetting'а, в котором лежит override floors v1. */
 const FLOORS_ADMIN_SETTING_KEY = 'dataclass_policy:floors';
@@ -104,6 +107,15 @@ export class DataClassPolicyService {
   private readonly floorLiftedTotal: Counter<
     'kind' | 'source_level' | 'result_level'
   >;
+  /**
+   * W4.3 — счётчик заблокированных outbound-эмиссий. Алерт `> 0 за 5 мин`
+   * (page on-call): см. `docs/policies/outbound-gating-runbook.md`.
+   */
+  private readonly violationBlockedTotal: Counter<
+    'sink' | 'requested' | 'max_allowed'
+  >;
+  /** W4.3 — гистограмма латенси одного `canEmit` вызова (ms). */
+  private readonly canEmitLatencyMs: Histogram<'sink' | 'outcome'>;
 
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -128,6 +140,19 @@ export class DataClassPolicyService {
       name: METRIC_FLOOR_LIFTED,
       help: 'W4.1: сколько раз floor (правило v1) повысил уровень результата выше max(source).',
       labelNames: ['kind', 'source_level', 'result_level'],
+    });
+    this.violationBlockedTotal = this.getOrCreateCounter<
+      'sink' | 'requested' | 'max_allowed'
+    >({
+      name: METRIC_VIOLATION_BLOCKED,
+      help: 'W4.3: сколько раз outbound-эмиссия была заблокирована canEmit. Алерт >0 за 5 мин (page on-call). Лейбл sink — kind sink-а (channel_binding|issue_webhook|export|public_api), requested — payloadDataClass, max_allowed — потолок sink-а.',
+      labelNames: ['sink', 'requested', 'max_allowed'],
+    });
+    this.canEmitLatencyMs = this.getOrCreateHistogram<'sink' | 'outcome'>({
+      name: METRIC_CAN_EMIT_LATENCY,
+      help: 'W4.3: латенси одного canEmit-вызова (ms). Помогает заметить деградацию gating (например, если кто-то добавит DB-чтение).',
+      labelNames: ['sink', 'outcome'],
+      buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100],
     });
   }
 
@@ -259,26 +284,202 @@ export class DataClassPolicyService {
   }
 
   /**
-   * Gating для outbound-каналов (Telegram/Email/Webhook/etc) и LLM-провайдеров.
-   * В W4.1 — заготовка: только проверяет потолок sink'а по lattice. В W4.3
-   * добавим subject-based ACL (private payload разрешён только в личку subject'а).
+   * W4.3 — Gating для outbound-каналов и export endpoints.
+   *
+   * Поведение:
+   *   - Если `cfg.dataClassPolicy.outboundGatingEnabled === false`
+   *     (kill-switch `DATACLASS_OUTBOUND_GATING_ENABLED=false`) — всегда
+   *     `{allowed:true}`. Метрика latency пишется с outcome=allowed_disabled.
+   *   - `kind='channel_binding'` — lattice по `maxDataClass` + subject-ACL
+   *     для `private`. `private`-payload разрешён только если
+   *     recipientPersonId = subjectPersonId ИЛИ `recipientIsOwnerOrSuper=true`.
+   *   - `kind='issue_webhook'` — set membership по `allowedDataClasses[]`.
+   *     Пустой массив трактуется как `['public', 'internal']` (см. ТЗ §W4.3).
+   *   - `kind='export'` — `private` всегда reject; `sensitive` только owner.
+   *   - `kind='public_api'` — принимает только `payload='public'`.
+   *
+   * Метрики:
+   *   - `kc_dataclass_violation_blocked_total{sink,requested,max_allowed}` —
+   *     инкремент на каждый allowed=false. **Алерт >0 за 5 мин (page on-call).**
+   *   - `kc_dataclass_canEmit_latency_ms{sink,outcome}` — гистограмма latency.
+   *
+   * Reason — human-readable текст для логов / NotificationDelivery.errorReason /
+   * IssueWebhookLog.errorMessage. Не предназначен для UI.
    */
   canEmit(args: {
     payloadDataClass: DataClass;
     payloadSubjectPersonId?: string | null;
     sink: SinkConfig;
   }): { allowed: boolean; reason?: string } {
-    const payloadRank = DATACLASS_RANK[args.payloadDataClass];
-    const sinkRank = DATACLASS_RANK[args.sink.maxDataClass];
+    const startedAt = performance.now();
+    const sinkKind = this.sinkKindLabel(args.sink);
+
+    // Kill-switch.
+    if (!this.cfg.dataClassPolicy.outboundGatingEnabled) {
+      this.observeLatency(sinkKind, 'allowed_disabled', startedAt);
+      return { allowed: true };
+    }
+
+    const decision = this.evaluateSink(args);
+
+    if (!decision.allowed) {
+      this.violationBlockedTotal.inc({
+        sink: sinkKind,
+        requested: args.payloadDataClass,
+        max_allowed: decision.maxAllowedLabel ?? 'n/a',
+      });
+      this.logger.warn(
+        {
+          sink: sinkKind,
+          payloadDataClass: args.payloadDataClass,
+          payloadSubjectPersonId: args.payloadSubjectPersonId ?? null,
+          reason: decision.reason,
+          channel:
+            'channel' in args.sink ? (args.sink.channel ?? null) : null,
+        },
+        'DataClassPolicyService.canEmit: blocked outbound emit',
+      );
+    }
+    this.observeLatency(
+      sinkKind,
+      decision.allowed ? 'allowed' : 'blocked',
+      startedAt,
+    );
+
+    return decision.allowed
+      ? { allowed: true }
+      : { allowed: false, reason: decision.reason };
+  }
+
+  /** Гранулярная логика gating per `kind`. Без метрик/логов — это снаружи. */
+  private evaluateSink(args: {
+    payloadDataClass: DataClass;
+    payloadSubjectPersonId?: string | null;
+    sink: SinkConfig;
+  }): { allowed: boolean; reason?: string; maxAllowedLabel?: string } {
+    const { payloadDataClass: cls, payloadSubjectPersonId } = args;
+    const sink = args.sink;
+
+    // Legacy short-hand `{ maxDataClass }` → channel_binding без subject-ACL.
+    if (!('kind' in sink) || sink.kind === undefined) {
+      const lattice = this.checkLattice(cls, sink.maxDataClass, sink.channel);
+      return {
+        allowed: lattice.allowed,
+        reason: lattice.reason,
+        maxAllowedLabel: sink.maxDataClass,
+      };
+    }
+
+    switch (sink.kind) {
+      case 'channel_binding': {
+        const lattice = this.checkLattice(cls, sink.maxDataClass, sink.channel);
+        if (!lattice.allowed) {
+          return {
+            allowed: false,
+            reason: lattice.reason,
+            maxAllowedLabel: sink.maxDataClass,
+          };
+        }
+        // Subject-ACL для private.
+        if (cls === 'private') {
+          const sameSubject =
+            payloadSubjectPersonId &&
+            sink.recipientPersonId &&
+            payloadSubjectPersonId === sink.recipientPersonId;
+          if (!sameSubject && !sink.recipientIsOwnerOrSuper) {
+            return {
+              allowed: false,
+              reason: `private payload requires recipient=subject (got recipientPersonId=${sink.recipientPersonId ?? 'null'}, subjectPersonId=${payloadSubjectPersonId ?? 'null'}) or owner/super_admin`,
+              maxAllowedLabel: sink.maxDataClass,
+            };
+          }
+        }
+        return { allowed: true, maxAllowedLabel: sink.maxDataClass };
+      }
+      case 'issue_webhook': {
+        const allowList: DataClass[] =
+          sink.allowedDataClasses.length > 0
+            ? sink.allowedDataClasses
+            : ['public', 'internal'];
+        if (!allowList.includes(cls)) {
+          return {
+            allowed: false,
+            reason: `payload=${cls} not in webhook.allowedDataClasses=[${allowList.join(',')}]${
+              sink.channel ? ` (webhook=${sink.channel})` : ''
+            }`,
+            maxAllowedLabel: allowList.join(','),
+          };
+        }
+        return { allowed: true, maxAllowedLabel: allowList.join(',') };
+      }
+      case 'export': {
+        if (cls === 'private') {
+          return {
+            allowed: false,
+            reason: `export does not accept private${sink.channel ? ` (endpoint=${sink.channel})` : ''}`,
+            maxAllowedLabel: 'sensitive',
+          };
+        }
+        if (cls === 'sensitive' && !sink.ownerOnly) {
+          return {
+            allowed: false,
+            reason: `export of sensitive requires owner role${sink.channel ? ` (endpoint=${sink.channel})` : ''}`,
+            maxAllowedLabel: 'internal',
+          };
+        }
+        return { allowed: true, maxAllowedLabel: 'sensitive' };
+      }
+      case 'public_api': {
+        if (cls !== 'public') {
+          return {
+            allowed: false,
+            reason: `public API accepts only public payload (got ${cls})${sink.channel ? ` (endpoint=${sink.channel})` : ''}`,
+            maxAllowedLabel: 'public',
+          };
+        }
+        return { allowed: true, maxAllowedLabel: 'public' };
+      }
+      default: {
+        const _exhaustive: never = sink;
+        void _exhaustive;
+        return { allowed: false, reason: 'unknown sink kind' };
+      }
+    }
+  }
+
+  private checkLattice(
+    payload: DataClass,
+    sinkMax: DataClass,
+    channelLabel?: string,
+  ): { allowed: boolean; reason?: string } {
+    const payloadRank = DATACLASS_RANK[payload];
+    const sinkRank = DATACLASS_RANK[sinkMax];
     if (payloadRank > sinkRank) {
       return {
         allowed: false,
-        reason: `payload=${args.payloadDataClass} > sink.maxDataClass=${args.sink.maxDataClass}${
-          args.sink.channel ? ` (channel=${args.sink.channel})` : ''
+        reason: `payload=${payload} > sink.maxDataClass=${sinkMax}${
+          channelLabel ? ` (channel=${channelLabel})` : ''
         }`,
       };
     }
     return { allowed: true };
+  }
+
+  private sinkKindLabel(sink: SinkConfig): string {
+    if (!('kind' in sink) || sink.kind === undefined) return 'channel_binding';
+    return sink.kind;
+  }
+
+  private observeLatency(
+    sinkLabel: string,
+    outcome: 'allowed' | 'blocked' | 'allowed_disabled',
+    startedAt: number,
+  ): void {
+    const elapsedMs = performance.now() - startedAt;
+    this.canEmitLatencyMs.observe(
+      { sink: sinkLabel, outcome },
+      Math.max(0, elapsedMs),
+    );
   }
 
   /**
@@ -396,6 +597,24 @@ export class DataClassPolicyService {
       name: config.name,
       help: config.help,
       labelNames: config.labelNames as L[],
+    });
+  }
+
+  private getOrCreateHistogram<L extends string>(config: {
+    name: string;
+    help: string;
+    labelNames: readonly L[];
+    buckets: number[];
+  }): Histogram<L> {
+    const existing = register.getSingleMetric(config.name);
+    if (existing instanceof Histogram) {
+      return existing as Histogram<L>;
+    }
+    return new Histogram<L>({
+      name: config.name,
+      help: config.help,
+      labelNames: config.labelNames as L[],
+      buckets: config.buckets,
     });
   }
 }

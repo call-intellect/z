@@ -113,3 +113,48 @@ describe('workspace getter — sync resolve через AdminSetting + ENV', () =
     expect(value).toBe(25);
   });
 });
+
+describe('retention / argon / auth-TTL — sync resolve', () => {
+  it('retention cacheMap override: hydrateSync задаёт значения → retention отдаёт их', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([
+      ['retention.chatEnabled', false],
+      ['retention.defaultDays', 365],
+    ]);
+    expect(cfg.retention.chatEnabled).toBe(false);
+    expect(cfg.retention.defaultDays).toBe(365);
+  });
+
+  it('retention ENV fallback: cacheMap пустой → значения из ENV', () => {
+    const cfg = buildService({
+      DEFAULT_RETENTION_DAYS: 30,
+      RETENTION_CRON: '0 * * * *',
+    });
+    expect(cfg.retention.defaultDays).toBe(30);
+    expect(cfg.retention.cron).toBe('0 * * * *');
+  });
+
+  it('argon cacheMap override: applySync задаёт memoryKb → argon отдаёт новое значение', () => {
+    const cfg = buildService();
+    cfg.applySync('security.argonMemoryKb', 65536);
+    expect(cfg.argon.memoryKb).toBe(65536);
+  });
+
+  it('auth TTL не трогает прочие поля: sessionSecret по-прежнему читается через ENV (this.get)', () => {
+    // cacheMap пустой — никаких security.sessionTtlSeconds в нём нет.
+    const cfg = buildService({
+      JWT_SESSION_SECRET: 'env-session-secret',
+      JWT_DEEP_LINK_SECRET: 'env-deep-link-secret',
+      COOKIE_DOMAIN: 'example.com',
+      PUBLIC_FRONTEND_URL: 'https://app.example.com',
+      SESSION_TTL_SECONDS: 3_600,
+      DEEP_LINK_TTL_SECONDS: 600,
+    });
+    expect(cfg.auth.sessionSecret).toBe('env-session-secret');
+    expect(cfg.auth.deepLinkSecret).toBe('env-deep-link-secret');
+    expect(cfg.auth.publicFrontendUrl).toBe('https://app.example.com');
+    // TTL'ы тоже работают через resolveSync → ENV-fallback.
+    expect(cfg.auth.sessionTtlSeconds).toBe(3_600);
+    expect(cfg.auth.deepLinkTtlSeconds).toBe(600);
+  });
+});

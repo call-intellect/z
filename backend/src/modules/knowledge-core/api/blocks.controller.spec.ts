@@ -30,6 +30,7 @@ import { KnowledgeBlocksController } from './blocks.controller';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
+import type { ReasoningChainService } from '../services/reasoning-chain.service';
 
 const PREFIX = 'kc-blocks-spec';
 
@@ -63,6 +64,16 @@ function makeRbacDeny(): RbacService {
     canWrite: async () => false,
     check: async () => false,
   } as unknown as RbacService;
+}
+
+/**
+ * KC-Temporal W3.2 (2026-05-25) — stub ReasoningChainService: пустые цепочки.
+ * Покрытие reasoning-chain endpoint'а — в reasoning-chain.service.spec.ts.
+ */
+function makeReasoningChainStub(): ReasoningChainService {
+  return {
+    buildChain: async () => ({ nodes: [], edges: [] }),
+  } as unknown as ReasoningChainService;
 }
 
 const userA: CurrentUserPayload = {
@@ -103,7 +114,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
 
     const res = await ctrl.byId(f.blockAId, userA, f.orgAId);
     expect(res.block.id).toBe(f.blockAId);
@@ -116,7 +127,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
 
     // userB пытается прочитать блок Org A через свой X-Org-Id = orgB.
     await expect(ctrl.byId(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(
@@ -128,7 +139,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacDeny());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacDeny(), makeReasoningChainStub());
 
     await expect(ctrl.byId(f.blockAId, userA, f.orgAId)).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -139,7 +150,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
 
     await expect(ctrl.byId(f.blockAId, userA, undefined)).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -150,7 +161,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
 
     await expect(
       ctrl.byId(`${PREFIX}-missing-block`, userA, f.orgAId),
@@ -161,7 +172,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
 
     const res = await ctrl.links(f.blockAId, userA, f.orgAId);
     expect(Array.isArray(res.outgoing)).toBe(true);
@@ -172,7 +183,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
 
     await expect(ctrl.links(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(
       NotFoundException,

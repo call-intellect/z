@@ -40,6 +40,8 @@ export type ChannelEntry = {
     externalId: string;
     verifiedAt: Date | null;
     preferences: Record<string, unknown>;
+    /** W4.3 — per-binding потолок чувствительности (radio в /me/channels). */
+    maxDataClass: 'public' | 'internal' | 'sensitive' | 'private';
   } | null;
 };
 
@@ -59,6 +61,7 @@ export function mapChannelEntry(api: ChannelEntryApi): ChannelEntry {
             ? new Date(api.binding.verifiedAt)
             : null,
           preferences: (api.binding.preferences ?? {}) as Record<string, unknown>,
+          maxDataClass: api.binding.maxDataClass ?? 'internal',
         }
       : null,
   };

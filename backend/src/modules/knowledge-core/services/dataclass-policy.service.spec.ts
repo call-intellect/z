@@ -17,10 +17,17 @@ import type { DataClassSource, DerivedKind } from './dataclass-policy.types';
  */
 
 // Заглушка TypedConfigService — derive() не дёргает getDynamic (только
-// version). canEmit/derive ничего больше не читают через cfg.
-function makeService(): DataClassPolicyService {
+// version). canEmit читает `dataClassPolicy.outboundGatingEnabled` (W4.3).
+function makeService(opts?: {
+  outboundGatingEnabled?: boolean;
+}): DataClassPolicyService {
   const fakeCfg = {
-    dataClassPolicy: { enforcement: 'shadow' as const, version: 'v1' },
+    dataClassPolicy: {
+      enforcement: 'shadow' as const,
+      version: 'v1',
+      auditRequired: true,
+      outboundGatingEnabled: opts?.outboundGatingEnabled ?? true,
+    },
     getDynamic: async () => null,
   } as unknown as ConstructorParameters<typeof DataClassPolicyService>[0];
   return new DataClassPolicyService(fakeCfg);
@@ -347,5 +354,190 @@ describe('W4.2 — floor применяется и dataClass не понижае
         );
       }
     }
+  });
+});
+
+// ──────── W4.3 KC-Temporal (2026-05-25) — outbound gating ─────────────────
+describe('W4.3 — canEmit для kind=channel_binding', () => {
+  let svc: DataClassPolicyService;
+  beforeEach(() => {
+    svc = makeService();
+  });
+
+  it('lattice reject: payload=sensitive + binding.maxDataClass=internal → blocked', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'sensitive',
+      sink: {
+        kind: 'channel_binding',
+        maxDataClass: 'internal',
+        channel: 'telegram_bot',
+      },
+    });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/sensitive/);
+  });
+
+  it('private accept: recipient = subject → allowed', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'private',
+      payloadSubjectPersonId: 'p_alice',
+      sink: {
+        kind: 'channel_binding',
+        maxDataClass: 'private',
+        recipientPersonId: 'p_alice',
+        channel: 'in_app',
+      },
+    });
+    expect(r.allowed).toBe(true);
+  });
+
+  it('private reject: recipient != subject и не owner → blocked', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'private',
+      payloadSubjectPersonId: 'p_alice',
+      sink: {
+        kind: 'channel_binding',
+        maxDataClass: 'private',
+        recipientPersonId: 'p_bob',
+        channel: 'in_app',
+      },
+    });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/private/);
+  });
+
+  it('private accept: owner/super_admin → allowed (даже если не subject)', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'private',
+      payloadSubjectPersonId: 'p_alice',
+      sink: {
+        kind: 'channel_binding',
+        maxDataClass: 'private',
+        recipientPersonId: 'p_owner',
+        recipientIsOwnerOrSuper: true,
+        channel: 'in_app',
+      },
+    });
+    expect(r.allowed).toBe(true);
+  });
+});
+
+describe('W4.3 — canEmit для kind=issue_webhook', () => {
+  let svc: DataClassPolicyService;
+  beforeEach(() => {
+    svc = makeService();
+  });
+
+  it('accept: payload входит в allowedDataClasses', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'internal',
+      sink: {
+        kind: 'issue_webhook',
+        allowedDataClasses: ['public', 'internal'],
+        channel: 'tracker-wh',
+      },
+    });
+    expect(r.allowed).toBe(true);
+  });
+
+  it('reject: payload не входит в allowedDataClasses', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'sensitive',
+      sink: {
+        kind: 'issue_webhook',
+        allowedDataClasses: ['public', 'internal'],
+        channel: 'tracker-wh',
+      },
+    });
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/sensitive/);
+  });
+
+  it('default: пустой массив трактуется как ["public","internal"]', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'sensitive',
+      sink: { kind: 'issue_webhook', allowedDataClasses: [] },
+    });
+    expect(r.allowed).toBe(false);
+  });
+});
+
+describe('W4.3 — canEmit для kind=export', () => {
+  let svc: DataClassPolicyService;
+  beforeEach(() => {
+    svc = makeService();
+  });
+
+  it('private всегда reject (даже owner)', () => {
+    const r = svc.canEmit({
+      payloadDataClass: 'private',
+      sink: { kind: 'export', ownerOnly: true, channel: '/admin/llm/x' },
+    });
+    expect(r.allowed).toBe(false);
+  });
+
+  it('sensitive — только owner', () => {
+    const rOwner = svc.canEmit({
+      payloadDataClass: 'sensitive',
+      sink: { kind: 'export', ownerOnly: true },
+    });
+    const rNotOwner = svc.canEmit({
+      payloadDataClass: 'sensitive',
+      sink: { kind: 'export', ownerOnly: false },
+    });
+    expect(rOwner.allowed).toBe(true);
+    expect(rNotOwner.allowed).toBe(false);
+  });
+
+  it('internal/public — всегда allow', () => {
+    expect(
+      svc.canEmit({
+        payloadDataClass: 'internal',
+        sink: { kind: 'export', ownerOnly: false },
+      }).allowed,
+    ).toBe(true);
+    expect(
+      svc.canEmit({
+        payloadDataClass: 'public',
+        sink: { kind: 'export', ownerOnly: false },
+      }).allowed,
+    ).toBe(true);
+  });
+});
+
+describe('W4.3 — canEmit для kind=public_api', () => {
+  let svc: DataClassPolicyService;
+  beforeEach(() => {
+    svc = makeService();
+  });
+
+  it('только public allowed', () => {
+    expect(
+      svc.canEmit({
+        payloadDataClass: 'public',
+        sink: { kind: 'public_api' },
+      }).allowed,
+    ).toBe(true);
+    for (const dc of ['internal', 'sensitive', 'private'] as DataClass[]) {
+      expect(
+        svc.canEmit({ payloadDataClass: dc, sink: { kind: 'public_api' } })
+          .allowed,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('W4.3 — kill-switch DATACLASS_OUTBOUND_GATING_ENABLED=false', () => {
+  it('всегда allowed=true', () => {
+    const svc = makeService({ outboundGatingEnabled: false });
+    const r = svc.canEmit({
+      payloadDataClass: 'sensitive',
+      sink: {
+        kind: 'issue_webhook',
+        allowedDataClasses: ['public'],
+      },
+    });
+    expect(r.allowed).toBe(true);
+    expect(r.reason).toBeUndefined();
   });
 });

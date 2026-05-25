@@ -113,17 +113,44 @@ export class TypedConfigService {
       cookieDomain: isLocal(rawDomain) ? undefined : rawDomain,
       cookieStandaloneDomain: isLocal(standaloneRaw) ? undefined : standaloneRaw,
       publicFrontendUrl: this.get('PUBLIC_FRONTEND_URL'),
-      sessionTtlSeconds: this.get('SESSION_TTL_SECONDS'),
-      deepLinkTtlSeconds: this.get('DEEP_LINK_TTL_SECONDS'),
+      // Фаза 3 — TTL'ы переехали в AdminSetting (security.*). Секреты/
+      // cookieDomain/publicFrontendUrl остаются ENV-only (см. ТЗ §3 — auth).
+      sessionTtlSeconds: this.resolveSync<number>(
+        'security.sessionTtlSeconds',
+        'SESSION_TTL_SECONDS',
+        86_400,
+      ),
+      deepLinkTtlSeconds: this.resolveSync<number>(
+        'security.deepLinkTtlSeconds',
+        'DEEP_LINK_TTL_SECONDS',
+        900,
+      ),
     } as const;
   }
 
   // ─────────────────────────── argon (standalone passwords) ─────
+  /**
+   * Фаза 3 env-to-admin-setting-call-sites-migration: каждое поле через
+   * resolveSync(security.argonX, ARGON_X, default). AdminSetting'и
+   * сидятся в `seed-admin-settings.ts` под префиксом `security.argon*`.
+   */
   get argon() {
     return {
-      memoryKb: this.get('ARGON_MEMORY_KB'),
-      iterations: this.get('ARGON_ITERATIONS'),
-      parallelism: this.get('ARGON_PARALLELISM'),
+      memoryKb: this.resolveSync<number>(
+        'security.argonMemoryKb',
+        'ARGON_MEMORY_KB',
+        19_456,
+      ),
+      iterations: this.resolveSync<number>(
+        'security.argonIterations',
+        'ARGON_ITERATIONS',
+        2,
+      ),
+      parallelism: this.resolveSync<number>(
+        'security.argonParallelism',
+        'ARGON_PARALLELISM',
+        1,
+      ),
     } as const;
   }
 
@@ -255,20 +282,70 @@ export class TypedConfigService {
   }
 
   // ─────────────────────────── retention ─────────────────────────
+  /**
+   * Фаза 3 env-to-admin-setting-call-sites-migration: каждое поле читается
+   * через `resolveSync(adminKey, envFallbackKey, default)` — cacheMap →
+   * ENV → default. AdminSetting'и сидятся в `seed-admin-settings.ts`
+   * под префиксом `retention.*`.
+   */
   get retention() {
     return {
-      defaultDays: this.get('DEFAULT_RETENTION_DAYS'),
-      cron: this.get('RETENTION_CRON'),
-      softDeleteGraceDays: this.get('SOFT_DELETE_GRACE_DAYS'),
-      webhookDeliveryDays: this.get('WEBHOOK_DELIVERY_RETENTION_DAYS'),
-      shareViewDays: this.get('SHARE_VIEW_RETENTION_DAYS'),
-      apiAccessLogDays: this.get('API_ACCESS_LOG_RETENTION_DAYS'),
+      defaultDays: this.resolveSync<number>(
+        'retention.defaultDays',
+        'DEFAULT_RETENTION_DAYS',
+        30,
+      ),
+      cron: this.resolveSync<string>(
+        'retention.cron',
+        'RETENTION_CRON',
+        '0 * * * *',
+      ),
+      softDeleteGraceDays: this.resolveSync<number>(
+        'retention.softDeleteGraceDays',
+        'SOFT_DELETE_GRACE_DAYS',
+        30,
+      ),
+      webhookDeliveryDays: this.resolveSync<number>(
+        'retention.webhookDeliveryDays',
+        'WEBHOOK_DELIVERY_RETENTION_DAYS',
+        30,
+      ),
+      shareViewDays: this.resolveSync<number>(
+        'retention.shareViewDays',
+        'SHARE_VIEW_RETENTION_DAYS',
+        90,
+      ),
+      apiAccessLogDays: this.resolveSync<number>(
+        'retention.apiAccessLogDays',
+        'API_ACCESS_LOG_RETENTION_DAYS',
+        30,
+      ),
       // ── Фаза 11: knowledge-core retention sweeps ──
-      sweepBatchSize: this.get('RETENTION_SWEEP_BATCH_SIZE'),
-      rawEventsEnabled: this.get('RETENTION_RAW_EVENTS_ENABLED'),
-      auditEnabled: this.get('RETENTION_AUDIT_ENABLED'),
-      chatEnabled: this.get('RETENTION_CHAT_ENABLED'),
-      blocksEnabled: this.get('RETENTION_BLOCKS_ENABLED'),
+      sweepBatchSize: this.resolveSync<number>(
+        'retention.sweepBatchSize',
+        'RETENTION_SWEEP_BATCH_SIZE',
+        500,
+      ),
+      rawEventsEnabled: this.resolveSync<boolean>(
+        'retention.rawEventsEnabled',
+        'RETENTION_RAW_EVENTS_ENABLED',
+        false,
+      ),
+      auditEnabled: this.resolveSync<boolean>(
+        'retention.auditEnabled',
+        'RETENTION_AUDIT_ENABLED',
+        false,
+      ),
+      chatEnabled: this.resolveSync<boolean>(
+        'retention.chatEnabled',
+        'RETENTION_CHAT_ENABLED',
+        true,
+      ),
+      blocksEnabled: this.resolveSync<boolean>(
+        'retention.blocksEnabled',
+        'RETENTION_BLOCKS_ENABLED',
+        false,
+      ),
     } as const;
   }
 

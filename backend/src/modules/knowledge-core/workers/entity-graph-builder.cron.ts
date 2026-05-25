@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { Cron } from '@nestjs/schedule';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EntityGraphService } from '../services/entity-graph.service';
+import { EntityLinkService } from '../services/entity-link.service';
 
 /**
  * EntityGraphBuilderCron — раз в час сканирует Org'и и достраивает граф
@@ -17,6 +17,9 @@ import { EntityGraphService } from '../services/entity-graph.service';
  *      для LLM) и вызвать `judgeRelation`.
  *   4. Если verdict valid и confidence >= LINK_MIN_CONFIDENCE → upsert
  *      EntityLink (createdBy='linker').
+ *
+ * KC-Temporal W3.1 (2026-05-25) — upsert делегируется в `EntityLinkService.
+ * upsertRichEdge`: union sourceBlockIds, max(confidence), merge(attributes).
  *
  * NB: cron-expression в декораторе фиксирован (`'0 * * * *'`) — это совпадает
  * с дефолтом `ENTITY_GRAPH_BUILDER_CRON`. Если потребуется кастом из ENV —
@@ -34,6 +37,9 @@ export class EntityGraphBuilderCron {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(EntityGraphService) private readonly graph: EntityGraphService,
+    // KC-Temporal W3.1 (2026-05-25) — единая точка upsert'а rich-edges.
+    @Inject(EntityLinkService)
+    private readonly entityLinks: EntityLinkService,
   ) {}
 
   @Cron('0 * * * *')
@@ -95,40 +101,26 @@ export class EntityGraphBuilderCron {
           if (verdict.relationType === null) continue;
           if (verdict.confidence < minConfidence) continue;
 
-          const confidenceDecimal = new Prisma.Decimal(
-            verdict.confidence.toFixed(3),
-          );
-          // С Фазы 0a EntityLink — полиморфная модель (fromType/toType).
-          // Для legacy Entity↔Entity связей явно ставим fromType='entity',
-          // toType='entity' — иначе composite unique ключ не совпадёт
-          // и upsert создаст дубликат при следующем проходе.
-          await this.prisma.entityLink.upsert({
-            where: {
-              fromEntityId_fromType_toEntityId_toType_relationType: {
-                fromEntityId: pair.entityA.id,
-                fromType: 'entity',
-                toEntityId: pair.entityB.id,
-                toType: 'entity',
-                relationType: verdict.relationType,
-              },
-            },
-            update: {
-              confidence: confidenceDecimal,
-              explanation: verdict.explanation,
-              status: 'active',
-            },
-            create: {
-              tenantId: org.id,
-              fromEntityId: pair.entityA.id,
-              fromType: 'entity',
-              toEntityId: pair.entityB.id,
-              toType: 'entity',
-              relationType: verdict.relationType,
-              confidence: confidenceDecimal,
-              explanation: verdict.explanation,
-              createdBy: 'linker',
-              status: 'active',
-            },
+          // KC-Temporal W3.1 (2026-05-25) — Rich edges. Делегируем upsert
+          // в `EntityLinkService`: он мерджит sourceBlockIds (union),
+          // confidence (max), attributes (плоский merge). LLM-вердикт может
+          // содержать `validFromHint`/`validUntilHint`/`attributes` — это
+          // новые опц. поля схемы (см. entity-graph.service.ts).
+          await this.entityLinks.upsertRichEdge({
+            tenantId: org.id,
+            fromEntityId: pair.entityA.id,
+            fromType: 'entity',
+            toEntityId: pair.entityB.id,
+            toType: 'entity',
+            relationType: verdict.relationType,
+            confidence: verdict.confidence,
+            explanation: verdict.explanation,
+            createdBy: 'linker',
+            attributes: verdict.attributes ?? null,
+            sourceBlockIds: recentBlocks.map((b) => b.id),
+            validFrom: parseHintToDate(verdict.validFromHint),
+            // validUntil: undefined = «не трогаем»; null = «бессрочно».
+            validUntil: parseHintToDate(verdict.validUntilHint),
           });
           upsertedLinks += 1;
         } catch (err) {
@@ -145,4 +137,32 @@ export class EntityGraphBuilderCron {
     }
     return { scannedOrgs, upsertedLinks };
   }
+}
+
+/**
+ * KC-Temporal W3.1 (2026-05-25) — парсер ISO-подсказок LLM в Date.
+ *
+ * Принимает:
+ *   - null / undefined / '' → undefined (caller интерпретирует как «не трогать»).
+ *   - 'YYYY' → Date(YYYY-01-01).
+ *   - 'YYYY-MM' → Date(YYYY-MM-01).
+ *   - 'YYYY-MM-DD' → Date(YYYY-MM-DD).
+ *   - другие невалидные строки → undefined (логгировать не имеет смысла —
+ *     LLM иногда отвечает «—» или «не указано»).
+ */
+function parseHintToDate(hint: string | null | undefined): Date | undefined {
+  if (!hint || typeof hint !== 'string') return undefined;
+  const trimmed = hint.trim();
+  if (trimmed.length === 0) return undefined;
+  let normalized = trimmed;
+  if (/^\d{4}$/.test(trimmed)) {
+    normalized = `${trimmed}-01-01`;
+  } else if (/^\d{4}-\d{2}$/.test(trimmed)) {
+    normalized = `${trimmed}-01`;
+  } else if (!/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return undefined;
+  }
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date;
 }

@@ -43,9 +43,10 @@ describe('WebhookDispatcher', () => {
   });
 
   it('dispatch — фильтрует по tenant + isActive + events.has(eventType)', async () => {
+    // W4.3: select теперь возвращает + name + allowedDataClasses (для canEmit).
     findManyMock.mockResolvedValueOnce([
-      { id: 'wh_1' },
-      { id: 'wh_2' },
+      { id: 'wh_1', name: 'wh-one', allowedDataClasses: ['public', 'internal'] },
+      { id: 'wh_2', name: 'wh-two', allowedDataClasses: ['public', 'internal'] },
     ]);
     const ids = await dispatcher.dispatch('org_1', 'issue.created', { foo: 'bar' });
     expect(ids).toEqual(['job_1', 'job_2']);
@@ -55,7 +56,7 @@ describe('WebhookDispatcher', () => {
         isActive: true,
         events: { has: 'issue.created' },
       },
-      select: { id: true },
+      select: { id: true, name: true, allowedDataClasses: true },
     });
     expect(addJobMock).toHaveBeenCalledTimes(2);
     const firstCall = addJobMock.mock.calls[0]!;

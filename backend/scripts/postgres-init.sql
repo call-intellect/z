@@ -431,6 +431,26 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- KC-Temporal W3.1 (2026-05-25) — rich edges на EntityLink.
+--   `sourceBlockIds` хранит IdeaBlock-источники, на основе которых LLM
+--   построил ребро. GIN-индекс ускоряет reverse-lookup «какие рёбра
+--   поддерживает этот блок» (для UI и для backfill при удалении блока).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'EntityLink'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "EntityLink_sourceBlockIds_gin_idx"
+      ON "EntityLink" USING gin ("sourceBlockIds")
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- β-9 (2026-05-25) — глобальный Telegram-бот.
 --   Один глобальный канал per kind (запись с tenantId IS NULL).
 --   Postgres трактует NULL != NULL, поэтому обычный @@unique([tenantId, kind])

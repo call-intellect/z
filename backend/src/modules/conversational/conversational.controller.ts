@@ -29,6 +29,8 @@ import { ConversationalService } from './conversational.service';
 import {
   type LinkCodeKindDto,
   LinkCodeKindSchema,
+  type UpdateMaxDataClassDto,
+  UpdateMaxDataClassSchema,
   type UpdatePreferencesDto,
   UpdatePreferencesSchema,
 } from './dto/channel.dto';
@@ -84,6 +86,8 @@ export class ConversationalController {
               externalId: binding.externalId,
               verifiedAt: binding.verifiedAt?.toISOString() ?? null,
               preferences: binding.preferences,
+              // W4.3 — per-binding потолок чувствительности (radio в /me/channels).
+              maxDataClass: binding.maxDataClass,
             }
           : null,
       })),
@@ -119,6 +123,28 @@ export class ConversationalController {
     return {
       id: updated.id,
       preferences: updated.preferences,
+    };
+  }
+
+  @Patch('channels/bindings/:bindingId/max-data-class')
+  @ApiOperation({
+    summary:
+      'W4.3 — обновить потолок чувствительности канала (public/internal/sensitive)',
+  })
+  async updateMaxDataClass(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('bindingId') bindingId: string,
+    @Body(new ZodValidationPipe(UpdateMaxDataClassSchema))
+    body: UpdateMaxDataClassDto,
+  ) {
+    const updated = await this.svc.updateBindingMaxDataClass({
+      userId: user.id,
+      bindingId,
+      maxDataClass: body.maxDataClass,
+    });
+    return {
+      id: updated.id,
+      maxDataClass: updated.maxDataClass,
     };
   }
 

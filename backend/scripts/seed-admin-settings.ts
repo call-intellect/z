@@ -183,12 +183,18 @@ function buildSettings(): SettingSeed[] {
   }
 
   // ── Retention (retention.*) — также в RetentionPolicy.
-  const retentions: Array<[string, string, number, Severity, string]> = [
+  const retentions: Array<[string, string, unknown, Severity, string]> = [
     ['DEFAULT_RETENTION_DAYS', 'retention.defaultDays', envInt('DEFAULT_RETENTION_DAYS', 90), 'high', 'Дефолтный срок хранения по умолчанию (дни)'],
     ['SOFT_DELETE_GRACE_DAYS', 'retention.softDeleteGraceDays', envInt('SOFT_DELETE_GRACE_DAYS', 30), 'high', 'Льготный период перед окончательным удалением (дни)'],
     ['WEBHOOK_DELIVERY_RETENTION_DAYS', 'retention.webhookDeliveryDays', envInt('WEBHOOK_DELIVERY_RETENTION_DAYS', 14), 'high', 'Хранение журнала webhook-доставок (дни)'],
     ['SHARE_VIEW_RETENTION_DAYS', 'retention.shareViewDays', envInt('SHARE_VIEW_RETENTION_DAYS', 90), 'high', 'Хранение логов просмотров shared-ссылок (дни)'],
     ['API_ACCESS_LOG_RETENTION_DAYS', 'retention.apiAccessLogDays', envInt('API_ACCESS_LOG_RETENTION_DAYS', 30), 'high', 'Хранение журнала API-обращений (дни)'],
+    ['RETENTION_CRON', 'retention.cron', env('RETENTION_CRON', '0 * * * *'), 'high', 'Cron retention-sweep'],
+    ['RETENTION_SWEEP_BATCH_SIZE', 'retention.sweepBatchSize', envInt('RETENTION_SWEEP_BATCH_SIZE', 500), 'medium', 'Размер батча retention-sweep'],
+    ['RETENTION_RAW_EVENTS_ENABLED', 'retention.rawEventsEnabled', envBool('RETENTION_RAW_EVENTS_ENABLED', false), 'high', 'Retention sweep RawEvent включён'],
+    ['RETENTION_AUDIT_ENABLED', 'retention.auditEnabled', envBool('RETENTION_AUDIT_ENABLED', false), 'high', 'Retention sweep AuditLog включён'],
+    ['RETENTION_CHAT_ENABLED', 'retention.chatEnabled', envBool('RETENTION_CHAT_ENABLED', true), 'high', 'Retention sweep ChatMessage включён'],
+    ['RETENTION_BLOCKS_ENABLED', 'retention.blocksEnabled', envBool('RETENTION_BLOCKS_ENABLED', false), 'destructive', 'Retention sweep IdeaBlock включён'],
   ];
   for (const [, key, value, severity, description] of retentions) {
     out.push({ key, value, category: 'tenants', section: 'retention', severity, description });
@@ -343,6 +349,7 @@ function buildSettings(): SettingSeed[] {
     ['security.adminSessionTtlSeconds', envInt('ADMIN_SESSION_TTL_SECONDS', 14_400), 'destructive', 'TTL админской сессии (сек)'],
     ['security.argonMemoryKb', envInt('ARGON_MEMORY_KB', 65536), 'destructive', 'Argon2: memory KB'],
     ['security.argonIterations', envInt('ARGON_ITERATIONS', 3), 'destructive', 'Argon2: iterations'],
+    ['security.argonParallelism', envInt('ARGON_PARALLELISM', 1), 'destructive', 'Argon2: parallelism'],
   ];
   for (const [key, value, severity, description] of security) {
     out.push({ key, value, category: 'platform', section: 'security', severity, description });
@@ -369,6 +376,50 @@ function buildSettings(): SettingSeed[] {
   for (const [key, value, severity, description] of shareClipExport) {
     out.push({ key, value, category: 'content', section: 'share-clip-export', severity, description });
   }
+
+  // ── W4.3 (2026-05-25) — DataClass policy floors + channel defaults.
+  // Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §4.
+  // Эти ключи читаются `DataClassPolicyService.getFloor` и UI `/admin/policy/dataclass`.
+  out.push({
+    key: 'dataclass_policy:floors',
+    value: {
+      idea_block: 'public',
+      insight: 'internal',
+      decision: 'internal',
+      card_rollup: 'internal',
+      executable_persona: 'internal',
+      skill_profile: 'internal',
+      skill_trait: 'internal',
+      idea: 'internal',
+      regulation: 'internal',
+      process: 'internal',
+      policy: 'internal',
+      chat_context: 'public',
+      ai_usage_log: 'public',
+      conflict_item: 'public',
+      probe_event: 'internal',
+    },
+    category: 'policy',
+    section: 'dataclass',
+    severity: 'high',
+    description:
+      'Минимальный DataClass-уровень результата по типу проекции (W4.3). Override default-значений из кода DataClassPolicyService.',
+  });
+  out.push({
+    key: 'dataclass_policy:channel_defaults',
+    value: {
+      in_app: 'private',
+      telegram_dm: 'internal',
+      telegram_group: 'public',
+      email: 'sensitive',
+      public_link: 'public',
+    },
+    category: 'policy',
+    section: 'dataclass',
+    severity: 'high',
+    description:
+      'Дефолтный потолок чувствительности для нового канала по его kind (W4.3). Применяется при создании ChannelBinding. Пользователь может опустить ниже в /me/channels, но не поднять выше.',
+  });
 
   return out;
 }

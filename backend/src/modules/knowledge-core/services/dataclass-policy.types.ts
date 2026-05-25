@@ -101,14 +101,60 @@ export type DataClassAudit = {
 };
 
 /**
- * Минимальная конфигурация outbound-канала / sink'а — для `canEmit`.
- * Полноценный SinkConfig (с per-канал hooks, retry-policy, secret rotation)
- * будет в W4.3; здесь оставлен только потолок dataClass, которого достаточно
- * для логики gating.
+ * Конфигурация outbound-канала / sink'а — для `canEmit` (W4.3).
+ *
+ * Поддерживается четыре формы:
+ *   - `kind='channel_binding'` — ChannelBinding (in_app / telegram / email).
+ *     Используется `maxDataClass` lattice (payload <= max).
+ *   - `kind='issue_webhook'` — IssueWebhook (outbound webhook tracker'а).
+ *     Используется `allowedDataClasses[]` (set membership). Пустой массив
+ *     трактуется как `['public', 'internal']` (default по ТЗ §W4.3).
+ *   - `kind='export'` — административный export endpoint
+ *     (`/admin/llm/preference-dataset` и аналогичные). Используется
+ *     `ownerOnly` + reject `private` всегда.
+ *   - `kind='public_api'` — публичный share/API. Принимает только `public`.
+ *
+ * Legacy short-hand `{ maxDataClass }` без явного `kind` сохраняется как
+ * `channel_binding` (упрощает существующие W4.1-call-sites и тесты).
  */
-export type SinkConfig = {
-  /** Самый строгий dataClass, который sink имеет право принять. */
-  maxDataClass: DataClass;
-  /** Опционально: имя канала для логов/метрик. */
-  channel?: string;
-};
+export type SinkConfig =
+  | {
+      kind: 'channel_binding';
+      /** Самый строгий dataClass, который binding имеет право принять. */
+      maxDataClass: DataClass;
+      /** Имя канала / kind для логов и метрик. */
+      channel?: string;
+      /** Получатель — нужен для проверки private+subjectPersonId. */
+      recipientUserId?: string;
+      /** Person у получателя — для private gating (= subjectPersonId payload'а). */
+      recipientPersonId?: string | null;
+      /** True если получатель — owner или super_admin (override private). */
+      recipientIsOwnerOrSuper?: boolean;
+    }
+  | {
+      kind: 'issue_webhook';
+      /**
+       * Allow-list классов данных. Пустой массив = `['public', 'internal']`
+       * (см. ТЗ §W4.3 и `IssueWebhook.allowedDataClasses` default).
+       */
+      allowedDataClasses: DataClass[];
+      /** ID webhook'а / имя — для логов и метрик. */
+      channel?: string;
+    }
+  | {
+      kind: 'export';
+      /** True если запрашивающий — owner. Для `private` обязательно. */
+      ownerOnly: boolean;
+      channel?: string;
+    }
+  | {
+      kind: 'public_api';
+      channel?: string;
+    }
+  // Legacy short-hand для W4.1 call-sites: `{ maxDataClass: ... }` без kind.
+  // Трактуется как `channel_binding` без recipient-checks.
+  | {
+      maxDataClass: DataClass;
+      channel?: string;
+      kind?: undefined;
+    };

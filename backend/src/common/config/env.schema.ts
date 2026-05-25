@@ -1413,6 +1413,12 @@ const TrackerSchema = z.object({
   // проекций без `dataClassAudit` фейлится с ошибкой. На shadow/off — не
   // фейлит даже при true. См. §W4.2 DoD «audit-trail обязателен».
   DATACLASS_AUDIT_REQUIRED: z.coerce.boolean().default(true),
+  // ── W4.3 (2026-05-25) — Outbound gating каналов ─────────────────────
+  // Глобальный kill-switch для `DataClassPolicyService.canEmit`. Если false —
+  // все outbound-каналы (ChannelBinding, IssueWebhook, export endpoints,
+  // public share) пропускают payload любого класса (legacy-поведение).
+  // Default — true, выключаем только при инциденте.
+  DATACLASS_OUTBOUND_GATING_ENABLED: z.coerce.boolean().default(true),
 
   // ── W2.2 (2026-05-25) — Calibrated confidence (Platt scaling) ────────
   // См. §W2.2 ТЗ. Cron-выражение совместимо с `@nestjs/schedule` (5/6 полей).

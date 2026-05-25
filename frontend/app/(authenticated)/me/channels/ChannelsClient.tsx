@@ -10,6 +10,7 @@ import {
   generateLinkCode,
   listMyChannels,
   unlinkChannelBinding,
+  updateBindingMaxDataClass,
   type ChannelEntryApi,
   type LinkCodeKindApi,
 } from '@/api/conversational.api';
@@ -180,9 +181,20 @@ export function ChannelsClient() {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="text-muted-foreground">
-                    Класс данных: до уровня <strong>{ch.maxDataClass}</strong> ·
+                    Класс данных (канал): до уровня <strong>{ch.maxDataClass}</strong> ·
                     направление: {ch.direction === 'bidirectional' ? 'двустороннее' : ch.direction}
                   </div>
+                  {ch.binding && (
+                    <MaxDataClassRadio
+                      bindingId={ch.binding.id}
+                      current={
+                        ch.binding.maxDataClass === 'private'
+                          ? 'sensitive'
+                          : ch.binding.maxDataClass
+                      }
+                      onChanged={() => mutate(swrKey)}
+                    />
+                  )}
                   {ch.binding ? (
                     <div className="flex items-center justify-between">
                       <div>
@@ -450,6 +462,114 @@ function TelegramCard({
 }
 
 // ─────────────────────────── TelegramLinkDialog ────────────────────────
+
+// ─────────────────────── MaxDataClassRadio (W4.3) ─────────────────────
+
+/**
+ * W4.3 — radio выбора потолка чувствительности для привязки канала.
+ * `private` через UI недоступен (см. §W4.3 ТЗ).
+ *
+ * Подписи на русском, без англицизмов — см. правило `feedback_admin_ui_russian_only`.
+ */
+function MaxDataClassRadio({
+  bindingId,
+  current,
+  onChanged,
+}: {
+  bindingId: string;
+  current: 'public' | 'internal' | 'sensitive';
+  onChanged: () => Promise<unknown>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [value, setValue] = useState<'public' | 'internal' | 'sensitive'>(
+    current,
+  );
+
+  async function handleChange(
+    next: 'public' | 'internal' | 'sensitive',
+  ): Promise<void> {
+    if (next === value || busy) return;
+    setBusy(true);
+    const prev = value;
+    setValue(next);
+    try {
+      await updateBindingMaxDataClass(bindingId, next);
+      toast.success('Чувствительность канала обновлена');
+      await onChanged();
+    } catch (e) {
+      setValue(prev);
+      const msg =
+        e instanceof ApiError ? e.message : 'Не удалось обновить';
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+      <div className="mb-2 font-medium">Какие сообщения может получать канал</div>
+      <div className="space-y-1">
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="radio"
+            name={`mdc-${bindingId}`}
+            value="public"
+            checked={value === 'public'}
+            onChange={() => handleChange('public')}
+            disabled={busy}
+            className="mt-1"
+          />
+          <span>
+            <strong>Только публичная информация</strong>
+            <div className="text-xs text-muted-foreground">
+              Кейсы, согласованные публикации, общие новости.
+            </div>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="radio"
+            name={`mdc-${bindingId}`}
+            value="internal"
+            checked={value === 'internal'}
+            onChange={() => handleChange('internal')}
+            disabled={busy}
+            className="mt-1"
+          />
+          <span>
+            <strong>Внутренние рабочие данные</strong>
+            <div className="text-xs text-muted-foreground">
+              Рабочие встречи, регламенты, метрики команды (по умолчанию).
+            </div>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="radio"
+            name={`mdc-${bindingId}`}
+            value="sensitive"
+            checked={value === 'sensitive'}
+            onChange={() => handleChange('sensitive')}
+            disabled={busy}
+            className="mt-1"
+          />
+          <span>
+            <strong>Включая чувствительные данные</strong>
+            <div className="text-xs text-amber-700">
+              Стратегия, финансы, переговорные позиции. Сюда будут приходить
+              такие уведомления.
+            </div>
+          </span>
+        </label>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Личные данные о конкретном человеке (private) — никогда. Они приходят
+        только в «Личный кабинет» и только их субъекту.
+      </p>
+    </div>
+  );
+}
 
 function TelegramLinkDialog({
   open,

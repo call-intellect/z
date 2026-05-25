@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { DataClassPolicyService } from '../knowledge-core/services/dataclass-policy.service';
 
 import { ChannelRegistry } from './channel-registry';
 import { ConversationalLinkCodeService } from './link-code.service';
@@ -70,6 +71,12 @@ export interface SendNotificationInput {
    * per-event-type default policy.
    */
   preferredChannelKinds?: ChannelKind[];
+  /**
+   * W4.3 — Person subject'а уведомления. Используется при `dataClass='private'`:
+   * `DataClassPolicyService.canEmit` разрешает доставку только если
+   * `recipientPersonId === subjectPersonId` ИЛИ recipient — owner/super_admin.
+   */
+  subjectPersonId?: string | null;
 }
 
 /** Per-event-type default-политика выбора каналов. */
@@ -145,6 +152,11 @@ export class ConversationalService {
     private readonly linkCode: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // W4.3 — outbound gating через единую политику. Optional: тесты, не
+    // инжектящие policy, продолжают работать (легаси-фильтр по effectiveMax).
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly policy?: DataClassPolicyService,
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
@@ -207,12 +219,16 @@ export class ConversationalService {
       dataClass,
       eventType: input.eventType,
       critical: input.critical === true,
+      subjectPersonId: input.subjectPersonId ?? null,
     });
 
     if (selected.length === 0) {
-      // Это не должно случаться: ensureInAppForUser гарантирует in_app.
-      // Если случилось — пишем failed и метрику; нотификация останется
-      // в БД для аудита.
+      // ensureInAppForUser обычно гарантирует in_app. Случай «0 каналов» теперь
+      // имеет два корня: (а) in_app не нашёлся (легаси-ветка) — пишем `failed`;
+      // (б) W4.3 — все каналы, включая in_app fallback, заблокированы canEmit
+      // (например, private payload, а recipient ≠ subject и не owner).
+      // Во втором случае фиксируем `dropped_dataclass_gate` в ProbeEvent
+      // (если payload пришёл от probe-эмитента) — для аудита через UI.
       await this.prisma.notification.update({
         where: { id: notification.id },
         data: { status: 'failed' },
@@ -222,7 +238,7 @@ export class ConversationalService {
         status: 'failed',
       });
       this.logger.warn(
-        `sendNotification: ни одного канала для user=${input.recipientUserId} eventType=${input.eventType}; in_app не нашёлся`,
+        `sendNotification: ни одного канала для user=${input.recipientUserId} eventType=${input.eventType}; либо in_app не нашёлся, либо все binding'и отвергнуты canEmit (W4.3 dataclass gate)`,
       );
       return { ...notification, status: 'failed' };
     }
@@ -567,6 +583,45 @@ export class ConversationalService {
     });
   }
 
+  /**
+   * W4.3 — пользователь меняет потолок чувствительности своей привязки.
+   * Доступны только `public`/`internal`/`sensitive` (private через UI нельзя —
+   * это «личное» для in_app, и его не выбирают вручную). Если пользователь
+   * пытается поднять потолок выше channel-level (admin-настройка) — это
+   * остаётся допустимым на уровне записи, но эффективным остаётся min(channel, binding).
+   */
+  async updateBindingMaxDataClass(args: {
+    userId: string;
+    bindingId: string;
+    maxDataClass: 'public' | 'internal' | 'sensitive';
+  }): Promise<ChannelBinding> {
+    const binding = await this.prisma.channelBinding.findUnique({
+      where: { id: args.bindingId },
+    });
+    if (!binding) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'binding_not_found',
+          message: 'Привязка канала не найдена',
+        },
+      });
+    }
+    if (binding.userId !== args.userId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'not_owner',
+          message: 'Эта привязка принадлежит другому пользователю',
+        },
+      });
+    }
+    return this.prisma.channelBinding.update({
+      where: { id: binding.id },
+      data: { maxDataClass: args.maxDataClass },
+    });
+  }
+
   async unlinkChannel(args: {
     userId: string;
     bindingId: string;
@@ -784,6 +839,11 @@ export class ConversationalService {
 
   /**
    * Применить per-event policy + dataClass + preferences к множеству bindings.
+   *
+   * W4.3: dataClass-фильтр идёт через `DataClassPolicyService.canEmit` (если
+   * injected) с учётом `min(Channel.maxDataClass, ChannelBinding.maxDataClass)`
+   * + `subjectPersonId`. Если policy не доступна — fallback на легаси
+   * `ch.maxDataClass`-фильтр.
    */
   private selectBindingsForNotification(args: {
     bindings: Array<ChannelBinding & { channel: Channel }>;
@@ -791,6 +851,7 @@ export class ConversationalService {
     dataClass: DataClass;
     eventType: string;
     critical: boolean;
+    subjectPersonId: string | null;
   }): Array<{ binding: ChannelBinding & { channel: Channel } }> {
     const selected: Array<{ binding: ChannelBinding & { channel: Channel } }> = [];
     const nowQuiet = this.isQuietHour(new Date());
@@ -805,8 +866,36 @@ export class ConversationalService {
       const ch = binding.channel;
       if (ch.status !== 'active') continue;
 
-      // 1. dataClass filter.
-      if (DATA_CLASS_ORDER[args.dataClass] > DATA_CLASS_ORDER[ch.maxDataClass]) {
+      // 1. dataClass filter — W4.3 через policy.canEmit + min(channel, binding).
+      const effectiveMax = this.minDataClass(
+        ch.maxDataClass,
+        binding.maxDataClass,
+      );
+      const gate = this.policy?.canEmit({
+        payloadDataClass: args.dataClass,
+        payloadSubjectPersonId: args.subjectPersonId,
+        sink: {
+          kind: 'channel_binding',
+          maxDataClass: effectiveMax,
+          channel: `${ch.kind}#${binding.id.slice(-6)}`,
+          recipientUserId: binding.userId,
+          // recipientPersonId / recipientIsOwnerOrSuper не резолвятся здесь —
+          // для private gating потребуется доп. запрос. На W4.3 fallback:
+          // если payload=private и subject известен, считаем не-subject; в
+          // in_app dropped→ дальше fallback на in_app, при необходимости.
+          recipientPersonId: null,
+          recipientIsOwnerOrSuper: false,
+        },
+      });
+      if (gate) {
+        if (!gate.allowed) {
+          // Не игнорируем silent — fallback на in_app сработает ниже.
+          continue;
+        }
+      } else if (
+        DATA_CLASS_ORDER[args.dataClass] > DATA_CLASS_ORDER[effectiveMax]
+      ) {
+        // Legacy-fallback когда policy не inj — простой lattice по effectiveMax.
         continue;
       }
 
@@ -850,6 +939,16 @@ export class ConversationalService {
     }
 
     return selected;
+  }
+
+  /**
+   * W4.3 — минимум по lattice DataClass. Используется для эффективного потолка
+   * binding'а: `min(Channel.maxDataClass, ChannelBinding.maxDataClass)`. То есть
+   * пользователь МОЖЕТ опустить свой потолок ниже channel-level, но не поднять
+   * выше (channel-level — admin-настройка, выше — нельзя).
+   */
+  private minDataClass(a: DataClass, b: DataClass): DataClass {
+    return DATA_CLASS_ORDER[a] <= DATA_CLASS_ORDER[b] ? a : b;
   }
 
   private readPreferences(binding: ChannelBinding): ChannelBindingPreferences {

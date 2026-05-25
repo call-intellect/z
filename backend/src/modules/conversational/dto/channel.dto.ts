@@ -21,3 +21,13 @@ export type LinkCodeKindDto = z.infer<typeof LinkCodeKindSchema>;
  */
 export const UpdatePreferencesSchema = ChannelBindingPreferencesSchema;
 export type UpdatePreferencesDto = z.infer<typeof UpdatePreferencesSchema>;
+
+/**
+ * W4.3 (KC-Temporal) — `PATCH /me/channels/bindings/:bindingId/max-data-class`.
+ * Пользователь устанавливает потолок чувствительности своей привязки.
+ * `private` через UI недоступен (см. §W4.3 «`private` — никогда (выбор недоступен)»).
+ */
+export const UpdateMaxDataClassSchema = z.object({
+  maxDataClass: z.enum(['public', 'internal', 'sensitive']),
+});
+export type UpdateMaxDataClassDto = z.infer<typeof UpdateMaxDataClassSchema>;

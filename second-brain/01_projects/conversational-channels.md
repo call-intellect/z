@@ -314,9 +314,9 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 
 ---
 
-# Планируется: β-9 — Глобальный Telegram-бот + GitHub-style приглашения
+# β-9 — Глобальный Telegram-бот + GitHub-style приглашения (реализовано 2026-05-25)
 
-> **Дата фиксации:** 2026-05-25. **ТЗ:** [plans/tz/2026-05-25-telegram-bot-global-and-invites.md](../../plans/tz/2026-05-25-telegram-bot-global-and-invites.md). **Статус:** ТЗ написано, реализация не начата.
+> **Дата фиксации ТЗ:** 2026-05-25. **ТЗ:** [plans/tz/2026-05-25-telegram-bot-global-and-invites.md](../../plans/tz/2026-05-25-telegram-bot-global-and-invites.md). **Статус:** реализовано в коммитах `d011831` (backend, фазы 1+2+3) и `913dd1e` (UI + admin, фазы 4+5+6). 4-волновая оркестрация — рефлексия в [`05_история/2026-05-25-β-9-orchestration.md`](../05_история/2026-05-25-β-9-orchestration.md). Smoke-инструкция — `backend/src/modules/conversational/adapters/telegram-bot/SMOKE.md`.
 
 **Что меняет:**
 - `Channel` для kind `telegram_bot` становится **глобальным** (один на всю платформу, без `tenantId`). Все клиенты пользуются одним нашим ботом `@kora_bot`. Per-tenant ботов больше нет.

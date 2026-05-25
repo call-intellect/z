@@ -184,6 +184,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         matchPrefix: '/admin/ai/routing',
       },
       {
+        href: '/admin/llm-routes',
+        label: 'Управление роутами LLM',
+        icon: Network,
+        matchPrefix: '/admin/llm-routes',
+      },
+      {
         href: '/admin/ai/catalog',
         label: 'Каталог LLM',
         icon: CircleDollarSign,

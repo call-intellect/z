@@ -431,6 +431,48 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- KC-Temporal W3.4 (2026-05-25) — Strong IDs (выделенные идентификаторы)
+-- на Entity. Дедуп внутри Org через ИНН / ОГРН / email / домен БЕЗ LLM.
+-- Prisma `@@unique` не поддерживает WHERE-условие; full-unique нельзя —
+-- большинство сущностей этих полей не имеют. Partial unique со скоупом
+-- (tenantId, type, <strong_field>) даёт целевую защиту от дублей.
+-- Запускать ПОСЛЕ `prisma db push` (когда колонки уже добавлены в "Entity").
+-- См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W3.4.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Entity' AND column_name = 'inn'
+  ) THEN
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "Entity_strong_inn_uniq"
+        ON "Entity" ("tenantId", "type", "inn") WHERE "inn" IS NOT NULL
+    $sql$;
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "Entity_strong_ogrn_uniq"
+        ON "Entity" ("tenantId", "type", "ogrn") WHERE "ogrn" IS NOT NULL
+    $sql$;
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "Entity_strong_email_uniq"
+        ON "Entity" ("tenantId", "type", "email") WHERE "email" IS NOT NULL
+    $sql$;
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "Entity_strong_domain_uniq"
+        ON "Entity" ("tenantId", "type", "domain") WHERE "domain" IS NOT NULL
+    $sql$;
+    -- Phone уникальным не делаем — один номер может принадлежать нескольким
+    -- контактам (общий ресепшн, семейный номер и т.п.). Lookup-индекс
+    -- (не unique) для быстрого resolve по phone.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Entity_strong_phone_idx"
+        ON "Entity" ("tenantId", "type", "phone") WHERE "phone" IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- KC-Temporal W3.1 (2026-05-25) — rich edges на EntityLink.
 --   `sourceBlockIds` хранит IdeaBlock-источники, на основе которых LLM
 --   построил ребро. GIN-индекс ускоряет reverse-lookup «какие рёбра

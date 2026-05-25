@@ -52,6 +52,8 @@ import { ThemeClassificationService } from './services/theme-classification.serv
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
 // KC-Temporal волна 3 (W3.1 + W3.2, 2026-05-25).
 import { ReasoningChainService } from './services/reasoning-chain.service';
+// KC-Temporal W3.5 (2026-05-25) — Materialized projections rebuild.
+import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 // W2.2 + W2.3 + W2.4 + G.2 + W4.2 KC-Temporal (2026-05-25).
 import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
@@ -201,6 +203,14 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
     // Chat-v2 для подмешивания цепочки рассуждения и API
     // GET /blocks/:id/reasoning-chain.
     ReasoningChainService,
+    // ── KC-Temporal W3.5 (2026-05-25) — ProjectionRebuilderService ──
+    // Подписан на `idea_block.updated` через @OnEvent. При изменении
+    // IdeaBlock пересобирает зависимые материализованные проекции
+    // (Decision/Insight/Idea/Card/Regulation/Process/Policy/SkillTrait/
+    // ProcessTemplate/Experiment) через дебаунс в `core.specialist-routing`
+    // и `core.card-rollup-v2`. Ставим в конец providers, чтобы минимизировать
+    // конфликты с параллельными ветками той же фазы.
+    ProjectionRebuilderService,
   ],
   exports: [
     SegmentBuilderService,
@@ -290,6 +300,9 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
     // экспорт для blocks.controller (HTTP) и Chat-v2 hook'а.
     EntityLinkService,
     ReasoningChainService,
+    // KC-Temporal W3.5 — экспортируем для интеграционных тестов и
+    // admin-эндпоинтов «manual projection rebuild» (future).
+    ProjectionRebuilderService,
   ],
 })
 export class KnowledgeCoreModule {}

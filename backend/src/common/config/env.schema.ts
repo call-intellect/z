@@ -680,6 +680,22 @@ const KnowledgeCoreSchema = z.object({
     .int()
     .positive()
     .default(3600),
+
+  // ── KC-Temporal W3.5 (2026-05-25) — Materialized projections rebuild ──
+  /**
+   * Дебаунс enqueue'а rebuild'а проекций (Decision/Insight/Idea/Card/...)
+   * при изменении IdeaBlock. Несколько подряд идущих событий
+   * `idea_block.updated` по одной и той же projection (jobId
+   * `projection-rebuild_<kind>_<id>`) в этом окне сложатся в один
+   * отложенный job — снимает нагрузку при шквале merge'ей одной встречи.
+   * Default 5 мин — компромисс между свежестью и батчингом.
+   * См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W3.5.
+   */
+  PROJECTION_REBUILD_DEBOUNCE_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300_000),
 });
 
 /** Шеринг (длительность ссылок). */

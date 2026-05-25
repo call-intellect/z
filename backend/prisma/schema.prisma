@@ -2669,6 +2669,12 @@ model IdeaBlockEvidence {
 /// Используется в IdeaBlockEntity (M:M с блоками) и в knowledge-core search.
 /// canonicalName уникален в рамках tenant + type через приложение (не индексом —
 /// возможны исторические дубликаты до прохода entity-merge-arbiter).
+///
+/// KC-Temporal W3.4 (2026-05-25) — «Strong IDs»: поля inn/ogrn/email/phone/domain
+/// используются для дедупа БЕЗ LLM в рамках Org. Уникальность гарантируется
+/// partial unique indices в `backend/scripts/postgres-init.sql` (Prisma
+/// `@@unique` не поддерживает WHERE-условия, а делать full-unique нельзя —
+/// большинство сущностей не имеют этих идентификаторов).
 model Entity {
   id            String                       @id @default(cuid())
   tenantId      String
@@ -2679,6 +2685,13 @@ model Entity {
   mentionsCount Int                          @default(0)
   embedding     Unsupported("vector(1536)")?
   metadata      Json?
+  /// KC-Temporal W3.4 — strong-IDs (ИНН/ОГРН/email/phone/domain).
+  /// Все nullable; partial unique через postgres-init.sql.
+  inn           String?                      @db.VarChar(20)
+  ogrn          String?                      @db.VarChar(20)
+  email         String?                      @db.VarChar(320)
+  phone         String?                      @db.VarChar(40)
+  domain        String?                      @db.VarChar(253)
   createdAt     DateTime                     @default(now())
   updatedAt     DateTime                     @updatedAt
 

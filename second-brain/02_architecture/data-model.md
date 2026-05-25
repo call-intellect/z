@@ -903,4 +903,77 @@ Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` п�
 
 **`IdeaBlockLinkType` (новое значение):** `resolves` — запись `signalType='commitment_status'` закрывает исходное `commitment` через `IdeaBlockLink`.
 
+## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
+
+Фича **глобальная (не tenant-bound)** — фидбэк адресован команде Z, а не конкретной `Org`. Поля `tenantId` в моделях нет.
+
+### FeedbackMessage
+
+Каждое сообщение пользователя через форму `/feedback`. Один user может сабмитить до 5 сообщений в сутки UTC (rate-limit через Redis).
+
+```prisma
+model FeedbackMessage {
+  id          String    @id @default(cuid())
+  userId      String    @index
+  user        User      @relation(fields: [userId], references: [id])
+  text        String    @db.Text
+  createdAt   DateTime  @default(now()) @index
+  processedAt DateTime? @index             // выставляется ночным digest'ом
+  failedRuns  Int       @default(0)        // на 3 → выпадает из выборки
+
+  items       FeedbackItem[]               // 0..N — что AI извлёк из сообщения
+}
+```
+
+### FeedbackTopic
+
+Смысловой блок (кластер) предложений. AI создаёт новые блоки или докладывает items в существующие на ночном прогоне.
+
+```prisma
+model FeedbackTopic {
+  id           String              @id @default(cuid())
+  title        String              @db.VarChar(200)
+  description  String              @db.Text
+  status       FeedbackTopicStatus @default(ACTIVE)
+  mergedIntoId String?             @index          // куда смерджен (если status=MERGED)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  items        FeedbackItem[]
+  mergedInto   FeedbackTopic?  @relation("FeedbackTopicMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom   FeedbackTopic[] @relation("FeedbackTopicMerge")
+}
+
+enum FeedbackTopicStatus {
+  ACTIVE      // активный блок
+  ARCHIVED    // спрятан из дашборда, не докладывается
+  MERGED      // склеен в другой topic (mergedIntoId)
+}
+```
+
+### FeedbackItem
+
+Атомарное наблюдение, извлечённое AI из одного `FeedbackMessage`. Одно сообщение может породить несколько items (если LLM решил, что в нём несколько разных идей) или 0 items с `discarded=true`.
+
+```prisma
+model FeedbackItem {
+  id            String   @id @default(cuid())
+  messageId     String   @index
+  message       FeedbackMessage @relation(fields: [messageId], references: [id])
+  topicId       String?  @index           // null когда discarded=true
+  topic         FeedbackTopic? @relation(fields: [topicId], references: [id])
+  text          String   @db.Text         // нормализованная формулировка от LLM
+  discarded     Boolean  @default(false)  // мусор / off-topic
+  discardReason String?  @db.VarChar(100) // 'agent_marked' и т.п.
+  createdAt     DateTime @default(now())
+}
+```
+
+### Redis ключи (вне Prisma)
+
+- `feedback:ratelimit:{userId}:{YYYY-MM-DD-UTC}` — счётчик сабмитов на сутки, TTL до конца UTC-суток. Cap 5/сутки.
+- `feedback:digest:lock` — SET NX EX 1800 (30 минут). Только один прогон ночного digest'а на весь кластер одновременно.
+
 [[../index|← index]]

@@ -66,6 +66,14 @@ export class EntityResolutionService {
     type: EntityType;
     name: string;
     metadata?: Record<string, unknown>;
+    // KC-Temporal W3.4 — strong-IDs. Если заданы — пытаемся резолвить по ним
+    // ДО exact-name / KNN. Уникальность защищена partial unique indices
+    // (см. postgres-init.sql `Entity_strong_*_uniq`).
+    inn?: string | null;
+    ogrn?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    domain?: string | null;
   }): Promise<{ entity: Entity; created: boolean }> {
     const normalized = args.name.trim();
     if (normalized.length === 0) {
@@ -76,6 +84,39 @@ export class EntityResolutionService {
     const observeLatency = (): void => {
       this.metrics?.observeKcEntityResolveLatencyMs(Date.now() - startedAt);
     };
+
+    // 0. KC-Temporal W3.4 — резолв по сильным идентификаторам (ИНН/ОГРН/
+    //    email/domain). Phone — lookup, но не unique (один номер у нескольких
+    //    контактов). Это ПЕРЕД exact-name match: ИНН строже имени.
+    const strong = this.normalizeStrongIds(args);
+    const strongHit = await this.resolveByStrongIds({
+      tenantId: args.tenantId,
+      type: args.type,
+      ...strong,
+    });
+    if (strongHit) {
+      const merged = this.mergeMetadata(strongHit.metadata, args.metadata);
+      const updated = await this.prisma.entity.update({
+        where: { id: strongHit.id },
+        data: {
+          mentionsCount: { increment: 1 },
+          // Заполняем пустые strong-поля (если новый вызов принёс данные,
+          // которых не было в существующей сущности).
+          ...(strong.inn && !strongHit.inn ? { inn: strong.inn } : {}),
+          ...(strong.ogrn && !strongHit.ogrn ? { ogrn: strong.ogrn } : {}),
+          ...(strong.email && !strongHit.email ? { email: strong.email } : {}),
+          ...(strong.phone && !strongHit.phone ? { phone: strong.phone } : {}),
+          ...(strong.domain && !strongHit.domain ? { domain: strong.domain } : {}),
+          ...(merged !== undefined ? { metadata: merged } : {}),
+        },
+      });
+      // Кладём в cache по имени, чтобы повторный resolve по имени тоже работал.
+      const cacheKey = this.buildCacheKey(args.tenantId, args.type, lowered);
+      await this.writeCache(cacheKey, updated.id);
+      this.metrics?.incKcEntityResolvePath({ path: 'strong_id' });
+      observeLatency();
+      return { entity: updated, created: false };
+    }
 
     // 1. Redis cache hit — горячее имя возвращаем без БД-вызова.
     const cacheKey = this.buildCacheKey(args.tenantId, args.type, lowered);
@@ -178,6 +219,8 @@ export class EntityResolutionService {
     }
 
     // 4. Не нашли. Создаём + enqueue async resolver на глубокий LLM-арбитраж.
+    //    W3.4 — если caller передал strong-IDs, сохраняем их в выделенные
+    //    колонки (partial unique защитит от гонки на уровне БД).
     const created = await this.prisma.entity.create({
       data: {
         tenantId: args.tenantId,
@@ -185,6 +228,11 @@ export class EntityResolutionService {
         canonicalName: normalized,
         mentionsCount: 1,
         metadata: (args.metadata ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+        ...(strong.inn ? { inn: strong.inn } : {}),
+        ...(strong.ogrn ? { ogrn: strong.ogrn } : {}),
+        ...(strong.email ? { email: strong.email } : {}),
+        ...(strong.phone ? { phone: strong.phone } : {}),
+        ...(strong.domain ? { domain: strong.domain } : {}),
       },
     });
     try {
@@ -341,6 +389,120 @@ export class EntityResolutionService {
       where: { id: best.id },
     });
     return entity;
+  }
+
+  // ─────────────────────────── KC-Temporal W3.4: strong-IDs ───────────────
+
+  /**
+   * Нормализует strong-IDs из args:
+   *   - ИНН/ОГРН — оставляем только цифры (10/12 для ИНН, 13/15 для ОГРН/ОГРНИП).
+   *   - email   — trim + lowercase.
+   *   - phone   — trim, оставляем только `+` и цифры (E.164-friendly).
+   *   - domain  — trim, lowercase, без `https://` / `www.`.
+   * Возвращает `null` для пустых/невалидных значений (короче минимума).
+   */
+  private normalizeStrongIds(args: {
+    inn?: string | null;
+    ogrn?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    domain?: string | null;
+  }): {
+    inn: string | null;
+    ogrn: string | null;
+    email: string | null;
+    phone: string | null;
+    domain: string | null;
+  } {
+    const innRaw = (args.inn ?? '').replace(/\D/g, '');
+    const inn = innRaw.length === 10 || innRaw.length === 12 ? innRaw : null;
+
+    const ogrnRaw = (args.ogrn ?? '').replace(/\D/g, '');
+    const ogrn = ogrnRaw.length === 13 || ogrnRaw.length === 15 ? ogrnRaw : null;
+
+    const emailRaw = (args.email ?? '').trim().toLowerCase();
+    const email = emailRaw.includes('@') && emailRaw.length >= 5 ? emailRaw : null;
+
+    const phoneRaw = (args.phone ?? '').trim();
+    const phoneCleaned = phoneRaw.replace(/[^\d+]/g, '');
+    const phone = phoneCleaned.length >= 7 ? phoneCleaned : null;
+
+    let domainRaw = (args.domain ?? '').trim().toLowerCase();
+    domainRaw = domainRaw.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    // Срезаем path/query, если попало (например `example.com/foo`).
+    domainRaw = domainRaw.split('/')[0] ?? '';
+    const domain = domainRaw.includes('.') && domainRaw.length >= 3 ? domainRaw : null;
+
+    return { inn, ogrn, email, phone, domain };
+  }
+
+  /**
+   * Поиск Entity по сильным идентификаторам в порядке строгости:
+   *   ИНН → ОГРН → email → domain → phone.
+   * Возвращает первую найденную сущность (mergedIntoId IS NULL) в рамках
+   * (tenantId, type). Если ни один strong-ID не задан — возвращает null.
+   *
+   * Каждый шаг — отдельный raw SQL по соответствующему partial-индексу
+   * (Entity_strong_*_uniq/Entity_strong_phone_idx). За один проход
+   * максимум 5 запросов, но в проде обычно ≤ 1-2 (типичный case: либо
+   * customer с ИНН, либо person с email).
+   */
+  private async resolveByStrongIds(args: {
+    tenantId: string;
+    type: EntityType;
+    inn: string | null;
+    ogrn: string | null;
+    email: string | null;
+    phone: string | null;
+    domain: string | null;
+  }): Promise<Entity | null> {
+    const lookupField = async (
+      column: 'inn' | 'ogrn' | 'email' | 'domain' | 'phone',
+      value: string,
+    ): Promise<Entity | null> => {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `
+        SELECT id
+        FROM "Entity"
+        WHERE "tenantId" = $1
+          AND "type"::text = $2
+          AND "${column}" = $3
+          AND "mergedIntoId" IS NULL
+        LIMIT 1
+        `,
+        args.tenantId,
+        args.type,
+        value,
+      );
+      const hit = rows[0];
+      if (!hit) return null;
+      return this.prisma.entity.findUnique({ where: { id: hit.id } });
+    };
+
+    if (args.inn) {
+      const e = await lookupField('inn', args.inn);
+      if (e) return e;
+    }
+    if (args.ogrn) {
+      const e = await lookupField('ogrn', args.ogrn);
+      if (e) return e;
+    }
+    if (args.email) {
+      const e = await lookupField('email', args.email);
+      if (e) return e;
+    }
+    if (args.domain) {
+      const e = await lookupField('domain', args.domain);
+      if (e) return e;
+    }
+    // Phone — последним, т.к. не unique (один номер у нескольких контактов).
+    // LIMIT 1 возвращает первый матч, но если в Org несколько Entity с одним
+    // phone — это ОК-fallback (не worse чем имя).
+    if (args.phone) {
+      const e = await lookupField('phone', args.phone);
+      if (e) return e;
+    }
+    return null;
   }
 
   /** Redis ключ кеша resolved-сущности. */

@@ -30,6 +30,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | `core.card-rollup-v2` | on-event (debounce 60s) | `card-rollup-v2.worker` | 2 | AI rollup карточки |
 | (legacy) `core.card-rollup` | on-event (debounce 5s) | `card-rollup.worker` | 2 | Legacy (живёт до Фаз 5/6) |
 | **`core.meeting-report-fast` (ТЗ 2026-05-25)** | `merge.worker` (после готовности транскрипта; рядом с `ai.analyze`) | `meeting-report-fast.worker` | 2 | Один LLM-вызов на сыром транскрипте → главы + задачи + summary + quality_score → `Meeting.reportFastStatus`. ENV kill-switch `MEETING_REPORT_FAST_ENABLED`. Параллельно с legacy v2 для A/B. См. [meeting-report-pipeline](meeting-report-pipeline.md). |
+| **`core.feedback-digest` (2026-05-25)** | `feedback-digest.cron` (`0 1 * * *` UTC) + ручной `POST /admin/feedback/digest/run` | `feedback-digest.worker` | 1 | Ночной AI-прогон по `FeedbackMessage`: кластеризация в `FeedbackTopic` через taskType `feedback-cluster` (DeepSeek V4 Pro). Redis-lock `feedback:digest:lock` (TTL 30 мин). Глобальная фича (без tenant). См. [[feedback]]. |
 
 ## @Cron задания
 
@@ -65,6 +66,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | **`operations-weekly-digest` (β-8.1)** | `0 * * * *` (фильтр по `Org.timezone`, понедельник `COO_WEEKLY_DIGEST_LOCAL_HOUR`) | `operations/workers/operations-weekly-digest.cron.ts` | Идемпотентно по `(tenantId, weekStart)`. Отправка `coo+owner` через `ConversationalService` (eventType `operations.weekly_digest`). |
 | **`commitment-followup` (β-8.2)** | `0 * * * *` (фильтр по `Org.timezone`, `COMMITMENT_FOLLOWUP_LOCAL_HOUR` default 9) | `operations/workers/commitment-followup.cron.ts` | Ищет `commitmentStatus='open'` со сроком прошедшим (+1 рабочий день через `HolidayService`) → `ProbeService.suggest(reason='commitment.followup')`. Эскалация ролям `coo`/`owner` после `COMMITMENT_ESCALATION_DAYS` молчания. |
 | **`operations-daily-digest` (β-8.3)** | `0 22 * * *` UTC (= 01:00 МСК, час настраивается `COO_DAILY_DIGEST_HOUR_UTC`) — **глобальный, не per-Org** | `operations/workers/operations-daily-digest.cron.ts` | Идемпотентно по `(tenantId, dateLocal)` в окне 1 день МСК. Двухстадийная сборка (агрегат → LLM taskType `operations-daily-digest`). Тумблер `AdminSetting.operations.daily_digest.enabled` (+ kill-switch ENV `COO_DAILY_DIGEST_ENABLED`). Отправка в Telegram **только `coo+owner`** (admin исключён) через `ConversationalService.sendNotification(eventType='operations.daily_digest')` — гейтится `AdminSetting.operations.daily_digest.deliver_to_telegram` (default false). |
+| **`feedback-digest` (2026-05-25)** | `0 1 * * *` UTC — **глобальный, не per-Org** | `feedback/workers/feedback-digest.cron.ts` | Producer ночного job'а в очередь `core.feedback-digest`. Сам `runDigest()` берёт Redis-lock `feedback:digest:lock` (SET NX EX 1800), забирает батч `FeedbackMessage` (`processedAt=null AND failedRuns<3`, take 1000), зовёт LLM `feedback-cluster` с 2 попытками, транзакционно создаёт `FeedbackTopic` + `FeedbackItem` + `processedAt=now()`. Метрики `feedback_digest_runs_total{result}` + 3 счётчика. См. [[feedback]]. |
 
 ## Финальный handoff Wave 1-3 — новые воркеры (2026-05-25)
 

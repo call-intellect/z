@@ -55,6 +55,15 @@ export class BusinessMetricsService implements OnModuleInit {
   // о массовом переходе на tools.
   private deepseekSchemaToToolConversionTotal!: Counter<'model'>;
 
+  // ── llm thinking-model guard (ТЗ 2026-05-25 Фаза 1) ──────────────────
+  // Универсальный счётчик автоматических подмен параметров для thinking-моделей
+  // (DeepSeek-V4-Pro / любые «*-pro» / «*-thinking»). kind ∈ schema-to-tool
+  // | strict-stripped | tool-choice-relaxed. Покрывает и `DeepSeekService`,
+  // и `OpenAiChatProtocolAdapter` (registry-путь). Высокое значение
+  // strict-stripped — caller-ы передают одновременно tools И json_schema:
+  // надо убирать json_schema на их стороне.
+  private llmThinkingModelGuardTotal!: Counter<'kind' | 'model'>;
+
   // ── admin ai-models (Фаза A.4) ──────────────────────────────────────
   private adminAiModelsRouteChangeTotal!: Counter<'task_type' | 'change_type'>;
   private adminAiModelsExperimentStartedTotal!: Counter<'task_type'>;
@@ -305,6 +314,17 @@ export class BusinessMetricsService implements OnModuleInit {
   // Используется DoD «cache hit rate ≥ 60%» (= cache_hit / total).
   private kcEntityResolvePathTotal!: Counter<'path'>;
   private kcEntityResolveLatencyMs!: Histogram<never>;
+
+  // ── KC-Temporal W3.5 (2026-05-25) — ProjectionRebuilderService ─────
+  // type ∈ decision | insight | idea | card | regulation | process | policy |
+  //        skill_trait | process_template | experiment.
+  // Считаем сколько rebuild-jobs реально enqueue'нулись (с учётом
+  // дедупа BullMQ — повторный enqueue в окне debounce не инкрементит).
+  private kcProjectionRebuildTotal!: Counter<'type'>;
+  // Lag от события `idea_block.updated` до момента enqueue (best-effort:
+  // полный lag «до завершения rebuild job'а» требует hook на complete
+  // worker'ов специалистов — оставлено на отдельную задачу).
+  private kcProjectionRebuildLagMs!: Histogram<never>;
 
   // ── SBA β-2 — Knowledge Clone (Specialist 3.2) — два специфичных метрик'а.
   private knowledgeCloneCategoriesPerProfile!: Histogram<never>;
@@ -643,6 +663,17 @@ export class BusinessMetricsService implements OnModuleInit {
   private calendarRemindersSentTotal!: Counter<'tenant' | 'channel' | 'success'>;
   private calendarFindFreeSlotTotal!: Counter<'tenant' | 'found'>;
 
+  // ── Feedback channel + AI clustering (ТЗ 2026-05-25) ───────────────
+  // Канал «Ваши предложения» с ночным AI-прогоном (01:00 UTC).
+  // Cardinality-safe: метрики глобальные (без tenant — фидбэк не tenant-bound,
+  // это сообщения пользователей супер-админу Z). Label `result` для
+  // `feedback_digest_runs_total` — фиксированный whitelist:
+  //   success | skipped | lock_held | agent_failed | txn_failed | anomaly.
+  private feedbackDigestRunsTotal!: Counter<'result'>;
+  private feedbackDigestMessagesProcessedTotal!: Counter<never>;
+  private feedbackDigestNewTopicsTotal!: Counter<never>;
+  private feedbackDigestFailedRunsTotal!: Counter<never>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -746,6 +777,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_deepseek_schema_to_tool_conversion_total',
       help: 'ТЗ 2026-05-25 — автоконвертация json_schema → tool в DeepSeekService (Pro thinking-mode не поддерживает strict json_schema). Высокое значение = много caller-ов всё ещё на json_schema; кандидат на массовый перевод на tools.',
       labelNames: ['model'] as const,
+    });
+
+    this.llmThinkingModelGuardTotal = this.getOrCreateCounter({
+      name: 'z_llm_thinking_model_guard_total',
+      help: 'ТЗ 2026-05-25 Фаза 1 — автоматическая подмена параметров для thinking-моделей (DeepSeek-V4-Pro / *-pro / *-thinking) во избежание 400. kind: schema-to-tool | strict-stripped | tool-choice-relaxed.',
+      labelNames: ['kind', 'model'] as const,
     });
 
     this.adminAiModelsRouteChangeTotal = this.getOrCreateCounter({
@@ -1413,6 +1450,19 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'KC-Temporal W1.5 — длительность одного findOrCreateEntity в миллисекундах.',
       labelNames: [] as const,
       buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500],
+    });
+
+    // KC-Temporal W3.5 — ProjectionRebuilderService.
+    this.kcProjectionRebuildTotal = this.getOrCreateCounter({
+      name: 'kc_projection_rebuild_total',
+      help: 'KC-Temporal W3.5 — сколько rebuild-jobs было поставлено в очередь (type = decision|insight|idea|card|regulation|process|policy|skill_trait|process_template|experiment).',
+      labelNames: ['type'] as const,
+    });
+    this.kcProjectionRebuildLagMs = this.getOrCreateHistogram({
+      name: 'kc_projection_rebuild_lag_ms',
+      help: 'KC-Temporal W3.5 — lag между событием `idea_block.updated` и enqueue rebuild-job\'а в миллисекундах (без учёта дебаунса BullMQ).',
+      labelNames: [] as const,
+      buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
     });
 
     // ── SBA β-2 — Knowledge Clone (Specialist 3.2) ──
@@ -2338,6 +2388,25 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Calendar MVP — вызовы /events/find-free-slot (tenant × found).',
       labelNames: ['tenant', 'found'] as const,
     });
+
+    // ── Feedback channel + AI clustering (ТЗ 2026-05-25) ──────────────
+    this.feedbackDigestRunsTotal = this.getOrCreateCounter({
+      name: 'feedback_digest_runs_total',
+      help: 'Каждый прогон FeedbackDigestService.runDigest() (result ∈ success|skipped|lock_held|agent_failed|txn_failed|anomaly).',
+      labelNames: ['result'] as const,
+    });
+    this.feedbackDigestMessagesProcessedTotal = this.getOrCreateCounter({
+      name: 'feedback_digest_messages_processed_total',
+      help: 'Сколько FeedbackMessage было успешно обработано (инкремент на размер батча после успешной транзакции).',
+    });
+    this.feedbackDigestNewTopicsTotal = this.getOrCreateCounter({
+      name: 'feedback_digest_new_topics_total',
+      help: 'Сколько новых FeedbackTopic было создано в результате прогонов digest.',
+    });
+    this.feedbackDigestFailedRunsTotal = this.getOrCreateCounter({
+      name: 'feedback_digest_failed_runs_total',
+      help: 'Сколько раз сообщения попали в FeedbackMessage.failedRuns >= 3 (хронически невалидные).',
+    });
   }
 
   // ────────────────────── обёртки-методы ───────────────────────────────
@@ -2614,6 +2683,26 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incDeepseekSchemaToToolConversion(args: { model: string }): void {
     this.deepseekSchemaToToolConversionTotal.inc({ model: args.model });
+  }
+
+  /**
+   * ТЗ 2026-05-25 Фаза 1 — фиксирует один случай автозамены параметра(ов)
+   * для thinking-модели (DeepSeek-V4-Pro / любая «*-pro» / «*-thinking»).
+   * Используется и в `DeepSeekService`, и в `OpenAiChatProtocolAdapter`.
+   *
+   * kind:
+   *   - `schema-to-tool` — strict json_schema без tools → виртуальный tool +
+   *     tool_choice='auto' + hint в user. Дублирует более узкую метрику
+   *     `z_deepseek_schema_to_tool_conversion_total` для совместимости.
+   *   - `strict-stripped` — strict json_schema вместе с tools → json_schema
+   *     снят (оставлены только tools). Caller передал лишний параметр.
+   *   - `tool-choice-relaxed` — caller передал forced `tool_choice` → 'auto'.
+   */
+  incLlmThinkingModelGuard(args: {
+    kind: 'schema-to-tool' | 'strict-stripped' | 'tool-choice-relaxed';
+    model: string;
+  }): void {
+    this.llmThinkingModelGuardTotal.inc({ kind: args.kind, model: args.model });
   }
 
   /**
@@ -3549,9 +3638,10 @@ export class BusinessMetricsService implements OnModuleInit {
   }
 
   // ─────────────────────── KC-Temporal W1.5 — EntityResolutionService ──
-  /** Каким путём отрезолвилась сущность в findOrCreateEntity. */
+  /** Каким путём отрезолвилась сущность в findOrCreateEntity.
+   *  W3.4 добавил путь `strong_id` (резолв через ИНН/ОГРН/email/domain/phone). */
   incKcEntityResolvePath(args: {
-    path: 'exact' | 'knn' | 'create' | 'cache_hit';
+    path: 'exact' | 'knn' | 'create' | 'cache_hit' | 'strong_id';
   }): void {
     this.kcEntityResolvePathTotal.inc({ path: args.path });
   }
@@ -3560,6 +3650,37 @@ export class BusinessMetricsService implements OnModuleInit {
   observeKcEntityResolveLatencyMs(ms: number): void {
     if (ms < 0) return;
     this.kcEntityResolveLatencyMs.observe(ms);
+  }
+
+  // ─────────────────────── KC-Temporal W3.5 — ProjectionRebuilderService ──
+  /**
+   * Инкремент счётчика поставленных rebuild-jobs (по типу проекции).
+   * Вызывается из ProjectionRebuilderService после успешного enqueue.
+   */
+  incKcProjectionRebuild(args: {
+    type:
+      | 'decision'
+      | 'insight'
+      | 'idea'
+      | 'card'
+      | 'regulation'
+      | 'process'
+      | 'policy'
+      | 'skill_trait'
+      | 'process_template'
+      | 'experiment';
+  }): void {
+    this.kcProjectionRebuildTotal.inc({ type: args.type });
+  }
+
+  /**
+   * Lag в миллисекундах между событием `idea_block.updated` и моментом
+   * enqueue rebuild-job'а (per projection). Учитывает только пред-обработку,
+   * не включает дебаунс.
+   */
+  observeKcProjectionRebuildLagMs(ms: number): void {
+    if (ms < 0) return;
+    this.kcProjectionRebuildLagMs.observe(ms);
   }
 
   /** SBA β-2 — наблюдение по числу категорий в построенном knowledgeProfile. */
@@ -5137,6 +5258,45 @@ export class BusinessMetricsService implements OnModuleInit {
       tenant: args.tenant,
       found: args.found ? 'true' : 'false',
     });
+  }
+
+  // ────────────────────── Feedback (ТЗ 2026-05-25) ────────────────────
+
+  /**
+   * Прогон FeedbackDigestService.runDigest() завершён.
+   * result ∈ success | skipped | lock_held | agent_failed | txn_failed | anomaly.
+   */
+  incFeedbackDigestRun(args: {
+    result:
+      | 'success'
+      | 'skipped'
+      | 'lock_held'
+      | 'agent_failed'
+      | 'txn_failed'
+      | 'anomaly';
+  }): void {
+    this.feedbackDigestRunsTotal.inc({ result: args.result });
+  }
+
+  /**
+   * Сколько FeedbackMessage реально обработано (инкремент на размер батча
+   * после успешной транзакции).
+   */
+  incFeedbackDigestMessagesProcessed(by: number): void {
+    if (by <= 0) return;
+    this.feedbackDigestMessagesProcessedTotal.inc(by);
+  }
+
+  /** Создано новых FeedbackTopic за прогон. */
+  incFeedbackDigestNewTopics(by: number): void {
+    if (by <= 0) return;
+    this.feedbackDigestNewTopicsTotal.inc(by);
+  }
+
+  /** Сообщения, у которых failedRuns достиг 3 (хронически невалидные). */
+  incFeedbackDigestFailedRuns(by: number): void {
+    if (by <= 0) return;
+    this.feedbackDigestFailedRunsTotal.inc(by);
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

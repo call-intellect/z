@@ -6,6 +6,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type IdeaBlock, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -20,6 +21,7 @@ import {
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { BlockMergeService } from '../services/block-merge.service';
 import { FactSupersedeService } from '../services/fact-supersede.service';
+import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
 /**
  * Block-distill worker (`core.block-distill` consumer).
@@ -58,6 +60,13 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(FactSupersedeService)
     private readonly factSupersede?: FactSupersedeService,
+    // KC-Temporal W3.5 — Optional EventEmitter2 для emit'а
+    // `idea_block.updated` (подписан ProjectionRebuilderService).
+    // Optional, чтобы worker'у не было обязательным наличие
+    // EventEmitterModule в DI-контексте (унит-тесты воркера).
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   onModuleInit(): void {
@@ -156,6 +165,15 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
     this.logger.log({ blockId: block.id }, 'block-distill: canonical');
+
+    // KC-Temporal W3.5 — best-effort emit для ProjectionRebuilderService.
+    // Если EventEmitter2 не задан (тестовое окружение) — просто пропускаем.
+    this.emitIdeaBlockUpdated({
+      tenantId: block.tenantId,
+      blockId: block.id,
+      changeKind: 'updated',
+      emittedAt: Date.now(),
+    });
 
     // KC-Temporal W1.2 — fact-supersede best-effort. Запускается только
     // если включены оба флага (BITEMPORAL_ENABLED + BITEMPORAL_SUPERSEDE_ENABLED).
@@ -293,6 +311,38 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       { blockId: block.id, canonicalId, explanation: args.explanation },
       'block-distill: merged_into',
     );
+
+    // KC-Temporal W3.5 — emit'им по canonicalId (это «живой» блок,
+    // через который пересобираются Decision/Insight/...; merged-блок
+    // больше не используется как источник). changeKind='merged' даёт
+    // ProjectionRebuilderService возможность отличить merge-trigger
+    // от обычного update'а (для метрик / алертов).
+    this.emitIdeaBlockUpdated({
+      tenantId: block.tenantId,
+      blockId: canonicalId,
+      changeKind: 'merged',
+      emittedAt: Date.now(),
+    });
+  }
+
+  /**
+   * KC-Temporal W3.5 — best-effort emit `idea_block.updated`. Все ошибки
+   * проглатываем (warn-лог), чтобы не валить distill из-за проблем в
+   * подписчиках.
+   */
+  private emitIdeaBlockUpdated(event: IdeaBlockUpdatedEvent): void {
+    if (!this.eventEmitter) return;
+    try {
+      this.eventEmitter.emit('idea_block.updated', event);
+    } catch (err) {
+      this.logger.warn(
+        {
+          blockId: event.blockId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'block-distill: emit idea_block.updated упал — пропускаем',
+      );
+    }
   }
 
   private async onJobFailed(

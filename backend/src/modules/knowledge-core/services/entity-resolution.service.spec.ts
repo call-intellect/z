@@ -175,4 +175,136 @@ describe('EntityResolutionService (integration)', () => {
       ).rejects.toThrow();
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // KC-Temporal W3.4 — Strong IDs (ИНН/ОГРН/email/domain/phone).
+  // Дедуп БЕЗ LLM: одно и то же юр.лицо с разными написаниями имени
+  // (например "ООО Альфа" и "Альфа") должно резолвиться в одну Entity,
+  // если совпадает ИНН.
+  // ─────────────────────────────────────────────────────────────────────
+  describe('findOrCreateEntity — strong-IDs (W3.4)', () => {
+    it('резолвит по ИНН — старая Entity возвращается, mentionsCount++', async (testCtx) => {
+      if (skipIfNoDb(testCtx)) return;
+      const f = ctx.fixture!;
+      const prisma = await getPrismaClient();
+
+      // 1) Первый вызов — создаём vendor с ИНН.
+      const r1 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'vendor',
+        name: `${PREFIX}-ООО Альфа Продакшн`,
+        inn: '7707083893', // 10 цифр — валидный ИНН юр.лица
+      });
+      expect(r1.created).toBe(true);
+      expect(r1.entity.inn).toBe('7707083893');
+
+      // 2) Второй вызов — другое написание имени, тот же ИНН → должна
+      //    вернуться ТА ЖЕ Entity (resolve по strong-ID до exact-name).
+      const r2 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'vendor',
+        name: `${PREFIX}-Альфа`,
+        inn: '7707083893',
+      });
+      expect(r2.created).toBe(false);
+      expect(r2.entity.id).toBe(r1.entity.id);
+      expect(r2.entity.mentionsCount).toBe(2);
+
+      // 3) И ИНН в форматированном виде ("7707-083-893") должен нормализоваться.
+      const r3 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'vendor',
+        name: `${PREFIX}-АЛЬФА`,
+        inn: '7707-083-893',
+      });
+      expect(r3.created).toBe(false);
+      expect(r3.entity.id).toBe(r1.entity.id);
+      expect(r3.entity.mentionsCount).toBe(3);
+
+      await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
+    });
+
+    it('fallback на name/KNN если strong-IDs не заданы или не найдены', async (testCtx) => {
+      if (skipIfNoDb(testCtx)) return;
+      const f = ctx.fixture!;
+      const prisma = await getPrismaClient();
+
+      // 1) Создаём по имени БЕЗ strong-IDs.
+      const r1 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'customer',
+        name: `${PREFIX}-customer-no-inn`,
+      });
+      expect(r1.created).toBe(true);
+      expect(r1.entity.inn).toBeNull();
+
+      // 2) Второй вызов с НОВЫМ ИНН (которого ни у кого нет) — strong-ID
+      //    lookup промахнётся → fallback на exact-name → найдёт ту же Entity.
+      const r2 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'customer',
+        name: `${PREFIX}-customer-no-inn`,
+        inn: '1234567890',
+      });
+      expect(r2.created).toBe(false);
+      expect(r2.entity.id).toBe(r1.entity.id);
+      // Заодно проверяем, что новый ИНН подписался на существующую Entity
+      // (W3.4 backfill пустых strong-полей).
+      expect(r2.entity.inn).toBe('1234567890');
+
+      await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
+    });
+
+    it('изоляция per-tenant: одинаковый ИНН в двух Org → две разные Entity', async (testCtx) => {
+      if (skipIfNoDb(testCtx)) return;
+      const f = ctx.fixture!;
+      const prisma = await getPrismaClient();
+
+      const a = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'vendor',
+        name: `${PREFIX}-vendor-tenant-A`,
+        inn: '9999999999',
+      });
+      const b = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgBId,
+        type: 'vendor',
+        name: `${PREFIX}-vendor-tenant-B`,
+        inn: '9999999999',
+      });
+      expect(a.entity.id).not.toBe(b.entity.id);
+      expect(a.entity.tenantId).toBe(f.orgAId);
+      expect(b.entity.tenantId).toBe(f.orgBId);
+
+      await prisma.entity.delete({ where: { id: a.entity.id } }).catch(() => undefined);
+      await prisma.entity.delete({ where: { id: b.entity.id } }).catch(() => undefined);
+    });
+
+    it('резолвит по email — case-insensitive нормализация', async (testCtx) => {
+      if (skipIfNoDb(testCtx)) return;
+      const f = ctx.fixture!;
+      const prisma = await getPrismaClient();
+
+      const r1 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'person',
+        name: `${PREFIX}-Иван Петров`,
+        email: 'Ivan.Petrov@Example.COM',
+      });
+      expect(r1.created).toBe(true);
+      expect(r1.entity.email).toBe('ivan.petrov@example.com');
+
+      // Другое написание имени, тот же email (в другом регистре) → та же Entity.
+      const r2 = await ctx.svc!.findOrCreateEntity({
+        tenantId: f.orgAId,
+        type: 'person',
+        name: `${PREFIX}-И. Петров`,
+        email: 'ivan.petrov@example.com',
+      });
+      expect(r2.created).toBe(false);
+      expect(r2.entity.id).toBe(r1.entity.id);
+
+      await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
+    });
+  });
 });

@@ -417,6 +417,45 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * KC-Temporal W3.5 — публикация события `specialist.routing` с
+   * **кастомным** jobId и опц. delay. Используется
+   * `ProjectionRebuilderService` для дедупа rebuild-job'ов по проекции
+   * (jobId = `projection-rebuild_<kind>_<projectionId>`), а не по блоку.
+   *
+   * NB: BullMQ 5.x запрещает `:` в Custom Id (см. Job.validateOptions),
+   * поэтому caller обязан использовать `_` как разделитель.
+   *
+   * При повторном enqueue в окне `delayMs` BullMQ обновит delay
+   * существующего delayed-job'а (через дедуп) — итого один rebuild
+   * на окно дебаунса.
+   */
+  async enqueueSpecialistRoutingWithCustomJobId(args: {
+    specialistName: string;
+    blockId: string;
+    tenantId: string;
+    signalType: string;
+    jobId: string;
+    delayMs?: number;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.SPECIALIST_ROUTING);
+    const payload: SpecialistRoutingJobData = {
+      blockId: args.blockId,
+      tenantId: args.tenantId,
+      signalType: args.signalType,
+      specialistName: args.specialistName,
+    };
+    const opts: JobsOptions = { jobId: args.jobId };
+    if (args.delayMs !== undefined && args.delayMs > 0) {
+      opts.delay = args.delayMs;
+    }
+    await q.add(args.specialistName, payload, opts);
+    this.logger.debug(
+      `enqueue core.specialist-routing (custom jobId) specialist=${args.specialistName} blockId=${args.blockId} jobId=${args.jobId} delay=${args.delayMs ?? 0}ms`,
+    );
+    return { jobId: args.jobId };
+  }
+
+  /**
    * SBA β-2 — публикация события `knowledge-clone.rebuild`. Consumer —
    * `KnowledgeCloneRebuildWorker`. jobId = `rebuild-knowledge-profile_<personId>`
    * — повторный enqueue для того же Person'а в окне debounce обновит delay

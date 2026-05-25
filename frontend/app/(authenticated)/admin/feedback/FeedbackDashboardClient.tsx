@@ -4,8 +4,9 @@
  * `/admin/feedback` — клиентский компонент дашборда смысловых блоков
  * обратной связи. Все тексты — на русском.
  *
- * Фаза 7 ТЗ user-feedback-with-ai-clustering. Действия rename / merge / archive
- * — Phase 8 (сейчас placeholder с alert).
+ * Фаза 7+8 ТЗ user-feedback-with-ai-clustering. Действия rename / merge /
+ * archive / unarchive открывают соответствующий диалог; после успеха SWR
+ * mutate перетягивает таблицу.
  */
 
 import { useMemo, useState } from 'react';
@@ -18,6 +19,7 @@ import { adminFeedbackApi } from '@/api/admin-feedback.api';
 import {
   toFeedbackTopicsList,
   type FeedbackSort,
+  type FeedbackTopicSummary,
   type FeedbackWindow,
 } from '@/domain/admin-feedback';
 import { AdminSection } from '@/ui/components/admin/AdminSection';
@@ -29,8 +31,17 @@ import {
   AdminForbidden,
   AdminLoading,
 } from '../AdminStateViews';
+import { ArchiveTopicDialog } from './components/ArchiveTopicDialog';
+import { MergeTopicDialog } from './components/MergeTopicDialog';
+import { RenameTopicDialog } from './components/RenameTopicDialog';
 import { TopicsFilters } from './components/TopicsFilters';
 import { TopicsTable } from './components/TopicsTable';
+
+type DialogState =
+  | { kind: 'rename'; topic: FeedbackTopicSummary }
+  | { kind: 'merge'; topic: FeedbackTopicSummary }
+  | { kind: 'archive'; topic: FeedbackTopicSummary }
+  | null;
 
 const PAGE_SIZE = 20;
 
@@ -41,6 +52,7 @@ export function FeedbackDashboardClient() {
   const [sort, setSort] = useState<FeedbackSort>('percent');
   const [page, setPage] = useState(1);
   const [digestRunning, setDigestRunning] = useState(false);
+  const [dialog, setDialog] = useState<DialogState>(null);
 
   const swrKey = useMemo(
     () =>
@@ -103,13 +115,16 @@ export function FeedbackDashboardClient() {
   }
 
   function handleAction(action: 'rename' | 'merge' | 'archive', topicId: string) {
-    // Phase 8 подключит реальные диалоги. Пока placeholder.
-    const labels: Record<typeof action, string> = {
-      rename: 'Переименование',
-      merge: 'Объединение',
-      archive: 'Архивация / восстановление',
-    };
-    alert(`${labels[action]} — Фаза 8. ID блока: ${topicId}`);
+    const topic = list?.items.find((t) => t.id === topicId);
+    if (!topic) {
+      toast.error('Блок не найден в текущем списке. Обновите страницу.');
+      return;
+    }
+    setDialog({ kind: action, topic });
+  }
+
+  async function refreshAfterAction() {
+    await swr.mutate();
   }
 
   return (
@@ -119,7 +134,7 @@ export function FeedbackDashboardClient() {
         { label: 'Обратная связь' },
       ]}
       title="Обратная связь пользователей"
-      description="Смысловые блоки, в которые AI-кластеризатор сводит сообщения канала «Ваши предложения». Метрики считаются за выбранное окно. Действия переименовать / объединить / архивировать появятся в Фазе 8."
+      description="Смысловые блоки, в которые AI-кластеризатор сводит сообщения канала «Ваши предложения». Метрики считаются за выбранное окно. Действия переименовать / объединить / архивировать доступны в меню «⋯» строки."
       actions={
         <Button
           variant="outline"
@@ -228,6 +243,45 @@ export function FeedbackDashboardClient() {
         )}
 
       <FailedMessagesHint />
+
+      {dialog?.kind === 'rename' && (
+        <RenameTopicDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialog(null);
+          }}
+          topicId={dialog.topic.id}
+          initialTitle={dialog.topic.title}
+          initialDescription={dialog.topic.description}
+          onSaved={() => void refreshAfterAction()}
+        />
+      )}
+
+      {dialog?.kind === 'merge' && (
+        <MergeTopicDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialog(null);
+          }}
+          sourceId={dialog.topic.id}
+          sourceTitle={dialog.topic.title}
+          sourceItemsCount={dialog.topic.itemsCount}
+          onSaved={() => void refreshAfterAction()}
+        />
+      )}
+
+      {dialog?.kind === 'archive' && (
+        <ArchiveTopicDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialog(null);
+          }}
+          topicId={dialog.topic.id}
+          topicTitle={dialog.topic.title}
+          mode={dialog.topic.status === 'archived' ? 'unarchive' : 'archive'}
+          onSaved={() => void refreshAfterAction()}
+        />
+      )}
     </AdminSection>
   );
 }

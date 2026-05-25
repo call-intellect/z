@@ -90,6 +90,14 @@ covers: реестр всех страниц Next.js App Router
 | `/admin/prompts` | Prompt Registry (Phase A) |
 | `/admin/users` | Пользователи Org |
 | `/admin/audit` | Audit Log |
+| `/admin/feedback` | **Канал обратной связи + AI-кластеризация (2026-05-25)** — дашборд блоков `FeedbackTopic` с процентами по items, действия rename/merge/archive, ручной запуск ночного прогона. Только super_admin. |
+| `/admin/feedback/[topicId]` | Детальная карточка блока + items + диалоги действий (Phase 8). |
+
+## Feedback (пользовательская часть, 2026-05-25)
+
+| Путь | Назначение |
+|---|---|
+| `/feedback` | **Канал «Ваши предложения».** Форма submit (rate-limit 5/сутки UTC) + история своих сообщений + индикатор лимита. Глобальная фича — фидбэк адресован команде Z, а не Org'е. См. [[feedback]]. |
 
 ## Top-level
 
@@ -191,5 +199,6 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-05-25 (UI/API modernization):** добавлена секция про design-preview / 7 новых shared-компонентов / 2 hooks / OKLCH-токены / sonner-миграцию / mobile-адаптацию.
 - **2026-05-25 (β-8.1/β-8.2):** добавлены страницы `/dashboard/operations/weekly` и `/me/promises`, виджеты `TeamTemperatureWidget` и «Открытые обещания», роль `coo` во фронтенд-типах.
 - **2026-05-25 (β-8.3):** добавлена страница `/dashboard/operations/daily` + новые виджеты `CauseCategoryMapWidget` и `MaturityWidget` на `/dashboard/operations` + блок «Вчерашний отчёт» + кликабельные бэйджи `cause_category` в `InsightsTopWidget` (deep-link `/insights?cause_category=…`). Файл `frontend/src/lib/cause-category-presentation.ts` — 8 русских лейблов + Tailwind палитра.
+- **2026-05-25 (feedback):** добавлены страницы `/feedback` (пользователь), `/admin/feedback` (super_admin дашборд блоков), `/admin/feedback/[topicId]` (детали блока). Полная заметка фичи — [[feedback]].
 
 [[../index|← index]]

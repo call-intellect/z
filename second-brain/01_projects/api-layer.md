@@ -82,6 +82,37 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`orgs-and-rbac.md`](orgs-and-rbac.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).
 
+## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
+
+Глобальная фича (не tenant-bound). Полная заметка — [[feedback]].
+
+### Пользовательские endpoints
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/feedback` | Submit сообщения. Body `{ text }`. 400 на пустоту / длину > N. 429 на превышение лимита. | authenticated |
+| GET | `/api/v1/feedback/my` | История своих сообщений с items / topics. | authenticated |
+| GET | `/api/v1/feedback/my/limit` | `{ used, limit, resetAt }` — оставшийся лимит на сутки UTC. | authenticated |
+
+Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}:{YYYY-MM-DD-UTC}`, cap 5/сутки, TTL до конца UTC-суток.
+
+### Admin endpoints (`super_admin` only)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/admin/feedback/topics` | Список блоков с фильтрами (статус, поиск) + counts items |
+| GET | `/api/v1/admin/feedback/topics/:id` | Детали блока (description, counts, динамика) |
+| GET | `/api/v1/admin/feedback/topics/:id/items` | Items блока (пагинация) |
+| GET | `/api/v1/admin/feedback/topics/:id/items/:itemId/message` | Оригинал сообщения (для просмотра контекста) |
+| PATCH | `/api/v1/admin/feedback/topics/:id` | Rename: `{ title?, description? }` |
+| POST | `/api/v1/admin/feedback/topics/:sourceId/merge` | Merge `source → target`: `{ targetId }` (items переезжают, source становится `status='MERGED'`, `mergedIntoId=targetId`) |
+| POST | `/api/v1/admin/feedback/topics/:id/archive` | Archive (status=ARCHIVED) — спрятать с дашборда |
+| POST | `/api/v1/admin/feedback/topics/:id/unarchive` | Unarchive (status=ACTIVE) |
+| POST | `/api/v1/admin/feedback/digest/run` | Ручной запуск ночного прогона (BullMQ-job в `core.feedback-digest`). Возвращает `{ jobId }`. |
+| GET | `/api/v1/admin/feedback/messages/failed` | Сообщения с `failedRuns >= 3` (AI трижды не справился) |
+
+Защита: `CookieAuthGuard` + `SuperAdminGuard`. Все мутации логируются `SuperAdminAccessLog`.
+
 ## Operations — COO Dashboard + DailyCheckIn + Promises
 
 | Метод | Путь | Назначение | Доступ | Фаза |
@@ -234,5 +265,6 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 - **2026-05-25 (β-8.1/β-8.2):** добавлены `team-temperature`, `weekly-digest`, `open-commitments`, `/me/promises`, `personal-relations/commitments` endpoints; зафиксирована fail-safe privacy для поля `sentiment`.
 - **2026-05-25 (β-8.3):** добавлены `daily-digest` (GET/POST + `/latest`) endpoints — ежедневный отчёт COO в окне 1 день МСК. См. [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 - **2026-05-25 (admin-redesign Фазы 0-9):** добавлен раздел «Admin (Z-Admin) — новые эндпоинты Фаз 0-9» с полным списком префиксов `/api/v1/admin/{settings,crons,audit,incidents,analytics,ai,orgs/{plans,entitlements,:id/*},content/*,integrations/*,media/*,platform/*,llm-routes}`.
+- **2026-05-25 (feedback):** добавлен раздел «Feedback — канал обратной связи + AI-кластеризация» с пользовательскими и админскими эндпоинтами `/api/v1/feedback/*` и `/api/v1/admin/feedback/*`. Полная заметка фичи — [[feedback]].
 
 [[../index|← index]]

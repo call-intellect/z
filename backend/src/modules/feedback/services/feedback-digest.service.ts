@@ -34,6 +34,7 @@
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -92,6 +93,8 @@ export class FeedbackDigestService {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(FeedbackDigestQueue) private readonly queue: FeedbackDigestQueue,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   /**
@@ -102,8 +105,13 @@ export class FeedbackDigestService {
     const lockToken = await this.acquireLock();
     if (!lockToken) {
       this.logger.warn(
+        {
+          lockKey: FEEDBACK_DIGEST_LOCK_KEY,
+          result: 'lock_held',
+        },
         'feedback-digest: lock уже занят другим прогоном — пропускаю',
       );
+      this.metrics.incFeedbackDigestRun({ result: 'lock_held' });
       return { skipped: true, processed: 0, newTopics: 0, reason: 'lock-held' };
     }
 
@@ -122,7 +130,15 @@ export class FeedbackDigestService {
       });
 
       if (messages.length === 0) {
-        this.logger.log('feedback-digest: пусто — нечего обрабатывать');
+        this.logger.log(
+          {
+            lockKey: FEEDBACK_DIGEST_LOCK_KEY,
+            batchSize: 0,
+            result: 'skipped',
+          },
+          'feedback-digest: пусто — нечего обрабатывать',
+        );
+        this.metrics.incFeedbackDigestRun({ result: 'skipped' });
         return {
           skipped: true,
           processed: 0,
@@ -153,6 +169,7 @@ export class FeedbackDigestService {
         agentOutput = await this.callAgentWithRetry(agentInput, messages.length);
       } catch (err) {
         await this.markBatchFailed(messages.map((m) => m.id));
+        this.metrics.incFeedbackDigestRun({ result: 'agent_failed' });
         throw err;
       }
 
@@ -169,7 +186,17 @@ export class FeedbackDigestService {
         const reason =
           `feedback-digest: аномалия — newTopics=${agentOutput.newTopics.length} ` +
           `> 0.5 * totalItems=${totalItems}. Помечаю батч failed.`;
-        this.logger.error(reason);
+        this.logger.error(
+          {
+            lockKey: FEEDBACK_DIGEST_LOCK_KEY,
+            batchSize: messages.length,
+            newTopicsCount: agentOutput.newTopics.length,
+            itemsCreated: totalItems,
+            result: 'anomaly',
+          },
+          reason,
+        );
+        this.metrics.incFeedbackDigestRun({ result: 'anomaly' });
         throw new Error(reason);
       }
 
@@ -182,17 +209,32 @@ export class FeedbackDigestService {
         });
       } catch (err) {
         await this.markBatchFailed(messageIds);
+        this.metrics.incFeedbackDigestRun({ result: 'txn_failed' });
         throw err;
       }
 
+      const discardedCount = agentOutput.assignments.reduce(
+        (acc, a) => acc + a.items.filter((it) => it.topicRef === 'discard').length,
+        0,
+      );
+
       this.logger.log(
         {
-          processed: messages.length,
-          newTopics: agentOutput.newTopics.length,
-          totalItems,
+          lockKey: FEEDBACK_DIGEST_LOCK_KEY,
+          batchSize: messages.length,
+          topicsCount: topics.length,
+          newTopicsCreated: agentOutput.newTopics.length,
+          itemsCreated: totalItems,
+          discardedCount,
+          result: 'success',
         },
         'feedback-digest: прогон завершён',
       );
+
+      // Метрики (после успешной транзакции — единственное место, где увеличиваем).
+      this.metrics.incFeedbackDigestRun({ result: 'success' });
+      this.metrics.incFeedbackDigestMessagesProcessed(messages.length);
+      this.metrics.incFeedbackDigestNewTopics(agentOutput.newTopics.length);
 
       return {
         skipped: false,
@@ -391,13 +433,27 @@ export class FeedbackDigestService {
         where: { id: { in: messageIds } },
         data: { failedRuns: { increment: 1 } },
       });
+      // Сколько сообщений достигли cap'а после инкремента — выпадают из выборки.
+      const reachedCap = await this.prisma.feedbackMessage.count({
+        where: { id: { in: messageIds }, failedRuns: { gte: 3 } },
+      });
       this.logger.warn(
-        { count: messageIds.length },
+        {
+          batchSize: messageIds.length,
+          reachedCap,
+          result: 'failed',
+        },
         'feedback-digest: батч помечен failed (failedRuns++)',
       );
+      if (reachedCap > 0) {
+        this.metrics.incFeedbackDigestFailedRuns(reachedCap);
+      }
     } catch (err) {
       this.logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        {
+          batchSize: messageIds.length,
+          err: err instanceof Error ? err.message : String(err),
+        },
         'feedback-digest: не удалось проинкрементить failedRuns',
       );
     }

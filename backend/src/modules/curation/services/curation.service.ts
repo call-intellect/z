@@ -85,6 +85,36 @@ export interface DecideInput {
   reasoning?: string;
 }
 
+/**
+ * G.3 KC-Temporal (2026-05-25) — payload для `recordDecision`.
+ *
+ * Используется, когда нужно зафиксировать post-hoc решение по карточке/ребру
+ * (например, «это неверно» из UI Карты знаний) БЕЗ существующего CurationItem.
+ *
+ * Сервис создаёт CurationItem в статусе `decided` (level='light',
+ * proposedPayload=пусто) и приписывает к нему CurationDecision выбранного типа.
+ *
+ * Эмитится `curation.decision_recorded` → PreferenceDatasetService запишет
+ * LlmPreferenceSample (для `mark_as_misleading` → label='misleading').
+ */
+export interface RecordDecisionInput {
+  tenantId: string;
+  /// `resourceType` — что помечаем: 'entity', 'entity_link', 'block',
+  /// 'idea_block_link', 'skill_trait', 'card', ... Произвольная строка
+  /// (см. соглашение специалистов).
+  resourceType: string;
+  resourceId: string;
+  decisionType: CurationDecisionTypeDto;
+  recordedBy: string;
+  reason?: string | null;
+  /// Опц. taskType для LlmPreferenceSample — если не передан, выводится из
+  /// `resourceType` через `resourceTypeToTaskType` в PreferenceDatasetService.
+  taskType?: string | null;
+  /// Опц. дополнительный контекст (попадает в proposedPayload и CardVersion
+  /// если decisionType писал бы версию — но для mark_as_misleading не пишет).
+  context?: Record<string, unknown>;
+}
+
 const DEFAULT_AUTO_THRESHOLD = 0.85;
 const DEFAULT_DEEP_REVIEW_THRESHOLD = 0.6;
 const DEFAULT_CRITICAL_TYPES = ['regulation', 'process', 'decision'] as const;
@@ -533,6 +563,114 @@ export class CurationService {
     }
 
     return result;
+  }
+
+  // ──────────────────────────── recordDecision ────────────────────
+  /**
+   * G.3 KC-Temporal (2026-05-25) — post-hoc запись «карточка/ребро неверны»
+   * без существующего CurationItem (UI Карты знаний, кнопка «Это неверно»).
+   *
+   * Создаёт CurationItem(status='decided', level='light') + CurationDecision
+   * за одну транзакцию; затем эмитит `curation.decision_recorded` →
+   * PreferenceDatasetService запишет LlmPreferenceSample.
+   *
+   * Возвращает id созданных записей. Best-effort: ошибка emit не валит
+   * транзакцию (как в `decide`).
+   */
+  async recordDecision(
+    input: RecordDecisionInput,
+  ): Promise<{ curationItemId: string; curationDecisionId: string }> {
+    if (!input.tenantId || !input.resourceType || !input.resourceId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_record_decision_input',
+          message:
+            'tenantId / resourceType / resourceId обязательны для recordDecision',
+        },
+      });
+    }
+    if (!input.recordedBy) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'recorded_by_required',
+          message: 'recordedBy (User.id) обязателен',
+        },
+      });
+    }
+    const proposedPayload = (input.context ?? {}) as Prisma.InputJsonValue;
+    const triageReason = {
+      via: 'recordDecision',
+      reason: input.reason ?? null,
+      taskType: input.taskType ?? null,
+    };
+
+    const now = new Date();
+    const { item, decision } = await this.prisma.$transaction(async (tx) => {
+      const createdItem = await tx.curationItem.create({
+        data: {
+          tenantId: input.tenantId,
+          resourceType: input.resourceType,
+          resourceId: input.resourceId,
+          level: 'light',
+          status: 'decided',
+          assignedToUserId: input.recordedBy,
+          triageReason: triageReason as Prisma.InputJsonValue,
+          proposedPayload,
+          decidedAt: now,
+        },
+      });
+      const createdDecision = await tx.curationDecision.create({
+        data: {
+          curationItemId: createdItem.id,
+          decisionType: input.decisionType as CurationDecisionType,
+          payload: proposedPayload,
+          reasoning: input.reason ?? null,
+          reviewerUserId: input.recordedBy,
+        },
+      });
+      return { item: createdItem, decision: createdDecision };
+    });
+
+    try {
+      this.events?.emit('curation.decision_recorded', {
+        tenantId: item.tenantId,
+        curationItemId: item.id,
+        curationDecisionId: decision.id,
+        resourceType: item.resourceType,
+        resourceId: item.resourceId,
+        decisionType: input.decisionType,
+        reviewerUserId: input.recordedBy,
+        reasoning: input.reason ?? null,
+        proposedPayload: item.proposedPayload,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'curation.recordDecision emit failed (handled inside)',
+      );
+    }
+
+    this.metrics.incCurationDecision({
+      decisionType: input.decisionType,
+      level: 'light',
+    });
+
+    this.logger.log(
+      {
+        tenantId: input.tenantId,
+        itemId: item.id,
+        decisionId: decision.id,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        decisionType: input.decisionType,
+        recordedBy: input.recordedBy,
+      },
+      'curation.recordDecision: post-hoc решение зафиксировано',
+    );
+
+    return { curationItemId: item.id, curationDecisionId: decision.id };
   }
 
   // ──────────────────────────── list / get ────────────────────────

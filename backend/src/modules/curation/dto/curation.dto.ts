@@ -29,6 +29,10 @@ export const CurationDecisionTypeSchema = z.enum([
   'split',
   'merge',
   'supersede',
+  /// SBA γ-1 — post-hoc «карточка/ребро неверны» (Skill traits, rich-edge,
+  /// другие фактуры). Не порождает CardVersion, но эмитит
+  /// `curation.decision_recorded` → PreferenceDatasetService → LlmPreferenceSample.
+  'mark_as_misleading',
   /// SBA α-4 wave 2 — слияние SkillTraitCategory (для γ-1).
   'merge_categories',
   /// SBA α-4 wave 2 — передача карточки следующему куратору

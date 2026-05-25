@@ -20,6 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type {
@@ -30,6 +31,32 @@ import type {
 import type { FeedbackDigestQueue } from '../workers/feedback-digest.queue';
 
 import { FeedbackDigestService } from './feedback-digest.service';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Metrics stub
+// ──────────────────────────────────────────────────────────────────────────
+
+function makeMetrics(): {
+  metrics: BusinessMetricsService;
+  calls: {
+    run: ReturnType<typeof vi.fn>;
+    processed: ReturnType<typeof vi.fn>;
+    newTopics: ReturnType<typeof vi.fn>;
+    failedRuns: ReturnType<typeof vi.fn>;
+  };
+} {
+  const run = vi.fn();
+  const processed = vi.fn();
+  const newTopics = vi.fn();
+  const failedRuns = vi.fn();
+  const metrics = {
+    incFeedbackDigestRun: run,
+    incFeedbackDigestMessagesProcessed: processed,
+    incFeedbackDigestNewTopics: newTopics,
+    incFeedbackDigestFailedRuns: failedRuns,
+  } as unknown as BusinessMetricsService;
+  return { metrics, calls: { run, processed, newTopics, failedRuns } };
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Prisma stub
@@ -74,6 +101,7 @@ function makePrisma(opts: {
   const txItemCreate = vi.fn(async () => ({ id: 'created_item' }));
   const txMessageUpdateMany = vi.fn(async () => ({ count: 0 }));
   const msgUpdateMany = vi.fn(async () => ({ count: 0 }));
+  const msgCount = vi.fn(async () => 0);
 
   const transaction = vi.fn(
     async <T>(
@@ -96,6 +124,7 @@ function makePrisma(opts: {
     feedbackMessage: {
       findMany: findMessages,
       updateMany: msgUpdateMany,
+      count: msgCount,
     },
     feedbackTopic: {
       findMany: findTopics,
@@ -275,7 +304,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     const result = await svc.runDigest();
 
@@ -299,7 +329,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([GOOD_AGENT_OUTPUT]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     const result = await svc.runDigest();
 
@@ -362,7 +393,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm(['это не json {{{', GOOD_AGENT_OUTPUT]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     const result = await svc.runDigest();
 
@@ -383,7 +415,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([new Error('llm down'), new Error('llm still down')]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     await expect(svc.runDigest()).rejects.toThrow(/все попытки агента/);
 
@@ -416,7 +449,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([badOutput, badOutput]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     await expect(svc.runDigest()).rejects.toThrow(/все попытки агента/);
     expect(l.call).toHaveBeenCalledTimes(2);
@@ -441,7 +475,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([discardOutput]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     const result = await svc.runDigest();
 
@@ -482,7 +517,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([insaneOutput]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     await expect(svc.runDigest()).rejects.toThrow(/аномалия/);
 
@@ -499,7 +535,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis({ lockHeld: true });
     const l = makeLlm([]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     const result = await svc.runDigest();
 
@@ -524,7 +561,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([GOOD_AGENT_OUTPUT]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     await expect(svc.runDigest()).rejects.toThrow(/db connection lost/);
 
@@ -541,7 +579,8 @@ describe('FeedbackDigestService', () => {
     const r = makeRedis();
     const l = makeLlm([]);
     const q = makeQueue();
-    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue);
+    const m = makeMetrics();
+    const svc = new FeedbackDigestService(p.prisma, r.redis, l.llm, q.queue, m.metrics);
 
     const out = await svc.enqueueManualRun();
     expect(out).toEqual({ jobId: 'feedback-digest-manual-mock' });

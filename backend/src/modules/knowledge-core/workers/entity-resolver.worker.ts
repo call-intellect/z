@@ -2,9 +2,11 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type Entity, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -17,6 +19,7 @@ import {
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { EntityMergeService } from '../services/entity-merge.service';
+import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
 /**
  * Entity-resolver worker (`core.entity-resolver` consumer).
@@ -52,6 +55,13 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(EntityMergeService) private readonly merger: EntityMergeService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    // KC-Temporal W3.5 — Optional EventEmitter2 для emit'а
+    // `idea_block.updated` (после merge сущности блоки канонической
+    // сущности получили новый список mention'ов → projections на этих
+    // блоках стоит пересобрать).
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   onModuleInit(): void {
@@ -260,6 +270,66 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       { entityId: entity.id, targetId, explanation: args.explanation },
       'entity-resolver: merged',
     );
+
+    // KC-Temporal W3.5 — emit'им `idea_block.updated` для каждого блока,
+    // у которого был mention объединённой сущности. Сущность теперь
+    // указывает на target → projections (Decision/Insight/...), привязанные
+    // к этим блокам, могли поменять смысл.
+    //
+    // NB: список блоков читаем ПОСЛЕ commit'а транзакции (mention'ы уже
+    // перенесены на targetId, поэтому ищем по target.id, чтобы накрыть и
+    // оригинальные блоки канонической сущности, и блоки только что
+    // приклеившейся entity).
+    await this.emitProjectionsRebuildForEntityMerge({
+      tenantId: entity.tenantId,
+      targetEntityId: targetId,
+    });
+  }
+
+  /**
+   * KC-Temporal W3.5 — best-effort emit `idea_block.updated` для каждого
+   * блока, в котором target-сущность (включая бывшие mention'ы entity)
+   * упоминается. Ошибки логируются warn'ом и не валят merge.
+   */
+  private async emitProjectionsRebuildForEntityMerge(args: {
+    tenantId: string;
+    targetEntityId: string;
+  }): Promise<void> {
+    if (!this.eventEmitter) return;
+    try {
+      const rows = await this.prisma.ideaBlockEntity.findMany({
+        where: { entityId: args.targetEntityId },
+        select: { blockId: true },
+      });
+      const now = Date.now();
+      for (const r of rows) {
+        const event: IdeaBlockUpdatedEvent = {
+          tenantId: args.tenantId,
+          blockId: r.blockId,
+          changeKind: 'entity_merged',
+          emittedAt: now,
+        };
+        try {
+          this.eventEmitter.emit('idea_block.updated', event);
+        } catch (err) {
+          this.logger.warn(
+            {
+              blockId: r.blockId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'entity-resolver: emit idea_block.updated упал — пропускаем блок',
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          targetEntityId: args.targetEntityId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'entity-resolver: не удалось собрать список блоков для emit — пропускаем',
+      );
+    }
   }
 
   private async onJobFailed(

@@ -6,13 +6,13 @@
  *
  * Содержит:
  *   - шапку (TopicDetail) с заголовком, описанием, метриками, переключателем
- *     окна и кнопками действий (Phase 8 placeholder);
+ *     окна и кнопками действий (rename / merge / archive);
  *   - список items (TopicItemsList) с пагинацией и опциональной группировкой
  *     по пользователю;
  *   - каждый item можно развернуть (ItemRow) — подгружается полный текст
  *     исходного сообщения.
  *
- * Фаза 7 ТЗ user-feedback-with-ai-clustering.
+ * Фаза 7+8 ТЗ user-feedback-with-ai-clustering.
  */
 
 import { useMemo, useState } from 'react';
@@ -33,8 +33,13 @@ import {
   AdminForbidden,
   AdminLoading,
 } from '../../AdminStateViews';
+import { ArchiveTopicDialog } from '../components/ArchiveTopicDialog';
+import { MergeTopicDialog } from '../components/MergeTopicDialog';
+import { RenameTopicDialog } from '../components/RenameTopicDialog';
 import { TopicDetail } from '../components/TopicDetail';
 import { TopicItemsList } from '../components/TopicItemsList';
+
+type DetailDialogKind = 'rename' | 'merge' | 'archive' | null;
 
 const ITEMS_PAGE_SIZE = 50;
 
@@ -42,6 +47,7 @@ export function FeedbackTopicDetailClient({ topicId }: { topicId: string }) {
   const [window, setWindow] = useState<FeedbackWindow>('30');
   const [page, setPage] = useState(1);
   const [groupByUser, setGroupByUser] = useState(false);
+  const [dialogKind, setDialogKind] = useState<DetailDialogKind>(null);
 
   const detailKey = useMemo(
     () => ['admin-feedback-topic', topicId, window] as const,
@@ -78,12 +84,11 @@ export function FeedbackTopicDetailClient({ topicId }: { topicId: string }) {
       : null;
 
   function handleAction(action: 'rename' | 'merge' | 'archive') {
-    const labels: Record<typeof action, string> = {
-      rename: 'Переименование',
-      merge: 'Объединение',
-      archive: 'Архивация / восстановление',
-    };
-    alert(`${labels[action]} — Фаза 8. ID блока: ${topicId}`);
+    setDialogKind(action);
+  }
+
+  async function refreshAfterAction() {
+    await Promise.all([detailSwr.mutate(), itemsSwr.mutate()]);
   }
 
   return (
@@ -150,6 +155,45 @@ export function FeedbackTopicDetailClient({ topicId }: { topicId: string }) {
             />
           )}
         </div>
+      )}
+
+      {detail && dialogKind === 'rename' && (
+        <RenameTopicDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialogKind(null);
+          }}
+          topicId={detail.id}
+          initialTitle={detail.title}
+          initialDescription={detail.description}
+          onSaved={() => void refreshAfterAction()}
+        />
+      )}
+
+      {detail && dialogKind === 'merge' && (
+        <MergeTopicDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialogKind(null);
+          }}
+          sourceId={detail.id}
+          sourceTitle={detail.title}
+          sourceItemsCount={detail.itemsCount}
+          onSaved={() => void refreshAfterAction()}
+        />
+      )}
+
+      {detail && dialogKind === 'archive' && (
+        <ArchiveTopicDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setDialogKind(null);
+          }}
+          topicId={detail.id}
+          topicTitle={detail.title}
+          mode={detail.status === 'archived' ? 'unarchive' : 'archive'}
+          onSaved={() => void refreshAfterAction()}
+        />
       )}
     </AdminSection>
   );

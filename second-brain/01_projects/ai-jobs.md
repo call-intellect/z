@@ -44,6 +44,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | **operations (β-8.1, 2026-05-25)** | `checkin-sentiment`, `operations-weekly-digest` | DeepSeek-chat → OpenAI-mini → Ollama qwen3.5:9b |
 | **operations (β-8.2, 2026-05-25)** | `commitment-extract-dates`, `commitment-extract-status` | DeepSeek-chat → OpenAI-mini → Ollama qwen3.5:9b |
 | **operations (β-8.3, 2026-05-25)** | `operations-daily-digest` | DeepSeek-chat → OpenAI via proxy `gpt-5.4-nano` → Ollama `qwen3.5:9b`. Seed — `backend/scripts/seed-llm-task-routes-beta-8-3.ts`. Используется глобальным cron'ом `operations-daily-digest` (01:00 МСК) для двухстадийной сборки ежедневного отчёта COO. |
+| **feedback (2026-05-25)** | `feedback-cluster` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4-mini` → Ollama `qwen3.5:9b`. Seed — `backend/scripts/seed-llm-task-routes-feedback-cluster.ts`. Используется ночным cron'ом `feedback-digest` (`0 1 * * *` UTC) для кластеризации пользовательского фидбэка в смысловые блоки. Полная заметка фичи — [`feedback.md`](feedback.md). |
 
 ## Финальный handoff Wave 1-3 — изменения (2026-05-25)
 

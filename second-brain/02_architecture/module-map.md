@@ -1838,4 +1838,40 @@ mail-inbound/
 - `conversational/conversational.service.ts` — eventType `operations.daily_digest` (получатели **только `coo+owner`**, admin исключён).
 - `metrics/business-metrics.service.ts` — `coo_daily_digest_{generated,failed,delivered}_total` + `coo_daily_digest_age_seconds`, `coo_insights_by_cause_total{cause}`, `coo_company_maturity_score`.
 
+## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
+
+Глобальная фича (не tenant-bound): фидбэк адресован команде Z. `super_admin`-only дашборд блоков с AI-кластеризацией.
+
+### `backend/src/modules/feedback/`
+
+| Слой | Файл | Назначение |
+|---|---|---|
+| Controller (user) | `controllers/feedback-user.controller.ts` | `POST /api/v1/feedback`, `GET /feedback/my`, `GET /feedback/my/limit` |
+| Controller (admin) | `controllers/feedback-admin.controller.ts` | `/api/v1/admin/feedback/topics` + items + actions (rename/merge/archive/unarchive) + `digest/run` + `messages/failed`. Под `SuperAdminGuard`. |
+| Service | `services/feedback.service.ts` | `submit` + `history` + `getLimit` + admin facades |
+| Service | `services/feedback-digest.service.ts` | Ночной AI-прогон: lock → батч → LLM с retry → транзакция (новые topics + items + processedAt) → счётчики метрик и structured-логи |
+| Service | `services/feedback-topic-manager.service.ts` | `rename / merge / archive / unarchive` + listing |
+| Guard | `guards/feedback-rate-limit.guard.ts` | Redis-counter `feedback:ratelimit:{userId}:{YYYY-MM-DD-UTC}`, cap 5/сутки |
+| Worker (queue) | `workers/feedback-digest.queue.ts` | BullMQ producer для очереди `core.feedback-digest` |
+| Worker (consumer) | `workers/feedback-digest.worker.ts` | Зовёт `FeedbackDigestService.runDigest()` |
+| Cron | `workers/feedback-digest.cron.ts` | `0 1 * * *` UTC — продюсер ночного job'а |
+| Prompt | `prompts/feedback-cluster.prompt.ts` | Registry-key `feedback.cluster`, code-fallback, Zod-схема + referential validator, taskType `feedback-cluster` |
+
+### Внешние пересечения
+
+- `prisma/schema.prisma` — новые модели `FeedbackMessage`, `FeedbackTopic`, `FeedbackItem` + enum `FeedbackTopicStatus` (см. [[data-model|data-model]]).
+- `ai/services/llm-router.service.ts` — новый taskType `feedback-cluster` (primary `deepseek-v4-pro` → secondary OpenAI via proxy → tertiary Ollama). Seed — `backend/scripts/seed-llm-task-routes-feedback-cluster.ts`.
+- `common/metrics/business-metrics.service.ts` — `feedback_digest_runs_total{result}`, `feedback_digest_messages_processed_total`, `feedback_digest_new_topics_total`, `feedback_digest_failed_runs_total`.
+- `frontend/app/(authenticated)/feedback/` + `frontend/app/(authenticated)/admin/feedback/` — UI (см. [[../01_projects/frontend-pages|frontend-pages]]).
+- `frontend/src/api/feedback.api.ts` + `admin-feedback.api.ts` + `domain/{feedback,admin-feedback}.ts` — ApiDto → DomainModel.
+
+### BullMQ + Redis
+
+- Очередь `core.feedback-digest` (in-process, см. [[../01_projects/workers-queues|workers-queues]]).
+- Lock-ключ `feedback:digest:lock` (SET NX EX 1800).
+- Rate-limit ключ `feedback:ratelimit:{userId}:{YYYY-MM-DD-UTC}` (TTL до конца UTC-суток).
+
+
 [[../index|← index]]

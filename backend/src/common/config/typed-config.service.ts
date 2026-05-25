@@ -260,16 +260,50 @@ export class TypedConfigService {
         baseUrl: this.get('PROXY_BASE_URL'),
         prefix: this.get('PROXY_PREFIX'),
       },
+      // Фаза 4 env-to-admin-setting-call-sites-migration: 8 полей через
+      // resolveSync(adminKey, envFallbackKey, default) под префиксом
+      // `embeddings.*`. `proxyApiKey` остаётся ENV (секрет).
       embeddings: {
-        provider: this.get('EMBEDDING_PROVIDER'),
-        model: this.get('EMBEDDING_MODEL'),
-        dimensions: this.get('EMBEDDING_DIMENSIONS'),
+        provider: this.resolveSync<string>(
+          'embeddings.provider',
+          'EMBEDDING_PROVIDER',
+          'openai-via-proxy',
+        ),
+        model: this.resolveSync<string>(
+          'embeddings.model',
+          'EMBEDDING_MODEL',
+          'text-embedding-3-small',
+        ),
+        dimensions: this.resolveSync<number>(
+          'embeddings.dimensions',
+          'EMBEDDING_DIMENSIONS',
+          1536,
+        ),
         proxyApiKey: this.get('OPENAI_PROXY_API_KEY'),
-        proxyEmbeddingsUrl: this.get('OPENAI_PROXY_EMBEDDINGS_URL'),
-        fallbackLocalUrl: this.get('EMBEDDING_FALLBACK_LOCAL_URL'),
-        batchSize: this.get('EMBEDDING_BATCH_SIZE'),
-        chunkTargetTokens: this.get('EMBEDDING_CHUNK_TARGET_TOKENS'),
-        chunkOverlapTokens: this.get('EMBEDDING_CHUNK_OVERLAP_TOKENS'),
+        proxyEmbeddingsUrl: this.resolveSync<string>(
+          'embeddings.proxyEmbeddingsUrl',
+          'OPENAI_PROXY_EMBEDDINGS_URL',
+          'https://proxy.agent-lia.ru/v1/embeddings',
+        ),
+        fallbackLocalUrl: this.resolveSync<string | undefined>(
+          'embeddings.fallbackLocalUrl',
+          'EMBEDDING_FALLBACK_LOCAL_URL',
+        ),
+        batchSize: this.resolveSync<number>(
+          'embeddings.batchSize',
+          'EMBEDDING_BATCH_SIZE',
+          100,
+        ),
+        chunkTargetTokens: this.resolveSync<number>(
+          'embeddings.chunkTargetTokens',
+          'EMBEDDING_CHUNK_TARGET_TOKENS',
+          400,
+        ),
+        chunkOverlapTokens: this.resolveSync<number>(
+          'embeddings.chunkOverlapTokens',
+          'EMBEDDING_CHUNK_OVERLAP_TOKENS',
+          50,
+        ),
       },
     } as const;
   }
@@ -498,25 +532,41 @@ export class TypedConfigService {
    */
   get aiFeatures() {
     return {
-      includeRoomChat: this.get('INCLUDE_ROOM_CHAT_IN_AI'),
+      includeRoomChat: this.resolveSync<boolean>(
+        'aiFeatures.includeRoomChat',
+        'INCLUDE_ROOM_CHAT_IN_AI',
+        true,
+      ),
       /**
        * Фаза D (sub-TZ §6.2) — включает LLM-уточнение уровня 2 в воркере
        * `ai.transcript-clean`. При false воркер работает только через
        * детерминистский уровень 1.
        */
-      transcriptCleaningLlmRefine: this.get('TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED'),
+      transcriptCleaningLlmRefine: this.resolveSync<boolean>(
+        'aiFeatures.transcriptCleaningLlmRefine',
+        'TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED',
+        true,
+      ),
       /**
        * Фаза B (sub-TZ 2026-05-21-phase-B §7) — включает LLM-refine
        * в воркере `ai.behavior-metrics`. По умолчанию false.
        */
-      behaviorMetricsLlmRefine: this.get('BEHAVIOR_METRICS_LLM_REFINE_ENABLED'),
+      behaviorMetricsLlmRefine: this.resolveSync<boolean>(
+        'aiFeatures.behaviorMetricsLlmRefine',
+        'BEHAVIOR_METRICS_LLM_REFINE_ENABLED',
+        false,
+      ),
       /**
        * ТЗ 2026-05-24 §4 (F1) — мастер-флаг защиты от prompt-injection.
        * При true (default) customPrompt идёт в user внутри маркеров +
        * INJECTION_GUARD_NOTE в system. При false — legacy-поведение
        * (customPrompt напрямую в system) для быстрого rollback.
        */
-      promptInjectionGuardEnabled: this.get('PROMPT_INJECTION_GUARD_ENABLED'),
+      promptInjectionGuardEnabled: this.resolveSync<boolean>(
+        'aiFeatures.promptInjectionGuardEnabled',
+        'PROMPT_INJECTION_GUARD_ENABLED',
+        true,
+      ),
     } as const;
   }
 
@@ -678,6 +728,20 @@ export class TypedConfigService {
     return {
       resolveThreshold: this.get('ENTITY_INGEST_RESOLVE_THRESHOLD') as number,
       cacheTtlSeconds: this.get('ENTITY_INGEST_RESOLVE_CACHE_TTL_S') as number,
+    } as const;
+  }
+
+  // ─────────────────────────── KC-Temporal W3.5 — Projection rebuild ──
+  /**
+   * Параметры `ProjectionRebuilderService` (W3.5):
+   *   - `debounceMs` — окно BullMQ-дедупа enqueue'а rebuild-job'а
+   *     по jobId `projection-rebuild_<kind>_<id>`. Несколько подряд
+   *     идущих `idea_block.updated` по одной проекции схлопнутся в один
+   *     отложенный job. Default 5 мин.
+   */
+  get projectionRebuild() {
+    return {
+      debounceMs: this.get('PROJECTION_REBUILD_DEBOUNCE_MS') as number,
     } as const;
   }
 
@@ -1637,8 +1701,17 @@ export class TypedConfigService {
       this.logSourceOnce(adminKey, 'default');
       return defaultValue;
     }
+    // Фаза 4: смягчение throw. Если envFallbackKey передан — значит, вызывающая
+    // сторона осознанно сообщила «значение может отсутствовать» (например,
+    // `EMBEDDING_FALLBACK_LOCAL_URL` помечен `.optional()` в схеме). В этом
+    // случае возвращаем undefined вместо ошибки — это правильная семантика
+    // optional-ENV. Бросаем только если envFallbackKey не задан вообще.
+    if (envFallbackKey !== undefined) {
+      this.logSourceOnce(adminKey, 'env');
+      return undefined as T;
+    }
     throw new Error(
-      `TypedConfigService.resolveSync: "${adminKey}" не найден ни в cache, ни в ENV${envFallbackKey ? ` (${envFallbackKey})` : ''}, ни в defaultValue`,
+      `TypedConfigService.resolveSync: "${adminKey}" не найден ни в cache, ни в ENV, ни в defaultValue`,
     );
   }
 

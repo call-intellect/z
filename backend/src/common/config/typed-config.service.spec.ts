@@ -46,11 +46,21 @@ describe('TypedConfigService — sync admin-setting cache', () => {
     expect(cfg.resolveSync<number>('limits.maxX', 'MAX_X', 7)).toBe(7);
   });
 
-  it('resolveSync throws, если все три источника пусты', () => {
+  it('resolveSync throws, только если envFallbackKey не передан и default отсутствует', () => {
     const cfg = buildService();
-    expect(() => cfg.resolveSync<number>('limits.maxX', 'MAX_X')).toThrow(
+    // Без envFallbackKey и без default → throws.
+    expect(() => cfg.resolveSync<number>('limits.maxX')).toThrow(
       /не найден ни в cache, ни в ENV/,
     );
+  });
+
+  it('resolveSync возвращает undefined, если envFallbackKey передан, но ни ENV-значения, ни default нет (Фаза 4 — optional ENV)', () => {
+    const cfg = buildService(); // ENV пуст
+    const value = cfg.resolveSync<string | undefined>(
+      'embeddings.fallbackLocalUrl',
+      'EMBEDDING_FALLBACK_LOCAL_URL',
+    );
+    expect(value).toBeUndefined();
   });
 
   it('applySync(key, undefined) удаляет ключ; resolveSync после этого падает на ENV', () => {
@@ -156,5 +166,57 @@ describe('retention / argon / auth-TTL — sync resolve', () => {
     // TTL'ы тоже работают через resolveSync → ENV-fallback.
     expect(cfg.auth.sessionTtlSeconds).toBe(3_600);
     expect(cfg.auth.deepLinkTtlSeconds).toBe(600);
+  });
+});
+
+describe('embeddings + aiFeatures — sync resolve (Фаза 4)', () => {
+  it('embeddings cacheMap override: hydrateSync задаёт dimensions → cfg.ai.embeddings.dimensions отдаёт его', () => {
+    const cfg = buildService({
+      // ENV-fallback для остальных полей геттера, чтобы они не упали на throws.
+      EMBEDDING_PROVIDER: 'openai-via-proxy',
+      EMBEDDING_MODEL: 'text-embedding-3-small',
+      OPENAI_PROXY_API_KEY: 'k',
+      OPENAI_PROXY_EMBEDDINGS_URL: 'https://proxy/v1/embeddings',
+      EMBEDDING_BATCH_SIZE: 100,
+      EMBEDDING_CHUNK_TARGET_TOKENS: 400,
+      EMBEDDING_CHUNK_OVERLAP_TOKENS: 50,
+    });
+    cfg.hydrateSync([['embeddings.dimensions', 768]]);
+    expect(cfg.ai.embeddings.dimensions).toBe(768);
+  });
+
+  it('aiFeatures cacheMap override: hydrateSync задаёт includeRoomChat=false → cfg.aiFeatures.includeRoomChat=false', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([['aiFeatures.includeRoomChat', false]]);
+    expect(cfg.aiFeatures.includeRoomChat).toBe(false);
+  });
+
+  it('embeddings.fallbackLocalUrl: optional ENV — cacheMap пустой, ENV undefined → undefined без throws', () => {
+    // ENV не задаёт EMBEDDING_FALLBACK_LOCAL_URL (он optional в schema).
+    // Остальные обязательные ENV даём, чтобы остальной геттер не упал.
+    const cfg = buildService({
+      EMBEDDING_PROVIDER: 'openai-via-proxy',
+      EMBEDDING_MODEL: 'text-embedding-3-small',
+      EMBEDDING_DIMENSIONS: 1536,
+      OPENAI_PROXY_API_KEY: 'k',
+      OPENAI_PROXY_EMBEDDINGS_URL: 'https://proxy/v1/embeddings',
+      EMBEDDING_BATCH_SIZE: 100,
+      EMBEDDING_CHUNK_TARGET_TOKENS: 400,
+      EMBEDDING_CHUNK_OVERLAP_TOKENS: 50,
+    });
+    expect(cfg.ai.embeddings.fallbackLocalUrl).toBeUndefined();
+  });
+
+  it('aiFeatures ENV fallback: cacheMap пустой → значения из ENV', () => {
+    const cfg = buildService({
+      INCLUDE_ROOM_CHAT_IN_AI: true,
+      TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED: false,
+      BEHAVIOR_METRICS_LLM_REFINE_ENABLED: true,
+      PROMPT_INJECTION_GUARD_ENABLED: false,
+    });
+    expect(cfg.aiFeatures.includeRoomChat).toBe(true);
+    expect(cfg.aiFeatures.transcriptCleaningLlmRefine).toBe(false);
+    expect(cfg.aiFeatures.behaviorMetricsLlmRefine).toBe(true);
+    expect(cfg.aiFeatures.promptInjectionGuardEnabled).toBe(false);
   });
 });

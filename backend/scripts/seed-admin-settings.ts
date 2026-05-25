@@ -248,11 +248,12 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'knowledge-core', severity, description });
   }
 
-  // ── Эмбеддинги (embeddings.*) — 7.
+  // ── Эмбеддинги (embeddings.*) — 8.
   const embeddings: Array<[string, unknown, Severity, string]> = [
     ['embeddings.provider', env('EMBEDDING_PROVIDER', 'openai-proxy'), 'high', 'Провайдер эмбеддингов'],
     ['embeddings.model', env('EMBEDDING_MODEL', 'text-embedding-3-small'), 'high', 'Модель эмбеддингов'],
     ['embeddings.dimensions', envInt('EMBEDDING_DIMENSIONS', 1536), 'destructive', 'Размерность вектора — менять только при пересчёте всех embeddings'],
+    ['embeddings.proxyEmbeddingsUrl', env('OPENAI_PROXY_EMBEDDINGS_URL', 'https://proxy.agent-lia.ru/v1/embeddings'), 'medium', 'URL endpoint embeddings через прокси'],
     ['embeddings.fallbackLocalUrl', env('EMBEDDING_FALLBACK_LOCAL_URL', ''), 'medium', 'Локальный fallback-URL для эмбеддингов'],
     ['embeddings.batchSize', envInt('EMBEDDING_BATCH_SIZE', 32), 'medium', 'Размер батча'],
     ['embeddings.chunkTargetTokens', envInt('EMBEDDING_CHUNK_TARGET_TOKENS', 600), 'medium', 'Целевой размер чанка в токенах'],
@@ -260,6 +261,17 @@ function buildSettings(): SettingSeed[] {
   ];
   for (const [key, value, severity, description] of embeddings) {
     out.push({ key, value, category: 'ai', section: 'embeddings', severity, description });
+  }
+
+  // ── AI feature flags (aiFeatures.*) — 4. Фаза 4 миграции call-sites.
+  const aiFeatures: Array<[string, unknown, Severity, string]> = [
+    ['aiFeatures.includeRoomChat', envBool('INCLUDE_ROOM_CHAT_IN_AI', true), 'medium', 'Включать room-chat в AI-анализ'],
+    ['aiFeatures.transcriptCleaningLlmRefine', envBool('TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED', true), 'medium', 'LLM-refine в transcript-clean (уровень 2)'],
+    ['aiFeatures.behaviorMetricsLlmRefine', envBool('BEHAVIOR_METRICS_LLM_REFINE_ENABLED', false), 'medium', 'LLM-refine в behavior-metrics (Фаза B)'],
+    ['aiFeatures.promptInjectionGuardEnabled', envBool('PROMPT_INJECTION_GUARD_ENABLED', true), 'high', 'Защита от prompt-injection в customPrompt (F1)'],
+  ];
+  for (const [key, value, severity, description] of aiFeatures) {
+    out.push({ key, value, category: 'ai', section: 'features', severity, description });
   }
 
   // ── Conversational (conversational.*) — 15.

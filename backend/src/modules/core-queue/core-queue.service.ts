@@ -25,6 +25,7 @@ import {
   type IdeaClustererJobData,
   type MeetingAnalyzeV2JobData,
   type MeetingReportFastJobData,
+  type SpecialistsCombinedJobData,
   type ProbeEventJobData,
   type PushSendJobData,
   type RawEventJobData,
@@ -252,6 +253,34 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('meeting-report-fast', payload, jobOpts);
     this.logger.debug(
       `enqueue core.meeting-report-fast meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
+    );
+  }
+
+  /**
+   * ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+   *
+   * Enqueue одного job'а в `core.specialists-combined`. Идемпотентность через
+   * `jobId = specialists_combined_<meetingId>`: повторный enqueue той же
+   * встречи в окне BullMQ не создаст дубль.
+   *
+   * NB: producer (например, `MeetingAnalyzeV2Cron` при включённом флаге
+   * `SPECIALISTS_COMBINED_ENABLED`) сам должен проверить флаг перед вызовом.
+   * Сам сервис очереди — нейтрален.
+   */
+  async enqueueSpecialistsCombined(
+    meetingId: string,
+    opts?: { delayMs?: number },
+  ): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.SPECIALISTS_COMBINED);
+    const jobId = `specialists_combined_${meetingId}`;
+    const payload: SpecialistsCombinedJobData = { meetingId };
+    const jobOpts: JobsOptions = { jobId };
+    if (opts?.delayMs !== undefined && opts.delayMs > 0) {
+      jobOpts.delay = opts.delayMs;
+    }
+    await q.add('specialists-combined', payload, jobOpts);
+    this.logger.debug(
+      `enqueue core.specialists-combined meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
     );
   }
 

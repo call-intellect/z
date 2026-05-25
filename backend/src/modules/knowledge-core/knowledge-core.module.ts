@@ -54,6 +54,10 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
 import { ReasoningChainService } from './services/reasoning-chain.service';
 // KC-Temporal W3.5 (2026-05-25) — Materialized projections rebuild.
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
+// ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+// Один LLM-вызов на все блоки встречи извлекает 8 типов сущностей.
+// Параллельно со старыми 3-1..3-9 под флагом SPECIALISTS_COMBINED_ENABLED.
+import { SpecialistsCombinedService } from './services/specialists-combined.service';
 // W2.2 + W2.3 + W2.4 + G.2 + W4.2 KC-Temporal (2026-05-25).
 import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
@@ -211,6 +215,12 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
     // и `core.card-rollup-v2`. Ставим в конец providers, чтобы минимизировать
     // конфликты с параллельными ветками той же фазы.
     ProjectionRebuilderService,
+    // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+    // Один LLM-вызов на все блоки встречи → 8 типов сущностей через tool
+    // `submit_all_8_entities`. Worker (`SpecialistsCombinedWorker`) живёт в
+    // `WorkersModule` и инжектит этот service. Под flag-rollout
+    // `SPECIALISTS_COMBINED_ENABLED` (default false).
+    SpecialistsCombinedService,
   ],
   exports: [
     SegmentBuilderService,
@@ -303,6 +313,9 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
     // KC-Temporal W3.5 — экспортируем для интеграционных тестов и
     // admin-эндпоинтов «manual projection rebuild» (future).
     ProjectionRebuilderService,
+    // ТЗ 2026-05-25 llm-architecture §3 — экспорт для WorkersModule
+    // (SpecialistsCombinedWorker инжектит этот сервис).
+    SpecialistsCombinedService,
   ],
 })
 export class KnowledgeCoreModule {}

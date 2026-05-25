@@ -727,6 +727,18 @@ const ShareSchema = z.object({
 const RouterSchema = z.object({
   ROUTER_DISPATCH_CONCURRENCY: z.coerce.number().int().positive().default(4),
   ROUTER_MAX_SPECIALISTS_PER_BLOCK: z.coerce.number().int().positive().default(4),
+  /**
+   * ТЗ 2026-05-25 llm-architecture-changes §3 — Specialists Combined (Variant Б+).
+   *
+   * Когда `true` — параллельно со старыми специалистами 3-1..3-9 запускается
+   * единый объединённый сервис `SpecialistsCombinedService`, который за ОДИН
+   * LLM-вызов извлекает все 8 типов сущностей по всем canonical-блокам встречи.
+   *
+   * Безопасный flag-rollout: при включении старые специалисты НЕ отключаются —
+   * сначала проверяем дубли/качество на проде, потом удаляем старых отдельным
+   * шагом. Default = false.
+   */
+  SPECIALISTS_COMBINED_ENABLED: z.coerce.boolean().default(false),
 });
 
 /**

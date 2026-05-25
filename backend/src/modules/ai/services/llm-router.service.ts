@@ -324,6 +324,15 @@ export type LlmTaskType =
   //   отчёта. Capable модель + большой выход + thinking.
   //   Primary = deepseek-v4-pro; secondary = gpt-5.4-mini; tertiary = ollama qwen3.5:9b.
   | 'meeting-report-fast'
+  // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+  // 'knowledge-specialists-combined' — ОДИН LLM-вызов на ВСЕ блоки одной
+  //   встречи, возвращает 8 типов сущностей через tool `submit_all_8_entities`:
+  //   decisions/ideas/insights/experiments/regulations/knowledge_categories/
+  //   skill_traits/helpfulness_traits. Заменяет 8 раздельных вызовов
+  //   специалистов 3-1..3-9 (в 3.7× дешевле, 18:13 по качеству).
+  //   Capable + большой выход + thinking. Primary = deepseek-v4-pro;
+  //   secondary = gpt-5.4 (proxy); tertiary = ollama qwen3.5:9b.
+  | 'knowledge-specialists-combined'
   // KC-Temporal W1.2 (2026-05-25) — FactSupersedeService.
   // 'fact-supersede-detect' — арбитр { unrelated | extends | contradicts |
   //   supersedes } по новому factual-блоку и top-K KNN кандидатам с тем же

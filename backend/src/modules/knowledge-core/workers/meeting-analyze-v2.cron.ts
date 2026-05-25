@@ -96,6 +96,7 @@ export class MeetingAnalyzeV2Cron {
     );
 
     let enqueued = 0;
+    const combinedEnabled = this.cfg.specialistsCombined.enabled === true;
     for (const r of rows) {
       try {
         await this.coreQueue.enqueueMeetingAnalyzeV2(r.id);
@@ -108,6 +109,24 @@ export class MeetingAnalyzeV2Cron {
           },
           'meeting-analyze-v2-cron: enqueue упал — пропускаем',
         );
+      }
+      // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+      // При включённом флаге `SPECIALISTS_COMBINED_ENABLED=true` параллельно
+      // запускаем объединённый специалист (8 типов сущностей за один LLM-вызов).
+      // Старые специалисты НЕ отключаются — flag-rollout. Дубли в БД ожидаются;
+      // после стабилизации удалим старых отдельным шагом.
+      if (combinedEnabled) {
+        try {
+          await this.coreQueue.enqueueSpecialistsCombined(r.id);
+        } catch (err) {
+          this.logger.warn(
+            {
+              meetingId: r.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'meeting-analyze-v2-cron: enqueueSpecialistsCombined упал — пропускаем',
+          );
+        }
       }
     }
     return enqueued;

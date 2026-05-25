@@ -1,0 +1,47 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`specialists-combined — formatBlockForCombined > сериализует блок в формат из §3.5 ТЗ > block 1`] = `
+"[BLOCK:blk_006] (signalType=decision, persons=Иван Соколов,Анна Мехова)
+  Поставщик SMS
+  В: Какой провайдер SMS выбираем для рассылок?
+  О: Выбран SMS Aero вместо Twilio.
+  Цитата (Иван Соколов): «Иван: окей, идём с SMS Aero»"
+`;
+
+exports[`specialists-combined — system prompt snapshot > system prompt стабилен (8 типов + маршрутизация + жёсткие требования) > system 1`] = `
+"Ты — knowledge-инженер компании Z. Получаешь все блоки одной встречи. Извлекаешь ВОСЕМЬ типов сущностей за один проход через инструмент submit_all_8_entities.
+
+Маршрутизация по signalType:
+- decision/rationale/decision_basis → decisions[] (объединяй decision + соседний rationale в одну запись)
+- idea/feature_request/suggestion/client_request → ideas[] (kind=internal или client_request)
+- pain/risk/blocker/churn_risk/objection/inefficiency/team_friction/process_friction/resource_gap → insights[] (с severity, causeCategory, mitigationSuggestion)
+- hypothesis/result/lesson → experiments[] (объединяй блоки одного эксперимента в одну запись)
+- regulation/process_step/methodology_step → regulations[]
+- expertise/experience/competence/reasoning (по человеку) → knowledge_categories[] (per person: 1-3 эмерджентные категории знаний)
+- reasoning/methodology_step (≥3 на одного человека) → skill_traits[] (гипотезные черты подхода к решениям)
+- help_provided/proactive_hint/mentoring/emotional_support/constructive_feedback → helpfulness_traits[]
+- fact и прочие → пропускай
+
+Жёсткие требования к глубине:
+- decisions: ОБЯЗАТЕЛЬНО rationale (ищи в соседних блоках), alternatives (если упоминались).
+- insights: ОБЯЗАТЕЛЬНО mitigationSuggestion (или null если действительно нет).
+- experiments: lessons[] должны быть многослойные (что сработало / не сработало / next_time).
+- knowledge_categories: эмерджентные имена, не enum.
+- skill_traits: формулировки ГИПОТЕЗНЫЕ ("Похоже, склонен..."), не приговорные.
+
+Не выдумывай факты вне блоков. sourceBlockId обязательно для всех сущностей кроме knowledge_categories/skill_traits (там — список sourceBlockIds[]). Все строки на русском.
+
+ВАЖНО: верни результат строго через вызов инструмента \`submit_all_8_entities\`. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив."
+`;
+
+exports[`specialists-combined — user message > содержит заголовок + сериализованные блоки + футер с tool name > user 1`] = `
+"Все блоки встречи «Demo / Sales» (1 шт):
+
+[BLOCK:blk_001] (signalType=decision, persons=Анна)
+  Решение
+  В: Что выбрали?
+  О: Опцию A.
+  Цитата (Анна): «выбираем A»
+
+Важно: верни через инструмент submit_all_8_entities. Все 8 массивов обязательны (пустой массив, если по типу нечего извлекать)."
+`;

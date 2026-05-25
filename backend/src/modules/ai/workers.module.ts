@@ -15,6 +15,8 @@ import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.
 import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
 import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
 import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-report-fast.worker';
+// ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+import { SpecialistsCombinedWorker } from '../knowledge-core/workers/specialists-combined.worker';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
 import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
@@ -204,6 +206,12 @@ import { VoxService } from './services/vox.service';
     // На Фазе 2 producer не подключён (будет в Фазе 4) — воркер существует
     // и слушает очередь, но автоматически jobs не появляются.
     MeetingReportFastWorker,
+    // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined.
+    // Consumer `core.specialists-combined`. Под flag-rollout
+    // `SPECIALISTS_COMBINED_ENABLED` (default false) работает ПАРАЛЛЕЛЬНО со
+    // старыми специалистами 3-1..3-9. Producer — `MeetingAnalyzeV2Cron` при
+    // включённом флаге.
+    SpecialistsCombinedWorker,
     StrategicAlignmentWorker,
     StrategicAlignmentCron,
 

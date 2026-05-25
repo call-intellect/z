@@ -916,6 +916,20 @@ export class TypedConfigService {
     } as const;
   }
 
+  /**
+   * ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+   *
+   * `enabled` — мастер-флаг для нового объединённого LLM-вызова на ВСЕ блоки
+   * встречи (один tool `submit_all_8_entities`). При `true` параллельно со
+   * старыми специалистами 3-1..3-9 запускается `SpecialistsCombinedService`.
+   * Default false (safe flag-rollout).
+   */
+  get specialistsCombined() {
+    return {
+      enabled: this.get('SPECIALISTS_COMBINED_ENABLED'),
+    } as const;
+  }
+
   // ─────────────────────────── knowledge-clone (SBA β-2) ───────
   /**
    * Параметры Specialist 3.2 (Knowledge Clone). См.

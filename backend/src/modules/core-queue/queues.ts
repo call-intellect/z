@@ -160,6 +160,21 @@ export const CORE_QUEUE_NAMES = {
    * на того же user'а не создаст дубль push'а. Reuters / DAU-минута — окно.
    */
   PUSH_SEND: 'core.push-send',
+  /**
+   * ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+   *
+   * Consumer — `SpecialistsCombinedWorker`. Один LLM-вызов на ВСЕ canonical-
+   * блоки одной встречи через tool `submit_all_8_entities`. Извлекает 8 типов
+   * сущностей (decisions/ideas/insights/experiments/regulations/
+   * knowledge_categories/skill_traits/helpfulness_traits) за один thinking-
+   * проход. Заменяет 8 раздельных вызовов специалистов 3-1..3-9.
+   *
+   * Включается ENV-флагом `SPECIALISTS_COMBINED_ENABLED=true`. Старые
+   * специалисты НЕ отключаются — flag-rollout (см. RouterSchema).
+   *
+   * Идемпотентность: `jobId = specialists_combined_<meetingId>`.
+   */
+  SPECIALISTS_COMBINED: 'core.specialists-combined',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -224,6 +239,17 @@ export interface MeetingAnalyzeV2JobData {
  * tenantId / type из БД.
  */
 export interface MeetingReportFastJobData {
+  meetingId: string;
+}
+
+/**
+ * Payload для job'а `core.specialists-combined` (ТЗ 2026-05-25 llm-architecture §3).
+ * Минимальный — только `meetingId`; consumer (`SpecialistsCombinedWorker`)
+ * сам подтянет canonical-блоки и tenantId через `BlockFetchService`.
+ *
+ * Идемпотентность через `jobId = specialists_combined_<meetingId>`.
+ */
+export interface SpecialistsCombinedJobData {
   meetingId: string;
 }
 

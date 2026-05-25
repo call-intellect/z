@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import useSWR from 'swr';
 
 import { adminApi } from '@/api/admin.api';
@@ -50,7 +51,15 @@ export function AdminMeetingDetails({ meetingId }: Props) {
             <span className="font-mono">{m.id}</span>
           </p>
         </div>
-        <AdminMeetingActions meetingId={meetingId} onChanged={() => mutate()} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/admin/media/meetings/${encodeURIComponent(meetingId)}/compare`}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-bg-subtle px-3 py-1.5 text-sm font-medium text-fg-primary transition-colors hover:bg-bg-overlay focus:outline-none focus:ring-2 focus:ring-border-strong focus:ring-offset-2"
+          >
+            Сравнить версии (v2 vs fast)
+          </Link>
+          <AdminMeetingActions meetingId={meetingId} onChanged={() => mutate()} />
+        </div>
       </header>
 
       <Card title="Сводка">

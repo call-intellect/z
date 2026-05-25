@@ -168,6 +168,18 @@ export class MeetingsAdminController {
       createdAt: string;
       owner: { id: string; externalId: string | null; email: string; name: string };
     };
+    reportStatuses: {
+      analyzeV2: {
+        status: string | null;
+        error: string | null;
+        generatedAt: string | null;
+      };
+      reportFast: {
+        status: string | null;
+        error: string | null;
+        generatedAt: string | null;
+      };
+    };
     participants: Array<{
       id: string;
       name: string;
@@ -213,7 +225,35 @@ export class MeetingsAdminController {
       tasks: unknown;
       modelUsed: string;
       createdAt: string;
+      summaryV2: string | null;
+      summaryV2Model: string | null;
+      summaryV2GeneratedAt: string | null;
+      summaryFast: string | null;
+      summaryFastModel: string | null;
+      summaryFastGeneratedAt: string | null;
     } | null;
+    chapters: Array<{
+      id: string;
+      title: string;
+      summary: string | null;
+      startMs: number;
+      endMs: number;
+      extractorVersion: string | null;
+      createdAt: string;
+    }>;
+    tasks: Array<{
+      id: string;
+      title: string;
+      description: string | null;
+      status: string;
+      assigneeRaw: string | null;
+      assigneeUserId: string | null;
+      dueDate: string | null;
+      extractorVersion: string | null;
+      sourceQuote: string | null;
+      confidence: number | null;
+      createdAt: string;
+    }>;
     events: Array<{
       id: string;
       eventType: string;
@@ -233,11 +273,23 @@ export class MeetingsAdminController {
     });
     if (!meeting) throw new MeetingNotFoundError(id);
 
-    const events = await this.prisma.meetingEvent.findMany({
-      where: { meetingId: id },
-      orderBy: { receivedAt: 'desc' },
-      take: 50,
-    });
+    const [events, chapters, tasks] = await Promise.all([
+      this.prisma.meetingEvent.findMany({
+        where: { meetingId: id },
+        orderBy: { receivedAt: 'desc' },
+        take: 50,
+      }),
+      // Главы — фильтрация по tenantId для соблюдения tenant-isolation.
+      this.prisma.meetingChapter.findMany({
+        where: { meetingId: id, tenantId: meeting.tenantId },
+        orderBy: { startMs: 'asc' },
+      }),
+      // Задачи — то же.
+      this.prisma.task.findMany({
+        where: { meetingId: id, tenantId: meeting.tenantId },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
 
     return {
       meeting: {
@@ -251,6 +303,18 @@ export class MeetingsAdminController {
         endedAt: meeting.endedAt?.toISOString() ?? null,
         createdAt: meeting.createdAt.toISOString(),
         owner: meeting.owner,
+      },
+      reportStatuses: {
+        analyzeV2: {
+          status: meeting.analyzeV2Status ?? null,
+          error: meeting.analyzeV2Error ?? null,
+          generatedAt: meeting.analyzeV2GeneratedAt?.toISOString() ?? null,
+        },
+        reportFast: {
+          status: meeting.reportFastStatus ?? null,
+          error: meeting.reportFastError ?? null,
+          generatedAt: meeting.reportFastGeneratedAt?.toISOString() ?? null,
+        },
       },
       participants: meeting.participants.map((p) => ({
         id: p.id,
@@ -305,8 +369,38 @@ export class MeetingsAdminController {
             tasks: meeting.aiResult.tasks ?? null,
             modelUsed: meeting.aiResult.modelUsed,
             createdAt: meeting.aiResult.createdAt.toISOString(),
+            summaryV2: meeting.aiResult.summaryV2 ?? null,
+            summaryV2Model: meeting.aiResult.summaryV2Model ?? null,
+            summaryV2GeneratedAt:
+              meeting.aiResult.summaryV2GeneratedAt?.toISOString() ?? null,
+            summaryFast: meeting.aiResult.summaryFast ?? null,
+            summaryFastModel: meeting.aiResult.summaryFastModel ?? null,
+            summaryFastGeneratedAt:
+              meeting.aiResult.summaryFastGeneratedAt?.toISOString() ?? null,
           }
         : null,
+      chapters: chapters.map((c) => ({
+        id: c.id,
+        title: c.title,
+        summary: c.summary ?? null,
+        startMs: c.startMs,
+        endMs: c.endMs,
+        extractorVersion: c.extractorVersion ?? null,
+        createdAt: c.createdAt.toISOString(),
+      })),
+      tasks: tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description ?? null,
+        status: t.status,
+        assigneeRaw: t.assigneeRaw ?? null,
+        assigneeUserId: t.assigneeUserId ?? null,
+        dueDate: t.dueDate?.toISOString() ?? null,
+        extractorVersion: t.extractorVersion ?? null,
+        sourceQuote: t.sourceQuote ?? null,
+        confidence: t.confidence ?? null,
+        createdAt: t.createdAt.toISOString(),
+      })),
       events: events.map((e) => ({
         id: e.id,
         eventType: e.eventType,

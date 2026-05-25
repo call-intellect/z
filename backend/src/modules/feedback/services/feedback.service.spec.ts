@@ -1,11 +1,18 @@
 /**
- * Unit-тесты для FeedbackService (пользовательская часть).
+ * Unit-тесты для FeedbackService (пользовательская часть + admin-методы).
  *
- * Покрытие:
+ * Покрытие user-части (Фаза 2):
  *   - submit: создаёт FeedbackMessage с правильными полями (trim, orgId, defaults)
  *   - listMine: возвращает items + total + пагинация, сортировка createdAt desc
  *   - getLimit: читает Redis-ключ (UTC, формат feedback:ratelimit:{uid}:{YYYY-MM-DD})
  *               возвращает usedToday / limit=5 / resetAt в виде ISO полночи UTC
+ *
+ * Покрытие admin-части (Фаза 6):
+ *   - listFailedMessages: фильтр failedRuns>=3 AND processedAt IS NULL,
+ *                         сортировка failedRuns desc, маппинг userEmail
+ *   - listTopics/getTopicDetails/getTopicItems/getMessageById: фасадные
+ *     методы тонко делегируют в FeedbackTopicManagerService (подробные
+ *     тесты — в feedback-topic-manager.service.spec.ts).
  *
  * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
  */
@@ -15,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
+import type { FeedbackTopicManagerService } from './feedback-topic-manager.service';
 import { FeedbackService } from './feedback.service';
 
 interface PrismaStub {
@@ -52,6 +60,63 @@ function makeRedis(getReturn: string | null = null): RedisStub {
   return { redis, get };
 }
 
+/**
+ * Заглушка FeedbackTopicManagerService — методы возвращают vi.fn(),
+ * чтобы тесты могли проверить вызов фасадными методами FeedbackService.
+ */
+function makeTopicManager(): {
+  manager: FeedbackTopicManagerService;
+  listTopics: ReturnType<typeof vi.fn>;
+  getTopic: ReturnType<typeof vi.fn>;
+  listItems: ReturnType<typeof vi.fn>;
+  getItemMessage: ReturnType<typeof vi.fn>;
+} {
+  const listTopics = vi.fn(async () => ({
+    items: [],
+    totalItemsInWindow: 0,
+    totalUsersInWindow: 0,
+    totalTopicsInWindow: 0,
+    page: 1,
+    pageSize: 20,
+  }));
+  const getTopic = vi.fn(async () => ({
+    id: 't-1',
+    title: 't',
+    description: 'd',
+    status: 'ACTIVE',
+    itemsCount: 0,
+    uniqueUsersCount: 0,
+    percentOfWindow: 0,
+    lastItemAt: null,
+    createdAt: new Date().toISOString(),
+    archivedAt: null,
+    updatedAt: new Date().toISOString(),
+    mergedIntoId: null,
+  }));
+  const listItems = vi.fn(async () => ({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 50,
+  }));
+  const getItemMessage = vi.fn(async () => ({
+    id: 'm-1',
+    text: 'x',
+    createdAt: new Date().toISOString(),
+    userId: 'u-1',
+    orgId: null,
+    user: { id: 'u-1', email: 'a@b', name: null },
+    org: null,
+  }));
+  const manager = {
+    listTopics,
+    getTopic,
+    listItems,
+    getItemMessage,
+  } as unknown as FeedbackTopicManagerService;
+  return { manager, listTopics, getTopic, listItems, getItemMessage };
+}
+
 describe('FeedbackService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -76,7 +141,11 @@ describe('FeedbackService', () => {
       });
       const redisStub = makeRedis();
 
-      const svc = new FeedbackService(prismaStub.prisma, redisStub.redis);
+      const svc = new FeedbackService(
+        prismaStub.prisma,
+        redisStub.redis,
+        makeTopicManager().manager,
+      );
       const result = await svc.submit(
         'u-1',
         'org-42',
@@ -115,7 +184,11 @@ describe('FeedbackService', () => {
           processedAt: null,
         },
       });
-      const svc = new FeedbackService(prismaStub.prisma, makeRedis().redis);
+      const svc = new FeedbackService(
+        prismaStub.prisma,
+        makeRedis().redis,
+        makeTopicManager().manager,
+      );
 
       await svc.submit('u-1', null, 'feedback');
 
@@ -136,7 +209,11 @@ describe('FeedbackService', () => {
           processedAt,
         },
       });
-      const svc = new FeedbackService(prismaStub.prisma, makeRedis().redis);
+      const svc = new FeedbackService(
+        prismaStub.prisma,
+        makeRedis().redis,
+        makeTopicManager().manager,
+      );
       const out = await svc.submit('u-1', null, 'x');
       expect(out.processedAt).toBe(processedAt.toISOString());
     });
@@ -153,7 +230,11 @@ describe('FeedbackService', () => {
         ],
         countReturn: 17,
       });
-      const svc = new FeedbackService(prismaStub.prisma, makeRedis().redis);
+      const svc = new FeedbackService(
+        prismaStub.prisma,
+        makeRedis().redis,
+        makeTopicManager().manager,
+      );
 
       const result = await svc.listMine('u-1', 2, 5);
 
@@ -184,7 +265,11 @@ describe('FeedbackService', () => {
 
     it('skip=0 для первой страницы', async () => {
       const prismaStub = makePrisma({ findManyReturn: [], countReturn: 0 });
-      const svc = new FeedbackService(prismaStub.prisma, makeRedis().redis);
+      const svc = new FeedbackService(
+        prismaStub.prisma,
+        makeRedis().redis,
+        makeTopicManager().manager,
+      );
       await svc.listMine('u-1', 1, 20);
       expect(prismaStub.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 0, take: 20 }),
@@ -196,7 +281,11 @@ describe('FeedbackService', () => {
     it('читает Redis по ключу UTC и возвращает usedToday/limit/resetAt(00:00 UTC завтра)', async () => {
       const redisStub = makeRedis('3');
       const prismaStub = makePrisma();
-      const svc = new FeedbackService(prismaStub.prisma, redisStub.redis);
+      const svc = new FeedbackService(
+        prismaStub.prisma,
+        redisStub.redis,
+        makeTopicManager().manager,
+      );
 
       const result = await svc.getLimit('u-1');
 
@@ -212,14 +301,22 @@ describe('FeedbackService', () => {
 
     it('Redis пустой (null) → usedToday=0', async () => {
       const redisStub = makeRedis(null);
-      const svc = new FeedbackService(makePrisma().prisma, redisStub.redis);
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        redisStub.redis,
+        makeTopicManager().manager,
+      );
       const result = await svc.getLimit('u-1');
       expect(result.usedToday).toBe(0);
     });
 
     it('Redis вернул мусор (NaN) → usedToday=0', async () => {
       const redisStub = makeRedis('not-a-number');
-      const svc = new FeedbackService(makePrisma().prisma, redisStub.redis);
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        redisStub.redis,
+        makeTopicManager().manager,
+      );
       const result = await svc.getLimit('u-1');
       expect(result.usedToday).toBe(0);
     });
@@ -229,10 +326,160 @@ describe('FeedbackService', () => {
         throw new Error('redis down');
       });
       const redis = { client: { get } } as unknown as RedisService;
-      const svc = new FeedbackService(makePrisma().prisma, redis);
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        redis,
+        makeTopicManager().manager,
+      );
       const result = await svc.getLimit('u-1');
       expect(result.usedToday).toBe(0);
       expect(result.limit).toBe(5);
+    });
+  });
+
+  // ──────────────────────── admin: фасады ────────────────────────
+
+  describe('admin facades', () => {
+    it('listTopics делегирует в topicManager.listTopics', async () => {
+      const tm = makeTopicManager();
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        makeRedis().redis,
+        tm.manager,
+      );
+      await svc.listTopics({
+        window: '30',
+        sort: 'percent',
+        page: 1,
+        pageSize: 20,
+        includeArchived: false,
+      });
+      expect(tm.listTopics).toHaveBeenCalledTimes(1);
+      expect(tm.listTopics).toHaveBeenCalledWith({
+        window: '30',
+        sort: 'percent',
+        page: 1,
+        pageSize: 20,
+        includeArchived: false,
+      });
+    });
+
+    it('getTopicDetails делегирует в topicManager.getTopic', async () => {
+      const tm = makeTopicManager();
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        makeRedis().redis,
+        tm.manager,
+      );
+      await svc.getTopicDetails('t-1', '90');
+      expect(tm.getTopic).toHaveBeenCalledWith('t-1', '90');
+    });
+
+    it('getTopicItems делегирует в topicManager.listItems', async () => {
+      const tm = makeTopicManager();
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        makeRedis().redis,
+        tm.manager,
+      );
+      await svc.getTopicItems('t-1', 2, 50);
+      expect(tm.listItems).toHaveBeenCalledWith('t-1', 2, 50);
+    });
+
+    it('getMessageById делегирует в topicManager.getItemMessage', async () => {
+      const tm = makeTopicManager();
+      const svc = new FeedbackService(
+        makePrisma().prisma,
+        makeRedis().redis,
+        tm.manager,
+      );
+      await svc.getMessageById('t-1', 'i-1');
+      expect(tm.getItemMessage).toHaveBeenCalledWith('t-1', 'i-1');
+    });
+  });
+
+  // ──────────────────────── admin: listFailedMessages ────────────────────────
+
+  describe('listFailedMessages', () => {
+    it('фильтр failedRuns>=3 AND processedAt=null + маппинг userEmail', async () => {
+      const created = new Date(Date.UTC(2026, 4, 25, 10, 0, 0));
+      const findMany = vi.fn(
+        async (_args: unknown) =>
+          [
+            {
+              id: 'fm-1',
+              userId: 'u-1',
+              text: 'упал',
+              createdAt: created,
+              failedRuns: 5,
+              user: { email: 'fail@z' },
+            },
+          ] as unknown[],
+      );
+      const count = vi.fn(async (_args: unknown) => 1);
+      const prisma = {
+        feedbackMessage: { findMany, count },
+        $transaction: vi.fn(async (ops: Promise<unknown>[]) =>
+          Promise.all(ops),
+        ),
+      } as unknown as PrismaService;
+
+      const svc = new FeedbackService(
+        prisma,
+        makeRedis().redis,
+        makeTopicManager().manager,
+      );
+      const result = await svc.listFailedMessages(1, 20);
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      const callArgs = (findMany.mock.calls[0]![0]) as {
+        where: { failedRuns: { gte: number }; processedAt: null };
+        orderBy: Array<Record<string, string>>;
+        skip: number;
+        take: number;
+      };
+      expect(callArgs.where).toEqual({
+        failedRuns: { gte: 3 },
+        processedAt: null,
+      });
+      expect(callArgs.orderBy).toEqual([
+        { failedRuns: 'desc' },
+        { createdAt: 'desc' },
+      ]);
+      expect(callArgs.skip).toBe(0);
+      expect(callArgs.take).toBe(20);
+      expect(result.total).toBe(1);
+      expect(result.items[0]!).toEqual({
+        id: 'fm-1',
+        userId: 'u-1',
+        userEmail: 'fail@z',
+        text: 'упал',
+        createdAt: created.toISOString(),
+        failedRuns: 5,
+      });
+    });
+
+    it('пагинация: page=3 pageSize=10 → skip=20', async () => {
+      const findMany = vi.fn(async (_args: unknown) => [] as unknown[]);
+      const count = vi.fn(async (_args: unknown) => 0);
+      const prisma = {
+        feedbackMessage: { findMany, count },
+        $transaction: vi.fn(async (ops: Promise<unknown>[]) =>
+          Promise.all(ops),
+        ),
+      } as unknown as PrismaService;
+
+      const svc = new FeedbackService(
+        prisma,
+        makeRedis().redis,
+        makeTopicManager().manager,
+      );
+      const result = await svc.listFailedMessages(3, 10);
+      const callArgs = (findMany.mock.calls[0]![0]) as { skip: number; take: number };
+      expect(callArgs.skip).toBe(20);
+      expect(callArgs.take).toBe(10);
+      expect(result.page).toBe(3);
+      expect(result.pageSize).toBe(10);
     });
   });
 });

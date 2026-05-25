@@ -30,3 +30,12 @@ export const TopicListFiltersSchema = z.object({
 });
 export type TopicListFilters = z.infer<typeof TopicListFiltersSchema>;
 export class TopicListFiltersDto extends createZodDto(TopicListFiltersSchema) {}
+
+/**
+ * Query для `GET /admin/feedback/topics/:id` — нужно только окно агрегатов.
+ */
+export const TopicDetailsQuerySchema = z.object({
+  window: FeedbackTopicWindowSchema.default('30'),
+});
+export type TopicDetailsQuery = z.infer<typeof TopicDetailsQuerySchema>;
+export class TopicDetailsQueryDto extends createZodDto(TopicDetailsQuerySchema) {}

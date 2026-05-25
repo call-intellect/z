@@ -210,6 +210,8 @@ const OPERATIONS_GROUP: NavGroup = {
     { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
     // SBA β-8.2 — «Мои обещания».
     { href: '/me/promises', label: 'Мои обещания', icon: CheckCircle2, matchPrefix: '/me/promises' },
+    // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
+    { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
   ],
 };
 

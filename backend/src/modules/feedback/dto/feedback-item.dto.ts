@@ -38,7 +38,7 @@ export class FeedbackItemDto extends createZodDto(FeedbackItemSchema) {}
 
 export const FeedbackItemsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
   /// Группировать по пользователю (для опции в UI). Реализация — фаза 6.
   groupByUser: z
     .union([z.literal('true'), z.literal('false')])
@@ -67,10 +67,13 @@ export class FeedbackItemsListResponseDto extends createZodDto(
 
 /// Ответ на «развернуть исходное сообщение» —
 /// GET /admin/feedback/topics/:id/items/:itemId/message.
+/// По ТЗ возвращаем плоские userId/orgId, плюс user/org для удобства UI.
 export const FeedbackItemMessageResponseSchema = z.object({
   id: z.string(),
   text: z.string(),
   createdAt: z.string().datetime(),
+  userId: z.string(),
+  orgId: z.string().nullable(),
   user: FeedbackItemAuthorSchema,
   org: FeedbackItemOrgSchema,
 });

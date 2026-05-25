@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type DataClass,
   type Idea,
@@ -29,6 +29,7 @@ import {
   IDEA_EXTRACT_SYSTEM_PROMPT,
   IDEA_EXTRACT_USER_TEMPLATE,
 } from '../prompts/idea-extract.prompt';
+import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 
 interface IdeaSupporter {
@@ -76,6 +77,10 @@ export class Specialist36Service {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    // W4.1 — DataClassPolicyService для shadow-compare.
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -128,6 +133,28 @@ export class Specialist36Service {
         recencyDate: block.createdAt,
         hasRationale: Boolean(draft.rationale),
       });
+
+      // W4.1 — shadow-compare. legacy = block.dataClass (passthrough);
+      // proposed — derive с floor=internal по kind='idea'. Реально пишется
+      // legacy. См. ТЗ §W4.1.
+      if (this.dataClassPolicy) {
+        const proposed = this.dataClassPolicy.derive({
+          sources: [
+            {
+              dataClass: block.dataClass,
+              sourceId: block.id,
+              sourceKind: 'idea_block',
+            },
+          ],
+          context: { kind: 'idea' },
+        }).dataClass;
+        this.dataClassPolicy.compareWithLegacy({
+          legacyResult: block.dataClass,
+          proposedResult: proposed,
+          kind: 'idea',
+          sourceIds: [block.id],
+        });
+      }
 
       const idea = await this.prisma.idea.create({
         data: {

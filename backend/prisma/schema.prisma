@@ -523,6 +523,10 @@ enum IdeaBlockLinkType {
   question_answered_by
   /// SBA β-8.2 — `commitment_status` блок закрывает (resolves) исходный `commitment`.
   resolves
+  /// KC-Temporal W1.1 (2026-05-25) — новый блок-факт замещает старый.
+  /// Создаётся `FactSupersedeService` при детектировании supersede-вердикта.
+  /// Пара: from=новый блок, to=старый блок.
+  supersedes
 }
 
 /// Тип типизированной связи между сущностями. С Фазы 0 — также все
@@ -2527,12 +2531,35 @@ model IdeaBlock {
   commitmentAskedAt           DateTime?
   /// Когда эскалировали при молчании (probe ушёл COO + owner).
   commitmentEscalatedAt       DateTime?
+  /// KC-Temporal W1.1 (2026-05-25) — bi-temporal оси факта.
+  /// `validFrom` — когда факт стал верен в реальности (default — самый
+  /// ранний `IdeaBlockEvidence.sourceTimestamp`, иначе `createdAt`).
+  /// Заполняется при persist в block-ingest.worker'е (при `BITEMPORAL_ENABLED=true`).
+  validFrom                   DateTime?
+  /// KC-Temporal W1.1 — когда факт перестал быть верен (null = до сих пор).
+  /// Выставляется `FactSupersedeService` при `supersedes`-вердикте.
+  validUntil                  DateTime?
+  /// KC-Temporal W1.1 — когда система узнала о факте.
+  /// Default now(); для backfill — равно `createdAt`.
+  recordedAt                  DateTime                     @default(now())
+  /// KC-Temporal W1.1 — когда система пометила факт устаревшим (supersede).
+  supersededAt                DateTime?
+  /// KC-Temporal W1.1 — id нового блока, который заменил этот.
+  supersededById              String?
+  /// KC-Temporal W1.4 (2026-05-25) — спан-уровневые свидетельства.
+  /// Структура: `Array<{ field, refId?, evidenceId, startMs, endMs }>`.
+  /// `field ∈ {'name'|'criticalQuestion'|'trustedAnswer'|'mentionedEntity'}`.
+  /// Best-effort; отсутствие не ломает рендер.
+  propertySpans               Json?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
 
   org                 Org                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   mergedInto          IdeaBlock?           @relation("BlockMerges", fields: [mergedIntoId], references: [id])
   mergedFrom          IdeaBlock[]          @relation("BlockMerges")
+  /// KC-Temporal W1.1 — supersede chain (новый блок → старый).
+  supersedes          IdeaBlock?           @relation("IdeaBlockSupersedes", fields: [supersededById], references: [id])
+  supersedeChain      IdeaBlock[]          @relation("IdeaBlockSupersedes")
   evidence            IdeaBlockEvidence[]
   entities            IdeaBlockEntity[]
   linksFrom           IdeaBlockLink[]      @relation("BlockLinkFrom")
@@ -2559,6 +2586,10 @@ model IdeaBlock {
   /// SBA β-8.2 — личный кабинет «Мои обещания» (по personId через
   /// `Person.userId`, фильтр по статусу).
   @@index([tenantId, signalType, commitmentStatus])
+  /// KC-Temporal W1.1 — частые запросы «активные сейчас» (validUntil IS NULL).
+  @@index([tenantId, validUntil])
+  /// KC-Temporal W1.1 — снапшот «активные блоки данного signalType».
+  @@index([tenantId, signalType, validUntil])
 }
 
 /// IdeaBlockAxisLabel — fan-out IdeaBlock по 4 осям знания
@@ -3187,7 +3218,17 @@ model EntityLink {
   /// Временной интервал жизни связи (для bi-temporal в Фазе α; в Фазе 0 —
   /// используется для `executes_role` Person→Role).
   validFrom    DateTime       @default(now())
+  /// DEPRECATED (KC-Temporal W1.1): оставлено для legacy-кода. Новые
+  /// записи должны использовать `validUntil` (см. ниже). Backfill-скрипт
+  /// `patch-bitemporal-backfill.ts` переносит значение в `validUntil`.
   validTo      DateTime?
+  /// KC-Temporal W1.1 (2026-05-25) — bi-temporal «когда связь перестала
+  /// быть верной». null = действует до сих пор. Новые ребра пишутся сюда;
+  /// `validTo` оставлен только для чтения legacy-данных.
+  validUntil   DateTime?
+  /// KC-Temporal W1.1 — когда система узнала о ребре. Default now();
+  /// для backfill — равно `createdAt`.
+  recordedAt   DateTime       @default(now())
   /// Произвольные свойства связи (cosine score, RACI-флаги, observed_at и т.д.).
   properties   Json           @default("{}")
   /// Soft-delete: записывается при удалении из Org-Admin (Фаза 7).
@@ -3209,6 +3250,8 @@ model EntityLink {
   @@index([tenantId, toEntityId, toType])
   @@index([tenantId, relationType, validFrom])
   @@index([tenantId, deletedAt])
+  /// KC-Temporal W1.1 — выборка активных рёбер (validUntil IS NULL).
+  @@index([tenantId, validUntil])
 }
 
 // ──────────────────────────── knowledge-core: Theme (Фаза 4) ────────────────────────────
@@ -6229,14 +6272,34 @@ model ExecutablePersona {
   /// SBA γ-1 доделки — время триггерного события (создания N-го trait'а / mark_misleading);
   /// нужно для метрики `executable_persona_snapshot_lag_seconds`.
   triggerEventAt       DateTime?
+  /// Clones=Roles Ф1 (2026-05-25) — версия клона роли (1, 2, 3...).
+  /// При смене носителя роли создаётся новая версия. null — для scope='person'
+  /// (legacy) и для записей до backfill.
+  roleVersion          Int?          @default(1)
+  /// Clones=Roles Ф1 — Person.id текущего носителя роли (для scope='role').
+  /// null — для scope='person', для архивных версий и пока компания
+  /// не назначила первого носителя.
+  currentBearerPersonId String?
+  /// Clones=Roles Ф1 — публичное имя клона: «Клон Маркетолога v2».
+  /// Генерируется при build/backfill. null — для legacy persona.
+  publicName           String?
+  /// Clones=Roles Ф1 — id предыдущей версии ExecutablePersona в цепочке
+  /// версий клона роли (succeed-link).
+  succeedsPersonaId    String?
   createdAt            DateTime      @default(now())
 
-  tenant  Org           @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
-  profile SkillProfile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tenant     Org                  @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  profile    SkillProfile?        @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// Clones=Roles Ф1 — связь на предыдущую версию персоны.
+  succeeds   ExecutablePersona?   @relation("PersonaSuccession", fields: [succeedsPersonaId], references: [id])
+  /// Clones=Roles Ф1 — обратная связь: какие персоны заменили эту.
+  succeededBy ExecutablePersona[] @relation("PersonaSuccession")
 
   @@unique([profileId, scope, scopeRefId, version])
   @@index([scope, scopeRefId, status])
   @@index([tenantId])
+  /// Clones=Roles Ф1 — быстрый lookup «активная версия клона роли».
+  @@index([scope, scopeRefId, status, roleVersion])
   @@map("executable_personas")
 }
 

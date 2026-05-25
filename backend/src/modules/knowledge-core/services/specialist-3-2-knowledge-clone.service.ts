@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -28,6 +28,7 @@ import {
   KNOWLEDGE_CLONE_MERGE_SYSTEM_PROMPT,
   KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE,
 } from '../prompts/knowledge-clone-merge.prompt';
+import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';
 
@@ -75,6 +76,10 @@ export class Specialist32Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -228,6 +233,22 @@ export class Specialist32Service {
         categories: merged.categories,
         experienceHighlights: merged.experienceHighlights,
       };
+
+      // W4.1 — shadow-compare. legacy = 'internal' (hardcoded), proposed —
+      // через DataClassPolicyService (kind='skill_profile', floor=internal).
+      // Реально пишется legacy ('internal'). См. ТЗ §W4.1.
+      if (this.dataClassPolicy) {
+        const proposed = this.dataClassPolicy.derive({
+          sources: [],
+          context: { kind: 'skill_profile' },
+        }).dataClass;
+        this.dataClassPolicy.compareWithLegacy({
+          legacyResult: 'internal',
+          proposedResult: proposed,
+          kind: 'skill_profile',
+          sourceIds: [person.id],
+        });
+      }
 
       // 7. Triage. knowledge_profile НЕ в critical-types → auto-canonical
       //    при confidence ≥ autoThresholdDefault.

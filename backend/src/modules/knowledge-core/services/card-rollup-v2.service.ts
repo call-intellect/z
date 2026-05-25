@@ -16,6 +16,7 @@ import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { getCardRollupV2SystemPrompt } from '../prompts/card-rollup-v2.prompts';
 
+import { DataClassPolicyService } from './dataclass-policy.service';
 import { Specialist34ProbeService } from './specialist-3-4-probe.service';
 
 /**
@@ -155,6 +156,10 @@ export class CardRollupV2Service {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    // W4.1 — DataClassPolicyService для shadow-compare.
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -432,6 +437,26 @@ export class CardRollupV2Service {
       personSubjectIds,
       confidence,
     };
+
+    // W4.1 — shadow-compare. legacy = 'internal' (hardcoded), proposed —
+    // derive из enriched-blocks с floor=internal по kind='card_rollup'.
+    // Реально пишется legacy. См. ТЗ §W4.1.
+    if (this.dataClassPolicy) {
+      const proposed = this.dataClassPolicy.derive({
+        sources: enriched.map((b) => ({
+          dataClass: b.dataClass,
+          sourceId: b.id,
+          sourceKind: 'idea_block' as const,
+        })),
+        context: { kind: 'card_rollup' },
+      }).dataClass;
+      this.dataClassPolicy.compareWithLegacy({
+        legacyResult: 'internal',
+        proposedResult: proposed,
+        kind: 'card_rollup',
+        sourceIds: enriched.map((b) => b.id),
+      });
+    }
 
     const triage = await this.curation.triage({
       tenantId: args.tenantId,

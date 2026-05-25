@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type DataClass,
   type IdeaBlock,
@@ -37,6 +37,7 @@ import {
   INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT,
   INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE,
 } from '../prompts/insight-link-to-decisions.prompt';
+import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist35ProbeService } from './specialist-3-5-probe.service';
@@ -86,6 +87,10 @@ export class Specialist35Service {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // W4.1 — DataClassPolicyService для shadow-compare.
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -745,6 +750,32 @@ export class Specialist35Service {
     /** SBA β-4 wave 2 — категория первопричины (LLM-классифицировано). */
     causeCategory: InsightCauseCategory;
   }): Promise<Insight> {
+    // W4.1 — shadow-compare. legacy = elevateDataClass(block, 'internal');
+    // proposed — derive с floor=internal по kind='insight'. Реально
+    // пишется legacy (см. ТЗ §W4.1).
+    const legacyDataClass = this.elevateDataClass(
+      args.block.dataClass,
+      'internal',
+    );
+    if (this.dataClassPolicy) {
+      const proposed = this.dataClassPolicy.derive({
+        sources: [
+          {
+            dataClass: args.block.dataClass,
+            sourceId: args.block.id,
+            sourceKind: 'idea_block',
+          },
+        ],
+        context: { kind: 'insight' },
+      }).dataClass;
+      this.dataClassPolicy.compareWithLegacy({
+        legacyResult: legacyDataClass,
+        proposedResult: proposed,
+        kind: 'insight',
+        sourceIds: [args.block.id],
+      });
+    }
+
     return this.prisma.insight.create({
       data: {
         tenantId: args.block.tenantId,
@@ -761,7 +792,8 @@ export class Specialist35Service {
         ),
         // Insight чаще про процесс — default 'internal' (см. §13 sub-ТЗ).
         // Но если блок был sensitive/private — наследуем повышенный класс.
-        dataClass: this.elevateDataClass(args.block.dataClass, 'internal'),
+        // W4.1: legacyDataClass посчитан выше (см. shadow-compare).
+        dataClass: legacyDataClass,
         firstObservedAt: new Date(),
         lastObservedAt: new Date(),
         dynamicLabel: args.dynamicLabel,

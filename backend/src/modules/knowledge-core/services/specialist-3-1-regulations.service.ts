@@ -35,6 +35,7 @@ import {
   REGULATION_EXTRACT_SYSTEM_PROMPT,
   REGULATION_EXTRACT_USER_TEMPLATE,
 } from '../prompts/regulation-extract.prompt';
+import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist31ProbeService } from './specialist-3-1-probe.service';
 
@@ -92,6 +93,11 @@ export class Specialist31Service {
     private readonly probes: Specialist31ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // W4.1 — DataClassPolicyService для shadow-compare. @Optional, потому что
+    // unit-тесты могут не поднимать KnowledgeCoreModule целиком.
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -441,6 +447,7 @@ export class Specialist31Service {
         },
         conflictSignal: verdict.decision === 'contradicts' ? 'hard' : 'none',
         dataClass: block.dataClass,
+        sourceBlockId: block.id,
       });
 
       // 8. Probe-events.
@@ -604,6 +611,7 @@ export class Specialist31Service {
         },
         conflictSignal: verdict.decision === 'contradicts' ? 'hard' : 'none',
         dataClass: block.dataClass,
+        sourceBlockId: block.id,
       });
 
       await this.probes.checkAndEmitProbesProcess(proc);
@@ -771,6 +779,7 @@ export class Specialist31Service {
         },
         conflictSignal: verdict.decision === 'contradicts' ? 'hard' : 'none',
         dataClass: block.dataClass,
+        sourceBlockId: block.id,
       });
 
       await this.probes.checkAndEmitProbesPolicy(policy);
@@ -1047,7 +1056,30 @@ export class Specialist31Service {
     proposedPayload: Record<string, unknown>;
     conflictSignal: 'none' | 'soft' | 'hard';
     dataClass: 'public' | 'internal' | 'sensitive' | 'private';
+    /** W4.1 shadow-compare — id блока-источника + его DataClass. */
+    sourceBlockId?: string;
   }): Promise<void> {
+    // W4.1 — shadow-вызов DataClassPolicyService. РЯДОМ с legacy, без
+    // изменения реального write — реально пишется args.dataClass (legacy).
+    if (this.dataClassPolicy && args.sourceBlockId) {
+      const proposed = this.dataClassPolicy.derive({
+        sources: [
+          {
+            dataClass: args.dataClass,
+            sourceId: args.sourceBlockId,
+            sourceKind: 'idea_block',
+          },
+        ],
+        context: { kind: args.resourceType },
+      }).dataClass;
+      this.dataClassPolicy.compareWithLegacy({
+        legacyResult: args.dataClass,
+        proposedResult: proposed,
+        kind: args.resourceType,
+        sourceIds: [args.sourceBlockId],
+      });
+    }
+
     try {
       await this.curation.triage({
         tenantId: args.tenantId,

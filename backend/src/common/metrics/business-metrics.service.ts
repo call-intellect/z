@@ -124,6 +124,12 @@ export class BusinessMetricsService implements OnModuleInit {
   private coreEntitiesTotal!: Gauge<'tenant' | 'type'>;
   private coreLinksTotal!: Gauge<'tenant' | 'relation_type'>;
   private coreRawEventsTotal!: Gauge<'tenant' | 'processing_status'>;
+  /**
+   * KC-Temporal W1.1 (2026-05-25) — gauge «открытых» (validUntil IS NULL)
+   * IdeaBlock'ов, разрезанных по `signal_type`. Снапшотится тем же кроном
+   * `CoreMetricsSnapshotCron`.
+   */
+  private kcFactsOpenGauge!: Gauge<'tenant' | 'signal_type'>;
   private corePipelineDurationSeconds!: Histogram<'worker'>;
   private coreLlmTokensTotal!: Counter<'tenant' | 'task_type'>;
   private coreRetentionDeletedTotal!: Counter<'kind'>;
@@ -877,6 +883,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_raw_events_total',
       help: 'Количество RawEvent по processingStatus (snapshot).',
       labelNames: ['tenant', 'processing_status'] as const,
+    });
+    // KC-Temporal W1.1 — «открытые» (validUntil IS NULL) IdeaBlock'и по signal_type.
+    this.kcFactsOpenGauge = this.getOrCreateGauge({
+      name: 'kc_facts_open_gauge',
+      help: 'Открытые (validUntil IS NULL) канонические IdeaBlock\'и по signal_type. KC-Temporal W1.1.',
+      labelNames: ['tenant', 'signal_type'] as const,
     });
     this.corePipelineDurationSeconds = this.getOrCreateHistogram({
       name: 'core_pipeline_duration_seconds',
@@ -2664,6 +2676,17 @@ export class BusinessMetricsService implements OnModuleInit {
 
   setCoreEntities(args: { tenant: string; type: string; count: number }): void {
     this.coreEntitiesTotal.set({ tenant: args.tenant, type: args.type }, args.count);
+  }
+
+  /**
+   * KC-Temporal W1.1 — snapshot открытых (validUntil IS NULL) IdeaBlock'ов
+   * по signal_type. Вызывается из CoreMetricsSnapshotCron.
+   */
+  setKcFactsOpen(args: { tenant: string; signalType: string; count: number }): void {
+    this.kcFactsOpenGauge.set(
+      { tenant: args.tenant, signal_type: args.signalType },
+      args.count,
+    );
   }
 
   setCoreLinks(args: { tenant: string; relationType: string; count: number }): void {

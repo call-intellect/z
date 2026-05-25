@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { DataClass } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -19,6 +19,7 @@ import {
   type ChatV2Scope,
   type RankedBlockId,
 } from './chat-v2-retrieval.service';
+import { DataClassPolicyService } from './dataclass-policy.service';
 
 /**
  * ChatV2Service — единый AI-чат поверх IdeaBlock'ов (Фаза 6 knowledge-core).
@@ -144,6 +145,10 @@ export class ChatV2Service {
     private readonly retrieval: ChatV2RetrievalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -279,6 +284,26 @@ export class ChatV2Service {
     }
     const finalSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
     const finalUser = guardOn ? wrapUserData(userMessage) : userMessage;
+    // W4.1 — shadow-compare. legacy = maxDataClass(retrieval pool);
+    // proposed — derive с kind='chat_context'. Реально передаётся legacy
+    // в `llm.call`. См. ТЗ §W4.1.
+    const legacyDataClass = maxDataClass(contextBlocks.map((b) => b.dataClass));
+    if (this.dataClassPolicy) {
+      const proposed = this.dataClassPolicy.derive({
+        sources: contextBlocks.map((b) => ({
+          dataClass: b.dataClass,
+          sourceId: b.id,
+          sourceKind: 'idea_block' as const,
+        })),
+        context: { kind: 'chat_context' },
+      }).dataClass;
+      this.dataClassPolicy.compareWithLegacy({
+        legacyResult: legacyDataClass,
+        proposedResult: proposed,
+        kind: 'chat_context',
+        sourceIds: contextBlocks.map((b) => b.id),
+      });
+    }
     const result = await this.llm.call({
       taskType: 'chat-v2',
       systemPrompt: finalSystem,
@@ -287,7 +312,7 @@ export class ChatV2Service {
       userId: input.userId,
       sourceRef: { type: scope, id: scopeId ?? tenantId },
       // Фаза 11: max dataClass по retrieval pool.
-      dataClass: maxDataClass(contextBlocks.map((b) => b.dataClass)),
+      dataClass: legacyDataClass,
     });
 
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.

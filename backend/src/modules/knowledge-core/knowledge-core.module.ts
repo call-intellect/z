@@ -7,11 +7,12 @@ import { S3Service } from '../recordings/s3.service';
 
 import { SearchService } from './api/search.service';
 import { BlockExtractionService } from './services/block-extraction.service';
-import { BlockFetchService } from './services/block-fetch.service';
+import { BlockFetchService, KnowledgeBlockResolver } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChaptersExtractorV2Service } from './services/chapters-extractor-v2.service';
+import { DataClassPolicyService } from './services/dataclass-policy.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
 import { ChatV2Service } from './services/chat-v2.service';
 import { ClusteringService } from './services/clustering.service';
@@ -92,6 +93,10 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     CardRollupV2Service,
     // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
     BlockFetchService,
+    // KC-Temporal W1.1 (2026-05-25) — резолвер активных IdeaBlock'ов
+    // (validUntil IS NULL или validFrom<=at<validUntil). Используется
+    // search/snapshot/graph слоями. Без ENV-флага — это чистый helper.
+    KnowledgeBlockResolver,
     TasksExtractorV2Service,
     ChaptersExtractorV2Service,
     SummaryExtractorV2Service,
@@ -151,6 +156,11 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     ExecutablePersonaTriggerWatcherCron,
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
     SkillTraitConceptService,
+    // W4.1 (2026-05-25 KC-Temporal) — DataClassPolicyService.
+    // Single source of truth для DataClass derive. На W4.1 работает в
+    // shadow-режиме: специалисты вызывают `compareWithLegacy` рядом с
+    // легаси-вычислением; реальный write пока legacy. См. ТЗ §W4.1.
+    DataClassPolicyService,
   ],
   exports: [
     SegmentBuilderService,
@@ -168,6 +178,8 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // Фаза 5: экспортируем для воркеров (`MeetingAnalyzeV2Worker` и
     // `MeetingAnalyzeV2Cron` живут в WorkersModule).
     BlockFetchService,
+    // KC-Temporal W1.1 — экспортируется для consumer'ов (search/snapshot/graph).
+    KnowledgeBlockResolver,
     TasksExtractorV2Service,
     ChaptersExtractorV2Service,
     SummaryExtractorV2Service,
@@ -218,6 +230,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — экспортируется,
     // чтобы admin-модуль / cron-нормализатор / backfill-скрипт могли инжектить.
     SkillTraitConceptService,
+    // W4.1 — экспортируется для специалистов 3.1–3.6 (shadow-вызовы) и
+    // будущих enforce-call'ов на W4.2 + W4.3.
+    DataClassPolicyService,
   ],
 })
 export class KnowledgeCoreModule {}

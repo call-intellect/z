@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { DataClass, SignalType } from '@prisma/client';
+import type { DataClass, IdeaBlock, Prisma, SignalType } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -168,4 +168,60 @@ function minStartMs(block: MeetingBlock): number {
     if (ev.startMs !== null && ev.startMs < min) min = ev.startMs;
   }
   return Number.isFinite(min) ? min : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * KC-Temporal W1.1 (2026-05-25) — резолвер «активных на момент T» IdeaBlock'ов.
+ *
+ * Базовый helper для search/snapshot/graph слоёв. Bi-temporal-фильтр:
+ *   - Если `at` не передан (snapshot=now): `validUntil IS NULL`.
+ *   - Если `at` передан: `validFrom <= at AND (validUntil IS NULL OR validUntil > at)`.
+ *
+ * При `BITEMPORAL_ENABLED=false` caller'ы могут вообще не вызывать этот
+ * метод — это легитимный «legacy»-режим (все блоки активны). Сам резолвер
+ * флаг не читает: он чистый библиотечный slice, ENV-проверка — на caller'е.
+ */
+@Injectable()
+export class KnowledgeBlockResolver {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  /**
+   * Возвращает Prisma WHERE-фрагмент для подмешивания в любой `findMany`.
+   * Не делает запрос сам — caller комбинирует с собственными фильтрами.
+   */
+  buildActiveWhere(at?: Date): Prisma.IdeaBlockWhereInput {
+    if (!at) {
+      return { validUntil: null };
+    }
+    return {
+      AND: [
+        { OR: [{ validFrom: null }, { validFrom: { lte: at } }] },
+        { OR: [{ validUntil: null }, { validUntil: { gt: at } }] },
+      ],
+    };
+  }
+
+  /**
+   * Достаёт canonical-блоки tenant'а, активные на `at` (или на now()).
+   * Без relations — caller сам решит, что подгружать.
+   */
+  async getActive(args: {
+    tenantId: string;
+    at?: Date;
+    signalTypes?: SignalType[];
+    take?: number;
+  }): Promise<IdeaBlock[]> {
+    return this.prisma.ideaBlock.findMany({
+      where: {
+        tenantId: args.tenantId,
+        status: 'canonical',
+        ...(args.signalTypes && args.signalTypes.length > 0
+          ? { signalType: { in: args.signalTypes } }
+          : {}),
+        ...this.buildActiveWhere(args.at),
+      },
+      take: args.take ?? 100,
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
 }

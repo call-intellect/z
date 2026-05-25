@@ -220,6 +220,21 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
                 name: { type: 'string' },
                 mentionContext: { type: 'string' },
                 metadata: { type: 'object' },
+                /**
+                 * KC-Temporal W1.4 (2026-05-25) — опциональный таймкод цитаты,
+                 * где упомянута эта сущность (для прыжка плеера на нужную
+                 * секунду из карточки блока). Может быть не возвращён —
+                 * в этом случае span на UI просто не подсветится.
+                 */
+                sourceSpan: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['startMs', 'endMs'],
+                  properties: {
+                    startMs: { type: 'integer', minimum: 0 },
+                    endMs: { type: 'integer', minimum: 0 },
+                  },
+                },
               },
             },
           },

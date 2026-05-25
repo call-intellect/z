@@ -5,8 +5,10 @@ import type {
   IdeaBlockLinkType,
   IdeaBlockStatus,
   RawEventProcessingStatus,
+  SignalType,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -34,6 +36,7 @@ export class CoreMetricsSnapshotCron {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -44,6 +47,12 @@ export class CoreMetricsSnapshotCron {
         this.snapshotEntities(),
         this.snapshotLinks(),
         this.snapshotRawEvents(),
+        // KC-Temporal W1.1 — открытые факты по signal_type (validUntil IS NULL).
+        // Снапшотим всегда (gauge не зависит от ENV — он показывает реальное
+        // состояние БД). ENV-флаг лишь управляет тем, ставится ли validUntil
+        // в принципе; при выключенном bitemporal-режиме gauge будет показывать
+        // общее число canonical-блоков по signal_type — это тоже полезно.
+        this.snapshotKcFactsOpen(),
       ]);
     } catch (err) {
       this.logger.error(
@@ -105,6 +114,34 @@ export class CoreMetricsSnapshotCron {
       this.metrics.setCoreRawEvents({
         tenant: row.tenantId,
         processingStatus: row.processingStatus as RawEventProcessingStatus,
+        count: row._count._all,
+      });
+    }
+  }
+
+  /**
+   * KC-Temporal W1.1 — снапшот «открытых» (validUntil IS NULL) канонических
+   * IdeaBlock'ов по `signal_type`. Используется TZ-фильтрация: только
+   * factual типы (из `BITEMPORAL_FACT_SIGNAL_TYPES`). Прочие signal-типы
+   * supersede-арбитр не закрывает, поэтому метрика по ним бессмысленна.
+   */
+  private async snapshotKcFactsOpen(): Promise<void> {
+    const factTypes = this.cfg.bitemporal.factSignalTypes;
+    if (!factTypes || factTypes.length === 0) return;
+
+    const rows = await this.prisma.ideaBlock.groupBy({
+      by: ['tenantId', 'signalType'],
+      where: {
+        status: 'canonical',
+        validUntil: null,
+        signalType: { in: factTypes as SignalType[] },
+      },
+      _count: { _all: true },
+    });
+    for (const row of rows) {
+      this.metrics.setKcFactsOpen({
+        tenant: row.tenantId,
+        signalType: row.signalType as SignalType,
         count: row._count._all,
       });
     }

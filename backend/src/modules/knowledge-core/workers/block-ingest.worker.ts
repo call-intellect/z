@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { GraphService } from '../../../common/graph/graph.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -38,6 +39,27 @@ import { EntityResolutionService } from '../services/entity-resolution.service';
 import { AxisClassifierService } from '../services/axis-classifier.service';
 import { RouterService } from '../services/router.service';
 import { SegmentBuilderService } from '../services/segment-builder.service';
+
+/**
+ * KC-Temporal W1.4 (2026-05-25) — типизированный спан-уровневый провенанс.
+ * Сохраняется в `IdeaBlock.propertySpans` как JSON-массив.
+ *
+ *   - `field` — какое property блока подсвечивается (`name`/`criticalQuestion`/
+ *     `trustedAnswer`/`mentionedEntity`). На MVP block-ingest пишет только
+ *     `mentionedEntity` (entity-чипы → прыжок плеера).
+ *   - `refId` — id связанной сущности (опц.). При insert worker'ом не пишется
+ *     (entity-resolution идёт вне транзакции); может быть выставлено позже.
+ *   - `evidenceId` — обязательная связь со свидетельством (через который
+ *     UI знает, какой timecode проигрывать).
+ *   - `startMs` / `endMs` — таймкоды цитаты внутри source-медиа.
+ */
+export interface PropertySpan {
+  field: 'name' | 'criticalQuestion' | 'trustedAnswer' | 'mentionedEntity';
+  refId?: string;
+  evidenceId: string;
+  startMs: number;
+  endMs: number;
+}
 
 /**
  * Block-ingest worker (`core.raw-events` consumer).
@@ -93,6 +115,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RouterService) private readonly router: RouterService,
     @Inject(AxisClassifierService)
     private readonly axisClassifier: AxisClassifierService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   onModuleInit(): void {
@@ -699,6 +722,12 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         ? this.parseGuessedDueDate(block.commitmentDueDateGuess)
         : null;
 
+      // KC-Temporal W1.1: при включённом флаге проставляем validFrom из
+      // первого evidence (для одиночного evidence — это event.occurredAt).
+      // Если флаг выключен — оставляем null, backfill-скрипт заполнит позже.
+      const bitemporalEnabled = this.cfg.bitemporal.enabled;
+      const validFromValue: Date | null = bitemporalEnabled ? event.occurredAt : null;
+
       const blockId = await this.prisma.$transaction(async (tx) => {
         const ideaBlock = await tx.ideaBlock.create({
           data: {
@@ -714,6 +743,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             evidenceCount: 1,
             roleRelevant,
             roleId,
+            ...(validFromValue !== null ? { validFrom: validFromValue } : {}),
             ...(isCommitment
               ? {
                   commitmentStatus: 'open',
@@ -729,7 +759,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             ideaBlock.id,
           );
         }
-        await tx.ideaBlockEvidence.create({
+        const evidence = await tx.ideaBlockEvidence.create({
           data: {
             blockId: ideaBlock.id,
             rawEventId: event.id,
@@ -740,6 +770,18 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             endMs: block.evidenceEndMs,
           },
         });
+        // KC-Temporal W1.4: маппим LLM-output mentionedEntities[*].sourceSpan
+        // → propertySpans (требует evidenceId, поэтому ПОСЛЕ создания evidence).
+        // Best-effort: если LLM не вернул ни одного span — пропускаем UPDATE.
+        const propertySpansValue = this.buildPropertySpans(block, evidence.id);
+        if (propertySpansValue !== null && propertySpansValue.length > 0) {
+          await tx.ideaBlock.update({
+            where: { id: ideaBlock.id },
+            data: {
+              propertySpans: propertySpansValue as unknown as Prisma.InputJsonValue,
+            },
+          });
+        }
         return ideaBlock.id;
       });
 
@@ -851,6 +893,56 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     const d = new Date(`${trimmed}T00:00:00.000Z`);
     if (Number.isNaN(d.getTime())) return null;
     return d;
+  }
+
+  /**
+   * KC-Temporal W1.4 — собирает массив `PropertySpan` для записи в
+   * `IdeaBlock.propertySpans`. Сейчас — только из
+   * `mentionedEntities[*].sourceSpan` (опциональное LLM-поле).
+   *
+   * Формат записи (см. ТЗ §W1.4):
+   *   { field: 'mentionedEntity', refId?, evidenceId, startMs, endMs }
+   *
+   * `refId` для entity сейчас null — entity ещё не разрешена (linkEntity
+   * происходит вне транзакции). Это допустимо: UI смотрит spans по
+   * evidenceId + startMs/endMs (прыжок плеера); resolved-entity отдельно.
+   *
+   * Возвращает null, если в блоке нет mentionedEntities; пустой массив —
+   * если ни у одной mention LLM не вернул sourceSpan (caller сам решит,
+   * писать ли в БД).
+   */
+  private buildPropertySpans(
+    block: ExtractedBlock,
+    evidenceId: string,
+  ): PropertySpan[] | null {
+    if (!Array.isArray(block.mentionedEntities) || block.mentionedEntities.length === 0) {
+      return null;
+    }
+    const spans: PropertySpan[] = [];
+    for (const mention of block.mentionedEntities) {
+      const sourceSpan = (mention as ExtractedEntityMention & {
+        sourceSpan?: { startMs?: number; endMs?: number };
+      }).sourceSpan;
+      if (!sourceSpan) continue;
+      const { startMs, endMs } = sourceSpan;
+      if (
+        typeof startMs !== 'number' ||
+        typeof endMs !== 'number' ||
+        !Number.isFinite(startMs) ||
+        !Number.isFinite(endMs) ||
+        startMs < 0 ||
+        endMs < startMs
+      ) {
+        continue;
+      }
+      spans.push({
+        field: 'mentionedEntity',
+        evidenceId,
+        startMs: Math.floor(startMs),
+        endMs: Math.floor(endMs),
+      });
+    }
+    return spans;
   }
 
   /**

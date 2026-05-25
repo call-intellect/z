@@ -30,6 +30,12 @@ export interface ExtractedEntityMention {
   name: string;
   mentionContext: string;
   metadata?: Record<string, unknown>;
+  /**
+   * KC-Temporal W1.4 (2026-05-25) — опциональный таймкод цитаты, где
+   * упомянута сущность. Маппится в `IdeaBlock.propertySpans[*]` в
+   * block-ingest.worker'е. LLM может не вернуть — это допустимо.
+   */
+  sourceSpan?: { startMs: number; endMs: number };
 }
 
 /**
@@ -154,6 +160,13 @@ const ExtractedEntityMentionSchema = z.object({
   name: z.string().min(1),
   mentionContext: z.string(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  // KC-Temporal W1.4 — опциональный span (старые LLM-промпты могут не возвращать).
+  sourceSpan: z
+    .object({
+      startMs: z.number().int().min(0),
+      endMs: z.number().int().min(0),
+    })
+    .optional(),
 });
 
 const ExtractedBlockSchema = z.object({

@@ -610,6 +610,33 @@ const KnowledgeCoreSchema = z.object({
    * clone_style не реализован — fallback на synthetic.
    */
   CHAT_V2_DEFAULT_MODE: z.enum(['factual', 'synthetic', 'clone_style']).default('synthetic'),
+
+  // ── KC-Temporal (2026-05-25) W1.1 Bitemporal fields ──────────────────
+  /**
+   * Master kill-switch для всей Волны 1 KC-Temporal (bi-temporal факты,
+   * supersede, snapshot API, span evidence). Если `false` — block-ingest
+   * НЕ заполняет `validFrom`/`recordedAt` принудительно, поиск НЕ фильтрует
+   * по `validUntil IS NULL`, фактический supersede-арбитр не запускается.
+   * Backfill-скрипт (`patch-bitemporal-backfill.ts`) можно гонять отдельно —
+   * он не зависит от ENV-флага.
+   */
+  BITEMPORAL_ENABLED: zBool(false),
+  /**
+   * KC-Temporal W1.2 (готовим заранее) — отдельный флаг для запуска
+   * `FactSupersedeService.processNewBlock` после canonical-distill.
+   * Логически требует `BITEMPORAL_ENABLED=true`; раздельный флаг даёт
+   * возможность включить только bitemporal-поля без LLM-арбитра.
+   */
+  BITEMPORAL_SUPERSEDE_ENABLED: zBool(false),
+  /**
+   * KC-Temporal W1.1 — comma-separated список `signalType`, которые мы
+   * считаем «factual» (т.е. они могут быть supersede'нуты). Остальные
+   * типы (events tracker'а, mood/drift и т.п.) supersede-арбитр пропускает.
+   * См. решение №1 ТЗ 2026-05-25-knowledge-core-temporal-and-graph-quality.
+   */
+  BITEMPORAL_FACT_SIGNAL_TYPES: z
+    .string()
+    .default('fact,commitment,commitment_status,plan_item,done_item,client_request'),
 });
 
 /** Шеринг (длительность ссылок). */
@@ -1318,6 +1345,26 @@ const TrackerSchema = z.object({
     .int()
     .positive()
     .default(60_000),
+
+  // ── W4.1 (knowledge-core temporal) — DataClassPolicyService режим ────
+  // См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md
+  // §W4.1. Сложены в TrackerSchema, чтобы не удлинять `.merge` цепочку
+  // EnvSchema (TS2589 — см. NB перед EnvSchema). Логически независимы —
+  // читаются через `cfg.dataClassPolicy`.
+  //
+  //   - DATACLASS_POLICY_ENFORCEMENT — режим работы политики.
+  //       * `off` — DataClassPolicyService не вызывается; легаси работает.
+  //       * `shadow` — derive() считается параллельно, compareWithLegacy()
+  //         эмитит метрики; реальный write идёт от легаси (W4.1 — default).
+  //       * `enforce` — derive() становится источником истины; легаси
+  //         удаляется (включится в W4.2 после ≥1 недели shadow).
+  //   - DATACLASS_POLICY_VERSION — строка-маркер версии правил, попадает в
+  //     `DataClassAudit.policyVersion`. Меняется только деплоем кода (когда
+  //     корректируем правила, например v1.1 после анализа shadow-метрик).
+  DATACLASS_POLICY_ENFORCEMENT: z
+    .enum(['off', 'shadow', 'enforce'])
+    .default('shadow'),
+  DATACLASS_POLICY_VERSION: z.string().min(1).default('v1'),
 });
 
 /**

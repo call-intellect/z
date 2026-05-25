@@ -34,6 +34,7 @@ import {
   DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT,
   DECISION_SUPERSEDE_DETECT_USER_TEMPLATE,
 } from '../prompts/decision-supersede-detect.prompt';
+import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist33ProbeService } from './specialist-3-3-probe.service';
@@ -86,6 +87,10 @@ export class Specialist33Service {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    // W4.1 — DataClassPolicyService для shadow-compare.
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -642,6 +647,28 @@ export class Specialist33Service {
     supersedesId?: string;
     validFrom?: Date;
   }): Promise<Decision> {
+    // W4.1 — shadow-compare DataClass. legacy = block.dataClass (passthrough);
+    // proposed — derive с floor=internal по kind='decision'. Реально пишется
+    // legacy (см. ТЗ §W4.1).
+    if (this.dataClassPolicy) {
+      const proposed = this.dataClassPolicy.derive({
+        sources: [
+          {
+            dataClass: args.block.dataClass,
+            sourceId: args.block.id,
+            sourceKind: 'idea_block',
+          },
+        ],
+        context: { kind: 'decision' },
+      }).dataClass;
+      this.dataClassPolicy.compareWithLegacy({
+        legacyResult: args.block.dataClass,
+        proposedResult: proposed,
+        kind: 'decision',
+        sourceIds: [args.block.id],
+      });
+    }
+
     return this.prisma.decision.create({
       data: {
         tenantId: args.block.tenantId,

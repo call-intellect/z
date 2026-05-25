@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type ExecutablePersona,
   type SkillTrait,
@@ -21,6 +21,8 @@ import {
   EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
   EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE,
 } from '../prompts/executable-persona-compile.prompt';
+
+import { DataClassPolicyService } from './dataclass-policy.service';
 
 /**
  * SBA γ-1 доделки — почему был собран snapshot.
@@ -59,6 +61,10 @@ export class ExecutablePersonaBuildService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
+    @Optional()
+    @Inject(DataClassPolicyService)
+    private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
   /**
@@ -120,6 +126,28 @@ export class ExecutablePersonaBuildService {
         scope: 'person',
         scopeRefId: null,
       });
+
+      // W4.1 — shadow-compare. ExecutablePersona не имеет поля dataClass в
+      // Prisma (на W4.2 добавится `dataClassAudit`), но политика W4.1
+      // фиксирует, что Клон Роли = `internal` (см. §4 ТЗ — решение №6
+      // от 2026-05-25, clones-role-based-rebrand). legacy='internal'
+      // (де-факто), proposed — derive с floor=internal.
+      if (this.dataClassPolicy) {
+        const proposed = this.dataClassPolicy.derive({
+          sources: profile.traits.map((t) => ({
+            dataClass: 'internal' as const,
+            sourceId: t.id,
+            sourceKind: 'skill_trait' as const,
+          })),
+          context: { kind: 'executable_persona' },
+        }).dataClass;
+        this.dataClassPolicy.compareWithLegacy({
+          legacyResult: 'internal',
+          proposedResult: proposed,
+          kind: 'executable_persona',
+          sourceIds: profile.traits.map((t) => t.id),
+        });
+      }
 
       const newPersona = await this.prisma.$transaction(async (tx) => {
         await tx.executablePersona.updateMany({

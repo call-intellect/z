@@ -447,6 +447,30 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── KC-Temporal Bitemporal ─────────────
+  /**
+   * KC-Temporal W1.1 (2026-05-25) — bi-temporal факты, supersede-арбитр.
+   *
+   *   - `enabled` — master kill-switch для всей Волны 1 (block-ingest
+   *     заполняет validFrom, search фильтрует validUntil IS NULL).
+   *   - `supersedeEnabled` — флаг W1.2 (FactSupersedeService), требует
+   *     `enabled=true`. Раздельный — чтобы катить bitemporal-поля без LLM.
+   *   - `factSignalTypes` — список signalType, на которых работает
+   *     supersede-арбитр (см. решение №1 ТЗ).
+   */
+  get bitemporal() {
+    const csv = this.get('BITEMPORAL_FACT_SIGNAL_TYPES') as string;
+    const factSignalTypes = csv
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    return {
+      enabled: this.get('BITEMPORAL_ENABLED') as boolean,
+      supersedeEnabled: this.get('BITEMPORAL_SUPERSEDE_ENABLED') as boolean,
+      factSignalTypes,
+    } as const;
+  }
+
   // ─────────────────────────── SBA α-5 — Chat-v2 Omnichannel ─────
   /**
    * Конфигурация модуля `chat-v2/` (новая обёртка над knowledge-core
@@ -1165,6 +1189,30 @@ export class TypedConfigService {
       webhookRetryBackoffInitialMs: this.get(
         'TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS',
       ),
+    } as const;
+  }
+
+  // ─────────────────── dataclass policy (W4.1 knowledge-core temporal) ──
+  /**
+   * Параметры `DataClassPolicyService` — единого источника правды по
+   * вычислению `DataClass` для проекций knowledge-core.
+   *
+   *   - `enforcement` ∈ off | shadow | enforce. На W4.1 — `shadow` (default).
+   *     На W4.2 — переключим в `enforce` после ≥1 недели без расхождений.
+   *   - `version` — строка-маркер версии правил v1, пишется в
+   *     `DataClassAudit.policyVersion`. Меняется только деплоем кода.
+   *
+   * См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W4.1.
+   */
+  get dataClassPolicy() {
+    const mode = this.get('DATACLASS_POLICY_ENFORCEMENT') as
+      | 'off'
+      | 'shadow'
+      | 'enforce'
+      | undefined;
+    return {
+      enforcement: mode ?? 'shadow',
+      version: String(this.get('DATACLASS_POLICY_VERSION') ?? 'v1'),
     } as const;
   }
 

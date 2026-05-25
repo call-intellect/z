@@ -77,6 +77,11 @@ export class SearchService {
 
     const cosineWeight = this.cfg.knowledgeCore.searchCosineWeight;
     const bm25Weight = this.cfg.knowledgeCore.searchBm25Weight;
+    // KC-Temporal W1.1: при включённом флаге фильтруем активные на сейчас
+    // блоки (validUntil IS NULL). Поведение по умолчанию идентично legacy,
+    // когда флаг выключен. Snapshot-API (W1.3) пробросит явный `at`, на
+    // котором фильтр будет: validFrom <= at AND (validUntil IS NULL OR > at).
+    const bitemporalActiveOnly = this.cfg.bitemporal.enabled;
 
     const rows = await this.runHybridQuery({
       tenantId: args.tenantId,
@@ -89,6 +94,7 @@ export class SearchService {
       dateFrom: args.dateFrom ?? null,
       dateTo: args.dateTo ?? null,
       limit: args.limit,
+      bitemporalActiveOnly,
     });
 
     if (rows.length === 0) {
@@ -133,6 +139,8 @@ export class SearchService {
     dateFrom: Date | null;
     dateTo: Date | null;
     limit: number;
+    /** KC-Temporal W1.1 — отфильтровать активные на «сейчас» (validUntil IS NULL). */
+    bitemporalActiveOnly?: boolean;
   }): Promise<RawSearchRow[]> {
     const params: unknown[] = [];
     const pushParam = (v: unknown): string => {
@@ -157,6 +165,11 @@ export class SearchService {
       `b."tenantId" = ${pTenant}`,
       `b.status = 'canonical'`,
     ];
+    // KC-Temporal W1.1 — фильтр «активные сейчас». Учитывает legacy блоки,
+    // у которых validUntil ещё не выставлен (NULL = действующий факт).
+    if (args.bitemporalActiveOnly) {
+      filters.push('b."validUntil" IS NULL');
+    }
     if (args.qvec) {
       filters.push('b.embedding IS NOT NULL');
     }

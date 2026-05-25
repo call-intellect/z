@@ -385,6 +385,9 @@ export class CardRollupV2Service {
       sourceRef: { type: 'card', id: card.id },
       // Фаза 11: max dataClass по блокам карточки.
       dataClass: maxDataClass(enriched.map((b) => b.dataClass)),
+      // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — текст summary карточки
+      // (несколько абзацев) + резерв на thinking при переключении на Pro.
+      maxTokens: 8_000,
     });
 
     const summary = result.text.trim() || null;

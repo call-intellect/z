@@ -243,7 +243,10 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
           schema: GOAL_ALIGNMENT_JSON_SCHEMA,
           strict: true,
         },
-        maxTokens: 1200,
+        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — 1200 → 2000. Primary
+        // `deepseek-v4-pro` с thinking; короткий JSON {score, explanation,
+        // signals} + thinking-токены не помещаются в 1200.
+        maxTokens: 2_000,
       });
       parsed = parseLlmResponse(result.text);
     } catch (err) {

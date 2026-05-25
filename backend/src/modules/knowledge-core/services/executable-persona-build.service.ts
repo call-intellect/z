@@ -431,6 +431,9 @@ export class ExecutablePersonaBuildService {
         userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.tenantId,
         dataClass: 'internal',
+        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — текст persona 300-800
+        // слов + thinking-токены DeepSeek-Pro. На дефолтных 4096 проваливается.
+        maxTokens: 8_000,
       });
     } catch (err) {
       this.logger.warn(

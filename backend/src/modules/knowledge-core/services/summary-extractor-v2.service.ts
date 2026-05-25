@@ -95,6 +95,10 @@ export class SummaryExtractorV2Service {
       sourceRef: { type: 'meeting', id: input.meetingId },
       // Фаза 11: dataClass = max по входным блокам.
       dataClass: maxDataClass(input.blocks.map((b) => b.dataClass)),
+      // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — markdown-резюме встречи
+      // (несколько разделов) + thinking-токены DeepSeek-Pro (primary
+      // deepseek-v4-pro). Дефолт 4096 на Pro даёт обрезание.
+      maxTokens: 8_000,
     });
     const markdown = result.text.trim();
     if (markdown.length === 0) {

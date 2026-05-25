@@ -194,7 +194,10 @@ export class DirectorDashboardService {
         systemPrompt: DASHBOARD_SUMMARY_SYSTEM_PROMPT,
         userMessage,
         sourceRef: { type: 'dashboard', id: args.tenantId },
-        maxTokens: 600,
+        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — 600 → 4000.
+        // Текст нарратива 200-500 слов + резерв на thinking при переключении
+        // primary на Pro.
+        maxTokens: 4_000,
       });
       const text = (out.text ?? '').trim();
       if (text.length === 0) {

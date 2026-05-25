@@ -121,6 +121,10 @@ export class RoleProfileService {
         },
         dataClass: 'sensitive',
         sourceRef: { type: 'role-profile', id: roleId },
+        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — длинный JSON
+        // role_profile_v1. На 6000 в smoke обрезалось; ставим 16000 с запасом
+        // на thinking-токены при будущем переключении на Pro.
+        maxTokens: 16_000,
       });
       const raw = JSON.parse(result.text) as unknown;
       parsed = RoleProfileSchema.parse(raw);

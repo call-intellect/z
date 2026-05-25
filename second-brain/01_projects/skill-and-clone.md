@@ -114,3 +114,24 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 ## Чувствительность
 
 Этот sub-TZ — самый чувствительный во всём SBA. Любая ошибка в формулировках, утечка manager-видимости носителю, потеря качества `skill-trait-detect` — подорвёт восприятие продукта. После deploy 1–2 dev-куратора должны лично подтвердить «traits похожи на правду» (manager validation note).
+
+## Доработки 2026-05-25 — clone-reliability-hardening
+
+ТЗ: [`plans/tz/2026-05-25-clone-reliability-hardening.md`](../../plans/tz/2026-05-25-clone-reliability-hardening.md). Закрыто 7 фаз из 8 (см. рефлексию [`05_история/2026-05-25-clone-reliability-hardening-wave.md`](../05_история/2026-05-25-clone-reliability-hardening-wave.md)).
+
+### Что изменилось в γ-1 после доработок
+
+| Аспект | Было до 2026-05-25 | Стало после |
+|---|---|---|
+| Антифальшивка | Одна строка в промпте `clone-respond.prompt.ts` (пункт 6). | **Программное правило** в [`ClonesService.askPerson`/`askRole`](../../backend/src/modules/clones/services/clones.service.ts) до вызова LLM: `cfg.skill.cloneTopicMinBlocks=2` блоков с косинусной близостью >= `cfg.skill.cloneTopicSimilarityThreshold=0.70` к вопросу — иначе отказ без LLM. DTO `refused`/`refusalReason`, метрика `clone_ask_refused_total{reason}`. Snapshot-тест на промпт + integration-тест 3-х сценариев. |
+| Категории SkillTrait у разных людей | Эмерджентный текст без нормализации — три формулировки одной черты у трёх человек считались разными. | См. [[skill-trait-concepts]] — модель `SkillTraitConcept` с порогом совпадения 0.85 и порогом слияния 0.92. Cron `0 3 * * *` сливает близкие концепты, LLM `skill-trait-concept-name` (DeepSeek V4 Flash) предлагает каноническое имя только при слиянии 2+. |
+| Probe-получатель | Только админы (нет поля «глава отдела»). | `Department.headPersonId` + общий helper [`resolveProbeRecipients`](../../backend/src/modules/knowledge-core/services/probe-recipient.util.ts): глава отдела → fallback к admin/owner. |
+| Триггер пересборки персоны | Только cron раз в неделю (вс 06:00). | Cron `0 */2 * * *`, реактивный по `cfg.skill.personaRebuildTraitDeltaThreshold=2` новых traits за 24ч ИЛИ `personaRebuildMaxAgeHours=48`. Кнопка «Обновить клона» на `/me/clone`, в чате клона и на `/persons/[id]/skill-profile` (при `canMarkMisleading=true`). |
+| Заморозка модели | Только комментарий в seed-script. | Поле `LlmTaskRoute.pinnedVersionNote` + snapshot-тест [`seed-llm-task-routes-skill-and-clone.snapshot.spec.ts`](../../backend/scripts/seed-llm-task-routes-skill-and-clone.snapshot.spec.ts) — фиксирует точные provider/model для 4 цепочек. Любая правка → snapshot ломается. UI `/admin/llm-routes` показывает warning для критичного списка `{skill-trait-detect, clone-respond, block-ingest}` при пустой заметке. |
+| Golden-набор | Не было. | [`backend/test/eval/skill-trait-detect-golden/`](../../backend/test/eval/skill-trait-detect-golden/) — 20 валидных + 5 reject фикстур, 84 unit-теста, инварианты `categoryKeywords` / `statementContainsQualifier` / `forbiddenWords` против приговорного стиля. Реальный прогон через LLM включается `SKILL_TRAIT_DETECT_GOLDEN_REAL=1`. |
+
+### Что осталось — Фаза 6.1 (переключение моделей на DeepSeek V4 Pro)
+
+⛔ **Заблокировано** параллельным ТЗ [`plans/tz/2026-05-25-deepseek-pro-output-format-fix.md`](../../plans/tz/2026-05-25-deepseek-pro-output-format-fix.md): DeepSeek-V4-Pro+thinking не поддерживает `response_format: json_schema strict`, а `skill-trait-detect` именно его использует. Нужна автоконвертация json_schema → tool+auto в `DeepSeekService` (черновик владельца).
+
+Дальнейший порядок: (1) реализовать deepseek-pro-output-format-fix; (2) прогнать `skill-trait-detect-golden` на двух моделях в сравнении; (3) если DeepSeek-Pro не хуже — patch-script переключения; (4) заполнить `pinnedVersionNote`.

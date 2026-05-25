@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import { HomeClient } from './HomeClient';
 
 export const metadata: Metadata = {
-  title: 'Z — AI-видеовстречи',
+  title: 'КОРА — память вашей компании',
   description:
-    'Z — видеовстречи с AI-отчётом под тип встречи. Получите готовый отчёт через 3 минуты после звонка.',
+    'Кора — видеовстречи, задачи и AI-операционный директор. Встречи, переписки и вечерние отчёты автоматически сохраняются в память компании. Уходит человек — память остаётся.',
 };
 
 export default function HomePage() {

@@ -93,7 +93,7 @@ covers: реестр всех страниц Next.js App Router
 
 ## Top-level
 
-- `/` (public) — landing.
+- `/` (public, prerender static) — лендинг **КОРА** (`app/HomeClient.tsx`). Бренд `КОРА` (кириллица, wordmark с mint-точкой), позиционирование «память компании». Структура: hero → 01·Встречи (2) → 02·Задачи (2, привычный трекер + автоматизация) → 03·AI-операционный директор (выделенный gradient-блок, 2 карточки) → bridge «копируется во второй мозг» → 04·Память (6 карточек: второй мозг flagship, знания не уходят, двойники, собирает сама, личный консультант, Telegram) → финальный CTA. Стилистика dark + mint, motion (fadeIn/slideUp/whileInView). Авторизованных редиректит на `/dashboard`. Заглушка показывается только при `user` (не при `isLoading`) — иначе при недоступном бэке лендинг бесконечно висел в «синем экране».
 - `/login`, `/register`, `/forgot`, `/reset` — auth.
 - `/onboarding` — wizard (Phase 0c, owner-only).
 - `/chat-v2` — AI-чат компании (master-detail + deep-link `?conversationId=`).

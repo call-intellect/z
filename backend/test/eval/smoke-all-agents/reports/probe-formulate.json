@@ -1,0 +1,11 @@
+{
+  "taskType": "probe-formulate",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "parsedOk": true,
+  "tokensIn": 672,
+  "tokensOut": 398,
+  "costUsd": 0.00063858,
+  "ms": 7961,
+  "modelResponse": "{\"question\": \"Кто будет ответственным за интеграцию с Битрикс24?\", \"options\": [\"Назначить Алексея\", \"Выбрать другого\", \"Пока без ответственного\"]}"
+}

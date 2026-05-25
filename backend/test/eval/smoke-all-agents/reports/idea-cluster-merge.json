@@ -1,0 +1,12 @@
+{
+  "taskType": "idea-cluster-merge",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 958,
+  "tokensOut": 624,
+  "cachedTokens": 0,
+  "costUsd": 0.0009596100000000001,
+  "ms": 11932,
+  "modelResponse": "{\"verdict\": \"add_to_existing\", \"targetClusterId\": \"cl-001\", \"newClusterName\": \"null\", \"newClusterDescription\": \"null\", \"reasoning\": \"Тёмная тема — это прямое визуальное UX-улучшение личного кабинета, что полностью соответствует тематике кластера cl-001 «UX-улучшения личного кабинета». В кластере уже",
+  "error": null
+}

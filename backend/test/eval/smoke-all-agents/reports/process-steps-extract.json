@@ -1,0 +1,11 @@
+{
+  "taskType": "process-steps-extract",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1044,
+  "tokensOut": 1178,
+  "cachedTokens": 0,
+  "costUsd": 0.001479,
+  "ms": 16028,
+  "modelResponse": "{\"steps\": [{\"order\": 1, \"name\": \"Отправка welcome-письма и подписание NDA\", \"description\": \"HR отправляет welcome-pack с доступами и подписывает NDA с новым сотрудником.\", \"slaMinutes\": null, \"roleHint\": \"HR\"}, {\"order\": 2, \"name\": \"Выдача ноутбука и создание корпоративной почты\", \"description\": \"IT выдаёт ноутбук и создаёт корпоративную почту для нового сотрудника.\", \"slaMinutes\": null, \"roleHint\": \"IT\"}, {\"order\": 3, \"name\": \"Проведение вводной встречи\", \"description\": \"Менеджер проводит часовую вводную встречу с новым сотрудником.\", \"slaMinutes\": null, \"roleHint\": \"Менеджер\"}, {\"order\": 4, "
+}

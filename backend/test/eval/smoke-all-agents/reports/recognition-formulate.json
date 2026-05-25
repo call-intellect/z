@@ -1,0 +1,12 @@
+{
+  "taskType": "recognition-formulate",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 709,
+  "tokensOut": 701,
+  "cachedTokens": 0,
+  "costUsd": 0.000918285,
+  "ms": 12555,
+  "modelResponse": "{\"message\": \"Мария, вижу, как ты помогаешь команде: на прошлой неделе и с интеграцией разобралась, и про отпуска подсказала, и демо для новичка провела. Это многое меняет.\"}",
+  "error": null
+}

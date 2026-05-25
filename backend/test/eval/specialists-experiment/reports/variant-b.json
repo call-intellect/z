@@ -1,0 +1,296 @@
+{
+  "variant": "B",
+  "fixtureId": "specialists-01-team-standup",
+  "model": "deepseek-v4-pro",
+  "totalMs": 179589,
+  "totalTokensIn": 11491,
+  "totalTokensOut": 10685,
+  "totalCachedTokens": 0,
+  "totalCostUsd": 0.014294535,
+  "totalEntities": 28,
+  "steps": [
+    {
+      "step": "combined",
+      "ok": true,
+      "ms": 179588,
+      "tokensIn": 11491,
+      "tokensOut": 10685,
+      "cachedTokens": 0,
+      "costUsd": 0.014294535,
+      "blocksGiven": 55,
+      "entitiesExtracted": 28,
+      "output": {
+        "decisions": [
+          {
+            "sourceBlockId": "blk_006",
+            "statement": "Снизить порог алерта Prometheus по p95 latency на тарификаторе с 30 до 5 секунд. Делает Анна до пятницы 23 мая.",
+            "rationale": "5 секунд — это в 2 раза выше обычного p95 (2.3с), даёт буфер на сетевые всплески, но ловит начало деградации за 10–12 минут до отказа сервиса.",
+            "alternatives": [
+              "Оставить 30 секунд",
+              "Поставить 10 секунд",
+              "Поставить 3 секунды"
+            ],
+            "status": "approved",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_007",
+            "statement": "Порог 5 секунд для latency-алерта выбран потому, что обычный p95 тарификатора — 2.3 секунды; двукратный запас даёт буфер на сетевые всплески и не ловит шум, но позволяет заметить начало деградации за 10–12 минут до отказа сервиса.",
+            "rationale": null,
+            "alternatives": [],
+            "status": "approved",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_026",
+            "statement": "Перевести все три каталога — услуг, прайсов и шаблонов документов — с node-cache на Redis до 6 июня. Делают Анна и Дмитрий в паре.",
+            "rationale": "Redis показал p95 1.8мс против 2.3мс у node-cache (на 22% быстрее) и полностью устранил рассинхрон между подами Kubernetes.",
+            "alternatives": [
+              "Оставить node-cache",
+              "Использовать другой distributed cache (например, Hazelcast)"
+            ],
+            "status": "approved",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_029",
+            "statement": "Поднять временный Redis в Docker на dev-VPS (8GB) и провести миграцию каталога услуг — он самый маленький. Прайсы и шаблоны документов — после возвращения Виктора 2 июня.",
+            "rationale": "Единственный devops Виктор в отпуске до 2 июня, прав на Terraform у разработчиков нет, staging-кластер Redis поднять некому.",
+            "alternatives": [
+              "Ждать Виктора и ничего не делать 2 недели",
+              "Просить доступы у DevOps из другой команды"
+            ],
+            "status": "approved",
+            "confidence": 0.85
+          },
+          {
+            "sourceBlockId": "blk_039",
+            "statement": "Провести коллективное интервью с кандидатом Виктором Грушиным на роль fullstack-инженера 22 мая (четверг) в 16:00. Участвуют Иван, Анна и Дмитрий.",
+            "rationale": null,
+            "alternatives": [
+              "Провести серию индивидуальных интервью",
+              "Перенести на следующую неделю"
+            ],
+            "status": "approved",
+            "confidence": 0.9
+          }
+        ],
+        "ideas": [
+          {
+            "sourceBlockId": "blk_013",
+            "kind": "internal",
+            "statement": "Добавить push-уведомления о статусе платежа в личный кабинет: об успехе, ошибке и возврате. Сейчас пользователи проверяют статус вручную по 5–6 раз в день.",
+            "rationale": "Пользователи заходят и обновляют страницу по пять раз в день, это видно по аналитике.",
+            "confidence": 0.8
+          },
+          {
+            "sourceBlockId": "blk_014",
+            "kind": "client_request",
+            "statement": "Экспорт счетов в формате 1С (CSV с полями ИНН, КПП, номер счёта, сумма, НДС) для клиента Альфа.",
+            "rationale": "Клиент Альфа официально запросил фичу и грозит уйти к конкуренту к августу без неё.",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_015",
+            "kind": "client_request",
+            "statement": "Мобильное приложение для iOS для просмотра KPI топ-менеджерами с телефона — клиент Гамма просит второй раз за квартал.",
+            "rationale": "Текущая мобильная вёрстка не устраивает клиента Гамма; CEO должен смотреть KPI с телефона.",
+            "confidence": 0.85
+          },
+          {
+            "sourceBlockId": "blk_016",
+            "kind": "internal",
+            "statement": "Встроить AI-классификатор тикетов в админку саппорта: модель автоматически проставляет категорию (billing, bug, feature, account) и приоритет.",
+            "rationale": null,
+            "confidence": 0.7
+          },
+          {
+            "sourceBlockId": "blk_017",
+            "kind": "internal",
+            "statement": "Интерактивный onboarding-чеклист в личном кабинете: 7 шагов до первой успешной операции, прогресс-бар и подсказки на каждом шаге.",
+            "rationale": null,
+            "confidence": 0.75
+          },
+          {
+            "sourceBlockId": "blk_018",
+            "kind": "internal",
+            "statement": "Реферальная программа: клиент приводит нового платящего клиента — обоим месяц бесплатного тарифа.",
+            "rationale": "Маркетинг просчитал unit economics: окупается со второго месяца нового платящего клиента.",
+            "confidence": 0.8
+          }
+        ],
+        "insights": [
+          {
+            "sourceBlockId": "blk_003",
+            "kind": "problem",
+            "statement": "Алерты Prometheus на тарификатор сработали только через 18 минут после падения, потому что порог по latency был 30 секунд, а сервис деградировал плавно и не пересёк порог. Дежурный узнал об инциденте от клиента в Telegram.",
+            "severity": "high",
+            "causeCategory": "tooling",
+            "mitigationSuggestion": "Снизить порог алерта по p95 latency до 5 секунд и добавить алерты на тренд (rate of change) и отклонение от baseline за период.",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_004",
+            "kind": "problem",
+            "statement": "У дежурного не было runbook (инструкции по восстановлению) на тарификатор. Он 25 минут искал по коду способ отката релиза, в итоге Анну подняли среди ночи.",
+            "severity": "high",
+            "causeCategory": "process_gap",
+            "mitigationSuggestion": "Создать и поддерживать runbook для каждого P1-сервиса с разделами: Симптомы, Диагностика, Откат, Эскалация.",
+            "confidence": 0.95
+          },
+          {
+            "sourceBlockId": "blk_005",
+            "kind": "risk",
+            "statement": "Без срочной починки алертов и runbook инцидент на тарификаторе повторится в течение 2–3 недель, потому что нагрузка на сервис растёт на 15% в месяц.",
+            "severity": "high",
+            "causeCategory": "process_gap",
+            "mitigationSuggestion": "Закрыть алерты и runbook за неделю, ввести pre-mortem на квартальном планировании для прогнозирования подобных рисков.",
+            "confidence": 0.85
+          },
+          {
+            "sourceBlockId": "blk_027",
+            "kind": "blocker",
+            "statement": "На staging нет Redis-кластера с прод-объёмом памяти (32GB). Тестировать миграцию каталога прайсов негде — dev-инстанс всего 4GB.",
+            "severity": "medium",
+            "causeCategory": "resource_constraint",
+            "mitigationSuggestion": "Временно использовать Redis в Docker на dev-VPS (8GB) для маленьких сервисов; прайсы и шаблоны отложить до восстановления staging-кластера.",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_028",
+            "kind": "blocker",
+            "statement": "Единственный devops Виктор Скоробогатов в отпуске до 2 июня. Прав на Terraform у разработчиков нет, поднять Redis-кластер на staging некому.",
+            "severity": "medium",
+            "causeCategory": "resource_constraint",
+            "mitigationSuggestion": "Временное решение через Docker на dev-VPS; долгосрочно — расширить права на Terraform на нескольких членов команды для избежания single point of failure.",
+            "confidence": 0.95
+          }
+        ],
+        "experiments": [
+          {
+            "sourceBlockId": "blk_022",
+            "name": "Миграция кэша каталога услуг с node-cache на Redis",
+            "hypothesisText": "Redis по latency не хуже in-process кэша (node-cache) при p95 < 3мс, если pool настроен правильно и Redis находится в той же сети (availability zone).",
+            "currentResult": "Redis показал p95 = 1.8мс, node-cache был 2.3мс — Redis быстрее на 22%. Расcинхрон между подами Kubernetes полностью исчез.",
+            "lessons": [
+              {
+                "text": "Redis вынес память за пределы процесса Node.js и полностью устранил GC-паузы V8 (200–300мс на сборку мусора при большом наборе ключей), что дало неожиданный прирост производительности.",
+                "type": "what_worked"
+              },
+              {
+                "text": "При выборе in-process кэша обязательно измерять GC-метрики, а не только latency. Большой набор ключей в Node.js даёт скрытый штраф на garbage collection, который не виден в обычных бенчмарках.",
+                "type": "next_time"
+              }
+            ],
+            "status": "completed",
+            "confidence": 0.95
+          },
+          {
+            "sourceBlockId": "blk_008",
+            "name": "Инцидент тарификатора: мониторинг плавной деградации",
+            "hypothesisText": "Существующая система алертов с порогами по абсолютным значениям latency достаточна для своевременного обнаружения инцидентов.",
+            "currentResult": "Система не сработала вовремя: алерт пришёл через 18 минут после падения, дежурный узнал об инциденте от клиента в Telegram, а не из мониторинга.",
+            "lessons": [
+              {
+                "text": "Пороговые алерты по абсолютным значениям не ловят плавную деградацию. Необходимы метрики тренда (rate of change) и алерты на отклонение от baseline за период — добавить в backlog.",
+                "type": "what_failed"
+              }
+            ],
+            "status": "completed",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_009",
+            "name": "Инцидент тарификатора: альтернативные каналы обнаружения",
+            "hypothesisText": "Система мониторинга и пейджер — единственный необходимый канал обнаружения production-инцидентов.",
+            "currentResult": "Клиент написал в Telegram о падении быстрее, чем сработал пейджер. Канал поддержки оказался более быстрым сигналом, чем внутренний мониторинг.",
+            "lessons": [
+              {
+                "text": "Нужно подключить парсинг саппорт-чата (Telegram) как дополнительный сигнал инцидента: алертить на ключевые слова вроде «упало», «не работает», «ошибка».",
+                "type": "what_failed"
+              }
+            ],
+            "status": "completed",
+            "confidence": 0.85
+          },
+          {
+            "sourceBlockId": "blk_019",
+            "name": "Push-уведомления о статусе платежа: снижение нагрузки на саппорт",
+            "hypothesisText": "Внедрение push-уведомлений о статусе платежа (успех/ошибка/возврат) снизит количество тикетов категории «где мой платёж» в саппорт на 30% за первый месяц после выкатки.",
+            "currentResult": null,
+            "lessons": [],
+            "status": "hypothesis",
+            "confidence": 0.75
+          },
+          {
+            "sourceBlockId": "blk_020",
+            "name": "Мобильное приложение iOS для KPI: рост retention топ-менеджеров",
+            "hypothesisText": "Мобильное приложение для iOS с push-уведомлениями увеличит недельный возврат (WAU) топ-менеджеров на 40%: с 1–2 заходов в неделю с десктопа до ежедневных заходов с телефона.",
+            "currentResult": null,
+            "lessons": [],
+            "status": "hypothesis",
+            "confidence": 0.7
+          }
+        ],
+        "regulations": [
+          {
+            "sourceBlockId": "blk_010",
+            "kind": "regulation",
+            "name": "Обязательный runbook для каждого P1-сервиса",
+            "statement": "У каждого сервиса класса P1 (критический) должен быть runbook в Notion с разделами: Симптомы, Диагностика, Откат, Эскалация. Без runbook сервис не допускается в production.",
+            "severity": "mandatory",
+            "confidence": 0.95
+          },
+          {
+            "sourceBlockId": "blk_011",
+            "kind": "process",
+            "name": "Заполнение runbook перед релизом P1-сервиса",
+            "statement": "Перед релизом нового P1-сервиса автор задачи создаёт runbook по шаблону и прикладывает ссылку в pull request. CI-пайплайн проверяет наличие заполненного поля и блокирует merge при его отсутствии.",
+            "severity": "mandatory",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_012",
+            "kind": "process",
+            "name": "Pre-mortem на квартальном планировании",
+            "statement": "На каждом квартальном планировании команда проводит pre-mortem: 30 минут на сессию «what could go wrong» по каждому крупному эпику, результаты протоколируются в Notion.",
+            "severity": "advisory",
+            "confidence": 0.8
+          },
+          {
+            "sourceBlockId": "blk_035",
+            "kind": "policy",
+            "name": "Code review двумя ревьюерами",
+            "statement": "Любой PR в master требует approve от двух ревьюеров (раньше был один). Для критических модулей (billing, auth, tarifficator) один из ревьюеров — обязательно Tech Lead или Senior. Старт со среды 21 мая.",
+            "severity": "mandatory",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_036",
+            "kind": "process",
+            "name": "SLA первого отклика на code review — 4 часа",
+            "statement": "Ревьюер обязан оставить первый отклик (approve, request changes или уточняющие вопросы) в течение 4 рабочих часов с момента запроса. Если ревьюер занят — должен сразу делегировать другому.",
+            "severity": "mandatory",
+            "confidence": 0.85
+          },
+          {
+            "sourceBlockId": "blk_037",
+            "kind": "process",
+            "name": "Обязательный чеклист в шаблоне PR",
+            "statement": "В шаблон PR добавляется чеклист из 5 пунктов: тесты есть, миграции описаны, runbook обновлён, security-review пройдён (для auth/billing), changelog заполнен. Без всех галок PR не мержится.",
+            "severity": "mandatory",
+            "confidence": 0.9
+          },
+          {
+            "sourceBlockId": "blk_038",
+            "kind": "process",
+            "name": "Еженедельный review-ретро по пятницам",
+            "statement": "Раз в неделю по пятницам 15 минут команда смотрит метрики code review: среднее время до первого отклика, число PR старше 48 часов, доля PR с request changes. Цель — держать review pipeline здоровым.",
+            "severity": "advisory",
+            "confidence": 0.8
+          }
+        ]
+      }
+    }
+  ]
+}

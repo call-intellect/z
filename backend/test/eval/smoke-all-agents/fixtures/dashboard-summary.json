@@ -1,0 +1,94 @@
+{
+  "fixtureId": "smoke-dashboard-summary",
+  "description": "Минимальная фикстура: сводка виджетов директорского дашборда за неделю.",
+  "period": "week",
+  "newThemes": [
+    {
+      "id": "th-001",
+      "name": "Возражения по приватности записи",
+      "branch": "sales",
+      "weight": 0.72,
+      "dynamic": "growing",
+      "blocksCount": 8,
+      "lastSignalAt": null
+    },
+    {
+      "id": "th-002",
+      "name": "Запросы AI-чата по архиву встреч",
+      "branch": "product",
+      "weight": 0.85,
+      "dynamic": "growing",
+      "blocksCount": 12,
+      "lastSignalAt": null
+    }
+  ],
+  "activeThemes": [
+    {
+      "id": "th-003",
+      "name": "Цена per-seat vs flat",
+      "branch": "sales",
+      "weight": 0.66,
+      "dynamic": "stable",
+      "blocksCount": 5,
+      "lastSignalAt": "2026-05-22T10:00:00Z"
+    }
+  ],
+  "newSignals": [
+    {
+      "id": "sig-001",
+      "name": "Клиент Бета хочет SSO через Active Directory",
+      "signalType": "feature_request",
+      "confidence": 0.85,
+      "criticalQuestion": "Какая часть клиентов требует SSO для покупки?",
+      "trustedAnswer": "Клиент Бета (700 сотрудников) обозначил SSO как блокер покупки.",
+      "evidenceMeetingId": "meet-201"
+    },
+    {
+      "id": "sig-002",
+      "name": "Возражение: приватность записи внутренних встреч",
+      "signalType": "objection",
+      "confidence": 0.78,
+      "criticalQuestion": "Готов ли руководящий состав к записи?",
+      "trustedAnswer": "Двое клиентов сказали, что запись встреч руководства недопустима без явного opt-in.",
+      "evidenceMeetingId": "meet-202"
+    },
+    {
+      "id": "sig-003",
+      "name": "Боль: транскрибация имён на длинных встречах",
+      "signalType": "pain",
+      "confidence": 0.80,
+      "criticalQuestion": "Как улучшить распознавание имён?",
+      "trustedAnswer": "На встречах >2 часов имена и термины распознаются хуже — нужно дробление.",
+      "evidenceMeetingId": "meet-203"
+    }
+  ],
+  "signalCounters": {
+    "pain": 4,
+    "feature_request": 7,
+    "churn_risk": 1,
+    "objection": 3,
+    "risk": 2,
+    "decision": 5,
+    "commitment": 3,
+    "other": 6
+  },
+  "hotEntities": [
+    { "id": "ent-001", "canonicalName": "Клиент Бета", "type": "client", "recentMentions": 14 },
+    { "id": "ent-002", "canonicalName": "SSO", "type": "concept", "recentMentions": 9 },
+    { "id": "ent-003", "canonicalName": "Outlook-интеграция", "type": "concept", "recentMentions": 6 }
+  ],
+  "openQuestions": [
+    {
+      "id": "q-001",
+      "name": "Сколько клиентов требуют SSO?",
+      "criticalQuestion": "Является ли SSO блокером для сделок >500 сотрудников?",
+      "createdAt": "2026-05-20T10:00:00Z"
+    },
+    {
+      "id": "q-002",
+      "name": "Какой триал-период оптимален?",
+      "criticalQuestion": "2 недели или месяц без карты?",
+      "createdAt": "2026-05-21T10:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "taskType": "entity-merge-arbiter",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1099,
+  "tokensOut": 450,
+  "cachedTokens": 0,
+  "costUsd": 0.0008695650000000001,
+  "ms": 8915,
+  "modelResponse": "{\"verdict\": \"merge\", \"canonicalId\": \"ent-cand-001\", \"explanation\": \"Обе сущности имеют одинаковый ИНН (7707123456) и домен (beta-tech.ru), что однозначно указывает на одно и то же юридическое лицо. «ООО Бета Технологии» — полное официальное название, «Бета Тех» — краткая форма.\"}",
+  "error": null
+}

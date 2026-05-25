@@ -1,0 +1,13 @@
+{
+  "blockName": "Миграция логов на холодное хранилище",
+  "signalType": "decision",
+  "criticalQuestion": "Куда переносим архив логов старше 90 дней?",
+  "trustedAnswer": "Решили перенести логи старше 90 дней на S3-Glacier (холодное хранилище Selectel). Срок миграции — конец квартала. Ответственный — Сергей (бэк).",
+  "tags": ["логи", "хранилище", "selectel", "архив"],
+  "domainWhitelist": [
+    { "slug": "engineering", "name": "Инженерия / Backend" },
+    { "slug": "devops", "name": "DevOps / Инфраструктура" },
+    { "slug": "finance", "name": "Финансы" },
+    { "slug": "sales", "name": "Продажи" }
+  ]
+}

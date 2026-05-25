@@ -1,0 +1,6 @@
+{
+  "taskType": "concierge-respond",
+  "userMessage": "Покажи мне последние встречи за неделю",
+  "contextBlock": "Пользователь: Алексей Иванов (роль: admin). Текущая страница: /admin/meetings. Доступные ему модули: встречи, задачи, отчёты, дашборд.",
+  "toolFragment": "- list_meetings (GET /api/v1/meetings) — список встреч с фильтрами by date. Параметры: dateFrom (ISO), dateTo (ISO), limit (int).\n- search_knowledge (POST /api/v1/knowledge/search) — поиск по памяти компании. Параметры: query (string).\n- ask_chat_v2 (POST /api/v1/chat-v2/ask) — спросить у AI-аналитика компании. Параметры: query (string)."
+}

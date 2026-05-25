@@ -1,0 +1,15 @@
+{
+  "taskType": "probe-formulate",
+  "emittedByService": "decision-extractor",
+  "reason": "decision_without_owner",
+  "message": "В встрече 2026-05-20 принято решение «использовать Битрикс24 как CRM», но не назначен ответственный за интеграцию.",
+  "suggestedActions": [
+    "Назначить Алексея ответственным",
+    "Назначить другого человека",
+    "Решение пока без ответственного"
+  ],
+  "contextCard": {
+    "kind": "decision",
+    "title": "Интеграция с Битрикс24"
+  }
+}

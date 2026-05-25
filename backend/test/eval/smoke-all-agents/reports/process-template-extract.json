@@ -1,0 +1,11 @@
+{
+  "taskType": "process-template-extract",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1492,
+  "tokensOut": 1733,
+  "cachedTokens": 0,
+  "costUsd": 0.00215673,
+  "ms": 28700,
+  "modelResponse": "{\"templates\": [{\"name\": \"Найм разработчика\", \"summary\": \"Процесс найма разработчика: от скрининга резюме до отправки оффера. Включает техническое интервью, тестовое задание и финальную встречу с тимлидом. Оффер отправляет HR после согласования с тимлидом и CEO.\", \"category\": \"hire\", \"scope\": \"Разработчики\", \"confidence\": 0.75, \"steps\": [{\"order\": 1, \"name\": \"Скрининг резюме\", \"description\": \"Рекрутер выполняет первичный отбор резюме кандидатов на позицию разработчика.\", \"ownerRoleHint\": \"Рекрутер\", \"inputArtifact\": \"Резюме кандидатов\", \"outputArtifact\": \"Отобранные резюме\", \"slaMinutes\": null}"
+}

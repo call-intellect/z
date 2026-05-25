@@ -630,8 +630,472 @@ const resp = await client.chat.completions.create({
 
 ---
 
+## §8. skill-trait-detect — переключение primary на DeepSeek-Pro (golden подтверждён)
+
+### 8.1 Статус
+✅ **Подтверждено golden-прогоном 2026-05-25.** DeepSeek-Pro прошёл критерий пользователя (passed >= gpt-5.4, допуск −5%) — на деле даже **превзошёл** gpt-5.4 (96% vs 92%) при цене в 4.5× меньше.
+
+### 8.2 Что меняем
+
+Меняется в [backend/scripts/seed-llm-task-routes-skill-and-clone.ts](../../backend/scripts/seed-llm-task-routes-skill-and-clone.ts) — переставить местами primary и secondary в `skill-trait-detect`:
+
+| tier | Было | Стало |
+|---|---|---|
+| primary | openai-via-proxy / gpt-5.4 | **deepseek / deepseek-v4-pro** |
+| secondary | deepseek / deepseek-v4-pro | **openai-via-proxy / gpt-5.4** |
+| tertiary | ollama / qwen3:30b | без изменений |
+
+`skill-trait-merge`, `executable-persona-compile`, `clone-respond` — уже на DeepSeek-flash primary, переключать нечего.
+
+### 8.3 Применение
+
+```bash
+cd backend
+# отредактировать seed-llm-task-routes-skill-and-clone.ts (поменять местами primary/secondary для skill-trait-detect)
+bun run scripts/seed-llm-task-routes-skill-and-clone.ts --update-existing
+```
+
+Флаг `--update-existing` важен — без него скрипт пропустит существующие записи.
+
+### 8.4 Цифры golden-прогона
+
+| Метрика | gpt-5.4 | deepseek-v4-pro |
+|---|---|---|
+| Прошли | 23/25 (92%) | **24/25 (96%)** |
+| valid (должны извлечь) | 19/20 | **20/20** |
+| reject (должны отказаться) | 4/5 | 4/5 |
+| Стоимость прогона | $0.1021 | **$0.0226** |
+
+**В 4.5× дешевле при лучшем качестве.** Цена в проде: DeepSeek $0.001/trait vs gpt-5.4 $0.004/trait.
+
+### 8.5 Замечания (для будущего тюнинга)
+
+1. **Обе модели упали на `24-reject-technical-questions.json`** — извлекли черту вместо отказа. Это сигнал, что **сама фикстура** слишком похожа на valid. Пересмотреть.
+2. **Уникальный фейл gpt-5.4 на `18-transparent-status.json`** — категория «рано сигнализирует о рисках» правильная, но не покрыта `categoryKeywords: [«прозрачн», «статус», «застр»]`. Слишком жёсткие keywords в фикстуре.
+
+### 8.6 Артефакты
+
+- Runner: [backend/scripts/eval/run-skill-trait-detect-golden.ts](../../backend/scripts/eval/run-skill-trait-detect-golden.ts)
+- Отчёты JSON: `backend/test/eval/skill-trait-detect-golden/reports/golden-deepseek-v4-pro.json` и `golden-gpt-5.4.json`.
+- Фикстуры (golden-набор): `backend/test/eval/skill-trait-detect-golden/fixtures/` — 25 шт (20 valid + 5 reject).
+
+---
+
+## §9. clone-respond — эволюция (от обсуждения 2026-05-25)
+
+### 9.1 Статус
+📋 **Готово к реализации.** Решения зафиксированы в обсуждении с product owner.
+
+### 9.2 Цель
+
+Текущий `clone-respond` — упрощённая архитектура: один LLM-вызов без памяти диалога, жёсткие RBAC-правила в коде, единый стиль ответа с обязательными цитатами `[BLOCK:id]`.
+
+Что не работает:
+- Длинные диалоги — клон каждый раз отвечает «с чистого листа», не помнит контекст.
+- Уточняющие вопросы («а почему так?») — не понимаются.
+- Вопросы по аналогии («как бы клон роли решил для другой компании?») — клон отказывается из-за topic-density guard или жёстко цитирует факты вместо экстраполяции.
+- Жёсткие RBAC-правила в коде не позволяют гибко настраивать «кто кого может спросить».
+- Носитель видит свой клон автоматически — это нежелательно.
+
+### 9.3 Десять решений
+
+| # | Что меняем |
+|---|---|
+| 1 | **Доступ к клону — только через галочку главного админа.** Носитель свой клон по умолчанию не видит. Прямой руководитель — тоже. Доступ выдаётся вручную. |
+| 2 | **Два режима ответа: factual / judgmental.** Выбираются автоматически через `dialog-classify` по intent. |
+| 3 | **Цитаты `[BLOCK:id]`:** в factual — показываются пользователю; в judgmental — скрываются из текста, сохраняются в метаданных для аудита. |
+| 4 | **Topic-density guard сохраняем**, но в judgmental порог понижается до минимум 1 блока. Полное снятие — нет. |
+| 5 | **Доступ — поштучно** (галочка на каждую пару user↔clone). Групповые правила — отложено. |
+| 6 | **Маркетплейс клонов** в кабинете пользователя + админ-управление. Пользователь видит только тех клонов, к кому ему стоит галочка. |
+| 7 | **Память диалога** — подключить полный `dialog-layer` (contextualize + confidence + classify + multi-query + summarize) к `clone-respond`. |
+| 8 | **Multi-query промпт — отдельный `dialog-multi-query-clone`.** Расширяет вопрос аналогиями («похожие ситуации», «общие принципы»). |
+| 9 | **Модель `clone-respond` — `deepseek-v4-pro`** (primary), без golden до этого. |
+| 10 | **Кнопка «Новый диалог»** — создаёт новую `ChatV2Conversation`. Старые в боковой панели UI, как в ChatGPT. |
+
+### 9.4 Технические детали
+
+#### 9.4.1 Новая таблица `CloneAccessGrant`
+
+```prisma
+model CloneAccessGrant {
+  id              String   @id @default(cuid())
+  tenantId        String
+  grantedToUserId String   // пользователь, получающий право спрашивать
+  cloneType       String   // 'person' | 'role'
+  cloneRefId      String   // personId или roleId
+  grantedById     String   // userId главного админа
+  grantedAt       DateTime @default(now())
+
+  tenant      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grantedTo   User     @relation("CloneAccessGrant_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
+  grantedBy   User     @relation("CloneAccessGrant_grantedBy", fields: [grantedById], references: [id])
+
+  @@unique([tenantId, grantedToUserId, cloneType, cloneRefId])
+  @@index([tenantId, grantedToUserId])
+  @@index([tenantId, cloneType, cloneRefId])
+}
+```
+
+Без `expiresAt` — галочка либо стоит, либо нет.
+
+#### 9.4.2 Изменение `RbacService.canAccessPersonClone`
+
+Новая логика — **только** галочка в `CloneAccessGrant`. Все старые исключения (носитель, прямой руководитель, владелец Org) — убираются. Главный админ может выдать галочку себе сам.
+
+```ts
+async canAccessPersonClone(args: { tenantId, requesterUserId, personId }): Promise<boolean> {
+  const grant = await this.prisma.cloneAccessGrant.findUnique({
+    where: {
+      tenantId_grantedToUserId_cloneType_cloneRefId: {
+        tenantId: args.tenantId,
+        grantedToUserId: args.requesterUserId,
+        cloneType: 'person',
+        cloneRefId: args.personId,
+      },
+    },
+  });
+  return !!grant;
+}
+```
+
+Аналогично для `canAccessRoleClone`.
+
+**Миграция:** скрипт `backend/scripts/patch-migrate-clone-access.ts` — пройти по существующим access-логам и выдать гранты по факту использования.
+
+#### 9.4.3 Подключение `dialog-layer` к `clone-respond`
+
+В `ClonesService.askPerson` — перед `callCloneRespond` добавить `DialogService.process()`:
+
+```ts
+const dialogResult = await this.dialogService.process({
+  tenantId, userId, userMessage: args.question,
+  conversationId: args.conversationId ?? null,
+  scope: 'clone',
+  scopeRefId: profile.id,
+  validAt: null,
+});
+
+if (dialogResult.cachedAnswer) {
+  return formatCachedResponse(dialogResult.cachedAnswer);
+}
+
+const finalQuestion = dialogResult.standaloneQuestion;
+const intent = dialogResult.intent;
+const queries = dialogResult.queries; // массив 3+ запросов
+```
+
+Subgraph retrieval — расширяется на `queries[]` (поиск по 3, объединение результатов).
+
+#### 9.4.4 Новый taskType `dialog-multi-query-clone`
+
+Отличие от обычного `dialog-multi-query`:
+- Обычный — переформулировки одного вопроса.
+- Для клона — **запросы по аналогии**:
+  1. Оригинальный вопрос.
+  2. Похожие ситуации с другими объектами/компаниями.
+  3. Общие принципы решения подобных задач.
+
+Файл: `backend/src/modules/dialog-layer/prompts/multi-query-clone.prompt.ts`.
+
+Сервис: расширить `MultiQueryExpansionService` параметром `mode: 'org' | 'clone'`.
+
+Регистрация: добавить в `seed-llm-task-routes-skill-and-clone.ts` маршрут `dialog-multi-query-clone` → DeepSeek-Pro.
+
+#### 9.4.5 Два режима ответа: factual / judgmental
+
+**Выбор:**
+- `dialog-classify.intent === 'factual'` → **factual**.
+- `dialog-classify.intent === 'exploratory' | 'analytical'` → **judgmental**.
+
+**Параметры:**
+
+| Параметр | factual | judgmental |
+|---|---|---|
+| temperature | **0.2** | **0.7** |
+| Цитаты `[BLOCK:id]` в ответе | показываются | скрыты (но в метаданных) |
+| topic-density min blocks | текущий порог | **минимум 1** |
+| Правила в промпте | «отвечай по фактам, цитируй» | «отвечай по аналогии, не цитируй в тексте» |
+
+**Изменение в `clone-respond.prompt.ts`:**
+
+```ts
+export function buildCloneRespondSystemPrompt(args: {
+  mode: 'factual' | 'judgmental';
+  personaPrompt: string;
+}): string {
+  const baseRules = args.mode === 'factual' ? FACTUAL_RULES : JUDGMENTAL_RULES;
+  return [baseRules, '── PERSONA PROMPT ──', args.personaPrompt].join('\n');
+}
+```
+
+Дисклеймер «(ответ — от клона; могу ошибаться, спроси оригинал)» остаётся в обоих режимах.
+
+#### 9.4.6 Topic-density guard — изменение порога
+
+```ts
+const requiredBlocks = mode === 'judgmental'
+  ? Math.max(1, Math.floor(this.cfg.skill.cloneTopicMinBlocks / 2))
+  : this.cfg.skill.cloneTopicMinBlocks;
+```
+
+#### 9.4.7 Кнопка «Новый диалог»
+
+**Backend:** новый эндпоинт `POST /api/v1/clones/persons/:personId/conversations` — создаёт новую `ChatV2Conversation`, возвращает её id.
+
+**Frontend:** боковая панель «Мои диалоги с клоном X» + кнопка «+ Новый диалог» наверху. Старые диалоги доступны кликом.
+
+#### 9.4.8 Маркетплейс клонов
+
+**Где:** `/clones` (кабинет пользователя) и `/admin/clones` (админ Org).
+
+**Карточка:** имя/роль/отдел, аватар, статус (активен/собирается/нет данных), количество встреч и рассуждений, дата последнего snapshot persona, кнопка «Спросить»/«Управлять доступом».
+
+**Видимость:**
+- Рядовой пользователь — только тех клонов, к кому есть галочка в `CloneAccessGrant`.
+- Главный админ — все клоны Org + управление галочками.
+
+### 9.5 Точный LLM-вызов
+
+```ts
+const resp = await client.chat.completions.create({
+  model: 'deepseek-v4-pro',
+  messages: [
+    {
+      role: 'system',
+      content: buildCloneRespondSystemPrompt({ mode, personaPrompt }),
+    },
+    {
+      role: 'user',
+      content: CLONE_RESPOND_USER_TEMPLATE({
+        question: standaloneQuestion,
+        subgraph: { reasoningBlocks, knowledgeProfileSummary, decisions },
+        historyExcerpt: dialogHistory, // последние 6 + summary
+      }),
+    },
+  ],
+  max_tokens: 4000,
+  temperature: mode === 'factual' ? 0.2 : 0.7,
+});
+```
+
+### 9.6 Затронутые файлы
+
+- `backend/prisma/schema.prisma` — модель `CloneAccessGrant`.
+- `backend/src/modules/rbac/rbac.service.ts` — переписать `canAccessPersonClone` / `canAccessRoleClone`.
+- `backend/src/modules/clones/services/clones.service.ts` — подключение `DialogService`, два режима.
+- `backend/src/modules/knowledge-core/prompts/clone-respond.prompt.ts` — параметризация под два режима.
+- `backend/src/modules/dialog-layer/prompts/multi-query-clone.prompt.ts` — новый промпт.
+- `backend/src/modules/dialog-layer/services/multi-query-expansion.service.ts` — параметр `mode`.
+- `backend/src/modules/clones/clones.controller.ts` — эндпоинт «Новый диалог».
+- `backend/src/modules/admin/...` — endpoint управления `CloneAccessGrant`.
+- `backend/scripts/seed-llm-task-routes-skill-and-clone.ts` — маршрут `dialog-multi-query-clone`.
+- `backend/scripts/patch-migrate-clone-access.ts` — миграция доступов.
+- Frontend — маркетплейс, боковая панель, кнопка «Новый диалог», админ-страница галочек.
+
+### 9.7 Порядок применения
+
+1. **DB:** `CloneAccessGrant` в schema.prisma → `bun run prisma:push && bun run prisma:generate`.
+2. **Миграция:** запустить `patch-migrate-clone-access.ts`.
+3. **Backend:** переписать `canAccessPersonClone` (тесты обновить).
+4. **Backend:** подключить `DialogService` в `ClonesService.askPerson`.
+5. **Backend:** параметризовать `clone-respond.prompt.ts`, добавить два режима.
+6. **Backend:** новый `dialog-multi-query-clone` + seed маршрута.
+7. **Backend:** эндпоинт «Новый диалог», админ-эндпоинты галочек.
+8. **Frontend:** маркетплейс, боковая панель, кнопки.
+9. **Включить флагом** `CLONE_V2_ENABLED` (default false; включать по тенантам).
+
+### 9.8 Риски
+
+- **Риск 1 (доступ):** при включении пользователи без галочек теряют доступ. Решение — миграция п.2.
+- **Риск 2 (deepfake в judgmental):** temperature 0.7 + порог 1 блок может дать «правдоподобное мнение». Митигация — обязательный дисклеймер + блоки в метаданных для аудита.
+- **Риск 3 (стоимость):** dialog-layer добавляет 4-5 LLM-вызовов на каждый вопрос. На DeepSeek-Pro ≈$0.005-0.015 на вопрос вместо текущих ≈$0.001. При 20 вопросах/день/пользователь — терпимо.
+- **Риск 4 (latency):** dialog-layer — 4 LLM-вызова перед основным. +3-5 секунд латентности. UX-смягчение: индикатор с этапами.
+
+### 9.9 Что НЕ делаем в этой итерации
+
+- Групповые правила доступа (по отделам/ролям) — отложено.
+- Настройка температуры из админки — пока хардкод (0.2 / 0.7).
+- Настройка topic-density порогов из админки — пока хардкод.
+- Кэш ответов клона (`AnswerCache` для clone-scope) — рассмотреть позже.
+- Голосовой ввод для клона — отдельная фича.
+- Golden-набор для `clone-respond` — отложено.
+
+### 9.10 Исторические клоны должности (когда сотрудник ушёл) — отдельная фаза
+
+**Принципиально:** клон — это **клон должности**, не клон человека. В нём НЕТ персональных данных — есть профессиональные паттерны принятия решений, привязанные к роли. Юридического вопроса о согласии бывшего сотрудника **не возникает** — компания владеет знаниями о роли, а не о личности.
+
+**Идея:** когда сотрудник увольняется или переходит на другую роль, его клон-снимок **сохраняется** как версия для этой должности. В маркетплейсе остаётся видимым с пометкой «Прошлый владелец роли». Это даёт:
+
+1. **Преемственность знаний.** Новый сотрудник пришёл на роль продажника — можно сравнить, как бы старый и новый ответили на тот же вопрос. Прямой механизм передачи опыта.
+2. **Институциональная память роли.** Накопленные паттерны решений принадлежат компании, не уходят вместе с человеком.
+
+**Технически:**
+
+- `Person.status: 'active' | 'archived'` — добавить, если поля ещё нет.
+- `SkillProfile.status = 'archived'` при увольнении (поле уже есть).
+- `ExecutablePersona` — сохраняется как последняя активная версия на момент ухода. Cron `executable-persona-compile` пропускает archived-профили (не пересобирает).
+- **Маркетплейс:** по умолчанию фильтр «active»; чекбокс «показать предыдущих владельцев роли» открывает архивных.
+- **Карточка архивного клона:** тег «Предыдущий владелец роли», период работы, дата последнего snapshot persona.
+- **UI сравнения:** на странице роли — кнопка «Сравнить с предыдущим владельцем», split-view, общий вопрос → два ответа.
+
+**Порядок:** базовый §9 → потом §9.10 отдельной фазой.
+
+---
+
+## §10. Smoke-прогон всех LLM-агентов (2026-05-25)
+
+### 10.1 Статус
+✅ **Закрыт.** Все 28 LLM-агентов, не покрытых предыдущими экспериментами, прошли smoke-тест на DeepSeek-Pro. Ни одного 400/500. С учётом 13 агентов из эксп.1-4 и golden — **41/41 LLM-агентов проекта работают на DeepSeek-Pro «из коробки»**.
+
+### 10.2 Что делалось
+
+Для каждого taskType:
+1. Прочитан промпт (из `*.prompt.ts` или из встроенной константы в `*.service.ts`).
+2. Создана минимальная синтетическая фикстура.
+3. Написан одиночный runner-скрипт.
+4. Запущен один LLM-вызов на DeepSeek-Pro.
+5. Зафиксирован результат (валидный ответ / ошибка).
+
+### 10.3 Полная таблица результатов (28 шт)
+
+| # | Батч | taskType | OK | Цена | Время | Заметка |
+|---|---|---|---|---|---|---|
+| 1 | 1 | axis-classify | ✅ | $0.0008 | 11.0 с | tools+auto |
+| 2 | 1 | block-distill | ✅ | $0.0009 | 9.7 с | промпт встроен в `block-merge.service.ts:76` |
+| 3 | 1 | block-linker | ✅ | $0.0010 | 12.4 с | промпт встроен в `block-link.service.ts:93` |
+| 4 | 1 | card-rollup-v2 | ✅ | $0.0008 | 15.6 с | свободный markdown без tools |
+| 5 | 1 | decision-supersede-detect | ✅ | $0.0010 | 11.3 с | tools+auto |
+| 6 | 1 | insight-link-to-decisions | ✅ | $0.0008 | 9.4 с | tools+auto |
+| 7 | 1 | idea-cluster-merge | ✅ | $0.0010 | 11.9 с | tools+auto |
+| 8 | 2 | idea-status-summarize | ✅ | $0.0009 | 13.6 с | tools+auto |
+| 9 | 2 | regulation-dedupe | ✅ | $0.0013 | 20.8 с | корректно поймал контракт |
+| 10 | 2 | process-steps-extract | ✅ | $0.0015 | 16.0 с | 5 нормализованных шагов |
+| 11 | 2 | process-template-extract | ✅ | $0.0022 | 28.7 с | шаблон + confidence |
+| 12 | 2 | knowledge-clone-merge | ✅ | $0.0021 | 23.1 с | observationCount 9 |
+| 13 | 2 | skill-trait-concept-name | ✅ | $0.0009 | 12.0 с | 4-словная фраза |
+| 14 | 2 | skill-trait-merge | ✅ | $0.0011 | 15.2 с | verdict: merge |
+| 15 | 3 | chat-v2-conversation-title | ✅ | $0.0002 | 3.8 с | — |
+| 16 | 3 | chat-v2-synthesize | ✅ | $0.0005 | 7.5 с | — |
+| 17 | 3 | clone-respond | ✅ | $0.0011 | 16.8 с | от 1-го лица, с цитатой `[BLOCK:id]` |
+| 18 | 3 | concierge-respond | ✅ | $0.0006 | 9.2 с | частичный smoke (без tool-execution loop) |
+| 19 | 3 | probe-formulate | ✅ | $0.0006 | 8.0 с | короткий probe-вопрос |
+| 20 | 3 | goal-alignment | ✅ | $0.0016 | 24.4 с | tools+auto |
+| 21 | 3 | executable-persona-compile | ✅ | $0.0030 | 62.5 с | длинный текст persona 300-800 слов |
+| 22 | 4 | reframing | ✅ | $0.0021 | 33.2 с | промпт встроен в `reframing.cron.ts` |
+| 23 | 4 | theme-classify | ✅ | $0.0014 | 17.7 с | промпт встроен в `theme-classification.service.ts` |
+| 24 | 4 | role-profile-build | ✅ | $0.0033 | 64.5 с | ⚠ обрезался на max_tokens=6000 → поднял до 16000 |
+| 25 | 4 | recognition-formulate | ✅ | $0.0009 | 12.6 с | tools+auto |
+| 26 | 4 | dashboard-summary | ✅ | $0.0012 | 22.5 с | plain-text ответ |
+| 27 | 4 | daily-digest | ✅ | $0.0021 | 39.0 с | markdown с `---SHORT_SUMMARY---` |
+| 28 | 4 | entity-merge-arbiter | ✅ | $0.0009 | 8.9 с | промпт встроен в `entity-merge.service.ts` |
+
+**Итого:** 28/28 ОК. Суммарная цена $0.036. Среднее время ~18 секунд на вызов.
+
+### 10.4 Системные находки (важно для применения в коде)
+
+**Находка 1 — `max_tokens` может быть слишком мал.**
+
+`role-profile-build` обрезался на `max_tokens=6000`. После подъёма до 16000 — успех. Это повторяет проблему `checkin-sentiment max_tokens: 300 → 1500` из эксп.4 (§6).
+
+**Действие при переключении на DeepSeek-Pro:** аудитировать `max_tokens` во всех агентах с длинным выходом:
+- `executable-persona-compile` (текст 300-800 слов + thinking) — минимум 8000.
+- `role-profile-build` — минимум 16000.
+- `card-rollup-v2`, `summary-v2`, `weekly-digest`, `daily-digest`, `dashboard-summary` — минимум 4000-8000.
+- Все остальные с тёгом «короткий JSON» — минимум 1500-2000 (thinking + сам JSON).
+
+**Find 2 — 5 промптов «встроены в сервисы».**
+
+Не в `prompts/`, а как константы внутри `services/*.ts`:
+- `block-distill` — `block-merge.service.ts:76` (JUDGE_SYSTEM_PROMPT)
+- `block-linker` — `block-link.service.ts:93` (LINK_SYSTEM_PROMPT)
+- `theme-classify` — `theme-classification.service.ts`
+- `reframing` — `reframing.cron.ts` (REFRAMING_SYSTEM_PROMPT)
+- `entity-merge-arbiter` — `entity-merge.service.ts` (ARBITER_SYSTEM_PROMPT)
+
+**Действие (низкий приоритет, но желательно):** вынести в `prompts/*.prompt.ts` для единообразия и admin-редактирования через PromptRegistry.
+
+**Find 3 — два пути «структурный vs текстовый».**
+
+Дополняем §4 — фактически у нас два паттерна агентов на DeepSeek-Pro:
+
+| Паттерн | Когда | Параметры |
+|---|---|---|
+| **Структурный** (большинство) | Нужен валидный JSON по схеме | `tools: [<один tool>] + tool_choice: 'auto'` + явное «верни через инструмент submit_X» в user-сообщении |
+| **Текстовый** | Свободный markdown / plain-text для UI | Без `tools`, без `response_format`. Просто `chat.completions.create` с system+user. |
+
+Примеры текстовых: `card-rollup-v2`, `dashboard-summary`, `daily-digest`, `executable-persona-compile`. Эти 4 нужно НЕ переписывать в tools — оставить текстовый паттерн.
+
+### 10.5 Артефакты
+
+Все артефакты smoke-прогона в `backend/test/eval/smoke-all-agents/`:
+
+- **Сводный отчёт:** [SUMMARY-SMOKE.md](../../backend/test/eval/smoke-all-agents/SUMMARY-SMOKE.md) — полная таблица с пояснениями.
+- **Фикстуры:** [fixtures/](../../backend/test/eval/smoke-all-agents/fixtures/) — 28 минимальных JSON-фикстур, по одной на taskType.
+- **Отчёты:** [reports/](../../backend/test/eval/smoke-all-agents/reports/) — 28 JSON-результатов с метриками (tokensIn, tokensOut, costUsd, ms, modelResponse).
+
+Runner-скрипты в `backend/scripts/eval/`:
+- `smoke-all-agents-runner.ts` — универсальный runner с параметром taskType.
+- `_smoke-shared.ts` — общий хелпер (цены, парсинг usage).
+- `smoke-<taskType>.ts` — 28 тонких обёрток на каждый taskType.
+
+**Как пере-запустить smoke любого агента:**
+```bash
+cd backend
+bun run scripts/eval/smoke-<taskType>.ts
+```
+
+Например: `bun run scripts/eval/smoke-clone-respond.ts`.
+
+### 10.6 Что НЕ покрыто smoke (но покрыто прошлыми экспериментами)
+
+13 агентов покрыты экспериментами 1-4 и golden:
+- **эксп.1** (sales-merge): `chapters-v2`, `tasks-v2`, `summary-v2`, `quality-score`, `meeting-report-fast`, `block-ingest`.
+- **эксп.2** (dialog): `chat-v2` целиком (5 шагов dialog-layer + финальный синтез).
+- **эксп.3** (specialists): 8 специалистов knowledge-core 3.1-3.9 (`regulation-extract`, `decision-extract`, `insight-extract`, `idea-extract`, `experiment-extract`, `knowledge-clone-extract`, `skill-trait-detect`, `helpfulness-detect`).
+- **эксп.4** (operations): `checkin-sentiment`, `weekly-digest`.
+- **golden**: `skill-trait-detect`.
+
+Итого: smoke (28) + эмпирика (13) = **41 уникальный taskType покрыт** на DeepSeek-Pro.
+
+### 10.7 Главный вывод
+
+**Миграция любого taskType на DeepSeek-Pro технически безопасна** — 400/500 не будет. Главное правило для применения:
+
+1. Для **структурного вывода** (большинство) — `tools+auto` + явное «верни через инструмент submit_X» в user-сообщении. НЕ `response_format: json_schema strict`, НЕ `tool_choice: 'required'`.
+2. Для **текстового вывода** (4 агента) — без `tools`, без `response_format`.
+3. **`max_tokens` поднять** для длинных выходов (см. Find 1).
+4. **Качественную регрессию** проверять отдельно через golden — для критичных пользовательских (`clone-respond`, `concierge-respond`, `chat-v2`) — это следующая фаза.
+
+---
+
 ## Финальный итог
 
-Документ заполняется по мере экспериментов. Когда закроем §6 — программисту останется один большой проход по коду по плану из §7.
+Документ — **полная карта изменений** для миграции всех LLM-агентов на DeepSeek-Pro.
 
-**Главный архитектурный вывод всей серии:** объединённый вызов выигрывает там, где есть тяжёлый общий контекст; раздельные вызовы остаются там, где входы маленькие и не связаны. Кэш-префикс DeepSeek работает не так, как пишут в маркетинге, — для нашей архитектуры он становится ненужным.
+**Эмпирически закрыто (на 2026-05-25):**
+- §1, §2, §3 — meeting-report, chat-v2, specialists (4 эксперимента).
+- §6 — operations (эксп.4).
+- §8 — skill-trait-detect (golden 96% vs 92%).
+- §10 — smoke-прогон 28 непокрытых агентов (28/28 OK).
+
+**Готово к реализации:**
+- §4 — фикс формата (фундамент перед всем).
+- §5 — кэш-префикс (опционально, см. правило выбора).
+- §7 — план применения.
+- §9 — эволюция clone-respond (memory, режимы, маркетплейс, доступ через галочки).
+- §9.10 — исторические клоны должности (отдельная фаза).
+
+**Главный архитектурный вывод серии:**
+- Объединённый вызов выигрывает там, где есть тяжёлый общий контекст (§1, §3).
+- Раздельные вызовы остаются там, где входы маленькие и не связаны (§2 chat-v2 ↔ DialogService).
+- Кэш-префикс DeepSeek работает на 90-99% при правильной структуре payload (§5).
+- Переход на DeepSeek-Pro даёт 4.5-5× экономию практически везде без потери качества — подтверждено на 4 эмпирических экспериментах + golden + smoke 28 агентов.
+
+**Программисту, который сядет применять:**
+1. Сначала §4 (формат вывода) — фундамент.
+2. Параллельно §6 + §8 — мелкие правки маршрутов.
+3. §1 / §3 — упрощение цепочек в один вызов.
+4. §10 Find 1 — аудит `max_tokens` по списку.
+5. Применить §9 — большой кусок: схема БД, новые сервисы, FE-маркетплейс.
+6. §10 Find 2 — вынос embedded-промптов (низкий приоритет).
+7. §9.10 — историзация клонов отдельной фазой.

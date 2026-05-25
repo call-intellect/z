@@ -1,0 +1,1488 @@
+{
+  "variant": "A",
+  "fixtureId": "fixture-02-objections",
+  "model": "deepseek-v4-pro",
+  "totalMs": 376703,
+  "totalTokensIn": 39146,
+  "totalTokensOut": 30421,
+  "totalCachedTokens": 2816,
+  "totalCostUsd": 0.17030424000000002,
+  "steps": [
+    {
+      "step": "1. block-ingest",
+      "ok": true,
+      "ms": 296211,
+      "tokensIn": 15757,
+      "tokensOut": 19230,
+      "cachedTokens": 0,
+      "costUsd": 0.09433758,
+      "jsonValid": true,
+      "output": {
+        "blocks": [
+          {
+            "name": "Антон Викторович — ЛПР, отсутствует на встрече по болезни",
+            "criticalQuestion": "Кто принимает финальное решение по сделке?",
+            "trustedAnswer": "Решение по подписанию за Антоном Викторовичем, директором по операциям. Он болеет, на встрече отсутствует, без него подписать ничего не смогут.",
+            "signalType": "fact",
+            "tags": [
+              "decision-maker",
+              "deal-governance",
+              "технолинк"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Марина: Да, решение по подписанию за ним. Мы с Григорием сегодня соберём вопросы, обсудим условия, но финально без Антона Викторовича подписать ничего не сможем.",
+            "evidenceStartMs": 35000,
+            "evidenceEndMs": 50000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Антон Викторович",
+                "mentionContext": "Директор по операциям ТехноЛинк, ЛПР по сделке, отсутствует по болезни"
+              },
+              {
+                "type": "person",
+                "name": "Марина",
+                "mentionContext": "Участник встречи со стороны ТехноЛинк, информирует об отсутствии ЛПР"
+              },
+              {
+                "type": "person",
+                "name": "Григорий",
+                "mentionContext": "Участник встречи со стороны ТехноЛинк"
+              },
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Потенциальный клиент Айдаты"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Формат встречи: обсудить и упаковать для Антона",
+            "criticalQuestion": "Как решено провести встречу в отсутствие ЛПР?",
+            "trustedAnswer": "Договорились пройтись по вопросам, обсудить коммерческие условия и упаковать итог в письмо для Антона Викторовича.",
+            "signalType": "decision",
+            "tags": [
+              "meeting-format",
+              "deal-process"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Кирилл: Тогда предлагаю так: пройдёмся по тому, что мы обсуждали в прошлый раз, я отвечу на накопившиеся вопросы, обсудим коммерческие условия. А итог упакуем в одно письмо для Антона Викторовича, чтобы ему было удобно посмотреть, когда выздоровеет.",
+            "evidenceStartMs": 50000,
+            "evidenceEndMs": 69000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Кирилл",
+                "mentionContext": "Продавец со стороны Айдата Аналитика, предлагает формат"
+              },
+              {
+                "type": "person",
+                "name": "Антон Викторович",
+                "mentionContext": "Получатель итогового письма с предложением"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Тариф Бизнес: 600 руб/пользователь/мес при годовой оплате",
+            "criticalQuestion": "Какое ценовое предложение сделано?",
+            "trustedAnswer": "Тарифный план Бизнес — 600 рублей за пользователя в месяц при годовой оплате, примерно 50 сотрудников, итого ~30000 руб/мес.",
+            "signalType": "fact",
+            "tags": [
+              "pricing",
+              "business-tariff"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Кирилл: Напомню, что мы предложили: тарифный план Бизнес, шестьсот рублей за пользователя в месяц при годовой оплате. У вас примерно пятьдесят сотрудников, которым нужен доступ, итого порядка тридцати тысяч в месяц.",
+            "evidenceStartMs": 78000,
+            "evidenceEndMs": 99000,
+            "mentionedEntities": [
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Продукт, тарифный план Бизнес"
+              },
+              {
+                "type": "metric",
+                "name": "Цена за пользователя в месяц",
+                "mentionContext": "600 руб/пользователь/мес"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Конкурент АналитПро дешевле на ~25%",
+            "criticalQuestion": "Какое конкурентное предложение у клиента?",
+            "trustedAnswer": "АналитПро предложил сопоставимый функционал примерно на 25% дешевле при годовой оплате за пользователя.",
+            "signalType": "competitor_move",
+            "tags": [
+              "competitor",
+              "аналитпро",
+              "pricing"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: Мы запрашивали предложение у АналитПро, у них на сопоставимый функционал выходит примерно на двадцать пять процентов дешевле. У них тоже годовой план, и тоже за пользователя, но базовая ставка ниже.",
+            "evidenceStartMs": 99000,
+            "evidenceEndMs": 122000,
+            "mentionedEntities": [
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Прямой конкурент Айдаты, предложил цену на 25% ниже"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "АналитПро дешевле на ~7000 руб/мес даже с допами",
+            "criticalQuestion": "Какова реальная разница в цене с АналитПро при равном функционале?",
+            "trustedAnswer": "Даже с учётом дополнительных опций АналитПро дешевле примерно на 7000 руб/мес, что составляет ~90000 руб/год.",
+            "signalType": "objection",
+            "tags": [
+              "pricing",
+              "competitor",
+              "аналитпро"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: Кирилл, я с цифрами в руках смотрел. Даже если допы накинуть, всё равно получается дешевле тысяч на семь в месяц. Это девяносто тысяч в год. На круг — серьёзные деньги.",
+            "evidenceStartMs": 144000,
+            "evidenceEndMs": 159000,
+            "mentionedEntities": [
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Конкурент с более низкой ценой даже при сопоставимом функционале"
+              },
+              {
+                "type": "metric",
+                "name": "Разница в цене",
+                "mentionContext": "~7000 руб/мес, ~90000 руб/год"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Цена — критический фактор для ЛПР",
+            "criticalQuestion": "Что в первую очередь бросится в глаза ЛПР при рассмотрении КП?",
+            "trustedAnswer": "Цена — первое, на что Антон Викторович обратит внимание. Его принцип: если есть аналог дешевле, надо объяснить разницу либо подвинуться по цене.",
+            "signalType": "pain",
+            "tags": [
+              "pricing",
+              "decision-maker",
+              "антон-викторович"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Марина: Цена — это первое, что Антону Викторовичу бросится в глаза, когда он будет смотреть. У него простой принцип: если на рынке есть аналог дешевле, надо как минимум объяснить разницу, либо подвинуться.",
+            "evidenceStartMs": 159000,
+            "evidenceEndMs": 178000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Антон Викторович",
+                "mentionContext": "ЛПР, для которого цена — первичный фактор"
+              },
+              {
+                "type": "person",
+                "name": "Марина",
+                "mentionContext": "Предупреждает о приоритетах ЛПР"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Демо Айдаты понравилось аналитикам, интерфейс удобнее АналитПро",
+            "criticalQuestion": "Как клиент оценил продукт в тестовом использовании?",
+            "trustedAnswer": "Аналитический отдел ТехноЛинк тестировал демо-стенд Айдаты две недели, интерфейс понравился и признан удобнее, чем у АналитПро.",
+            "signalType": "fact",
+            "tags": [
+              "product-feedback",
+              "ui-ux",
+              "demo"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Марина: Пробовали, мы две недели смотрели демо-стенд, ребята из аналитического отдела сидели. Им понравилось, честно скажу. Интерфейс удобнее, чем у АналитПро.",
+            "evidenceStartMs": 198000,
+            "evidenceEndMs": 216000,
+            "mentionedEntities": [
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Продукт, чей демо-стенд тестировали"
+              },
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Конкурент, чей интерфейс признан менее удобным"
+              },
+              {
+                "type": "org_unit",
+                "name": "Аналитический отдел ТехноЛинк",
+                "mentionContext": "Проводил тестирование демо-стенда"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Григория убеждают только цифры, не удобство",
+            "criticalQuestion": "Почему преимущество в удобстве интерфейса не решает вопрос цены?",
+            "trustedAnswer": "Григорий заявляет, что его убеждают только цифры. Переплачивать ~100000 руб/год за удобство в их компании не пройдёт.",
+            "signalType": "objection",
+            "tags": [
+              "pricing",
+              "objection",
+              "ui-ux"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: Меня убеждают цифры. Удобство — это хорошо, но за удобство переплачивать сто тысяч в год... нет, у нас так не пройдёт.",
+            "evidenceStartMs": 216000,
+            "evidenceEndMs": 227000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Григорий",
+                "mentionContext": "Финансово-ориентированный стейкхолдер, не принимает аргумент удобства"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Модель оплаты «за пользователя» — проблема при текучке персонала",
+            "criticalQuestion": "Почему модель оплаты за пользователя не устраивает клиента?",
+            "trustedAnswer": "У ТехноЛинк проектная история, люди приходят и уходят, численность колеблется от 45 до 60. Считать каждый месяц — головная боль.",
+            "signalType": "pain",
+            "tags": [
+              "pricing-model",
+              "per-user",
+              "headcount-fluctuation"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: У нас компания живая, люди приходят, уходят, проектная история. Сегодня пятьдесят, через месяц шестьдесят, потом сорок пять. Считать каждый месяц — это головная боль.",
+            "evidenceStartMs": 242000,
+            "evidenceEndMs": 265000,
+            "mentionedEntities": [
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Компания с проектной структурой и текучестью персонала"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Запрос фиксированной оплаты за компанию (флэт)",
+            "criticalQuestion": "Какую модель оплаты хочет клиент?",
+            "trustedAnswer": "ТехноЛинк хочет фиксированную сумму за весь периметр без подсчёта голов — флэт за компанию.",
+            "signalType": "feature_request",
+            "tags": [
+              "pricing-model",
+              "flat-fee",
+              "feature-request"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Марина: Да, мы бы хотели фикс. Просто за компанию, флэт. Например, фиксированная сумма за весь периметр, без подсчёта голов. Так гораздо проще и нам, и вашей бухгалтерии.",
+            "evidenceStartMs": 265000,
+            "evidenceEndMs": 282000,
+            "mentionedEntities": [
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Клиент запрашивает флэт-модель оплаты"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Флэт возможен для крупных клиентов, требует индивидуального расчёта",
+            "criticalQuestion": "Готова ли Айдата предложить флэт-модель?",
+            "trustedAnswer": "У Айдаты исторически модель за пользователя, но в кастомных контрактах для крупных клиентов бывает флэт. Нужен индивидуальный расчёт.",
+            "signalType": "fact",
+            "tags": [
+              "pricing-model",
+              "flat-fee",
+              "custom-contract"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Кирилл: У нас исторически модель за пользователя, потому что нагрузка на инфраструктуру зависит от числа активных аккаунтов. Но у нас в кастомных контрактах для крупных клиентов бывает флэт. Это надо считать индивидуально.",
+            "evidenceStartMs": 282000,
+            "evidenceEndMs": 305000,
+            "mentionedEntities": [
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Продукт, допускающий кастомные контракты с флэтом"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Предложен флэт на 60 пользователей с буфером 10%",
+            "criticalQuestion": "Какая конфигурация флэта обсуждалась?",
+            "trustedAnswer": "Обсуждается флэт на 60 пользователей с правом превышения на 10% без доплаты (до 66 пользователей). Цена флэта обычно чуть выше потарифной.",
+            "signalType": "idea",
+            "tags": [
+              "pricing-model",
+              "flat-fee",
+              "buffer"
+            ],
+            "confidence": 0.7,
+            "evidenceQuote": "Кирилл: Условно: флэт на шестьдесят пользователей, с правом превысить на десять процентов без доплаты. Но цена флэта обычно чуть выше, чем при шестидесяти пользователях по тарифу.",
+            "evidenceStartMs": 319000,
+            "evidenceEndMs": 342000,
+            "mentionedEntities": [
+              {
+                "type": "metric",
+                "name": "Количество пользователей",
+                "mentionContext": "60 пользователей — верхняя граница флэта, буфер до 66"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "В стандартном договоре нет настоящего SLA",
+            "criticalQuestion": "Какая проблема с договором со стороны клиента?",
+            "trustedAnswer": "В проекте договора нет SLA с конкретными цифрами — только формулировка о «разумных усилиях». Юристы ТехноЛинк такое не пропустят.",
+            "signalType": "pain",
+            "tags": [
+              "contract",
+              "sla",
+              "legal"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: У вас нет SLA, соглашения об уровне сервиса. Совсем. Ни про доступность, ни про время реакции на инциденты. ... «провайдер прилагает разумные усилия для обеспечения доступности». Это не SLA. Это маркетинговая формулировка. Наши юристы такое не пропустят.",
+            "evidenceStartMs": 408000,
+            "evidenceEndMs": 462000,
+            "mentionedEntities": [
+              {
+                "type": "document",
+                "name": "Проект договора Айдаты",
+                "mentionContext": "Договор без SLA, приложение 3 с маркетинговой формулировкой"
+              },
+              {
+                "type": "topic",
+                "name": "SLA",
+                "mentionContext": "Соглашение об уровне сервиса — отсутствует в стандартном договоре"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Корпоративный SLA: 99.9% доступности, 2 часа на критический инцидент",
+            "criticalQuestion": "Какие параметры SLA может предложить Айдата?",
+            "trustedAnswer": "Для корпоративных клиентов есть отдельное приложение-SLA: 99.9% доступности в месяц, реакция на критический инцидент — 2 часа, штрафные санкции — сервис-кредиты.",
+            "signalType": "fact",
+            "tags": [
+              "sla",
+              "uptime",
+              "response-time",
+              "corporate"
+            ],
+            "confidence": 0.8,
+            "evidenceQuote": "Кирилл: У нас есть отдельный приложение-SLA для корпоративных клиентов. Я могу его подложить. Там девяносто девять и девять десятых процента доступности в месяц, время реакции на критический — два часа, штрафные санкции в виде сервис-кредитов.",
+            "evidenceStartMs": 462000,
+            "evidenceEndMs": 488000,
+            "mentionedEntities": [
+              {
+                "type": "document",
+                "name": "Приложение-SLA для корпоративных клиентов",
+                "mentionContext": "Отдельный документ с конкретными метриками доступности и реакции"
+              },
+              {
+                "type": "metric",
+                "name": "Доступность платформы",
+                "mentionContext": "99.9% в месяц"
+              },
+              {
+                "type": "metric",
+                "name": "Время реакции на критический инцидент",
+                "mentionContext": "2 часа"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Срок контракта 12 месяцев — слишком долго",
+            "criticalQuestion": "Почему клиент против годового контракта?",
+            "trustedAnswer": "ТехноЛинк не готов фиксироваться на год с новым подрядчиком. Хотят более короткий первый контракт.",
+            "signalType": "objection",
+            "tags": [
+              "contract-term",
+              "risk",
+              "new-vendor"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: Срок контракта. У вас в проекте — двенадцать месяцев. Это слишком долго. Мы не готовы зашиваться на год с новым подрядчиком.",
+            "evidenceStartMs": 516000,
+            "evidenceEndMs": 534000,
+            "mentionedEntities": [
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Клиент отказывается от годового контракта с новым подрядчиком"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Политика закупок: первый контракт не длиннее квартала",
+            "criticalQuestion": "Какое внутреннее правило ограничивает срок первого контракта?",
+            "trustedAnswer": "В политике закупок ТехноЛинк закреплено: первый контракт с новым подрядчиком не longer квартала, чтобы можно было выйти без потерь.",
+            "signalType": "regulation",
+            "tags": [
+              "procurement-policy",
+              "contract-term",
+              "risk-management"
+            ],
+            "confidence": 0.8,
+            "evidenceQuote": "Марина: У нас в политике закупок — стараться не делать первый контракт длиннее квартала. Чтобы можно было выйти, если что-то пойдёт не так.",
+            "evidenceStartMs": 534000,
+            "evidenceEndMs": 549000,
+            "mentionedEntities": [
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Компания с закреплённой политикой закупок"
+              },
+              {
+                "type": "document",
+                "name": "Политика закупок ТехноЛинк",
+                "mentionContext": "Внутренний регламент: первый контракт ≤ квартала"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "При квартальной оплате цена: 750 руб/пользователь/мес (+25%)",
+            "criticalQuestion": "Какая цена при отказе от годового контракта?",
+            "trustedAnswer": "При помесячной или поквартальной оплате — 750 руб/пользователь/мес вместо 600 руб, т.е. на 25% дороже.",
+            "signalType": "fact",
+            "tags": [
+              "pricing",
+              "contract-term",
+              "quarterly"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Кирилл: При оплате помесячно или поквартально — семьсот пятьдесят рублей за пользователя в месяц вместо шестисот. То есть процентов двадцать пять сверху.",
+            "evidenceStartMs": 568000,
+            "evidenceEndMs": 581000,
+            "mentionedEntities": [
+              {
+                "type": "metric",
+                "name": "Цена за пользователя в месяц (поквартально)",
+                "mentionContext": "750 руб/пользователь/мес"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Предложен квартальный пилот с последующим переходом на годовой",
+            "criticalQuestion": "Какой компромисс по сроку контракта обсуждается?",
+            "trustedAnswer": "Обсуждается схема: первый квартал по стандартному тарифу как пилот, затем переход на годовой со скидкой с первого месяца годового периода.",
+            "signalType": "idea",
+            "tags": [
+              "contract-term",
+              "pilot",
+              "compromise"
+            ],
+            "confidence": 0.7,
+            "evidenceQuote": "Кирилл: Логика: первый квартал — по стандартному тарифу, без обязательств продлевать, и если решаете идти дальше — переходите на годовой и получаете скидку с первого месяца годового периода.",
+            "evidenceStartMs": 623000,
+            "evidenceEndMs": 646000,
+            "mentionedEntities": [
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Продукт, предлагающий пилотный квартал"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Конкурент АналитПро предлагает бесплатный месяц пилота",
+            "criticalQuestion": "Какое специальное предложение у конкурента?",
+            "trustedAnswer": "АналитПро предложил ТехноЛинк бесплатный месяц пилота с полным функционалом.",
+            "signalType": "competitor_move",
+            "tags": [
+              "competitor",
+              "аналитпро",
+              "free-trial",
+              "pilot"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Марина: АналитПро не просто дешевле. Они ещё и предложили нам бесплатный месяц на пилоте. Полный функционал, без оплаты.",
+            "evidenceStartMs": 678000,
+            "evidenceEndMs": 700000,
+            "mentionedEntities": [
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Конкурент, предлагающий бесплатный месяц пилота"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Бесплатный месяц АналитПро — урезанный демо-доступ, не полноценный пилот",
+            "criticalQuestion": "В чём подвох бесплатного месяца АналитПро?",
+            "trustedAnswer": "Кирилл утверждает, что бесплатный месяц АналитПро — это демо-доступ без интеграции с CRM, без выделенной поддержки и с ограничением в 20 пользователей.",
+            "signalType": "fact",
+            "tags": [
+              "competitor",
+              "аналитпро",
+              "free-trial",
+              "ограничения"
+            ],
+            "confidence": 0.65,
+            "evidenceQuote": "Кирилл: Я смотрел их условия в открытых источниках. Бесплатный месяц у них без интеграции с C R M, без выделенной поддержки, и с ограничением на двадцать пользователей. То есть это не «полный функционал».",
+            "evidenceStartMs": 737000,
+            "evidenceEndMs": 759000,
+            "mentionedEntities": [
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Конкурент с ограниченным бесплатным периодом"
+              },
+              {
+                "type": "technology",
+                "name": "CRM",
+                "mentionContext": "Интеграция с CRM отсутствует в бесплатном периоде АналитПро"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Марина не знала об ограничениях бесплатного месяца АналитПро",
+            "criticalQuestion": "Знал ли клиент об ограничениях конкурента?",
+            "trustedAnswer": "Марина подтвердила, что не знала об ограничениях бесплатного месяца АналитПро — им про ограничения не говорили.",
+            "signalType": "knowledge_gap",
+            "tags": [
+              "competitor",
+              "аналитпро",
+              "discovery"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Марина: Ой, вот этого я не знала. Они нам про ограничения не говорили. Так, отметила себе, спрошу у них.",
+            "evidenceStartMs": 759000,
+            "evidenceEndMs": 768000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Марина",
+                "mentionContext": "Обнаружила пробел в информации о конкуренте"
+              },
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Конкурент, не раскрывший ограничения бесплатного периода"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Скидка 50% на первый месяц при годовом контракте",
+            "criticalQuestion": "Какую альтернативу бесплатному месяцу предложил Кирилл?",
+            "trustedAnswer": "Вместо бесплатного месяца — стартовая скидка 50% на первый месяц при выборе годового плана. Совмещается со скидкой 15% за год.",
+            "signalType": "commitment",
+            "tags": [
+              "discount",
+              "first-month",
+              "incentive"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Кирилл: Вместе. Логика: пятнадцать процентов от прайса на весь год плюс ещё минус пятьдесят процентов от уже сниженной цены на первый месяц. То есть первый месяц совсем символический.",
+            "evidenceStartMs": 880000,
+            "evidenceEndMs": 897000,
+            "mentionedEntities": [
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Продукт со стартовой скидкой 50% на первый месяц"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Итоговая скидка 15%: 510 руб/пользователь/мес при годовом контракте",
+            "criticalQuestion": "Какая финальная цена предложена при годовом контракте?",
+            "trustedAnswer": "Скидка 15% от прайса при годовом контракте, итого 510 руб/пользователь/мес.",
+            "signalType": "commitment",
+            "tags": [
+              "pricing",
+              "discount",
+              "annual-contract"
+            ],
+            "confidence": 0.8,
+            "evidenceQuote": "Кирилл: Готов в коммерческом предложении прописать следующее. Первое: скидка пятнадцать процентов от прайса при годовом контракте, итого получаем пятьсот десять рублей за пользователя в месяц.",
+            "evidenceStartMs": 782000,
+            "evidenceEndMs": 810000,
+            "mentionedEntities": [
+              {
+                "type": "metric",
+                "name": "Цена за пользователя в месяц (со скидкой 15%)",
+                "mentionContext": "510 руб/пользователь/мес при годовом контракте"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Скидка 20% — потолок, требует коммерческого директора",
+            "criticalQuestion": "Какова максимально возможная скидка?",
+            "trustedAnswer": "20% — максимальная скидка, доступная Кириллу в исключительных случаях. Требует согласования с коммерческим директором. 15% Кирилл подписывает сам.",
+            "signalType": "fact",
+            "tags": [
+              "pricing",
+              "discount-limit",
+              "approval-process"
+            ],
+            "confidence": 0.8,
+            "evidenceQuote": "Кирилл: Двадцать — это потолок, который мне в принципе доступен, и только в исключительных случаях. Пятнадцать я могу подписать сам, двадцать — мне нужно идти к коммерческому директору.",
+            "evidenceStartMs": 816000,
+            "evidenceEndMs": 840000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Кирилл",
+                "mentionContext": "Продавец с лимитом скидки 15%, 20% — через коммерческого директора"
+              },
+              {
+                "type": "person",
+                "name": "Коммерческий директор Айдаты",
+                "mentionContext": "Утверждает скидки свыше 15%"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Данные должны храниться в России (требование клиента)",
+            "criticalQuestion": "Где должны физически храниться данные по политике ТехноЛинк?",
+            "trustedAnswer": "По политике ТехноЛинк — только российские серверы.",
+            "signalType": "regulation",
+            "tags": [
+              "data-security",
+              "compliance",
+              "russian-servers"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: Где физически хранятся наши данные? В России? У нас по политике — только российские серверы.",
+            "evidenceStartMs": 1036000,
+            "evidenceEndMs": 1048000,
+            "mentionedEntities": [
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Клиент с требованием хранения данных в РФ"
+              },
+              {
+                "type": "location",
+                "name": "Россия",
+                "mentionContext": "Обязательное место хранения данных"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Инфраструктура Айдаты: Москва и СПб, бэкап каждые 6 часов",
+            "criticalQuestion": "Где физически размещена инфраструктура Айдаты?",
+            "trustedAnswer": "Инфраструктура полностью в России: два дата-центра в Москве и Санкт-Петербурге, резервное копирование каждые 6 часов.",
+            "signalType": "fact",
+            "tags": [
+              "infrastructure",
+              "data-centers",
+              "backup",
+              "russia"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Кирилл: Да, у нас инфраструктура полностью в России, в двух дата-центрах в Москве и Санкт-Петербурге. С резервным копированием каждые шесть часов.",
+            "evidenceStartMs": 1048000,
+            "evidenceEndMs": 1066000,
+            "mentionedEntities": [
+              {
+                "type": "location",
+                "name": "Москва",
+                "mentionContext": "Дата-центр №1"
+              },
+              {
+                "type": "location",
+                "name": "Санкт-Петербург",
+                "mentionContext": "Дата-центр №2"
+              },
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Инфраструктура продукта"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Скрытые платежи: интеграции 15000 руб, 500 ГБ бесплатно, экспорт без ограничений",
+            "criticalQuestion": "Какие дополнительные платежи есть в Бизнес-плане помимо базовой ставки?",
+            "trustedAnswer": "Одна интеграция включена бесплатно, каждая следующая — 15000 руб единоразово. Хранение до 500 ГБ бесплатно, далее по тарифу. Экспорт без ограничений.",
+            "signalType": "fact",
+            "tags": [
+              "pricing",
+              "integrations",
+              "storage",
+              "export",
+              "transparency"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Кирилл: У нас в Бизнес-плане одна интеграция включена бесплатно — например, ваша основная C R M. Каждая следующая — пятнадцать тысяч единоразово за подключение. Хранение данных — до пятисот гигабайт без доплаты, дальше по тарифу. Экспорт во всех форматах — без ограничений.",
+            "evidenceStartMs": 1172000,
+            "evidenceEndMs": 1202000,
+            "mentionedEntities": [
+              {
+                "type": "technology",
+                "name": "CRM",
+                "mentionContext": "Одна интеграция включена бесплатно"
+              },
+              {
+                "type": "metric",
+                "name": "Лимит хранения данных",
+                "mentionContext": "500 ГБ бесплатно"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Бюджет выделен, жёсткого дедлайна нет, цель — новый год",
+            "criticalQuestion": "Какие сроки принятия решения и бюджетная ситуация?",
+            "trustedAnswer": "Бюджет на проект выделен. Жёсткого дедлайна нет, планируют обновиться к новому году. Рассматривают три варианта: Айдата, АналитПро и третий поставщик.",
+            "signalType": "fact",
+            "tags": [
+              "budget",
+              "timeline",
+              "competition"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Марина: У нас нет жёсткого дедлайна, мы не горим. Сейчас работаем на старой системе, она нас в принципе устраивает, просто хотим обновиться к новому году. Думаем над несколькими вариантами — вы, АналитПро, и ещё ребята из третьей компании. ... Григорий: Бюджет на это у нас выделен, не переживайте.",
+            "evidenceStartMs": 953000,
+            "evidenceEndMs": 995000,
+            "mentionedEntities": [
+              {
+                "type": "customer",
+                "name": "ТехноЛинк Аутсорсинг",
+                "mentionContext": "Клиент с выделенным бюджетом, без жёсткого дедлайна"
+              },
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Один из трёх рассматриваемых поставщиков"
+              },
+              {
+                "type": "vendor",
+                "name": "Третий поставщик (неназванный)",
+                "mentionContext": "Третий конкурент, ещё не приславший КП"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Обязательство: КП завтра до конца дня с полным пакетом",
+            "criticalQuestion": "Когда и что Кирилл обязался прислать?",
+            "trustedAnswer": "Кирилл обязуется прислать коммерческое предложение завтра до конца дня с двумя вариантами расчёта, расширенным SLA, двумя вариантами договора и кейсами.",
+            "signalType": "commitment",
+            "tags": [
+              "cp",
+              "deadline",
+              "deliverables"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Кирилл: Да, я пришлю коммерческое предложение завтра до конца дня. С калькуляцией по обоим вариантам — за пользователя и флэт. И SLA приложением, и проект договора с правкой по сроку.",
+            "evidenceStartMs": 913000,
+            "evidenceEndMs": 932000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Кирилл",
+                "mentionContext": "Отвечает за отправку КП"
+              },
+              {
+                "type": "document",
+                "name": "Коммерческое предложение",
+                "mentionContext": "Документ с калькуляцией, SLA и проектами договора"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": "Марина, Григорий, Антон Викторович"
+          },
+          {
+            "name": "Обязательство: созвон через неделю, предварительный слот на вторник",
+            "criticalQuestion": "Когда состоится следующая встреча?",
+            "trustedAnswer": "Договорились созвониться через неделю. Марина поставит предварительный слот на следующий вторник в то же время. Если Антон Викторович не будет готов — перенесут.",
+            "signalType": "commitment",
+            "tags": [
+              "follow-up",
+              "meeting",
+              "next-steps"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Марина: Я в календаре поставлю предварительный слот на следующий вторник, в это же время. Если Антон Викторович будет не готов — я заранее предупрежу, перенесём.",
+            "evidenceStartMs": 1015000,
+            "evidenceEndMs": 1031000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Марина",
+                "mentionContext": "Организует следующий созвон"
+              },
+              {
+                "type": "person",
+                "name": "Антон Викторович",
+                "mentionContext": "Должен присутствовать на следующей встрече"
+              },
+              {
+                "type": "event",
+                "name": "Следующий созвон (вторник)",
+                "mentionContext": "Предварительный слот через неделю"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Готовность бороться за 20% скидку при быстром подписании",
+            "criticalQuestion": "При каких условиях Кирилл готов идти к коммерческому директору за 20% скидкой?",
+            "trustedAnswer": "Кирилл готов пойти к коммерческому директору за 20% скидкой, если это закроет сделку. В КП заложит 15%, а в письме отметит готовность выйти на 20% при быстром подписании.",
+            "signalType": "commitment",
+            "tags": [
+              "discount",
+              "negotiation",
+              "escalation"
+            ],
+            "confidence": 0.75,
+            "evidenceQuote": "Кирилл: В КП я заложу пятнадцать процентов, но в письме отдельно припишу, что при готовности к быстрому подписанию готов выйти на двадцать. Это будет честно с обеих сторон.",
+            "evidenceStartMs": 1128000,
+            "evidenceEndMs": 1149000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Кирилл",
+                "mentionContext": "Готов эскалировать до коммерческого директора"
+              },
+              {
+                "type": "person",
+                "name": "Коммерческий директор Айдаты",
+                "mentionContext": "Утверждает скидку 20%"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": "Антон Викторович"
+          },
+          {
+            "name": "Запрос кейсов клиентов схожего профиля из аутсорсинга",
+            "criticalQuestion": "Какие дополнительные материалы запросил клиент?",
+            "trustedAnswer": "Григорий запросил кейсы клиентов схожего размера из аутсорсинга. Кирилл пообещал приложить два обезличенных кейса — компании из Екатеринбурга и Казани.",
+            "signalType": "client_request",
+            "tags": [
+              "case-studies",
+              "references",
+              "social-proof"
+            ],
+            "confidence": 0.8,
+            "evidenceQuote": "Григорий: Я бы ещё попросил приложить кейсы клиентов вашего размера. Кто из аутсорсинга у вас уже работает? ... Кирилл: Да, есть два кейса похожих по профилю. Один — компания из Екатеринбурга, второй — из Казани.",
+            "evidenceStartMs": 1272000,
+            "evidenceEndMs": 1306000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Григорий",
+                "mentionContext": "Запросил клиентские кейсы"
+              },
+              {
+                "type": "location",
+                "name": "Екатеринбург",
+                "mentionContext": "Город одного из референсных клиентов"
+              },
+              {
+                "type": "location",
+                "name": "Казань",
+                "mentionContext": "Город второго референсного клиента"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Итоговый пакет из 7 пунктов для КП",
+            "criticalQuestion": "Из чего состоит итоговый пакет обязательств Кирилла?",
+            "trustedAnswer": "Кирилл зафиксировал 7 пунктов: 1) КП завтра, 2) два варианта расчёта (15% скидка за пользователя и флэт), 3) расширенный SLA, 4) два варианта договора (пилотный квартал и годовой), 5) скидка 50% на первый месяц, 6) фиксация лимитов по хранению/интеграциям/экспорту, 7) упоминание о готовности к 20% скидке.",
+            "signalType": "commitment",
+            "tags": [
+              "summary",
+              "package",
+              "deliverables"
+            ],
+            "confidence": 0.9,
+            "evidenceQuote": "Кирилл: Первое: коммерческое предложение завтра до конца дня. Второе: два варианта расчёта — за пользователя со скидкой пятнадцать процентов, и флэт на шестьдесят пользователей. Третье: расширенный SLA с конкретными цифрами по доступности и реакции. Четвёртое: два варианта договора — пилот на квартал и годовой. Пятое: стартовая скидка пятьдесят процентов на первый месяц при выборе годового. Шестое: явная фиксация лимитов по хранению, интеграциям и экспорту. Седьмое: упоминание о готовности обсудить двадцать процентов при быстром подписании.",
+            "evidenceStartMs": 1214000,
+            "evidenceEndMs": 1266000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Кирилл",
+                "mentionContext": "Фиксирует итоговый пакет обязательств"
+              },
+              {
+                "type": "document",
+                "name": "Коммерческое предложение",
+                "mentionContext": "Документ, объединяющий все 7 пунктов"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": "Марина, Григорий, Антон Викторович"
+          },
+          {
+            "name": "Конкурентное преимущество Айдаты: включённые интеграции, отчёты, поддержка",
+            "criticalQuestion": "В чём Айдата выигрывает у АналитПро по составу тарифа?",
+            "trustedAnswer": "В Бизнес-план Айдаты сразу включены: одна CRM-интеграция, ежедневные отчёты и выделенный канал поддержки. У АналитПро это дополнительные опции.",
+            "signalType": "fact",
+            "tags": [
+              "competitive-advantage",
+              "product-differentiation"
+            ],
+            "confidence": 0.7,
+            "evidenceQuote": "Кирилл: У нас в Бизнес-плане сразу включена интеграция с одним C R M, ежедневные отчёты, поддержка по выделенному каналу. У них это допы.",
+            "evidenceStartMs": 122000,
+            "evidenceEndMs": 144000,
+            "mentionedEntities": [
+              {
+                "type": "product",
+                "name": "Айдата Аналитика",
+                "mentionContext": "Продукт с включёнными CRM, отчётами и поддержкой"
+              },
+              {
+                "type": "vendor",
+                "name": "АналитПро",
+                "mentionContext": "Конкурент с допами за эти функции"
+              },
+              {
+                "type": "technology",
+                "name": "CRM",
+                "mentionContext": "Интеграция включена в Бизнес-план"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          },
+          {
+            "name": "Григорий будет торговаться — это принципиальная позиция",
+            "criticalQuestion": "Какова переговорная позиция Григория?",
+            "trustedAnswer": "Григорий прямо заявил, что они будут торговаться, это принципиально.",
+            "signalType": "fact",
+            "tags": [
+              "negotiation",
+              "pricing",
+              "позиция-клиента"
+            ],
+            "confidence": 0.85,
+            "evidenceQuote": "Григорий: И мы будем торговаться, это принципиально.",
+            "evidenceStartMs": 988000,
+            "evidenceEndMs": 995000,
+            "mentionedEntities": [
+              {
+                "type": "person",
+                "name": "Григорий",
+                "mentionContext": "Заявляет принципиальную позицию — будут торговаться"
+              }
+            ],
+            "role_relevant": false,
+            "roleHint": null,
+            "commitmentDueDateGuess": null,
+            "commitmentRecipientNameGuess": null
+          }
+        ],
+        "processes": [
+          {
+            "name": "Процесс закупки ПО в ТехноЛинк Аутсорсинг",
+            "description": "Закупка нового ПО включает: сбор предложений от поставщиков, оценку командой (Марина, Григорий), финальное утверждение Антоном Викторовичем. Первый контракт с новым подрядчиком — не длиннее квартала согласно внутренней политике.",
+            "ownerRoleHint": "Директор по операциям (Антон Викторович)",
+            "triggerDescription": "Потребность в новом ПО / обновлении системы",
+            "confidence": 0.75,
+            "sourceBlockIndex": 15
+          },
+          {
+            "name": "Процесс согласования скидок в Айдата Аналитика",
+            "description": "Скидки до 15% менеджер подписывает самостоятельно. Скидки 20% и выше требуют согласования с коммерческим директором в исключительных случаях.",
+            "ownerRoleHint": "Коммерческий директор Айдаты",
+            "triggerDescription": "Запрос клиента на скидку свыше стандартной",
+            "confidence": 0.7,
+            "sourceBlockIndex": 24
+          }
+        ],
+        "decisions": [
+          {
+            "text": "Формат встречи: обсудить все вопросы и коммерческие условия, упаковать итог в письмо для Антона Викторовича",
+            "rationale": "Антон Викторович — ЛПР — отсутствует по болезни, без него подписание невозможно",
+            "decidedByPersonHint": "Кирилл (предложил), Марина и Григорий согласились",
+            "decidedAt": null,
+            "confidence": 0.85,
+            "sourceBlockIndex": 1
+          },
+          {
+            "text": "Итоговый пакет коммерческого предложения из 7 пунктов: два варианта расчёта, расширенный SLA, два варианта договора, стартовая скидка 50%, фиксация лимитов, опциональные 20%",
+            "rationale": "Закрыть все озвученные возражения и вопросы клиента в одном документе для удобства ЛПР",
+            "decidedByPersonHint": "Кирилл",
+            "decidedAt": null,
+            "confidence": 0.9,
+            "sourceBlockIndex": 32
+          },
+          {
+            "text": "Скидка 15% от прайса при годовом контракте (510 руб/пользователь/мес), с опцией повышения до 20% при быстром подписании",
+            "rationale": "15% Кирилл подписывает сам, 20% требует коммерческого директора — готов эскалировать только при гарантии сделки",
+            "decidedByPersonHint": "Кирилл",
+            "decidedAt": null,
+            "confidence": 0.8,
+            "sourceBlockIndex": 23
+          }
+        ],
+        "regulations": [
+          {
+            "name": "Политика закупок ТехноЛинк: первый контракт — не длиннее квартала",
+            "contentMd": "При первом контракте с новым подрядчиком срок не должен превышать одного квартала. Это позволяет выйти из договора с минимальными потерями, если что-то пойдёт не так.",
+            "category": "regulation",
+            "confidence": 0.8,
+            "sourceBlockIndex": 15
+          },
+          {
+            "name": "Политика ТехноЛинк: данные только на российских серверах",
+            "contentMd": "Все данные компании должны физически храниться на серверах на территории Российской Федерации.",
+            "category": "regulation",
+            "confidence": 0.85,
+            "sourceBlockIndex": 25
+          }
+        ],
+        "policies": [
+          {
+            "name": "Хранение данных в РФ (ТехноЛинк)",
+            "contentMd": "По внутренней политике ТехноЛинк Аутсорсинг все данные должны размещаться исключительно на серверах в России.",
+            "severity": "blocking",
+            "confidence": 0.85,
+            "sourceBlockIndex": 25
+          }
+        ],
+        "metrics": [
+          {
+            "name": "Цена за пользователя в месяц (годовой контракт, базовая)",
+            "description": "Базовая ставка тарифа Бизнес при годовой оплате",
+            "unit": "руб",
+            "target": null,
+            "valueType": "money",
+            "confidence": 0.85,
+            "sourceBlockIndex": 2
+          },
+          {
+            "name": "Цена за пользователя в месяц (годовой контракт, со скидкой 15%)",
+            "description": "Предложенная цена со скидкой 15% от прайса",
+            "unit": "руб",
+            "target": 510,
+            "valueType": "money",
+            "confidence": 0.8,
+            "sourceBlockIndex": 23
+          },
+          {
+            "name": "Цена за пользователя в месяц (поквартально, без скидки)",
+            "description": "Стандартная ставка при оплате помесячно или поквартально",
+            "unit": "руб",
+            "target": null,
+            "valueType": "money",
+            "confidence": 0.85,
+            "sourceBlockIndex": 16
+          },
+          {
+            "name": "Доступность платформы (SLA)",
+            "description": "Гарантированный процент доступности в месяц по корпоративному SLA",
+            "unit": "%",
+            "target": 99.9,
+            "valueType": "ratio",
+            "confidence": 0.8,
+            "sourceBlockIndex": 13
+          },
+          {
+            "name": "Время реакции на критический инцидент (SLA)",
+            "description": "Максимальное время реакции поддержки на критический инцидент",
+            "unit": "часов",
+            "target": 2,
+            "valueType": "duration_seconds",
+            "confidence": 0.8,
+            "sourceBlockIndex": 13
+          },
+          {
+            "name": "Лимит хранения данных (бесплатно)",
+            "description": "Объём хранения данных, включённый в Бизнес-план без доплаты",
+            "unit": "ГБ",
+            "target": 500,
+            "valueType": "other",
+            "confidence": 0.85,
+            "sourceBlockIndex": 27
+          }
+        ],
+        "tools": [
+          {
+            "name": "Айдата Аналитика",
+            "kind": "software",
+            "externalUrl": null,
+            "confidence": 0.9,
+            "sourceBlockIndex": 2
+          },
+          {
+            "name": "АналитПро",
+            "kind": "software",
+            "externalUrl": null,
+            "confidence": 0.85,
+            "sourceBlockIndex": 3
+          },
+          {
+            "name": "CRM-система ТехноЛинк",
+            "kind": "software",
+            "externalUrl": null,
+            "confidence": 0.7,
+            "sourceBlockIndex": 27
+          }
+        ],
+        "mission": null,
+        "vision": null,
+        "strategy": null,
+        "links": [
+          {
+            "fromIndex": 0,
+            "fromType": "process",
+            "toIndex": 0,
+            "toType": "regulation",
+            "linkType": "governed_by",
+            "confidence": 0.75
+          },
+          {
+            "fromIndex": 0,
+            "fromType": "process",
+            "toIndex": 1,
+            "toType": "tool",
+            "linkType": "evaluates",
+            "confidence": 0.7
+          },
+          {
+            "fromIndex": 1,
+            "fromType": "process",
+            "toIndex": 4,
+            "toType": "metric",
+            "linkType": "constrains",
+            "confidence": 0.7
+          }
+        ]
+      },
+      "outputSizeChars": 38371
+    },
+    {
+      "step": "2. chapters-v2",
+      "ok": true,
+      "ms": 80489,
+      "tokensIn": 6571,
+      "tokensOut": 5965,
+      "cachedTokens": 768,
+      "costUsd": 0.031189500000000002,
+      "jsonValid": true,
+      "output": {
+        "chapters": [
+          {
+            "title": "Открытие встречи: ЛПР отсутствует",
+            "summary": "Антон Викторович, директор по операциям и финальный ЛПР, отсутствует по болезни. Принято решение обсудить все вопросы и упаковать итоги в письмо для него.",
+            "startMs": 35000,
+            "endMs": 69000,
+            "evidenceBlockIds": [
+              "blk_000",
+              "blk_001"
+            ]
+          },
+          {
+            "title": "Ценовое предложение и конкурентный анализ",
+            "summary": "Кирилл презентует тариф «Бизнес» — 600 руб/пользователь/мес при годовой оплате. Клиент сравнивает с АналитПро, который на ~25% дешевле. Кирилл указывает на включённые в тариф интеграции, отчёты и поддержку, которых у конкурента нет. Марина подсчитывает, что даже с допами АналитПро дешевле на ~7 000 руб/мес. Григорий предупреждает: цена — первое, на что посмотрит ЛПР.",
+            "startMs": 78000,
+            "endMs": 178000,
+            "evidenceBlockIds": [
+              "blk_002",
+              "blk_003",
+              "blk_033",
+              "blk_004",
+              "blk_005"
+            ]
+          },
+          {
+            "title": "Обратная связь по продукту и модель оплаты",
+            "summary": "Аналитический отдел ТехноЛинк высоко оценил интерфейс Айдаты, но Григорий настаивает: переплата за удобство неприемлема. Обсуждается проблема модели «за пользователя» при текучке персонала (45–60 чел). Клиент запрашивает фиксированную оплату за компанию. Кирилл подтверждает возможность флэт-модели для крупных клиентов и предлагает флэт на 60 пользователей с буфером 10%.",
+            "startMs": 198000,
+            "endMs": 342000,
+            "evidenceBlockIds": [
+              "blk_006",
+              "blk_007",
+              "blk_008",
+              "blk_009",
+              "blk_010",
+              "blk_011"
+            ]
+          },
+          {
+            "title": "Договорные условия: SLA и срок контракта",
+            "summary": "В стандартном договоре Айдаты нет конкретных цифр SLA — юристы ТехноЛинк не пропустят. Кирилл предлагает корпоративное SLA-приложение: 99.9% доступности, реакция на критический инцидент — 2 часа. Клиент возражает против годового контракта: по политике закупок первый контракт с новым подрядчиком — не дольше квартала. Обсуждается компромисс: квартальный пилот с последующим переходом на годовой со скидкой.",
+            "startMs": 408000,
+            "endMs": 646000,
+            "evidenceBlockIds": [
+              "blk_012",
+              "blk_013",
+              "blk_014",
+              "blk_015",
+              "blk_016",
+              "blk_017"
+            ]
+          },
+          {
+            "title": "Конкурентный пилот и система скидок",
+            "summary": "АналитПро предложил бесплатный месяц пилота, но Кирилл вскрывает ограничения: без CRM-интеграции, без выделенной поддержки и до 20 пользователей. Марина подтверждает, что об ограничениях не знала. Кирилл предлагает альтернативу: скидку 15% (510 руб/пользователь/мес) при годовом контракте, 50% на первый месяц, и обозначает потолок скидки в 20% — требует согласования коммерческого директора.",
+            "startMs": 678000,
+            "endMs": 897000,
+            "evidenceBlockIds": [
+              "blk_018",
+              "blk_019",
+              "blk_020",
+              "blk_022",
+              "blk_023",
+              "blk_021"
+            ]
+          },
+          {
+            "title": "Следующие шаги и переговорная позиция",
+            "summary": "Кирилл обязуется прислать КП завтра до конца дня. Бюджет у клиента выделен, жёсткого дедлайна нет, цель — обновиться к новому году. Рассматриваются три поставщика. Григорий прямо заявляет о принципиальном намерении торговаться. Договариваются о созвоне через неделю, предварительный слот — вторник. Если Антон Викторович не будет готов — перенесут.",
+            "startMs": 913000,
+            "endMs": 1031000,
+            "evidenceBlockIds": [
+              "blk_028",
+              "blk_027",
+              "blk_034",
+              "blk_029"
+            ]
+          },
+          {
+            "title": "Инфраструктура и соответствие требованиям",
+            "summary": "По политике ТехноЛинк данные должны храниться в России. Кирилл подтверждает: инфраструктура Айдаты полностью в РФ — дата-центры в Москве и Санкт-Петербурге, резервное копирование каждые 6 часов.",
+            "startMs": 1036000,
+            "endMs": 1066000,
+            "evidenceBlockIds": [
+              "blk_024",
+              "blk_025"
+            ]
+          },
+          {
+            "title": "Финальные договорённости и итоговый пакет",
+            "summary": "Кирилл готов идти к коммерческому директору за скидкой 20% при быстром подписании. Обсуждаются скрытые платежи: интеграции по 15 000 руб, до 500 ГБ хранения бесплатно, экспорт без ограничений. Григорий запрашивает кейсы клиентов из аутсорсинга. Кирилл фиксирует итоговый пакет из 7 пунктов для КП.",
+            "startMs": 1128000,
+            "endMs": 1306000,
+            "evidenceBlockIds": [
+              "blk_030",
+              "blk_026",
+              "blk_032",
+              "blk_031"
+            ]
+          }
+        ]
+      },
+      "outputSizeChars": 3840
+    },
+    {
+      "step": "3. tasks-v2",
+      "ok": true,
+      "ms": 33635,
+      "tokensIn": 2767,
+      "tokensOut": 1669,
+      "cachedTokens": 768,
+      "costUsd": 0.00962046,
+      "jsonValid": true,
+      "output": {
+        "tasks": [
+          {
+            "title": "Подготовить и отправить коммерческое предложение с двумя вариантами расчёта, расширенным SLA, двумя вариантами договора и кейсами",
+            "assigneeRaw": "Кирилл",
+            "dueDateIso": null,
+            "evidenceBlockIds": [
+              "blk_028",
+              "blk_032",
+              "blk_001"
+            ],
+            "confidence": 0.95
+          },
+          {
+            "title": "Поставить предварительный слот в календаре на следующий вторник в то же время",
+            "assigneeRaw": "Марина",
+            "dueDateIso": null,
+            "evidenceBlockIds": [
+              "blk_029"
+            ],
+            "confidence": 0.95
+          }
+        ]
+      },
+      "outputSizeChars": 443
+    },
+    {
+      "step": "4. summary-v2",
+      "ok": true,
+      "ms": 36135,
+      "tokensIn": 7585,
+      "tokensOut": 1732,
+      "cachedTokens": 128,
+      "costUsd": 0.01905822,
+      "jsonValid": true,
+      "output": "## Стадия сделки\n\nПереговоры на уровне оценки коммерческого предложения. Продукт (Айдата) протестирован аналитическим отделом ТехноЛинк, получен положительный отзыв об удобстве. Финальное решение за ЛПР — директором по операциям Антоном Викторовичем, который отсутствовал по болезни. Бюджет выделен, жёсткого дедлайна нет, цель — внедрение к новому году. Конкуренты: АналитПро и третий неназванный поставщик.\n\n## Боли клиента\n\n- **Цена — критический фактор для ЛПР.** Антон Викторович ориентируется на стоимость, требует либо снижения, либо явного обоснования разницы, если аналог дешевле.\n- **Неудобство модели оплаты «за пользователя».** В компании высокая текучка кадров, количество активных учётных записей колеблется от 45 до 60. Подсчёт и изменение платежей каждый месяц воспринимаются как головная боль.\n- **Отсутствие SLA в стандартном договоре.** Юристы ТехноЛинк не пропускают размытые формулировки вроде «разумных усилий» — нужны конкретные показатели доступности и времени реакции на инциденты.\n- **Риск долгосрочного контракта с новым подрядчиком.** Политика закупок ограничивает первый контракт кварталом, чтобы можно было без потерь выйти из отношений. Годовой договор клиентом изначально отвергался.\n\n## Возражения: снятые и открытые\n\n### Снятые\n- **Конкурент дешевле, но с ограничениями.** Выяснилось, что бесплатный пилотный месяц АналитПро — это демо-доступ с урезанным функционалом (без интеграций, выделенной поддержки, лимит 20 пользователей). Клиент не знал об этих ограничениях.\n- **Срок контракта.** Предложен компромисс: пилотный квартал по стандартному тарифу, затем переход на годовой со скидкой, применяемой с первого месяца. Клиент принял логику для обсуждения с ЛПР.\n- **Отсутствие SLA.** Айдата готова приложить корпоративное SLA-приложение с параметрами: доступность 99.9%, реакция на критический инцидент — 2 часа, штрафные санкции в виде сервис-кредитов.\n- **Данные в России.** Подтверждена инфраструктура в дата-центрах Москвы и Санкт-Петербурга, резервное копирование каждые 6 часов. Вопрос закрыт.\n\n### Открытые\n- **Цена всё ещё выше конкурента.** Даже с учётом 15% скидки и раскрытых ограничений АналитПро, разница остаётся ощутимой. Клиент заявил о принципиальном намерении торговаться. 20% скидка (потолок полномочий менеджера) может быть согласована при условии быстрого подписания — это требует решения ЛПР.\n- **Итоговый выбор модели оплаты.** Флэт (фиксированная сумма за компанию) обсуждается, но требует индивидуального расчёта. Окончательное предложение и реакция клиента на него — после получения КП.\n\n## Достигнутые договорённости\n\n- **Кирилл** (Айдата) завтра до конца дня направляет коммерческое предложение, содержащее:\n  1. Два варианта расчёта: за пользователя со скидкой 15% (510 руб./мес) и флэт на 60 пользователей.\n  2. Расширенное SLA-приложение с целевыми показателями.\n  3. Два варианта договора: пилотный квартал и годовой контракт.\n  4. Скидку 50% на первый месяц при выборе годового плана.\n  5. Явную фиксацию лимитов по хранению, интеграциям и экспорту.\n  6. Упоминание о готовности выйти на скидку 20% в случае оперативного подписания.\n  7. Два обезличенных кейса схожих компаний из аутсорсинга.\n- **Марина** (ТехноЛинк) ставит предварительный созвон на следующий вторник, в то же время. Если Антон Викторович не будет готов — перенесут.\n\n## Следующие шаги\n\n1. **Кирилл** готовит и отправляет полный пакет документов (КП, SLA, договоры, кейсы) до конца дня, следующего за встречей.\n2. **Марина** и **Григорий** внутренне обсуждают материалы и готовят вопросы для Антона Викторовича.\n3. **Созвон** через неделю для обсуждения реакции ЛПР и продолжения переговоров. Ожидается предметный торг, прежде всего по цене и модели оплаты.",
+      "outputSizeChars": 3694
+    },
+    {
+      "step": "5. meeting-quality-score",
+      "ok": true,
+      "ms": 39015,
+      "tokensIn": 6466,
+      "tokensOut": 1825,
+      "cachedTokens": 1152,
+      "costUsd": 0.016098480000000002,
+      "jsonValid": true,
+      "output": {
+        "overallScore": 80,
+        "categories": {
+          "preparation": 65,
+          "structure": 72,
+          "clarity": 82,
+          "outcomes": 88,
+          "engagement": 85
+        },
+        "recommendations": [
+          {
+            "text": "Озвучивать повестку и цель встречи проактивно в первые 2 минуты, не дожидаясь, пока участники зададут направление своими вопросами.",
+            "severity": "info",
+            "category": "preparation"
+          },
+          {
+            "text": "В начале встречи явно обозначить структуру: «Сначала цена и модель оплаты, затем договор и SLA, затем сроки, в конце — итоги и следующие шаги». Это задаст рамку и поможет управлять временем.",
+            "severity": "info",
+            "category": "structure"
+          },
+          {
+            "text": "Фиксировать договорённости в реальном времени в общем документе или на экране, а не только устно в конце. Это снижает риск упустить пункт и демонстрирует клиенту прогресс по ходу встречи.",
+            "severity": "warning",
+            "category": "outcomes"
+          },
+          {
+            "text": "При возврате участника к уже обсуждённому вопросу (цена — дважды) явно фиксировать: «К цене возвращаемся в конце, сейчас идём по плану», и строго придерживаться этого, чтобы не терять время.",
+            "severity": "info",
+            "category": "structure"
+          },
+          {
+            "text": "Подготовить визуальное сравнение с конкурентами (таблица «мы vs АналитПро» по составу и ограничениям), чтобы разница была видна сразу и не приходилось доказывать устно.",
+            "severity": "info",
+            "category": "clarity"
+          }
+        ],
+        "strengths": [
+          "Отличное подведение итогов: Кирилл перечислил 7 конкретных обязательств со своей стороны, сверился с участниками и закрыл все пункты.",
+          "Гибкая работа с возражениями: предложил несколько альтернатив (флэт, пилотный квартал, градация скидок 15% vs 20%), а не один жёсткий вариант.",
+          "Тактичная работа с конкурентом: знал ограничения бесплатного периода АналитПро и подсветил их без агрессии, дав клиенту повод перепроверить предложение конкурента.",
+          "Чёткая договорённость о следующих шагах: КП завтра до конца дня, предварительный слот в календаре через неделю, явное подтверждение от обеих сторон."
+        ]
+      },
+      "outputSizeChars": 1874
+    }
+  ],
+  "ingestedBlocksCount": 35
+}

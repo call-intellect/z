@@ -1,0 +1,45 @@
+{
+  "fixtureId": "smoke-daily-digest",
+  "description": "Минимальная фикстура: агрегат за вчерашний день для operations-daily-digest.",
+  "dateLocal": "2026-05-24",
+  "totalCheckIns": 18,
+  "greenShare": 0.61,
+  "yellowShare": 0.28,
+  "redShare": 0.11,
+  "topRedCheckIns": [
+    {
+      "personName": null,
+      "excerpt": "Два дня подряд не могу закрыть задачу: ждём ответа от продукта по API. Чувствую, что выгораю."
+    },
+    {
+      "personName": null,
+      "excerpt": "Сегодня встреча с клиентом сорвалась, потому что не пришли материалы от маркетинга. Опять."
+    }
+  ],
+  "newBlockers": [
+    { "name": "Нет ответа от продукта по API клиента Бета — 3 дня", "confidence": 0.85 },
+    { "name": "Маркетинг не доставил материалы к встрече с клиентом Гамма", "confidence": 0.72 },
+    { "name": "Сервер транскрибации падает на встречах >90 минут", "confidence": 0.78 }
+  ],
+  "overdueCommitments": [
+    { "name": "Подготовить договор для клиента Альфа", "dueDate": "2026-05-22" },
+    { "name": "Прислать ответы на security-чеклист клиенту Дельта", "dueDate": "2026-05-23" }
+  ],
+  "goals": { "completed": 1, "failed": 0, "activated": 2 },
+  "newHighInsights": [
+    {
+      "statement": "Клиент Бета может уйти, если за неделю не закроем вопрос SSO",
+      "kind": "churn_risk",
+      "causeCategory": "продукт"
+    },
+    {
+      "statement": "Возражение по приватности записи стало стабильным паттерном (3 клиента за неделю)",
+      "kind": "objection",
+      "causeCategory": "позиционирование"
+    }
+  ],
+  "decisions": [
+    { "statement": "Перенести релиз SSO на следующий спринт", "status": "approved" },
+    { "statement": "Отказались от per-seat pricing для команд <10 человек", "status": "approved" }
+  ]
+}

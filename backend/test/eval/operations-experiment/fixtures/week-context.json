@@ -1,0 +1,163 @@
+{
+  "fixtureId": "operations-week-2026-05-19",
+  "description": "Дополнительный контекст недели сверх чек-инов: накопленные insights, цели спринта, висящие решения. Используется в Variant Б (гипотеза 1) — даём LLM сырые данные, он сам агрегирует.",
+  "weekStart": "2026-05-19",
+  "weekEnd": "2026-05-23",
+  "rawInsights": [
+    {
+      "id": "ins-01",
+      "kind": "risk",
+      "statement": "Виктор Скоробогатов — единственный devops в команде, все Terraform-задачи блокируются на нём. Сейчас он в отпуске до 2 июня, отсюда блокеры с правами и поднятием инфраструктуры.",
+      "severity": "high",
+      "firstSeenAt": "2026-04-12",
+      "mentions": 4,
+      "weekTrend": "repeating",
+      "sourceCheckInIds": ["ci-02", "ci-12", "ci-22"]
+    },
+    {
+      "id": "ins-02",
+      "kind": "process_gap",
+      "statement": "Онбординг новичков (Дмитрий, 3 месяца в команде) идёт без формальной структуры. Большие задачи даются без поэтапного входа, новичок переживает кризис уверенности.",
+      "severity": "medium",
+      "firstSeenAt": "2026-05-20",
+      "mentions": 3,
+      "weekTrend": "new",
+      "sourceCheckInIds": ["ci-03", "ci-08", "ci-13"]
+    },
+    {
+      "id": "ins-03",
+      "kind": "problem",
+      "statement": "Покрытие тестами pricing-сервиса недостаточное: критические баги (округление, tier-modifier) обнаруживаются только при ручном тестировании, не покрыты автотестами.",
+      "severity": "medium",
+      "firstSeenAt": "2026-03-15",
+      "mentions": 5,
+      "weekTrend": "repeating",
+      "sourceCheckInIds": ["ci-04", "ci-09", "ci-19", "ci-24"]
+    },
+    {
+      "id": "ins-04",
+      "kind": "risk",
+      "statement": "Михаил Дроздов перегружен после болезни — на двух чек-инах подряд упомянул усталость и снижение темпа на следующую неделю. Риск выгорания.",
+      "severity": "medium",
+      "firstSeenAt": "2026-05-19",
+      "mentions": 3,
+      "weekTrend": "new",
+      "sourceCheckInIds": ["ci-05", "ci-10", "ci-25"]
+    },
+    {
+      "id": "ins-05",
+      "kind": "strength",
+      "statement": "Парное программирование Анна+Дмитрий в четверг сильно ускорило понимание dashboard у новичка. Это рабочий инструмент менторства.",
+      "severity": "low",
+      "firstSeenAt": "2026-05-22",
+      "mentions": 2,
+      "weekTrend": "new",
+      "sourceCheckInIds": ["ci-17", "ci-18"]
+    },
+    {
+      "id": "ins-06",
+      "kind": "problem",
+      "statement": "node-cache даёт рассинхрон между подами Kubernetes — решено миграцией на Redis (закрыто на этой неделе для каталога услуг, прайсы и шаблоны на следующую).",
+      "severity": "high",
+      "firstSeenAt": "2026-04-25",
+      "mentions": 3,
+      "weekTrend": "resolved",
+      "sourceCheckInIds": ["ci-02", "ci-07", "ci-12"]
+    }
+  ],
+  "rawGoals": [
+    {
+      "id": "goal-01",
+      "statement": "Закрыть миграцию каталога услуг с node-cache на Redis",
+      "owner": "Анна Мехова",
+      "plannedFor": "2026-05-23",
+      "currentStatus": "completed",
+      "completedAt": "2026-05-23",
+      "notes": "Доставлено в staging, прод-деплой запланирован на 2026-05-26."
+    },
+    {
+      "id": "goal-02",
+      "statement": "Провести интервью fullstack-кандидата Виктора Грушина",
+      "owner": "Иван Соколов",
+      "plannedFor": "2026-05-22",
+      "currentStatus": "completed",
+      "completedAt": "2026-05-22",
+      "notes": "Решение — дать оффер."
+    },
+    {
+      "id": "goal-03",
+      "statement": "Снизить порог алертов p95 latency на тарификаторе с 30 до 5 секунд",
+      "owner": "Иван Соколов",
+      "plannedFor": "2026-05-23",
+      "currentStatus": "completed",
+      "completedAt": "2026-05-21",
+      "notes": "Выкатано в прод во вторник, runbook написан."
+    },
+    {
+      "id": "goal-04",
+      "statement": "Найти и исправить критический баг возврата средств при tier-апгрейде",
+      "owner": "Елена Поликарпова + Михаил Дроздов",
+      "plannedFor": null,
+      "currentStatus": "completed",
+      "completedAt": "2026-05-23",
+      "notes": "Воспроизвели в четверг, исправили в пятницу. Причина — порядок применения tier-modifier."
+    },
+    {
+      "id": "goal-05",
+      "statement": "Завершить рефакторинг dashboard на Zustand (14 компонентов)",
+      "owner": "Дмитрий Карпов",
+      "plannedFor": "2026-06-06",
+      "currentStatus": "in_progress",
+      "completedAt": null,
+      "notes": "Готова 1 из 14 компонентов (KPI-карточка). Тон сменился с тревожного на нормальный после парной работы с Анной."
+    },
+    {
+      "id": "goal-06",
+      "statement": "Закрыть миграцию прайсов и шаблонов документов на Redis",
+      "owner": "Анна Мехова + Виктор Скоробогатов",
+      "plannedFor": "2026-05-23",
+      "currentStatus": "moved",
+      "completedAt": null,
+      "notes": "Сдвинуто на неделю после возвращения Виктора 2 июня (нужны права на Terraform)."
+    }
+  ],
+  "previousWeekStats": {
+    "weekStart": "2026-05-12",
+    "weekEnd": "2026-05-16",
+    "goalsCompleted": 3,
+    "goalsFailed": 0,
+    "goalsInProgress": 2,
+    "greenShare": 0.6,
+    "yellowShare": 0.32,
+    "redShare": 0.08
+  },
+  "rawHangingDecisions": [
+    {
+      "id": "dec-01",
+      "statement": "Перейти на GraphQL для админки вместо текущего REST",
+      "discussedAt": "2026-05-14",
+      "ageDays": 9,
+      "decidedBy": ["Иван Соколов"],
+      "currentResult": null,
+      "notes": "Обсуждали на ретро, никто не взял в работу. Дискуссия осталась без явного шага."
+    },
+    {
+      "id": "dec-02",
+      "statement": "Внедрить feature flags через LaunchDarkly",
+      "discussedAt": "2026-05-11",
+      "ageDays": 12,
+      "decidedBy": ["Иван Соколов", "Анна Мехова"],
+      "currentResult": null,
+      "notes": "Договорились внедрить, но не назначили owner и сроки."
+    },
+    {
+      "id": "dec-03",
+      "statement": "Унифицировать стиль логов pino (формат timestamp, уровни, контекст)",
+      "discussedAt": "2026-05-16",
+      "ageDays": 7,
+      "decidedBy": ["Михаил Дроздов"],
+      "currentResult": null,
+      "notes": "Михаил собирался взять, но заболел. Тикет открыт, не двигается."
+    }
+  ]
+}

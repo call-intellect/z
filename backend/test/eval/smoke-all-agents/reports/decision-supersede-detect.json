@@ -1,0 +1,12 @@
+{
+  "taskType": "decision-supersede-detect",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1046,
+  "tokensOut": 633,
+  "cachedTokens": 0,
+  "costUsd": 0.00100572,
+  "ms": 11329,
+  "modelResponse": "{\"verdict\": \"supersedes\", \"targetId\": \"dec-A-001\", \"reasoning\": \"Черновик регулирует тот же порог и ту же операцию (платежи свыше 1 млн руб.), что и кандидат dec-A-001, но меняет подписанта с финансового директора на CEO. Это содержательно иная логика — явная замена старого правила новым. Кандидат d",
+  "error": null
+}

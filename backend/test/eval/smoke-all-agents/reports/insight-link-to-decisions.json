@@ -1,0 +1,12 @@
+{
+  "taskType": "insight-link-to-decisions",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 856,
+  "tokensOut": 529,
+  "cachedTokens": 0,
+  "costUsd": 0.00083259,
+  "ms": 9409,
+  "modelResponse": "{\"linkedDecisionIds\": [\"dec-A-001\"], \"reasoning\": \"Смена поставщика SIM-карт на «Бета-Поставщик» (dec-A-001) напрямую объясняет высокий процент брака в партии 2026-Q2: решение принято в марте 2026, а проблемная партия пришлась на второй квартал — логичная временная цепочка «сменили поставщика → полу",
+  "error": null
+}

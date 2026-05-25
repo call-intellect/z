@@ -1,0 +1,839 @@
+{
+  "fixtureId": "specialists-01-team-standup",
+  "meetingTitle": "Еженедельная планёрка команды разработки",
+  "meetingType": "team",
+  "scenario": "Разнообразная планёрка с фокусом на задачи, инцидент, идеи фич, найм, навыки",
+  "speakers": [
+    {"name": "Иван Соколов", "role": "Tech Lead"},
+    {"name": "Анна Мехова", "role": "Senior Backend инженер"},
+    {"name": "Дмитрий Карпов", "role": "Frontend инженер"},
+    {"name": "Елена Воробьёва", "role": "Product Manager"}
+  ],
+  "blocks": [
+    {
+      "id": "blk_001",
+      "name": "Старт планёрки и повестка недели",
+      "criticalQuestion": "Какие темы команда обсуждает на этой планёрке?",
+      "trustedAnswer": "Иван открыл встречу и перечислил повестку: разбор инцидента в пятницу, идеи фич от Елены, эксперимент Анны с кэшем, новый регламент code review и обсуждение кандидата на fullstack.",
+      "signalType": "fact",
+      "tags": ["agenda", "planning"],
+      "evidence": {
+        "quote": "Так, всем привет. Сегодня у нас пять тем: разбор пятничного инцидента, идеи от Елены, эксперимент Ани с кэшем, новый процесс code review и кандидат Виктор. Поехали.",
+        "startMs": 0,
+        "endMs": 18000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Елена Воробьёва", "Анна Мехова"]
+    },
+    {
+      "id": "blk_002",
+      "name": "Факт инцидента в пятницу",
+      "criticalQuestion": "Что произошло в пятницу с продакшеном?",
+      "trustedAnswer": "В пятницу 16 мая в 19:47 упал сервис расчёта тарифов, недоступность длилась 42 минуты, пострадало около 1200 пользователей.",
+      "signalType": "fact",
+      "tags": ["incident", "production"],
+      "evidence": {
+        "quote": "Напомню по цифрам: пятница, 19:47, лёг тарификатор, лежал 42 минуты, по логам — затронуло где-то 1200 юзеров.",
+        "startMs": 18500,
+        "endMs": 38000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_003",
+      "name": "Боль — мониторинг не сработал",
+      "criticalQuestion": "Почему алерты не прилетели вовремя?",
+      "trustedAnswer": "Алерты Prometheus сработали только через 18 минут после падения, потому что порог по latency был выставлен на 30 секунд, а сервис деградировал плавно. Дежурный узнал об инциденте от клиента в Telegram, а не из системы.",
+      "signalType": "pain",
+      "tags": ["monitoring", "alerting", "incident"],
+      "evidence": {
+        "quote": "Главная боль — нас разбудил клиент в телеге, а не пейджер. Алерт сработал через 18 минут, потому что у нас порог 30 секунд по latency, а оно деградировало плавно.",
+        "startMs": 38500,
+        "endMs": 62000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_004",
+      "name": "Боль — не было runbook у дежурного",
+      "criticalQuestion": "Почему дежурный не смог быстро восстановить сервис?",
+      "trustedAnswer": "У дежурного не было runbook (инструкции по восстановлению) на тарификатор. Он 25 минут искал по коду, как откатить релиз, и в итоге Анну подняли среди ночи.",
+      "signalType": "pain",
+      "tags": ["runbook", "oncall", "documentation"],
+      "evidence": {
+        "quote": "Второе — у Лёхи не было runbook на тарификатор. Он 25 минут лазил по коду, искал как откатить, в итоге меня подняли.",
+        "startMs": 62500,
+        "endMs": 82000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова", "Алексей"]
+    },
+    {
+      "id": "blk_005",
+      "name": "Risk — повторение инцидента до конца квартала",
+      "criticalQuestion": "Какой риск связан с тарификатором в ближайшие недели?",
+      "trustedAnswer": "Иван считает, что без срочной починки алертов и runbook инцидент повторится в течение 2-3 недель, потому что нагрузка на тарификатор растёт на 15% в месяц.",
+      "signalType": "risk",
+      "tags": ["incident-risk", "tarifficator"],
+      "evidence": {
+        "quote": "Если мы не закроем алерты и runbook за неделю — это рванёт ещё раз. У нас рост нагрузки 15% в месяц на тарификаторе.",
+        "startMs": 82500,
+        "endMs": 100000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_006",
+      "name": "Решение — снизить порог алерта по latency до 5 секунд",
+      "criticalQuestion": "Какой порог latency-алерта команда установит на тарификатор?",
+      "trustedAnswer": "Решено снизить порог алерта Prometheus по p95 latency на тарификаторе с 30 до 5 секунд. Делает Анна до пятницы 23 мая.",
+      "signalType": "decision",
+      "tags": ["alerting", "prometheus", "latency"],
+      "evidence": {
+        "quote": "Ок, решено: опускаем порог p95 latency с тридцати до пяти секунд. Аня берёт, делает до пятницы.",
+        "startMs": 100500,
+        "endMs": 116000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Анна Мехова"]
+    },
+    {
+      "id": "blk_007",
+      "name": "Rationale — почему именно 5 секунд",
+      "criticalQuestion": "Почему выбран порог 5 секунд, а не другой?",
+      "trustedAnswer": "Анна аргументировала: 5 секунд — это в 2 раза выше нашего обычного p95 (2.3с), даёт буфер на сетевые всплески, но ловит начало деградации за 10-12 минут до отказа сервиса.",
+      "signalType": "rationale",
+      "tags": ["alerting", "threshold-choice"],
+      "evidence": {
+        "quote": "Почему пять — потому что наш обычный p95 две и три, пять это в два раза выше, шум не ловим, но начало деградации видим минут за десять до факта.",
+        "startMs": 116500,
+        "endMs": 138000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_008",
+      "name": "Lesson — мониторинг плавной деградации требует отдельных метрик",
+      "criticalQuestion": "Какой урок команда извлекла из инцидента?",
+      "trustedAnswer": "Урок: пороговые алерты по абсолютным значениям не ловят плавную деградацию. Нужны метрики тренда (rate of change) и алерты на отклонение от baseline за период.",
+      "signalType": "lesson",
+      "tags": ["monitoring", "lesson-learned", "incident"],
+      "evidence": {
+        "quote": "Главный урок — пороги по абсолюту не ловят плавняк. Надо алерты на тренд, на отклонение от baseline за час. Это в backlog обязательно.",
+        "startMs": 138500,
+        "endMs": 158000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_009",
+      "name": "Lesson — гость в Telegram быстрее пейджера",
+      "criticalQuestion": "Что сказал инцидент о коммуникационных каналах?",
+      "trustedAnswer": "Анна отметила: клиенты пишут в Telegram быстрее, чем срабатывает наш мониторинг. Нужно подключить парсинг саппорт-чата как дополнительный сигнал инцидента.",
+      "signalType": "lesson",
+      "tags": ["incident", "communication", "support-signal"],
+      "evidence": {
+        "quote": "И второй урок — клиент в телеге быстрее пейджера. Может, надо парсить саппорт-чат и алертить на ключевые слова типа упало, не работает.",
+        "startMs": 158500,
+        "endMs": 178000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_010",
+      "name": "Регламент — обязательный runbook для каждого критического сервиса",
+      "criticalQuestion": "Какое правило вводится по runbook?",
+      "trustedAnswer": "Введён регламент: у каждого сервиса класса P1 (критический) должен быть runbook в Notion с разделами Симптомы, Диагностика, Откат, Эскалация. Без runbook сервис не выезжает в production.",
+      "signalType": "regulation",
+      "tags": ["runbook", "p1-service", "production-policy"],
+      "evidence": {
+        "quote": "Новый закон — каждый P1-сервис должен иметь runbook в Notion: симптомы, диагностика, откат, эскалация. Нет runbook — в прод не катимся. Точка.",
+        "startMs": 178500,
+        "endMs": 202000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_011",
+      "name": "Process step — заполнение runbook перед релизом",
+      "criticalQuestion": "Какой шаг добавляется в процесс релиза?",
+      "trustedAnswer": "Перед релизом нового сервиса P1 автор задачи создаёт runbook по шаблону и прикладывает ссылку в pull request. Без ссылки CI-пайплайн не пропускает merge.",
+      "signalType": "process_step",
+      "tags": ["release-process", "runbook", "ci"],
+      "evidence": {
+        "quote": "Технически — добавляем шаг в шаблон PR: ссылка на runbook обязательное поле. CI чекает, что поле не пустое.",
+        "startMs": 202500,
+        "endMs": 220000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_012",
+      "name": "Process step — pre-mortem на квартальном планировании",
+      "criticalQuestion": "Какой ритуал команда вводит для прогноза рисков?",
+      "trustedAnswer": "На каждом квартальном планировании команда проводит pre-mortem: 30 минут на сессию what could go wrong по каждому крупному эпику, протоколируется в Notion.",
+      "signalType": "process_step",
+      "tags": ["quarterly-planning", "pre-mortem", "ritual"],
+      "evidence": {
+        "quote": "И добавим на квартал pre-mortem — полчаса на каждый большой эпик, протокол в Notion. Чтобы не было сюрпризов.",
+        "startMs": 220500,
+        "endMs": 240000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_013",
+      "name": "Идея — фича push-уведомлений о статусе платежа",
+      "criticalQuestion": "Какую новую фичу предложила Елена?",
+      "trustedAnswer": "Елена принесла идею: добавить push-уведомления о статусе платежа в личный кабинет — об успехе, ошибке, возврате. Сейчас пользователи проверяют статус вручную по 5-6 раз в день.",
+      "signalType": "idea",
+      "tags": ["push-notifications", "payments", "ux"],
+      "evidence": {
+        "quote": "Идея от меня: push-уведомления о статусе платежа в личке. Сейчас люди заходят и обновляют страницу по пять раз в день, это видно по аналитике.",
+        "startMs": 240500,
+        "endMs": 262000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_014",
+      "name": "Feature request — клиент Альфа просит экспорт счетов в 1С",
+      "criticalQuestion": "Какой запрос пришёл от клиента Альфа?",
+      "trustedAnswer": "Клиент Альфа официально запросил экспорт счетов в формате 1С (CSV с полями ИНН, КПП, номер счёта, сумма, НДС). Без этой фичи они грозят уйти к конкуренту к августу.",
+      "signalType": "feature_request",
+      "tags": ["export", "1c-integration", "client-alpha"],
+      "evidence": {
+        "quote": "От Альфы официальный реквест — экспорт счетов в формате 1С. CSV с ИНН, КПП, суммой, НДС. Без этого они уходят к августу.",
+        "startMs": 262500,
+        "endMs": 282000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_015",
+      "name": "Feature request — клиент Гамма хочет мобильное приложение",
+      "criticalQuestion": "Какой запрос есть от Гаммы?",
+      "trustedAnswer": "Клиент Гамма второй раз за квартал просит мобильное приложение для iOS, чтобы топ-менеджеры смотрели KPI с телефона. Текущая мобильная вёрстка их не устраивает.",
+      "signalType": "feature_request",
+      "tags": ["mobile-app", "ios", "client-gamma"],
+      "evidence": {
+        "quote": "И Гамма — второй раз пишут про мобильное приложение под iOS. Им нужно, чтобы CEO смотрел KPI с телефона. Текущий адаптив их не радует.",
+        "startMs": 282500,
+        "endMs": 302000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_016",
+      "name": "Идея — встроить AI-классификатор тикетов в саппорт",
+      "criticalQuestion": "Какую идею команда обсуждает по саппорту?",
+      "trustedAnswer": "Дмитрий предложил встроить AI-классификатор тикетов в админку саппорта: модель автоматически проставляет категорию (billing, bug, feature, account) и приоритет.",
+      "signalType": "idea",
+      "tags": ["ai-classifier", "support", "automation"],
+      "evidence": {
+        "quote": "Я бы предложил AI-классификатор тикетов прикрутить в саппорт. Модель сама ставит категорию: billing, баг, фича, аккаунт — и приоритет.",
+        "startMs": 302500,
+        "endMs": 322000,
+        "speaker": "Дмитрий Карпов"
+      },
+      "mentionedPersons": ["Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_017",
+      "name": "Идея — onboarding-чеклист для новых клиентов",
+      "criticalQuestion": "Что Елена предложила для адаптации новых клиентов?",
+      "trustedAnswer": "Елена предложила интерактивный onboarding-чеклист в личном кабинете: 7 шагов до первой успешной операции, прогресс-бар, подсказки.",
+      "signalType": "idea",
+      "tags": ["onboarding", "checklist", "activation"],
+      "evidence": {
+        "quote": "Ещё одна — onboarding-чеклист в личке. Семь шагов до первой успешной операции, прогресс-бар, тултипы на каждом шаге.",
+        "startMs": 322500,
+        "endMs": 340000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_018",
+      "name": "Идея — реферальная программа для существующих клиентов",
+      "criticalQuestion": "Какую идею роста озвучила Елена?",
+      "trustedAnswer": "Елена предложила реферальную программу: клиент приводит нового платящего клиента — обоим месяц бесплатного тарифа. Маркетинг просчитал unit economics, окупается со второго месяца нового клиента.",
+      "signalType": "idea",
+      "tags": ["referral", "growth", "marketing"],
+      "evidence": {
+        "quote": "Маркетинг просчитал реферальную программу: привёл клиента — месяц бесплатно обоим. Окупается со второго месяца платящего нового.",
+        "startMs": 340500,
+        "endMs": 360000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_019",
+      "name": "Гипотеза — push-уведомления снизят нагрузку на саппорт на 30%",
+      "criticalQuestion": "Какую гипотезу выдвинула команда про push-уведомления?",
+      "trustedAnswer": "Елена выдвинула гипотезу: если внедрить push-уведомления о платежах, количество тикетов где мой платёж в саппорт упадёт на 30% за месяц.",
+      "signalType": "hypothesis",
+      "tags": ["push-notifications", "support-load", "hypothesis"],
+      "evidence": {
+        "quote": "Гипотеза — пуши срежут тикеты где мой платёж на тридцать процентов за месяц. Сейчас это четверть всего саппорта.",
+        "startMs": 360500,
+        "endMs": 380000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_020",
+      "name": "Гипотеза — мобильное приложение повысит retention топ-менеджеров",
+      "criticalQuestion": "Какая гипотеза по мобильному приложению?",
+      "trustedAnswer": "Елена предположила, что мобильное приложение увеличит еженедельный возврат топ-менеджеров на 40%: сейчас они заходят 1-2 раза в неделю с десктопа, с пушей будут заходить ежедневно.",
+      "signalType": "hypothesis",
+      "tags": ["mobile-app", "retention", "executives"],
+      "evidence": {
+        "quote": "По мобилке гипотеза — WAU топов вырастет процентов на сорок. Сейчас они заходят раза два в неделю, с пушами — каждый день.",
+        "startMs": 380500,
+        "endMs": 400000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_021",
+      "name": "Эксперимент Анны — переход с node-cache на Redis для каталога",
+      "criticalQuestion": "Какой эксперимент Анна провела на прошлой неделе?",
+      "trustedAnswer": "Анна провела эксперимент: заменила in-process кэш (node-cache) на Redis для каталога услуг, чтобы избавиться от рассинхрона между подами Kubernetes.",
+      "signalType": "fact",
+      "tags": ["redis", "caching", "experiment"],
+      "evidence": {
+        "quote": "На прошлой неделе я катанула эксперимент: на каталоге услуг сняли node-cache, поставили Redis. Цель — убрать рассинхрон между подами в k8s.",
+        "startMs": 400500,
+        "endMs": 420000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_022",
+      "name": "Гипотеза — Redis даст ту же latency что и in-process",
+      "criticalQuestion": "Какую гипотезу проверяла Анна в эксперименте с кэшем?",
+      "trustedAnswer": "Анна проверяла гипотезу: Redis по latency не хуже in-process кэша при p95 < 3мс, если pool настроен правильно и Redis в той же сети.",
+      "signalType": "hypothesis",
+      "tags": ["redis", "latency", "caching"],
+      "evidence": {
+        "quote": "Гипотеза была — Redis даст ту же latency, что и node-cache. p95 меньше трёх миллисекунд, если pool настроить и Redis в той же AZ.",
+        "startMs": 420500,
+        "endMs": 440000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_023",
+      "name": "Результат эксперимента — Redis оказался быстрее на 22%",
+      "criticalQuestion": "Какой результат показал эксперимент Анны?",
+      "trustedAnswer": "Результат: Redis показал p95 = 1.8мс, node-cache был 2.3мс. Redis оказался даже быстрее на 22%, рассинхрон между подами полностью исчез.",
+      "signalType": "result",
+      "tags": ["redis", "experiment-result", "performance"],
+      "evidence": {
+        "quote": "По итогам — Redis быстрее. p95 один и восемь, node-cache был два и три. Это плюс двадцать два процента, и рассинхрон полностью ушёл.",
+        "startMs": 440500,
+        "endMs": 462000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_024",
+      "name": "Reasoning Анны — почему Redis быстрее in-process",
+      "criticalQuestion": "Как Анна объясняет, что Redis обогнал in-process кэш?",
+      "trustedAnswer": "Анна объяснила: node-cache в нашем случае проигрывал из-за garbage collection в Node.js — при большом наборе ключей V8 тратил 200-300мс на сборку мусора. Redis вынес память за пределы процесса и убрал GC-паузы.",
+      "signalType": "reasoning",
+      "tags": ["redis", "gc", "v8", "explanation"],
+      "evidence": {
+        "quote": "Почему он быстрее — потому что у нас в node-cache было много ключей, V8 уходил в garbage collection на двести-триста миллисекунд. Redis вынес память за процесс, GC-пауз нет.",
+        "startMs": 462500,
+        "endMs": 488000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_025",
+      "name": "Lesson — измерять не только latency, но и GC-метрики",
+      "criticalQuestion": "Какой урок Анна вынесла из эксперимента?",
+      "trustedAnswer": "Урок: при выборе in-process кэша обязательно смотреть GC-метрики, а не только latency. Большой набор ключей в Node.js даёт скрытый штраф на garbage collection, который не виден в обычных бенчмарках.",
+      "signalType": "lesson",
+      "tags": ["caching", "gc", "lesson-learned"],
+      "evidence": {
+        "quote": "Урок: когда выбираешь in-process кэш — смотри GC-метрики, не только latency. На большом наборе ключей V8 даёт скрытый штраф, на бенчах его не видно.",
+        "startMs": 488500,
+        "endMs": 510000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_026",
+      "name": "Решение — переводим все каталоги на Redis",
+      "criticalQuestion": "Какое решение принято по итогам эксперимента?",
+      "trustedAnswer": "Решено: до 6 июня перевести с node-cache на Redis все три каталога — услуг, прайсов и шаблонов документов. Делает Анна вместе с Дмитрием.",
+      "signalType": "decision",
+      "tags": ["redis", "migration", "decision"],
+      "evidence": {
+        "quote": "Решили: до шестого июня все три каталога — услуги, прайсы, шаблоны — на Redis. Аня и Дима в паре.",
+        "startMs": 510500,
+        "endMs": 528000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Анна Мехова", "Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_027",
+      "name": "Blocker — нет staging-кластера Redis под полную нагрузку",
+      "criticalQuestion": "Что мешает быстрому переводу на Redis?",
+      "trustedAnswer": "Дмитрий обозначил блокер: на staging нет Redis-кластера с прод-объёмом памяти (32GB). Тестировать миграцию каталога прайсов придётся либо на dev (4GB, мало), либо тащить временный инстанс.",
+      "signalType": "blocker",
+      "tags": ["redis", "staging", "infrastructure"],
+      "evidence": {
+        "quote": "У меня сразу блокер — у нас на стейдже нет Redis с тридцатью двумя гигами. Прайсы туда не влезут на четырёх гигах dev'а.",
+        "startMs": 528500,
+        "endMs": 548000,
+        "speaker": "Дмитрий Карпов"
+      },
+      "mentionedPersons": ["Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_028",
+      "name": "Blocker — Виктор из инфры в отпуске две недели",
+      "criticalQuestion": "Что мешает поднять Redis на staging?",
+      "trustedAnswer": "Иван отметил блокер: единственный devops Виктор Скоробогатов в отпуске до 2 июня. Поднять кластер Redis на staging некому, а у разработчиков нет прав на Terraform.",
+      "signalType": "blocker",
+      "tags": ["devops", "vacation", "permissions"],
+      "evidence": {
+        "quote": "И ещё блок — Витя в отпуске до второго июня. Terraform-права только у него, без него staging не поднимем.",
+        "startMs": 548500,
+        "endMs": 565000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Виктор Скоробогатов"]
+    },
+    {
+      "id": "blk_029",
+      "name": "Decision — временный Redis на dev-VPS до возвращения Виктора",
+      "criticalQuestion": "Как команда решила проблему с инфрой Redis?",
+      "trustedAnswer": "Решение: Анна поднимет временный Redis в Docker на dev-VPS (8GB) и проведёт миграцию каталога услуг — он самый маленький. Прайсы и шаблоны подождут возвращения Виктора 2 июня.",
+      "signalType": "decision",
+      "tags": ["redis", "workaround", "staging"],
+      "evidence": {
+        "quote": "Решаем так: Аня поднимает Redis в Docker на dev-VPS, мигрирует услуги — они мелкие. Прайсы и шаблоны после второго числа, когда Витя выйдет.",
+        "startMs": 565500,
+        "endMs": 588000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Анна Мехова", "Виктор Скоробогатов"]
+    },
+    {
+      "id": "blk_030",
+      "name": "Менторский момент — Дмитрий спрашивает про cache invalidation",
+      "criticalQuestion": "О чём Дмитрий спросил Ивана по архитектуре?",
+      "trustedAnswer": "Дмитрий задал вопрос: как правильно инвалидировать кэш в Redis при обновлении прайса — pub/sub или TTL? Раньше он работал только с in-process кэшем и не сталкивался с распределёнными сценариями.",
+      "signalType": "fact",
+      "tags": ["cache-invalidation", "mentoring", "question"],
+      "evidence": {
+        "quote": "Слушай, Вань, а как правильно инвалидировать Redis при апдейте прайса — через pub/sub или TTL? Я с распределёнными кэшами не работал.",
+        "startMs": 588500,
+        "endMs": 608000,
+        "speaker": "Дмитрий Карпов"
+      },
+      "mentionedPersons": ["Дмитрий Карпов", "Иван Соколов"]
+    },
+    {
+      "id": "blk_031",
+      "name": "Mentoring — Иван объясняет паттерн cache invalidation",
+      "criticalQuestion": "Какой совет Иван дал Дмитрию по инвалидации кэша?",
+      "trustedAnswer": "Иван подробно объяснил Дмитрию: для прайсов лучше пара write-through + короткий TTL (60 секунд) как safety net. Pub/sub — для real-time сценариев, но усложняет тесты. Привёл аналогию с тем, как он решал ту же задачу в прошлом проекте.",
+      "signalType": "mentoring",
+      "tags": ["cache-invalidation", "mentoring", "patterns"],
+      "evidence": {
+        "quote": "Слушай, я тебе расскажу. Для прайсов делай write-through плюс TTL шестьдесят секунд как страховка. Pub/sub — это когда нужен real-time, но он усложняет тесты. У меня в прошлом проекте была та же тема — я тебе скину код.",
+        "startMs": 608500,
+        "endMs": 640000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_032",
+      "name": "Help provided — Анна предложила парное программирование Дмитрию",
+      "criticalQuestion": "Кто и какую помощь предложил Дмитрию по миграции?",
+      "trustedAnswer": "Анна предложила Дмитрию провести 2 часа парного программирования по миграции на Redis: пройти вместе пайплайн кэширования, показать как настраивать pool и обрабатывать ошибки подключения.",
+      "signalType": "help_provided",
+      "tags": ["pair-programming", "redis", "help"],
+      "evidence": {
+        "quote": "Дим, давай завтра два часа сядем парно, я тебе всю pipeline кэширования пройду — pool, обработка обрывов, retry. За два часа всё разложу.",
+        "startMs": 640500,
+        "endMs": 662000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова", "Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_033",
+      "name": "Help provided — Иван прислал шаблон runbook Анне",
+      "criticalQuestion": "Чем Иван помог Анне в моменте?",
+      "trustedAnswer": "Иван в чат планёрки скинул Анне ссылку на шаблон runbook из прошлого проекта, чтобы она не писала с нуля для тарификатора.",
+      "signalType": "help_provided",
+      "tags": ["runbook", "template", "help"],
+      "evidence": {
+        "quote": "Аня, держи — кидаю в чат ссылку на мой старый шаблон runbook. Бери и адаптируй под тарификатор, не пиши с нуля.",
+        "startMs": 662500,
+        "endMs": 678000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Анна Мехова"]
+    },
+    {
+      "id": "blk_034",
+      "name": "Proactive hint — Анна предупредила про лимит соединений в Redis",
+      "criticalQuestion": "О каком подводном камне Анна предупредила команду заранее?",
+      "trustedAnswer": "Анна проактивно предупредила: при миграции прайсов на Redis надо помнить, что у нас 40 подов, дефолтный pool = 10, итого 400 соединений — упрёмся в лимит maxclients Redis (10000) только если параллельно подключим аналитику, но запас должен быть.",
+      "signalType": "proactive_hint",
+      "tags": ["redis", "connections", "warning"],
+      "evidence": {
+        "quote": "Сразу подсвечу подводный камень: у нас сорок подов, дефолтный pool десять — это четыреста соединений. В лимит maxclients не упрёмся, но если ещё аналитика подключится — запас будет тонкий, заложите.",
+        "startMs": 678500,
+        "endMs": 704000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_035",
+      "name": "Regulation — обязательный code review двумя ревьюерами",
+      "criticalQuestion": "Какой новый регламент code review вводится?",
+      "trustedAnswer": "Вводится регламент: любой PR в master требует approve от двух ревьюеров (раньше был один). Для критических модулей (billing, auth, tarifficator) один из ревьюеров — обязательно Tech Lead или Senior. Старт со среды 21 мая.",
+      "signalType": "regulation",
+      "tags": ["code-review", "policy", "pr-process"],
+      "evidence": {
+        "quote": "По code review новый закон: с двадцать первого мая два аппрува в master, не один. На критичных модулях — billing, auth, тариф — один из аппрувов от senior или меня. Запускаем со среды.",
+        "startMs": 704500,
+        "endMs": 728000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_036",
+      "name": "Process step — SLA на review 4 часа в рабочее время",
+      "criticalQuestion": "Какой SLA вводится на code review?",
+      "trustedAnswer": "Шаг процесса: ревьюер обязан оставить первый отклик (approve, request changes или вопросы) в течение 4 рабочих часов с момента запроса. Если ревьюер занят — должен сразу делегировать.",
+      "signalType": "process_step",
+      "tags": ["code-review", "sla", "process"],
+      "evidence": {
+        "quote": "SLA: первый отклик от ревьюера за четыре рабочих часа. Не успеваешь — сразу делегируй, не держи PR в очереди.",
+        "startMs": 728500,
+        "endMs": 746000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_037",
+      "name": "Process step — чеклист в шаблоне PR",
+      "criticalQuestion": "Какой чеклист обязателен в PR?",
+      "trustedAnswer": "В шаблон PR добавляется чеклист из 5 пунктов: тесты есть, миграции описаны, runbook обновлён, security-review пройдён (если auth/billing), changelog заполнен. Без галок PR не мержится.",
+      "signalType": "process_step",
+      "tags": ["pr-template", "checklist", "process"],
+      "evidence": {
+        "quote": "В шаблон PR — чеклист на пять пунктов: тесты, миграции, runbook, security-review для авторизации и биллинга, changelog. Нет галки — нет merge.",
+        "startMs": 746500,
+        "endMs": 768000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_038",
+      "name": "Process step — еженедельный review-ретро по пятницам",
+      "criticalQuestion": "Какой ритуал по code review вводится?",
+      "trustedAnswer": "Раз в неделю по пятницам 15 минут команда смотрит метрики code review: среднее время до первого отклика, число PR старше 48 часов, доля PR с request changes. Цель — держать pipeline здоровым.",
+      "signalType": "process_step",
+      "tags": ["review-retro", "metrics", "ritual"],
+      "evidence": {
+        "quote": "По пятницам пятнадцать минут смотрим метрики ревью: среднее до первого отклика, сколько PR старше двух суток, доля changes. Чтобы не зарасло.",
+        "startMs": 768500,
+        "endMs": 788000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_039",
+      "name": "Решение — обсудить кандидата Виктора Грушина в четверг",
+      "criticalQuestion": "Какое решение принято по найму fullstack-инженера?",
+      "trustedAnswer": "Решено: 22 мая, четверг, в 16:00 проводим коллективное интервью с кандидатом Виктором Грушиным на роль fullstack-инженера. От команды — Иван, Анна, Дмитрий.",
+      "signalType": "decision",
+      "tags": ["hiring", "fullstack", "interview"],
+      "evidence": {
+        "quote": "По найму: в четверг в шестнадцать ноль-ноль интервью с Виктором Грушиным, fullstack. Я, Аня, Дима — все втроём.",
+        "startMs": 788500,
+        "endMs": 808000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Анна Мехова", "Дмитрий Карпов", "Виктор Грушин"]
+    },
+    {
+      "id": "blk_040",
+      "name": "Expertise — Анна экспертно знает Redis и распределённые кэши",
+      "criticalQuestion": "В чём Анна экспертно сильна на текущем проекте?",
+      "trustedAnswer": "Иван подсветил: Анна — самый сильный человек в команде по Redis, распределённому кэшированию и оптимизации Node.js GC. Она была tech-owner кэширования в прошлом проекте на 5 лет.",
+      "signalType": "expertise",
+      "tags": ["expertise", "redis", "caching", "anna"],
+      "evidence": {
+        "quote": "Я тут скажу прямо — Аня у нас самая сильная по Redis и распределённым кэшам. Она пять лет в прошлом проекте была tech-owner кэширования.",
+        "startMs": 808500,
+        "endMs": 828000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Анна Мехова"]
+    },
+    {
+      "id": "blk_041",
+      "name": "Expertise — Дмитрий экспертно владеет React Server Components",
+      "criticalQuestion": "В чём экспертная сильная сторона Дмитрия?",
+      "trustedAnswer": "Дмитрий — единственный в команде, кто экспертно владеет React Server Components: переводил два проекта на RSC, выступал на митапе с докладом про streaming.",
+      "signalType": "expertise",
+      "tags": ["expertise", "react", "rsc", "dmitry"],
+      "evidence": {
+        "quote": "По фронту Дима у нас один в RSC. Два проекта на Server Components переводил, на митапе докладывал про streaming.",
+        "startMs": 828500,
+        "endMs": 845000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_042",
+      "name": "Expertise — Иван экспертно разбирается в архитектуре платёжных систем",
+      "criticalQuestion": "В чём экспертиза Ивана как Tech Lead?",
+      "trustedAnswer": "Иван 7 лет проектировал платёжные системы, в том числе для банка Открытие и Тинькофф-Бизнес. Знает регуляторику ЦБ РФ, PCI DSS, ФЗ-115 и сам делал интеграции с НСПК.",
+      "signalType": "expertise",
+      "tags": ["expertise", "payments", "regulation", "ivan"],
+      "evidence": {
+        "quote": "А я по платёжным системам — семь лет, Открытие и Тинькофф-Бизнес делал. Регуляторика ЦБ, PCI DSS, ФЗ-115, интеграции с НСПК — это всё на мне.",
+        "startMs": 845500,
+        "endMs": 868000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_043",
+      "name": "Expertise — Елена сильна в количественном UX-ресёрче",
+      "criticalQuestion": "В чём сильная сторона Елены как Product Manager?",
+      "trustedAnswer": "Елена сильна в количественном UX-ресёрче: умеет ставить и считать продуктовые метрики (activation, retention, NPS), проводила больше 50 A/B-тестов, имеет сертификат Reforge на product strategy.",
+      "signalType": "expertise",
+      "tags": ["expertise", "ux-research", "product-metrics", "elena"],
+      "evidence": {
+        "quote": "Я по продуктовой аналитике — это мой профиль. Activation, retention, NPS, больше пятидесяти A/B-тестов прогнала, Reforge есть.",
+        "startMs": 868500,
+        "endMs": 890000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_044",
+      "name": "Experience — Анна 5 лет работала в фин-теке (Ozon)",
+      "criticalQuestion": "Какой релевантный опыт у Анны?",
+      "trustedAnswer": "До нас Анна 5 лет работала в Ozon Финансы: бэкенд биллинга, миграция монолита на микросервисы, проработка идемпотентности платежей.",
+      "signalType": "experience",
+      "tags": ["experience", "ozon", "fintech", "anna"],
+      "evidence": {
+        "quote": "До вас я была пять лет в Ozon Финансы. Делала биллинг-бэкенд, разносила монолит на микросервисы, идемпотентность платежей — всё через меня.",
+        "startMs": 890500,
+        "endMs": 910000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_045",
+      "name": "Experience — Дмитрий вёл свой Open Source проект 3 года",
+      "criticalQuestion": "Какой важный опыт у Дмитрия за пределами найма?",
+      "trustedAnswer": "Дмитрий 3 года вёл Open Source библиотеку для React-форм (2.8к звёзд на GitHub), общался с контрибьюторами, выпустил 47 релизов — это дало ему опыт API-дизайна и работы с сообществом.",
+      "signalType": "experience",
+      "tags": ["experience", "open-source", "react", "dmitry"],
+      "evidence": {
+        "quote": "Я три года вёл свою библиотеку для React-форм — две восемьсот звёзд, сорок семь релизов. Это мне дало API-дизайн и работу с комьюнити.",
+        "startMs": 910500,
+        "endMs": 930000,
+        "speaker": "Дмитрий Карпов"
+      },
+      "mentionedPersons": ["Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_046",
+      "name": "Experience — Елена запускала B2B-продукт с нуля до 200 клиентов",
+      "criticalQuestion": "Какой релевантный опыт запуска у Елены?",
+      "trustedAnswer": "Елена в предыдущей компании СберМаркетинг запускала B2B-продукт для малого бизнеса с нуля: за 18 месяцев довела до 200 платящих клиентов и MRR 4.5 млн рублей.",
+      "signalType": "experience",
+      "tags": ["experience", "b2b-launch", "elena"],
+      "evidence": {
+        "quote": "В СберМаркетинге я запускала B2B-продукт с нуля. За полтора года — двести платящих клиентов, MRR четыре с половиной миллиона.",
+        "startMs": 930500,
+        "endMs": 950000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_047",
+      "name": "Competence — кандидату Виктору нужны Node.js + React + PostgreSQL",
+      "criticalQuestion": "Какой профиль навыков нужен у кандидата fullstack?",
+      "trustedAnswer": "Команда сформулировала компетенции для fullstack: Node.js (NestJS) на уровне production-сервисов, React 18+ с TypeScript, PostgreSQL включая explain analyze, опыт с Redis и BullMQ — желателен.",
+      "signalType": "competence",
+      "tags": ["hiring", "skills-profile", "fullstack"],
+      "evidence": {
+        "quote": "По навыкам fullstack нам нужен: Node.js на уровне production, NestJS, React восемнадцать с TypeScript, PostgreSQL — обязательно explain analyze, Redis и BullMQ — желательно.",
+        "startMs": 950500,
+        "endMs": 974000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_048",
+      "name": "Competence — кандидату нужна способность вести фичу end-to-end",
+      "criticalQuestion": "Какая soft-skill требуется кандидату?",
+      "trustedAnswer": "Елена подчеркнула: важна способность вести фичу end-to-end — от brief'а с PM до выкатки и снятия первых метрик. Без этого fullstack превращается в two-half-stack.",
+      "signalType": "competence",
+      "tags": ["hiring", "soft-skills", "ownership"],
+      "evidence": {
+        "quote": "От себя добавлю: важно, чтобы человек вёл фичу end-to-end. От брифа со мной до выкатки и снятия метрик. Иначе это не fullstack, а два полукекса.",
+        "startMs": 974500,
+        "endMs": 998000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва"]
+    },
+    {
+      "id": "blk_049",
+      "name": "Reasoning — почему PostgreSQL важнее MongoDB для нашего стека",
+      "criticalQuestion": "Почему команда настаивает на PostgreSQL у кандидата?",
+      "trustedAnswer": "Иван объяснил: вся наша транзакционная модель построена на PostgreSQL с heavy use стандартных constraints и оконных функций. Без понимания explain analyze fullstack будет тормозить ревью.",
+      "signalType": "reasoning",
+      "tags": ["postgresql", "hiring-rationale", "reasoning"],
+      "evidence": {
+        "quote": "Почему PostgreSQL обязательно — у нас вся транзакционка на ней, constraints везде, оконные функции для отчётов. Не понимает explain analyze — будет тормозить ревью.",
+        "startMs": 998500,
+        "endMs": 1020000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_050",
+      "name": "Reasoning Дмитрия — почему RSC снижают bundle size",
+      "criticalQuestion": "Как Дмитрий объяснил преимущество RSC?",
+      "trustedAnswer": "Дмитрий объяснил: React Server Components выполняются на сервере и не попадают в клиентский bundle — у нас на одной странице это снижает JavaScript bundle на 35%, что критично для мобильного трафика.",
+      "signalType": "reasoning",
+      "tags": ["rsc", "bundle-size", "reasoning"],
+      "evidence": {
+        "quote": "RSC снижают bundle потому, что серверные компоненты вообще не приезжают в браузер. На странице каталога у нас минус тридцать пять процентов JS — на мобиле это критично.",
+        "startMs": 1020500,
+        "endMs": 1044000,
+        "speaker": "Дмитрий Карпов"
+      },
+      "mentionedPersons": ["Дмитрий Карпов"]
+    },
+    {
+      "id": "blk_051",
+      "name": "Reasoning Анны — почему write-through лучше pub/sub для прайсов",
+      "criticalQuestion": "Почему Анна рекомендует write-through вместо pub/sub?",
+      "trustedAnswer": "Анна аргументировала: прайсы обновляются 5-10 раз в день, write-through даёт детерминированную консистентность без extra-инфраструктуры; pub/sub оправдан только при >100 обновлений в минуту и сложно тестируется.",
+      "signalType": "reasoning",
+      "tags": ["caching", "write-through", "reasoning"],
+      "evidence": {
+        "quote": "Write-through лучше — прайсы обновляются пять-десять раз в день. Это даёт детерминированную консистентность без дополнительной инфры. Pub/sub имеет смысл от ста обновлений в минуту, и тестировать его — больно.",
+        "startMs": 1044500,
+        "endMs": 1070000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_052",
+      "name": "Methodology step — как Анна проводит миграцию кэша",
+      "criticalQuestion": "Какую методологию Анна использует при миграции кэша?",
+      "trustedAnswer": "Анна описала свой подход к миграции кэша 4 шага: 1) включить shadow-чтение из нового кэша параллельно, 2) сравнить ответы на canary 5% трафика 24 часа, 3) переключить чтение, 4) убрать старый код через 7 дней.",
+      "signalType": "methodology_step",
+      "tags": ["migration", "methodology", "shadow-read"],
+      "evidence": {
+        "quote": "Моя схема миграции кэша — четыре шага. Shadow-чтение параллельно, потом канарейка пять процентов на сутки, сравниваем ответы, переключаем чтение, через неделю убираем старый код. Никогда не сразу.",
+        "startMs": 1070500,
+        "endMs": 1098000,
+        "speaker": "Анна Мехова"
+      },
+      "mentionedPersons": ["Анна Мехова"]
+    },
+    {
+      "id": "blk_053",
+      "name": "Methodology step — как Елена приоритизирует фичи (RICE)",
+      "criticalQuestion": "Какую методологию Елена использует для приоритизации?",
+      "trustedAnswer": "Елена приоритизирует фичи по RICE: reach × impact × confidence / effort. Каждую неделю собирает таблицу в Notion, обсуждает с Иваном, верхние 3 идут в спринт.",
+      "signalType": "methodology_step",
+      "tags": ["prioritization", "rice", "methodology"],
+      "evidence": {
+        "quote": "Я приоритизирую по RICE — reach, impact, confidence, делить на effort. Раз в неделю собираю таблицу в Notion, обсуждаем с Ваней, верхние три уходят в спринт.",
+        "startMs": 1098500,
+        "endMs": 1120000,
+        "speaker": "Елена Воробьёва"
+      },
+      "mentionedPersons": ["Елена Воробьёва", "Иван Соколов"]
+    },
+    {
+      "id": "blk_054",
+      "name": "Факт — релиз 4.18 планируется на 30 мая",
+      "criticalQuestion": "Когда планируется ближайший релиз?",
+      "trustedAnswer": "Релиз 4.18 запланирован на пятницу 30 мая в 11:00. В нём: миграция каталога услуг на Redis, новый алерт-порог тарификатора, чеклист в PR-шаблоне.",
+      "signalType": "fact",
+      "tags": ["release", "schedule"],
+      "evidence": {
+        "quote": "Релиз четыре восемнадцать — пятница тридцатое мая, одиннадцать утра. Внутри: миграция услуг на Redis, новый порог тарификатора, чеклист в PR.",
+        "startMs": 1120500,
+        "endMs": 1140000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов"]
+    },
+    {
+      "id": "blk_055",
+      "name": "Факт — закрытие планёрки и follow-ups в Notion",
+      "criticalQuestion": "Чем закрылась встреча?",
+      "trustedAnswer": "Иван закрыл встречу в 17:58. Все action-items уйдут follow-up письмом в Notion от Елены до конца дня. Следующая планёрка — четверг 22 мая, 17:00.",
+      "signalType": "fact",
+      "tags": ["closing", "follow-up"],
+      "evidence": {
+        "quote": "Ок, закрываемся. Лен, follow-up в Notion до конца дня. Следующая планёрка — четверг семнадцать ноль-ноль. Всем спасибо.",
+        "startMs": 1140500,
+        "endMs": 1156000,
+        "speaker": "Иван Соколов"
+      },
+      "mentionedPersons": ["Иван Соколов", "Елена Воробьёва"]
+    }
+  ]
+}

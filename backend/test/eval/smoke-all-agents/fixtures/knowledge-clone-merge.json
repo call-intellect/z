@@ -1,0 +1,56 @@
+{
+  "personName": "Иван Петров",
+  "nowIso": "2026-05-25T10:00:00.000Z",
+  "oldProfile": {
+    "categories": [
+      {
+        "name": "AI-pipeline в knowledge-core",
+        "confidence": "high",
+        "observationCount": 6,
+        "sampleStatements": [
+          { "quote": "Я переписал воркер extraction под BullMQ.", "blockId": "blk-old-1" }
+        ],
+        "relatedEntityIds": [],
+        "lastObservedAt": "2025-12-10T10:00:00.000Z"
+      },
+      {
+        "name": "переговоры с поставщиками",
+        "confidence": "medium",
+        "observationCount": 2,
+        "sampleStatements": [
+          { "quote": "Согласовал контракт со Selectel.", "blockId": "blk-old-2" }
+        ],
+        "relatedEntityIds": [],
+        "lastObservedAt": "2024-09-01T10:00:00.000Z"
+      }
+    ],
+    "experienceHighlights": [
+      { "summary": "Запустил миграцию на pgvector в Q1 2025.", "blockIds": ["blk-old-3"] }
+    ]
+  },
+  "newDraft": {
+    "categories": [
+      {
+        "name": "AI-pipeline в knowledge-core",
+        "confidence": "high",
+        "observationCount": 3,
+        "sampleStatements": [
+          { "quote": "Подключил DeepSeek-Pro к llm-router.", "blockId": "blk-new-1" }
+        ],
+        "relatedEntityIds": [],
+        "lastObservedAt": "2026-05-20T10:00:00.000Z"
+      },
+      {
+        "name": "найм разработчиков",
+        "confidence": "medium",
+        "observationCount": 2,
+        "sampleStatements": [
+          { "quote": "Провёл 4 техинтервью в апреле.", "blockId": "blk-new-2" }
+        ],
+        "relatedEntityIds": [],
+        "lastObservedAt": "2026-04-15T10:00:00.000Z"
+      }
+    ],
+    "experienceHighlights": []
+  }
+}

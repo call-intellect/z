@@ -1,0 +1,12 @@
+{
+  "taskType": "goal-alignment",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "parsedOk": true,
+  "zodOk": true,
+  "tokensIn": 1163,
+  "tokensOut": 1247,
+  "costUsd": 0.001590795,
+  "ms": 24377,
+  "modelResponse": "{\"score\": 72, \"explanation\": \"Компания устойчиво движется к цели: архитектурные решения приняты, REST-клиент готов, чтение сделок реализовано. Однако вторая половина MVP — запись комментариев — ещё не сделана, а интеграция с BullMQ для обхода rate-limit остаётся в планах. При 21 дне до дедлайна риск"
+}

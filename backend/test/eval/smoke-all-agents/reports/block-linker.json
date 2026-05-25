@@ -1,0 +1,12 @@
+{
+  "taskType": "block-linker",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1048,
+  "tokensOut": 606,
+  "cachedTokens": 0,
+  "costUsd": 0.0009831,
+  "ms": 12357,
+  "modelResponse": "{\"relationType\": \"causes\", \"confidence\": 0.95, \"explanation\": \"Миграция на pgvector (A) напрямую привела к росту latency с 30мс до 250мс (B). Блок B явно ссылается на последствия переключения, описывая проблему с HNSW-индексом — это прямое следствие решения из A.\"}",
+  "error": null
+}

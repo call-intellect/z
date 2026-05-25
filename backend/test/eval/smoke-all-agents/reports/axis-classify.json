@@ -1,0 +1,12 @@
+{
+  "taskType": "axis-classify",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 914,
+  "tokensOut": 508,
+  "cachedTokens": 0,
+  "costUsd": 0.0008395500000000001,
+  "ms": 11000,
+  "modelResponse": "{\"functional\": [{\"label\": \"devops\", \"confidence\": 0.9}, {\"label\": \"engineering\", \"confidence\": 0.7}], \"temporal\": [{\"label\": \"temporal:current\", \"confidence\": 0.9}]}",
+  "error": null
+}

@@ -1,0 +1,31 @@
+{
+  "taskType": "executable-persona-compile",
+  "personName": "Алексей Иванов",
+  "personRole": "Тимлид backend-разработки",
+  "traits": [
+    {
+      "category": "decision-making",
+      "statement": "Принимает технические решения только после анализа двух-трёх альтернатив, любит писать ADR.",
+      "confidence": "high",
+      "observationCount": 12
+    },
+    {
+      "category": "code-review",
+      "statement": "Уделяет особое внимание читаемости и именам, не любит «умный» код ради краткости.",
+      "confidence": "high",
+      "observationCount": 18
+    },
+    {
+      "category": "communication",
+      "statement": "В переговорах с продактом сначала уточняет бизнес-цель и только потом обсуждает реализацию.",
+      "confidence": "medium",
+      "observationCount": 7
+    },
+    {
+      "category": "incident-response",
+      "statement": "В инциденте сначала останавливает кровотечение, потом разбирает причины, поэтому ценит post-mortem.",
+      "confidence": "high",
+      "observationCount": 5
+    }
+  ]
+}

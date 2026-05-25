@@ -1,0 +1,10 @@
+{
+  "taskType": "chat-v2-conversation-title",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 244,
+  "tokensOut": 82,
+  "costUsd": 0.00017748000000000002,
+  "ms": 3794,
+  "modelResponse": "Решения по интеграции с CRM Битрикс"
+}

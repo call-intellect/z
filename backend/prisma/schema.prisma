@@ -926,6 +926,11 @@ model User {
   ownedEvents         Event[]            @relation("EventOwner")
   eventParticipations EventParticipant[] @relation("EventParticipantUser")
 
+  // ── User Feedback with AI Clustering (2026-05-25) ──
+  /// Сообщения обратной связи пользователя через канал «Ваши предложения».
+  /// См. plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
+  feedbackMessages FeedbackMessage[]
+
   @@unique([email, signupSource])
   @@index([email])
   @@index([deletedAt])
@@ -2141,6 +2146,11 @@ model Org {
 
   // ── SBA δ-2 — ProactiveWatcher (2026-05-23) ──
   proactiveNotifications ProactiveNotification[]
+
+  // ── User Feedback with AI Clustering (2026-05-25) ──
+  /// Сообщения обратной связи пользователей этой Org. Опционально —
+  /// orgId на FeedbackMessage может быть NULL, поэтому это lookup-only релейшен.
+  feedbackMessages FeedbackMessage[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -7635,4 +7645,93 @@ model CronRunHistory {
   triggeredBy String?
 
   @@index([cronName, startedAt])
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// User Feedback with AI Clustering (2026-05-25)
+// Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md
+// Канал прямой обратной связи пользователей продукту Z с ночным AI-агентом,
+// который кластеризует тезисы в смысловые блоки.
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Сообщение, отправленное пользователем через форму «Ваши предложения».
+/// Один FeedbackMessage = одна отправка из UI. Лимит 5 в сутки на userId.
+/// Может породить несколько FeedbackItem (по одному на тезис) после
+/// ночной обработки агентом.
+model FeedbackMessage {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Org, в контексте которой пользователь писал сообщение (если он залогинен
+  /// в Org). Опционально, потому что фидбэк глобальный — мы храним для
+  /// аналитики «из каких org приходят запросы».
+  orgId       String?
+  org         Org?      @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  text        String    @db.Text
+  createdAt   DateTime  @default(now())
+  /// Помечается, когда ночной digest-воркер обработал сообщение и создал
+  /// items. NULL = ещё не обработано, ждёт следующий прогон.
+  processedAt DateTime?
+  /// Счётчик неудачных попыток обработки. После 3 — сообщение исключается
+  /// из дальнейших прогонов и попадает в /admin/feedback/messages/failed
+  /// для ручного разбора.
+  failedRuns  Int       @default(0)
+
+  items FeedbackItem[]
+
+  @@index([processedAt])
+  @@index([userId, createdAt])
+}
+
+/// Смысловой блок обратной связи. Создаётся либо AI-агентом во время
+/// ночного digest'а, либо вручную super-admin'ом. Items группируются в блок
+/// по тематической близости тезисов.
+model FeedbackTopic {
+  id           String              @id @default(cuid())
+  title        String
+  description  String              @db.Text
+  status       FeedbackTopicStatus @default(ACTIVE)
+  archivedAt   DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  /// Если блок был объединён с другим — здесь id «целевого» блока.
+  /// Сами items при merge переносятся в target, а source помечается
+  /// status=MERGED. См. /admin/feedback/topics/:sourceId/merge.
+  mergedIntoId String?
+  mergedInto   FeedbackTopic?      @relation("FeedbackTopicMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom   FeedbackTopic[]     @relation("FeedbackTopicMerge")
+
+  items FeedbackItem[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum FeedbackTopicStatus {
+  ACTIVE
+  ARCHIVED
+  MERGED
+}
+
+/// Тезис, выделенный AI-агентом из FeedbackMessage. Один FeedbackMessage
+/// может породить несколько items (если пользователь высказал несколько
+/// тем в одном сообщении). discarded=true означает, что агент посчитал
+/// тезис мусором (spam / unintelligible / off-topic) и не привязал к блоку.
+model FeedbackItem {
+  id            String           @id @default(cuid())
+  messageId     String
+  message       FeedbackMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  /// NULL если discarded=true (мусор/спам), либо если блок был удалён
+  /// (onDelete: SetNull сохраняет item для аналитики).
+  topicId       String?
+  topic         FeedbackTopic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  text          String           @db.Text
+  discarded     Boolean          @default(false)
+  /// 'spam' | 'unintelligible' | 'off-topic' | 'agent_marked'.
+  discardReason String?
+  createdAt     DateTime         @default(now())
+
+  @@index([topicId, createdAt])
+  @@index([messageId])
+  @@index([discarded])
 }

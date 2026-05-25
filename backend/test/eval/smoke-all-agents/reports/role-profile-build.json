@@ -1,0 +1,12 @@
+{
+  "taskType": "role-profile-build",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1657,
+  "tokensOut": 3743,
+  "cachedTokens": 1536,
+  "costUsd": 0.003314613,
+  "ms": 64531,
+  "modelResponse": "{\"responsibilities\": [{\"title\": \"Onboarding новых клиентов\", \"kind\": \"outcome\", \"details\": \"Проведение 4 встреч (kickoff, технический setup, обучение администраторов, постпродажа) в течение 2 недель с момента подписания клиента.\", \"evidence\": [\"blk-201\"]}, {\"title\": \"Проведение ежеквартальных QBR-вс",
+  "error": null
+}

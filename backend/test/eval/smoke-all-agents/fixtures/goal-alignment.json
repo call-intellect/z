@@ -1,0 +1,33 @@
+{
+  "taskType": "goal-alignment",
+  "goalName": "Запустить интеграцию с CRM Битрикс24 до 15 июня",
+  "goalDescription": "MVP интеграции: чтение сделок и запись комментариев. Без двусторонней синхронизации.",
+  "daysUntilTarget": 21,
+  "windowDays": 30,
+  "themes": [
+    { "id": "th_1", "name": "CRM-интеграция", "weight": 0.85, "dynamic": "growing" },
+    { "id": "th_2", "name": "BullMQ очереди", "weight": 0.4, "dynamic": "stable" }
+  ],
+  "blocks": [
+    {
+      "signalType": "decision",
+      "criticalQuestion": "Каким способом интегрироваться с Битрикс24?",
+      "trustedAnswer": "Через REST API (вебхуки), не через приложение маркетплейса — быстрее, без проверки модератора."
+    },
+    {
+      "signalType": "decision",
+      "criticalQuestion": "Кто отвечает за интеграцию и какие сроки?",
+      "trustedAnswer": "Ответственный — Алексей. Срок MVP — 15 июня. Скоуп: чтение сделок, запись комментариев."
+    },
+    {
+      "signalType": "risk",
+      "criticalQuestion": "Какой rate-limit у Битрикс24 на бесплатном тарифе?",
+      "trustedAnswer": "2 запроса в секунду. Решили закладывать BullMQ-очередь с retry."
+    },
+    {
+      "signalType": "progress",
+      "criticalQuestion": "Что сделано на этой неделе по интеграции Битрикс24?",
+      "trustedAnswer": "Готов клиент REST API, написаны базовые методы чтения сделок. Осталось реализовать запись комментариев и интегрировать с BullMQ."
+    }
+  ]
+}

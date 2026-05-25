@@ -1,0 +1,61 @@
+{
+  "variant": "A",
+  "fixtureId": "dialog-01-factual",
+  "model": "deepseek-v4-pro",
+  "totalMs": 12254,
+  "totalTokensIn": 3733,
+  "totalTokensOut": 596,
+  "totalCachedTokens": 0,
+  "totalCostUsd": 0.002142375,
+  "steps": [
+    {
+      "step": "1. contextualize",
+      "ok": true,
+      "ms": 2945,
+      "tokensIn": 305,
+      "tokensOut": 78,
+      "cachedTokens": 0,
+      "costUsd": 0.000200535,
+      "output": "Какой был бюджет на маркетинг в марте 2026?"
+    },
+    {
+      "step": "2. classify",
+      "ok": true,
+      "ms": 2382,
+      "tokensIn": 582,
+      "tokensOut": 95,
+      "cachedTokens": 0,
+      "costUsd": 0.00033582,
+      "output": {
+        "intent": "factual"
+      }
+    },
+    {
+      "step": "4. confidence",
+      "ok": true,
+      "ms": 2795,
+      "tokensIn": 577,
+      "tokensOut": 124,
+      "cachedTokens": 0,
+      "costUsd": 0.00035887500000000004,
+      "output": {
+        "confidence": 1,
+        "reason": "Переформулировка полностью идентична оригинальному вопросу, смысл сохранён без искажений."
+      }
+    },
+    {
+      "step": "5. answer-factual",
+      "ok": true,
+      "ms": 6514,
+      "tokensIn": 2269,
+      "tokensOut": 299,
+      "cachedTokens": 0,
+      "costUsd": 0.0012471449999999999,
+      "output": "Бюджет на маркетинг в марте 2026 года составил 850 тысяч рублей: 500 тыс. на платные каналы привлечения и 350 тыс. на контент и блог [BLOCK:blk_001]."
+    }
+  ],
+  "derived": {
+    "standalone": "Какой был бюджет на маркетинг в марте 2026?",
+    "intent": "factual"
+  }
+}

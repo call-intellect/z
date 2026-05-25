@@ -1,0 +1,18 @@
+{
+  "blockA": {
+    "id": "blk-A-001",
+    "name": "Решение мигрировать на pgvector",
+    "criticalQuestion": "Какую базу используем для семантического поиска?",
+    "trustedAnswer": "Решено мигрировать поиск по embeddings с in-memory FAISS на PostgreSQL + pgvector с HNSW-индексом.",
+    "signalType": "decision",
+    "tags": ["pgvector", "поиск", "embeddings"]
+  },
+  "blockB": {
+    "id": "blk-B-001",
+    "name": "Жалоба на медленный поиск",
+    "criticalQuestion": "Почему семантический поиск стал медленнее?",
+    "trustedAnswer": "После переключения на pgvector latency p95 выросла с 30мс до 250мс. Подозреваем неоптимальный HNSW-индекс — m=8 слишком мал.",
+    "signalType": "pain",
+    "tags": ["pgvector", "performance", "поиск"]
+  }
+}

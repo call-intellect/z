@@ -1,0 +1,559 @@
+{
+  "model": "deepseek-v4-pro",
+  "timestamp": "2026-05-25T12:10:00.641Z",
+  "total": 25,
+  "passed": 24,
+  "failed": 1,
+  "passRate": 0.96,
+  "validPassRate": 1,
+  "rejectPassRate": 0.8,
+  "totalTokensIn": 52896,
+  "totalCachedTokens": 41216,
+  "cacheHitRatio": 0.779189352692075,
+  "totalTokensOut": 19971,
+  "totalCostUsd": 0.022604978,
+  "totalMs": 366139,
+  "failuresByReason": {
+    "Expected refusal (empty sourceBlockIds), got extraction": 1
+  },
+  "results": [
+    {
+      "fixtureName": "01-cautious-deadlines.json",
+      "fixtureId": "01-cautious-deadlines",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "осторожен с ранними оценками сроков",
+        "statement": "Похоже, склонен откладывать коммитмент по срокам до получения фактических данных — в большинстве случаев требует сначала снять неопределённости (замеры нагрузки, разбор контрактов с зависимыми системами) и не хочет фиксировать оценки при обилии допущений.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f01-b1",
+          "f01-b2",
+          "f01-b3"
+        ]
+      },
+      "tokensIn": 2104,
+      "tokensOut": 867,
+      "cachedTokens": 0,
+      "ms": 16008,
+      "costUsd": 0.00166953
+    },
+    {
+      "fixtureName": "02-data-driven-decisions.json",
+      "fixtureId": "02-data-driven-decisions",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "требует метрик перед решением",
+        "statement": "Похоже, склонен откладывать продуктовые решения до получения количественных данных — в большинстве случаев явно противопоставляет метрики интуиции и мнениям, настаивая на сборе цифр (конверсия, A/B, удержание) как обязательной основе для выбора.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f02-b1",
+          "f02-b2",
+          "f02-b3",
+          "f02-b4"
+        ]
+      },
+      "tokensIn": 2174,
+      "tokensOut": 846,
+      "cachedTokens": 0,
+      "ms": 14502,
+      "costUsd": 0.0016817099999999999
+    },
+    {
+      "fixtureName": "03-delegates-early-estimates.json",
+      "fixtureId": "03-delegates-early-estimates",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "избегает эффекта якоря в оценках",
+        "statement": "Похоже, в большинстве случаев намеренно воздерживается от того, чтобы первой называть цифру по срокам или трудозатратам — передаёт право первой оценки команде или тимлиду, чтобы избежать эффекта якоря и получить независимую оценку, основанную на реальном контексте исполнителей.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f03-b1",
+          "f03-b2",
+          "f03-b3"
+        ]
+      },
+      "tokensIn": 2125,
+      "tokensOut": 1062,
+      "cachedTokens": 1792,
+      "ms": 18110,
+      "costUsd": 0.001075291
+    },
+    {
+      "fixtureName": "04-scope-expansion-under-load.json",
+      "fixtureId": "04-scope-expansion-under-load",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "расширяет scope из-за смежных проблем",
+        "statement": "Похоже, склонен расширять scope текущей задачи при обнаружении смежных проблем — в большинстве случаев добавляет в тот же PR исправления соседних модулей или слоёв, обосновывая это нежеланием возвращаться к тому же файлу позже.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f04-b1",
+          "f04-b2",
+          "f04-b3"
+        ]
+      },
+      "tokensIn": 2131,
+      "tokensOut": 1029,
+      "cachedTokens": 1792,
+      "ms": 18207,
+      "costUsd": 0.001049191
+    },
+    {
+      "fixtureName": "05-challenges-authority.json",
+      "fixtureId": "05-challenges-authority",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "ставит данные выше авторитета",
+        "statement": "Похоже, Ольга последовательно оценивает решения по их фактической применимости, а не по статусу источника — склонна оспаривать предложения архитекторов, CTO и «книжные» рекомендации, если они расходятся с эмпирическими данными (профиль нагрузки, полугодовая статистика, поведение пользователей).",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f05-b1",
+          "f05-b2",
+          "f05-b3",
+          "f05-b4"
+        ]
+      },
+      "tokensIn": 2172,
+      "tokensOut": 727,
+      "cachedTokens": 1792,
+      "ms": 13604,
+      "costUsd": 0.000804286
+    },
+    {
+      "fixtureName": "06-leans-on-history.json",
+      "fixtureId": "06-leans-on-history",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "опирается на прошлые инциденты",
+        "statement": "Похоже, склонен обосновывать технические решения ссылками на конкретные прошлые инциденты и прецеденты — как свои, так и чужие — чтобы избежать повторения известных ошибок.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f06-b1",
+          "f06-b2",
+          "f06-b3"
+        ]
+      },
+      "tokensIn": 2127,
+      "tokensOut": 829,
+      "cachedTokens": 1792,
+      "ms": 15180,
+      "costUsd": 0.000873451
+    },
+    {
+      "fixtureName": "07-readability-over-performance.json",
+      "fixtureId": "07-readability-over-performance",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "предпочитает читаемость микрооптимизациям",
+        "statement": "Похоже, Илья склонен отдавать предпочтение читаемости и поддерживаемости кода перед микрооптимизациями — в большинстве случаев отказывается от «хитрых» решений (битовая магия, one-liner'ы) в пользу явного и понятного кода, если только бизнес-метрика не требует обратного.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f07-b1",
+          "f07-b2",
+          "f07-b3"
+        ]
+      },
+      "tokensIn": 2131,
+      "tokensOut": 811,
+      "cachedTokens": 1792,
+      "ms": 13850,
+      "costUsd": 0.000859531
+    },
+    {
+      "fixtureName": "08-prefers-async-communication.json",
+      "fixtureId": "08-prefers-async-communication",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "предпочитает асинхронные форматы коммуникации",
+        "statement": "Похоже, склонна выбирать асинхронные форматы обсуждений (треды, loom-видео, чаты) вместо синхронных созвонов — в большинстве случаев аргументирует это тем, что асинхрон даёт людям время подумать и не разрушает фокус-тайм, а синхронный созвон считает оправданным только для срочного разрешения споров.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f08-b1",
+          "f08-b2",
+          "f08-b3"
+        ]
+      },
+      "tokensIn": 2127,
+      "tokensOut": 900,
+      "cachedTokens": 1792,
+      "ms": 15865,
+      "costUsd": 0.0009352210000000001
+    },
+    {
+      "fixtureName": "09-resists-premature-optimization.json",
+      "fixtureId": "09-resists-premature-optimization",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "сопротивляется преждевременным усложнениям",
+        "statement": "Похоже, склонен отклонять предложения по усложнению системы — будь то смена стека, добавление кэша или переход на новый протокол — требуя сначала доказательств (профилировка, метрики нагрузки), что текущее решение действительно является узким местом и оправдывает издержки усложнения.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f09-b1",
+          "f09-b2",
+          "f09-b3"
+        ]
+      },
+      "tokensIn": 2139,
+      "tokensOut": 774,
+      "cachedTokens": 1792,
+      "ms": 14027,
+      "costUsd": 0.000830821
+    },
+    {
+      "fixtureName": "10-tradeoff-analysis.json",
+      "fixtureId": "10-tradeoff-analysis",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "структурирует решения через trade-off анализ",
+        "statement": "Похоже, склонен рассматривать любое техническое решение как набор разменов: прежде чем выбрать вариант, раскладывает, что приобретаем, чем жертвуем и какую цену платим за каждую опцию, избегая оценок «правильно/неправильно».",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f10-b1",
+          "f10-b2",
+          "f10-b3"
+        ]
+      },
+      "tokensIn": 2150,
+      "tokensOut": 905,
+      "cachedTokens": 1792,
+      "ms": 15991,
+      "costUsd": 0.000949576
+    },
+    {
+      "fixtureName": "11-edge-case-hunter.json",
+      "fixtureId": "11-edge-case-hunter",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "требует проверки edge-кейсов перед мержем",
+        "statement": "Похоже, склонен систематически выявлять граничные условия и нестандартные сценарии (пустой массив, массив из одного элемента, одновременные ретраи, отрицательный timeout) и настаивать на их проверке до слияния кода — в большинстве случаев при ревью явно перечисляет конкретные edge-кейсы и требует закрыть дыры до прода.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f11-b1",
+          "f11-b2",
+          "f11-b3"
+        ]
+      },
+      "tokensIn": 2151,
+      "tokensOut": 760,
+      "cachedTokens": 1792,
+      "ms": 14178,
+      "costUsd": 0.000823861
+    },
+    {
+      "fixtureName": "12-documents-decisions.json",
+      "fixtureId": "12-documents-decisions",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "документирует архитектурные решения в ADR",
+        "statement": "Похоже, склонна систематически фиксировать архитектурные решения в ADR — как для «будущего себя» через полгода, так и для других команд, чтобы обеспечить прослеживаемость, обоснованность выбора и возможность сослаться на решение.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f12-b1",
+          "f12-b2",
+          "f12-b3"
+        ]
+      },
+      "tokensIn": 2122,
+      "tokensOut": 797,
+      "cachedTokens": 1792,
+      "ms": 13890,
+      "costUsd": 0.0008434359999999999
+    },
+    {
+      "fixtureName": "13-monolith-first.json",
+      "fixtureId": "13-monolith-first",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "избегает преждевременной микросервисной архитектуры",
+        "statement": "Похоже, последовательно откладывает переход к микросервисам до появления реальных ограничений монолита — в большинстве случаев опирается на конкретные критерии (размер команды, инфраструктурные издержки, оркестрационные долги) и собственный негативный опыт преждевременной декомпозиции.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f13-b1",
+          "f13-b2",
+          "f13-b3"
+        ]
+      },
+      "tokensIn": 2145,
+      "tokensOut": 778,
+      "cachedTokens": 1792,
+      "ms": 15151,
+      "costUsd": 0.0008369110000000001
+    },
+    {
+      "fixtureName": "14-feature-flags-for-risk.json",
+      "fixtureId": "14-feature-flags-for-risk",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "выкатывает через feature flags и канарейки",
+        "statement": "Похоже, склонен минимизировать риски деплоя — в большинстве случаев использует фича-флаги и канареечные выкатки, особенно для критичных изменений (платёжный путь, поиск), предпочитает постепенное раскатывание с мониторингом метрик вместо разового полного деплоя.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f14-b1",
+          "f14-b2",
+          "f14-b3"
+        ]
+      },
+      "tokensIn": 2136,
+      "tokensOut": 914,
+      "cachedTokens": 1792,
+      "ms": 16657,
+      "costUsd": 0.000951316
+    },
+    {
+      "fixtureName": "15-small-prs.json",
+      "fixtureId": "15-small-prs",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "дробит PR ради качественного ревью",
+        "statement": "Похоже, склонна разбивать большие изменения на маленькие атомарные PR (100–200 строк), чтобы получить содержательный фидбек от ревьюеров, ускорить мердж и упростить локализацию багов через bisect — даже ценой дополнительных затрат времени на рефакторинг истории коммитов.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f15-b1",
+          "f15-b2",
+          "f15-b3"
+        ]
+      },
+      "tokensIn": 2133,
+      "tokensOut": 830,
+      "cachedTokens": 1792,
+      "ms": 15349,
+      "costUsd": 0.0008769310000000001
+    },
+    {
+      "fixtureName": "16-asks-for-extra-eyes.json",
+      "fixtureId": "16-asks-for-extra-eyes",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "привлекает extra ревьюверов на критичных правках",
+        "statement": "Похоже, Денис системно привлекает дополнительных ревьюверов на изменениях с высокими ставками (безопасность, долго сидел в коде). В большинстве случаев руководствуется принципом: стоимость лишнего ревью ниже стоимости ошибки в проде.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f16-b1",
+          "f16-b2",
+          "f16-b3"
+        ]
+      },
+      "tokensIn": 2122,
+      "tokensOut": 734,
+      "cachedTokens": 1792,
+      "ms": 14124,
+      "costUsd": 0.000788626
+    },
+    {
+      "fixtureName": "17-protects-focus-time.json",
+      "fixtureId": "17-protects-focus-time",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "защищает фокус-тайм от прерываний",
+        "statement": "Похоже, склонна системно защищать фокусное время команды — вводит «no-meeting»-дни, превращает встречи в документы и отказывается от лишних синков, исходя из убеждения, что цена прерываний выше, чем кажется.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f17-b1",
+          "f17-b2",
+          "f17-b3"
+        ]
+      },
+      "tokensIn": 2120,
+      "tokensOut": 712,
+      "cachedTokens": 1792,
+      "ms": 12225,
+      "costUsd": 0.0007686160000000001
+    },
+    {
+      "fixtureName": "18-transparent-status.json",
+      "fixtureId": "18-transparent-status",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "проактивная прозрачность при проблемах",
+        "statement": "Похоже, склонен оперативно и открыто сообщать команде о возникших блокерах, задержках или нехватке компетенций, рассматривая раннюю видимость статуса как проявление уважения к коллегам — в большинстве случаев предпочитает честную эскалацию замалчиванию проблем до дедлайна.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f18-b1",
+          "f18-b2",
+          "f18-b3"
+        ]
+      },
+      "tokensIn": 2128,
+      "tokensOut": 977,
+      "cachedTokens": 1792,
+      "ms": 17471,
+      "costUsd": 0.001002646
+    },
+    {
+      "fixtureName": "19-accepts-architecture-criticism.json",
+      "fixtureId": "19-accepts-architecture-criticism",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "конструктивно воспринимает критику дизайна",
+        "statement": "Похоже, склонен воспринимать критику своих технических решений безлично: если не может аргументированно ответить — признаёт замечание справедливым и переделывает решение без защитной реакции.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f19-b1",
+          "f19-b2",
+          "f19-b3"
+        ]
+      },
+      "tokensIn": 2115,
+      "tokensOut": 816,
+      "cachedTokens": 1792,
+      "ms": 14492,
+      "costUsd": 0.0008569210000000001
+    },
+    {
+      "fixtureName": "20-gradual-migration.json",
+      "fixtureId": "20-gradual-migration",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "избегает big-bang, мигрирует поэтапно с откатом",
+        "statement": "Похоже, склонен всегда выбирать постепенные стратегии при переходах на новые системы — dual-write, canary-раскатки по проценту трафика, feature-флаги, теневые прогоны — и в большинстве случаев закладывает возможность остановиться и откатиться при ухудшении метрик, избегая починки «на ходу».",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f20-b1",
+          "f20-b2",
+          "f20-b3"
+        ]
+      },
+      "tokensIn": 2153,
+      "tokensOut": 1052,
+      "cachedTokens": 1792,
+      "ms": 21755,
+      "costUsd": 0.001078771
+    },
+    {
+      "fixtureName": "21-reject-bare-commitments.json",
+      "fixtureId": "21-reject-bare-commitments",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только commitments без объяснения подхода к решениям. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2060,
+      "tokensOut": 421,
+      "cachedTokens": 1792,
+      "ms": 8983,
+      "costUsd": 0.0004893460000000001
+    },
+    {
+      "fixtureName": "22-reject-routine-agreements.json",
+      "fixtureId": "22-reject-routine-agreements",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только краткие подтверждения без объяснения подхода к решениям. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2020,
+      "tokensOut": 407,
+      "cachedTokens": 1792,
+      "ms": 7827,
+      "costUsd": 0.000459766
+    },
+    {
+      "fixtureName": "23-reject-emotional-reactions.json",
+      "fixtureId": "23-reject-emotional-reactions",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только короткие эмоциональные реакции («Класс!», «Не понимаю.», «Бесит.») без объяснения подхода к принятию решений. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2024,
+      "tokensOut": 457,
+      "cachedTokens": 1792,
+      "ms": 8660,
+      "costUsd": 0.000505006
+    },
+    {
+      "fixtureName": "24-reject-technical-questions.json",
+      "fixtureId": "24-reject-technical-questions",
+      "category": "reject",
+      "pass": false,
+      "failures": [
+        "Expected refusal (empty sourceBlockIds), got extraction"
+      ],
+      "response": {
+        "category": "уточняет операционный контекст перед действием",
+        "statement": "Похоже, склонен перед принятием решений собирать операционный контекст — в большинстве случаев выясняет расположение конфигураций, ownership сервисов и актуальность зависимостей, прежде чем двигаться дальше.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f24-b1",
+          "f24-b2",
+          "f24-b3"
+        ]
+      },
+      "tokensIn": 2045,
+      "tokensOut": 1006,
+      "cachedTokens": 1792,
+      "ms": 19323,
+      "costUsd": 0.000991771
+    },
+    {
+      "fixtureName": "25-reject-rhetorical-empty.json",
+      "fixtureId": "25-reject-rhetorical-empty",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только риторические самохарактеристики без объяснения подхода к решениям. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2042,
+      "tokensOut": 560,
+      "cachedTokens": 1792,
+      "ms": 10710,
+      "costUsd": 0.000602446
+    }
+  ]
+}

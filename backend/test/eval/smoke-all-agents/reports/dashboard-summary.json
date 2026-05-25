@@ -1,0 +1,12 @@
+{
+  "taskType": "dashboard-summary",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 540,
+  "tokensOut": 1135,
+  "cachedTokens": 0,
+  "costUsd": 0.00122235,
+  "ms": 22466,
+  "modelResponse": "Растущий запрос на AI-чат по архиву встреч стал самой сильной продуктовой темой. Клиент Бета (700 сотрудников) назвал отсутствие SSO через Active Directory блокером покупки. Два клиента высказали возражение о недопустимости записи внутренних встреч руководства без явного opt-in. На встречах длиннее ",
+  "error": null
+}

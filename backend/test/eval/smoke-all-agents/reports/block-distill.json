@@ -1,0 +1,12 @@
+{
+  "taskType": "block-distill",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 971,
+  "tokensOut": 513,
+  "cachedTokens": 0,
+  "costUsd": 0.0008686950000000001,
+  "ms": 9688,
+  "modelResponse": "{\"verdict\": \"merge\", \"canonicalId\": \"blk-cand-A\", \"explanation\": \"Оба блока отвечают на один и тот же вопрос о сроке оплаты Acme и содержат идентичную суть: 30 дней с даты счёта, зафиксировано в контракте 2026. Различия в формулировках — чисто стилистические, это перефразировка одного знания.\"}",
+  "error": null
+}

@@ -1,0 +1,11 @@
+{
+  "taskType": "concierge-respond",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 399,
+  "tokensOut": 470,
+  "costUsd": 0.000582465,
+  "ms": 9157,
+  "modelResponse": "{\"tool_call\": {\"name\": \"list_meetings\", \"arguments\": {\"dateFrom\": \"2025-03-31T00:00:00Z\", \"dateTo\": \"2025-04-07T23:59:59Z\", \"limit\": 10}}}",
+  "interpretation": "tool_call"
+}

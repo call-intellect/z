@@ -1,0 +1,50 @@
+{
+  "fixtureId": "smoke-theme-classify",
+  "description": "Минимальная фикстура для smoke-теста theme-classify: кластер из 5 блоков о ценообразовании + 2 сущности.",
+  "blocks": [
+    {
+      "id": "blk-101",
+      "name": "Цена для среднего бизнеса",
+      "criticalQuestion": "Какая цена терпима для среднего бизнеса?",
+      "trustedAnswer": "Клиенты обсуждают $200-400 в месяц как верхнюю границу.",
+      "signalType": "feature_request",
+      "tags": ["цена", "СМБ"]
+    },
+    {
+      "id": "blk-102",
+      "name": "Per-seat vs flat",
+      "criticalQuestion": "Какая модель цен ближе клиентам?",
+      "trustedAnswer": "Большинство хотят flat за всю компанию, а не per-seat.",
+      "signalType": "objection",
+      "tags": ["цена", "модель"]
+    },
+    {
+      "id": "blk-103",
+      "name": "Скидка за годовую оплату",
+      "criticalQuestion": "Какая скидка достаточна за годовую оплату?",
+      "trustedAnswer": "Клиенты ожидают 15-20% скидку за годовую оплату вперёд.",
+      "signalType": "feature_request",
+      "tags": ["цена", "скидка"]
+    },
+    {
+      "id": "blk-104",
+      "name": "Бесплатный пробный период",
+      "criticalQuestion": "Какой триал устраивает клиентов?",
+      "trustedAnswer": "Двухнедельный триал без карты — это норма ожиданий.",
+      "signalType": "feature_request",
+      "tags": ["цена", "триал"]
+    },
+    {
+      "id": "blk-105",
+      "name": "Тариф для команды до 10 человек",
+      "criticalQuestion": "Есть ли смысл в тарифе для малых команд?",
+      "trustedAnswer": "Маленькие команды (до 10 человек) готовы платить $99/мес flat.",
+      "signalType": "feature_request",
+      "tags": ["цена", "малый бизнес"]
+    }
+  ],
+  "entities": [
+    { "id": "ent-001", "canonicalName": "Pro-тариф", "type": "product" },
+    { "id": "ent-002", "canonicalName": "Team-тариф", "type": "product" }
+  ]
+}

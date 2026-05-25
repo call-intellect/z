@@ -1,0 +1,28 @@
+{
+  "fixtureId": "smoke-entity-merge-arbiter",
+  "description": "Минимальная фикстура: две сущности типа client с похожими именами; задача арбитра — решить merge или distinct.",
+  "newEntity": {
+    "id": "ent-new-001",
+    "type": "client",
+    "canonicalName": "ООО Бета Технологии",
+    "aliases": ["Бета", "Beta Tech"],
+    "metadata": { "inn": "7707123456", "domain": "beta-tech.ru", "city": "Москва" },
+    "mentionsCount": 5,
+    "recentMentions": [
+      { "name": "Встреча Бета — kickoff", "criticalQuestion": "Какие SLA по саппорту нужны?", "signalType": "feature_request" },
+      { "name": "Бета — внедрение SSO", "criticalQuestion": "Будет ли SSO готов до конца квартала?", "signalType": "commitment" }
+    ]
+  },
+  "candidate": {
+    "id": "ent-cand-001",
+    "type": "client",
+    "canonicalName": "Бета Тех",
+    "aliases": ["BetaTech"],
+    "metadata": { "inn": "7707123456", "domain": "beta-tech.ru" },
+    "mentionsCount": 12,
+    "recentMentions": [
+      { "name": "Бета Тех — QBR Q1", "criticalQuestion": "Какие метрики важны для CEO?", "signalType": "fact" },
+      { "name": "Бета Тех — продление", "criticalQuestion": "Готовы ли к годовому контракту?", "signalType": "decision" }
+    ]
+  }
+}

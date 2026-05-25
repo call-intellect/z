@@ -1,0 +1,72 @@
+{
+  "fixtureId": "operations-week-2026-05-19",
+  "description": "Агрегат, который текущий код-агрегатор (weekly-digest.service.ts) собрал бы из сырых данных недели. Используется в Variant A (гипотеза 1) — LLM получает готовую таблицу и пишет markdown по ней. Соответствует interface WeeklyDigestAggregates.",
+  "aggregate": {
+    "weekStart": "2026-05-19",
+    "weekEnd": "2026-05-23",
+    "totalCheckIns": 25,
+    "greenShare": 0.64,
+    "yellowShare": 0.32,
+    "redShare": 0.04,
+    "topBlockers": [
+      {
+        "text": "Виктор в отпуске — devops-задачи висят, нет прав на Terraform",
+        "count": 3
+      },
+      {
+        "text": "Усталость / нет сил / переработки после болезни",
+        "count": 3
+      },
+      {
+        "text": "Не понимаю как dashboard устроен / страх большой задачи",
+        "count": 3
+      },
+      {
+        "text": "Edge-cases в pricing — баги вскрываются после прода",
+        "count": 2
+      },
+      {
+        "text": "Serialization Redis Date-объектов",
+        "count": 2
+      }
+    ],
+    "topInsights": [
+      {
+        "statement": "Виктор Скоробогатов — единственный devops, все Terraform-задачи блокируются на нём (отпуск до 2 июня)",
+        "kind": "risk",
+        "dynamicLabel": "repeating"
+      },
+      {
+        "statement": "Онбординг новичков идёт без формальной структуры — Дмитрий пережил кризис уверенности",
+        "kind": "process_gap",
+        "dynamicLabel": "new"
+      },
+      {
+        "statement": "Михаил Дроздов перегружен после болезни, на 3 чек-инах упомянул усталость",
+        "kind": "risk",
+        "dynamicLabel": "new"
+      }
+    ],
+    "goals": {
+      "completed": 4,
+      "failed": 0,
+      "inProgress": 1,
+      "completedDelta": 1,
+      "failedDelta": 0
+    },
+    "hangingDecisions": [
+      {
+        "statement": "Перейти на GraphQL для админки вместо REST",
+        "ageDays": 9
+      },
+      {
+        "statement": "Внедрить feature flags через LaunchDarkly",
+        "ageDays": 12
+      },
+      {
+        "statement": "Унифицировать стиль логов pino",
+        "ageDays": 7
+      }
+    ]
+  }
+}

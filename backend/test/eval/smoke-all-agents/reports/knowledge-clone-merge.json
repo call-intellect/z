@@ -1,0 +1,11 @@
+{
+  "taskType": "knowledge-clone-merge",
+  "promptFound": true,
+  "ranSuccessfully": true,
+  "tokensIn": 1678,
+  "tokensOut": 1526,
+  "cachedTokens": 0,
+  "costUsd": 0.00205755,
+  "ms": 23101,
+  "modelResponse": "{\"categories\": [{\"name\": \"AI-pipeline в knowledge-core\", \"confidence\": \"high\", \"observationCount\": 9, \"sampleStatements\": [{\"quote\": \"Я переписал воркер extraction под BullMQ.\", \"blockId\": \"blk-old-1\"}, {\"quote\": \"Подключил DeepSeek-Pro к llm-router.\", \"blockId\": \"blk-new-1\"}], \"relatedEntityIds\": [], \"lastObservedAt\": \"2026-05-20T10:00:00.000Z\"}, {\"name\": \"найм разработчиков\", \"confidence\": \"medium\", \"observationCount\": 2, \"sampleStatements\": [{\"quote\": \"Провёл 4 техинтервью в апреле.\", \"blockId\": \"blk-new-2\"}], \"relatedEntityIds\": [], \"lastObservedAt\": \"2026-04-15T10:00:00.000Z\"}], \"experien"
+}

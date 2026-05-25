@@ -1,0 +1,23 @@
+{
+  "draft": {
+    "category": "оценка сроков",
+    "statement": "Иван запрашивает уточнения по объёму задачи перед коммитом по срокам.",
+    "confidence": "medium"
+  },
+  "candidates": [
+    {
+      "id": "trait-001",
+      "category": "оценка сроков",
+      "statement": "Иван не называет дедлайны без понимания требований.",
+      "confidence": "medium",
+      "lastConfirmedAt": "2026-03-12T10:00:00.000Z"
+    },
+    {
+      "id": "trait-002",
+      "category": "коммуникация",
+      "statement": "Иван чётко формулирует риски на еженедельных встречах.",
+      "confidence": "high",
+      "lastConfirmedAt": "2026-05-01T10:00:00.000Z"
+    }
+  ]
+}

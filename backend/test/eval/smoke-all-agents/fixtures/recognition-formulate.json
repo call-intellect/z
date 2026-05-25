@@ -1,0 +1,16 @@
+{
+  "fixtureId": "smoke-recognition-formulate",
+  "description": "Минимальная фикстура: благодарность типа thanks_helpfulness.",
+  "type": "thanks_helpfulness",
+  "toUserName": "Мария",
+  "fromUserName": null,
+  "payload": {
+    "helpfulMentions": 3,
+    "examples": [
+      "помогла коллеге с настройкой интеграции",
+      "ответила на вопрос в чате про политику отпусков",
+      "провела демо для нового сотрудника"
+    ],
+    "weekRange": "19-23 мая"
+  }
+}

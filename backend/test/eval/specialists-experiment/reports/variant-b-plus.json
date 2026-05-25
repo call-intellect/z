@@ -1,0 +1,490 @@
+{
+  "variant": "B+",
+  "fixtureId": "specialists-01-team-standup",
+  "model": "deepseek-v4-pro",
+  "totalMs": 164233,
+  "totalTokensIn": 11833,
+  "totalTokensOut": 10502,
+  "totalCachedTokens": 0,
+  "totalCostUsd": 0.014284095,
+  "totalEntities": 41,
+  "counts": {
+    "decisions": 4,
+    "ideas": 6,
+    "insights": 5,
+    "experiments": 4,
+    "regulations": 7,
+    "knowledge_categories": 9,
+    "skill_traits": 2,
+    "helpfulness_traits": 4
+  },
+  "output": {
+    "decisions": [
+      {
+        "sourceBlockId": "blk_006",
+        "statement": "Снизить порог алерта Prometheus по p95 latency на тарификаторе с 30 до 5 секунд",
+        "rationale": "5 секунд — это в 2 раза выше обычного p95 (2.3с), даёт буфер на сетевые всплески, но ловит начало деградации за 10–12 минут до отказа сервиса. Анна выполняет до пятницы 23 мая.",
+        "alternatives": [
+          "оставить порог 30 секунд",
+          "выставить порог 10 секунд",
+          "использовать только трендовые алерты без абсолютного порога"
+        ],
+        "decidedBy": [
+          "Иван Соколов",
+          "Анна Мехова"
+        ],
+        "status": "approved",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_026",
+        "statement": "До 6 июня перевести с node-cache на Redis все три каталога — услуг, прайсов и шаблонов документов. Делают Анна и Дмитрий в паре.",
+        "rationale": "Redis показал p95 = 1.8мс против 2.3мс у node-cache (быстрее на 22%), рассинхрон между подами Kubernetes полностью исчез, GC-паузы V8 исключены за счёт выноса памяти за процесс.",
+        "alternatives": [
+          "оставить node-cache и мириться с рассинхроном",
+          "использовать Hazelcast",
+          "настроить sticky sessions в k8s дляnode-cache"
+        ],
+        "decidedBy": [
+          "Иван Соколов",
+          "Анна Мехова",
+          "Дмитрий Карпов"
+        ],
+        "status": "approved",
+        "confidence": 0.9
+      },
+      {
+        "sourceBlockId": "blk_029",
+        "statement": "Анна поднимает временный Redis в Docker на dev-VPS (8GB) и мигрирует каталог услуг (самый маленький). Прайсы и шаблоны ждут возвращения Виктора 2 июня и поднятия полноценного staging-кластера.",
+        "rationale": "Единственный devops Виктор в отпуске до 2 июня, права на Terraform только у него. Каталог услуг небольшой и влезает в 8GB на dev-VPS. Это позволяет не блокировать всю миграцию на две недели.",
+        "alternatives": [
+          "ждать возвращения Виктора и ничего не мигрировать 2 недели",
+          "выдать права на Terraform разработчикам",
+          "арендовать managed Redis на время отпуска Виктора"
+        ],
+        "decidedBy": [
+          "Иван Соколов",
+          "Анна Мехова"
+        ],
+        "status": "approved",
+        "confidence": 0.85
+      },
+      {
+        "sourceBlockId": "blk_039",
+        "statement": "22 мая (четверг) в 16:00 провести коллективное интервью с кандидатом Виктором Грушиным на роль fullstack-инженера. Участвуют Иван, Анна и Дмитрий.",
+        "rationale": "Команде нужен fullstack-инженер с Node.js (NestJS), React 18+, TypeScript, PostgreSQL (explain analyze) и способностью вести фичи end-to-end от брифа до метрик.",
+        "alternatives": [
+          "провести интервью только силами Ивана",
+          "нанять внешнего рекрутера для финального раунда",
+          "отложить наём до конца квартала"
+        ],
+        "decidedBy": [
+          "Иван Соколов",
+          "Анна Мехова",
+          "Дмитрий Карпов"
+        ],
+        "status": "approved",
+        "confidence": 0.9
+      }
+    ],
+    "ideas": [
+      {
+        "sourceBlockId": "blk_013",
+        "kind": "internal",
+        "statement": "Добавить push-уведомления о статусе платежа (успех, ошибка, возврат) в личный кабинет — сейчас пользователи вручную проверяют статус по 5–6 раз в день.",
+        "rationale": "Снижение нагрузки на саппорт: тикеты «где мой платёж» составляют четверть всех обращений. Гипотеза — падение на 30% за месяц после внедрения.",
+        "confidence": 0.85
+      },
+      {
+        "sourceBlockId": "blk_014",
+        "kind": "client_request",
+        "statement": "Экспорт счетов в формате 1С (CSV с полями ИНН, КПП, номер счёта, сумма, НДС) — официальный запрос от клиента Альфа.",
+        "rationale": "Клиент Альфа угрожает уйти к конкуренту к августу, если фича не будет реализована. Критично для удержания enterprise-клиента.",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_015",
+        "kind": "client_request",
+        "statement": "Мобильное приложение под iOS для топ-менеджеров — клиент Гамма второй раз за квартал запрашивает, чтобы CEO мог смотреть KPI с телефона.",
+        "rationale": "Текущая адаптивная вёрстка не устраивает. Гипотеза — рост WAU топ-менеджеров на 40% за счёт push-уведомлений и нативного UX.",
+        "confidence": 0.9
+      },
+      {
+        "sourceBlockId": "blk_016",
+        "kind": "internal",
+        "statement": "Встроить AI-классификатор тикетов в админку саппорта: модель автоматически проставляет категорию (billing, bug, feature, account) и приоритет.",
+        "rationale": "Сокращение ручной сортировки тикетов саппорт-командой, ускорение времени реакции на критические обращения.",
+        "confidence": 0.75
+      },
+      {
+        "sourceBlockId": "blk_017",
+        "kind": "internal",
+        "statement": "Интерактивный onboarding-чеклист в личном кабинете: 7 шагов до первой успешной операции, прогресс-бар, тултипы на каждом шаге.",
+        "rationale": "Улучшение activation rate новых клиентов, снижение оттока на первых шагах использования продукта.",
+        "confidence": 0.8
+      },
+      {
+        "sourceBlockId": "blk_018",
+        "kind": "internal",
+        "statement": "Реферальная программа: клиент приводит нового платящего клиента — обоим месяц бесплатного тарифа.",
+        "rationale": "Маркетинг просчитал unit economics — окупается со второго месяца нового клиента. Механика проверена на B2B-рынке.",
+        "confidence": 0.85
+      }
+    ],
+    "insights": [
+      {
+        "sourceBlockId": "blk_003",
+        "kind": "problem",
+        "statement": "Алерты Prometheus на тарификатор сработали только через 18 минут после падения, потому что порог по latency был 30 секунд, а сервис деградировал плавно. Дежурный узнал об инциденте от клиента в Telegram.",
+        "severity": "high",
+        "causeCategory": "tooling",
+        "mitigationSuggestion": "Снизить порог p95 latency до 5 секунд; добавить алерты на тренд (rate of change) и отклонение от baseline за период; настроить парсинг саппорт-чата на ключевые слова как дополнительный триггер инцидента.",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_004",
+        "kind": "blocker",
+        "statement": "У дежурного не было runbook (инструкции по восстановлению) на тарификатор — он 25 минут искал по коду способ отката релиза, в итоге пришлось поднимать Анну среди ночи.",
+        "severity": "critical",
+        "causeCategory": "process_gap",
+        "mitigationSuggestion": "Ввести обязательный runbook для каждого P1-сервиса с разделами: Симптомы, Диагностика, Откат, Эскалация. Добавить шаг в шаблон PR — ссылка на runbook обязательна, CI чекает наличие.",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_005",
+        "kind": "risk",
+        "statement": "Без срочной починки алертов и создания runbook инцидент с тарификатором повторится в течение 2–3 недель, так как нагрузка на сервис растёт на 15% в месяц.",
+        "severity": "high",
+        "causeCategory": "priority",
+        "mitigationSuggestion": "Закрыть задачи по алертам и runbook до 23 мая; ввести квартальный pre-mortem по каждому крупному эпику для проактивного выявления рисков.",
+        "confidence": 0.9
+      },
+      {
+        "sourceBlockId": "blk_027",
+        "kind": "blocker",
+        "statement": "На staging-окружении нет Redis-кластера с прод-объёмом памяти (32GB) — тестировать миграцию каталога прайсов можно только на dev (4GB), чего недостаточно.",
+        "severity": "medium",
+        "causeCategory": "tooling",
+        "mitigationSuggestion": "Поднять временный Redis в Docker на dev-VPS (8GB) для миграции каталога услуг; после возвращения devops Виктора (2 июня) развернуть полноценный staging-кластер Redis через Terraform.",
+        "confidence": 0.9
+      },
+      {
+        "sourceBlockId": "blk_028",
+        "kind": "blocker",
+        "statement": "Единственный devops Виктор Скоробогатов в отпуске до 2 июня — поднять кластер Redis на staging некому, у разработчиков нет прав на Terraform.",
+        "severity": "medium",
+        "causeCategory": "resource_constraint",
+        "mitigationSuggestion": "Временное решение — Redis в Docker на dev-VPS силами Анны; долгосрочно — рассмотреть выдачу ограниченных Terraform-прав senior-разработчикам или найм второго devops.",
+        "confidence": 0.9
+      }
+    ],
+    "experiments": [
+      {
+        "sourceBlockId": "blk_022",
+        "name": "Переход с node-cache на Redis для каталога услуг",
+        "hypothesisText": "Redis обеспечит ту же latency, что и in-process node-cache, при p95 < 3мс, если пул соединений настроен правильно и Redis размещён в той же Availability Zone.",
+        "currentResult": "Redis показал p95 = 1.8мс против 2.3мс у node-cache — быстрее на 22%. Расcинхрон между подами Kubernetes полностью исчез.",
+        "lessons": [
+          {
+            "text": "Redis оказался быстрее in-process кэша, потому что node-cache на большом наборе ключей страдал от GC-пауз V8 (200–300мс на сборку мусора). Redis вынес память за пределы процесса Node.js и убрал GC-штраф.",
+            "type": "what_worked"
+          },
+          {
+            "text": "При выборе in-process кэша обязательно смотреть GC-метрики, а не только latency — на большом наборе ключей V8 даёт скрытый штраф, невидимый в обычных бенчмарках.",
+            "type": "what_failed"
+          },
+          {
+            "text": "При миграции кэша всегда использовать 4-шаговую схему: shadow-чтение → canary 5% на 24 часа → переключение → удаление старого кода через 7 дней. Никогда не переключать сразу.",
+            "type": "next_time"
+          }
+        ],
+        "status": "completed",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_019",
+        "name": "Push-уведомления о статусе платежа",
+        "hypothesisText": "Если внедрить push-уведомления о платежах (успех, ошибка, возврат), количество тикетов «где мой платёж» в саппорте упадёт на 30% за месяц — сейчас это четверть всех обращений.",
+        "currentResult": null,
+        "lessons": [],
+        "status": "hypothesis",
+        "confidence": 0.8
+      },
+      {
+        "sourceBlockId": "blk_020",
+        "name": "Мобильное iOS-приложение для топ-менеджеров",
+        "hypothesisText": "Нативное мобильное приложение с push-уведомлениями увеличит еженедельный возврат (WAU) топ-менеджеров на 40%: сейчас они заходят 1–2 раза в неделю с десктопа, с пушами будут заходить ежедневно.",
+        "currentResult": null,
+        "lessons": [],
+        "status": "hypothesis",
+        "confidence": 0.75
+      },
+      {
+        "sourceBlockId": "blk_008",
+        "name": "Постмортем инцидента с тарификатором — улучшение мониторинга",
+        "hypothesisText": "Внедрение трендовых алертов (отклонение от baseline за час) и парсинг саппорт-чата как дополнительного сигнала позволит обнаруживать деградацию сервиса на 10–12 минут раньше, чем текущие пороговые алерты.",
+        "currentResult": null,
+        "lessons": [
+          {
+            "text": "Пороговые алерты по абсолютным значениям не ловят плавную деградацию — нужны метрики тренда (rate of change) и алерты на отклонение от baseline за период. Это должно быть в бэклоге как обязательное требование к мониторингу.",
+            "type": "what_failed"
+          },
+          {
+            "text": "Клиенты пишут в Telegram быстрее, чем срабатывает мониторинг — нужно подключить парсинг саппорт-чата на ключевые слова («упало», «не работает») как дополнительный триггер инцидента.",
+            "type": "next_time"
+          },
+          {
+            "text": "Отсутствие runbook у дежурного превратило 42-минутный инцидент в 25 минут поиска решения в коде — runbook с разделами «Симптомы, Диагностика, Откат, Эскалация» критически важен для каждого P1-сервиса.",
+            "type": "what_failed"
+          }
+        ],
+        "status": "hypothesis",
+        "confidence": 0.85
+      }
+    ],
+    "regulations": [
+      {
+        "sourceBlockId": "blk_010",
+        "kind": "regulation",
+        "name": "Обязательный runbook для P1-сервисов",
+        "statement": "Каждый сервис класса P1 (критический) должен иметь runbook в Notion с разделами: Симптомы, Диагностика, Откат, Эскалация. Без runbook сервис не выезжает в production.",
+        "severity": "blocking",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_011",
+        "kind": "process",
+        "name": "Шаг runbook в процессе релиза",
+        "statement": "Перед релизом нового P1-сервиса автор задачи создаёт runbook по шаблону и прикладывает ссылку в pull request. Ссылка на runbook — обязательное поле в шаблоне PR, CI-пайплайн проверяет его заполнение и блокирует merge при отсутствии.",
+        "severity": "blocking",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_012",
+        "kind": "process",
+        "name": "Квартальный pre-mortem",
+        "statement": "На каждом квартальном планировании команда проводит pre-mortem: 30 минут на сессию «what could go wrong» по каждому крупному эпику. Результаты протоколируются в Notion.",
+        "severity": "advisory",
+        "confidence": 0.85
+      },
+      {
+        "sourceBlockId": "blk_035",
+        "kind": "regulation",
+        "name": "Code review двумя ревьюерами",
+        "statement": "Любой PR в master требует approve от двух ревьюеров (ранее — один). Для критических модулей (billing, auth, tarifficator) один из ревьюеров — обязательно Tech Lead или Senior. Старт с 21 мая.",
+        "severity": "mandatory",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_036",
+        "kind": "process",
+        "name": "SLA первого отклика на code review — 4 часа",
+        "statement": "Ревьюер обязан оставить первый отклик (approve, request changes или вопросы) в течение 4 рабочих часов с момента запроса. Если ревьюер занят — должен немедленно делегировать.",
+        "severity": "mandatory",
+        "confidence": 0.9
+      },
+      {
+        "sourceBlockId": "blk_037",
+        "kind": "process",
+        "name": "Чеклист из 5 пунктов в шаблоне PR",
+        "statement": "В шаблон PR добавляется обязательный чеклист: тесты есть, миграции описаны, runbook обновлён, security-review пройдён (для auth/billing), changelog заполнен. Без всех галок PR не мержится.",
+        "severity": "blocking",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_038",
+        "kind": "process",
+        "name": "Еженедельное review-ретро по пятницам",
+        "statement": "Раз в неделю по пятницам 15 минут команда смотрит метрики code review: среднее время до первого отклика, количество PR старше 48 часов, доля PR с request changes. Цель — держать review-пайплайн здоровым.",
+        "severity": "advisory",
+        "confidence": 0.85
+      }
+    ],
+    "knowledge_categories": [
+      {
+        "personName": "Иван Соколов",
+        "category": "Архитектура платёжных систем и fintech-регуляторика",
+        "confidence": "high",
+        "sampleStatements": [
+          "7 лет проектировал платёжные системы для банка Открытие и Тинькофф-Бизнес",
+          "Знает регуляторику ЦБ РФ, PCI DSS, ФЗ-115, делал интеграции с НСПК"
+        ],
+        "sourceBlockIds": [
+          "blk_042"
+        ]
+      },
+      {
+        "personName": "Иван Соколов",
+        "category": "Проектирование транзакционных моделей на PostgreSQL",
+        "confidence": "high",
+        "sampleStatements": [
+          "Вся транзакционная модель построена на PostgreSQL с heavy use constraints и оконных функций",
+          "Без понимания explain analyze fullstack будет тормозить ревью"
+        ],
+        "sourceBlockIds": [
+          "blk_049",
+          "blk_047"
+        ]
+      },
+      {
+        "personName": "Анна Мехова",
+        "category": "Распределённое кэширование и администрирование Redis",
+        "confidence": "high",
+        "sampleStatements": [
+          "Самый сильный человек в команде по Redis и распределённым кэшам",
+          "5 лет была tech-owner кэширования в прошлом проекте",
+          "Аргументировала выбор write-through против pub/sub на основе частоты обновлений"
+        ],
+        "sourceBlockIds": [
+          "blk_040",
+          "blk_051",
+          "blk_024"
+        ]
+      },
+      {
+        "personName": "Анна Мехова",
+        "category": "Оптимизация производительности Node.js и диагностика GC",
+        "confidence": "high",
+        "sampleStatements": [
+          "Объяснила, что node-cache проигрывал из-за GC-пауз V8 на 200–300мс при большом наборе ключей",
+          "Урок: при выборе in-process кэша обязательно смотреть GC-метрики, не только latency"
+        ],
+        "sourceBlockIds": [
+          "blk_024",
+          "blk_025"
+        ]
+      },
+      {
+        "personName": "Анна Мехова",
+        "category": "Миграция монолита на микросервисы в финтехе",
+        "confidence": "medium",
+        "sampleStatements": [
+          "5 лет в Ozon Финансы: бэкенд биллинга, разносила монолит на микросервисы",
+          "Прорабатывала идемпотентность платежей"
+        ],
+        "sourceBlockIds": [
+          "blk_044"
+        ]
+      },
+      {
+        "personName": "Дмитрий Карпов",
+        "category": "React Server Components и современная фронтенд-архитектура",
+        "confidence": "high",
+        "sampleStatements": [
+          "Единственный в команде, кто экспертно владеет React Server Components",
+          "Переводил два проекта на RSC, выступал на митапе с докладом про streaming",
+          "Объяснил снижение bundle size на 35% за счёт серверных компонентов"
+        ],
+        "sourceBlockIds": [
+          "blk_041",
+          "blk_050"
+        ]
+      },
+      {
+        "personName": "Дмитрий Карпов",
+        "category": "API-дизайн и ведение Open Source проектов",
+        "confidence": "medium",
+        "sampleStatements": [
+          "3 года вёл Open Source библиотеку для React-форм — 2.8к звёзд на GitHub, 47 релизов",
+          "Опыт общения с контрибьюторами и дизайна публичного API"
+        ],
+        "sourceBlockIds": [
+          "blk_045"
+        ]
+      },
+      {
+        "personName": "Елена Воробьёва",
+        "category": "Количественный UX-ресёрч и продуктовая аналитика",
+        "confidence": "high",
+        "sampleStatements": [
+          "Сильна в количественном UX-ресёрче: activation, retention, NPS",
+          "Провела больше 50 A/B-тестов",
+          "Сертификат Reforge на product strategy",
+          "Приоритизирует фичи по RICE (reach × impact × confidence / effort)"
+        ],
+        "sourceBlockIds": [
+          "blk_043",
+          "blk_053"
+        ]
+      },
+      {
+        "personName": "Елена Воробьёва",
+        "category": "B2B-продуктовый запуск с нуля и рост клиентской базы",
+        "confidence": "high",
+        "sampleStatements": [
+          "В СберМаркетинге запустила B2B-продукт с нуля до 200 платящих клиентов за 18 месяцев",
+          "Достигла MRR 4.5 млн рублей"
+        ],
+        "sourceBlockIds": [
+          "blk_046"
+        ]
+      }
+    ],
+    "skill_traits": [
+      {
+        "personName": "Анна Мехова",
+        "category": "Системный пошаговый подход к инфраструктурным изменениям",
+        "statement": "Похоже, Анна склонна к методичному, многоэтапному внедрению инфраструктурных изменений: при миграции кэша использует 4-шаговую схему (shadow → canary → переключение → удаление старого), при выборе паттерна инвалидации опирается на количественные критерии (частота обновлений), а при анализе производительности копает глубже очевидных метрик — вплоть до GC-поведения рантайма.",
+        "confidence": "high",
+        "sourceBlockIds": [
+          "blk_052",
+          "blk_051",
+          "blk_024"
+        ]
+      },
+      {
+        "personName": "Анна Мехова",
+        "category": "Проактивное выявление скрытых рисков производительности",
+        "statement": "Похоже, Анна обладает выраженной способностью предвидеть неочевидные узкие места: заранее предупредила команду о лимите соединений Redis при 40 подах, объяснила скрытый GC-штраф node-cache, который не виден в стандартных бенчмарках, и аргументировала выбор write-through против pub/sub через конкретные operational-метрики.",
+        "confidence": "high",
+        "sourceBlockIds": [
+          "blk_034",
+          "blk_024",
+          "blk_051"
+        ]
+      }
+    ],
+    "helpfulness_traits": [
+      {
+        "sourceBlockId": "blk_031",
+        "traitType": "mentoring",
+        "helperUserHint": "Иван Соколов",
+        "recipientUserHint": "Дмитрий Карпов",
+        "topicHint": "Паттерны cache invalidation в распределённых системах: write-through + TTL vs pub/sub",
+        "intensity": 0.9,
+        "evidenceQuote": "Слушай, я тебе расскажу. Для прайсов делай write-through плюс TTL шестьдесят секунд как страховка. Pub/sub — это когда нужен real-time, но он усложняет тесты. У меня в прошлом проекте была та же тема — я тебе скину код.",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_032",
+        "traitType": "help_provided",
+        "helperUserHint": "Анна Мехова",
+        "recipientUserHint": "Дмитрий Карпов",
+        "topicHint": "Парное программирование по миграции на Redis: настройка pool, обработка обрывов соединения, retry-логика",
+        "intensity": 0.85,
+        "evidenceQuote": "Дим, давай завтра два часа сядем парно, я тебе всю pipeline кэширования пройду — pool, обработка обрывов, retry. За два часа всё разложу.",
+        "confidence": 0.95
+      },
+      {
+        "sourceBlockId": "blk_033",
+        "traitType": "help_provided",
+        "helperUserHint": "Иван Соколов",
+        "recipientUserHint": "Анна Мехова",
+        "topicHint": "Шаблон runbook для тарификатора — переиспользование артефакта из прошлого проекта",
+        "intensity": 0.7,
+        "evidenceQuote": "Аня, держи — кидаю в чат ссылку на мой старый шаблон runbook. Бери и адаптируй под тарификатор, не пиши с нуля.",
+        "confidence": 0.9
+      },
+      {
+        "sourceBlockId": "blk_034",
+        "traitType": "proactive_hint",
+        "helperUserHint": "Анна Мехова",
+        "recipientUserHint": null,
+        "topicHint": "Лимит соединений Redis при массовой миграции: 40 подов × pool=10 = 400 соединений, запас до maxclients тонкий при подключении аналитики",
+        "intensity": 0.8,
+        "evidenceQuote": "Сразу подсвечу подводный камень: у нас сорок подов, дефолтный pool десять — это четыреста соединений. В лимит maxclients не упрёмся, но если ещё аналитика подключится — запас будет тонкий, заложите.",
+        "confidence": 0.9
+      }
+    ]
+  }
+}

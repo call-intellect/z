@@ -1,0 +1,562 @@
+{
+  "model": "gpt-5.4",
+  "timestamp": "2026-05-25T12:12:20.070Z",
+  "total": 25,
+  "passed": 23,
+  "failed": 2,
+  "passRate": 0.92,
+  "validPassRate": 0.95,
+  "rejectPassRate": 0.8,
+  "totalTokensIn": 58246,
+  "totalCachedTokens": 46080,
+  "cacheHitRatio": 0.791127287710744,
+  "totalTokensOut": 6855,
+  "totalCostUsd": 0.10209799999999998,
+  "totalMs": 127524,
+  "failuresByReason": {
+    "No categoryKeyword matched. Expected one of [прозрачн, статус, застр] in": 1,
+    "Expected refusal (empty sourceBlockIds), got extraction": 1
+  },
+  "results": [
+    {
+      "fixtureName": "01-cautious-deadlines.json",
+      "fixtureId": "01-cautious-deadlines",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "осторожен с ранними оценками сроков",
+        "statement": "Похоже, склонен откладывать коммит по срокам до сбора фактических данных и снятия ключевых неопределённостей — часто не хочет фиксировать оценку, если слишком много допущений.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f01-b1",
+          "f01-b2",
+          "f01-b3"
+        ]
+      },
+      "tokensIn": 2321,
+      "tokensOut": 162,
+      "cachedTokens": 0,
+      "ms": 3908,
+      "costUsd": 0.006261999999999999
+    },
+    {
+      "fixtureName": "02-data-driven-decisions.json",
+      "fixtureId": "02-data-driven-decisions",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "требует метрики перед выбором",
+        "statement": "Похоже, склонен откладывать продуктовые решения до появления измеримых данных и в большинстве случаев предпочитает метрики мнению или интуиции, особенно при сравнении вариантов и бюджетных решениях.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f02-b1",
+          "f02-b2",
+          "f02-b3",
+          "f02-b4"
+        ]
+      },
+      "tokensIn": 2387,
+      "tokensOut": 209,
+      "cachedTokens": 1920,
+      "ms": 4085,
+      "costUsd": 0.0034080000000000004
+    },
+    {
+      "fixtureName": "03-delegates-early-estimates.json",
+      "fixtureId": "03-delegates-early-estimates",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "делегирует первичную оценку команде",
+        "statement": "Похоже, склонна отдавать первичную оценку тем, кто ближе к реализации и обладает локальным контекстом, а свою цифру часто сознательно не озвучивает заранее, чтобы не создавать якорь для команды.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f03-b1",
+          "f03-b2",
+          "f03-b3"
+        ]
+      },
+      "tokensIn": 2340,
+      "tokensOut": 315,
+      "cachedTokens": 1920,
+      "ms": 5307,
+      "costUsd": 0.004374
+    },
+    {
+      "fixtureName": "04-scope-expansion-under-load.json",
+      "fixtureId": "04-scope-expansion-under-load",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "расширяет scope при касании",
+        "statement": "Похоже, склонен расширять изначальный объём задачи, если уже зашёл в проблемный участок кода: часто заодно исправляет соседние дефекты или устаревшие части, чтобы не возвращаться к тому же месту позже.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f04-b1",
+          "f04-b2",
+          "f04-b3"
+        ]
+      },
+      "tokensIn": 2342,
+      "tokensOut": 231,
+      "cachedTokens": 1920,
+      "ms": 4637,
+      "costUsd": 0.003538
+    },
+    {
+      "fixtureName": "05-challenges-authority.json",
+      "fixtureId": "05-challenges-authority",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "оспаривает авторитет контекстом и данными",
+        "statement": "Похоже, склонна пересматривать решения, даже если они исходят от авторитетных источников, когда они не подтверждаются данными или не проходят проверку на специфику нагрузки и пользователей в её контексте.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f05-b1",
+          "f05-b2",
+          "f05-b3",
+          "f05-b4"
+        ]
+      },
+      "tokensIn": 2382,
+      "tokensOut": 334,
+      "cachedTokens": 1920,
+      "ms": 6570,
+      "costUsd": 0.004648
+    },
+    {
+      "fixtureName": "06-leans-on-history.json",
+      "fixtureId": "06-leans-on-history",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "опирается на прошлые сбои",
+        "statement": "Похоже, склонен принимать решения с оглядкой на прошлые инциденты и не повторять уже встречавшиеся ошибки — в большинстве случаев апеллирует к историческим прецедентам и заранее закладывает запас.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f06-b1",
+          "f06-b2",
+          "f06-b3"
+        ]
+      },
+      "tokensIn": 2337,
+      "tokensOut": 221,
+      "cachedTokens": 1920,
+      "ms": 4703,
+      "costUsd": 0.003428
+    },
+    {
+      "fixtureName": "07-readability-over-performance.json",
+      "fixtureId": "07-readability-over-performance",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "ставит читаемость выше микрооптимизаций",
+        "statement": "Похоже, в большинстве случаев склонен отказываться от микрооптимизаций и слишком компактных решений, если они ухудшают читаемость и будущую отладку без заметной пользы для бизнес-метрик.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f07-b1",
+          "f07-b2",
+          "f07-b3"
+        ]
+      },
+      "tokensIn": 2338,
+      "tokensOut": 338,
+      "cachedTokens": 1920,
+      "ms": 5737,
+      "costUsd": 0.0046
+    },
+    {
+      "fixtureName": "08-prefers-async-communication.json",
+      "fixtureId": "08-prefers-async-communication",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "предпочитает асинхронные решения",
+        "statement": "Похоже, в большинстве случаев склонен переводить обсуждение и принятие решений в асинхронный формат, если нет явного конфликта или срочной необходимости в синхронном созвоне — чтобы дать людям время подумать и сохранить фокус.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f08-b1",
+          "f08-b2",
+          "f08-b3"
+        ]
+      },
+      "tokensIn": 2341,
+      "tokensOut": 216,
+      "cachedTokens": 1920,
+      "ms": 4150,
+      "costUsd": 0.003386
+    },
+    {
+      "fixtureName": "09-resists-premature-optimization.json",
+      "fixtureId": "09-resists-premature-optimization",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "избегает преждевременной оптимизации",
+        "statement": "Похоже, склонен отвергать технические усложнения и оптимизации, пока нет подтверждённого bottleneck или значимого выигрыша: в большинстве случаев опирается на фактическую нагрузку и профилировку и учитывает стоимость поддержки, инвалидаций и дебага.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f09-b1",
+          "f09-b2",
+          "f09-b3"
+        ]
+      },
+      "tokensIn": 2353,
+      "tokensOut": 356,
+      "cachedTokens": 1920,
+      "ms": 5528,
+      "costUsd": 0.00481
+    },
+    {
+      "fixtureName": "10-tradeoff-analysis.json",
+      "fixtureId": "10-tradeoff-analysis",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "сначала проговаривает цену компромиссов",
+        "statement": "Похоже, склонна принимать архитектурные и инструментальные решения через явное сравнение trade-off'ов: в большинстве случаев сначала просит расписать, что команда теряет и приобретает, и чем готова пожертвовать ради выбранной опции.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f10-b1",
+          "f10-b2",
+          "f10-b3"
+        ]
+      },
+      "tokensIn": 2356,
+      "tokensOut": 318,
+      "cachedTokens": 1920,
+      "ms": 5207,
+      "costUsd": 0.004436
+    },
+    {
+      "fixtureName": "11-edge-case-hunter.json",
+      "fixtureId": "11-edge-case-hunter",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "ищет пограничные сценарии заранее",
+        "statement": "Похоже, склонен перед принятием решения о мёрже или выпуске специально проверять edge-кейсы и скрытые допущения — часто фокусируется на промежуточных и аномальных состояниях, где, по его мнению, вероятнее всего проявятся баги.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f11-b1",
+          "f11-b2",
+          "f11-b3"
+        ]
+      },
+      "tokensIn": 2362,
+      "tokensOut": 221,
+      "cachedTokens": 1920,
+      "ms": 4157,
+      "costUsd": 0.003478
+    },
+    {
+      "fixtureName": "12-documents-decisions.json",
+      "fixtureId": "12-documents-decisions",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "фиксирует причины решений письменно",
+        "statement": "Похоже, склонен явно документировать принятые решения и отвергнутые альтернативы через ADR, чтобы сохранить объяснение выбора для будущих команд и для самого себя.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f12-b1",
+          "f12-b2",
+          "f12-b3"
+        ]
+      },
+      "tokensIn": 2340,
+      "tokensOut": 252,
+      "cachedTokens": 1920,
+      "ms": 4949,
+      "costUsd": 0.003744
+    },
+    {
+      "fixtureName": "13-monolith-first.json",
+      "fixtureId": "13-monolith-first",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "избегает преждевременной декомпозиции",
+        "statement": "Похоже, склонен оставлять систему монолитной до появления реальной боли или подтверждённых лимитов — в большинстве случаев рассматривает ранний переход к микросервисам как источник лишнего процессного и инфраструктурного overhead.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f13-b1",
+          "f13-b2",
+          "f13-b3"
+        ]
+      },
+      "tokensIn": 2357,
+      "tokensOut": 293,
+      "cachedTokens": 1920,
+      "ms": 6170,
+      "costUsd": 0.004188000000000001
+    },
+    {
+      "fixtureName": "14-feature-flags-for-risk.json",
+      "fixtureId": "14-feature-flags-for-risk",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "снижает риск через поэтапный rollout",
+        "statement": "Похоже, склонен принимать решения о релизе через обратимые и поэтапные механизмы — фича-флаги, канарейки и частичную раскатку с проверкой метрик, особенно когда цена ошибки высока.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f14-b1",
+          "f14-b2",
+          "f14-b3"
+        ]
+      },
+      "tokensIn": 2342,
+      "tokensOut": 228,
+      "cachedTokens": 1920,
+      "ms": 4658,
+      "costUsd": 0.0035080000000000003
+    },
+    {
+      "fixtureName": "15-small-prs.json",
+      "fixtureId": "15-small-prs",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "дробит изменения для управляемости",
+        "statement": "Похоже, склонен разбивать крупные изменения на небольшие PR/порции, чтобы улучшить качество ревью, ускорить мердж и упростить поиск багов.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f15-b1",
+          "f15-b2",
+          "f15-b3"
+        ]
+      },
+      "tokensIn": 2348,
+      "tokensOut": 212,
+      "cachedTokens": 1920,
+      "ms": 5306,
+      "costUsd": 0.00336
+    },
+    {
+      "fixtureName": "16-asks-for-extra-eyes.json",
+      "fixtureId": "16-asks-for-extra-eyes",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "усиливает ревью на рисках",
+        "statement": "Похоже, склонен запрашивать дополнительную независимую проверку для критичных изменений или когда считает свой взгляд замыленным — в большинстве случаев исходит из того, что стоимость лишнего ревью ниже риска ошибки в проде.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f16-b1",
+          "f16-b2",
+          "f16-b3"
+        ]
+      },
+      "tokensIn": 2333,
+      "tokensOut": 271,
+      "cachedTokens": 1920,
+      "ms": 5030,
+      "costUsd": 0.00392
+    },
+    {
+      "fixtureName": "17-protects-focus-time.json",
+      "fixtureId": "17-protects-focus-time",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "защищает фокус-тайм команды",
+        "statement": "Похоже, в большинстве случаев склонна сокращать лишние встречи и отдельно защищать большие блоки фокус-тайма команды, потому что считает стоимость прерываний и переключений выше пользы дополнительных синков.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f17-b1",
+          "f17-b2",
+          "f17-b3"
+        ]
+      },
+      "tokensIn": 2331,
+      "tokensOut": 334,
+      "cachedTokens": 1920,
+      "ms": 5881,
+      "costUsd": 0.004546
+    },
+    {
+      "fixtureName": "18-transparent-status.json",
+      "fixtureId": "18-transparent-status",
+      "category": "valid",
+      "pass": false,
+      "failures": [
+        "No categoryKeyword matched. Expected one of [прозрачн, статус, застр] in: \"рано сигнализирует о рисках\" / \"Похоже, склонен заранее и прямо сообщать о блокерах или нехватке понимания, чтобы команда не строила ложных ожиданий; в большинстве случаев предпочитает раннюю эскалацию проблем молчаливому дотягиванию до дедлайна.\""
+      ],
+      "response": {
+        "category": "рано сигнализирует о рисках",
+        "statement": "Похоже, склонен заранее и прямо сообщать о блокерах или нехватке понимания, чтобы команда не строила ложных ожиданий; в большинстве случаев предпочитает раннюю эскалацию проблем молчаливому дотягиванию до дедлайна.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f18-b1",
+          "f18-b2",
+          "f18-b3"
+        ]
+      },
+      "tokensIn": 2347,
+      "tokensOut": 327,
+      "cachedTokens": 1920,
+      "ms": 5697,
+      "costUsd": 0.004508
+    },
+    {
+      "fixtureName": "19-accepts-architecture-criticism.json",
+      "fixtureId": "19-accepts-architecture-criticism",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "пересматривает решение после критики",
+        "statement": "Похоже, склонен воспринимать техническую критику без персонализации и, если не может её аргументированно опровергнуть, в большинстве случаев пересматривает выбранное решение и вносит изменения в дизайн.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f19-b1",
+          "f19-b2",
+          "f19-b3"
+        ]
+      },
+      "tokensIn": 2329,
+      "tokensOut": 215,
+      "cachedTokens": 1920,
+      "ms": 4007,
+      "costUsd": 0.003352
+    },
+    {
+      "fixtureName": "20-gradual-migration.json",
+      "fixtureId": "20-gradual-migration",
+      "category": "valid",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "предпочитает поэтапные миграции",
+        "statement": "Похоже, склонен принимать решения в пользу постепенных переходов и rollout’ов с защитными механизмами (dual-write, флаги, теневые прогоны, откат), а не резких переключений.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f20-b1",
+          "f20-b2",
+          "f20-b3"
+        ]
+      },
+      "tokensIn": 2360,
+      "tokensOut": 227,
+      "cachedTokens": 1920,
+      "ms": 4167,
+      "costUsd": 0.0035340000000000002
+    },
+    {
+      "fixtureName": "21-reject-bare-commitments.json",
+      "fixtureId": "21-reject-bare-commitments",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только commitments без объяснения подхода. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2285,
+      "tokensOut": 187,
+      "cachedTokens": 1920,
+      "ms": 3546,
+      "costUsd": 0.002984
+    },
+    {
+      "fixtureName": "22-reject-routine-agreements.json",
+      "fixtureId": "22-reject-routine-agreements",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только краткие подтверждения без объяснения подхода к решениям. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2246,
+      "tokensOut": 350,
+      "cachedTokens": 1920,
+      "ms": 5528,
+      "costUsd": 0.004536
+    },
+    {
+      "fixtureName": "23-reject-emotional-reactions.json",
+      "fixtureId": "23-reject-emotional-reactions",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет reasoning — только короткие эмоциональные реакции без объяснения подхода к решениям. Trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2245,
+      "tokensOut": 368,
+      "cachedTokens": 1920,
+      "ms": 6343,
+      "costUsd": 0.004714
+    },
+    {
+      "fixtureName": "24-reject-technical-questions.json",
+      "fixtureId": "24-reject-technical-questions",
+      "category": "reject",
+      "pass": false,
+      "failures": [
+        "Expected refusal (empty sourceBlockIds), got extraction"
+      ],
+      "response": {
+        "category": "сначала уточняет системный контекст",
+        "statement": "Похоже, в большинстве случаев начинает движение к решению с уточняющих вопросов о конфигурации, владельце сервиса и истории изменений, прежде чем делать выводы или предлагать действия.",
+        "confidence": "medium",
+        "sourceBlockIds": [
+          "f24-b1",
+          "f24-b2",
+          "f24-b3"
+        ]
+      },
+      "tokensIn": 2260,
+      "tokensOut": 404,
+      "cachedTokens": 1920,
+      "ms": 7553,
+      "costUsd": 0.005104
+    },
+    {
+      "fixtureName": "25-reject-rhetorical-empty.json",
+      "fixtureId": "25-reject-rhetorical-empty",
+      "category": "reject",
+      "pass": true,
+      "failures": [],
+      "response": {
+        "category": "недостаточно сигнала",
+        "statement": "В цитатах нет наблюдаемого reasoning о том, почему принимаются рабочие решения — это общие риторические самоописания, поэтому trait не извлекается.",
+        "confidence": "low",
+        "sourceBlockIds": []
+      },
+      "tokensIn": 2264,
+      "tokensOut": 266,
+      "cachedTokens": 1920,
+      "ms": 4700,
+      "costUsd": 0.003732
+    }
+  ]
+}

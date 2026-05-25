@@ -6,6 +6,7 @@ import { AdminAiModelsController } from './ai-models/ai-models.controller';
 import { AdminAiModelsService } from './ai-models/ai-models.service';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
+import { ContentAdminModule } from './content/content-admin.module';
 import { AdminCronsModule } from './crons/admin-crons.module';
 import { AdminEntitlementsModule } from './entitlements/entitlements.module';
 import { AdminIncidentsModule } from './incidents/admin-incidents.module';
@@ -86,6 +87,9 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     // (глобальный обзор overrides + per-org мутации).
     AdminPlansModule,
     AdminEntitlementsModule,
+    // Admin-redesign Фаза 5 — Контент продукта: типы встреч, шаблоны писем,
+    // системные сообщения (баннеры), глобальные каналы, UI-строки.
+    ContentAdminModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

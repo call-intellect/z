@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import type {
   LlmCompleteInput,
@@ -21,6 +22,15 @@ import { LlmError, LlmFormatNotSupportedError } from './llm.types';
  * - Prompt caching: автоматический; `usage.prompt_cache_hit_tokens` (или
  *   `cached_tokens` у новых API) → `cachedTokens`.
  * - Retry [500, 1000, 2000]ms на 429 / 5xx.
+ *
+ * ТЗ 2026-05-25 — автоконвертация json_schema → tool для Pro:
+ *   DeepSeek-V4-Pro в thinking-режиме НЕ поддерживает strict json_schema
+ *   (`400 «This response_format type is unavailable now»`) и forced
+ *   tool_choice. Работает только `tools + tool_choice='auto'`. Чтобы не
+ *   переписывать 100+ caller-ов, использующих json_schema, конвертируем
+ *   автоматически в `buildParams`: создаём виртуальный tool из json_schema,
+ *   подмешиваем hint в user-сообщение, а в `mapResponse` достаём ответ из
+ *   `tool_calls[0].input` и стрингифицируем обратно в `text`.
  */
 @Injectable()
 export class DeepSeekService {
@@ -31,6 +41,9 @@ export class DeepSeekService {
 
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {
     this.client = new OpenAI({
       baseURL: this.cfg.ai.deepseek.baseUrl,
@@ -41,7 +54,14 @@ export class DeepSeekService {
 
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
-    const params = this.buildParams(input, model);
+    const { params, autoConvertedToolName } = this.buildParams(input, model);
+
+    if (autoConvertedToolName) {
+      this.metrics?.incDeepseekSchemaToToolConversion({ model });
+      this.logger.debug(
+        `DeepSeek-Pro: автоконвертация json_schema → tool model=${model} schemaName=${autoConvertedToolName}`,
+      );
+    }
 
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
@@ -49,7 +69,7 @@ export class DeepSeekService {
         const response = await this.client.chat.completions.create(
           params as unknown as Parameters<typeof this.client.chat.completions.create>[0],
         );
-        return this.mapResponse(response, model);
+        return this.mapResponse(response, model, autoConvertedToolName);
       } catch (err) {
         lastErr = err;
         const status = extractStatus(err);
@@ -77,19 +97,23 @@ export class DeepSeekService {
 
   // ─────────────────────────── private ─────────────────────────────────────
 
-  private buildParams(input: LlmCompleteInput, model: string): Record<string, unknown> {
+  private buildParams(
+    input: LlmCompleteInput,
+    model: string,
+  ): { params: Record<string, unknown>; autoConvertedToolName?: string } {
     // T7-F3: LlmUserInput может быть string или {text, cacheControl?}. DeepSeek
     // не поддерживает Anthropic-style cache_control, поэтому распаковываем в
     // строку и полагаемся на их автоматический prompt caching (см.
     // prompt_cache_hit_tokens в mapResponse).
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+      { role: 'system', content: input.system.text },
+      { role: 'user', content: userText },
+    ];
     const params: Record<string, unknown> = {
       model,
       stream: false,
-      messages: [
-        { role: 'system', content: input.system.text },
-        { role: 'user', content: userText },
-      ],
+      messages,
     };
     if (input.maxTokens !== undefined) {
       params['max_tokens'] = input.maxTokens;
@@ -97,8 +121,39 @@ export class DeepSeekService {
     if (input.temperature !== undefined) {
       params['temperature'] = input.temperature;
     }
+
     const fmt = input.responseFormat;
-    if (fmt) {
+    const callerHasTools = !!(input.tools && input.tools.length > 0);
+
+    // ТЗ 2026-05-25 — автоконвертация json_schema → tool на Pro.
+    // Pro+thinking падает на strict json_schema (400) — переключаемся
+    // на эквивалентный tool + tool_choice='auto'.
+    const isProModel = model.includes('pro');
+    const autoConvert =
+      isProModel && fmt?.type === 'json_schema' && !callerHasTools;
+
+    let autoConvertedToolName: string | undefined;
+
+    if (autoConvert && fmt?.type === 'json_schema') {
+      autoConvertedToolName = `submit_${fmt.name}`;
+      params['tools'] = [
+        {
+          type: 'function',
+          function: {
+            name: autoConvertedToolName,
+            description: `Отдать структурированный результат по схеме ${fmt.name}.`,
+            parameters: fmt.schema,
+          },
+        },
+      ];
+      params['tool_choice'] = 'auto';
+      // Подмешиваем hint, иначе модель может ответить свободным текстом.
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        lastMsg.content += `\n\nВажно: верни результат через вызов инструмента ${autoConvertedToolName}.`;
+      }
+      // response_format НЕ выставляем — модель ответит через tool_calls.
+    } else if (fmt) {
       if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };
       } else if (fmt.type === 'json_schema') {
@@ -112,8 +167,9 @@ export class DeepSeekService {
         };
       }
     }
-    if (input.tools && input.tools.length > 0) {
-      params['tools'] = input.tools.map((t) => ({
+
+    if (callerHasTools) {
+      params['tools'] = input.tools!.map((t) => ({
         type: 'function',
         function: {
           name: t.name,
@@ -123,15 +179,16 @@ export class DeepSeekService {
       }));
       params['tool_choice'] = 'auto';
     }
-    if (input.reasoningEffort && model.includes('pro')) {
+    if (input.reasoningEffort && isProModel) {
       params['reasoning'] = { effort: input.reasoningEffort };
     }
-    return params;
+    return { params, autoConvertedToolName };
   }
 
   private mapResponse(
     response: unknown,
     model: string,
+    autoConvertedToolName?: string,
   ): LlmCompleteOutput {
     const r = response as {
       choices?: Array<{
@@ -151,7 +208,7 @@ export class DeepSeekService {
       };
     };
     const choice = r.choices?.[0];
-    const text = choice?.message?.content ?? '';
+    let text = choice?.message?.content ?? '';
     const toolCalls: LlmToolCall[] = [];
     for (const tc of choice?.message?.tool_calls ?? []) {
       const name = tc.function?.name ?? '';
@@ -164,6 +221,17 @@ export class DeepSeekService {
       }
       if (name) toolCalls.push({ name, input: parsed });
     }
+
+    // ТЗ 2026-05-25 — если был автоконверт json_schema → tool, caller ждал
+    // JSON-строку в `text`. Стрингифицируем args автоконвертированного
+    // tool-call обратно в text, чтобы интерфейс остался прежним.
+    if (autoConvertedToolName && !text) {
+      const autoTc = toolCalls.find((tc) => tc.name === autoConvertedToolName);
+      if (autoTc) {
+        text = JSON.stringify(autoTc.input);
+      }
+    }
+
     const cachedTokens =
       r.usage?.prompt_cache_hit_tokens ??
       r.usage?.cached_tokens ??

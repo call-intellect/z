@@ -230,46 +230,39 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 
 ## LLM prompt caching (2026-05-25)
 
+> **Полная карта «что работает, что нет» по всем 9 каналам Z** — [llm-cache-status.md](llm-cache-status.md). Здесь — только короткое правило-памятка.
+
 ### Главное правило
 
 > **Кэш срабатывает только если payload-префикс БАЙТ-В-БАЙТ идентичен между вызовами.** Любое расхождение в начале — кэш miss с этой точки.
 
-Это касается не только `messages`, но и **всего payload**:
+Должны совпадать: `model`, `messages[]`, `tools[]`, `tool_choice`, `response_format`, `reasoning`, `instructions`, `system[]+cache_control`. Не влияет на кэш: `max_tokens`, `temperature`, `stream`.
 
-| Поле | Должно совпадать? |
-|---|---|
-| `model`, `messages[]`, `tools[]`, `tool_choice`, `response_format`, `reasoning`, `instructions` | ✅ да, целиком до точки расхождения |
-| `max_tokens`, `temperature`, `stream` | ❌ не влияет на кэш |
+### Что работает в проде Z
 
-### Тестировано (контрольный эксперимент 2026-05-25)
-
-Прогон [probe-deepseek-cache.ts](../../backend/scripts/eval/probe-deepseek-cache.ts) и [probe-openai-proxy-cache.ts](../../backend/scripts/eval/probe-openai-proxy-cache.ts) — отчёты в `backend/test/eval/cache-experiment/reports/`.
-
-| Провайдер | Канал | До какого размера тестирован | Hit на 2-м идентичном запросе | Минимум для кэша | Гранулярность (chunk) | Скидка cached |
-|---|---|---|---|---|---|---|
-| DeepSeek-V4-Pro | прямой `api.deepseek.com/v1` | 43k токенов | 99.9% | 64 токена | 64 | ~99% ($0.435 → $0.003625 /M) |
-| gpt-5-mini | через `proxy.agent-lia.ru/v1` | 49k токенов | 99.8% | 1024 токена | 128 | 90% ($0.25 → $0.025 /M) |
-
-Прокси `proxy.agent-lia.ru` кэш не ломает. 8 параллельных одинаковых запросов тоже кэшируются.
+| Канал | Hit | Где |
+|---|--:|---|
+| `deepseek` (любая модель, прямой канал) | 99.9% | block-ingest, chat-v2, summary-v2 и др. |
+| `openai-via-proxy` (gpt-5*, через proxy.agent-lia.ru) | 99.7-99.8% | fallback'и, классификаторы |
+| `minimax` MiniMax-M2.5 (Anthropic-формат) | 100% | A/B на summary-v2 |
+| KIE / GRSAI | **0%** | кэш не пробрасывается, не закладывать в экономику |
 
 ### 6 анти-паттернов, ломающих кэш
 
-1. ❌ **Разный `system` на каждый шаг цепочки.** Был главной причиной 21% hit в Variant Г эксп.3 — каждый из 8 параллельных специалистов имел свой `system`, кэш совпал только в начальных преамбулах ~2700 токенов. **Это не потолок DeepSeek**, это сломанный префикс.
-2. ❌ **Разные `tools[]` между вызовами** — даже того же набора, но в разном порядке.
-3. ❌ **Переменное поле в начале user** (`Date.now()`, `requestId`, ID встречи) — весь префикс уходит в miss.
+1. ❌ **Разный `system` на каждый шаг цепочки.** Был причиной 21% hit в Variant Г эксп.3.
+2. ❌ **Разные `tools[]` между вызовами** (даже того же набора, в разном порядке).
+3. ❌ **Переменное поле в начале user** (`Date.now()`, `requestId`, ID встречи).
 4. ❌ **Разный `response_format`** между вызовами.
-5. ❌ **Разные модели** для одной цепочки — разные кэш-namespace.
-6. ❌ **Изменение `tool_choice`** (`'auto'` vs `{type:'function', function:{name:...}}`) между вызовами.
-
-### Когда применять
-
-- ✅ Цепочка ≥2 вызовов на одних данных (специалисты knowledge-core, dialog-layer, любой агентный цикл).
-- ✅ Одиночные вызовы с повторяющимся system между разными встречами (если ≥1024 ток. на OpenAI или ≥64 ток. на DeepSeek).
-- ❌ Не нужен в архитектуре «один объединённый вызов» (там нечего кэшировать).
-- ❌ Не выгоден в малых вызовах (<1024 токенов суммарно на OpenAI).
+5. ❌ **Разные модели** для одной цепочки.
+6. ❌ **Изменение `tool_choice`** между вызовами.
 
 ### Куда вынести общий префикс
 
-`backend/src/common/ai/cache-prefix-builder.ts` (см. ТЗ [2026-05-25-llm-cache-prefix-everywhere.md](../../plans/tz/2026-05-25-llm-cache-prefix-everywhere.md)) — utility, формирующая стабильный текст роли + commonContext + commonRules. Стабильно идентичная для всех вызовов цепочки.
+`backend/src/common/ai/cache-prefix-builder.ts` (см. ТЗ [`2026-05-25-llm-cache-prefix-everywhere.md`](../../plans/tz/2026-05-25-llm-cache-prefix-everywhere.md)) — utility, формирующая стабильный «роль + commonContext + commonRules».
+
+### Подробности и сырые числа
+
+- Финальная матрица по всем 9 каналам с размерными порогами / chunk size / скидками — [llm-cache-status.md](llm-cache-status.md).
+- Описание эксперимента + как переверифицировать — [backend/test/eval/cache-experiment/README.md](../../backend/test/eval/cache-experiment/README.md).
 
 [[../index|← index]]

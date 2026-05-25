@@ -1,0 +1,717 @@
+{
+  "totalMs": 52655,
+  "summaries": [
+    {
+      "target": "minimax-m2.5",
+      "status": "ok",
+      "maxHitS1": 0.9998483239799788,
+      "maxCachedS1": 19776,
+      "avgHitS2": 0.8699659386896413,
+      "hitS3Variable": 0.9930153661943724,
+      "totalRequests": 16,
+      "totalMs": 22800,
+      "notes": "кэш работает (max hit 100.0%)"
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "status": "ok",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0.4686473947180585,
+      "hitS3Variable": 0,
+      "totalRequests": 16,
+      "totalMs": 29854,
+      "notes": "cache_tokens=0 во всех S1 → канал не возвращает cached_tokens или кэш не работает"
+    }
+  ],
+  "rows": [
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S1",
+      "targetTokens": 1024,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 1689,
+      "promptTokens": 894,
+      "cachedTokens": 0,
+      "completionTokens": 39,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens": 894,
+        "output_tokens": 39,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S1",
+      "targetTokens": 1024,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 999,
+      "promptTokens": 894,
+      "cachedTokens": 880,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9843400447427293,
+      "usageRaw": {
+        "input_tokens": 14,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 880
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S1",
+      "targetTokens": 5000,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 1468,
+      "promptTokens": 4991,
+      "cachedTokens": 0,
+      "completionTokens": 80,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens": 4991,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S1",
+      "targetTokens": 5000,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 1209,
+      "promptTokens": 4991,
+      "cachedTokens": 4976,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9969945902624725,
+      "usageRaw": {
+        "input_tokens": 15,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4976
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S1",
+      "targetTokens": 20000,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4772,
+      "promptTokens": 19779,
+      "cachedTokens": 4976,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.25157995854188786,
+      "usageRaw": {
+        "input_tokens": 14803,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4976
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S1",
+      "targetTokens": 20000,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 3546,
+      "promptTokens": 19779,
+      "cachedTokens": 19776,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9998483239799788,
+      "usageRaw": {
+        "input_tokens": 3,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 19776
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 0,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2008,
+      "promptTokens": 4991,
+      "cachedTokens": 4976,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9969945902624725,
+      "usageRaw": {
+        "input_tokens": 15,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4976
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2471,
+      "promptTokens": 4991,
+      "cachedTokens": 4960,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9937888198757764,
+      "usageRaw": {
+        "input_tokens": 31,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4960
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2927,
+      "promptTokens": 4991,
+      "cachedTokens": 4960,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9937888198757764,
+      "usageRaw": {
+        "input_tokens": 31,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4960
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 3,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2447,
+      "promptTokens": 4991,
+      "cachedTokens": 0,
+      "completionTokens": 80,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens": 4991,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 4,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2471,
+      "promptTokens": 4991,
+      "cachedTokens": 4960,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9937888198757764,
+      "usageRaw": {
+        "input_tokens": 31,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4960
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 5,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2738,
+      "promptTokens": 4991,
+      "cachedTokens": 4960,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9937888198757764,
+      "usageRaw": {
+        "input_tokens": 31,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4960
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 6,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2673,
+      "promptTokens": 4991,
+      "cachedTokens": 4960,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9937888198757764,
+      "usageRaw": {
+        "input_tokens": 31,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4960
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 7,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2479,
+      "promptTokens": 4991,
+      "cachedTokens": 4960,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9937888198757764,
+      "usageRaw": {
+        "input_tokens": 31,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4960
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S3",
+      "targetTokens": 5000,
+      "attemptOrIdx": 1,
+      "tailLen": 41,
+      "ok": true,
+      "ms": 1353,
+      "promptTokens": 5010,
+      "cachedTokens": 4976,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9932135728542915,
+      "usageRaw": {
+        "input_tokens": 34,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4976
+      }
+    },
+    {
+      "target": "minimax-m2.5",
+      "scenario": "S3",
+      "targetTokens": 5000,
+      "attemptOrIdx": 2,
+      "tailLen": 41,
+      "ok": true,
+      "ms": 4837,
+      "promptTokens": 5011,
+      "cachedTokens": 4976,
+      "completionTokens": 80,
+      "cacheHitRatio": 0.9930153661943724,
+      "usageRaw": {
+        "input_tokens": 35,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 4976
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S1",
+      "targetTokens": 1024,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2511,
+      "promptTokens": 0,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 5,
+        "output_tokens": 5,
+        "input_tokens": 0,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S1",
+      "targetTokens": 1024,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 1894,
+      "promptTokens": 0,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 5,
+        "output_tokens": 5,
+        "input_tokens": 0,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S1",
+      "targetTokens": 5000,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2333,
+      "promptTokens": 1283,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1288,
+        "output_tokens": 5,
+        "input_tokens": 1283,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S1",
+      "targetTokens": 5000,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2119,
+      "promptTokens": 1283,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 1288,
+        "output_tokens": 5,
+        "input_tokens": 1283,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S1",
+      "targetTokens": 20000,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4764,
+      "promptTokens": 65013,
+      "cachedTokens": 2304,
+      "completionTokens": 5,
+      "cacheHitRatio": 0.035439066032947254,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 2304
+        },
+        "total_tokens": 65018,
+        "output_tokens": 5,
+        "input_tokens": 65013,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S1",
+      "targetTokens": 20000,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4245,
+      "promptTokens": 65013,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 65018,
+        "output_tokens": 5,
+        "input_tokens": 65013,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 0,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2454,
+      "promptTokens": 14010,
+      "cachedTokens": 3328,
+      "completionTokens": 5,
+      "cacheHitRatio": 0.23754461099214846,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 3328
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 1,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 3303,
+      "promptTokens": 14010,
+      "cachedTokens": 4352,
+      "completionTokens": 5,
+      "cacheHitRatio": 0.3106352605281941,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 4352
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 2,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 2677,
+      "promptTokens": 14010,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 3,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 6271,
+      "promptTokens": 14010,
+      "cachedTokens": 14010,
+      "completionTokens": 5,
+      "cacheHitRatio": 1,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 14010
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 4,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4918,
+      "promptTokens": 14010,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 5,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4804,
+      "promptTokens": 14010,
+      "cachedTokens": 2816,
+      "completionTokens": 5,
+      "cacheHitRatio": 0.20099928622412563,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 2816
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 6,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4495,
+      "promptTokens": 14010,
+      "cachedTokens": 14010,
+      "completionTokens": 5,
+      "cacheHitRatio": 1,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 14010
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S2",
+      "targetTokens": 5000,
+      "attemptOrIdx": 7,
+      "tailLen": 0,
+      "ok": true,
+      "ms": 4686,
+      "promptTokens": 14010,
+      "cachedTokens": 14010,
+      "completionTokens": 5,
+      "cacheHitRatio": 1,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 14010
+        },
+        "total_tokens": 14015,
+        "output_tokens": 5,
+        "input_tokens": 14010,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S3",
+      "targetTokens": 5000,
+      "attemptOrIdx": 1,
+      "tailLen": 40,
+      "ok": true,
+      "ms": 3208,
+      "promptTokens": 14028,
+      "cachedTokens": 2304,
+      "completionTokens": 5,
+      "cacheHitRatio": 0.16424294268605646,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 2304
+        },
+        "total_tokens": 14033,
+        "output_tokens": 5,
+        "input_tokens": 14028,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "scenario": "S3",
+      "targetTokens": 5000,
+      "attemptOrIdx": 2,
+      "tailLen": 42,
+      "ok": true,
+      "ms": 2504,
+      "promptTokens": 14030,
+      "cachedTokens": 0,
+      "completionTokens": 5,
+      "cacheHitRatio": 0,
+      "usageRaw": {
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 14035,
+        "output_tokens": 5,
+        "input_tokens": 14030,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  ]
+}

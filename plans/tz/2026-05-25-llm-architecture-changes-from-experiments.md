@@ -376,25 +376,35 @@ tool_choice: 'auto',  // не 'required'!
 
 ### 5.2 Контрольный эксперимент (что замерили)
 
-Скрипты: [probe-deepseek-cache.ts](../../backend/scripts/eval/probe-deepseek-cache.ts) и [probe-openai-proxy-cache.ts](../../backend/scripts/eval/probe-openai-proxy-cache.ts).
+Скрипты:
+- [`probe-deepseek-cache.ts`](../../backend/scripts/eval/probe-deepseek-cache.ts) и [`probe-openai-proxy-cache.ts`](../../backend/scripts/eval/probe-openai-proxy-cache.ts) — детальные probes.
+- [`probe-llm-cache-matrix.ts`](../../backend/scripts/eval/probe-llm-cache-matrix.ts) — матричный probe по 7 production-каналам.
 
-3 сценария на каждом провайдере:
+3 сценария на каждом канале:
 - **S1 sequential identical** — 2 идентичных запроса подряд на размерах 256/1024/2048/2700/3500/5000/10000/20000/50000 токенов.
 - **S2 8 parallel identical** — 8 одинаковых параллельных запросов на 10k токенов.
 - **S3 общий префикс + переменный 41-символьный хвост** — для имитации прода.
 
-Результаты:
+**Полная итоговая таблица по 9 каналам** (источник правды — [`second-brain/02_architecture/llm-cache-status.md`](../../second-brain/02_architecture/llm-cache-status.md), описание эксперимента — [`backend/test/eval/cache-experiment/README.md`](../../backend/test/eval/cache-experiment/README.md)):
 
-| Сценарий | DeepSeek-V4-Pro (api.deepseek.com) | gpt-5-mini (через proxy.agent-lia.ru) |
-|---|---|---|
-| S1 max cached_tokens (на 2-м запросе) | 43264 из 43308 (**99.9%**) | 49152 из 49268 (**99.8%**) |
-| S1 hit_ratio при N=2700 | 97.3% | 99.4% |
-| S2 средний hit (8 параллельных одинаковых) | **98.8%** | 96.8% |
-| S3 hit при 20k префикса + переменный хвост | 99.6% | 97.2% |
-| Гранулярность кэша | **64 токена** | **128 токенов** |
-| Минимум для попадания в кэш | 64 токена | **1024 токена** |
-| Стоимость cache miss | $0.435/M | $0.25/M |
-| Стоимость cache hit | $0.003625/M (**−99%**) | $0.025/M (**−90%**) |
+| # | Канал | Модель | Кэш | Hit max | Parallel | Variable tail | Замечание |
+|--:|---|---|:--:|--:|--:|--:|---|
+| 1 | `deepseek` прямой | `deepseek-v4-pro` | ✅ | 99.9% | 98.8% | 99.6% | До 43k токенов, chunk 64 |
+| 2 | `deepseek` прямой | `deepseek-v4-flash` | ✅ | **99.9%** | **99.8%** | 99.8% | До 50k, идентично pro |
+| 3 | `openai-via-proxy` | `gpt-5-mini` | ✅ | 99.8% | 96.8% | 97.2% | До 49k, chunk 128, порог 1024 ток |
+| 4 | `openai-via-proxy` | `gpt-5.4-mini` | ✅ | 99.7% | 95.7% | 97.8% | До 49k, **порог попадания ~2048 ток** (отличие от gpt-5-mini) |
+| 5 | `minimax` (прямой Anthropic) | `MiniMax-M2.5` | ✅ | **100%** | 87.0% | 99.3% | Требует явный `cache_control: 'ephemeral'` |
+| 6 | `grsai` SSE | `gemini-3-pro` | ❌ | 0% | 0% | 0% | usage без `cached_tokens` |
+| 7 | `kie` (Anthropic) | `claude-opus-4-7` | ❌ | 0% | 0% | 0% | `cache_read_input_tokens=0` |
+| 8 | `kie` (Responses) | `gpt-5-4` | ⚠ | 0% S1 | 47% S2 | 0% | Балансировка на разные backend |
+| 9 | `kie` (chat-compat) | `gemini-3-flash` | ❌ | 0% | 0% | 0% | Кэш не работает |
+
+**Скидка cache hit vs miss:**
+- DeepSeek: cache miss $0.435/M → cache hit $0.003625/M = **−99%**.
+- OpenAI gpt-5-mini: $0.25/M → $0.025/M = **−90%**.
+- OpenAI gpt-5.4-mini: $0.75/M → $0.075/M = **−90%**.
+- MiniMax-M2.5: $0.3/M → (anthropic-style cache discount, на практике ~−50%).
+- KIE / GRSAI: кэш не работает, **скидку не считать**.
 
 ### 5.3 Почему в Variant Г было 21% (объяснение)
 
@@ -478,25 +488,117 @@ const userText = STABLE_USER_PREFIX + variableTask;
 
 ---
 
-## §6. operations (от эксп.4 — заполняется)
+## §6. operations (от эксп.4 — закрыто)
 
 ### 6.1 Статус
-🔬 **Эксперимент в работе.** Тестируем три гипотезы:
+✅ **Эксперимент закрыт 2026-05-25.** Артефакты — `backend/test/eval/operations-experiment/`.
 
-1. **weekly-digest** — «LLM-агрегация vs код-агрегация»: сейчас агрегат строится в коде, LLM описывает. Дать ли LLM сырые чек-ины + блокеры + цели, чтобы он сам нашёл паттерны?
-2. **checkin-sentiment** — «batch vs single»: батч из 10 чек-инов за вызов vs один-за-вызов.
-3. **На малых источниках кэш-префикс бесполезен** — быстрая проверка (1500-знаковый чек-ин < 2700 токенов кэшируемого префикса).
-
-### 6.2 Затронутые модули (для контекста)
+### 6.2 Затронутые модули
 - `backend/src/modules/operations/workers/checkin-sentiment-analyzer.worker.ts`
 - `backend/src/modules/operations/workers/operations-weekly-digest.cron.ts`
-- `backend/src/modules/operations/workers/commitment-followup.cron.ts`
 - `backend/src/modules/operations/services/weekly-digest.service.ts`
 - `backend/src/modules/operations/prompts/checkin-sentiment.prompt.ts`
 - `backend/src/modules/operations/prompts/weekly-digest.prompt.ts`
 
-### 6.3 Результаты
-_(будут заполнены после прогона эксперимента 4)_
+### 6.3 Решения
+
+| Подсистема | Что меняем | Почему |
+|---|---|---|
+| **checkin-sentiment** | single → batch (10 чек-инов = 1 вызов) | В 2× дешевле ($0.0039 vs $0.0080), точность 100% vs 96%, на 20% быстрее. |
+| **checkin-sentiment** | `max_tokens: 300 → 1500` (КРИТИЧНО) | На DeepSeek-Pro с thinking при 300 — **56% ответов пустые** (thinking-токены съедают весь лимит). Без этого фикса миграция на Pro ломает классификатор. |
+| **weekly-digest** | **НЕ менять архитектуру.** Оставляем «код агрегирует → LLM пишет». | Variant Б (LLM делает всё) галлюцинировал: придумал «дедлайн 6 июня» (даты нет в данных) и спутал день красного сигнала. Для COO-сводки точность критичнее глубины. В 2.6× дешевле. |
+| **weekly-digest** | Переключить модель на `deepseek-v4-pro` | Цена $0.0016 на сводку. |
+| **commitment-followup / commitment-extract-status** | Не тронуто экспериментом | Это маленькие классификации; применяется §0.2 «когда НЕ объединять» — каждый ответ обрабатывается своим вызовом. После §4 (фикс формата вывода) применить как обычно. |
+
+### 6.4 Точный LLM-вызов для batch checkin-sentiment
+
+**Референс:** [backend/scripts/eval/run-checkin-batch.ts](../../backend/scripts/eval/run-checkin-batch.ts).
+
+```ts
+const resp = await client.chat.completions.create({
+  model: 'deepseek-v4-pro',
+  messages: [
+    { role: 'system', content: SYSTEM_PROMPT_BATCH },
+    { role: 'user', content: buildBatchUserMessage(batch) },
+  ],
+  max_tokens: 8000,
+  tools: [SUBMIT_BATCH_SENTIMENTS_TOOL],
+  tool_choice: 'auto',
+});
+```
+
+**Tool-схема** `submit_batch_sentiments`:
+- `results: array<{ checkInId: string, sentiment: 'green'|'yellow'|'red', rationale: string }>`
+
+**System-промпт** — модифицированный из текущего `checkin-sentiment.prompt.ts`:
+- Те же 3 значения настроения (green/yellow/red) с теми же определениями.
+- Добавлено: «Тебе дают список из N чек-инов. Для КАЖДОГО определи настроение САМОСТОЯТЕЛЬНО — не сравнивай между собой и не делай общий тон по неделе.»
+- Финал: «Верни через инструмент submit_batch_sentiments.»
+
+**User-сообщение** — каждый чек-ин обрамлён `═══ [id] ═══` для надёжного связывания id с результатом.
+
+**Размер батча: 10.** Это эмпирически отобрано: на 25 = 3 батча. Большие батчи (50+) пока не тестировались — может потерять качество.
+
+### 6.5 Триггер batch вместо текущего event-driven
+
+Текущая архитектура — `@OnEvent('checkin.created')` → один вызов на чек-ин. Для batch нужен другой триггер:
+- **Вариант A:** оставить event, копить в Redis-листе, флашить раз в N минут или при достижении 10 элементов.
+- **Вариант Б:** убрать event, заменить на cron каждые 5 мин «выбрать чек-ины с `sentiment IS NULL` за последний час, обработать батчем».
+
+Решение по триггеру — отдельный архитектурный шаг при применении. Рекомендация: **Б (cron)** — проще, реже падает, легче перезапустить.
+
+### 6.6 Бонус-фикс — `max_tokens` везде в operations
+
+Аудит всех `LlmRouterService.call`/`OpenAiProxyService.complete` в `operations/`:
+- `checkin-sentiment-analyzer.worker.ts:70` — сейчас `maxTokens: 300`, поднять до **1500**.
+- `weekly-digest.service.ts` — должно быть **2000-4000** (текущее значение проверить).
+- Все остальные места, где модель Pro и `max_tokens < 1500` — поднять.
+
+**Почему 1500 минимум для Pro:**
+- thinking-токены не управляются (модель сама решает сколько думать).
+- На простых задачах thinking ~200-500 токенов; на сложных — до 2000.
+- Полезный output после thinking: 50-300 токенов для JSON.
+- Итого 1500 — безопасный минимум.
+
+### 6.7 Результаты экспериментов в цифрах
+
+**Гипотеза 1 (weekly-digest):**
+
+| | A (код-агрегат) | Б (LLM делает всё) |
+|---|---|---|
+| Время | 28.9 с | 48.3 с |
+| Стоимость | $0.0016 | $0.0042 |
+| Вход (токены) | 806 | 4928 |
+| Сумма судьи | 19/25 | 21/25 |
+| Победитель | **A** (несмотря на меньшую сумму) — Б галлюцинировал даты | |
+
+**Гипотеза 2 (checkin-sentiment):**
+
+| | A (single) | Б (batch 10×) |
+|---|---|---|
+| Время (параллельно) | 39 с | 31.6 с |
+| Стоимость суммарно | $0.0080 | $0.0039 |
+| Стоимость за чек-ин | $0.0003 | $0.0002 |
+| Точность | 24/25 (96%) | **25/25 (100%)** |
+| Cache hit | 76% | 93% |
+
+**Гипотеза 3 (кэш-префикс на малом):**
+
+| | Проход A (short 254 тока) | Проход B (long 901 ток + 5 примеров) |
+|---|---|---|
+| Cache hit средний | 83.7% | 84.6% |
+| Cache hit после 1-го вызова | 83.8% | **87.3%** |
+| Точность | 88% | 92% (+4 пп) |
+| Цена за чек-ин | $0.00031 | $0.00038 (+22%) |
+
+Подтверждена обновлённая §5: кэш работает на полную длину префикса даже на малых system (254 токена → кэшируется 384 = 6 чанков по 64). Поправка к §5.5 не нужна.
+
+### 6.8 Артефакты
+
+- Фикстуры: [backend/test/eval/operations-experiment/fixtures/](../../backend/test/eval/operations-experiment/fixtures/) — 25 чек-инов команды разработки, контекст недели, агрегат.
+- Runner'ы: [run-weekly-digest-a.ts](../../backend/scripts/eval/run-weekly-digest-a.ts), [run-weekly-digest-b.ts](../../backend/scripts/eval/run-weekly-digest-b.ts), [run-checkin-single.ts](../../backend/scripts/eval/run-checkin-single.ts), [run-checkin-batch.ts](../../backend/scripts/eval/run-checkin-batch.ts), [run-checkin-cache-test.ts](../../backend/scripts/eval/run-checkin-cache-test.ts).
+- Судья: [judge-weekly-digest.ts](../../backend/scripts/eval/judge-weekly-digest.ts).
+- Отчёты: [backend/test/eval/operations-experiment/reports/](../../backend/test/eval/operations-experiment/reports/), включая [SUMMARY-WEEKLY-DIGEST.md](../../backend/test/eval/operations-experiment/reports/SUMMARY-WEEKLY-DIGEST.md).
 
 ---
 

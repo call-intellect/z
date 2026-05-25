@@ -94,15 +94,26 @@ Cache hit ~95% на втором и последующих вызовах. Пл�
 5. ❌ **Разный `response_format`** между вызовами (на одном json_object, на другом json_schema) → miss.
 6. ❌ **Разные модели** для одной цепочки — разные кэш-namespace.
 
-### Минимальные размеры для попадания в кэш (важно для малых вызовов)
+### Минимальные размеры для попадания в кэш (по каналам)
 
-| Провайдер | Минимум для кэша | Гранулярность (chunk) | Кэшированию НЕ подлежат |
-|---|---|---|---|
-| DeepSeek-V4-Pro/Flash | **64 токена** | 64 | Промпты < 64 токенов |
-| gpt-5-mini (OpenAI Responses) | **1024 токена** | 128 | Промпты < 1024 токенов |
-| Claude (через прокси) | требует явного `cache_control: 'ephemeral'` | минимум 1024 (Sonnet/Opus), 2048 (Haiku) | Без явной разметки кэша нет |
+**Источник правды:** [`second-brain/02_architecture/llm-cache-status.md`](../../second-brain/02_architecture/llm-cache-status.md). Здесь — сводка по производственным каналам Z (verified 2026-05-25).
 
-**Практический вывод:** для коротких вызовов (чек-ин ≈ 500 токенов суммарно) **кэш не выгоден на OpenAI** — там минимум 1024. На DeepSeek — выгоден от любых ≥64 токенов.
+| Канал | Модель | Кэш | Минимум для попадания | Chunk | Скидка cached |
+|---|---|:--:|---|---|--:|
+| `deepseek` (прямой) | `deepseek-v4-pro`, `v4-flash`, `deepseek-chat` | ✅ | **64 токена** | 64 | −99% |
+| `openai-via-proxy` (proxy.agent-lia.ru) | `gpt-5-mini` | ✅ | **1024 токена** | 128 | −90% |
+| `openai-via-proxy` (proxy.agent-lia.ru) | `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.4` | ✅ | **~2048 токенов** | 128 | −90% |
+| `minimax` (прямой Anthropic-формат) | `MiniMax-M2.5`, `MiniMax-M2.7` | ✅ | требует **явный** `cache_control: 'ephemeral'`, минимум ≈1024 | ≈1024 (Anthropic-style) | ~−50% |
+| `ollama` (self-hosted) | `qwen3.5:9b` | ❌ | prompt cache на уровне API не предусмотрен |
+| `kie` (любой формат) | `claude-opus-4-7`, `gpt-5-4`, `gemini-3-flash` | ❌ | кэш не пробрасывается через KIE |
+| `grsai` (Gemini SSE) | `gemini-3-pro`, `gemini-3.1-pro` | ❌ | `cached_tokens` отсутствует в usage |
+| `anthropic` (прямой) | claude-* | n/a | в Z не используется (решение владельца) |
+
+**Практические следствия:**
+- **Чек-ины** (≈500 токенов суммарно): кэш не выгоден ни на одном канале — слишком короткие.
+- **gpt-5.4-nano для классификаторов** (theme-classify, entity-resolver): кэш может не сработать, если промпт <2k токенов.
+- **MiniMax-M2.5**: для использования cache нужен **явный** `cache_control: 'ephemeral'`. Сейчас в `LlmRouter` он ставится только на system, но не на user — см. ТЗ [`2026-05-25-minimax-cache-control-on-user.md`](2026-05-25-minimax-cache-control-on-user.md).
+- **KIE / GRSAI**: не закладывать скидку cached в расчёты экономики.
 
 ## 3. Где применять (список цепочек по приоритету)
 

@@ -1,0 +1,83 @@
+{
+  "totalMs": 588670,
+  "summaries": [
+    {
+      "target": "deepseek-v4-flash",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    },
+    {
+      "target": "gpt-5.4-mini",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    },
+    {
+      "target": "minimax-m2.5",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    },
+    {
+      "target": "grsai-gemini-3-pro",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    },
+    {
+      "target": "kie-claude-opus-4-7",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    },
+    {
+      "target": "kie-gpt-5-4",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    },
+    {
+      "target": "kie-gemini-3-flash",
+      "status": "fail",
+      "maxHitS1": 0,
+      "maxCachedS1": 0,
+      "avgHitS2": 0,
+      "hitS3Variable": 0,
+      "totalRequests": 0,
+      "totalMs": 0,
+      "notes": "FATAL: avgHitS2 is not defined"
+    }
+  ],
+  "rows": []
+}

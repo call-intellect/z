@@ -62,6 +62,7 @@
 - [[02_architecture/data-model]] — сущности (Meeting, Participant, Recording, AI Result) и FSM статусов; Фаза 0: группа А (с UI) + группа Б (слоты каркаса) + расширения existing + Apache AGE
 - [[02_architecture/age-deployment-decision]] — решение по Apache AGE (граф знаний поверх PostgreSQL)
 - [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
+- [[02_architecture/llm-cache-status]] — **prompt caching по всем 9 каналам Z**: где работает, где нет, размерные пороги, 6 анти-паттернов (verified 2026-05-25)
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
 - [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы

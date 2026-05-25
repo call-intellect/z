@@ -25,13 +25,20 @@ const QuotaKeySchema = z.enum(
 );
 const TierKeySchema = z.enum(ALL_TIERS as readonly [TierKey, ...TierKey[]]);
 
-/** Тело PATCH /api/v1/admin/orgs/:tenantId/entitlement (super_admin only). */
+/**
+ * Тело PATCH /api/v1/admin/orgs/:tenantId/entitlement (super_admin only).
+ *
+ * featureOverrides / quotaOverrides — частичные мапы (Partial<Record>).
+ * В Zod 4 `z.record(enum, …)` валидирует строгий полный Record (все ключи
+ * enum'а обязательны). Контроллер ожидает partial, поэтому используем
+ * `z.partialRecord`, который явно описывает «любое подмножество ключей».
+ */
 export const PatchEntitlementSchema = z
   .object({
     tier: TierKeySchema.optional(),
-    featureOverrides: z.record(FeatureKeySchema, z.boolean()).optional(),
+    featureOverrides: z.partialRecord(FeatureKeySchema, z.boolean()).optional(),
     quotaOverrides: z
-      .record(QuotaKeySchema, z.coerce.number().int().min(0))
+      .partialRecord(QuotaKeySchema, z.coerce.number().int().min(0))
       .optional(),
     notes: z.string().max(2_000).nullable().optional(),
     /** Reason — обязательный, попадает в AuditLog для compliance. */

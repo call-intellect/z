@@ -140,6 +140,7 @@ describe('AccountsService', () => {
           name: 'Alice',
           mustChangePassword: true,
         }),
+        expect.anything(),
       );
       expect(mail.sendTempPassword).toHaveBeenCalledWith(
         expect.objectContaining({

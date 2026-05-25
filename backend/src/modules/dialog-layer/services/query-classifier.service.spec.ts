@@ -24,6 +24,7 @@ describe('QueryClassifierService', () => {
       {
         observeDialogProcessingDuration: observeMock,
       } as unknown as never,
+      { aiFeatures: { promptInjectionGuardEnabled: true } } as unknown as never,
     );
   });
 

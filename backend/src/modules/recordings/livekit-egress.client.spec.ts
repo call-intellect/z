@@ -10,13 +10,14 @@ vi.mock('livekit-server-sdk', async () => {
   const actual = await vi.importActual<typeof import('livekit-server-sdk')>(
     'livekit-server-sdk',
   );
+  class EgressClientMock {
+    startRoomCompositeEgress = mockStartRoomCompositeEgress;
+    startTrackEgress = mockStartTrackEgress;
+    stopEgress = mockStopEgress;
+  }
   return {
     ...actual,
-    EgressClient: vi.fn().mockImplementation(() => ({
-      startRoomCompositeEgress: mockStartRoomCompositeEgress,
-      startTrackEgress: mockStartTrackEgress,
-      stopEgress: mockStopEgress,
-    })),
+    EgressClient: EgressClientMock,
   };
 });
 

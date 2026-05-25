@@ -11,6 +11,7 @@ describe('ContextualizerService', () => {
     svc = new ContextualizerService(
       { call: llmCallMock } as unknown as never,
       { observeDialogProcessingDuration: vi.fn() } as unknown as never,
+      { aiFeatures: { promptInjectionGuardEnabled: true } } as unknown as never,
     );
   });
 

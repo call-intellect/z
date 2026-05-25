@@ -119,15 +119,12 @@ describe('EntitlementsController', () => {
       );
     });
 
-    it('применяет featureOverrides через setOverride (обход Zod-strict-record bug — see TODO)', async () => {
+    it('применяет featureOverrides через setOverride', async () => {
       const { ctrl, svc } = build();
-      // ⚠ В текущей версии Zod 4 `z.record(z.enum(...), …)` требует ВСЕ ключи.
-      // Это известный bug в DTO (см. deviation в Phase F report); тест эмулирует
-      // тело, как если бы оно прошло валидацию.
-      const body = {
+      const body = PatchEntitlementSchema.parse({
         featureOverrides: { 'feature.theme': true },
         reason: 'unlock themes',
-      } as Parameters<typeof ctrl.adminPatch>[1];
+      });
       await ctrl.adminPatch('t-1', body, userOwner);
       expect(svc.setOverride).toHaveBeenCalledWith(
         't-1',
@@ -139,12 +136,12 @@ describe('EntitlementsController', () => {
       );
     });
 
-    it('применяет quotaOverrides через setOverride (обход Zod-strict-record bug)', async () => {
+    it('применяет quotaOverrides через setOverride', async () => {
       const { ctrl, svc } = build();
-      const body = {
+      const body = PatchEntitlementSchema.parse({
         quotaOverrides: { meetings_per_month: 1000 },
         reason: 'bump quota',
-      } as Parameters<typeof ctrl.adminPatch>[1];
+      });
       await ctrl.adminPatch('t-1', body, userOwner);
       expect(svc.setOverride).toHaveBeenCalledWith(
         't-1',

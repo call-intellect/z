@@ -5,15 +5,28 @@ const mockDestroy = vi.fn();
 const mockGetSignedUrl = vi.fn();
 
 vi.mock('@aws-sdk/client-s3', () => {
+  class S3ClientMock {
+    send = mockSend;
+    destroy = mockDestroy;
+  }
+  class GetObjectCommandMock {
+    __cmd = 'Get';
+    input: unknown;
+    constructor(args: unknown) {
+      this.input = args;
+    }
+  }
+  class DeleteObjectsCommandMock {
+    __cmd = 'DeleteObjects';
+    input: unknown;
+    constructor(args: unknown) {
+      this.input = args;
+    }
+  }
   return {
-    S3Client: vi.fn().mockImplementation(() => ({
-      send: mockSend,
-      destroy: mockDestroy,
-    })),
-    GetObjectCommand: vi.fn().mockImplementation((args) => ({ __cmd: 'Get', input: args })),
-    DeleteObjectsCommand: vi
-      .fn()
-      .mockImplementation((args) => ({ __cmd: 'DeleteObjects', input: args })),
+    S3Client: S3ClientMock,
+    GetObjectCommand: GetObjectCommandMock,
+    DeleteObjectsCommand: DeleteObjectsCommandMock,
   };
 });
 

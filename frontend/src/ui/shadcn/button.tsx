@@ -26,10 +26,12 @@ const buttonVariants = cva(
         link: 'text-accent underline-offset-4 hover:underline px-0',
       },
       size: {
-        sm: 'h-8 px-3 text-xs',
-        default: 'h-9 px-4',
+        // WHY min-h-10 md:min-h-Х: touch target ≥40px на mobile (WCAG 2.5.5),
+        // на md+ возвращаем плотность desktop'а.
+        sm: 'min-h-10 md:min-h-8 px-3 text-xs',
+        default: 'min-h-10 md:min-h-9 px-4',
         lg: 'h-10 px-6 text-base',
-        icon: 'h-9 w-9',
+        icon: 'min-h-10 min-w-10 md:min-h-9 md:min-w-9',
       },
     },
     defaultVariants: {

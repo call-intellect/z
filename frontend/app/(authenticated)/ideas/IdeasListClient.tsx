@@ -140,7 +140,6 @@ function IdeasContent(): JSX.Element {
         setSelected(detail);
       } catch (e) {
         setSelected(null);
-        // eslint-disable-next-line no-console
         console.warn('ideas.getById failed', e);
       }
     },

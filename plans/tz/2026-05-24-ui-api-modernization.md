@@ -362,7 +362,7 @@ body::before {
 - [x] C.3 — Аналогично к [ThemesClient.tsx](../../frontend/app/(authenticated)/themes/ThemesClient.tsx), [TasksClient.tsx](../../frontend/app/(authenticated)/tasks/TasksClient.tsx), [ChatClient.tsx](../../frontend/app/(authenticated)/chat/ChatClient.tsx) (chat — пропущен: внутри только OrgChatPanel, нет list+loading+empty паттерна).
 - [x] C.4 — Аналогично к persons/, roles/, settings/* (применено к persons, roles, settings/api, settings/sources, settings/tags, settings/webhooks, settings/exports — везде, где есть loading+list+empty).
 - [x] C.5 — Заменить нативные `alert/confirm` на `ConfirmDialog` / sonner.toast (через новый `useConfirmDialog` hook; обработано ~28 файлов).
-- [ ] C.6 — Заменить голые pill-`<button>` на shadcn-Toggle/ToggleGroup в tasks, meetings-journal, intake — **SKIPPED**: shadcn Toggle отсутствует, требуется установка `@radix-ui/react-toggle` + написание обёртки; отложено до отдельной задачи.
+- [x] C.6 — Заменить голые pill-`<button>` на shadcn-Toggle/ToggleGroup в tasks, meetings-journal, intake — установлен `@radix-ui/react-toggle` + `react-toggle-group`, созданы обёртки `frontend/src/ui/shadcn/{toggle,toggle-group}.tsx`. Применено в `TasksClient.tsx` (status pills = ToggleGroup multiple, week-only = Toggle single). В `MeetingsJournalReal.FilterChips` chip'ы — это DropdownMenuTrigger/PopoverTrigger, не toggle-pattern, замена не требуется. В `IntakeClient` pill-фильтры отсутствуют (только SuggestionChip как display-only badge).
 - [x] C.7 — Build + lint зелёные (typecheck без ошибок, lint без ошибок и с 1 pre-existing warning, build OK).
 
 ### Фаза D — Чистка hardcoded цветов (1-2 дня, параллельно с C)

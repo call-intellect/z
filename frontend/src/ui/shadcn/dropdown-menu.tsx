@@ -22,6 +22,7 @@ export const DropdownMenuSubTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       'flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-bg-overlay data-[state=open]:bg-bg-overlay text-fg-primary',
+      'min-h-10 md:min-h-0',
       inset && 'pl-8',
       className,
     )}
@@ -78,6 +79,8 @@ export const DropdownMenuItem = React.forwardRef<
     ref={ref}
     className={cn(
       'relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors',
+      // touch target ≥40px на mobile (WCAG 2.5.5); на md+ возвращаем плотность.
+      'min-h-10 md:min-h-0',
       'focus:bg-bg-overlay focus:text-fg-primary',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       inset && 'pl-8',
@@ -96,6 +99,7 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
     ref={ref}
     className={cn(
       'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-bg-overlay',
+      'min-h-10 md:min-h-0',
       className,
     )}
     checked={checked}
@@ -119,6 +123,7 @@ export const DropdownMenuRadioItem = React.forwardRef<
     ref={ref}
     className={cn(
       'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-bg-overlay',
+      'min-h-10 md:min-h-0',
       className,
     )}
     {...props}

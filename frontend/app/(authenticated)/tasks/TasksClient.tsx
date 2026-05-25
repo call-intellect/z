@@ -35,6 +35,8 @@ import {
   DropdownMenuTrigger,
 } from '@/ui/shadcn/dropdown-menu';
 import { Input } from '@/ui/shadcn/input';
+import { Toggle } from '@/ui/shadcn/toggle';
+import { ToggleGroup, ToggleGroupItem } from '@/ui/shadcn/toggle-group';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -151,12 +153,6 @@ export function TasksClient() {
     return map;
   }, [tasks]);
 
-  const toggleStatus = useCallback((s: TaskStatus) => {
-    setFilterStatuses((prev) =>
-      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
-    );
-  }, []);
-
   const handleUpdate = useCallback(
     async (id: string, patch: Parameters<typeof tasksApi.update>[1]) => {
       try {
@@ -243,36 +239,34 @@ export function TasksClient() {
       {/* Фильтры */}
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-2">
         <div className="-mx-1 flex items-center gap-2 overflow-x-auto scrollbar-none snap-x px-1 md:mx-0 md:flex-wrap md:overflow-visible md:snap-none md:px-0">
-          {STATUS_FILTER_ORDER.map((s) => {
-            const active = filterStatuses.includes(s);
-            return (
-              <button
+          <ToggleGroup
+            type="multiple"
+            variant="outline"
+            size="sm"
+            value={filterStatuses}
+            onValueChange={(value) => setFilterStatuses(value as TaskStatus[])}
+            className="gap-2"
+          >
+            {STATUS_FILTER_ORDER.map((s) => (
+              <ToggleGroupItem
                 key={s}
-                type="button"
-                onClick={() => toggleStatus(s)}
-                className={cn(
-                  'shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                  active
-                    ? 'border-accent-border bg-accent-muted text-accent'
-                    : 'border-border-subtle bg-bg-card text-fg-secondary hover:bg-bg-overlay',
-                )}
+                value={s}
+                aria-label={STATUS_LABEL[s]}
+                className="shrink-0 snap-start rounded-full"
               >
                 {STATUS_LABEL[s]}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setThisWeekOnly((v) => !v)}
-            className={cn(
-              'shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-              thisWeekOnly
-                ? 'border-accent-border bg-accent-muted text-accent'
-                : 'border-border-subtle bg-bg-card text-fg-secondary hover:bg-bg-overlay',
-            )}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <Toggle
+            variant="outline"
+            size="sm"
+            pressed={thisWeekOnly}
+            onPressedChange={setThisWeekOnly}
+            className="shrink-0 snap-start rounded-full"
           >
             Срок: на этой неделе
-          </button>
+          </Toggle>
         </div>
         <div className="relative w-full md:ml-auto md:max-w-xs">
           <Search

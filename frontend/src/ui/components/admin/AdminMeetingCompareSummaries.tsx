@@ -76,7 +76,7 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
       <header className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <Link
-            href={`/admin/meetings/${encodeURIComponent(meetingId)}`}
+            href={`/admin/media/meetings/${encodeURIComponent(meetingId)}`}
             className="text-sm text-info hover:underline"
           >
             ← К деталям встречи
@@ -114,6 +114,7 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
             <SummaryColumn version="v2" data={data} />
             <SummaryColumn version="fast" data={data} />
           </div>
+          <QualityScoreBlock qualityScore={m.qualityScore} />
         </TabsContent>
 
         <TabsContent value="chapters">
@@ -320,6 +321,31 @@ function TasksColumn({
         </ul>
       )}
     </Column>
+  );
+}
+
+// ───────────────────── Quality score (общий блок) ─────────────────────
+
+/**
+ * Единый collapsed-блок quality_score под обеими колонками сводки.
+ * Генерируется только fast-цепочкой (meeting-report-fast.worker), поэтому
+ * нет смысла дублировать по колонкам v2/fast. NULL = ещё не посчитано.
+ */
+function QualityScoreBlock({
+  qualityScore,
+}: {
+  qualityScore: Record<string, unknown> | null;
+}) {
+  if (!qualityScore) return null;
+  return (
+    <details className="mt-4 rounded-md border border-border-subtle bg-white p-4 shadow-sm">
+      <summary className="cursor-pointer text-sm font-semibold text-fg-secondary">
+        Оценка качества встречи (quality_score)
+      </summary>
+      <pre className="mt-3 overflow-x-auto rounded bg-bg-subtle p-3 text-xs">
+        {JSON.stringify(qualityScore, null, 2)}
+      </pre>
+    </details>
   );
 }
 

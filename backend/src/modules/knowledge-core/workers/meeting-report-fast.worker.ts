@@ -322,6 +322,27 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    // 3d. Quality score (целиком, Json). Пишем в Meeting.reportFastQualityScore.
+    // Структура: { overallScore, categories, recommendations[], strengths[] } —
+    // её гарантирует zod-схема `MeetingReportFastQualityScoreSchema` (zod успешно
+    // прошёл выше; здесь дополнительная защита от неожиданных мутаций объекта).
+    // В отличие от других writer'ов, ошибка quality-score-write НЕ валит весь
+    // отчёт: фоновая аналитика по quality_score опциональна, лог warn достаточен.
+    try {
+      await this.writeQualityScore({
+        meetingId,
+        qualityScore: parsed.quality_score,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          meetingId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'meeting-report-fast: quality-score-write failed (не валим отчёт)',
+      );
+    }
+
     // ── 4. Финальный статус ──
     const allFailed = failures.length === 3;
     const someFailed = failures.length > 0 && !allFailed;
@@ -508,6 +529,40 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         summaryFastModel: args.modelUsed,
         summaryFastGeneratedAt: nowAt,
       } as Prisma.AiResultUncheckedCreateInput,
+    });
+  }
+
+  /**
+   * Сохраняет quality_score целиком в Meeting.reportFastQualityScore (Json).
+   * Защищается от пустого/неожиданного объекта: если у `qualityScore` нет хотя бы
+   * `overallScore` числом — лог warn и пропуск (не пишем мусор). Структуру
+   * гарантирует zod-схема `MeetingReportFastQualityScoreSchema`, поэтому в
+   * штатном режиме проверка просто проходит насквозь.
+   */
+  private async writeQualityScore(args: {
+    meetingId: string;
+    qualityScore: MeetingReportFastOutput['quality_score'] | null | undefined;
+  }): Promise<void> {
+    const qs = args.qualityScore;
+    if (!qs || typeof qs !== 'object') {
+      this.logger.warn(
+        { meetingId: args.meetingId },
+        'meeting-report-fast: quality_score пустой/невалидный — skip write',
+      );
+      return;
+    }
+    if (typeof (qs as { overallScore?: unknown }).overallScore !== 'number') {
+      this.logger.warn(
+        { meetingId: args.meetingId },
+        'meeting-report-fast: quality_score без overallScore — skip write',
+      );
+      return;
+    }
+    await this.prisma.meeting.update({
+      where: { id: args.meetingId },
+      data: {
+        reportFastQualityScore: qs as unknown as Prisma.InputJsonValue,
+      },
     });
   }
 

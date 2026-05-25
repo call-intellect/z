@@ -46,6 +46,10 @@ export type AdminMeetingDetailsApi = {
     endedAt: string | null;
     createdAt: string;
     owner: { id: string; externalId: string | null; email: string; name: string };
+    /// quality_score, целиком сгенерированный воркером meeting-report-fast.
+    /// Структура: { overallScore, categories, recommendations[], strengths[] }
+    /// (см. backend `meeting-report-fast.prompt.ts`). NULL пока не сгенерирован.
+    qualityScore: Record<string, unknown> | null;
   };
   participants: Array<{
     id: string;

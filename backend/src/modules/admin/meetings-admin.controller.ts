@@ -167,6 +167,11 @@ export class MeetingsAdminController {
       endedAt: string | null;
       createdAt: string;
       owner: { id: string; externalId: string | null; email: string; name: string };
+      /// quality_score, целиком из meeting-report-fast. Структура задаётся
+      /// промптом `meeting-report-fast.prompt.ts` (overallScore, categories,
+      /// recommendations, strengths). NULL = ещё не сгенерирован. В БД
+      /// хранится в `Meeting.reportFastQualityScore` (Json).
+      qualityScore: Record<string, unknown> | null;
     };
     reportStatuses: {
       analyzeV2: {
@@ -303,6 +308,13 @@ export class MeetingsAdminController {
         endedAt: meeting.endedAt?.toISOString() ?? null,
         createdAt: meeting.createdAt.toISOString(),
         owner: meeting.owner,
+        // quality_score в БД лежит в `reportFastQualityScore` (Json); в API
+        // выдаём под коротким именем `qualityScore`. Полагаемся на zod-схему
+        // `MeetingReportFastQualityScoreSchema` — типизируем как
+        // `Record<string, unknown>` для контракта.
+        qualityScore:
+          (meeting.reportFastQualityScore as Record<string, unknown> | null) ??
+          null,
       },
       reportStatuses: {
         analyzeV2: {

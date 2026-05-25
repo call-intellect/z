@@ -998,6 +998,17 @@ model Meeting {
   reportFastError       String?       @db.Text
   /// Когда `meeting-report-fast` завершил работу (последний раз).
   reportFastGeneratedAt DateTime?
+  /// 2026-05-25 quality_score целиком из meeting-report-fast (ТЗ
+  /// plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md, ответ из
+  /// прозрачного блока «quality_score»). Json-объект формы:
+  /// `{ overallScore, categories: { preparation, structure, clarity, outcomes,
+  /// engagement }, recommendations: Array<{ text, severity, category }>,
+  /// strengths: string[] }`. Структуру задаёт `meeting-report-fast.prompt.ts`.
+  /// Поле названо `reportFastQualityScore`, потому что относится именно к
+  /// fast-цепочке; relation `qualityScore` ниже зарезервирован за отдельным
+  /// воркером `ai.quality-score` (модель `MeetingQualityScore`). В Admin
+  /// API/UI поле отдаётся под ключом `qualityScore`.
+  reportFastQualityScore Json?
   /// Автоматически вести запись при старте встречи. Если true — запись стартует
   /// при подключении хоста; ручное управление записью в комнате недоступно.
   recordByDefault       Boolean       @default(true)
@@ -1725,6 +1736,12 @@ model LlmTaskRoute {
   /// Если ни один провайдер не подходит — `NoEligibleProviderError` +
   /// метрика `core_data_class_violations_total`.
   requiredDataClass DataClass?
+  /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии модели.
+  /// Текстовая пометка вида «закреплено на deepseek-v4-pro версии 2026-04-15;
+  /// перед обновлением — прогнать golden-набор skill-trait-detect-golden».
+  /// Прокси DeepSeek не поддерживает версионные slug-и, поэтому заморозка —
+  /// через комментарий + snapshot-тест на seed-script.
+  pinnedVersionNote String?       @db.Text
   updatedAt         DateTime      @updatedAt
 
   /// Legacy unique: (taskType, tenantId) — для записей БЕЗ tier (одна запись на taskType).
@@ -2097,6 +2114,9 @@ model Org {
   /// SkillTrait.category). См.
   /// plans/tz/2026-05-23-sba-gamma-1-finishing-skilltraitcategory-persona-versioning.md.
   skillTraitCategories SkillTraitCategory[] @relation("SkillTraitCategoryTenant")
+  /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
+  /// Канонизация SkillTrait'ов разных сотрудников в общий концепт.
+  skillTraitConcepts   SkillTraitConcept[]  @relation("SkillTraitConceptTenant")
 
   /// Org-настройки Слоя 4 (curation). См. plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §8.
   /// Структура: `{ autoThreshold: 0.85, deepReviewThreshold: 0.6,
@@ -3658,12 +3678,39 @@ model Person {
   headOfDepartments     Department[]       @relation("DepartmentHead")
   /// Calendar MVP (2026-05-25) — участие как Person (external контакт).
   eventParticipations   EventParticipant[] @relation("EventParticipantPerson")
+  /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический
+  /// индекс категорий профиля знаний (для запросов «кто разбирается в X»).
+  knowledgeCategoryEmbeddings PersonKnowledgeCategoryEmbedding[]
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
   @@index([tenantId, primaryDepartmentId])
   @@index([tenantId, entityId])
   @@map("persons")
+}
+
+/// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический индекс
+/// категорий профиля знаний для запросов «кто разбирается в X».
+/// Тонкий индекс над JSON Person.knowledgeProfile.categories[]:
+/// дублирует name+confidence + кладёт embedding для векторного поиска.
+model PersonKnowledgeCategoryEmbedding {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  personId            String
+  /// = knowledgeProfile.categories[].name (для отображения).
+  categoryName        String   @db.VarChar(200)
+  /// 'low' | 'medium' | 'high' — копия, чтобы фильтровать без чтения JSON.
+  confidence          String   @db.VarChar(16)
+  embedding           Unsupported("vector(1536)")?
+  builtAt             DateTime @default(now())
+  /// = Person.profileBuildVersion на момент построения этого embedding.
+  profileBuildVersion Int
+
+  person              Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, confidence])
+  @@index([personId])
+  @@map("person_knowledge_category_embeddings")
 }
 
 /// @deprecated SBA α-8 wave 3 (2026-05-23) — use `Appointment`.
@@ -6006,6 +6053,14 @@ model SkillTrait {
   createdAt                 DateTime                     @default(now())
   updatedAt                 DateTime                     @updatedAt
 
+  /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — ссылка на канонический
+  /// «смысловой блок навыка» (SkillTraitConcept). Канонизация одинаковых по
+  /// смыслу traits у разных сотрудников: «осторожен с оценками сроков»,
+  /// «не любит давать сроки без данных», «откладывает оценку» → один концепт.
+  /// Null временно — до прогона backfill-скрипта.
+  conceptId                 String?
+  concept                   SkillTraitConcept?           @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+
   profile    SkillProfile        @relation(fields: [profileId], references: [id], onDelete: Cascade)
   categoryFk SkillTraitCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
@@ -6013,7 +6068,50 @@ model SkillTrait {
   @@index([profileId, category])
   @@index([profileId, categoryId])
   @@index([categoryId])
+  @@index([conceptId])
   @@map("skill_traits")
+}
+
+/// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловой блок навыка.
+/// Канонизирует одинаковые по смыслу SkillTrait у разных сотрудников
+/// (напр. «осторожен с оценками сроков», «не любит давать сроки без данных»,
+/// «откладывает оценку» — все указывают на один концепт).
+model SkillTraitConcept {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// Каноническое имя — берётся из category первого trait'а при создании,
+  /// пересчитывается агентом `skill-trait-concept-name` при слиянии 2+ концептов.
+  canonicalName   String   @db.VarChar(200)
+  /// 1-2 предложения, поясняющие смысл, для админки (опционально).
+  description     String?  @db.Text
+  /// Все наблюдённые варианты названия (для прозрачности и debug).
+  variants        String[] @default([])
+  /// Семантический отпечаток canonicalName + description.
+  embedding       Unsupported("vector(1536)")?
+  status          SkillTraitConceptStatus @default(active)
+  /// Куда слит, если status='merged_into'.
+  mergedIntoId    String?
+  mergedInto      SkillTraitConcept?  @relation("ConceptMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom      SkillTraitConcept[] @relation("ConceptMerge")
+  /// Денормализованный счётчик активных traits с этим conceptId.
+  traitCount      Int      @default(0)
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  org             Org @relation("SkillTraitConceptTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  traits          SkillTrait[]
+
+  @@unique([tenantId, canonicalName])
+  @@index([tenantId, status])
+  @@map("skill_trait_concepts")
+}
+
+enum SkillTraitConceptStatus {
+  active
+  merged_into
+  archived
 }
 
 /// SBA γ-1 доделки — SkillTraitCategory — эмерджентная категория группы

@@ -52,3 +52,132 @@ export function buildCheckinSentimentUserMessage(args: {
 /** Допустимые значения настроения. */
 export const CHECKIN_SENTIMENT_VALUES = ['green', 'yellow', 'red'] as const;
 export type CheckinSentiment = (typeof CHECKIN_SENTIMENT_VALUES)[number];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ТЗ 2026-05-25 LLM-architecture §6 — BATCH-вариант checkin-sentiment.
+//
+// Эксперимент 4 (`backend/test/eval/operations-experiment/`):
+//   - single (старый) — точность 24/25 (96%), $0.0080.
+//   - batch 10× (новый) — точность 25/25 (100%), $0.0039 (в 2× дешевле),
+//     +20% быстрее. Cache hit 93% vs 76%.
+// Размер батча 10 выбран эмпирически. Каждый чек-ин обрамлён `═══ [id] ═══`
+// для надёжного связывания id с результатом.
+// Модель — `deepseek-v4-pro` (через router taskType='checkin-sentiment-batch').
+// max_tokens = 8000 — thinking-токены + JSON-output на 10 элементов.
+// Референс — `backend/scripts/eval/run-checkin-batch.ts`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const CHECKIN_SENTIMENT_BATCH_PROMPT_VERSION = 'prompt-batch-v1';
+
+/** Размер батча. См. §6.4 — 10 эмпирически отобрано. */
+export const CHECKIN_SENTIMENT_BATCH_SIZE = 10;
+
+export const CHECKIN_SENTIMENT_BATCH_SYSTEM_PROMPT = [
+  'Ты — внимательный читатель ежедневных вечерних чек-инов сотрудников.',
+  'Тебе дают список из N чек-инов (каждый — короткий свободный текст). Для КАЖДОГО определи общее настроение одним из трёх значений:',
+  '  - "green" — день прошёл нормально или хорошо: задачи закрыты, тон спокойный, блокеров нет или они мелкие.',
+  '  - "yellow" — есть напряжение: часть задач не закрыта, есть блокеры или раздражение, но в целом ситуация управляемая.',
+  '  - "red" — серьёзные проблемы: ничего не сделано, сильное выгорание, конфликт, явная просьба о помощи, упоминание увольнения, переработки несколько дней подряд.',
+  '',
+  'ВАЖНО: оценивай каждый чек-ин САМОСТОЯТЕЛЬНО — не сравнивай между собой и не делай общий тон по неделе.',
+  '',
+  'Верни результат через инструмент submit_batch_sentiments. Каждый элемент массива — {checkInId, sentiment, rationale}.',
+  'rationale — короткое (до 200 символов) обоснование на русском для администратора.',
+  'Если текст пустой/бессмысленный/односложный — sentiment="green", rationale="мало деталей, явных проблем нет".',
+].join('\n');
+
+/**
+ * Tool-схема `submit_batch_sentiments`. Передаётся в `LlmRouterService.call({ tools: [...] })`.
+ * `LlmTool.input_schema` — JSON Schema аргументов.
+ */
+export const CHECKIN_SENTIMENT_BATCH_TOOL = {
+  name: 'submit_batch_sentiments',
+  description: 'Отдать классификацию настроения для массива чек-инов.',
+  input_schema: {
+    type: 'object' as const,
+    required: ['results'],
+    additionalProperties: false,
+    properties: {
+      results: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['checkInId', 'sentiment', 'rationale'],
+          properties: {
+            checkInId: { type: 'string' },
+            sentiment: { type: 'string', enum: ['green', 'yellow', 'red'] },
+            rationale: { type: 'string' },
+          },
+        },
+      },
+    },
+  },
+};
+
+/** Элемент batch для построения user-сообщения. */
+export interface CheckinSentimentBatchItem {
+  checkInId: string;
+  rawText: string;
+}
+
+/**
+ * Сборка user-сообщения batch'а: каждый чек-ин обрамлён `═══ [id] ═══`.
+ * См. §6.4 ТЗ — это критично для надёжного связывания id с результатом.
+ */
+export function buildCheckinSentimentBatchUserMessage(
+  items: CheckinSentimentBatchItem[],
+): string {
+  const lines: string[] = [];
+  lines.push(
+    `Классифицируй настроение для ${items.length} вечерних чек-инов ниже.`,
+  );
+  lines.push(
+    'Каждый чек-ин помечен идентификатором [ID]. Верни результат через submit_batch_sentiments.',
+  );
+  lines.push('');
+  for (const c of items) {
+    lines.push(`═══ [${c.checkInId}] ═══`);
+    lines.push((c.rawText ?? '').slice(0, 4_000));
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+/** Результат одного элемента batch'а. */
+export interface CheckinSentimentBatchResult {
+  checkInId: string;
+  sentiment: CheckinSentiment;
+  rationale: string;
+}
+
+/**
+ * Парсер tool_call `submit_batch_sentiments`. Безопасный: при любых
+ * нарушениях схемы возвращает только валидные элементы (некорректные
+ * молча пропускаются, чтобы один кривой пункт не сломал весь батч).
+ */
+export function parseCheckinSentimentBatchToolInput(
+  input: unknown,
+): CheckinSentimentBatchResult[] {
+  if (!input || typeof input !== 'object') return [];
+  const results = (input as { results?: unknown }).results;
+  if (!Array.isArray(results)) return [];
+  const out: CheckinSentimentBatchResult[] = [];
+  for (const raw of results) {
+    if (!raw || typeof raw !== 'object') continue;
+    const obj = raw as Record<string, unknown>;
+    const checkInId = typeof obj.checkInId === 'string' ? obj.checkInId : null;
+    const sentiment = obj.sentiment;
+    if (!checkInId) continue;
+    if (
+      sentiment !== 'green' &&
+      sentiment !== 'yellow' &&
+      sentiment !== 'red'
+    ) {
+      continue;
+    }
+    const rationale =
+      typeof obj.rationale === 'string' ? obj.rationale.slice(0, 1_000) : '';
+    out.push({ checkInId, sentiment, rationale });
+  }
+  return out;
+}

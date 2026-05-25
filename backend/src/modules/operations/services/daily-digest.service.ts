@@ -170,7 +170,9 @@ export class DailyDigestService {
         tenantId: args.tenantId,
         systemPrompt: DAILY_DIGEST_SYSTEM_PROMPT,
         userMessage: buildDailyDigestUserMessage(promptInput),
-        maxTokens: 1_500,
+        // ТЗ 2026-05-25 LLM-architecture §6.6 — 1500 → 4000. Текст 200-450 слов
+        // + shortSummary + thinking-токены DeepSeek-Pro.
+        maxTokens: 4_000,
         sourceRef: { type: 'daily-digest', id: `${args.tenantId}:${args.dateLocal}` },
       });
       const parsed = parseDailyDigestLlmResponse(result.text);

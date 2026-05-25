@@ -67,7 +67,10 @@ export class CheckinSentimentAnalyzerWorker {
             rawText: event.rawText,
           }),
           responseFormat: { type: 'json_object' },
-          maxTokens: 300,
+          // ТЗ 2026-05-25 LLM-architecture §6.6 — поднято 300 → 1500.
+          // На DeepSeek-Pro с thinking при 300 — 56% ответов пустые
+          // (thinking-токены съедают весь лимит). 1500 — безопасный минимум.
+          maxTokens: 1_500,
           sourceRef: { type: 'checkin', id: event.checkInId },
         }),
         new Promise<never>((_, reject) =>

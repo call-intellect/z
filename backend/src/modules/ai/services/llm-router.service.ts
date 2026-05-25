@@ -225,6 +225,11 @@ export type LlmTaskType =
   | 'checkin-parse'
   | 'operations-summary'
   | 'checkin-sentiment'
+  // ТЗ 2026-05-25 LLM-architecture §6 — batch-вариант checkin-sentiment.
+  // 10 чек-инов в одном вызове через tool `submit_batch_sentiments`.
+  // Эксперимент 4: точность 100% vs 96% single, в 2× дешевле, на 20% быстрее.
+  // Primary `deepseek/deepseek-v4-pro` (capable + thinking). max_tokens=8000.
+  | 'checkin-sentiment-batch'
   | 'operations-weekly-digest'
   // SBA β-8.3 — ежедневный отчёт COO.
   // 'operations-daily-digest' — собрать связный текст ежедневного отчёта

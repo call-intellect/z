@@ -36,10 +36,10 @@ const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'operations-daily-digest',
     playbookSection:
-      '§β-8.3 §1.7 — связный markdown 4-6 разделов ежедневного дайджеста + shortSummary. 1 вызов/день/Org.',
+      'ТЗ 2026-05-25 LLM-architecture §6 — primary deepseek-v4-pro (миграция с deepseek-chat для совместимости с thinking; maxTokens сервиса поднят до 4000). Связный markdown 4-6 разделов + shortSummary. 1 вызов/день/Org.',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
-      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },

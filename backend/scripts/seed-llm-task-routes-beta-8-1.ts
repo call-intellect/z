@@ -2,13 +2,24 @@
  * SBA β-8.1 — Seed маршрутов LLM для добивки панели операционного директора.
  *
  *   - checkin-sentiment — определение настроения чек-ина (green/yellow/red)
- *     по тексту вечернего ответа сотрудника. Дешёвый частый вызов;
- *     primary deepseek-chat, secondary openai gpt-4o-mini, tertiary
- *     ollama qwen3.5:9b. Точность не критична (rationale для аудита всегда
- *     заполняется; админ может перепроверить).
+ *     по тексту вечернего ответа сотрудника. Дешёвый частый вызов; fallback
+ *     event-driven worker (CheckinSentimentAnalyzerWorker) — мгновенная
+ *     реакция на одиночный чек-ин.
+ *   - checkin-sentiment-batch — batch-вариант (10 чек-инов = 1 вызов через
+ *     tool `submit_batch_sentiments`). ТЗ 2026-05-25 LLM-architecture §6
+ *     (эксперимент 4: точность 100% vs 96%, в 2× дешевле, на 20% быстрее).
+ *     Primary `deepseek-v4-pro` (capable + thinking; max_tokens=8000 в коде).
+ *     Используется основным механизмом — `CheckinSentimentBatchCron`.
  *   - operations-weekly-digest — связный текст недельного дайджеста
  *     (markdown, 5-7 коротких разделов). Один вызов в неделю на Org —
- *     не критично к скорости. Тот же провайдерский профиль.
+ *     не критично к скорости. ТЗ 2026-05-25 §6 — primary `deepseek-v4-pro`
+ *     (цена $0.0016 на сводку).
+ *
+ * ТЗ 2026-05-25 LLM-architecture §6 — переключение моделей:
+ *   - checkin-sentiment        primary deepseek-chat → deepseek-v4-pro
+ *   - checkin-sentiment-batch  новый maршрут        primary deepseek-v4-pro
+ *   - operations-weekly-digest primary deepseek-chat → deepseek-v4-pro
+ *   - secondary openai-via-proxy gpt-4o-mini → gpt-5.4-mini (актуальная).
  *
  * Запуск:
  *   bun run scripts/seed-llm-task-routes-beta-8-1.ts
@@ -40,20 +51,30 @@ const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'checkin-sentiment',
     playbookSection:
-      '§β-8.1 §9 — primary deepseek-chat (баланс цена/качество). Дешёвая частая задача (per checkin).',
+      'ТЗ 2026-05-25 LLM-architecture §6 — fallback single-вариант (event-driven). Основной механизм — checkin-sentiment-batch. Primary deepseek-v4-pro (миграция с deepseek-chat для совместимости с thinking, maxTokens worker поднят до 1500).',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
-      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+    ],
+  },
+  {
+    taskType: 'checkin-sentiment-batch',
+    playbookSection:
+      'ТЗ 2026-05-25 LLM-architecture §6 (эксперимент 4) — основной механизм sentiment-классификации. 10 чек-инов = 1 вызов через tool `submit_batch_sentiments`. Точность 100% vs 96% single, в 2× дешевле. max_tokens=8000 в коде.',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
   {
     taskType: 'operations-weekly-digest',
     playbookSection:
-      '§β-8.1 §9 — связный markdown 5-7 разделов недельной сводки. 1 вызов/неделя/Org.',
+      'ТЗ 2026-05-25 LLM-architecture §6 — primary deepseek-v4-pro (миграция с deepseek-chat). Цена $0.0016 на сводку. Архитектура «код агрегирует → LLM пишет» НЕ меняется — Variant Б галлюцинировал даты в эксперименте 4. 1 вызов/неделя/Org.',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
-      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },

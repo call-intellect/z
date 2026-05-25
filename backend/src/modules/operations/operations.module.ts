@@ -22,6 +22,7 @@ import { PersonalRelationService } from './services/personal-relation.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
+import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
@@ -86,6 +87,9 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
     WeeklyDigestService,
     OperationsWeeklyDigestCron,
     CheckinSentimentAnalyzerWorker,
+    // ТЗ 2026-05-25 LLM-architecture §6 — batch-cron (основной механизм
+    // sentiment-классификации, в 2× дешевле и точнее single через event).
+    CheckinSentimentBatchCron,
     // SBA β-8.2 — Хранитель обещаний.
     CommitmentsService,
     Specialist39PromiseKeeperService,

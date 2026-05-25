@@ -139,7 +139,9 @@ export class WeeklyDigestService {
         tenantId: args.tenantId,
         systemPrompt: WEEKLY_DIGEST_SYSTEM_PROMPT,
         userMessage: buildWeeklyDigestUserMessage(promptInput),
-        maxTokens: 1_500,
+        // ТЗ 2026-05-25 LLM-architecture §6.6 — 1500 → 4000. Текст ~250-600
+        // слов (≈800-2000 токенов output) + thinking-токены DeepSeek-Pro.
+        maxTokens: 4_000,
         sourceRef: { type: 'weekly-digest', id: `${args.tenantId}:${args.weekStart}` },
       });
       bodyMarkdown = result.text.trim();

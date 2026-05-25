@@ -8,6 +8,10 @@ import { ApiError } from '@/api/api-error';
 import { clonesApi, type SkillProfileApi, type SkillTraitApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
+import {
+  RebuildCloneButton,
+  formatLastBuildHint,
+} from '@/ui/clone/RebuildCloneButton';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -94,16 +98,39 @@ export function PersonSkillProfileClient({ personId }: { personId: string }) {
 
   if (!data) return null;
 
+  const lastSnapshotAt =
+    data.personaSnapshots?.find((s) => s.status === 'active')?.snapshotAt ??
+    data.personaSnapshots?.[0]?.snapshotAt ??
+    data.lastBuildAt ??
+    null;
+
   return (
     <section className="space-y-4 p-4">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Навыковый профиль: {data.personName}
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Навыковый профиль: {data.personName}
+          </h1>
+          {currentOrgId && data.canMarkMisleading && (
+            <RebuildCloneButton
+              orgId={currentOrgId}
+              personId={personId}
+              variant="compact"
+              onRebuildScheduled={() => {
+                if (swrKey) void mutate(swrKey);
+              }}
+            />
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
           Эмерджентные черты подхода к решениям, наблюдаемые в reasoning-блоках.
           Формулировки — гипотезные («похоже»/«склонен»/«в большинстве случаев»).
         </p>
+        {data.canMarkMisleading && (
+          <p className="text-xs text-muted-foreground">
+            {formatLastBuildHint(lastSnapshotAt)}
+          </p>
+        )}
         <ProfileMeta profile={data} />
       </div>
 

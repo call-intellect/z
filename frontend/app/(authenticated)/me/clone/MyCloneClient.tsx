@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import { Bot, Flag, Loader2, Send, Sparkles } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
@@ -11,6 +11,10 @@ import { meProfileApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import { mapCloneAnswer, type CloneAnswer } from '@/domain/clone';
+import {
+  RebuildCloneButton,
+  formatLastBuildHint,
+} from '@/ui/clone/RebuildCloneButton';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent } from '@/ui/shadcn/card';
@@ -63,6 +67,23 @@ export function MyCloneClient() {
   const isReady = !authLoading && !loadingMyProfile && !!personId;
   const isEmpty =
     knowledgeProfile?.isEmpty ?? (knowledgeProfile?.categories.length ?? 0) === 0;
+
+  // 3. Фаза 5 «clone reliability» — грузим skill-profile, чтобы показать
+  //    дату последнего активного snapshot ExecutablePersona под кнопкой
+  //    «Обновить клона». Запрос — только когда personId известен.
+  const skillProfileSwrKey =
+    currentOrgId && personId
+      ? ['my-skill-profile-for-clone', currentOrgId, personId]
+      : null;
+  const { data: skillProfile } = useSWR(skillProfileSwrKey, async () =>
+    clonesApi.getPersonSkillProfile(currentOrgId!, personId!),
+  );
+  const lastSnapshotAt =
+    skillProfile?.personaSnapshots?.find((s) => s.status === 'active')
+      ?.snapshotAt ??
+    skillProfile?.personaSnapshots?.[0]?.snapshotAt ??
+    skillProfile?.lastBuildAt ??
+    null;
 
   async function handleSubmit() {
     if (!currentOrgId || !personId) return;
@@ -125,14 +146,30 @@ export function MyCloneClient() {
   return (
     <section className="space-y-4 p-4">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Попробовать своего клона
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Попробовать своего клона
+          </h1>
+          {isReady && currentOrgId && personId && (
+            <RebuildCloneButton
+              orgId={currentOrgId}
+              personId={personId}
+              onRebuildScheduled={() => {
+                if (skillProfileSwrKey) void mutate(skillProfileSwrKey);
+              }}
+            />
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
           Это AI на основе моего наблюдаемого поведения на встречах. Спросите,
           как я подошёл бы к задаче — клон ответит в моём стиле, опираясь на
           накопленные обсуждения «почему я так решил».
         </p>
+        {isReady && (
+          <p className="text-xs text-muted-foreground">
+            {formatLastBuildHint(lastSnapshotAt)}
+          </p>
+        )}
       </div>
 
       {!isReady && (
@@ -159,6 +196,26 @@ export function MyCloneClient() {
 
       {isReady && (
         <div className="space-y-3">
+          {messages.length > 0 && currentOrgId && personId && (
+            <div className="flex items-center justify-between rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              <span>
+                Текущие ответы — по описанию клона{' '}
+                {lastSnapshotAt
+                  ? `от ${new Date(lastSnapshotAt).toLocaleString('ru-RU')}`
+                  : '(дата неизвестна)'}
+                . После обновления следующие ответы будут учитывать самые
+                новые наблюдения.
+              </span>
+              <RebuildCloneButton
+                orgId={currentOrgId}
+                personId={personId}
+                variant="iconOnly"
+                onRebuildScheduled={() => {
+                  if (skillProfileSwrKey) void mutate(skillProfileSwrKey);
+                }}
+              />
+            </div>
+          )}
           <ul className="space-y-3">
             {messages.map((m) => (
               <li key={m.id}>

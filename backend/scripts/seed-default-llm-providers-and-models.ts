@@ -13,9 +13,12 @@
  *   bun run scripts/seed-default-llm-providers-and-models.ts
  */
 
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
+});
 
 interface ProviderSeed {
   name: string;

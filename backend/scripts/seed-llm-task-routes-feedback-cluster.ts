@@ -23,9 +23,13 @@
  *   - С `--update-existing` — обновляем model/priority/isActive.
  */
 
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// Prisma 7 driver adapter — см. prisma/seed.ts. URL — из env (bun грузит .env).
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
+});
 
 interface TierEntry {
   tier: LlmRouteTier;

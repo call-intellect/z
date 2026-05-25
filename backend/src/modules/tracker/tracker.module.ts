@@ -36,6 +36,7 @@ import { MyMentionsService } from './services/my-mentions.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
+import { SimilarIssuesService } from './services/similar-issues.service';
 import { StatesService } from './services/states.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
@@ -111,6 +112,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // см. отчёт оркестратора (Sprint 10).
     HolidayService,
     IssuesService,
+    SimilarIssuesService,
     CyclesService,
     IntakeService,
     CommentsService,

@@ -174,11 +174,18 @@ export class FeedbackDigestService {
       }
 
       // 4. Sanity-check: лимит новых блоков относительно объёма items.
+      // Применяется только когда уже есть смысловые блоки (existingTopics >= 5);
+      // на «холодном старте» (когда блоков ещё нет или их мало) агент по
+      // определению создаёт новые блоки под каждую тему — это нормально, а не
+      // аномалия. Триггер: >50% items идут в новые блоки И при этом достаточно
+      // существующих, чтобы сравнение имело смысл.
       const totalItems = agentOutput.assignments.reduce(
         (acc, a) => acc + a.items.length,
         0,
       );
+      const SANITY_CHECK_MIN_EXISTING_TOPICS = 5;
       if (
+        topics.length >= SANITY_CHECK_MIN_EXISTING_TOPICS &&
         agentOutput.newTopics.length > 0 &&
         agentOutput.newTopics.length > totalItems * 0.5
       ) {

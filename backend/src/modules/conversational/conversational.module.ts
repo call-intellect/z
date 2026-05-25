@@ -113,6 +113,9 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // β-9 Phase 4 — нужен AdminTelegramBotService (валидация токена через
     // getMe, перенастройка webhook через setWebhook).
     TelegramApiClient,
+    // β-9 Phase ? — AdminBotsService инжектит MaxApiClient (симметрично
+    // TelegramApiClient). Без этого экспорта Nest не резолвит зависимость.
+    MaxApiClient,
   ],
 })
 export class ConversationalModule {}

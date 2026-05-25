@@ -84,3 +84,16 @@ export interface AccountsUpdateMeResponse {
 export interface AccountsOkResponse {
   ok: true;
 }
+
+/**
+ * β-9 — приём приглашения по magic-link (публичный, без auth).
+ * Бэкенд: `POST /api/v1/accounts/invitations/accept-magic`.
+ * После успеха сессия установлена через cookie `z_session` в Set-Cookie.
+ */
+export interface AcceptInvitationMagicLinkRequest {
+  magicToken: string;
+}
+
+export interface AcceptInvitationMagicLinkResponse {
+  user: AccountUserApi;
+}

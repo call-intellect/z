@@ -168,6 +168,16 @@ export class BusinessMetricsService implements OnModuleInit {
   // отправителей (linked, но без Membership / вовсе незнакомых).
   private telegramBotGlobalWebhookReceivedTotal!: Counter<'type'>;
   private telegramBotUnknownSenderTotal!: Counter<'reason'>;
+  /**
+   * β-9 / Phase 6 — команда `/login` в Telegram-боте (выпуск magic-link
+   * прямо в чат боту). outcome ∈ ok | not_linked | user_not_found.
+   */
+  private botLoginCommandTotal!: Counter<'outcome'>;
+
+  // ── admin: действия в админке Z над глобальным Telegram-ботом (β-9) ─
+  // action ∈ token_changed | webhook_reset | status_toggled |
+  //          templates_updated | settings_read | bindings_read.
+  private adminTelegramBotActionsTotal!: Counter<'action'>;
 
   // ── invitations + magic-link (β-9, 2026-05-25) ─────────────────────
   // Сопровождают GitHub-style flow приглашений: создание/принятие,
@@ -1033,6 +1043,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'telegram_bot_unknown_sender_total',
       help: 'β-9 — Входящие в глобальный Telegram-бот от незнакомых отправителей. reason: no_binding | no_membership.',
       labelNames: ['reason'] as const,
+    });
+    // β-9 Phase 4 — действия главного администратора Z в админке над
+    // глобальным Telegram-ботом. action ∈ token_changed | webhook_reset |
+    // status_toggled | templates_updated | settings_read | bindings_read.
+    this.adminTelegramBotActionsTotal = this.getOrCreateCounter({
+      name: 'admin_telegram_bot_actions_total',
+      help: 'β-9 Phase 4 — действия super-admin в админке над глобальным Telegram-ботом. action ∈ token_changed | webhook_reset | status_toggled | templates_updated | settings_read | bindings_read.',
+      labelNames: ['action'] as const,
+    });
+    // β-9 Phase 6 — команда `/login` в Telegram-боте. Бот выдаёт
+    // одноразовую magic-link на 15 минут для входа в веб-кабинет.
+    // outcome ∈ ok (ссылка выдана) | not_linked (отправитель не привязан) |
+    //           user_not_found (binding есть, но user удалён).
+    this.botLoginCommandTotal = this.getOrCreateCounter({
+      name: 'bot_login_command_total',
+      help: 'β-9 Phase 6 — команда /login в Telegram-боте. outcome = ok|not_linked|user_not_found.',
+      labelNames: ['outcome'] as const,
     });
 
     // ── invitations + magic-link (β-9, 2026-05-25) ─────────────────
@@ -2737,6 +2764,34 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: 'no_binding' | 'no_membership';
   }): void {
     this.telegramBotUnknownSenderTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * β-9 Phase 6 — команда `/login` в Telegram-боте.
+   * outcome ∈ ok (ссылка выдана) | not_linked (отправитель не привязан к
+   * аккаунту в Коре) | user_not_found (binding найден, но User удалён).
+   */
+  incBotLoginCommand(args: {
+    outcome: 'ok' | 'not_linked' | 'user_not_found';
+  }): void {
+    this.botLoginCommandTotal.inc({ outcome: args.outcome });
+  }
+
+  /**
+   * β-9 Phase 4 — действие super-admin в админке над глобальным
+   * Telegram-ботом. Пишется по каждому успешному действию (включая чтение —
+   * для compliance вместе с SuperAdminAccessLog).
+   */
+  incAdminTelegramBotAction(args: {
+    action:
+      | 'token_changed'
+      | 'webhook_reset'
+      | 'status_toggled'
+      | 'templates_updated'
+      | 'settings_read'
+      | 'bindings_read';
+  }): void {
+    this.adminTelegramBotActionsTotal.inc({ action: args.action });
   }
 
   // ────────────────────── invitations + magic-link (β-9) ─────────────

@@ -736,7 +736,10 @@ export class OrgInvitationsService {
 
   private buildMagicLinkUrl(magicToken: string): string {
     const base = this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '');
-    return `${base}/invitations/accept?token=${magicToken}`;
+    // β-9: путь `/invite/<token>` — публичный (без auth), под существующий
+    // frontend route `app/invite/[token]/page.tsx`. НЕ путать с авторизованным
+    // `/invitations/[token]` для legacy-flow (там нужен уже залогиненный юзер).
+    return `${base}/invite/${magicToken}`;
   }
 
   private buildTelegramDeepLink(linkCode: string): string {

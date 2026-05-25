@@ -9,6 +9,8 @@
 
 import { apiClient } from './api-client';
 import type {
+  AcceptInvitationMagicLinkRequest,
+  AcceptInvitationMagicLinkResponse,
   AccountsChangePasswordRequest,
   AccountsForgotPasswordRequest,
   AccountsLoginRequest,
@@ -45,4 +47,14 @@ export const accountsApi = {
 
   changePassword: (body: AccountsChangePasswordRequest) =>
     apiClient.post<AccountsOkResponse>('/api/v1/accounts/me/change-password', body),
+
+  /**
+   * β-9 — принять приглашение по magic-token. Публичный, без auth.
+   * После успеха сессия установлена через cookie `z_session` (Set-Cookie).
+   */
+  acceptInvitationMagicLink: (body: AcceptInvitationMagicLinkRequest) =>
+    apiClient.post<AcceptInvitationMagicLinkResponse>(
+      '/api/v1/accounts/invitations/accept-magic',
+      body,
+    ),
 };

@@ -83,6 +83,7 @@ describe('AccountsService', () => {
   let metrics: {
     incMagicLinkRequest: ReturnType<typeof vi.fn>;
     incMagicLinkConsume: ReturnType<typeof vi.fn>;
+    incBotLoginCommand: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -134,6 +135,7 @@ describe('AccountsService', () => {
     metrics = {
       incMagicLinkRequest: vi.fn(),
       incMagicLinkConsume: vi.fn(),
+      incBotLoginCommand: vi.fn(),
     };
   });
 
@@ -547,6 +549,58 @@ describe('AccountsService', () => {
         MagicLinkInvalidError,
       );
       expect(metrics.incMagicLinkConsume).toHaveBeenCalledWith({ outcome: 'expired' });
+    });
+  });
+
+  // ─── β-9 / Phase 6: requestMagicLinkForBot (internal, без письма) ─────
+
+  describe('requestMagicLinkForBot', () => {
+    it('успех: создаёт verification token, возвращает URL и TTL, метрика ok', async () => {
+      repo.findById.mockResolvedValue(makeUser());
+      const svc = make();
+
+      const r = await svc.requestMagicLinkForBot({ userId: 'u1' });
+
+      expect(r.url).toMatch(/^https:\/\/z\.app\/accounts\/magic-link\/consume\?token=/);
+      expect(r.ttlMinutes).toBe(15);
+      expect(repo.createVerificationToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          purpose: 'magic_link',
+          userId: 'u1',
+        }),
+      );
+      // Письмо НЕ отправляется (контракт: бот доставит сам).
+      expect(mail.sendPasswordReset).not.toHaveBeenCalled();
+      expect(metrics.incBotLoginCommand).toHaveBeenCalledWith({ outcome: 'ok' });
+    });
+
+    it('user не найден: кидает Error, метрика user_not_found, token не создаётся', async () => {
+      repo.findById.mockResolvedValue(null);
+      const svc = make();
+
+      await expect(
+        svc.requestMagicLinkForBot({ userId: 'ghost' }),
+      ).rejects.toThrow(/не найден/i);
+      expect(repo.createVerificationToken).not.toHaveBeenCalled();
+      expect(metrics.incBotLoginCommand).toHaveBeenCalledWith({
+        outcome: 'user_not_found',
+      });
+    });
+
+    it('URL формируется с обрезкой trailing-слешей publicFrontendUrl', async () => {
+      repo.findById.mockResolvedValue(makeUser());
+      cfg = {
+        ...cfg,
+        auth: { publicFrontendUrl: 'https://kora.example.com///' },
+        invites: { magicLinkRateLimitPerHour: 5, magicLinkTtlMinutes: 15 },
+      } as unknown as TypedConfigService;
+      const svc = make();
+
+      const r = await svc.requestMagicLinkForBot({ userId: 'u1' });
+
+      expect(r.url).toMatch(
+        /^https:\/\/kora\.example\.com\/accounts\/magic-link\/consume\?token=/,
+      );
     });
   });
 

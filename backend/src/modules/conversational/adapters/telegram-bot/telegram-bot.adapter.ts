@@ -19,6 +19,7 @@ import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
+import { AccountsService } from '../../../accounts/accounts.service';
 import { VoxService } from '../../../ai/services/vox.service';
 import { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
 import { DocumentsService } from '../../../documents/documents.service';
@@ -85,6 +86,13 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
   /** Regex linking-кода: гибкий, поддерживает 6-digit и 12-hex форматы. */
   static readonly LINK_CODE_REGEX = /^[a-f0-9]{6,32}$/i;
 
+  /**
+   * β-9 / Phase 6 (2026-05-25) — единственная допустимая slash-команда
+   * помимо `/start`. Поддерживает суффикс `@<bot_username>` (типично для
+   * групповых чатов; на MVP бот только в личке, но сохраняем совместимость).
+   */
+  static readonly LOGIN_COMMAND_REGEX = /^\/login(?:@\w+)?$/i;
+
   constructor(
     @Inject(ChannelRegistry) private readonly registry: ChannelRegistry,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -106,6 +114,14 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     @Optional()
     @Inject(TelegramBotMessageHandler)
     private readonly taskHandler?: TelegramBotMessageHandler,
+    // β-9 / Phase 6 (2026-05-25): команда `/login` в боте — выпуск magic-link
+    // на 15 минут через AccountsService. @Optional, чтобы не ломать
+    // существующие unit-тесты адаптера, которые конструируют его напрямую
+    // без AccountsService. В DI прод-сборки сервис всегда доступен через
+    // импорт AccountsModule в ConversationalModule.
+    @Optional()
+    @Inject(AccountsService)
+    private readonly accounts?: AccountsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -284,6 +300,27 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     //    Передаём «-» как placeholder, если legacy путь не задал tenantId.
     const tenantPlaceholder = args.tenantId ?? '';
     const text = (msg.text ?? '').trim();
+
+    // 1.0. /login (β-9 Phase 6) — выпуск magic-link на 15 минут для входа
+    //      в веб-кабинет. Работает только для уже привязанного пользователя
+    //      (verified binding). Незалинкованным — подсказка попросить
+    //      ссылку у руководителя. AccountsService — @Optional в DI,
+    //      поэтому при отсутствии (старые unit-тесты) ветка деградирует
+    //      молча и сообщение продолжит идти по обычному pipeline.
+    if (TelegramBotChannelAdapter.LOGIN_COMMAND_REGEX.test(text)) {
+      this.metrics.incBotInbound({
+        channel: 'telegram_bot',
+        kind: 'other',
+      });
+      await this.handleLogin({
+        tgUserId: String(tgUserId),
+        chatId: msg.chat.id,
+        channel,
+        config,
+      });
+      return null;
+    }
+
     const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?$/i);
     if (startMatch) {
       this.metrics.incBotInbound({
@@ -564,6 +601,83 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       channel: args.channel,
       config: args.config,
     });
+  }
+
+  /**
+   * β-9 / Phase 6 (2026-05-25) — обработчик команды `/login`.
+   *
+   * Контракт:
+   *   - Если binding есть и verified → выпускаем magic-link через
+   *     `AccountsService.requestMagicLinkForBot`, шлём ссылку обратно
+   *     в чат. Метрика `bot_login_command_total{outcome='ok'}` —
+   *     инкрементится самим `AccountsService`.
+   *   - Если binding отсутствует / не verified → reply «сначала
+   *     привяжите бот по ссылке от руководителя» + метрика
+   *     `outcome='not_linked'`.
+   *   - Если AccountsService недоступен (DI deg., например в старых
+   *     unit-тестах адаптера) → reply «временно недоступно» и тихо
+   *     выходим. Метрика не пишется.
+   */
+  private async handleLogin(args: {
+    tgUserId: string;
+    chatId: number;
+    channel: Channel;
+    config: TelegramBotChannelConfig;
+  }): Promise<void> {
+    if (!this.accounts) {
+      this.logger.warn(
+        { tgUserId: args.tgUserId },
+        'telegram /login: AccountsService недоступен в DI — деградация',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Команда /login сейчас временно недоступна. Попробуйте позже или войдите по ссылке из письма.',
+      });
+      return;
+    }
+
+    const binding = await this.prisma.channelBinding.findFirst({
+      where: { channelId: args.channel.id, externalId: args.tgUserId },
+    });
+    if (!binding || !binding.verifiedAt) {
+      this.metrics.incBotLoginCommand({ outcome: 'not_linked' });
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Сначала привяжите бот по ссылке от руководителя. После этого команда /login откроет вам ссылку для входа в кабинет.',
+      });
+      return;
+    }
+
+    try {
+      const { url, ttlMinutes } = await this.accounts.requestMagicLinkForBot({
+        userId: binding.userId,
+      });
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          `Перейдите по ссылке для входа в кабинет. Ссылка действует ${ttlMinutes} минут.\n\n${url}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          userId: binding.userId,
+          tgUserId: args.tgUserId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram /login: requestMagicLinkForBot упал',
+      );
+      await this.replyToUserBestEffort({
+        config: args.config,
+        chatId: args.chatId,
+        text:
+          'Не удалось выпустить ссылку. Попросите руководителя перепривязать вас или обратитесь в поддержку.',
+      });
+    }
   }
 
   private async handleLinkCode(args: {

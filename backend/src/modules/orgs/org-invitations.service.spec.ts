@@ -149,7 +149,9 @@ describe('OrgInvitationsService (β-9)', () => {
 
       expect(result.email).toBeNull();
       expect(result.linkCode).toBe('abcd1234abcd1234');
-      expect(result.magicLinkUrl).toMatch(/^https:\/\/kora\.app\/invitations\/accept\?token=/);
+      // β-9 (после фикса URL mismatch): magic-link идёт на public route
+      // /invite/<token>, под существующий frontend route app/invite/[token].
+      expect(result.magicLinkUrl).toMatch(/^https:\/\/kora\.app\/invite\/[\w-]+$/);
       expect(result.telegramDeepLink).toBe('https://t.me/kora_bot?start=abcd1234abcd1234');
       expect(result.manualShareUrl).toBe(result.magicLinkUrl);
       // Письмо не шлём, если email пуст.

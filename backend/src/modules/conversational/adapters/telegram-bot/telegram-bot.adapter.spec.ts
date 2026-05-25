@@ -12,6 +12,8 @@ import type { DocumentsService } from '../../../documents/documents.service';
 import type { ChannelRegistry } from '../../channel-registry';
 import type { ConversationalLinkCodeService } from '../../link-code.service';
 
+import type { AccountsService } from '../../../accounts/accounts.service';
+
 import type { TelegramApiClient } from './telegram-api-client';
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import type { TelegramUpdate } from './telegram.types';
@@ -58,6 +60,11 @@ function makeAdapter(opts: {
   classifyIntent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
   classifyThrows?: boolean;
   rateLimitCount?: number;
+  // β-9 / Phase 6 — если undefined, AccountsService инжектится как @Optional
+  // отсутствующий → /login деградирует с сообщением «временно недоступно».
+  // Если задан, эмулирует прод-сборку.
+  accountsRequestThrows?: boolean;
+  withAccounts?: boolean;
 } = {}) {
   const registry = { register: vi.fn() } as unknown as ChannelRegistry;
   const prisma = {
@@ -105,6 +112,8 @@ function makeAdapter(opts: {
     incBotIntentClassified: vi.fn(),
     // β-9: метрики «незнакомый отправитель».
     incTelegramBotUnknownSender: vi.fn(),
+    // β-9 / Phase 6: метрика команды `/login` в боте.
+    incBotLoginCommand: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const vox = {
@@ -138,6 +147,17 @@ function makeAdapter(opts: {
     },
   } as unknown as TypedConfigService;
 
+  const accounts = (opts.withAccounts || opts.accountsRequestThrows
+    ? {
+        requestMagicLinkForBot: opts.accountsRequestThrows
+          ? vi.fn().mockRejectedValue(new Error('user u-42 не найден'))
+          : vi.fn().mockResolvedValue({
+              url: 'https://z.app/accounts/magic-link/consume?token=raw-token-123',
+              ttlMinutes: 15,
+            }),
+      }
+    : undefined) as AccountsService | undefined;
+
   const adapter = new TelegramBotChannelAdapter(
     registry,
     prisma,
@@ -150,8 +170,23 @@ function makeAdapter(opts: {
     documents,
     classifier,
     cfg,
+    undefined, // taskHandler @Optional
+    accounts,
   );
-  return { adapter, registry, prisma, redis, crypto, api, linkCode, metrics, vox, documents, classifier };
+  return {
+    adapter,
+    registry,
+    prisma,
+    redis,
+    crypto,
+    api,
+    linkCode,
+    metrics,
+    vox,
+    documents,
+    classifier,
+    accounts,
+  };
 }
 
 const verifiedBinding = (id = 'binding-1'): ChannelBinding =>
@@ -635,6 +670,169 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     expect(
       vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
     ).toMatch(/не привязаны к компании|руководителя|приглашени/i);
+  });
+
+  // ─── /login (β-9 / Phase 6) ─────────────────────────────────────────
+
+  it('/login: verified binding + AccountsService → magic-link отправляется в чат + metric ok', async () => {
+    const mocks = makeAdapter({ withAccounts: true });
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 200,
+      message: {
+        message_id: 50,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/login',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({ update, channel });
+
+    expect(result).toBeNull();
+    expect(mocks.accounts!.requestMagicLinkForBot).toHaveBeenCalledWith({
+      userId: 'user-42',
+    });
+    expect(mocks.api.sendMessage).toHaveBeenCalled();
+    const sentText = vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text;
+    expect(sentText).toMatch(/15 минут/);
+    expect(sentText).toContain(
+      'https://z.app/accounts/magic-link/consume?token=raw-token-123',
+    );
+    // Метрика ok пишется внутри AccountsService.requestMagicLinkForBot —
+    // у адаптера остаётся только incBotInbound для трекинга трафика.
+    expect(mocks.metrics.incBotInbound).toHaveBeenCalledWith({
+      channel: 'telegram_bot',
+      kind: 'other',
+    });
+  });
+
+  it('/login@kora_bot: суффикс username тоже распознаётся как команда', async () => {
+    const mocks = makeAdapter({ withAccounts: true });
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 201,
+      message: {
+        message_id: 51,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/login@kora_bot',
+      },
+    };
+    await mocks.adapter.ingestUpdate({ update, channel });
+
+    expect(mocks.accounts!.requestMagicLinkForBot).toHaveBeenCalled();
+  });
+
+  it('/login от незалинкованного юзера → reply «привяжите бот» + metric not_linked', async () => {
+    const mocks = makeAdapter({ withAccounts: true });
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
+
+    const update: TelegramUpdate = {
+      update_id: 202,
+      message: {
+        message_id: 52,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/login',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({ update, channel });
+
+    expect(result).toBeNull();
+    expect(mocks.accounts!.requestMagicLinkForBot).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/привяжите бот|ссылке от руководителя/i);
+    expect(
+      vi.mocked(mocks.metrics.incBotLoginCommand),
+    ).toHaveBeenCalledWith({ outcome: 'not_linked' });
+  });
+
+  it('/login с binding но без verifiedAt → reply «привяжите бот» + metric not_linked', async () => {
+    const mocks = makeAdapter({ withAccounts: true });
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue({
+      ...verifiedBinding(),
+      verifiedAt: null,
+    } as never);
+
+    const update: TelegramUpdate = {
+      update_id: 203,
+      message: {
+        message_id: 53,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/login',
+      },
+    };
+    await mocks.adapter.ingestUpdate({ update, channel });
+
+    expect(mocks.accounts!.requestMagicLinkForBot).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.metrics.incBotLoginCommand),
+    ).toHaveBeenCalledWith({ outcome: 'not_linked' });
+  });
+
+  it('/login: AccountsService.requestMagicLinkForBot бросает → reply «не удалось» (graceful)', async () => {
+    const mocks = makeAdapter({ accountsRequestThrows: true });
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 204,
+      message: {
+        message_id: 54,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/login',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({ update, channel });
+
+    expect(result).toBeNull();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/Не удалось выпустить ссылку|перепривязать|поддержку/i);
+  });
+
+  it('/login: AccountsService отсутствует в DI (legacy) → reply «временно недоступно», не падаем', async () => {
+    // По умолчанию makeAdapter без withAccounts/accountsRequestThrows
+    // не передаёт accounts, эмулируя старую DI-сборку.
+    const mocks = makeAdapter();
+    const channel = makeChannel({ global: true });
+
+    const update: TelegramUpdate = {
+      update_id: 205,
+      message: {
+        message_id: 55,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/login',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({ update, channel });
+
+    expect(result).toBeNull();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/временно недоступна/i);
   });
 
   it('/start <code> на глобальном канале — линковка работает без tenantId', async () => {

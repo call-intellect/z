@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { AccountsModule } from '../accounts/accounts.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { TrackerModule } from '../tracker/tracker.module';
 
@@ -63,6 +64,12 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // TrackerModule не импортирует Conversational напрямую (ConversationalService @Global) —
     // циклической зависимости нет.
     TrackerModule,
+    // β-9 Phase 6 (2026-05-25) — TelegramBotChannelAdapter инжектит
+    // AccountsService.requestMagicLinkForBot для команды `/login`
+    // (выпуск magic-link прямо в чат боту). AccountsModule НЕ глобален,
+    // импортируем явно. Цикла нет: Accounts → Orgs, обратной ссылки на
+    // Conversational нет.
+    AccountsModule,
   ],
   controllers: [
     ConversationalController,
@@ -103,6 +110,9 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     ConversationalService,
     ConversationalIngestAdapter,
     ChannelRegistry,
+    // β-9 Phase 4 — нужен AdminTelegramBotService (валидация токена через
+    // getMe, перенастройка webhook через setWebhook).
+    TelegramApiClient,
   ],
 })
 export class ConversationalModule {}

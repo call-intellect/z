@@ -53,6 +53,23 @@ export interface MagicLinkRequestResult {
   emailError?: string;
 }
 
+/**
+ * β-9 / Phase 6 (2026-05-25) — magic-link для команды `/login` в боте.
+ * В отличие от обычного `requestMagicLink` отдаёт raw-токен и готовый URL
+ * наружу (без отправки письма) — бот доставит ссылку в чат сам.
+ *
+ * Safe-by-design: вызывать ТОЛЬКО когда отправитель уже verified в
+ * `ChannelBinding` (см. `TelegramBotChannelAdapter.requireVerifiedBinding`).
+ * Никаких HTTP-эндпоинтов — internal-only, иначе разрушит защиту от
+ * user enumeration базового `requestMagicLink`.
+ */
+export interface BotMagicLinkResult {
+  /** Полный URL вида `${publicFrontendUrl}/accounts/magic-link/consume?token=…`. */
+  url: string;
+  /** TTL в минутах (для текста сообщения боту). */
+  ttlMinutes: number;
+}
+
 export interface MagicLinkConsumeResult {
   user: PublicUserDto;
   token: string;
@@ -365,6 +382,55 @@ export class AccountsService {
 
     this.metrics.incMagicLinkRequest({ outcome: 'sent' });
     return { status: 'ok', emailSent: true };
+  }
+
+  /**
+   * β-9 / Phase 6 (2026-05-25) — выдать magic-link через Telegram-бот по
+   * команде `/login`. Возвращает raw-токен в URL — caller (бот) сам
+   * доставит ссылку в чат пользователю.
+   *
+   * **Internal-only**: НЕТ HTTP-эндпоинта, метод дёргается ТОЛЬКО из
+   * `TelegramBotChannelAdapter` после `requireVerifiedBinding`. Без письма,
+   * без rate-limit (anti-spam уже на уровне адаптера через verified-binding
+   * + регулярный Telegram-rate-limit пользователя), без silent-ok на
+   * «user not found» — здесь user обязан существовать.
+   *
+   * @throws Error если пользователя по `userId` нет (binding stale,
+   *   директор удалил аккаунт после привязки бота).
+   */
+  async requestMagicLinkForBot(input: {
+    userId: string;
+  }): Promise<BotMagicLinkResult> {
+    const user = await this.repo.findById(input.userId);
+    if (!user) {
+      this.metrics.incBotLoginCommand({ outcome: 'user_not_found' });
+      throw new Error(
+        `requestMagicLinkForBot: user ${input.userId} не найден (binding stale)`,
+      );
+    }
+
+    const rawToken = randomBytes(MAGIC_LINK_TOKEN_BYTES).toString('base64url');
+    const tokenHash = AccountsService.hashToken(rawToken);
+    const ttlMin = this.cfg.invites.magicLinkTtlMinutes;
+    const expiresAt = new Date(Date.now() + ttlMin * 60_000);
+
+    await this.repo.createVerificationToken({
+      userId: user.id,
+      tokenHash,
+      purpose: 'magic_link',
+      expiresAt,
+    });
+
+    const url =
+      `${this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '')}` +
+      `/accounts/magic-link/consume?token=${rawToken}`;
+
+    this.metrics.incBotLoginCommand({ outcome: 'ok' });
+    this.logger.log(
+      { userId: user.id, ttlMin },
+      'requestMagicLinkForBot: magic-link выпущен через Telegram-бот',
+    );
+    return { url, ttlMinutes: ttlMin };
   }
 
   /**

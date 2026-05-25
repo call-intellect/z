@@ -8,7 +8,6 @@ import {
   ArrowRight,
   Sparkles,
   Video,
-  FileText,
   ListChecks,
   Zap,
   Briefcase,
@@ -19,6 +18,18 @@ import {
   Wand2,
   MessageSquare,
   Send,
+  UserMinus,
+  KeyRound,
+  Hourglass,
+  AlertOctagon,
+  HeartCrack,
+  Compass,
+  TrendingDown,
+  GitBranch,
+  Mic,
+  FileText,
+  CalendarClock,
+  type LucideIcon,
 } from 'lucide-react';
 
 import { useAuth } from '@/contexts/auth-context';
@@ -26,16 +37,20 @@ import { Button } from '@/ui/shadcn/button';
 import { fadeIn, slideUp } from '@/ui/motion';
 
 /**
- * Главная страница (публичный лендинг).
+ * Главная страница (публичный лендинг КОРА).
+ *
+ * Структура:
+ *   1. Top bar (КОРА wordmark + login/signup)
+ *   2. LeakSection — боль: 8 «дыр», через которые утекает выручка.
+ *   3. SourcesBridge — мост: откуда Кора это видит (5 источников).
+ *   4. Hero — ответ на боль: «второй мозг компании».
+ *   5–9. Встречи · Задачи · AI-директор · bridge «копируется во второй мозг» · 6 карточек памяти.
+ *   10. Final CTA + footer.
  *
  * Логика:
- * - Залогинен → редирект на /dashboard (guard в (authenticated)/layout сам
- *   отправит на onboarding при mustChangePassword).
- * - Не залогинен → полный лендинг: hero → встречи → трекер → AI-директор →
- *   мост «копируется во второй мозг» → 6 карточек памяти → финальный CTA.
- *
- * Стилистика: dark-first, mint accent, glass-карточки, motion на появлении.
- * Позиционирование: «второй мозг компании» (12 инструментов работают на одну цель).
+ *   - Залогинен → редирект на /dashboard (guard в (authenticated)/layout отправит на onboarding если нужно).
+ *   - Не залогинен → лендинг. Заглушка отображается ТОЛЬКО под `user` — иначе при недоступном бэке
+ *     `isLoading` зависает в true и пользователь видит «синий экран».
  */
 export function HomeClient() {
   const router = useRouter();
@@ -47,16 +62,17 @@ export function HomeClient() {
     }
   }, [user, isLoading, router]);
 
-  // Лендинг публичный — показываем сразу, не ждём auth.
-  // Заглушку показываем только когда user точно есть (короткое окно до редиректа),
-  // иначе при недоступном бэке `isLoading` зависает в true и был бы «синий экран».
+  // Заглушка только под user (момент до редиректа).
+  // Если ждать `isLoading` — при недоступном бэке зависнет «синий экран».
   if (user) {
     return <div className="min-h-screen bg-bg-base" />;
   }
 
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-bg-base text-fg-primary">
-      {/* Global mesh — два мягких mint-пятна на тёмном фоне */}
+      <KeyframesStyle />
+
+      {/* Mint-сетка-mesh на весь экран */}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-0"
@@ -67,7 +83,7 @@ export function HomeClient() {
       />
 
       {/* Top bar */}
-      <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5 md:px-10">
+      <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-5 md:px-10">
         <Link
           href="/"
           className="group flex items-end gap-1.5"
@@ -88,47 +104,55 @@ export function HomeClient() {
         </nav>
       </header>
 
-      {/* Hero */}
-      <section className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 pb-24 pt-12 text-center md:px-10 md:pt-20">
+      {/* Первая секция — БОЛЬ */}
+      <LeakSection />
+
+      {/* Мост-1 — откуда Кора это видит */}
+      <SourcesBridge />
+
+      {/* Hero — ответ на боль: что такое Кора */}
+      <section className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 py-24 text-center md:px-10 md:py-32">
         <motion.div
           variants={fadeIn}
           initial="initial"
-          animate="animate"
+          whileInView="animate"
+          viewport={{ once: true, margin: '-100px' }}
           className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent-border bg-accent-muted px-3 py-1 text-xs font-medium text-accent backdrop-blur-glass"
         >
           <Sparkles size={12} strokeWidth={1.75} />
-          Второй мозг компании
+          Что такое Кора
         </motion.div>
 
         <motion.h1
           variants={slideUp}
           initial="initial"
-          animate="animate"
-          className="max-w-4xl text-4xl font-semibold tracking-tight text-fg-primary md:text-6xl"
+          whileInView="animate"
+          viewport={{ once: true, margin: '-100px' }}
+          className="max-w-5xl text-4xl font-semibold tracking-tight text-fg-primary md:text-6xl"
         >
-          Видеовстречи, задачи и AI-директор.
-          <br className="hidden md:block" />{' '}
-          <span className="font-medium italic text-accent">
-            Всё сохраняется в память компании.
-          </span>
+          <span className="font-medium italic text-accent">Второй мозг</span>{' '}
+          вашей компании. Помнит за всех, видит каждую утечку, освобождает
+          вашу голову для главного.
         </motion.h1>
 
         <motion.p
           variants={slideUp}
           initial="initial"
-          animate="animate"
+          whileInView="animate"
+          viewport={{ once: true, margin: '-100px' }}
           transition={{ delay: 0.05 }}
           className="mt-6 max-w-2xl text-lg text-fg-secondary"
         >
-          Проводите встречи, ставьте задачи, управляйте командой — а Кора
-          автоматически собирает всё в одно место и помнит за вас. Уходит
-          человек — память остаётся.
+          Кора собирает встречи, задачи, переписки и решения в одну память.
+          AI-директор берёт операционку на себя — у вас остаётся стратегия.
+          Уходит человек — память остаётся.
         </motion.p>
 
         <motion.div
           variants={slideUp}
           initial="initial"
-          animate="animate"
+          whileInView="animate"
+          viewport={{ once: true, margin: '-100px' }}
           transition={{ delay: 0.1 }}
           className="mt-10 flex flex-wrap items-center justify-center gap-3"
         >
@@ -144,27 +168,23 @@ export function HomeClient() {
         </motion.div>
       </section>
 
-      {/* Section 1 — Видеовстречи */}
+      {/* Section — Встречи */}
       <Section
-        eyebrow="01 · Встречи"
+        eyebrow="Встречи"
         title="Видеовстречи и отчёт по итогам"
-        lead="Проводите встречи прямо в Коре. Запись и расшифровка — автоматически. Отчёт под тип встречи готов через минуту после окончания."
+        lead="Запись и расшифровка — автоматически. Отчёт под тип встречи готов через минуту после окончания."
+        cols={1}
       >
         <Card
           icon={<Video size={20} strokeWidth={1.75} />}
-          title="Видеовстречи"
-          text="Полноценные видеовстречи с экраном и чатом. Гость заходит по ссылке без регистрации. Запись и расшифровка сохраняются сразу."
-        />
-        <Card
-          icon={<FileText size={20} strokeWidth={1.75} />}
-          title="Отчёт после каждой встречи"
-          text="Под каждый тип встречи свой шаблон: один-на-один, разбор сделки, ретроспектива, собеседование. Структура под задачу — не одна выжимка для всех."
+          title="Видеовстречи с AI-отчётом"
+          text="Полноценные видеовстречи с экраном и чатом. Гость по ссылке без регистрации. Запись и расшифровка сохраняются автоматически. Отчёт под каждый тип встречи — один-на-один, разбор сделки, ретроспектива, собеседование. Структура под задачу, не одна выжимка для всех."
         />
       </Section>
 
-      {/* Section 2 — Задачи и трекер */}
+      {/* Section — Задачи */}
       <Section
-        eyebrow="02 · Задачи"
+        eyebrow="Задачи"
         title="Современный трекер задач"
         lead="Привычный современный трекер — команда ведёт задачи руками, как обычно. Для людей ничего не меняется. А Кора сверху добавляет контекст и собирает новые задачи из встреч и переписки сама."
       >
@@ -180,7 +200,7 @@ export function HomeClient() {
         />
       </Section>
 
-      {/* Section 3 — AI-операционный директор (выделенный полноширинный блок) */}
+      {/* AI-директор */}
       <section className="relative z-10 mx-auto max-w-6xl px-6 py-16 md:px-10 md:py-24">
         <motion.div
           variants={fadeIn}
@@ -200,7 +220,7 @@ export function HomeClient() {
           <div className="relative max-w-3xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-accent-border bg-accent-muted-strong px-3 py-1 text-xs font-medium text-accent">
               <Bot size={12} strokeWidth={1.75} />
-              03 · AI-операционный директор
+              AI-операционный директор
             </div>
             <h2 className="text-3xl font-semibold tracking-tight md:text-5xl">
               Над всем этим —{' '}
@@ -230,7 +250,7 @@ export function HomeClient() {
         </motion.div>
       </section>
 
-      {/* Bridge — большой акцент «копируется во второй мозг» */}
+      {/* Bridge — копируется во второй мозг */}
       <section className="relative z-10 mx-auto max-w-5xl px-6 py-20 text-center md:px-10 md:py-28">
         <motion.div
           variants={fadeIn}
@@ -270,9 +290,9 @@ export function HomeClient() {
         </motion.p>
       </section>
 
-      {/* Section 4 — Память компании (6 карточек в 3 колонки) */}
+      {/* Память — 6 карточек */}
       <Section
-        eyebrow="04 · Память"
+        eyebrow="Память"
         title="Память компании, которая остаётся"
         lead="Шесть инструментов работают на одну цель: компания помнит за вас, накапливает опыт и становится умнее с каждым днём."
         cols={3}
@@ -296,7 +316,7 @@ export function HomeClient() {
         <Card
           icon={<Wand2 size={20} strokeWidth={1.75} />}
           title="Собирает информацию сама"
-          text="Кора подхватывает контекст из встреч, рабочих чатов, переписок и вечерних отчётов сотрудников — без вашего участия. Не нужно вести базу знаний руками."
+          text="Кора подхватывает контекст из встреч, рабочих чатов, переписок и вечерних отчётов сотрудников — без вашего участия."
         />
         <Card
           icon={<MessageSquare size={20} strokeWidth={1.75} />}
@@ -306,7 +326,7 @@ export function HomeClient() {
         <Card
           icon={<Send size={20} strokeWidth={1.75} />}
           title="Доступ через Telegram"
-          text="Не нужно открывать сайт. Написали в Telegram — получили ответ. Поставили задачу одним сообщением — она появилась у исполнителя."
+          text="Не нужно открывать сайт. Написали в Telegram — получили ответ. Поставили задачу — она появилась у исполнителя."
         />
       </Section>
 
@@ -321,7 +341,7 @@ export function HomeClient() {
         >
           <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
             Двенадцать инструментов —{' '}
-            <span className="text-accent">один актив</span>.
+            <span className="font-medium italic text-accent">один актив</span>.
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-fg-secondary">
             Память вашей компании, которая накапливается каждый день и
@@ -348,7 +368,296 @@ export function HomeClient() {
   );
 }
 
-/* ---------------- helpers ---------------- */
+/* ============================================================
+   Секция «Кора найдёт дыры»
+   ============================================================ */
+
+type Leak = {
+  icon: LucideIcon;
+  leak: string;
+  fix: string;
+};
+
+const LEAKS: Leak[] = [
+  {
+    icon: AlertOctagon,
+    leak: 'Из компании утекает выручка — а где именно течёт, непонятно',
+    fix: 'Кора подсвечивает каждую утечку: от обещаний клиентам до знаний, уходящих с людьми',
+  },
+  {
+    icon: Compass,
+    leak: 'Утопаешь в операционке — нет времени думать на три хода вперёд',
+    fix: 'AI-директор берёт рутину на себя — голова освобождается для стратегии',
+  },
+  {
+    icon: TrendingDown,
+    leak: 'Без присмотра команда теряет ритм: задачи зависают, обещания не выполняются',
+    fix: 'Кора держит ритм: слышит обещания, подсвечивает что застряло',
+  },
+  {
+    icon: GitBranch,
+    leak: 'Микроконфликты и несогласованность тормозят работу — а вы узнаёте последним',
+    fix: 'AI-директор видит расхождения по тону встреч и чатов, подсвечивает раньше эскалации',
+  },
+  {
+    icon: KeyRound,
+    leak: 'Знания только в вашей голове — команда не помнит, почему сделали так',
+    fix: 'Каждое решение в общей памяти, со ссылкой на встречу или переписку',
+  },
+  {
+    icon: UserMinus,
+    leak: 'Эксперт ушёл — знания ушли с ним',
+    fix: 'Цифровой двойник остаётся, отвечает за человека',
+  },
+  {
+    icon: Hourglass,
+    leak: 'Долгий онбординг — новички вязнут на пол-года',
+    fix: 'Новичок видит историю отдела за минуту, спрашивает у двойников',
+  },
+  {
+    icon: HeartCrack,
+    leak: 'Клиенту обещали — не сделали',
+    fix: 'Обещание клиенту = задача в трекере, никто не забывает',
+  },
+];
+
+function LeakSection() {
+  return (
+    <section className="relative z-10 mx-auto max-w-6xl px-6 pb-20 pt-12 md:px-10 md:pb-28 md:pt-16">
+      {/* Дышащее mint-пятно за блоком */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[60%] w-[80%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/8 blur-3xl"
+        style={{ animation: 'breathe-mesh 8s ease-in-out infinite' }}
+      />
+
+      <motion.div
+        initial="initial"
+        animate="animate"
+        variants={{
+          initial: {},
+          animate: { transition: { staggerChildren: 0.1 } },
+        }}
+      >
+        <motion.div
+          variants={fadeIn}
+          className="mb-8 inline-flex items-center gap-3 text-xs font-medium uppercase tracking-[0.22em] text-accent"
+        >
+          <span className="h-px w-10 bg-accent" />
+          Что Кора видит первым
+        </motion.div>
+
+        {/* КОРА — wordmark крупно с пульсирующей mint-«дырой» */}
+        <motion.div
+          variants={{
+            initial: { opacity: 0, filter: 'blur(10px)', y: 12 },
+            animate: {
+              opacity: 1,
+              filter: 'blur(0px)',
+              y: 0,
+              transition: { duration: 0.9, ease: [0.16, 1, 0.3, 1] },
+            },
+          }}
+          className="flex items-baseline gap-3 md:gap-5"
+        >
+          <span
+            className="text-6xl font-bold leading-none tracking-[0.06em] text-fg-primary md:text-8xl"
+            style={{
+              textShadow:
+                '0 0 32px rgba(94, 234, 212, 0.22), 0 0 80px rgba(94, 234, 212, 0.10)',
+            }}
+          >
+            КОРА
+          </span>
+          <span
+            aria-hidden
+            className="relative inline-flex h-3 w-3 shrink-0 md:h-4 md:w-4"
+          >
+            <span className="absolute inset-0 rounded-full bg-accent shadow-glow-mint" />
+            <span
+              className="absolute -inset-2 rounded-full bg-accent/20"
+              style={{
+                animation: 'leak-pulse-accent 2.4s ease-in-out infinite',
+              }}
+            />
+          </span>
+        </motion.div>
+
+        {/* Animated accent underline */}
+        <motion.div
+          variants={{
+            initial: { width: 0, opacity: 0 },
+            animate: {
+              width: '6rem',
+              opacity: 1,
+              transition: {
+                duration: 0.9,
+                delay: 0.2,
+                ease: [0.16, 1, 0.3, 1],
+              },
+            },
+          }}
+          className="mt-3 h-px bg-gradient-to-r from-accent via-accent/60 to-transparent"
+        />
+
+        <motion.h2
+          variants={slideUp}
+          className="mt-6 max-w-4xl text-3xl font-semibold tracking-tight md:text-5xl"
+        >
+          найдёт дыры, через которые{' '}
+          <span className="font-medium italic text-accent">утекает выручка</span>{' '}
+          твоей компании.
+        </motion.h2>
+
+        <motion.p
+          variants={slideUp}
+          className="mt-6 max-w-2xl text-lg text-fg-secondary"
+        >
+          Самые частые точки потерь в командах — и самые дорогие.
+        </motion.p>
+      </motion.div>
+
+      <div className="mt-14 divide-y divide-border-subtle border-y border-border-subtle">
+        {LEAKS.map((leak, i) => (
+          <LeakRow key={leak.leak} {...leak} delay={i * 0.06} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LeakRow({ icon: Icon, leak, fix, delay }: Leak & { delay: number }) {
+  return (
+    <motion.div
+      variants={slideUp}
+      initial="initial"
+      whileInView="animate"
+      viewport={{ once: true, margin: '-50px' }}
+      transition={{ delay }}
+      className="group relative grid items-center gap-4 px-2 py-7 transition-colors hover:bg-accent-muted/30 md:grid-cols-[auto_1fr_auto_1fr] md:gap-6 md:px-4 md:py-8"
+    >
+      {/* Иконка-«дыра» — мягкий amber огонёк */}
+      <div className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center">
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-full border border-dashed border-warning/30"
+        />
+        <span
+          aria-hidden
+          className="absolute inset-1 rounded-full"
+          style={{
+            animation: 'leak-pulse 4.5s ease-in-out infinite',
+            animationDelay: `${delay}s`,
+          }}
+        />
+        <Icon
+          size={20}
+          strokeWidth={1.75}
+          className="relative z-10 text-warning/85"
+        />
+      </div>
+
+      {/* Текст «дыры» */}
+      <div className="text-base font-medium text-fg-primary md:text-lg">
+        {leak}
+      </div>
+
+      {/* Shimmer-линия между «дырой» и «решением» */}
+      <div className="relative hidden h-px w-16 overflow-hidden md:block">
+        <div
+          aria-hidden
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer-line 2.4s linear infinite',
+            animationDelay: `${delay + 0.2}s`,
+          }}
+        />
+      </div>
+
+      {/* Текст «решения» с мягким accent-glow */}
+      <div
+        className="text-base leading-snug text-accent md:text-lg"
+        style={{ textShadow: '0 0 24px rgba(94, 234, 212, 0.15)' }}
+      >
+        {fix}
+      </div>
+    </motion.div>
+  );
+}
+
+/* ============================================================
+   Мост-1 — Откуда Кора это видит
+   ============================================================ */
+
+const SOURCES: Array<{ icon: LucideIcon; label: string }> = [
+  { icon: Mic, label: 'Видеовстречи' },
+  { icon: CalendarClock, label: 'Планёрки' },
+  { icon: FileText, label: 'Вечерние отчёты' },
+  { icon: MessageSquare, label: 'Рабочие чаты' },
+  { icon: ListChecks, label: 'Задачи в трекере' },
+];
+
+function SourcesBridge() {
+  return (
+    <section className="relative z-10 mx-auto max-w-6xl px-6 pb-10 pt-4 md:px-10 md:pb-16 md:pt-8">
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true, margin: '-50px' }}
+        className="mb-6 text-center text-xs font-medium uppercase tracking-[0.22em] text-fg-tertiary"
+      >
+        Откуда Кора это видит
+      </motion.div>
+
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true, margin: '-50px' }}
+        className="flex flex-wrap items-center justify-center gap-2 md:gap-3"
+      >
+        {SOURCES.map(({ icon: Icon, label }, i) => (
+          <motion.div
+            key={label}
+            variants={slideUp}
+            initial="initial"
+            whileInView="animate"
+            viewport={{ once: true, margin: '-50px' }}
+            transition={{ delay: i * 0.08 }}
+            className="group inline-flex items-center gap-2 rounded-full border border-border-subtle bg-bg-card/40 px-4 py-2 text-sm text-fg-secondary backdrop-blur-glass transition-all hover:border-accent-border hover:text-accent"
+          >
+            <Icon
+              size={14}
+              strokeWidth={1.75}
+              className="text-accent transition-transform group-hover:scale-110"
+            />
+            {label}
+          </motion.div>
+        ))}
+      </motion.div>
+
+      <motion.p
+        variants={fadeIn}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true, margin: '-50px' }}
+        transition={{ delay: 0.3 }}
+        className="mx-auto mt-8 max-w-xl text-center text-sm text-fg-tertiary"
+      >
+        Все источники складываются в одну картину команды. Двенадцать
+        инструментов работают на одну цель — ниже.
+      </motion.p>
+    </section>
+  );
+}
+
+/* ============================================================
+   Helpers (Section / Card)
+   ============================================================ */
 
 function Section({
   eyebrow,
@@ -360,10 +669,15 @@ function Section({
   eyebrow: string;
   title: string;
   lead: string;
-  cols?: 2 | 3;
+  cols?: 1 | 2 | 3;
   children: React.ReactNode;
 }) {
-  const gridCols = cols === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2';
+  const gridCols =
+    cols === 3
+      ? 'md:grid-cols-3'
+      : cols === 1
+        ? 'md:max-w-3xl md:mx-auto'
+        : 'md:grid-cols-2';
   return (
     <section className="relative z-10 mx-auto max-w-6xl px-6 py-16 md:px-10 md:py-20">
       <motion.div
@@ -427,5 +741,53 @@ function Card({
       </h3>
       <p className="mt-2 text-sm leading-relaxed text-fg-secondary">{text}</p>
     </motion.div>
+  );
+}
+
+/* ============================================================
+   Inline keyframes для pulse / shimmer / breathing
+   ============================================================ */
+
+function KeyframesStyle() {
+  return (
+    <style>{`
+      @keyframes leak-pulse {
+        0%, 100% {
+          box-shadow:
+            0 0 0 0 rgba(245, 158, 11, 0.12),
+            0 0 10px 1px rgba(245, 158, 11, 0.08);
+          background: rgba(245, 158, 11, 0.025);
+        }
+        50% {
+          box-shadow:
+            0 0 0 5px rgba(245, 158, 11, 0),
+            0 0 16px 3px rgba(245, 158, 11, 0.14);
+          background: rgba(245, 158, 11, 0.06);
+        }
+      }
+      @keyframes leak-pulse-accent {
+        0%, 100% {
+          box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.5), 0 0 14px 2px rgba(94, 234, 212, 0.35);
+        }
+        50% {
+          box-shadow: 0 0 0 8px rgba(94, 234, 212, 0), 0 0 22px 4px rgba(94, 234, 212, 0.6);
+        }
+      }
+      @keyframes shimmer-line {
+        0%   { background-position: -120% 0; }
+        100% { background-position: 220% 0; }
+      }
+      @keyframes breathe-mesh {
+        0%, 100% { opacity: 0.45; transform: translate(-50%, -50%) scale(1); }
+        50%      { opacity: 0.85; transform: translate(-50%, -50%) scale(1.12); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        [style*="leak-pulse"],
+        [style*="shimmer-line"],
+        [style*="breathe-mesh"] {
+          animation: none !important;
+        }
+      }
+    `}</style>
   );
 }

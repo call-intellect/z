@@ -120,15 +120,23 @@ Cardinality риск (известный, общий для tracker/calendar): l
 
 ## Известные TODO
 
-1. **LiveKit Meeting auto-create при `kind=meeting`** — у `MeetingsService` нет универсального `create()` (только partner-контексты). Сейчас просто логируется. Когда появится — сразу подключить.
-2. **Cancel связанного Meeting при softDelete Event** — аналогично.
-3. **push/email доставка reminders** — стоят заглушки с TODO. Telegram-доставка работает через `ConversationalService` уже.
-4. **projectId-фильтр в `/me/calendar`** — пока клиентский (CalendarView фильтрует items). Когда добавим `?projectId=` в `MyCalendarQuerySchema` — переключить на серверный.
-5. **EventForm.participants** — MVP принимает userId через запятую. Поиск по имени/email — после подключения каталога пользователей в UI.
-6. **Полный RFC-5545 RRULE** (BYSETPOS, EXDATE) — Фаза 3.
-7. **2-way OAuth Я.Календарь / Google / Outlook** — Фаза 3 после валидации.
-8. **Motion-style autoscheduler** — Фаза 3 после валидации.
-9. **UI не тестировался в браузере** в этой сессии (нет MCP playwright). Golden path задокументирован, typecheck/lint чистые.
+Закрыто в Polish (commit `5c4c6c1`, 2026-05-25):
+- ✅ LiveKit Meeting auto-create при `kind=meeting` через `MeetingsService.createForCalendarEvent`, joinUrl в EventDto, кнопка «Войти во встречу» в EventForm.
+- ✅ Cancel связанного Meeting при softDelete Event через `cancelScheduledForCalendarEvent`.
+- ✅ Email-канал доставки reminders через `MailService.sendPlain` (русские склонения времени, fallback в text/plain).
+- ✅ Серверный `?projectId=` фильтр в `/me/calendar` и `/users/:id/calendar`, клиентская фильтрация снята.
+- ✅ EventForm.participants → `ParticipantPicker` (4 сценария: коллега / контакт / свободный ввод / пусто).
+
+Осталось:
+
+1. **Push-уведомления** в браузере — заглушка с TODO. Push требует service worker, отложено. Email + Telegram перекрывают MVP.
+2. **Полный RFC-5545 RRULE** (BYSETPOS, EXDATE) — Фаза 3.
+3. **2-way OAuth Я.Календарь / Google / Outlook** — детальный план в [calendar-external-sync.md](../../plans/tz/2026-05-25-calendar-external-sync.md), 17-22 дня на F1-F4.
+4. **Motion-style autoscheduler** — Фаза 3 после валидации спроса.
+5. **UI не тестировался в браузере** в сессиях (нет MCP playwright). Golden path задокументирован, typecheck/lint чистые.
+6. **EventForm edit-режим не показывает participants** — `CalendarEventDomain.participants[]` приходит только id-ами без `name`, ParticipantPicker требует `{type, id, name}`. Решение: либо enrich EventDto именами участников, либо отдельный fetch.
+7. **Egress stop при cancel активной LiveKit-встречи** — `cancelScheduledForCalendarEvent` пишет warn и полагается на webhook `room_finished` для остановки Egress. Альтернативы: добавить `actorUserId` в контракт или `RecordingsService.forceStopByMeetingId()` без owner-check.
+8. **joinUrl без JWT-токена** — `{publicFrontendUrl}/m/{id}` без deep-link токена. Для внешних guest'ов через email-рассылку — нужен JWT с TTL≥недели. Сейчас работает только для аутентифицированных через cookie.
 
 ## Связи
 
@@ -138,8 +146,25 @@ Cardinality риск (известный, общий для tracker/calendar): l
 - [knowledge-core](../02_architecture/knowledge-core.md) — Events с `visibility != personal` индексируются как Entity{type=event} (legacy путь через `EntityResolutionService`)
 - LiveKit `Meeting` — связь через `Event.relatedMeetingId` (TODO авто-создание из Event при kind=meeting)
 
+## Дополнения от Polish (2026-05-25, commit `5c4c6c1`)
+
+**Новые backend endpoints:**
+
+| Метод | Эндпоинт | RBAC | Описание |
+|---|---|---|---|
+| `GET` | `/api/v1/org-members/search?q=&limit=` | авторизованный member | Поиск User+Person по имени/email в Org, dedup, сортировка |
+| `POST` | `/api/v1/persons/quick-create` | `event_card.write` | Создать Person с relationship=external (dedup по email/name) |
+
+**Новые методы MeetingsService:**
+- `createForCalendarEvent({tenantId, ownerUserId, title, scheduledFor, eventId})` → `{meetingId, joinUrl}` — универсальный конструктор Meeting под календарное событие (нет partner-контекста).
+- `cancelScheduledForCalendarEvent({meetingId, reason})` — soft-delete + failureReason, идемпотентен.
+
+**Новый общий UI-компонент:** [ParticipantPicker.tsx](../../frontend/src/ui/shared/ParticipantPicker.tsx) — переиспользуем для трекера/прав доступа/чатов в будущем.
+
 ## План реализации
 
-- ТЗ: [`plans/tz/2026-05-25-calendar-mvp.md`](../../plans/tz/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).
-- Коммиты: `800fdbd` (Фаза 1 — backend), `6e5fd62` (Фаза 2 — UI+ICS).
-- Тесты: 25 unit + integration в `backend/src/modules/events/*.spec.ts` (events.service: 11, find-free-slot: 5, ics-feed: 9). Service-map-generator: 11/11. typecheck backend+frontend: 0 ошибок.
+- Базовый ТЗ: [`plans/tz/2026-05-25-calendar-mvp.md`](../../plans/tz/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).
+- Polish ТЗ: [`plans/tz/2026-05-25-calendar-mvp-polish.md`](../../plans/tz/2026-05-25-calendar-mvp-polish.md) — 4 фазы (P1-P4) закрыты.
+- External sync ТЗ: [`plans/tz/2026-05-25-calendar-external-sync.md`](../../plans/tz/2026-05-25-calendar-external-sync.md) — F1-F4 для интеграций (планируется).
+- Коммиты: `800fdbd` (Фаза 1 — backend), `6e5fd62` (Фаза 2 — UI+ICS), `13b6a66` (second-brain), `5c4c6c1` (Polish P1-P4).
+- Тесты: 63 unit + integration зелёных (+1 skipped) в events/persons/org-members/meetings, frontend typecheck 0.

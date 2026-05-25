@@ -1,0 +1,32 @@
+{
+  "fixtureId": "20-gradual-migration",
+  "category": "valid",
+  "personName": "Лариса",
+  "personRole": "staff engineer",
+  "quotes": [
+    {
+      "blockId": "f20-b1",
+      "quote": "Миграцию таблицы делаем через dual-write — пишем и в старую, и в новую неделю. Только потом переключаем чтение. Big bang — это всегда страшно.",
+      "observedAt": "2026-04-14T10:00:00Z"
+    },
+    {
+      "blockId": "f20-b2",
+      "quote": "Раскатим по 5% трафика в день. Если на каком-то проценте поплывут метрики — остановимся и откатимся, а не будем чинить на ходу.",
+      "observedAt": "2026-04-29T14:00:00Z"
+    },
+    {
+      "blockId": "f20-b3",
+      "quote": "Любой переход на новую систему — это постепенно, через флаги и теневые прогоны. Резкие миграции у нас в индустрии в 50% случаев заканчиваются откатом.",
+      "observedAt": "2026-05-23T11:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "выполняет миграции постепенно",
+    "categoryKeywords": ["миграц", "постепен", "dual"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "медлительный"]
+  }
+}

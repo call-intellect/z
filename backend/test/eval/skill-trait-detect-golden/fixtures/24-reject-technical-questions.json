@@ -1,0 +1,28 @@
+{
+  "fixtureId": "24-reject-technical-questions",
+  "category": "reject",
+  "personName": "Роман",
+  "personRole": "backend engineer",
+  "quotes": [
+    {
+      "blockId": "f24-b1",
+      "quote": "Где лежит конфиг логгера?",
+      "observedAt": "2026-04-08T09:30:00Z"
+    },
+    {
+      "blockId": "f24-b2",
+      "quote": "Кто отвечает за этот сервис?",
+      "observedAt": "2026-04-22T15:00:00Z"
+    },
+    {
+      "blockId": "f24-b3",
+      "quote": "Когда последний раз обновляли зависимости?",
+      "observedAt": "2026-05-15T11:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": false,
+    "reason": "Технические вопросы без выражения позиции/подхода.",
+    "forbiddenWords": ["перфекционист", "выдающийся", "идеальный", "любопытный"]
+  }
+}

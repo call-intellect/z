@@ -1,0 +1,28 @@
+{
+  "fixtureId": "22-reject-routine-agreements",
+  "category": "reject",
+  "personName": "Антон",
+  "personRole": "qa engineer",
+  "quotes": [
+    {
+      "blockId": "f22-b1",
+      "quote": "Да.",
+      "observedAt": "2026-04-06T10:00:00Z"
+    },
+    {
+      "blockId": "f22-b2",
+      "quote": "Не возражаю.",
+      "observedAt": "2026-04-20T15:00:00Z"
+    },
+    {
+      "blockId": "f22-b3",
+      "quote": "Принято.",
+      "observedAt": "2026-05-13T11:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": false,
+    "reason": "Рутинные согласия без рассуждения о подходе.",
+    "forbiddenWords": ["перфекционист", "выдающийся", "идеальный", "покладистый"]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "fixtureId": "11-edge-case-hunter",
+  "category": "valid",
+  "personName": "Никита",
+  "personRole": "backend engineer",
+  "quotes": [
+    {
+      "blockId": "f11-b1",
+      "quote": "Окей, это работает на счастливом пути. А что если юзер сделал ретрай через 30 секунд? А если их два одновременно? А если первый зависает в очереди? Хочу пройтись по edge-кейсам, прежде чем мержить.",
+      "observedAt": "2026-04-12T11:00:00Z"
+    },
+    {
+      "blockId": "f11-b2",
+      "quote": "Тест на пустой массив есть, а на массив из одного элемента нет. Часто баги вылезают именно там — когда не пусто и не «нормально».",
+      "observedAt": "2026-04-27T15:00:00Z"
+    },
+    {
+      "blockId": "f11-b3",
+      "quote": "У нас в коде есть допущение, что timeout не может быть отрицательным. А в реальности — может. Закроем эту дыру до прода.",
+      "observedAt": "2026-05-19T10:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "активно ищет edge cases",
+    "categoryKeywords": ["edge", "кейс", "крайн"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "параноик"]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "fixtureId": "04-scope-expansion-under-load",
+  "category": "valid",
+  "personName": "Дмитрий",
+  "personRole": "senior engineer",
+  "quotes": [
+    {
+      "blockId": "f04-b1",
+      "quote": "Раз уж лезу в авторизацию — заодно перепишу и кэширование токенов. Иначе через месяц снова придётся открывать этот же файл.",
+      "observedAt": "2026-04-10T12:00:00Z"
+    },
+    {
+      "blockId": "f04-b2",
+      "quote": "Понимаю, что задача была про baseline, но я там увидел три места, где течёт логика. Не могу пройти мимо — добавлю в этот же PR.",
+      "observedAt": "2026-04-25T14:30:00Z"
+    },
+    {
+      "blockId": "f04-b3",
+      "quote": "В фиксе обнаружил, что весь модуль построен на устаревшем API. Расширил scope — почистил заодно соседний слой.",
+      "observedAt": "2026-05-12T09:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "расширяет scope под нагрузкой",
+    "categoryKeywords": ["scope", "расшир", "scope"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "fixtureId": "14-feature-flags-for-risk",
+  "category": "valid",
+  "personName": "Кирилл",
+  "personRole": "senior backend engineer",
+  "quotes": [
+    {
+      "blockId": "f14-b1",
+      "quote": "Эту правку выкатываем за фича-флагом. Если что-то пойдёт не так — выключим за минуту, а не будем катить откат всего релиза.",
+      "observedAt": "2026-04-09T11:00:00Z"
+    },
+    {
+      "blockId": "f14-b2",
+      "quote": "Не хочу выкатывать новый алгоритм поиска сразу на 100% — раскатаю 10%, посмотрю метрики сутки, потом дальше.",
+      "observedAt": "2026-04-22T14:30:00Z"
+    },
+    {
+      "blockId": "f14-b3",
+      "quote": "Любое изменение в платёжном пути — только через флаг и канарейкой. Я не готов рисковать всем потоком ради уверенности в коде.",
+      "observedAt": "2026-05-14T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "использует feature flags для рискованных правок",
+    "categoryKeywords": ["флаг", "канарей", "раскат"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "трус"]
+  }
+}

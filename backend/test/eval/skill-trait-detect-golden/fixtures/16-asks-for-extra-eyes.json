@@ -1,0 +1,32 @@
+{
+  "fixtureId": "16-asks-for-extra-eyes",
+  "category": "valid",
+  "personName": "Денис",
+  "personRole": "senior engineer",
+  "quotes": [
+    {
+      "blockId": "f16-b1",
+      "quote": "Хочу позвать ещё двух ревьюверов на этот PR — он трогает безопасность сессий. Одной пары глаз тут мало.",
+      "observedAt": "2026-04-11T09:30:00Z"
+    },
+    {
+      "blockId": "f16-b2",
+      "quote": "Прежде чем катить, давайте кто-то ещё посмотрит. Я в этом куске мог пропустить очевидное — слишком долго в нём сидел.",
+      "observedAt": "2026-04-26T15:00:00Z"
+    },
+    {
+      "blockId": "f16-b3",
+      "quote": "На критичных правках всегда зову ещё одну пару глаз, даже если не обязан. Стоимость лишнего ревью ниже, чем стоимость ошибки в проде.",
+      "observedAt": "2026-05-19T10:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "запрашивает дополнительное ревью на сложных правках",
+    "categoryKeywords": ["ревью", "глаз", "посмотр"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "неуверенный"]
+  }
+}

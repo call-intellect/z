@@ -1,0 +1,32 @@
+{
+  "fixtureId": "06-leans-on-history",
+  "category": "valid",
+  "personName": "Павел",
+  "personRole": "tech lead",
+  "quotes": [
+    {
+      "blockId": "f06-b1",
+      "quote": "У нас уже было такое в 2024 — мы тогда зарулили в эту же ловушку с очередями. Помню, как чинили три недели.",
+      "observedAt": "2026-04-03T09:00:00Z"
+    },
+    {
+      "blockId": "f06-b2",
+      "quote": "Был похожий инцидент в прошлом квартале — Redis съел память за ночь. Не хочу наступать на те же грабли.",
+      "observedAt": "2026-04-20T14:00:00Z"
+    },
+    {
+      "blockId": "f06-b3",
+      "quote": "Помню, как ребята из платформы делали то же самое в 2023 — закончилось переписыванием с нуля. Лучше сразу заложить запас.",
+      "observedAt": "2026-05-08T11:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "опирается на исторические инциденты",
+    "categoryKeywords": ["истор", "инцидент", "прошл"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

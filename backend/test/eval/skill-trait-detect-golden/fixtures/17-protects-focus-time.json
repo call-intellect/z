@@ -1,0 +1,32 @@
+{
+  "fixtureId": "17-protects-focus-time",
+  "category": "valid",
+  "personName": "Светлана",
+  "personRole": "engineering manager",
+  "quotes": [
+    {
+      "blockId": "f17-b1",
+      "quote": "Команда жалуется на дёрганость — я сделаю «no-meeting Wednesday». Без больших блоков фокус-тайма мы тащим не качество, а скорость переключений.",
+      "observedAt": "2026-04-12T10:00:00Z"
+    },
+    {
+      "blockId": "f17-b2",
+      "quote": "Эту встречу можно превратить в документ. Не буду красть людям 30 минут, если можно прочитать за пять.",
+      "observedAt": "2026-04-27T14:00:00Z"
+    },
+    {
+      "blockId": "f17-b3",
+      "quote": "Я защищаю их фокус-тайм даже когда меня просят согласовать ещё один синк. Прерывания дороже, чем кажется.",
+      "observedAt": "2026-05-20T11:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "защищает фокус-тайм команды",
+    "categoryKeywords": ["фокус", "прерыв", "встреч"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "fixtureId": "01-cautious-deadlines",
+  "category": "valid",
+  "personName": "Сергей",
+  "personRole": "backend lead",
+  "quotes": [
+    {
+      "blockId": "f01-b1",
+      "quote": "Давайте не закладывать срок пока не посмотрим, как ведёт себя нагрузка в стейдже — я обжигался на оценках без замеров.",
+      "observedAt": "2026-04-05T10:00:00Z"
+    },
+    {
+      "blockId": "f01-b2",
+      "quote": "Я бы не давал сроки на этот эпик, пока не разберём контракт с биллингом — там может вылезти неделя.",
+      "observedAt": "2026-04-19T14:00:00Z"
+    },
+    {
+      "blockId": "f01-b3",
+      "quote": "Можно прикинуть, но я не хочу комиттиться — слишком много допущений.",
+      "observedAt": "2026-05-18T11:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "осторожность с оценками сроков",
+    "categoryKeywords": ["оценк", "срок"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

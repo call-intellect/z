@@ -1,0 +1,32 @@
+{
+  "fixtureId": "09-resists-premature-optimization",
+  "category": "valid",
+  "personName": "Виктор",
+  "personRole": "platform engineer",
+  "quotes": [
+    {
+      "blockId": "f09-b1",
+      "quote": "У нас тут 100 запросов в минуту, а вы предлагаете перейти на Rust для одного хендлера. Это решение для нагрузки, которой у нас нет и в обозримом не будет.",
+      "observedAt": "2026-04-09T11:00:00Z"
+    },
+    {
+      "blockId": "f09-b2",
+      "quote": "Кэш сюда добавлять рано. Сначала покажите профилировку — может, это даже не bottleneck. Иначе мы наплодим инвалидаций на ровном месте.",
+      "observedAt": "2026-04-23T15:30:00Z"
+    },
+    {
+      "blockId": "f09-b3",
+      "quote": "Я против переезда на gRPC ради 10 мс. Текущий REST понимают все, а профит сомнительный — потеряем больше на дебаге.",
+      "observedAt": "2026-05-16T12:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "сопротивляется преждевременной оптимизации",
+    "categoryKeywords": ["оптимиз", "преждевремен", "рано"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "ленивый", "консерватор"]
+  }
+}

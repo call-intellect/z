@@ -1,0 +1,32 @@
+{
+  "fixtureId": "03-delegates-early-estimates",
+  "category": "valid",
+  "personName": "Мария",
+  "personRole": "engineering manager",
+  "quotes": [
+    {
+      "blockId": "f03-b1",
+      "quote": "Я бы оценку этой фичи отдала Ивану — он две недели в этой подсистеме сидит, я только мешать буду цифрой со стороны.",
+      "observedAt": "2026-04-08T11:00:00Z"
+    },
+    {
+      "blockId": "f03-b2",
+      "quote": "Не хочу сама прикидывать, пока команда не пройдёт grooming. Мои числа без их контекста — это шум, а не план.",
+      "observedAt": "2026-04-22T15:30:00Z"
+    },
+    {
+      "blockId": "f03-b3",
+      "quote": "Пусть тимлид даст свою оценку первой. Если я скажу раньше — это будет якорь, и ребята подстроятся под меня, а не под реальность.",
+      "observedAt": "2026-05-14T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "делегирует ранние оценки команде",
+    "categoryKeywords": ["делегир", "оценк", "команд"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

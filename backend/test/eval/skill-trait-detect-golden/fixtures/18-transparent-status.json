@@ -1,0 +1,32 @@
+{
+  "fixtureId": "18-transparent-status",
+  "category": "valid",
+  "personName": "Григорий",
+  "personRole": "backend engineer",
+  "quotes": [
+    {
+      "blockId": "f18-b1",
+      "quote": "Я застрял на интеграции с биллингом — не сделаю до пятницы как планировал. Пишу сразу, чтобы команда не ждала зря.",
+      "observedAt": "2026-04-08T09:30:00Z"
+    },
+    {
+      "blockId": "f18-b2",
+      "quote": "Признаюсь, я не разобрался с этим куском пайплайна — мне нужна помощь. Лучше скажу сейчас, чем тяну до дедлайна.",
+      "observedAt": "2026-04-22T14:30:00Z"
+    },
+    {
+      "blockId": "f18-b3",
+      "quote": "Видимость статуса для меня — это уважение к команде. Тащить «всё ок» когда не ок — это потом всех подставит.",
+      "observedAt": "2026-05-15T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "прозрачен по статусу задач",
+    "categoryKeywords": ["прозрачн", "статус", "застр"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "слабый"]
+  }
+}

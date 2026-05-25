@@ -1,0 +1,28 @@
+{
+  "fixtureId": "25-reject-rhetorical-empty",
+  "category": "reject",
+  "personName": "Анна",
+  "personRole": "analyst",
+  "quotes": [
+    {
+      "blockId": "f25-b1",
+      "quote": "Ну, я обычно стараюсь делать всё качественно.",
+      "observedAt": "2026-04-09T10:00:00Z"
+    },
+    {
+      "blockId": "f25-b2",
+      "quote": "Стараюсь подходить к работе серьёзно.",
+      "observedAt": "2026-04-23T14:00:00Z"
+    },
+    {
+      "blockId": "f25-b3",
+      "quote": "В целом я ответственный человек.",
+      "observedAt": "2026-05-16T11:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": false,
+    "reason": "Риторические фразы без поведенческой основы и без наблюдений за конкретными решениями. Adversarial-кейс из промпта.",
+    "forbiddenWords": ["перфекционист", "выдающийся", "идеальный", "ответственный", "грамотный"]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "fixtureId": "19-accepts-architecture-criticism",
+  "category": "valid",
+  "personName": "Юрий",
+  "personRole": "principal engineer",
+  "quotes": [
+    {
+      "blockId": "f19-b1",
+      "quote": "Хорошая критика — я согласен, мой выбор event sourcing тут избыточен. Перерисую без него и посмотрю, что получится.",
+      "observedAt": "2026-04-13T11:00:00Z"
+    },
+    {
+      "blockId": "f19-b2",
+      "quote": "Не воспринимаю замечания к дизайну как личные. Если я не могу аргументированно ответить — значит, замечание справедливое.",
+      "observedAt": "2026-04-28T15:00:00Z"
+    },
+    {
+      "blockId": "f19-b3",
+      "quote": "Ребята указали, что я не учёл сценарий повторных вебхуков — да, это дыра. Переделаю.",
+      "observedAt": "2026-05-21T10:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "принимает критику архитектуры без личного",
+    "categoryKeywords": ["критик", "замечан", "согласен"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "слабый"]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "fixtureId": "21-reject-bare-commitments",
+  "category": "reject",
+  "personName": "Маша",
+  "personRole": "junior engineer",
+  "quotes": [
+    {
+      "blockId": "f21-b1",
+      "quote": "Окей, сделаю до пятницы.",
+      "observedAt": "2026-04-05T09:30:00Z"
+    },
+    {
+      "blockId": "f21-b2",
+      "quote": "Беру задачу.",
+      "observedAt": "2026-04-19T14:00:00Z"
+    },
+    {
+      "blockId": "f21-b3",
+      "quote": "Готово.",
+      "observedAt": "2026-05-12T11:00:00Z"
+    },
+    {
+      "blockId": "f21-b4",
+      "quote": "Сделаю.",
+      "observedAt": "2026-05-22T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": false,
+    "reason": "Только commitments без объяснения подхода — нет reasoning.",
+    "forbiddenWords": ["перфекционист", "выдающийся", "идеальный", "ответственный"]
+  }
+}

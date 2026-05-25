@@ -1,0 +1,32 @@
+{
+  "fixtureId": "12-documents-decisions",
+  "category": "valid",
+  "personName": "Татьяна",
+  "personRole": "principal engineer",
+  "quotes": [
+    {
+      "blockId": "f12-b1",
+      "quote": "Запишу ADR по этому выбору. Через год кто-то откроет код и будет недоумевать, почему мы пошли именно по такому пути — пусть будет ответ.",
+      "observedAt": "2026-04-04T09:30:00Z"
+    },
+    {
+      "blockId": "f12-b2",
+      "quote": "Если решение не записано — его не было. Завтра другая команда сделает противоположное, и мы не сможем сослаться.",
+      "observedAt": "2026-04-18T14:00:00Z"
+    },
+    {
+      "blockId": "f12-b3",
+      "quote": "Я веду ADR не для аудитории, а для будущего себя. Через полгода я сам не вспомню, что мы тогда отвергли и почему.",
+      "observedAt": "2026-05-11T11:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "документирует архитектурные решения",
+    "categoryKeywords": ["документ", "ADR", "решен", "запис"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "бюрократ"]
+  }
+}

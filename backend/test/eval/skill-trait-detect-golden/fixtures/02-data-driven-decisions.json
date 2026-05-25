@@ -1,0 +1,37 @@
+{
+  "fixtureId": "02-data-driven-decisions",
+  "category": "valid",
+  "personName": "Алексей",
+  "personRole": "product manager",
+  "quotes": [
+    {
+      "blockId": "f02-b1",
+      "quote": "Пока не вижу цифр по конверсии — давайте не будем решать про редизайн чекаута. Доверяюсь не интуиции, а воронке.",
+      "observedAt": "2026-04-02T09:30:00Z"
+    },
+    {
+      "blockId": "f02-b2",
+      "quote": "У меня нет данных, чтобы сравнить эти два варианта. Подождём результатов A/B хотя бы две недели.",
+      "observedAt": "2026-04-16T16:00:00Z"
+    },
+    {
+      "blockId": "f02-b3",
+      "quote": "Я понимаю, что аргумент про опыт силён, но без метрики удержания мы стреляем в темноте. Соберём дашборд сначала.",
+      "observedAt": "2026-05-07T10:45:00Z"
+    },
+    {
+      "blockId": "f02-b4",
+      "quote": "Если есть выбор между мнением и числом — беру число. Особенно когда речь о бюджете на 2 квартала.",
+      "observedAt": "2026-05-20T13:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "требует данных перед решением",
+    "categoryKeywords": ["данн", "цифр", "метрик", "числ"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["гениальный", "выдающийся", "идеальный"]
+  }
+}

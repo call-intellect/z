@@ -1,0 +1,28 @@
+{
+  "fixtureId": "23-reject-emotional-reactions",
+  "category": "reject",
+  "personName": "Виктория",
+  "personRole": "designer",
+  "quotes": [
+    {
+      "blockId": "f23-b1",
+      "quote": "Класс!",
+      "observedAt": "2026-04-07T11:00:00Z"
+    },
+    {
+      "blockId": "f23-b2",
+      "quote": "Не понимаю.",
+      "observedAt": "2026-04-21T14:30:00Z"
+    },
+    {
+      "blockId": "f23-b3",
+      "quote": "Бесит.",
+      "observedAt": "2026-05-14T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": false,
+    "reason": "Эмоциональные реакции без объяснения подхода к решениям.",
+    "forbiddenWords": ["перфекционист", "выдающийся", "идеальный", "эмоциональный"]
+  }
+}

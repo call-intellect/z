@@ -1,0 +1,32 @@
+{
+  "fixtureId": "07-readability-over-performance",
+  "category": "valid",
+  "personName": "Илья",
+  "personRole": "backend engineer",
+  "quotes": [
+    {
+      "blockId": "f07-b1",
+      "quote": "Я понимаю, что битовая магия быстрее, но через полгода никто не поймёт, что тут происходит. Оставим явный switch.",
+      "observedAt": "2026-04-07T10:00:00Z"
+    },
+    {
+      "blockId": "f07-b2",
+      "quote": "Этот хитрый one-liner сэкономит нам полмиллисекунды, но дебажить его будут все, кто откроет файл. Лучше развернуть в три строки.",
+      "observedAt": "2026-04-21T15:00:00Z"
+    },
+    {
+      "blockId": "f07-b3",
+      "quote": "Оптимизация ради оптимизации — это долг будущему себе. Если бизнес-метрика не страдает, оставляю читаемую версию.",
+      "observedAt": "2026-05-15T11:30:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "приоритет читаемости над производительностью",
+    "categoryKeywords": ["читаем", "понятн", "явн"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

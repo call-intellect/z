@@ -1,0 +1,32 @@
+{
+  "fixtureId": "15-small-prs",
+  "category": "valid",
+  "personName": "Мария",
+  "personRole": "backend engineer",
+  "quotes": [
+    {
+      "blockId": "f15-b1",
+      "quote": "Этот PR на 800 строк — давайте я порежу на три. Ревьюверу в таком виде не разобраться, а я хочу нормальный фидбек, а не «LGTM».",
+      "observedAt": "2026-04-10T10:00:00Z"
+    },
+    {
+      "blockId": "f15-b2",
+      "quote": "Большие PR — это болото. Я лучше потрачу полдня на рефакторинг истории коммитов, чем выкачу одно полотно.",
+      "observedAt": "2026-04-25T14:00:00Z"
+    },
+    {
+      "blockId": "f15-b3",
+      "quote": "Раздроблю на маленькие порции — каждая по 100-200 строк. Так и мердж быстрее, и баги легче ловить bisect'ом.",
+      "observedAt": "2026-05-17T11:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "дробит большие PR на маленькие",
+    "categoryKeywords": ["дроб", "маленьк", "PR", "порц"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "перфекционист"]
+  }
+}

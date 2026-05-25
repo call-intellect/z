@@ -1,0 +1,32 @@
+{
+  "fixtureId": "08-prefers-async-communication",
+  "category": "valid",
+  "personName": "Анна",
+  "personRole": "senior engineer",
+  "quotes": [
+    {
+      "blockId": "f08-b1",
+      "quote": "Давайте это решим в треде, а не на созвоне. На митинге половина команды просто молчит, а в чате каждый успевает подумать.",
+      "observedAt": "2026-04-06T09:30:00Z"
+    },
+    {
+      "blockId": "f08-b2",
+      "quote": "Если можно записать loom вместо звонка — записываю loom. Так люди смотрят, когда им удобно, и не дёргают свой фокус.",
+      "observedAt": "2026-04-19T14:00:00Z"
+    },
+    {
+      "blockId": "f08-b3",
+      "quote": "Синхронный созвон оправдан только если нужно решить спор за один присест. Всё остальное — это украденный фокус-тайм.",
+      "observedAt": "2026-05-13T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "shouldExtract": true,
+    "categoryGloss": "предпочитает асинхронную коммуникацию",
+    "categoryKeywords": ["асинхрон", "тред", "чат", "loom"],
+    "statementContainsQualifier": true,
+    "minObservations": 3,
+    "expectedConfidence": "medium",
+    "forbiddenWords": ["идеальный", "выдающийся", "интроверт"]
+  }
+}

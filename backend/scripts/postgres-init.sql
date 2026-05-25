@@ -347,6 +347,47 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
+--    HNSW индекс на skill_trait_concepts.embedding для быстрого
+--    findOrCreateConcept (top-1 по cosine) и cron-нормализатора.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'skill_trait_concepts'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "skill_trait_concepts_embedding_hnsw_idx"
+      ON "skill_trait_concepts" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический индекс
+--    категорий профиля знаний (Person.knowledgeProfile.categories[]).
+--    HNSW индекс на person_knowledge_category_embeddings.embedding для
+--    запроса «кто разбирается в X» через cosine-distance.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'person_knowledge_category_embeddings'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS person_knowledge_category_embeddings_embedding_hnsw_idx
+      ON person_knowledge_category_embeddings USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Wave 2 — Specialist 3.8 (HelpfulnessTrait).
 --   HNSW индекс на HelpfulnessTrait.embedding для KNN-merge через cosine.
 --   Без индекса worker делает seq-scan; HNSW обеспечивает O(log n) recall

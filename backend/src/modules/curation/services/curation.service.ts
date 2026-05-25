@@ -40,8 +40,16 @@ export interface TriageInput {
   tenantId: string;
   resourceType: string;
   resourceId: string;
-  /** confidence карточки [0..1]. */
+  /** confidence карточки [0..1] (raw, сырое значение LLM). */
   confidence: number;
+  /**
+   * W2.2 KC-Temporal (2026-05-25) — калиброванная confidence через Platt
+   * scaling. Если задана — `triage()` использует её для сравнения с порогами
+   * (autoThreshold / deepReviewThreshold). Иначе — fallback на `confidence`.
+   *
+   * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.2.
+   */
+  calibratedConfidence?: number;
   /** Финальный payload карточки (что специалист предлагает канонизировать). */
   proposedPayload: Record<string, unknown>;
   /** Опц. сигналы конфликта от специалиста: «soft» / «hard». */
@@ -156,11 +164,19 @@ export class CurationService {
     const conflict = input.conflictSignal ?? 'none';
     const isCritical = settings.criticalTypes.includes(input.resourceType);
 
+    // W2.2 KC-Temporal — если калиброванная confidence известна, используем её
+    // для сравнения с порогами. Иначе — fallback на raw. См. §W2.2 ТЗ.
+    const effectiveConfidence =
+      typeof input.calibratedConfidence === 'number' &&
+      Number.isFinite(input.calibratedConfidence)
+        ? Math.max(0, Math.min(1, input.calibratedConfidence))
+        : input.confidence;
+
     // 1. auto-canonical
     if (
       !isCritical &&
       conflict === 'none' &&
-      input.confidence >= settings.autoThreshold
+      effectiveConfidence >= settings.autoThreshold
     ) {
       const version = await this.createInitialCardVersion(input);
       this.metrics.incCurationAutoCanonical({ resourceType: input.resourceType });
@@ -186,7 +202,7 @@ export class CurationService {
     if (
       isCritical ||
       conflict === 'hard' ||
-      input.confidence < settings.deepReviewThreshold
+      effectiveConfidence < settings.deepReviewThreshold
     ) {
       level = 'deep';
     } else {
@@ -195,6 +211,12 @@ export class CurationService {
 
     const triageReason = {
       confidence: input.confidence,
+      // W2.2 — оба значения в reason для прозрачности и debugging'а.
+      calibratedConfidence:
+        typeof input.calibratedConfidence === 'number'
+          ? input.calibratedConfidence
+          : null,
+      effectiveConfidence,
       conflictSignal: conflict,
       conflictIds: input.conflictIds ?? [],
       criticalType: isCritical,
@@ -418,6 +440,29 @@ export class CurationService {
 
       return updated;
     });
+
+    // W2.3 KC-Temporal (2026-05-25) — эмит события для PreferenceDatasetService.
+    // Best-effort: ошибка emit не должна валить decide-flow. Слушатель
+    // решает, нужно ли записать LlmPreferenceSample (фильтр по decisionType
+    // лежит на стороне consumer'а).
+    try {
+      this.events?.emit('curation.decision_recorded', {
+        tenantId: item.tenantId,
+        curationItemId: item.id,
+        curationDecisionId: createdDecisionId,
+        resourceType: item.resourceType,
+        resourceId: item.resourceId,
+        decisionType: input.decisionType,
+        reviewerUserId: input.reviewerUserId,
+        reasoning: input.reasoning ?? null,
+        proposedPayload: item.proposedPayload,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'curation.decision_recorded emit failed (handled inside)',
+      );
+    }
 
     // Метрики (вне транзакции, best-effort).
     this.metrics.incCurationDecision({

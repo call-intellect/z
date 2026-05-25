@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type ExecutablePersona,
+  Prisma,
   type SkillTrait,
 } from '@prisma/client';
 
@@ -127,27 +128,32 @@ export class ExecutablePersonaBuildService {
         scopeRefId: null,
       });
 
-      // W4.1 — shadow-compare. ExecutablePersona не имеет поля dataClass в
-      // Prisma (на W4.2 добавится `dataClassAudit`), но политика W4.1
-      // фиксирует, что Клон Роли = `internal` (см. §4 ТЗ — решение №6
-      // от 2026-05-25, clones-role-based-rebrand). legacy='internal'
-      // (де-факто), proposed — derive с floor=internal.
-      if (this.dataClassPolicy) {
-        const proposed = this.dataClassPolicy.derive({
-          sources: profile.traits.map((t) => ({
-            dataClass: 'internal' as const,
-            sourceId: t.id,
-            sourceKind: 'skill_trait' as const,
-          })),
-          context: { kind: 'executable_persona' },
-        }).dataClass;
+      // W4.1/W4.2 — derive DataClass для ExecutablePersona.
+      // Floor: 'internal' (Клон Роли, §4 ТЗ — решение №6 clones-role-based-rebrand).
+      // На enforce — сохраняем audit в `ExecutablePersona.dataClassAudit`;
+      // на shadow/off — JsonNull. dataClass-колонки у модели нет — это
+      // ожидаемо, артефакт всегда 'internal' по floor'у.
+      const enforcementEp = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+      const derivedEp = this.dataClassPolicy?.derive({
+        sources: profile.traits.map((t) => ({
+          dataClass: 'internal' as const,
+          sourceId: t.id,
+          sourceKind: 'skill_trait' as const,
+        })),
+        context: { kind: 'executable_persona' },
+      });
+      if (this.dataClassPolicy && derivedEp) {
         this.dataClassPolicy.compareWithLegacy({
           legacyResult: 'internal',
-          proposedResult: proposed,
+          proposedResult: derivedEp.dataClass,
           kind: 'executable_persona',
           sourceIds: profile.traits.map((t) => t.id),
         });
       }
+      const personaAudit: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+        enforcementEp === 'enforce' && derivedEp
+          ? (derivedEp.audit as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
 
       const newPersona = await this.prisma.$transaction(async (tx) => {
         await tx.executablePersona.updateMany({
@@ -171,6 +177,7 @@ export class ExecutablePersonaBuildService {
             builtFromTraitsCount: profile.traits.length,
             triggerReason,
             triggerEventAt,
+            dataClassAudit: personaAudit,
           },
         });
       });
@@ -291,13 +298,41 @@ export class ExecutablePersonaBuildService {
         scopeRefId: args.roleId,
       });
 
+      // Clones=Roles Ф5 (2026-05-25) — клон роли это shared-знание Org,
+      // dataClass всегда `internal` (floor поднимает любой источник).
+      // Используем `DataClassPolicyService.derive(kind='executable_persona')`.
+      // Audit-trail сохраняем в `dataClassAudit` (W4.2-поле).
+      let dataClassAudit: import('@prisma/client').Prisma.InputJsonValue | undefined;
+      if (this.dataClassPolicy) {
+        const derived = this.dataClassPolicy.derive({
+          sources: aggregatedTraits.map((t) => ({
+            dataClass: 'internal' as const,
+            sourceId: t.id,
+            sourceKind: 'skill_trait' as const,
+          })),
+          context: { kind: 'executable_persona' },
+        });
+        // Shadow-compare с legacy='internal' (де-факто).
+        this.dataClassPolicy.compareWithLegacy({
+          legacyResult: 'internal',
+          proposedResult: derived.dataClass,
+          kind: 'executable_persona',
+          sourceIds: aggregatedTraits.map((t) => t.id),
+        });
+        dataClassAudit = derived.audit as unknown as import('@prisma/client').Prisma.InputJsonValue;
+      }
+
+      // Clones=Roles Ф2 — пересборка для role-scope должна также
+      // «погашать» pending_rebuild версии (создаваемые handler'ом при
+      // смене носителя). Иначе они останутся висеть в БД и портить count
+      // в `clones_role_versions_total`.
       const newPersona = await this.prisma.$transaction(async (tx) => {
         await tx.executablePersona.updateMany({
           where: {
             tenantId: args.tenantId,
             scope: 'role',
             scopeRefId: args.roleId,
-            status: 'active',
+            status: { in: ['active', 'pending_rebuild'] },
           },
           data: { status: 'superseded' },
         });
@@ -314,6 +349,7 @@ export class ExecutablePersonaBuildService {
             builtFromTraitsCount: aggregatedTraits.length,
             triggerReason,
             triggerEventAt,
+            ...(dataClassAudit ? { dataClassAudit } : {}),
           },
         });
       });

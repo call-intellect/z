@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
+  type DataClass,
   type IdeaBlock,
   type IdeaBlockEntity,
   type IdeaBlockEvidence,
@@ -332,6 +333,11 @@ export class Specialist31Service {
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
 
       let regulation: Regulation;
+      const dcRes = this.deriveDataClassForPersist({
+        blockId: block.id,
+        blockDataClass: block.dataClass,
+        kind: 'regulation',
+      });
 
       if (verdict.decision === 'new' || !verdict.targetId) {
         regulation = await this.prisma.regulation.upsert({
@@ -344,7 +350,8 @@ export class Specialist31Service {
             ownerPersonId: ownerPersonId ?? undefined,
             sourceBlockIds: { set: this.union(sourceBlockIds, []) },
             personSubjectIds: { set: this.union(personSubjectIds, []) },
-            dataClass: block.dataClass,
+            dataClass: dcRes.dataClass,
+            dataClassAudit: dcRes.dataClassAudit,
             confidence: draft.confidence ?? null,
             category: draft.category === 'standard' ? 'standard' : 'regulation',
           },
@@ -359,7 +366,8 @@ export class Specialist31Service {
             ownerPersonId: ownerPersonId ?? null,
             sourceBlockIds,
             personSubjectIds,
-            dataClass: block.dataClass,
+            dataClass: dcRes.dataClass,
+            dataClassAudit: dcRes.dataClassAudit,
           },
         });
       } else {
@@ -388,7 +396,8 @@ export class Specialist31Service {
               ownerPersonId: ownerPersonId ?? null,
               sourceBlockIds,
               personSubjectIds,
-              dataClass: block.dataClass,
+              dataClass: dcRes.dataClass,
+              dataClassAudit: dcRes.dataClassAudit,
             },
           });
         } else {
@@ -499,6 +508,11 @@ export class Specialist31Service {
       // иначе draft.name.
       const processName = draft.processStepHint?.processName ?? draft.name;
 
+      const dcResProc = this.deriveDataClassForPersist({
+        blockId: block.id,
+        blockDataClass: block.dataClass,
+        kind: 'process',
+      });
       if (verdict.decision === 'new' || !verdict.targetId) {
         proc = await this.prisma.process.upsert({
           where: {
@@ -510,7 +524,8 @@ export class Specialist31Service {
             ownerPersonId: ownerPersonId ?? undefined,
             sourceBlockIds: { set: this.union(sourceBlockIds, []) },
             personSubjectIds: { set: this.union(personSubjectIds, []) },
-            dataClass: block.dataClass,
+            dataClass: dcResProc.dataClass,
+            dataClassAudit: dcResProc.dataClassAudit,
             confidence: draft.confidence ?? null,
           },
           create: {
@@ -521,7 +536,8 @@ export class Specialist31Service {
             ownerPersonId: ownerPersonId ?? null,
             sourceBlockIds,
             personSubjectIds,
-            dataClass: block.dataClass,
+            dataClass: dcResProc.dataClass,
+            dataClassAudit: dcResProc.dataClassAudit,
             confidence: draft.confidence ?? null,
           },
         });
@@ -543,7 +559,8 @@ export class Specialist31Service {
               ownerPersonId: ownerPersonId ?? null,
               sourceBlockIds,
               personSubjectIds,
-              dataClass: block.dataClass,
+              dataClass: dcResProc.dataClass,
+              dataClassAudit: dcResProc.dataClassAudit,
               confidence: draft.confidence ?? null,
             },
           });
@@ -673,6 +690,11 @@ export class Specialist31Service {
 
       let policy: Policy;
 
+      const dcResPol = this.deriveDataClassForPersist({
+        blockId: block.id,
+        blockDataClass: block.dataClass,
+        kind: 'policy',
+      });
       if (verdict.decision === 'new' || !verdict.targetId) {
         policy = await this.prisma.policy.upsert({
           where: {
@@ -685,7 +707,8 @@ export class Specialist31Service {
             ownerPersonId: ownerPersonId ?? undefined,
             sourceBlockIds: { set: this.union(sourceBlockIds, []) },
             personSubjectIds: { set: this.union(personSubjectIds, []) },
-            dataClass: block.dataClass,
+            dataClass: dcResPol.dataClass,
+            dataClassAudit: dcResPol.dataClassAudit,
             confidence: draft.confidence ?? null,
           },
           create: {
@@ -697,7 +720,8 @@ export class Specialist31Service {
             ownerPersonId: ownerPersonId ?? null,
             sourceBlockIds,
             personSubjectIds,
-            dataClass: block.dataClass,
+            dataClass: dcResPol.dataClass,
+            dataClassAudit: dcResPol.dataClassAudit,
             confidence: draft.confidence ?? null,
           },
         });
@@ -720,7 +744,8 @@ export class Specialist31Service {
               ownerPersonId: ownerPersonId ?? null,
               sourceBlockIds,
               personSubjectIds,
-              dataClass: block.dataClass,
+              dataClass: dcResPol.dataClass,
+              dataClassAudit: dcResPol.dataClassAudit,
               confidence: draft.confidence ?? null,
             },
           });
@@ -1301,6 +1326,55 @@ export class Specialist31Service {
 
   private union<T>(a: readonly T[], b: readonly T[]): T[] {
     return [...new Set([...a, ...b])];
+  }
+
+  /**
+   * W4.1/W4.2 helper — резолвит финальный `dataClass` + Json-audit для
+   * persist'а Regulation/Process/Policy.
+   *
+   * Возвращает кортеж `{ dataClass, dataClassAudit }`:
+   *   - на `enforcement === 'enforce'` — derive().dataClass + serialized audit.
+   *   - иначе — legacy `block.dataClass`, audit = JsonNull (NULL в БД).
+   *
+   * compareWithLegacy дёргается всегда при наличии сервиса — это даёт
+   * shadow-метрику расхождения даже после переключения в enforce.
+   */
+  private deriveDataClassForPersist(args: {
+    blockId: string;
+    blockDataClass: DataClass;
+    kind: 'regulation' | 'process' | 'policy';
+  }): {
+    dataClass: DataClass;
+    dataClassAudit: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  } {
+    const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+    const proposed = this.dataClassPolicy?.derive({
+      sources: [
+        {
+          dataClass: args.blockDataClass,
+          sourceId: args.blockId,
+          sourceKind: 'idea_block',
+        },
+      ],
+      context: { kind: args.kind },
+    });
+    if (this.dataClassPolicy && proposed) {
+      this.dataClassPolicy.compareWithLegacy({
+        legacyResult: args.blockDataClass,
+        proposedResult: proposed.dataClass,
+        kind: args.kind,
+        sourceIds: [args.blockId],
+      });
+    }
+    const finalDc =
+      enforcement === 'enforce' && proposed
+        ? proposed.dataClass
+        : args.blockDataClass;
+    const audit: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+      enforcement === 'enforce' && proposed
+        ? (proposed.audit as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+    return { dataClass: finalDc, dataClassAudit: audit };
   }
 }
 

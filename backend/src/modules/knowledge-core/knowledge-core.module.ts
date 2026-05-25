@@ -42,12 +42,21 @@ import { Specialist39ExperimentProbeService } from './services/specialist-3-9-ex
 import { Specialist39ExperimentsService } from './services/specialist-3-9-experiments.service';
 import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
+import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
 import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
+// W2.2 + W2.3 + W2.4 + G.2 + W4.2 KC-Temporal (2026-05-25).
+import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
+import { PreferenceDatasetService } from './services/preference-dataset.service';
+import { TemporalProbeService } from './services/temporal-probe.service';
+import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
+import { TemporalProbeCron } from './workers/temporal-probe.cron';
+import { SignalTypeStatsCron } from './workers/signal-type-stats.cron';
+import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.cron';
 
 /**
  * KnowledgeCoreModule — оркестрация ingest → distill для IdeaBlock'ов.
@@ -78,6 +87,10 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
   // мог инжектить `CurationService.triage()` и `ConflictService.report()`.
   imports: [ConfigModule, PrismaModule, CurationModule],
   providers: [
+    // Clones=Roles Ф2 (2026-05-25) — handler `role.bearer_changed`. Ставим
+    // первым providers'ом: в момент onModuleInit Nest регистрирует @OnEvent —
+    // важно, чтобы handler был готов до первых emit'ов.
+    RoleClonePersonaVersioningHandler,
     S3Service,
     SegmentBuilderService,
     BlockExtractionService,
@@ -166,6 +179,16 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // Запускается best-effort из BlockDistillWorker после markCanonical
     // при cfg.bitemporal.enabled && cfg.bitemporal.supersedeEnabled.
     FactSupersedeService,
+    // ── KC-Temporal волна 2 + G.2 + W4.2 (2026-05-25) ──
+    // Добавлено в конец providers, чтобы минимизировать конфликт с S3.B
+    // (clones-related изменениями в этой же фазе).
+    ConfidenceCalibrationService,
+    PreferenceDatasetService,
+    TemporalProbeService,
+    ConfidenceCalibrationCron,
+    TemporalProbeCron,
+    SignalTypeStatsCron,
+    DataClassAuditSnapshotCron,
   ],
   exports: [
     SegmentBuilderService,
@@ -232,6 +255,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     ExecutablePersonaBuildService,
     // SBA γ-1 доделки.
     ExecutablePersonaVersioningService,
+    // Clones=Roles Ф2 — экспорт handler'а, чтобы admin force-new-version API
+    // мог напрямую вызвать `handle(...)`.
+    RoleClonePersonaVersioningHandler,
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — экспортируется,
     // чтобы admin-модуль / cron-нормализатор / backfill-скрипт могли инжектить.
     SkillTraitConceptService,
@@ -241,6 +267,11 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // KC-Temporal W1.2 — экспортируется для BlockDistillWorker (WorkersModule)
     // и тестов.
     FactSupersedeService,
+    // KC-Temporal волна 2 + G.2 + W4.2 — экспортируем для admin-эндпоинтов
+    // (preference-dataset download) + integration-тестов.
+    ConfidenceCalibrationService,
+    PreferenceDatasetService,
+    TemporalProbeService,
   ],
 })
 export class KnowledgeCoreModule {}

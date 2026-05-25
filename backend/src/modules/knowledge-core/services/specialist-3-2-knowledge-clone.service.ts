@@ -234,9 +234,13 @@ export class Specialist32Service {
         experienceHighlights: merged.experienceHighlights,
       };
 
-      // W4.1 — shadow-compare. legacy = 'internal' (hardcoded), proposed —
-      // через DataClassPolicyService (kind='skill_profile', floor=internal).
-      // Реально пишется legacy ('internal'). См. ТЗ §W4.1.
+      // W4.1/W4.2 — derive DataClass.
+      // knowledge_profile хранится в `Person.knowledgeProfile` (Json) и сам
+      // не имеет колонки `dataClass`. Поэтому в enforce-режиме мы лишь
+      // продолжаем эмитить compareWithLegacy (для shadow_diff метрик), но
+      // payload остаётся 'internal' — это корректно: floor для skill_profile
+      // равен 'internal', а проекция без источников не может быть выше
+      // floor'а.
       if (this.dataClassPolicy) {
         const proposed = this.dataClassPolicy.derive({
           sources: [],

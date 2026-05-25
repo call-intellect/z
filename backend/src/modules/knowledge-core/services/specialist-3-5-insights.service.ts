@@ -750,31 +750,41 @@ export class Specialist35Service {
     /** SBA β-4 wave 2 — категория первопричины (LLM-классифицировано). */
     causeCategory: InsightCauseCategory;
   }): Promise<Insight> {
-    // W4.1 — shadow-compare. legacy = elevateDataClass(block, 'internal');
-    // proposed — derive с floor=internal по kind='insight'. Реально
-    // пишется legacy (см. ТЗ §W4.1).
+    // W4.1/W4.2 — derive DataClass.
+    // legacy = elevateDataClass(block, 'internal') (floor=internal вручную).
+    // proposed — DataClassPolicyService.derive({ kind: 'insight' }).
+    // На 'enforce' — пишем derive() + audit; на shadow/off — legacy.
     const legacyDataClass = this.elevateDataClass(
       args.block.dataClass,
       'internal',
     );
-    if (this.dataClassPolicy) {
-      const proposed = this.dataClassPolicy.derive({
-        sources: [
-          {
-            dataClass: args.block.dataClass,
-            sourceId: args.block.id,
-            sourceKind: 'idea_block',
-          },
-        ],
-        context: { kind: 'insight' },
-      }).dataClass;
+    const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+    const proposed = this.dataClassPolicy?.derive({
+      sources: [
+        {
+          dataClass: args.block.dataClass,
+          sourceId: args.block.id,
+          sourceKind: 'idea_block',
+        },
+      ],
+      context: { kind: 'insight' },
+    });
+    if (this.dataClassPolicy && proposed) {
       this.dataClassPolicy.compareWithLegacy({
         legacyResult: legacyDataClass,
-        proposedResult: proposed,
+        proposedResult: proposed.dataClass,
         kind: 'insight',
         sourceIds: [args.block.id],
       });
     }
+    const finalDc =
+      enforcement === 'enforce' && proposed
+        ? proposed.dataClass
+        : legacyDataClass;
+    const audit =
+      enforcement === 'enforce' && proposed
+        ? (proposed.audit as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
 
     return this.prisma.insight.create({
       data: {
@@ -791,9 +801,9 @@ export class Specialist35Service {
           Math.max(0, Math.min(1, args.confidence)),
         ),
         // Insight чаще про процесс — default 'internal' (см. §13 sub-ТЗ).
-        // Но если блок был sensitive/private — наследуем повышенный класс.
-        // W4.1: legacyDataClass посчитан выше (см. shadow-compare).
-        dataClass: legacyDataClass,
+        // W4.2: в enforce-режиме источником истины становится derive().
+        dataClass: finalDc,
+        dataClassAudit: audit,
         firstObservedAt: new Date(),
         lastObservedAt: new Date(),
         dynamicLabel: args.dynamicLabel,
@@ -819,6 +829,11 @@ export class Specialist35Service {
       : 'unknown';
   }
 
+  /**
+   * @deprecated W4.2 (2026-05-25) — используй `DataClassPolicyService.derive()`.
+   * Оставлено как legacy path при `enforcement` ∈ {'off','shadow'} — для
+   * сохранения исторического поведения и сравнения через compareWithLegacy.
+   */
   private elevateDataClass(
     blockClass: DataClass,
     defaultClass: DataClass,

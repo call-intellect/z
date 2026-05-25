@@ -39,6 +39,19 @@ export class TypedConfigService {
    */
   private adminReader: DynamicAdminSettingsReader | null | undefined = undefined;
 
+  /**
+   * Sync-кэш AdminSetting-значений. Заливается на старте процесса через
+   * `AdminSettingsBootstrapService` → `hydrateSync(...)`. Обновляется на лету
+   * из `AdminSettingsService.set()` локально и из Redis pub/sub (другие
+   * процессы) через `applySync(key, value)`.
+   *
+   * Существует, чтобы `resolveSync(...)` мог быть sync — вызывается из
+   * `@Cron`, guard'ов и конструкторов сервисов, где async неприемлем.
+   */
+  private readonly cacheMap = new Map<string, unknown>();
+  /** Один раз на (key, source) логируем источник, чтобы не спамить debug. */
+  private readonly resolveSourceLogged = new Set<string>();
+
   constructor(
     // NB: убрали generic ConfigService<Env, true> — на агрегированной схеме
     // (~50 .merge), Env-union триггерит TS2589 ещё при объявлении конструктора.
@@ -1239,6 +1252,64 @@ export class TypedConfigService {
     return {
       enforcement: mode ?? 'shadow',
       version: String(this.get('DATACLASS_POLICY_VERSION') ?? 'v1'),
+      // W4.2 (2026-05-25) — фейлить persist без audit при enforce.
+      auditRequired: Boolean(this.get('DATACLASS_AUDIT_REQUIRED') ?? true),
+    } as const;
+  }
+
+  // ─────────────────── W2.2 calibrated confidence (KC-Temporal) ───────
+  /**
+   * W2.2 — параметры Platt scaling калибровки confidence.
+   *
+   *   - `enabled` — если false, `ConfidenceCalibrationService.calibrate(raw)`
+   *     возвращает raw (identity). Cron не пишет AdminSetting.
+   *   - `cron` — расписание еженедельной пересборки `{ a, b }` per taskType.
+   *
+   * См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.2.
+   */
+  get confidenceCalibration() {
+    return {
+      enabled: Boolean(this.get('CONFIDENCE_CALIBRATION_ENABLED') ?? false),
+      cron: String(this.get('CONFIDENCE_CALIBRATION_CRON') ?? '0 4 * * 0'),
+    } as const;
+  }
+
+  // ─────────────────── W2.4 темпоральный probe-trigger ─────────────────
+  /**
+   * W2.4 — параметры `temporal.fact_stale_contradiction` probe-trigger'а.
+   *
+   *   - `cron` — когда запускать проверку (default — понедельник 07:00 UTC).
+   *   - `limitPerOrg` — лимит probe на Org за один проход (default 50).
+   *   - `escalateAfterWeeks` — через сколько недель без ответа эскалировать
+   *     owner'у (default 2).
+   *
+   * См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.4.
+   */
+  get temporalProbe() {
+    return {
+      cron: String(this.get('TEMPORAL_PROBE_CRON') ?? '0 7 * * 1'),
+      limitPerOrg: Number(this.get('TEMPORAL_PROBE_LIMIT_PER_ORG') ?? 50),
+      escalateAfterWeeks: Number(
+        this.get('TEMPORAL_PROBE_ESCALATE_AFTER_WEEKS') ?? 2,
+      ),
+    } as const;
+  }
+
+  // ─────────────────── G.2 Markov-матрица переходов signalType ────────
+  /**
+   * G.2 — параметры daily cron для расчёта матрицы переходов signalType.
+   *
+   *   - `cron` — daily (default 02:00 UTC).
+   *   - `driftSigmaThreshold` — σ-порог для алёрта о дрейфе (3.0 ≈ 99.7%).
+   *
+   * См. plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §G.2.
+   */
+  get signalTypeStats() {
+    return {
+      cron: String(this.get('SIGNAL_TYPE_STATS_CRON') ?? '0 2 * * *'),
+      driftSigmaThreshold: Number(
+        this.get('SIGNAL_TYPE_DRIFT_SIGMA_THRESHOLD') ?? 3.0,
+      ),
     } as const;
   }
 
@@ -1333,5 +1404,72 @@ export class TypedConfigService {
       this.adminReader = null;
     }
     return this.adminReader;
+  }
+
+  // ─────────────────────────── sync admin-setting cache ─────────────────
+  /**
+   * Залить весь набор AdminSetting в синхронный кэш TypedConfigService.
+   * Вызывается AdminSettingsBootstrapService на onApplicationBootstrap.
+   * Идемпотентен — повторный вызов заменяет содержимое.
+   */
+  hydrateSync(entries: Iterable<[string, unknown]>): void {
+    this.cacheMap.clear();
+    for (const [k, v] of entries) {
+      this.cacheMap.set(k, v);
+    }
+    this.resolveSourceLogged.clear();
+  }
+
+  /**
+   * Применить одно изменение (от AdminSettingsService.set() локально или
+   * через pub/sub из другого процесса). value=undefined — удалить ключ
+   * из cacheMap (resolveSync упадёт на ENV/default).
+   */
+  applySync(key: string, value: unknown | undefined): void {
+    if (value === undefined) {
+      this.cacheMap.delete(key);
+    } else {
+      this.cacheMap.set(key, value);
+    }
+    // Сбросить «один раз залогированный источник», чтобы новое решение
+    // (cache vs env vs default) залогировалось ещё раз.
+    for (const tag of Array.from(this.resolveSourceLogged)) {
+      if (tag.startsWith(`${key}:`)) this.resolveSourceLogged.delete(tag);
+    }
+  }
+
+  /**
+   * Синхронное чтение настройки: cacheMap → ENV (envFallbackKey) →
+   * defaultValue. Throws, если все три источника пусты.
+   *
+   * Sync (не async) — чтобы вызываться из @Cron, guards, конструкторов
+   * сервисов. См. ТЗ env-to-admin-setting-call-sites-migration.
+   */
+  resolveSync<T>(adminKey: string, envFallbackKey?: string, defaultValue?: T): T {
+    if (this.cacheMap.has(adminKey)) {
+      this.logSourceOnce(adminKey, 'cache');
+      return this.cacheMap.get(adminKey) as T;
+    }
+    if (envFallbackKey !== undefined) {
+      const fromEnv = this.get(envFallbackKey);
+      if (fromEnv !== undefined && fromEnv !== null) {
+        this.logSourceOnce(adminKey, 'env');
+        return fromEnv as T;
+      }
+    }
+    if (defaultValue !== undefined) {
+      this.logSourceOnce(adminKey, 'default');
+      return defaultValue;
+    }
+    throw new Error(
+      `TypedConfigService.resolveSync: "${adminKey}" не найден ни в cache, ни в ENV${envFallbackKey ? ` (${envFallbackKey})` : ''}, ни в defaultValue`,
+    );
+  }
+
+  private logSourceOnce(adminKey: string, source: 'cache' | 'env' | 'default'): void {
+    const tag = `${adminKey}:${source}`;
+    if (this.resolveSourceLogged.has(tag)) return;
+    this.resolveSourceLogged.add(tag);
+    this.logger.debug({ adminKey, source }, 'resolveSync');
   }
 }

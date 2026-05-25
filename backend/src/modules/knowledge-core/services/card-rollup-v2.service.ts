@@ -438,25 +438,36 @@ export class CardRollupV2Service {
       confidence,
     };
 
-    // W4.1 — shadow-compare. legacy = 'internal' (hardcoded), proposed —
-    // derive из enriched-blocks с floor=internal по kind='card_rollup'.
-    // Реально пишется legacy. См. ТЗ §W4.1.
-    if (this.dataClassPolicy) {
-      const proposed = this.dataClassPolicy.derive({
-        sources: enriched.map((b) => ({
-          dataClass: b.dataClass,
-          sourceId: b.id,
-          sourceKind: 'idea_block' as const,
-        })),
-        context: { kind: 'card_rollup' },
-      }).dataClass;
+    // W4.1/W4.2 — derive DataClass.
+    // legacy = 'internal' (hardcoded для card_rollup), proposed — derive из
+    // enriched-blocks с floor=internal по kind='card_rollup'.
+    // На 'enforce' — triage получает derive().dataClass + сохраняем audit
+    // в Card. На shadow/off — legacy.
+    const enforcementCr = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+    const derivedCr = this.dataClassPolicy?.derive({
+      sources: enriched.map((b) => ({
+        dataClass: b.dataClass,
+        sourceId: b.id,
+        sourceKind: 'idea_block' as const,
+      })),
+      context: { kind: 'card_rollup' },
+    });
+    if (this.dataClassPolicy && derivedCr) {
       this.dataClassPolicy.compareWithLegacy({
         legacyResult: 'internal',
-        proposedResult: proposed,
+        proposedResult: derivedCr.dataClass,
         kind: 'card_rollup',
         sourceIds: enriched.map((b) => b.id),
       });
     }
+    const effectiveDcCr =
+      enforcementCr === 'enforce' && derivedCr
+        ? derivedCr.dataClass
+        : 'internal';
+    const auditCr: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+      enforcementCr === 'enforce' && derivedCr
+        ? (derivedCr.audit as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
 
     const triage = await this.curation.triage({
       tenantId: args.tenantId,
@@ -466,7 +477,7 @@ export class CardRollupV2Service {
       proposedPayload,
       conflictSignal: 'none',
       createdByUserId: null,
-      dataClass: 'internal',
+      dataClass: effectiveDcCr,
     });
 
     let applied = false;
@@ -485,6 +496,9 @@ export class CardRollupV2Service {
           currentVersionId: cardVersionId ?? undefined,
           personSubjectIds,
           lastConfirmedAt: new Date(),
+          // W4.2 — audit-trail только в enforce-режиме. На shadow/off — JsonNull
+          // (поле в БД остаётся null).
+          dataClassAudit: auditCr,
         },
       });
       applied = true;

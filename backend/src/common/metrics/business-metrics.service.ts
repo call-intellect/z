@@ -378,6 +378,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── clone-reliability-hardening Фаза 2 — Смысловые блоки навыка ──
   private skillTraitConceptsTotal!: Gauge<'status'>;
   private skillTraitConceptsMergedTotal!: Counter<never>;
+  // ── Clones=Roles Ф2 (2026-05-25) — версионирование клонов ролей ──
+  private cloneRoleVersionCreatedTotal!: Counter<'role_id'>;
+  private cloneRoleVersionsTotal!: Gauge<'role_id'>;
 
   // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
   private axisLabelsTotal!: Counter<'tenant_top' | 'axis' | 'source'>;
@@ -1672,6 +1675,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'skill_trait_concepts_merged_total',
       help: 'Фаза 2 clone-reliability — общее число операций слияния SkillTraitConcept в cron-нормализаторе.',
       labelNames: [] as const,
+    });
+
+    // ── Clones=Roles Ф2 (2026-05-25) — версионирование клонов ролей ──
+    this.cloneRoleVersionCreatedTotal = this.getOrCreateCounter({
+      name: 'clones_role_version_created_total',
+      help: 'Clones=Roles Ф2 — сколько раз была создана новая версия ExecutablePersona(scope=role) при смене носителя роли (label role_id).',
+      labelNames: ['role_id'] as const,
+    });
+    this.cloneRoleVersionsTotal = this.getOrCreateGauge({
+      name: 'clones_role_versions_total',
+      help: 'Clones=Roles Ф2 — общее число версий клона на роль (включая archived/superseded/pending_rebuild). Обновляется в ClonesService.getCloneHistory.',
+      labelNames: ['role_id'] as const,
     });
 
     // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
@@ -3905,6 +3920,24 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incSkillTraitConceptsMerged(): void {
     this.skillTraitConceptsMergedTotal.inc();
+  }
+
+  /**
+   * Clones=Roles Ф2 — инкремент counter'а «создана новая версия клона роли».
+   * Дёргается из `RoleClonePersonaVersioningHandler` и admin force-new-version API.
+   */
+  incCloneRoleVersionCreated(args: { roleId: string }): void {
+    this.cloneRoleVersionCreatedTotal.inc({ role_id: args.roleId });
+  }
+
+  /**
+   * Clones=Roles Ф2 — gauge «общее число версий клона на роль» (включая
+   * archived/superseded/pending_rebuild). Caller передаёт итоговое число
+   * после count'а — мы пишем как есть. Negative — skip (защита от багов).
+   */
+  setCloneRoleVersionsTotal(args: { roleId: string; value: number }): void {
+    if (args.value < 0) return;
+    this.cloneRoleVersionsTotal.set({ role_id: args.roleId }, args.value);
   }
 
   // ────────────────────── SBA α-9 wave 3 (Company Foundation) ──────────

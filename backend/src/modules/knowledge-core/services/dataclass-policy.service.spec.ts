@@ -292,3 +292,60 @@ describe('DataClassPolicyService.compareWithLegacy — shadow-метрики', (
     ).not.toThrow();
   });
 });
+
+// ──────── W4.2 KC-Temporal (2026-05-25) — регрессии enforce-режима ────────
+describe('W4.2 — floor применяется и dataClass не понижается', () => {
+  const svc = makeService();
+
+  it('floor для каждого kind ≥ max(source.dataClass) ∩ legacy floor', () => {
+    // По таблице §4 ТЗ: floor для основных kind'ов.
+    const expectedFloor: Record<string, DataClass> = {
+      insight: 'internal',
+      decision: 'internal',
+      card_rollup: 'internal',
+      executable_persona: 'internal',
+      skill_profile: 'internal',
+      skill_trait: 'internal',
+      idea: 'internal',
+      regulation: 'internal',
+      process: 'internal',
+      policy: 'internal',
+    };
+    for (const [kind, floor] of Object.entries(expectedFloor)) {
+      // public-источник → kind floor лифтит результат до 'internal'.
+      const r = svc.derive({
+        sources: [src({ dataClass: 'public' })],
+        context: { kind: kind as DerivedKind },
+      });
+      expect(DATACLASS_RANK[r.dataClass]).toBeGreaterThanOrEqual(
+        DATACLASS_RANK[floor],
+      );
+    }
+  });
+
+  it('никогда не понижает: derive([s], k).dataClass >= s.dataClass для всех kind', () => {
+    const kinds: DerivedKind[] = [
+      'insight',
+      'decision',
+      'idea',
+      'card_rollup',
+      'regulation',
+      'process',
+      'policy',
+      'executable_persona',
+      'skill_profile',
+      'skill_trait',
+    ];
+    for (const kind of kinds) {
+      for (const dc of ALL_CLASSES) {
+        const r = svc.derive({
+          sources: [src({ dataClass: dc })],
+          context: { kind },
+        });
+        expect(DATACLASS_RANK[r.dataClass]).toBeGreaterThanOrEqual(
+          DATACLASS_RANK[dc],
+        );
+      }
+    }
+  });
+});

@@ -647,27 +647,39 @@ export class Specialist33Service {
     supersedesId?: string;
     validFrom?: Date;
   }): Promise<Decision> {
-    // W4.1 — shadow-compare DataClass. legacy = block.dataClass (passthrough);
-    // proposed — derive с floor=internal по kind='decision'. Реально пишется
-    // legacy (см. ТЗ §W4.1).
-    if (this.dataClassPolicy) {
-      const proposed = this.dataClassPolicy.derive({
-        sources: [
-          {
-            dataClass: args.block.dataClass,
-            sourceId: args.block.id,
-            sourceKind: 'idea_block',
-          },
-        ],
-        context: { kind: 'decision' },
-      }).dataClass;
+    // W4.1/W4.2 — derive DataClass. Поведение зависит от
+    // cfg.dataClassPolicy.enforcement:
+    //   - 'off' / 'shadow' — пишем legacy (block.dataClass), compareWithLegacy
+    //     эмитит метрику расхождения.
+    //   - 'enforce' — пишем derive().dataClass и аудит. Legacy остаётся для
+    //     compareWithLegacy метрики (`shadow_diff` уже не растёт, но видно
+    //     насколько мы ушли от исторического правила).
+    const legacyDc = args.block.dataClass;
+    const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+    const proposed = this.dataClassPolicy?.derive({
+      sources: [
+        {
+          dataClass: args.block.dataClass,
+          sourceId: args.block.id,
+          sourceKind: 'idea_block',
+        },
+      ],
+      context: { kind: 'decision' },
+    });
+    if (this.dataClassPolicy && proposed) {
       this.dataClassPolicy.compareWithLegacy({
-        legacyResult: args.block.dataClass,
-        proposedResult: proposed,
+        legacyResult: legacyDc,
+        proposedResult: proposed.dataClass,
         kind: 'decision',
         sourceIds: [args.block.id],
       });
     }
+    const finalDc =
+      enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDc;
+    const audit =
+      enforcement === 'enforce' && proposed
+        ? (proposed.audit as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
 
     return this.prisma.decision.create({
       data: {
@@ -692,7 +704,8 @@ export class Specialist33Service {
         confidence: new Prisma.Decimal(
           Math.max(0, Math.min(1, args.draft.confidence)),
         ),
-        dataClass: args.block.dataClass,
+        dataClass: finalDc,
+        dataClassAudit: audit,
         // Если в блоке есть один decidedByPerson — заполняем legacy-поле.
         decidedByPersonId: args.decidedByPersonIds[0] ?? null,
         validFrom: args.validFrom ?? args.decidedAt ?? null,

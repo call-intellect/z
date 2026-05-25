@@ -326,7 +326,15 @@ export type LlmTaskType =
   //   создаётся IdeaBlockLink(relationType='supersedes') + ConflictItem.
   //   Дешёвый арбитр (≤700 input + ≤300 output): primary deepseek-v4-flash,
   //   secondary openai gpt-5.4-mini, tertiary ollama qwen3:30b.
-  | 'fact-supersede-detect';
+  | 'fact-supersede-detect'
+  // ТЗ 2026-05-25 user-feedback-with-ai-clustering (Фаза 4) —
+  // канал «Ваши предложения». 'feedback.cluster' — ночной batch-агент:
+  //   на вход messages[] + existingTopics[], на выход newTopics[] + assignments[]
+  //   (один тезис → один топик; жалоба/запрос/благодарность — часть смысла,
+  //   не отдельное измерение). Capable модель + structured JSON:
+  //   primary = deepseek-v4-pro, secondary = openai gpt-5.4,
+  //   tertiary = kie gemini-3-pro, quaternary = grsai gemini-3-pro.
+  | 'feedback.cluster';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -452,6 +460,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'meeting-report-fast',
   // ТЗ 2026-05-25 KC-Temporal W1.2 — FactSupersedeService.
   'fact-supersede-detect',
+  // ТЗ 2026-05-25 user-feedback-with-ai-clustering (Фаза 4).
+  'feedback.cluster',
 ] as const;
 
 /**
@@ -518,12 +528,18 @@ const DATA_CLASS_RANK: Record<DataClass, number> = {
 };
 
 /**
+ * @deprecated W4.2 KC-Temporal (2026-05-25) — используй
+ *   `DataClassPolicyService.derive({ sources, context: { kind } })`.
+ *
  * Возвращает «строжайший» из переданных DataClass'ов. Используется в
  * call-site'ах LLM-вызовов, где входных блоков/документов больше одного
  * (chat retrieval, distill judge, summary v2 и т.п.). Дефолт — 'internal'.
  *
  * Пустой/отсутствующий вход → 'internal' (чтобы вызовы без явного
  * dataClass не оказывались более строгими, чем нужно).
+ *
+ * Оставлено для legacy-вызовов вне knowledge-core (chat retrieval вне
+ * specialist flow, summary v2). Новый код должен дёргать DataClassPolicyService.
  */
 export function maxDataClass(
   classes: Array<DataClass | null | undefined>,

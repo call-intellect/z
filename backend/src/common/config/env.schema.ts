@@ -1408,6 +1408,39 @@ const TrackerSchema = z.object({
     .enum(['off', 'shadow', 'enforce'])
     .default('shadow'),
   DATACLASS_POLICY_VERSION: z.string().min(1).default('v1'),
+  // ── W4.2 (2026-05-25) — DataClassPolicy enforce + audit-trail ─────────
+  // Если true и `DATACLASS_POLICY_ENFORCEMENT === 'enforce'` — persist
+  // проекций без `dataClassAudit` фейлится с ошибкой. На shadow/off — не
+  // фейлит даже при true. См. §W4.2 DoD «audit-trail обязателен».
+  DATACLASS_AUDIT_REQUIRED: z.coerce.boolean().default(true),
+
+  // ── W2.2 (2026-05-25) — Calibrated confidence (Platt scaling) ────────
+  // См. §W2.2 ТЗ. Cron-выражение совместимо с `@nestjs/schedule` (5/6 полей).
+  //
+  // `CONFIDENCE_CALIBRATION_ENABLED` — мастер-флаг. default OFF; включаем,
+  // когда golden-set + curated >100 примеров для taskType.
+  // `CONFIDENCE_CALIBRATION_CRON` — выражение cron для еженедельной
+  // пересборки параметров `a, b` per taskType (default Sun 04:00 UTC).
+  CONFIDENCE_CALIBRATION_ENABLED: z.coerce.boolean().default(false),
+  CONFIDENCE_CALIBRATION_CRON: z.string().min(1).default('0 4 * * 0'),
+
+  // ── W2.4 (2026-05-25) — Temporal probe-trigger ─────────────────────
+  // Cron `fact_stale_contradiction`. Понедельник 07:00 UTC по умолчанию.
+  TEMPORAL_PROBE_CRON: z.string().min(1).default('0 7 * * 1'),
+  // Лимит probe на Org за один проход (защита от шторма уведомлений).
+  TEMPORAL_PROBE_LIMIT_PER_ORG: z.coerce.number().int().positive().default(50),
+  // Через сколько недель без ответа эскалировать owner'у.
+  TEMPORAL_PROBE_ESCALATE_AFTER_WEEKS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(2),
+
+  // ── G.2 (2026-05-25) — Markov-матрица переходов signalType ────────
+  // Daily cron для пересчёта матрицы (`signal_type_transition_matrix:<orgId>`).
+  SIGNAL_TYPE_STATS_CRON: z.string().min(1).default('0 2 * * *'),
+  // σ-порог для алёрта о дрейфе распределения signalType (3.0 = ~99.7%).
+  SIGNAL_TYPE_DRIFT_SIGMA_THRESHOLD: z.coerce.number().positive().default(3.0),
 });
 
 /**

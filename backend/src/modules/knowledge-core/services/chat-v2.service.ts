@@ -284,26 +284,33 @@ export class ChatV2Service {
     }
     const finalSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
     const finalUser = guardOn ? wrapUserData(userMessage) : userMessage;
-    // W4.1 — shadow-compare. legacy = maxDataClass(retrieval pool);
-    // proposed — derive с kind='chat_context'. Реально передаётся legacy
-    // в `llm.call`. См. ТЗ §W4.1.
+    // W4.1/W4.2 — derive DataClass для chat_context.
+    // legacy = maxDataClass(retrieval pool). proposed — derive с
+    // kind='chat_context'. На enforce — передаём derive().dataClass в
+    // llm.call (правильнее с точки зрения compliance: floor + private
+    // aggregation учитываются). На shadow/off — legacy.
     const legacyDataClass = maxDataClass(contextBlocks.map((b) => b.dataClass));
-    if (this.dataClassPolicy) {
-      const proposed = this.dataClassPolicy.derive({
-        sources: contextBlocks.map((b) => ({
-          dataClass: b.dataClass,
-          sourceId: b.id,
-          sourceKind: 'idea_block' as const,
-        })),
-        context: { kind: 'chat_context' },
-      }).dataClass;
+    const enforcementChat = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+    const derivedChat = this.dataClassPolicy?.derive({
+      sources: contextBlocks.map((b) => ({
+        dataClass: b.dataClass,
+        sourceId: b.id,
+        sourceKind: 'idea_block' as const,
+      })),
+      context: { kind: 'chat_context' },
+    });
+    if (this.dataClassPolicy && derivedChat) {
       this.dataClassPolicy.compareWithLegacy({
         legacyResult: legacyDataClass,
-        proposedResult: proposed,
+        proposedResult: derivedChat.dataClass,
         kind: 'chat_context',
         sourceIds: contextBlocks.map((b) => b.id),
       });
     }
+    const effectiveDataClass =
+      enforcementChat === 'enforce' && derivedChat
+        ? derivedChat.dataClass
+        : legacyDataClass;
     const result = await this.llm.call({
       taskType: 'chat-v2',
       systemPrompt: finalSystem,
@@ -311,8 +318,8 @@ export class ChatV2Service {
       tenantId,
       userId: input.userId,
       sourceRef: { type: scope, id: scopeId ?? tenantId },
-      // Фаза 11: max dataClass по retrieval pool.
-      dataClass: legacyDataClass,
+      // Фаза 11/W4.2: max dataClass по retrieval pool (с учётом floor'а).
+      dataClass: effectiveDataClass,
     });
 
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.

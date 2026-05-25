@@ -1262,6 +1262,9 @@ model AiUsageLog {
   cachedCostPerMillionTokensSnapshot Decimal? @db.Decimal(10, 6)
   currencyRateToUsdSnapshot          Decimal? @db.Decimal(12, 6)
   costRub                            Decimal? @db.Decimal(14, 4)
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass: log пишется ПОСЛЕ
+  /// derive() — фиксируем max(input,output) для compliance-аудита.
+  dataClassAudit                     Json?
   createdAt                          DateTime @default(now())
 
   @@index([meetingId])
@@ -1919,6 +1922,12 @@ model Card {
   sourceBlockIds   String[]     @default([])
   /// confidence последнего LLM-rollup'а [0..1]. Используется CurationService.triage().
   confidence       Decimal?     @db.Decimal(4, 3)
+  /// KC-Temporal W2.2 (2026-05-25) — калиброванная confidence (Platt).
+  calibratedConfidence Decimal? @db.Decimal(4, 3)
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass.
+  /// NB: у Card нет поля `dataClass` напрямую — audit описывает класс,
+  /// применённый при rollup'е (для трассировки compliance).
+  dataClassAudit   Json?
   /// FK на текущую опубликованную версию CardVersion (α-4). Заполняется после auto-triage.
   currentVersionId String?
   currentVersion   CardVersion? @relation("CardCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
@@ -2146,6 +2155,9 @@ model Org {
 
   // ── SBA δ-2 — ProactiveWatcher (2026-05-23) ──
   proactiveNotifications ProactiveNotification[]
+
+  // ── W2.3 KC-Temporal (2026-05-25) — preference dataset ──
+  llmPreferenceSamples LlmPreferenceSample[]
 
   // ── User Feedback with AI Clustering (2026-05-25) ──
   /// Сообщения обратной связи пользователей этой Org. Опционально —
@@ -3005,6 +3017,9 @@ model ConflictItem {
   resolvedByUserId String?
   resolvedAt       DateTime?
   reasoning        String?             @db.Text
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (max от участников
+  /// конфликта; evolving + admin-resolve → sensitive по §4 floors).
+  dataClassAudit   Json?
   createdAt        DateTime            @default(now())
 
   org        Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -5108,6 +5123,9 @@ model ProbeEvent {
   createdAt                DateTime    @default(now())
   dispatchedAt             DateTime?
   expiresAt                DateTime?
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass probe-payload'а
+  /// (для compliance — мы храним вопрос-предложение, иногда чувствительный).
+  dataClassAudit           Json?
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -6089,9 +6107,14 @@ enum PersonaScope {
 /// PersonaStatus — статус снапшота персоны.
 ///   - active: используется ClonesService.
 ///   - superseded: заменён более новой версией.
+///   - pending_rebuild: Clones=Roles Ф2 (2026-05-25) — создан при смене
+///     носителя роли, ждёт пересборки `personaPrompt` через
+///     `ExecutablePersonaBuildService.buildForRole`. Активным НЕ считается
+///     (clone-API не использует), но виден в `/history`.
 enum PersonaStatus {
   active
   superseded
+  pending_rebuild
 }
 
 /// SkillProfile — навыковый профиль сотрудника. 1:1 с Person (только relationship='employee').
@@ -6108,6 +6131,9 @@ model SkillProfile {
   lastBuildAt  DateTime?
   /// Версия профиля (инкремент при каждом успешном rebuild).
   buildVersion Int                @default(0)
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (для всего профиля
+  /// как агрегата traits + персонального субъекта).
+  dataClassAudit Json?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
@@ -6296,6 +6322,10 @@ model ExecutablePersona {
   /// Clones=Roles Ф1 — id предыдущей версии ExecutablePersona в цепочке
   /// версий клона роли (succeed-link).
   succeedsPersonaId    String?
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (как минимум 'internal'
+  /// по правилу floor для executable_persona; private-trait'ы анонимизируются
+  /// до sensitive по private-aggregation в DataClassPolicyService).
+  dataClassAudit       Json?
   createdAt            DateTime      @default(now())
 
   tenant     Org                  @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
@@ -7645,6 +7675,37 @@ model CronRunHistory {
   triggeredBy String?
 
   @@index([cronName, startedAt])
+}
+
+/// W2.3 KC-Temporal (2026-05-25) — LlmPreferenceSample.
+///
+/// Каждое исправление пользователя через CurationDecision (mark_as_misleading,
+/// rejected, rolled_back, approved) фиксируется как пример для будущего
+/// retraining'а few-shot'ов и оценки качества LLM-агентов.
+///
+/// Источник правды: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.3.
+///
+/// `taskType` — LlmTaskType из ai/services/llm-router.service.ts (хранится строкой
+/// для расширяемости без миграций enum'а).
+/// `label` — 'correct' | 'wrong' | 'misleading' | 'partially_correct'.
+/// `inputContext` — сырой вход LLM (segment / block / candidates).
+/// `modelOutput` — что LLM вернул (для voting/comparison).
+model LlmPreferenceSample {
+  id           String   @id @default(cuid())
+  tenantId     String
+  taskType     String
+  inputContext Json
+  modelOutput  Json
+  label        String   @db.VarChar(40)
+  reason       String?  @db.Text
+  recordedBy   String   @db.VarChar(80)
+  decisionId   String?
+  createdAt    DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, taskType, createdAt])
+  @@map("llm_preference_samples")
 }
 
 // ───────────────────────────────────────────────────────────────────────────

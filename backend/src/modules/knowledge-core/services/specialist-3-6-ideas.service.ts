@@ -134,27 +134,36 @@ export class Specialist36Service {
         hasRationale: Boolean(draft.rationale),
       });
 
-      // W4.1 — shadow-compare. legacy = block.dataClass (passthrough);
-      // proposed — derive с floor=internal по kind='idea'. Реально пишется
-      // legacy. См. ТЗ §W4.1.
-      if (this.dataClassPolicy) {
-        const proposed = this.dataClassPolicy.derive({
-          sources: [
-            {
-              dataClass: block.dataClass,
-              sourceId: block.id,
-              sourceKind: 'idea_block',
-            },
-          ],
-          context: { kind: 'idea' },
-        }).dataClass;
+      // W4.1/W4.2 — derive DataClass.
+      // legacy = block.dataClass (passthrough); proposed — derive с
+      // floor=internal по kind='idea'. На 'enforce' — пишем derive + audit;
+      // иначе legacy.
+      const legacyDc = block.dataClass;
+      const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
+      const proposed = this.dataClassPolicy?.derive({
+        sources: [
+          {
+            dataClass: block.dataClass,
+            sourceId: block.id,
+            sourceKind: 'idea_block',
+          },
+        ],
+        context: { kind: 'idea' },
+      });
+      if (this.dataClassPolicy && proposed) {
         this.dataClassPolicy.compareWithLegacy({
-          legacyResult: block.dataClass,
-          proposedResult: proposed,
+          legacyResult: legacyDc,
+          proposedResult: proposed.dataClass,
           kind: 'idea',
           sourceIds: [block.id],
         });
       }
+      const finalDc =
+        enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDc;
+      const audit =
+        enforcement === 'enforce' && proposed
+          ? (proposed.audit as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
 
       const idea = await this.prisma.idea.create({
         data: {
@@ -175,7 +184,8 @@ export class Specialist36Service {
           confidence: new Prisma.Decimal(
             Math.max(0, Math.min(1, draft.confidence)),
           ),
-          dataClass: block.dataClass,
+          dataClass: finalDc,
+          dataClassAudit: audit,
           createdByUserId: ownerUserId,
         },
       });

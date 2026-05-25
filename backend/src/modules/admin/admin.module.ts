@@ -59,6 +59,7 @@ import { AdminPricesService } from './services/admin-prices.service';
 import { AdminUsageService } from './services/admin-usage.service';
 import { OrgAdminKnowledgeService } from './services/org-admin-knowledge.service';
 import { AdminSkillTraitConceptsModule } from './skill-trait-concepts/skill-trait-concepts.module';
+import { LlmPreferenceDatasetController } from './llm-preference-dataset/llm-preference-dataset.controller';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 import { AdminTelegramBotController } from './system/telegram-bot/admin-telegram-bot.controller';
 import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bot.service';
@@ -132,6 +133,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     OrgEconomicsController,
     // β-9 Phase 4 — главная админка Z, глобальный Telegram-бот.
     AdminTelegramBotController,
+    // W2.3 KC-Temporal (2026-05-25) — admin download preference-dataset.
+    LlmPreferenceDatasetController,
   ],
   providers: [
     AdminAuditInterceptor,

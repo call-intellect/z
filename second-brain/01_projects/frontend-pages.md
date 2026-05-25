@@ -175,6 +175,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 | `/dashboard/operations` (расширена) | Существующая панель + новый виджет `TeamTemperatureWidget` (зелёный/жёлтый/красный по 7 дням) + виджет «Открытые обещания» | β-8.1 + β-8.2 |
 | `/dashboard/operations/weekly?weekStart=YYYY-MM-DD` | `WeeklyDigestClient` — рендер `WeeklyOperationsDigest` с навигацией по неделям. Доступ — `coo`/`owner`/`admin`. | β-8.1 |
 | `/me/promises` | `MyPromisesClient` — таблица обещаний сотрудника + фильтр (open/asked/all) + действия (Сделано / Не сделано / Отменить) | β-8.2 |
+| `/persons/[id]` (расширена) | Секция «Обещания» в `PersonDetailClient.tsx` (через `PersonCommitmentsSection`): исходящие («что обещал») + входящие («что обещали ему»). Видна `owner`/`admin`/`coo`/`super_admin`. Запрос идёт по `entityId` (бэк сам резолвит `Person.id` через `Person.entityId`). | β-8.2 |
 
 **Навигация (`Sidebar.tsx`):**
 - Группа «Операции»: «Панель операций» (как было) + «Недельная сводка» (новое).

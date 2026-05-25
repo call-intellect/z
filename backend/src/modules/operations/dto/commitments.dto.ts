@@ -48,10 +48,14 @@ export type OpenCommitmentsQuery = z.infer<typeof OpenCommitmentsQuerySchema>;
 
 export const PersonCommitmentsQuerySchema = z
   .object({
-    personId: z.string().min(1).max(80),
+    personId: z.string().min(1).max(80).optional(),
+    entityId: z.string().min(1).max(80).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(50),
   })
-  .strict();
+  .strict()
+  .refine((d) => d.personId !== undefined || d.entityId !== undefined, {
+    message: 'Нужен personId или entityId',
+  });
 
 export type PersonCommitmentsQuery = z.infer<
   typeof PersonCommitmentsQuerySchema

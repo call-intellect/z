@@ -40,4 +40,10 @@ export const commitmentsApi = {
       `/api/v1/personal-relations/commitments?${q.toString()}`,
     );
   },
+  listForEntity: (entityId: string, limit = 50) => {
+    const q = new URLSearchParams({ entityId, limit: String(limit) });
+    return apiClient.get<PersonCommitmentsApi>(
+      `/api/v1/personal-relations/commitments?${q.toString()}`,
+    );
+  },
 };

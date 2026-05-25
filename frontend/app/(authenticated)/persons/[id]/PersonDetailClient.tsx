@@ -9,11 +9,14 @@ import {
   appointmentsApi,
   type AppointmentTimelineItemApi,
 } from '@/api/appointments.api';
+import { commitmentsApi } from '@/api/commitments.api';
+import type { CommitmentApi, CommitmentStatusApi } from '@/api/promises.api';
 import {
   personsApi,
   type EraseReportApi,
   type PersonDetailApi,
 } from '@/api/persons.api';
+import type { CurrentOrgRole } from '@/domain/account';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
@@ -50,7 +53,12 @@ const ERASED_NAME = '[удалено по запросу]';
  *   две стадии (сравнение ФИО + причина).
  */
 export function PersonDetailClient({ entityId }: { entityId: string }) {
-  const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
+  const {
+    currentOrgId,
+    currentOrgRole,
+    user,
+    isLoading: authLoading,
+  } = useAuth();
 
   if (authLoading) return <AdminLoading rows={4} />;
   if (!currentOrgId) {
@@ -67,6 +75,8 @@ export function PersonDetailClient({ entityId }: { entityId: string }) {
       entityId={entityId}
       orgId={currentOrgId}
       isOwner={currentOrgRole === 'owner'}
+      orgRole={currentOrgRole}
+      isSuperAdmin={user?.isSuperAdmin === true}
     />
   );
 }
@@ -75,10 +85,14 @@ function PersonDetailContent({
   entityId,
   orgId,
   isOwner,
+  orgRole,
+  isSuperAdmin,
 }: {
   entityId: string;
   orgId: string;
   isOwner: boolean;
+  orgRole: CurrentOrgRole;
+  isSuperAdmin: boolean;
 }) {
   const [data, setData] = useState<PersonDetailApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -184,6 +198,10 @@ function PersonDetailContent({
 
       {isPerson && (
         <AppointmentsTimelineSection orgId={orgId} entityId={entityId} />
+      )}
+
+      {isPerson && canSeePersonCommitments(orgRole, isSuperAdmin) && (
+        <PersonCommitmentsSection entityId={entityId} />
       )}
 
       {isOwner && isPerson && !isAlreadyErased && (
@@ -522,4 +540,169 @@ function pluralizeDays(n: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'день';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
   return 'дней';
+}
+
+// ─── SBA β-8.2 — Обещания человека ──────────────────────────────────────
+
+const COMMITMENT_ADMIN_ROLES: ReadonlySet<NonNullable<CurrentOrgRole>> = new Set([
+  'owner',
+  'admin',
+  'coo',
+]);
+
+function canSeePersonCommitments(
+  role: CurrentOrgRole,
+  isSuperAdmin: boolean,
+): boolean {
+  if (isSuperAdmin) return true;
+  if (!role) return false;
+  return COMMITMENT_ADMIN_ROLES.has(role);
+}
+
+/**
+ * Вкладка «Обещания» — исходящие (что человек обещал) и входящие
+ * (что обещали ему). Доступна только админ-ролям (owner/admin/coo/
+ * super_admin). Сам сотрудник видит свои обещания в `/me/promises`.
+ *
+ * Запрос идёт по `entityId` — на бэке `personal-relations/commitments`
+ * сам резолвит `Person.id` через `Person.entityId`. Если Person не
+ * привязан к Entity — отдаётся пустой результат, тогда секция показывает
+ * empty state.
+ */
+function PersonCommitmentsSection({ entityId }: { entityId: string }) {
+  const [outgoing, setOutgoing] = useState<CommitmentApi[] | null>(null);
+  const [incoming, setIncoming] = useState<CommitmentApi[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await commitmentsApi.listForEntity(entityId);
+        if (!cancelled) {
+          setOutgoing(res.outgoing);
+          setIncoming(res.incoming);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          if (e instanceof ApiError && e.code === 'forbidden') {
+            // Тихо скрываем секцию — у роли нет прав на чтение обещаний.
+            setOutgoing([]);
+            setIncoming([]);
+          } else {
+            setError(
+              e instanceof ApiError ? e.message : 'Не удалось загрузить обещания',
+            );
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId]);
+
+  if (loading) {
+    return (
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
+        <h2 className="mb-3 text-base font-medium">Обещания</h2>
+        <p className="text-sm text-fg-tertiary">Загрузка обещаний…</p>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
+        <h2 className="mb-3 text-base font-medium">Обещания</h2>
+        <p className="text-sm text-danger">{error}</p>
+      </section>
+    );
+  }
+
+  const hasAny = (outgoing?.length ?? 0) + (incoming?.length ?? 0) > 0;
+
+  return (
+    <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
+      <h2 className="mb-3 text-base font-medium">Обещания</h2>
+      {!hasAny && (
+        <p className="text-sm text-fg-tertiary">
+          У человека нет открытых или закрытых обещаний в графе знаний. Они
+          появляются автоматически из встреч и чек-инов.
+        </p>
+      )}
+      {(outgoing?.length ?? 0) > 0 && (
+        <div className="mb-5">
+          <h3 className="mb-2 text-sm font-medium text-fg-secondary">
+            Что обещал ({outgoing!.length})
+          </h3>
+          <CommitmentsList items={outgoing!} showRecipient />
+        </div>
+      )}
+      {(incoming?.length ?? 0) > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-fg-secondary">
+            Что обещали ему ({incoming!.length})
+          </h3>
+          <CommitmentsList items={incoming!} showAuthor />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CommitmentsList({
+  items,
+  showRecipient = false,
+  showAuthor = false,
+}: {
+  items: CommitmentApi[];
+  showRecipient?: boolean;
+  showAuthor?: boolean;
+}) {
+  return (
+    <ul className="divide-y divide-border-subtle">
+      {items.map((c) => (
+        <li key={c.id} className="py-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-sm text-fg-primary">{c.text}</p>
+            <span className="shrink-0 text-xs text-fg-tertiary">
+              {renderCommitmentStatus(c.status)}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-fg-tertiary">
+            {c.dueDate ? (
+              <>Срок: {new Date(c.dueDate).toLocaleDateString('ru-RU')}</>
+            ) : (
+              <>Срок не указан</>
+            )}
+            {showRecipient && c.recipientPersonName && (
+              <> · Кому: {c.recipientPersonName}</>
+            )}
+            {showAuthor && c.authorPersonName && (
+              <> · От: {c.authorPersonName}</>
+            )}
+            {c.escalatedAt && <> · эскалировано</>}
+            {!c.escalatedAt && c.askedAt && <> · уточнение отправлено</>}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function renderCommitmentStatus(status: CommitmentStatusApi | null): string {
+  if (status === 'open') return 'открыто';
+  if (status === 'asked') return 'ждём ответа';
+  if (status === 'fulfilled') return 'выполнено';
+  if (status === 'missed') return 'не выполнено';
+  if (status === 'cancelled') return 'отменено';
+  if (status === 'superseded') return 'заменено';
+  return '—';
 }

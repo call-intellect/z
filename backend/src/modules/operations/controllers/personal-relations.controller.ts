@@ -12,6 +12,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { z } from 'zod';
 
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -52,6 +53,7 @@ export class PersonalRelationsController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(CommitmentsService)
     private readonly commitments: CommitmentsService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -81,6 +83,12 @@ export class PersonalRelationsController {
   /**
    * SBA β-8.2 — Обещания человека (исходящие + входящие).
    * Доступ — admin/coo/owner (через RBAC commitment.read).
+   *
+   * Принимает `personId` (Person.id) ИЛИ `entityId` (Entity.id, тип `person`).
+   * Если передан только entityId — резолвим Person через `Person.entityId`.
+   * Если Person по entityId не найден — отдаём пустой результат (страница
+   * `/persons/[id]` может вызывать сюда для любой персоны, в т.ч. ещё не
+   * привязанной к учётке сотрудника).
    */
   @Get('commitments')
   @ApiOperation({ summary: 'Обещания человека (исходящие + входящие)' })
@@ -99,9 +107,26 @@ export class PersonalRelationsController {
         error: { code: 'forbidden', message: 'Нет прав на обещания' },
       });
     }
+
+    let personId = q.personId;
+    if (!personId && q.entityId) {
+      const person = await this.prisma.person.findFirst({
+        where: {
+          tenantId: tenantId!,
+          entityId: q.entityId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!person) {
+        return { outgoing: [], incoming: [] };
+      }
+      personId = person.id;
+    }
+
     return this.commitments.listForPerson({
       tenantId: tenantId!,
-      personId: q.personId,
+      personId: personId!,
       limit: q.limit,
     });
   }

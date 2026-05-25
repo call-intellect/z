@@ -100,7 +100,7 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 | **GET** | `/api/v1/me/promises?status=open\|asked\|all&limit=50` | Свои обещания (изоляция через JOIN `entities.entity.persons.some.id`) | self | **β-8.2** |
 | **POST** | `/api/v1/me/promises/:blockId/mark` | Ручное закрытие (`fulfilled`/`missed`/`cancelled` + note) | self | **β-8.2** |
 | GET | `/api/v1/personal-relations?personId=&relationType=` | EntityLink-связи человека | `admin` `coo` | β-8 |
-| **GET** | `/api/v1/personal-relations/commitments?personId=` | Исходящие + входящие обещания человека | `admin` `coo` | **β-8.2** |
+| **GET** | `/api/v1/personal-relations/commitments?personId=` или `?entityId=` | Исходящие + входящие обещания человека. Принимает `Person.id` или `Entity.id` (тип `person`) — взаимоисключающе. | `admin` `coo` `owner` `super_admin` | **β-8.2** |
 
 ⚠ **Privacy `sentiment`:** в `/me/check-ins` маппер `stripSentimentForRole` всегда вызывается с `role=null` — fail-safe двойная защита (RBAC + DTO-фильтр) против утечки настроения сотруднику. Покрыто 9 тестами.
 

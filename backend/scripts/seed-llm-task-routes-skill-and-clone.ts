@@ -14,12 +14,21 @@
  * карта second-brain/01_projects/llm-providers-verified.md (smoke 2026-05-21).
  *
  * ⚠ **Качество skill-trait-detect — критично.** Primary должна быть capable
- * модель (gpt-5.4 или deepseek-v4-pro — не -flash). Тесты этой модели в playbook
- * (см. test «skill-trait-detect»). **Без согласования с product owner —
- * не менять primary.**
+ * модель (deepseek-v4-pro или gpt-5.4 — не -flash). Тесты этой модели —
+ * `backend/test/eval/skill-trait-detect-golden/` (20 valid + 5 reject фикстур).
+ *
+ * **Решение по primary 2026-05-25 (clone-reliability-hardening, Фаза 6.1):**
+ * Прогон golden-набора на двух моделях:
+ *   - gpt-5.4: 23/25 (92%), $0.10
+ *   - deepseek-v4-pro: 24/25 (96%), $0.02  ← победил по точности и в 4.5×
+ *                                             дешевле, переключаем primary.
+ * Перед следующей сменой primary — обязательно прогнать golden-набор:
+ *   `SKILL_TRAIT_DETECT_GOLDEN_REAL=1 bunx vitest run backend/test/eval/skill-trait-detect-golden`
+ * + snapshot-тест `seed-llm-task-routes-skill-and-clone.snapshot.spec.ts`
+ * сломается на любой правке цепочки → осознанный `bunx vitest -u`.
  *
  * Цепочки:
- *   skill-trait-detect       — primary: gpt-5.4 (capable), secondary: deepseek-v4-pro, tertiary: ollama qwen3:30b
+ *   skill-trait-detect       — primary: deepseek-v4-pro (capable), secondary: gpt-5.4 (страховка), tertiary: ollama qwen3:30b
  *   skill-trait-merge        — primary: deepseek-v4-flash, secondary: gpt-5.4-mini, tertiary: ollama qwen3:30b
  *   executable-persona-compile — primary: deepseek-v4-flash, secondary: gpt-5.4-mini, tertiary: ollama qwen3:30b
  *   clone-respond            — primary: deepseek-v4-flash, secondary: gpt-5.4-mini, tertiary: ollama qwen3:30b
@@ -63,27 +72,36 @@ interface TaskRouteSeed {
   taskType: string;
   playbookSection: string;
   chain: TierEntry[];
+  /**
+   * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — закрепление версии модели.
+   * Прокси DeepSeek версионные slug-и не поддерживает, поэтому заморозка —
+   * через текстовую заметку, видимую супер-админу на /admin/llm-routes.
+   * Сохраняется на всех записях одного taskType (для всех tier'ов одинаково).
+   */
+  pinnedVersionNote?: string;
 }
 
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'skill-trait-detect',
-    // ⚠ САМАЯ ОТВЕТСТВЕННАЯ ЗАДАЧА γ-1 — primary должна быть capable.
+    // ⚠ САМАЯ ОТВЕТСТВЕННАЯ ЗАДАЧА γ-1 — primary capable, выбрана через golden-набор.
     playbookSection:
-      '§2.3 capable LLM (gpt-5.4 / deepseek-v4-pro) — НЕ менять primary без согласования с product owner. См. зонтичный §3.4 + sub-TZ γ-1 §12.',
+      '§2.3 capable LLM. Primary = deepseek-v4-pro выбрана через golden-прогон 2026-05-25 (24/25 vs gpt-5.4 23/25, в 4.5× дешевле). Перед сменой primary — обязательно прогнать `backend/test/eval/skill-trait-detect-golden/` с SKILL_TRAIT_DETECT_GOLDEN_REAL=1.',
     chain: [
       {
         tier: 'primary',
-        providerName: 'openai-via-proxy',
-        model: 'gpt-5.4',
-      },
-      {
-        tier: 'secondary',
         providerName: 'deepseek',
         model: 'deepseek-v4-pro',
       },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4',
+      },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
+    pinnedVersionNote:
+      'Закреплено на deepseek-v4-pro 2026-05-25 после golden-прогона (24/25 vs gpt-5.4 23/25, $0.02 vs $0.10). Перед сменой primary — обязательно прогнать SKILL_TRAIT_DETECT_GOLDEN_REAL=1 bunx vitest run backend/test/eval/skill-trait-detect-golden. Прокси DeepSeek не поддерживает версионные slug-и, поэтому при обновлении модели провайдером поведение может незаметно измениться.',
   },
   {
     taskType: 'skill-trait-merge',
@@ -175,6 +193,7 @@ async function applySeed(
           providers: null,
           isActive: true,
           editedByAdmin: false,
+          pinnedVersionNote: seed.pinnedVersionNote ?? null,
         },
       });
       stats.inserted++;
@@ -196,10 +215,12 @@ async function applySeed(
       stats.skipped++;
       continue;
     }
+    const seedPin = seed.pinnedVersionNote ?? null;
     if (
       existing.model === entry.model &&
       existing.priority === priority &&
-      existing.isActive === true
+      existing.isActive === true &&
+      existing.pinnedVersionNote === seedPin
     ) {
       stats.skipped++;
       continue;
@@ -210,6 +231,7 @@ async function applySeed(
         model: entry.model,
         priority,
         isActive: true,
+        pinnedVersionNote: seedPin,
       },
     });
     stats.updated++;
@@ -230,7 +252,7 @@ async function main(): Promise<void> {
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
   // eslint-disable-next-line no-console
   console.log(
-    '⚠  skill-trait-detect — самая ответственная задача γ-1. Primary = gpt-5.4 (capable). Без согласования с product owner — НЕ менять primary.',
+    '⚠  skill-trait-detect — самая ответственная задача γ-1. Primary = deepseek-v4-pro (выбрана через golden-прогон 2026-05-25: 24/25 vs gpt-5.4 23/25, в 4.5× дешевле). pinnedVersionNote — см. seed. Перед сменой primary — golden-набор с SKILL_TRAIT_DETECT_GOLDEN_REAL=1.',
   );
 
   const stats: SeedStats = {

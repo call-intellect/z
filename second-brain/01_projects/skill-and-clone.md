@@ -78,12 +78,12 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 
 | TaskType | Primary | Secondary | Tertiary |
 |---|---|---|---|
-| `skill-trait-detect` (⚠ критично) | `openai-via-proxy:gpt-5.4` | `deepseek:deepseek-v4-pro` | `ollama:qwen3:30b` |
+| `skill-trait-detect` (⚠ критично) | `deepseek:deepseek-v4-pro` | `openai-via-proxy:gpt-5.4` | `ollama:qwen3:30b` |
 | `skill-trait-merge` | `deepseek:deepseek-v4-flash` | `openai-via-proxy:gpt-5.4-mini` | `ollama:qwen3:30b` |
 | `executable-persona-compile` | `deepseek:deepseek-v4-flash` | `openai-via-proxy:gpt-5.4-mini` | `ollama:qwen3:30b` |
 | `clone-respond` | `deepseek:deepseek-v4-flash` | `openai-via-proxy:gpt-5.4-mini` | `ollama:qwen3:30b` |
 
-⚠ `skill-trait-detect` — primary должна быть capable. **Без согласования с product owner — не менять.**
+⚠ `skill-trait-detect` — primary должна быть capable. **Решение по primary 2026-05-25 (Фаза 6.1):** прогон golden-набора на двух моделях — `deepseek-v4-pro` 24/25 (96%) при $0.02 против `gpt-5.4` 23/25 (92%) при $0.10. Переключили. `pinnedVersionNote` заполнено в seed: «Закреплено на deepseek-v4-pro 2026-05-25...». **Перед сменой primary — обязательно прогнать** `SKILL_TRAIT_DETECT_GOLDEN_REAL=1 bunx vitest run backend/test/eval/skill-trait-detect-golden` + snapshot-тест seed сломается на любой правке цепочки.
 
 ## Метрики
 
@@ -130,8 +130,12 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 | Заморозка модели | Только комментарий в seed-script. | Поле `LlmTaskRoute.pinnedVersionNote` + snapshot-тест [`seed-llm-task-routes-skill-and-clone.snapshot.spec.ts`](../../backend/scripts/seed-llm-task-routes-skill-and-clone.snapshot.spec.ts) — фиксирует точные provider/model для 4 цепочек. Любая правка → snapshot ломается. UI `/admin/llm-routes` показывает warning для критичного списка `{skill-trait-detect, clone-respond, block-ingest}` при пустой заметке. |
 | Golden-набор | Не было. | [`backend/test/eval/skill-trait-detect-golden/`](../../backend/test/eval/skill-trait-detect-golden/) — 20 валидных + 5 reject фикстур, 84 unit-теста, инварианты `categoryKeywords` / `statementContainsQualifier` / `forbiddenWords` против приговорного стиля. Реальный прогон через LLM включается `SKILL_TRAIT_DETECT_GOLDEN_REAL=1`. |
 
-### Что осталось — Фаза 6.1 (переключение моделей на DeepSeek V4 Pro)
+### Фаза 6.1 — реализована 2026-05-25
 
-⛔ **Заблокировано** параллельным ТЗ [`plans/tz/2026-05-25-deepseek-pro-output-format-fix.md`](../../plans/tz/2026-05-25-deepseek-pro-output-format-fix.md): DeepSeek-V4-Pro+thinking не поддерживает `response_format: json_schema strict`, а `skill-trait-detect` именно его использует. Нужна автоконвертация json_schema → tool+auto в `DeepSeekService` (черновик владельца).
+✅ **Закрыта.** Цепочка событий:
+1. Параллельный фикс владельца — коммит `a8b2ab6 feat(ai/deepseek): авто-конвертация json_schema → tool для V4-Pro` + рефлексия `8f8ad86`. `DeepSeekService.buildParams` теперь автоконвертит `response_format: json_schema strict` в `tools[]` + `tool_choice: 'auto'` с виртуальным tool `submit_<schemaName>`, а `mapResponse` читает результат из `tool_calls[0].input` обратно в `text`. Это сняло технический блокер.
+2. Реальный прогон golden-набора `backend/test/eval/skill-trait-detect-golden/` под `SKILL_TRAIT_DETECT_GOLDEN_REAL=1` на двух моделях: `deepseek-v4-pro` 24/25 (96%) при $0.02 против `gpt-5.4` 23/25 (92%) при $0.10. DeepSeek победил по обоим показателям.
+3. Решение владельца — переключить. Правка в [`seed-llm-task-routes-skill-and-clone.ts`](../../backend/scripts/seed-llm-task-routes-skill-and-clone.ts): primary `deepseek:deepseek-v4-pro`, secondary (страховка) `openai-via-proxy:gpt-5.4`. Snapshot-тест обновлён через `bunx vitest --update`.
+4. `pinnedVersionNote` для `skill-trait-detect` заполнено прямо в seed (поле в `LlmTaskRoute`, синхронизируется на все tier-записи) с описанием результатов прогона.
 
-Дальнейший порядок: (1) реализовать deepseek-pro-output-format-fix; (2) прогнать `skill-trait-detect-golden` на двух моделях в сравнении; (3) если DeepSeek-Pro не хуже — patch-script переключения; (4) заполнить `pinnedVersionNote`.
+Применить на проде: `bun run scripts/seed-llm-task-routes-skill-and-clone.ts --update-existing` (если у Org нет `editedByAdmin=true` на этих роутах) ИЛИ через UI `/admin/llm-routes` вручную для каждой Org.

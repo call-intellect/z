@@ -1,12 +1,16 @@
 ---
 type: tz
-status: draft
+status: implemented
 date: 2026-05-25
+implemented: 2026-05-25
 owner: sergrv80@gmail.com
 relates_to:
   - second-brain/01_projects/skill-and-clone.md
   - second-brain/01_projects/knowledge-clone.md
+  - second-brain/01_projects/skill-trait-concepts.md
   - second-brain/02_architecture/knowledge-core.md
+  - second-brain/05_история/2026-05-25-clone-reliability-hardening-wave.md
+all-phases-closed: 2026-05-25
 ---
 
 # Усиление надёжности клона сотрудника

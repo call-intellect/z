@@ -55,9 +55,30 @@ distilled: false
 
 7. **Заморозка модели без поддержки версионных slug-ов в прокси.** Прокси DeepSeek принимает только базовое имя `deepseek-v4-pro` (без `@дата`). Заморозить «версию которая работала» нельзя на уровне API. Защита через snapshot-тест seed-route — ломается, если кто-то поменял model — плюс UI warning «без закреплённой версии» для критичного списка. → Когда внешний API не даёт версионирования — переноси контроль в свой код через тесты и пометки.
 
-## Что осталось
+## Дополнение того же дня — Фаза 6.1 закрыта
 
-- **Фаза 6.1** — `skill-trait-detect`/`clone-respond`/др. на DeepSeek V4 Pro. Ждёт фикса `deepseek-pro-output-format-fix.md`. После фикса: прогон golden-набора на двух моделях параллельно (через `SKILL_TRAIT_DETECT_GOLDEN_REAL=1`), если DeepSeek-Pro не хуже — patch-script переключения + заполнить `pinnedVersionNote` для всех 4 цепочек агента клона.
+После основной волны провёл ещё один цикл:
+
+1. **Перепроверил «блокер»** — оказался фантомным. Коммит `a8b2ab6 feat(ai/deepseek): авто-конвертация json_schema → tool для V4-Pro` (от того же 2026-05-25) уже реализовал автоконвертацию `response_format: json_schema strict` → `tools[]` + `tool_choice: 'auto'` для DeepSeek-V4-Pro. Я в основном отчёте говорил «фикс в draft» — был неправ, фактически фикс был сделан **до** моих фаз 1/5. Frontmatter ТЗ `deepseek-pro-output-format-fix.md` обновлён `draft → implemented`.
+
+2. **Owner провёл golden-прогон** под `SKILL_TRAIT_DETECT_GOLDEN_REAL=1`:
+   - `gpt-5.4` — 23/25 (92%), $0.10.
+   - `deepseek-v4-pro` — 24/25 (96%), $0.02.
+   - DeepSeek победил по точности и в 4.5× дешевле → решение переключать.
+
+3. **Переключил seed-script** `seed-llm-task-routes-skill-and-clone.ts`:
+   - `skill-trait-detect`: primary `deepseek:deepseek-v4-pro`, secondary `openai-via-proxy:gpt-5.4` (страховка).
+   - `pinnedVersionNote` заполнено прямо в seed: "Закреплено на deepseek-v4-pro 2026-05-25 после golden-прогона (24/25 vs gpt-5.4 23/25, $0.02 vs $0.10). Перед сменой primary — обязательно прогнать SKILL_TRAIT_DETECT_GOLDEN_REAL=1...".
+   - Расширил `TaskRouteSeed` интерфейс полем `pinnedVersionNote?`, `applySeed` пробрасывает в `LlmTaskRoute.create`/`update`.
+   - Snapshot-тест обновлён через `bunx vitest --update` — новая цепочка зафиксирована.
+
+4. **Дополнительный урок** (8-й к 7 основным):
+
+   **Анализ «что блокирует» нужно делать на коде, а не на frontmatter ТЗ.** Я смотрел на `status: draft` в `deepseek-pro-output-format-fix.md` и делал вывод что не реализовано. На самом деле код был, рефлексия была, коммит был. Frontmatter просто не успели обновить. → При вопросе «что блокирует» — grep по реальному коду (наличие функции/класса), а не статус ТЗ. ТЗ — отстающий индикатор.
+
+ТЗ `plans/tz/2026-05-25-clone-reliability-hardening.md` теперь весь закрыт (`status: implemented`, `all-phases-closed: 2026-05-25`).
+
+## Что осталось
 - **Frontend интеграция с `conceptId`** — на `/persons/[id]/skill-profile` группировка traits идёт по `category` (тексту), не по `conceptId`. После бэкфилла можно сделать естественный шаг — группировать по концепту. Не критично для MVP.
 - **Виджет «топ-смысловых блоков компании»** на дашборде CEO — отложен, см. [[skill-trait-concepts]] «Что осталось».
 - **Реестры в `second-brain`** (`02_architecture/data-model.md`, `module-map.md`, `01_projects/ai-jobs.md`, `workers-queues.md`, `api-layer.md`, `frontend-pages.md`, `admin.md`) — не обновил детально. Изменений много, прицельные правки сделал только в `skill-and-clone.md` и создал `skill-trait-concepts.md`. Реестры обновлять при следующей итерации.

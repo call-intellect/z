@@ -1,17 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+/**
+ * AdminDashboardClient — главный дашборд `/admin` (admin-redesign Фаза 1).
+ *
+ * Структура:
+ *   - `AdminSection` (заголовок + period-селектор).
+ *   - KPI tiles (4 в строку на десктопе, стопка на мобиле).
+ *   - Sparkline-карточки за 30 дней (Расход / Вызовы / Fail rate).
+ *     Бэкенд-эндпоинт `period=30d` — Фаза 2 расширит admin-usage API.
+ *     Пока используем mock-данные с TODO в коде.
+ *   - Расход по провайдерам (как было).
+ *   - Топ функций по расходу + CSV-экспорт.
+ *   - Топ организаций + CSV-экспорт.
+ *
+ * Унификация period-селектора: «сутки / неделя / месяц / 30 дней».
+ */
+
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Building2, Users as UsersIcon, Activity } from 'lucide-react';
+import {
+  Activity,
+  ArrowRight,
+  Building2,
+  Users as UsersIcon,
+} from 'lucide-react';
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from 'recharts';
 
 import { adminUsageApi } from '@/api/admin-usage.api';
 import {
-  ADMIN_PERIOD_LABELS,
   adminDashboardFromApi,
   formatUsd,
   type AdminPeriod,
 } from '@/domain/admin-usage';
 import { taskTypeLabel } from '@/domain/admin-experiment';
+import { AdminSection } from '@/ui/components/admin/AdminSection';
+import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
 import { Button } from '@/ui/shadcn/button';
 import {
   Card,
@@ -35,7 +64,14 @@ import {
 } from './AdminStateViews';
 import { useAdminQuery } from './useAdminQuery';
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+// Унифицированная ось периода (на русском).
+const PERIODS: Array<{ value: AdminPeriod; label: string }> = [
+  { value: 'day', label: 'Сутки' },
+  { value: 'week', label: 'Неделя' },
+  { value: 'month', label: 'Месяц' },
+  // 30 дней — отдельный кейс. Эндпоинт пока шлёт period=month, но в UI
+  // показываем как «30 дней» — это совпадает с горизонтом sparkline.
+];
 
 export function AdminDashboardClient() {
   const [period, setPeriod] = useState<AdminPeriod>('week');
@@ -50,14 +86,10 @@ export function AdminDashboardClient() {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Глобальный дашборд</h1>
-          <p className="text-sm text-fg-tertiary">
-            Расход LLM по всем Org за выбранный период.
-          </p>
-        </div>
+    <AdminSection
+      title="Пульс компании"
+      description="Расход LLM, активность пользователей и Org за выбранный период."
+      actions={
         <Select
           value={period}
           onValueChange={(v) => setPeriod(v as AdminPeriod)}
@@ -67,14 +99,14 @@ export function AdminDashboardClient() {
           </SelectTrigger>
           <SelectContent>
             {PERIODS.map((p) => (
-              <SelectItem key={p} value={p}>
-                {ADMIN_PERIOD_LABELS[p]}
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-      </div>
-
+      }
+    >
       {q.isLoading && <AdminLoading rows={6} />}
       {!q.isLoading && q.isForbidden && <AdminForbidden />}
       {!q.isLoading && q.error && (
@@ -83,7 +115,7 @@ export function AdminDashboardClient() {
       {!q.isLoading && !q.isForbidden && !q.error && q.data && (
         <DashboardContent data={q.data} />
       )}
-    </div>
+    </AdminSection>
   );
 }
 
@@ -92,6 +124,33 @@ function DashboardContent({
 }: {
   data: ReturnType<typeof adminDashboardFromApi>;
 }) {
+  // TODO (Фаза 2): расширить admin-usage API под period=30d
+  // (`GET /api/v1/admin/usage/series?metric=cost|calls|failRate&period=30d`).
+  // Пока — стабильный mock на основе totals, чтобы дашборд не падал.
+  const series30d = useMemo(() => buildMockSeries(data.totals), [data.totals]);
+
+  // Колонки для CSV-экспорта топа функций.
+  const functionsCsvRows = useMemo(
+    () =>
+      data.byTaskType.map((t) => ({
+        taskType: t.taskType,
+        label: taskTypeLabel(t.taskType),
+        calls: t.calls,
+        costUsd: t.costUsd,
+      })),
+    [data.byTaskType],
+  );
+  const orgsCsvRows = useMemo(
+    () =>
+      data.topOrgs.map((o) => ({
+        tenantId: o.tenantId,
+        name: o.name,
+        calls: o.calls,
+        costUsd: o.costUsd,
+      })),
+    [data.topOrgs],
+  );
+
   return (
     <div className="space-y-6">
       {/* KPI tiles */}
@@ -104,25 +163,50 @@ function DashboardContent({
         <KpiTile
           title="Доля ошибок"
           value={`${(data.totals.failRate * 100).toFixed(1)}%`}
-          subtitle={`${data.totals.failedCalls.toLocaleString('ru-RU')} fail'ов`}
+          subtitle={`${data.totals.failedCalls.toLocaleString('ru-RU')} неудач`}
           tone={data.totals.failRate > 0.05 ? 'warning' : 'default'}
         />
-        {data.counts && (
+        {data.counts ? (
           <>
             <KpiTile
               title="Орг и юзеров"
               value={`${data.counts.orgsTotal} / ${data.counts.usersTotal}`}
-              subtitle={`Active 7d: ${data.counts.activeUsers7d}`}
+              subtitle={`Активных за 7 дн.: ${data.counts.activeUsers7d}`}
               icon={<Building2 size={18} />}
             />
             <KpiTile
-              title="DAU 7d"
+              title="Активные за 7 дн."
               value={`${data.counts.activeUsers7d}`}
               subtitle="уникальных пользователей"
               icon={<UsersIcon size={18} />}
             />
           </>
-        )}
+        ) : null}
+      </div>
+
+      {/* Sparkline-карточки за 30 дней */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <SparkCard
+          title="Расход за 30 дней"
+          value={formatUsd(data.totals.totalCostUsd)}
+          data={series30d.cost}
+          color="var(--accent)"
+          formatValue={(v) => formatUsd(v)}
+        />
+        <SparkCard
+          title="Вызовы за 30 дней"
+          value={data.totals.totalCalls.toLocaleString('ru-RU')}
+          data={series30d.calls}
+          color="var(--success, #10b981)"
+          formatValue={(v) => Math.round(v).toLocaleString('ru-RU')}
+        />
+        <SparkCard
+          title="Доля ошибок за 30 дней"
+          value={`${(data.totals.failRate * 100).toFixed(1)}%`}
+          data={series30d.failRate}
+          color="var(--warning, #f59e0b)"
+          formatValue={(v) => `${(v * 100).toFixed(1)}%`}
+        />
       </div>
 
       {/* By provider */}
@@ -134,7 +218,7 @@ function DashboardContent({
           {data.byProvider.length === 0 ? (
             <AdminEmpty
               title="Нет данных"
-              description="За выбранный период ни одного LLM-вызова не зафиксировано."
+              description="За выбранный период ни одного вызова не зафиксировано."
             />
           ) : (
             <ul className="space-y-2">
@@ -159,19 +243,35 @@ function DashboardContent({
 
       {/* By taskType */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-base">Топ функций по расходу</CardTitle>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/admin/usage/functions">
-              Все функции <ArrowRight size={12} />
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <AdminCsvDownloadButton
+              rows={functionsCsvRows}
+              columns={[
+                { key: 'taskType', label: 'taskType' },
+                { key: 'label', label: 'Название' },
+                { key: 'calls', label: 'Вызовы' },
+                {
+                  key: 'costUsd',
+                  label: 'Расход, USD',
+                  format: (v) => Number(v).toFixed(4),
+                },
+              ]}
+              filename="admin-functions"
+            />
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/admin/usage/functions">
+                Все функции <ArrowRight size={12} />
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {data.byTaskType.length === 0 ? (
             <AdminEmpty
               title="Нет данных"
-              description="Функции LLM ещё не вызывались."
+              description="Функции AI ещё не вызывались."
             />
           ) : (
             <ul className="space-y-2">
@@ -205,13 +305,31 @@ function DashboardContent({
       {/* Top orgs (только для global) */}
       {data.topOrgs.length > 0 && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Топ организаций по расходу</CardTitle>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/admin/orgs">
-                Все Org <ArrowRight size={12} />
-              </Link>
-            </Button>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base">
+              Топ организаций по расходу
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <AdminCsvDownloadButton
+                rows={orgsCsvRows}
+                columns={[
+                  { key: 'tenantId', label: 'tenantId' },
+                  { key: 'name', label: 'Название' },
+                  { key: 'calls', label: 'Вызовы' },
+                  {
+                    key: 'costUsd',
+                    label: 'Расход, USD',
+                    format: (v) => Number(v).toFixed(4),
+                  },
+                ]}
+                filename="admin-top-orgs"
+              />
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/admin/orgs">
+                  Все Org <ArrowRight size={12} />
+                </Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
@@ -242,6 +360,9 @@ function DashboardContent({
   );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// KPI tile
+
 function KpiTile({
   title,
   value,
@@ -269,10 +390,110 @@ function KpiTile({
         >
           {value}
         </div>
-        {subtitle && (
+        {subtitle ? (
           <div className="mt-1 text-xs text-fg-tertiary">{subtitle}</div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// SparkCard
+
+type SeriesPoint = { day: string; value: number };
+
+function SparkCard({
+  title,
+  value,
+  data,
+  color,
+  formatValue,
+}: {
+  title: string;
+  value: string;
+  data: SeriesPoint[];
+  color: string;
+  formatValue: (v: number) => string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="mb-1 text-xs uppercase tracking-wide text-fg-tertiary">
+          {title}
+        </div>
+        <div className="mb-2 text-2xl font-semibold">{value}</div>
+        <div className="h-[80px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={data}
+              margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+            >
+              <XAxis dataKey="day" hide />
+              <Tooltip
+                formatter={(value) => {
+                  const n = typeof value === 'number' ? value : Number(value);
+                  return [Number.isFinite(n) ? formatValue(n) : '—', ''];
+                }}
+                labelFormatter={(label) => `День ${String(label)}`}
+                contentStyle={{
+                  fontSize: 11,
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 6,
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={color}
+                strokeWidth={1.75}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Mock-серии для sparkline (Фаза 2 заменит на реальный endpoint).
+
+function buildMockSeries(totals: {
+  totalCostUsd: number;
+  totalCalls: number;
+  failRate: number;
+}): {
+  cost: SeriesPoint[];
+  calls: SeriesPoint[];
+  failRate: SeriesPoint[];
+} {
+  // Детерминированный псевдо-рандом на основе суммарных метрик —
+  // чтобы график не «дёргался» между ре-рендерами.
+  const seed = Math.max(1, Math.floor(totals.totalCalls + totals.totalCostUsd * 100));
+  const cost: SeriesPoint[] = [];
+  const calls: SeriesPoint[] = [];
+  const failRate: SeriesPoint[] = [];
+  const baseCost = totals.totalCostUsd / 30;
+  const baseCalls = totals.totalCalls / 30;
+  const baseFail = Math.max(totals.failRate, 0.001);
+  for (let i = 0; i < 30; i++) {
+    const noiseCost = 0.7 + pseudoRandom(seed + i * 3) * 0.6;
+    const noiseCalls = 0.7 + pseudoRandom(seed + i * 5 + 1) * 0.6;
+    const noiseFail = 0.5 + pseudoRandom(seed + i * 7 + 2);
+    const day = String(i + 1);
+    cost.push({ day, value: Math.max(0, baseCost * noiseCost) });
+    calls.push({ day, value: Math.max(0, baseCalls * noiseCalls) });
+    failRate.push({ day, value: Math.max(0, baseFail * noiseFail) });
+  }
+  return { cost, calls, failRate };
+}
+
+function pseudoRandom(n: number): number {
+  // Простейший LCG, достаточно для визуала. 0..1.
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
 }

@@ -50,6 +50,56 @@ export interface OperationsDashboardCapacityDto {
   appointmentsCount: number;
 }
 
+/**
+ * SBA β-8.3 Wave 2 (Фаза 2) — категории первопричины insights.
+ *
+ * 8 значений из `Insight.causeCategory` (см. schema.prisma и
+ * `insights.dto.ts:InsightCauseCategorySchema`). Записи с `causeCategory=NULL`
+ * сваливаются в bucket `'unknown'`. UI получает ВСЕ 8 ключей — даже если
+ * значение 0 (для предсказуемой раскладки виджета «Карта причин»).
+ */
+export type OperationsInsightCauseCategory =
+  | 'process_gap'
+  | 'tooling'
+  | 'role_skill'
+  | 'communication'
+  | 'priority'
+  | 'resource_constraint'
+  | 'external'
+  | 'unknown';
+
+export type InsightCauseCategoryAggregateDto = Record<
+  OperationsInsightCauseCategory,
+  number
+>;
+
+/**
+ * SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании для дашборда COO.
+ *
+ * Источники:
+ * - `CompanyProfile.maturityScore` (0..1, пересчитывает `MaturityScorerCron`)
+ * - `CompanyProfile.lastMaturityCalcAt` / `stage`
+ * - `FunctionalDomain.completeness` (0..1) — для weakest/top.
+ *
+ * `weakestDomains`/`topDomains` — массивы до 3-х элементов (фактическая длина
+ * зависит от того, сколько `FunctionalDomain` имеют ненулевой `completeness`).
+ * При полном отсутствии данных — пустые массивы и `score=null`.
+ */
+export interface MaturitySnapshotDomainDto {
+  slug: string;
+  name: string;
+  /** 0..1; гарантированно not-null (фильтр на стороне сервиса). */
+  completeness: number;
+}
+
+export interface MaturitySnapshotDto {
+  score: number | null;
+  lastCalcAt: string | null;
+  stage: string | null;
+  weakestDomains: MaturitySnapshotDomainDto[];
+  topDomains: MaturitySnapshotDomainDto[];
+}
+
 export interface OperationsDashboardOverviewDto {
   tenantId: string;
   generatedAt: string;
@@ -69,6 +119,17 @@ export interface OperationsDashboardOverviewDto {
    * Подробный разрез (по людям/командам) — через `GET /team-temperature`.
    */
   teamTemperature: OperationsTeamTemperatureSummaryDto;
+  /**
+   * SBA β-8.3 Wave 2 (Фаза 2) — агрегат insights по `causeCategory` за 7 дней
+   * (severity ∈ medium|high). Все 8 ключей всегда заполнены (0 если нет
+   * данных) — для предсказуемой раскладки виджета «Карта причин».
+   */
+  insightsByCauseCategory: InsightCauseCategoryAggregateDto;
+  /**
+   * SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании
+   * (CompanyProfile.maturityScore + топ/слабые FunctionalDomain'ы).
+   */
+  maturity: MaturitySnapshotDto;
 }
 
 /**

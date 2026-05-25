@@ -7,6 +7,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
 import type {
+  InsightCauseCategoryAggregateDto,
+  MaturitySnapshotDto,
   OperationsDashboardBlockerDto,
   OperationsDashboardBlockersListDto,
   OperationsDashboardCapacityDto,
@@ -14,6 +16,7 @@ import type {
   OperationsDashboardOverviewDto,
   OperationsDashboardTeamFrictionDto,
   OperationsDashboardTeamFrictionsListDto,
+  OperationsInsightCauseCategory,
   OperationsTeamTemperatureDto,
   OperationsTeamTemperaturePersonDto,
   OperationsTeamTemperatureSummaryDto,
@@ -23,6 +26,35 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
 const TEAM_FRICTION_RELATION_TYPES: EntityLinkType[] = ['conflicted_with'];
 // Severity buckets для cardinality-safe Gauge.
 type Severity = 'low' | 'medium' | 'high' | 'unknown';
+
+/**
+ * SBA β-8.3 Wave 2 (Фаза 2) — полный whitelist `Insight.causeCategory`.
+ * Используется и в БД-фильтре (на случай странных значений), и для
+ * гарантии «все 8 ключей в ответе» (UI ожидает фиксированную раскладку).
+ */
+const INSIGHT_CAUSE_CATEGORIES: readonly OperationsInsightCauseCategory[] = [
+  'process_gap',
+  'tooling',
+  'role_skill',
+  'communication',
+  'priority',
+  'resource_constraint',
+  'external',
+  'unknown',
+] as const;
+
+function makeEmptyInsightCauseAggregate(): InsightCauseCategoryAggregateDto {
+  return {
+    process_gap: 0,
+    tooling: 0,
+    role_skill: 0,
+    communication: 0,
+    priority: 0,
+    resource_constraint: 0,
+    external: 0,
+    unknown: 0,
+  };
+}
 
 /**
  * SBA β-8 — OperationsDashboardService.
@@ -63,15 +95,26 @@ export class OperationsDashboardService {
     const cached = await this.cacheGet<OperationsDashboardOverviewDto>(cacheKey);
     if (cached) return cached;
 
-    const [blockers, goalsAgg, frictions, capacity, temperature] =
-      await Promise.all([
-        this.fetchBlockers(args.tenantId, 100),
-        this.fetchGoalsAgg(args.tenantId),
-        this.fetchTeamFrictions(args.tenantId, 100),
-        this.fetchCapacity(args.tenantId),
-        // SBA β-8.1 — Температура команды за 7 дней.
-        this.fetchTeamTemperature(args.tenantId, 7),
-      ]);
+    const [
+      blockers,
+      goalsAgg,
+      frictions,
+      capacity,
+      temperature,
+      insightsByCauseCategory,
+      maturity,
+    ] = await Promise.all([
+      this.fetchBlockers(args.tenantId, 100),
+      this.fetchGoalsAgg(args.tenantId),
+      this.fetchTeamFrictions(args.tenantId, 100),
+      this.fetchCapacity(args.tenantId),
+      // SBA β-8.1 — Температура команды за 7 дней.
+      this.fetchTeamTemperature(args.tenantId, 7),
+      // SBA β-8.3 Wave 2 (Фаза 2) — карта причин за 7 дней (severity ≥ medium).
+      this.fetchInsightsByCauseCategory(args.tenantId, 7),
+      // SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании.
+      this.fetchMaturitySnapshot(args.tenantId),
+    ]);
 
     const blockersBySeverity: Record<Severity, number> = {
       low: 0,
@@ -105,10 +148,18 @@ export class OperationsDashboardService {
       topRecentBlockers: blockers.slice(0, 5),
       topRecentTeamFrictions: frictions.slice(0, 5),
       teamTemperature: teamTemperatureSummary,
+      insightsByCauseCategory,
+      maturity,
     };
 
     await this.cacheSet(cacheKey, dto);
-    this.publishMetricsSnapshot(args.tenantId, blockersBySeverity, frictions.length);
+    this.publishMetricsSnapshot(
+      args.tenantId,
+      blockersBySeverity,
+      frictions.length,
+      insightsByCauseCategory,
+      maturity,
+    );
     this.metrics.setCooTeamTemperatureRedShare({
       tenantTop: resolveOperationsTenantTop(args.tenantId),
       value: temperature.redShare,
@@ -405,6 +456,121 @@ export class OperationsDashboardService {
     };
   }
 
+  /**
+   * SBA β-8.3 Wave 2 (Фаза 2) — агрегат insights по `causeCategory` за
+   * последние `days` дней.
+   *
+   * Фильтры:
+   *   - severity ∈ medium|high (буквально из ТЗ Wave 2);
+   *   - status ≠ 'archived' (висящие insights);
+   *   - firstObservedAt ≥ now − days — «появился за последние N дней»
+   *     (lastObservedAt дал бы «упоминался», а нам нужно «новых причин
+   *     столько-то» для виджета «Карта причин недели»).
+   *
+   * Возвращает все 8 ключей всегда (для предсказуемой раскладки UI).
+   * Записи с `causeCategory=NULL` → bucket `'unknown'`.
+   *
+   * @param days окно агрегации, дефолт 7 (см. ТЗ §2.1).
+   */
+  private async fetchInsightsByCauseCategory(
+    tenantId: string,
+    days = 7,
+  ): Promise<InsightCauseCategoryAggregateDto> {
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - days);
+    const grouped = await this.prisma.insight.groupBy({
+      by: ['causeCategory'],
+      where: {
+        tenantId,
+        severity: { in: ['medium', 'high'] },
+        status: { not: 'archived' },
+        firstObservedAt: { gte: since },
+      },
+      _count: { _all: true },
+    });
+
+    const out = makeEmptyInsightCauseAggregate();
+    const whitelist = new Set<string>(INSIGHT_CAUSE_CATEGORIES);
+    for (const row of grouped) {
+      // NULL и значения вне whitelist'а → bucket 'unknown' (защита от старых
+      // данных, где LLM могла записать что-то нестандартное; и от reality
+      // schema.prisma — causeCategory это String, не enum).
+      const cause: OperationsInsightCauseCategory =
+        row.causeCategory && whitelist.has(row.causeCategory)
+          ? (row.causeCategory as OperationsInsightCauseCategory)
+          : 'unknown';
+      out[cause] += row._count._all;
+    }
+    return out;
+  }
+
+  /**
+   * SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании.
+   *
+   * Источник `score/lastCalcAt/stage` — `CompanyProfile` (1:1 на tenant,
+   * пересчитывается `MaturityScorerCron` каждое утро в 05:00 UTC).
+   *
+   * `weakestDomains`/`topDomains` — топ-3 `FunctionalDomain` по
+   * `completeness` ASC и DESC соответственно. Берём только домены с
+   * `completeness IS NOT NULL` и `deletedAt IS NULL`. При пересечении
+   * (доменов меньше 6) — массивы могут пересекаться по элементам, что ОК
+   * для UI и явно отражает реальность: топ и weakest совпадают.
+   */
+  private async fetchMaturitySnapshot(
+    tenantId: string,
+  ): Promise<MaturitySnapshotDto> {
+    const [profile, domains] = await Promise.all([
+      this.prisma.companyProfile.findUnique({
+        where: { tenantId },
+        select: {
+          maturityScore: true,
+          lastMaturityCalcAt: true,
+          stage: true,
+        },
+      }),
+      this.prisma.functionalDomain.findMany({
+        where: {
+          tenantId,
+          deletedAt: null,
+          completeness: { not: null },
+        },
+        select: { slug: true, name: true, completeness: true },
+      }),
+    ]);
+
+    const normalized = domains
+      .map((d) => ({
+        slug: d.slug,
+        name: d.name,
+        completeness:
+          d.completeness === null ? null : Number(d.completeness.toString()),
+      }))
+      .filter(
+        (d): d is { slug: string; name: string; completeness: number } =>
+          d.completeness !== null && Number.isFinite(d.completeness),
+      );
+
+    const byAsc = [...normalized].sort(
+      (a, b) => a.completeness - b.completeness,
+    );
+    const byDesc = [...normalized].sort(
+      (a, b) => b.completeness - a.completeness,
+    );
+
+    return {
+      score:
+        profile?.maturityScore !== null && profile?.maturityScore !== undefined
+          ? Number(profile.maturityScore.toString())
+          : null,
+      lastCalcAt: profile?.lastMaturityCalcAt
+        ? profile.lastMaturityCalcAt.toISOString()
+        : null,
+      stage: profile?.stage ?? null,
+      weakestDomains: byAsc.slice(0, 3),
+      topDomains: byDesc.slice(0, 3),
+    };
+  }
+
   private async fetchCapacity(
     tenantId: string,
   ): Promise<OperationsDashboardCapacityListDto> {
@@ -459,6 +625,8 @@ export class OperationsDashboardService {
     tenantId: string,
     bySeverity: Record<Severity, number>,
     frictionCount: number,
+    insightsByCauseCategory: InsightCauseCategoryAggregateDto,
+    maturity: MaturitySnapshotDto,
   ): void {
     const tenantTop = resolveOperationsTenantTop(tenantId);
     for (const sev of Object.keys(bySeverity) as Severity[]) {
@@ -472,6 +640,24 @@ export class OperationsDashboardService {
       tenantTop,
       value: frictionCount,
     });
+    // SBA β-8.3 Wave 2 (Фаза 2) — обновляем все 8 значений (включая 0),
+    // чтобы Grafana всегда видела полную раскладку категорий.
+    for (const cause of INSIGHT_CAUSE_CATEGORIES) {
+      this.metrics.setCooInsightsByCause({
+        tenantTop,
+        cause,
+        value: insightsByCauseCategory[cause] ?? 0,
+      });
+    }
+    // SBA β-8.3 Wave 2 (Фаза 3) — `maturityScore=null` означает, что
+    // MaturityScorerCron ещё не отрабатывал для этого tenant'а; не публикуем
+    // нули, чтобы не зашумлять метрику.
+    if (maturity.score !== null) {
+      this.metrics.setCooCompanyMaturityScore({
+        tenantTop,
+        value: maturity.score,
+      });
+    }
   }
 
   private async cacheGet<T>(key: string): Promise<T | null> {

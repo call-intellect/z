@@ -443,6 +443,12 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooDailyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
   private cooDailyDigestAgeSeconds!: Gauge<'tenant_top'>;
 
+  // ── SBA β-8.3 Wave 2 — COO overview расширения ─────────────────────
+  // Cardinality-safe: tenant_top — top-100 bucket; cause — фиксированный
+  // whitelist из 8 значений `Insight.causeCategory`.
+  private cooInsightsByCauseTotal!: Gauge<'tenant_top' | 'cause'>;
+  private cooCompanyMaturityScore!: Gauge<'tenant_top'>;
+
   // ── SBA β-8.2 — Promise Keeper («Хранитель обещаний») ──────────────
   // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
   // whitelist причин («llm_failed', 'parse_failed', 'no_block', 'exception').
@@ -1834,6 +1840,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cooDailyDigestAgeSeconds = this.getOrCreateGauge({
       name: 'coo_daily_digest_age_seconds',
       help: 'SBA β-8.3 — возраст последнего ежедневного дайджеста (now − createdAt) в секундах. Тревога Grafana при > 25 часов.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA β-8.3 Wave 2 — COO overview расширения ──
+    this.cooInsightsByCauseTotal = this.getOrCreateGauge({
+      name: 'coo_insights_by_cause_total',
+      help: 'SBA β-8.3 Wave 2 — снапшот числа активных insights за 7 дней по категории первопричины (cause ∈ process_gap|tooling|role_skill|communication|priority|resource_constraint|external|unknown).',
+      labelNames: ['tenant_top', 'cause'] as const,
+    });
+    this.cooCompanyMaturityScore = this.getOrCreateGauge({
+      name: 'coo_company_maturity_score',
+      help: 'SBA β-8.3 Wave 2 — текущий CompanyProfile.maturityScore (0..1). Не публикуется, если значение null.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -4181,6 +4199,41 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cooDailyDigestAgeSeconds.set(
       { tenant_top: args.tenantTop },
       Math.max(0, args.value),
+    );
+  }
+
+  // ────────────────────── SBA β-8.3 Wave 2 — COO overview ────────────
+
+  /**
+   * Gauge `coo_insights_by_cause_total{tenant_top, cause}`. Cause —
+   * whitelist из 8 значений `Insight.causeCategory`; для записей с
+   * `causeCategory=NULL` используется bucket `'unknown'`.
+   */
+  setCooInsightsByCause(args: {
+    tenantTop: string;
+    cause: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.cooInsightsByCauseTotal.set(
+      { tenant_top: args.tenantTop, cause: args.cause },
+      Math.max(0, Math.floor(args.value)),
+    );
+  }
+
+  /**
+   * Gauge `coo_company_maturity_score{tenant_top}` (0..1). НЕ публикуем,
+   * если score=null (cron `MaturityScorerCron` ещё не отработал) — это
+   * штатное состояние раннего tenant'а, мы не хотим зашумлять метрику нулём.
+   */
+  setCooCompanyMaturityScore(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.cooCompanyMaturityScore.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
     );
   }
 

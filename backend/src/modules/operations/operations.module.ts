@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { ProbeModule } from '../probe/probe.module';
 import { TrackerModule } from '../tracker/tracker.module';
+
+import { DailyDigestController } from './controllers/daily-digest.controller';
 import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyPromisesController } from './controllers/my-promises.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
@@ -13,6 +15,7 @@ import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
+import { DailyDigestService } from './services/daily-digest.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonalRelationService } from './services/personal-relation.service';
@@ -21,6 +24,7 @@ import { WeeklyDigestService } from './services/weekly-digest.service';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
+import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
 
 /**
@@ -67,6 +71,8 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
     WeeklyDigestController,
     // SBA β-8.2 — `/me/promises`.
     MyPromisesController,
+    // SBA β-8.3 — ежедневный отчёт COO.
+    DailyDigestController,
   ],
   providers: [
     DailyCheckInService,
@@ -85,6 +91,9 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
     Specialist39PromiseKeeperService,
     CommitmentFollowupCron,
     CommitmentResponseHandler,
+    // SBA β-8.3 — ежедневный отчёт COO.
+    DailyDigestService,
+    OperationsDailyDigestCron,
   ],
   exports: [
     GoalCascadeService,
@@ -96,6 +105,8 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
     // SBA β-8.2 — экспортируем для тестов / повторного использования.
     CommitmentsService,
     Specialist39PromiseKeeperService,
+    // SBA β-8.3 — экспортируем для тестов / повторного использования.
+    DailyDigestService,
   ],
 })
 export class OperationsModule {}

@@ -434,6 +434,15 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
 
+  // ── SBA β-8.3 — ежедневный отчёт COO ──────────────────────────────
+  // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
+  // whitelist ('llm_failed' | 'aggregation_failed' | 'notify_failed' | 'exception').
+  // channel — 'conversational' (через α-1 ConversationalService).
+  private cooDailyDigestGeneratedTotal!: Counter<'tenant_top'>;
+  private cooDailyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  private cooDailyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
+  private cooDailyDigestAgeSeconds!: Gauge<'tenant_top'>;
+
   // ── SBA β-8.2 — Promise Keeper («Хранитель обещаний») ──────────────
   // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
   // whitelist причин («llm_failed', 'parse_failed', 'no_block', 'exception').
@@ -1803,6 +1812,28 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cooTeamTemperatureRedShare = this.getOrCreateGauge({
       name: 'coo_team_temperature_red_share',
       help: 'SBA β-8.1 — доля красных чек-инов за 7 дней (0..1). Тревога Grafana при > 0.3.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── SBA β-8.3 — ежедневный отчёт COO ──
+    this.cooDailyDigestGeneratedTotal = this.getOrCreateCounter({
+      name: 'coo_daily_digest_generated_total',
+      help: 'SBA β-8.3 — успешно сгенерированный ежедневный дайджест операционного директора.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooDailyDigestFailedTotal = this.getOrCreateCounter({
+      name: 'coo_daily_digest_failed_total',
+      help: 'SBA β-8.3 — провал генерации ежедневного дайджеста (reason ∈ llm_failed|aggregation_failed|notify_failed|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.cooDailyDigestDeliveredTotal = this.getOrCreateCounter({
+      name: 'coo_daily_digest_delivered_total',
+      help: 'SBA β-8.3 — счётчик удачных доставок ежедневного дайджеста (channel ∈ conversational).',
+      labelNames: ['tenant_top', 'channel'] as const,
+    });
+    this.cooDailyDigestAgeSeconds = this.getOrCreateGauge({
+      name: 'coo_daily_digest_age_seconds',
+      help: 'SBA β-8.3 — возраст последнего ежедневного дайджеста (now − createdAt) в секундах. Тревога Grafana при > 25 часов.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -4112,6 +4143,44 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cooTeamTemperatureRedShare.set(
       { tenant_top: args.tenantTop },
       Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  // ────────────────────── SBA β-8.3 — Daily Digest ────────────────────
+
+  /** Counter `coo_daily_digest_generated_total{tenant_top}`. */
+  incCooDailyDigestGenerated(args: { tenantTop: string }): void {
+    this.cooDailyDigestGeneratedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `coo_daily_digest_failed_total{tenant_top, reason}`. */
+  incCooDailyDigestFailed(args: {
+    tenantTop: string;
+    reason: string;
+  }): void {
+    this.cooDailyDigestFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Counter `coo_daily_digest_delivered_total{tenant_top, channel}`. */
+  incCooDailyDigestDelivered(args: {
+    tenantTop: string;
+    channel: string;
+  }): void {
+    this.cooDailyDigestDeliveredTotal.inc({
+      tenant_top: args.tenantTop,
+      channel: args.channel,
+    });
+  }
+
+  /** Gauge `coo_daily_digest_age_seconds{tenant_top}` (now − createdAt). */
+  setCooDailyDigestAge(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.cooDailyDigestAgeSeconds.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, args.value),
     );
   }
 

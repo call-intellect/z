@@ -226,6 +226,12 @@ export type LlmTaskType =
   | 'operations-summary'
   | 'checkin-sentiment'
   | 'operations-weekly-digest'
+  // SBA β-8.3 — ежедневный отчёт COO.
+  // 'operations-daily-digest' — собрать связный текст ежедневного отчёта
+  //   (4-6 коротких разделов markdown + shortSummary для Telegram) поверх
+  //   агрегата за вчерашние сутки. Один вызов в день на Org. Та же цепочка
+  //   провайдеров, что и у operations-weekly-digest.
+  | 'operations-daily-digest'
   // SBA β-8.2 — Promise Keeper («Хранитель обещаний»).
   // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
   //   (вызов из block-ingest для уточнения если основной prompt не справился).
@@ -405,6 +411,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA β-8.1 — добивка панели операционного директора
   'checkin-sentiment',
   'operations-weekly-digest',
+  // SBA β-8.3 — ежедневный отчёт COO
+  'operations-daily-digest',
   // SBA β-8.2 — Promise Keeper
   'commitment-extract-dates',
   'commitment-extract-status',

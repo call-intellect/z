@@ -2,8 +2,6 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 
-import type { Env } from './env.schema';
-
 /**
  * Минимальный интерфейс `AdminSettingsService`, чтобы не импортировать
  * сам класс (живёт в `modules/admin/`, а это `common/` — нельзя плодить
@@ -939,6 +937,12 @@ export class TypedConfigService {
       weeklyDigestEnabled: this.get('COO_WEEKLY_DIGEST_ENABLED') !== false,
       weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
       weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),
+      // SBA β-8.3 — ежедневный отчёт COO (статические fallback'и; в cron
+      // используется `TypedConfigService.getDynamic` поверх AdminSetting).
+      dailyDigestEnabled: this.get('COO_DAILY_DIGEST_ENABLED') !== false,
+      dailyDigestDeliverToTelegram:
+        this.get('COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM') === true,
+      dailyDigestHourUtc: Number(this.get('COO_DAILY_DIGEST_HOUR_UTC') ?? 22),
       // SBA β-8.2 — «Хранитель обещаний».
       commitmentFollowupEnabled:
         this.get('COMMITMENT_FOLLOWUP_ENABLED') !== false,
@@ -1203,7 +1207,11 @@ export class TypedConfigService {
    */
   async getDynamic<T>(
     key: string,
-    envFallbackKey?: keyof Env,
+    // NB: envFallbackKey: keyof Env упирается в TS2589 (excessively deep) на
+    // .merge цепочке EnvSchema — TS сужает union до `never|undefined`,
+    // ломая call-site'ы. Принимаем как `string` и cast'им через `unknown`
+    // внутри (внешняя проверка ENV-имени — code review + типизация на месте).
+    envFallbackKey?: string,
     defaultValue?: T,
   ): Promise<T> {
     const reader = this.resolveAdminReader();
@@ -1223,7 +1231,7 @@ export class TypedConfigService {
       }
     }
     if (envFallbackKey !== undefined) {
-      const fromEnv = this.get(envFallbackKey as unknown as string);
+      const fromEnv = this.get(envFallbackKey);
       if (fromEnv !== undefined && fromEnv !== null) {
         return fromEnv as T;
       }

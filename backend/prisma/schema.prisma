@@ -2055,6 +2055,9 @@ model Org {
   // ── SBA β-8.1 — Weekly operations digest для операционного директора ──
   weeklyOperationsDigests WeeklyOperationsDigest[]
 
+  // ── SBA β-8.3 — Daily operations digest (ежедневный отчёт COO) ──
+  dailyOperationsDigests DailyOperationsDigest[]
+
   // ── SBA α-3 — Layer 2 ontology extension ──
   vendors  Vendor[]
   events   Event[]
@@ -5631,6 +5634,53 @@ model WeeklyOperationsDigest {
   @@unique([tenantId, weekStart])
   @@index([tenantId, weekStart])
   @@map("weekly_operations_digests")
+}
+
+/// SBA β-8.3 — DailyOperationsDigest. Ежедневный отчёт операционного директора.
+/// Источник: plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md §1.2.
+///
+/// Зеркало `WeeklyOperationsDigest` с окном «вчерашние сутки в МСК». Генерируется
+/// глобальным cron'ом `operations-daily-digest.cron` каждый день в 01:00 МСК
+/// (= 22:00 UTC). Не per-Org timezone — ICP РФ, к утру рабочего дня готово
+/// во всех часовых поясах страны.
+///
+/// `DailyDigestService.generate` собирает агрегаты вчерашнего дня
+/// (чек-ины, новые блокеры, просроченные обещания, цели, новые high-severity
+/// инсайты, решения) и одним LLM-вызовом `operations-daily-digest` собирает
+/// связный текст комментария (4-6 коротких разделов + shortSummary для
+/// Telegram-рассылки и блока на главной).
+///
+/// Идемпотентность — `@@unique([tenantId, dateLocal])`. Если за день дайджест
+/// уже сгенерирован — повторный запуск cron'а не создаёт второй.
+///
+/// `deliveredAt` — отметка успешной Telegram-рассылки. NULL — ещё не доставлено
+/// (или тумблер `operations.daily_digest.deliver_to_telegram` выключен).
+model DailyOperationsDigest {
+  id             String    @id @default(cuid())
+  tenantId       String
+  /// YYYY-MM-DD — дата отчёта в МСК (день, ЗА который сделан отчёт).
+  dateLocal      String    @db.VarChar(10)
+  /// Связный текст комментария от LLM. Markdown (4-6 коротких разделов).
+  /// При неудаче LLM — «сухой» вариант со структурой без связного текста.
+  bodyMarkdown   String    @db.Text
+  /// Структурированные показатели для виджетов: greenShare/yellowShare/redShare,
+  /// topBlockers, openCommitments, completedGoals, missedGoals, ...
+  metricsJson    Json
+  /// Провенанс: id блокеров, чек-инов, обещаний, целей, инсайтов, решений.
+  sourcesJson    Json
+  /// Идентификатор маршрута/модели LLM (`prompt-v1+<model>`). NULL при сухом fallback.
+  llmTaskRouteId String?
+  /// Кратко (1 короткий параграф) — для Telegram-рассылки и блока на главной.
+  shortSummary   String?   @db.Text
+  /// Telegram-доставка прошла. NULL — ещё не доставлено или выключено.
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dateLocal])
+  @@index([tenantId, dateLocal])
+  @@map("daily_operations_digests")
 }
 
 // ──────────────────────────── SBA δ-2 — ProactiveWatcher (2026-05-23) ────────────────────────────

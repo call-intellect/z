@@ -26,3 +26,11 @@ export const UpdateCronScheduleSchema = z
     message: 'необходимо указать хотя бы одно поле (expression или enabled)',
   });
 export type UpdateCronScheduleDto = z.infer<typeof UpdateCronScheduleSchema>;
+
+/**
+ * История запусков cron'а: `limit` от 1 до 500, по умолчанию 20.
+ */
+export const CronHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(20),
+});
+export type CronHistoryQueryDto = z.infer<typeof CronHistoryQuerySchema>;

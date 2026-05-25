@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -20,6 +21,8 @@ import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
 import { CronManagerService } from './cron-manager.service';
 import {
+  CronHistoryQuerySchema,
+  type CronHistoryQueryDto,
   UpdateCronScheduleSchema,
   type UpdateCronScheduleDto,
 } from './dto/admin-crons.dto';
@@ -43,6 +46,28 @@ export class CronManagerController {
   @ApiOperation({ summary: 'Список cron-джобов с расписанием и последним запуском.' })
   list() {
     return this.svc.list();
+  }
+
+  @Get('with-history')
+  @ApiOperation({
+    summary:
+      'Список cron-джобов с расписанием и последними 10 запусками на каждый (для UI Фазы 8).',
+  })
+  listWithHistory() {
+    return this.svc.listWithHistory();
+  }
+
+  @Get(':name/history')
+  @ApiOperation({
+    summary:
+      'Расширенная история запусков одного cron-джоба (по умолчанию 20 записей, максимум 500).',
+  })
+  history(
+    @Param('name') name: string,
+    @Query(new ZodValidationPipe(CronHistoryQuerySchema))
+    q: CronHistoryQueryDto,
+  ) {
+    return this.svc.getHistory(name, q.limit);
   }
 
   @Patch(':name')

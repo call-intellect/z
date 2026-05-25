@@ -103,7 +103,33 @@ function buildService(opts: { dbAvailable: boolean } = { dbAvailable: true }): {
   };
 
   const cronRunHistory = {
-    findMany: vi.fn(async () => store.runs.slice()),
+    findMany: vi.fn(
+      async (
+        args?: {
+          where?: { cronName?: string | { in: string[] } };
+          orderBy?: { startedAt?: 'asc' | 'desc' };
+          take?: number;
+        },
+      ) => {
+        let rows = store.runs.slice();
+        const where = args?.where?.cronName;
+        if (typeof where === 'string') {
+          rows = rows.filter((r) => r.cronName === where);
+        } else if (where && Array.isArray(where.in)) {
+          const set = new Set(where.in);
+          rows = rows.filter((r) => set.has(r.cronName));
+        }
+        if (args?.orderBy?.startedAt === 'desc') {
+          rows.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+        } else if (args?.orderBy?.startedAt === 'asc') {
+          rows.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+        }
+        if (typeof args?.take === 'number') {
+          rows = rows.slice(0, args.take);
+        }
+        return rows;
+      },
+    ),
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
       runIdCounter += 1;
       const row = {
@@ -288,5 +314,73 @@ describe('CronManagerService', () => {
     // Не подключаем subscriber (Redis тоже мокируем) — onModuleInit
     // должен мягко проглотить и БД-сбой, и pub/sub-сбой.
     await expect(svc.onModuleInit()).resolves.not.toThrow();
+  });
+
+  it('listWithHistory(): объединяет CronSchedule + последние 10 запусков на крон', async () => {
+    const { svc, store } = buildService();
+    svc.registerHandlerForTest('only-code', async () => undefined, '0 * * * *');
+    store.schedules.set('with-runs', {
+      name: 'with-runs',
+      expression: '*/5 * * * *',
+      defaultExpression: '*/5 * * * *',
+      enabled: true,
+      description: 'has history',
+      lastRunAt: null,
+      lastRunDurationMs: null,
+      lastRunError: null,
+      updatedBy: null,
+    });
+    // Накидаем 12 записей истории для with-runs — должно быть отсечено до 10.
+    for (let i = 0; i < 12; i += 1) {
+      store.runs.push({
+        id: `h-${i}`,
+        cronName: 'with-runs',
+        status: 'success',
+        durationMs: 100 + i,
+        error: null,
+        triggeredBy: null,
+        startedAt: new Date(Date.now() - i * 60_000),
+      });
+    }
+    // findMany нашего мока вернёт ВСЁ; сервис сам должен отсечь до 10 на крон.
+    // Чтобы порядок DESC по startedAt — переопределим findMany сортировкой.
+    (
+      store.runs as Array<{ startedAt: Date }>
+    ).sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+
+    const items = await svc.listWithHistory();
+    const withRuns = items.find((i) => i.name === 'with-runs');
+    expect(withRuns).toBeTruthy();
+    expect(withRuns?.recentRuns.length).toBe(10);
+    const onlyCode = items.find((i) => i.name === 'only-code');
+    expect(onlyCode?.recentRuns.length).toBe(0);
+  });
+
+  it('getHistory(): возвращает только историю указанного крона с учётом limit', async () => {
+    const { svc, store } = buildService();
+    for (let i = 0; i < 5; i += 1) {
+      store.runs.push({
+        id: `hist-${i}`,
+        cronName: 'cron-a',
+        status: 'success',
+        durationMs: 50,
+        error: null,
+        triggeredBy: null,
+        startedAt: new Date(Date.now() - i * 60_000),
+      });
+    }
+    store.runs.push({
+      id: 'other',
+      cronName: 'cron-b',
+      status: 'success',
+      durationMs: 50,
+      error: null,
+      triggeredBy: null,
+      startedAt: new Date(),
+    });
+
+    const rows = await svc.getHistory('cron-a', 3);
+    expect(rows.length).toBe(3);
+    expect(rows.every((r) => r.id.startsWith('hist-'))).toBe(true);
   });
 });

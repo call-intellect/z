@@ -250,6 +250,128 @@ export class CronManagerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Расширенный list для UI Фазы 8: каждая запись + последние 10
+   * CronRunHistory одним батч-join. Делаем один общий запрос histories
+   * с `take` на одну запись через окно: грузим до N * крон записей и
+   * группируем in-memory (PostgreSQL без window-функций в Prisma).
+   */
+  async listWithHistory(): Promise<
+    Array<{
+      name: string;
+      expression: string;
+      defaultExpression: string;
+      enabled: boolean;
+      description: string | null;
+      lastRunAt: Date | null;
+      lastRunDurationMs: number | null;
+      lastRunError: string | null;
+      recentRuns: Array<{
+        startedAt: Date;
+        durationMs: number | null;
+        status: string;
+        error: string | null;
+        triggeredBy: string | null;
+      }>;
+    }>
+  > {
+    const rows = await this.prisma.cronSchedule.findMany({
+      orderBy: { name: 'asc' },
+    });
+    const rowsByName = new Map(rows.map((r) => [r.name, r] as const));
+
+    const recentByName = new Map<
+      string,
+      Array<{
+        startedAt: Date;
+        durationMs: number | null;
+        status: string;
+        error: string | null;
+        triggeredBy: string | null;
+      }>
+    >();
+
+    const allNames = new Set<string>([
+      ...this.handlers.keys(),
+      ...rows.map((r) => r.name),
+    ]);
+
+    if (allNames.size > 0) {
+      // Берём «достаточно» истории, чтобы по 10 на крон сошлось. Окно
+      // (N кронов × 10) + запас 20% от среднего рассеяния.
+      const cap = Math.max(50, allNames.size * 12);
+      const histories = await this.prisma.cronRunHistory.findMany({
+        where: { cronName: { in: Array.from(allNames) } },
+        orderBy: { startedAt: 'desc' },
+        take: cap,
+      });
+      for (const h of histories) {
+        const arr = recentByName.get(h.cronName) ?? [];
+        if (arr.length >= 10) continue;
+        arr.push({
+          startedAt: h.startedAt,
+          durationMs: h.durationMs,
+          status: h.status,
+          error: h.error,
+          triggeredBy: h.triggeredBy,
+        });
+        recentByName.set(h.cronName, arr);
+      }
+    }
+
+    const result = [];
+    for (const name of allNames) {
+      const row = rowsByName.get(name);
+      const handler = this.handlers.get(name);
+      result.push({
+        name,
+        expression: row?.expression ?? handler?.defaultExpression ?? '',
+        defaultExpression:
+          row?.defaultExpression ?? handler?.defaultExpression ?? '',
+        enabled: row?.enabled ?? true,
+        description: row?.description ?? null,
+        lastRunAt: row?.lastRunAt ?? null,
+        lastRunDurationMs: row?.lastRunDurationMs ?? null,
+        lastRunError: row?.lastRunError ?? null,
+        recentRuns: recentByName.get(name) ?? [],
+      });
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * История запусков одного cron'а — последние N записей (по умолчанию 20,
+   * максимум 500).
+   */
+  async getHistory(
+    name: string,
+    limit = 20,
+  ): Promise<
+    Array<{
+      id: string;
+      startedAt: Date;
+      durationMs: number | null;
+      status: string;
+      error: string | null;
+      triggeredBy: string | null;
+    }>
+  > {
+    const take = Math.min(Math.max(limit, 1), 500);
+    const rows = await this.prisma.cronRunHistory.findMany({
+      where: { cronName: name },
+      orderBy: { startedAt: 'desc' },
+      take,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      startedAt: r.startedAt,
+      durationMs: r.durationMs,
+      status: r.status,
+      error: r.error,
+      triggeredBy: r.triggeredBy,
+    }));
+  }
+
+  /**
    * Запустить cron вручную. Запись в `CronRunHistory(status='running' →
    * 'success'/'failed')` + audit.
    */

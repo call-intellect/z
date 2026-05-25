@@ -517,6 +517,52 @@ export class EventsService {
   // ─────────────────────────── helpers (private) ───────────────────────
 
   /**
+   * Возвращает сырые Event'ы и Issue'ы пользователя в окне [from, to] —
+   * для генерации ICS-feed (`/api/v1/calendar/:userId.ics`). В отличие от
+   * `getMyCalendar`, здесь не нужен tenant — feed строится по конкретному
+   * user'у (его tenant вычисляется отдельно или не учитывается, т.к. token
+   * привязан к user'у). Включает personal-события (это собственный feed
+   * пользователя).
+   */
+  async getEventsForFeed(args: {
+    userId: string;
+    from: Date;
+    to: Date;
+  }): Promise<{
+    events: (Event & {
+      participants: EventParticipant[];
+      reminders: EventReminder[];
+    })[];
+    issues: (Issue & { project: Project | null })[];
+  }> {
+    const { userId, from, to } = args;
+    const [events, issues] = await Promise.all([
+      this.prisma.event.findMany({
+        where: {
+          deletedAt: null,
+          startAt: { gte: from, lt: to },
+          OR: [
+            { ownerId: userId },
+            { participants: { some: { userId } } },
+          ],
+        },
+        include: { participants: true, reminders: true },
+        orderBy: [{ startAt: 'asc' }],
+      }),
+      this.prisma.issue.findMany({
+        where: {
+          deletedAt: null,
+          dueDate: { gte: from, lt: to },
+          assignees: { some: { userId } },
+        },
+        include: { project: true },
+        orderBy: [{ dueDate: 'asc' }],
+      }),
+    ]);
+    return { events, issues };
+  }
+
+  /**
    * Внутренний метод для FindFreeSlotService — возвращает busy-окна для
    * заданного пользователя (Events + Issues с dueDate).
    */

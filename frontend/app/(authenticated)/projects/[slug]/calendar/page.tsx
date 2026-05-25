@@ -1,21 +1,22 @@
 import type { Metadata } from 'next';
+import type { JSX } from 'react';
+
+import { CalendarView } from '@/ui/calendar/CalendarView';
 
 import { ProjectViewShell } from '../ProjectViewShell';
 
 export const metadata: Metadata = {
-  title: 'Календарь — Z',
+  title: 'Календарь проекта — Z',
 };
 
 export default function ProjectCalendarPage({
   params,
 }: {
   params: { slug: string };
-}) {
+}): JSX.Element {
   return (
     <ProjectViewShell slug={params.slug}>
-      <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-12 text-center text-sm text-fg-tertiary">
-        Календарь задач по dueDate появится в Sprint 4.
-      </div>
+      <CalendarView mode="project" projectSlug={params.slug} />
     </ProjectViewShell>
   );
 }

@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import {
   BadRequestException,
   Body,
@@ -14,7 +16,9 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { TypedConfigService } from '../../common/config/index';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -76,6 +80,8 @@ export class EventsController {
     @Inject(FindFreeSlotService)
     private readonly freeSlot: FindFreeSlotService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   // ─────────────────────────── reads ───────────────────────────────────
@@ -214,6 +220,55 @@ export class EventsController {
       from: q.from,
       to: q.to,
     });
+  }
+
+  // ─────────────────────────── ICS-feed token ──────────────────────────
+
+  /**
+   * Сгенерировать персональную ссылку на ICS-feed. Если токен уже есть —
+   * возвращает существующую ссылку (не перевыпускаем без явного `DELETE`).
+   * Адрес фида: `{publicHostUrl}/api/v1/calendar/{userId}.ics?token={token}`.
+   */
+  @Post('me/calendar/feed/generate')
+  @ApiOperation({
+    summary: 'Сгенерировать ссылку на ICS-подписку моего календаря',
+  })
+  async generateCalendarFeedToken(
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ url: string }> {
+    const existing = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { calendarFeedToken: true },
+    });
+    let token = existing?.calendarFeedToken ?? null;
+    if (!token) {
+      token = randomBytes(32).toString('base64url');
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { calendarFeedToken: token },
+      });
+    }
+    const base = this.cfg.publicHostUrl.replace(/\/+$/, '');
+    const url = `${base}/api/v1/calendar/${user.id}.ics?token=${token}`;
+    return { url };
+  }
+
+  /**
+   * Удалить токен ICS-подписки (для перевыпуска). После этого старая ссылка
+   * перестаёт работать; новая получается через `POST /me/calendar/feed/generate`.
+   */
+  @Delete('me/calendar/feed')
+  @ApiOperation({
+    summary: 'Удалить токен ICS-подписки (для перевыпуска ссылки)',
+  })
+  async revokeCalendarFeedToken(
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { calendarFeedToken: null },
+    });
+    return { ok: true };
   }
 
   @Get('users/:userId/calendar')

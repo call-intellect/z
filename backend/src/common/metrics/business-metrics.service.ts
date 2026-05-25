@@ -81,6 +81,14 @@ export class BusinessMetricsService implements OnModuleInit {
   //                    tool_choice в редких случаях).
   private promptInvalidResponseTotal!: Counter<'task_type' | 'model' | 'reason'>;
 
+  // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
+  // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
+  // одинаковым display name >1 (или LLM вернул userId не из списка
+  // participants — галлюцинация). В обоих случаях `assigneeUserId` сбрасывается
+  // в null и Task сохраняется только с `assigneeRaw`.
+  // tenant — Org.id; reason ∈ 'duplicate_name' | 'llm_hallucination'.
+  private taskAssigneeAmbiguousTotal!: Counter<'tenant' | 'reason'>;
+
   // ── prompt templates admin (Фаза A.2) ───────────────────────────────
   private promptTemplateActiveCount!: Gauge<'scope'>;
   private promptTemplatePreviewTotal!: Counter<'result'>;
@@ -158,6 +166,14 @@ export class BusinessMetricsService implements OnModuleInit {
   private meetingReportDeletedTotal!: Counter<string>;
   private meetingReportDurationSeconds!: Histogram<string>;
   private meetingReportLlmCostUsd!: Counter<string>;
+
+  // ── meeting report fast (ТЗ 2026-05-25) ───────────────────────────
+  // Один LLM-вызов поверх сырого транскрипта (chapters + tasks + summary +
+  // quality score). См. plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md.
+  // tenant — Org.id (low cardinality в рамках инсталляции).
+  // status — 'ready'|'failed'|'partial'.
+  private meetingReportFastTotal!: Counter<'tenant' | 'status'>;
+  private meetingReportFastDurationSeconds!: Histogram<string>;
 
   // ── conversational channels (SBA α-1) ─────────────────────────────
   private conversationalNotificationsTotal!: Counter<'event_type' | 'status'>;
@@ -328,11 +344,15 @@ export class BusinessMetricsService implements OnModuleInit {
   private personaBuildDurationSeconds!: Histogram<never>;
   private cloneAskTotal!: Counter<'scope'>;
   private cloneAskByOwnerTotal!: Counter<never>;
+  // Фаза 1 clone-reliability-hardening — программный отказ клона отвечать.
+  private cloneAskRefusedTotal!: Counter<'reason'>;
   // ── SBA γ-1 доделки — SkillTraitCategory + hybrid versioning ──
   private skillCategoriesTotal!: Gauge<'tenant_top'>;
   private skillTraitCategorizedRatio!: Gauge<'tenant_top'>;
   private executablePersonaSnapshotsTotal!: Counter<'tenant_top' | 'trigger'>;
   private executablePersonaSnapshotLagSeconds!: Gauge<'tenant_top'>;
+  // ── clone-reliability-hardening Фаза 5 — реактивная пересборка персоны ──
+  private personaRebuildTriggeredTotal!: Counter<'reason'>;
 
   // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
   private axisLabelsTotal!: Counter<'tenant_top' | 'axis' | 'source'>;
@@ -566,6 +586,15 @@ export class BusinessMetricsService implements OnModuleInit {
   private feedReactionsTotal!: Counter<'tenant' | 'feed_type' | 'reaction'>;
   private feedItemsExpiredTotal!: Counter<'tenant' | 'feed_type'>;
 
+  // ── Calendar MVP (2026-05-25) ───────────────────────────────────────
+  // Cardinality-safe: tenant — top-100 bucket (паттерн tracker'а);
+  // kind — фиксированный enum EventKind (~10 значений);
+  // visibility ∈ company|team|personal; channel ∈ push|email|telegram;
+  // success ∈ 'true'|'false'; found ∈ 'true'|'false'.
+  private calendarEventsCreatedTotal!: Counter<'tenant' | 'kind' | 'visibility'>;
+  private calendarRemindersSentTotal!: Counter<'tenant' | 'channel' | 'success'>;
+  private calendarFindFreeSlotTotal!: Counter<'tenant' | 'found'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -717,6 +746,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_prompt_invalid_response_total',
       help: 'Невалидный ответ LLM (ТЗ 2026-05-24 §9 F6): не парсится JSON / не проходит Zod-схему / отсутствует ожидаемый tool_use. Накапливается на каждый retry, не только финальный fail.',
       labelNames: ['task_type', 'model', 'reason'] as const,
+    });
+
+    this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
+      name: 'z_task_assignee_ambiguous_total',
+      help: 'Резолвер исполнителя задачи (ТЗ 2026-05-25 hard-participant-identification) не смог однозначно сопоставить assigneeRaw с участником встречи. reason="duplicate_name" — ≥2 участников с тем же display name; "llm_hallucination" — LLM вернул userId, которого нет в списке participants.',
+      labelNames: ['tenant', 'reason'] as const,
     });
 
     this.promptTemplateActiveCount = this.getOrCreateGauge({
@@ -999,6 +1034,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_meeting_report_llm_cost_usd',
       help: 'Фаза E — оценочная суммарная стоимость LLM-вызовов custom-report (USD).',
       labelNames: [] as const,
+    });
+
+    // ── meeting report fast (ТЗ 2026-05-25) ───────────────────────────
+    this.meetingReportFastTotal = this.getOrCreateCounter({
+      name: 'z_meeting_report_fast_total',
+      help: 'meeting-report-fast: количество запусков воркера по tenant × status (ready|failed|partial).',
+      labelNames: ['tenant', 'status'] as const,
+    });
+    this.meetingReportFastDurationSeconds = this.getOrCreateHistogram({
+      name: 'z_meeting_report_fast_duration_seconds',
+      help: 'meeting-report-fast: длительность одного запуска воркера (секунды). p50/p95 через histogram_quantile.',
+      labelNames: [] as const,
+      // Целевая latency по ТЗ — ~2 минуты. Bucket'ы перекрывают «зелёную»
+      // зону (< 60s), целевую (60-180s) и «красную» (> 300s).
+      buckets: [5, 15, 30, 60, 90, 120, 180, 300, 600],
     });
 
     // ── conversational channels (SBA α-1) ──────────────────────────
@@ -1505,6 +1555,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA γ-1 — сколько раз носитель спросил своего же клона (engagement).',
       labelNames: [] as const,
     });
+    this.cloneAskRefusedTotal = this.getOrCreateCounter({
+      name: 'clone_ask_refused_total',
+      help: 'Фаза 1 clone-reliability-hardening — программный отказ клона отвечать (reason: topic_starved | …). Растёт ДО вызова модели — экономит токены и блокирует deepfake-риск.',
+      labelNames: ['reason'] as const,
+    });
 
     // ── SBA γ-1 доделки — SkillTraitCategory + hybrid versioning ──
     this.skillCategoriesTotal = this.getOrCreateGauge({
@@ -1526,6 +1581,13 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'executable_persona_snapshot_lag_seconds',
       help: 'SBA γ-1 доделки — лаг (секунды) от триггерного события до создания snapshot (последнее значение per tenant_top).',
       labelNames: ['tenant_top'] as const,
+    });
+
+    // ── clone-reliability-hardening Фаза 5 — реактивная пересборка персоны ──
+    this.personaRebuildTriggeredTotal = this.getOrCreateCounter({
+      name: 'persona_rebuild_triggered_total',
+      help: 'Фаза 5 clone-reliability — сколько раз cron-watcher триггернул rebuild ExecutablePersona по reason: trait_delta | max_age.',
+      labelNames: ['reason'] as const,
     });
 
     // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
@@ -2106,6 +2168,23 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Activity Feeds — записи, истёкшие по expiresAt (probe-вопросы без ответа > 24-72ч и др.).',
       labelNames: ['tenant', 'feed_type'] as const,
     });
+
+    // ── Calendar MVP (2026-05-25) ───────────────────────────────────
+    this.calendarEventsCreatedTotal = this.getOrCreateCounter({
+      name: 'calendar_events_created_total',
+      help: 'Calendar MVP — создание событий календаря (tenant × kind × visibility).',
+      labelNames: ['tenant', 'kind', 'visibility'] as const,
+    });
+    this.calendarRemindersSentTotal = this.getOrCreateCounter({
+      name: 'calendar_reminders_sent_total',
+      help: 'Calendar MVP — отправка напоминаний о событиях (tenant × channel × success).',
+      labelNames: ['tenant', 'channel', 'success'] as const,
+    });
+    this.calendarFindFreeSlotTotal = this.getOrCreateCounter({
+      name: 'calendar_find_free_slot_total',
+      help: 'Calendar MVP — вызовы /events/find-free-slot (tenant × found).',
+      labelNames: ['tenant', 'found'] as const,
+    });
   }
 
   // ────────────────────── обёртки-методы ───────────────────────────────
@@ -2233,6 +2312,26 @@ export class BusinessMetricsService implements OnModuleInit {
     this.promptInvalidResponseTotal.inc({
       task_type: args.taskType,
       model: args.model,
+      reason: args.reason,
+    });
+  }
+
+  /**
+   * Task assignee resolver (ТЗ 2026-05-25 hard-participant-identification):
+   * инкрементируется когда нельзя однозначно сопоставить `assigneeRaw` с
+   * участником встречи.
+   *
+   *   - reason='duplicate_name' — в participants ≥2 host'ов с тем же display
+   *     name (например, два «Сергея»). `assigneeUserId` сбрасывается в null.
+   *   - reason='llm_hallucination' — LLM вернул `assigneeUserId`, которого нет
+   *     в списке participants встречи. Резолвер игнорирует и сбрасывает в null.
+   */
+  incTaskAssigneeAmbiguous(args: {
+    tenant: string;
+    reason: 'duplicate_name' | 'llm_hallucination';
+  }): void {
+    this.taskAssigneeAmbiguousTotal.inc({
+      tenant: args.tenant,
       reason: args.reason,
     });
   }
@@ -2703,6 +2802,29 @@ export class BusinessMetricsService implements OnModuleInit {
   incMeetingReportLlmCost(usd: number): void {
     if (!Number.isFinite(usd) || usd <= 0) return;
     this.meetingReportLlmCostUsd.inc(usd);
+  }
+
+  // ────────────────────── meeting-report-fast (ТЗ 2026-05-25) ──────────
+
+  /**
+   * Запуск воркера `MeetingReportFastWorker` завершён.
+   * status: 'ready' — успех; 'partial' — частичная запись (например, не было
+   * хотя бы одной из секций); 'failed' — упал после ретраев.
+   */
+  incMeetingReportFast(args: {
+    tenant: string;
+    status: 'ready' | 'failed' | 'partial';
+  }): void {
+    this.meetingReportFastTotal.inc({
+      tenant: args.tenant,
+      status: args.status,
+    });
+  }
+
+  /** Длительность одного запуска `MeetingReportFastWorker` (секунды). */
+  observeMeetingReportFastDuration(seconds: number): void {
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    this.meetingReportFastDurationSeconds.observe(seconds);
   }
 
   // ────────────────────── conversational (SBA α-1) ────────────────────
@@ -3529,6 +3651,15 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cloneAskByOwnerTotal.inc();
   }
 
+  /**
+   * Фаза 1 clone-reliability-hardening — программный отказ клона отвечать
+   * (анти-deepfake). Инкрементируется ДО вызова модели. `reason` —
+   * например `topic_starved`.
+   */
+  incCloneAskRefused(args: { reason: string }): void {
+    this.cloneAskRefusedTotal.inc({ reason: args.reason.slice(0, 64) });
+  }
+
   // ────────────────────── SBA γ-1 доделки (SkillTraitCategory + versioning) ──
 
   /** SBA γ-1 доделки — установить gauge числа активных SkillTraitCategory per tenant_top. */
@@ -3576,6 +3707,16 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       args.seconds,
     );
+  }
+
+  /**
+   * Фаза 5 clone-reliability-hardening — counter триггеров rebuild
+   * ExecutablePersona в watcher-cron'е. `reason` ∈ `trait_delta` | `max_age`.
+   */
+  incPersonaRebuildTriggered(args: {
+    reason: 'trait_delta' | 'max_age';
+  }): void {
+    this.personaRebuildTriggeredTotal.inc({ reason: args.reason });
   }
 
   // ────────────────────── SBA α-9 wave 3 (Company Foundation) ──────────
@@ -4624,6 +4765,42 @@ export class BusinessMetricsService implements OnModuleInit {
     this.feedItemsExpiredTotal.inc({
       tenant: args.tenant,
       feed_type: args.feedType,
+    });
+  }
+
+  // ────────────────────── Calendar MVP (2026-05-25) ───────────────────
+
+  /** Создание события календаря (POST /api/v1/events). */
+  incCalendarEventCreated(args: {
+    tenant: string;
+    kind: string;
+    visibility: string;
+  }): void {
+    this.calendarEventsCreatedTotal.inc({
+      tenant: args.tenant,
+      kind: args.kind,
+      visibility: args.visibility,
+    });
+  }
+
+  /** Доставка напоминания по каналу (EventRemindersWorker). */
+  incCalendarReminderSent(args: {
+    tenant: string;
+    channel: string;
+    success: boolean;
+  }): void {
+    this.calendarRemindersSentTotal.inc({
+      tenant: args.tenant,
+      channel: args.channel,
+      success: args.success ? 'true' : 'false',
+    });
+  }
+
+  /** Вызов POST /api/v1/events/find-free-slot. */
+  incCalendarFindFreeSlot(args: { tenant: string; found: boolean }): void {
+    this.calendarFindFreeSlotTotal.inc({
+      tenant: args.tenant,
+      found: args.found ? 'true' : 'false',
     });
   }
 

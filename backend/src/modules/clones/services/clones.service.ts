@@ -21,6 +21,7 @@ import {
   CLONE_RESPOND_SYSTEM_PROMPT_BASE,
   CLONE_RESPOND_USER_TEMPLATE,
 } from '../../knowledge-core/prompts/clone-respond.prompt';
+import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from '../../knowledge-core/services/executable-persona-versioning.service';
 import { RbacService } from '../../rbac/rbac.service';
@@ -54,6 +55,16 @@ export class ClonesService {
   /** Минимум traits в SkillProfile для ответа клона. */
   private static readonly MIN_TRAITS_FOR_ANSWER = 3;
 
+  /**
+   * Фаза 1 clone-reliability-hardening — точная формулировка отказа клона,
+   * когда в его памяти нет достаточного количества рассуждений по теме
+   * вопроса. Совпадает с пунктом 6 промпта `clone-respond.prompt.ts` —
+   * фронту удобно различать «программный отказ» и «модель сказала что-то
+   * похожее». Текст менять только в паре с тестами/документацией.
+   */
+  static readonly TOPIC_STARVED_REFUSAL_TEXT =
+    'У оригинала недостаточно высказываний по этой теме, чтобы я мог отвечать в его стиле без выдумывания. Спроси напрямую.';
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
@@ -66,6 +77,8 @@ export class ClonesService {
     @Inject(ExecutablePersonaVersioningService)
     private readonly personaVersioning: ExecutablePersonaVersioningService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(KnowledgeEmbeddingService)
+    private readonly embedder: KnowledgeEmbeddingService,
   ) {}
 
   /**
@@ -166,6 +179,59 @@ export class ClonesService {
       tenantId: args.tenantId,
       personId: args.personId,
     });
+
+    // 5.5. Программный анти-deepfake: плотность рассуждений по теме вопроса.
+    // Если в reasoning-блоках сотрудника < cloneTopicMinBlocks с
+    // косинусной близостью к вопросу ≥ cloneTopicSimilarityThreshold —
+    // НЕ зовём модель, отдаём готовый отказ. Защита перенесена в код,
+    // чтобы не зависеть от того, послушает ли модель пункт 6 промпта.
+    const topicDensity = await this.assertTopicDensity({
+      question: args.question,
+      reasoningBlocks: subgraph.reasoningBlocks,
+    });
+    if (topicDensity.refused) {
+      const refusalText = ClonesService.TOPIC_STARVED_REFUSAL_TEXT;
+      const { conversationId, messageId } = await this.persistMessage({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scope: 'card',
+        scopeRefId: profile.id,
+        question: args.question,
+        conversationId: args.conversationId,
+        answer: refusalText,
+        citations: [],
+        llmMeta: {
+          refused: true,
+          refusalReason: 'topic_starved',
+          personaVersion: persona.version,
+          topicMatchedBlocks: topicDensity.matchedBlocks,
+          topicRequiredBlocks: topicDensity.requiredBlocks,
+          topicSimilarityThreshold: topicDensity.similarityThreshold,
+        },
+      });
+
+      this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
+      this.metrics.incCloneAsk({ scope: 'person' });
+      if (
+        profile.person.userId &&
+        profile.person.userId === args.requesterUserId
+      ) {
+        this.metrics.incCloneAskByOwner();
+      }
+
+      return {
+        conversationId,
+        messageId,
+        text: refusalText,
+        citations: [],
+        mode: 'clone_style',
+        isOwner:
+          profile.person.userId !== null &&
+          profile.person.userId === args.requesterUserId,
+        refused: true,
+        refusalReason: 'topic_starved',
+      };
+    }
 
     // 6. LLM clone-respond.
     const llmResult = await this.callCloneRespond({
@@ -292,6 +358,51 @@ export class ClonesService {
       tenantId: args.tenantId,
       roleId: args.roleId,
     });
+
+    // 4.5. Программный анти-deepfake: плотность рассуждений по теме вопроса.
+    // Для роли «тема» агрегируется — нам важно, чтобы среди reasoning-блоков
+    // любого из сотрудников роли нашлось ≥ cloneTopicMinBlocks по теме.
+    const topicDensity = await this.assertTopicDensity({
+      question: args.question,
+      reasoningBlocks: subgraph.reasoningBlocks,
+    });
+    if (topicDensity.refused) {
+      const refusalText = ClonesService.TOPIC_STARVED_REFUSAL_TEXT;
+      const { conversationId, messageId } = await this.persistMessage({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scope: 'card',
+        scopeRefId: args.roleId,
+        question: args.question,
+        conversationId: args.conversationId,
+        answer: refusalText,
+        citations: [],
+        llmMeta: {
+          refused: true,
+          refusalReason: 'topic_starved',
+          personaVersion: persona.version,
+          scopeKind: 'role',
+          roleId: args.roleId,
+          topicMatchedBlocks: topicDensity.matchedBlocks,
+          topicRequiredBlocks: topicDensity.requiredBlocks,
+          topicSimilarityThreshold: topicDensity.similarityThreshold,
+        },
+      });
+
+      this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
+      this.metrics.incCloneAsk({ scope: 'role' });
+
+      return {
+        conversationId,
+        messageId,
+        text: refusalText,
+        citations: [],
+        mode: 'clone_style',
+        isOwner: false,
+        refused: true,
+        refusalReason: 'topic_starved',
+      };
+    }
 
     // 5. LLM call.
     const llmResult = await this.callCloneRespond({
@@ -997,6 +1108,141 @@ export class ClonesService {
     return parts.length > 0 ? parts.join('; ') : null;
   }
 
+  // ─────────────────────── topic density (anti-deepfake) ───────────────────────
+
+  /**
+   * Фаза 1 clone-reliability-hardening — программная проверка плотности
+   * рассуждений по теме вопроса.
+   *
+   * Возвращает `{ refused: true }`, если в reasoningBlocks меньше
+   * `cfg.skill.cloneTopicMinBlocks` блоков с косинусной близостью к
+   * embedding'у вопроса ≥ `cfg.skill.cloneTopicSimilarityThreshold`.
+   *
+   * Консервативные edge-кейсы:
+   *   - блок без embedding (старые данные) → НЕ считается «по теме»
+   *     (лучше отказаться, чем сгенерировать дипфейк);
+   *   - embedQuery вернул null/упал → НЕ блокируем пользователя при
+   *     технической проблеме (пропускаем как «достаточная плотность»),
+   *     но логируем warning. Это явное решение «не подменять анти-deepfake
+   *     отказом из-за технической недоступности embedding-сервиса».
+   */
+  private async assertTopicDensity(args: {
+    question: string;
+    reasoningBlocks: ReadonlyArray<{ id: string; text: string }>;
+  }): Promise<{
+    refused: boolean;
+    matchedBlocks: number;
+    requiredBlocks: number;
+    similarityThreshold: number;
+  }> {
+    const similarityThreshold = this.cfg.skill.cloneTopicSimilarityThreshold;
+    const requiredBlocks = this.cfg.skill.cloneTopicMinBlocks;
+
+    // Граница: порог 0 — фича выключена.
+    if (requiredBlocks <= 0) {
+      return {
+        refused: false,
+        matchedBlocks: args.reasoningBlocks.length,
+        requiredBlocks,
+        similarityThreshold,
+      };
+    }
+
+    // Если блоков физически меньше требуемого — можем не ходить за
+    // embedding'ами вообще (всё равно не наберём порог).
+    if (args.reasoningBlocks.length < requiredBlocks) {
+      return {
+        refused: true,
+        matchedBlocks: 0,
+        requiredBlocks,
+        similarityThreshold,
+      };
+    }
+
+    let questionEmbedding: number[] | null = null;
+    try {
+      questionEmbedding = await this.embedder.embedQuery(args.question);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.assertTopicDensity: embedQuery упал — пропускаю анти-deepfake проверку',
+      );
+      return {
+        refused: false,
+        matchedBlocks: args.reasoningBlocks.length,
+        requiredBlocks,
+        similarityThreshold,
+      };
+    }
+    if (!questionEmbedding) {
+      this.logger.warn(
+        'clones.assertTopicDensity: embedQuery вернул null — пропускаю анти-deepfake проверку',
+      );
+      return {
+        refused: false,
+        matchedBlocks: args.reasoningBlocks.length,
+        requiredBlocks,
+        similarityThreshold,
+      };
+    }
+
+    const blockEmbeddings = await this.loadBlockEmbeddings(
+      args.reasoningBlocks.map((b) => b.id),
+    );
+
+    let matched = 0;
+    for (const block of args.reasoningBlocks) {
+      const vec = blockEmbeddings.get(block.id);
+      if (!vec) continue; // нет embedding'а — консервативно не считаем
+      const sim = cosineSim(questionEmbedding, vec);
+      if (sim >= similarityThreshold) matched += 1;
+    }
+
+    return {
+      refused: matched < requiredBlocks,
+      matchedBlocks: matched,
+      requiredBlocks,
+      similarityThreshold,
+    };
+  }
+
+  /**
+   * Читает IdeaBlock.embedding через pgvector raw query. Возвращает мапу
+   * blockId → number[]. Блоки без embedding в карту не попадут.
+   *
+   * Логика скопирована из `Specialist37Service.loadEmbeddings` —
+   * специально без вынесения в общий helper, чтобы не цеплять
+   * `Specialist37Service` за этот файл и не плодить циклы зависимостей.
+   */
+  private async loadBlockEmbeddings(
+    blockIds: string[],
+  ): Promise<Map<string, number[]>> {
+    if (blockIds.length === 0) return new Map();
+    try {
+      const rows = await this.prisma.$queryRaw<
+        Array<{ id: string; emb: string | null }>
+      >`SELECT "id", "embedding"::text AS "emb" FROM "IdeaBlock" WHERE "id" IN (${Prisma.join(blockIds)}) AND "embedding" IS NOT NULL`;
+      const map = new Map<string, number[]>();
+      for (const r of rows) {
+        if (!r.emb) continue;
+        // pgvector text-формат: '[0.1,0.2,...]'.
+        const inner = r.emb.replace(/^\[|\]$/g, '');
+        if (!inner) continue;
+        const vec = inner.split(',').map((s) => Number(s));
+        if (vec.every((n) => Number.isFinite(n))) {
+          map.set(r.id, vec);
+        }
+      }
+      return map;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.loadBlockEmbeddings: упал — fallback на пустую мапу (консервативно)',
+      );
+      return new Map();
+    }
+  }
+
   // ─────────────────────── LLM call ───────────────────────
 
   private async callCloneRespond(args: {
@@ -1151,4 +1397,25 @@ function emptySubgraph(): CloneSubgraph {
     knowledgeProfileSummary: null,
     decisions: [],
   };
+}
+
+/**
+ * Косинусная близость двух эмбеддингов одинаковой размерности.
+ * Возвращает 0 для несовпадающих длин или нулевых векторов
+ * (никогда не кидает — это «горячий путь» Clone API).
+ */
+function cosineSim(a: number[], b: number[]): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }

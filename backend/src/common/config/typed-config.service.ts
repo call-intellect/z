@@ -438,6 +438,10 @@ export class TypedConfigService {
       v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
       meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
+      // ТЗ 2026-05-25: meeting-report-fast — новая параллельная цепочка отчёта
+      // на сыром транскрипте (один LLM-вызов). Включается флагом отдельно от
+      // v2-агентов; producer — MergeWorker (после готовности транскрипта).
+      meetingReportFastEnabled: this.get('MEETING_REPORT_FAST_ENABLED'),
       // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов).
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
@@ -708,6 +712,11 @@ export class TypedConfigService {
    *   - `recalibrateCron` / `managerDigestCron` — расписания cron'ов.
    *   - `rebuildDebounceMs` — дебаунс enqueue rebuild-job'а одного профиля.
    *   - `cloneAskPerUserPerDay` — rate limit запросов к /clones/persons/:id/ask.
+   *   - `personaRebuildTraitDeltaThreshold` — сколько новых/замещённых traits
+   *     за 24ч триггерит внеочередной rebuild ExecutablePersona (Фаза 5,
+   *     clone reliability hardening; default 2).
+   *   - `personaRebuildMaxAgeHours` — максимальный возраст активного snapshot;
+   *     превышен → rebuild ставится даже без новых черт (default 48).
    */
   get skill() {
     return {
@@ -720,6 +729,14 @@ export class TypedConfigService {
       managerDigestCron: this.get('SKILL_MANAGER_DIGEST_CRON'),
       rebuildDebounceMs: this.get('SKILL_REBUILD_DEBOUNCE_MS'),
       cloneAskPerUserPerDay: this.get('CLONE_ASK_PER_USER_PER_DAY'),
+      // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 1 ──
+      cloneTopicSimilarityThreshold: this.get('CLONE_TOPIC_SIMILARITY_THRESHOLD'),
+      cloneTopicMinBlocks: this.get('CLONE_TOPIC_MIN_BLOCKS'),
+      // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
+      personaRebuildTraitDeltaThreshold: this.get(
+        'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',
+      ),
+      personaRebuildMaxAgeHours: this.get('PERSONA_REBUILD_MAX_AGE_HOURS'),
     } as const;
   }
 

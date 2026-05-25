@@ -549,6 +549,23 @@ const KnowledgeCoreSchema = z.object({
    */
   MEETING_ANALYZE_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(120_000),
 
+  // ── ТЗ 2026-05-25: meeting-report-fast (объединённый отчёт по сырому транскрипту) ──
+  /**
+   * Master-флаг новой быстрой цепочки отчёта (см. ТЗ
+   * plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md, Фаза 4).
+   * При `true` после успешной склейки транскрипта (`MergeWorker`)
+   * producer ставит job в `core.meeting-report-fast` ПАРАЛЛЕЛЬНО с
+   * existing `ai.analyze` цепочкой / `meeting-analyze-v2` cron'ом —
+   * для A/B-сравнения качества на dev-трафике.
+   *
+   * Default `true` — на dev включаем сразу; на prod выключать через ENV
+   * до явного подтверждения качества (kill-switch).
+   *
+   * Старая цепочка `meeting-analyze-v2` НЕ переключается этим флагом —
+   * она имеет собственный `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`.
+   */
+  MEETING_REPORT_FAST_ENABLED: zBool(true),
+
   // ── Фаза 6: единый AI-чат поверх IdeaBlock'ов (5 scope: org/meeting/card/theme/entity) ──
   /**
    * Master-флаг ChatV2. По умолчанию `false` — существующие чат-эндпоинты
@@ -840,6 +857,28 @@ const SkillSchema = z.object({
   SKILL_MANAGER_DIGEST_CRON: z.string().min(1).default('0 9 * * MON'),
   SKILL_REBUILD_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
   CLONE_ASK_PER_USER_PER_DAY: z.coerce.number().int().positive().default(20),
+  // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 1 (антифальшивка) ──
+  /**
+   * Порог семантической близости вопроса к reasoning-блоку: ниже этого —
+   * блок считается «не по теме». Default 0.70.
+   */
+  CLONE_TOPIC_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.70),
+  /**
+   * Минимум reasoning-блоков «по теме», чтобы клон отвечал. Если меньше —
+   * программный отказ ДО вызова модели (анти-deepfake). Default 2.
+   */
+  CLONE_TOPIC_MIN_BLOCKS: z.coerce.number().int().positive().default(2),
+  // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
+  /**
+   * Сколько новых/замещённых SkillTrait за последние 24ч триггерит
+   * внеочередной rebuild ExecutablePersona. Default 2.
+   */
+  PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD: z.coerce.number().int().positive().default(2),
+  /**
+   * Максимальный возраст активного ExecutablePersona snapshot в часах —
+   * после превышения rebuild ставится даже без новых черт. Default 48.
+   */
+  PERSONA_REBUILD_MAX_AGE_HOURS: z.coerce.number().int().positive().default(48),
 });
 
 /**

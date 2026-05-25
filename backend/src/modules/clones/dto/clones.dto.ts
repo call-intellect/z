@@ -47,6 +47,18 @@ export interface AskCloneResponseDto {
   mode: 'clone_style';
   /** Если true — носитель спрашивает своего же клона (для UI). */
   isOwner: boolean;
+  /**
+   * Фаза 1 «clone reliability hardening» — клон отказался отвечать
+   * (программный анти-deepfake). По умолчанию undefined ≈ false.
+   */
+  refused?: boolean;
+  /**
+   * Машинно-читаемая причина отказа клона отвечать.
+   * Текущие значения: `'topic_starved'` — в контексте недостаточно
+   * рассуждений по теме вопроса. Поле опциональное — null/undefined,
+   * когда клон ответил нормально.
+   */
+  refusalReason?: string | null;
 }
 
 /**

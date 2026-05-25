@@ -103,6 +103,23 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 
 `ai/builders/tasks-unified.ts` — единый builder для legacy (Wave 1 `{title, assignee, dueDate}`), Wave 3 (`{title, description, projectIdHint, sourceQuote, confidence}`), structured (JSON Schema strict). Удалил 3 дублирующиеся реализации в разных worker'ах.
 
+### Meeting Report Fast (ТЗ 2026-05-25)
+
+Раньше отчёт пользователю по встрече шёл цепочкой `block-ingest → chapters-v2 + tasks-v2 + summary-v2 + meeting-quality-score` — 5 последовательных LLM-вызовов. Эксперимент `sales-merge-experiment` (3 фикстуры × 2 варианта × Claude Opus 4.7 как независимый судья) показал: один объединённый вызов на сыром транскрипте даёт сравнимое или лучшее качество, при этом в 3.5× быстрее и в 4.6× дешевле.
+
+Решение: **раздельные pipeline** — «отчёт пользователю» отделён от «памяти компании» (граф знаний). Подробная карта — [`meeting-report-pipeline.md`](meeting-report-pipeline.md).
+
+- `meeting-report-fast.prompt.ts` (`backend/src/modules/ai/services/prompts/`) — builder под 12 типов встреч, Zod + JSON Schema + tool `submit_meeting_analysis` с 4 секциями (chapters, tasks, summary_markdown, quality_score).
+- `meeting-report-fast.worker.ts` (`backend/src/modules/knowledge-core/workers/`) — concurrency=2, парсинг tool_call с JSON-fallback, prompt-injection guard. Статусы `Meeting.reportFastStatus`.
+- Producer в `merge.worker.ts` — enqueue в `core.meeting-report-fast` сразу после готовности транскрипта, **параллельно** с legacy `ai.analyze` (не вместо). Ошибки producer'а изолированы от legacy-цепочки.
+- ENV kill-switch `knowledgeCore.meetingReportFastEnabled` (default `true`).
+- taskType `meeting-report-fast`: `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b`. Формат — `tools + tool_choice='auto'` (требование DeepSeek-V4-Pro с thinking).
+- LlmRouter расширен опциональными `params.tools` + `result.toolCalls`.
+- Метрики: `z_meeting_report_fast_total{tenant, status}` (counter) + `z_meeting_report_fast_duration_seconds` (histogram).
+- Поля Prisma: `AiResult.summaryFast`/`summaryFastModel`/`summaryFastGeneratedAt`; `Meeting.reportFastStatus`/`reportFastError`/`reportFastGeneratedAt`; `MeetingChapter.extractorVersion='fast'`, `Task.extractorVersion='fast'`.
+
+Legacy `meeting-analyze-v2.worker` остаётся работать **параллельно** для A/B-сравнения на dev-трафике. Свёртка v2 — после положительной обратной связи продакта (Фаза 6 ТЗ).
+
 ### Hard participant identification (ТЗ 2026-05-25)
 
 Раньше AI заполнял только `Task.assigneeRaw` строкой («Иван»). Поле `Task.assigneeUserId` существовало в схеме, но не использовалось. После ТЗ `2026-05-25-hard-participant-identification`:

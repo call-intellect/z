@@ -44,7 +44,23 @@ PostgreSQL + Redis  ←─────────────────  ре
 `Host жмёт «начать запись» → Backend → LiveKit Egress → S3 → webhook → Backend (status update)`
 
 ### AI после встречи
-`Webhook «встреча завершилась» → Backend → очередь (Redis) → AI worker → транскрибация → шаблон по типу → DB (ai_result)`
+
+После расшифровки транскрипта (`merge.worker`) запускаются **две независимые параллельные цепочки**:
+
+```
+                                  ┌── [Б] core.meeting-report-fast ──→ AiResult.summaryFast +
+                                  │   (1 LLM-вызов, ~2 мин)            MeetingChapter/Task (extractorVersion='fast') +
+                                  │                                    Meeting.reportFastStatus
+транскрипт готов (merge.worker) ──┤                                    → пользователь видит отчёт
+                                  │
+                                  └── [A] ai.analyze → block-ingest ──→ IdeaBlock + Entity + Theme
+                                      (5 LLM-вызовов, ~7 мин)           → специалисты 3-1...3-9
+                                                                        → граф знаний компании
+                                                                        + legacy summaryV2/chapters-v2/tasks-v2
+                                                                          (живёт до свёртки в Фазе 6)
+```
+
+Принцип: **Б — отчёт пользователю** (быстро, 1 вызов, в 3.5× быстрее и в 4.6× дешевле — подтверждено экспериментом sales-merge). **A — память компании** (граф через block-ingest и слой 3, остаётся). Они не блокируют друг друга. Карта пайплайнов — [`01_projects/meeting-report-pipeline.md`](../01_projects/meeting-report-pipeline.md).
 
 ## In-meeting interaction state (raise hand)
 

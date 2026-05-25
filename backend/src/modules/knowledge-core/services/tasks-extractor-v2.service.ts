@@ -61,6 +61,13 @@ export interface TasksExtractorV2Result {
  * IdeaBlock'ов встречи через LLM-вызов `task-extract-v2`.
  *
  * Не пишет в БД — это ответственность `meeting-analyze-v2.worker`.
+ *
+ * @deprecated С 2026-05-25 заменён на объединённый `MeetingReportFastWorker`
+ * (`meeting-report-fast.worker.ts`) — один LLM-вызов на главы+задачи+резюме+
+ * quality_score (см. ТЗ
+ * `plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`, Фаза 6).
+ * Сервис продолжает работать параллельно для A/B-сравнения ещё 2 недели;
+ * пользовательский UI уже приоритезирует `Task.extractorVersion='fast'`.
  */
 @Injectable()
 export class TasksExtractorV2Service {

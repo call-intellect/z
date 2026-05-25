@@ -15,6 +15,11 @@ export type TaskDomain = {
   createdManually: boolean;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора.
+   * Используется UI для фильтрации (fast → приоритет, v2/null → fallback).
+   */
+  extractorVersion: string | null;
 };
 
 export function taskFromApi(api: TaskApi): TaskDomain {
@@ -35,5 +40,22 @@ export function taskFromApi(api: TaskApi): TaskDomain {
     createdManually: api.createdManually,
     createdAt: new Date(api.createdAt),
     updatedAt: new Date(api.updatedAt),
+    extractorVersion: api.extractorVersion ?? null,
   };
+}
+
+/**
+ * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — фильтр приоритета:
+ *   - если есть хоть одна fast-задача → возвращаем только fast,
+ *   - иначе возвращаем v2 + legacy (null + ручные) — как fallback.
+ *
+ * Используется ТОЛЬКО в пользовательском UI карточки встречи.
+ * Admin compare UI продолжает показывать оба варианта рядом.
+ */
+export function pickPrimaryTasks(items: TaskDomain[]): TaskDomain[] {
+  const fast = items.filter((t) => t.extractorVersion === 'fast');
+  if (fast.length > 0) return fast;
+  return items.filter(
+    (t) => t.extractorVersion === 'v2' || t.extractorVersion === null,
+  );
 }

@@ -64,10 +64,12 @@ import { useVidstackPlayer } from '@/hooks/use-vidstack-player';
 
 import type { RoomMessageDomain } from '@/domain/room-message';
 
-import { aiResultFromApi } from '@/domain/ai-result';
+import { aiResultFromApi, pickPrimarySummary } from '@/domain/ai-result';
+import { pickPrimaryChapters } from '@/domain/chapter';
 import type { MeetingDomain } from '@/domain/meeting';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
+import { pickPrimaryTasks } from '@/domain/task';
 
 import { MeetingBehaviorSection } from '@/ui/components/behavior-metrics/MeetingBehaviorSection';
 import { MeetingQualityScoreSection } from '@/ui/components/quality-score/MeetingQualityScoreSection';
@@ -99,6 +101,7 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { FeedbackButton } from './FeedbackButton';
 import { MeetingPlayer } from './MeetingPlayer';
 import { MeetingChatPanel } from './MeetingChatPanel';
+import { MeetingSummaryRender } from './MeetingSummaryRender';
 import { ReportsTab } from './ReportsTab';
 import { ShareDialog } from './ShareDialog';
 import { HighlightCreatorDialog } from './HighlightCreatorDialog';
@@ -164,6 +167,30 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     [result],
   );
 
+  /**
+   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для UI:
+   * fast → v2 → legacy. Возвращает `{ markdown, source }` либо `null`.
+   */
+  const primarySummary = useMemo(
+    () => pickPrimarySummary(aiResult),
+    [aiResult],
+  );
+
+  /**
+   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетные главы:
+   * если есть fast → только fast, иначе v2 + legacy.
+   */
+  const primaryChapters = useMemo(
+    () => pickPrimaryChapters(chapters),
+    [chapters],
+  );
+
+  /**
+   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетные задачи:
+   * если есть fast → только fast, иначе v2 + legacy + ручные.
+   */
+  const primaryTasks = useMemo(() => pickPrimaryTasks(tasks), [tasks]);
+
   // Presigned URL — отдельный endpoint; null-ключ отключает запрос до готовности.
   // Хук должен быть ДО любых early return'ов (Rules of Hooks).
   const isRecordingReady = result?.recording?.hasRecording === true;
@@ -223,7 +250,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         <MeetingPlayer
           videoUrl={safeVideoUrl}
           durationMs={durationMs}
-          chapters={chapters}
+          chapters={primaryChapters}
           highlights={highlights}
           playerRef={player.playerRef}
           onTimeUpdate={(ms) => setCurrentMs(ms)}
@@ -250,9 +277,9 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
             <TabsTrigger value="chapters">
               <Circle size={14} strokeWidth={1.75} />
               Главы
-              {chapters.length > 0 && (
+              {primaryChapters.length > 0 && (
                 <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
-                  {chapters.length}
+                  {primaryChapters.length}
                 </span>
               )}
             </TabsTrigger>
@@ -272,9 +299,9 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
             <TabsTrigger value="tasks">
               <ListChecks size={14} strokeWidth={1.75} />
               Задачи
-              {tasks.length > 0 && (
+              {primaryTasks.length > 0 && (
                 <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
-                  {tasks.length}
+                  {primaryTasks.length}
                 </span>
               )}
             </TabsTrigger>
@@ -295,12 +322,12 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                 <OverviewTab
                   meeting={meeting}
                   durationMs={durationMs}
-                  summary={aiResult?.summary ?? null}
+                  primarySummary={primarySummary}
                   followUpEmail={aiResult?.followUpEmail ?? null}
                   structuredData={aiResult?.structuredData ?? null}
                   customMd={aiResult?.customOutputMd ?? null}
-                  chaptersCount={chapters.length}
-                  tasksCount={tasks.length}
+                  chaptersCount={primaryChapters.length}
+                  tasksCount={primaryTasks.length}
                   highlightsCount={highlights.length}
                 />
                 {/* Фаза A.3 — Кнопка обратной связи 👍/👎 на AI-отчёт. */}
@@ -326,7 +353,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           <TabsContent value="chapters">
             <ChaptersTab
               meetingId={meetingId}
-              chapters={chapters}
+              chapters={primaryChapters}
               onSeek={onSeek}
               onMutate={mutateChapters}
             />
@@ -343,14 +370,14 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           <TabsContent value="tasks">
             <TasksTab
               meetingId={meetingId}
-              tasks={tasks}
+              tasks={primaryTasks}
               onSeek={onSeek}
               onMutate={mutateTasks}
             />
           </TabsContent>
 
           <TabsContent value="notes">
-            <NotesTab summary={aiResult?.summary ?? null} />
+            <NotesTab primarySummary={primarySummary} />
           </TabsContent>
         </Tabs>
       </div>
@@ -753,7 +780,7 @@ function RenderStatusBadge({
 function OverviewTab({
   meeting,
   durationMs,
-  summary,
+  primarySummary,
   followUpEmail,
   structuredData,
   customMd,
@@ -763,7 +790,11 @@ function OverviewTab({
 }: {
   meeting: MeetingDomain;
   durationMs: number | null;
-  summary: string | null;
+  /**
+   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'v2'|'legacy' }`
+   * либо `null` если ни одного варианта нет.
+   */
+  primarySummary: { markdown: string; source: 'fast' | 'v2' | 'legacy' } | null;
   followUpEmail: string | null;
   structuredData: unknown;
   customMd: string | null;
@@ -782,15 +813,18 @@ function OverviewTab({
   return (
     <div className="flex flex-col gap-4">
       <StatsRow stats={stats} />
-      {summary && (
+      {primarySummary && (
         <Card>
           <CardHeader title="Краткое содержание" />
-          <p className="m-0 text-base leading-relaxed text-fg-primary">
-            {summary}
-          </p>
+          {/*
+           * `fast` и `v2` приходят как markdown. `legacy` исторически приходит
+           * как plain-text, но markdown-рендер совместим (отсутствие разметки
+           * выглядит как обычный текст).
+           */}
+          <MeetingSummaryRender markdown={primarySummary.markdown} />
         </Card>
       )}
-      {!summary && !customMd && (
+      {!primarySummary && !customMd && (
         <Card>
           <div className="text-sm text-fg-secondary">
             AI ещё не сформировал краткое содержание этой встречи.
@@ -1499,12 +1533,16 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
   );
 }
 
-function NotesTab({ summary }: { summary: string | null }) {
+function NotesTab({
+  primarySummary,
+}: {
+  primarySummary: { markdown: string; source: 'fast' | 'v2' | 'legacy' } | null;
+}) {
   const [copied, setCopied] = useState(false);
   const onCopy = async () => {
-    if (!summary) return;
+    if (!primarySummary) return;
     try {
-      await navigator.clipboard.writeText(summary);
+      await navigator.clipboard.writeText(primarySummary.markdown);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -1516,7 +1554,7 @@ function NotesTab({ summary }: { summary: string | null }) {
       <CardHeader
         title="Заметки"
         accessory={
-          summary ? (
+          primarySummary ? (
             <Button variant="outline" size="sm" onClick={onCopy}>
               <Copy size={12} />
               {copied ? 'Скопировано' : 'Скопировать'}
@@ -1524,10 +1562,8 @@ function NotesTab({ summary }: { summary: string | null }) {
           ) : undefined
         }
       />
-      {summary ? (
-        <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
-          {summary}
-        </p>
+      {primarySummary ? (
+        <MeetingSummaryRender markdown={primarySummary.markdown} />
       ) : (
         <p className="m-0 text-sm text-fg-tertiary">
           Нет данных. Заметки появятся после AI-анализа.

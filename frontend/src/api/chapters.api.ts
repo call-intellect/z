@@ -14,6 +14,13 @@ export type ChapterApi = {
   source: 'ai' | 'manual';
   orderIndex: number;
   createdAt: string;
+  /**
+   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора главы.
+   * `'fast'` = новый `MeetingReportFastWorker` (приоритет в пользовательском UI),
+   * `'v2'` = knowledge-core `meeting-analyze-v2.worker` (fallback),
+   * `null` = legacy `chapters.worker`.
+   */
+  extractorVersion: string | null;
 };
 
 export type ChapterListApiResponse = { items: ChapterApi[] };

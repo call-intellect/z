@@ -39,6 +39,13 @@ export interface SummaryExtractorV2Result {
  * `summary-v2`. Выбирает system-промпт по типу встречи (9 типов).
  *
  * Не пишет в БД — это `meeting-analyze-v2.worker`.
+ *
+ * @deprecated С 2026-05-25 заменён на объединённый `MeetingReportFastWorker`
+ * (`meeting-report-fast.worker.ts`) — один LLM-вызов на главы+задачи+резюме+
+ * quality_score поверх СЫРОГО транскрипта (см. ТЗ
+ * `plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`, Фаза 6).
+ * Сервис продолжает работать параллельно для A/B-сравнения ещё 2 недели;
+ * пользовательский UI уже приоритезирует `AiResult.summaryFast`.
  */
 @Injectable()
 export class SummaryExtractorV2Service {

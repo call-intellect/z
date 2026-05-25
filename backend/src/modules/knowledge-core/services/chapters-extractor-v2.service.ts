@@ -42,6 +42,13 @@ export interface ChaptersExtractorV2Result {
  * `chapter-extract-v2`.
  *
  * Не пишет в БД — это `meeting-analyze-v2.worker`.
+ *
+ * @deprecated С 2026-05-25 заменён на объединённый `MeetingReportFastWorker`
+ * (`meeting-report-fast.worker.ts`) — один LLM-вызов на главы+задачи+резюме+
+ * quality_score (см. ТЗ
+ * `plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`, Фаза 6).
+ * Сервис продолжает работать параллельно для A/B-сравнения ещё 2 недели;
+ * пользовательский UI уже приоритезирует `MeetingChapter.extractorVersion='fast'`.
  */
 @Injectable()
 export class ChaptersExtractorV2Service {

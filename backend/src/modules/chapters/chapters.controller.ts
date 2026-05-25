@@ -96,6 +96,7 @@ export class ChaptersController {
     title: string;
     summary: string | null;
     order: number;
+    extractorVersion: string | null;
     createdAt: Date;
     updatedAt: Date;
   }): {
@@ -106,6 +107,13 @@ export class ChaptersController {
     title: string;
     summary: string | null;
     order: number;
+    /**
+     * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора главы.
+     * `'fast'` = новый `MeetingReportFastWorker` (приоритет в UI пользователя),
+     * `'v2'` = knowledge-core `meeting-analyze-v2.worker` (fallback),
+     * `null` = legacy `chapters.worker`.
+     */
+    extractorVersion: string | null;
     createdAt: string;
     updatedAt: string;
   } {
@@ -117,6 +125,7 @@ export class ChaptersController {
       title: c.title,
       summary: c.summary,
       order: c.order,
+      extractorVersion: c.extractorVersion ?? null,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     };

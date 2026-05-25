@@ -23,6 +23,13 @@ export type TaskApi = {
   createdManually: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора задачи.
+   * `'fast'` = новый `MeetingReportFastWorker` (приоритет в пользовательском UI),
+   * `'v2'` = knowledge-core v2 (fallback),
+   * `null` = legacy `tasks-extract.worker` либо ручная.
+   */
+  extractorVersion: string | null;
 };
 
 export type TasksListApiResponse = {

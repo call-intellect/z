@@ -88,7 +88,7 @@ core.raw-events → block-ingest → blocks[] → block-distill → IdeaBlock
                                        граф знаний компании
 ```
 
-Legacy v2-агенты (`chapters-v2`, `tasks-v2`, `summary-v2`, `meeting-quality-score`) **продолжают работать** для A/B-сравнения. После Фазы 6 ТЗ (положительная обратная связь от продакта) — будут свёрнуты, UI переключится с `summaryV2` на `summaryFast`.
+Legacy v2-агенты (`chapters-v2`, `tasks-v2`, `summary-v2`, `meeting-quality-score`) **продолжают работать** для A/B-сравнения. С Фазы 6 ТЗ они помечены `@deprecated` (JSDoc), но НЕ удалены — продолжают писать в `AiResult.summaryV2` / `extractorVersion='v2'` для admin compare UI. Полное удаление — через 2 недели параллельной работы и положительный фидбек продакта.
 
 ## Состояние во времени (фазы ТЗ)
 
@@ -100,7 +100,7 @@ Legacy v2-агенты (`chapters-v2`, `tasks-v2`, `summary-v2`, `meeting-qualit
 | 4 — Producer + ENV | ✅ закрыто | `merge.worker.maybeEnqueueMeetingReportFast` + `MEETING_REPORT_FAST_ENABLED` |
 | 4.6 — LlmRouter route | ✅ закрыто | `seed-llm-task-routes-knowledge-core.ts` |
 | 5 — Admin compare UI | 🔄 в работе | Превью v2 vs fast в админке для продакта |
-| 6 — Свёртка v2 | ⏳ ждёт фидбек | Помечаем v2-агентов deprecated, переключаем UI |
+| 6 — Свёртка v2 | ✅ закрыто (safe compromise) | v2-агенты помечены `@deprecated` (worker + 3 сервиса + 3 prompt builder'а); пользовательский UI карточки встречи (`MeetingResultPageReal`) приоритезирует `summaryFast` / fast-главы / fast-задачи через `pickPrimarySummary` / `pickPrimaryChapters` / `pickPrimaryTasks`. v2 — fallback; legacy `summary` — fallback от fallback. Admin compare UI **не тронут**. Полное удаление v2-агентов — через 2 недели параллельной работы и фидбек продакта. |
 | 7 — second-brain | ✅ закрыто | Эта заметка + правки `ai-jobs.md`, `workers-queues.md`, `module-map.md` |
 
 ## Связанные документы

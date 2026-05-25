@@ -184,8 +184,8 @@ reportFastGeneratedAt DateTime?
 - [ ] За 1 неделю собрать обратную связь.
 
 ### Фаза 6 — Свёртка v2 (1-2 часа)
-- [ ] После положительной обратной связи — UI переключить на `fast`.
-- [ ] v2-агенты пометить `@deprecated`, через 2 недели удалить.
+- [x] После положительной обратной связи — UI переключить на `fast`. **Сделано safe-compromise-стратегией:** UI пользователя приоритезирует `summaryFast` через `pickPrimarySummary` (`@/domain/ai-result`), главы через `pickPrimaryChapters` (`@/domain/chapter`), задачи через `pickPrimaryTasks` (`@/domain/task`). Fallback на `summaryV2` / `extractorVersion='v2'` / legacy. Admin compare UI не тронут. Сводки рендерятся через общий компонент `MeetingSummaryRender` (react-markdown + rehype-sanitize).
+- [x] v2-агенты пометить `@deprecated`, через 2 недели удалить. **JSDoc-deprecation проставлен** на: `MeetingAnalyzeV2Worker`, `TasksExtractorV2Service`, `ChaptersExtractorV2Service`, `SummaryExtractorV2Service`, `buildTasksV2Prompt`, `buildChaptersV2Prompt`, `buildSummaryV2Prompt`. Воркер и сервисы продолжают работать параллельно с `meeting-report-fast` — будут удалены после 2 недель A/B и положительной обратной связи от продакта.
 
 ### Фаза 7 — Обновление second-brain (30 минут)
 - [ ] [01_projects/ai-jobs.md](../../second-brain/01_projects/ai-jobs.md) — добавить `meeting-report-fast` в реестр.
@@ -199,7 +199,7 @@ reportFastGeneratedAt DateTime?
 - [ ] Стоимость отчёта на 1 встречу — ≤ $0.015 (сейчас ~$0.04 со скидкой).
 - [ ] На 10 dev-встречах разных типов отчёт строится без `partial`/`failed` статусов.
 - [ ] `block-ingest` и граф знаний работают как раньше — никаких регрессий в `IdeaBlock`/`Entity`/`Theme`.
-- [ ] Старые поля `aiResult.summaryV2` и `meetingChapter.extractorVersion='v2'` либо помечены deprecated, либо удалены полностью (по итогам Фазы 6).
+- [x] Старые поля `aiResult.summaryV2` и `meetingChapter.extractorVersion='v2'` либо помечены deprecated, либо удалены полностью (по итогам Фазы 6). **Помечены `@deprecated` через JSDoc на классах сервисов / воркера / prompt builder'ов.** Поля БД остаются — будут удалены вместе с воркером через 2 недели A/B.
 - [ ] Обновлены 3 файла в second-brain.
 
 ## 7. Что НЕ делать в этой задаче

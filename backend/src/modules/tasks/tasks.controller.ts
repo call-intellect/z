@@ -192,6 +192,7 @@ export class TasksController {
     sourceQuote: string | null;
     confidence: number | null;
     createdManually: boolean;
+    extractorVersion: string | null;
     createdAt: Date;
     updatedAt: Date;
   }): {
@@ -208,6 +209,13 @@ export class TasksController {
     sourceQuote: string | null;
     confidence: number | null;
     createdManually: boolean;
+    /**
+     * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора задачи.
+     * `'fast'` = новый `MeetingReportFastWorker` (приоритет в UI пользователя),
+     * `'v2'` = knowledge-core `meeting-analyze-v2.worker` (fallback),
+     * `null` = legacy `tasks-extract.worker`.
+     */
+    extractorVersion: string | null;
     createdAt: string;
     updatedAt: string;
   } {
@@ -228,6 +236,7 @@ export class TasksController {
       sourceQuote: t.sourceQuote,
       confidence: t.confidence,
       createdManually: t.createdManually,
+      extractorVersion: t.extractorVersion ?? null,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     };

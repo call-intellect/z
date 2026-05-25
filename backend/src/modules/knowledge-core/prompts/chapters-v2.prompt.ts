@@ -76,6 +76,15 @@ interface BuildArgs {
   blocks: MeetingBlock[];
 }
 
+/**
+ * Формирует system+user промпты для chapters-v2 LLM-вызова.
+ *
+ * @deprecated С 2026-05-25 заменён на объединённый промпт
+ * `meeting-report-fast` (`backend/src/modules/ai/services/prompts/meeting-report-fast.prompt.ts`).
+ * См. ТЗ `plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`,
+ * Фаза 6. Промпт пока остаётся для A/B-сравнения; удалить после 2 недель
+ * параллельной работы и положительной обратной связи от продакт-менеджера.
+ */
 export function buildChaptersV2Prompt(args: BuildArgs): {
   system: string;
   user: string;

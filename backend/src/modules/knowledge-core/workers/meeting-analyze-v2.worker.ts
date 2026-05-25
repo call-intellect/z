@@ -23,6 +23,16 @@ import { TasksExtractorV2Service } from '../services/tasks-extractor-v2.service'
 /**
  * MeetingAnalyzeV2Worker (`core.meeting-analyze-v2` consumer, Фаза 5).
  *
+ * @deprecated С 2026-05-25 заменён на `MeetingReportFastWorker`
+ * (`meeting-report-fast.worker.ts`) — один LLM-вызов поверх СЫРОГО транскрипта,
+ * в 4 раза дешевле и в 3.5 раза быстрее (см. ТЗ
+ * `plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`, Фаза 6).
+ *
+ * Воркер пока остаётся работать ПАРАЛЛЕЛЬНО с `meeting-report-fast` ещё
+ * 2 недели — для A/B-сравнения в admin compare UI. Удалить только после
+ * положительной обратной связи от продакт-менеджера. Пользовательский UI уже
+ * приоритезирует `summaryFast` / fast-главы / fast-задачи; v2 — fallback.
+ *
  * Запускается cron'ом `meeting-analyze-v2.cron` (каждые 10 мин) для встреч
  * со status='ai_ready' AND tenantId IS NOT NULL AND analyzeV2Status IS NULL
  * (или failed но не сегодняшний). Дебаунс ~2 минуты по jobId.

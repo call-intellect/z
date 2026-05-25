@@ -6,6 +6,7 @@ import { KnowledgeGraphController } from './api/graph.controller';
 import { KnowledgeSearchController } from './api/search.controller';
 import { KnowledgeThemesController } from './api/themes.controller';
 import { KnowledgeCoreModule } from './knowledge-core.module';
+import { KnowledgeSnapshotModule } from './snapshot.module';
 
 /**
  * HTTP-слой knowledge-core: только контроллеры (поиск/блоки/сущности/граф/темы).
@@ -16,9 +17,13 @@ import { KnowledgeCoreModule } from './knowledge-core.module';
  * — из глобальных модулей HTTP-приложения.
  *
  * Импортируется только в `app.module` (HTTP).
+ *
+ * KC-Temporal W1.3 (2026-05-25): `KnowledgeSnapshotModule` отдельным
+ * под-модулем, чтобы изолировать snapshot-контроллер/сервис от потенциальных
+ * merge-конфликтов с параллельными агентами.
  */
 @Module({
-  imports: [KnowledgeCoreModule],
+  imports: [KnowledgeCoreModule, KnowledgeSnapshotModule],
   controllers: [
     KnowledgeSearchController,
     KnowledgeBlocksController,

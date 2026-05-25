@@ -311,7 +311,11 @@ export class TypedConfigService {
   // ─────────────────────────── crossmark ─────────────────────────
   get crossmark() {
     return {
-      hmacTimestampWindowSeconds: this.get('CROSSMARK_HMAC_TIMESTAMP_WINDOW_SECONDS'),
+      hmacTimestampWindowSeconds: this.resolveSync<number>(
+        'crossmark.hmacTimestampWindowSeconds',
+        'CROSSMARK_HMAC_TIMESTAMP_WINDOW_SECONDS',
+        300,
+      ),
     } as const;
   }
 
@@ -387,10 +391,20 @@ export class TypedConfigService {
   get webhooksOut() {
     return {
       encryptionKey: this.get('WEBHOOK_SECRETS_ENCRYPTION_KEY'),
-      deliveryTimeoutMs: this.get('WEBHOOK_DELIVERY_TIMEOUT_MS'),
-      maxAttempts: this.get('WEBHOOK_MAX_ATTEMPTS'),
-      egressAllowedHosts: (
-        this.get('WEBHOOK_EGRESS_ALLOWED_HOSTS') as string
+      deliveryTimeoutMs: this.resolveSync<number>(
+        'webhook.deliveryTimeoutMs',
+        'WEBHOOK_DELIVERY_TIMEOUT_MS',
+        10_000,
+      ),
+      maxAttempts: this.resolveSync<number>(
+        'webhook.maxAttempts',
+        'WEBHOOK_MAX_ATTEMPTS',
+        8,
+      ),
+      egressAllowedHosts: this.resolveSync<string>(
+        'webhook.egressAllowedHosts',
+        'WEBHOOK_EGRESS_ALLOWED_HOSTS',
+        '',
       )
         .split(',')
         .map((h: string) => h.trim())
@@ -578,9 +592,21 @@ export class TypedConfigService {
 
   get share() {
     return {
-      tokenLengthBytes: this.get('SHARE_TOKEN_LENGTH_BYTES'),
-      defaultExpirationDays: this.get('SHARE_DEFAULT_EXPIRATION_DAYS'),
-      allowedExpirationDays: this.get('SHARE_ALLOWED_EXPIRATION_DAYS') as readonly number[],
+      tokenLengthBytes: this.resolveSync<number>(
+        'share.tokenLengthBytes',
+        'SHARE_TOKEN_LENGTH_BYTES',
+        24,
+      ),
+      defaultExpirationDays: this.resolveSync<number>(
+        'share.defaultExpirationDays',
+        'SHARE_DEFAULT_EXPIRATION_DAYS',
+        7,
+      ),
+      allowedExpirationDays: this.resolveSync<readonly number[]>(
+        'share.allowedExpirationDays',
+        'SHARE_ALLOWED_EXPIRATION_DAYS',
+        [1, 7, 14],
+      ),
     } as const;
   }
 
@@ -611,9 +637,21 @@ export class TypedConfigService {
   // ─────────────────────────── email-fetch (Фаза 10) ─────────────
   get emailFetch() {
     return {
-      enabled: this.get('EMAIL_FETCH_ENABLED'),
-      cron: this.get('EMAIL_FETCH_CRON'),
-      maxPerRun: this.get('EMAIL_FETCH_MAX_PER_RUN'),
+      enabled: this.resolveSync<boolean>(
+        'emailFetch.enabled',
+        'EMAIL_FETCH_ENABLED',
+        false,
+      ),
+      cron: this.resolveSync<string>(
+        'emailFetch.cron',
+        'EMAIL_FETCH_CRON',
+        '*/5 * * * *',
+      ),
+      maxPerRun: this.resolveSync<number>(
+        'emailFetch.maxPerRun',
+        'EMAIL_FETCH_MAX_PER_RUN',
+        50,
+      ),
     } as const;
   }
 
@@ -1088,16 +1126,32 @@ export class TypedConfigService {
   // ─────────────────────────── idle ──────────────────────────────
   get idle() {
     return {
-      timeoutMinutes: this.get('IDLE_MEETING_TIMEOUT_MINUTES'),
-      cron: this.get('IDLE_MEETING_CRON'),
+      timeoutMinutes: this.resolveSync<number>(
+        'idle.timeoutMinutes',
+        'IDLE_MEETING_TIMEOUT_MINUTES',
+        15,
+      ),
+      cron: this.resolveSync<string>(
+        'idle.cron',
+        'IDLE_MEETING_CRON',
+        '*/1 * * * *',
+      ),
     } as const;
   }
 
   // ─────────────────────────── quotas ────────────────────────────
   get quotas() {
     return {
-      maxParticipantsPerMeeting: this.get('MAX_PARTICIPANTS_PER_MEETING'),
-      maxMeetingDurationHours: this.get('MAX_MEETING_DURATION_HOURS'),
+      maxParticipantsPerMeeting: this.resolveSync<number>(
+        'limits.maxParticipantsPerMeeting',
+        'MAX_PARTICIPANTS_PER_MEETING',
+        10,
+      ),
+      maxMeetingDurationHours: this.resolveSync<number>(
+        'limits.maxMeetingDurationHours',
+        'MAX_MEETING_DURATION_HOURS',
+        8,
+      ),
     } as const;
   }
 

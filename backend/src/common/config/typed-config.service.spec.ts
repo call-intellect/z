@@ -220,3 +220,49 @@ describe('embeddings + aiFeatures — sync resolve (Фаза 4)', () => {
     expect(cfg.aiFeatures.promptInjectionGuardEnabled).toBe(false);
   });
 });
+
+describe('Фаза 5 — crossmark/webhook/share/emailFetch/idle/quotas', () => {
+  it('idle.timeoutMinutes cacheMap override: hydrateSync → cfg.idle.timeoutMinutes отдаёт значение из cache', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([['idle.timeoutMinutes', 60]]);
+    expect(cfg.idle.timeoutMinutes).toBe(60);
+  });
+
+  it('share.allowedExpirationDays массив через cacheMap: hydrateSync задаёт [3, 30] → cfg.share.allowedExpirationDays === [3, 30]', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([['share.allowedExpirationDays', [3, 30]]]);
+    expect(cfg.share.allowedExpirationDays).toEqual([3, 30]);
+  });
+
+  it('webhook.egressAllowedHosts CSV-парсинг: cacheMap содержит строку — геттер парсит её в массив', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([['webhook.egressAllowedHosts', 'a.com, b.com,  c.com']]);
+    expect(cfg.webhooksOut.egressAllowedHosts).toEqual(['a.com', 'b.com', 'c.com']);
+  });
+
+  it('crossmark.hmacTimestampWindowSeconds ENV fallback: cacheMap пустой → значение из ENV', () => {
+    const cfg = buildService({ CROSSMARK_HMAC_TIMESTAMP_WINDOW_SECONDS: 600 });
+    expect(cfg.crossmark.hmacTimestampWindowSeconds).toBe(600);
+  });
+
+  it('emailFetch ENV fallback: cacheMap пустой → значения из ENV', () => {
+    const cfg = buildService({
+      EMAIL_FETCH_ENABLED: true,
+      EMAIL_FETCH_CRON: '*/10 * * * *',
+      EMAIL_FETCH_MAX_PER_RUN: 200,
+    });
+    expect(cfg.emailFetch.enabled).toBe(true);
+    expect(cfg.emailFetch.cron).toBe('*/10 * * * *');
+    expect(cfg.emailFetch.maxPerRun).toBe(200);
+  });
+
+  it('quotas через limits.* cacheMap: hydrateSync задаёт maxParticipantsPerMeeting → геттер отдаёт его', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([
+      ['limits.maxParticipantsPerMeeting', 25],
+      ['limits.maxMeetingDurationHours', 12],
+    ]);
+    expect(cfg.quotas.maxParticipantsPerMeeting).toBe(25);
+    expect(cfg.quotas.maxMeetingDurationHours).toBe(12);
+  });
+});

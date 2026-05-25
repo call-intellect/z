@@ -84,6 +84,19 @@ function envBool(name: string, fallback: boolean): boolean {
 }
 
 /**
+ * Парсит CSV-список дней (например `'1,7,14'`) в массив положительных целых.
+ * Используется для `share.allowedExpirationDays` — в AdminSetting храним
+ * `number[]` напрямую (Json), а не строку, чтобы геттер `cfg.share.*`
+ * получал готовый массив через `resolveSync<readonly number[]>`.
+ */
+function parseShareDays(raw: string): number[] {
+  return raw
+    .split(',')
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/**
  * upsert одной AdminSetting. Если admin её уже редактировал (updatedBy != null),
  * то перезаписываем ТОЛЬКО метаданные (category/section/severity/description),
  * сохраняя value — это правило `safe-seed-rules` для admin-edited.
@@ -377,16 +390,53 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'content', section: 'documents', severity, description });
   }
 
-  // ── Share/clip/export (share.*, clip.*, export.*) — 5.
-  const shareClipExport: Array<[string, unknown, Severity, string]> = [
-    ['share.tokenLengthBytes', envInt('SHARE_TOKEN_LENGTH_BYTES', 16), 'high', 'Длина share-токена (байт)'],
-    ['share.defaultExpirationDays', envInt('SHARE_DEFAULT_EXPIRATION_DAYS', 30), 'high', 'Срок жизни shared-ссылки по умолчанию (дни)'],
-    ['share.allowedExpirationDays', env('SHARE_ALLOWED_EXPIRATION_DAYS', '1,7,30,90'), 'medium', 'CSV: разрешённые сроки shared-ссылок'],
+  // ── Clip/export (clip.*, export.*) — 2. (share.* перенесены в отдельную
+  // секцию ниже, потому что allowedExpirationDays теперь хранится как
+  // number[] — это формат, который ожидает геттер cfg.share после Фазы 5
+  // env-to-admin-setting-call-sites-migration.)
+  const clipExport: Array<[string, unknown, Severity, string]> = [
     ['clip.maxDurationSeconds', envInt('CLIP_MAX_DURATION_SECONDS', 600), 'medium', 'Максимум длительности клипа (сек)'],
     ['export.zipMaxMeetings', envInt('EXPORT_ZIP_MAX_MEETINGS', 50), 'medium', 'Максимум встреч в zip-экспорте'],
   ];
-  for (const [key, value, severity, description] of shareClipExport) {
+  for (const [key, value, severity, description] of clipExport) {
     out.push({ key, value, category: 'content', section: 'share-clip-export', severity, description });
+  }
+
+  // ── Crossmark (crossmark.*) — 1. Фаза 5.
+  const crossmark: Array<[string, unknown, Severity, string]> = [
+    ['crossmark.hmacTimestampWindowSeconds', envInt('CROSSMARK_HMAC_TIMESTAMP_WINDOW_SECONDS', 300), 'high', 'Окно валидности HMAC-timestamp для crossmark API (сек)'],
+  ];
+  for (const [key, value, severity, description] of crossmark) {
+    out.push({ key, value, category: 'integrations', section: 'crossmark', severity, description });
+  }
+
+  // ── Share (share.*) — 3. Фаза 5. NB: allowedExpirationDays — number[].
+  const share: Array<[string, unknown, Severity, string]> = [
+    ['share.tokenLengthBytes', envInt('SHARE_TOKEN_LENGTH_BYTES', 24), 'high', 'Длина share-токена в байтах'],
+    ['share.defaultExpirationDays', envInt('SHARE_DEFAULT_EXPIRATION_DAYS', 7), 'medium', 'Дефолтный срок жизни share-ссылки (дни)'],
+    ['share.allowedExpirationDays', parseShareDays(env('SHARE_ALLOWED_EXPIRATION_DAYS', '1,7,14')), 'medium', 'Допустимые сроки жизни share-ссылки (массив дней)'],
+  ];
+  for (const [key, value, severity, description] of share) {
+    out.push({ key, value, category: 'media', section: 'share', severity, description });
+  }
+
+  // ── Email-fetch (emailFetch.*) — 3. Фаза 5.
+  const emailFetch: Array<[string, unknown, Severity, string]> = [
+    ['emailFetch.enabled', envBool('EMAIL_FETCH_ENABLED', false), 'medium', 'Master-flag cron email-fetch'],
+    ['emailFetch.cron', env('EMAIL_FETCH_CRON', '*/5 * * * *'), 'medium', 'Расписание email-fetch cron'],
+    ['emailFetch.maxPerRun', envInt('EMAIL_FETCH_MAX_PER_RUN', 50), 'medium', 'Лимит писем за один проход email-fetch'],
+  ];
+  for (const [key, value, severity, description] of emailFetch) {
+    out.push({ key, value, category: 'integrations', section: 'email-fetch', severity, description });
+  }
+
+  // ── Idle-meeting (idle.*) — 2. Фаза 5.
+  const idle: Array<[string, unknown, Severity, string]> = [
+    ['idle.timeoutMinutes', envInt('IDLE_MEETING_TIMEOUT_MINUTES', 15), 'medium', 'Таймаут idle-встречи до авто-завершения (мин)'],
+    ['idle.cron', env('IDLE_MEETING_CRON', '*/1 * * * *'), 'medium', 'Расписание idle-meeting cron'],
+  ];
+  for (const [key, value, severity, description] of idle) {
+    out.push({ key, value, category: 'media', section: 'idle', severity, description });
   }
 
   // ── W4.3 (2026-05-25) — DataClass policy floors + channel defaults.

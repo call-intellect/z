@@ -25,7 +25,7 @@ export class FeedbackMessageDto extends createZodDto(FeedbackMessageSchema) {}
 
 export const FeedbackMessagesListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type FeedbackMessagesListQuery = z.infer<
   typeof FeedbackMessagesListQuerySchema

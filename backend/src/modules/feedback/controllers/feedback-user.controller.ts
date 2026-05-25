@@ -8,8 +8,6 @@
  *
  * Все эндпоинты под CookieAuthGuard.
  *
- * Каркас — Фаза 1: только заглушки. Логика — Фаза 2.
- *
  * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
  */
 
@@ -17,6 +15,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -72,14 +71,14 @@ export class FeedbackUserController {
       'Лимит 5 сообщений в сутки на пользователя (окно UTC). При превышении — 429.',
   })
   @ApiOkResponse({ type: FeedbackMessageDto })
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async submit(
-    @Body(new ZodValidationPipe(SubmitFeedbackSchema)) _body: SubmitFeedbackBody,
-    @CurrentUser() _user: CurrentUserPayload,
+    @Body(new ZodValidationPipe(SubmitFeedbackSchema)) body: SubmitFeedbackBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @Headers('x-org-id') orgIdHeader: string | undefined,
   ): Promise<FeedbackMessage> {
-    throw new Error(
-      'FeedbackUserController.submit not implemented yet (фаза 2)',
-    );
+    const orgId =
+      orgIdHeader && orgIdHeader.trim().length > 0 ? orgIdHeader.trim() : null;
+    return this.feedback.submit(user.id, orgId, body.text);
   }
 
   @Get('my')
@@ -87,15 +86,12 @@ export class FeedbackUserController {
     summary: 'История моих сообщений обратной связи (пагинация, новые сверху).',
   })
   @ApiOkResponse({ type: FeedbackMessagesListResponseDto })
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async listMine(
     @Query(new ZodValidationPipe(FeedbackMessagesListQuerySchema))
-    _query: FeedbackMessagesListQuery,
-    @CurrentUser() _user: CurrentUserPayload,
+    query: FeedbackMessagesListQuery,
+    @CurrentUser() user: CurrentUserPayload,
   ): Promise<FeedbackMessagesListResponse> {
-    throw new Error(
-      'FeedbackUserController.listMine not implemented yet (фаза 2)',
-    );
+    return this.feedback.listMine(user.id, query.page, query.pageSize);
   }
 
   @Get('my/limit')
@@ -104,12 +100,9 @@ export class FeedbackUserController {
       'Сколько сообщений я отправил сегодня и когда счётчик обнулится (00:00 UTC).',
   })
   @ApiOkResponse({ type: FeedbackLimitResponseDto })
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getLimit(
-    @CurrentUser() _user: CurrentUserPayload,
+    @CurrentUser() user: CurrentUserPayload,
   ): Promise<FeedbackLimitResponse> {
-    throw new Error(
-      'FeedbackUserController.getLimit not implemented yet (фаза 2)',
-    );
+    return this.feedback.getLimit(user.id);
   }
 }

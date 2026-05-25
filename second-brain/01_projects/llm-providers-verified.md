@@ -85,6 +85,7 @@ Latency для KIE-каналов — TBD (зависит от прогона); 
 6. **Anthropic-провайдеры (`anthropic`) не добавлять в дефолты.** В коде сервис есть, но любой `LlmTaskRoute.providers` со строкой `'anthropic'` будет ронять задачу с 401.
 7. **Embeddings → только `text-embedding-3-small` через прокси.** Никакого `bge-m3`.
 8. **KIE / GRSAI пока через `LlmRouter` НЕ ходят.** Модели в разделе B доступны только из smoke-скрипта. Если кому-то нужно дёргать Gemini/Claude через KIE из прод-кода — это запрещено до выполнения ТЗ [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md). После выполнения ТЗ — переключать через `/admin/ai-models/[taskType]`.
+9. **`deepseek-v4-pro` (thinking) НЕ поддерживает strict `json_schema` и forced `tool_choice`** — `400 «This response_format type is unavailable now»` / «Thinking mode does not support this tool_choice». Работает только `tools + tool_choice='auto'`. Для caller-кода это прозрачно: `DeepSeekService.buildParams` автоматически конвертирует `responseFormat: json_schema` в виртуальный `tool` + hint в user-сообщении (ТЗ [2026-05-25-deepseek-pro-output-format-fix.md](../../plans/tz/2026-05-25-deepseek-pro-output-format-fix.md)). Метрика срабатываний — `z_deepseek_schema_to_tool_conversion_total{model}`. Эмпирическая проверка 8 комбинаций — `backend/scripts/eval/probe-deepseek-formats.ts`.
 
 ## Готовые образцы вызова (для копи-пейста)
 

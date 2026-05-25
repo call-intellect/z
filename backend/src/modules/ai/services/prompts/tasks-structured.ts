@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { type DialogTurn } from './common';
+import type { AiParticipantContext } from './participant-context';
 import { buildTasksPromptUnified, buildTasksSchemaUnified } from './tasks-unified';
 
 /**
@@ -28,6 +29,12 @@ export const TaskExtractedSchema = z
     title: z.string().min(1).max(300),
     description: z.string().max(2000).nullable().optional(),
     assigneeRaw: z.string().max(200).nullable().optional(),
+    /**
+     * ТЗ 2026-05-25 hard-participant-identification — поле опциональное:
+     * присутствует, только если builder получил непустой список participants.
+     * Резолвер (`TaskAssigneeResolverService`) валидирует/обогащает.
+     */
+    assigneeUserId: z.string().max(100).nullable().optional(),
     dueDate: z.string().max(40).nullable().optional(),
     sourceStartMs: z.number().int().nonnegative(),
     sourceEndMs: z.number().int().nonnegative(),
@@ -76,6 +83,12 @@ export const TASKS_STRUCTURED_JSON_SCHEMA = z.toJSONSchema(
 export interface TasksStructuredPromptInput {
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
+  /**
+   * ТЗ 2026-05-25 hard-participant-identification — список участников встречи
+   * для жёсткой идентификации `assigneeUserId`. Если пуст/отсутствует — промпт
+   * собирается в legacy-режиме без поля и блока.
+   */
+  participants?: readonly AiParticipantContext[];
 }
 
 /**
@@ -92,11 +105,17 @@ export interface TasksStructuredPromptInput {
  * `{ tasks: [...] }`, что совместимо с json_schema strict. Caller
  * (`TaskExtractionService`) принимает оба варианта (новый объект-обёртку и
  * легаси голый массив, на случай если провайдер игнорирует schema).
+ *
+ * ТЗ 2026-05-25: пробрасываем `participants` в unified builder. JSON Schema
+ * на module-evaluation остаётся без поля `assigneeUserId` (используется в
+ * legacy-режиме без participants), но caller может передать participants —
+ * тогда LLM получит блок с participants в user-сообщении.
  */
 export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
   system: string;
   user: string;
 } {
+  const participants = input.participants ?? [];
   return buildTasksPromptUnified(
     {
       meeting: {
@@ -106,6 +125,9 @@ export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
       },
       dialog: input.dialog,
     },
-    { ...TASKS_STRUCTURED_OPTIONS },
+    {
+      ...TASKS_STRUCTURED_OPTIONS,
+      ...(participants.length > 0 ? { participants } : {}),
+    },
   );
 }

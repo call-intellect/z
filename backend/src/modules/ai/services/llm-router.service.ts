@@ -22,6 +22,8 @@ import type {
   LlmCompleteOutput,
   LlmResponseFormat,
   LlmReasoningEffort,
+  LlmTool,
+  LlmToolCall,
 } from './llm.types';
 import { MinimaxService } from './minimax.service';
 import { calcCostUsd, MODEL_PRICES } from './model-prices';
@@ -296,7 +298,15 @@ export type LlmTaskType =
   | 'telegram-create-task'
   | 'telegram-forward-to-task'
   | 'telegram-reply-classify'
-  | 'telegram-digest-formulate';
+  | 'telegram-digest-formulate'
+  // ТЗ 2026-05-25 (meeting-report-split-from-block-ingest) — Фаза 1.
+  // 'meeting-report-fast' — ОДИН LLM-вызов поверх СЫРОГО транскрипта,
+  //   возвращает { chapters, tasks, summary_markdown, quality_score } через
+  //   tool_use. Заменяет цепочку block-ingest → tasks-v2 → chapters-v2 →
+  //   summary-v2 → meeting-quality-score для «быстрого» пользовательского
+  //   отчёта. Capable модель + большой выход + thinking.
+  //   Primary = deepseek-v4-pro; secondary = gpt-5.4-mini; tertiary = ollama qwen3.5:9b.
+  | 'meeting-report-fast';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -414,6 +424,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'telegram-forward-to-task',
   'telegram-reply-classify',
   'telegram-digest-formulate',
+  // ТЗ 2026-05-25 — meeting-report-fast (Фаза 1).
+  'meeting-report-fast',
 ] as const;
 
 /**
@@ -592,6 +604,16 @@ export interface LlmCallParams {
    *   - meeting-уровень — наследуем из Meeting/RawEvent.
    */
   dataClass?: DataClass;
+  /**
+   * Tools для tool_use (function-calling). Если задан непустой массив —
+   * провайдер получит `tools` + `tool_choice='auto'` (см. DeepSeekService /
+   * OpenAiProxyService). Результирующие tool_calls попадут в
+   * `LlmCallResult.toolCalls`.
+   *
+   * Используется в ТЗ 2026-05-25 `meeting-report-fast` для strict вывода
+   * через tool `submit_meeting_analysis`.
+   */
+  tools?: LlmTool[];
 }
 
 export interface LlmCallResult {
@@ -612,6 +634,13 @@ export interface LlmCallResult {
   tier?: LlmRouteTier | null;
   /** Имя провайдера, который реально ответил (в дополнение к `modelUsed`). */
   providerUsed?: string;
+  /**
+   * Tool calls, которые вернула модель при `params.tools` (function-calling).
+   * Заполняется только провайдерами, поддерживающими tool_use
+   * (DeepSeek/OpenAI/Anthropic/MiniMax/Ollama). Если tools не передавался —
+   * undefined.
+   */
+  toolCalls?: LlmToolCall[];
 }
 
 export class LlmRouterAllProvidersFailedError extends Error {
@@ -953,6 +982,9 @@ export class LlmRouterService implements OnModuleInit {
           durationMs: Date.now() - overallStartedAt,
           tier: effectiveTier,
           providerUsed: out.provider,
+          ...(out.toolCalls && out.toolCalls.length > 0
+            ? { toolCalls: out.toolCalls }
+            : {}),
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1116,6 +1148,10 @@ export class LlmRouterService implements OnModuleInit {
       ...(params.reasoningEffort !== undefined
         ? { reasoningEffort: params.reasoningEffort }
         : {}),
+      // ТЗ 2026-05-25: function-calling. Если воркер передал tools — пробрасываем
+      // напрямую в провайдера. DeepSeek/OpenAI добавят `tool_choice='auto'`
+      // автоматически (см. DeepSeekService.buildParams / OpenAiProxyService).
+      ...(params.tools && params.tools.length > 0 ? { tools: params.tools } : {}),
     };
     // SBA α-10 wave 3 — Feature-flag USE_PROTOCOL_ADAPTER_REGISTRY.
     // false (default, production safety) → legacy switch ниже.

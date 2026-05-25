@@ -9,6 +9,7 @@ import { type Job, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { ParticipantContextService } from '../../ai/services/participant-context.service';
 import {
   CORE_QUEUE_NAMES,
   type MeetingAnalyzeV2JobData,
@@ -16,6 +17,7 @@ import {
 import { BlockFetchService } from '../services/block-fetch.service';
 import { ChaptersExtractorV2Service } from '../services/chapters-extractor-v2.service';
 import { SummaryExtractorV2Service } from '../services/summary-extractor-v2.service';
+import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 import { TasksExtractorV2Service } from '../services/tasks-extractor-v2.service';
 
 /**
@@ -54,6 +56,10 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
     private readonly chaptersExtractor: ChaptersExtractorV2Service,
     @Inject(SummaryExtractorV2Service)
     private readonly summaryExtractor: SummaryExtractorV2Service,
+    @Inject(ParticipantContextService)
+    private readonly participantContext: ParticipantContextService,
+    @Inject(TaskAssigneeResolverService)
+    private readonly assigneeResolver: TaskAssigneeResolverService,
   ) {}
 
   onModuleInit(): void {
@@ -145,6 +151,10 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
     const meetingType = meeting.type;
     const jobId = job.id ?? null;
 
+    // ТЗ 2026-05-25 hard-participant-identification — список участников для
+    // жёсткой идентификации `assigneeUserId` в извлечённых задачах.
+    const participants = await this.participantContext.loadForMeeting(meetingId);
+
     const [tasksRes, chaptersRes, summaryRes] = await Promise.allSettled([
       this.tasksExtractor.extract({
         meetingId,
@@ -153,6 +163,7 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
         blocks,
         userId,
         jobId,
+        ...(participants.length > 0 ? { participants } : {}),
       }),
       this.chaptersExtractor.extract({
         meetingId,
@@ -183,6 +194,7 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
           tenantId,
           ownerId: meeting.ownerId,
           tasks: tasksRes.value.tasks,
+          participants,
         });
       } catch (err) {
         failures.push(
@@ -284,12 +296,25 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
     tasks: Array<{
       title: string;
       assigneeRaw?: string | null | undefined;
+      assigneeUserId?: string | null | undefined;
       dueDateIso?: string | null | undefined;
       evidenceBlockIds: string[];
       confidence: number;
     }>;
+    participants: readonly import('../../ai/services/prompts/participant-context').AiParticipantContext[];
   }): Promise<void> {
     if (args.tasks.length === 0) return;
+
+    // ТЗ 2026-05-25 — резолвим assigneeUserId по participants. На выходе —
+    // массив с тем же порядком: validated userId + ambiguous-флаг.
+    const resolved = this.assigneeResolver.resolve(
+      args.tasks.map((t) => ({
+        assigneeRaw: t.assigneeRaw ?? null,
+        assigneeUserId: t.assigneeUserId ?? null,
+      })),
+      args.participants,
+      args.tenantId,
+    );
 
     // Существующие задачи встречи — отбираем titles, чтобы не дублить.
     // Учитываем и legacy (extractorVersion=null), и предыдущие v2-результаты.
@@ -303,7 +328,9 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
 
     let created = 0;
     let skipped = 0;
-    for (const task of args.tasks) {
+    for (let idx = 0; idx < args.tasks.length; idx++) {
+      const task = args.tasks[idx]!;
+      const r = resolved[idx];
       const normalized = task.title.trim();
       if (normalized.length === 0) continue;
       if (existingTitles.has(normalized.toLowerCase())) {
@@ -319,7 +346,8 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
             title: normalized,
             description: null,
             status: 'open',
-            assigneeRaw: task.assigneeRaw ?? null,
+            assigneeRaw: r?.assigneeRaw ?? task.assigneeRaw ?? null,
+            assigneeUserId: r?.assigneeUserId ?? null,
             dueDate: parseDueDateIso(task.dueDateIso ?? null),
             confidence: task.confidence,
             createdManually: false,

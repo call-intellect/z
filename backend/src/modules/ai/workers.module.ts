@@ -14,6 +14,7 @@ import { EntityResolverCronService } from '../knowledge-core/workers/entity-reso
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
 import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
 import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
+import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-report-fast.worker';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
 import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
@@ -192,6 +193,12 @@ import { VoxService } from './services/vox.service';
     SkillManagerDigestCron,
     MeetingAnalyzeV2Worker,
     MeetingAnalyzeV2Cron,
+    // ТЗ 2026-05-25 — meeting-report-fast.
+    // Consumer `core.meeting-report-fast`: один LLM-вызов по СЫРОМУ
+    // транскрипту → chapters + tasks + summaryFast + qualityScore.
+    // На Фазе 2 producer не подключён (будет в Фазе 4) — воркер существует
+    // и слушает очередь, но автоматически jobs не появляются.
+    MeetingReportFastWorker,
     StrategicAlignmentWorker,
     StrategicAlignmentCron,
 

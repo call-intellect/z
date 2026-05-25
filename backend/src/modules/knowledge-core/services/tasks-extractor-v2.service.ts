@@ -9,6 +9,7 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import {
   buildTasksV2Prompt,
   TASKS_V2_JSON_SCHEMA,
@@ -41,6 +42,12 @@ export interface TasksExtractorV2Input {
   blocks: MeetingBlock[];
   jobId?: string | null;
   userId?: string | null;
+  /**
+   * ТЗ 2026-05-25 hard-participant-identification — список участников для
+   * жёсткой идентификации `assigneeUserId`. Если непустой — пробрасывается в
+   * `buildTasksV2Prompt` (system + user-блок).
+   */
+  participants?: readonly AiParticipantContext[];
 }
 
 export interface TasksExtractorV2Result {
@@ -85,10 +92,12 @@ export class TasksExtractorV2Service {
       return { tasks: [], modelUsed: 'n/a', blocksConsidered: 0 };
     }
 
+    const participants = input.participants ?? [];
     const prompt = buildTasksV2Prompt({
       meetingId: input.meetingId,
       meetingTitle: input.meetingTitle,
       blocks: candidateBlocks,
+      ...(participants.length > 0 ? { participants } : {}),
     });
     const validBlockIds = new Set(candidateBlocks.map((b) => b.id));
 

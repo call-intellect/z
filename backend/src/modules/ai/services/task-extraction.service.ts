@@ -4,6 +4,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 
 import { LlmRouterService } from './llm-router.service';
 import type { DialogTurn } from './prompts/common';
+import type { AiParticipantContext } from './prompts/participant-context';
 import {
   type TaskExtracted,
   TASKS_STRUCTURED_JSON_SCHEMA,
@@ -25,6 +26,12 @@ export interface ExtractTasksInput {
    * Минимальный confidence: ниже — отбрасываем. Дефолт 0.5.
    */
   minConfidence?: number;
+  /**
+   * ТЗ 2026-05-25 hard-participant-identification — список участников встречи
+   * с userId/fullName. Если непустой, LLM получит блок «Участники этой встречи»
+   * и сможет вернуть `assigneeUserId` для каждой задачи.
+   */
+  participants?: readonly AiParticipantContext[];
 }
 
 /**
@@ -47,10 +54,20 @@ export class TaskExtractionService {
   ) {}
 
   async extractTasks(input: ExtractTasksInput): Promise<TaskExtracted[]> {
+    const participants = input.participants ?? [];
     const prompt = buildTasksStructuredPrompt({
       meeting: input.meeting,
       dialog: input.dialog,
+      ...(participants.length > 0 ? { participants } : {}),
     });
+    // ВАЖНО: `TASKS_STRUCTURED_JSON_SCHEMA` собирается на module-load БЕЗ
+    // `participants` (он module-level const), поэтому в strict JSON Schema
+    // нет поля `assigneeUserId`. На strict-провайдерах (OpenAI/DeepSeek) LLM
+    // не сможет вернуть это поле через json_schema strict — соответственно
+    // assigneeUserId будет null. Это пограничный кейс legacy-пути: основная
+    // ветка извлечения задач — `meeting-analyze-v2.worker` (через tasks-v2.prompt),
+    // там JSON Schema поле включает. Если потребуется обогатить и legacy-путь —
+    // выделить отдельную динамическую сборку schema (см. ТЗ §4.6 vNext).
     const minConfidence =
       input.minConfidence ?? TaskExtractionService.DEFAULT_MIN_CONFIDENCE;
 

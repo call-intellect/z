@@ -194,6 +194,26 @@ const ROUTES: RouteSeed[] = [
     ],
     isActive: true,
   },
+  // ТЗ 2026-05-25 (meeting-report-split-from-block-ingest) — Фаза 4.6.
+  // ОДИН LLM-вызов по СЫРОМУ транскрипту → chapters + tasks + summary +
+  // quality_score через tool_use `submit_meeting_analysis`.
+  // - primary: deepseek-v4-pro — большой output, thinking, доказано в
+  //   эксперименте Variant Б (см. SUMMARY-ALL.md). Capable, держит strict
+  //   tools+tool_choice='auto'.
+  // - secondary: gpt-5.4-mini через OpenAI proxy — fallback, поддерживает
+  //   tool_use, дешевле.
+  // - tertiary: ollama qwen3.5:9b — locally-hosted fallback при недоступности
+  //   внешних. Может не справиться с большим выходом (32k tokens), но
+  //   гарантирует, что отчёт всё-таки сгенерится.
+  {
+    taskType: 'meeting-report-fast',
+    providers: [
+      { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { provider: 'ollama', model: 'qwen3.5:9b' },
+    ],
+    isActive: true,
+  },
 ];
 
 async function main(): Promise<void> {

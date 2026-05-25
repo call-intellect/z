@@ -185,6 +185,7 @@ export class TasksController {
     description: string | null;
     status: string;
     assigneeRaw: string | null;
+    assigneeUserId: string | null;
     dueDate: Date | null;
     sourceStartMs: number | null;
     sourceEndMs: number | null;
@@ -200,6 +201,7 @@ export class TasksController {
     description: string | null;
     status: string;
     assigneeRaw: string | null;
+    assigneeUserId: string | null;
     dueDate: string | null;
     sourceStartMs: number | null;
     sourceEndMs: number | null;
@@ -216,6 +218,10 @@ export class TasksController {
       description: t.description,
       status: t.status,
       assigneeRaw: t.assigneeRaw,
+      // ТЗ 2026-05-25 hard-participant-identification — отдаём userId
+      // ответственного, когда AI смог жёстко сопоставить. UI использует для
+      // фильтра «мои задачи» и аватара.
+      assigneeUserId: t.assigneeUserId,
       dueDate: t.dueDate?.toISOString() ?? null,
       sourceStartMs: t.sourceStartMs,
       sourceEndMs: t.sourceEndMs,

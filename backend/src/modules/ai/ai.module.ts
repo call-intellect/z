@@ -17,6 +17,7 @@ import { LlmRouterService } from './services/llm-router.service';
 import { MinimaxService } from './services/minimax.service';
 import { OllamaService } from './services/ollama.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
+import { ParticipantContextService } from './services/participant-context.service';
 import { PromptResolverService } from './services/prompt-resolver.service';
 import { AnthropicMessagesProtocolAdapter } from './services/protocol-adapter/adapters/anthropic-messages.adapter';
 import { CustomHttpProtocolAdapter } from './services/protocol-adapter/adapters/custom-http.adapter';
@@ -85,6 +86,9 @@ import { VoxService } from './services/vox.service';
     ProviderInfoResolver,
     ChapterExtractionService,
     TaskExtractionService,
+    // ТЗ 2026-05-25 hard-participant-identification — загрузка списка
+    // участников встречи (с userId/fullName) для AI-промптов задач.
+    ParticipantContextService,
     RegenerateService,
     // Card-rollup — синхронный вызов из endpoint'а на странице карточки
     // (опционально), и из воркера (см. WorkersModule).
@@ -113,6 +117,7 @@ import { VoxService } from './services/vox.service';
     RegenerateService,
     ChapterExtractionService,
     TaskExtractionService,
+    ParticipantContextService,
     CardRollupService,
     PromptResolverService,
     BehaviorMetricsCalculator,

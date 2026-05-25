@@ -1,4 +1,11 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -6,10 +13,10 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { MeetingsService } from '../../meetings/meetings.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
-
 import {
   countWords,
   loadRoomChatForMerge,
@@ -42,6 +49,12 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // ТЗ 2026-05-25, Фаза 4 — producer для новой цепочки `meeting-report-fast`.
+    // Optional, чтобы спеки/тесты могли создавать worker без core-queue
+    // (legacy ai-pipeline останется работать).
+    @Optional()
+    @Inject(CoreQueueService)
+    private readonly coreQueue?: CoreQueueService,
   ) {}
 
   onModuleInit(): void {
@@ -100,6 +113,8 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       await this.queue.enqueueAnalyze(meetingId);
       // Фаза B — параллельно с analyze. Идемпотентность через jobId.
       await this.queue.enqueueBehaviorMetrics(meetingId);
+      // ТЗ 2026-05-25, Фаза 4 — параллельный producer meeting-report-fast.
+      await this.maybeEnqueueMeetingReportFast(meetingId);
       return;
     }
 
@@ -162,6 +177,10 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     await this.queue.enqueueAnalyze(meetingId);
     // Фаза B — поведенческие метрики параллельно с analyze (не блокирует).
     await this.queue.enqueueBehaviorMetrics(meetingId);
+    // ТЗ 2026-05-25, Фаза 4 — параллельный producer meeting-report-fast.
+    // Старая цепочка `ai.analyze` (и/или `core.meeting-analyze-v2`) не
+    // ломается — новая запускается рядом для A/B-сравнения.
+    await this.maybeEnqueueMeetingReportFast(meetingId);
 
     // Фаза D — опционально ставим очистку транскрипта.
     // Включается через `Org.transcriptCleaningAuto`. Если выключено — Org
@@ -201,6 +220,58 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       },
       'merge: успешно — analyze + behavior-metrics поставлены',
     );
+  }
+
+  /**
+   * ТЗ 2026-05-25, Фаза 4 — producer для `core.meeting-report-fast`.
+   *
+   * Запускается параллельно с `enqueueAnalyze` / `enqueueBehaviorMetrics`,
+   * как только транскрипт готов (`turns` записаны или уже были). Управляется
+   * ENV-флагом `MEETING_REPORT_FAST_ENABLED` через
+   * `cfg.knowledgeCore.meetingReportFastEnabled`:
+   *   - default true (dev): job уходит в очередь;
+   *   - false (prod до явного включения): producer пропускается, в логи
+   *     пишется info-сообщение.
+   *
+   * Идемпотентность обеспечивает `CoreQueueService.enqueueMeetingReportFast`
+   * через `jobId = meeting_report_fast_<meetingId>` — повторный merge для той
+   * же встречи не создаст дубль.
+   *
+   * Ошибки producer'а не валят merge: legacy `ai.analyze` цепочка остаётся
+   * работать. Логируем warn и продолжаем.
+   */
+  private async maybeEnqueueMeetingReportFast(meetingId: string): Promise<void> {
+    if (!this.cfg.knowledgeCore.meetingReportFastEnabled) {
+      this.logger.log(
+        { meetingId },
+        'merge: MEETING_REPORT_FAST_ENABLED=false — producer meeting-report-fast пропущен',
+      );
+      return;
+    }
+    if (!this.coreQueue) {
+      // В рантайме coreQueue резолвится через DI; в spec'ах он может быть
+      // не передан — это ожидаемый optional, просто пропускаем.
+      this.logger.debug(
+        { meetingId },
+        'merge: CoreQueueService не доступен — meeting-report-fast пропущен',
+      );
+      return;
+    }
+    try {
+      await this.coreQueue.enqueueMeetingReportFast(meetingId);
+      this.logger.log(
+        { meetingId },
+        'merge: meeting-report-fast — job поставлен в core.meeting-report-fast',
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          meetingId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'merge: не удалось поставить core.meeting-report-fast (продолжаем без fast-отчёта)',
+      );
+    }
   }
 
   private async onJobFailed(job: Job<AiJobData> | null, err: Error): Promise<void> {

@@ -41,6 +41,7 @@ import { ExecutablePersonaBuildService } from './services/executable-persona-bui
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
+import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
@@ -93,6 +94,10 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     TasksExtractorV2Service,
     ChaptersExtractorV2Service,
     SummaryExtractorV2Service,
+    // ТЗ 2026-05-25 hard-participant-identification — резолвер
+    // Task.assigneeUserId на выходе LLM (fallback по имени + защита от
+    // галлюцинаций). Используется meeting-analyze-v2 и tasks-extract воркерами.
+    TaskAssigneeResolverService,
     // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов, 5 scope).
     ChatV2RetrievalService,
     ChatV2Service,
@@ -163,6 +168,7 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     TasksExtractorV2Service,
     ChaptersExtractorV2Service,
     SummaryExtractorV2Service,
+    TaskAssigneeResolverService,
     // Фаза 6: ChatV2 экспортируется, чтобы chat.service из ChatModule мог
     // его инжектить (этот модуль @Global, поэтому импортирует прозрачно).
     ChatV2RetrievalService,

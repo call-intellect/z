@@ -9,7 +9,9 @@ import { type Job, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
+import { ParticipantContextService } from '../services/participant-context.service';
 import type { DialogTurn } from '../services/prompts/common';
 import { TaskExtractionService } from '../services/task-extraction.service';
 
@@ -28,6 +30,10 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TaskExtractionService) private readonly extractor: TaskExtractionService,
+    @Inject(ParticipantContextService)
+    private readonly participantContext: ParticipantContextService,
+    @Inject(TaskAssigneeResolverService)
+    private readonly assigneeResolver: TaskAssigneeResolverService,
   ) {}
 
   onModuleInit(): void {
@@ -86,6 +92,10 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // ТЗ 2026-05-25 hard-participant-identification — загружаем участников
+    // встречи для жёсткой идентификации `assigneeUserId` в извлечённых задачах.
+    const participants = await this.participantContext.loadForMeeting(meetingId);
+
     const tasks = await this.extractor.extractTasks({
       meetingId,
       tenantId: meeting.tenantId,
@@ -93,7 +103,20 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
       dialog,
       jobId: job.id ?? null,
       userId: meeting.ownerId,
+      ...(participants.length > 0 ? { participants } : {}),
     });
+
+    // Резолвер по userId/имени. На выходе — массив с `assigneeUserId`,
+    // прошедшим валидацию против participants. Совпадает по индексам с
+    // `tasks` (resolve работает one-to-one).
+    const resolved = this.assigneeResolver.resolve(
+      tasks.map((t) => ({
+        assigneeRaw: t.assigneeRaw ?? null,
+        assigneeUserId: (t as { assigneeUserId?: string | null }).assigneeUserId ?? null,
+      })),
+      participants,
+      meeting.tenantId,
+    );
 
     // Не удаляем существующие — пользователь мог отредактировать вручную.
     // Если регенерация — caller bumps recapVersion, а старые задачи остаются
@@ -101,13 +124,14 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
     // защищены уникальностью (пока нет — уникальность по title в M3b опц.).
     if (tasks.length > 0) {
       await this.prisma.task.createMany({
-        data: tasks.map((t) => ({
+        data: tasks.map((t, idx) => ({
           meetingId,
           tenantId: meeting.tenantId,
           userId: meeting.ownerId,
           title: t.title,
           description: t.description ?? null,
-          assigneeRaw: t.assigneeRaw ?? null,
+          assigneeRaw: resolved[idx]?.assigneeRaw ?? t.assigneeRaw ?? null,
+          assigneeUserId: resolved[idx]?.assigneeUserId ?? null,
           dueDate: parseDueDate(t.dueDate ?? null),
           sourceStartMs: t.sourceStartMs,
           sourceEndMs: t.sourceEndMs,

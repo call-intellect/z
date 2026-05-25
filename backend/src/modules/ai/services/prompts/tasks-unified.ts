@@ -15,6 +15,11 @@ import {
   withRoomChatNote,
   withToolInstructions,
 } from './common';
+import {
+  type AiParticipantContext,
+  formatParticipantsForPrompt,
+  PARTICIPANT_IDENTIFICATION_RULES,
+} from './participant-context';
 
 /**
  * Wave 3 / ТЗ 2026-05-24 prompts-hardening §8 (F5).
@@ -101,6 +106,13 @@ export interface TasksPromptOptions {
   calibrationOnly?: boolean;
   meetingDateIso?: string;
   orgContext?: TasksOrgContext;
+  /**
+   * ТЗ 2026-05-25 hard-participant-identification: список участников встречи
+   * для жёсткой идентификации `assigneeUserId`. Если непустой — добавляется
+   * блок «Участники этой встречи» в user-сообщение, правила идентификации
+   * в system, и поле `assigneeUserId: string | null` в schema задачи.
+   */
+  participants?: readonly AiParticipantContext[];
 }
 
 export interface TasksOrgContext {
@@ -142,6 +154,13 @@ export function buildTaskItemSchemaUnified(
     shape['assigneeRaw'] = z.string().max(200).nullable().optional();
   } else {
     shape['assignee'] = z.string().nullable();
+  }
+
+  // ТЗ 2026-05-25 — поле assigneeUserId добавляем, если передан список
+  // участников. nullable+optional: LLM может вернуть null или вообще не
+  // включить поле (старая модель). Резолвер обработает оба варианта.
+  if (opts.participants && opts.participants.length > 0) {
+    shape['assigneeUserId'] = z.string().max(100).nullable().optional();
   }
 
   // dueDate — всегда есть (в каком-то виде). Для structured-пути — может
@@ -213,6 +232,13 @@ export function buildTasksToolUnified(opts: TasksPromptOptions): LlmTool {
   } else {
     taskProperties['assignee'] = fieldNullableString;
     taskRequired.push('assignee');
+  }
+
+  // ТЗ 2026-05-25 — assigneeUserId в JSON Schema. Только когда передан
+  // список участников. Поле nullable (не required) — LLM может вернуть null,
+  // если исполнитель не зарегистрирован на встрече.
+  if (opts.participants && opts.participants.length > 0) {
+    taskProperties['assigneeUserId'] = fieldNullableString;
   }
 
   taskProperties['dueDate'] = fieldNullableString;
@@ -351,6 +377,11 @@ function buildSystemUnified(
   if (opts.withFragmentBounds) body += `\n${FRAGMENT_BOUNDS_BLOCK}`;
   if (opts.withSourceQuote) body += `\n${SOURCE_QUOTE_BLOCK}`;
   if (opts.withConfidence) body += `\n${CONFIDENCE_FIELD_BLOCK}`;
+  // ТЗ 2026-05-25 hard-participant-identification: правила про
+  // assigneeUserId — только когда передан непустой список participants.
+  if (opts.participants && opts.participants.length > 0) {
+    body += `\n\nПоле "assigneeUserId" — User.id из списка участников этой встречи (см. ниже в user-сообщении). null если исполнитель — не зарегистрированный сотрудник встречи.\n${PARTICIPANT_IDENTIFICATION_RULES}`;
+  }
 
   if (opts.responseAsBareArray) {
     body += BARE_ARRAY_INSTRUCTION;
@@ -407,6 +438,15 @@ function buildUserUnified(
     for (const p of ctx.people.slice(0, 60)) {
       lines.push(`  - ${p.name}${p.role ? ` (${p.role})` : ''}`);
     }
+  }
+
+  // ТЗ 2026-05-25 hard-participant-identification — компактный блок участников
+  // встречи (стабильный userId), отдельно от «Сотрудники организации» (которые
+  // могут быть упомянуты в речи, но не быть на встрече).
+  if (opts.participants && opts.participants.length > 0) {
+    lines.push('');
+    lines.push('Участники этой встречи (для assigneeUserId):');
+    lines.push(formatParticipantsForPrompt(opts.participants));
   }
 
   lines.push('');

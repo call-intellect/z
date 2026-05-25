@@ -103,6 +103,19 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 
 `ai/builders/tasks-unified.ts` — единый builder для legacy (Wave 1 `{title, assignee, dueDate}`), Wave 3 (`{title, description, projectIdHint, sourceQuote, confidence}`), structured (JSON Schema strict). Удалил 3 дублирующиеся реализации в разных worker'ах.
 
+### Hard participant identification (ТЗ 2026-05-25)
+
+Раньше AI заполнял только `Task.assigneeRaw` строкой («Иван»). Поле `Task.assigneeUserId` существовало в схеме, но не использовалось. После ТЗ `2026-05-25-hard-participant-identification`:
+
+- `ParticipantContextService.loadForMeeting(meetingId)` (`backend/src/modules/ai/services/participant-context.service.ts`) загружает `Participant + User` для встречи и возвращает `AiParticipantContext[]` — `{livekitIdentity, displayName, userId, fullName, role}`.
+- Промпты `tasks-v2.prompt.ts`, `tasks-unified.ts`, `tasks-structured.ts` принимают `participants` через BuildArgs. Когда непустой — добавляют блок «Участники этой встречи» в user-сообщение + правила `PARTICIPANT_IDENTIFICATION_RULES` в system + поле `assigneeUserId: string | null` в Zod/JSON-schema.
+- `TaskAssigneeResolverService.resolve()` (`backend/src/modules/knowledge-core/services/task-assignee-resolver.service.ts`) валидирует ответ LLM: (1) валидный userId из списка → принимаем; (2) галлюцинация (userId не в participants) → null + метрика `llm_hallucination`; (3) только `assigneeRaw` → точный case-insensitive матч по `displayName`/`fullName`; (4) ≥2 матча → null + метрика `duplicate_name`.
+- `tasks-extract.worker` и `meeting-analyze-v2.worker` загружают participants → пробрасывают в extractor → резолвят результат → пишут `assigneeUserId` в `Task`. Эталон жёсткого+мягкого матча — `behavior-metrics-calculator.ts:253-268`.
+- Метрика: `z_task_assignee_ambiguous_total{tenant, reason}` (`reason ∈ duplicate_name | llm_hallucination`).
+- Гость остаётся с `assigneeUserId=null` (нет `User.id`).
+
+См. [`participant-identification.md`](participant-identification.md) для деталей.
+
 ### Что осталось (T7 P2/P3)
 
 P2 (F6-F11) и P3 (F12-F16) — на следующую сессию. См. [`plans/tz/2026-05-24-prompts-hardening.md`](../../plans/tz/2026-05-24-prompts-hardening.md).

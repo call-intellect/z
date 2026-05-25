@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 import type { LlmTaskType } from '../../ai/services/llm-router.service';
+import {
+  type AiParticipantContext,
+  formatParticipantsForPrompt,
+  PARTICIPANT_IDENTIFICATION_RULES,
+} from '../../ai/services/prompts/participant-context';
 import type { MeetingBlock } from '../services/block-fetch.service';
 
 /**
@@ -13,6 +18,13 @@ export const TasksV2ItemSchema = z
   .object({
     title: z.string().min(1).max(300),
     assigneeRaw: z.string().nullable().optional(),
+    /**
+     * ТЗ 2026-05-25 hard-participant-identification: LLM возвращает User.id
+     * из переданного списка participants, если исполнитель — зарегистрированный
+     * сотрудник на этой встрече. Иначе null. Резолвер (`TaskAssigneeResolverService`)
+     * проверит/обогатит fallback по имени.
+     */
+    assigneeUserId: z.string().nullable().optional(),
     dueDateIso: z.string().nullable().optional(),
     evidenceBlockIds: z.array(z.string()).default([]),
     confidence: z.number().min(0).max(1),
@@ -46,6 +58,7 @@ export const TASKS_V2_JSON_SCHEMA: Record<string, unknown> = {
         properties: {
           title: { type: 'string', maxLength: 300 },
           assigneeRaw: { type: ['string', 'null'] },
+          assigneeUserId: { type: ['string', 'null'] },
           dueDateIso: { type: ['string', 'null'] },
           evidenceBlockIds: {
             type: 'array',
@@ -67,6 +80,7 @@ const SYSTEM_PROMPT = `Ты — извлекатель задач (action items)
 Поля задачи:
 - title: короткая формулировка (≤300 символов), глагол + объект («Подготовить дизайн макета», «Согласовать договор с юристом»).
 - assigneeRaw: имя/роль исполнителя как прозвучало («Иван», «Маркетинг», «команда RevOps»). Null если не названо.
+- assigneeUserId: User.id из списка участников встречи (см. блок «Участники этой встречи» ниже), если исполнитель — зарегистрированный сотрудник на встрече. Null во всех остальных случаях.
 - dueDateIso: дата в формате YYYY-MM-DD или ISO datetime, если в блоке прозвучала конкретная дата. Null если относительно («на следующей неделе») или не названо. Не пытайся вычислить дату — это сделает caller.
 - evidenceBlockIds: массив id IdeaBlock'ов, из которых задача извлечена. Минимум один. Если задача собрана из нескольких блоков (например, commitment + decision уточняют друг друга) — перечисли все.
 - confidence: 0..1 — уверенность что это РЕАЛЬНАЯ задача, а не пожелание/идея.
@@ -82,6 +96,12 @@ interface BuildArgs {
   meetingId: string;
   meetingTitle?: string | undefined;
   blocks: MeetingBlock[];
+  /**
+   * ТЗ 2026-05-25 hard-participant-identification: список участников
+   * встречи для жёсткой идентификации `assigneeUserId`. Пустой список или
+   * undefined → промпт работает в legacy-режиме (без блока про participants).
+   */
+  participants?: readonly AiParticipantContext[];
 }
 
 /**
@@ -108,6 +128,17 @@ export function buildTasksV2Prompt(args: BuildArgs): {
   const header = args.meetingTitle
     ? `Заголовок встречи: ${args.meetingTitle}\n\n`
     : '';
-  const user = `${header}Канонические блоки встречи (signalType ∈ {commitment, decision, task}):\n${JSON.stringify(blocksJson, null, 2)}\n\nВерни JSON по схеме { tasks: [...] }.`;
-  return { system: SYSTEM_PROMPT, user };
+  const participants = args.participants ?? [];
+  const participantsBlock =
+    participants.length > 0
+      ? `\n\nУчастники этой встречи (используй для жёсткой идентификации исполнителя):\n${formatParticipantsForPrompt(participants)}`
+      : '';
+  // Подмешиваем правила про assigneeUserId в system только когда передан
+  // непустой список — иначе оставляем legacy-промпт без изменений.
+  const system =
+    participants.length > 0
+      ? `${SYSTEM_PROMPT}\n${PARTICIPANT_IDENTIFICATION_RULES}`
+      : SYSTEM_PROMPT;
+  const user = `${header}Канонические блоки встречи (signalType ∈ {commitment, decision, task}):\n${JSON.stringify(blocksJson, null, 2)}${participantsBlock}\n\nВерни JSON по схеме { tasks: [...] }.`;
+  return { system, user };
 }

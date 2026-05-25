@@ -28,7 +28,6 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
-  NotImplementedException,
   Param,
   Patch,
   Post,
@@ -79,6 +78,7 @@ import {
   type TopicDetailsQuery,
   type TopicListFilters,
 } from '../dto/topic-list-filters.dto';
+import { FeedbackDigestService } from '../services/feedback-digest.service';
 import { FeedbackTopicManagerService } from '../services/feedback-topic-manager.service';
 import { FeedbackService } from '../services/feedback.service';
 
@@ -91,6 +91,8 @@ export class FeedbackAdminController {
     @Inject(FeedbackService) private readonly feedback: FeedbackService,
     @Inject(FeedbackTopicManagerService)
     private readonly topics: FeedbackTopicManagerService,
+    @Inject(FeedbackDigestService)
+    private readonly digest: FeedbackDigestService,
   ) {}
 
   // ──────────────────────── read: topics ────────────────────────
@@ -194,15 +196,12 @@ export class FeedbackAdminController {
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary:
-      'Запустить AI-кластеризацию обратной связи прямо сейчас (форс-обработка нового батча).',
+      'Запустить AI-кластеризацию обратной связи прямо сейчас (форс-обработка нового батча). ' +
+      'Возвращает jobId — реальный прогон отрабатывает в BullMQ-воркере.',
   })
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async runDigest(): Promise<{ jobId: string }> {
-    // Phase 5 заменит этот stub реальным enqueue. Сейчас — явный 501,
-    // чтобы фронт не вызывал случайно.
-    throw new NotImplementedException(
-      'POST /admin/feedback/digest/run будет включен в Фазе 5',
-    );
+  async runDigest(): Promise<{ enqueued: true; jobId: string }> {
+    const { jobId } = await this.digest.enqueueManualRun();
+    return { enqueued: true, jobId };
   }
 
   // ──────────────────────── failed messages ────────────────────

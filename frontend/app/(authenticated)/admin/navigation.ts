@@ -39,6 +39,7 @@ import {
   Lock,
   Mail,
   Megaphone,
+  MessageCircle,
   MessagesSquare,
   Network,
   PlayCircle,
@@ -397,6 +398,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         label: 'Безопасность',
         icon: Lock,
         matchPrefix: '/admin/platform/security',
+      },
+      {
+        href: '/admin/feedback',
+        label: 'Обратная связь',
+        icon: MessageCircle,
+        matchPrefix: '/admin/feedback',
       },
       {
         href: '/admin/platform/maintenance',

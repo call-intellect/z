@@ -1,0 +1,26 @@
+import type { Metadata } from 'next';
+
+import { FeedbackTopicDetailClient } from './FeedbackTopicDetailClient';
+
+export const metadata: Metadata = {
+  title: 'Блок обратной связи — Z-Admin',
+};
+
+/**
+ * `/admin/feedback/[topicId]` — детальная страница смыслового блока:
+ *   - title / description (read-only, Phase 8 добавит редактирование);
+ *   - метрики itemsCount / uniqueUsersCount / percentOfWindow (переключатель окна);
+ *   - список items с возможностью развернуть исходное сообщение.
+ *
+ * Защита: backend требует super_admin; frontend показывает `AdminForbidden` при 403.
+ *
+ * См. ТЗ: `plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`,
+ * раздел «Frontend — админский» → подраздел «Страница `/admin/feedback/[topicId]`».
+ */
+export default function AdminFeedbackTopicPage({
+  params,
+}: {
+  params: { topicId: string };
+}) {
+  return <FeedbackTopicDetailClient topicId={params.topicId} />;
+}

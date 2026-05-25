@@ -231,6 +231,92 @@ describe('RbacService — матрица ролей × ресурсов × де�
     );
   });
 
+  // ──────────────── Clones=Roles Ф5 (2026-05-25) — clone_persona member-wide read ───
+  describe('clone_persona — Clones=Roles Ф5: read доступен всем member ролям (включая manager strict)', () => {
+    const memberRoles: Array<{
+      role: 'owner' | 'admin' | 'manager';
+      visibility: 'open' | 'strict';
+    }> = [
+      { role: 'owner', visibility: 'open' },
+      { role: 'admin', visibility: 'open' },
+      { role: 'manager', visibility: 'open' },
+      { role: 'manager', visibility: 'strict' },
+    ];
+    it.each(memberRoles)(
+      '$role/$visibility read clone_persona → true',
+      async ({ role, visibility }) => {
+        const rbac = buildRbac({
+          membership: { role, org: { visibilityMode: visibility } },
+          orgVisibility: visibility,
+        });
+        const allowed = await rbac.check({
+          userId: 'u-1',
+          tenantId: 't-1',
+          obj: 'clone_persona',
+          act: 'read',
+          resourceOwnerId: 'u-other', // не-self, проверяем именно shared-access
+        });
+        expect(allowed).toBe(true);
+      },
+    );
+
+    it('write clone_persona — только owner/admin', async () => {
+      const owner = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await owner.check({
+          userId: 'u-o',
+          tenantId: 't-1',
+          obj: 'clone_persona',
+          act: 'write',
+          resourceOwnerId: null,
+        }),
+      ).toBe(true);
+
+      const admin = buildRbac({
+        membership: { role: 'admin', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await admin.check({
+          userId: 'u-a',
+          tenantId: 't-1',
+          obj: 'clone_persona',
+          act: 'write',
+          resourceOwnerId: null,
+        }),
+      ).toBe(true);
+
+      const mgr = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await mgr.check({
+          userId: 'u-m',
+          tenantId: 't-1',
+          obj: 'clone_persona',
+          act: 'write',
+          resourceOwnerId: 'u-m',
+        }),
+      ).toBe(false);
+    });
+
+    it('skill_profile read доступен manager strict без self-ограничителя (Clones=Roles Ф5)', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'strict' } },
+        orgVisibility: 'strict',
+      });
+      const allowed = await rbac.check({
+        userId: 'u-mgr',
+        tenantId: 't-1',
+        obj: 'skill_profile',
+        act: 'read',
+        resourceOwnerId: 'u-other', // чужой профиль — должен открыться
+      });
+      expect(allowed).toBe(true);
+    });
+  });
+
   // ─────────────────────────── shortcuts ────────────────────────────────
   describe('shortcuts canRead/canWrite/canManageOrg', () => {
     it('canRead делегирует в check с action=read', async () => {

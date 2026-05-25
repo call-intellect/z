@@ -96,7 +96,8 @@ export interface SkillProfileDto {
     version: number;
     snapshotAt: string;
     builtFromTraitsCount: number;
-    status: 'active' | 'superseded';
+    /** Clones=Roles Ф2 — добавлен pending_rebuild (см. CloneListItemDto.status). */
+    status: 'active' | 'superseded' | 'pending_rebuild';
   }>;
 }
 
@@ -131,7 +132,10 @@ export interface RoleSkillProfileDto {
  *   - `page`, `pageSize` — 1-based pagination, pageSize default 20, max 100.
  */
 export const ClonesListQuerySchema = z.object({
-  status: z.enum(['active', 'superseded']).optional().default('active'),
+  status: z
+    .enum(['active', 'superseded', 'pending_rebuild'])
+    .optional()
+    .default('active'),
   q: z.string().trim().min(1).max(200).optional(),
   confidenceMin: z.coerce.number().min(0).max(1).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
@@ -158,8 +162,13 @@ export interface CloneListItemDto {
   version: number;
   /** Публичное имя клона «Клон Маркетолога v2» (ExecutablePersona.publicName). */
   publicName: string;
-  /** ExecutablePersona.status — active/archived/superseded. */
-  status: 'active' | 'superseded';
+  /**
+   * ExecutablePersona.status — active/superseded/pending_rebuild.
+   * Clones=Roles Ф2 (2026-05-25) — добавлен `pending_rebuild`: после смены
+   * носителя роли создаётся новая версия без personaPrompt; следующий
+   * `executable-persona-build` его дозаполнит и переключит на `active`.
+   */
+  status: 'active' | 'superseded' | 'pending_rebuild';
   /** Текущий носитель роли (Person.id + name) или null. */
   currentBearer: { personId: string; personName: string } | null;
   /** confidence клона — эвристика min(1, builtFromTraitsCount / 10), 0..1. */
@@ -186,7 +195,11 @@ export interface CloneVersionDto {
   roleId: string;
   version: number;
   publicName: string;
-  status: 'active' | 'superseded';
+  /**
+   * ExecutablePersona.status — active/superseded/pending_rebuild
+   * (Clones=Roles Ф2, см. CloneListItemDto.status).
+   */
+  status: 'active' | 'superseded' | 'pending_rebuild';
   /** Носитель роли в эту версию (если был зафиксирован). */
   bearer: { personId: string; personName: string } | null;
   /** Старт периода — snapshotAt этой версии. */

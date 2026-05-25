@@ -18,8 +18,8 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import {
-  CLONE_RESPOND_SYSTEM_PROMPT_BASE,
   CLONE_RESPOND_USER_TEMPLATE,
+  buildCloneRespondSystemPrompt,
 } from '../../knowledge-core/prompts/clone-respond.prompt';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
@@ -239,11 +239,16 @@ export class ClonesService {
     }
 
     // 6. LLM clone-respond.
+    // Clones=Roles Фаза 6 — у person-scope askPerson нет «должности», поэтому
+    // roleName = null (промпт подставит дефолт «сотрудника»), bearerName =
+    // имя самого носителя профиля.
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
       question: args.question,
       subgraph,
+      roleName: null,
+      bearerName: profile.person.name,
     });
 
     // 7. Распарсить цитаты.
@@ -410,11 +415,27 @@ export class ClonesService {
     }
 
     // 5. LLM call.
+    // Clones=Roles Фаза 6 — подставляем roleName из Role.name и bearerName
+    // из текущего носителя `ExecutablePersona.currentBearerPersonId`. Если
+    // bearer не зафиксирован — null (промпт подставит дефолт).
+    let bearerName: string | null = null;
+    if (persona.currentBearerPersonId) {
+      const bearer = await this.prisma.person.findUnique({
+        where: { id: persona.currentBearerPersonId },
+        select: { name: true, tenantId: true },
+      });
+      if (bearer && bearer.tenantId === args.tenantId) {
+        bearerName = bearer.name;
+      }
+    }
+
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
       question: args.question,
       subgraph,
+      roleName: role.name,
+      bearerName,
     });
 
     const citations = this.parseCitations(llmResult.text, subgraph);
@@ -797,7 +818,7 @@ export class ClonesService {
         departmentId: role.department?.id ?? null,
         version: c.roleVersion ?? 1,
         publicName: c.publicName ?? `Клон ${role.name} v${c.roleVersion ?? 1}`,
-        status: c.status as 'active' | 'superseded',
+        status: c.status as 'active' | 'superseded' | 'pending_rebuild',
         currentBearer: bearer
           ? { personId: bearer.id, personName: bearer.name }
           : null,
@@ -913,6 +934,17 @@ export class ClonesService {
       );
     }
 
+    // Clones=Roles Ф2 — обновляем gauge «общее число версий клона на роль».
+    // Учитываем все версии (active + superseded + pending_rebuild).
+    try {
+      this.metrics.setCloneRoleVersionsTotal({
+        roleId: args.roleId,
+        value: personas.length,
+      });
+    } catch {
+      // observability — не критичный путь, игнорируем
+    }
+
     const versions: CloneVersionDto[] = personas.map((p) => {
       const bearer = p.currentBearerPersonId
         ? bearerById.get(p.currentBearerPersonId)
@@ -922,7 +954,7 @@ export class ClonesService {
         roleId: role.id,
         version: p.roleVersion ?? 1,
         publicName: p.publicName ?? `Клон ${role.name} v${p.roleVersion ?? 1}`,
-        status: p.status as 'active' | 'superseded',
+        status: p.status as 'active' | 'superseded' | 'pending_rebuild',
         bearer: bearer
           ? { personId: bearer.id, personName: bearer.name }
           : null,
@@ -1528,8 +1560,20 @@ export class ClonesService {
     persona: ExecutablePersona;
     question: string;
     subgraph: CloneSubgraph;
+    /**
+     * Clones=Roles Фаза 6 — название должности и имя текущего носителя.
+     * Подставляются в шаблон `clone-respond.prompt.ts` (placeholders
+     * `{{roleName}}` / `{{bearerName}}`). Если null/undefined — используются
+     * безопасные дефолты внутри `buildCloneRespondSystemPrompt`.
+     */
+    roleName: string | null;
+    bearerName: string | null;
   }): Promise<LlmCallResult> {
-    const systemPrompt = `${CLONE_RESPOND_SYSTEM_PROMPT_BASE}\n\n${args.persona.personaPrompt}`;
+    const systemPrompt = buildCloneRespondSystemPrompt({
+      roleName: args.roleName,
+      bearerName: args.bearerName,
+      personaPrompt: args.persona.personaPrompt,
+    });
     return this.llm.call({
       taskType: 'clone-respond',
       systemPrompt,

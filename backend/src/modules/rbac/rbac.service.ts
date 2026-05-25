@@ -592,6 +592,11 @@ function isResourceType(s: string): s is ResourceType {
     // SBA β-5 — Ideas Collector + Probe-Agent.
     'idea',
     'probe_event',
+    // SBA β-2 — Knowledge Clone.
+    'knowledge_profile',
+    // SBA γ-1 — Skill + ExecutablePersona + Clone.
+    'skill_profile',
+    'clone_persona',
     // SBA γ-1 доделки — SkillTraitCategory.
     'skill_category',
     // SBA α-8 wave 3 — Appointment + KPI.

@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { RbacModule } from '../rbac/rbac.module';
 
+import { ClonesAdminController } from './clones-admin.controller';
 import { ClonesController } from './clones.controller';
 import { ClonesService } from './services/clones.service';
 
@@ -28,7 +29,7 @@ import { ClonesService } from './services/clones.service';
 @Global()
 @Module({
   imports: [PrismaModule, RbacModule],
-  controllers: [ClonesController],
+  controllers: [ClonesController, ClonesAdminController],
   providers: [ClonesService],
   exports: [ClonesService],
 })

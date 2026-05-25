@@ -5,12 +5,15 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
+import type { RoleBearerChangedEvent } from '../../knowledge-core/services/role-clone-persona-versioning.handler';
 import type {
   AppointmentDto,
   AppointmentStatus,
@@ -40,6 +43,11 @@ import {
  *   - `appointments_total{tenant_top, status}` — gauge кол-ва.
  *
  * RBAC — `appointment.read|write|delete`. Проверка в контроллере.
+ *
+ * Clones=Roles Ф2 (2026-05-25) — после успешного create/update/softDelete
+ * вызываем `maybeEmitBearerChanged(roleId)` чтобы определить, сменился ли
+ * носитель роли. Если да — эмитим `role.bearer_changed` для
+ * `RoleClonePersonaVersioningHandler` в knowledge-core.
  */
 @Injectable()
 export class AppointmentsService {
@@ -50,6 +58,12 @@ export class AppointmentsService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // Clones=Roles Ф2 (2026-05-25) — EventEmitter2 для `role.bearer_changed`.
+    // `@Optional()` чтобы не ломать существующие интеграционные тесты, где
+    // EventEmitterModule не подключён. Если null — emit'ы пропускаются (no-op).
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
   ) {}
 
   // ─────────────────────────── list / get ───────────────────────────
@@ -212,6 +226,17 @@ export class AppointmentsService {
         this.logger.warn(`refreshAppointmentsGauge failed: ${String(err)}`),
       );
 
+      // Clones=Roles Ф2 — после успешного create проверяем, сменился ли
+      // активный носитель роли. Если да — emit `role.bearer_changed`.
+      void this.maybeEmitBearerChanged({
+        tenantId: args.tenantId,
+        roleId: args.body.roleId,
+      }).catch((err) =>
+        this.logger.warn(
+          `maybeEmitBearerChanged failed (create): ${String(err)}`,
+        ),
+      );
+
       return this.toDto(created);
     } catch (err) {
       this.handleUniqueViolation(err);
@@ -282,6 +307,16 @@ export class AppointmentsService {
         this.logger.warn(`refreshAppointmentsGauge failed: ${String(err)}`),
       );
 
+      // Clones=Roles Ф2 — изменение status/validTo может означать смену носителя.
+      void this.maybeEmitBearerChanged({
+        tenantId: args.tenantId,
+        roleId: existing.roleId,
+      }).catch((err) =>
+        this.logger.warn(
+          `maybeEmitBearerChanged failed (update): ${String(err)}`,
+        ),
+      );
+
       return this.toDto(updated);
     } catch (err) {
       this.handleUniqueViolation(err);
@@ -330,6 +365,16 @@ export class AppointmentsService {
 
     void this.refreshAppointmentsGauge(args.tenantId).catch((err) =>
       this.logger.warn(`refreshAppointmentsGauge failed: ${String(err)}`),
+    );
+
+    // Clones=Roles Ф2 — softDelete активного назначения = освобождение роли.
+    void this.maybeEmitBearerChanged({
+      tenantId: args.tenantId,
+      roleId: existing.roleId,
+    }).catch((err) =>
+      this.logger.warn(
+        `maybeEmitBearerChanged failed (softDelete): ${String(err)}`,
+      ),
     );
 
     return this.toDto(updated);
@@ -392,6 +437,70 @@ export class AppointmentsService {
         },
       });
     }
+  }
+
+  /**
+   * Clones=Roles Ф2 — сравнить «активный носитель сейчас» (по Appointment-у)
+   * с `currentBearerPersonId` у активной ExecutablePersona(scope='role').
+   * Если различаются — эмитим `role.bearer_changed` и handler в knowledge-core
+   * создаст новую версию persona.
+   *
+   * Активный носитель = Appointment(tenantId, roleId, validTo IS NULL) с
+   * максимальным `loadPercent`, при равенстве — самый поздний `validFrom`.
+   *
+   * Безопасно дёргать после любого create/update/softDelete: idempotent
+   * относительно handler'а (двойной emit будет фильтрован handler'ом).
+   */
+  private async maybeEmitBearerChanged(args: {
+    tenantId: string;
+    roleId: string;
+  }): Promise<void> {
+    if (!this.events) return;
+
+    const activeAppointments = await this.prisma.appointment.findMany({
+      where: {
+        tenantId: args.tenantId,
+        roleId: args.roleId,
+        validTo: null,
+      },
+      orderBy: [{ loadPercent: 'desc' }, { validFrom: 'desc' }],
+      select: { personId: true },
+      take: 1,
+    });
+    const newBearerId = activeAppointments[0]?.personId ?? null;
+
+    const currentPersona = await this.prisma.executablePersona.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+        status: 'active',
+      },
+      orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+      select: { currentBearerPersonId: true },
+    });
+    const oldBearerId = currentPersona?.currentBearerPersonId ?? null;
+
+    if (oldBearerId === newBearerId) return; // нет смены
+
+    const payload: RoleBearerChangedEvent = {
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      oldPersonId: oldBearerId,
+      newPersonId: newBearerId,
+      changedAt: new Date(),
+    };
+    // EventEmitter2.emit — синхронный. emitAsync ждёт async-обработчиков.
+    // Fire-and-forget с warn-логом при ошибке (controller'ный путь не блокируем).
+    void this.events.emitAsync('role.bearer_changed', payload).catch((err) => {
+      this.logger.warn(
+        {
+          roleId: args.roleId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'role.bearer_changed: emit упал',
+      );
+    });
   }
 
   /**

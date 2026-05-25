@@ -437,8 +437,9 @@ p, manager, strict, self, knowledge_profile, read
 
 # ──────────────────────────── SBA γ-1 — Skill + ExecutablePersona + Clone ────────────────────────────
 # skill_profile: навыковый профиль сотрудника (Person + SkillTrait[]). Видимость:
-# owner/admin Org — r/w/d. manager open — read всех (для direct manager'ов).
-# manager strict — read только своего. Write идёт только через worker; ручного API write нет.
+# owner/admin Org — r/w/d. manager open — read всех. manager strict — read всех
+# (Clones=Roles Ф5 2026-05-25: убран self-ограничитель, профили — shared-знание
+# Org для оркестрации команды). Write идёт только через worker; ручного API write нет.
 # mark_as_misleading (action 'write') — owner/admin/manager open (для direct manager'ов).
 p, owner, *, *, skill_profile, read
 p, owner, *, *, skill_profile, write
@@ -447,15 +448,21 @@ p, admin, *, *, skill_profile, read
 p, admin, *, *, skill_profile, write
 p, admin, *, *, skill_profile, delete
 p, manager, open, *, skill_profile, read
-p, manager, strict, self, skill_profile, read
+p, manager, strict, *, skill_profile, read
 
-# clone_persona: executable persona для clone API. Read = тем, кто имеет доступ
-# к skill_profile того же Person'а. Call ask — то же самое + сам носитель.
-# Тонкая логика (direct manager в той же department) проверяется в ClonesService.
+# clone_persona: executable persona для clone API.
+# Clones=Roles Ф5 (2026-05-25) — клон роли — это shared-знание Org (не личные данные
+# сотрудника), поэтому read доступен ВСЕМ member'ам Org (owner/admin/manager open/
+# manager strict — без self-ограничителя). Write/delete остаются у owner/admin.
+# Per-clone visibility (например, для будущей роли с особым доступом) проверяется
+# в ClonesService поверх RBAC.
 p, owner, *, *, clone_persona, read
+p, owner, *, *, clone_persona, write
+p, owner, *, *, clone_persona, delete
 p, admin, *, *, clone_persona, read
+p, admin, *, *, clone_persona, write
 p, manager, open, *, clone_persona, read
-p, manager, strict, self, clone_persona, read
+p, manager, strict, *, clone_persona, read
 
 # SBA γ-1 доделки — skill_category: эмерджентная категория SkillTrait. Read —
 # всем member'ам (словарь категорий компании, как skill); write/delete — owner/admin.

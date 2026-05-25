@@ -2,8 +2,11 @@
  * SBA γ-1 — API-клиент Clone API.
  *
  * Эндпоинты:
- *   - POST /api/v1/clones/persons/:personId/ask
- *   - POST /api/v1/clones/roles/:roleId/ask
+ *   - POST /api/v1/clones/roles/:roleId/ask  (ролевые клоны, фаза 3 ТЗ Clones=Roles)
+ *
+ * Фаза 3 ТЗ Clones=Roles (2026-05-25): `askPerson` удалён — клоны теперь
+ * принадлежат ролям, а не персонам. Endpoint `/persons/:id/ask` будет
+ * переименован в фазе 6 ТЗ; на γ-1 в frontend он больше не вызывается.
  *
  * Защита: `CookieAuthGuard + TenantGuard`. RBAC — внутри ClonesService
  * (owner/admin/self/direct manager). Rate limit — 20 в сутки на пользователя.
@@ -125,13 +128,7 @@ export interface ManualPersonaSnapshotResultApi {
 }
 
 export const clonesApi = {
-  askPerson: (orgId: string, personId: string, body: AskCloneRequestApi) =>
-    apiClient.post<AskCloneResponseApi>(
-      `/api/v1/clones/persons/${encodeURIComponent(personId)}/ask`,
-      body,
-      { headers: orgHeaders(orgId) },
-    ),
-
+  // Фаза 3 ТЗ Clones=Roles (2026-05-25): `askPerson` удалён — клоны ролевые.
   askRole: (orgId: string, roleId: string, body: AskCloneRequestApi) =>
     apiClient.post<AskCloneResponseApi>(
       `/api/v1/clones/roles/${encodeURIComponent(roleId)}/ask`,

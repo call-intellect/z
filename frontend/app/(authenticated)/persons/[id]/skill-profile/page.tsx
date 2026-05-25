@@ -1,21 +1,16 @@
-import type { Metadata } from 'next';
-
-import { PersonSkillProfileClient } from './PersonSkillProfileClient';
-
-export const metadata: Metadata = {
-  title: 'Навыковый профиль сотрудника — Кора',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * `/persons/:id/skill-profile` (SBA γ-1) — навыковый профиль сотрудника.
+ * `/persons/:id/skill-profile` — удалена в фазе 3 ТЗ Clones=Roles
+ * (2026-05-25). Skill-профиль больше не публичный артефакт человека:
+ * клоны теперь делаются по должности (см. `/clones`).
  *
- * Видимость: owner / admin / direct manager / сам носитель.
- * Действие mark_as_misleading доступно только direct manager / admin.
+ * Маршрут оставлен только для редиректа со старых ссылок.
  */
 export default function PersonSkillProfilePage({
   params,
 }: {
   params: { id: string };
 }) {
-  return <PersonSkillProfileClient personId={params.id} />;
+  redirect(`/persons/${params.id}`);
 }

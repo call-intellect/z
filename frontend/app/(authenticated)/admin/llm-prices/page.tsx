@@ -1,9 +1,9 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { LlmPricesClient } from './LlmPricesClient';
-
-export const metadata: Metadata = { title: 'Z-Admin — Прайс LLM' };
-
-export default function LlmPricesPage() {
-  return <LlmPricesClient />;
+/**
+ * Фаза 3 редизайна — страница прайса вошла в `/admin/ai/catalog` под
+ * вкладку `?tab=prices`. Сохраняем redirect для bookmark'ов.
+ */
+export default function AdminLlmPricesRedirect() {
+  redirect('/admin/ai/catalog?tab=prices');
 }

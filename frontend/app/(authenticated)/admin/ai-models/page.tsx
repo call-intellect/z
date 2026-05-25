@@ -1,11 +1,10 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { AiModelsClient } from './AiModelsClient';
-
-export const metadata: Metadata = {
-  title: 'AI Models — Admin',
-};
-
-export default function AdminAiModelsPage() {
-  return <AiModelsClient />;
+/**
+ * Фаза 3 редизайна — старый URL `/admin/ai-models` мигрирован под
+ * `/admin/ai/routing`. Сохраняем redirect для bookmark'ов и внутренних
+ * ссылок (старые клиенты используют `Link href="/admin/ai-models/..."`).
+ */
+export default function AdminAiModelsRedirect() {
+  redirect('/admin/ai/routing');
 }

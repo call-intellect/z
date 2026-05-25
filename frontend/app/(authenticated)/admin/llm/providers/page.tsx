@@ -1,9 +1,9 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { LlmProvidersClient } from './LlmProvidersClient';
-
-export const metadata: Metadata = { title: 'Z-Admin — LLM провайдеры' };
-
-export default function LlmProvidersPage() {
-  return <LlmProvidersClient />;
+/**
+ * Фаза 3 редизайна — провайдеры LLM перешли в `/admin/ai/catalog` под
+ * вкладку `?tab=providers`.
+ */
+export default function AdminLlmProvidersRedirect() {
+  redirect('/admin/ai/catalog?tab=providers');
 }

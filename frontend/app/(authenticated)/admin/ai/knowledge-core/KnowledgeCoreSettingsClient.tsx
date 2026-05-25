@@ -1,0 +1,496 @@
+'use client';
+
+/**
+ * Фаза 3 редизайна — `/admin/ai/knowledge-core`.
+ *
+ * Управление ~40 порогами и параметрами пайплайна Knowledge-Core через
+ * `AdminSetting` (БД-override поверх ENV-fallback). Каждая настройка —
+ * отдельный `SettingRow` с собственным `useAdminSettingEditor`-instance.
+ *
+ * Группы (10 вкладок):
+ *   distill / entity / theme / idea / insight / skill / persona /
+ *   block / link / curation
+ *
+ * Все Zod-схемы захардкожены здесь (бэкенд-endpoint
+ * `GET /admin/settings/schema/:key` появится позже — тогда `AdminSettingField`
+ * сможет получать схему динамически). Дефолты соответствуют ENV из
+ * `backend/src/common/config/env.schema.ts`.
+ *
+ * Поведение `SettingRow`:
+ *   - При маунте читает текущее значение (SWR).
+ *   - Edit inline через `AdminSettingField`.
+ *   - Кнопка «Сохранить» → POST, кнопка «Сбросить» → undo draft.
+ *   - Кнопка «История» открывает `AdminSettingHistoryDrawer`.
+ */
+
+import { useState } from 'react';
+import {
+  Activity,
+  Brain,
+  Cpu,
+  History as HistoryIcon,
+  Layers,
+  Link2,
+  Loader2,
+  Network,
+  Sparkles,
+  Target,
+  UserSquare,
+  Wand2,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import type { LucideIcon } from 'lucide-react';
+import { z, type ZodTypeAny } from 'zod';
+
+import { AdminSection } from '@/ui/components/admin/AdminSection';
+import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
+import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
+import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
+import { ApiError } from '@/api/api-error';
+import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
+import { Button } from '@/ui/shadcn/button';
+
+// ───────────────────────────────────────── Схемы ──
+
+type SettingSpec<T> = {
+  key: string;
+  label: string;
+  description?: string;
+  schema: ZodTypeAny;
+  defaultValue: T;
+};
+
+type SettingGroup = {
+  value: string;
+  label: string;
+  icon: LucideIcon;
+  settings: SettingSpec<unknown>[];
+};
+
+const ratio01 = (def: number) =>
+  z.number().min(0).max(1).default(def);
+
+const positiveInt = (def: number, max?: number) => {
+  let s = z.number().int().min(1);
+  if (typeof max === 'number') s = s.max(max);
+  return s.default(def);
+};
+
+const cronExpr = z.string().min(9).max(64);
+
+const GROUPS: SettingGroup[] = [
+  {
+    value: 'distill',
+    label: 'Distill',
+    icon: Wand2,
+    settings: [
+      {
+        key: 'knowledge.distill.merge_threshold',
+        label: 'Порог слияния (cosine)',
+        description: 'Минимальная косинусная близость для слияния схожих distill-блоков.',
+        schema: ratio01(0.92),
+        defaultValue: 0.92,
+      },
+      {
+        key: 'knowledge.distill.debounce_ms',
+        label: 'Debounce, мс',
+        description: 'Задержка между повторными ингестами одного источника.',
+        schema: positiveInt(2000),
+        defaultValue: 2000,
+      },
+      {
+        key: 'knowledge.distill.knn_top_k',
+        label: 'kNN top-k',
+        description: 'Сколько ближайших соседей рассматривать при кандидате на слияние.',
+        schema: positiveInt(20, 200),
+        defaultValue: 20,
+      },
+    ],
+  },
+  {
+    value: 'entity',
+    label: 'Entity',
+    icon: Network,
+    settings: [
+      {
+        key: 'knowledge.entity.merge_threshold',
+        label: 'Порог слияния сущностей',
+        description: 'Косинус для дедупа Entity (люди, компании, проекты).',
+        schema: ratio01(0.86),
+        defaultValue: 0.86,
+      },
+    ],
+  },
+  {
+    value: 'theme',
+    label: 'Theme',
+    icon: Layers,
+    settings: [
+      {
+        key: 'knowledge.theme.cosine_threshold',
+        label: 'Порог темы (cosine)',
+        description: 'Минимальная близость для отнесения блока к существующей теме.',
+        schema: ratio01(0.78),
+        defaultValue: 0.78,
+      },
+      {
+        key: 'knowledge.theme.cluster_min_size',
+        label: 'Мин. размер кластера',
+        description: 'Минимум блоков для создания темы.',
+        schema: positiveInt(3),
+        defaultValue: 3,
+      },
+      {
+        key: 'knowledge.theme.clustering_min_blocks',
+        label: 'Мин. блоков для запуска кластеризатора',
+        description: 'Если в Org меньше блоков — кластеризация пропускается.',
+        schema: positiveInt(20),
+        defaultValue: 20,
+      },
+      {
+        key: 'knowledge.theme.clusterer_cron',
+        label: 'Cron темы-кластеризатора',
+        description: 'Расписание задачи theme-clusterer.',
+        schema: cronExpr,
+        defaultValue: '0 */6 * * *',
+      },
+    ],
+  },
+  {
+    value: 'idea',
+    label: 'Idea',
+    icon: Sparkles,
+    settings: [
+      {
+        key: 'knowledge.idea.cluster_threshold',
+        label: 'Порог кластера идей',
+        schema: ratio01(0.82),
+        defaultValue: 0.82,
+      },
+      {
+        key: 'knowledge.idea.clusterer_cron',
+        label: 'Cron кластеризатора идей',
+        schema: cronExpr,
+        defaultValue: '0 */8 * * *',
+      },
+      {
+        key: 'knowledge.idea.min_supporters_for_cluster',
+        label: 'Мин. сторонников идеи',
+        description: 'Минимум упоминаний разными участниками для группировки в Idea.',
+        schema: positiveInt(2),
+        defaultValue: 2,
+      },
+    ],
+  },
+  {
+    value: 'insight',
+    label: 'Insight',
+    icon: Brain,
+    settings: [
+      {
+        key: 'knowledge.insight.cluster_threshold',
+        label: 'Порог кластера инсайтов',
+        schema: ratio01(0.84),
+        defaultValue: 0.84,
+      },
+      {
+        key: 'knowledge.insight.cluster_cron',
+        label: 'Cron кластеризатора инсайтов',
+        schema: cronExpr,
+        defaultValue: '0 */12 * * *',
+      },
+      {
+        key: 'knowledge.insight.frequency_window_days',
+        label: 'Окно частоты (дни)',
+        description: 'Окно, в котором считаем повторяемость инсайта.',
+        schema: positiveInt(30),
+        defaultValue: 30,
+      },
+      {
+        key: 'knowledge.insight.spike_ratio',
+        label: 'Коэффициент всплеска',
+        description: 'Во сколько раз частота должна превысить базовую линию.',
+        schema: z.number().min(1).max(20).default(2),
+        defaultValue: 2,
+      },
+    ],
+  },
+  {
+    value: 'skill',
+    label: 'Skill',
+    icon: Cpu,
+    settings: [
+      {
+        key: 'knowledge.skill.min_observations',
+        label: 'Мин. наблюдений по скиллу',
+        schema: positiveInt(3),
+        defaultValue: 3,
+      },
+      {
+        key: 'knowledge.skill.trait_similarity_threshold',
+        label: 'Порог схожести трейтов',
+        schema: ratio01(0.8),
+        defaultValue: 0.8,
+      },
+      {
+        key: 'knowledge.skill.lookback_months',
+        label: 'Глубина просмотра (мес.)',
+        schema: positiveInt(6),
+        defaultValue: 6,
+      },
+      {
+        key: 'knowledge.skill.decay_months',
+        label: 'Месяцы затухания',
+        description: 'Через сколько месяцев скилл начинает «угасать».',
+        schema: positiveInt(12),
+        defaultValue: 12,
+      },
+      {
+        key: 'knowledge.skill.archive_months',
+        label: 'Месяцы до архивации',
+        schema: positiveInt(24),
+        defaultValue: 24,
+      },
+    ],
+  },
+  {
+    value: 'persona',
+    label: 'Persona',
+    icon: UserSquare,
+    settings: [
+      {
+        key: 'knowledge.persona.build_cron',
+        label: 'Cron сборки персон',
+        schema: cronExpr,
+        defaultValue: '0 3 * * *',
+      },
+      {
+        key: 'knowledge.persona.min_traits',
+        label: 'Мин. трейтов для персоны',
+        schema: positiveInt(5),
+        defaultValue: 5,
+      },
+      {
+        key: 'knowledge.persona.role_agg_min_persons',
+        label: 'Мин. персон для роли',
+        description: 'Сколько людей нужно для агрегата роли.',
+        schema: positiveInt(3),
+        defaultValue: 3,
+      },
+      {
+        key: 'knowledge.persona.executable_threshold_traits_count',
+        label: 'Порог executable-персоны (трейтов)',
+        description: 'С какого количества трейтов персона считается executable.',
+        schema: positiveInt(20),
+        defaultValue: 20,
+      },
+    ],
+  },
+  {
+    value: 'block',
+    label: 'Block',
+    icon: Layers,
+    settings: [
+      {
+        key: 'knowledge.block_ingest.window_segments',
+        label: 'Размер окна сегментов',
+        description: 'Сколько сегментов транскрипта объединять в один кандидат-блок.',
+        schema: positiveInt(8),
+        defaultValue: 8,
+      },
+      {
+        key: 'knowledge.block_ingest.max_tokens_per_segment',
+        label: 'Макс. токенов на сегмент',
+        schema: positiveInt(500),
+        defaultValue: 500,
+      },
+      {
+        key: 'knowledge.block.dynamic_score_decay_days',
+        label: 'Затухание динамики (дни)',
+        description: 'За сколько дней «свежесть» блока падает вдвое.',
+        schema: positiveInt(14),
+        defaultValue: 14,
+      },
+    ],
+  },
+  {
+    value: 'link',
+    label: 'Link',
+    icon: Link2,
+    settings: [
+      {
+        key: 'knowledge.link.min_confidence',
+        label: 'Мин. уверенность связи',
+        schema: ratio01(0.55),
+        defaultValue: 0.55,
+      },
+      {
+        key: 'knowledge.link.knn_top_k',
+        label: 'kNN top-k связей',
+        schema: positiveInt(15, 100),
+        defaultValue: 15,
+      },
+      {
+        key: 'knowledge.linker.min_blocks',
+        label: 'Мин. блоков для линкера',
+        schema: positiveInt(10),
+        defaultValue: 10,
+      },
+    ],
+  },
+  {
+    value: 'curation',
+    label: 'Curation',
+    icon: Target,
+    settings: [
+      {
+        key: 'knowledge.curation.auto_threshold_default',
+        label: 'Порог автокурации',
+        description: 'С какой confidence факт идёт в curation-очередь без человеческой проверки.',
+        schema: ratio01(0.9),
+        defaultValue: 0.9,
+      },
+      {
+        key: 'knowledge.curation.deep_review_threshold_default',
+        label: 'Порог deep-review',
+        description: 'Ниже этой уверенности факт уходит на глубокую проверку владельцем.',
+        schema: ratio01(0.65),
+        defaultValue: 0.65,
+      },
+      {
+        key: 'knowledge.curation.item_expiry_days',
+        label: 'Срок жизни элемента очереди (дни)',
+        schema: positiveInt(30),
+        defaultValue: 30,
+      },
+    ],
+  },
+];
+
+const TABS: AdminTabDef[] = GROUPS.map((g) => ({
+  value: g.value,
+  label: g.label,
+  icon: g.icon,
+}));
+
+export function KnowledgeCoreSettingsClient() {
+  const [historyKey, setHistoryKey] = useState<string | null>(null);
+
+  return (
+    <AdminSection
+      breadcrumbs={[
+        { label: 'Z-Admin', href: '/admin' },
+        { label: 'AI и модели' },
+        { label: 'Knowledge-Core настройки' },
+      ]}
+      title="Knowledge-Core настройки"
+      description="Пороги слияния, кластеризации, выжимок и связей. БД-override поверх ENV. Сохранение инвалидируется на всех процессах через Redis pub/sub."
+    >
+      <AdminTabs tabs={TABS} defaultTab="distill">
+        {(active) => {
+          const group = GROUPS.find((g) => g.value === active);
+          if (!group) return null;
+          return (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {group.settings.map((s) => (
+                <SettingRow
+                  key={s.key}
+                  spec={s}
+                  onOpenHistory={() => setHistoryKey(s.key)}
+                />
+              ))}
+            </div>
+          );
+        }}
+      </AdminTabs>
+
+      <AdminSettingHistoryDrawer
+        settingKey={historyKey}
+        open={Boolean(historyKey)}
+        onOpenChange={(open) => {
+          if (!open) setHistoryKey(null);
+        }}
+      />
+    </AdminSection>
+  );
+}
+
+// ───────────────────────────────────────── SettingRow ──
+
+function SettingRow<T>({
+  spec,
+  onOpenHistory,
+}: {
+  spec: SettingSpec<T>;
+  onOpenHistory: () => void;
+}) {
+  const editor = useAdminSettingEditor<T>(spec.key, {
+    schema: spec.schema,
+    defaultValue: spec.defaultValue,
+  });
+
+  const handleSave = async () => {
+    try {
+      await editor.save();
+      toast.success(`Настройка ${spec.key} сохранена`);
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Не удалось сохранить';
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-card p-3">
+      <AdminSettingField<T>
+        schema={spec.schema}
+        value={editor.value}
+        onChange={editor.setValue}
+        label={spec.label}
+        description={spec.description}
+        disabled={editor.isLoading || editor.isSaving}
+        error={editor.error ?? undefined}
+        rightSlot={
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="inline-flex items-center gap-1 text-[10px] text-fg-tertiary hover:text-fg-primary"
+            aria-label="История изменений"
+          >
+            <HistoryIcon size={11} aria-hidden />
+            История
+          </button>
+        }
+      />
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="text-[10px] text-fg-tertiary">
+          <span className="font-mono">{spec.key}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={editor.reset}
+            disabled={!editor.isDirty || editor.isSaving}
+          >
+            Сбросить
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={!editor.isDirty || editor.isSaving}
+          >
+            {editor.isSaving ? (
+              <Loader2 size={12} className="mr-1 animate-spin" />
+            ) : null}
+            Сохранить
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,15 +1,14 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { TaskTypeDetailsClient } from './TaskTypeDetailsClient';
-
-export const metadata: Metadata = {
-  title: 'Модель агента — Admin',
-};
-
-export default function TaskTypePage({
+/**
+ * Фаза 3 редизайна — детальный URL `/admin/ai-models/[taskType]` мигрирован
+ * под `/admin/ai/routing/[taskType]`. Сохраняем redirect, чтобы старые
+ * Link'и (например, в `AiModelsClient`) не приводили к 404.
+ */
+export default function AdminAiModelsDetailRedirect({
   params,
 }: {
   params: { taskType: string };
 }) {
-  return <TaskTypeDetailsClient taskType={decodeURIComponent(params.taskType)} />;
+  redirect(`/admin/ai/routing/${encodeURIComponent(params.taskType)}`);
 }

@@ -1,11 +1,11 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { ExperimentsClient } from './ExperimentsClient';
-
-export const metadata: Metadata = {
-  title: 'A/B-эксперименты моделей — Admin',
-};
-
-export default function ExperimentsPage() {
-  return <ExperimentsClient />;
+/**
+ * Фаза 3 редизайна — страница A/B-экспериментов моделей пока не имеет
+ * самостоятельного URL внутри `/admin/ai/routing` (есть только вкладка
+ * под конкретный taskType). Редиректим на список агентов; полная страница
+ * экспериментов будет добавлена в одной из следующих фаз.
+ */
+export default function AdminAiModelsExperimentsRedirect() {
+  redirect('/admin/ai/routing');
 }

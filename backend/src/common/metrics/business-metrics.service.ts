@@ -47,6 +47,14 @@ export class BusinessMetricsService implements OnModuleInit {
   private llmCacheReadTokensTotal!: Counter<'provider' | 'model'>;
   private llmCacheCreationTokensTotal!: Counter<'provider' | 'model'>;
 
+  // ── deepseek schema→tool conversion (ТЗ 2026-05-25) ─────────────────
+  // DeepSeek-V4-Pro в thinking-режиме не поддерживает strict json_schema —
+  // DeepSeekService автоматически конвертирует его в эквивалентный tool
+  // + tool_choice='auto'. Большое значение этой метрики — индикатор того,
+  // что много caller-ов всё ещё передают json_schema, имеет смысл задуматься
+  // о массовом переходе на tools.
+  private deepseekSchemaToToolConversionTotal!: Counter<'model'>;
+
   // ── admin ai-models (Фаза A.4) ──────────────────────────────────────
   private adminAiModelsRouteChangeTotal!: Counter<'task_type' | 'change_type'>;
   private adminAiModelsExperimentStartedTotal!: Counter<'task_type'>;
@@ -655,6 +663,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_llm_cache_creation_tokens_total',
       help: 'T7-F3 — суммарно токенов, записанных в prompt cache (cost ~1.25× input price для 5min-TTL). Релевантно только Anthropic-семейству.',
       labelNames: ['provider', 'model'] as const,
+    });
+
+    this.deepseekSchemaToToolConversionTotal = this.getOrCreateCounter({
+      name: 'z_deepseek_schema_to_tool_conversion_total',
+      help: 'ТЗ 2026-05-25 — автоконвертация json_schema → tool в DeepSeekService (Pro thinking-mode не поддерживает strict json_schema). Высокое значение = много caller-ов всё ещё на json_schema; кандидат на массовый перевод на tools.',
+      labelNames: ['model'] as const,
     });
 
     this.adminAiModelsRouteChangeTotal = this.getOrCreateCounter({
@@ -2338,6 +2352,16 @@ export class BusinessMetricsService implements OnModuleInit {
       { provider: args.provider, model: args.model },
       args.tokens,
     );
+  }
+
+  /**
+   * ТЗ 2026-05-25 — фиксирует один случай автоконвертации json_schema → tool
+   * в DeepSeekService. Вызывается, когда caller передал
+   * `responseFormat: json_schema` без `tools`, а модель — Pro (thinking-mode
+   * не поддерживает strict json_schema).
+   */
+  incDeepseekSchemaToToolConversion(args: { model: string }): void {
+    this.deepseekSchemaToToolConversionTotal.inc({ model: args.model });
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
+import { AdminAiModule } from './ai/ai.module';
 import { AdminAiModelsController } from './ai-models/ai-models.controller';
 import { AdminAiModelsService } from './ai-models/ai-models.service';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -77,6 +78,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminIncidentsModule,
     // Admin-redesign Фаза 2 — read-only аналитика (knowledge + concierge).
     AnalyticsModule,
+    // Admin-redesign Фаза 3 — AI smoke-test endpoints.
+    AdminAiModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

@@ -18,6 +18,11 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
+import {
+  getSchemaForKey,
+  hasSchemaForKey,
+  zodToSimpleSchema,
+} from './admin-setting-schema-registry';
 import { AdminSettingsService } from './admin-settings.service';
 import {
   HistoryQuerySchema,
@@ -54,6 +59,45 @@ export class AdminSettingsController {
       ...(q.category ? { category: q.category } : {}),
       ...(q.section ? { section: q.section } : {}),
     });
+  }
+
+  @Get('schema/:key')
+  @ApiOperation({
+    summary:
+      'JSON-схема ожидаемого значения admin-настройки + текущее/дефолтное значение. ' +
+      'Используется фронтом для генерации `AdminSettingField` (Фаза 3).',
+  })
+  async schema(@Param('key') key: string) {
+    const zodSchema = getSchemaForKey(key);
+    const jsonSchema = zodToSimpleSchema(zodSchema);
+
+    // Текущее значение и метаданные берём через сервис, если запись есть.
+    // Для not-found возвращаем jsonSchema с currentValue=null — фронт всё
+    // равно сможет отрисовать поле и записать первый раз.
+    let currentValue: unknown = null;
+    let severity: string | null = null;
+    let description: string | null = null;
+    let updatedAt: Date | null = null;
+    try {
+      const detail = await this.svc.getDetail(key);
+      currentValue = detail.value;
+      severity = detail.severity;
+      description = detail.description;
+      updatedAt = detail.updatedAt;
+    } catch {
+      // not found — оставляем nulls
+    }
+
+    return {
+      key,
+      hasTypedSchema: hasSchemaForKey(key),
+      jsonSchema,
+      currentValue,
+      defaultValue: null,
+      severity,
+      description,
+      updatedAt,
+    };
   }
 
   @Get(':key')

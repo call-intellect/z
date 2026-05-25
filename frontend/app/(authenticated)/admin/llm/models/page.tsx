@@ -1,9 +1,9 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { LlmModelsClient } from './LlmModelsClient';
-
-export const metadata: Metadata = { title: 'Z-Admin — LLM модели' };
-
-export default function LlmModelsPage() {
-  return <LlmModelsClient />;
+/**
+ * Фаза 3 редизайна — модели LLM перешли в `/admin/ai/catalog` под
+ * вкладку `?tab=models`.
+ */
+export default function AdminLlmModelsRedirect() {
+  redirect('/admin/ai/catalog?tab=models');
 }

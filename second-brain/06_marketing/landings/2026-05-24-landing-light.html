@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Кора — инструменты</title>
+  <meta name="description" content="Кора — программа, которая помнит за всю компанию: видеовстречи, отчёты, задачи, трекер, помощник в Telegram." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,700&family=Manrope:wght@300;400;500;600&family=Caveat:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      /* Бумажные поверхности — тёплая палитра «слоновая кость» */
+      --paper-base: #EFE7D2;
+      --paper-warm: #E9DFC6;
+
+      /* Карточки — все в кремово-бежевой тональной семье */
+      --card-ivory:    #FBF6E7;
+      --card-cream:    #F7F0DE;
+      --card-bone:     #F4ECD6;
+      --card-stone:    #EDE3CB;
+      --card-mist:     #F0EBDB;
+      --card-warm:     #E9DFC6;
+      --card-blush:    #F5EBD7;
+      --card-ash:      #F2EBDB;
+
+      /* Краска */
+      --ink:        #221E18;
+      --ink-muted:  #5C5346;
+      --ink-faint:  #948A7A;
+
+      /* Акценты — глубокий лес + матовая латунь */
+      --accent:      #1F3A2E;
+      --accent-deep: #14271F;
+      --brass:       #B89150;
+      --brass-deep:  #8A6B36;
+
+      /* Тонкие линии */
+      --hairline:        rgba(60, 45, 20, 0.10);
+      --hairline-strong: rgba(60, 45, 20, 0.18);
+
+      --serif: 'Fraunces', Georgia, serif;
+      --sans:  'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+      --hand:  'Caveat', cursive;
+      --mono:  'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+
+      background-color: var(--paper-base);
+      /* Мягкие световые пятна вместо клетки — даёт глубину как у дорогой бумаги */
+      background-image:
+        radial-gradient(ellipse 90% 60% at 18% -10%, rgba(255, 248, 225, 0.75), transparent 70%),
+        radial-gradient(ellipse 80% 55% at 82% 110%, rgba(80, 55, 20, 0.10), transparent 70%);
+      background-attachment: fixed;
+    }
+
+    /* Очень тонкое бумажное зерно — едва уловимо */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='5'/><feColorMatrix values='0 0 0 0 0.32  0 0 0 0 0.25  0 0 0 0 0.12  0 0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      pointer-events: none;
+      opacity: 0.32;
+      z-index: 1;
+      mix-blend-mode: multiply;
+    }
+
+    .board { position: relative; z-index: 2; }
+
+    /* Верх: лаконичный wordmark, без рукописной марки */
+    .top-tape {
+      position: relative;
+      padding: 36px 56px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+    @media (max-width: 720px) { .top-tape { padding: 24px 24px 16px; } }
+    .top-tape .brand {
+      font-family: var(--serif);
+      font-variation-settings: "SOFT" 30;
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: 0;
+      display: flex; align-items: baseline; gap: 8px;
+      color: var(--ink);
+    }
+    .top-tape .brand .leaf {
+      width: 6px; height: 6px;
+      background: var(--brass);
+      border-radius: 50%;
+      transform: translateY(-3px);
+    }
+    .top-tape .stamp {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      transform: none;
+    }
+    @media (max-width: 600px) { .top-tape .stamp { display: none; } }
+
+    /* Hero */
+    .hero-area {
+      padding: 32px 56px 80px;
+      max-width: 1320px;
+      margin: 0 auto;
+      position: relative;
+    }
+    @media (max-width: 720px) { .hero-area { padding: 16px 24px 48px; } }
+
+    .hero-note {
+      position: relative;
+      max-width: 880px;
+      margin: 32px auto 0;
+      background: var(--card-ivory);
+      padding: 72px 80px 64px;
+      border-radius: 2px;
+      border: 1px solid var(--hairline);
+      transform: none;
+      box-shadow:
+        0 1px 0 rgba(40, 30, 15, 0.04),
+        0 6px 18px rgba(40, 30, 15, 0.06),
+        0 30px 60px rgba(40, 30, 15, 0.06);
+    }
+    /* Скотчи и блики на героическом листе убираем — это «крафт», не «люкс» */
+    .hero-note::before,
+    .hero-note::after,
+    .hero-note .tape-right {
+      display: none;
+    }
+    @media (max-width: 720px) {
+      .hero-note { padding: 44px 28px 40px; }
+    }
+    .hero-note .eyebrow {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--brass-deep);
+      display: inline-flex; align-items: center; gap: 12px;
+      position: relative;
+    }
+    .hero-note .eyebrow::before {
+      content: ''; width: 28px; height: 1px; background: var(--brass);
+    }
+    .hero-note h1 {
+      font-family: var(--serif);
+      font-variation-settings: "SOFT" 30;
+      font-size: clamp(38px, 5.6vw, 64px);
+      font-weight: 400;
+      letter-spacing: -0.025em;
+      line-height: 1.06;
+      margin-top: 24px;
+      max-width: 18ch;
+      color: var(--ink);
+      position: relative;
+    }
+    .hero-note h1 em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 400;
+    }
+    .hero-note p {
+      margin-top: 26px;
+      font-size: 17px;
+      line-height: 1.65;
+      max-width: 60ch;
+      color: var(--ink-muted);
+      position: relative;
+    }
+    /* Рукописная подпись «смотри ниже» — убираем, в editorial-стиле она лишняя */
+    .hero-note .hand { display: none; }
+
+    /* Notes grid */
+    .notes-area {
+      position: relative;
+      padding: 32px 56px 112px;
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+    @media (max-width: 720px) { .notes-area { padding: 16px 24px 64px; } }
+
+    /* Нити: тонкая латунная hairline вместо красной нити */
+    .strings-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .strings-svg g {
+      stroke: var(--brass);
+      stroke-width: 0.5;
+      opacity: 0.28;
+    }
+    @media (max-width: 980px) { .strings-svg { display: none; } }
+
+    .notes-grid {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px 36px;
+    }
+    @media (max-width: 980px) { .notes-grid { grid-template-columns: repeat(2, 1fr); gap: 32px; } }
+    @media (max-width: 600px) {
+      .notes-grid { grid-template-columns: 1fr; gap: 24px; }
+    }
+
+    /* Поворот карточек масштабируется к ~18% от исходного — лёгкая живость без «детского коллажа» */
+    .note {
+      position: relative;
+      padding: 36px 32px 32px;
+      border-radius: 2px;
+      border: 1px solid var(--hairline);
+      box-shadow:
+        0 1px 0 rgba(40, 30, 15, 0.04),
+        0 4px 14px rgba(40, 30, 15, 0.06),
+        0 18px 36px rgba(40, 30, 15, 0.05);
+      transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.3s ease;
+      min-height: 280px;
+      display: flex; flex-direction: column;
+      transform: rotate(calc(var(--rot, 0deg) * 0.18));
+    }
+    .note:hover {
+      transform: rotate(calc(var(--rot, 0deg) * 0.18)) translateY(-3px);
+      box-shadow:
+        0 2px 0 rgba(40, 30, 15, 0.05),
+        0 8px 22px rgba(40, 30, 15, 0.09),
+        0 28px 52px rgba(40, 30, 15, 0.08);
+      z-index: 5;
+    }
+    .note::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 2px;
+      background: linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, transparent 55%);
+      pointer-events: none;
+    }
+
+    /* Карточки — все в тёплой кремовой палитре, минимальные различия */
+    .n-cream    { background: var(--card-ivory); }
+    .n-white    { background: #FCF8EE; }
+    .n-sage     { background: var(--card-cream); }
+    .n-peach    { background: var(--card-bone); }
+    .n-sky      { background: var(--card-mist); }
+    .n-lavender { background: var(--card-stone); }
+    .n-rose     { background: var(--card-blush); }
+    .n-amber    { background: var(--card-ash); }
+
+    .note > * { position: relative; z-index: 1; }
+    /* Номер — small caps в моноширинной, латунь, не «детский маркер» */
+    .note .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      line-height: 1;
+      color: var(--brass-deep);
+      opacity: 0.9;
+    }
+    .note h3 {
+      font-family: var(--serif);
+      font-variation-settings: "SOFT" 30;
+      font-size: 24px;
+      font-weight: 500;
+      line-height: 1.22;
+      letter-spacing: -0.018em;
+      margin-top: 14px;
+      color: var(--ink);
+    }
+    .note p {
+      margin-top: 14px;
+      font-size: 14.5px;
+      line-height: 1.62;
+      color: var(--ink-muted);
+    }
+    .note .foot {
+      margin-top: auto;
+      padding-top: 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px;
+    }
+    /* Чип — тонкая контурная капителька */
+    .note .chip {
+      display: inline-block;
+      padding: 4px 11px;
+      background: transparent;
+      border: 1px solid var(--hairline-strong);
+      color: var(--ink-muted);
+      border-radius: 100px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+    /* Рукописные приписки «всё → сюда», «→ Иван» — убираем */
+    .note .scribble { display: none; }
+
+    /* Булавки → плоская латунная точка */
+    .pin {
+      position: absolute;
+      top: -3px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      z-index: 3;
+      background: var(--brass);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.4),
+        0 2px 4px rgba(0, 0, 0, 0.18);
+    }
+    .pin::after { display: none; }
+    .pin-bronze,
+    .pin-brass,
+    .pin-forest,
+    .pin-burgundy,
+    .pin-slate { background: var(--brass); }
+
+    /* Флагман — тонкая капителька с латунным контуром, не наклонная лента */
+    .note.flagship::after {
+      content: 'ФЛАГМАН';
+      position: absolute;
+      top: 18px; right: 20px;
+      padding: 3px 10px;
+      background: transparent;
+      color: var(--brass-deep);
+      border: 1px solid var(--brass);
+      font-family: var(--mono);
+      font-size: 9.5px;
+      letter-spacing: 0.2em;
+      transform: none;
+      z-index: 3;
+      border-radius: 2px;
+      box-shadow: none;
+    }
+
+    /* Загнутый уголок — очень тонко */
+    .note.curled::after {
+      content: '';
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 18px; height: 18px;
+      background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.02) 80%);
+      border-bottom-right-radius: 2px;
+    }
+
+    /* Footer */
+    .footer-area {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 56px 112px;
+      position: relative;
+    }
+    @media (max-width: 720px) { .footer-area { padding: 0 24px 64px; } }
+
+    .footer-note {
+      position: relative;
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--card-ivory);
+      padding: 44px 48px;
+      border-radius: 2px;
+      border: 1px solid var(--hairline);
+      transform: none;
+      box-shadow:
+        0 1px 0 rgba(40, 30, 15, 0.04),
+        0 6px 16px rgba(40, 30, 15, 0.07),
+        0 24px 48px rgba(40, 30, 15, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+    .footer-note::before {
+      content: '';
+      position: absolute;
+      top: -3px; left: 50%;
+      transform: translateX(-50%);
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--brass);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.4),
+        0 2px 4px rgba(0, 0, 0, 0.18);
+    }
+    .footer-note .foot-text {
+      font-family: var(--serif);
+      font-variation-settings: "SOFT" 30;
+      font-size: 21px;
+      line-height: 1.45;
+      max-width: 38ch;
+      font-style: italic;
+      font-weight: 400;
+      color: var(--ink);
+    }
+    .footer-note .foot-cta {
+      display: inline-flex; align-items: center; gap: 12px;
+      padding: 14px 26px;
+      background: var(--accent);
+      color: var(--card-ivory);
+      font-family: var(--sans);
+      font-size: 12.5px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-decoration: none;
+      border-radius: 2px;
+      transition: background 0.2s, transform 0.2s;
+      box-shadow: 0 2px 10px rgba(20, 39, 31, 0.18);
+    }
+    .footer-note .foot-cta:hover {
+      background: var(--accent-deep);
+      transform: translateY(-2px);
+    }
+    .footer-note .foot-cta .arrow { transition: transform 0.2s; }
+    .footer-note .foot-cta:hover .arrow { transform: translateX(4px); }
+
+    /* Подпись — изящный италик-serif вместо рукописного */
+    .footer-credit {
+      text-align: center;
+      margin-top: 56px;
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--ink-faint);
+      transform: none;
+      letter-spacing: 0.02em;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: rotate(calc(var(--rot, 0deg) * 0.18)) translateY(20px);
+      transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+    .reveal.in {
+      opacity: 1;
+      transform: rotate(calc(var(--rot, 0deg) * 0.18)) translateY(0);
+    }
+    .reveal.no-rot {
+      transform: translateY(20px);
+    }
+    .reveal.no-rot.in {
+      transform: translateY(0);
+    }
+
+    .strings-svg path {
+      stroke-dasharray: 1500;
+      stroke-dashoffset: 1500;
+      animation: drawString 2.8s ease-out forwards;
+    }
+    .strings-svg path:nth-child(2) { animation-delay: 0.4s; }
+    .strings-svg path:nth-child(3) { animation-delay: 0.8s; }
+    .strings-svg path:nth-child(4) { animation-delay: 1.2s; }
+    .strings-svg path:nth-child(5) { animation-delay: 1.6s; }
+    @keyframes drawString {
+      to { stroke-dashoffset: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { opacity: 1; transform: rotate(calc(var(--rot, 0deg) * 0.18)); transition: none; }
+      .strings-svg path { animation: none; stroke-dashoffset: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="board">
+
+    <header class="top-tape">
+      <div class="brand">Кора<span class="leaf"></span></div>
+      <div class="stamp">собрано вручную · май 2026</div>
+    </header>
+
+    <div class="hero-area">
+      <div class="hero-note reveal no-rot">
+        <div class="tape-right"></div>
+        <span class="eyebrow">Что такое Кора</span>
+        <h1>Второй мозг вашей компании. <em>Главный актив, который растёт с каждым днём.</em></h1>
+        <p>
+          Знания вашей компании сегодня — в головах сотрудников, в десятках чатов, в разрозненных табличках и программах. Уходит человек — уходит память. Кора собирает всё в одно место и сохраняет навсегда. Двенадцать инструментов работают на одну цель: компания помнит за вас, накапливает опыт и становится умнее с каждым днём.
+        </p>
+        <span class="hand">смотри ниже, 12 листочков</span>
+      </div>
+    </div>
+
+    <div class="notes-area">
+
+      <!-- Strings: smooth thread between conceptually related notes -->
+      <svg class="strings-svg" preserveAspectRatio="none" viewBox="0 0 1240 1700" xmlns="http://www.w3.org/2000/svg">
+        <g stroke="#8C3F3F" stroke-width="1.2" fill="none" opacity="0.5" stroke-linecap="round">
+          <!-- 02 (директор) ↔ 08 (команда на ладони) — управление -->
+          <path d="M620,180 Q540,520 620,920"/>
+          <!-- 03 (клоны) ↔ 09 (знания не уходят) — сотрудники -->
+          <path d="M1030,180 Q1100,520 1030,920"/>
+          <!-- 04 (видеовстречи) → 06 (отчёт) — встреча → отчёт -->
+          <path d="M210,560 Q620,500 1030,560"/>
+          <!-- 06 (отчёт) → 07 (задачи) — отчёт → задачи -->
+          <path d="M1030,580 Q620,800 210,920"/>
+          <!-- 07 (задачи) → 05 (трекер) — задачи в трекер -->
+          <path d="M210,920 Q380,720 620,560"/>
+        </g>
+      </svg>
+
+      <div class="notes-grid">
+
+        <!-- 01. Второй мозг (флагман, главное) -->
+        <div class="note n-cream flagship reveal" style="--rot: -1.5deg;">
+          <div class="pin pin-burgundy"></div>
+          <div class="num">№ 01</div>
+          <h3>Второй мозг компании</h3>
+          <p>
+            Сегодня знания вашей компании разбросаны: что-то в голове у руководителя, что-то у сотрудника, что-то в десятках рабочих чатов и в разных программах. Уходит человек — уходит память. Кора собирает всё в одно место и хранит. С каждым днём она помнит о компании больше — это ваш актив, который только растёт.
+          </p>
+          <div class="foot">
+            <span class="chip">Память · Актив</span>
+            <span class="scribble">всё → сюда</span>
+          </div>
+        </div>
+
+        <!-- 02. Помощник директора -->
+        <div class="note n-amber reveal" style="--rot: 1.2deg;">
+          <div class="pin pin-bronze"></div>
+          <div class="num">№ 02</div>
+          <h3>Помощник директора</h3>
+          <p>
+            Раньше операционная картина была у вас в голове и в десяти разных местах. Помощник Коры собирает её в одно: кто чем занят, что обещано клиентам, где застряли дела, кому пора напомнить. Работает круглосуточно, не уходит в отпуск, ничего не забывает.
+          </p>
+          <div class="foot">
+            <span class="chip">Управление</span>
+            <span class="scribble">всё под контролем</span>
+          </div>
+        </div>
+
+        <!-- 03. Цифровые двойники -->
+        <div class="note n-lavender reveal curled" style="--rot: -0.8deg;">
+          <div class="pin pin-forest"></div>
+          <div class="num">№ 03</div>
+          <h3>Цифровые двойники сотрудников</h3>
+          <p>
+            У каждого сотрудника в Коре есть цифровой двойник — он помнит всё, что человек делал, обсуждал и решал. С двойником можно разговаривать так же, как с самим сотрудником: спросить ведущего специалиста, который в отпуске, или эксперта, который уже уволился. Двойник ответит так же, как ответил бы он сам.
+          </p>
+          <div class="foot">
+            <span class="chip">Сотрудники · Уникально</span>
+          </div>
+        </div>
+
+        <!-- 04. Видеовстречи -->
+        <div class="note n-sky reveal" style="--rot: 2deg;">
+          <div class="pin pin-slate"></div>
+          <div class="num">№ 04</div>
+          <h3>Видеовстречи</h3>
+          <p>
+            Проводите встречи прямо в Коре — до 10 человек, с экраном и чатом. Гость заходит по ссылке без регистрации. Запись сохраняется, расшифровка и отчёт готовы сразу после окончания.
+          </p>
+          <div class="foot">
+            <span class="chip">Встречи</span>
+          </div>
+        </div>
+
+        <!-- 05. Встроенный трекер задач -->
+        <div class="note n-sage reveal" style="--rot: -1.2deg;">
+          <div class="pin pin-forest"></div>
+          <div class="num">№ 05</div>
+          <h3>Встроенный трекер задач</h3>
+          <p>
+            Все задачи компании в одном месте. Каждая знает свою историю: на какой встрече появилась, кто о ней говорил, какие решения с ней связаны. Не просто список дел — карта работы команды.
+          </p>
+          <div class="foot">
+            <span class="chip">Задачи</span>
+            <span class="scribble">главное место</span>
+          </div>
+        </div>
+
+        <!-- 06. Отчёт после встречи (логически за видеовстречами) -->
+        <div class="note n-amber reveal curled" style="--rot: 0.6deg;">
+          <div class="pin pin-bronze"></div>
+          <div class="num">№ 06</div>
+          <h3>Отчёт после каждой встречи</h3>
+          <p>
+            Встреча закончилась — через минуту готов отчёт. Под каждый тип встречи свой: один-на-один с сотрудником, разбор сделки, ретроспектива, собеседование. Не одинаковая выжимка для всех — структура под задачу.
+          </p>
+          <div class="foot">
+            <span class="chip">Встречи</span>
+          </div>
+        </div>
+
+        <!-- 07. Задачи появляются сами (логически из отчёта в трекер) -->
+        <div class="note n-rose reveal" style="--rot: -1.8deg;">
+          <div class="pin pin-burgundy"></div>
+          <div class="num">№ 07</div>
+          <h3>Задачи появляются сами</h3>
+          <p>
+            Кора слышит на встрече: «Иван, сделай к пятнице» — и задача появляется на Иване со сроком. Не нужно ничего записывать вручную, никто ничего не забывает, ничего не теряется.
+          </p>
+          <div class="foot">
+            <span class="chip">Задачи</span>
+            <span class="scribble">→ Иван</span>
+          </div>
+        </div>
+
+        <!-- 08. Команда на ладони (пара к директору) -->
+        <div class="note n-peach reveal" style="--rot: 1.4deg;">
+          <div class="pin pin-burgundy"></div>
+          <div class="num">№ 08</div>
+          <h3>Команда на ладони</h3>
+          <p>
+            В одном месте видно: кто над чем работает, что обещал, что зависло. Не отчёты раз в неделю — настоящее положение дел прямо сейчас, без созвона и докладов.
+          </p>
+          <div class="foot">
+            <span class="chip">Управление</span>
+          </div>
+        </div>
+
+        <!-- 09. Знания не уходят с людьми (пара к клонам) -->
+        <div class="note n-peach reveal" style="--rot: -0.6deg;">
+          <div class="pin pin-bronze"></div>
+          <div class="num">№ 09</div>
+          <h3>Знания не уходят с людьми</h3>
+          <p>
+            Увольнение перестаёт быть катастрофой. Всё, что человек делал, обсуждал и решал — уже в памяти компании. Новый сотрудник видит, как работал предшественник и почему принимал такие решения. Не «надо срочно вспомнить», а «можно спокойно посмотреть».
+          </p>
+          <div class="foot">
+            <span class="chip">Сотрудники</span>
+            <span class="scribble">остаётся ↑</span>
+          </div>
+        </div>
+
+        <!-- 10. Собирает информацию сама -->
+        <div class="note n-sage reveal" style="--rot: 1.8deg;">
+          <div class="pin pin-forest"></div>
+          <div class="num">№ 10</div>
+          <h3>Собирает информацию сама</h3>
+          <p>
+            Не нужно вести базу знаний руками и заставлять сотрудников «всё записывать». Кора подхватывает контекст из встреч, рабочих чатов и задач без вашего участия. Ваше дело — работать, а не вести документацию.
+          </p>
+          <div class="foot">
+            <span class="chip">Автоматически</span>
+          </div>
+        </div>
+
+        <!-- 11. Личный консультант -->
+        <div class="note n-white reveal curled" style="--rot: -1deg;">
+          <div class="pin pin-slate"></div>
+          <div class="num">№ 11</div>
+          <h3>Личный консультант</h3>
+          <p>
+            Спросите как умного коллегу: «Что мы решили по этому клиенту в марте?», «Почему отказались от поставщика?», «Кто отвечает за этот контракт?». Кора отвечает на любой вопрос о компании со ссылкой на источник — встречу, переписку, документ.
+          </p>
+          <div class="foot">
+            <span class="chip">Помощник</span>
+          </div>
+        </div>
+
+        <!-- 12. Доступ через Telegram -->
+        <div class="note n-sky reveal" style="--rot: 0.8deg;">
+          <div class="pin pin-slate"></div>
+          <div class="num">№ 12</div>
+          <h3>Доступ через Telegram</h3>
+          <p>
+            Не нужно открывать сайт или приложение. Написали в Telegram — получили ответ. Поставили задачу одним сообщением — она появилась у исполнителя и в трекере. Управляйте компанией прямо из мессенджера.
+          </p>
+          <div class="foot">
+            <span class="chip">Удобство</span>
+            <span class="scribble">из кармана</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="footer-area">
+      <div class="footer-note reveal no-rot">
+        <div class="foot-text">
+          Двенадцать инструментов — один актив. Память вашей компании, которая накапливается каждый день и остаётся, что бы ни случилось.
+        </div>
+        <a href="#" class="foot-cta">
+          Получить ранний доступ <span class="arrow">→</span>
+        </a>
+      </div>
+      <div class="footer-credit">сделано с уважением к памяти ваших команд</div>
+    </div>
+
+  </div>
+
+  <script>
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  </script>
+
+</body>
+</html>

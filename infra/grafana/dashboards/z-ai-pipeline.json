@@ -100,6 +100,54 @@
           "legendFormat": "{{provider}}"
         }
       ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "meeting-report-fast — duration p50/p95 (s)",
+      "description": "Длительность одного запуска воркера meeting-report-fast. Цель по ТЗ — p95 ≈ 2 мин. Алерт MeetingReportFastDurationP95High срабатывает при p95 > 300s более 15m.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 34 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(z_meeting_report_fast_duration_seconds_bucket[10m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(z_meeting_report_fast_duration_seconds_bucket[10m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "meeting-report-fast — failure ratio by tenant",
+      "description": "Доля failed от всех запусков воркера за 10m, разрезано по тенантам. Алерт MeetingReportFastFailuresHigh — порог 5%.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 34 },
+      "targets": [
+        {
+          "expr": "sum by (tenant) (rate(z_meeting_report_fast_total{status=\"failed\"}[10m])) / clamp_min(sum by (tenant) (rate(z_meeting_report_fast_total[10m])), 0.001)",
+          "legendFormat": "{{tenant}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "task-assignee ambiguous — по reason (1h increase)",
+      "description": "Случаи, когда резолвер исполнителя задачи не смог однозначно сопоставить assigneeRaw с участником встречи. reason=duplicate_name — два участника с одинаковым именем; reason=llm_hallucination — LLM выдал userId, отсутствующий в participants. Алерт TaskAssigneeHallucinationRising — порог >10/1h по llm_hallucination.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
+      "targets": [
+        {
+          "expr": "sum by (tenant, reason) (increase(z_task_assignee_ambiguous_total[1h]))",
+          "legendFormat": "{{tenant}} — {{reason}}"
+        }
+      ]
     }
   ]
 }

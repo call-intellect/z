@@ -1,0 +1,69 @@
+# Prometheus alert rules для AI-pipeline Z: meeting-report-fast и
+# жёсткой идентификации участников (ТЗ 2026-05-25).
+#
+# Метрики:
+#   - z_meeting_report_fast_total{tenant, status}            (counter)
+#       status ∈ ready | failed | partial (processing — промежуточный, не учитывается)
+#   - z_meeting_report_fast_duration_seconds                 (histogram)
+#       buckets: 5, 15, 30, 60, 90, 120, 180, 300, 600
+#       целевой p95 ≈ 2 минуты, эксперимент: ~165s
+#   - z_task_assignee_ambiguous_total{tenant, reason}        (counter)
+#       reason ∈ duplicate_name | llm_hallucination
+#
+# Подключаются через prometheus.yml → `rule_files: [/etc/prometheus/alerts/*.yml]`.
+# Лейблы: component — для группировки в Alertmanager по компоненту (паттерн проекта),
+#         team       — для маршрутизации алерта на команду (по ТЗ 2026-05-25).
+groups:
+  - name: z-ai-pipeline
+    interval: 30s
+    rules:
+      - alert: MeetingReportFastFailuresHigh
+        # Доля failed > 5% от всех запусков воркера за 10 минут (на каждый tenant).
+        # clamp_min защищает от деления на 0 при низком трафике конкретного тенанта.
+        expr: |
+          (
+            sum by (tenant) (rate(z_meeting_report_fast_total{status="failed"}[10m]))
+              /
+            clamp_min(sum by (tenant) (rate(z_meeting_report_fast_total[10m])), 0.001)
+          ) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          component: ai
+          team: ai
+        annotations:
+          summary: "Высокий процент failed в meeting-report-fast ({{ $labels.tenant }})"
+          description: "Доля failed > 5% за последние 10 минут (tenant={{ $labels.tenant }}, текущее значение = {{ $value | humanizePercentage }}). Проверь логи воркера meeting-report-fast и доступность LLM-провайдеров (DeepSeek через proxy.agent-lia.ru, OpenAI-proxy)."
+
+      - alert: MeetingReportFastDurationP95High
+        # p95 длительности воркера meeting-report-fast > 5 минут.
+        # Целевая latency по эксперименту ~165s. > 300s — деградация.
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(z_meeting_report_fast_duration_seconds_bucket[10m]))
+          ) > 300
+        for: 15m
+        labels:
+          severity: warning
+          component: ai
+          team: ai
+        annotations:
+          summary: "p95 длительности meeting-report-fast > 5 мин"
+          description: "Эксперимент показывал p95 ~165s. Текущий p95 = {{ $value | humanizeDuration }}, превышает порог 300s более 15 минут — деградация. Проверь rate-limit LLM-провайдера (DeepSeek/OpenAI через proxy.agent-lia.ru) и net health до upstream'ов."
+
+      - alert: TaskAssigneeHallucinationRising
+        # LLM возвращает assigneeUserId, отсутствующий в participants.
+        # Резолвер такие случаи отрезает, но рост — сигнал о деградации промпта
+        # или неконсистентных данных в participant-context.
+        expr: |
+          sum by (tenant) (increase(z_task_assignee_ambiguous_total{reason="llm_hallucination"}[1h]))
+            > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: ai
+          team: ai
+        annotations:
+          summary: "LLM галлюцинирует assigneeUserId ({{ $labels.tenant }})"
+          description: "За последний час > 10 случаев (текущее = {{ $value | humanize }}), когда LLM вернул userId, отсутствующий в participants (tenant={{ $labels.tenant }}). Возможно, в промпт ушли неконсистентные данные. Резолвер их отрезает, но рост — сигнал. Проверь participant-context.service и tasks-extract.worker."

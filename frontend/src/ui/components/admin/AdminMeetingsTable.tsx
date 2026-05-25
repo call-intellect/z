@@ -134,7 +134,7 @@ export function AdminMeetingsTable() {
                   </td>
                   <td className="px-3 py-2">
                     <Link
-                      href={`/admin/meetings/${encodeURIComponent(m.id)}`}
+                      href={`/admin/media/meetings/${encodeURIComponent(m.id)}`}
                       className="text-info hover:underline"
                     >
                       {t('admin.meetings.details')}

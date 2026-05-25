@@ -1,8 +1,8 @@
-import { AdminMeetingDetails } from '@/ui/components/admin/AdminMeetingDetails';
+import { permanentRedirect } from 'next/navigation';
 
 type Props = { params: Promise<{ id: string }> };
 
-export default async function AdminMeetingDetailsPage({ params }: Props) {
+export default async function AdminMeetingDetailsRedirectPage({ params }: Props) {
   const { id } = await params;
-  return <AdminMeetingDetails meetingId={decodeURIComponent(id)} />;
+  permanentRedirect(`/admin/media/meetings/${encodeURIComponent(id)}`);
 }

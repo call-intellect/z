@@ -74,7 +74,7 @@ export function ExpiringRecordingsTable() {
                 <tr key={row.id} className="border-t border-border-subtle">
                   <td className="px-3 py-2">
                     <a
-                      href={`/admin/meetings/${encodeURIComponent(row.meetingId)}`}
+                      href={`/admin/media/meetings/${encodeURIComponent(row.meetingId)}`}
                       className="text-info hover:underline"
                     >
                       {row.meetingTitle}

@@ -1,0 +1,312 @@
+{
+  "model": "gpt-5-mini",
+  "baseUrl": "https://proxy.agent-lia.ru/v1",
+  "proxyPrefix": "myFeedproxy3128",
+  "totalMs": 41115,
+  "scenarios": {
+    "S1": [
+      {
+        "targetTokens": 1024,
+        "attempt": 1,
+        "promptTokens": 777,
+        "cachedTokens": 0,
+        "cacheHitRatio": 0,
+        "completionTokens": 19,
+        "ms": 2811,
+        "costUsd": 0.00023224999999999998
+      },
+      {
+        "targetTokens": 1024,
+        "attempt": 2,
+        "promptTokens": 777,
+        "cachedTokens": 0,
+        "cacheHitRatio": 0,
+        "completionTokens": 19,
+        "ms": 1258,
+        "costUsd": 0.00023224999999999998
+      },
+      {
+        "targetTokens": 2048,
+        "attempt": 1,
+        "promptTokens": 2050,
+        "cachedTokens": 0,
+        "cacheHitRatio": 0,
+        "completionTokens": 19,
+        "ms": 1073,
+        "costUsd": 0.0005504999999999999
+      },
+      {
+        "targetTokens": 2048,
+        "attempt": 2,
+        "promptTokens": 2050,
+        "cachedTokens": 1920,
+        "cacheHitRatio": 0.9365853658536586,
+        "completionTokens": 19,
+        "ms": 1220,
+        "costUsd": 0.00011850000000000001
+      },
+      {
+        "targetTokens": 2700,
+        "attempt": 1,
+        "promptTokens": 2703,
+        "cachedTokens": 1920,
+        "cacheHitRatio": 0.7103218645948945,
+        "completionTokens": 19,
+        "ms": 1673,
+        "costUsd": 0.00028175
+      },
+      {
+        "targetTokens": 2700,
+        "attempt": 2,
+        "promptTokens": 2703,
+        "cachedTokens": 2688,
+        "cacheHitRatio": 0.9944506104328524,
+        "completionTokens": 19,
+        "ms": 1231,
+        "costUsd": 0.00010894999999999999
+      },
+      {
+        "targetTokens": 3500,
+        "attempt": 1,
+        "promptTokens": 3495,
+        "cachedTokens": 2688,
+        "cacheHitRatio": 0.769098712446352,
+        "completionTokens": 19,
+        "ms": 1614,
+        "costUsd": 0.00030695
+      },
+      {
+        "targetTokens": 3500,
+        "attempt": 2,
+        "promptTokens": 3495,
+        "cachedTokens": 2816,
+        "cacheHitRatio": 0.805722460658083,
+        "completionTokens": 19,
+        "ms": 1109,
+        "costUsd": 0.00027814999999999996
+      },
+      {
+        "targetTokens": 5000,
+        "attempt": 1,
+        "promptTokens": 4963,
+        "cachedTokens": 2816,
+        "cacheHitRatio": 0.5673987507555914,
+        "completionTokens": 19,
+        "ms": 1338,
+        "costUsd": 0.0006451499999999999
+      },
+      {
+        "targetTokens": 5000,
+        "attempt": 2,
+        "promptTokens": 4963,
+        "cachedTokens": 4864,
+        "cacheHitRatio": 0.9800523876687487,
+        "completionTokens": 19,
+        "ms": 1084,
+        "costUsd": 0.00018435
+      },
+      {
+        "targetTokens": 10000,
+        "attempt": 1,
+        "promptTokens": 9887,
+        "cachedTokens": 4864,
+        "cacheHitRatio": 0.4919591382623647,
+        "completionTokens": 19,
+        "ms": 2428,
+        "costUsd": 0.00141535
+      },
+      {
+        "targetTokens": 10000,
+        "attempt": 2,
+        "promptTokens": 9887,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.919186810963892,
+        "completionTokens": 19,
+        "ms": 1223,
+        "costUsd": 0.00046495000000000005
+      },
+      {
+        "targetTokens": 20000,
+        "attempt": 1,
+        "promptTokens": 19736,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.4604783137413863,
+        "completionTokens": 19,
+        "ms": 1834,
+        "costUsd": 0.0029271999999999996
+      },
+      {
+        "targetTokens": 20000,
+        "attempt": 2,
+        "promptTokens": 19736,
+        "cachedTokens": 19200,
+        "cacheHitRatio": 0.9728415079043372,
+        "completionTokens": 19,
+        "ms": 1996,
+        "costUsd": 0.000652
+      },
+      {
+        "targetTokens": 50000,
+        "attempt": 1,
+        "promptTokens": 49268,
+        "cachedTokens": 19200,
+        "cacheHitRatio": 0.3897052853779329,
+        "completionTokens": 19,
+        "ms": 2859,
+        "costUsd": 0.008034999999999999
+      },
+      {
+        "targetTokens": 50000,
+        "attempt": 2,
+        "promptTokens": 49268,
+        "cachedTokens": 49152,
+        "cacheHitRatio": 0.9976455305675084,
+        "completionTokens": 19,
+        "ms": 2068,
+        "costUsd": 0.0012958000000000002
+      }
+    ],
+    "S2": [
+      {
+        "parallelIdx": 0,
+        "promptTokens": 9887,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.919186810963892,
+        "completionTokens": 19,
+        "ms": 1167,
+        "costUsd": 0.00046495000000000005
+      },
+      {
+        "parallelIdx": 1,
+        "promptTokens": 9887,
+        "cachedTokens": 9856,
+        "cacheHitRatio": 0.996864569636897,
+        "completionTokens": 19,
+        "ms": 1835,
+        "costUsd": 0.00029215
+      },
+      {
+        "parallelIdx": 2,
+        "promptTokens": 9887,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.919186810963892,
+        "completionTokens": 19,
+        "ms": 2422,
+        "costUsd": 0.00046495000000000005
+      },
+      {
+        "parallelIdx": 3,
+        "promptTokens": 9887,
+        "cachedTokens": 9856,
+        "cacheHitRatio": 0.996864569636897,
+        "completionTokens": 19,
+        "ms": 2117,
+        "costUsd": 0.00029215
+      },
+      {
+        "parallelIdx": 4,
+        "promptTokens": 9887,
+        "cachedTokens": 9856,
+        "cacheHitRatio": 0.996864569636897,
+        "completionTokens": 19,
+        "ms": 2410,
+        "costUsd": 0.00029215
+      },
+      {
+        "parallelIdx": 5,
+        "promptTokens": 9887,
+        "cachedTokens": 9856,
+        "cacheHitRatio": 0.996864569636897,
+        "completionTokens": 19,
+        "ms": 2071,
+        "costUsd": 0.00029215
+      },
+      {
+        "parallelIdx": 6,
+        "promptTokens": 9887,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.919186810963892,
+        "completionTokens": 19,
+        "ms": 1880,
+        "costUsd": 0.00046495000000000005
+      },
+      {
+        "parallelIdx": 7,
+        "promptTokens": 9887,
+        "cachedTokens": 9856,
+        "cacheHitRatio": 0.996864569636897,
+        "completionTokens": 19,
+        "ms": 1863,
+        "costUsd": 0.00029215
+      }
+    ],
+    "S3": [
+      {
+        "targetTokens": 2700,
+        "attempt": 1,
+        "tailLen": 40,
+        "promptTokens": 2719,
+        "cachedTokens": 1920,
+        "cacheHitRatio": 0.7061419639573373,
+        "completionTokens": 19,
+        "ms": 1856,
+        "costUsd": 0.00028575000000000003
+      },
+      {
+        "targetTokens": 2700,
+        "attempt": 2,
+        "tailLen": 41,
+        "promptTokens": 2721,
+        "cachedTokens": 0,
+        "cacheHitRatio": 0,
+        "completionTokens": 19,
+        "ms": 1291,
+        "costUsd": 0.0007182499999999999
+      },
+      {
+        "targetTokens": 10000,
+        "attempt": 1,
+        "tailLen": 41,
+        "promptTokens": 9906,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.9174237835655158,
+        "completionTokens": 19,
+        "ms": 1380,
+        "costUsd": 0.00046970000000000003
+      },
+      {
+        "targetTokens": 10000,
+        "attempt": 2,
+        "tailLen": 41,
+        "promptTokens": 9906,
+        "cachedTokens": 9088,
+        "cacheHitRatio": 0.9174237835655158,
+        "completionTokens": 19,
+        "ms": 1189,
+        "costUsd": 0.00046970000000000003
+      },
+      {
+        "targetTokens": 20000,
+        "attempt": 1,
+        "tailLen": 40,
+        "promptTokens": 19755,
+        "cachedTokens": 19200,
+        "cacheHitRatio": 0.9719058466211086,
+        "completionTokens": 19,
+        "ms": 1941,
+        "costUsd": 0.00065675
+      },
+      {
+        "targetTokens": 20000,
+        "attempt": 2,
+        "tailLen": 41,
+        "promptTokens": 19756,
+        "cachedTokens": 19200,
+        "cacheHitRatio": 0.9718566511439563,
+        "completionTokens": 19,
+        "ms": 4212,
+        "costUsd": 0.000657
+      }
+    ]
+  }
+}

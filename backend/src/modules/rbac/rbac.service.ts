@@ -459,6 +459,163 @@ export class RbacService implements OnModuleInit {
     return entry;
   }
 
+  /**
+   * ТЗ 2026-05-25 §9 (clone-respond эволюция, Фаза 7) — доступ к клону Person.
+   *
+   * Два режима:
+   *  - `cloneV2Enabled=false` (default) — legacy: owner/admin Org / сам носитель /
+   *    direct manager в той же primaryDepartment. Эта же логика остаётся внутри
+   *    `ClonesService.canAccessPersonClone` (private) — здесь дублируем для
+   *    единообразия и unit-тестов.
+   *  - `cloneV2Enabled=true` — ТОЛЬКО `CloneAccessGrant` (галочка админа). Все
+   *    legacy-исключения отключены, носитель свой клон по умолчанию не видит.
+   *    Главный админ может выдать галочку себе сам.
+   *
+   * Возвращает details (`relation` + сам verdict), чтобы caller мог отделить
+   * «носитель» от «manager» для UI (например, кнопка mark-misleading).
+   */
+  async canAccessPersonClone(args: {
+    tenantId: string;
+    requesterUserId: string;
+    personId: string;
+    cloneV2Enabled: boolean;
+  }): Promise<{
+    allowed: boolean;
+    relation: 'owner_admin' | 'self' | 'manager' | 'grant' | 'none';
+  }> {
+    if (args.cloneV2Enabled) {
+      const grant = await this.prisma.cloneAccessGrant.findUnique({
+        where: {
+          tenantId_grantedToUserId_cloneType_cloneRefId: {
+            tenantId: args.tenantId,
+            grantedToUserId: args.requesterUserId,
+            cloneType: 'person',
+            cloneRefId: args.personId,
+          },
+        },
+        select: { id: true },
+      });
+      return grant
+        ? { allowed: true, relation: 'grant' }
+        : { allowed: false, relation: 'none' };
+    }
+    return this.canAccessPersonCloneLegacy(args);
+  }
+
+  /**
+   * ТЗ 2026-05-25 §9 — доступ к role-клону.
+   *
+   *  - `cloneV2Enabled=false` — legacy: `rbac.check({obj:'role', act:'read'})`.
+   *  - `cloneV2Enabled=true` — только `CloneAccessGrant` (галочка админа).
+   */
+  async canAccessRoleClone(args: {
+    tenantId: string;
+    requesterUserId: string;
+    roleId: string;
+    cloneV2Enabled: boolean;
+  }): Promise<{ allowed: boolean; relation: 'grant' | 'role_read' | 'none' }> {
+    if (args.cloneV2Enabled) {
+      const grant = await this.prisma.cloneAccessGrant.findUnique({
+        where: {
+          tenantId_grantedToUserId_cloneType_cloneRefId: {
+            tenantId: args.tenantId,
+            grantedToUserId: args.requesterUserId,
+            cloneType: 'role',
+            cloneRefId: args.roleId,
+          },
+        },
+        select: { id: true },
+      });
+      return grant
+        ? { allowed: true, relation: 'grant' }
+        : { allowed: false, relation: 'none' };
+    }
+    const allowed = await this.check({
+      userId: args.requesterUserId,
+      tenantId: args.tenantId,
+      obj: 'role',
+      act: 'read',
+      resourceOwnerId: null,
+    });
+    return allowed
+      ? { allowed: true, relation: 'role_read' }
+      : { allowed: false, relation: 'none' };
+  }
+
+  /**
+   * Legacy-логика доступа к person-клону (до §9). Сохранена для обратной
+   * совместимости при выключенном `CLONE_V2_ENABLED` и для unit-тестов.
+   *
+   *  - owner/admin Org;
+   *  - сам носитель (Person.userId === requesterUserId);
+   *  - direct manager (Membership.role='manager' в той же primaryDepartment).
+   */
+  private async canAccessPersonCloneLegacy(args: {
+    tenantId: string;
+    requesterUserId: string;
+    personId: string;
+  }): Promise<{
+    allowed: boolean;
+    relation: 'owner_admin' | 'self' | 'manager' | 'none';
+  }> {
+    // 1. owner/admin?
+    const adminAllowed = await this.check({
+      userId: args.requesterUserId,
+      tenantId: args.tenantId,
+      obj: 'knowledge_profile',
+      act: 'read',
+      resourceOwnerId: null,
+    });
+    if (adminAllowed) {
+      const ctx = await this.loadContext(args.requesterUserId, args.tenantId);
+      const role = ctx?.isSuperAdmin ? 'owner' : ctx?.role;
+      if (role === 'owner' || role === 'admin') {
+        return { allowed: true, relation: 'owner_admin' };
+      }
+    }
+    // 2. self?
+    const target = await this.prisma.person.findUnique({
+      where: { id: args.personId },
+      select: {
+        id: true,
+        userId: true,
+        primaryDepartmentId: true,
+        tenantId: true,
+      },
+    });
+    if (!target || target.tenantId !== args.tenantId) {
+      return { allowed: false, relation: 'none' };
+    }
+    if (target.userId && target.userId === args.requesterUserId) {
+      return { allowed: true, relation: 'self' };
+    }
+    // 3. direct manager?
+    if (target.primaryDepartmentId) {
+      const requesterPerson = await this.prisma.person.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          userId: args.requesterUserId,
+          deletedAt: null,
+        },
+        select: { id: true, primaryDepartmentId: true },
+      });
+      if (
+        requesterPerson?.primaryDepartmentId === target.primaryDepartmentId
+      ) {
+        const isManager = await this.prisma.membership.findFirst({
+          where: {
+            orgId: args.tenantId,
+            userId: args.requesterUserId,
+            role: 'manager',
+          },
+          select: { id: true },
+        });
+        if (isManager) return { allowed: true, relation: 'manager' };
+      }
+    }
+    return { allowed: false, relation: 'none' };
+  }
+
   /** Очистить кэш для конкретной пары — например, после изменения роли. */
   invalidate(userId: string, tenantId: string): void {
     this.membershipCache.delete(`${userId}:${tenantId}`);

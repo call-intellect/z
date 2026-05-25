@@ -29,6 +29,7 @@ import {
   type CloneHistoryResponseDto,
   type ClonesListQuery,
   type ClonesListResponseDto,
+  type CreateCloneConversationResponseDto,
   type MarkTraitMisleadingBody,
   type SkillProfileDto,
   type RoleSkillProfileDto,
@@ -86,6 +87,44 @@ export class ClonesController {
       tenantId: t,
       requesterUserId: user.id,
       roleId,
+    });
+  }
+
+  @Post('persons/:personId/conversations')
+  @ApiOperation({
+    summary:
+      'ТЗ §9.4.7: создать новый пустой диалог с клоном сотрудника (кнопка «Новый диалог»)',
+  })
+  async createPersonConversation(
+    @Param('personId') personId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CreateCloneConversationResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.createCloneConversation({
+      tenantId: t,
+      requesterUserId: user.id,
+      cloneType: 'person',
+      cloneRefId: personId,
+    });
+  }
+
+  @Post('roles/:roleId/conversations')
+  @ApiOperation({
+    summary:
+      'ТЗ §9.4.7: создать новый пустой диалог с клоном роли (кнопка «Новый диалог»)',
+  })
+  async createRoleConversation(
+    @Param('roleId') roleId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CreateCloneConversationResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.createCloneConversation({
+      tenantId: t,
+      requesterUserId: user.id,
+      cloneType: 'role',
+      cloneRefId: roleId,
     });
   }
 

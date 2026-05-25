@@ -161,6 +161,11 @@ export type LlmTaskType =
   | 'dialog-classify'
   | 'dialog-multi-query'
   | 'dialog-summarize'
+  // ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — multi-query
+  // расширение для клонов: на входе вопрос к клону, на выходе 3 формулировки
+  // (точная / ситуационный аналог / общий принцип) для retrieval по
+  // аналогии. Отдельный route, primary — deepseek-v4-pro.
+  | 'dialog-multi-query-clone'
   // SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector.
   // 'process-template-extract' — батч IdeaBlock'ов
   //   (signalType=process_step|methodology_step) → массив кандидатов

@@ -1096,6 +1096,18 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── clone v2 (ТЗ 2026-05-25 §9, Фаза 7) ─
+  /**
+   * Параметры эволюции `clone-respond` (Фаза 7). Сейчас — один мастер-флаг.
+   * Дополнительные параметры (температура factual/judgmental, порог topic-density
+   * в judgmental) пока хардкодены — см. §9.9 ТЗ.
+   */
+  get cloneV2() {
+    return {
+      enabled: this.get('CLONE_V2_ENABLED'),
+    } as const;
+  }
+
   // ─────────────────────────── dialog-layer (SBA α-5 dialog-layer) ─
   /**
    * Параметры dialog-layer (Contextualizer / Cache / Summarizer). Минимально

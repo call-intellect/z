@@ -1007,6 +1007,26 @@ const SkillSchema = z.object({
     .int()
     .positive()
     .default(6),
+
+  // ── ТЗ 2026-05-25 §9 (clone-respond эволюция, Фаза 7) ──
+  /**
+   * Мастер-флаг `clone-respond v2`. По умолчанию false — поведение Clone API
+   * не меняется (legacy RBAC + один LLM-вызов без dialog-layer). При true:
+   *   - RBAC по клонам считается ТОЛЬКО через `CloneAccessGrant` (галочка
+   *     админа), legacy-исключения (носитель/manager/admin) отключаются.
+   *   - перед `clone-respond` запускается полный `DialogService.process()`
+   *     (5-шаговый pipeline с памятью диалога);
+   *   - выбирается режим factual / judgmental по intent классификатора;
+   *   - в judgmental порог topic-density понижен (минимум 1 блок),
+   *     temperature 0.7, цитаты `[BLOCK:id]` скрываются из текста, но
+   *     сохраняются в `metadata.citations` для аудита;
+   *   - multi-query расширение использует промпт `dialog-multi-query-clone`
+   *     (запросы по аналогии), а не общий `dialog-multi-query`.
+   *
+   * Включается по тенантам только после: prisma db push (CloneAccessGrant),
+   * seed-llm-task-routes-clone-v2.ts, миграции грантов.
+   */
+  CLONE_V2_ENABLED: zBool(false),
 });
 
 /**

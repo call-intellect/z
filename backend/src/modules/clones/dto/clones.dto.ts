@@ -218,3 +218,16 @@ export interface CloneHistoryResponseDto {
   roleName: string;
   versions: CloneVersionDto[];
 }
+
+// ─────────────── ТЗ 2026-05-25 §9.4.7 (Фаза 7) — «Новый диалог» ───────────────
+
+/**
+ * Ответ эндпоинта `POST /api/v1/clones/persons/:personId/conversations` и
+ * `POST /api/v1/clones/roles/:roleId/conversations` — создаёт пустой
+ * ChatV2Conversation с `mode='clone_style'`, `scope='clone'`,
+ * `scopeRefId=personId|roleId`. Возвращает её id, чтобы UI сразу открыл
+ * пустой диалог с боковой панелью истории.
+ */
+export interface CreateCloneConversationResponseDto {
+  conversationId: string;
+}

@@ -9,6 +9,11 @@ import {
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import {
+  DIALOG_MULTI_QUERY_CLONE_JSON_SCHEMA,
+  DIALOG_MULTI_QUERY_CLONE_SYSTEM_PROMPT,
+  buildMultiQueryCloneUserPrompt,
+} from '../prompts/multi-query-clone.prompt';
+import {
   DIALOG_MULTI_QUERY_JSON_SCHEMA,
   DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
   buildMultiQueryUserPrompt,
@@ -34,6 +39,16 @@ export interface MultiQueryInput {
   question: string;
   intent: DialogIntent;
   conversationId: string | null;
+  /**
+   * ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — режим
+   * расширения. 'org' (default) — три синонимические переформулировки
+   * (общий dialog-multi-query). 'clone' — три формулировки разного типа
+   * (точная / ситуационный аналог / общий принцип) через отдельный
+   * route `dialog-multi-query-clone`. Когда `mode='clone'`, intent
+   * игнорируется (расширение запускается всегда — для клона аналоги нужны
+   * даже на factual-вопрос, если judgmental).
+   */
+  mode?: 'org' | 'clone';
 }
 
 export interface MultiQueryResult {
@@ -69,8 +84,14 @@ export class MultiQueryExpansionService {
   async expand(input: MultiQueryInput): Promise<MultiQueryResult> {
     const startedAt = Date.now();
     const enabled = this.cfg.dialogLayer.multiQueryExpansionEnabled;
+    const mode: 'org' | 'clone' = input.mode ?? 'org';
+    // В режиме `clone` расширяем всегда — для клона аналоги полезны и на
+    // factual-вопросах. В режиме `org` — только exploratory/analytical
+    // (исторический gating).
     const intentNeedsExpansion =
-      input.intent === 'exploratory' || input.intent === 'analytical';
+      mode === 'clone' ||
+      input.intent === 'exploratory' ||
+      input.intent === 'analytical';
 
     if (!enabled || !intentNeedsExpansion) {
       const durationSeconds = (Date.now() - startedAt) / 1000;
@@ -95,13 +116,34 @@ export class MultiQueryExpansionService {
           this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
         }
       }
-      const rawUser = buildMultiQueryUserPrompt({ question: input.question });
+      const cfgByMode =
+        mode === 'clone'
+          ? {
+              taskType: 'dialog-multi-query-clone' as const,
+              systemPrompt: DIALOG_MULTI_QUERY_CLONE_SYSTEM_PROMPT,
+              jsonSchema: DIALOG_MULTI_QUERY_CLONE_JSON_SCHEMA,
+              userPrompt: buildMultiQueryCloneUserPrompt({
+                question: input.question,
+              }),
+              responseFormatName: 'dialog_multi_query_clone_response',
+            }
+          : {
+              taskType: 'dialog-multi-query' as const,
+              systemPrompt: DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
+              jsonSchema: DIALOG_MULTI_QUERY_JSON_SCHEMA,
+              userPrompt: buildMultiQueryUserPrompt({
+                question: input.question,
+              }),
+              responseFormatName: 'dialog_multi_query_response',
+            };
       const systemText = guardOn
-        ? withInjectionGuard(DIALOG_MULTI_QUERY_SYSTEM_PROMPT)
-        : DIALOG_MULTI_QUERY_SYSTEM_PROMPT;
-      const userText = guardOn ? wrapUserData(rawUser) : rawUser;
+        ? withInjectionGuard(cfgByMode.systemPrompt)
+        : cfgByMode.systemPrompt;
+      const userText = guardOn
+        ? wrapUserData(cfgByMode.userPrompt)
+        : cfgByMode.userPrompt;
       const result = await this.llm.call({
-        taskType: 'dialog-multi-query',
+        taskType: cfgByMode.taskType,
         tenantId: input.tenantId,
         userId: input.userId,
         systemPrompt: systemText,
@@ -111,9 +153,9 @@ export class MultiQueryExpansionService {
         // T7-F6: strict JSON Schema. Wrapper { queries: [...] } — root object.
         responseFormat: {
           type: 'json_schema',
-          name: 'dialog_multi_query_response',
+          name: cfgByMode.responseFormatName,
           strict: true,
-          schema: DIALOG_MULTI_QUERY_JSON_SCHEMA,
+          schema: cfgByMode.jsonSchema,
         },
         sourceRef: input.conversationId
           ? { type: 'chat_v2_conversation', id: input.conversationId }
@@ -125,7 +167,7 @@ export class MultiQueryExpansionService {
       // (модель должна вернуть ≥1 формулировку).
       if (expansions.length === 0 && result.text.length > 0) {
         this.metrics.incPromptInvalidResponse({
-          taskType: 'dialog-multi-query',
+          taskType: cfgByMode.taskType,
           model: result.modelUsed,
           reason: 'json_parse',
         });

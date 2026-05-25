@@ -24,6 +24,9 @@
  * константа, чтобы snapshot-тест мог зафиксировать жёсткий регламент
  * (правила 1-7, в т.ч. анти-deepfake пункт 6) отдельно от заголовка,
  * который зависит от {roleName, bearerName}.
+ *
+ * Это legacy-режим (до ТЗ 2026-05-25 §9 Фазы 7) — соответствует mode='factual'
+ * в новой архитектуре, оставлен в виде константы ради snapshot-теста.
  */
 export const CLONE_RESPOND_SYSTEM_PROMPT_BASE = [
   '⚠ Ты — клон должности «{{roleName}}» в компании.',
@@ -53,6 +56,66 @@ export const CLONE_RESPOND_SYSTEM_PROMPT_BASE = [
 ].join('\n');
 
 /**
+ * ТЗ 2026-05-25 §9.4.5 (clone-respond эволюция, Фаза 7) — режим **factual**.
+ *
+ * Используется при `dialog-classify.intent === 'factual'`. Поведение:
+ *   - temperature 0.2 (см. ClonesService);
+ *   - цитаты `[BLOCK:id]` обязательны в тексте ответа;
+ *   - topic-density guard работает на стандартном пороге `cloneTopicMinBlocks`.
+ *
+ * Правила идентичны legacy-каркасу (`CLONE_RESPOND_SYSTEM_PROMPT_BASE`):
+ * factual = старое поведение по фактам.
+ */
+export const CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL = CLONE_RESPOND_SYSTEM_PROMPT_BASE;
+
+/**
+ * ТЗ 2026-05-25 §9.4.5 (clone-respond эволюция, Фаза 7) — режим **judgmental**.
+ *
+ * Используется при `dialog-classify.intent ∈ {'exploratory','analytical'}`.
+ * Поведение:
+ *   - temperature 0.7 (более широкая генерация);
+ *   - цитаты `[BLOCK:id]` НЕ выводятся в тексте ответа, но они всё равно
+ *     парсятся caller'ом из «черновика» (если модель их вставит) и сохраняются
+ *     в `metadata.citations` для аудита;
+ *   - topic-density guard понижается до min 1 блока (см. ClonesService).
+ *
+ * В этом режиме клон отвечает по аналогии, опираясь на принципы и похожие
+ * ситуации, а не на дословные факты. Дисклеймер от лица клона остаётся.
+ */
+export const CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL = [
+  '⚠ Ты — клон должности «{{roleName}}» в компании.',
+  'На этой должности сейчас работает {{bearerName}} — его опыт, решения и',
+  'образ мышления учтены в твоих ответах. Отвечай от лица должности (как сама',
+  'функция/роль), опираясь на накопленный опыт текущего носителя. Это не сам',
+  'человек — это «должностной клон» по наблюдаемому поведению.',
+  '',
+  'Сейчас вопрос — рассуждающий / поисковый (а не фактический). Тебе разрешено',
+  'отвечать по АНАЛОГИИ: применять общие принципы из опыта роли к новой',
+  'ситуации, даже если точного прецедента в контексте нет.',
+  '',
+  'Правила:',
+  '1. От первого лица должности: «На этой должности я бы исходил из …»,',
+  '   «по моему опыту в роли — принцип такой …».',
+  '2. НЕ цитируй [BLOCK:<id>] в самом тексте ответа — это рассуждающий режим,',
+  '   читателю важна логика, а не источник. Цитаты сохранятся в метаданных',
+  '   автоматически.',
+  '3. Если в контексте нет совсем ничего похожего по теме — честно сказать:',
+  '   «У роли пока нет опыта по таким вопросам, ответить по аналогии не могу».',
+  '4. НЕ выдумывать факты о конкретных людях / клиентах / суммах. Можно',
+  '   обобщать паттерны («обычно в таких ситуациях …»), но не приписывать',
+  '   носителю конкретных слов или решений, которых нет в контексте.',
+  '5. Это не сам носитель, а должностной клон — упомяни это коротко в конце:',
+  '   «(ответ — от клона должности по аналогии; могу ошибаться, спроси',
+  '   напрямую — {{bearerName}})».',
+  '6. КРИТИЧЕСКОЕ (анти-deepfake): запрещены обещания, согласия, отказы,',
+  '   оценки коллег, прогнозы по конкретным сделкам и любые «от первого лица',
+  '   за носителя» утверждения, которые могут быть восприняты как реальное',
+  '   решение человека. Только обобщённые паттерны и принципы.',
+  '',
+  '── PERSONA PROMPT ──',
+].join('\n');
+
+/**
  * Безопасные дефолты для случаев, когда роль или носитель не определены
  * (например, legacy person-scope ask или роль без текущего носителя). Подбирает
  * стилистически нейтральные формулировки, чтобы шаблон не «протекал»
@@ -68,11 +131,19 @@ const DEFAULT_BEARER_NAME = 'текущий носитель этой роли';
  *
  * Используется `ClonesService.callCloneRespond` (и любыми другими местами,
  * где нужно вызвать clone-respond — например, conversational-каналом).
+ *
+ * ТЗ 2026-05-25 §9.4.5 (Фаза 7) — добавлен необязательный аргумент `mode`.
+ *   - `mode='factual'` (default — обратная совместимость) — фактический режим
+ *     (legacy-каркас CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL = BASE).
+ *   - `mode='judgmental'` — рассуждающий режим
+ *     (CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL, температура и порог topic-density
+ *     меняются на стороне caller'а).
  */
 export function buildCloneRespondSystemPrompt(args: {
   roleName: string | null | undefined;
   bearerName: string | null | undefined;
   personaPrompt: string;
+  mode?: 'factual' | 'judgmental';
 }): string {
   const roleName =
     args.roleName && args.roleName.trim().length > 0
@@ -82,10 +153,13 @@ export function buildCloneRespondSystemPrompt(args: {
     args.bearerName && args.bearerName.trim().length > 0
       ? args.bearerName.trim()
       : DEFAULT_BEARER_NAME;
-  const filled = CLONE_RESPOND_SYSTEM_PROMPT_BASE.replace(
-    /\{\{roleName\}\}/g,
-    roleName,
-  ).replace(/\{\{bearerName\}\}/g, bearerName);
+  const base =
+    args.mode === 'judgmental'
+      ? CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL
+      : CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL;
+  const filled = base
+    .replace(/\{\{roleName\}\}/g, roleName)
+    .replace(/\{\{bearerName\}\}/g, bearerName);
   return `${filled}\n\n${args.personaPrompt}`;
 }
 

@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, type ExecutablePersona } from '@prisma/client';
 
@@ -17,6 +18,7 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import { DialogService } from '../../dialog-layer/services/dialog.service';
 import {
   CLONE_RESPOND_USER_TEMPLATE,
   buildCloneRespondSystemPrompt,
@@ -84,10 +86,24 @@ export class ClonesService {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embedder: KnowledgeEmbeddingService,
+    /**
+     * ТЗ 2026-05-25 §9.4.3 (clone-respond эволюция, Фаза 7) — dialog-layer
+     * фасад. `@Optional()` — фича работает за флагом `CLONE_V2_ENABLED`;
+     * существующие unit-тесты, мокающие конструктор `ClonesService` без
+     * 11-го аргумента, остаются совместимыми.
+     */
+    @Optional()
+    @Inject(DialogService)
+    private readonly dialog: DialogService | null = null,
   ) {}
 
   /**
    * Ответ в стиле конкретного сотрудника.
+   *
+   * ТЗ 2026-05-25 §9 (clone-respond эволюция, Фаза 7) — при включённом
+   * `CLONE_V2_ENABLED` маршрутизация переключается на `askPersonV2`
+   * (dialog-layer + два режима + RBAC через `CloneAccessGrant`).
+   * Legacy-путь сохранён ниже как есть.
    */
   async askPerson(args: {
     tenantId: string;
@@ -96,6 +112,9 @@ export class ClonesService {
     question: string;
     conversationId?: string;
   }): Promise<AskCloneResponseDto> {
+    if (this.isCloneV2Enabled()) {
+      return this.askPersonV2(args);
+    }
     // 1. Проверка RBAC.
     const accessCheck = await this.canAccessPersonClone({
       tenantId: args.tenantId,
@@ -296,6 +315,9 @@ export class ClonesService {
 
   /**
    * Ответ в стиле роли (агрегат по employee'ям этой роли).
+   *
+   * ТЗ 2026-05-25 §9 (Фаза 7) — при `CLONE_V2_ENABLED` маршрутизация на
+   * `askRoleV2` (dialog-layer + два режима + CloneAccessGrant).
    */
   async askRole(args: {
     tenantId: string;
@@ -304,6 +326,9 @@ export class ClonesService {
     question: string;
     conversationId?: string;
   }): Promise<AskCloneResponseDto> {
+    if (this.isCloneV2Enabled()) {
+      return this.askRoleV2(args);
+    }
     // 1. RBAC: read на Role + read на ≥ одну skill_profile внутри Org → admin/owner.
     const allowed = await this.rbac.check({
       userId: args.requesterUserId,
@@ -470,6 +495,570 @@ export class ClonesService {
       mode: 'clone_style',
       isOwner: false,
     };
+  }
+
+  /**
+   * Defensive чтение `cfg.cloneV2.enabled` — старые unit-тесты передают мок
+   * cfg, в котором этой группы может не быть. В таком случае считаем V2
+   * отключённым (legacy path), что соответствует defaults в env.schema
+   * (CLONE_V2_ENABLED=false).
+   */
+  private isCloneV2Enabled(): boolean {
+    try {
+      return this.cfg.cloneV2?.enabled === true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ─────────────────────── Clone V2 (ТЗ 2026-05-25 §9, Фаза 7) ───────────────────────
+
+  /**
+   * ТЗ 2026-05-25 §9 — новый путь `askPerson` под `CLONE_V2_ENABLED`.
+   *
+   * Отличия от legacy:
+   *  - RBAC ТОЛЬКО через `CloneAccessGrant` (галочка админа), legacy-исключения
+   *    отключены (носитель свой клон по умолчанию не видит).
+   *  - Перед LLM запускается полный `DialogService.process()` (5-шаговый
+   *    pipeline с памятью диалога: contextualize → confidence → classify →
+   *    multi-query → cache).
+   *  - intent (`factual` | `exploratory|analytical` → `judgmental`) выбирает
+   *    режим ответа: temperature, порог topic-density, набор правил в промпте,
+   *    политика цитат.
+   *  - При `dialog-classify.intent='clone_roleplay'` режим — factual.
+   *  - При cache-hit dialog-layer'а — возвращаем cachedAnswer без LLM-вызова.
+   */
+  private async askPersonV2(args: {
+    tenantId: string;
+    requesterUserId: string;
+    personId: string;
+    question: string;
+    conversationId?: string;
+  }): Promise<AskCloneResponseDto> {
+    // 1. RBAC через RbacService.canAccessPersonClone(cloneV2Enabled=true).
+    const accessCheck = await this.rbac.canAccessPersonClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      personId: args.personId,
+      cloneV2Enabled: true,
+    });
+    if (!accessCheck.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message:
+            'Нет доступа к клону этого сотрудника. Запросите галочку у админа Org.',
+        },
+      });
+    }
+
+    // 2. Rate limit (общий с legacy).
+    await this.assertRateLimit(args.requesterUserId);
+
+    // 3. SkillProfile + persona (логика идентична legacy — переиспользуем).
+    const profile = await this.prisma.skillProfile.findUnique({
+      where: { personId: args.personId },
+      include: {
+        person: {
+          select: { id: true, name: true, userId: true, relationship: true },
+        },
+        traits: {
+          where: { status: 'active' },
+          orderBy: [{ confidence: 'desc' }, { lastConfirmedAt: 'desc' }],
+        },
+      },
+    });
+    if (!profile || profile.status !== 'active') {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'no_clone',
+          message:
+            'У этого сотрудника пока нет клона — недостаточно встреч с обсуждением «почему я так решил».',
+        },
+      });
+    }
+    if (profile.traits.length < ClonesService.MIN_TRAITS_FOR_ANSWER) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'starved_profile',
+          message:
+            'Клон ещё не сформирован — нужно больше встреч с обсуждениями подхода к решениям.',
+        },
+      });
+    }
+    let persona = await this.prisma.executablePersona.findFirst({
+      where: { profileId: profile.id, scope: 'person', status: 'active' },
+      orderBy: { version: 'desc' },
+    });
+    if (!persona) {
+      persona = await this.personaBuilder.buildForProfile({
+        profileId: profile.id,
+      });
+      if (!persona) {
+        throw new NotFoundException({
+          ok: false,
+          error: {
+            code: 'persona_unavailable',
+            message:
+              'Клон пока недоступен — следующий snapshot собирается каждое воскресенье 06:00.',
+          },
+        });
+      }
+    }
+
+    // 4. dialog-layer.
+    const dialog = await this.runDialogLayer({
+      tenantId: args.tenantId,
+      userId: args.requesterUserId,
+      userMessage: args.question,
+      conversationId: args.conversationId ?? null,
+      scope: 'clone',
+      scopeRefId: profile.id,
+    });
+
+    // 5. Mode = factual / judgmental.
+    const mode = ClonesService.intentToMode(dialog.intent);
+
+    // 6. Subgraph retrieval (как в legacy).
+    const subgraph = await this.loadPersonSubgraph({
+      tenantId: args.tenantId,
+      personId: args.personId,
+    });
+
+    // 7. Topic-density guard (порог зависит от mode).
+    const requiredBlocksOverride =
+      mode === 'judgmental'
+        ? Math.max(1, Math.floor(this.cfg.skill.cloneTopicMinBlocks / 2))
+        : null;
+    const topicDensity = await this.assertTopicDensity({
+      question: dialog.standaloneQuestion,
+      reasoningBlocks: subgraph.reasoningBlocks,
+      requiredBlocksOverride,
+    });
+    if (topicDensity.refused) {
+      return this.persistTopicStarvedRefusal({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scopeRefId: profile.id,
+        question: args.question,
+        conversationId: args.conversationId,
+        persona,
+        topicDensity,
+        scopeKind: 'person',
+        isOwner:
+          profile.person.userId !== null &&
+          profile.person.userId === args.requesterUserId,
+      });
+    }
+
+    // 8. LLM clone-respond — параметризованный mode.
+    const llmResult = await this.callCloneRespond({
+      tenantId: args.tenantId,
+      persona,
+      question: dialog.standaloneQuestion,
+      subgraph,
+      roleName: null,
+      bearerName: profile.person.name,
+      mode,
+    });
+
+    // 9. Парсим цитаты из «черновика». В judgmental — скрываем из текста.
+    const citations = this.parseCitations(llmResult.text, subgraph);
+    const finalText =
+      mode === 'judgmental'
+        ? ClonesService.stripCitationsFromText(llmResult.text)
+        : llmResult.text;
+
+    // 10. Persist.
+    const { conversationId, messageId } = await this.persistMessage({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      scope: 'card',
+      scopeRefId: profile.id,
+      question: args.question,
+      conversationId: args.conversationId,
+      answer: finalText,
+      citations,
+      llmMeta: {
+        model: llmResult.modelUsed,
+        inputTokens: llmResult.inputTokens,
+        outputTokens: llmResult.outputTokens,
+        tier: llmResult.tier ?? null,
+        personaVersion: persona.version,
+        cloneV2: true,
+        mode,
+        dialogIntent: dialog.intent,
+        dialogConfidence: dialog.confidence,
+        dialogQueriesCount: dialog.queries.length,
+      },
+    });
+
+    // 11. Метрики.
+    this.metrics.incCloneAsk({ scope: 'person' });
+    if (
+      profile.person.userId &&
+      profile.person.userId === args.requesterUserId
+    ) {
+      this.metrics.incCloneAskByOwner();
+    }
+
+    return {
+      conversationId,
+      messageId,
+      text: finalText,
+      citations,
+      mode: 'clone_style',
+      isOwner:
+        profile.person.userId !== null &&
+        profile.person.userId === args.requesterUserId,
+    };
+  }
+
+  /**
+   * ТЗ 2026-05-25 §9 — новый путь `askRole` под `CLONE_V2_ENABLED`.
+   * Структурно идентичен `askPersonV2`, но scope='role' и subgraph — агрегат
+   * по сотрудникам роли.
+   */
+  private async askRoleV2(args: {
+    tenantId: string;
+    requesterUserId: string;
+    roleId: string;
+    question: string;
+    conversationId?: string;
+  }): Promise<AskCloneResponseDto> {
+    // 1. RBAC через CloneAccessGrant.
+    const accessCheck = await this.rbac.canAccessRoleClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      roleId: args.roleId,
+      cloneV2Enabled: true,
+    });
+    if (!accessCheck.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message:
+            'Нет доступа к клону этой роли. Запросите галочку у админа Org.',
+        },
+      });
+    }
+    await this.assertRateLimit(args.requesterUserId);
+
+    const role = await this.prisma.role.findUnique({
+      where: { id: args.roleId },
+      select: { id: true, name: true, tenantId: true, deletedAt: true },
+    });
+    if (!role || role.deletedAt || role.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'role_not_found', message: 'Роль не найдена' },
+      });
+    }
+
+    let persona = await this.prisma.executablePersona.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+        status: 'active',
+      },
+      orderBy: { version: 'desc' },
+    });
+    if (!persona) {
+      persona = await this.personaBuilder.buildForRole({
+        tenantId: args.tenantId,
+        roleId: args.roleId,
+      });
+      if (!persona) {
+        throw new NotFoundException({
+          ok: false,
+          error: {
+            code: 'role_persona_unavailable',
+            message:
+              'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
+          },
+        });
+      }
+    }
+
+    const dialog = await this.runDialogLayer({
+      tenantId: args.tenantId,
+      userId: args.requesterUserId,
+      userMessage: args.question,
+      conversationId: args.conversationId ?? null,
+      scope: 'clone',
+      scopeRefId: args.roleId,
+    });
+
+    const mode = ClonesService.intentToMode(dialog.intent);
+
+    const subgraph = await this.loadRoleSubgraph({
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+    });
+
+    const requiredBlocksOverride =
+      mode === 'judgmental'
+        ? Math.max(1, Math.floor(this.cfg.skill.cloneTopicMinBlocks / 2))
+        : null;
+    const topicDensity = await this.assertTopicDensity({
+      question: dialog.standaloneQuestion,
+      reasoningBlocks: subgraph.reasoningBlocks,
+      requiredBlocksOverride,
+    });
+    if (topicDensity.refused) {
+      return this.persistTopicStarvedRefusal({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scopeRefId: args.roleId,
+        question: args.question,
+        conversationId: args.conversationId,
+        persona,
+        topicDensity,
+        scopeKind: 'role',
+        isOwner: false,
+      });
+    }
+
+    let bearerName: string | null = null;
+    if (persona.currentBearerPersonId) {
+      const bearer = await this.prisma.person.findUnique({
+        where: { id: persona.currentBearerPersonId },
+        select: { name: true, tenantId: true },
+      });
+      if (bearer && bearer.tenantId === args.tenantId) {
+        bearerName = bearer.name;
+      }
+    }
+
+    const llmResult = await this.callCloneRespond({
+      tenantId: args.tenantId,
+      persona,
+      question: dialog.standaloneQuestion,
+      subgraph,
+      roleName: role.name,
+      bearerName,
+      mode,
+    });
+
+    const citations = this.parseCitations(llmResult.text, subgraph);
+    const finalText =
+      mode === 'judgmental'
+        ? ClonesService.stripCitationsFromText(llmResult.text)
+        : llmResult.text;
+
+    const { conversationId, messageId } = await this.persistMessage({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      scope: 'card',
+      scopeRefId: args.roleId,
+      question: args.question,
+      conversationId: args.conversationId,
+      answer: finalText,
+      citations,
+      llmMeta: {
+        model: llmResult.modelUsed,
+        inputTokens: llmResult.inputTokens,
+        outputTokens: llmResult.outputTokens,
+        tier: llmResult.tier ?? null,
+        personaVersion: persona.version,
+        scopeKind: 'role',
+        roleId: args.roleId,
+        cloneV2: true,
+        mode,
+        dialogIntent: dialog.intent,
+        dialogConfidence: dialog.confidence,
+        dialogQueriesCount: dialog.queries.length,
+      },
+    });
+
+    this.metrics.incCloneAsk({ scope: 'role' });
+
+    return {
+      conversationId,
+      messageId,
+      text: finalText,
+      citations,
+      mode: 'clone_style',
+      isOwner: false,
+    };
+  }
+
+  /**
+   * Утилита: запустить dialog-layer (если сервис доступен и фича включена в
+   * конфиге). При `DIALOG_LAYER_ENABLED=false` или отсутствии DialogService
+   * — возвращаем no-op результат (standaloneQuestion = userMessage,
+   * intent='factual', одиночный запрос). Так v2-путь работает даже на
+   * unit-тестах, мокающих ClonesService без DialogService.
+   */
+  private async runDialogLayer(input: {
+    tenantId: string;
+    userId: string;
+    userMessage: string;
+    conversationId: string | null;
+    scope: string;
+    scopeRefId: string;
+  }): Promise<{
+    standaloneQuestion: string;
+    intent:
+      | 'factual'
+      | 'exploratory'
+      | 'analytical'
+      | 'clone_roleplay';
+    queries: string[];
+    confidence: number;
+  }> {
+    if (!this.dialog) {
+      return {
+        standaloneQuestion: input.userMessage,
+        intent: 'factual',
+        queries: [input.userMessage],
+        confidence: 1.0,
+      };
+    }
+    const r = await this.dialog.process({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      userMessage: input.userMessage,
+      conversationId: input.conversationId,
+      scope: input.scope,
+      scopeRefId: input.scopeRefId,
+      validAt: null,
+    });
+    return {
+      standaloneQuestion: r.standaloneQuestion,
+      intent: r.intent,
+      queries: r.queries,
+      confidence: r.confidence,
+    };
+  }
+
+  /** ТЗ 2026-05-25 §9.4.5 — маппинг intent → mode (factual/judgmental). */
+  private static intentToMode(
+    intent: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay',
+  ): 'factual' | 'judgmental' {
+    if (intent === 'exploratory' || intent === 'analytical') return 'judgmental';
+    return 'factual';
+  }
+
+  /**
+   * ТЗ 2026-05-25 §9.4.5 — убрать `[BLOCK:id]` маркеры из текста ответа в
+   * judgmental-режиме. Сами цитаты остаются в `metadata.citations` (через
+   * `parseCitations` до вызова этого метода).
+   */
+  private static stripCitationsFromText(text: string): string {
+    return text.replace(/\[BLOCK:[a-zA-Z0-9_-]+\]/g, '').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  /**
+   * Утилита: единая обработка topic-starved-отказа для обоих v2-путей.
+   * Возвращает готовый `AskCloneResponseDto` с `refused=true`.
+   */
+  private async persistTopicStarvedRefusal(args: {
+    tenantId: string;
+    requesterUserId: string;
+    scopeRefId: string;
+    question: string;
+    conversationId: string | undefined;
+    persona: ExecutablePersona;
+    topicDensity: {
+      matchedBlocks: number;
+      requiredBlocks: number;
+      similarityThreshold: number;
+    };
+    scopeKind: 'person' | 'role';
+    isOwner: boolean;
+  }): Promise<AskCloneResponseDto> {
+    const refusalText = ClonesService.TOPIC_STARVED_REFUSAL_TEXT;
+    const { conversationId, messageId } = await this.persistMessage({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      scope: 'card',
+      scopeRefId: args.scopeRefId,
+      question: args.question,
+      conversationId: args.conversationId,
+      answer: refusalText,
+      citations: [],
+      llmMeta: {
+        refused: true,
+        refusalReason: 'topic_starved',
+        personaVersion: args.persona.version,
+        cloneV2: true,
+        scopeKind: args.scopeKind,
+        topicMatchedBlocks: args.topicDensity.matchedBlocks,
+        topicRequiredBlocks: args.topicDensity.requiredBlocks,
+        topicSimilarityThreshold: args.topicDensity.similarityThreshold,
+      },
+    });
+    this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
+    this.metrics.incCloneAsk({ scope: args.scopeKind });
+    if (args.isOwner) this.metrics.incCloneAskByOwner();
+    return {
+      conversationId,
+      messageId,
+      text: refusalText,
+      citations: [],
+      mode: 'clone_style',
+      isOwner: args.isOwner,
+      refused: true,
+      refusalReason: 'topic_starved',
+    };
+  }
+
+  /**
+   * ТЗ 2026-05-25 §9.4.7 (Фаза 7) — «Новый диалог» с клоном.
+   *
+   * Создаёт пустую `ChatV2Conversation` с привязкой к клону
+   * (scope='card', scopeRefId — personId либо roleId — совпадает с
+   * persistMessage()). Доступ проверяется ТОЛЬКО через CloneAccessGrant в
+   * режиме v2; при выключенном V2 — через legacy-RBAC, чтобы UI «список
+   * моих диалогов» работал и до миграции.
+   */
+  async createCloneConversation(args: {
+    tenantId: string;
+    requesterUserId: string;
+    cloneType: 'person' | 'role';
+    cloneRefId: string;
+  }): Promise<{ conversationId: string }> {
+    const v2 = this.isCloneV2Enabled();
+    const access =
+      args.cloneType === 'person'
+        ? await this.rbac.canAccessPersonClone({
+            tenantId: args.tenantId,
+            requesterUserId: args.requesterUserId,
+            personId: args.cloneRefId,
+            cloneV2Enabled: v2,
+          })
+        : await this.rbac.canAccessRoleClone({
+            tenantId: args.tenantId,
+            requesterUserId: args.requesterUserId,
+            roleId: args.cloneRefId,
+            cloneV2Enabled: v2,
+          });
+    if (!access.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Нет доступа к клону',
+        },
+      });
+    }
+    const created = await this.prisma.chatV2Conversation.create({
+      data: {
+        tenantId: args.tenantId,
+        userId: args.requesterUserId,
+        scope: 'card',
+        scopeRefId: args.cloneRefId,
+        channelKindOrigin: 'web',
+      },
+      select: { id: true },
+    });
+    return { conversationId: created.id };
   }
 
   // ─────────────────────── skill-profile read ───────────────────────
@@ -1439,6 +2028,12 @@ export class ClonesService {
   private async assertTopicDensity(args: {
     question: string;
     reasoningBlocks: ReadonlyArray<{ id: string; text: string }>;
+    /**
+     * ТЗ 2026-05-25 §9.4.6 (Фаза 7) — override порога `cloneTopicMinBlocks`
+     * для judgmental-режима. Если задан — используется вместо
+     * `cfg.skill.cloneTopicMinBlocks`. null → дефолт из config.
+     */
+    requiredBlocksOverride?: number | null;
   }): Promise<{
     refused: boolean;
     matchedBlocks: number;
@@ -1446,7 +2041,11 @@ export class ClonesService {
     similarityThreshold: number;
   }> {
     const similarityThreshold = this.cfg.skill.cloneTopicSimilarityThreshold;
-    const requiredBlocks = this.cfg.skill.cloneTopicMinBlocks;
+    const requiredBlocks =
+      args.requiredBlocksOverride !== undefined &&
+      args.requiredBlocksOverride !== null
+        ? args.requiredBlocksOverride
+        : this.cfg.skill.cloneTopicMinBlocks;
 
     // Граница: порог 0 — фича выключена.
     if (requiredBlocks <= 0) {
@@ -1568,11 +2167,18 @@ export class ClonesService {
      */
     roleName: string | null;
     bearerName: string | null;
+    /**
+     * ТЗ 2026-05-25 §9.4.5 (Фаза 7) — режим ответа. Если не задан — factual
+     * (обратная совместимость с legacy-вызовами).
+     */
+    mode?: 'factual' | 'judgmental';
   }): Promise<LlmCallResult> {
+    const mode = args.mode ?? 'factual';
     const systemPrompt = buildCloneRespondSystemPrompt({
       roleName: args.roleName,
       bearerName: args.bearerName,
       personaPrompt: args.persona.personaPrompt,
+      mode,
     });
     return this.llm.call({
       taskType: 'clone-respond',
@@ -1591,6 +2197,12 @@ export class ClonesService {
       tenantId: args.tenantId,
       sourceRef: { type: 'executable_persona', id: args.persona.id },
       dataClass: 'internal',
+      // ТЗ 2026-05-25 §9.4.5 — температура зависит от режима (factual=0.2 /
+      // judgmental=0.7). На сегодня `LlmRouterService.call` не принимает
+      // temperature — она задаётся на стороне провайдера/route. Здесь
+      // фиксируем намерение через mode (передан в system prompt), а
+      // запись «mode=…» уходит в `llmMeta` через caller для аудита.
+      // TODO §9.9 — вывести temperature в LlmCallParams отдельной волной.
     });
   }
 

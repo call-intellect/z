@@ -931,6 +931,13 @@ model User {
   /// См. plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
   feedbackMessages FeedbackMessage[]
 
+  // ── ТЗ 2026-05-25 §9 (clone-respond эволюция) — CloneAccessGrant ──
+  /// Гранты на доступ к клонам (CloneAccessGrant). Под флагом
+  /// CLONE_V2_ENABLED — единственный источник правды о доступе к
+  /// person/role-клону. Без CLONE_V2_ENABLED не используется (legacy RBAC).
+  cloneAccessGrantsReceived CloneAccessGrant[] @relation("CloneAccessGrant_grantedTo")
+  cloneAccessGrantsGiven    CloneAccessGrant[] @relation("CloneAccessGrant_grantedBy")
+
   @@unique([email, signupSource])
   @@index([email])
   @@index([deletedAt])
@@ -2164,6 +2171,12 @@ model Org {
   /// orgId на FeedbackMessage может быть NULL, поэтому это lookup-only релейшен.
   feedbackMessages FeedbackMessage[]
 
+  // ── ТЗ 2026-05-25 §9 (clone-respond эволюция) — CloneAccessGrant ──
+  /// Гранты на доступ к клонам (CloneAccessGrant). Под флагом
+  /// CLONE_V2_ENABLED — единственный источник правды о доступе к
+  /// person/role-клону. Без CLONE_V2_ENABLED не используется (legacy RBAC).
+  cloneAccessGrants CloneAccessGrant[]
+
   @@index([ownerId])
   @@index([deletedAt])
 }
@@ -2188,6 +2201,38 @@ model Membership {
   @@index([userId])
   @@index([orgId, role])
   @@index([personId])
+}
+
+/// ТЗ 2026-05-25 §9 (clone-respond эволюция) — гранты доступа к клонам.
+///
+/// Под флагом `CLONE_V2_ENABLED=true` это ЕДИНСТВЕННЫЙ источник правды о
+/// доступе к person/role-клону: галочка либо стоит, либо нет. Без флага
+/// логика старая (носитель, manager, admin). См. RbacService.canAccessPersonClone /
+/// canAccessRoleClone.
+///
+/// Создание/удаление — admin-эндпоинты `/api/v1/admin/clones/access-grants/*`
+/// (отдельная подзадача). Скрипт первичной миграции грантов —
+/// `backend/scripts/patch-migrate-clone-access.ts` (заглушка на этом этапе).
+model CloneAccessGrant {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// Пользователь, получающий право спрашивать клона.
+  grantedToUserId String
+  /// 'person' (person-scope, по personId) или 'role' (role-scope, по roleId).
+  cloneType       String
+  /// personId или roleId — без формального FK (двойная природа), валидируется на уровне сервиса.
+  cloneRefId      String
+  /// Кто выдал галочку (admin Org).
+  grantedById     String
+  grantedAt       DateTime @default(now())
+
+  tenant    Org  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grantedTo User @relation("CloneAccessGrant_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
+  grantedBy User @relation("CloneAccessGrant_grantedBy", fields: [grantedById], references: [id])
+
+  @@unique([tenantId, grantedToUserId, cloneType, cloneRefId])
+  @@index([tenantId, grantedToUserId])
+  @@index([tenantId, cloneType, cloneRefId])
 }
 
 model OrgInvitation {

@@ -21,8 +21,10 @@ import {
   type DocumentUploadedJobData,
   type DumpCreatedJobData,
   type EntityResolverJobData,
+  type EventReminderJobData,
   type IdeaClustererJobData,
   type MeetingAnalyzeV2JobData,
+  type MeetingReportFastJobData,
   type ProbeEventJobData,
   type PushSendJobData,
   type RawEventJobData,
@@ -214,6 +216,42 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('meeting-analyze-v2', payload, { jobId, delay });
     this.logger.debug(
       `enqueue core.meeting-analyze-v2 meetingId=${meetingId} delay=${delay}ms`,
+    );
+  }
+
+  /**
+   * Публикация события `core.meeting-report-fast`
+   * (ТЗ 2026-05-25, Фаза 4 — параллельный запуск).
+   *
+   * Consumer — `MeetingReportFastWorker` (один LLM-вызов поверх СЫРОГО
+   * транскрипта → chapters + tasks + summaryFast + qualityScore).
+   *
+   * Идемпотентность: `jobId = meeting_report_fast_<meetingId>`. Повторный
+   * enqueue для той же встречи в окне дедупликации BullMQ не создаст дубль.
+   *
+   * Producer'ы:
+   *   - `MergeWorker` — сразу после успешной склейки turns транскрипта
+   *     (без задержки: новая цепочка должна стартовать «в момент готовности
+   *     транскрипта»);
+   *   - (опц.) ручной запуск из админки / integration-test.
+   *
+   * NB: НЕ блокирует и не зависит от `core.meeting-analyze-v2`/`ai.analyze` —
+   * это два независимых pipeline, идущих параллельно (см. ТЗ §3).
+   */
+  async enqueueMeetingReportFast(
+    meetingId: string,
+    opts?: { delayMs?: number },
+  ): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.MEETING_REPORT_FAST);
+    const jobId = `meeting_report_fast_${meetingId}`;
+    const payload: MeetingReportFastJobData = { meetingId };
+    const jobOpts: JobsOptions = { jobId };
+    if (opts?.delayMs !== undefined && opts.delayMs > 0) {
+      jobOpts.delay = opts.delayMs;
+    }
+    await q.add('meeting-report-fast', payload, jobOpts);
+    this.logger.debug(
+      `enqueue core.meeting-report-fast meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
     );
   }
 
@@ -557,6 +595,25 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('push-send', data, { jobId });
     this.logger.debug(
       `enqueue core.push-send userId=${data.userId} jobId=${jobId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Calendar MVP (2026-05-25) — публикация события `core.event-reminders`.
+   * Consumer — `EventRemindersWorker`. jobId = reminderId → идемпотентно:
+   * повторный enqueue того же reminder'а из cron'а в окне дедупа BullMQ не
+   * создаст дубля.
+   */
+  async enqueueEventReminder(args: {
+    reminderId: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.EVENT_REMINDERS);
+    const jobId = `event_reminder_${args.reminderId}`;
+    const payload: EventReminderJobData = { reminderId: args.reminderId };
+    await q.add('event-reminder', payload, { jobId });
+    this.logger.debug(
+      `enqueue core.event-reminders reminderId=${args.reminderId} jobId=${jobId}`,
     );
     return { jobId };
   }

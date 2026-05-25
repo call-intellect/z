@@ -42,4 +42,56 @@ describe('ServiceMapGeneratorService', () => {
     const t = svc.findTool('create_meeting');
     expect(t?.undoableVia).toBe('cancel_meeting');
   });
+
+  it('exposes calendar MVP tools (Фаза 1.3)', () => {
+    const tools = svc.getTools();
+    expect(tools.find((t) => t.name === 'create_event')).toBeDefined();
+    expect(tools.find((t) => t.name === 'list_my_events')).toBeDefined();
+    expect(tools.find((t) => t.name === 'list_user_events')).toBeDefined();
+    expect(tools.find((t) => t.name === 'find_free_slot')).toBeDefined();
+    expect(tools.find((t) => t.name === 'delete_event')).toBeDefined();
+  });
+
+  it('create_event is undoable via delete_event', () => {
+    const t = svc.findTool('create_event');
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/events');
+    expect(t?.undoableVia).toBe('delete_event');
+    expect(t?.rbacResource).toBe('event_card');
+    expect(t?.rbacAction).toBe('write');
+    expect(t?.parameters.required).toEqual(['title', 'startAt']);
+  });
+
+  it('list_my_events is a read tool on /me/calendar', () => {
+    const t = svc.findTool('list_my_events');
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/me/calendar');
+    expect(t?.rbacAction).toBe('read');
+  });
+
+  it('list_user_events requires userId param', () => {
+    const t = svc.findTool('list_user_events');
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/users/:userId/calendar');
+    expect(t?.parameters.required).toEqual(['userId']);
+  });
+
+  it('find_free_slot requires participantUserIds and durationMin', () => {
+    const t = svc.findTool('find_free_slot');
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/events/find-free-slot');
+    expect(t?.parameters.required).toEqual([
+      'participantUserIds',
+      'durationMin',
+    ]);
+  });
+
+  it('delete_event uses DELETE method and event_card.delete RBAC', () => {
+    const t = svc.findTool('delete_event');
+    expect(t?.method).toBe('DELETE');
+    expect(t?.path).toBe('/api/v1/events/:id');
+    expect(t?.rbacResource).toBe('event_card');
+    expect(t?.rbacAction).toBe('delete');
+    expect(t?.parameters.required).toEqual(['id']);
+  });
 });

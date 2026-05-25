@@ -42,6 +42,21 @@ export const CORE_QUEUE_NAMES = {
    */
   MEETING_ANALYZE_V2: 'core.meeting-analyze-v2',
   /**
+   * Meeting-report-fast (ТЗ 2026-05-25, Фаза 2). Consumer —
+   * `MeetingReportFastWorker`. Один LLM-вызов поверх СЫРОГО транскрипта
+   * выдаёт chapters + tasks + summaryFast + qualityScore. Работает
+   * НЕЗАВИСИМО от block-ingest / meeting-analyze-v2.
+   *
+   * Идемпотентность: jobId = `meeting_report_fast_<meetingId>` (опционально
+   * добавляется producer'ом, фоновый cron в Фазе 4).
+   *
+   * На Фазе 2 (текущая волна) consumer регистрируется в DI, но автоматически
+   * на готовность транскрипта НЕ подписан — это сделает Фаза 4 (event
+   * + producer). Пока используется только для ручного запуска из админки /
+   * тестов.
+   */
+  MEETING_REPORT_FAST: 'core.meeting-report-fast',
+  /**
    * Strategic-alignment (Фаза 9): суточная LLM-оценка движения к Goal Org.
    * Один job на (Org, Goal). jobId=`strat_<goalId>_<YYYYMMDD>` для cron'а
    * (дневной dedup) или `strat_manual_<goalId>_<ts>` для ручного recompute.
@@ -127,6 +142,15 @@ export const CORE_QUEUE_NAMES = {
    */
   RECOGNITION_FORMULATE: 'core.recognition-formulate',
   /**
+   * Calendar MVP (2026-05-25). Consumer — `EventRemindersWorker`. Принимает
+   * `EventReminderJobData` ({ reminderId }) и доставляет напоминание по
+   * каналу (telegram / push / email). После доставки помечает
+   * `EventReminder.sentAt = now`. Producer — `EventReminderSchedulerCron`
+   * (раз в минуту сканирует ближайшие due reminders). jobId = reminderId —
+   * идемпотентно: повторный enqueue того же reminder'а не создаст дубль.
+   */
+  EVENT_REMINDERS: 'core.event-reminders',
+  /**
    * Wave 2 — Web Push (2026-05-24). Consumer — `PushSenderWorker` (PushModule).
    * Принимает `PushSendJobData` и отправляет web-push на все активные
    * PushSubscription'ы пользователя через npm `web-push` с VAPID.
@@ -191,6 +215,15 @@ export interface CardRollupV2JobData {
  * `meetingId`, остальное (tenantId, blocks) consumer подтянет из БД.
  */
 export interface MeetingAnalyzeV2JobData {
+  meetingId: string;
+}
+
+/**
+ * Payload для job'а `core.meeting-report-fast` (ТЗ 2026-05-25, Фаза 2).
+ * Минимальный — только `meetingId`; consumer сам подтянет transcript /
+ * tenantId / type из БД.
+ */
+export interface MeetingReportFastJobData {
   meetingId: string;
 }
 
@@ -338,6 +371,16 @@ export interface PushSendJobData {
   body: string;
   icon?: string;
   data?: Record<string, unknown>;
+}
+
+/**
+ * Calendar MVP (2026-05-25) — payload `core.event-reminders`. Consumer —
+ * `EventRemindersWorker`. jobId = reminderId — повторный enqueue того же
+ * reminder'а не создаст дубль. Сам ID воркер получит из payload и сам
+ * подтянет Event/EventReminder из БД (правильный pattern с тонким payload).
+ */
+export interface EventReminderJobData {
+  reminderId: string;
 }
 
 export interface RecognitionFormulateJobData {

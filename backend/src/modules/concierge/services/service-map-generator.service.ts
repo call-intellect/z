@@ -185,6 +185,156 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'task',
         rbacAction: 'read',
       },
+      {
+        name: 'create_event',
+        description:
+          'Создать событие календаря (встреча, созвон, личная встреча или блок времени). Используй для запросов «запиши встречу с N на 3-е», «забронируй мне время в среду с 14 до 16», «созвон с клиентом завтра в 15:00». Параметр kind ∈ meeting|call|offline_meeting|personal_block|deadline. Если kind=meeting (онлайн-видео) — автоматически создастся LiveKit-комната.',
+        method: 'POST',
+        path: '/api/v1/events',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Название события' },
+            startAt: {
+              type: 'string',
+              description:
+                'ISO-8601 datetime начала (например, 2026-06-03T15:00:00+03:00)',
+            },
+            endAt: {
+              type: 'string',
+              description:
+                'ISO-8601 datetime конца. Опц. — если не задан, MVP считает длительность 60 мин для meeting/call, 30 мин для personal_block.',
+            },
+            kind: {
+              type: 'string',
+              description:
+                'Тип события: meeting|call|offline_meeting|personal_block|deadline (default meeting)',
+            },
+            visibility: {
+              type: 'string',
+              description:
+                'company|team|personal (default company). personal не индексируется в графе.',
+            },
+            location: {
+              type: 'string',
+              description: 'Место (физ. адрес или ссылка). Опц.',
+            },
+            description: {
+              type: 'string',
+              description: 'Описание / повестка. Опц.',
+            },
+            participants: {
+              type: 'array',
+              description:
+                'Массив объектов {userId} или {personId} с опц. role (organizer|required|optional).',
+            },
+          },
+          required: ['title', 'startAt'],
+        },
+        undoableVia: 'delete_event',
+        rbacResource: 'event_card',
+        rbacAction: 'write',
+      },
+      {
+        name: 'list_my_events',
+        description:
+          'Получить мои события календаря в диапазоне дат. Микшируется с задачами трекера: возвращает массив items, каждый — {type: "event", event} или {type: "issue", issue}. Используй для «какие у меня встречи сегодня», «что у меня запланировано на этой неделе», «покажи мой завтрашний день».',
+        method: 'GET',
+        path: '/api/v1/me/calendar',
+        parameters: {
+          type: 'object',
+          properties: {
+            from: {
+              type: 'string',
+              description:
+                'ISO-8601 datetime нижней границы. Default — сегодня 00:00 локального времени.',
+            },
+            to: {
+              type: 'string',
+              description:
+                'ISO-8601 datetime верхней границы. Default — завтра 00:00.',
+            },
+          },
+        },
+        rbacResource: 'event_card',
+        rbacAction: 'read',
+      },
+      {
+        name: 'list_user_events',
+        description:
+          'Получить события и задачи другого пользователя по userId. Требует прав manager+ или быть участником события. Личные блоки (visibility=personal) другого пользователя возвращаются как "Занято" без деталей. Используй для «что у Васи на этой неделе», «свободен ли Петя завтра».',
+        method: 'GET',
+        path: '/api/v1/users/:userId/calendar',
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: {
+              type: 'string',
+              description: 'ID пользователя (User.id).',
+            },
+            from: {
+              type: 'string',
+              description: 'ISO-8601 нижняя граница.',
+            },
+            to: {
+              type: 'string',
+              description: 'ISO-8601 верхняя граница.',
+            },
+          },
+          required: ['userId'],
+        },
+        rbacResource: 'event_card',
+        rbacAction: 'read',
+      },
+      {
+        name: 'find_free_slot',
+        description:
+          'Найти ближайший общий свободный слот заданной длительности среди участников. Учитывает события каждого участника и его задачи трекера (с estimateMinutes или дефолтом 30 мин). По умолчанию ищет в рабочее время (Пн-Пт 9:00-18:00 timezone организатора, который = первый user в списке). Используй для «найди время на этой неделе для созвона с Васей на час», «когда мы можем встретиться втроём на 30 минут».',
+        method: 'POST',
+        path: '/api/v1/events/find-free-slot',
+        parameters: {
+          type: 'object',
+          properties: {
+            participantUserIds: {
+              type: 'array',
+              description: 'Массив User.id участников (включая инициатора).',
+            },
+            durationMin: {
+              type: 'number',
+              description: 'Длительность нужного слота в минутах (15..480).',
+            },
+            withinDays: {
+              type: 'number',
+              description:
+                'В каком горизонте искать (1..30 дней). Default 7.',
+            },
+            workingHoursOnly: {
+              type: 'boolean',
+              description:
+                'Только в рабочее время Пн-Пт 9-18. Default true.',
+            },
+          },
+          required: ['participantUserIds', 'durationMin'],
+        },
+        rbacResource: 'event_card',
+        rbacAction: 'read',
+      },
+      {
+        name: 'delete_event',
+        description:
+          'Отменить событие по id (мягкое удаление, status=cancelled). Используй для «отмени встречу с N», «удали событие в среду».',
+        method: 'DELETE',
+        path: '/api/v1/events/:id',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Event.id' },
+          },
+          required: ['id'],
+        },
+        rbacResource: 'event_card',
+        rbacAction: 'delete',
+      },
     ];
   }
 }

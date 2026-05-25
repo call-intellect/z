@@ -96,6 +96,9 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // обязателен; telegram/max — для мгновенных пушей. Email скучен — оставляем
   // как fallback в дайджест-режиме (не в этом event-type'е).
   'issue.mention': ['in_app', 'telegram_bot', 'max_bot'],
+  // Calendar MVP (2026-05-25): напоминание о событии календаря. Push не везде
+  // подключён — приоритет на бот-каналы + in-app.
+  'event.reminder': ['in_app', 'telegram_bot', 'max_bot'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

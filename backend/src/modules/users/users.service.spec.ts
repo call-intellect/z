@@ -76,6 +76,7 @@ describe('UsersService.upsertFromCrossmark', () => {
     createdAt: new Date('2026-01-01'),
     lastSeenAt: null,
     deletedAt: null,
+    calendarFeedToken: null,
     ...over,
   });
 

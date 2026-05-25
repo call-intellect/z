@@ -200,6 +200,27 @@ const OperationsWeeklyDigestPayloadSchema = z
   })
   .strict();
 
+/**
+ * Calendar MVP (2026-05-25) — payload `event.reminder` для напоминания
+ * о событии календаря. Доставляется через ConversationalService.sendNotification
+ * по каналу telegram_bot / push / email.
+ *
+ * `eventId` / `eventTitle` / `startAtIso` — нужны клиенту канала для
+ * рендеринга карточки. `offsetMin` — за сколько минут до начала это напоминание
+ * (для текста «через 15 минут начнётся ...»). `location` — опц. (для UI).
+ * `actionUrl` — куда отправить по клику (страница события в /me/calendar).
+ */
+const EventReminderPayloadSchema = z
+  .object({
+    eventId: z.string().min(1).max(80),
+    eventTitle: z.string().min(1).max(300),
+    startAtIso: z.string().min(1).max(40),
+    offsetMin: z.number().int().min(0).max(60 * 24 * 7),
+    location: z.string().max(300).nullable().optional(),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
@@ -217,6 +238,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['operations.weekly_digest', OperationsWeeklyDigestPayloadSchema],
   // T8 (2026-05-24) — @-упоминание в комментарии задачи трекера.
   ['issue.mention', IssueMentionPayloadSchema],
+  // Calendar MVP (2026-05-25) — напоминание о событии календаря.
+  ['event.reminder', EventReminderPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

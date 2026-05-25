@@ -394,13 +394,60 @@ enum VendorStatus {
 
 /// EventKind — вид события (для модели Event как сущности графа).
 /// `meeting` ссылается на Meeting через `relatedMeetingId`.
+/// Calendar MVP (2026-05-25) добавил: `call` (телефонный созвон), `offline_meeting`
+/// (личная встреча оффлайн), `personal_block` (личный блок времени, не в графе),
+/// `deadline` (срок без длительности — endAt = startAt).
 enum EventKind {
   meeting
   incident
   release
   transition
   milestone
+  call
+  offline_meeting
+  personal_block
+  deadline
   other
+}
+
+/// Статус события (Calendar MVP 2026-05-25). По умолчанию `confirmed`.
+enum EventStatus {
+  tentative
+  confirmed
+  cancelled
+}
+
+/// Видимость события (Calendar MVP 2026-05-25). `personal` — только owner,
+/// не индексируется в графе знаний. `team` — видно участникам проекта.
+/// `company` (default) — видно всем в Org.
+enum EventVisibility {
+  company
+  team
+  personal
+}
+
+/// Роль участника события (Calendar MVP 2026-05-25).
+/// Имя `EventParticipantRole` (не `ParticipantRole`), чтобы не пересекаться
+/// с существующим `ParticipantRole` (host/guest) для LiveKit-встреч.
+enum EventParticipantRole {
+  organizer
+  required
+  optional
+}
+
+/// RSVP-статус участника (Calendar MVP 2026-05-25).
+enum RsvpStatus {
+  pending
+  accepted
+  declined
+  tentative
+}
+
+/// Канал доставки напоминания (Calendar MVP 2026-05-25).
+enum ReminderChannel {
+  push
+  email
+  telegram
 }
 
 enum RawEventPayloadStorage {
@@ -808,6 +855,9 @@ model User {
   destinations         IntegrationDestination[]
   tags                 Tag[]
   tasks                Task[]
+  /// ТЗ 2026-05-25 hard-participant-identification — задачи, где этот User
+  /// сопоставлен как assignee через AI/manual (`Task.assigneeUserId`).
+  assignedTasks        Task[]                   @relation("TaskAssignee")
   chatMessages         MeetingChatMessage[]
   userTemplates        UserTemplate[]
   exports              Export[]
@@ -863,6 +913,14 @@ model User {
 
   // ── SBA δ-2 — ProactiveWatcher (2026-05-23) ──
   proactiveNotifications ProactiveNotification[] @relation("ProactiveNotificationUser")
+
+  // ── Calendar MVP (2026-05-25) — события и подписка на ICS-feed ──
+  /// Секретный токен для подписки на персональный ICS-feed
+  /// (`GET /api/v1/calendar/:userId.ics?token=...`). Генерируется по запросу
+  /// из /me/settings/calendar. Хранится как HMAC base64.
+  calendarFeedToken   String?            @db.VarChar(80)
+  ownedEvents         Event[]            @relation("EventOwner")
+  eventParticipations EventParticipant[] @relation("EventParticipantUser")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -931,6 +989,15 @@ model Meeting {
   analyzeV2GeneratedAt  DateTime?
   /// Текст ошибки на failed/partial. Multi-line, агент пишет короткую сводку.
   analyzeV2Error        String?       @db.Text
+  /// 2026-05-25 meeting-report-fast (ТЗ plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md):
+  /// статус «быстрого» отчёта пользователю (один LLM-вызов поверх сырого транскрипта).
+  /// NULL = не запускался; 'processing'|'ready'|'failed'|'partial'.
+  /// Независим от analyzeV2Status — два pipeline работают параллельно.
+  reportFastStatus      String?
+  /// Текст ошибки на failed/partial для `meeting-report-fast`.
+  reportFastError       String?       @db.Text
+  /// Когда `meeting-report-fast` завершил работу (последний раз).
+  reportFastGeneratedAt DateTime?
   /// Автоматически вести запись при старте встречи. Если true — запись стартует
   /// при подключении хоста; ручное управление записью в комнате недоступно.
   recordByDefault       Boolean       @default(true)
@@ -1102,6 +1169,15 @@ model AiResult {
   summaryV2Model          String?
   /// Когда сгенерирован `summaryV2`.
   summaryV2GeneratedAt    DateTime?
+  /// 2026-05-25 meeting-report-fast (ТЗ plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md):
+  /// быстрая сводка пользователю, сгенерированная одним LLM-вызовом
+  /// `MeetingReportFastWorker` поверх СЫРОГО транскрипта (минуя block-ingest).
+  /// Не перезаписывает `summary` и `summaryV2`. Будет основным полем после A/B.
+  summaryFast             String?                @db.Text
+  /// `<provider>:<model>` модели, которая сгенерила `summaryFast`.
+  summaryFastModel        String?
+  /// Когда сгенерирован `summaryFast`.
+  summaryFastGeneratedAt  DateTime?
   /// Фаза A.1 — какой версией шаблона промпта (`PromptTemplateVersion`) сгенерирован основной отчёт
   /// (structuredData / customOutputMd). NULL = `code_fallback` (промпт пришёл из встроенного кода
   /// `ai/services/prompts/type-*.ts`), что нормально при пустой БД или ошибке резолва.
@@ -1251,7 +1327,12 @@ model Task {
   description      String?    @db.Text
   status           TaskStatus @default(open)
   assigneeRaw      String?
+  /// ТЗ 2026-05-25 hard-participant-identification: жёсткая связь с User,
+  /// заполняется AI-pipeline (через resolve по participants встречи).
+  /// onDelete=SetNull: при удалении User'а assigneeUserId сбрасывается,
+  /// но Task остаётся (assigneeRaw сохраняет историческую строку).
   assigneeUserId   String?
+  assignee         User?      @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
   dueDate          DateTime?
   sourceStartMs    Int?
   sourceEndMs      Int?
@@ -1272,6 +1353,8 @@ model Task {
   @@index([meetingId])
   @@index([dueDate])
   @@index([tenantId])
+  /// Индекс для фильтра «мои задачи» по assigneeUserId.
+  @@index([assigneeUserId])
 }
 
 model MeetingChapter {
@@ -2059,47 +2142,47 @@ model Membership {
 }
 
 model OrgInvitation {
-  id               String              @id @default(cuid())
-  orgId            String
-  org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id                 String              @id @default(cuid())
+  orgId              String
+  org                Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   /// β-9 (2026-05-25): email теперь опционален. Для линейного персонала без
   /// почты директор копирует ссылку приглашения и пересылает руками
   /// (через `linkCode` или magic-link URL из `manualShareUrl` ответа).
-  email            String?
-  role             MembershipRole
+  email              String?
+  role               MembershipRole
   /// Случайный nanoid(40); хранится как plaintext (короткоживущий + одноразовый).
-  token            String              @unique
-  status           OrgInvitationStatus @default(pending)
-  invitedBy        String
-  inviter          User                @relation("OrgInvitationInvitedBy", fields: [invitedBy], references: [id])
+  token              String              @unique
+  status             OrgInvitationStatus @default(pending)
+  invitedBy          String
+  inviter            User                @relation("OrgInvitationInvitedBy", fields: [invitedBy], references: [id])
   /// Фаза 0a §10 — линковка с бизнес-Person. Опц.; при создании приглашения
   /// из wizard'а или /structure?tab=persons backend заранее создаёт Person
   /// и сохраняет ссылку здесь, чтобы при accept'е заполнить Person.userId.
-  personId         String?
-  person           Person?             @relation("OrgInvitationPerson", fields: [personId], references: [id], onDelete: SetNull)
+  personId           String?
+  person             Person?             @relation("OrgInvitationPerson", fields: [personId], references: [id], onDelete: SetNull)
   /// β-9 (2026-05-25) — одноразовый код для прямой привязки Telegram-бота
   /// из письма приглашения (deep-link `https://t.me/<bot>?start=<linkCode>`).
   /// Hex(12) от `ConversationalLinkCodeService`, дублируется в Redis для горячего
   /// пути бота. NULL для legacy-приглашений без β-9 интеграции.
-  linkCode            String?  @unique
-  linkCodeUsedAt      DateTime?
+  linkCode           String?             @unique
+  linkCodeUsedAt     DateTime?
   /// β-9 (2026-05-25) — sha256 magic-link-токена (по аналогии с
   /// `UserVerificationToken.tokenHash`). Прожигается при первом клике по
   /// magic-link в письме → создаётся `User` + `Membership`, открывается сессия
   /// без пароля. NULL для legacy-приглашений.
-  magicTokenHash      String?  @unique
-  magicTokenUsedAt    DateTime?
+  magicTokenHash     String?             @unique
+  magicTokenUsedAt   DateTime?
   /// β-9 (2026-05-25) — когда крон `org-invitation-reminders` отправил
   /// напоминание сотруднику (на 7-й день после `createdAt`). NULL = не отправляли.
-  reminderSentAt      DateTime?
+  reminderSentAt     DateTime?
   /// β-9 (2026-05-25) — когда крон уведомил директора, что сотрудник так и
   /// не принял (на 14-й день, в день истечения). NULL = не уведомляли.
-  directorNotifiedAt  DateTime?
-  createdAt        DateTime            @default(now())
-  expiresAt        DateTime
-  acceptedAt       DateTime?
-  acceptedByUserId String?
-  acceptedByUser   User?               @relation("OrgInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  directorNotifiedAt DateTime?
+  createdAt          DateTime            @default(now())
+  expiresAt          DateTime
+  acceptedAt         DateTime?
+  acceptedByUserId   String?
+  acceptedByUser     User?               @relation("OrgInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
 
   @@index([orgId, status])
   @@index([email, status])
@@ -2386,26 +2469,26 @@ model RawEvent {
 ///   - merged_into: блок-дубликат, его mergedIntoId указывает на canonical
 ///   - archived: устарел / явно скрыт
 model IdeaBlock {
-  id               String                       @id @default(cuid())
-  tenantId         String
-  name             String
-  criticalQuestion String                       @db.Text
-  trustedAnswer    String                       @db.Text
-  tags             String[]                     @default([])
-  signalType       SignalType
-  confidence       Decimal                      @default(0.5) @db.Decimal(4, 3)
-  dataClass        DataClass                    @default(internal)
-  embedding        Unsupported("vector(1536)")?
-  status           IdeaBlockStatus              @default(draft)
-  mergedIntoId     String?
-  evidenceCount    Int                          @default(0)
+  id                          String                       @id @default(cuid())
+  tenantId                    String
+  name                        String
+  criticalQuestion            String                       @db.Text
+  trustedAnswer               String                       @db.Text
+  tags                        String[]                     @default([])
+  signalType                  SignalType
+  confidence                  Decimal                      @default(0.5) @db.Decimal(4, 3)
+  dataClass                   DataClass                    @default(internal)
+  embedding                   Unsupported("vector(1536)")?
+  status                      IdeaBlockStatus              @default(draft)
+  mergedIntoId                String?
+  evidenceCount               Int                          @default(0)
   /// Динамический рейтинг: пересчитывается ретеншеном; влияет на ранжирование в поиске.
-  dynamicScore     Decimal                      @default(1.0) @db.Decimal(8, 4)
+  dynamicScore                Decimal                      @default(1.0) @db.Decimal(8, 4)
   /// Фаза 0b — пометка role-relevance из BlockExtractionService.
   /// Если true и roleId != null — блок учитывается RoleProfileAgent'ом (Фаза 0d).
-  roleRelevant     Boolean                      @default(false)
+  roleRelevant                Boolean                      @default(false)
   /// Опц. связь блока с Role (бизнес-должность). NULL — общий блок.
-  roleId           String?
+  roleId                      String?
   /// SBA β-8.2 — поля «Хранителя обещаний». Заполняются ТОЛЬКО для
   /// блоков с signalType='commitment'. Для остальных типов всегда NULL.
   ///
@@ -2414,35 +2497,35 @@ model IdeaBlock {
   /// Если не извлечён — backfill-скрипт ставит `createdAt + 5 рабочих дней`.
   commitmentDueDate           DateTime?
   /// 'open' | 'asked' | 'fulfilled' | 'missed' | 'cancelled' | 'superseded'.
-  commitmentStatus            String?    @db.VarChar(20)
+  commitmentStatus            String?                      @db.VarChar(20)
   /// Адресат обещания (Person той же Org). NULL если не извлечён.
   commitmentRecipientPersonId String?
   /// Когда последний раз ушёл probe «выполнил ли?».
   commitmentAskedAt           DateTime?
   /// Когда эскалировали при молчании (probe ушёл COO + owner).
   commitmentEscalatedAt       DateTime?
-  createdAt        DateTime                     @default(now())
-  updatedAt        DateTime                     @updatedAt
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
 
-  org        Org                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  mergedInto IdeaBlock?           @relation("BlockMerges", fields: [mergedIntoId], references: [id])
-  mergedFrom IdeaBlock[]          @relation("BlockMerges")
-  evidence   IdeaBlockEvidence[]
-  entities   IdeaBlockEntity[]
-  linksFrom  IdeaBlockLink[]      @relation("BlockLinkFrom")
-  linksTo    IdeaBlockLink[]      @relation("BlockLinkTo")
-  themes     ThemeIdeaBlock[]
+  org                 Org                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mergedInto          IdeaBlock?           @relation("BlockMerges", fields: [mergedIntoId], references: [id])
+  mergedFrom          IdeaBlock[]          @relation("BlockMerges")
+  evidence            IdeaBlockEvidence[]
+  entities            IdeaBlockEntity[]
+  linksFrom           IdeaBlockLink[]      @relation("BlockLinkFrom")
+  linksTo             IdeaBlockLink[]      @relation("BlockLinkTo")
+  themes              ThemeIdeaBlock[]
   /// Decision-сущности, созданные параллельно этому блоку (idempotent по
   /// sourceIdeaBlockId; Фаза 0b §I.66 зонтичного ТЗ).
-  decisions  Decision[]
+  decisions           Decision[]
   /// Фаза 0d — link на Role-бизнес-должность для RoleProfileAgent.
-  role       Role?                @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  role                Role?                @relation(fields: [roleId], references: [id], onDelete: SetNull)
   /// SBA α-3 wave 3 — axis-метки (who/functional/contextual/temporal),
   /// проставленные AxisClassifierService после router.dispatch.
   /// См. plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md.
-  axisLabels IdeaBlockAxisLabel[]
+  axisLabels          IdeaBlockAxisLabel[]
   /// SBA β-8.2 — адресат обещания (для блоков signalType='commitment').
-  commitmentRecipient Person? @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
+  commitmentRecipient Person?              @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
@@ -2607,6 +2690,7 @@ model Event {
   durationMin           Int?
   location              String?   @db.VarChar(300)
   /// Person.id участников (мягкая ссылка, без FK — каскад не нужен).
+  /// Legacy-поле от AI-pipeline. Calendar MVP использует EventParticipant.
   participantsPersonIds String[]  @default([])
   /// Meeting.id, если событие отражает реальную видеовстречу LiveKit.
   relatedMeetingId      String?
@@ -2616,9 +2700,76 @@ model Event {
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime?
 
+  // ── Calendar MVP (2026-05-25) — расширения для пользовательского календаря ──
+  /// Организатор события. NULL для AI-сгенерированных событий из транскриптов
+  /// (legacy путь через EntityResolutionService.findOrCreateOrLinkEventEntity).
+  /// REQUIRED для событий, созданных через POST /api/v1/events.
+  ownerId          String?
+  owner            User?           @relation("EventOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  description      String?         @db.Text
+  /// true → событие на весь день (startAt = 00:00 локальной TZ, endAt = 00:00 след. дня).
+  allDay           Boolean         @default(false)
+  /// IANA timezone организатора (например, "Europe/Moscow").
+  timezone         String          @default("Europe/Moscow") @db.VarChar(64)
+  /// RFC-5545 RRULE для повторяющихся событий. В MVP — только пресеты
+  /// (FREQ=DAILY|WEEKLY|MONTHLY|YEARLY[;BYDAY=...]). Полный парсер — Фаза 3.
+  rrule            String?
+  status           EventStatus     @default(confirmed)
+  visibility       EventVisibility @default(company)
+  /// Источник синхронизации (для будущей 2-way OAuth, Фаза 3).
+  externalProvider String?         @db.VarChar(40)
+  externalEventId  String?         @db.VarChar(200)
+  /// Опц. привязка к Project трекера (для per-project Calendar view).
+  projectId        String?
+
+  participants EventParticipant[]
+  reminders    EventReminder[]
+
   @@index([tenantId, startAt])
   @@index([tenantId, kind])
   @@index([tenantId, deletedAt])
+  @@index([tenantId, ownerId, startAt])
+  @@index([tenantId, projectId, startAt])
+  @@index([externalProvider, externalEventId])
+}
+
+/// EventParticipant — участник события (Calendar MVP 2026-05-25).
+/// Один из (userId, personId) обязательно заполнен. userId — для приглашённых
+/// пользователей платформы; personId — для external контактов (Person).
+model EventParticipant {
+  id        String               @id @default(cuid())
+  eventId   String
+  event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?                @relation("EventParticipantUser", fields: [userId], references: [id], onDelete: Cascade)
+  personId  String?
+  person    Person?              @relation("EventParticipantPerson", fields: [personId], references: [id], onDelete: Cascade)
+  role      EventParticipantRole @default(required)
+  rsvp      RsvpStatus           @default(pending)
+  rsvpAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([eventId])
+  @@index([userId, rsvp])
+  @@index([personId])
+}
+
+/// EventReminder — напоминание по событию (Calendar MVP 2026-05-25).
+/// Sweep'ит EventReminderSchedulerCron каждую минуту: где
+/// `sentAt IS NULL AND event.startAt - offsetMin*60s <= now`.
+/// userId=NULL → отправляется всем участникам.
+model EventReminder {
+  id        String          @id @default(cuid())
+  eventId   String
+  event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  offsetMin Int
+  channel   ReminderChannel
+  userId    String?
+  sentAt    DateTime?
+  createdAt DateTime        @default(now())
+
+  @@index([eventId])
+  @@index([sentAt, eventId])
 }
 
 /// Market — рынок как сущность графа знаний (категория A, SBA α-3 wave 2).
@@ -3345,6 +3496,10 @@ model Department {
   sourceBlockIds     String[]  @default([])
   /// Confidence от extraction-LLM (для агентских записей).
   confidence         Decimal?  @db.Decimal(4, 3)
+  /// ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — глава отдела.
+  /// Person.id главы отдела; probe-уведомления об аномалиях профиля клона
+  /// сначала идут ему, и только при NULL — fallback к admin'ам.
+  headPersonId       String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   /// Soft-delete: cohabits с уникальностью (orgId, name) благодаря включению deletedAt в @@unique.
@@ -3354,6 +3509,8 @@ model Department {
   parent                    Department?            @relation("DepartmentParent", fields: [parentDepartmentId], references: [id])
   children                  Department[]           @relation("DepartmentParent")
   entity                    Entity?                @relation("DepartmentEntity", fields: [entityId], references: [id], onDelete: SetNull)
+  /// ТЗ 2026-05-25 Фаза 3 — глава отдела (см. headPersonId).
+  headPerson                Person?                @relation("DepartmentHead", fields: [headPersonId], references: [id], onDelete: SetNull)
   roles                     Role[]
   persons                   Person[]               @relation("PersonPrimaryDepartment")
   /// SBA α-8 wave 3 — Appointment[] (current/historical назначения в отделе).
@@ -3368,6 +3525,7 @@ model Department {
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId])
   @@index([tenantId, parentDepartmentId])
+  @@index([tenantId, headPersonId])
   @@map("departments")
 }
 
@@ -3472,30 +3630,34 @@ model Person {
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
 
-  org                   Org               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user                  User?             @relation("UserPersons", fields: [userId], references: [id], onDelete: SetNull)
-  primaryDepartment     Department?       @relation("PersonPrimaryDepartment", fields: [primaryDepartmentId], references: [id])
-  entity                Entity?           @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  org                   Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                  User?              @relation("UserPersons", fields: [userId], references: [id], onDelete: SetNull)
+  primaryDepartment     Department?        @relation("PersonPrimaryDepartment", fields: [primaryDepartmentId], references: [id])
+  entity                Entity?            @relation(fields: [entityId], references: [id], onDelete: SetNull)
   personRoles           PersonRole[]
   /// SBA α-8 wave 3 — Appointment[] (replacement для PersonRole).
   appointments          Appointment[]
-  uploadedDocuments     Document[]        @relation("DocumentUploader")
-  decisionsMade         Decision[]        @relation("DecisionDecidedBy")
-  ownedProcesses        Process[]         @relation("ProcessOwnerPerson")
+  uploadedDocuments     Document[]         @relation("DocumentUploader")
+  decisionsMade         Decision[]         @relation("DecisionDecidedBy")
+  ownedProcesses        Process[]          @relation("ProcessOwnerPerson")
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
-  ownedRegulations      Regulation[]      @relation("RegulationOwnerPerson")
-  ownedPolicies         Policy[]          @relation("PolicyOwnerPerson")
+  ownedRegulations      Regulation[]       @relation("RegulationOwnerPerson")
+  ownedPolicies         Policy[]           @relation("PolicyOwnerPerson")
   /// SBA α-7 wave 2 — Person как owner ProcessTemplate.
-  ownedProcessTemplates ProcessTemplate[] @relation("ProcessTemplateOwnerPerson")
-  memberships           Membership[]      @relation("MembershipPerson")
-  invitations           OrgInvitation[]   @relation("OrgInvitationPerson")
+  ownedProcessTemplates ProcessTemplate[]  @relation("ProcessTemplateOwnerPerson")
+  memberships           Membership[]       @relation("MembershipPerson")
+  invitations           OrgInvitation[]    @relation("OrgInvitationPerson")
   /// SBA γ-1 — Specialist 3.7 (SkillProfile). 1:1 — у одного Person ровно один профиль.
-  skillProfile          SkillProfile?     @relation("SkillProfilePerson")
+  skillProfile          SkillProfile?      @relation("SkillProfilePerson")
   /// SBA β-8 — DailyCheckIn записи сотрудника.
-  dailyCheckIns         DailyCheckIn[]    @relation("DailyCheckInPerson")
+  dailyCheckIns         DailyCheckIn[]     @relation("DailyCheckInPerson")
   /// SBA β-8.2 — обратная связь для обещаний, адресованных этому человеку
   /// (`IdeaBlock.commitmentRecipientPersonId`).
-  commitmentsToMe       IdeaBlock[]       @relation("CommitmentRecipient")
+  commitmentsToMe       IdeaBlock[]        @relation("CommitmentRecipient")
+  /// ТЗ 2026-05-25 Фаза 3 — отделы, где этот Person — глава.
+  headOfDepartments     Department[]       @relation("DepartmentHead")
+  /// Calendar MVP (2026-05-25) — участие как Person (external контакт).
+  eventParticipations   EventParticipant[] @relation("EventParticipantPerson")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6219,8 +6381,8 @@ model Project {
   // Полный адрес = `${emailInboxAlias}@${MAIL_INBOX_DOMAIN}`.
   // - emailInboxAlias: nullable + @unique (одноимённый alias невозможен в принципе).
   // - emailInboxEnabled: kill-switch на проект (по умолчанию выключено).
-  emailInboxAlias   String?  @unique
-  emailInboxEnabled Boolean  @default(false)
+  emailInboxAlias   String? @unique
+  emailInboxEnabled Boolean @default(false)
 
   // Шаблон команды, из которого создан
   teamTemplateId String?

@@ -41,6 +41,8 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | recognition | `recognition-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
 | tracker AI (Phase 3) | `meeting-extract-actions`, `intake-auto-triage`, `issue-infer-fields`, `issue-goal-suggest` | DeepSeek-flash → OpenAI-mini → Ollama |
 | meeting analyze | `analyze-default`, `type-sales`, `type-interview`, `type-1on1`, ..., `review`, `retrospective`, `task_discussion` | по типу — см. `seed-llm-task-routes*.ts` |
+| **operations (β-8.1, 2026-05-25)** | `checkin-sentiment`, `operations-weekly-digest` | DeepSeek-chat → OpenAI-mini → Ollama qwen3.5:9b |
+| **operations (β-8.2, 2026-05-25)** | `commitment-extract-dates`, `commitment-extract-status` | DeepSeek-chat → OpenAI-mini → Ollama qwen3.5:9b |
 
 ## Финальный handoff Wave 1-3 — изменения (2026-05-25)
 

@@ -1743,4 +1743,24 @@ mail-inbound/
 
 [`plans/analysis/2026-05-24-spo-discovery.md`](../../plans/analysis/2026-05-24-spo-discovery.md) — 9 секций аналитики + 5 вопросов владельцу. Реализация (модели Strategy / Plan / Operation + связи) — после решения владельца. Код НЕ затронут.
 
+### SBA β-8.1 + β-8.2 — модуль `operations/` расширен (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md).
+
+`backend/src/modules/operations/` — расширения поверх готового β-8:
+
+| Слой | β-8 (уже было) | β-8.1 (новое) | β-8.2 (новое) |
+|---|---|---|---|
+| Контроллеры | `operations-dashboard`, `my-check-ins`, `personal-relations` | `weekly-digest` + extension `operations-dashboard.team-temperature` | `my-promises` + extensions `operations-dashboard.open-commitments`, `personal-relations.commitments` |
+| Сервисы | `daily-checkin`, `personal-relation`, `goal-cascade`, `operations-dashboard`, `checkin-parser`, `checkin-response.handler` | `weekly-digest.service` | `commitments.service`, `specialist-3-9-promise-keeper.service`, `commitment-response.handler` |
+| Воркеры/cron | `daily-checkin-prompt.cron`, `personal-relation-builder.worker` | `checkin-sentiment-analyzer.worker` (@OnEvent), `operations-weekly-digest.cron` | `commitment-followup.cron` |
+| Промпты | — | `checkin-sentiment`, `weekly-digest` | — (использует общий `block-ingest.prompt` с двумя новыми guess-полями) |
+| Скрипты | — | `patch-org-timezone-default.ts`, `seed-llm-task-routes-beta-8-1.ts` | `backfill-commitment-due-dates.ts`, `seed-llm-task-routes-beta-8-2.ts` |
+
+**Внешние пересечения β-8.2:**
+- `knowledge-core/services/router.service.ts` — снята заглушка `commitment_status: no-op`, теперь эмитит `commitment.status_received` через `EventEmitter2`.
+- `knowledge-core/prompts/block-ingest.prompt.ts` + `services/block-extraction.service.ts` + `workers/block-ingest.worker.ts` — извлечение `commitmentDueDateGuess` и `commitmentRecipientNameGuess` из текста встреч/чек-инов; fuzzy-match Person по имени.
+- `tracker/tracker.module.ts` — `HolidayService` экспортируется наружу (нужен PromiseKeeper'у для «5 рабочих дней» и «следующий рабочий день»).
+- `rbac/policies/policy.csv` + `rbac/rbac.service.ts` — новые ресурсы `dashboard_operations_temperature`, `dashboard_operations_weekly`, `commitment`.
+
 [[../index|← index]]

@@ -166,9 +166,26 @@ Admin-таблицы (`/admin/llm-prices`, `/admin/usage/users`, `/admin/usage/f
 
 Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pills) — горизонтальный `overflow-x-auto scrollbar-none snap-x` на mobile, `flex-wrap` на desktop.
 
+## SBA β-8.1 + β-8.2 — добивка панели COO + Хранитель обещаний (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md).
+
+| Путь | Что показывает | Фаза |
+|---|---|---|
+| `/dashboard/operations` (расширена) | Существующая панель + новый виджет `TeamTemperatureWidget` (зелёный/жёлтый/красный по 7 дням) + виджет «Открытые обещания» | β-8.1 + β-8.2 |
+| `/dashboard/operations/weekly?weekStart=YYYY-MM-DD` | `WeeklyDigestClient` — рендер `WeeklyOperationsDigest` с навигацией по неделям. Доступ — `coo`/`owner`/`admin`. | β-8.1 |
+| `/me/promises` | `MyPromisesClient` — таблица обещаний сотрудника + фильтр (open/asked/all) + действия (Сделано / Не сделано / Отменить) | β-8.2 |
+
+**Навигация (`Sidebar.tsx`):**
+- Группа «Операции»: «Панель операций» (как было) + «Недельная сводка» (новое).
+- Группа «Я»: «Мои обещания» (новое, иконка `CheckCircle2`).
+
+**Frontend-роль:** `CurrentOrgRole` расширена значением `'coo'` (`frontend/src/api/types/accounts.ts` + `frontend/src/domain/account.ts`).
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.
 - **2026-05-25 (UI/API modernization):** добавлена секция про design-preview / 7 новых shared-компонентов / 2 hooks / OKLCH-токены / sonner-миграцию / mobile-адаптацию.
+- **2026-05-25 (β-8.1/β-8.2):** добавлены страницы `/dashboard/operations/weekly` и `/me/promises`, виджеты `TeamTemperatureWidget` и «Открытые обещания», роль `coo` во фронтенд-типах.
 
 [[../index|← index]]

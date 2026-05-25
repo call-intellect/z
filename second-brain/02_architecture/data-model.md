@@ -818,4 +818,63 @@ enum MailInboundStatus {
 
 `ChatV2Scope` enum (Prisma + DTO) расширен: значения `org | card | project | issue`. Теперь чат-в-задаче (`IssueChat`) работает на родном scope, а не через workaround scope=`'card'` (как было в Wave 2). Маппинг scope→specialist'ы — в `SynthesisService.mapScope` + новый specialist в `card-specialist-registry.service.ts`.
 
+### SBA β-8.1 — DailyCheckIn.sentiment + WeeklyOperationsDigest (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md).
+
+**`DailyCheckIn` (расширение, β-8 + β-8.1):**
+
+```prisma
+sentiment             String?   @db.VarChar(10)  // 'green' | 'yellow' | 'red' | null
+sentimentRationale    String?   @db.Text          // короткое обоснование от LLM
+sentimentVersion      String?   @db.VarChar(120)  // 'prompt-v1+deepseek-chat'
+sentimentDeterminedAt DateTime?
+@@index([tenantId, sentiment, dateLocal])         // для виджета «Температура команды»
+```
+
+⚠ **Privacy:** поля `sentiment*` отдаются только ролям `coo` / `owner` / `admin` / `super_admin`. Маппер `stripSentimentForRole` (см. `backend/src/modules/operations/dto/daily-check-in.dto.ts`) удаляет их у остальных. В `/me/check-ins` маппер вызывается с `role=null` всегда — сотрудник своего настроения никогда не увидит.
+
+**`WeeklyOperationsDigest` (новая):**
+
+```prisma
+model WeeklyOperationsDigest {
+  id              String   @id @default(cuid())
+  tenantId        String
+  weekStart       String   // YYYY-MM-DD, понедельник недели в локали Org
+  weekEnd         String   // YYYY-MM-DD, воскресенье
+  bodyMarkdown    String   @db.Text
+  metricsJson     Json     // структурированные показатели для виджетов
+  sourcesJson     Json     // провенанс: id блокеров/инсайтов/целей/решений
+  llmTaskRouteId  String?
+  createdAt       DateTime @default(now())
+  @@unique([tenantId, weekStart])                 // идемпотентность cron'а
+  @@map("weekly_operations_digests")
+}
+```
+
+**`Org` (расширение):** добавлено поле `timezone String? @default("Europe/Moscow")`. Backfill — `backend/scripts/patch-org-timezone-default.ts`.
+
+### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).
+
+**`IdeaBlock` (расширение для `signalType='commitment'`):**
+
+```prisma
+commitmentDueDate           DateTime?     // срок (из текста или резерв createdAt + 5 рабочих дней)
+commitmentStatus            String?       // 'open' | 'asked' | 'fulfilled' | 'missed' | 'cancelled' | 'superseded'
+commitmentRecipientPersonId String?
+commitmentAskedAt           DateTime?     // когда отправили followup-probe
+commitmentEscalatedAt       DateTime?     // когда эскалировали (после COMMITMENT_ESCALATION_DAYS молчания)
+commitmentRecipient Person? @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
+@@index([tenantId, signalType, commitmentStatus, commitmentDueDate])
+@@index([tenantId, signalType, commitmentStatus])
+```
+
+Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` поддерживается).
+
+**`Person` (обратная связь):** `commitmentsToMe IdeaBlock[] @relation("CommitmentRecipient")` — обещания, адресованные этому человеку.
+
+**`IdeaBlockLinkType` (новое значение):** `resolves` — запись `signalType='commitment_status'` закрывает исходное `commitment` через `IdeaBlockLink`.
+
 [[../index|← index]]

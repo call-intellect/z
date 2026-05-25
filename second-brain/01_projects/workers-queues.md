@@ -61,6 +61,8 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | `telegram-digest` | `0 9 * * *` | tracker Wave 3 | Telegram дайджест моих задач |
 | `cycle-rollover` | (на end of cycle) | tracker | Auto-rollover незакрытых задач |
 | **`imap-poll` (T5)** | `MAIL_INBOX_POLL_CRON` default `*/2 * * * *` | `mail-inbound/cron/imap-poll.cron.ts` | **Финальный handoff 2026-05-25.** IMAP fetch unseen → парсит → routing на Project |
+| **`operations-weekly-digest` (β-8.1)** | `0 * * * *` (фильтр по `Org.timezone`, понедельник `COO_WEEKLY_DIGEST_LOCAL_HOUR`) | `operations/workers/operations-weekly-digest.cron.ts` | Идемпотентно по `(tenantId, weekStart)`. Отправка `coo+owner` через `ConversationalService` (eventType `operations.weekly_digest`). |
+| **`commitment-followup` (β-8.2)** | `0 * * * *` (фильтр по `Org.timezone`, `COMMITMENT_FOLLOWUP_LOCAL_HOUR` default 9) | `operations/workers/commitment-followup.cron.ts` | Ищет `commitmentStatus='open'` со сроком прошедшим (+1 рабочий день через `HolidayService`) → `ProbeService.suggest(reason='commitment.followup')`. Эскалация ролям `coo`/`owner` после `COMMITMENT_ESCALATION_DAYS` молчания. |
 
 ## Финальный handoff Wave 1-3 — новые воркеры (2026-05-25)
 
@@ -94,8 +96,23 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 4. **HNSW pgvector индексы** — для всех embedding-полей. Создаются скриптом `bun run apply-postgres-init` (НЕ в `schema.prisma`).
 5. **Метрики Prometheus** — каждая очередь имеет `<queue>_total{tenant, status}` counter.
 
+## SBA β-8.1 + β-8.2 — добивка панели COO + Хранитель обещаний (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md).
+
+### Воркеры (event-driven, без BullMQ-очереди)
+
+| Worker | Триггер | Файл | Что делает |
+|---|---|---|---|
+| `CheckinSentimentAnalyzerWorker` | `@OnEvent('checkin.created')` после `CheckinResponseHandler.upsertFromParser` или ручного `POST /me/check-ins` | `operations/workers/checkin-sentiment-analyzer.worker.ts` | Один вызов LLM `checkin-sentiment` (timeout 30с). Только вечерние чек-ины. Best-effort: при ошибке — `sentiment=null`, чек-ин остаётся. |
+| `PersonalRelationBuilderWorker` (β-8, уже было) | event-driven | `operations/workers/personal-relation-builder.worker.ts` | — |
+| `CommitmentResponseHandler` (β-8.2) | `@OnEvent('notification.responded')` + `metaJson.reason='commitment.followup'` | `operations/services/commitment-response.handler.ts` | LLM `commitment-extract-status` → создаёт `IdeaBlock(signalType='commitment_status')` + `IdeaBlockLink(type='resolves')` + обновляет статус исходного. Если `missed` — создаёт ещё `blocker`-блок. |
+
+Маршрутизатор `knowledge-core/services/router.service.ts` для `signalType='commitment_status'` теперь эмитит `commitment.status_received` (раньше был `no-op`).
+
 ## История
 
 - **2026-05-25:** создан в рамках финального handoff Wave 1-3. Добавлен `imap-poll` cron (T5), документировано отсутствие воркера для voice WS (T4).
+- **2026-05-25 (β-8.1/β-8.2):** добавлены `operations-weekly-digest` и `commitment-followup` cron'ы + event-driven worker'ы `CheckinSentimentAnalyzerWorker` и `CommitmentResponseHandler`.
 
 [[../index|← index]]

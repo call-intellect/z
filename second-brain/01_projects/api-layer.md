@@ -82,6 +82,28 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`orgs-and-rbac.md`](orgs-and-rbac.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).
 
+## Operations — COO Dashboard + DailyCheckIn + Promises
+
+| Метод | Путь | Назначение | Доступ | Фаза |
+|---|---|---|---|---|
+| GET | `/api/v1/dashboard/operations/overview` | Pulse: blockers/missed goals/team friction/capacity | `coo` `owner` `admin` | β-8 |
+| GET | `/api/v1/dashboard/operations/blockers` | Активные блокеры с владельцами | `coo` `owner` `admin` | β-8 |
+| GET | `/api/v1/dashboard/operations/team-frictions` | EntityLink-конфликты в команде | `coo` `owner` `admin` | β-8 |
+| GET | `/api/v1/dashboard/operations/capacity` | Аггрегат `Appointment.loadPercent` | `coo` `owner` `admin` | β-8 |
+| **GET** | `/api/v1/dashboard/operations/team-temperature?days=7` | Агрегат `sentiment` чек-инов по людям/командам | `coo` `owner` `admin` | **β-8.1** |
+| **GET** | `/api/v1/dashboard/operations/weekly-digest?weekStart=YYYY-MM-DD` | Сохранённый `WeeklyOperationsDigest` или 404 | `coo` `owner` `admin` | **β-8.1** |
+| **POST** | `/api/v1/dashboard/operations/weekly-digest/generate?weekStart=…` | Принудительная перегенерация | `admin` `super_admin` | **β-8.1** |
+| **GET** | `/api/v1/dashboard/operations/open-commitments?days=14` | Висящие обещания в команде с именами | `coo` `owner` `admin` | **β-8.2** |
+| GET | `/api/v1/me/check-ins?date=&kind=` | Свои чек-ины (`sentiment*` поля **всегда скрыты**, даже если у юзера есть роль `coo`) | self | β-8 / β-8.1 |
+| POST | `/api/v1/me/check-ins` | Manual upsert | self | β-8 |
+| GET | `/api/v1/me/check-ins/history?days=30` | Окно истории | self | β-8 |
+| **GET** | `/api/v1/me/promises?status=open\|asked\|all&limit=50` | Свои обещания (изоляция через JOIN `entities.entity.persons.some.id`) | self | **β-8.2** |
+| **POST** | `/api/v1/me/promises/:blockId/mark` | Ручное закрытие (`fulfilled`/`missed`/`cancelled` + note) | self | **β-8.2** |
+| GET | `/api/v1/personal-relations?personId=&relationType=` | EntityLink-связи человека | `admin` `coo` | β-8 |
+| **GET** | `/api/v1/personal-relations/commitments?personId=` | Исходящие + входящие обещания человека | `admin` `coo` | **β-8.2** |
+
+⚠ **Privacy `sentiment`:** в `/me/check-ins` маппер `stripSentimentForRole` всегда вызывается с `role=null` — fail-safe двойная защита (RBAC + DTO-фильтр) против утечки настроения сотруднику. Покрыто 9 тестами.
+
 ## WebSocket gateways
 
 | Namespace | Назначение |
@@ -93,5 +115,6 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.
+- **2026-05-25 (β-8.1/β-8.2):** добавлены `team-temperature`, `weekly-digest`, `open-commitments`, `/me/promises`, `personal-relations/commitments` endpoints; зафиксирована fail-safe privacy для поля `sentiment`.
 
 [[../index|← index]]

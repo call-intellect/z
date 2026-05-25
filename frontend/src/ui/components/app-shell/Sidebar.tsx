@@ -7,6 +7,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bot,
   Brain,
   Building2,
   CalendarClock,
@@ -147,6 +148,8 @@ const COMPANY_GROUP: NavGroup = {
     { href: '/maturity', label: 'Зрелость', icon: Gauge, matchPrefix: '/maturity' },
     { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
     { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles' },
+    // Clones=Roles Ф4 — публичная витрина клонов должностей.
+    { href: '/clones', label: 'Клоны', icon: Bot, matchPrefix: '/clones' },
     // SBA α-3 — read-only список поставщиков и событий (категория A онтологии).
     { href: '/vendors', label: 'Поставщики', icon: Truck, matchPrefix: '/vendors' },
     { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },

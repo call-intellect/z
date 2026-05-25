@@ -115,3 +115,93 @@ export interface RoleSkillProfileDto {
   /** True — есть active role-persona (можно «попробовать клона роли»). */
   hasRolePersona: boolean;
 }
+
+// ─────────────── Clones=Roles Ф4 — /clones list & history ───────────────
+
+/**
+ * Clones=Roles Ф4 — query-params для `GET /api/v1/clones`.
+ * Возвращает paginated список текущих active ролевых клонов Org.
+ *
+ * Filters:
+ *   - `status` — фильтр по `ExecutablePersona.status`. По умолчанию active.
+ *   - `q` — поиск подстрокой по `Role.name` (case-insensitive).
+ *   - `confidenceMin` — минимальный confidence клона (0..1).
+ *     Confidence считается как `min(1, builtFromTraitsCount / 10)` —
+ *     эвристика «10 traits = полный confidence», совпадает с UI Ф4.
+ *   - `page`, `pageSize` — 1-based pagination, pageSize default 20, max 100.
+ */
+export const ClonesListQuerySchema = z.object({
+  status: z.enum(['active', 'superseded']).optional().default('active'),
+  q: z.string().trim().min(1).max(200).optional(),
+  confidenceMin: z.coerce.number().min(0).max(1).optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional().default(20),
+});
+export type ClonesListQuery = z.infer<typeof ClonesListQuerySchema>;
+
+/**
+ * Clones=Roles Ф4 — карточка клона роли для `/clones` UI.
+ * Поля сгруппированы по UX-блокам страницы.
+ */
+export interface CloneListItemDto {
+  /** ExecutablePersona.id текущей active версии. */
+  personaId: string;
+  /** Role.id — ссылка `/roles/:id/clone`. */
+  roleId: string;
+  /** Role.name. */
+  roleName: string;
+  /** Department.name (если у роли есть отдел) — для группировок/фильтров. */
+  departmentName: string | null;
+  /** Department.id — для будущих фильтров по департаменту. */
+  departmentId: string | null;
+  /** Версия клона роли (ExecutablePersona.roleVersion). 1, если backfill не прошёл. */
+  version: number;
+  /** Публичное имя клона «Клон Маркетолога v2» (ExecutablePersona.publicName). */
+  publicName: string;
+  /** ExecutablePersona.status — active/archived/superseded. */
+  status: 'active' | 'superseded';
+  /** Текущий носитель роли (Person.id + name) или null. */
+  currentBearer: { personId: string; personName: string } | null;
+  /** confidence клона — эвристика min(1, builtFromTraitsCount / 10), 0..1. */
+  confidence: number;
+  /** Количество SkillTrait.id, попавших в snapshot. */
+  traitsCount: number;
+  /** ISO дата последнего snapshot (ExecutablePersona.snapshotAt). */
+  lastBuildAt: string;
+}
+
+export interface ClonesListResponseDto {
+  items: CloneListItemDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Clones=Roles Ф4 — одна версия из истории клона роли
+ * (`GET /api/v1/clones/:roleId/history`).
+ */
+export interface CloneVersionDto {
+  personaId: string;
+  roleId: string;
+  version: number;
+  publicName: string;
+  status: 'active' | 'superseded';
+  /** Носитель роли в эту версию (если был зафиксирован). */
+  bearer: { personId: string; personName: string } | null;
+  /** Старт периода — snapshotAt этой версии. */
+  validFrom: string;
+  /**
+   * Конец периода — snapshotAt следующей версии или null, если эта версия
+   * сейчас активна. UI отображает «по сейчас».
+   */
+  validUntil: string | null;
+  confidence: number;
+  traitsCount: number;
+}
+
+export interface CloneHistoryResponseDto {
+  roleId: string;
+  roleName: string;
+  versions: CloneVersionDto[];
+}

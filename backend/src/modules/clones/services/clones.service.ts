@@ -29,6 +29,11 @@ import { RbacService } from '../../rbac/rbac.service';
 import type {
   AskCloneResponseDto,
   CloneCitationDto,
+  CloneHistoryResponseDto,
+  CloneListItemDto,
+  ClonesListQuery,
+  ClonesListResponseDto,
+  CloneVersionDto,
   RoleSkillProfileDto,
   SkillProfileDto,
   SkillTraitDto,
@@ -656,6 +661,279 @@ export class ClonesService {
       people,
       hasRolePersona,
     };
+  }
+
+  // ─────────────────────── Clones=Roles Ф4 — list & history ───────────────────────
+
+  /**
+   * Clones=Roles Ф4 — список текущих ролевых клонов Org для `/clones`.
+   *
+   * Контракт:
+   *   - RBAC: read `role` (как и `getRoleSkillProfile`). Любой member,
+   *     которому видны роли, видит список их клонов.
+   *   - Возвращает только `ExecutablePersona(scope='role')` — person-scope
+   *     персоны (legacy) скрыты, фронт их больше не показывает.
+   *   - На каждую (role, version) даём максимум одну запись: для status='active'
+   *     это естественно (одна active версия на роль), для других статусов
+   *     группировка делается на DB-уровне через ORDER BY + DISTINCT ON.
+   *     На Ф4 берём только status='active' по умолчанию — поэтому достаточно
+   *     обычного findMany.
+   *   - confidence — эвристика `min(1, builtFromTraitsCount / 10)`.
+   *     Без отдельного поля в БД, согласовано с UI Ф4 (та же формула там).
+   */
+  async listClones(args: {
+    tenantId: string;
+    requesterUserId: string;
+    query: ClonesListQuery;
+  }): Promise<ClonesListResponseDto> {
+    const allowed = await this.rbac.check({
+      userId: args.requesterUserId,
+      tenantId: args.tenantId,
+      obj: 'role',
+      act: 'read',
+      resourceOwnerId: null,
+    });
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Нет доступа к списку клонов ролей',
+        },
+      });
+    }
+
+    const { status, q, confidenceMin, page, pageSize } = args.query;
+
+    // Сначала собираем кандидатов на уровне БД: ExecutablePersona(scope='role')
+    // нужного статуса в этом Org. Фильтр по Role.name (через include) и
+    // confidenceMin делаем in-memory — на текущих объёмах (десятки ролей)
+    // это безопасно. Если ролей в Org станет >>100 — переедет в pgvector-style
+    // raw query, пока избыточно.
+    const allCandidates = await this.prisma.executablePersona.findMany({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        status,
+      },
+      orderBy: { snapshotAt: 'desc' },
+      select: {
+        id: true,
+        scopeRefId: true,
+        version: true,
+        roleVersion: true,
+        publicName: true,
+        status: true,
+        currentBearerPersonId: true,
+        builtFromTraitsCount: true,
+        snapshotAt: true,
+        includedTraitIds: true,
+      },
+    });
+
+    if (allCandidates.length === 0) {
+      return { items: [], total: 0, page, pageSize };
+    }
+
+    // Загружаем Role + Department + bearer Person одним батчем.
+    const roleIds = [
+      ...new Set(
+        allCandidates
+          .map((c) => c.scopeRefId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const bearerIds = [
+      ...new Set(
+        allCandidates
+          .map((c) => c.currentBearerPersonId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+
+    const [roles, bearers] = await Promise.all([
+      roleIds.length > 0
+        ? this.prisma.role.findMany({
+            where: { id: { in: roleIds }, tenantId: args.tenantId },
+            select: {
+              id: true,
+              name: true,
+              departmentId: true,
+              department: { select: { id: true, name: true } },
+            },
+          })
+        : Promise.resolve([]),
+      bearerIds.length > 0
+        ? this.prisma.person.findMany({
+            where: { id: { in: bearerIds }, tenantId: args.tenantId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const roleById = new Map(roles.map((r) => [r.id, r]));
+    const bearerById = new Map(bearers.map((p) => [p.id, p]));
+
+    // Сборка DTO + фильтры по Role.name и confidenceMin.
+    const qLower = q?.toLowerCase();
+    const mapped: CloneListItemDto[] = [];
+    for (const c of allCandidates) {
+      if (!c.scopeRefId) continue;
+      const role = roleById.get(c.scopeRefId);
+      if (!role) continue; // роль удалена / иной tenant — пропускаем
+      if (qLower && !role.name.toLowerCase().includes(qLower)) continue;
+
+      const confidence = Math.min(1, c.builtFromTraitsCount / 10);
+      if (confidenceMin !== undefined && confidence < confidenceMin) continue;
+
+      const bearer = c.currentBearerPersonId
+        ? bearerById.get(c.currentBearerPersonId)
+        : undefined;
+
+      mapped.push({
+        personaId: c.id,
+        roleId: role.id,
+        roleName: role.name,
+        departmentName: role.department?.name ?? null,
+        departmentId: role.department?.id ?? null,
+        version: c.roleVersion ?? 1,
+        publicName: c.publicName ?? `Клон ${role.name} v${c.roleVersion ?? 1}`,
+        status: c.status as 'active' | 'superseded',
+        currentBearer: bearer
+          ? { personId: bearer.id, personName: bearer.name }
+          : null,
+        confidence,
+        traitsCount: c.includedTraitIds.length,
+        lastBuildAt: c.snapshotAt.toISOString(),
+      });
+    }
+
+    const total = mapped.length;
+    const offset = (page - 1) * pageSize;
+    const items = mapped.slice(offset, offset + pageSize);
+
+    return { items, total, page, pageSize };
+  }
+
+  /**
+   * Clones=Roles Ф4 — история версий клона роли для
+   * `GET /api/v1/clones/:roleId/history`.
+   *
+   * Возвращает все `ExecutablePersona(scope='role', scopeRefId=roleId)`
+   * отсортированные по `roleVersion DESC`. Период каждой версии:
+   *   - validFrom = snapshotAt самой версии;
+   *   - validUntil = snapshotAt предыдущей по времени версии (для архивных)
+   *     или null (для текущей активной).
+   *
+   * RBAC: read `role`.
+   */
+  async getCloneHistory(args: {
+    tenantId: string;
+    requesterUserId: string;
+    roleId: string;
+  }): Promise<CloneHistoryResponseDto> {
+    const allowed = await this.rbac.check({
+      userId: args.requesterUserId,
+      tenantId: args.tenantId,
+      obj: 'role',
+      act: 'read',
+      resourceOwnerId: null,
+    });
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Нет доступа к истории клона роли',
+        },
+      });
+    }
+
+    const role = await this.prisma.role.findUnique({
+      where: { id: args.roleId },
+      select: { id: true, name: true, tenantId: true, deletedAt: true },
+    });
+    if (!role || role.deletedAt || role.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'role_not_found', message: 'Роль не найдена' },
+      });
+    }
+
+    const personas = await this.prisma.executablePersona.findMany({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+      },
+      orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+      select: {
+        id: true,
+        roleVersion: true,
+        version: true,
+        publicName: true,
+        status: true,
+        currentBearerPersonId: true,
+        builtFromTraitsCount: true,
+        snapshotAt: true,
+        includedTraitIds: true,
+      },
+    });
+
+    if (personas.length === 0) {
+      return { roleId: role.id, roleName: role.name, versions: [] };
+    }
+
+    const bearerIds = [
+      ...new Set(
+        personas
+          .map((p) => p.currentBearerPersonId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const bearers =
+      bearerIds.length > 0
+        ? await this.prisma.person.findMany({
+            where: { id: { in: bearerIds }, tenantId: args.tenantId },
+            select: { id: true, name: true },
+          })
+        : [];
+    const bearerById = new Map(bearers.map((p) => [p.id, p]));
+
+    // Сортируем по snapshotAt ASC для корректного вычисления validUntil:
+    // validUntil[i] = snapshotAt[i+1] (или null для самой свежей).
+    const byTimeAsc = [...personas].sort(
+      (a, b) => a.snapshotAt.getTime() - b.snapshotAt.getTime(),
+    );
+    const validUntilByPersonaId = new Map<string, string | null>();
+    for (let i = 0; i < byTimeAsc.length; i += 1) {
+      const next = byTimeAsc[i + 1];
+      validUntilByPersonaId.set(
+        byTimeAsc[i]!.id,
+        next ? next.snapshotAt.toISOString() : null,
+      );
+    }
+
+    const versions: CloneVersionDto[] = personas.map((p) => {
+      const bearer = p.currentBearerPersonId
+        ? bearerById.get(p.currentBearerPersonId)
+        : undefined;
+      return {
+        personaId: p.id,
+        roleId: role.id,
+        version: p.roleVersion ?? 1,
+        publicName: p.publicName ?? `Клон ${role.name} v${p.roleVersion ?? 1}`,
+        status: p.status as 'active' | 'superseded',
+        bearer: bearer
+          ? { personId: bearer.id, personName: bearer.name }
+          : null,
+        validFrom: p.snapshotAt.toISOString(),
+        validUntil: validUntilByPersonaId.get(p.id) ?? null,
+        confidence: Math.min(1, p.builtFromTraitsCount / 10),
+        traitsCount: p.includedTraitIds.length,
+      };
+    });
+
+    return { roleId: role.id, roleName: role.name, versions };
   }
 
   /**

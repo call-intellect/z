@@ -6,6 +6,7 @@ import {
   Inject,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -21,9 +22,13 @@ import { TenantGuard } from '../rbac/guards/tenant.guard';
 
 import {
   AskCloneBodySchema,
+  ClonesListQuerySchema,
   MarkTraitMisleadingBodySchema,
   type AskCloneBody,
   type AskCloneResponseDto,
+  type CloneHistoryResponseDto,
+  type ClonesListQuery,
+  type ClonesListResponseDto,
   type MarkTraitMisleadingBody,
   type SkillProfileDto,
   type RoleSkillProfileDto,
@@ -44,6 +49,45 @@ import { ClonesService } from './services/clones.service';
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class ClonesController {
   constructor(@Inject(ClonesService) private readonly clones: ClonesService) {}
+
+  // ─────── Clones=Roles Ф4 — list + history (новые ролевые эндпоинты) ───────
+
+  @Get()
+  @ApiOperation({
+    summary:
+      'Clones=Roles Ф4: список текущих ролевых клонов Org (для /clones UI)',
+  })
+  async listClones(
+    @Query(new ZodValidationPipe(ClonesListQuerySchema))
+    query: ClonesListQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ClonesListResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.listClones({
+      tenantId: t,
+      requesterUserId: user.id,
+      query,
+    });
+  }
+
+  @Get(':roleId/history')
+  @ApiOperation({
+    summary:
+      'Clones=Roles Ф4: история версий клона роли (для /roles/:id/clone/history)',
+  })
+  async getCloneHistory(
+    @Param('roleId') roleId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CloneHistoryResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.getCloneHistory({
+      tenantId: t,
+      requesterUserId: user.id,
+      roleId,
+    });
+  }
 
   @Post('persons/:personId/ask')
   @ApiOperation({

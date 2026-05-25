@@ -13,7 +13,7 @@
  */
 
 import { apiClient } from './api-client';
-import { orgHeaders } from './admin-helpers';
+import { buildQuery, orgHeaders } from './admin-helpers';
 
 export interface CloneCitationApi {
   blockId: string;
@@ -127,6 +127,57 @@ export interface ManualPersonaSnapshotResultApi {
   reason: string | null;
 }
 
+// ─────────── Clones=Roles Ф4 — list & history ───────────
+
+export interface CloneListItemApi {
+  personaId: string;
+  roleId: string;
+  roleName: string;
+  departmentName: string | null;
+  departmentId: string | null;
+  version: number;
+  publicName: string;
+  status: 'active' | 'superseded';
+  currentBearer: { personId: string; personName: string } | null;
+  confidence: number;
+  traitsCount: number;
+  lastBuildAt: string;
+}
+
+export interface ClonesListResponseApi {
+  items: CloneListItemApi[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ClonesListParams {
+  status?: 'active' | 'superseded';
+  q?: string;
+  confidenceMin?: number;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CloneVersionApi {
+  personaId: string;
+  roleId: string;
+  version: number;
+  publicName: string;
+  status: 'active' | 'superseded';
+  bearer: { personId: string; personName: string } | null;
+  validFrom: string;
+  validUntil: string | null;
+  confidence: number;
+  traitsCount: number;
+}
+
+export interface CloneHistoryResponseApi {
+  roleId: string;
+  roleName: string;
+  versions: CloneVersionApi[];
+}
+
 export const clonesApi = {
   // Фаза 3 ТЗ Clones=Roles (2026-05-25): `askPerson` удалён — клоны ролевые.
   askRole: (orgId: string, roleId: string, body: AskCloneRequestApi) =>
@@ -164,6 +215,27 @@ export const clonesApi = {
     apiClient.post<ManualPersonaSnapshotResultApi>(
       `/api/v1/clones/persons/${encodeURIComponent(personId)}/persona/snapshot`,
       {},
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Clones=Roles Ф4 — список текущих ролевых клонов Org. */
+  listClones: (orgId: string, params: ClonesListParams = {}) => {
+    const qs = buildQuery({
+      status: params.status,
+      q: params.q,
+      confidenceMin: params.confidenceMin,
+      page: params.page,
+      pageSize: params.pageSize,
+    });
+    return apiClient.get<ClonesListResponseApi>(`/api/v1/clones${qs}`, {
+      headers: orgHeaders(orgId),
+    });
+  },
+
+  /** Clones=Roles Ф4 — история версий клона роли. */
+  getCloneHistory: (orgId: string, roleId: string) =>
+    apiClient.get<CloneHistoryResponseApi>(
+      `/api/v1/clones/${encodeURIComponent(roleId)}/history`,
       { headers: orgHeaders(orgId) },
     ),
 };

@@ -85,9 +85,24 @@ export function RoutingDetailClient({ taskType }: Props) {
 
 // ────────────────────────────────────────── Метрики ──
 
+/**
+ * Унифицированная ось периода (Фаза 9 редизайна): `day/week/month`.
+ * Бэкенд `adminAiModelsApi.metrics` пока ждёт legacy-значения `24h/7d/30d`,
+ * поэтому конвертируем на лету при вызове API. Лейблы и UI-state — на новой оси.
+ */
+type UnifiedPeriod = 'day' | 'week' | 'month';
+const PERIOD_OPTIONS: ReadonlyArray<{ value: UnifiedPeriod; label: string }> = [
+  { value: 'day', label: 'Сутки' },
+  { value: 'week', label: 'Неделя' },
+  { value: 'month', label: 'Месяц' },
+];
+function periodToApi(p: UnifiedPeriod): '24h' | '7d' | '30d' {
+  return p === 'day' ? '24h' : p === 'week' ? '7d' : '30d';
+}
+
 function MetricsTabSection({ taskType }: { taskType: string }) {
   const [metrics, setMetrics] = useState<TaskTypeMetricsApi | null>(null);
-  const [period, setPeriod] = useState<'24h' | '7d' | '30d'>('7d');
+  const [period, setPeriod] = useState<UnifiedPeriod>('week');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,7 +110,7 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
     setLoading(true);
     setError(null);
     try {
-      const m = await adminAiModelsApi.metrics(taskType, period);
+      const m = await adminAiModelsApi.metrics(taskType, periodToApi(period));
       setMetrics(m);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить метрики');
@@ -113,18 +128,18 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-base font-semibold text-fg-primary">Метрики за период</h2>
         <div className="flex gap-1">
-          {(['24h', '7d', '30d'] as const).map((p) => (
+          {PERIOD_OPTIONS.map((p) => (
             <button
-              key={p}
+              key={p.value}
               type="button"
-              onClick={() => setPeriod(p)}
+              onClick={() => setPeriod(p.value)}
               className={`rounded px-2 py-1 text-xs ${
-                period === p
+                period === p.value
                   ? 'bg-fg-primary text-bg-card'
                   : 'bg-bg-subtle text-fg-secondary hover:bg-bg-overlay'
               }`}
             >
-              {p === '24h' ? '24ч' : p === '7d' ? '7 дней' : '30 дней'}
+              {p.label}
             </button>
           ))}
         </div>

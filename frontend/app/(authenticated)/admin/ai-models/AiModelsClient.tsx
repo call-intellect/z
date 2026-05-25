@@ -9,23 +9,24 @@
  *
  * Все строки на русском (memory `feedback_admin_ui_russian_only`).
  *
+ * Фаза 9 редизайна: переведён с `useEffect + useState + fetchData` на
+ * `useAdminQuery` — единый хук с поддержкой 403/forbidden и refetch.
+ *
  * Связанные страницы:
  *   - `/admin/ai-models/[taskType]` — детальная карточка с метриками и audit.
  *   - `/admin/ai-models/experiments` — A/B-эксперименты на моделях.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ExternalLink, Loader2, Search } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
 import {
   AI_MODELS_GROUPS,
   adminAiModelsApi,
   type AiModelGroup,
 } from '@/api/admin-ai-models.api';
 import { mapTaskTypeRoute, type TaskTypeRouteUi } from '@/domain/admin-ai-model';
-import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -36,34 +37,30 @@ import {
   SelectValue,
 } from '@/ui/shadcn/select';
 
+import { AdminForbidden } from '../AdminStateViews';
+import { useAdminQuery } from '../useAdminQuery';
+
 export function AiModelsClient() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<TaskTypeRouteUi[]>([]);
   const [groupFilter, setGroupFilter] = useState<'all' | AiModelGroup>('all');
   const [search, setSearch] = useState('');
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const q = useAdminQuery<TaskTypeRouteUi[]>(
+    `ai-models:${groupFilter}:${search}`,
+    async () => {
       const res = await adminAiModelsApi.list({
         ...(groupFilter !== 'all' ? { group: groupFilter } : {}),
         ...(search ? { search } : {}),
       });
-      setItems(res.items.map(mapTaskTypeRoute));
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить модели';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [groupFilter, search]);
+      return res.items.map(mapTaskTypeRoute);
+    },
+    [groupFilter, search],
+  );
 
-  useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+  // q.data — стабильная ссылка от useAdminQuery (меняется только при перезапросе),
+  // в отличие от `q.data ?? []`, который создаёт новый массив на каждый рендер.
+  const items: TaskTypeRouteUi[] = useMemo(() => q.data ?? [], [q.data]);
+  const loading = q.isLoading;
+  const error = q.error;
 
   const grouped = useMemo(() => {
     const map = new Map<string, TaskTypeRouteUi[]>();
@@ -133,13 +130,15 @@ export function AiModelsClient() {
         </div>
       )}
 
-      {error && !loading && (
+      {!loading && q.isForbidden && <AdminForbidden />}
+
+      {!loading && !q.isForbidden && error && (
         <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           {error}
         </div>
       )}
 
-      {!loading && !error && items.length === 0 && (
+      {!loading && !q.isForbidden && !error && items.length === 0 && (
         <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
           Пока нет ни одной записи. Запустите{' '}
           <code className="rounded bg-bg-subtle px-1 py-0.5 font-mono">

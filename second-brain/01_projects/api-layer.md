@@ -112,9 +112,123 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 | `/ws/feed` | ActivityFeed live (tenant/team/user rooms) |
 | `/ws/voice` | **T4 — Streaming ASR (Concierge voice input)** |
 
+## Admin (Z-Admin) — новые эндпоинты Фаз 0-9 редизайна (2026-05-25)
+
+Все эндпоинты — под `SuperAdminGuard` + `SuperAdminAuditInterceptor`, префикс `/api/v1/admin`. Severity `high`/`destructive` требует поля `reason` в payload. Подробнее — [admin-z-global.md](admin-z-global.md), [admin-settings.md](admin-settings.md), [admin-crons.md](admin-crons.md), [admin-workers.md](admin-workers.md), [admin-content.md](admin-content.md).
+
+### Settings (Фаза 0)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/settings` | список, фильтры `?category=&section=` |
+| GET | `/admin/settings/:key` | значение + метаданные |
+| POST | `/admin/settings/:key` | `{ value, reason? }` (reason обязателен для high/destructive) |
+| GET | `/admin/settings/:key/history` | последние 50 правок |
+
+### Crons (Фаза 8)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/crons` | список всех + статус |
+| PATCH | `/admin/crons/:name` | `{ expression?, enabled? }` |
+| POST | `/admin/crons/:name/run` | ручной запуск (пишет `CronRunHistory.triggeredBy`) |
+
+### Workers / BullMQ (Фаза 8)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/workers/queues` | список + counts |
+| GET | `/admin/workers/queues/:name` | active / waiting / failed / delayed |
+| POST | `/admin/workers/queues/:name/retry-failed` | Job.retry() для failed |
+| POST | `/admin/workers/queues/:name/pause` | Queue.pause() |
+| POST | `/admin/workers/queues/:name/resume` | Queue.resume() |
+
+### Audit + Incidents (Фаза 1)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/audit` | журнал super_admin, `?adminId=&entity=&from=&to=` |
+| GET | `/admin/incidents` | DLQ + failed jobs + алерты |
+| GET | `/admin/incidents/rules` | список правил алертов |
+| POST | `/admin/incidents/rules` | CRUD правил |
+| GET | `/admin/search` | Cmd+K fuzzy `?type=org|user|meeting&q=` |
+
+### Analytics (Фаза 2, read-only)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/analytics/orgs` | usage по Org + пользователям |
+| GET | `/admin/analytics/functions` | LLM-функции (заменил legacy `/admin/ai-usage`) |
+| GET | `/admin/analytics/economics` | юнит-экономика |
+| GET | `/admin/analytics/meetings` | встречи |
+| GET | `/admin/analytics/knowledge` | Knowledge-Core |
+| GET | `/admin/analytics/concierge` | Concierge / AI-чат |
+
+### AI и модели (Фаза 3)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/ai-models` | список taskType (legacy URL роутится сюда же из `/admin/ai/routing`) |
+| GET | `/admin/ai-models/:taskType` | детали + цепочка |
+| GET | `/admin/ai-models/:taskType/metrics` | `?period=24h\|7d\|30d` (legacy ось периода; UI шлёт через mapper из `day/week/month`) |
+| GET | `/admin/ai-models/:taskType/history` | audit переключений |
+| POST | `/admin/ai-models/:taskType/switch-primary` | switch + опц. A/B |
+| GET | `/admin/llm-routes` | роуты LLM по `dataClass` + `taskType` |
+| GET | `/admin/ai-prompts` (он же `/admin/prompts`) | реестр шаблонов промптов |
+| GET | `/admin/ai-prompts/:id` | + версии |
+
+### Orgs / Plans / Entitlements (Фаза 4)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/orgs/plans` | список планов продукта |
+| POST | `/admin/orgs/plans` | CRUD |
+| PATCH | `/admin/orgs/plans/:id` | CRUD |
+| GET | `/admin/orgs/entitlements` | глобальный обзор overrides по Org |
+| PATCH | `/admin/orgs/:id/entitlements` | редактирование per-Org overrides |
+
+### Content (Фаза 5)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/content/meeting-types` | список + CRUD |
+| POST | `/admin/content/meeting-types` | … |
+| PATCH | `/admin/content/meeting-types/:id` | … |
+| GET | `/admin/content/email-templates` | список (БД + bootstrap-sync из `mail.templates.ts`) |
+| POST | `/admin/content/email-templates` | … |
+| POST | `/admin/content/email-templates/:key/test-send` | `{ to }` тестовая отправка |
+| GET | `/admin/content/system-messages` | баннеры / maintenance / алерты |
+| POST | `/admin/content/system-messages` | … |
+| GET | `/admin/content/global-channels` | каталог in_app/email/telegram/max |
+| POST | `/admin/content/global-channels` | … |
+| GET | `/admin/content/copy-strings` | UI-строки |
+| PATCH | `/admin/content/copy-strings/:key` | … |
+
+### Integrations (Фаза 6)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/integrations/bots` | Conversational боты |
+| GET | `/admin/integrations/webhooks` | подписки на вебхуки |
+| GET | `/admin/integrations/livekit` | LiveKit-инспектор |
+
+### Media (Фаза 7)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/media/retention` | `RetentionPolicy` по типам |
+| PATCH | `/admin/media/retention/:type` | `{ days }` |
+| GET | `/admin/media/storage` | S3 buckets stats |
+| POST | `/admin/media/storage/switch` | `{ provider }` (Yandex/Selectel/MinIO/…) |
+
+### Platform (Фаза 8)
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/platform/feature-flags` | глобальный default + org overrides + rollout% |
+| PATCH | `/admin/platform/feature-flags/:key` | … |
+| GET | `/admin/platform/feature-flags/:key/resolve` | `?tenantId=…` для отладки |
+| GET | `/admin/platform/limits` | `MAX_*` |
+| PATCH | `/admin/platform/limits/:key` | … |
+| GET | `/admin/platform/security` | Argon / JWT TTL / IP-salt / rotation |
+| PATCH | `/admin/platform/security` | … |
+| GET | `/admin/platform/maintenance` | бэкапы / re-index |
+| POST | `/admin/platform/maintenance/backup-now` | … |
+| POST | `/admin/platform/maintenance/reindex-now` | … |
+
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.
 - **2026-05-25 (β-8.1/β-8.2):** добавлены `team-temperature`, `weekly-digest`, `open-commitments`, `/me/promises`, `personal-relations/commitments` endpoints; зафиксирована fail-safe privacy для поля `sentiment`.
+- **2026-05-25 (admin-redesign Фазы 0-9):** добавлен раздел «Admin (Z-Admin) — новые эндпоинты Фаз 0-9» с полным списком префиксов `/api/v1/admin/{settings,crons,audit,incidents,analytics,ai,orgs/{plans,entitlements,:id/*},content/*,integrations/*,media/*,platform/*,llm-routes}`.
 
 [[../index|← index]]

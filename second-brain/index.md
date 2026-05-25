@@ -47,6 +47,11 @@
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
 - [[01_projects/meeting-result-page]] — карточка результата: что показываем после встречи
 - [[01_projects/capacity-and-infra]] — мощности, метрики, deployment-правила
+- [[01_projects/admin-z-global]] — Z-Admin (super_admin консоль) после редизайна 2026-05-25: 8 категорий × 36 разделов, двухуровневый сайдбар, Cmd+K-палитра, audit-first, ENV→AdminSetting
+  - [[01_projects/admin-settings]] — `AdminSetting` + `AdminSettingsService` (LRU + Redis pub/sub) + `TypedConfigService.getDynamic`
+  - [[01_projects/admin-crons]] — `CronManagerService` + `CronSchedule` UI (включить/отключить/изменить расписание/запустить вручную)
+  - [[01_projects/admin-workers]] — BullMQ-инспектор (`/admin/platform/workers`): retry-failed, pause/resume, DLQ
+  - [[01_projects/admin-content]] — типы встреч / email-шаблоны (Handlebars + bootstrap-sync) / system-messages / global-channels / copy-strings
 
 ## Архитектура
 

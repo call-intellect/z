@@ -5,13 +5,15 @@
  *
  * Фильтры: scope, status, meetingType + поиск.
  * Все строки на русском (memory `feedback_admin_ui_russian_only`).
+ *
+ * Фаза 9 редизайна: переведён с `useEffect + useState + fetchData` на
+ * `useAdminQuery` — единый хук с поддержкой 403/forbidden и refetch.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Loader2, Plus, Search } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
 import {
   adminPromptTemplatesApi,
   PROMPT_TASK_TYPES,
@@ -28,7 +30,6 @@ import {
   scopeLabel,
   statusLabel,
 } from '@/domain/admin-prompt-template';
-import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -39,39 +40,32 @@ import {
   SelectValue,
 } from '@/ui/shadcn/select';
 
-export function PromptsListClient() {
+import { AdminForbidden } from '../AdminStateViews';
+import { useAdminQuery } from '../useAdminQuery';
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<PromptTemplateUi[]>([]);
+export function PromptsListClient() {
   const [scopeFilter, setScopeFilter] = useState<'all' | PromptTemplateScope>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | PromptTemplateStatus>('all');
   const [taskTypeFilter, setTaskTypeFilter] = useState<'all' | PromptTaskType>('all');
   const [search, setSearch] = useState('');
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const q = useAdminQuery<PromptTemplateUi[]>(
+    `prompts:${scopeFilter}:${statusFilter}:${taskTypeFilter}:${search}`,
+    async () => {
       const res = await adminPromptTemplatesApi.list({
         ...(scopeFilter !== 'all' ? { scope: scopeFilter } : {}),
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
         ...(taskTypeFilter !== 'all' ? { taskType: taskTypeFilter } : {}),
         ...(search ? { search } : {}),
       });
-      setItems(res.items.map(mapPromptTemplate));
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить шаблоны';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [scopeFilter, statusFilter, taskTypeFilter, search]);
+      return res.items.map(mapPromptTemplate);
+    },
+    [scopeFilter, statusFilter, taskTypeFilter, search],
+  );
 
-  useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+  const items: PromptTemplateUi[] = q.data ?? [];
+  const loading = q.isLoading;
+  const error = q.error;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -165,19 +159,21 @@ export function PromptsListClient() {
         </div>
       )}
 
-      {error && !loading && (
+      {!loading && q.isForbidden && <AdminForbidden />}
+
+      {!loading && !q.isForbidden && error && (
         <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           {error}
         </div>
       )}
 
-      {!loading && !error && items.length === 0 && (
+      {!loading && !q.isForbidden && !error && items.length === 0 && (
         <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
           У вас нет шаблонов под выбранные фильтры. Скопируйте системный или создайте с нуля.
         </div>
       )}
 
-      {!loading && items.length > 0 && (
+      {!loading && !q.isForbidden && !error && items.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
           <table className="w-full text-sm">
             <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">

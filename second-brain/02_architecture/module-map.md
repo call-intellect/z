@@ -1759,6 +1759,57 @@ mail-inbound/
 
 [`plans/analysis/2026-05-24-spo-discovery.md`](../../plans/analysis/2026-05-24-spo-discovery.md) — 9 секций аналитики + 5 вопросов владельцу. Реализация (модели Strategy / Plan / Operation + связи) — после решения владельца. Код НЕ затронут.
 
+## Admin Redesign — Фазы 0-9 (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-25-admin-redesign-tz.md`](../../plans/tz/2026-05-25-admin-redesign-tz.md). См. [admin-z-global.md](../01_projects/admin-z-global.md), [admin-settings.md](../01_projects/admin-settings.md), [admin-crons.md](../01_projects/admin-crons.md), [admin-workers.md](../01_projects/admin-workers.md), [admin-content.md](../01_projects/admin-content.md).
+
+Глобальная админка переработана в двухуровневый сайдбар (8 категорий × 36 разделов) с модульным блоком вкладок (`AdminSection` + `AdminTabs` + URL-driven state) и Cmd+K-палитрой. ~140 ENV-переменных мигрированы в БД (`AdminSetting`) с UI-редактированием.
+
+### `backend/src/modules/admin/` — новые подмодули
+
+| Подмодуль | Назначение | Фаза |
+|---|---|---|
+| `admin/settings/` | `AdminSettingsService` (LRU + Redis pub/sub) + контроллер + schemas.registry | 0 |
+| `admin/crons/` | `CronManagerService` (поверх `@nestjs/schedule.SchedulerRegistry`) + контроллер | 8 |
+| `admin/workers/` | BullMQ-инспектор (`Queue.getJobCounts`, `getFailed`, `retry`, `pause`/`resume`) | 8 |
+| `admin/audit/` | Журнал `SuperAdminAccessLog` с фильтрами и UI | 1 |
+| `admin/incidents/` | DLQ + failed jobs + `AlertRule` + правила | 1 |
+| `admin/search/` | Cmd+K fuzzy `?type=org|user|meeting&q=` | 0 |
+| `admin/analytics/` | Read-only аналитика (orgs/functions/economics/meetings/knowledge/concierge) | 2 |
+| `admin/ai/` | Routing (taskType + цепочки), catalog, prompts, knowledge-core пороги, embeddings | 3 |
+| `admin/orgs/plans/` | CRUD `Plan` (тарифы продукта) | 4 |
+| `admin/orgs/entitlements/` | Глобальный обзор overrides по Org | 4 |
+| `admin/content/` | `meeting-types`, `email-templates`, `system-messages`, `global-channels`, `copy-strings` | 5 |
+| `admin/integrations/` | Conversational боты, webhooks, integration keys, LiveKit | 6 |
+| `admin/media/` | `RetentionPolicy` UI + S3 stats / provider switch | 7 |
+| `admin/platform/` | Feature flags, limits, security, maintenance | 8 |
+
+### Расширения существующих
+
+- [common/config/typed-config.service.ts](../../backend/src/common/config/typed-config.service.ts) — добавлен `getDynamic<T>(key, fallbackEnvKey?, defaultValue?): Promise<T>` поверх `AdminSettingsService`. Старый `get()` остался синхронным (для bootstrap-критичных PORT/DATABASE_URL).
+- [common/config/env.schema.ts](../../backend/src/common/config/env.schema.ts) — мигрированные ~140 ENV помечены `@deprecated` в JSDoc, не удалены (нужны для bootstrap).
+- `SuperAdminAuditInterceptor` — `SuperAdminAccessLog.reason` теперь обязателен для severity `high`/`destructive`.
+- `workers/main.ts` + HTTP `app.module.ts` — bootstrap-подписка на Redis канал `admin:setting:invalidate`.
+
+### Новые таблицы Prisma (Фаза 0)
+
+`AdminSetting`, `AdminSettingHistory`, `Plan`, `FeatureFlag`, `EmailTemplate`, `MeetingType`, `SystemMessage`, `RetentionPolicy`, `CronSchedule`, `CronRunHistory`. Полный список — [data-model.md](data-model.md).
+
+### Bootstrap-сидинг
+
+- [backend/scripts/seed-admin-settings.ts](../../backend/scripts/seed-admin-settings.ts) — ~140 ключей из ENV.
+- [backend/scripts/seed-email-templates.ts](../../backend/scripts/seed-email-templates.ts) — копирование `mail.templates.ts` → БД.
+- Все скрипты идемпотентны (skill `safe-seed-rules`, защита admin-edited данных через `updatedBy != null`).
+
+### Frontend
+
+- [frontend/app/(authenticated)/admin/AdminShell.tsx](../../frontend/app/(authenticated)/admin/AdminShell.tsx) — двухуровневая навигация.
+- [frontend/app/(authenticated)/admin/navigation.ts](../../frontend/app/(authenticated)/admin/navigation.ts) — единый источник правды по структуре (8 категорий × 36 разделов).
+- [frontend/ui/components/admin/](../../frontend/ui/components/admin/) — `AdminSection` / `AdminTabs` / `AdminBreadcrumbs` / `AdminDangerZone` / `AdminSparkline` / `AdminSettingField` / `AdminSettingHistoryDrawer` / `AdminCsvDownloadButton` / `AdminCommandPalette`.
+- [frontend/app/(authenticated)/admin/useAdminQuery.ts](../../frontend/app/(authenticated)/admin/useAdminQuery.ts) — единый fetcher с 403-обработкой + refetch. В Фазе 9 финально мигрированы оставшиеся `useEffect+useState+fetchData` (PromptsListClient, AiModelsClient).
+- Period-селекторы унифицированы на `day/week/month` (Фаза 9); legacy `24h/7d/30d` остался только в API-вызовах через UI-mapper.
+- `/admin/ai-usage` — 308-redirect на `/admin/analytics/functions` (Фаза 9).
+
 ### SBA β-8.1 + β-8.2 — модуль `operations/` расширен (2026-05-25)
 
 **Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md).

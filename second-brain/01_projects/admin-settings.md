@@ -1,0 +1,127 @@
+---
+type: project
+status: in_progress
+phase: 0-9
+---
+
+# AdminSetting + AdminSettingsService (динамические настройки)
+
+> Источник правды по «крутилкам» Z, мигрированным из `.env` в БД. Часть редизайна админки (Фазы 0–9). См. [admin-z-global.md](admin-z-global.md).
+
+## Зачем
+
+~140 ENV-переменных продукта (`THEME_COSINE_THRESHOLD`, `MAX_MEETINGS_PER_DAY`, `*_RETENTION_DAYS`, `ARGON2_TIME_COST`, …) раньше требовали редеплоя при каждой правке. После Фазы 0 редизайна они хранятся в БД и редактируются super_admin через UI с history, audit и live-инвалидацией кэшей во всех процессах за <1 секунду.
+
+ENV не выкорчёвывались — `env.schema.ts` пометил мигрированные ключи как `@deprecated` и оставил как fallback для самого первого старта чистой БД.
+
+## Модели Prisma
+
+[backend/prisma/schema.prisma](backend/prisma/schema.prisma) — добавлены в Фазе 0:
+
+```prisma
+model AdminSetting {
+  key         String   @id          // "knowledge.theme.cosine_threshold"
+  value       Json
+  category    String                // "ai" | "platform" | "content" | ...
+  section     String                // "knowledge-core" | "crons" | ...
+  severity    String   @default("low")    // "low" | "medium" | "high" | "destructive"
+  schemaHash  String?               // ref на Zod-schema registry (для UI рендера)
+  description String?               // hover-подсказка в UI
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+  comment     String?               // последняя причина изменения
+  @@index([category, section])
+}
+
+model AdminSettingHistory {
+  id          String   @id @default(cuid())
+  key         String
+  prevValue   Json
+  newValue    Json
+  changedBy   String
+  reason      String?
+  changedAt   DateTime @default(now())
+  @@index([key, changedAt])
+}
+```
+
+## Сервис
+
+[backend/src/modules/admin/settings/admin-settings.service.ts](backend/src/modules/admin/settings/admin-settings.service.ts):
+
+- `get<T>(key)` — `Promise<T | null>`, LRU-кэш TTL 30s (для категорий `security`/`retention` — 5s).
+- `getMany(keys: string[])` — batch.
+- `set(key, value, ctx: { userId, reason? })` — пишет AdminSetting + AdminSettingHistory + публикует в Redis канал `admin:setting:invalidate` payload `{ key }`.
+- `list({ category?, section? })` — пагинированный список.
+- `history(key, limit = 50)` — последние правки.
+
+LRU-кэш — на каждый процесс (`HTTP` + `workers/main.ts`). При публикации в Redis pub/sub — все подписчики делают `cache.del(key)`. Подписка инициализируется в `RedisService` через bootstrap [workers/main.ts](backend/src/workers/main.ts) и в HTTP-процессе.
+
+## Контроллер
+
+[backend/src/modules/admin/settings/admin-settings.controller.ts](backend/src/modules/admin/settings/admin-settings.controller.ts):
+
+```
+GET    /api/v1/admin/settings              ?category=&section=
+GET    /api/v1/admin/settings/:key
+POST   /api/v1/admin/settings/:key         { value, reason? }
+GET    /api/v1/admin/settings/:key/history last 50
+```
+
+Все эндпоинты под `SuperAdminGuard` + `SuperAdminAuditInterceptor`. Если severity `high`/`destructive` — `reason` обязателен на уровне Zod-DTO.
+
+## TypedConfigService.getDynamic
+
+[backend/src/common/config/typed-config.service.ts](backend/src/common/config/typed-config.service.ts) расширен:
+
+```ts
+async getDynamic<T>(key: string, fallbackEnvKey?: string, defaultValue?: T): Promise<T> {
+  // 1. AdminSettingsService.get(key) — если есть, вернуть.
+  // 2. fallbackEnvKey → process.env[...] через текущий схема-валидатор.
+  // 3. defaultValue.
+}
+```
+
+`get(key)` остаётся синхронным и читает только ENV (для bootstrap-критичных значений: PORT, DATABASE_URL, REDIS_URL — их в БД нет и быть не должно).
+
+## Schema-registry для UI
+
+UI-форма для каждой `AdminSetting` рендерится из Zod-схемы — единый источник правды для бэкенда (валидация на save) и фронтенда (рендер поля). Реестр схем — `backend/src/modules/admin/settings/schemas.registry.ts`, по `key` отдаёт Zod-схему, severity и человекочитаемое описание. Поле в UI рендерится через [AdminSettingField](frontend/ui/components/admin/AdminSettingField.tsx):
+
+| Zod-тип | UI |
+|---|---|
+| `z.number()` | Input type=number |
+| `z.enum([...])` | Select |
+| `z.boolean()` | Switch |
+| `z.string()` | Input |
+| `z.object({...})` | вложенная форма |
+
+## Bootstrap-сидинг
+
+[backend/scripts/seed-admin-settings.ts](backend/scripts/seed-admin-settings.ts):
+
+- Идемпотент (`upsert` по `key`, см. skill `safe-seed-rules`).
+- Заполняет ~140 ключей из текущих ENV.
+- Защищает admin-edited данные: если `updatedBy != null` — не перезаписывает.
+
+Запуск: `cd backend && bun run scripts/seed-admin-settings.ts`.
+
+## Риски и митигации
+
+1. **Crash во время правки → out-of-sync процессы.** HTTP записал в БД, но Redis pub/sub упал — воркер не получил invalidation. **Митигация:** LRU TTL 30s гарантирует max staleness 30 секунд. Для security/retention — 5s.
+2. **БД упала → нет настроек.** `getDynamic` падает на ENV-fallback (текущая прод-конфигурация). Логируется `ERROR admin-settings unavailable, falling back to ENV`.
+3. **Race при одновременной правке.** Optimistic concurrency через `updatedAt`: если значение в БД новее, чем `updatedAt` из формы — `409 conflict`, UI предложит перечитать.
+4. **Перегрузка SELECT'ами.** Knowledge-Core воркер читает порог тысячи раз — LRU отрезает 99.9% этих SELECT'ов.
+
+## UI
+
+- Список — `/admin/ai/knowledge-core` (knowledge-core пороги), `/admin/platform/limits` (MAX_*), `/admin/platform/security` (Argon/JWT TTL), `/admin/media/retention` (RetentionPolicy — отдельная модель), `/admin/platform/flags` (FeatureFlag).
+- Хук `useAdminSettingValue<T>(key, fallback?)` — read-only с SWR-revalidate 30s.
+- Хук `useAdminSettingEditor(key, opts)` — `{ value, setValue, save, reset, isDirty, isLoading, history, error }`.
+
+## Связанные
+
+- [admin-z-global.md](admin-z-global.md) — общий каркас админки.
+- [admin-crons.md](admin-crons.md) — отдельная история со своим override через `CronSchedule`.
+- [admin-workers.md](admin-workers.md) — BullMQ-инспектор.
+- [admin-content.md](admin-content.md) — контент (типы встреч, email-шаблоны).

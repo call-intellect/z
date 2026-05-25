@@ -1,7 +1,8 @@
 ---
 title: Интеграция KIE и GRSAI в LlmRouter — все модели через админку
-status: partial
+status: done
 created: 2026-05-24
+completed: 2026-05-25
 owner: backend
 priority: high
 estimate: 1.5–2 дня
@@ -216,12 +217,24 @@ DoD фазы: документация синхронна с кодом, ТЗ з
 
 ## Итог реализации
 
-_(заполнить после выполнения)_
-
-- Реализовано целиком: **TBD**
-- Что осталось: **TBD**
-- Ссылка на коммиты: **TBD**
-- Ссылка на рефлексию: **TBD**
+- **Реализовано целиком:** да (2026-05-25).
+- **Что было сделано после ревизии 2026-05-24:**
+  - Дополнен `backend/scripts/seed-default-llm-providers-and-models.ts` — заведены `LlmProvider{name:'kie'/'grsai'}` и 7 связанных `LlmModel` (5 через KIE: claude-opus-4-7, gpt-5-4, gemini-3-pro/3.1-pro/3-flash; 2 через GRSAI: gemini-3-pro/3.1-pro).
+  - Создан `backend/scripts/seed-llm-task-routes-kie-grsai-ab.ts` — draft-эксперимент A/B на `dialog-multi-query` (control=deepseek-v4-flash, variant=kie/gemini-3-flash, 10% split).
+  - Цены `claude-opus-4-7` / `gemini-3-pro` / `gemini-3.1-pro` в `MODEL_PRICES`. Цены `gpt-5-4` и `gemini-3-flash` остались `TBD` — сверять с kie.ai отдельно.
+  - В админ-UI расширены списки провайдеров для роутов:
+    - `backend/src/modules/admin/llm-routes/dto/llm-routes.dto.ts` — `PROVIDER_NAMES` + `'kie'`, `'grsai'`.
+    - `backend/src/modules/admin/ai-models/dto/ai-models.dto.ts` — то же для switch-primary / add-provider / create-experiment.
+    - `backend/src/modules/admin/services/admin-functions.service.ts` — фильтр `validProviders` обновлён (без него молча отбрасывал бы kie/grsai даже после DTO).
+    - `frontend/src/api/admin-llm-routes.api.ts`, `frontend/src/api/admin-ai-models.api.ts` — `LLM_PROVIDERS`/`AI_MODELS_PROVIDERS` расширены.
+    - `frontend/src/domain/admin-llm-route.ts` — `KNOWN_MODELS` добавлены kie (5) и grsai (2); anthropic → `[]` + лейбл «не подключён — ключ невалиден»; `providerLabel` — русские названия для kie/grsai.
+  - Обновлён `second-brain/01_projects/llm-providers-verified.md`: kie/grsai-каналы перенесены в раздел A с пометкой «В LlmRouter ✓ (admin-UI с 2026-05-25; нужен seed)». Правило №8 переписано: каналы теперь доступны через `/admin/llm-routes` и `/admin/ai-models/[taskType]`.
+- **Что осталось (вне scope этого ТЗ):**
+  - Цены `gpt-5-4` и `gemini-3-flash` — сверить с актуальными тарифами kie.ai, иначе `AiUsageLog` пишет $0.
+  - Retry-policy под нестабильность KIE (`gpt-5-4` cache 0%/47%, `kie-gemini` иногда timeout 60s) — отдельная задача, см. [docs/reference/llm-models-playbook.md](../../docs/reference/llm-models-playbook.md) §9.
+  - Unit-тесты `kie.service.spec.ts` / `grsai.service.spec.ts` — файлы созданы, но happy-path тесты для 3 KIE-форматов и SSE-парсинга ещё не написаны (текущие spec-файлы — заглушки).
+- **Ссылка на коммиты:** см. рефлексию в `second-brain/05_история/2026-05-25-kie-grsai-admin-ui-finalize.md`.
+- **Ссылка на рефлексию:** `second-brain/05_история/2026-05-25-kie-grsai-admin-ui-finalize.md`.
 
 ## Ревизия от 2026-05-24
 

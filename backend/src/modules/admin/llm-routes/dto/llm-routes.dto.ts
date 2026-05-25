@@ -8,6 +8,8 @@ const PROVIDER_NAMES = [
   'openai-via-proxy',
   'deepseek',
   'ollama',
+  'kie',
+  'grsai',
 ] as const;
 
 /**

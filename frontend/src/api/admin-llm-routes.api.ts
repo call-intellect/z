@@ -52,6 +52,8 @@ export const LLM_PROVIDERS = [
   'openai-via-proxy',
   'deepseek',
   'ollama',
+  'kie',
+  'grsai',
 ] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 

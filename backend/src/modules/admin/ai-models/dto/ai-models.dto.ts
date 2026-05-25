@@ -14,6 +14,8 @@ export const PROVIDER_NAMES = [
   'openai-via-proxy',
   'deepseek',
   'ollama',
+  'kie',
+  'grsai',
 ] as const;
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
 

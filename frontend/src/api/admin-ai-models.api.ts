@@ -24,6 +24,8 @@ export const AI_MODELS_PROVIDERS = [
   'openai-via-proxy',
   'deepseek',
   'ollama',
+  'kie',
+  'grsai',
 ] as const;
 export type AiModelProvider = (typeof AI_MODELS_PROVIDERS)[number];
 

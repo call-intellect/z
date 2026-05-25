@@ -196,6 +196,8 @@ export class AdminFunctionsService {
         'openai-via-proxy',
         'deepseek',
         'ollama',
+        'kie',
+        'grsai',
       ].includes(p.provider),
     );
     if (validProviders.length === 0) {

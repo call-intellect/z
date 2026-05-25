@@ -151,9 +151,19 @@ export function llmRoutesUiListFromApi(
 export const KNOWN_MODELS: Record<string, string[]> = {
   deepseek: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat'],
   'openai-via-proxy': ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano'],
-  ollama: ['qwen3.5:9b', 'qwen3:30b'],
-  anthropic: ['claude-opus-4-7', 'claude-sonnet-4-6'],
+  ollama: ['qwen3.5:9b'],
+  // Anthropic-ключ невалиден (см. second-brain/01_projects/llm-providers-verified.md),
+  // claude-* модели реально доступны только через провайдер 'kie'.
+  anthropic: [],
   minimax: ['MiniMax-M2.7'],
+  kie: [
+    'claude-opus-4-7',
+    'gpt-5-4',
+    'gemini-3-pro',
+    'gemini-3.1-pro',
+    'gemini-3-flash',
+  ],
+  grsai: ['gemini-3-pro', 'gemini-3.1-pro'],
 };
 
 export function providerLabel(provider: string): string {
@@ -165,9 +175,13 @@ export function providerLabel(provider: string): string {
     case 'ollama':
       return 'Ollama (локально)';
     case 'anthropic':
-      return 'Anthropic';
+      return 'Anthropic (не подключён — ключ невалиден)';
     case 'minimax':
       return 'MiniMax';
+    case 'kie':
+      return 'KIE (Claude / GPT / Gemini hub)';
+    case 'grsai':
+      return 'GRSAI (Gemini через прокси)';
     default:
       return provider;
   }

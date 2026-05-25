@@ -2,7 +2,7 @@
 title: LLM-провайдеры и модели — verified
 status: actual
 verified_at: 2026-05-24
-updated: 2026-05-24
+updated: 2026-05-25
 ---
 
 # LLM-провайдеры Z — verified карта
@@ -49,13 +49,20 @@ updated: 2026-05-24
 | **minimax** | `MiniMax-M2.5` | ✓ verified | ✗ (seed нет) | ~1.8s | ✅ 100% (требует явный `cache_control: 'ephemeral'`) | Anthropic-совместимый fallback, A/B-кандидат на summary-v2 |
 | **minimax** | `MiniMax-M2.7` | ✓ verified | ✓ | ~2.9s | ✅ (по аналогии с M2.5) | Свежая M2.7, A/B-кандидат на summary-v2 |
 | **ollama** (`ollama.agent-lia.ru`) | `qwen3.5:9b` | ✓ verified | ✓ | ~8.0s | ❌ prompt cache на уровне API не предусмотрен | Self-hosted secondary fallback; единственная chat-модель, реально установленная на нашем Ollama |
+| **kie** | `claude-opus-4-7` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed-default-llm-providers-and-models.ts) | ~20s | ❌ `cache_read_input_tokens=0` даже с `cache_control` | A/B-кандидат на summary-v2 / goal-alignment. Цена $15/$75 в `MODEL_PRICES`. |
+| **kie** | `gpt-5-4` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~3s | ⚠ нестабильно (S1=0%, S2 parallel=47%) | Через `/codex/v1/responses`. ⚠ цена TBD в `MODEL_PRICES` — пока 0. |
+| **kie** | `gemini-3-pro` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~9s | ❌ 0% | A/B-кандидат на summary-v2. Цена $0.5/$3.5. |
+| **kie** | `gemini-3.1-pro` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | TBD | ❌ (по аналогии) | Свежая 3.1, A/B-кандидат. Цена $0.5/$3.5. |
+| **kie** | `gemini-3-flash` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~25s | ❌ 0% | A/B-кандидат на `dialog-multi-query` (заведён draft-эксперимент). ⚠ цена TBD. |
+| **grsai** | `gemini-3-pro` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~10.5s | ❌ 0% (usage без `cached_tokens`) | Альт. канал к Gemini 3 Pro через прокси (SSE). |
+| **grsai** | `gemini-3.1-pro` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~9.5s | ❌ (по аналогии) | Альт. канал к Gemini 3.1 Pro через прокси (SSE). |
 | **embeddings** (openai-via-proxy) | `text-embedding-3-small` | ✓ verified | (отдельный pipeline) | ~1.4s | n/a | **Единственный verified канал embeddings.** dim=1536 |
 
-### B. Каналы проверенные smoke-тестом, но НЕ в LlmRouter (через админку недоступны)
+### B. Подробности smoke-вызовов KIE / GRSAI (исторические, до 2026-05-25)
 
-Эти каналы реально дёргались с production-ключей и отвечают, но провайдер-сервиса в `LlmRouter` нет, в `LlmTaskRoute` посадить нельзя. Чтобы подключить — см. ТЗ [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md).
+Сохраняем как контекст эксперимента, который привёл к подключению этих каналов в `LlmRouter`. После 2026-05-25 каналы доступны через админку (см. раздел A); этот раздел оставлен для трассировки URL-форматов и cache-поведения.
 
-> **Внимание:** в cache-эксперименте 2026-05-25 ни один канал группы B prompt caching не пробрасывает. При подключении в `LlmRouter` — **в расчётах экономики кэш не учитывать**.
+> **Внимание:** в cache-эксперименте 2026-05-25 ни один из этих каналов prompt caching не пробрасывает. **В расчётах экономики кэш не учитывать.**
 
 | Канал | URL-формат | Модель | Статус smoke (2026-05-24) | Latency | Кэш |
 |---|---|---|---|---|--:|
@@ -88,7 +95,7 @@ Latency для KIE-каналов — TBD (зависит от прогона); 
    - `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5` — **только** `'none'|'low'|'medium'|'high'` (без `'minimal'` — `OpenAiProxyService` сейчас шлёт `'medium'` по умолчанию, для smoke было поправлено).
 6. **Anthropic-провайдеры (`anthropic`) не добавлять в дефолты.** В коде сервис есть, но любой `LlmTaskRoute.providers` со строкой `'anthropic'` будет ронять задачу с 401.
 7. **Embeddings → только `text-embedding-3-small` через прокси.** Никакого `bge-m3`.
-8. **KIE / GRSAI пока через `LlmRouter` НЕ ходят.** Модели в разделе B доступны только из smoke-скрипта. Если кому-то нужно дёргать Gemini/Claude через KIE из прод-кода — это запрещено до выполнения ТЗ [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md). После выполнения ТЗ — переключать через `/admin/ai-models/[taskType]`.
+8. **KIE / GRSAI через `LlmRouter` доступны c 2026-05-25.** Подключены как полноценные провайдеры (`KieService`/`GrsaiService` в `LlmRouter`), управление маршрутами — через `/admin/llm-routes` и `/admin/ai-models/[taskType]`. Перед использованием — прогнать `bun scripts/seed-default-llm-providers-and-models.ts`, чтобы записи `LlmProvider{name:'kie'/'grsai'}` и связанные `LlmModel` появились в БД. **Кэш не пробрасывается** (см. раздел B) — экономику считать по полной цене ввода.
 9. **`deepseek-v4-pro` (thinking) НЕ поддерживает strict `json_schema` и forced `tool_choice`** — `400 «This response_format type is unavailable now»` / «Thinking mode does not support this tool_choice». Работает только `tools + tool_choice='auto'`. Для caller-кода это прозрачно: `DeepSeekService.buildParams` автоматически конвертирует `responseFormat: json_schema` в виртуальный `tool` + hint в user-сообщении (ТЗ [2026-05-25-deepseek-pro-output-format-fix.md](../../plans/tz/2026-05-25-deepseek-pro-output-format-fix.md)). Метрика срабатываний — `z_deepseek_schema_to_tool_conversion_total{model}`. Эмпирическая проверка 8 комбинаций — `backend/scripts/eval/probe-deepseek-formats.ts`.
 
 ## Готовые образцы вызова (для копи-пейста)

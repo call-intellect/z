@@ -112,7 +112,8 @@ export class ContextualizerService {
         userId: input.userId,
         systemPrompt: systemText,
         userMessage: userText,
-        maxTokens: 200,
+        // ТЗ 2026-05-25 §10.4 Find 1 — для thinking-моделей (DeepSeek-Pro) минимум 1500.
+        maxTokens: 1500,
         sourceRef: input.conversationId
           ? { type: 'chat_v2_conversation', id: input.conversationId }
           : null,

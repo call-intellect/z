@@ -17,14 +17,16 @@
  *   - openai-via-proxy `gpt-5.4-mini` (secondary cheap).
  *   - ollama `qwen3.5:9b` (tertiary local).
  *
- *   - dialog-contextualize / dialog-confidence / dialog-classify
- *       primary    deepseek          deepseek-v4-flash    (cheap)
+ *   ВСЕ 5 dialog-layer task'ов (2026-05-25, ТЗ §2 «chat-v2 — НЕ менять
+ *   архитектуру»): переключены на deepseek-v4-pro. Эксперимент 2 показал,
+ *   что архитектура из 5 шагов оптимальна; Pro даёт качество, Flash —
+ *   деградирует на standalone-question / confidence для длинных диалогов.
+ *
+ *   - dialog-contextualize / dialog-confidence / dialog-classify /
+ *     dialog-multi-query / dialog-summarize
+ *       primary    deepseek          deepseek-v4-pro      (capable, thinking)
  *       secondary  openai-via-proxy  gpt-5.4-mini         (reserve)
  *       tertiary   ollama            qwen3.5:9b           (local fallback)
- *   - dialog-multi-query / dialog-summarize
- *       primary    deepseek          deepseek-v4-flash    (по-прежнему дёшево хватает)
- *       secondary  openai-via-proxy  gpt-5.4-mini         (резерв)
- *       tertiary   ollama            qwen3.5:9b           (fallback)
  *
  * Anthropic НЕ используем (нет ключа). См. project_z_infra_and_ai.
  *
@@ -35,11 +37,13 @@
  *
  * Идемпотентность:
  *   - upsert по (taskType, tenantId=null, tier, providerName).
- *   - existing + editedByAdmin=true → skip;
- *   - existing + editedByAdmin=false → skip (обновление — через UI).
+ *   - existing + editedByAdmin=true → skip ВСЕГДА;
+ *   - existing + editedByAdmin=false → skip без флага; обновить с
+ *     `--update-existing` (для миграции flash → pro 2026-05-25).
  *
  * Запуск:
  *   bun run scripts/seed-llm-task-routes-dialog-layer.ts
+ *   bun run scripts/seed-llm-task-routes-dialog-layer.ts --update-existing
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -66,7 +70,7 @@ const ROUTES: RouteSeed[] = [
   {
     tier: 'primary',
     provider: 'deepseek',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-v4-pro',
     priority: 0,
     maxDataClass: 'internal',
   },
@@ -87,12 +91,14 @@ const ROUTES: RouteSeed[] = [
 ];
 
 async function main(): Promise<void> {
+  const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
   console.log(
-    `=== seed-llm-task-routes-dialog-layer START (taskTypes=${TASK_TYPES.join(',')}) ===`,
+    `=== seed-llm-task-routes-dialog-layer START (taskTypes=${TASK_TYPES.join(',')}, updateExisting=${updateExisting}) ===`,
   );
 
   let inserted = 0;
+  let updated = 0;
   let skipped = 0;
   let skippedEdited = 0;
 
@@ -113,13 +119,39 @@ async function main(): Promise<void> {
           console.log(
             `[skipped:edited] ${taskType} ${r.tier} ${r.provider}:${r.model} (admin отредактировал — не трогаем)`,
           );
-        } else {
+          continue;
+        }
+        if (!updateExisting) {
           skipped++;
           // eslint-disable-next-line no-console
           console.log(
             `[skipped:exists] ${taskType} ${r.tier} ${r.provider}:${r.model}`,
           );
+          continue;
         }
+        if (
+          existing.model === r.model &&
+          existing.priority === r.priority &&
+          existing.isActive === true &&
+          existing.requiredDataClass === r.maxDataClass
+        ) {
+          skipped++;
+          continue;
+        }
+        await prisma.llmTaskRoute.update({
+          where: { id: existing.id },
+          data: {
+            model: r.model,
+            priority: r.priority,
+            isActive: true,
+            requiredDataClass: r.maxDataClass,
+          },
+        });
+        updated++;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[updated] ${taskType} ${r.tier} ${r.provider}:${r.model}`,
+        );
         continue;
       }
       await prisma.llmTaskRoute.create({
@@ -143,7 +175,7 @@ async function main(): Promise<void> {
 
   // eslint-disable-next-line no-console
   console.log(
-    `inserted: ${inserted}, skipped(exists): ${skipped}, skipped(edited): ${skippedEdited}`,
+    `inserted: ${inserted}, updated: ${updated}, skipped(exists): ${skipped}, skipped(edited): ${skippedEdited}`,
   );
   // eslint-disable-next-line no-console
   console.log('=== seed-llm-task-routes-dialog-layer DONE ===');

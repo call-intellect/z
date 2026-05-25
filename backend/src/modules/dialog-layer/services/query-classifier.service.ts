@@ -144,7 +144,8 @@ export class QueryClassifierService {
         userId: input.userId,
         systemPrompt: systemText,
         userMessage: userText,
-        maxTokens: 60,
+        // ТЗ 2026-05-25 §10.4 Find 1 — для thinking-моделей (DeepSeek-Pro) минимум 1500.
+        maxTokens: 1500,
         // T7-F6: strict JSON Schema. Ollama выдаст LlmFormatNotSupportedError —
         // LlmRouter перейдёт на следующего провайдера в цепочке.
         responseFormat: {

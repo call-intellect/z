@@ -115,7 +115,8 @@ export class ConfidenceEstimatorService {
         userId: input.userId,
         systemPrompt: systemText,
         userMessage: userText,
-        maxTokens: 120,
+        // ТЗ 2026-05-25 §10.4 Find 1 — для thinking-моделей (DeepSeek-Pro) минимум 1500.
+        maxTokens: 1500,
         // T7-F6: strict JSON Schema.
         responseFormat: {
           type: 'json_schema',

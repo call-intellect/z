@@ -194,7 +194,8 @@ export class ConversationSummarizerCron {
       tenantId: conv.tenantId,
       systemPrompt: systemText,
       userMessage: userText,
-      maxTokens: 600,
+      // ТЗ 2026-05-25 §10.4 Find 1 — для thinking-моделей (DeepSeek-Pro) минимум 1500.
+      maxTokens: 1500,
       // T7-F6: strict JSON Schema. Wrapper { summary, entities[] } — root object.
       responseFormat: {
         type: 'json_schema',

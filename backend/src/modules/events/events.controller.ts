@@ -207,7 +207,10 @@ export class EventsController {
   // ─────────────────────────── calendar ────────────────────────────────
 
   @Get('me/calendar')
-  @ApiOperation({ summary: 'Мой календарь (события + дедлайны задач)' })
+  @ApiOperation({
+    summary:
+      'Мой календарь (события + дедлайны задач). Опц. ?projectId= — фильтр по проекту (P3).',
+  })
   async myCalendar(
     @Query(new ZodValidationPipe(MyCalendarQuerySchema)) q: MyCalendarQuery,
     @CurrentUser() user: CurrentUserPayload,
@@ -219,6 +222,7 @@ export class EventsController {
       userId: user.id,
       from: q.from,
       to: q.to,
+      ...(q.projectId ? { projectId: q.projectId } : {}),
     });
   }
 
@@ -293,6 +297,7 @@ export class EventsController {
       targetUserId: userId,
       from: q.from,
       to: q.to,
+      ...(q.projectId ? { projectId: q.projectId } : {}),
     });
   }
 

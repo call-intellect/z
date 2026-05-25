@@ -185,6 +185,12 @@ export interface FindFreeSlotResponse {
 export const MyCalendarQuerySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
+  /**
+   * Calendar MVP Polish (P3, 2026-05-25). Фильтр событий и задач по проекту.
+   * Если задан — серверная фильтрация заменяет клиентскую, которая раньше
+   * подгружала все события user'а и резала их на стороне браузера.
+   */
+  projectId: z.string().min(1).max(80).optional(),
 });
 export type MyCalendarQuery = z.infer<typeof MyCalendarQuerySchema>;
 
@@ -200,6 +206,12 @@ export interface EventListItemDto {
   durationMin: number | null;
   location: string | null;
   relatedMeetingId: string | null;
+  /**
+   * Calendar MVP Polish (P1, 2026-05-25). Публичный URL для подключения к
+   * LiveKit-комнате связанной встречи. Заполнен только когда `kind=meeting`
+   * и Meeting создан успешно. Берётся из `Event.metadata.joinUrl`.
+   */
+  joinUrl: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

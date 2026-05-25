@@ -156,6 +156,12 @@ export interface CalendarEventDomain {
   rrule: string | null;
   timezone: string;
   allDay: boolean;
+  /**
+   * Calendar MVP Polish (P1, 2026-05-25). URL для подключения к LiveKit-комнате
+   * связанной встречи. Заполнен только при `kind=meeting` (и если автосоздание
+   * Meeting не упало). UI показывает кнопку «Войти во встречу».
+   */
+  joinUrl: string | null;
   /** Полный ApiDto — нужен EventForm-у при редактировании. */
   raw: EventApi;
 }
@@ -210,6 +216,7 @@ export function toCalendarEvent(api: EventApi): CalendarEventDomain {
     rrule: api.rrule,
     timezone: api.timezone,
     allDay: api.allDay,
+    joinUrl: api.joinUrl ?? null,
     raw: api,
   };
 }

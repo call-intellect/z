@@ -36,6 +36,10 @@ import {
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 import { Textarea } from '@/ui/shadcn/textarea';
+import {
+  ParticipantPicker,
+  type ParticipantPickerValue,
+} from '@/ui/shared/ParticipantPicker';
 
 const KIND_OPTIONS: EventKindApi[] = [
   'meeting',
@@ -67,7 +71,8 @@ interface FormState {
   location: string;
   description: string;
   visibility: EventVisibilityApi;
-  participantUserIds: string; // через запятую
+  /** Calendar MVP Фаза P4 — структурированный список участников. */
+  participants: ParticipantPickerValue[];
 }
 
 function toLocalInputValue(d: Date): string {
@@ -93,10 +98,6 @@ function buildDefaultState(
   if (event) {
     const startAt = toLocalInputValue(event.startAt);
     const endAt = event.endAt ? toLocalInputValue(event.endAt) : '';
-    const userIds = event.participants
-      .map((p) => p.userId)
-      .filter((u): u is string => !!u)
-      .join(', ');
     return {
       title: event.title,
       kind: event.kind,
@@ -105,7 +106,8 @@ function buildDefaultState(
       location: event.location ?? '',
       description: event.description ?? '',
       visibility: event.visibility,
-      participantUserIds: userIds,
+      // В edit-режиме participants не редактируются (имена не приходят в EventDto).
+      participants: [],
     };
   }
   const base = defaultStartAt ?? new Date();
@@ -121,7 +123,7 @@ function buildDefaultState(
     location: '',
     description: '',
     visibility: 'company',
-    participantUserIds: '',
+    participants: [],
   };
 }
 
@@ -187,15 +189,12 @@ export function EventForm({
     return null;
   }
 
-  function parseParticipants(): ParticipantInputApi[] {
-    const raw = state.participantUserIds
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    return raw.map<ParticipantInputApi>((userId) => ({
-      userId,
-      role: 'required',
-    }));
+  function buildParticipantsPayload(): ParticipantInputApi[] {
+    return state.participants.map<ParticipantInputApi>((p) =>
+      p.type === 'user'
+        ? { userId: p.userId, role: 'required' }
+        : { personId: p.personId, role: 'required' },
+    );
   }
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
@@ -239,7 +238,7 @@ export function EventForm({
             : {}),
           ...(projectId ? { projectId } : {}),
         };
-        const participants = parseParticipants();
+        const participants = buildParticipantsPayload();
         if (participants.length > 0) body.participants = participants;
         await calendarApi.createEvent(body);
       }
@@ -385,28 +384,41 @@ export function EventForm({
             </div>
           </div>
 
-          {!isEdit && (
-            <div>
-              <Label htmlFor="event-participants">
-                Участники (id пользователей через запятую)
-              </Label>
-              <Input
-                id="event-participants"
-                value={state.participantUserIds}
-                onChange={(e) => setField('participantUserIds', e.target.value)}
-                placeholder="user_abc, user_def"
-              />
-              <p className="mt-1 text-xs text-fg-tertiary">
-                Временно: вводите id вручную. Поиск по имени появится после
-                подключения каталога пользователей.
-              </p>
-            </div>
-          )}
+          {!isEdit &&
+            state.kind !== 'personal_block' &&
+            state.kind !== 'deadline' && (
+              <div>
+                <Label htmlFor="event-participants">Участники</Label>
+                <ParticipantPicker
+                  value={state.participants}
+                  onChange={(next) => setField('participants', next)}
+                  placeholder="Найти коллегу или внешний контакт"
+                />
+                <p className="mt-1 text-xs text-fg-tertiary">
+                  Поиск по коллегам Org и внешним контактам. Если человека нет
+                  в списке — вы можете добавить его как новый контакт прямо из
+                  выпадающего меню.
+                </p>
+              </div>
+            )}
 
           {error && (
             <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
               {error}
             </p>
+          )}
+
+          {/* Calendar MVP Polish P1: для встреч с автосозданной LiveKit-комнатой
+              показываем явную кнопку «Войти во встречу». Открываем в новой вкладке. */}
+          {isEdit && event && event.joinUrl && (
+            <a
+              href={event.joinUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-accent/60 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
+            >
+              Войти во встречу
+            </a>
           )}
 
           <DialogFooter className="gap-2">

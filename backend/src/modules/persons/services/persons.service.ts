@@ -15,6 +15,8 @@ import type {
   CreatePersonDto,
   PersonDto,
   PersonListItemDto,
+  QuickCreatePersonDto,
+  QuickCreatePersonResponseDto,
   UpdatePersonDto,
 } from '../dto/persons.dto';
 
@@ -550,6 +552,121 @@ export class PersonsService {
       metadata: { tenantId: args.tenantId, soft: true },
     });
     return { id: args.id, deletedAt: now.toISOString() };
+  }
+
+  /**
+   * Calendar MVP (2026-05-25) Фаза P4 — быстрое создание внешнего контакта
+   * прямо из EventForm.ParticipantPicker. Минимально необходимый набор полей,
+   * без roleId/departmentId. По умолчанию `relationship='external'`.
+   *
+   * Дубль-защита:
+   *   - если задан email — ищем активный (deletedAt=NULL) Person в той же Org
+   *     с этим email и возвращаем его;
+   *   - если email пуст — ищем по точному совпадению name (case-insensitive)
+   *     среди контактов с пустым email; иначе создаём нового.
+   *
+   * `email` в БД — non-null (см. schema.prisma Person.email). Если запросчик
+   * не задал email, сохраняем пустую строку — это согласовано с поведением
+   * legacy-Person'ов до Фазы 0a.
+   */
+  async quickCreate(args: {
+    tenantId: string;
+    userId: string;
+    body: QuickCreatePersonDto;
+  }): Promise<QuickCreatePersonResponseDto> {
+    const trimmedName = args.body.name.trim();
+    const normalizedEmail = args.body.email?.trim().toLowerCase() ?? null;
+
+    // Dedup: предпочитаем существующий Person, если он уже есть в Org.
+    if (normalizedEmail) {
+      const existing = await this.prisma.person.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          email: normalizedEmail,
+          deletedAt: null,
+        },
+        select: { id: true, name: true, email: true },
+      });
+      if (existing) {
+        return {
+          personId: existing.id,
+          name: existing.name,
+          email: existing.email ? existing.email : null,
+        };
+      }
+    } else {
+      // Поиск по точному совпадению name среди контактов без email.
+      const existingByName = await this.prisma.person.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          name: { equals: trimmedName, mode: 'insensitive' },
+          email: '',
+          deletedAt: null,
+        },
+        select: { id: true, name: true, email: true },
+      });
+      if (existingByName) {
+        return {
+          personId: existingByName.id,
+          name: existingByName.name,
+          email: existingByName.email ? existingByName.email : null,
+        };
+      }
+    }
+
+    try {
+      const created = await this.prisma.person.create({
+        data: {
+          tenantId: args.tenantId,
+          userId: null,
+          name: trimmedName,
+          email: normalizedEmail ?? '',
+          relationship: 'external',
+        },
+        select: { id: true, name: true, email: true },
+      });
+
+      void this.audit.log({
+        userId: args.userId,
+        action: 'person.quick_created',
+        resourceId: created.id,
+        metadata: {
+          tenantId: args.tenantId,
+          email: normalizedEmail,
+          source: 'calendar_participant_picker',
+        },
+      });
+
+      return {
+        personId: created.id,
+        name: created.name,
+        email: created.email ? created.email : null,
+      };
+    } catch (err) {
+      // Параллельный конкурентный insert по тому же email — повторим dedup.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        normalizedEmail
+      ) {
+        const existing = await this.prisma.person.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            email: normalizedEmail,
+            deletedAt: null,
+          },
+          select: { id: true, name: true, email: true },
+        });
+        if (existing) {
+          return {
+            personId: existing.id,
+            name: existing.name,
+            email: existing.email ? existing.email : null,
+          };
+        }
+      }
+      throw err;
+    }
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

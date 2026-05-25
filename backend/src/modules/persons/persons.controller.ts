@@ -30,12 +30,15 @@ import {
   BatchCreatePersonsSchema,
   CreatePersonSchema,
   ListPersonsQuerySchema,
+  QuickCreatePersonSchema,
   UpdatePersonSchema,
   type BatchCreatePersonsDto,
   type CreatePersonDto,
   type ListPersonsQuery,
   type PersonDto,
   type PersonListItemDto,
+  type QuickCreatePersonDto,
+  type QuickCreatePersonResponseDto,
   type UpdatePersonDto,
 } from './dto/persons.dto';
 import { PersonsService } from './services/persons.service';
@@ -121,6 +124,32 @@ export class PersonsController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.persons.createBatch({ tenantId: t, userId: user.id, body });
+  }
+
+  @Post('quick-create')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Быстро создать внешний контакт (Calendar MVP) — минимально name+email?+phone?',
+    description:
+      'Используется ParticipantPicker в EventForm. Дубль-защита по (tenantId, email): если контакт с этим email уже существует, возвращается существующий. Без email — поиск по точному совпадению name среди контактов без email.',
+  })
+  async quickCreate(
+    @Body(new ZodValidationPipe(QuickCreatePersonSchema)) body: QuickCreatePersonDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<QuickCreatePersonResponseDto> {
+    const t = this.requireTenant(tenantId);
+    // RBAC: write по event_card (раз создаём при создании события). Если нет
+    // прав на события — запрещаем; managers без write по event_card не должны
+    // плодить контакты.
+    const ok = await this.rbac.canWrite(user.id, t, 'event_card');
+    if (!ok) {
+      throw this.forbidden(
+        'Недостаточно прав для создания контактов из календаря',
+      );
+    }
+    return this.persons.quickCreate({ tenantId: t, userId: user.id, body });
   }
 
   @Patch(':id')

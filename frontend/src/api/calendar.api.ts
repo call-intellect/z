@@ -67,6 +67,12 @@ export interface EventApi {
   durationMin: number | null;
   location: string | null;
   relatedMeetingId: string | null;
+  /**
+   * Calendar MVP Polish (P1, 2026-05-25). Публичная ссылка на LiveKit-комнату,
+   * созданную автоматически для kind=meeting. null — для других kind или если
+   * создание комнаты упало (фолбэк не блокирует событие).
+   */
+  joinUrl: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -166,25 +172,39 @@ export interface FindFreeSlotResponseApi {
 
 // ─────────────────────────── API client ──────────────────────────────
 
-function buildRangeQuery(from?: string, to?: string): string {
+function buildRangeQuery(
+  from?: string,
+  to?: string,
+  projectId?: string,
+): string {
   const p = new URLSearchParams();
   if (from) p.set('from', from);
   if (to) p.set('to', to);
+  if (projectId) p.set('projectId', projectId);
   const qs = p.toString();
   return qs ? `?${qs}` : '';
 }
 
 export const calendarApi = {
-  /** Мой календарь (события + задачи с dueDate). */
-  getMyCalendar: (from?: string, to?: string) =>
+  /**
+   * Мой календарь (события + задачи с dueDate).
+   * @param projectId — Calendar MVP Polish (P3, 2026-05-25): серверный
+   *   фильтр по проекту; раньше клиент фильтровал у себя.
+   */
+  getMyCalendar: (from?: string, to?: string, projectId?: string) =>
     apiClient.get<CalendarResponseApi>(
-      `/api/v1/me/calendar${buildRangeQuery(from, to)}`,
+      `/api/v1/me/calendar${buildRangeQuery(from, to, projectId)}`,
     ),
 
   /** Календарь другого пользователя (personal-события маскированы). */
-  getUserCalendar: (userId: string, from?: string, to?: string) =>
+  getUserCalendar: (
+    userId: string,
+    from?: string,
+    to?: string,
+    projectId?: string,
+  ) =>
     apiClient.get<CalendarResponseApi>(
-      `/api/v1/users/${encodeURIComponent(userId)}/calendar${buildRangeQuery(from, to)}`,
+      `/api/v1/users/${encodeURIComponent(userId)}/calendar${buildRangeQuery(from, to, projectId)}`,
     ),
 
   createEvent: (body: CreateEventRequestApi) =>

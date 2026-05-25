@@ -269,6 +269,156 @@ export class MeetingsService {
     return created;
   }
 
+  /**
+   * Calendar MVP Polish (2026-05-25, Фаза P1) — создание LiveKit-комнаты
+   * под событие пользовательского календаря (`POST /api/v1/events` с
+   * `kind=meeting`).
+   *
+   * Отличия от `createForUser`:
+   *   - не плодит ULID → используется ULID самого Event (для трассировки
+   *     event ↔ meeting через одинаковый префикс времени);
+   *   - tenantId приходит готовым (рассчитан в EventsService из CurrentOrg),
+   *     не пытаемся резолвить «дефолт» — это сценарий конкретной Org.
+   *   - не привязывается к Card (карточка человека из CRM) — это календарь;
+   *   - возвращает {meetingId, joinUrl} — joinUrl сохраняется в Event.metadata
+   *     и отдаётся клиенту, чтобы показать кнопку «Войти во встречу».
+   *
+   * roomName = meetingId (как везде; ULID годится для public URL).
+   * type — нейтральный `team` (нет специального `calendar_event` в enum;
+   * `MeetingType` остаётся для совместимости с AI-промптами по типу).
+   */
+  async createForCalendarEvent(args: {
+    tenantId: string;
+    ownerUserId: string;
+    title: string;
+    scheduledFor: Date;
+    eventId: string;
+  }): Promise<{ meetingId: string; joinUrl: string }> {
+    const { tenantId, ownerUserId, title, eventId } = args;
+
+    const meetingId = ulid();
+    await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: ownerUserId } });
+      if (!user) throw new NotAuthorizedError('user_not_found');
+
+      await this.meetings.create(
+        {
+          id: meetingId,
+          title: title.trim().slice(0, 300),
+          type: 'team',
+          ownerId: ownerUserId,
+          tenantId,
+          customPrompt: null,
+          recordByDefault: true,
+        },
+        tx,
+      );
+
+      await tx.participant.create({
+        data: {
+          meetingId,
+          livekitIdentity: `host:${ownerUserId}`,
+          name: user.name,
+          role: 'host',
+          isRegisteredUser: true,
+          userId: ownerUserId,
+        },
+      });
+    });
+
+    this.metrics.incMeetingCreated('team');
+    const joinUrl = `${this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '')}/m/${meetingId}`;
+    this.logger.log(
+      `Calendar Meeting ${meetingId} создан для события ${eventId} (owner=${ownerUserId}, tenant=${tenantId})`,
+    );
+    return { meetingId, joinUrl };
+  }
+
+  /**
+   * Calendar MVP Polish (2026-05-25, Фаза P1) — отмена «запланированной»
+   * комнаты при удалении/отмене события календаря.
+   *
+   * Отличается от `cancelScheduled(id, partnerId)` (Crossmark, выше тем,
+   * что:
+   *   - не привязан к partner-контексту;
+   *   - идемпотентен (если уже отменена/удалена — no-op, не валит);
+   *   - не падает на FSM-несовпадении (event может быть удалён уже после
+   *     начала встречи — тогда не отменяем status, только лог);
+   *   - принимает `reason` (event_deleted | event_cancelled) — пишется
+   *     в `failureReason`.
+   *
+   * НЕ останавливает активный Egress напрямую — RecordingsService.stop
+   * требует hostUserId; webhook room_finished подберёт сам, когда комната
+   * закроется по таймауту неактивности. Просто пишем warning для трассировки.
+   */
+  async cancelScheduledForCalendarEvent(args: {
+    meetingId: string;
+    reason: 'event_deleted' | 'event_cancelled';
+  }): Promise<void> {
+    const { meetingId, reason } = args;
+    const meeting = await this.meetings.findById(meetingId);
+    if (!meeting) {
+      this.logger.warn(
+        { meetingId, reason },
+        'cancelScheduledForCalendarEvent: meeting не найден — no-op',
+      );
+      return;
+    }
+    if (meeting.deletedAt !== null) {
+      // Уже удалена — идемпотентно.
+      return;
+    }
+    // Если встреча уже активна / завершена — статус не трогаем, только soft-delete,
+    // чтобы не сломать FSM (FSM запрещает active → failed без явного перехода).
+    if (meeting.status === 'scheduled') {
+      try {
+        await this.meetings.updateStatus(meetingId, 'failed', {
+          failureReason: reason,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            meetingId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'cancelScheduledForCalendarEvent: не удалось перевести статус → failed, продолжаю',
+        );
+      }
+    } else {
+      // active / *_processing / ready / failed — soft-delete без смены статуса.
+      this.logger.warn(
+        { meetingId, status: meeting.status, reason },
+        'cancelScheduledForCalendarEvent: встреча уже не scheduled — только soft-delete',
+      );
+      // Проверим активную запись для трассировки (Egress останавливать не пробуем —
+      // нет userId хоста в контракте, webhook room_finished подберёт сам).
+      const recording = await this.prisma.recording.findUnique({
+        where: { meetingId },
+        select: { status: true, compositeEgressId: true },
+      });
+      if (
+        recording?.status === 'requested' ||
+        recording?.status === 'recording'
+      ) {
+        this.logger.warn(
+          {
+            meetingId,
+            recordingStatus: recording.status,
+            compositeEgressId: recording.compositeEgressId,
+          },
+          'cancelScheduledForCalendarEvent: запись активна, ожидаем room_finished webhook для остановки',
+        );
+      }
+    }
+    await this.prisma.meeting.update({
+      where: { id: meetingId },
+      data: { deletedAt: new Date() },
+    });
+    this.logger.log(
+      `Calendar Meeting ${meetingId} отменён (reason=${reason})`,
+    );
+  }
+
   // ────────────────────────── чтение ─────────────────────────────────────
 
   async getForCrossmark(id: string): Promise<MeetingPublicDto> {
@@ -489,6 +639,21 @@ export class MeetingsService {
       tasks: unknown;
       modelUsed: string;
       createdAt: string;
+      /**
+       * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для
+       * пользовательского UI (`MeetingReportFastWorker`).
+       */
+      summaryFast: string | null;
+      summaryFastModel: string | null;
+      summaryFastGeneratedAt: string | null;
+      /**
+       * Сводка предыдущего поколения (knowledge-core v2). Fallback, если
+       * `summaryFast` ещё не сгенерирован. Поле сохраняется до полного
+       * удаления v2-агентов (через 2 недели A/B-сравнения).
+       */
+      summaryV2: string | null;
+      summaryV2Model: string | null;
+      summaryV2GeneratedAt: string | null;
     } | null;
     recording: {
       hasRecording: boolean;
@@ -612,6 +777,12 @@ export class MeetingsService {
     tasks: unknown;
     modelUsed: string;
     createdAt: string;
+    summaryFast: string | null;
+    summaryFastModel: string | null;
+    summaryFastGeneratedAt: string | null;
+    summaryV2: string | null;
+    summaryV2Model: string | null;
+    summaryV2GeneratedAt: string | null;
   } {
     return {
       summary: r.summary,
@@ -621,6 +792,13 @@ export class MeetingsService {
       tasks: r.tasks ?? null,
       modelUsed: r.modelUsed,
       createdAt: r.createdAt.toISOString(),
+      // ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для UI.
+      summaryFast: r.summaryFast ?? null,
+      summaryFastModel: r.summaryFastModel ?? null,
+      summaryFastGeneratedAt: r.summaryFastGeneratedAt?.toISOString() ?? null,
+      summaryV2: r.summaryV2 ?? null,
+      summaryV2Model: r.summaryV2Model ?? null,
+      summaryV2GeneratedAt: r.summaryV2GeneratedAt?.toISOString() ?? null,
     };
   }
 

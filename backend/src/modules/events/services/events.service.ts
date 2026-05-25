@@ -21,6 +21,7 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EntityResolutionService } from '../../knowledge-core/services/entity-resolution.service';
+import { MeetingsService } from '../../meetings/meetings.service';
 import type {
   CalendarItemDto,
   CalendarResponseDto,
@@ -62,6 +63,9 @@ export class EventsService {
     private readonly entityResolver: EntityResolutionService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(MeetingsService)
+    private readonly meetings: MeetingsService | undefined,
     @Optional() @Inject(EventEmitter2) private readonly eventEmitter?: EventEmitter2,
   ) {}
 
@@ -247,15 +251,53 @@ export class EventsService {
       return full!;
     });
 
-    // 3. TODO: kind=meeting → создать LiveKit Meeting через MeetingsService
-    // и записать meeting.id в Event.relatedMeetingId. Текущий
-    // MeetingsService.createForUser требует partner-контекст, не подходит
-    // под календарь напрямую. Откладываем до доработки MeetingsService.create.
+    // 3. kind=meeting → создать LiveKit Meeting + записать meeting.id в
+    //    Event.relatedMeetingId. joinUrl кладём в Event.metadata, чтобы UI
+    //    мог показать кнопку «Войти во встречу». Для kind=call комнату НЕ
+    //    создаём — это телефонный звонок, не онлайн-видео.
     if (data.kind === 'meeting') {
-      this.logger.warn(
-        { eventId: created.id, kind: data.kind },
-        'TODO: создание LiveKit Meeting для kind=meeting — пока заглушка',
-      );
+      if (!this.meetings) {
+        this.logger.warn(
+          { eventId: created.id },
+          'MeetingsService не инжектирован — LiveKit-комната не создана',
+        );
+      } else {
+        try {
+          const meet = await this.meetings.createForCalendarEvent({
+            tenantId,
+            ownerUserId: ownerId,
+            title: data.title.trim().slice(0, 300),
+            scheduledFor: data.startAt,
+            eventId: created.id,
+          });
+          // Обновляем Event: relatedMeetingId + metadata.joinUrl. Делаем
+          // отдельным апдейтом (не в основной транзакции), чтобы при сбое
+          // LiveKit само событие осталось — пользователь увидит его без
+          // joinUrl и сможет докрутить вручную.
+          const meta = this.mergeMetadata(created.metadata, {
+            joinUrl: meet.joinUrl,
+          });
+          const updated = await this.prisma.event.update({
+            where: { id: created.id },
+            data: {
+              relatedMeetingId: meet.meetingId,
+              metadata: meta as Prisma.InputJsonValue,
+            },
+            include: { participants: true, reminders: true },
+          });
+          // Подменяем для финального DTO.
+          (created as Event).relatedMeetingId = updated.relatedMeetingId;
+          (created as Event).metadata = updated.metadata;
+        } catch (err) {
+          this.logger.error(
+            {
+              eventId: created.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'createForCalendarEvent: создание LiveKit Meeting упало — событие создано без joinUrl',
+          );
+        }
+      }
     }
 
     // 4. Доменное событие (для будущей RawEvent-интеграции в knowledge-core).
@@ -372,13 +414,28 @@ export class EventsService {
     });
 
     if (event.relatedMeetingId) {
-      // TODO: интеграция с MeetingsService.cancelScheduled —
-      // нужен partnerId, у нас нет. Когда появится универсальный cancel —
-      // вызвать его здесь.
-      this.logger.warn(
-        { eventId, meetingId: event.relatedMeetingId },
-        'TODO: отмена LiveKit Meeting при soft-delete события — пока no-op',
-      );
+      if (!this.meetings) {
+        this.logger.warn(
+          { eventId, meetingId: event.relatedMeetingId },
+          'MeetingsService не инжектирован — связанная LiveKit-комната не отменена',
+        );
+      } else {
+        try {
+          await this.meetings.cancelScheduledForCalendarEvent({
+            meetingId: event.relatedMeetingId,
+            reason: 'event_deleted',
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              eventId,
+              meetingId: event.relatedMeetingId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'cancelScheduledForCalendarEvent: упало при softDelete события — событие всё равно удалено',
+          );
+        }
+      }
     }
 
     this.tryEmit('event.deleted', { tenantId, eventId });
@@ -443,13 +500,22 @@ export class EventsService {
     userId: string;
     from?: Date;
     to?: Date;
+    /** Calendar MVP Polish (P3) — серверная фильтрация по проекту. */
+    projectId?: string;
   }): Promise<CalendarResponseDto> {
-    const { tenantId, userId } = args;
+    const { tenantId, userId, projectId } = args;
     const { from, to } = this.resolveCalendarWindow(args.from, args.to);
 
     const [events, issues] = await Promise.all([
-      this.fetchEventsForUser({ tenantId, userId, from, to, includePersonal: true }),
-      this.fetchIssuesForUser({ tenantId, userId, from, to }),
+      this.fetchEventsForUser({
+        tenantId,
+        userId,
+        from,
+        to,
+        includePersonal: true,
+        projectId,
+      }),
+      this.fetchIssuesForUser({ tenantId, userId, from, to, projectId }),
     ]);
 
     const items: CalendarItemDto[] = [
@@ -478,14 +544,17 @@ export class EventsService {
     targetUserId: string;
     from?: Date;
     to?: Date;
+    /** Calendar MVP Polish (P3) — серверная фильтрация по проекту. */
+    projectId?: string;
   }): Promise<CalendarResponseDto> {
-    const { tenantId, currentUserId, targetUserId } = args;
+    const { tenantId, currentUserId, targetUserId, projectId } = args;
     if (currentUserId === targetUserId) {
       return this.getMyCalendar({
         tenantId,
         userId: targetUserId,
         from: args.from,
         to: args.to,
+        ...(projectId ? { projectId } : {}),
       });
     }
     const { from, to } = this.resolveCalendarWindow(args.from, args.to);
@@ -496,8 +565,15 @@ export class EventsService {
         from,
         to,
         includePersonal: true, // подгружаем, но ниже замаскируем
+        projectId,
       }),
-      this.fetchIssuesForUser({ tenantId, userId: targetUserId, from, to }),
+      this.fetchIssuesForUser({
+        tenantId,
+        userId: targetUserId,
+        from,
+        to,
+        projectId,
+      }),
     ]);
 
     const items: CalendarItemDto[] = [
@@ -629,15 +705,18 @@ export class EventsService {
     from: Date;
     to: Date;
     includePersonal: boolean;
+    /** Calendar MVP Polish (P3) — фильтр по проекту, серверный. */
+    projectId?: string;
   }): Promise<
     (Event & { participants: EventParticipant[]; reminders: EventReminder[] })[]
   > {
-    const { tenantId, userId, from, to } = args;
+    const { tenantId, userId, from, to, projectId } = args;
     return this.prisma.event.findMany({
       where: {
         tenantId,
         deletedAt: null,
         startAt: { gte: from, lt: to },
+        ...(projectId ? { projectId } : {}),
         OR: [
           { ownerId: userId },
           { participants: { some: { userId } } },
@@ -654,14 +733,17 @@ export class EventsService {
     userId: string;
     from: Date;
     to: Date;
+    /** Calendar MVP Polish (P3) — фильтр по проекту, серверный. */
+    projectId?: string;
   }): Promise<(Issue & { project: Project | null })[]> {
-    const { tenantId, userId, from, to } = args;
+    const { tenantId, userId, from, to, projectId } = args;
     return this.prisma.issue.findMany({
       where: {
         tenantId,
         deletedAt: null,
         dueDate: { gte: from, lt: to },
         assignees: { some: { userId } },
+        ...(projectId ? { projectId } : {}),
       },
       include: { project: true },
       orderBy: [{ dueDate: 'asc' }],
@@ -711,10 +793,38 @@ export class EventsService {
       durationMin: e.durationMin,
       location: e.location,
       relatedMeetingId: e.relatedMeetingId,
+      joinUrl: this.extractJoinUrl(e.metadata),
       createdAt: e.createdAt.toISOString(),
       updatedAt: e.updatedAt.toISOString(),
       deletedAt: e.deletedAt ? e.deletedAt.toISOString() : null,
     };
+  }
+
+  /**
+   * Достаёт `joinUrl` из `Event.metadata` (см. Calendar MVP Polish P1).
+   * Защищаемся от того, что metadata может быть null, массивом или иметь
+   * не-строковое поле joinUrl.
+   */
+  private extractJoinUrl(meta: unknown): string | null {
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+    const v = (meta as Record<string, unknown>).joinUrl;
+    return typeof v === 'string' && v.length > 0 ? v : null;
+  }
+
+  /**
+   * Merge нового объекта в existing metadata (Json | null) без потери
+   * остальных полей. Используется при дописывании `joinUrl` после успешного
+   * создания LiveKit-комнаты.
+   */
+  private mergeMetadata(
+    current: unknown,
+    patch: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const base =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? (current as Record<string, unknown>)
+        : {};
+    return { ...base, ...patch };
   }
 
   private toDetail(

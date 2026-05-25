@@ -70,6 +70,30 @@ export const BatchCreatePersonsSchema = z.object({
 });
 export type BatchCreatePersonsDto = z.infer<typeof BatchCreatePersonsSchema>;
 
+/**
+ * Calendar MVP (2026-05-25) Фаза P4 — Quick-create контакта прямо из
+ * EventForm.ParticipantPicker. Минимально необходимый набор полей: name
+ * (обязательно), email/phone опц. Дубль-защита по (tenantId, email) на
+ * стороне сервиса.
+ */
+export const QuickCreatePersonSchema = z.object({
+  name: NameSchema,
+  email: EmailSchema.optional(),
+  phone: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64, 'Телефон не длиннее 64 символов')
+    .optional(),
+});
+export type QuickCreatePersonDto = z.infer<typeof QuickCreatePersonSchema>;
+
+export interface QuickCreatePersonResponseDto {
+  personId: string;
+  name: string;
+  email: string | null;
+}
+
 // ─────────────────────────── Response DTO ────────────────────────────
 
 export interface PersonListItemDto {

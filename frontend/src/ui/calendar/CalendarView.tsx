@@ -5,14 +5,9 @@
  *
  * Поддерживает два режима:
  *   - mode='me'      — глобальный «мой календарь» (/me/calendar).
- *   - mode='project' — календарь проекта; фильтрует элементы по projectId.
- *     ⚠ TODO: бэкенд `GET /me/calendar` не принимает `projectId`. В Фазе 2.3
- *     используем тот же `/me/calendar` + клиентская фильтрация (видны только
- *     события/задачи, где `projectId` совпадает с проектом). Это покажет
- *     события проекта лишь среди тех, что видит текущий user. Полный список
- *     событий проекта (включая чужие company-события) появится, когда
- *     backend расширит `GET /api/v1/events?projectId=&from=&to=` с
- *     календарным форматом ответа.
+ *   - mode='project' — календарь проекта; фильтр по projectId уходит на сервер
+ *     (`GET /me/calendar?projectId=`) — клиентская фильтрация снята после
+ *     Calendar MVP Polish P3 (2026-05-25).
  *
  * Состояние: режим отображения (day|week|month) и курсор-дата.
  * Данные: SWR-подписка на /me/calendar в окне [from, to].
@@ -145,21 +140,15 @@ export function CalendarView({
     calendarApi.getMyCalendar(
       loadRange.from.toISOString(),
       loadRange.to.toISOString(),
+      // P3 (2026-05-25): projectId уходит на сервер; клиентский filter снят.
+      mode === 'project' && projectId ? projectId : undefined,
     ),
   );
 
   const items: CalendarTimelineItem[] = useMemo(() => {
     if (!swr.data) return [];
-    const all = swr.data.items.map(toCalendarTimelineItem);
-    if (mode === 'project' && projectId) {
-      return all.filter((it) =>
-        it.type === 'event'
-          ? it.projectId === projectId
-          : it.projectId === projectId,
-      );
-    }
-    return all;
-  }, [swr.data, mode, projectId]);
+    return swr.data.items.map(toCalendarTimelineItem);
+  }, [swr.data]);
 
   // ─────────────────────── handlers ─────────────────────────
 

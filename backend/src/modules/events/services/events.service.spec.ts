@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { EntityResolutionService } from '../../knowledge-core/services/entity-resolution.service';
+import type { MeetingsService } from '../../meetings/meetings.service';
 
 import { EventsService } from './events.service';
 
@@ -42,6 +43,10 @@ describe('EventsService', () => {
 
   let entityFindOrCreate: ReturnType<typeof vi.fn>;
   let incCreated: ReturnType<typeof vi.fn>;
+
+  let meetingsCreateForCalendarEvent: ReturnType<typeof vi.fn>;
+  let meetingsCancelScheduled: ReturnType<typeof vi.fn>;
+  let meetings: MeetingsService;
 
   function makeEvent(
     over: Partial<Record<string, unknown>> = {},
@@ -120,6 +125,15 @@ describe('EventsService', () => {
       },
     } as unknown as PrismaService;
 
+    meetingsCreateForCalendarEvent = vi
+      .fn()
+      .mockResolvedValue({ meetingId: 'm-1', joinUrl: 'https://app/m/m-1' });
+    meetingsCancelScheduled = vi.fn().mockResolvedValue(undefined);
+    meetings = {
+      createForCalendarEvent: meetingsCreateForCalendarEvent,
+      cancelScheduledForCalendarEvent: meetingsCancelScheduled,
+    } as unknown as MeetingsService;
+
     entityFindOrCreate = vi
       .fn()
       .mockResolvedValue({ entity: { id: 'ent-1' }, created: true });
@@ -134,7 +148,7 @@ describe('EventsService', () => {
 
     emitMock = vi.fn();
 
-    svc = new EventsService(prisma, entityResolver, metrics, {
+    svc = new EventsService(prisma, entityResolver, metrics, meetings, {
       emit: emitMock,
     } as never);
   });
@@ -166,6 +180,12 @@ describe('EventsService', () => {
       });
       txEventCreate.mockResolvedValue({ id: 'e-new' });
       txEventFindUnique.mockResolvedValue(created);
+      // P1: MeetingsService.createForCalendarEvent → eventUpdate (relatedMeetingId + metadata).
+      eventUpdate.mockResolvedValue({
+        ...created,
+        relatedMeetingId: 'm-1',
+        metadata: { joinUrl: 'https://app/m/m-1' },
+      });
 
       const dto = await svc.create({
         tenantId: 't-1',
@@ -360,6 +380,162 @@ describe('EventsService', () => {
           payload: { status: 'accepted' },
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('Calendar MVP Polish — P1 LiveKit integration', () => {
+    it('create with kind=meeting → MeetingsService.createForCalendarEvent вызван; relatedMeetingId и joinUrl возвращаются', async () => {
+      txEventCreate.mockResolvedValue({ id: 'e-1' });
+      txEventFindUnique.mockResolvedValue(
+        makeEvent({ id: 'e-1', kind: 'meeting' }),
+      );
+      eventUpdate.mockResolvedValue(
+        makeEvent({
+          id: 'e-1',
+          kind: 'meeting',
+          relatedMeetingId: 'm-42',
+          metadata: { joinUrl: 'https://app/m/m-42' },
+        }),
+      );
+      meetingsCreateForCalendarEvent.mockResolvedValue({
+        meetingId: 'm-42',
+        joinUrl: 'https://app/m/m-42',
+      });
+
+      const dto = await svc.create({
+        tenantId: 't-1',
+        ownerId: 'u-owner',
+        data: {
+          title: 'Созвон по релизу',
+          startAt: new Date('2026-06-01T10:00:00Z'),
+          endAt: new Date('2026-06-01T11:00:00Z'),
+          kind: 'meeting',
+          visibility: 'company',
+          allDay: false,
+          timezone: 'Europe/Moscow',
+        },
+      });
+
+      expect(meetingsCreateForCalendarEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 't-1',
+          ownerUserId: 'u-owner',
+          title: 'Созвон по релизу',
+          eventId: 'e-1',
+        }),
+      );
+      expect(dto.relatedMeetingId).toBe('m-42');
+      expect(dto.joinUrl).toBe('https://app/m/m-42');
+    });
+
+    it('create with kind=call → MeetingsService НЕ вызывается (телефонный звонок)', async () => {
+      txEventCreate.mockResolvedValue({ id: 'e-call' });
+      txEventFindUnique.mockResolvedValue(
+        makeEvent({ id: 'e-call', kind: 'call' }),
+      );
+
+      const dto = await svc.create({
+        tenantId: 't-1',
+        ownerId: 'u-owner',
+        data: {
+          title: 'Звонок клиенту',
+          startAt: new Date('2026-06-01T10:00:00Z'),
+          endAt: new Date('2026-06-01T10:30:00Z'),
+          kind: 'call',
+          visibility: 'company',
+          allDay: false,
+          timezone: 'Europe/Moscow',
+        },
+      });
+
+      expect(meetingsCreateForCalendarEvent).not.toHaveBeenCalled();
+      expect(dto.joinUrl).toBeNull();
+      expect(dto.relatedMeetingId).toBeNull();
+    });
+
+    it('softDelete event с relatedMeetingId → MeetingsService.cancelScheduledForCalendarEvent вызван', async () => {
+      eventFindUnique.mockResolvedValue(
+        makeEvent({
+          ownerId: 'u-owner',
+          participants: [],
+          relatedMeetingId: 'm-99',
+        }),
+      );
+      eventUpdate.mockResolvedValue({});
+
+      await svc.softDelete({
+        tenantId: 't-1',
+        eventId: 'e-1',
+        actorUserId: 'u-owner',
+      });
+
+      expect(meetingsCancelScheduled).toHaveBeenCalledWith({
+        meetingId: 'm-99',
+        reason: 'event_deleted',
+      });
+    });
+
+    it('softDelete event без relatedMeetingId → MeetingsService не дёргается', async () => {
+      eventFindUnique.mockResolvedValue(
+        makeEvent({
+          ownerId: 'u-owner',
+          participants: [],
+          relatedMeetingId: null,
+        }),
+      );
+      eventUpdate.mockResolvedValue({});
+
+      await svc.softDelete({
+        tenantId: 't-1',
+        eventId: 'e-2',
+        actorUserId: 'u-owner',
+      });
+
+      expect(meetingsCancelScheduled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Calendar MVP Polish — P3 projectId filter', () => {
+    it('getMyCalendar с projectId → where.projectId включён в SQL', async () => {
+      eventFindMany.mockResolvedValue([]);
+      issueFindMany.mockResolvedValue([]);
+
+      await svc.getMyCalendar({
+        tenantId: 't-1',
+        userId: 'u-me',
+        from: new Date('2026-06-01T00:00:00Z'),
+        to: new Date('2026-06-02T00:00:00Z'),
+        projectId: 'prj-7',
+      });
+
+      expect(eventFindMany).toHaveBeenCalledOnce();
+      const eventArgs = eventFindMany.mock.calls[0]![0] as {
+        where: { projectId?: string };
+      };
+      expect(eventArgs.where.projectId).toBe('prj-7');
+
+      expect(issueFindMany).toHaveBeenCalledOnce();
+      const issueArgs = issueFindMany.mock.calls[0]![0] as {
+        where: { projectId?: string };
+      };
+      expect(issueArgs.where.projectId).toBe('prj-7');
+    });
+
+    it('getMyCalendar без projectId → where.projectId не присутствует', async () => {
+      eventFindMany.mockResolvedValue([]);
+      issueFindMany.mockResolvedValue([]);
+
+      await svc.getMyCalendar({
+        tenantId: 't-1',
+        userId: 'u-me',
+        from: new Date('2026-06-01T00:00:00Z'),
+        to: new Date('2026-06-02T00:00:00Z'),
+      });
+
+      const eventArgs = eventFindMany.mock.calls[0]![0] as {
+        where: Record<string, unknown>;
+      };
+      expect(eventArgs.where.projectId).toBeUndefined();
     });
   });
 

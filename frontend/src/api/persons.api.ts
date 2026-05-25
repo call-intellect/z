@@ -1,12 +1,15 @@
 /**
- * API-клиент для страниц персоны (Фаза 11 knowledge-core / 152-ФЗ).
+ * API-клиент для страниц персоны (Фаза 11 knowledge-core / 152-ФЗ) и
+ * быстрого создания контакта (Calendar MVP Фаза P4, 2026-05-25).
  *
  * Эндпоинты:
  *   - `GET    /api/v1/knowledge/entities/:id`        — данные сущности.
  *   - `DELETE /api/v1/persons/:entityId/data`        — удаление личных данных.
+ *   - `POST   /api/v1/persons/quick-create`          — быстрое создание Person
+ *     из ParticipantPicker (минимально name+email?+phone?, дубль-защита).
  *
  * Защита: `CookieAuthGuard + TenantGuard`. На стирание — owner-only (RBAC
- * `person.erase`). Чтение — `entity.read`.
+ * `person.erase`). Чтение — `entity.read`. quick-create — RBAC `event_card.write`.
  */
 
 import { apiClient } from './api-client';
@@ -62,6 +65,18 @@ export interface ListPersonsRequest {
   offset?: number;
 }
 
+export interface QuickCreatePersonRequestApi {
+  name: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface QuickCreatePersonResponseApi {
+  personId: string;
+  name: string;
+  email: string | null;
+}
+
 export const personsApi = {
   /**
    * Список персон (фильтр type=person). Под капотом — `/knowledge/entities`.
@@ -95,5 +110,19 @@ export const personsApi = {
         headers: orgHeaders(orgId),
         body: { reason },
       },
+    ),
+
+  /**
+   * Быстро создать внешний контакт (Calendar MVP Фаза P4). Дубль-защита по
+   * (tenantId, email) на бэке; без email — по точному совпадению name среди
+   * контактов без email.
+   *
+   * Authorization — cookie + Org из контекста (TenantGuard), отдельный
+   * `orgId` не нужен. RBAC — `event_card.write`.
+   */
+  quickCreate: (body: QuickCreatePersonRequestApi) =>
+    apiClient.post<QuickCreatePersonResponseApi>(
+      '/api/v1/persons/quick-create',
+      body,
     ),
 };

@@ -96,6 +96,8 @@ import { SourcesModule } from './modules/sources/sources.module';
 import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 // SBA α-3 — категория A онтологии: поставщики и события.
 import { EventsModule } from './modules/events/events.module';
+// Calendar MVP Фаза P4 (2026-05-25) — объединённый поиск участников событий.
+import { OrgMembersModule } from './modules/org-members/org-members.module';
 import { RegulationsModule } from './modules/regulations/regulations.module';
 import { ProcessesModule } from './modules/processes/processes.module';
 import { DecisionsModule } from './modules/decisions/decisions.module';
@@ -361,6 +363,8 @@ import { PushModule } from './modules/push/push.module';
     // (категория A онтологии). POST/PATCH/DELETE — в α-6.
     VendorsModule,
     EventsModule,
+    // Calendar MVP Фаза P4 — объединённый поиск участников (/api/v1/org-members/search).
+    OrgMembersModule,
 
     // SBA α-4 — Layer 4 Curation Foundation. CurationService.triage(...) +
     // ConflictService.report(...) для специалистов Слоя 3, REST API для

@@ -335,6 +335,56 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'event_card',
         rbacAction: 'delete',
       },
+      // ───────── Clones=Roles Фаза 6 — ролевые клоны ─────────
+      // Whitelist'им только ролевой клон и список ролевых клонов. Person-scope
+      // `ask_my_clone` намеренно ОТСУТСТВУЕТ (ребренд 2026-05-25): клоны
+      // привязаны к должностям, а не к людям.
+      {
+        name: 'ask_role_clone',
+        description:
+          'Спросить клон должности — отвечает от лица роли с учётом опыта текущего носителя. Используй для «спроси клон Маркетолога про каналы продвижения», «что бы сказал клон CFO про этот контракт».',
+        method: 'POST',
+        path: '/api/v1/clones/roles/:roleId/ask',
+        parameters: {
+          type: 'object',
+          properties: {
+            roleId: {
+              type: 'string',
+              description: 'Role.id — id должности, у клона которой спрашиваем.',
+            },
+            question: {
+              type: 'string',
+              description: 'Вопрос пользователя в свободной форме (3..2000 символов).',
+            },
+          },
+          required: ['roleId', 'question'],
+        },
+        rbacResource: 'role',
+        rbacAction: 'read',
+      },
+      {
+        name: 'list_clones',
+        description:
+          'Получить список текущих ролевых клонов компании. Используй для «какие у нас есть клоны должностей», «покажи всех клонов», «есть ли клон Маркетолога».',
+        method: 'GET',
+        path: '/api/v1/clones',
+        parameters: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              description:
+                'Фильтр по статусу клона: active|superseded. Default active.',
+            },
+            q: {
+              type: 'string',
+              description: 'Поиск подстрокой по названию должности (опц.).',
+            },
+          },
+        },
+        rbacResource: 'role',
+        rbacAction: 'read',
+      },
     ];
   }
 }

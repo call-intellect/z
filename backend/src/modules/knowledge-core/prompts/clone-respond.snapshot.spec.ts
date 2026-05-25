@@ -2,13 +2,17 @@
  * Snapshot-тест сборки промта `clone-respond.prompt.ts`.
  *
  * Фаза 1 «clone reliability hardening» — DoD 1.5.
+ * Clones=Roles Фаза 6 (2026-05-25) — добавлен тест на `buildCloneRespondSystemPrompt`
+ * с подстановкой `{{roleName}}` / `{{bearerName}}`.
  *
  * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
  *   - текст `CLONE_RESPOND_SYSTEM_PROMPT_BASE` (constant — guard от
  *     случайных правок жёстких правил формулировок: пункт 6 анти-deepfake
  *     должен быть стабилен, иначе плывёт ожидаемая фраза-отказ);
  *   - сборку `CLONE_RESPOND_USER_TEMPLATE` для типичного входа
- *     (3 reasoning-блока, summary профиля знаний, 2 решения).
+ *     (3 reasoning-блока, summary профиля знаний, 2 решения);
+ *   - финальный системный промпт после `buildCloneRespondSystemPrompt`
+ *     для пары (roleName='Маркетолог', bearerName='Анна Петрова', personaPrompt='...').
  *
  * Обновлять только при осознанном изменении: `bunx vitest --update`.
  */
@@ -17,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLONE_RESPOND_SYSTEM_PROMPT_BASE,
   CLONE_RESPOND_USER_TEMPLATE,
+  buildCloneRespondSystemPrompt,
 } from './clone-respond.prompt';
 
 describe('clone-respond — snapshot сборки промта', () => {
@@ -59,5 +64,24 @@ describe('clone-respond — snapshot сборки промта', () => {
       },
     });
     expect(user).toMatchSnapshot('user');
+  });
+
+  it('buildCloneRespondSystemPrompt — подставляет {{roleName}} / {{bearerName}} и аппендит personaPrompt', () => {
+    const sys = buildCloneRespondSystemPrompt({
+      roleName: 'Маркетолог',
+      bearerName: 'Анна Петрова',
+      personaPrompt:
+        '— фокус на performance-маркетинге, ROI считаю в когортах\n— инструменты: Яндекс.Директ, ВК Реклама\n— тон: спокойный, цифры важнее эмоций',
+    });
+    expect(sys).toMatchSnapshot('built-with-role-and-bearer');
+  });
+
+  it('buildCloneRespondSystemPrompt — подставляет дефолты при null/пустых значениях', () => {
+    const sys = buildCloneRespondSystemPrompt({
+      roleName: null,
+      bearerName: '   ',
+      personaPrompt: '(persona prompt placeholder)',
+    });
+    expect(sys).toMatchSnapshot('built-with-defaults');
   });
 });

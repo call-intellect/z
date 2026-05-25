@@ -35,6 +35,7 @@ import { OrgAdminUsageController } from './controllers/org-admin-usage.controlle
 import { AdminPlansModule } from './plans/plans.module';
 import { IntegrationsAdminModule } from './integrations/integrations-admin.module';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
+import { AdminMediaModule } from './media/admin-media.module';
 import { LlmRoutesController } from './llm-routes/llm-routes.controller';
 import { LlmRoutesService } from './llm-routes/llm-routes.service';
 import { MeetingsAdminController } from './meetings-admin.controller';
@@ -94,6 +95,9 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     // Admin-redesign Фаза 6 — Каналы и интеграции: Telegram/MAX-боты,
     // webhook subscriptions/deliveries management, LiveKit health.
     IntegrationsAdminModule,
+    // Admin-redesign Фаза 7 — Записи и медиа: retention (RetentionPolicy)
+    // и storage (S3 buckets stats + provider switch).
+    AdminMediaModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

@@ -333,31 +333,31 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
     label: 'Записи и медиа',
     icon: Video,
     items: [
+      // Фаза 7: все разделы переехали под /admin/media/*. Старые URL
+      // (/admin/meetings, /admin/recordings/expiring) делают 308 redirect.
       {
-        href: '/admin/meetings',
+        href: '/admin/media/meetings',
         label: 'Все встречи',
         icon: Video,
-        matchPrefix: '/admin/meetings',
+        matchPrefix: '/admin/media/meetings',
       },
       {
-        href: '/admin/recordings/expiring',
+        href: '/admin/media/expiring',
         label: 'Истекающие записи',
         icon: PlayCircle,
-        matchPrefix: '/admin/recordings/expiring',
+        matchPrefix: '/admin/media/expiring',
       },
       {
         href: '/admin/media/retention',
-        label: 'Retention',
+        label: 'Сроки хранения',
         icon: Clock,
         matchPrefix: '/admin/media/retention',
-        isComingSoon: true,
       },
       {
         href: '/admin/media/storage',
         label: 'S3 хранилище',
         icon: HardDrive,
         matchPrefix: '/admin/media/storage',
-        isComingSoon: true,
       },
     ],
   },

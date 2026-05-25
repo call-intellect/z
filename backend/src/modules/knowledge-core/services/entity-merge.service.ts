@@ -5,7 +5,6 @@ import {
   type IdeaBlock,
   Prisma,
 } from '@prisma/client';
-import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -14,6 +13,11 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import {
+  ENTITY_MERGE_ARBITER_JSON_SCHEMA,
+  ENTITY_MERGE_ARBITER_SYSTEM_PROMPT,
+  EntityMergeArbiterResponseSchema,
+} from '../prompts/entity-merge-arbiter.prompt';
 
 /**
  * Кандидат для merge'а Entity — другая сущность того же tenant'а / type,
@@ -50,36 +54,11 @@ interface RawCandidateRow {
   similarity: string | number;
 }
 
-const ArbiterResponseSchema = z.object({
-  verdict: z.enum(['merge', 'distinct']),
-  canonicalId: z.string().optional(),
-  explanation: z.string(),
-});
-
-const ARBITER_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['verdict', 'explanation'],
-  properties: {
-    verdict: { type: 'string', enum: ['merge', 'distinct'] },
-    canonicalId: { type: 'string' },
-    explanation: { type: 'string' },
-  },
-};
-
-const ARBITER_SYSTEM_PROMPT = `Ты — арбитр дубликатов сущностей в knowledge-core.
-Получаешь одну "новую" сущность и до 5 кандидатов того же типа (того же tenant'а), ближайших по эмбеддингу.
-Решаешь: новая сущность — это другое написание / алиас одного из кандидатов (verdict="merge"), или это другая сущность (verdict="distinct").
-
-Правила:
-- Учитывай metadata: для type=person — должность/email/телефон; для type=client — ИНН/домен/город; для type=project — кодовое имя; для type=product — артикул/SKU.
-- НЕ сливай однофамильцев из разных компаний (если metadata явно разделяет — distinct).
-- НЕ сливай разные продукты с похожими именами в разных проектах.
-- Учитывай контекст блоков (recentMentions[]) — если новая сущность и кандидат упоминаются в одних и тех же блоках/контекстах, это сильный сигнал к merge.
-- Если merge — поле "canonicalId" обязательно (id одного из переданных кандидатов).
-- Если distinct — "canonicalId" не указывай.
-- "explanation" — короткое объяснение в 1-2 предложениях, на русском.
-- Ответ — строго JSON по схеме. Никакого markdown.`;
+// Промпт, JSON Schema и Zod вынесены в `prompts/entity-merge-arbiter.prompt.ts`.
+// Алиасы под историческими именами — чтобы тело сервиса не менялось.
+const ArbiterResponseSchema = EntityMergeArbiterResponseSchema;
+const ARBITER_JSON_SCHEMA = ENTITY_MERGE_ARBITER_JSON_SCHEMA;
+const ARBITER_SYSTEM_PROMPT = ENTITY_MERGE_ARBITER_SYSTEM_PROMPT;
 
 /**
  * EntityMergeService — KNN cosine + LLM-арбитр для entity-resolver worker'а.

@@ -5,7 +5,6 @@ import {
   type IdeaBlockStatus,
   type SignalType,
 } from '@prisma/client';
-import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -17,6 +16,11 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import {
+  BLOCK_DISTILL_JSON_SCHEMA,
+  BLOCK_DISTILL_SYSTEM_PROMPT,
+  BlockDistillJudgeResponseSchema,
+} from '../prompts/block-distill.prompt';
 
 /**
  * Кандидат — canonical-блок, ближайший к новому по cosine. similarity ∈ [0,1].
@@ -56,35 +60,11 @@ interface RawCandidateRow {
   similarity: string | number;
 }
 
-const JudgeResponseSchema = z.object({
-  verdict: z.enum(['merge', 'distinct']),
-  canonicalId: z.string().optional(),
-  explanation: z.string(),
-});
-
-const JUDGE_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['verdict', 'explanation'],
-  properties: {
-    verdict: { type: 'string', enum: ['merge', 'distinct'] },
-    canonicalId: { type: 'string' },
-    explanation: { type: 'string' },
-  },
-};
-
-const JUDGE_SYSTEM_PROMPT = `Ты — арбитр дубликатов знания.
-Получаешь один новый IdeaBlock и до 5 кандидатов-канонических блоков, ближайших к нему по эмбеддингу.
-Решаешь: новый блок — это перефразировка одного из кандидатов (verdict="merge"), или это отдельное самостоятельное знание (verdict="distinct").
-
-Правила:
-- merge только если новый блок ОТВЕЧАЕТ НА ТОТ ЖЕ ВОПРОС, что и кандидат, и trustedAnswer семантически совместим.
-- Разные signalType (например, fact vs pain) — почти всегда distinct.
-- Разные сущности (разные клиенты/проекты) — distinct, даже при похожем тексте.
-- Если merge — поле "canonicalId" обязательно (id одного из переданных кандидатов).
-- Если distinct — "canonicalId" не указывай.
-- "explanation" — короткое объяснение в 1-2 предложениях, на русском.
-- Ответ — строго JSON по схеме. Никакого markdown.`;
+// Промпт, JSON Schema и Zod вынесены в `prompts/block-distill.prompt.ts`.
+// Здесь оставляем алиасы под историческими именами для минимума diff'а.
+const JudgeResponseSchema = BlockDistillJudgeResponseSchema;
+const JUDGE_JSON_SCHEMA = BLOCK_DISTILL_JSON_SCHEMA;
+const JUDGE_SYSTEM_PROMPT = BLOCK_DISTILL_SYSTEM_PROMPT;
 
 /**
  * BlockMergeService — KNN + LLM-арбитр для block-distill.

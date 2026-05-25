@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`entity-merge-arbiter — snapshot сборки промта > JSON Schema стабилен > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "canonicalId": {
+      "type": "string",
+    },
+    "explanation": {
+      "type": "string",
+    },
+    "verdict": {
+      "enum": [
+        "merge",
+        "distinct",
+      ],
+      "type": "string",
+    },
+  },
+  "required": [
+    "verdict",
+    "explanation",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`entity-merge-arbiter — snapshot сборки промта > system prompt стабилен > system 1`] = `
+"Ты — арбитр дубликатов сущностей в knowledge-core.
+Получаешь одну "новую" сущность и до 5 кандидатов того же типа (того же tenant'а), ближайших по эмбеддингу.
+Решаешь: новая сущность — это другое написание / алиас одного из кандидатов (verdict="merge"), или это другая сущность (verdict="distinct").
+
+Правила:
+- Учитывай metadata: для type=person — должность/email/телефон; для type=client — ИНН/домен/город; для type=project — кодовое имя; для type=product — артикул/SKU.
+- НЕ сливай однофамильцев из разных компаний (если metadata явно разделяет — distinct).
+- НЕ сливай разные продукты с похожими именами в разных проектах.
+- Учитывай контекст блоков (recentMentions[]) — если новая сущность и кандидат упоминаются в одних и тех же блоках/контекстах, это сильный сигнал к merge.
+- Если merge — поле "canonicalId" обязательно (id одного из переданных кандидатов).
+- Если distinct — "canonicalId" не указывай.
+- "explanation" — короткое объяснение в 1-2 предложениях, на русском.
+- Ответ — строго JSON по схеме. Никакого markdown."
+`;

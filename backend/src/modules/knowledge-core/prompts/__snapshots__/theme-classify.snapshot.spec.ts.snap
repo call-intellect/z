@@ -1,0 +1,110 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`theme-classify — snapshot сборки промта > JSON Schema стабилен > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "branch": {
+      "enum": [
+        "strategy",
+        "clients",
+        "sales",
+        "marketing",
+        "product",
+        "operations",
+        "team",
+        "finance",
+        "technology",
+        "production",
+        "partnerships",
+        "legal",
+        "none",
+      ],
+      "type": "string",
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+    },
+    "description": {
+      "maxLength": 1000,
+      "type": "string",
+    },
+    "name": {
+      "maxLength": 100,
+      "type": "string",
+    },
+    "tags": {
+      "items": {
+        "type": "string",
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "type": "array",
+    },
+    "weight": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+    },
+  },
+  "required": [
+    "name",
+    "description",
+    "branch",
+    "tags",
+    "weight",
+    "confidence",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`theme-classify — snapshot сборки промта > system prompt стабилен > system 1`] = `
+"Ты — аналитик, который называет тематические кластеры IdeaBlock'ов компании.
+
+На вход — N блоков (criticalQuestion + trustedAnswer + signalType + tags) и список упомянутых сущностей.
+
+Твоя задача — дать кластеру:
+1. "name" — короткое имя темы (≤100 символов, существительное / именная фраза, без markdown).
+2. "description" — описание (≤1000 символов, 2-4 предложения по-русски): что общего у этих блоков.
+3. "branch" — одна из 12 веток компании ИЛИ "none" если ни одна не подходит:
+   - strategy — стратегия и видение
+   - clients — работа с клиентами и аккаунт-менеджмент
+   - sales — продажи и сделки
+   - marketing — маркетинг и продвижение
+   - product — продукт, фичи, бэклог
+   - operations — операционка и процессы
+   - team — команда, найм, культура
+   - finance — финансы и бюджет
+   - technology — технологии, инфраструктура
+   - production — производство / поставки
+   - partnerships — партнёрства
+   - legal — юридические вопросы
+4. "tags" — 1-10 коротких ключевых слов (каждое ≤30 символов).
+5. "weight" — важность темы для бизнеса (0..1; 0.7+ для критичных тем).
+6. "confidence" — уверенность в кластере (0..1; 0.8+ для очевидной темы).
+
+Правила:
+- Не выдумывай связи. Если блоки разнородные — низкий confidence.
+- name на русском, без эмодзи и без кавычек.
+- Ответ — строго JSON по схеме."
+`;
+
+exports[`theme-classify — snapshot сборки промта > перечень 12 веток компании стабилен > branches 1`] = `
+[
+  "strategy",
+  "clients",
+  "sales",
+  "marketing",
+  "product",
+  "operations",
+  "team",
+  "finance",
+  "technology",
+  "production",
+  "partnerships",
+  "legal",
+]
+`;

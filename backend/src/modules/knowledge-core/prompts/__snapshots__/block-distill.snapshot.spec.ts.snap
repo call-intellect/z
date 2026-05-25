@@ -1,0 +1,42 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`block-distill — snapshot сборки промта > JSON Schema стабилен > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "canonicalId": {
+      "type": "string",
+    },
+    "explanation": {
+      "type": "string",
+    },
+    "verdict": {
+      "enum": [
+        "merge",
+        "distinct",
+      ],
+      "type": "string",
+    },
+  },
+  "required": [
+    "verdict",
+    "explanation",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`block-distill — snapshot сборки промта > system prompt стабилен > system 1`] = `
+"Ты — арбитр дубликатов знания.
+Получаешь один новый IdeaBlock и до 5 кандидатов-канонических блоков, ближайших к нему по эмбеддингу.
+Решаешь: новый блок — это перефразировка одного из кандидатов (verdict="merge"), или это отдельное самостоятельное знание (verdict="distinct").
+
+Правила:
+- merge только если новый блок ОТВЕЧАЕТ НА ТОТ ЖЕ ВОПРОС, что и кандидат, и trustedAnswer семантически совместим.
+- Разные signalType (например, fact vs pain) — почти всегда distinct.
+- Разные сущности (разные клиенты/проекты) — distinct, даже при похожем тексте.
+- Если merge — поле "canonicalId" обязательно (id одного из переданных кандидатов).
+- Если distinct — "canonicalId" не указывай.
+- "explanation" — короткое объяснение в 1-2 предложениях, на русском.
+- Ответ — строго JSON по схеме. Никакого markdown."
+`;

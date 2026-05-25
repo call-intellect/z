@@ -1,0 +1,159 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`reframing — snapshot сборки промта > blocks JSON Schema стабилен > blocks-schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "analysis": {
+      "maxLength": 1000,
+      "type": "string",
+    },
+    "mergeCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string",
+          },
+          "b": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "a",
+          "b",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "splitCandidates": {
+      "items": {
+        "type": "string",
+      },
+      "type": "array",
+    },
+    "themeShifts": {
+      "items": {
+        "type": "string",
+      },
+      "type": "array",
+    },
+  },
+  "required": [
+    "analysis",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`reframing — snapshot сборки промта > blocks system prompt стабилен > blocks-system 1`] = `
+"Ты — аналитик, переосмысливающий граф знания компании.
+На вход — список IdeaBlock'ов за последнюю неделю (имя + критический вопрос + доверенный ответ).
+
+Твоя задача — найти ВЫСОКОУРОВНЕВЫЕ паттерны:
+1. "splitCandidates" — id блоков, которые на самом деле смешивают две разные темы и стоит разделить.
+2. "mergeCandidates" — пары id блоков (a, b), которые описывают одну и ту же идею и стоит слить.
+3. "themeShifts" — короткие фразы, описывающие сдвиг фокуса (например, "стало больше про маркетинг, меньше про продукт").
+4. "analysis" — общий вывод (1-2 абзаца): что компания обсуждала на этой неделе, какие тренды.
+
+Правила:
+- Не выдумывай. Если блоков мало или они разрозненные — просто короткий "analysis", остальные поля можно опустить.
+- "analysis" — на русском, без markdown.
+- Ответ — строго JSON по схеме."
+`;
+
+exports[`reframing — snapshot сборки промта > themes JSON Schema стабилен > themes-schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "analysis": {
+      "maxLength": 1000,
+      "type": "string",
+    },
+    "themeMerges": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "type": "string",
+          },
+          "sourceId": {
+            "type": "string",
+          },
+          "targetId": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "sourceId",
+          "targetId",
+          "reason",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "themeSplits": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "type": "string",
+          },
+          "themeId": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "themeId",
+          "reason",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "themesToArchive": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "type": "string",
+          },
+          "themeId": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "themeId",
+          "reason",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+  },
+  "required": [
+    "analysis",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`reframing — snapshot сборки промта > themes system prompt стабилен > themes-system 1`] = `
+"Ты — аналитик графа знаний компании. На вход — список активных Theme'ов (имя + описание + размер по числу блоков), плюс блоки за последнюю неделю, ещё не привязанные ни к одной теме.
+
+Твоя задача — найти проблемы в текущей карте тем:
+1. "themeSplits" — id тем, которые на самом деле смешивают две и более идеи и стоит разделить (пары / группы).
+2. "themeMerges" — пары тем (sourceId, targetId), которые описывают одно и то же. source → merged_into target.
+3. "themesToArchive" — темы, которые потеряли актуальность (нет новых блоков, описание устарело).
+4. "analysis" — краткий вывод (1-2 абзаца), что наблюдается на этой неделе по теме мапы.
+
+Правила:
+- Не выдумывай. Если карта ровная — возвращай только analysis.
+- Не предлагай объединять разные ветки компании.
+- Ответ — строго JSON по схеме."
+`;

@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Entity, IdeaBlock, ThemeBranch } from '@prisma/client';
-import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import {
@@ -11,85 +10,21 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import {
+  THEME_BRANCH_VALUES as THEME_BRANCH_VALUES_FROM_PROMPT,
+  THEME_CLASSIFY_JSON_SCHEMA,
+  THEME_CLASSIFY_SYSTEM_PROMPT,
+  ThemeClassifyResponseSchema,
+} from '../prompts/theme-classify.prompt';
 
 /**
- * 12 веток компании из delivery M-07 + 'none' (LLM использует, если ветка
- * не определилась). Маппим 'none' → null в результате.
+ * Реэкспорт под историческим именем — наружу пользуется api/dto/theme.dto.ts.
+ * Источник правды — `prompts/theme-classify.prompt.ts`.
  */
-export const THEME_BRANCH_VALUES = [
-  'strategy',
-  'clients',
-  'sales',
-  'marketing',
-  'product',
-  'operations',
-  'team',
-  'finance',
-  'technology',
-  'production',
-  'partnerships',
-  'legal',
-] as const;
+export const THEME_BRANCH_VALUES = THEME_BRANCH_VALUES_FROM_PROMPT;
 
-const THEME_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['name', 'description', 'branch', 'tags', 'weight', 'confidence'],
-  properties: {
-    name: { type: 'string', maxLength: 100 },
-    description: { type: 'string', maxLength: 1000 },
-    branch: {
-      type: 'string',
-      enum: [...THEME_BRANCH_VALUES, 'none'],
-    },
-    tags: {
-      type: 'array',
-      items: { type: 'string' },
-      minItems: 1,
-      maxItems: 10,
-    },
-    weight: { type: 'number', minimum: 0, maximum: 1 },
-    confidence: { type: 'number', minimum: 0, maximum: 1 },
-  },
-};
-
-const ThemeClassifyResponseSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  description: z.string().trim().min(1).max(1000),
-  branch: z.enum([...THEME_BRANCH_VALUES, 'none']),
-  tags: z.array(z.string().trim().min(1)).min(1).max(10),
-  weight: z.number().min(0).max(1),
-  confidence: z.number().min(0).max(1),
-});
-
-const SYSTEM_PROMPT = `Ты — аналитик, который называет тематические кластеры IdeaBlock'ов компании.
-
-На вход — N блоков (criticalQuestion + trustedAnswer + signalType + tags) и список упомянутых сущностей.
-
-Твоя задача — дать кластеру:
-1. "name" — короткое имя темы (≤100 символов, существительное / именная фраза, без markdown).
-2. "description" — описание (≤1000 символов, 2-4 предложения по-русски): что общего у этих блоков.
-3. "branch" — одна из 12 веток компании ИЛИ "none" если ни одна не подходит:
-   - strategy — стратегия и видение
-   - clients — работа с клиентами и аккаунт-менеджмент
-   - sales — продажи и сделки
-   - marketing — маркетинг и продвижение
-   - product — продукт, фичи, бэклог
-   - operations — операционка и процессы
-   - team — команда, найм, культура
-   - finance — финансы и бюджет
-   - technology — технологии, инфраструктура
-   - production — производство / поставки
-   - partnerships — партнёрства
-   - legal — юридические вопросы
-4. "tags" — 1-10 коротких ключевых слов (каждое ≤30 символов).
-5. "weight" — важность темы для бизнеса (0..1; 0.7+ для критичных тем).
-6. "confidence" — уверенность в кластере (0..1; 0.8+ для очевидной темы).
-
-Правила:
-- Не выдумывай связи. Если блоки разнородные — низкий confidence.
-- name на русском, без эмодзи и без кавычек.
-- Ответ — строго JSON по схеме.`;
+// Алиас под историческим именем — чтобы тело сервиса не менялось.
+const SYSTEM_PROMPT = THEME_CLASSIFY_SYSTEM_PROMPT;
 
 export interface ThemeClassificationInput {
   tenantId: string;

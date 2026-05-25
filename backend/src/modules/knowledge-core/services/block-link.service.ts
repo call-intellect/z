@@ -6,7 +6,6 @@ import {
   type IdeaBlockStatus,
   type SignalType,
 } from '@prisma/client';
-import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,6 +17,11 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import {
+  BLOCK_LINKER_JSON_SCHEMA,
+  BLOCK_LINKER_SYSTEM_PROMPT,
+  BlockLinkerResponseSchema,
+} from '../prompts/block-linker.prompt';
 
 /**
  * Результат LLM-арбитра типизированной связи между двумя блоками.
@@ -50,67 +54,11 @@ interface RawLinkCandidateRow {
   similarity: string | number;
 }
 
-const LINK_TYPES: IdeaBlockLinkType[] = [
-  'develops',
-  'contradicts',
-  'causes',
-  'consequences_of',
-  'shares_topic',
-  'shares_entity',
-  'question_answered_by',
-];
-
-/** Strict JSON Schema для LLM-арбитра. `'none'` — отдельный sentinel. */
-const LINK_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['relationType', 'confidence', 'explanation'],
-  properties: {
-    relationType: {
-      type: 'string',
-      enum: [...LINK_TYPES, 'none'],
-    },
-    confidence: { type: 'number', minimum: 0, maximum: 1 },
-    explanation: { type: 'string', maxLength: 500 },
-  },
-};
-
-const LinkResponseSchema = z.object({
-  relationType: z.enum([
-    'develops',
-    'contradicts',
-    'causes',
-    'consequences_of',
-    'shares_topic',
-    'shares_entity',
-    'question_answered_by',
-    'none',
-  ]),
-  confidence: z.number().min(0).max(1),
-  explanation: z.string().max(500),
-});
-
-const LINK_SYSTEM_PROMPT = `Ты — эксперт по связям между знаниями.
-На вход даются два IdeaBlock — A (новый) и B (кандидат). Каждый — пара "критический вопрос → доверенный ответ".
-
-Твоя задача: определить, есть ли между A и B устойчивая логическая связь, и если да — какого типа.
-
-Возможные типы связей (выбирай один):
-- "develops" — B продолжает / расширяет / уточняет идею A.
-- "contradicts" — B противоречит A (разные ответы на тот же вопрос).
-- "causes" — A является причиной B (A влечёт B).
-- "consequences_of" — A является следствием B.
-- "shares_topic" — оба про одну тему / область, но без причинной связи.
-- "shares_entity" — оба упоминают одну ключевую сущность (клиента, проект и т.п.).
-- "question_answered_by" — критический вопрос A прямо отвечает trustedAnswer B (или наоборот).
-- "none" — связи нет, блоки независимы.
-
-Правила:
-- Связь должна быть СОДЕРЖАТЕЛЬНОЙ. Если просто "оба про маркетинг" — это слишком общо, ставь "none".
-- Не выдумывай связь, если её нет. "none" — нормальный ответ.
-- "confidence" ∈ [0,1] — насколько ты уверен. 0.9+ только если связь явная.
-- "explanation" — 1-2 короткие фразы на русском.
-- Ответ — строго JSON по схеме. Никакого markdown.`;
+// Промпт, JSON Schema и Zod вынесены в `prompts/block-linker.prompt.ts`.
+// Алиасы под историческими именами — чтобы тело сервиса не менялось.
+const LINK_JSON_SCHEMA = BLOCK_LINKER_JSON_SCHEMA;
+const LinkResponseSchema = BlockLinkerResponseSchema;
+const LINK_SYSTEM_PROMPT = BLOCK_LINKER_SYSTEM_PROMPT;
 
 /**
  * BlockLinkService — KNN-кандидаты + LLM-арбитр для `block-linker.worker`.

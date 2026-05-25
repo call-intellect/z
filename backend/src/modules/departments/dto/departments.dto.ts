@@ -53,12 +53,24 @@ export const BatchCreateDepartmentsSchema = z.object({
 });
 export type BatchCreateDepartmentsDto = z.infer<typeof BatchCreateDepartmentsSchema>;
 
+/**
+ * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — назначение/снятие
+ * главы отдела. `headPersonId === null` снимает главу. Person должен
+ * принадлежать той же Org, иметь `relationship='employee'` и быть активным.
+ */
+export const SetDepartmentHeadSchema = z.object({
+  headPersonId: z.string().min(1).nullable(),
+});
+export type SetDepartmentHeadDto = z.infer<typeof SetDepartmentHeadSchema>;
+
 // ─────────────────────────── Response DTO ────────────────────────────
 
 export interface DepartmentListItemDto {
   id: string;
   name: string;
   parentDepartmentId: string | null;
+  /** Person.id главы отдела, либо null если не назначен. */
+  headPersonId: string | null;
   rolesCount: number;
   childrenCount: number;
   createdAt: string;

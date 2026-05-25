@@ -5,6 +5,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ProbeService } from '../../probe/probe.service';
 
+import { resolveProbeRecipients } from './probe-recipient.util';
 import type {
   KnowledgeProfileDraft,
   SerializedKnowledgeProfile,
@@ -225,35 +226,23 @@ export class Specialist32ProbeService {
   }
 
   /**
-   * Получатели probe-events: owner/admin Org.
+   * Получатели probe-events.
    *
-   * NB: концепция «direct manager» (через `Department.headPersonId` или
-   * аналогичное поле) в текущей модели не реализована — на β-2 шлём
-   * только admin'ам Org. Когда появится поле "руководитель отдела"
-   * (или Department.headPersonId), сюда добавится первичный кандидат.
+   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — переадресация:
+   *   1. Сначала ищем главу primary-отдела субъекта (`Department.headPersonId`).
+   *   2. Если глава найден, у него есть `userId` и он не сам субъект — это
+   *      единственный получатель (нельзя слать главе probe про него самого).
+   *   3. Иначе — fallback к owner/admin Org (как было до Фазы 3).
    */
   private async findRecipients(
     tenantId: string,
     personId: string,
   ): Promise<string[]> {
-    const person = await this.prisma.person.findUnique({
-      where: { id: personId },
-      select: { userId: true },
+    return resolveProbeRecipients({
+      prisma: this.prisma,
+      tenantId,
+      subjectPersonId: personId,
     });
-
-    const recipients = new Set<string>();
-    const admins = await this.prisma.membership.findMany({
-      where: {
-        orgId: tenantId,
-        role: { in: ['owner', 'admin'] },
-      },
-      select: { userId: true },
-      take: 20,
-    });
-    for (const a of admins) {
-      if (a.userId && a.userId !== person?.userId) recipients.add(a.userId);
-    }
-    return [...recipients];
   }
 
   private logProbeError(reason: string, personId: string, err: unknown): void {

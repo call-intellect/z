@@ -4,6 +4,8 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProbeService } from '../../probe/probe.service';
 
+import { resolveProbeRecipients } from './probe-recipient.util';
+
 /**
  * SBA γ-1 — Specialist37ProbeService.
  *
@@ -77,7 +79,7 @@ export class Specialist37ProbeService {
     existingStatement: string;
     newStatement: string;
   }): Promise<void> {
-    const recipients = await this.findDirectManagerOrAdmins({
+    const recipients = await this.findRecipients({
       tenantId: args.tenantId,
       personId: args.personId,
     });
@@ -141,7 +143,7 @@ export class Specialist37ProbeService {
     // Если меньше — пинаем direct manager'а.
     if (freshCount >= 5) return;
 
-    const recipients = await this.findDirectManagerOrAdmins({
+    const recipients = await this.findRecipients({
       tenantId: args.tenantId,
       personId: args.personId,
     });
@@ -162,67 +164,38 @@ export class Specialist37ProbeService {
   // ─────────────────────── recipients ───────────────────────
 
   /**
-   * Находит direct manager'а сотрудника (Person с relationship='employee'
-   * в той же primary department с membership role='manager') или fallback
-   * на admin'ов Org.
+   * Находит получателей probe.
+   *
+   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — переадресация:
+   *   1. Глава primary-отдела сотрудника (`Department.headPersonId`), если
+   *      это не сам субъект.
+   *   2. Fallback — owner/admin Org.
+   *
+   * (До Фазы 3 здесь искались manager'ы по `Membership.role='manager'` в том
+   * же отделе. С появлением явного `Department.headPersonId` это поле стало
+   * единственным источником истины — оно editable из админки и не зависит
+   * от RBAC-роли в Z.)
    */
-  private async findDirectManagerOrAdmins(args: {
+  private async findRecipients(args: {
     tenantId: string;
     personId: string;
   }): Promise<string[]> {
-    const recipients = new Set<string>();
     try {
-      const person = await this.prisma.person.findUnique({
-        where: { id: args.personId },
-        select: { primaryDepartmentId: true },
+      return await resolveProbeRecipients({
+        prisma: this.prisma,
+        tenantId: args.tenantId,
+        subjectPersonId: args.personId,
       });
-      if (person?.primaryDepartmentId) {
-        // Ищем менеджеров в том же отделе.
-        const managers = await this.prisma.person.findMany({
-          where: {
-            tenantId: args.tenantId,
-            primaryDepartmentId: person.primaryDepartmentId,
-            relationship: 'employee',
-            deletedAt: null,
-            userId: { not: null },
-            // Membership.role='manager' — через memberships.
-            memberships: {
-              some: {
-                orgId: args.tenantId,
-                role: 'manager',
-              },
-            },
-          },
-          select: { userId: true },
-          take: 5,
-        });
-        for (const m of managers) {
-          if (m.userId) recipients.add(m.userId);
-        }
-      }
     } catch (err) {
       this.logger.debug(
         {
           personId: args.personId,
           err: err instanceof Error ? err.message : String(err),
         },
-        'specialist-3-7-probe.findDirectManagerOrAdmins: lookup упал',
+        'specialist-3-7-probe.findRecipients: lookup упал',
       );
+      return [];
     }
-    if (recipients.size === 0) {
-      const admins = await this.findOrgAdminsUserIds(args.tenantId);
-      for (const a of admins) recipients.add(a);
-    }
-    return [...recipients];
-  }
-
-  private async findOrgAdminsUserIds(tenantId: string): Promise<string[]> {
-    const memberships = await this.prisma.membership.findMany({
-      where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
-      select: { userId: true },
-      take: 20,
-    });
-    return memberships.map((m) => m.userId);
   }
 
   // ─────────────────────── emit ───────────────────────

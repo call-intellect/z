@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Pencil, Plus, Trash2, UserCog } from 'lucide-react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
-import { departmentsApi, type DepartmentApi } from '@/api/structure.api';
+import {
+  departmentsApi,
+  personsDomainApi,
+  type DepartmentApi,
+  type PersonDomainApi,
+} from '@/api/structure.api';
 import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -29,6 +34,7 @@ type DialogState =
   | { kind: 'none' }
   | { kind: 'create' }
   | { kind: 'rename'; dept: DepartmentApi }
+  | { kind: 'setHead'; dept: DepartmentApi }
   | { kind: 'remove'; dept: DepartmentApi };
 
 const swrKey = (orgId: string) => ['departments', orgId];
@@ -106,50 +112,23 @@ export function DepartmentsTab({
             <thead className="bg-bg-overlay/40 text-xs uppercase tracking-wider text-fg-tertiary">
               <tr>
                 <th className="px-4 py-2 text-left">Название</th>
+                <th className="px-4 py-2 text-left">Глава отдела</th>
                 <th className="px-4 py-2 text-right">Должностей</th>
                 <th className="px-4 py-2 text-right">Сотрудников</th>
-                {canEdit && <th className="w-32 px-4 py-2" />}
+                {canEdit && <th className="w-40 px-4 py-2" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
               {items.map((d) => (
-                <tr key={d.id} className="hover:bg-bg-overlay/30">
-                  <td className="px-4 py-2 font-medium text-fg-primary">
-                    {d.name}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-fg-secondary">
-                    {d.rolesCount ?? '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-fg-secondary">
-                    {d.personsCount ?? '—'}
-                  </td>
-                  {canEdit && (
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Переименовать"
-                          onClick={() =>
-                            setDialog({ kind: 'rename', dept: d })
-                          }
-                        >
-                          <Pencil size={14} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Удалить"
-                          onClick={() =>
-                            setDialog({ kind: 'remove', dept: d })
-                          }
-                        >
-                          <Trash2 size={14} className="text-danger" />
-                        </Button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
+                <DepartmentRow
+                  key={d.id}
+                  orgId={orgId}
+                  dept={d}
+                  canEdit={canEdit}
+                  onRename={() => setDialog({ kind: 'rename', dept: d })}
+                  onSetHead={() => setDialog({ kind: 'setHead', dept: d })}
+                  onRemove={() => setDialog({ kind: 'remove', dept: d })}
+                />
               ))}
             </tbody>
           </table>
@@ -176,6 +155,18 @@ export function DepartmentsTab({
             setDialog({ kind: 'none' });
             void mutate();
             toast.success('Отдел переименован.');
+          }}
+        />
+      )}
+      {dialog.kind === 'setHead' && (
+        <SetHeadDialog
+          orgId={orgId}
+          dept={dialog.dept}
+          onClose={() => setDialog({ kind: 'none' })}
+          onDone={() => {
+            setDialog({ kind: 'none' });
+            void mutate();
+            toast.success('Глава отдела сохранён.');
           }}
         />
       )}
@@ -298,6 +289,200 @@ function RenameDeptDialog({
                 setBusy(false);
               }
             }}
+          >
+            Сохранить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — ряд таблицы с
+ * отображением главы отдела. Имя главы достаётся одним SWR-запросом
+ * `personsDomainApi.byId` (когда headPersonId задан); иначе — «Не назначен».
+ * Кэширование — стандартное SWR (тот же ключ для одного personId
+ * переиспользуется при перерендерах).
+ */
+function DepartmentRow({
+  orgId,
+  dept,
+  canEdit,
+  onRename,
+  onSetHead,
+  onRemove,
+}: {
+  orgId: string;
+  dept: DepartmentApi;
+  canEdit: boolean;
+  onRename: () => void;
+  onSetHead: () => void;
+  onRemove: () => void;
+}) {
+  const headPersonId = dept.headPersonId ?? null;
+  const { data: headData } = useSWR(
+    headPersonId ? ['person', orgId, headPersonId] : null,
+    async () => personsDomainApi.byId(orgId, headPersonId!),
+    { revalidateOnFocus: false },
+  );
+  const headName = headPersonId
+    ? headData?.person.fullName ?? '…'
+    : null;
+  return (
+    <tr className="hover:bg-bg-overlay/30">
+      <td className="px-4 py-2 font-medium text-fg-primary">{dept.name}</td>
+      <td className="px-4 py-2 text-fg-secondary">
+        {headName ? (
+          <span>{headName}</span>
+        ) : (
+          <span className="text-fg-tertiary">Не назначен</span>
+        )}
+      </td>
+      <td className="px-4 py-2 text-right tabular-nums text-fg-secondary">
+        {dept.rolesCount ?? '—'}
+      </td>
+      <td className="px-4 py-2 text-right tabular-nums text-fg-secondary">
+        {dept.personsCount ?? '—'}
+      </td>
+      {canEdit && (
+        <td className="px-4 py-2 text-right">
+          <div className="flex justify-end gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Назначить главу отдела"
+              title="Назначить главу отдела"
+              onClick={onSetHead}
+            >
+              <UserCog size={14} />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Переименовать"
+              onClick={onRename}
+            >
+              <Pencil size={14} />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="Удалить"
+              onClick={onRemove}
+            >
+              <Trash2 size={14} className="text-danger" />
+            </Button>
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+}
+
+/**
+ * ТЗ 2026-05-25 Фаза 3 — диалог назначения/снятия главы отдела.
+ *
+ * Опции — все сотрудники Org (`personsDomainApi.list` без фильтра по отделу:
+ * глава отдела может быть руководителем-сотрудником из другого отдела —
+ * например, в маленьких компаниях, где один человек ведёт два направления).
+ * Backend дополнительно валидирует, что выбранный person — `relationship='employee'`.
+ *
+ * Кнопка «Снять» отправляет `headPersonId=null` (доступна, если глава назначен).
+ */
+function SetHeadDialog({
+  orgId,
+  dept,
+  onClose,
+  onDone,
+}: {
+  orgId: string;
+  dept: DepartmentApi;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [selected, setSelected] = useState<string>(dept.headPersonId ?? '');
+  const [busy, setBusy] = useState(false);
+  const { data, isLoading, error } = useSWR(
+    ['persons', orgId, 'all'],
+    async () => personsDomainApi.list(orgId, {}),
+    { revalidateOnFocus: false },
+  );
+  const persons = useMemo<PersonDomainApi[]>(
+    () => data?.items ?? [],
+    [data],
+  );
+
+  const save = async (headPersonId: string | null) => {
+    setBusy(true);
+    try {
+      await departmentsApi.setHead(orgId, dept.id, { headPersonId });
+      onDone();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : 'Не удалось сохранить главу отдела.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const initial = dept.headPersonId ?? '';
+  const changed = selected !== initial;
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Глава отдела «{dept.name}»</DialogTitle>
+          <DialogDescription>
+            Глава отдела первым получает уведомления об аномалиях в профилях
+            знаний и навыков своих сотрудников. Если главы нет — уведомления
+            идут владельцу и администраторам организации.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="dept-head-select">Сотрудник</Label>
+          {isLoading ? (
+            <div className="text-sm text-fg-tertiary">Загрузка сотрудников…</div>
+          ) : error ? (
+            <div className="text-sm text-danger">
+              Не удалось загрузить список сотрудников.
+            </div>
+          ) : (
+            <select
+              id="dept-head-select"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+              className="h-10 w-full rounded-md border border-border-subtle bg-bg-card px-3 text-sm"
+              disabled={busy}
+            >
+              <option value="">Не назначен</option>
+              {persons.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName}
+                  {p.departmentName ? ` — ${p.departmentName}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <DialogFooter className="gap-2 sm:gap-2">
+          {initial && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => void save(null)}
+            >
+              Снять
+            </Button>
+          )}
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
+          <Button
+            disabled={busy || !changed}
+            onClick={() => void save(selected === '' ? null : selected)}
           >
             Сохранить
           </Button>

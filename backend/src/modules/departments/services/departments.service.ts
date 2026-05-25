@@ -254,6 +254,92 @@ export class DepartmentsService {
     }
   }
 
+  /**
+   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — назначить или снять
+   * главу отдела. Probe-уведомления Specialist 3.2 / 3.7 идут главе в первую
+   * очередь, и только при NULL — fallback к admin'ам Org.
+   *
+   * Валидация:
+   *   - Отдел должен принадлежать `tenantId` и быть не удалён.
+   *   - Если `headPersonId !== null`: Person того же tenantId,
+   *     `relationship='employee'`, `deletedAt=null`.
+   */
+  async setHead(args: {
+    tenantId: string;
+    userId: string;
+    id: string;
+    headPersonId: string | null;
+  }): Promise<DepartmentDto> {
+    const existing = await this.prisma.department.findUnique({
+      where: { id: args.id },
+    });
+    if (!existing || existing.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'department_not_found', message: 'Отдел не найден' },
+      });
+    }
+    if (existing.deletedAt) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'department_deleted',
+          message: 'Нельзя назначить главу удалённому отделу',
+        },
+      });
+    }
+    if (args.headPersonId !== null) {
+      const person = await this.prisma.person.findUnique({
+        where: { id: args.headPersonId },
+        select: {
+          id: true,
+          tenantId: true,
+          relationship: true,
+          deletedAt: true,
+        },
+      });
+      if (
+        !person ||
+        person.tenantId !== args.tenantId ||
+        person.deletedAt !== null
+      ) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'head_person_not_found',
+            message: 'Сотрудник не найден в этой организации',
+          },
+        });
+      }
+      if (person.relationship !== 'employee') {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'head_person_not_employee',
+            message: 'Главой отдела может быть только сотрудник организации',
+          },
+        });
+      }
+    }
+    const updated = await this.prisma.department.update({
+      where: { id: args.id },
+      data: { headPersonId: args.headPersonId },
+    });
+    void this.audit.log({
+      userId: args.userId,
+      action: 'department.head_changed',
+      resourceId: args.id,
+      metadata: {
+        tenantId: args.tenantId,
+        headPersonId: args.headPersonId,
+        previousHeadPersonId: existing.headPersonId,
+      },
+    });
+    const counts = await this.countAttachments([updated.id]);
+    const c = counts.get(updated.id);
+    return this.toListItem(updated, c?.roles ?? 0, c?.children ?? 0);
+  }
+
   async softDelete(args: {
     tenantId: string;
     userId: string;
@@ -361,6 +447,7 @@ export class DepartmentsService {
       id: string;
       name: string;
       parentDepartmentId: string | null;
+      headPersonId: string | null;
       createdAt: Date;
       updatedAt: Date;
       deletedAt: Date | null;
@@ -372,6 +459,7 @@ export class DepartmentsService {
       id: d.id,
       name: d.name,
       parentDepartmentId: d.parentDepartmentId,
+      headPersonId: d.headPersonId,
       rolesCount,
       childrenCount,
       createdAt: d.createdAt.toISOString(),

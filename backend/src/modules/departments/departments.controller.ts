@@ -30,12 +30,14 @@ import {
   BatchCreateDepartmentsSchema,
   CreateDepartmentSchema,
   ListDepartmentsQuerySchema,
+  SetDepartmentHeadSchema,
   UpdateDepartmentSchema,
   type BatchCreateDepartmentsDto,
   type CreateDepartmentDto,
   type DepartmentDto,
   type DepartmentListItemDto,
   type ListDepartmentsQuery,
+  type SetDepartmentHeadDto,
   type UpdateDepartmentDto,
 } from './dto/departments.dto';
 import { DepartmentsService } from './services/departments.service';
@@ -128,6 +130,27 @@ export class DepartmentsController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.departments.update({ tenantId: t, userId: user.id, id, body });
+  }
+
+  @Patch(':id/head')
+  @ApiOperation({
+    summary:
+      'Назначить/снять главу отдела (probe-уведомления → главе → admin fallback)',
+  })
+  async setHead(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetDepartmentHeadSchema)) body: SetDepartmentHeadDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<DepartmentDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.departments.setHead({
+      tenantId: t,
+      userId: user.id,
+      id,
+      headPersonId: body.headPersonId,
+    });
   }
 
   @Delete(':id')

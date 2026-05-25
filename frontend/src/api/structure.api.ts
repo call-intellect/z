@@ -21,6 +21,12 @@ export interface DepartmentApi {
   id: string;
   orgId: string;
   name: string;
+  /**
+   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — глава отдела.
+   * Person.id главы либо null. Probe-уведомления специалистов клона идут
+   * сначала ему, и только при null — admin/owner Org.
+   */
+  headPersonId?: string | null;
   rolesCount?: number;
   personsCount?: number;
   createdAt: string;
@@ -36,6 +42,12 @@ export interface CreateDepartmentRequest {
 
 export interface UpdateDepartmentRequest {
   name?: string;
+}
+
+/** ТЗ 2026-05-25 Фаза 3 — body для PATCH /api/v1/departments/:id/head. */
+export interface SetDepartmentHeadRequest {
+  /** Person.id главы отдела или null чтобы снять. */
+  headPersonId: string | null;
 }
 
 // ─── Role (бизнес-должность) ────────────────────────────────────────────────
@@ -190,6 +202,14 @@ export const departmentsApi = {
   remove: (orgId: string, id: string) =>
     apiClient.del<{ ok: true }>(
       `/api/v1/departments/${encodeURIComponent(id)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** ТЗ 2026-05-25 Фаза 3 — назначить/снять главу отдела. */
+  setHead: (orgId: string, id: string, body: SetDepartmentHeadRequest) =>
+    apiClient.patch<DepartmentApi>(
+      `/api/v1/departments/${encodeURIComponent(id)}/head`,
+      body,
       { headers: orgHeaders(orgId) },
     ),
 };

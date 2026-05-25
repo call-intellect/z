@@ -13,6 +13,10 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import {
   CORE_QUEUE_NAMES,
   type SpecialistRoutingJobData,
 } from '../../core-queue/queues';
@@ -93,6 +97,17 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RoleMapBuilderService)
     private readonly builder: RoleMapBuilderService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   onModuleInit(): void {
     if (!this.cfg.roleMap.builderEnabled) {
@@ -365,12 +380,16 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     const stop = this.metrics.startRoleMapExtractTimer();
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (role + блоки) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
     let parsedRaw: unknown;
     try {
       const result = await this.llm.call({
         taskType: ROLE_MAP_EXTRACT_TASK_TYPE,
-        systemPrompt: ROLE_MAP_EXTRACT_SYSTEM_PROMPT,
-        userMessage,
+        systemPrompt: guardOn
+          ? withInjectionGuard(ROLE_MAP_EXTRACT_SYSTEM_PROMPT)
+          : ROLE_MAP_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

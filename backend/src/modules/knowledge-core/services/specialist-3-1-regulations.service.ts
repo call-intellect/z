@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type IdeaBlock,
   type IdeaBlockEntity,
@@ -9,12 +9,17 @@ import {
   type Regulation,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 
@@ -87,7 +92,21 @@ export class Specialist31Service {
     private readonly probes: Specialist31ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   // ──────────────── публичные методы (вызываются из воркера) ────────────────
 
@@ -184,19 +203,24 @@ export class Specialist31Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
+    const guardOnExtract = this.isPromptInjectionGuardEnabled();
+    const rawUserExtract = REGULATION_EXTRACT_USER_TEMPLATE({
+      blockName: block.name,
+      criticalQuestion: block.criticalQuestion,
+      trustedAnswer: block.trustedAnswer,
+      signalType: block.signalType,
+      tags: block.tags,
+      evidenceQuotes: quotes,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'regulation-extract',
-        systemPrompt: REGULATION_EXTRACT_SYSTEM_PROMPT,
-        userMessage: REGULATION_EXTRACT_USER_TEMPLATE({
-          blockName: block.name,
-          criticalQuestion: block.criticalQuestion,
-          trustedAnswer: block.trustedAnswer,
-          signalType: block.signalType,
-          tags: block.tags,
-          evidenceQuotes: quotes,
-        }),
+        systemPrompt: guardOnExtract
+          ? withInjectionGuard(REGULATION_EXTRACT_SYSTEM_PROMPT)
+          : REGULATION_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOnExtract ? wrapUserData(rawUserExtract) : rawUserExtract,
         tenantId: block.tenantId,
         responseFormat: {
           type: 'json_schema',
@@ -926,20 +950,25 @@ export class Specialist31Service {
       return { decision: 'new', targetId: null, reasoning: 'нет кандидатов' };
     }
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты) в маркеры.
+    const guardOnDedupe = this.isPromptInjectionGuardEnabled();
+    const rawUserDedupe = REGULATION_DEDUPE_USER_TEMPLATE({
+      draft: {
+        kind: args.draft.kind,
+        name: args.draft.name,
+        statement: args.draft.statement,
+        scope: args.draft.scope ?? null,
+      },
+      candidates: args.candidates,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'regulation-dedupe',
-        systemPrompt: REGULATION_DEDUPE_SYSTEM_PROMPT,
-        userMessage: REGULATION_DEDUPE_USER_TEMPLATE({
-          draft: {
-            kind: args.draft.kind,
-            name: args.draft.name,
-            statement: args.draft.statement,
-            scope: args.draft.scope ?? null,
-          },
-          candidates: args.candidates,
-        }),
+        systemPrompt: guardOnDedupe
+          ? withInjectionGuard(REGULATION_DEDUPE_SYSTEM_PROMPT)
+          : REGULATION_DEDUPE_SYSTEM_PROMPT,
+        userMessage: guardOnDedupe ? wrapUserData(rawUserDedupe) : rawUserDedupe,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

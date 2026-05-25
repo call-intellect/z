@@ -15,6 +15,10 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 
 import {
   SKILL_TRAIT_DETECT_JSON_SCHEMA,
@@ -75,6 +79,17 @@ export class Specialist37Service {
     @Inject(Specialist37ProbeService)
     private readonly probes: Specialist37ProbeService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   // ───────────────────── публичные методы ─────────────────────
 
@@ -509,16 +524,21 @@ export class Specialist37Service {
         observedAt: (b.createdAt ?? new Date()).toISOString(),
       }));
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (цитаты, исходно из транскриптов).
+    const guardOnDetect = this.isPromptInjectionGuardEnabled();
+    const rawUserDetect = SKILL_TRAIT_DETECT_USER_TEMPLATE({
+      personName: args.personName,
+      personRole: null,
+      quotes: quotesForLlm,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'skill-trait-detect',
-        systemPrompt: SKILL_TRAIT_DETECT_SYSTEM_PROMPT,
-        userMessage: SKILL_TRAIT_DETECT_USER_TEMPLATE({
-          personName: args.personName,
-          personRole: null,
-          quotes: quotesForLlm,
-        }),
+        systemPrompt: guardOnDetect
+          ? withInjectionGuard(SKILL_TRAIT_DETECT_SYSTEM_PROMPT)
+          : SKILL_TRAIT_DETECT_SYSTEM_PROMPT,
+        userMessage: guardOnDetect ? wrapUserData(rawUserDetect) : rawUserDetect,
         tenantId: args.profile.tenantId,
         responseFormat: {
           type: 'json_schema',
@@ -715,25 +735,30 @@ export class Specialist37Service {
       lastConfirmedAt: Date;
     }>;
   }): Promise<MergeVerdict> {
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты, исходно из транскриптов).
+    const guardOnMerge = this.isPromptInjectionGuardEnabled();
+    const rawUserMerge = SKILL_TRAIT_MERGE_USER_TEMPLATE({
+      draft: {
+        category: args.draft.category,
+        statement: args.draft.statement,
+        confidence: args.draft.confidence,
+      },
+      candidates: args.candidates.map((c) => ({
+        id: c.id,
+        category: c.category,
+        statement: c.statement,
+        confidence: c.confidence,
+        lastConfirmedAt: c.lastConfirmedAt.toISOString(),
+      })),
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'skill-trait-merge',
-        systemPrompt: SKILL_TRAIT_MERGE_SYSTEM_PROMPT,
-        userMessage: SKILL_TRAIT_MERGE_USER_TEMPLATE({
-          draft: {
-            category: args.draft.category,
-            statement: args.draft.statement,
-            confidence: args.draft.confidence,
-          },
-          candidates: args.candidates.map((c) => ({
-            id: c.id,
-            category: c.category,
-            statement: c.statement,
-            confidence: c.confidence,
-            lastConfirmedAt: c.lastConfirmedAt.toISOString(),
-          })),
-        }),
+        systemPrompt: guardOnMerge
+          ? withInjectionGuard(SKILL_TRAIT_MERGE_SYSTEM_PROMPT)
+          : SKILL_TRAIT_MERGE_SYSTEM_PROMPT,
+        userMessage: guardOnMerge ? wrapUserData(rawUserMerge) : rawUserMerge,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

@@ -5,6 +5,10 @@ import { z } from 'zod';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 
 const REFRAMING_JSON_SCHEMA: Record<string, unknown> = {
@@ -193,6 +197,17 @@ export class ReframingCron {
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
   @Cron('0 3 * * *')
   async sweep(): Promise<void> {
     try {
@@ -354,12 +369,18 @@ export class ReframingCron {
       trustedAnswer: b.trustedAnswer,
     }));
     const userMessage = `Блоки за последние ${REFRAMING_RECENT_BLOCKS_DAYS} дней:\n\n${JSON.stringify(userPayload, null, 2)}`;
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки) в маркеры.
+    const guardOnBlocks = this.isPromptInjectionGuardEnabled();
+    const guardedSystemBlocks = guardOnBlocks
+      ? withInjectionGuard(REFRAMING_SYSTEM_PROMPT)
+      : REFRAMING_SYSTEM_PROMPT;
+    const guardedUserBlocks = guardOnBlocks ? wrapUserData(userMessage) : userMessage;
     try {
       const out = await this.llm.call({
         taskType: 'reframing',
         tenantId,
-        systemPrompt: REFRAMING_SYSTEM_PROMPT,
-        userMessage,
+        systemPrompt: guardedSystemBlocks,
+        userMessage: guardedUserBlocks,
         responseFormat: {
           type: 'json_schema',
           name: 'ReframingAnalysis',
@@ -465,13 +486,19 @@ export class ReframingCron {
     };
     const userMessage = `Карта тем (active) и свежие блоки без темы:\n\n${JSON.stringify(userPayload, null, 2)}`;
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (темы + блоки без темы) в маркеры.
+    const guardOnThemes = this.isPromptInjectionGuardEnabled();
+    const guardedSystemThemes = guardOnThemes
+      ? withInjectionGuard(REFRAMING_THEMES_SYSTEM_PROMPT)
+      : REFRAMING_THEMES_SYSTEM_PROMPT;
+    const guardedUserThemes = guardOnThemes ? wrapUserData(userMessage) : userMessage;
     let parsed: z.infer<typeof ThemesReframingResponseSchema> | null;
     try {
       const out = await this.llm.call({
         taskType: 'reframing',
         tenantId,
-        systemPrompt: REFRAMING_THEMES_SYSTEM_PROMPT,
-        userMessage,
+        systemPrompt: guardedSystemThemes,
+        userMessage: guardedUserThemes,
         responseFormat: {
           type: 'json_schema',
           name: 'ReframingThemes',

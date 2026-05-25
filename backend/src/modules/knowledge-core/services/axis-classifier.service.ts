@@ -1,9 +1,14 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type AxisType, Prisma, type SignalType } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   AXIS_CLASSIFY_JSON_SCHEMA,
   AXIS_CLASSIFY_SYSTEM_PROMPT,
@@ -87,7 +92,21 @@ export class AxisClassifierService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Главный метод: классифицировать блок по 4 осям и сохранить axis-метки.
@@ -285,18 +304,23 @@ export class AxisClassifierService {
       take: 50,
     });
     const start = Date.now();
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока + whitelist) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const rawUser = AXIS_CLASSIFY_USER_TEMPLATE({
+      blockName: args.block.name,
+      signalType: args.block.signalType,
+      criticalQuestion: args.block.criticalQuestion,
+      trustedAnswer: args.block.trustedAnswer,
+      tags: args.block.tags,
+      domainWhitelist: domains,
+    });
     const result = await this.llm.call({
       taskType: 'axis-classify',
       tenantId: args.tenantId,
-      systemPrompt: AXIS_CLASSIFY_SYSTEM_PROMPT,
-      userMessage: AXIS_CLASSIFY_USER_TEMPLATE({
-        blockName: args.block.name,
-        signalType: args.block.signalType,
-        criticalQuestion: args.block.criticalQuestion,
-        trustedAnswer: args.block.trustedAnswer,
-        tags: args.block.tags,
-        domainWhitelist: domains,
-      }),
+      systemPrompt: guardOn
+        ? withInjectionGuard(AXIS_CLASSIFY_SYSTEM_PROMPT)
+        : AXIS_CLASSIFY_SYSTEM_PROMPT,
+      userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
       responseFormat: {
         type: 'json_schema',
         name: 'axis_classify_v1',

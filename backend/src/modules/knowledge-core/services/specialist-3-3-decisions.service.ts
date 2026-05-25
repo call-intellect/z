@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type DataClass,
   type Decision,
@@ -8,12 +8,17 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 
@@ -78,7 +83,21 @@ export class Specialist33Service {
     private readonly probes: Specialist33ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   // ───────────────────── публичный метод (вызывается из воркера) ─────────────────────
 
@@ -316,20 +335,25 @@ export class Specialist33Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока + контекст-цитаты).
+    const guardOnExtract = this.isPromptInjectionGuardEnabled();
+    const rawUserExtract = DECISION_EXTRACT_USER_TEMPLATE({
+      blockName: block.name,
+      criticalQuestion: block.criticalQuestion,
+      trustedAnswer: block.trustedAnswer,
+      signalType: block.signalType,
+      tags: block.tags,
+      evidenceQuotes: quotes,
+      contextQuotes,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'decision-extract',
-        systemPrompt: DECISION_EXTRACT_SYSTEM_PROMPT,
-        userMessage: DECISION_EXTRACT_USER_TEMPLATE({
-          blockName: block.name,
-          criticalQuestion: block.criticalQuestion,
-          trustedAnswer: block.trustedAnswer,
-          signalType: block.signalType,
-          tags: block.tags,
-          evidenceQuotes: quotes,
-          contextQuotes,
-        }),
+        systemPrompt: guardOnExtract
+          ? withInjectionGuard(DECISION_EXTRACT_SYSTEM_PROMPT)
+          : DECISION_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOnExtract ? wrapUserData(rawUserExtract) : rawUserExtract,
         tenantId: block.tenantId,
         responseFormat: {
           type: 'json_schema',
@@ -512,19 +536,24 @@ export class Specialist33Service {
       return { verdict: 'new', targetId: null, reasoning: 'нет кандидатов' };
     }
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты) в маркеры.
+    const guardOnSup = this.isPromptInjectionGuardEnabled();
+    const rawUserSup = DECISION_SUPERSEDE_DETECT_USER_TEMPLATE({
+      draft: {
+        statement: args.draft.statement,
+        rationale: args.draft.rationale ?? null,
+        decidedAt: args.draft.decidedAt ?? null,
+      },
+      candidates: args.candidates,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'decision-supersede-detect',
-        systemPrompt: DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT,
-        userMessage: DECISION_SUPERSEDE_DETECT_USER_TEMPLATE({
-          draft: {
-            statement: args.draft.statement,
-            rationale: args.draft.rationale ?? null,
-            decidedAt: args.draft.decidedAt ?? null,
-          },
-          candidates: args.candidates,
-        }),
+        systemPrompt: guardOnSup
+          ? withInjectionGuard(DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT)
+          : DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT,
+        userMessage: guardOnSup ? wrapUserData(rawUserSup) : rawUserSup,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

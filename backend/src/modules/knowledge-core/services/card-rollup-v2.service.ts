@@ -1,12 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma, type IdeaBlock } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   LlmRouterService,
   maxDataClass,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { getCardRollupV2SystemPrompt } from '../prompts/card-rollup-v2.prompts';
@@ -144,7 +149,26 @@ export class CardRollupV2Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(Specialist34ProbeService)
     private readonly probes: Specialist34ProbeService,
+    // ТЗ 2026-05-24 §4 (F1.2) — @Optional, чтобы старые unit-тесты
+    // CardRollupV2Service (без cfg в DI) продолжали работать. При null
+    // считаем guard включённым (default-true).
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch + @Optional cfg — старые тесты могут не инжектить
+   * TypedConfigService. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async buildRollup(args: {
     tenantId: string;
@@ -341,10 +365,16 @@ export class CardRollupV2Service {
       blocks: enriched,
       themes: topThemes,
     });
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки карточки + контакт +
+    // темы) в маркеры данных + INJECTION_GUARD_NOTE в system.
+    // Источник = 'transcript' (user-input = контент блоков встреч).
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const guardedSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
+    const guardedUser = guardOn ? wrapUserData(userMessage) : userMessage;
     const result = await this.llm.call({
       taskType: 'card-rollup-v2',
-      systemPrompt,
-      userMessage,
+      systemPrompt: guardedSystem,
+      userMessage: guardedUser,
       tenantId: args.tenantId,
       userId: card.ownerId,
       sourceRef: { type: 'card', id: card.id },

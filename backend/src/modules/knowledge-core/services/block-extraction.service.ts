@@ -5,6 +5,10 @@ import { z } from 'zod';
 import { TypedConfigService } from '../../../common/config/index';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import {
   BLOCK_INGEST_JSON_SCHEMA,
   ENTITY_TYPE_VALUES,
   METRIC_VALUE_TYPE_VALUES,
@@ -281,6 +285,19 @@ export class BlockExtractionService {
   ) {}
 
   /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — старые unit-тесты могут мокать cfg без `aiFeatures`.
+   * Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Главный метод извлечения. Возвращает:
    *   - `blocks` — блоки в порядке по `evidenceStartMs` (для UI/таймлайна).
    *   - `blocksInOrder` — блоки в исходном порядке выдачи LLM (для маппинга
@@ -359,14 +376,21 @@ export class BlockExtractionService {
       meetingTitle: args.meetingTitle,
       segments: args.segments,
     });
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть транскрипт-сегменты + meetingTitle
+    // в маркеры данных + INJECTION_GUARD_NOTE в system. Источник = 'transcript'.
+    // Sanitize по транскрипту не делаем — естественная речь даёт много
+    // false positives на regex'ах вроде «забудь предыдущие шаги».
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const guardedSystem = guardOn ? withInjectionGuard(system) : system;
+    const guardedUser = guardOn ? wrapUserData(user) : user;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const out = await this.llm.call({
           taskType: 'block-ingest',
           tenantId: args.tenantId,
-          systemPrompt: system,
-          userMessage: user,
+          systemPrompt: guardedSystem,
+          userMessage: guardedUser,
           responseFormat: {
             type: 'json_schema',
             name: 'IdeaBlocks',

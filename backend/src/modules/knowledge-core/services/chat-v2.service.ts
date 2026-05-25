@@ -2,11 +2,17 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { DataClass } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   LlmRouterService,
   maxDataClass,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 
 import {
   ChatV2RetrievalService,
@@ -136,7 +142,22 @@ export class ChatV2Service {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(ChatV2RetrievalService)
     private readonly retrieval: ChatV2RetrievalService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Главный метод. Делает retrieval, готовит prompt, вызывает LLM, парсит
@@ -242,10 +263,26 @@ export class ChatV2Service {
     );
 
     // 5) LLM call.
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский вопрос (query) +
+    // блоки контекста в маркеры данных. Системный prompt получает
+    // INJECTION_GUARD_NOTE. История диалога подмешана в systemPrompt
+    // (buildSystemPrompt), но это «системная сборка» с фиксированной
+    // структурой, поэтому защиту даёт NOTE через withInjectionGuard.
+    //
+    // Источник = 'chat': основной user-вход — это `query`.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      const sanitized = sanitizeCustomPrompt(query);
+      for (const pattern of sanitized.reasons) {
+        this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+      }
+    }
+    const finalSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
+    const finalUser = guardOn ? wrapUserData(userMessage) : userMessage;
     const result = await this.llm.call({
       taskType: 'chat-v2',
-      systemPrompt,
-      userMessage,
+      systemPrompt: finalSystem,
+      userMessage: finalUser,
       tenantId,
       userId: input.userId,
       sourceRef: { type: scope, id: scopeId ?? tenantId },

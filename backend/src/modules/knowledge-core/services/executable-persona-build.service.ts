@@ -11,6 +11,10 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { tenantTopLabel } from '../../company-foundation/utils/tenant-top';
 
 import {
@@ -56,6 +60,17 @@ export class ExecutablePersonaBuildService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Сборка persona для одного SkillProfile. Возвращает новый snapshot
@@ -330,21 +345,26 @@ export class ExecutablePersonaBuildService {
       observationCount: number;
     }>;
   }): Promise<string | null> {
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (traits, исходно из транскриптов).
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const rawUser = EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE({
+      personName: args.personName,
+      personRole: args.personRole,
+      traits: args.traits.map((t) => ({
+        category: t.category,
+        statement: t.statement,
+        confidence: t.confidence,
+        observationCount: t.observationCount,
+      })),
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'executable-persona-compile',
-        systemPrompt: EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
-        userMessage: EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE({
-          personName: args.personName,
-          personRole: args.personRole,
-          traits: args.traits.map((t) => ({
-            category: t.category,
-            statement: t.statement,
-            confidence: t.confidence,
-            observationCount: t.observationCount,
-          })),
-        }),
+        systemPrompt: guardOn
+          ? withInjectionGuard(EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT)
+          : EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.tenantId,
         dataClass: 'internal',
       });

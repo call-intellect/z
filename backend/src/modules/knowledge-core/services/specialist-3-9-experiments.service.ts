@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type DataClass,
   type Experiment,
@@ -7,12 +7,17 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { CurationService } from '../../curation/services/curation.service';
 
 import {
@@ -64,7 +69,21 @@ export class Specialist39ExperimentsService {
     private readonly probes: Specialist39ExperimentProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Главная точка входа — вызывается из `experiment-detector.worker`.
@@ -230,19 +249,24 @@ export class Specialist39ExperimentsService {
       .map((e) => e.quote)
       .filter((q): q is string => Boolean(q) && q.length > 0);
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const rawUser = EXPERIMENT_EXTRACT_USER_TEMPLATE({
+      signalType: block.signalType,
+      blockName: block.name,
+      criticalQuestion: block.criticalQuestion,
+      trustedAnswer: block.trustedAnswer,
+      tags: block.tags,
+      evidenceQuotes: quotes,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'experiment-extract',
-        systemPrompt: EXPERIMENT_EXTRACT_SYSTEM_PROMPT,
-        userMessage: EXPERIMENT_EXTRACT_USER_TEMPLATE({
-          signalType: block.signalType,
-          blockName: block.name,
-          criticalQuestion: block.criticalQuestion,
-          trustedAnswer: block.trustedAnswer,
-          tags: block.tags,
-          evidenceQuotes: quotes,
-        }),
+        systemPrompt: guardOn
+          ? withInjectionGuard(EXPERIMENT_EXTRACT_SYSTEM_PROMPT)
+          : EXPERIMENT_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: block.tenantId,
         responseFormat: {
           type: 'json_schema',

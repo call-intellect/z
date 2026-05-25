@@ -16,6 +16,10 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
 
@@ -73,6 +77,17 @@ export class Specialist36Service {
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async processBlock(args: {
     tenantId: string;
@@ -335,19 +350,24 @@ export class Specialist36Service {
       .slice(0, 6)
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const rawUser = IDEA_EXTRACT_USER_TEMPLATE({
+      blockName: block.name,
+      criticalQuestion: block.criticalQuestion,
+      trustedAnswer: block.trustedAnswer,
+      signalType: block.signalType,
+      tags: block.tags,
+      evidenceQuotes: quotes,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'idea-extract',
-        systemPrompt: IDEA_EXTRACT_SYSTEM_PROMPT,
-        userMessage: IDEA_EXTRACT_USER_TEMPLATE({
-          blockName: block.name,
-          criticalQuestion: block.criticalQuestion,
-          trustedAnswer: block.trustedAnswer,
-          signalType: block.signalType,
-          tags: block.tags,
-          evidenceQuotes: quotes,
-        }),
+        systemPrompt: guardOn
+          ? withInjectionGuard(IDEA_EXTRACT_SYSTEM_PROMPT)
+          : IDEA_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: block.tenantId,
         responseFormat: {
           type: 'json_schema',

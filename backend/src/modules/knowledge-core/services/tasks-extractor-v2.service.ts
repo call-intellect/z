@@ -1,9 +1,14 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import {
   LlmRouterService,
   maxDataClass,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   buildTasksV2Prompt,
   TASKS_V2_JSON_SCHEMA,
@@ -56,7 +61,21 @@ export class TasksExtractorV2Service {
 
   constructor(
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async extract(input: TasksExtractorV2Input): Promise<TasksExtractorV2Result> {
     const candidateBlocks = input.blocks.filter((b) =>
@@ -73,16 +92,21 @@ export class TasksExtractorV2Service {
     });
     const validBlockIds = new Set(candidateBlocks.map((b) => b.id));
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки) в маркеры; retry-suffix
+    // (системное сообщение оркестратора) остаётся СНАРУЖИ маркеров.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const guardedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
+    const wrappedUserBase = guardOn ? wrapUserData(prompt.user) : prompt.user;
     let lastError: unknown = null;
     let modelUsed = 'unknown';
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const userMessage =
         attempt === 0
-          ? prompt.user
-          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON по схеме. Верни ТОЛЬКО JSON-объект {tasks: [...]}.`;
+          ? wrappedUserBase
+          : `${wrappedUserBase}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON по схеме. Верни ТОЛЬКО JSON-объект {tasks: [...]}.`;
       const result = await this.router.call({
         taskType: TASKS_V2_TASK_TYPE,
-        systemPrompt: prompt.system,
+        systemPrompt: guardedSystem,
         userMessage,
         tenantId: input.tenantId,
         meetingId: input.meetingId,

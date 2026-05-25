@@ -1,12 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 
 import {
   HELPFULNESS_SPOTLIGHT_FORMULATE_JSON_SCHEMA,
@@ -52,7 +57,21 @@ export class HelpfulnessSpotlightCron {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   @Cron('0 9 * * 1')
   async sweep(): Promise<void> {
@@ -204,19 +223,24 @@ export class HelpfulnessSpotlightCron {
       .map(([k]) => k);
 
     // LLM-формулировка.
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (helperName + traits) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const rawUser = HELPFULNESS_SPOTLIGHT_FORMULATE_USER_TEMPLATE({
+      helperName,
+      helpCount: traits.length,
+      topTopics,
+      traitBreakdown: breakdown,
+      periodFromIso: args.periodFrom.toISOString(),
+      periodToIso: args.periodTo.toISOString(),
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'helpfulness-spotlight-formulate',
-        systemPrompt: HELPFULNESS_SPOTLIGHT_FORMULATE_SYSTEM_PROMPT,
-        userMessage: HELPFULNESS_SPOTLIGHT_FORMULATE_USER_TEMPLATE({
-          helperName,
-          helpCount: traits.length,
-          topTopics,
-          traitBreakdown: breakdown,
-          periodFromIso: args.periodFrom.toISOString(),
-          periodToIso: args.periodTo.toISOString(),
-        }),
+        systemPrompt: guardOn
+          ? withInjectionGuard(HELPFULNESS_SPOTLIGHT_FORMULATE_SYSTEM_PROMPT)
+          : HELPFULNESS_SPOTLIGHT_FORMULATE_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

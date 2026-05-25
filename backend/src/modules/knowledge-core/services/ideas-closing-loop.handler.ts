@@ -1,13 +1,18 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { ConversationalService } from '../../conversational/conversational.service';
 import {
   IDEA_STATUS_SUMMARIZE_JSON_SCHEMA,
@@ -53,7 +58,21 @@ export class IdeasClosingLoopHandler {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   @OnEvent('idea.status_changed')
   async handle(event: IdeaStatusChangedEvent): Promise<void> {
@@ -162,16 +181,21 @@ export class IdeasClosingLoopHandler {
       title: `Статус идеи: ${args.newStatus}`,
       body: `Идея «${args.statement.slice(0, 200)}» переведена в статус ${args.newStatus}.${args.reason ? ` Причина: ${args.reason}.` : ''}`,
     };
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (statement идеи + reason) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const rawUser = IDEA_STATUS_SUMMARIZE_USER_TEMPLATE({
+      ideaStatement: args.statement,
+      oldStatus: args.oldStatus,
+      newStatus: args.newStatus,
+      reason: args.reason,
+    });
     try {
       const result: LlmCallResult = await this.llm.call({
         taskType: 'idea-status-summarize',
-        systemPrompt: IDEA_STATUS_SUMMARIZE_SYSTEM_PROMPT,
-        userMessage: IDEA_STATUS_SUMMARIZE_USER_TEMPLATE({
-          ideaStatement: args.statement,
-          oldStatus: args.oldStatus,
-          newStatus: args.newStatus,
-          reason: args.reason,
-        }),
+        systemPrompt: guardOn
+          ? withInjectionGuard(IDEA_STATUS_SUMMARIZE_SYSTEM_PROMPT)
+          : IDEA_STATUS_SUMMARIZE_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

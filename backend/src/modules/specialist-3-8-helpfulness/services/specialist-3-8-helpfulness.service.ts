@@ -1,12 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type DataClass, Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 
 import {
@@ -110,7 +115,21 @@ export class Specialist38HelpfulnessService {
     private readonly embedder: KnowledgeEmbeddingService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Главный метод обработки одного IdeaBlock'а.
@@ -239,19 +258,24 @@ export class Specialist38HelpfulnessService {
     };
   }): Promise<DetectedTraitLlm[] | null> {
     const start = Date.now();
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
+    const guardOnDetect = this.isPromptInjectionGuardEnabled();
+    const rawUserDetect = HELPFULNESS_DETECT_USER_TEMPLATE({
+      blockName: args.block.name,
+      signalType: args.block.signalType,
+      criticalQuestion: args.block.criticalQuestion,
+      trustedAnswer: args.block.trustedAnswer,
+      tags: args.block.tags,
+      evidenceQuotes: args.block.quotes,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'helpfulness-detect',
-        systemPrompt: HELPFULNESS_DETECT_SYSTEM_PROMPT,
-        userMessage: HELPFULNESS_DETECT_USER_TEMPLATE({
-          blockName: args.block.name,
-          signalType: args.block.signalType,
-          criticalQuestion: args.block.criticalQuestion,
-          trustedAnswer: args.block.trustedAnswer,
-          tags: args.block.tags,
-          evidenceQuotes: args.block.quotes,
-        }),
+        systemPrompt: guardOnDetect
+          ? withInjectionGuard(HELPFULNESS_DETECT_SYSTEM_PROMPT)
+          : HELPFULNESS_DETECT_SYSTEM_PROMPT,
+        userMessage: guardOnDetect ? wrapUserData(rawUserDetect) : rawUserDetect,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',
@@ -613,21 +637,26 @@ export class Specialist38HelpfulnessService {
       lastObservedAt: string;
     };
   }): Promise<MergeLlmResponse | null> {
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (existing + incoming) в маркеры.
+    const guardOnMerge = this.isPromptInjectionGuardEnabled();
+    const rawUserMerge = HELPFULNESS_TRAIT_MERGE_USER_TEMPLATE({
+      existing: {
+        traitType: args.existing.traitType,
+        topicHint: args.existing.topicHint,
+        intensity: args.existing.intensity,
+        evidenceQuote: args.existing.evidenceQuote,
+        lastObservedAt: args.existing.lastObservedAt.toISOString(),
+      },
+      incoming: args.incoming,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'helpfulness-trait-merge',
-        systemPrompt: HELPFULNESS_TRAIT_MERGE_SYSTEM_PROMPT,
-        userMessage: HELPFULNESS_TRAIT_MERGE_USER_TEMPLATE({
-          existing: {
-            traitType: args.existing.traitType,
-            topicHint: args.existing.topicHint,
-            intensity: args.existing.intensity,
-            evidenceQuote: args.existing.evidenceQuote,
-            lastObservedAt: args.existing.lastObservedAt.toISOString(),
-          },
-          incoming: args.incoming,
-        }),
+        systemPrompt: guardOnMerge
+          ? withInjectionGuard(HELPFULNESS_TRAIT_MERGE_SYSTEM_PROMPT)
+          : HELPFULNESS_TRAIT_MERGE_SYSTEM_PROMPT,
+        userMessage: guardOnMerge ? wrapUserData(rawUserMerge) : rawUserMerge,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

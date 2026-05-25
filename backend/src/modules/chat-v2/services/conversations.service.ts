@@ -15,8 +15,15 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import {
   CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT,
   CHAT_V2_CONVERSATION_TITLE_USER_PROMPT,
@@ -81,7 +88,23 @@ export class ChatV2ConversationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async create(input: CreateConversationInput): Promise<ChatV2Conversation> {
     return this.prisma.chatV2Conversation.create({
@@ -226,13 +249,32 @@ export class ChatV2ConversationsService {
     firstUserMessage: string;
   }): Promise<string | null> {
     try {
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский firstUserMessage
+      // в маркеры данных + INJECTION_GUARD_NOTE в system. Источник = 'chat'.
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const trimmedFirstMessage = args.firstUserMessage.slice(0, 1000);
+      if (guardOn) {
+        // Observability: лёгкая regex-проверка (sanitize) с инкрементом метрики
+        // на каждый сработавший pattern. Не отклоняем — структурный слой
+        // (маркеры) даёт защиту даже при false-negative regex'а.
+        const sanitized = sanitizeCustomPrompt(trimmedFirstMessage);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+      const systemText = guardOn
+        ? withInjectionGuard(CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT)
+        : CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT;
+      const userText = guardOn
+        ? CHAT_V2_CONVERSATION_TITLE_USER_PROMPT(
+            wrapUserData(trimmedFirstMessage),
+          )
+        : CHAT_V2_CONVERSATION_TITLE_USER_PROMPT(trimmedFirstMessage);
       const result = await this.llm.call({
         taskType: 'chat-v2-conversation-title',
         tenantId: args.tenantId,
-        systemPrompt: CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT,
-        userMessage: CHAT_V2_CONVERSATION_TITLE_USER_PROMPT(
-          args.firstUserMessage.slice(0, 1000),
-        ),
+        systemPrompt: systemText,
+        userMessage: userText,
         maxTokens: 40,
         sourceRef: { type: 'chat_v2_conversation', id: args.conversationId },
       });

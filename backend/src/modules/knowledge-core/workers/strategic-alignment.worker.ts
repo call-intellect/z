@@ -2,15 +2,21 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { AuditLogService } from '../../audit/audit-log.service';
 import {
   CORE_QUEUE_NAMES,
@@ -65,7 +71,21 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   onModuleInit(): void {
     this.worker = new Worker<StrategicAlignmentJobData>(
@@ -205,13 +225,17 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       blocks: blocksPayload,
     });
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (goal + темы + блоки) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const guardedSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
+    const guardedUser = guardOn ? wrapUserData(userMessage) : userMessage;
     let parsed: { score: number; explanation: string; signals: { pro: string[]; contra: string[] } };
     try {
       const result = await this.llm.call({
         taskType: GOAL_ALIGNMENT_TASK_TYPE,
         tenantId,
-        systemPrompt,
-        userMessage,
+        systemPrompt: guardedSystem,
+        userMessage: guardedUser,
         sourceRef: { type: 'goal', id: goalId },
         responseFormat: {
           type: 'json_schema',

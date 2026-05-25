@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type Entity,
   type EntityType,
@@ -7,8 +7,13 @@ import {
 } from '@prisma/client';
 import { z } from 'zod';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 
 /**
  * Кандидат для merge'а Entity — другая сущность того же tenant'а / type,
@@ -93,7 +98,21 @@ export class EntityMergeService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async findCandidates(args: {
     tenantId: string;
@@ -155,12 +174,16 @@ export class EntityMergeService {
     };
     const userMessage = `Новая сущность и кандидат ниже. Реши verdict.\n\n${JSON.stringify(userPayload, null, 2)}`;
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (сущности) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
     try {
       const out = await this.llm.call({
         taskType: 'entity-merge-arbiter',
         tenantId: args.tenantId,
-        systemPrompt: ARBITER_SYSTEM_PROMPT,
-        userMessage,
+        systemPrompt: guardOn
+          ? withInjectionGuard(ARBITER_SYSTEM_PROMPT)
+          : ARBITER_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
         responseFormat: {
           type: 'json_schema',
           name: 'EntityMergeVerdict',

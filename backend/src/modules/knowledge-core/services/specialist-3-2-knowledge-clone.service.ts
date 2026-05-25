@@ -8,6 +8,10 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 
@@ -69,6 +73,17 @@ export class Specialist32Service {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Главный метод rebuild'а. Вызывается из `KnowledgeCloneRebuildWorker`.
@@ -395,15 +410,20 @@ export class Specialist32Service {
     personName: string;
     blocks: readonly KnowledgeCloneExtractBlockInput[];
   }): Promise<KnowledgeProfileDraft | null> {
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (имя + блоки сотрудника) в маркеры.
+    const guardOnExtract = this.isPromptInjectionGuardEnabled();
+    const rawUserExtract = KNOWLEDGE_CLONE_EXTRACT_USER_TEMPLATE({
+      personName: args.personName,
+      blocks: args.blocks,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'knowledge-clone-extract',
-        systemPrompt: KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT,
-        userMessage: KNOWLEDGE_CLONE_EXTRACT_USER_TEMPLATE({
-          personName: args.personName,
-          blocks: args.blocks,
-        }),
+        systemPrompt: guardOnExtract
+          ? withInjectionGuard(KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT)
+          : KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOnExtract ? wrapUserData(rawUserExtract) : rawUserExtract,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',
@@ -449,17 +469,22 @@ export class Specialist32Service {
     oldProfile: KnowledgeProfileDraft;
     newDraft: KnowledgeProfileDraft;
   }): Promise<KnowledgeProfileDraft | null> {
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (старый профиль + новый draft) в маркеры.
+    const guardOnMerge = this.isPromptInjectionGuardEnabled();
+    const rawUserMerge = KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE({
+      personName: args.personName,
+      nowIso: new Date().toISOString(),
+      oldProfileJson: JSON.stringify(args.oldProfile),
+      newDraftJson: JSON.stringify(args.newDraft),
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'knowledge-clone-merge',
-        systemPrompt: KNOWLEDGE_CLONE_MERGE_SYSTEM_PROMPT,
-        userMessage: KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE({
-          personName: args.personName,
-          nowIso: new Date().toISOString(),
-          oldProfileJson: JSON.stringify(args.oldProfile),
-          newDraftJson: JSON.stringify(args.newDraft),
-        }),
+        systemPrompt: guardOnMerge
+          ? withInjectionGuard(KNOWLEDGE_CLONE_MERGE_SYSTEM_PROMPT)
+          : KNOWLEDGE_CLONE_MERGE_SYSTEM_PROMPT,
+        userMessage: guardOnMerge ? wrapUserData(rawUserMerge) : rawUserMerge,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

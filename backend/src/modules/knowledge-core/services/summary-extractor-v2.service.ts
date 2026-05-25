@@ -1,10 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { MeetingType } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import {
   LlmRouterService,
   maxDataClass,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   buildSummaryV2Prompt,
   SUMMARY_V2_TASK_TYPE,
@@ -41,7 +46,21 @@ export class SummaryExtractorV2Service {
 
   constructor(
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async extract(
     input: SummaryExtractorV2Input,
@@ -54,10 +73,12 @@ export class SummaryExtractorV2Service {
       meetingTitle: input.meetingTitle,
       blocks: input.blocks,
     });
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки встречи) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
     const result = await this.router.call({
       taskType: SUMMARY_V2_TASK_TYPE,
-      systemPrompt: prompt.system,
-      userMessage: prompt.user,
+      systemPrompt: guardOn ? withInjectionGuard(prompt.system) : prompt.system,
+      userMessage: guardOn ? wrapUserData(prompt.user) : prompt.user,
       tenantId: input.tenantId,
       meetingId: input.meetingId,
       ...(input.userId ? { userId: input.userId } : {}),

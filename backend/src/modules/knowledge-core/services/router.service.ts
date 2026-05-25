@@ -9,6 +9,10 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 
 import { resolveAxisTenantTop } from './tenant-top';
@@ -117,6 +121,17 @@ export class RouterService {
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Главный метод: матчит специалистов и публикует jobs в
@@ -493,13 +508,15 @@ export class RouterService {
       `Whitelist специалистов: ${whitelist.join(', ')}`,
     ].join('\n');
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блок) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
     let llmText: string;
     try {
       const result = await this.llm.call({
         taskType: 'router-fallback',
         tenantId: block.tenantId,
-        systemPrompt,
-        userMessage,
+        systemPrompt: guardOn ? withInjectionGuard(systemPrompt) : systemPrompt,
+        userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
         responseFormat: { type: 'json_object' },
         maxTokens: 200,
         sourceRef: { type: 'idea_block', id: block.id },

@@ -10,6 +10,10 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import {
   IDEA_CLUSTER_MERGE_JSON_SCHEMA,
   IDEA_CLUSTER_MERGE_SCHEMA_NAME,
   IDEA_CLUSTER_MERGE_SYSTEM_PROMPT,
@@ -54,6 +58,17 @@ export class IdeaClustererCron {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   @Cron('30 */4 * * *')
   async sweep(): Promise<void> {
@@ -268,14 +283,19 @@ export class IdeaClustererCron {
           };
         }),
       );
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (statement + кандидаты) в маркеры.
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const rawUser = IDEA_CLUSTER_MERGE_USER_TEMPLATE({
+        ideaStatement: args.idea.statement,
+        ideaRationale: args.idea.rationale,
+        candidates: enriched,
+      });
       result = await this.llm.call({
         taskType: 'idea-cluster-merge',
-        systemPrompt: IDEA_CLUSTER_MERGE_SYSTEM_PROMPT,
-        userMessage: IDEA_CLUSTER_MERGE_USER_TEMPLATE({
-          ideaStatement: args.idea.statement,
-          ideaRationale: args.idea.rationale,
-          candidates: enriched,
-        }),
+        systemPrompt: guardOn
+          ? withInjectionGuard(IDEA_CLUSTER_MERGE_SYSTEM_PROMPT)
+          : IDEA_CLUSTER_MERGE_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.idea.tenantId,
         responseFormat: {
           type: 'json_schema',

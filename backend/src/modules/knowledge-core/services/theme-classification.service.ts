@@ -1,11 +1,16 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Entity, IdeaBlock, ThemeBranch } from '@prisma/client';
 import { z } from 'zod';
 
+import { TypedConfigService } from '../../../common/config/index';
 import {
   LlmRouterService,
   maxDataClass,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 
 /**
  * 12 веток компании из delivery M-07 + 'none' (LLM использует, если ветка
@@ -120,7 +125,23 @@ export interface ThemeClassificationResult {
 export class ThemeClassificationService {
   private readonly logger = new Logger(ThemeClassificationService.name);
 
-  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
+  constructor(
+    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
+  ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async classifyTheme(
     input: ThemeClassificationInput,
@@ -145,11 +166,13 @@ export class ThemeClassificationService {
     };
     const userMessage = `Кластер из ${blocks.length} блоков:\n\n${JSON.stringify(userPayload, null, 2)}`;
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки + сущности) в маркеры.
+    const guardOn = this.isPromptInjectionGuardEnabled();
     const out = await this.llm.call({
       taskType: 'theme-classify',
       tenantId,
-      systemPrompt: SYSTEM_PROMPT,
-      userMessage,
+      systemPrompt: guardOn ? withInjectionGuard(SYSTEM_PROMPT) : SYSTEM_PROMPT,
+      userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
       responseFormat: {
         type: 'json_schema',
         name: 'ThemeClassification',

@@ -17,6 +17,10 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { CurationService } from '../../curation/services/curation.service';
 
 import {
@@ -83,6 +87,18 @@ export class Specialist35Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — старые unit-тесты могут мокать cfg без `aiFeatures`.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   // ───────────────────── публичный метод (вызывается из воркера) ─────────────────────
 
@@ -452,19 +468,24 @@ export class Specialist35Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
+    const guardOnExtract = this.isPromptInjectionGuardEnabled();
+    const rawUserExtract = INSIGHT_EXTRACT_USER_TEMPLATE({
+      blockName: block.name,
+      criticalQuestion: block.criticalQuestion,
+      trustedAnswer: block.trustedAnswer,
+      signalType: block.signalType,
+      tags: block.tags,
+      evidenceQuotes: quotes,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'insight-extract',
-        systemPrompt: INSIGHT_EXTRACT_SYSTEM_PROMPT,
-        userMessage: INSIGHT_EXTRACT_USER_TEMPLATE({
-          blockName: block.name,
-          criticalQuestion: block.criticalQuestion,
-          trustedAnswer: block.trustedAnswer,
-          signalType: block.signalType,
-          tags: block.tags,
-          evidenceQuotes: quotes,
-        }),
+        systemPrompt: guardOnExtract
+          ? withInjectionGuard(INSIGHT_EXTRACT_SYSTEM_PROMPT)
+          : INSIGHT_EXTRACT_SYSTEM_PROMPT,
+        userMessage: guardOnExtract ? wrapUserData(rawUserExtract) : rawUserExtract,
         tenantId: block.tenantId,
         responseFormat: {
           type: 'json_schema',
@@ -602,16 +623,21 @@ export class Specialist35Service {
     if (candidates.length === 0) return [];
 
     // 2) LLM арбитр.
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (insight + кандидаты) в маркеры.
+    const guardOnLink = this.isPromptInjectionGuardEnabled();
+    const rawUserLink = INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE({
+      insightKind: args.insight.kind,
+      insightStatement: args.insight.statement,
+      candidates,
+    });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'insight-link-to-decisions',
-        systemPrompt: INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT,
-        userMessage: INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE({
-          insightKind: args.insight.kind,
-          insightStatement: args.insight.statement,
-          candidates,
-        }),
+        systemPrompt: guardOnLink
+          ? withInjectionGuard(INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT)
+          : INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT,
+        userMessage: guardOnLink ? wrapUserData(rawUserLink) : rawUserLink,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

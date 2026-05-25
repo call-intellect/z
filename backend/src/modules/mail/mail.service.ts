@@ -10,6 +10,9 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { TypedConfigService } from '../../common/config/index';
 
 import {
+  INVITE_DIRECTOR_TIMEOUT_TEMPLATE,
+  INVITE_GITHUB_STYLE_TEMPLATE,
+  INVITE_REMINDER_TEMPLATE,
   PASSWORD_RESET_TEMPLATE,
   REGISTER_TEMP_PASSWORD_TEMPLATE,
 } from './mail.templates';
@@ -49,6 +52,30 @@ interface CompiledTemplates {
     name: string;
     resetUrl: string;
     expiresInMinutes: number;
+  }>;
+  // β-9 (2026-05-25)
+  inviteGithubStyle: HandlebarsTemplateDelegate<{
+    name: string;
+    inviterName: string;
+    orgName: string;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+    ttlDays: number;
+  }>;
+  inviteReminder: HandlebarsTemplateDelegate<{
+    name: string;
+    inviterName: string;
+    orgName: string;
+    daysLeft: number;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+  }>;
+  inviteDirectorTimeout: HandlebarsTemplateDelegate<{
+    directorName: string;
+    employeeName: string;
+    employeeEmail?: string;
+    orgName: string;
+    teamPageUrl: string;
   }>;
 }
 
@@ -157,6 +184,91 @@ export class MailService implements OnModuleInit {
     });
   }
 
+  /**
+   * β-9 (2026-05-25) — GitHub-style приглашение сотрудника.
+   * Тема: «{{inviterName}} приглашает вас в {{orgName}}».
+   */
+  async sendInviteGithubStyle(input: {
+    to: string;
+    name: string;
+    inviterName: string;
+    orgName: string;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+    ttlDays: number;
+  }): Promise<SendResult> {
+    const text = this.templates.inviteGithubStyle({
+      name: input.name,
+      inviterName: input.inviterName,
+      orgName: input.orgName,
+      magicLinkUrl: input.magicLinkUrl,
+      telegramDeepLink: input.telegramDeepLink,
+      ttlDays: input.ttlDays,
+    });
+    return this.send({
+      to: input.to,
+      subject: `${input.inviterName} приглашает вас в «${input.orgName}»`,
+      text,
+      template: 'invite-github-style',
+    });
+  }
+
+  /**
+   * β-9 (2026-05-25) — напоминание сотруднику об ожидающем приглашении.
+   * Отправляется кроном `org-invitation-reminders` на 7-й день.
+   */
+  async sendInviteReminder(input: {
+    to: string;
+    name: string;
+    inviterName: string;
+    orgName: string;
+    daysLeft: number;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+  }): Promise<SendResult> {
+    const text = this.templates.inviteReminder({
+      name: input.name,
+      inviterName: input.inviterName,
+      orgName: input.orgName,
+      daysLeft: input.daysLeft,
+      magicLinkUrl: input.magicLinkUrl,
+      telegramDeepLink: input.telegramDeepLink,
+    });
+    return this.send({
+      to: input.to,
+      subject: `Напоминание: приглашение в «${input.orgName}» ещё действует`,
+      text,
+      template: 'invite-reminder',
+    });
+  }
+
+  /**
+   * β-9 (2026-05-25) — уведомление директора, что приглашение истекло.
+   * Отправляется кроном `org-invitation-reminders` на 14-й день.
+   */
+  async sendInviteDirectorTimeout(input: {
+    to: string;
+    directorName: string;
+    employeeName: string;
+    employeeEmail?: string | null;
+    orgName: string;
+    teamPageUrl: string;
+  }): Promise<SendResult> {
+    const text = this.templates.inviteDirectorTimeout({
+      directorName: input.directorName,
+      employeeName: input.employeeName,
+      ...(input.employeeEmail ? { employeeEmail: input.employeeEmail } : {}),
+      orgName: input.orgName,
+      teamPageUrl: input.teamPageUrl,
+    });
+    return this.send({
+      to: input.to,
+      subject: `Приглашение для ${input.employeeName} истекло`,
+      text,
+      template: 'invite-director-timeout',
+    });
+  }
+
   // ─────────────────────────── internals ──────────────────────────
 
   private async send(opts: {
@@ -220,6 +332,30 @@ export class MailService implements OnModuleInit {
         resetUrl: string;
         expiresInMinutes: number;
       }>(PASSWORD_RESET_TEMPLATE, { noEscape: true }),
+      // β-9 (2026-05-25)
+      inviteGithubStyle: Handlebars.compile<{
+        name: string;
+        inviterName: string;
+        orgName: string;
+        magicLinkUrl: string;
+        telegramDeepLink: string;
+        ttlDays: number;
+      }>(INVITE_GITHUB_STYLE_TEMPLATE, { noEscape: true }),
+      inviteReminder: Handlebars.compile<{
+        name: string;
+        inviterName: string;
+        orgName: string;
+        daysLeft: number;
+        magicLinkUrl: string;
+        telegramDeepLink: string;
+      }>(INVITE_REMINDER_TEMPLATE, { noEscape: true }),
+      inviteDirectorTimeout: Handlebars.compile<{
+        directorName: string;
+        employeeName: string;
+        employeeEmail?: string;
+        orgName: string;
+        teamPageUrl: string;
+      }>(INVITE_DIRECTOR_TIMEOUT_TEMPLATE, { noEscape: true }),
     };
   }
 }

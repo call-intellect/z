@@ -75,6 +75,53 @@ export class ConversationalLinkCodeService {
     return userId;
   }
 
+  /**
+   * β-9 (2026-05-25) — выдать длинно-живущий invite-код для GitHub-style
+   * приглашений. Используется `OrgInvitationsService.createInvitation`:
+   * код кладётся в Redis (`conv:invite:telegram_bot:<code>`) с TTL
+   * `invites.ttlDays * 86400` и дублируется в `OrgInvitation.linkCode` для
+   * аудита и перевыпуска. Семантика прожига — та же `consume`, но через
+   * отдельный namespace, чтобы не пересекаться с обычным `generate`/`consume`
+   * (которые работают на минутный TTL «привязать существующего юзера»).
+   *
+   * Длиннее (8 байт → 16 hex), потому что живёт 14 дней — энтропия 64 бита
+   * против 48 у краткоживущего кода.
+   */
+  async generateInviteCode(args: {
+    userId: string;
+    ttlSec: number;
+  }): Promise<{ code: string; ttlSec: number }> {
+    const code = randomBytes(8).toString('hex');
+    const key = this.inviteKeyFor(code);
+    await this.redis.client.set(key, args.userId, 'EX', args.ttlSec);
+    this.logger.debug(
+      `generateInviteCode: userId=${args.userId} ttl=${args.ttlSec}s code=${redact(code)}`,
+    );
+    return { code, ttlSec: args.ttlSec };
+  }
+
+  /**
+   * Прожечь invite-код (β-9). Возвращает `userId` приглашаемого, либо `null`.
+   * Атомарно через GETDEL. Используется глобальным Telegram-ботом
+   * на `/start <code>`.
+   */
+  async consumeInviteCode(args: { code: string }): Promise<string | null> {
+    const key = this.inviteKeyFor(args.code);
+    const userId = await this.redis.client.getdel(key);
+    if (!userId) {
+      this.logger.debug(
+        `consumeInviteCode: код невалиден или истёк code=${redact(args.code)}`,
+      );
+      return null;
+    }
+    this.logger.log(`consumeInviteCode: код прожжён userId=${userId}`);
+    return userId;
+  }
+
+  private inviteKeyFor(code: string): string {
+    return `conv:invite:telegram_bot:${code}`;
+  }
+
   private keyFor(kind: ChannelKind, code: string): string {
     return `conv:link:${kind}:${code}`;
   }

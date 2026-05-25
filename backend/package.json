@@ -39,7 +39,8 @@
     "seed:llm-task-routes-ideas-and-probe": "bun run scripts/seed-llm-task-routes-ideas-and-probe.ts",
     "seed:llm-task-routes-skill-and-clone": "bun run scripts/seed-llm-task-routes-skill-and-clone.ts",
     "setup:telegram-bot": "bun run scripts/setup-telegram-bot.ts",
-    "setup:max-bot": "bun run scripts/setup-max-bot.ts"
+    "setup:max-bot": "bun run scripts/setup-max-bot.ts",
+    "seed:global-channels": "bun run scripts/seed-global-channels.ts"
   },
   "prisma": {
     "seed": "bun prisma/seed.ts"

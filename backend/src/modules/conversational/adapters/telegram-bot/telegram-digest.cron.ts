@@ -146,6 +146,27 @@ export class TelegramDigestCron {
       timezoneByKey.set(`${p.userId}:${p.tenantId}`, p.timezone);
     }
 
+    // β-9: для глобального канала (`Channel.tenantId IS NULL`) tenantId
+    // нужно резолвить через `Membership.findFirst({ userId })` (принцип 4
+    // — один пользователь = одна Org). Делаем batch-резолв заранее.
+    const userIdsWithoutTenant = bindings
+      .filter((b) => b.channel.tenantId === null)
+      .map((b) => b.userId);
+    const membershipByUser = new Map<string, string>();
+    if (userIdsWithoutTenant.length > 0) {
+      const memberships = await this.prisma.membership.findMany({
+        where: { userId: { in: userIdsWithoutTenant } },
+        orderBy: { joinedAt: 'asc' },
+        select: { userId: true, orgId: true },
+      });
+      for (const m of memberships) {
+        // Берём первый по joinedAt — игнорируем последующие (один user = одна Org).
+        if (!membershipByUser.has(m.userId)) {
+          membershipByUser.set(m.userId, m.orgId);
+        }
+      }
+    }
+
     let sent = 0;
     let empty = 0;
     let deduped = 0;
@@ -153,8 +174,16 @@ export class TelegramDigestCron {
     let skippedHour = 0;
 
     for (const binding of bindings) {
-      const tenantId = binding.channel.tenantId;
       const userId = binding.userId;
+      // β-9: per-tenant канал — `binding.channel.tenantId`; глобальный —
+      // резолвим через membership. Если ничего не нашли — пропускаем
+      // (digest не может идти «в воздух», без Org-контекста).
+      const tenantId =
+        binding.channel.tenantId ?? membershipByUser.get(userId) ?? null;
+      if (!tenantId) {
+        skippedHour++; // считаем как тихий skip (без отдельной метрики)
+        continue;
+      }
       const tenantTop = tenantTopOf(tenantId);
       const tz = timezoneByKey.get(`${userId}:${tenantId}`) ?? null;
       const localHour = getLocalHour(now, tz);

@@ -32,6 +32,12 @@ enum UserSignupSource {
 enum VerificationPurpose {
   password_reset
   account_restore
+  /// β-9 (2026-05-25) — одноразовый magic-link для входа без пароля
+  /// (по запросу с `/accounts/magic-link/request` или через команду `/login` в боте).
+  magic_link
+  /// β-9 (2026-05-25) — magic-token, привязанный к `OrgInvitation.magicTokenHash`.
+  /// Прожигается при принятии приглашения, создаёт сессию без пароля.
+  invite_accept
 }
 
 enum MeetingType {
@@ -2056,7 +2062,10 @@ model OrgInvitation {
   id               String              @id @default(cuid())
   orgId            String
   org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  email            String
+  /// β-9 (2026-05-25): email теперь опционален. Для линейного персонала без
+  /// почты директор копирует ссылку приглашения и пересылает руками
+  /// (через `linkCode` или magic-link URL из `manualShareUrl` ответа).
+  email            String?
   role             MembershipRole
   /// Случайный nanoid(40); хранится как plaintext (короткоживущий + одноразовый).
   token            String              @unique
@@ -2068,6 +2077,24 @@ model OrgInvitation {
   /// и сохраняет ссылку здесь, чтобы при accept'е заполнить Person.userId.
   personId         String?
   person           Person?             @relation("OrgInvitationPerson", fields: [personId], references: [id], onDelete: SetNull)
+  /// β-9 (2026-05-25) — одноразовый код для прямой привязки Telegram-бота
+  /// из письма приглашения (deep-link `https://t.me/<bot>?start=<linkCode>`).
+  /// Hex(12) от `ConversationalLinkCodeService`, дублируется в Redis для горячего
+  /// пути бота. NULL для legacy-приглашений без β-9 интеграции.
+  linkCode            String?  @unique
+  linkCodeUsedAt      DateTime?
+  /// β-9 (2026-05-25) — sha256 magic-link-токена (по аналогии с
+  /// `UserVerificationToken.tokenHash`). Прожигается при первом клике по
+  /// magic-link в письме → создаётся `User` + `Membership`, открывается сессия
+  /// без пароля. NULL для legacy-приглашений.
+  magicTokenHash      String?  @unique
+  magicTokenUsedAt    DateTime?
+  /// β-9 (2026-05-25) — когда крон `org-invitation-reminders` отправил
+  /// напоминание сотруднику (на 7-й день после `createdAt`). NULL = не отправляли.
+  reminderSentAt      DateTime?
+  /// β-9 (2026-05-25) — когда крон уведомил директора, что сотрудник так и
+  /// не принял (на 14-й день, в день истечения). NULL = не уведомляли.
+  directorNotifiedAt  DateTime?
   createdAt        DateTime            @default(now())
   expiresAt        DateTime
   acceptedAt       DateTime?
@@ -5094,6 +5121,10 @@ enum ChannelStatus {
   active
   disabled
   broken
+  /// β-9 (2026-05-25) — kill-switch для глобального Telegram-канала
+  /// (только для строки с `tenantId IS NULL`). Главный администратор Z
+  /// выключает бота для всех клиентов одной кнопкой в `/admin/system/telegram-bot`.
+  global_disabled
 }
 
 /// Жизненный цикл `Notification`.
@@ -5141,7 +5172,14 @@ enum NotificationDeliveryStatus {
 /// разрешила email-доставку.
 model Channel {
   id           String           @id @default(cuid())
-  tenantId     String
+  /// β-9 (2026-05-25): nullable для глобальных каналов (один на всю платформу,
+  /// прим. — глобальный Telegram-бот @kora_bot). Per-tenant строки сохраняют
+  /// `tenantId` как раньше. Ровно одна глобальная строка на `kind` гарантируется
+  /// partial unique index'ом `channels_global_unique` в `postgres-init.sql`
+  /// (Prisma не поддерживает partial unique декларативно). Postgres трактует
+  /// `NULL != NULL`, поэтому `@@unique([tenantId, kind])` ниже остаётся
+  /// корректным для per-tenant пары и не мешает глобальной NULL-строке.
+  tenantId     String?
   kind         ChannelKind
   direction    ChannelDirection
   /// Зашифрованные секреты (botToken, etc). Для `in_app` = `{}`.
@@ -5155,7 +5193,7 @@ model Channel {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  org      Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   bindings ChannelBinding[]
 
   @@unique([tenantId, kind])

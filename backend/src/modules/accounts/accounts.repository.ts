@@ -143,6 +143,19 @@ export class AccountsRepository {
     });
   }
 
+  /**
+   * β-9 (2026-05-25) — поиск verification-токена ТОЛЬКО по hash, без purpose.
+   * Используется magic-link consume (purpose='magic_link') — caller сам
+   * проверяет purpose в результате, чтобы вернуть один общий error code.
+   */
+  findVerificationTokenByHash(
+    tokenHash: string,
+  ): Promise<UserVerificationToken | null> {
+    return this.prisma.userVerificationToken.findUnique({
+      where: { tokenHash },
+    });
+  }
+
   markVerificationTokenUsed(
     id: string,
     tx?: Prisma.TransactionClient,

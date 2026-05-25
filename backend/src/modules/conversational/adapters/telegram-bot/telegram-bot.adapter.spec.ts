@@ -31,10 +31,11 @@ import type { TelegramUpdate } from './telegram.types';
  * принятый в проекте.
  */
 
-function makeChannel(): Channel {
+function makeChannel(opts: { global?: boolean } = {}): Channel {
   return {
-    id: 'channel-1',
-    tenantId: 'org-1',
+    id: opts.global ? 'global-channel' : 'channel-1',
+    // β-9: глобальный канал имеет tenantId=null.
+    tenantId: opts.global ? null : 'org-1',
     kind: 'telegram_bot',
     direction: 'bidirectional',
     config: {
@@ -68,6 +69,10 @@ function makeAdapter(opts: {
     notificationDelivery: { findFirst: vi.fn() },
     channel: { findMany: vi.fn().mockResolvedValue([]) },
     person: { findFirst: vi.fn() },
+    // β-9: резолв tenantId из Membership при глобальном канале.
+    membership: {
+      findFirst: vi.fn().mockResolvedValue({ orgId: 'org-1' }),
+    },
   } as unknown as PrismaService;
 
   const incr = vi.fn().mockResolvedValue(opts.rateLimitCount ?? 1);
@@ -98,6 +103,8 @@ function makeAdapter(opts: {
     incBotInbound: vi.fn(),
     observeBotVoiceAsrDuration: vi.fn(),
     incBotIntentClassified: vi.fn(),
+    // β-9: метрики «незнакомый отправитель».
+    incTelegramBotUnknownSender: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const vox = {
@@ -552,5 +559,111 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     expect(
       vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
     ).toMatch(/Аккаунт не привязан|код|канал/i);
+    // β-9: метрика «незнакомый отправитель / no_binding».
+    expect(
+      vi.mocked(mocks.metrics.incTelegramBotUnknownSender),
+    ).toHaveBeenCalledWith({ reason: 'no_binding' });
+  });
+});
+
+// ───────────────────────────── β-9: глобальный канал ─────────────────────
+
+describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный канал)', () => {
+  it('свободный текст: резолвит tenantId через Membership.findFirst по userId', async () => {
+    const mocks = makeAdapter({ classifyIntent: 'factual' });
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.membership.findFirst).mockResolvedValue({
+      orgId: 'org-resolved-via-membership',
+    } as never);
+
+    const update: TelegramUpdate = {
+      update_id: 100,
+      message: {
+        message_id: 30,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'Какой план продаж на сентябрь?',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      // β-9: tenantId не передаётся — резолвится из binding.
+      channel,
+    });
+    expect(result).toEqual({
+      type: 'chat_query',
+      userId: 'user-42',
+      tenantId: 'org-resolved-via-membership',
+      question: 'Какой план продаж на сентябрь?',
+      originChannelBindingId: 'binding-1',
+    });
+    expect(mocks.prisma.membership.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'user-42' } }),
+    );
+  });
+
+  it('если binding есть, но Membership нет — отвечает «не привязаны к компании» + метрика no_membership', async () => {
+    const mocks = makeAdapter();
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.membership.findFirst).mockResolvedValue(null);
+
+    const update: TelegramUpdate = {
+      update_id: 101,
+      message: {
+        message_id: 31,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'Что-то спрашиваю',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(
+      vi.mocked(mocks.metrics.incTelegramBotUnknownSender),
+    ).toHaveBeenCalledWith({ reason: 'no_membership' });
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toMatch(/не привязаны к компании|руководителя|приглашени/i);
+  });
+
+  it('/start <code> на глобальном канале — линковка работает без tenantId', async () => {
+    const mocks = makeAdapter();
+    const channel = makeChannel({ global: true });
+    vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 102,
+      message: {
+        message_id: 32,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: '/start ABCDEF123456',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({ update, channel });
+    expect(result).toBeNull();
+    expect(mocks.linkCode.consume).toHaveBeenCalledWith({
+      kind: 'telegram_bot',
+      code: 'ABCDEF123456',
+    });
+    expect(mocks.prisma.channelBinding.upsert).toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
+    ).toContain('привязан');
   });
 });

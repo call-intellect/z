@@ -1,30 +1,34 @@
 /**
- * SBA β-1 — Setup script для Telegram Bot канала (zero-button, 2026-05-23).
+ * β-9 (2026-05-25) — Setup script для ГЛОБАЛЬНОГО Telegram Bot канала.
+ *
+ * До β-9: per-tenant модель (`--tenant-id <X>`), один бот на каждую Org.
+ * С β-9: один глобальный бот `@kora_bot` на всю платформу. Главный
+ * администратор Z вызывает этот скрипт ОДИН РАЗ (при первичной настройке
+ * или после ротации токена), после чего весь трафик идёт через
+ * `Channel WHERE tenantId IS NULL AND kind='telegram_bot'`.
  *
  * Что делает:
- *   1. setWebhook у Telegram (URL = <PUBLIC_HOST_URL>/api/v1/webhooks/telegram-bot/<tenantId>,
- *      secret_token = `--webhook-secret` или случайный).
- *      `allowed_updates=['message','edited_message']` — без `callback_query`
- *      (β-1 zero-button: бот больше не показывает inline-кнопок).
- *   2. setMyCommands([]) — очищает menu-хамбургер бота. Если в нём были
- *      ранее /ask, /note, /idea и т.п. — Telegram удалит.
- *   3. getMe — для проверки токена и подтягивания username.
- *   4. Upsert Channel(tenantId, kind='telegram_bot', config={encrypted token,
- *      encrypted secret, botUsername}, status='active', maxDataClass='internal',
- *      direction='bidirectional').
+ *   1. getMe — проверяет токен, тянет username бота.
+ *   2. setWebhook у Telegram (URL = `<PUBLIC_HOST_URL>/api/v1/webhooks/telegram-bot`
+ *      БЕЗ `:tenantId`, secret_token = `--webhook-secret` или случайный).
+ *      `allowed_updates=['message','edited_message']`.
+ *   3. setMyCommands([]) — очищает menu-хамбургер бота (β-1 zero-button).
+ *   4. Upsert ГЛОБАЛЬНОЙ записи `Channel` (`tenantId IS NULL`).
+ *      Prisma не поддерживает composite-unique upsert по null, поэтому
+ *      делаем «find OR create OR update».
  *
- * Все секреты шифруются совместимым с CryptoService форматом (`gcm:v1:...`)
- * — переиспользует `CRYPTO_MASTER_KEY` из .env.
+ * Все секреты шифруются совместимым с `CryptoService` форматом
+ * (`gcm:v1:...`) через `CRYPTO_MASTER_KEY` из .env.
  *
- * Usage:
+ * Usage (из backend/):
  *   bun run setup:telegram-bot -- \
  *       --token <BOT_TOKEN> \
- *       --tenant-id <tenantId> \
  *       --public-host-url https://api.kora.ai \
- *       [--webhook-secret <SECRET>]   # опционально, по умолчанию — random 32 hex bytes
+ *       [--webhook-secret <SECRET>]
  *
- * Idempotent: повторный запуск с тем же tenantId перезатирает Channel.config
- * и Telegram-webhook (нормально — токен мог обновиться).
+ * Идемпотентность: повторный запуск перезатирает токен/secret глобального
+ * канала и переустанавливает webhook у Telegram (нормально — токен мог
+ * обновиться, secret поменялся).
  */
 
 import { createCipheriv, randomBytes } from 'node:crypto';
@@ -34,7 +38,6 @@ import * as dotenv from 'dotenv';
 
 interface CliArgs {
   token: string;
-  tenantId: string;
   publicHostUrl: string;
   webhookSecret: string;
 }
@@ -42,7 +45,7 @@ interface CliArgs {
 const TELEGRAM_API_BASE =
   process.env['TELEGRAM_BOT_API_BASE'] ?? 'https://api.telegram.org';
 
-// SBA β-1 zero-button (2026-05-23): slash-команды удалены. setMyCommands
+// β-1 zero-button (2026-05-23): slash-команды удалены. setMyCommands
 // вызывается с пустым массивом, чтобы Telegram очистил menu-хамбургер.
 const COMMANDS: Array<{ command: string; description: string }> = [];
 
@@ -62,12 +65,18 @@ function parseArgs(): CliArgs {
       }
     }
   }
+  // β-9: --tenant-id больше не принимается. Если передали — предупредим
+  // и проигнорируем (миграция глобальная).
+  if (out['tenant-id']) {
+    console.warn(
+      '[setup-telegram-bot] WARN: флаг --tenant-id больше не используется (β-9: глобальный бот). Игнорирую.',
+    );
+  }
   const token = out['token'];
-  const tenantId = out['tenant-id'];
   const publicHostUrl = out['public-host-url'] ?? process.env['PUBLIC_HOST_URL'];
-  if (!token || !tenantId || !publicHostUrl) {
+  if (!token || !publicHostUrl) {
     console.error(
-      'usage: bun run setup:telegram-bot -- --token <token> --tenant-id <tenantId> --public-host-url <url> [--webhook-secret <secret>]',
+      'usage: bun run setup:telegram-bot -- --token <token> --public-host-url <url> [--webhook-secret <secret>]',
     );
     process.exit(1);
   }
@@ -75,7 +84,6 @@ function parseArgs(): CliArgs {
     out['webhook-secret'] ?? randomBytes(16).toString('hex');
   return {
     token,
-    tenantId,
     publicHostUrl: publicHostUrl.replace(/\/+$/, ''),
     webhookSecret,
   };
@@ -128,9 +136,10 @@ async function callTelegram(
 async function main(): Promise<void> {
   dotenv.config();
   const args = parseArgs();
-  const webhookUrl = `${args.publicHostUrl}/api/v1/webhooks/telegram-bot/${args.tenantId}`;
+  // β-9: webhook URL без `:tenantId`.
+  const webhookUrl = `${args.publicHostUrl}/api/v1/webhooks/telegram-bot`;
 
-  console.log(`[setup-telegram-bot] tenantId=${args.tenantId}`);
+  console.log('[setup-telegram-bot] mode=GLOBAL (β-9)');
   console.log(`[setup-telegram-bot] webhookUrl=${webhookUrl}`);
 
   // 1. getMe — проверка токена и подтягивание username.
@@ -169,7 +178,9 @@ async function main(): Promise<void> {
   }
   console.log('[setup-telegram-bot] setMyCommands ok');
 
-  // 4. Upsert Channel.
+  // 4. Upsert ГЛОБАЛЬНОГО Channel'а (tenantId IS NULL).
+  //    Prisma upsert по composite-unique с null невозможен — делаем
+  //    find-then-update / find-then-create вручную.
   const prisma = new PrismaClient();
   try {
     const config = {
@@ -177,32 +188,38 @@ async function main(): Promise<void> {
       webhookSecret: encryptForCryptoService(args.webhookSecret),
       botUsername: botUsername ?? null,
     };
-    const channel = await prisma.channel.upsert({
-      where: {
-        tenantId_kind: {
-          tenantId: args.tenantId,
-          kind: 'telegram_bot',
-        },
-      },
-      update: {
-        config,
-        status: 'active',
-        direction: 'bidirectional',
-        maxDataClass: 'internal',
-        brokenReason: null,
-      },
-      create: {
-        tenantId: args.tenantId,
-        kind: 'telegram_bot',
-        direction: 'bidirectional',
-        maxDataClass: 'internal',
-        status: 'active',
-        config,
-      },
+    const existing = await prisma.channel.findFirst({
+      where: { tenantId: null, kind: 'telegram_bot' },
     });
-    console.log(
-      `[setup-telegram-bot] Channel upserted id=${channel.id} tenantId=${args.tenantId}`,
-    );
+    if (existing) {
+      const updated = await prisma.channel.update({
+        where: { id: existing.id },
+        data: {
+          config,
+          status: 'active',
+          direction: 'bidirectional',
+          maxDataClass: 'internal',
+          brokenReason: null,
+        },
+      });
+      console.log(
+        `[setup-telegram-bot] Global Channel updated id=${updated.id} (status=active)`,
+      );
+    } else {
+      const created = await prisma.channel.create({
+        data: {
+          tenantId: null,
+          kind: 'telegram_bot',
+          direction: 'bidirectional',
+          maxDataClass: 'internal',
+          status: 'active',
+          config,
+        },
+      });
+      console.log(
+        `[setup-telegram-bot] Global Channel created id=${created.id}`,
+      );
+    }
     console.log('[setup-telegram-bot] DONE.');
   } finally {
     await prisma.$disconnect();

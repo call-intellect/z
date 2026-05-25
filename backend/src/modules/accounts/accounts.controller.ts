@@ -24,6 +24,14 @@ import { AccountsService } from './accounts.service';
 import { ChangePasswordSchema, type ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordSchema, type ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginSchema, type LoginDto } from './dto/login.dto';
+import {
+  AcceptInvitationMagicLinkSchema,
+  MagicLinkConsumeSchema,
+  MagicLinkRequestSchema,
+  type AcceptInvitationMagicLinkDto,
+  type MagicLinkConsumeDto,
+  type MagicLinkRequestDto,
+} from './dto/magic-link.dto';
 import { RegisterSchema, type RegisterDto } from './dto/register.dto';
 import { ResetPasswordSchema, type ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateProfileSchema, type UpdateProfileDto } from './dto/update-profile.dto';
@@ -142,6 +150,92 @@ export class AccountsController {
       newPassword: body.newPassword,
     });
     return { ok: true };
+  }
+
+  /**
+   * β-9 (2026-05-25) — запросить одноразовую ссылку для входа без пароля.
+   * Публичный эндпоинт с throttling (5 запросов / 15 минут на IP, плюс
+   * дополнительный per-email rate-limit внутри сервиса).
+   * Возвращает всегда `{ ok: true }` — защита от user enumeration.
+   */
+  @Post('magic-link/request')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
+  async requestMagicLink(
+    @Body(new ZodValidationPipe(MagicLinkRequestSchema))
+    body: MagicLinkRequestDto,
+  ): Promise<{ ok: true; email_sent: boolean }> {
+    const result = await this.accounts.requestMagicLink({ email: body.email });
+    return { ok: true, email_sent: result.emailSent };
+  }
+
+  /**
+   * β-9 (2026-05-25) — прожечь magic-link, открыть сессию.
+   * Публичный эндпоинт (одноразовый токен).
+   */
+  @Post('magic-link/consume')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
+  async consumeMagicLink(
+    @Body(new ZodValidationPipe(MagicLinkConsumeSchema))
+    body: MagicLinkConsumeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ user: Awaited<ReturnType<AccountsService['consumeMagicLink']>>['user'] }> {
+    const result = await this.accounts.consumeMagicLink(
+      { token: body.token },
+      {
+        userAgent:
+          typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+        ip: req.ip ?? null,
+      },
+    );
+
+    res.cookie(SESSION_COOKIE, result.token, {
+      domain: this.cfg.auth.cookieStandaloneDomain ?? this.cfg.auth.cookieDomain,
+      httpOnly: true,
+      secure: !this.cfg.runtime.isDevelopment,
+      sameSite: 'lax',
+      maxAge: this.cfg.auth.sessionTtlSeconds * 1000,
+    });
+
+    return { user: result.user };
+  }
+
+  /**
+   * β-9 (2026-05-25) — принять приглашение по magic-token из письма.
+   * Публичный эндпоинт. Без auth, одноразовый токен. Под капотом
+   * создаёт User + Membership, открывает сессию (cookie).
+   */
+  @Post('invitations/accept-magic')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
+  async acceptInvitationMagicLink(
+    @Body(new ZodValidationPipe(AcceptInvitationMagicLinkSchema))
+    body: AcceptInvitationMagicLinkDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{
+    user: Awaited<ReturnType<AccountsService['acceptInvitationMagicLink']>>['user'];
+  }> {
+    const result = await this.accounts.acceptInvitationMagicLink(
+      { magicToken: body.magicToken },
+      {
+        userAgent:
+          typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+        ip: req.ip ?? null,
+      },
+    );
+
+    res.cookie(SESSION_COOKIE, result.token, {
+      domain: this.cfg.auth.cookieStandaloneDomain ?? this.cfg.auth.cookieDomain,
+      httpOnly: true,
+      secure: !this.cfg.runtime.isDevelopment,
+      sameSite: 'lax',
+      maxAge: this.cfg.auth.sessionTtlSeconds * 1000,
+    });
+
+    return { user: result.user };
   }
 
   // ─────────────────────────── private (cookie) ──────────────────

@@ -1141,6 +1141,31 @@ const BetaOpsSchema = z.object({
   PROACTIVE_RULE_DEPARTMENT_NO_DOMAIN_ENABLED: zBool(true),
   PROACTIVE_RULE_INSIGHTS_SILOED_IN_DOMAIN_ENABLED: zBool(true),
   PROACTIVE_RULE_PLAN_ITEM_OVERDUE_ENABLED: zBool(true),
+
+  // ── β-9 — Глобальный Telegram-бот + GitHub-style приглашения (2026-05-25) ───
+  // См. plans/tz/2026-05-25-telegram-bot-global-and-invites.md §13.
+  // Сложены в BetaOpsSchema, чтобы не удлинять .merge цепочку EnvSchema
+  // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.invites`.
+  //
+  //   - KORA_BOT_USERNAME — имя глобального Telegram-бота без `@` для построения
+  //     deep-link'а `https://t.me/<KORA_BOT_USERNAME>?start=<code>` в письме
+  //     приглашения.
+  //   - INVITE_TTL_DAYS — срок жизни одного приглашения (default 14 — продлили
+  //     с 7 в рамках β-9 для линейного персонала, который проверяет почту реже).
+  //   - INVITE_REMINDER_DAYS — на какой день после createdAt отправлять
+  //     напоминание сотруднику (default 7).
+  //   - MAGIC_LINK_TTL_MINUTES — TTL одноразовой ссылки входа без пароля
+  //     (default 15 — короткий, потому что magic-link открывает сессию).
+  //   - MAGIC_LINK_RATE_LIMIT_PER_HOUR — защита от спама запросами magic-link
+  //     на одну электронную почту (default 5).
+  //   - INACTIVE_BINDING_DAYS — через сколько дней привязки с заблокированным
+  //     ботом сотрудник переводится в `inactive` (default 30).
+  KORA_BOT_USERNAME: z.string().min(1).default('kora_bot'),
+  INVITE_TTL_DAYS: z.coerce.number().int().positive().default(14),
+  INVITE_REMINDER_DAYS: z.coerce.number().int().positive().default(7),
+  MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  MAGIC_LINK_RATE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(5),
+  INACTIVE_BINDING_DAYS: z.coerce.number().int().positive().default(30),
 });
 
 /**

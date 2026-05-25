@@ -1,39 +1,49 @@
 /**
- * Spec для TelegramWebhooksController (Phase F.5).
+ * Spec для TelegramWebhooksController.
  *
- * Telegram сам отправляет header `X-Telegram-Bot-Api-Secret-Token`, если
- * webhook зарегистрирован с `secret_token` в `setWebhook`. Контроллер
- * сверяет его timing-safe c `Channel.config.webhookSecret`.
- *
- * Проверяем:
- *   - 404 channel_not_configured если Channel нет / неактивен.
- *   - 403 invalid_webhook_secret если header пустой / не совпал.
- *   - 200 happy path и вызов adapter.ingestUpdate + conversational.dispatchInbound.
- *   - 200 без 5xx если adapter.ingestUpdate бросает (логируем, возвращаем 200).
+ * Покрытие:
+ *   - β-9 (новый путь) `POST /api/v1/webhooks/telegram-bot` без `:tenantId`
+ *     лукапит глобальный канал и не передаёт tenantId в adapter.ingestUpdate.
+ *   - β-9 (legacy `:tenantId`) — если глобальный канал существует, использует
+ *     его, пишет warn про deprecation; иначе fallback на per-tenant.
+ *   - 404 если глобального канала нет (новый путь).
+ *   - 403 invalid_webhook_secret / webhook_secret_unreadable.
+ *   - 200 без 5xx если adapter.ingestUpdate бросает.
+ *   - 200 если ingestUpdate вернул null.
+ *   - 200 если dispatchInbound бросает.
  */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TelegramWebhooksController } from './telegram-webhooks.controller';
-
+import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { ConversationalService } from '../../conversational.service';
+
 import type { TelegramBotChannelAdapter } from './telegram-bot.adapter';
+import { TelegramWebhooksController } from './telegram-webhooks.controller';
 
 const SECRET = 'webhook-secret-42';
 
 function build(opts: {
-  channel?: { status: string } | null;
+  /** Какой канал вернёт `findFirst({ tenantId: null })`. По умолчанию — глобальный активный. */
+  globalChannel?: { id: string; status: string } | null;
+  /** Какой канал вернёт `findUnique({ tenantId_kind })` для legacy пути. По умолчанию — null. */
+  perTenantChannel?: { id: string; status: string } | null;
   readSecret?: string | null;
   adapterIngestReturns?: 'inbound' | 'null' | 'throw';
   dispatchThrows?: boolean;
 } = {}) {
-  const channel = opts.channel === undefined
-    ? { status: 'active' }
-    : opts.channel;
+  const globalChannel = opts.globalChannel === undefined
+    ? { id: 'global-1', status: 'active' }
+    : opts.globalChannel;
+  const perTenantChannel = opts.perTenantChannel === undefined
+    ? null
+    : opts.perTenantChannel;
+
   const prisma = {
     channel: {
-      findUnique: vi.fn(async () => channel),
+      findFirst: vi.fn(async () => globalChannel),
+      findUnique: vi.fn(async () => perTenantChannel),
     },
   } as unknown as PrismaService;
 
@@ -59,8 +69,17 @@ function build(opts: {
     }),
   } as unknown as ConversationalService;
 
-  const ctrl = new TelegramWebhooksController(prisma, adapter, conversational);
-  return { ctrl, prisma, adapter, conversational };
+  const metrics = {
+    incTelegramBotGlobalWebhookReceived: vi.fn(),
+  } as unknown as BusinessMetricsService;
+
+  const ctrl = new TelegramWebhooksController(
+    prisma,
+    adapter,
+    conversational,
+    metrics,
+  );
+  return { ctrl, prisma, adapter, conversational, metrics };
 }
 
 const validBody = {
@@ -74,68 +93,104 @@ const validBody = {
   },
 };
 
-describe('TelegramWebhooksController', () => {
-  it('happy: ingestUpdate + dispatchInbound вызываются, ok=true', async () => {
-    const { ctrl, adapter, conversational } = build();
-    const res = await ctrl.receive('tenant-1', validBody as never, SECRET);
+describe('TelegramWebhooksController — β-9 глобальный путь', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('happy: глобальный webhook без :tenantId → ingestUpdate(tenantId=undefined) + dispatch', async () => {
+    const { ctrl, adapter, conversational, metrics } = build();
+    const res = await ctrl.receiveGlobal(validBody as never, SECRET);
     expect(res).toEqual({ ok: true });
     expect(adapter.ingestUpdate).toHaveBeenCalledOnce();
+    expect(
+      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
+    ).toBeUndefined();
     expect(conversational.dispatchInbound).toHaveBeenCalledOnce();
+    expect(metrics.incTelegramBotGlobalWebhookReceived).toHaveBeenCalledWith({
+      type: 'message',
+    });
   });
 
-  it('404 channel_not_configured если Channel отсутствует', async () => {
-    const { ctrl } = build({ channel: null });
+  it('404 если глобального канала нет', async () => {
+    const { ctrl } = build({ globalChannel: null });
+    await expect(
+      ctrl.receiveGlobal(validBody as never, SECRET),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('404 если глобальный канал в статусе global_disabled (или paused)', async () => {
+    const { ctrl } = build({
+      globalChannel: { id: 'g', status: 'global_disabled' },
+    });
+    await expect(
+      ctrl.receiveGlobal(validBody as never, SECRET),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('403 если secret не совпадает', async () => {
+    const { ctrl } = build();
+    await expect(
+      ctrl.receiveGlobal(validBody as never, 'wrong-secret-padded-1234'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('403 если secret не читается', async () => {
+    const { ctrl } = build({ readSecret: null });
+    await expect(
+      ctrl.receiveGlobal(validBody as never, SECRET),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('200 если adapter.ingestUpdate бросает (Telegram не должен ретраить)', async () => {
+    const { ctrl, conversational } = build({ adapterIngestReturns: 'throw' });
+    const res = await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    expect(conversational.dispatchInbound).not.toHaveBeenCalled();
+  });
+
+  it('200 если ingestUpdate вернул null', async () => {
+    const { ctrl, conversational } = build({ adapterIngestReturns: 'null' });
+    const res = await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    expect(conversational.dispatchInbound).not.toHaveBeenCalled();
+  });
+
+  it('200 если dispatchInbound бросает', async () => {
+    const { ctrl } = build({ dispatchThrows: true });
+    const res = await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(res).toEqual({ ok: true });
+  });
+});
+
+describe('TelegramWebhooksController — legacy :tenantId путь', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('если глобальный канал есть — использует его, игнорит tenantId из URL', async () => {
+    const { ctrl, adapter } = build();
+    const res = await ctrl.receive('tenant-x', validBody as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    // tenantId не пробрасывается в адаптер — резолв через Membership.
+    expect(
+      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
+    ).toBeUndefined();
+  });
+
+  it('если глобального нет — fallback на per-tenant Channel', async () => {
+    const { ctrl, adapter } = build({
+      globalChannel: null,
+      perTenantChannel: { id: 'pt-1', status: 'active' },
+    });
+    const res = await ctrl.receive('tenant-1', validBody as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    // tenantId передаётся в адаптер (legacy режим).
+    expect(
+      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
+    ).toBe('tenant-1');
+  });
+
+  it('404 если ни глобального, ни per-tenant нет', async () => {
+    const { ctrl } = build({ globalChannel: null, perTenantChannel: null });
     await expect(
       ctrl.receive('tenant-x', validBody as never, SECRET),
     ).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('404 если канал неактивен (paused)', async () => {
-    const { ctrl } = build({ channel: { status: 'paused' } });
-    await expect(
-      ctrl.receive('tenant-1', validBody as never, SECRET),
-    ).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('403 invalid_webhook_secret если header отсутствует', async () => {
-    const { ctrl } = build();
-    await expect(
-      ctrl.receive('tenant-1', validBody as never, undefined),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it('403 invalid_webhook_secret если secret не совпадает', async () => {
-    const { ctrl } = build();
-    await expect(
-      ctrl.receive('tenant-1', validBody as never, 'wrong-secret-padded-1234'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it('403 webhook_secret_unreadable если расшифровка падает', async () => {
-    const { ctrl } = build({ readSecret: null });
-    await expect(
-      ctrl.receive('tenant-1', validBody as never, SECRET),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it('200 (НЕ 5xx) если adapter.ingestUpdate бросает', async () => {
-    const { ctrl, conversational } = build({ adapterIngestReturns: 'throw' });
-    const res = await ctrl.receive('tenant-1', validBody as never, SECRET);
-    expect(res).toEqual({ ok: true });
-    // dispatch НЕ вызывался — ingest упал.
-    expect(conversational.dispatchInbound).not.toHaveBeenCalled();
-  });
-
-  it('200 если ingestUpdate вернул null (no-op event типа edit_message_reaction)', async () => {
-    const { ctrl, conversational } = build({ adapterIngestReturns: 'null' });
-    const res = await ctrl.receive('tenant-1', validBody as never, SECRET);
-    expect(res).toEqual({ ok: true });
-    expect(conversational.dispatchInbound).not.toHaveBeenCalled();
-  });
-
-  it('200 если dispatchInbound бросает (логируем, возвращаем 200, чтобы TG не ретраил)', async () => {
-    const { ctrl } = build({ dispatchThrows: true });
-    const res = await ctrl.receive('tenant-1', validBody as never, SECRET);
-    expect(res).toEqual({ ok: true });
   });
 });

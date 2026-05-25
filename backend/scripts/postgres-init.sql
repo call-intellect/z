@@ -388,3 +388,27 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- β-9 (2026-05-25) — глобальный Telegram-бот.
+--   Один глобальный канал per kind (запись с tenantId IS NULL).
+--   Postgres трактует NULL != NULL, поэтому обычный @@unique([tenantId, kind])
+--   из Prisma не защищает от нескольких глобальных строк с одинаковым kind.
+--   Partial unique index решает это декларативно: уникальность вычисляется
+--   только для строк, где tenantId IS NULL.
+--   Запускать ПОСЛЕ `prisma db push` (когда таблица "channels" уже существует).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'channels'
+  ) THEN
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "channels_global_unique"
+      ON "channels" ("kind")
+      WHERE "tenantId" IS NULL
+    $sql$;
+  END IF;
+END $$;

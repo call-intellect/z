@@ -72,3 +72,25 @@ export class ResetTokenInvalidError extends DomainError {
     super('Ссылка для сброса пароля недействительна или истекла');
   }
 }
+
+/** β-9 (2026-05-25) — magic-link недействителен / истёк / уже использован. */
+export class MagicLinkInvalidError extends DomainError {
+  readonly code = 'magic_link_invalid';
+  readonly httpStatus = 410;
+
+  constructor() {
+    super('Ссылка для входа недействительна или истекла');
+  }
+}
+
+// ─────────────────────────── 429 ──────────────────────────────────
+
+/** β-9 (2026-05-25) — превышен лимит запросов magic-link на одну почту. */
+export class MagicLinkRateLimitedError extends DomainError {
+  readonly code = 'magic_link_rate_limited';
+  readonly httpStatus = 429;
+
+  constructor() {
+    super('Слишком много запросов ссылки для входа. Попробуйте позже.');
+  }
+}

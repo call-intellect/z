@@ -902,6 +902,39 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── invites (β-9, 2026-05-25) ──────────────
+  /**
+   * β-9 — Глобальный Telegram-бот + GitHub-style приглашения. См.
+   * plans/tz/2026-05-25-telegram-bot-global-and-invites.md §13.
+   *
+   *   - `botUsername` — имя глобального бота без `@`, для построения
+   *     deep-link'а `https://t.me/<botUsername>?start=<code>`.
+   *   - `ttlDays` — срок жизни приглашения (default 14).
+   *   - `reminderDays` — на какой день после создания приглашения отправлять
+   *     напоминание сотруднику (default 7).
+   *   - `magicLinkTtlMinutes` — TTL одноразовой ссылки входа без пароля
+   *     (default 15).
+   *   - `magicLinkRateLimitPerHour` — лимит запросов magic-link на одну
+   *     электронную почту в час (default 5).
+   *   - `inactiveBindingDays` — через сколько дней привязки с заблокированным
+   *     ботом сотрудник помечается `inactive` (default 30).
+   */
+  get invites() {
+    return {
+      botUsername: String(this.get('KORA_BOT_USERNAME') ?? 'kora_bot').replace(
+        /^@/,
+        '',
+      ),
+      ttlDays: Number(this.get('INVITE_TTL_DAYS') ?? 14),
+      reminderDays: Number(this.get('INVITE_REMINDER_DAYS') ?? 7),
+      magicLinkTtlMinutes: Number(this.get('MAGIC_LINK_TTL_MINUTES') ?? 15),
+      magicLinkRateLimitPerHour: Number(
+        this.get('MAGIC_LINK_RATE_LIMIT_PER_HOUR') ?? 5,
+      ),
+      inactiveBindingDays: Number(this.get('INACTIVE_BINDING_DAYS') ?? 30),
+    } as const;
+  }
+
   // ─────────────────────────── proactive (SBA δ-2) ───────────────────
   /**
    * SBA δ-2 — ProactiveWatcher. См.

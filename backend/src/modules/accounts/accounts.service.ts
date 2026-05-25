@@ -4,9 +4,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { User } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
+import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 import { DisposableEmailService } from '../mail/disposable-email.service';
 import { MailService } from '../mail/mail.service';
+import { OrgInvitationsService } from '../orgs/org-invitations.service';
 import { OrgsService } from '../orgs/orgs.service';
 
 import { AccountsRepository } from './accounts.repository';
@@ -14,6 +17,8 @@ import {
   CurrentPasswordInvalidError,
   DisposableEmailError,
   LoginInvalidError,
+  MagicLinkInvalidError,
+  MagicLinkRateLimitedError,
   ResetTokenInvalidError,
 } from './exceptions/accounts-errors';
 import { PasswordService } from './password.service';
@@ -36,6 +41,22 @@ import { SessionService } from './session.service';
 const TEMP_PASSWORD_BYTES = 9; // 9 bytes → 12 base64url-символов
 const RESET_TOKEN_BYTES = 32; // 32 bytes → 43 base64url-символа
 const RESET_TOKEN_TTL_MIN = 60;
+
+// β-9 (2026-05-25)
+const MAGIC_LINK_TOKEN_BYTES = 32; // 32 байта → 43 base64url-символа
+const MAGIC_LINK_REDIS_KEY_PREFIX = 'magic-link:request:';
+
+export interface MagicLinkRequestResult {
+  /** Всегда `'ok'` — для защиты от user enumeration. Письмо могло не отправиться. */
+  status: 'ok';
+  emailSent: boolean;
+  emailError?: string;
+}
+
+export interface MagicLinkConsumeResult {
+  user: PublicUserDto;
+  token: string;
+}
 
 export interface RegisterResult {
   status: 'ok';
@@ -82,6 +103,11 @@ export class AccountsService {
     @Inject(DisposableEmailService) private readonly disposable: DisposableEmailService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(OrgsService) private readonly orgs: OrgsService,
+    @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
+    @Inject(OrgInvitationsService)
+    private readonly orgInvitations: OrgInvitationsService,
   ) {}
 
   // ─────────────────────────── register ─────────────────────────
@@ -261,6 +287,201 @@ export class AccountsService {
 
     // Отзываем все активные сессии после смены пароля.
     await this.sessions.revokeAll(found.userId);
+  }
+
+  // ─────────────────────────── magic-link (β-9) ─────────────────
+
+  /**
+   * β-9 (2026-05-25) — выдать magic-link для входа без пароля.
+   *
+   * Поведение:
+   *   - Если standalone-юзера на этот email нет — silent ok (защита от
+   *     user enumeration), metric outcome='user_not_found'.
+   *   - Rate-limit по email через Redis: `magic-link:request:<email>` =
+   *     счётчик с TTL 1 час. При превышении `MAGIC_LINK_RATE_LIMIT_PER_HOUR`
+   *     → `MagicLinkRateLimitedError`.
+   *   - Создаёт `UserVerificationToken(purpose='magic_link')` с TTL
+   *     `MAGIC_LINK_TTL_MINUTES`, шлёт письмо со ссылкой
+   *     `/accounts/magic-link/consume?token=<raw>`.
+   */
+  async requestMagicLink(input: { email: string }): Promise<MagicLinkRequestResult> {
+    const normalized = AccountsService.normalizeEmail(input.email);
+
+    // Rate-limit (по email, не по IP — IP тоже стоит, но это уровень
+    // controller-throttler; здесь дополнительная per-email защита).
+    const ttlSec = 3600;
+    const limit = this.cfg.invites.magicLinkRateLimitPerHour;
+    const key = `${MAGIC_LINK_REDIS_KEY_PREFIX}${normalized}`;
+    const current = await this.redis.client.incr(key);
+    if (current === 1) {
+      await this.redis.client.expire(key, ttlSec);
+    }
+    if (current > limit) {
+      this.metrics.incMagicLinkRequest({ outcome: 'rate_limited' });
+      throw new MagicLinkRateLimitedError();
+    }
+
+    const user = await this.repo.findStandaloneByEmail(normalized);
+    if (!user) {
+      this.metrics.incMagicLinkRequest({ outcome: 'user_not_found' });
+      this.logger.log(
+        { email: normalized },
+        'requestMagicLink: standalone-аккаунт не найден, silent ok',
+      );
+      return { status: 'ok', emailSent: false };
+    }
+
+    const rawToken = randomBytes(MAGIC_LINK_TOKEN_BYTES).toString('base64url');
+    const tokenHash = AccountsService.hashToken(rawToken);
+    const ttlMin = this.cfg.invites.magicLinkTtlMinutes;
+    const expiresAt = new Date(Date.now() + ttlMin * 60_000);
+
+    await this.repo.createVerificationToken({
+      userId: user.id,
+      tokenHash,
+      purpose: 'magic_link',
+      expiresAt,
+    });
+
+    const magicLinkUrl =
+      `${this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '')}` +
+      `/accounts/magic-link/consume?token=${rawToken}`;
+    // Переиспользуем sendPasswordReset как «общую ссылку входа» — название
+    // шаблона deprecated, но логика идентичная (одноразовая ссылка с TTL).
+    const sendResult = await this.mail.sendPasswordReset({
+      to: user.email,
+      name: user.name,
+      resetUrl: magicLinkUrl,
+      expiresInMinutes: ttlMin,
+    });
+    if (!sendResult.ok) {
+      this.logger.warn(
+        { email: normalized, err: sendResult.error },
+        'requestMagicLink: ошибка отправки письма',
+      );
+      this.metrics.incMagicLinkRequest({ outcome: 'sent' });
+      return { status: 'ok', emailSent: false, emailError: sendResult.error ?? 'unknown' };
+    }
+
+    this.metrics.incMagicLinkRequest({ outcome: 'sent' });
+    return { status: 'ok', emailSent: true };
+  }
+
+  /**
+   * β-9 (2026-05-25) — прожечь magic-link и открыть сессию.
+   *
+   * Возвращает `{ user, token }` — caller (controller) выставит cookie.
+   */
+  async consumeMagicLink(
+    input: { token: string },
+    meta: { userAgent?: string | null; ip?: string | null } = {},
+  ): Promise<MagicLinkConsumeResult> {
+    const tokenHash = AccountsService.hashToken(input.token);
+    const found = await this.repo.findVerificationTokenByHash(tokenHash);
+    if (!found || found.purpose !== 'magic_link') {
+      this.metrics.incMagicLinkConsume({ outcome: 'invalid' });
+      throw new MagicLinkInvalidError();
+    }
+    if (found.usedAt !== null) {
+      this.metrics.incMagicLinkConsume({ outcome: 'already_used' });
+      throw new MagicLinkInvalidError();
+    }
+    if (found.expiresAt.getTime() <= Date.now()) {
+      this.metrics.incMagicLinkConsume({ outcome: 'expired' });
+      throw new MagicLinkInvalidError();
+    }
+
+    const user = await this.repo.findById(found.userId);
+    if (!user) {
+      this.metrics.incMagicLinkConsume({ outcome: 'invalid' });
+      throw new MagicLinkInvalidError();
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.repo.markVerificationTokenUsed(found.id, tx);
+    });
+
+    const { token } = await this.sessions.issue({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      userAgent: meta.userAgent ?? null,
+      ip: meta.ip ?? null,
+    });
+
+    this.metrics.incMagicLinkConsume({ outcome: 'ok' });
+    return {
+      user: this.toPublicUser(user),
+      token,
+    };
+  }
+
+  // ─────────────────────────── invite accept (β-9) ──────────────
+
+  /**
+   * β-9 (2026-05-25) — принять приглашение по magic-token из письма.
+   * Без auth, одноразовый токен. Под капотом — `OrgInvitationsService.acceptViaMagicLink`
+   * с callback'ами:
+   *   - `upsertUserByEmail` — для приглашений с email,
+   *   - `createUserWithoutEmail` — для приглашений без email (линейный персонал).
+   *     Генерим placeholder-email `noemail-<cuid>@kora.local`, потому что
+   *     `User.email` в схеме required; пользователь сможет позже заменить
+   *     его на настоящий через профиль.
+   *   - `issueSession` — выдаёт обычную UserSession (cookie-based).
+   *
+   * Транзакция и валидация «один user = одна Org» — внутри `OrgInvitationsService`.
+   */
+  async acceptInvitationMagicLink(
+    input: { magicToken: string },
+    meta: { userAgent?: string | null; ip?: string | null } = {},
+  ): Promise<MagicLinkConsumeResult> {
+    const result = await this.orgInvitations.acceptViaMagicLink({
+      magicToken: input.magicToken,
+      upsertUserByEmail: async (args) => {
+        const tempPassword = AccountsService.generateTempPassword();
+        const passwordHash = await this.passwords.hash(tempPassword);
+        const user = await this.repo.upsertStandalone({
+          email: args.email,
+          name: args.name,
+          passwordHash,
+          mustChangePassword: false,
+        });
+        return { id: user.id, email: user.email, role: user.role };
+      },
+      createUserWithoutEmail: async (args) => {
+        const tempPassword = AccountsService.generateTempPassword();
+        const passwordHash = await this.passwords.hash(tempPassword);
+        const placeholderEmail = `noemail-${randomBytes(12).toString('hex')}@kora.local`;
+        const user = await this.repo.upsertStandalone({
+          email: placeholderEmail,
+          name: args.name,
+          passwordHash,
+          mustChangePassword: false,
+        });
+        return { id: user.id, email: user.email, role: user.role };
+      },
+      issueSession: async (args) => {
+        const { token } = await this.sessions.issue({
+          userId: args.userId,
+          email: args.email,
+          role: args.role,
+          userAgent: meta.userAgent ?? null,
+          ip: meta.ip ?? null,
+        });
+        return { token };
+      },
+    });
+
+    const user = await this.repo.findById(result.userId);
+    if (!user) {
+      // не должно случиться — User создан в callback'е внутри acceptViaMagicLink
+      throw new MagicLinkInvalidError();
+    }
+    this.metrics.incInviteAccepted({ path: 'magic_link' });
+    return {
+      user: this.toPublicUser(user),
+      token: result.sessionToken,
+    };
   }
 
   // ─────────────────────────── change password (logged in) ──────

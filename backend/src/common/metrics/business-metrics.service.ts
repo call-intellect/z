@@ -162,6 +162,29 @@ export class BusinessMetricsService implements OnModuleInit {
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
 
+  // ── telegram bot — глобальный канал (β-9, 2026-05-25) ─────────────
+  // Отдельные счётчики, чтобы при переходе с per-tenant на глобальный
+  // путь видеть распределение трафика и количество писем от незнакомых
+  // отправителей (linked, но без Membership / вовсе незнакомых).
+  private telegramBotGlobalWebhookReceivedTotal!: Counter<'type'>;
+  private telegramBotUnknownSenderTotal!: Counter<'reason'>;
+
+  // ── invitations + magic-link (β-9, 2026-05-25) ─────────────────────
+  // Сопровождают GitHub-style flow приглашений: создание/принятие,
+  // напоминания, истечения, magic-link request/consume.
+  // has_email: true|false (приглашение с указанной электронной почтой
+  // или без).
+  // path: magic_link | password | telegram_first.
+  // day: 7 | 14.
+  // outcome (request): sent | rate_limited | user_not_found.
+  // outcome (consume): ok | expired | already_used | invalid.
+  private inviteCreatedTotal!: Counter<'has_email'>;
+  private inviteAcceptedTotal!: Counter<'path'>;
+  private inviteReminderSentTotal!: Counter<'day'>;
+  private inviteExpiredTotal!: Counter<string>;
+  private magicLinkRequestTotal!: Counter<'outcome'>;
+  private magicLinkConsumeTotal!: Counter<'outcome'>;
+
   // ── max bot channel (SBA β-1) ─────────────────────────────────────
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private maxBotWebhookReceivedTotal!: Counter<'type'>;
@@ -992,6 +1015,56 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'telegram_bot_webhook_received_total',
       help: 'SBA β-1 — webhook Update от Telegram (type = message/callback_query/command/...).',
       labelNames: ['type'] as const,
+    });
+    // β-9 (2026-05-25) — глобальный webhook без `:tenantId` в URL.
+    // Идёт параллельно с старой `telegram_bot_webhook_received_total` для
+    // переходного периода: операционная видит, какой путь сколько ловит.
+    this.telegramBotGlobalWebhookReceivedTotal = this.getOrCreateCounter({
+      name: 'telegram_bot_global_webhook_received_total',
+      help: 'β-9 — Webhook Update от глобального Telegram-бота (без `:tenantId` в URL). type = message/edited_message/unknown.',
+      labelNames: ['type'] as const,
+    });
+    // β-9 (2026-05-25) — пришёл `from.id` отправителя, для которого мы
+    // не смогли найти ни активного `ChannelBinding`, ни `Membership` (=>
+    // невозможно определить, в какой Org адресовать сообщение).
+    // reason ∈ no_binding (binding не найден) | no_membership (binding
+    // есть, но у user нет Membership).
+    this.telegramBotUnknownSenderTotal = this.getOrCreateCounter({
+      name: 'telegram_bot_unknown_sender_total',
+      help: 'β-9 — Входящие в глобальный Telegram-бот от незнакомых отправителей. reason: no_binding | no_membership.',
+      labelNames: ['reason'] as const,
+    });
+
+    // ── invitations + magic-link (β-9, 2026-05-25) ─────────────────
+    this.inviteCreatedTotal = this.getOrCreateCounter({
+      name: 'invite_created_total',
+      help: 'β-9 — Создание приглашения сотрудника. has_email = true|false.',
+      labelNames: ['has_email'] as const,
+    });
+    this.inviteAcceptedTotal = this.getOrCreateCounter({
+      name: 'invite_accepted_total',
+      help: 'β-9 — Принятие приглашения. path = magic_link|password|telegram_first.',
+      labelNames: ['path'] as const,
+    });
+    this.inviteReminderSentTotal = this.getOrCreateCounter({
+      name: 'invite_reminder_sent_total',
+      help: 'β-9 — Cron-напоминание. day = 7 (сотруднику) | 14 (директору).',
+      labelNames: ['day'] as const,
+    });
+    this.inviteExpiredTotal = this.getOrCreateCounter({
+      name: 'invite_expired_total',
+      help: 'β-9 — Приглашение истекло без принятия.',
+      labelNames: [] as const,
+    });
+    this.magicLinkRequestTotal = this.getOrCreateCounter({
+      name: 'magic_link_request_total',
+      help: 'β-9 — Запрос magic-link. outcome = sent|rate_limited|user_not_found.',
+      labelNames: ['outcome'] as const,
+    });
+    this.magicLinkConsumeTotal = this.getOrCreateCounter({
+      name: 'magic_link_consume_total',
+      help: 'β-9 — Прожиг magic-link. outcome = ok|expired|already_used|invalid.',
+      labelNames: ['outcome'] as const,
     });
 
     // ── max bot (SBA β-1) ──────────────────────────────────────────
@@ -2644,6 +2717,58 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Принят webhook Update от Telegram. type ∈ {message, callback_query, command, edited_message, ignored, unknown}. */
   incTelegramBotWebhookReceived(args: { type: string }): void {
     this.telegramBotWebhookReceivedTotal.inc({ type: args.type });
+  }
+
+  // ────────────────────── telegram bot — глобальный (β-9) ─────────────
+
+  /**
+   * β-9 — Принят webhook от глобального Telegram-бота (без `:tenantId`).
+   * type ∈ {message, edited_message, unknown}.
+   */
+  incTelegramBotGlobalWebhookReceived(args: { type: string }): void {
+    this.telegramBotGlobalWebhookReceivedTotal.inc({ type: args.type });
+  }
+
+  /**
+   * β-9 — Незнакомый отправитель в глобальном Telegram-боте.
+   * reason ∈ {no_binding, no_membership}.
+   */
+  incTelegramBotUnknownSender(args: {
+    reason: 'no_binding' | 'no_membership';
+  }): void {
+    this.telegramBotUnknownSenderTotal.inc({ reason: args.reason });
+  }
+
+  // ────────────────────── invitations + magic-link (β-9) ─────────────
+
+  incInviteCreated(args: { hasEmail: boolean }): void {
+    this.inviteCreatedTotal.inc({ has_email: String(args.hasEmail) });
+  }
+
+  incInviteAccepted(args: {
+    path: 'magic_link' | 'password' | 'telegram_first';
+  }): void {
+    this.inviteAcceptedTotal.inc({ path: args.path });
+  }
+
+  incInviteReminderSent(args: { day: 7 | 14 }): void {
+    this.inviteReminderSentTotal.inc({ day: String(args.day) });
+  }
+
+  incInviteExpired(): void {
+    this.inviteExpiredTotal.inc();
+  }
+
+  incMagicLinkRequest(args: {
+    outcome: 'sent' | 'rate_limited' | 'user_not_found';
+  }): void {
+    this.magicLinkRequestTotal.inc({ outcome: args.outcome });
+  }
+
+  incMagicLinkConsume(args: {
+    outcome: 'ok' | 'expired' | 'already_used' | 'invalid';
+  }): void {
+    this.magicLinkConsumeTotal.inc({ outcome: args.outcome });
   }
 
   // ────────────────────── max bot (SBA β-1) ──────────────────────────

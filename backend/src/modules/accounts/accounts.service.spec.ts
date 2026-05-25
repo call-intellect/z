@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
+import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { RedisService } from '../../common/redis/redis.service';
 import type { DisposableEmailService } from '../mail/disposable-email.service';
 import type { MailService } from '../mail/mail.service';
 
@@ -10,6 +12,8 @@ import { AccountsService } from './accounts.service';
 import {
   DisposableEmailError,
   LoginInvalidError,
+  MagicLinkInvalidError,
+  MagicLinkRateLimitedError,
   ResetTokenInvalidError,
   CurrentPasswordInvalidError,
 } from './exceptions/accounts-errors';
@@ -51,6 +55,7 @@ describe('AccountsService', () => {
     updateName: ReturnType<typeof vi.fn>;
     createVerificationToken: ReturnType<typeof vi.fn>;
     findVerificationToken: ReturnType<typeof vi.fn>;
+    findVerificationTokenByHash: ReturnType<typeof vi.fn>;
     markVerificationTokenUsed: ReturnType<typeof vi.fn>;
   };
   let passwords: {
@@ -74,6 +79,11 @@ describe('AccountsService', () => {
   };
   let orgs: { createForOwner: ReturnType<typeof vi.fn> };
   let cfg: TypedConfigService;
+  let redis: { client: { incr: ReturnType<typeof vi.fn>; expire: ReturnType<typeof vi.fn> } };
+  let metrics: {
+    incMagicLinkRequest: ReturnType<typeof vi.fn>;
+    incMagicLinkConsume: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     repo = {
@@ -85,6 +95,7 @@ describe('AccountsService', () => {
       updateName: vi.fn(async () => makeUser({ name: 'Bob' })),
       createVerificationToken: vi.fn(),
       findVerificationToken: vi.fn(),
+      findVerificationTokenByHash: vi.fn(),
       markVerificationTokenUsed: vi.fn(),
     };
     passwords = {
@@ -109,7 +120,21 @@ describe('AccountsService', () => {
     orgs = { createForOwner: vi.fn(async () => ({ id: 'org-1', name: 'Компания Alice' })) };
     cfg = {
       auth: { publicFrontendUrl: 'https://z.app' },
+      invites: {
+        magicLinkRateLimitPerHour: 5,
+        magicLinkTtlMinutes: 15,
+      },
     } as unknown as TypedConfigService;
+    redis = {
+      client: {
+        incr: vi.fn(async () => 1),
+        expire: vi.fn(async () => 1),
+      },
+    };
+    metrics = {
+      incMagicLinkRequest: vi.fn(),
+      incMagicLinkConsume: vi.fn(),
+    };
   });
 
   function make(): AccountsService {
@@ -122,6 +147,11 @@ describe('AccountsService', () => {
       disposable as unknown as DisposableEmailService,
       cfg,
       orgs as unknown as import('../orgs/orgs.service').OrgsService,
+      redis as unknown as RedisService,
+      metrics as unknown as BusinessMetricsService,
+      // β-9: OrgInvitationsService — для acceptInvitationMagicLink.
+      // Не нужен в текущих тестах, поэтому пустой stub.
+      {} as unknown as import('../orgs/org-invitations.service').OrgInvitationsService,
     );
   }
 
@@ -403,6 +433,120 @@ describe('AccountsService', () => {
           newPassword: 'NewPass1',
         }),
       ).rejects.toBeInstanceOf(CurrentPasswordInvalidError);
+    });
+  });
+
+  // ─────────────────────────── magic-link (β-9) ──────────────────
+
+  describe('requestMagicLink', () => {
+    beforeEach(() => {
+      mail.sendPasswordReset.mockResolvedValue({ ok: true });
+    });
+
+    it('юзера нет → silent ok, metric=user_not_found', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(null);
+      const svc = make();
+      const r = await svc.requestMagicLink({ email: 'nobody@example.com' });
+      expect(r.emailSent).toBe(false);
+      expect(metrics.incMagicLinkRequest).toHaveBeenCalledWith({ outcome: 'user_not_found' });
+    });
+
+    it('юзер есть → создаёт token и шлёт письмо', async () => {
+      repo.findStandaloneByEmail.mockResolvedValue(makeUser());
+      const svc = make();
+      const r = await svc.requestMagicLink({ email: 'alice@example.com' });
+      expect(r.emailSent).toBe(true);
+      expect(repo.createVerificationToken).toHaveBeenCalledWith(
+        expect.objectContaining({ purpose: 'magic_link' }),
+      );
+      expect(mail.sendPasswordReset).toHaveBeenCalled();
+      expect(metrics.incMagicLinkRequest).toHaveBeenCalledWith({ outcome: 'sent' });
+    });
+
+    it('rate-limit: >5/час → MagicLinkRateLimitedError', async () => {
+      redis.client.incr.mockResolvedValueOnce(6);
+      const svc = make();
+      await expect(svc.requestMagicLink({ email: 'x@y.com' })).rejects.toBeInstanceOf(
+        MagicLinkRateLimitedError,
+      );
+      expect(metrics.incMagicLinkRequest).toHaveBeenCalledWith({ outcome: 'rate_limited' });
+    });
+  });
+
+  describe('consumeMagicLink', () => {
+    it('валидный token → открывает сессию, помечает usedAt', async () => {
+      repo.findVerificationTokenByHash.mockResolvedValue({
+        id: 't1',
+        userId: 'u1',
+        purpose: 'magic_link',
+        tokenHash: 'h',
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: null,
+      });
+      repo.findById.mockResolvedValue(makeUser());
+
+      const svc = make();
+      const r = await svc.consumeMagicLink({ token: 'raw-token' });
+      expect(r.token).toBe('jwt');
+      expect(sessions.issue).toHaveBeenCalled();
+      expect(repo.markVerificationTokenUsed).toHaveBeenCalledWith('t1', prisma);
+      expect(metrics.incMagicLinkConsume).toHaveBeenCalledWith({ outcome: 'ok' });
+    });
+
+    it('token не существует → MagicLinkInvalidError, metric=invalid', async () => {
+      repo.findVerificationTokenByHash.mockResolvedValue(null);
+      const svc = make();
+      await expect(svc.consumeMagicLink({ token: 'x' })).rejects.toBeInstanceOf(
+        MagicLinkInvalidError,
+      );
+      expect(metrics.incMagicLinkConsume).toHaveBeenCalledWith({ outcome: 'invalid' });
+    });
+
+    it('wrong purpose → MagicLinkInvalidError', async () => {
+      repo.findVerificationTokenByHash.mockResolvedValue({
+        id: 't1',
+        userId: 'u1',
+        purpose: 'password_reset',
+        tokenHash: 'h',
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: null,
+      });
+      const svc = make();
+      await expect(svc.consumeMagicLink({ token: 'x' })).rejects.toBeInstanceOf(
+        MagicLinkInvalidError,
+      );
+    });
+
+    it('уже использованный → metric=already_used', async () => {
+      repo.findVerificationTokenByHash.mockResolvedValue({
+        id: 't1',
+        userId: 'u1',
+        purpose: 'magic_link',
+        tokenHash: 'h',
+        expiresAt: new Date(Date.now() + 60_000),
+        usedAt: new Date(),
+      });
+      const svc = make();
+      await expect(svc.consumeMagicLink({ token: 'x' })).rejects.toBeInstanceOf(
+        MagicLinkInvalidError,
+      );
+      expect(metrics.incMagicLinkConsume).toHaveBeenCalledWith({ outcome: 'already_used' });
+    });
+
+    it('истёкший → metric=expired', async () => {
+      repo.findVerificationTokenByHash.mockResolvedValue({
+        id: 't1',
+        userId: 'u1',
+        purpose: 'magic_link',
+        tokenHash: 'h',
+        expiresAt: new Date(Date.now() - 1),
+        usedAt: null,
+      });
+      const svc = make();
+      await expect(svc.consumeMagicLink({ token: 'x' })).rejects.toBeInstanceOf(
+        MagicLinkInvalidError,
+      );
+      expect(metrics.incMagicLinkConsume).toHaveBeenCalledWith({ outcome: 'expired' });
     });
   });
 

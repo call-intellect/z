@@ -131,7 +131,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         if (!config.botToken) continue;
         await this.api.setMyCommands({ token: config.botToken, commands: [] });
         this.logger.log(
-          `telegram setMyCommands([]) ok channelId=${channel.id} tenantId=${channel.tenantId}`,
+          `telegram setMyCommands([]) ok channelId=${channel.id} tenantId=${channel.tenantId ?? 'GLOBAL'}`,
         );
       } catch (err) {
         this.logger.warn(
@@ -208,17 +208,30 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
   }
 
   /**
-   * Главный inbound-метод для webhook controller'а. Принимает Update
-   * + tenantId (резолвится из URL). Возвращает InboundMessage или null
-   * (если адаптер сам обработал сообщение — например, привязка, voice
-   * пошёл в ASR-pipeline или document отправлен в DocumentsService).
+   * Главный inbound-метод для webhook controller'а. Принимает Update +
+   * `channel` (после β-9 — глобальный, `tenantId IS NULL`). `tenantId`
+   * сообщения — опциональный аргумент: если передан (legacy путь
+   * `/webhooks/telegram-bot/:tenantId`), используем его; иначе — резолвим
+   * через `ChannelBinding → Membership` от `from.id`. Если отправитель
+   * незнаком (нет binding) или у него нет ни одного Membership —
+   * отвечаем подсказкой и возвращаем `null`.
+   *
+   * Возвращает `InboundMessage` или `null` (если адаптер сам обработал
+   * сообщение — привязка, voice → ASR, document → DocumentsService,
+   * незнакомый отправитель и т.п.).
    */
   async ingestUpdate(args: {
     update: TelegramUpdate;
-    tenantId: string;
+    /**
+     * Опциональный tenantId. Передаётся только legacy webhook'ом
+     * `/webhooks/telegram-bot/:tenantId` (deprecated в β-9). Для нового
+     * глобального webhook'а — `undefined`; tenantId резолвится из
+     * `ChannelBinding → Membership` отправителя.
+     */
+    tenantId?: string;
     channel: Channel;
   }): Promise<InboundMessage | null> {
-    const { update, tenantId, channel } = args;
+    const { update, channel } = args;
     const config = this.readChannelConfig(channel);
 
     const msg = update.message ?? update.edited_message;
@@ -241,8 +254,35 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    // β-9: tenantId либо задан вызывающим (legacy `:tenantId` webhook),
+    // либо резолвится из `ChannelBinding.userId → Membership.orgId`
+    // внутри handler'ов. Здесь готовим контекстный резолвер один раз.
+    const resolveTenantForBinding = async (
+      binding: ChannelBinding,
+    ): Promise<string | null> => {
+      if (args.tenantId) return args.tenantId;
+      const membership = await this.prisma.membership.findFirst({
+        where: { userId: binding.userId },
+        orderBy: { joinedAt: 'asc' },
+        select: { orgId: true },
+      });
+      if (!membership) {
+        this.metrics.incTelegramBotUnknownSender({ reason: 'no_membership' });
+        this.logger.warn(
+          { userId: binding.userId, tgUserId: String(tgUserId) },
+          'telegram inbound: binding есть, но у user нет ни одного Membership',
+        );
+        return null;
+      }
+      return membership.orgId;
+    };
+
     // 1. /start <token> — единственный разрешённый slash. Без аргумента —
     //    приветствие. С аргументом — попытка прожечь как link-code.
+    //    Для linking-flow tenantId не нужен (`linkCode.consume` хранит
+    //    userId, а Membership уже создан раньше через приглашение).
+    //    Передаём «-» как placeholder, если legacy путь не задал tenantId.
+    const tenantPlaceholder = args.tenantId ?? '';
     const text = (msg.text ?? '').trim();
     const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?$/i);
     if (startMatch) {
@@ -255,7 +295,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         code,
         tgUserId: String(tgUserId),
         chatId: msg.chat.id,
-        tenantId,
+        tenantId: tenantPlaceholder,
         channel,
         config,
       });
@@ -275,6 +315,16 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         config,
       });
       if (!binding) return null;
+      const tenantId = await resolveTenantForBinding(binding);
+      if (!tenantId) {
+        await this.replyToUserBestEffort({
+          config,
+          chatId: msg.chat.id,
+          text:
+            'Вы не привязаны к компании. Попросите руководителя выслать вам ссылку-приглашение в кабинет.',
+        });
+        return null;
+      }
       if (!this.cfg.bot.voiceEnabled) {
         await this.replyToUserBestEffort({
           config,
@@ -315,6 +365,16 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         config,
       });
       if (!binding) return null;
+      const tenantId = await resolveTenantForBinding(binding);
+      if (!tenantId) {
+        await this.replyToUserBestEffort({
+          config,
+          chatId: msg.chat.id,
+          text:
+            'Вы не привязаны к компании. Попросите руководителя выслать вам ссылку-приглашение в кабинет.',
+        });
+        return null;
+      }
       if (!this.cfg.bot.documentEnabled) {
         await this.replyToUserBestEffort({
           config,
@@ -370,7 +430,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           code: rawText,
           tgUserId: String(tgUserId),
           chatId: msg.chat.id,
-          tenantId,
+          tenantId: tenantPlaceholder,
           channel,
           config,
         });
@@ -388,6 +448,16 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       config,
     });
     if (!binding) return null;
+    const tenantId = await resolveTenantForBinding(binding);
+    if (!tenantId) {
+      await this.replyToUserBestEffort({
+        config,
+        chatId: msg.chat.id,
+        text:
+          'Вы не привязаны к компании. Попросите руководителя выслать вам ссылку-приглашение в кабинет.',
+      });
+      return null;
+    }
 
     this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'text' });
 
@@ -807,6 +877,9 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
 
   /**
    * Резолв verified binding'а. Если нет — best-effort reply и null.
+   * β-9: дополнительно инкрементим `telegram_bot_unknown_sender_total{reason='no_binding'}`,
+   * чтобы видеть массовые попытки войти в бот без приглашения (типичный
+   * сигнал, что нужно перевыпустить ссылку или пользователь незнаком).
    */
   private async requireVerifiedBinding(args: {
     tgUserId: string;
@@ -818,6 +891,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       where: { channelId: args.channelId, externalId: args.tgUserId },
     });
     if (!binding || !binding.verifiedAt) {
+      this.metrics.incTelegramBotUnknownSender({ reason: 'no_binding' });
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,

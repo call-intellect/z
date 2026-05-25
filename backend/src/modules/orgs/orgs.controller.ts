@@ -151,7 +151,8 @@ export class OrgsController {
     const invitation = await this.invitations.createInvitation({
       orgId: id,
       actorUserId: user.id,
-      email: body.email,
+      email: body.email ?? null,
+      name: body.name ?? null,
       role: body.role,
     });
     return { invitation };
@@ -175,6 +176,45 @@ export class OrgsController {
   ): Promise<{ ok: true }> {
     await this.invitations.revoke(id, invitationId, user.id);
     return { ok: true };
+  }
+
+  /**
+   * β-9 (2026-05-25) — перевыпуск приглашения: новый linkCode + magicToken,
+   * повторная отправка письма (если email указан). Доступ — owner/admin.
+   */
+  @Post(':id/invitations/:invitationId/resend')
+  @HttpCode(HttpStatus.OK)
+  async resendInvitation(
+    @Param('id') id: string,
+    @Param('invitationId') invitationId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const invitation = await this.invitations.resendInvitation(
+      id,
+      invitationId,
+      user.id,
+    );
+    return { invitation };
+  }
+
+  /**
+   * β-9 (2026-05-25) — сброс привязки Telegram-бота сотрудника директором
+   * (на случай смены телефона/потери доступа). Удаляет все ChannelBinding
+   * пользователя для kind='telegram_bot'. Доступ — owner/admin.
+   */
+  @Delete(':id/members/:userId/telegram-binding')
+  @HttpCode(HttpStatus.OK)
+  async resetMemberTelegramBinding(
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true; removed: number }> {
+    const result = await this.invitations.resetMemberTelegramBinding({
+      orgId: id,
+      targetUserId,
+      actorUserId: user.id,
+    });
+    return { ok: true, removed: result.removed };
   }
 }
 

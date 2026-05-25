@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`seed-llm-task-routes-skill-and-clone — snapshot защиты от случайных правок модели > clone-respond — цепочка стабильна > clone-respond-chain 1`] = `
+[
+  {
+    "model": "deepseek-v4-flash",
+    "providerName": "deepseek",
+    "tier": "primary",
+  },
+  {
+    "model": "gpt-5.4-mini",
+    "providerName": "openai-via-proxy",
+    "tier": "secondary",
+  },
+  {
+    "model": "qwen3:30b",
+    "providerName": "ollama",
+    "tier": "tertiary",
+  },
+]
+`;
+
+exports[`seed-llm-task-routes-skill-and-clone — snapshot защиты от случайных правок модели > executable-persona-compile — цепочка стабильна > executable-persona-compile-chain 1`] = `
+[
+  {
+    "model": "deepseek-v4-flash",
+    "providerName": "deepseek",
+    "tier": "primary",
+  },
+  {
+    "model": "gpt-5.4-mini",
+    "providerName": "openai-via-proxy",
+    "tier": "secondary",
+  },
+  {
+    "model": "qwen3:30b",
+    "providerName": "ollama",
+    "tier": "tertiary",
+  },
+]
+`;
+
+exports[`seed-llm-task-routes-skill-and-clone — snapshot защиты от случайных правок модели > skill-trait-detect — primary/secondary/tertiary заморожены > skill-trait-detect-chain 1`] = `
+[
+  {
+    "model": "gpt-5.4",
+    "providerName": "openai-via-proxy",
+    "tier": "primary",
+  },
+  {
+    "model": "deepseek-v4-pro",
+    "providerName": "deepseek",
+    "tier": "secondary",
+  },
+  {
+    "model": "qwen3:30b",
+    "providerName": "ollama",
+    "tier": "tertiary",
+  },
+]
+`;
+
+exports[`seed-llm-task-routes-skill-and-clone — snapshot защиты от случайных правок модели > skill-trait-merge — цепочка стабильна > skill-trait-merge-chain 1`] = `
+[
+  {
+    "model": "deepseek-v4-flash",
+    "providerName": "deepseek",
+    "tier": "primary",
+  },
+  {
+    "model": "gpt-5.4-mini",
+    "providerName": "openai-via-proxy",
+    "tier": "secondary",
+  },
+  {
+    "model": "qwen3:30b",
+    "providerName": "ollama",
+    "tier": "tertiary",
+  },
+]
+`;

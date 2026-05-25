@@ -33,6 +33,11 @@ export type LlmRouteUi = {
   tertiary?: LlmRouteTierEntryUi;
   editedByAdmin: boolean;
   requiredDataClass: string;
+  /**
+   * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии модели.
+   * null = не закреплено (для критичных агентов UI показывает предупреждение).
+   */
+  pinnedVersionNote: string | null;
 };
 
 const EMPTY_MODEL_PLACEHOLDER = '—';
@@ -86,6 +91,17 @@ export function llmRoutesUiListFromApi(
     let tertiary: LlmRouteTierEntryUi | undefined;
     let editedByAdmin = false;
     let requiredDataClass = 'public';
+    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — берём первое
+    // непустое значение из любой записи по этому taskType (заметка
+    // синхронизируется backend'ом на все строки одного taskType).
+    let pinnedVersionNote: string | null = null;
+    for (const r of rows) {
+      const v = r.pinnedVersionNote;
+      if (typeof v === 'string' && v.length > 0) {
+        pinnedVersionNote = v;
+        break;
+      }
+    }
 
     if (tieredRows.length > 0) {
       // Внутри tier'а может быть несколько записей — берём с минимальным priority.
@@ -122,6 +138,7 @@ export function llmRoutesUiListFromApi(
       ...(tertiary ? { tertiary } : {}),
       editedByAdmin,
       requiredDataClass,
+      pinnedVersionNote,
     });
   }
 

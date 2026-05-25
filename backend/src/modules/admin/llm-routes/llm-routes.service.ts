@@ -34,6 +34,10 @@ export class LlmRoutesService {
         ...(p.model ? { model: p.model } : {}),
       })),
       isActive: dto.isActive,
+      // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии.
+      ...(dto.pinnedVersionNote !== undefined
+        ? { pinnedVersionNote: dto.pinnedVersionNote }
+        : {}),
     });
     const updated = (await this.router.getRoutes()).find(
       (r) => r.taskType === taskType && r.tenantId === null,

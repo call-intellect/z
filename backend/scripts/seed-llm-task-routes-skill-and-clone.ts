@@ -42,7 +42,16 @@
 
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — ленивая инициализация
+// PrismaClient, чтобы snapshot-тест мог импортировать `SEEDS` без поднятия БД
+// (см. `seed-llm-task-routes-skill-and-clone.snapshot.spec.ts`).
+let prismaInstance: PrismaClient | null = null;
+function getPrisma(): PrismaClient {
+  if (!prismaInstance) {
+    prismaInstance = new PrismaClient();
+  }
+  return prismaInstance;
+}
 
 interface TierEntry {
   tier: LlmRouteTier;
@@ -146,7 +155,7 @@ async function applySeed(
     const entry = seed.chain[i];
     if (!entry) continue;
     const priority = i;
-    const existing = await prisma.llmTaskRoute.findFirst({
+    const existing = await getPrisma().llmTaskRoute.findFirst({
       where: {
         taskType: seed.taskType,
         tenantId: null,
@@ -155,7 +164,7 @@ async function applySeed(
       },
     });
     if (!existing) {
-      await prisma.llmTaskRoute.create({
+      await getPrisma().llmTaskRoute.create({
         data: {
           taskType: seed.taskType,
           tenantId: null,
@@ -195,7 +204,7 @@ async function applySeed(
       stats.skipped++;
       continue;
     }
-    await prisma.llmTaskRoute.update({
+    await getPrisma().llmTaskRoute.update({
       where: { id: existing.id },
       data: {
         model: entry.model,
@@ -243,14 +252,24 @@ async function main(): Promise<void> {
   console.log('=== seed-llm-task-routes-skill-and-clone DONE ===');
 }
 
-main()
-  .catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error('seed-llm-task-routes-skill-and-clone FAILED:', err);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// Импорт-only из тестов: запускаем main() только если это прямой запуск скрипта.
+// import.meta.main === true в Bun-runtime для точки входа.
+declare const importMeta: { main?: boolean };
+const isMain =
+  typeof import.meta !== 'undefined' &&
+  (import.meta as unknown as importMeta).main === true;
+if (isMain) {
+  main()
+    .catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('seed-llm-task-routes-skill-and-clone FAILED:', err);
+      process.exit(1);
+    })
+    .finally(async () => {
+      if (prismaInstance) {
+        await prismaInstance.$disconnect();
+      }
+    });
+}
 
 export { SEEDS };

@@ -47,6 +47,20 @@ import {
   SelectValue,
 } from '@/ui/shadcn/select';
 import { Switch } from '@/ui/shadcn/switch';
+import { Textarea } from '@/ui/shadcn/textarea';
+
+/**
+ * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — критичные агенты,
+ * для которых отсутствие заметки о закреплённой версии модели должно
+ * подсвечиваться предупреждением. Прокси DeepSeek версионные slug-и не
+ * поддерживает — при обновлении модели провайдером поведение может
+ * непредсказуемо измениться.
+ */
+const PINNED_VERSION_CRITICAL_TASK_TYPES = new Set<string>([
+  'skill-trait-detect',
+  'clone-respond',
+  'block-ingest',
+]);
 
 type TierForm = {
   enabled: boolean;
@@ -90,7 +104,15 @@ export function EditRouteDialog({
     defaultTier(route.tertiary, 'ollama'),
   );
   const [isActive, setIsActive] = useState(true);
+  // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии модели.
+  const [pinnedVersionNote, setPinnedVersionNote] = useState<string>(
+    () => route.pinnedVersionNote ?? '',
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  const isCriticalTaskType = PINNED_VERSION_CRITICAL_TASK_TYPES.has(route.taskType);
+  const showPinWarning =
+    isCriticalTaskType && pinnedVersionNote.trim().length === 0;
 
   // Если хотя бы один tier включён и primary не пуст — считаем что primary он же.
   // Primary тоже может быть отключён (роут вырубается целиком через isActive=false).
@@ -116,11 +138,15 @@ export function EditRouteDialog({
       provider: t.provider,
       ...(t.model.trim() ? { model: t.model.trim() } : {}),
     }));
+    // ТЗ Фаза 6.5: trim — пустая строка означает «снять закрепление» (отправляем null).
+    const trimmedNote = pinnedVersionNote.trim();
+    const pinnedPayload: string | null = trimmedNote.length > 0 ? trimmedNote : null;
     setSubmitting(true);
     try {
       await adminLlmRoutesApi.upsert(route.taskType, {
         providers,
         isActive,
+        pinnedVersionNote: pinnedPayload,
       });
       toast.success('Роут сохранён');
       await onSaved();
@@ -150,6 +176,25 @@ export function EditRouteDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {showPinWarning && (
+            <div className="rounded-md border border-chip-warning-bg bg-chip-warning-bg/60 p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <AlertTriangle
+                  size={16}
+                  className="mt-0.5 shrink-0 text-chip-warning-fg"
+                />
+                <div className="text-chip-warning-fg">
+                  <strong>Этот роут не имеет закреплённой версии модели.</strong>{' '}
+                  Прокси DeepSeek не поддерживает версионные slug-и, поэтому при
+                  обновлении провайдером модели на новую — поведение может
+                  непредсказуемо измениться. Перед сменой модели — прогнать
+                  golden-набор. Для закрепления — заполните поле «Заметка о
+                  версии» ниже.
+                </div>
+              </div>
+            </div>
+          )}
+
           <TierBlock
             title="Primary (основной)"
             description="Используется первым. Если упал — пробуем secondary."
@@ -180,6 +225,26 @@ export function EditRouteDialog({
                 Если выключено, LLM-Router не будет использовать эту цепочку.
               </div>
             </div>
+          </div>
+
+          {/* ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заметка о закреплении версии. */}
+          <div className="space-y-1.5 rounded-md border border-border-subtle p-3">
+            <Label className="text-sm font-medium text-fg-primary">
+              Заметка о версии (закрепление)
+            </Label>
+            <div className="text-xs text-fg-secondary">
+              Свободный текст: какую версию модели закрепили и почему. Пример —
+              «закреплено на deepseek-v4-pro версии 2026-04-15; перед обновлением
+              — прогнать golden-набор skill-trait-detect-golden». Оставьте пустым,
+              чтобы снять закрепление.
+            </div>
+            <Textarea
+              value={pinnedVersionNote}
+              onChange={(e) => setPinnedVersionNote(e.target.value)}
+              placeholder="Например: закреплено на deepseek-v4-pro версии 2026-04-15…"
+              rows={3}
+              maxLength={2000}
+            />
           </div>
 
           <div className="rounded-md border border-chip-warning-bg bg-chip-warning-bg/30 p-3 text-sm">

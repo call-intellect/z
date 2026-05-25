@@ -13,7 +13,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.spec.ts', 'test/**/*.spec.ts', 'test/**/*.test.ts'],
+    include: [
+      'src/**/*.spec.ts',
+      'test/**/*.spec.ts',
+      'test/**/*.test.ts',
+      // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 —
+      // snapshot-тесты на seed-скрипты критичных LLM-роутов.
+      'scripts/**/*.spec.ts',
+    ],
     fileParallelism: false,
     setupFiles: ['./test/setup-test-env.ts'],
     coverage: {

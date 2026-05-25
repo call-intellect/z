@@ -173,6 +173,13 @@ export class AdminFunctionsService {
     taskType: string;
     providers: Array<{ provider: LlmProviderName; model?: string }>;
     isActive: boolean;
+    /**
+     * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии.
+     * Текстовая пометка о закреплении модели (см. `LlmTaskRoute.pinnedVersionNote`).
+     * undefined — поле не передавалось (не трогаем существующее значение).
+     * null или пустая строка — снять закрепление.
+     */
+    pinnedVersionNote?: string | null;
   }): Promise<{ ok: true }> {
     if (!(ALL_LLM_TASK_TYPES as readonly string[]).includes(args.taskType)) {
       throw new Error(`Unknown taskType: ${args.taskType}`);
@@ -199,11 +206,35 @@ export class AdminFunctionsService {
       where: { taskType: args.taskType, tenantId: null },
     });
     const providersJson: Prisma.InputJsonValue = validProviders as unknown as Prisma.InputJsonValue;
+    // Нормализуем pinnedVersionNote: пустая строка → null (снять закрепление).
+    const pinnedVersionNote =
+      args.pinnedVersionNote !== undefined
+        ? args.pinnedVersionNote && args.pinnedVersionNote.trim().length > 0
+          ? args.pinnedVersionNote
+          : null
+        : undefined;
+
     if (existing) {
       await this.prisma.llmTaskRoute.update({
         where: { id: existing.id },
-        data: { providers: providersJson, isActive: args.isActive },
+        data: {
+          providers: providersJson,
+          isActive: args.isActive,
+          ...(pinnedVersionNote !== undefined ? { pinnedVersionNote } : {}),
+        },
       });
+      // ТЗ Фаза 6.5: при наличии нескольких записей по taskType (по tier'ам)
+      // — синхронизируем заметку о версии на все, чтобы UI видел единое значение.
+      if (pinnedVersionNote !== undefined) {
+        await this.prisma.llmTaskRoute.updateMany({
+          where: {
+            taskType: args.taskType,
+            tenantId: null,
+            id: { not: existing.id },
+          },
+          data: { pinnedVersionNote },
+        });
+      }
     } else {
       await this.prisma.llmTaskRoute.create({
         data: {
@@ -211,6 +242,7 @@ export class AdminFunctionsService {
           tenantId: null,
           providers: providersJson,
           isActive: args.isActive,
+          ...(pinnedVersionNote !== undefined ? { pinnedVersionNote } : {}),
         },
       });
     }

@@ -82,6 +82,9 @@ const LlmRouteRawSchema = z.object({
   isActive: z.boolean(),
   editedByAdmin: z.boolean().optional(),
   requiredDataClass: z.string().nullable().optional(),
+  // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии модели.
+  // Прокси DeepSeek версионные slug-и не поддерживает, поэтому здесь свободный текст.
+  pinnedVersionNote: z.string().nullable().optional(),
   // Legacy: массив { provider, model? }.
   providers: z.array(LlmRouteProviderSchema).optional().nullable(),
   updatedAt: z.string().optional(),
@@ -112,6 +115,7 @@ export type LlmRouteApi = {
   model?: string | null;
   editedByAdmin?: boolean;
   requiredDataClass?: string | null;
+  pinnedVersionNote?: string | null;
 };
 
 export const PutLlmRouteSchema = z.object({
@@ -125,6 +129,9 @@ export const PutLlmRouteSchema = z.object({
     .min(1)
     .max(10),
   isActive: z.boolean(),
+  // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии модели.
+  // Свободный текст; null или пустая строка — снять закрепление.
+  pinnedVersionNote: z.string().max(2000).nullable().optional(),
 });
 
 export type PutLlmRouteRequest = z.infer<typeof PutLlmRouteSchema>;

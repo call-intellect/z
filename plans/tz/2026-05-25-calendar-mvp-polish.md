@@ -67,32 +67,54 @@
 
 **Время:** 1 час.
 
-### Фаза P4 — UserPicker (общий компонент выбора пользователя)
+### Фаза P4 — ParticipantPicker (общий компонент выбора участника)
 
-**Проблема:** EventForm.participants требует userId через запятую — нерабочий UX. Решение: компонент с поиском по имени, переиспользуемый в трекере / правах доступа.
+**Проблема:** EventForm.participants требует userId через запятую — нерабочий UX. Но также реальные события часто **не имеют участников из нашей Org**: «созвон с клиентом», «встреча с партнёром», «обед», «поход в больницу». Решение: компонент с поиском по имени из **трёх источников** + свободный ввод, переиспользуемый в трекере / правах доступа.
 
-**Решение:**
+**Четыре сценария использования:**
+1. **Без участников** — для `kind=personal_block` / `deadline` поле вообще скрывается; для `meeting`/`call`/`offline_meeting` — опционально (можно пустое: «созвон с клиентом» без указания кто именно).
+2. **Коллега из Org** — выбор из `User` через поиск по имени → создаётся `EventParticipant { userId }`.
+3. **Внешний контакт** — выбор из существующего `Person { relationship: 'external' }` (клиенты, партнёры) → `EventParticipant { personId }`.
+4. **Свободный ввод** — «Иван Иванов из Спортмастера», без выбора из списка → автоматически создаём `Person { name, relationship: 'external', tenantId, email: null }` → `EventParticipant { personId }`.
 
 **Backend:**
-1. Новый эндпоинт `GET /api/v1/users/search?q=Вас&limit=10` — `event_card.read` или общий `org_member.read`:
-   - Возвращает `{ items: [{userId, name, email, primaryRole?}] }`.
-   - Поиск по `name LIKE %q%` OR `email LIKE %q%` среди членов текущей Org (через `Membership`).
-   - Limit ≤ 20, response отсортирован по релевантности (точное совпадение начала имени → выше).
-2. RBAC: любой авторизованный member своей Org может искать (нет sensitive данных, кроме email).
+1. Новый эндпоинт `GET /api/v1/org-members/search?q=Иван&limit=10` — RBAC `event_card.read` (или общий `org_member.read` если хочешь):
+   - Возвращает массив объединённых результатов:
+     ```
+     items: [
+       { type: 'user', userId, name, email, primaryRole?, avatarUrl? },
+       { type: 'person', personId, name, email?, relationship: 'external'|'employee', primaryDepartment? }
+     ]
+     ```
+   - Поиск по `name LIKE %q%` OR `email LIKE %q%` в обеих таблицах (`User`+`Membership` для tenant + `Person` для tenant).
+   - Сортировка: точное совпадение начала имени → User'ы выше Person'ов (коллеги приоритетнее) → по алфавиту.
+   - Limit ≤ 20.
+2. Новый эндпоинт `POST /api/v1/persons/quick-create` — для свободного ввода:
+   - Тело: `{ name: string, email?: string, phone?: string }`.
+   - Создаёт `Person { name, email?, relationship: 'external', tenantId }` (минимальный набор).
+   - Дубль-защита: если в Org уже есть Person с таким email или (name + пустой email) — возвращает существующий вместо создания нового.
+   - Возвращает `{ personId, name, email }`.
+3. RBAC: любой авторизованный member своей Org может искать (нет sensitive данных, кроме email). Quick-create требует `event_card.write` (раз использовали при создании события).
 
 **Frontend:**
-3. Новый общий компонент `frontend/src/ui/shared/UserPicker.tsx`:
+4. Новый общий компонент `frontend/src/ui/shared/ParticipantPicker.tsx`:
    - Radix Combobox (или Popover + Input + список).
-   - Принимает `value: UserPickerItem[]` + `onChange`. Поддерживает multi-select.
-   - Debounce 250мс на ввод → `usersApi.search(q)`.
+   - Принимает `value: ParticipantPickerItem[]` (`{type: 'user', userId, name} | {type: 'person', personId, name}`) + `onChange`. Multi-select.
+   - Debounce 250мс на ввод → `orgMembersApi.search(q)`.
    - SWR-кэш по `q` (TTL 60с).
-   - Рендерит chips (выбранные) + input для добавления + дропдаун с результатами.
-4. Встроить `UserPicker` в `EventForm` — заменить текстовое поле participants.
-5. **(Опционально, в этом же ТЗ)** Встроить в `IssueForm` трекера (`AssigneeAvatar` уже есть, но select по ID — заменить на UserPicker). Если трекер уже трогать сложно — пропустить, оставить TODO.
+   - Рендерит chips (выбранные с иконкой 👤 для user / ◯ для external) + input для добавления + dropdown с результатами + последним пунктом всегда «➕ Добавить «{введённый текст}» как внешний контакт» (если q.length >= 2 и нет точного совпадения) → вызывает `personsApi.quickCreate({name: q})` → добавляет в выбранные.
+5. Встроить `ParticipantPicker` в `EventForm`:
+   - Поле «Участники» — `ParticipantPicker` вместо строки.
+   - Прячется когда `kind ∈ {personal_block, deadline}`.
+   - Опционально для остальных `kind` (можно не заполнять).
+6. **(Опционально)** Встроить в `IssueForm` трекера для assignee/subscribers. Если уже есть `AssigneeAvatar` с собственным select — оставить, не трогать (это отдельная задача). Если хочется минимизировать — пропустить, оставить TODO.
 
-**Тесты:** unit на сервер-search + integration на EventForm создаёт событие с участниками.
+**Тесты:**
+- backend: unit на org-members-search возвращает оба type'а, quick-create dedup'ит по email.
+- frontend: компонент рендерит результаты, свободный ввод создаёт Person, multi-select работает.
+- integration: EventForm создаёт событие с миксом userId+personId участников.
 
-**Время:** 4-6 часов.
+**Время:** 5-7 часов (расширилось с 4-6 из-за trех источников + quick-create).
 
 ## Impact list
 

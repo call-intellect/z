@@ -28,6 +28,7 @@ import {
   KNOWLEDGE_CLONE_MERGE_SYSTEM_PROMPT,
   KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE,
 } from '../prompts/knowledge-clone-merge.prompt';
+import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';
 
 /**
@@ -72,6 +73,8 @@ export class Specialist32Service {
     private readonly probes: Specialist32ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(KnowledgeEmbeddingService)
+    private readonly embeddings: KnowledgeEmbeddingService,
   ) {}
 
   /**
@@ -277,6 +280,14 @@ export class Specialist32Service {
             type: Specialist32Service.METRIC_TYPE,
             status: 'canonical',
           });
+          // ТЗ 2026-05-25 Фаза 4 — обновить семантический индекс категорий.
+          // Best-effort: если embedding-сервис упал, не валим rebuild —
+          // следующая успешная пересборка перетрёт.
+          await this.rebuildCategoryEmbeddings({
+            tenantId: args.tenantId,
+            personId: person.id,
+            profile: serialized,
+          });
         } catch (err) {
           this.metrics.incCoreSpecialistExtractionFailure({
             type: Specialist32Service.METRIC_TYPE,
@@ -326,6 +337,115 @@ export class Specialist32Service {
         seconds: (Date.now() - start) / 1000,
       });
     }
+  }
+
+  /**
+   * ТЗ 2026-05-25 Фаза 4 — пересборка семантического индекса категорий
+   * `PersonKnowledgeCategoryEmbedding` после успешного обновления
+   * `Person.knowledgeProfile`.
+   *
+   * Шаги:
+   *   1. Удалить все старые embedding-строки этого Person'а (где
+   *      profileBuildVersion < newVersion).
+   *   2. Для каждой категории посчитать embedding из
+   *      `categoryName + ' ' + sampleStatements[0].quote`.
+   *   3. Записать новые строки.
+   *
+   * Best-effort:
+   *   - Если embedding-сервис упал — пропускаем (поправится при следующем
+   *     успешном rebuild).
+   *   - На каждую запись — try/catch (нет уникального constraint, дубликаты
+   *     допустимы и перетрутся на следующем rebuild).
+   *
+   * Публичный — чтобы backfill-скрипт мог его переиспользовать.
+   */
+  async rebuildCategoryEmbeddings(args: {
+    tenantId: string;
+    personId: string;
+    profile: SerializedKnowledgeProfile;
+  }): Promise<{ built: number }> {
+    const newVersion = args.profile.version;
+    try {
+      await this.prisma.personKnowledgeCategoryEmbedding.deleteMany({
+        where: {
+          personId: args.personId,
+          profileBuildVersion: { lt: newVersion },
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          personId: args.personId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-2.rebuildCategoryEmbeddings: deleteMany упал — продолжаем',
+      );
+    }
+
+    let built = 0;
+    for (const c of args.profile.categories) {
+      const sampleQuote = c.sampleStatements[0]?.quote ?? '';
+      const textForEmbed = `${c.name} ${sampleQuote}`.trim();
+      if (textForEmbed.length === 0) continue;
+
+      let vec: number[] | null;
+      try {
+        vec = await this.embeddings.embedQuery(textForEmbed);
+      } catch (err) {
+        this.logger.warn(
+          {
+            personId: args.personId,
+            categoryName: c.name,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-2.rebuildCategoryEmbeddings: embedQuery упал — skip категории',
+        );
+        continue;
+      }
+      if (!vec || vec.length === 0) continue;
+
+      try {
+        // Сначала создаём строку без embedding (Prisma сгенерирует id и
+        // builtAt). Затем — UPDATE с raw SQL для pgvector-колонки,
+        // т.к. Unsupported-тип нельзя выставить через стандартный API.
+        const created = await this.prisma.personKnowledgeCategoryEmbedding.create({
+          data: {
+            tenantId: args.tenantId,
+            personId: args.personId,
+            categoryName: c.name.slice(0, 200),
+            confidence: c.confidence,
+            profileBuildVersion: newVersion,
+          },
+          select: { id: true },
+        });
+        const vecLiteral = `[${vec.join(',')}]`;
+        await this.prisma.$executeRaw`
+          UPDATE person_knowledge_category_embeddings
+          SET embedding = ${vecLiteral}::vector
+          WHERE id = ${created.id}
+        `;
+        built += 1;
+      } catch (err) {
+        this.logger.warn(
+          {
+            personId: args.personId,
+            categoryName: c.name,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-2.rebuildCategoryEmbeddings: INSERT упал — skip категории',
+        );
+      }
+    }
+
+    this.logger.log(
+      {
+        personId: args.personId,
+        built,
+        total: args.profile.categories.length,
+      },
+      `personKnowledgeCategoryEmbeddings: built ${built} rows for personId=${args.personId}`,
+    );
+    return { built };
   }
 
   // ──────────────────── приватные методы ────────────────────

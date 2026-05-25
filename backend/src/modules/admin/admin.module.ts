@@ -33,6 +33,7 @@ import { AdminUsageController } from './controllers/admin-usage.controller';
 import { OrgAdminKnowledgeController } from './controllers/org-admin-knowledge.controller';
 import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { AdminPlansModule } from './plans/plans.module';
+import { IntegrationsAdminModule } from './integrations/integrations-admin.module';
 import { IntegrationKeysAdminController } from './integration-keys.controller';
 import { LlmRoutesController } from './llm-routes/llm-routes.controller';
 import { LlmRoutesService } from './llm-routes/llm-routes.service';
@@ -90,6 +91,9 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     // Admin-redesign Фаза 5 — Контент продукта: типы встреч, шаблоны писем,
     // системные сообщения (баннеры), глобальные каналы, UI-строки.
     ContentAdminModule,
+    // Admin-redesign Фаза 6 — Каналы и интеграции: Telegram/MAX-боты,
+    // webhook subscriptions/deliveries management, LiveKit health.
+    IntegrationsAdminModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

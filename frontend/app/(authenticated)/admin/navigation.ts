@@ -299,7 +299,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         label: 'Conversational боты',
         icon: MessagesSquare,
         matchPrefix: '/admin/integrations/bots',
-        isComingSoon: true,
       },
       {
         href: '/admin/system/telegram-bot',
@@ -308,13 +307,13 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         matchPrefix: '/admin/system/telegram-bot',
       },
       {
-        href: '/admin/webhooks',
+        href: '/admin/integrations/webhooks',
         label: 'Webhook subscriptions',
         icon: Plug,
-        matchPrefix: '/admin/webhooks',
+        matchPrefix: '/admin/integrations/webhooks',
       },
       {
-        href: '/admin/integration-keys',
+        href: '/admin/integrations/keys',
         label: 'Integration keys',
         icon: KeyRound,
         matchPrefix: '/admin/integration-keys',
@@ -324,7 +323,6 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         label: 'LiveKit',
         icon: Video,
         matchPrefix: '/admin/integrations/livekit',
-        isComingSoon: true,
       },
     ],
   },

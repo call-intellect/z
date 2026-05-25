@@ -1,11 +1,13 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { AdminWebhooksClient } from './AdminWebhooksClient';
-
-export const metadata: Metadata = {
-  title: 'Авто-уведомления — Z',
-};
-
-export default function AdminWebhooksPage() {
-  return <AdminWebhooksClient />;
+/**
+ * `/admin/webhooks` — старый URL. После Фазы 6 редизайна (2026-05-25) этот
+ * раздел переехал под `/admin/integrations/webhooks`. Здесь — redirect, чтобы
+ * закладки/ссылки продолжали работать.
+ *
+ * Сам клиент `AdminWebhooksClient` остаётся в этой же папке — он реиспользуется
+ * вкладкой «Активные» из `WebhooksIntegrationsClient`.
+ */
+export default function LegacyAdminWebhooksRedirect(): never {
+  redirect('/admin/integrations/webhooks');
 }

@@ -70,19 +70,58 @@ GET    /api/v1/admin/settings/:key/history last 50
 
 Все эндпоинты под `SuperAdminGuard` + `SuperAdminAuditInterceptor`. Если severity `high`/`destructive` — `reason` обязателен на уровне Zod-DTO.
 
-## TypedConfigService.getDynamic
+## TypedConfigService — два пути чтения AdminSetting
 
-[backend/src/common/config/typed-config.service.ts](backend/src/common/config/typed-config.service.ts) расширен:
+[backend/src/common/config/typed-config.service.ts](backend/src/common/config/typed-config.service.ts) предоставляет **два метода**, разделённых по сценарию использования:
 
-```ts
-async getDynamic<T>(key: string, fallbackEnvKey?: string, defaultValue?: T): Promise<T> {
-  // 1. AdminSettingsService.get(key) — если есть, вернуть.
-  // 2. fallbackEnvKey → process.env[...] через текущий схема-валидатор.
-  // 3. defaultValue.
-}
-```
+### `getDynamic<T>(adminKey, envFallbackKey?, defaultValue?): Promise<T>` (async)
 
-`get(key)` остаётся синхронным и читает только ENV (для bootstrap-критичных значений: PORT, DATABASE_URL, REDIS_URL — их в БД нет и быть не должно).
+Ленивый async-путь — на каждый вызов идёт через `AdminSettingsService.get(adminKey)` (LRU TTL 30s, при miss — SELECT из БД), потом ENV-fallback, потом default. Используется в новых async-кодах, где нет sync-ограничения. Сейчас — в 2 местах: [dataclass-policy.service.ts](backend/src/modules/knowledge-core/services/dataclass-policy.service.ts), [operations-daily-digest.cron.ts](backend/src/modules/operations/workers/operations-daily-digest.cron.ts).
+
+### `resolveSync<T>(adminKey, envFallbackKey?, defaultValue?): T` (sync)
+
+Eager sync-путь — читает из `TypedConfigService.cacheMap`, заполненного на bootstrap через [AdminSettingsBootstrapService](backend/src/modules/admin/settings/admin-settings-bootstrap.service.ts). Поведение: cache → ENV → default. **Если `envFallbackKey` задан, но всё равно ничего нет — возвращает `undefined` вместо throws** (для optional ENV-ключей вроде `EMBEDDING_FALLBACK_LOCAL_URL`); throws — только если `envFallbackKey` не передан и default отсутствует.
+
+Используется в типизированных геттерах `TypedConfigService` (`cfg.workspace.maxX`, `cfg.retention.shareViewDays`, …) — потому что они вызываются из `@Cron`-декораторов, guards, конструкторов сервисов, где async неприемлем.
+
+### Сравнение
+
+| | `getDynamic` | `resolveSync` |
+|---|---|---|
+| Сигнатура | `async` | `sync` |
+| Источник | LRU TTL 30s + SELECT | eager cacheMap |
+| Bootstrap-зависимость | нет | да (без bootstrap'а — fallback на ENV) |
+| Max staleness | 30s | ≈ Redis-RTT (≤ 100ms) |
+| Для чего | редкие случаи без ENV-аналога, async-контексты | существующие синхронные геттеры |
+
+### Eager hydrate + invalidate
+
+[AdminSettingsBootstrapService](backend/src/modules/admin/settings/admin-settings-bootstrap.service.ts) на `onApplicationBootstrap` делает один SELECT `AdminSetting` и вызывает `cfg.hydrateSync(entries)`. При недоступной БД — лог WARN, кэш остаётся пустым, `resolveSync` падает на ENV/default.
+
+[AdminSettingsService.set()](backend/src/modules/admin/settings/admin-settings.service.ts) после транзакции UPSERT вызывает локально `cfg.applySync(key, value)` и публикует в Redis `{ key, value }` (а не только `{ key }`, как было до Фазы 1 миграции). Все процессы на подписке `admin:setting:invalidate` парсят payload и тоже зовут `cfg.applySync(key, value)`. Так max staleness между процессами — Redis-RTT, без повторного DB-roundtrip.
+
+`get(key)` остаётся синхронным и читает только ENV — для bootstrap-критичных значений (`PORT`, `DATABASE_URL`, `REDIS_URL`, JWT secrets, S3 ключи).
+
+## Какие геттеры уже на resolveSync
+
+По состоянию на 2026-05-25 (миграция env→AdminSetting Фазы 1-5):
+
+- [x] `cfg.workspace.*` — 22 поля (`limits.*`).
+- [x] `cfg.retention.*` — 11 полей (`retention.*`).
+- [x] `cfg.argon.*` — 3 поля (`security.argon*`).
+- [x] `cfg.auth.sessionTtlSeconds` и `cfg.auth.deepLinkTtlSeconds` — 2 поля (`security.*TtlSeconds`). Прочие поля `auth` (sessionSecret, deepLinkSecret, cookieDomain) остаются ENV — секреты/инфра.
+- [x] `cfg.ai.embeddings.*` — 8 полей (`embeddings.*`); `proxyApiKey` остаётся ENV.
+- [x] `cfg.aiFeatures.*` — 4 поля (`aiFeatures.*`).
+- [x] `cfg.crossmark.*` — 1 поле (`crossmark.*`).
+- [x] `cfg.webhooksOut.*` — 3 поля (`webhook.*`); `encryptionKey` остаётся ENV — секрет.
+- [x] `cfg.share.*` — 3 поля (`share.*`). `allowedExpirationDays` хранится как `number[]` в AdminSetting (не CSV).
+- [x] `cfg.emailFetch.*` — 3 поля (`emailFetch.*`).
+- [x] `cfg.idle.*` — 2 поля (`idle.*`).
+- [x] `cfg.quotas.*` — 2 поля (`limits.maxParticipantsPerMeeting`, `limits.maxMeetingDurationHours`).
+
+**Итого ~64 поля мигрировано в 12 геттерах.** Остальные ~40 геттеров (`knowledgeCore`, `chatV2`, `curation`, `insights`, `ideas`, `skill`, `persona`, `conversational`, `telegramBot`, `maxBot`, `bot`, `mailInbox`, `bitemporal`, `extraction`, `document`, `brandVoice`, `roleMap`, `betaOps`, `proactive`, `concierge`, `budget`, `tracker`, `companyFoundation`, `processTemplate`, `experiments`, `dataClassPolicy`, `confidenceCalibration`, `temporalProbe`, `signalTypeStats`, `voice`, `invites`, `push`, `router`, `entityIngest`, `projectionRebuild`, `admin`, и пр.) — пока ENV-only, мигрировать по мере необходимости отдельными ТЗ.
+
+ТЗ миграции: [plans/tz/2026-05-25-env-to-admin-setting-call-sites-migration.md](plans/tz/2026-05-25-env-to-admin-setting-call-sites-migration.md).
 
 ## Schema-registry для UI
 

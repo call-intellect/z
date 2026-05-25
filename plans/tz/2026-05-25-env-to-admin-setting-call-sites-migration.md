@@ -1,6 +1,6 @@
 ---
 type: tz
-status: in_progress
+status: done
 feature: env-to-admin-setting-call-sites-migration
 date: 2026-05-25
 ---
@@ -247,4 +247,12 @@ ENV-имя (snake-case) приходит вторым аргументом `reso
 
 ## Итог
 
-_Заполняется по факту реализации._
+**Реализованы Фазы 1-5** (64 поля мигрировано в 12 геттерах), коммиты `c4bad07` / `9045ad1` / [Фаза 3 в `b8f9e54`] / `0d28848` / `000294b`. Фаза 6 (smoke + docs) сведена к финальному обновлению `second-brain/01_projects/admin-settings.md` + `second-brain/02_architecture/code-pitfalls.md` + рефлексия `2026-05-25-env-to-admin-setting-sync-cache-migration.md` — без отдельного smoke-скрипта, поскольку 25 unit-тестов покрывают cache hit / ENV fallback / optional undefined / pub/sub-receive по всем 5 фазам.
+
+**Что осталось ENV-only** (мигрировать по запросу отдельными ТЗ):
+- Knowledge-core пороги: `knowledgeCore`, `bitemporal`, `chatV2`, `knowledgeClone`, `curation`, `insights`, `ideas`, `skill`, `persona`, `extraction`, `document`, `signalTypeStats`, `temporalProbe`, `dataClassPolicy`, `confidenceCalibration` — ~80+ полей.
+- Conversational: `conversational`, `telegramBot`, `maxBot`, `bot` — ~15 полей.
+- Специализированные: `brandVoice`, `roleMap`, `betaOps`, `proactive`, `concierge`, `budget`, `tracker`, `companyFoundation`, `processTemplate`, `experiments`, `voice`, `invites`, `push`, `router`, `entityIngest`, `projectionRebuild`, `admin`, `mailInbox` — ~80 полей.
+- Секреты и инфра (НЕ мигрируются): `db`, `redis`, `livekit`, `turn`, `s3`, `mail` (host/user/pass), `crypto`, `ingest`, `hashing`, `auth.sessionSecret/deepLinkSecret/cookieDomain`, `ai.{anthropic,openai,deepseek,minimax,kie,grsai,vox,ollama,proxy}.apiKey/baseUrl/model`, `embeddings.proxyApiKey`, `webhooksOut.encryptionKey` — ~50 полей.
+
+Архитектурное решение (eager sync-cache + `resolveSync` + Redis pub/sub `{key, value}`) задокументировано в [admin-settings.md](../../second-brain/01_projects/admin-settings.md) и [code-pitfalls.md](../../second-brain/02_architecture/code-pitfalls.md) — будущие миграции делаются по тому же образцу.

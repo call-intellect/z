@@ -6,6 +6,22 @@ type: architecture
 
 Пополняется через дистилляцию рефлексий из `05_история/`.
 
+## TypedConfigService / AdminSetting
+
+### TC1. Геттеры `cfg.X.Y` — `sync`. Никогда не делать их `async`
+
+В проекте все потребители читают настройки через типизированные геттеры (`cfg.workspace.maxChatRequestsPerDay`, `cfg.retention.shareViewDays`). Они вызываются из `@Cron`-декораторов, `CanActivate.canActivate`, конструкторов сервисов и в hot path запросов — где `await` либо невозможен, либо удваивает latency.
+
+**Как обойти:** при добавлении нового ENV/AdminSetting-ключа в геттер — использовать `this.resolveSync<T>(adminKey, envFallbackKey, default)`, **никогда** `this.getDynamic<T>(...)` (он async). `resolveSync` читает из eager `cacheMap`, который наполняется на старте процесса через [AdminSettingsBootstrapService](../../backend/src/modules/admin/settings/admin-settings-bootstrap.service.ts) и обновляется через Redis pub/sub `admin:setting:invalidate`. См. [admin-settings.md](../01_projects/admin-settings.md).
+
+### TC2. Pub/sub payload — `{key, value}`, не `{key}`
+
+Канал `admin:setting:invalidate` несёт **значение** новой настройки, чтобы все процессы могли обновить свой `cacheMap` без повторного SELECT. Если меняешь сервис `AdminSettingsService` или подписчиков — сохраняй контракт `{ key: string, value: unknown }`.
+
+### TC3. `resolveSync` возвращает `undefined` для optional ENV
+
+Если `envFallbackKey` задан, но ни cache, ни ENV, ни default не дали значения — `resolveSync` возвращает `undefined as T`, не throws. Это для optional полей (например `EMBEDDING_FALLBACK_LOCAL_URL`, который в `env.schema.ts` `.optional()`). Throws — только если `envFallbackKey` НЕ передан и `defaultValue` отсутствует (т.е. чисто-БД-ключ, для которого забыли сидер).
+
 ## LiveKit / Egress
 
 ### 1. Egress — потрескивание в записи (Feb 2026)

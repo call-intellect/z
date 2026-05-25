@@ -86,3 +86,30 @@ describe('TypedConfigService — sync admin-setting cache', () => {
     expect(cfg.resolveSync<number>('limits.maxX', 'MAX_X', 77)).toBe(77);
   });
 });
+
+describe('workspace getter — sync resolve через AdminSetting + ENV', () => {
+  it('cacheMap override: hydrateSync задаёт значение → workspace отдаёт его без обращения к ENV', () => {
+    const envGet = vi.fn();
+    const raw = { get: envGet } as unknown as ConfigService;
+    const cfg = new TypedConfigService(raw, null);
+
+    cfg.hydrateSync([['limits.maxChatRequestsPerDay', 999]]);
+
+    expect(cfg.workspace.maxChatRequestsPerDay).toBe(999);
+    // На MAX_CHAT_REQUESTS_PER_DAY обращений быть не должно — cache hit.
+    const envCalls = envGet.mock.calls.map(([key]) => key);
+    expect(envCalls).not.toContain('MAX_CHAT_REQUESTS_PER_DAY');
+  });
+
+  it('ENV fallback: cacheMap пустой → workspace читает значение из ENV', () => {
+    const cfg = buildService({ MAX_CHAT_REQUESTS_PER_DAY: 200 });
+    expect(cfg.workspace.maxChatRequestsPerDay).toBe(200);
+  });
+
+  it('cacheMap override для maxApiKeysPerUser — типизация остаётся number, значение из cache', () => {
+    const cfg = buildService();
+    cfg.hydrateSync([['limits.maxApiKeysPerUser', 25]]);
+    const value: number = cfg.workspace.maxApiKeysPerUser;
+    expect(value).toBe(25);
+  });
+});

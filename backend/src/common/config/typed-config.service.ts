@@ -288,35 +288,129 @@ export class TypedConfigService {
   }
 
   // ─────────────────────────── workspace limits / quotas ────────
+  /**
+   * Фаза 2 env-to-admin-setting-call-sites-migration: каждое поле читается
+   * через `resolveSync(adminKey, envFallbackKey, default)` — cacheMap →
+   * ENV → default. AdminSetting'и сидятся в `seed-admin-settings.ts`
+   * под префиксом `limits.*`.
+   */
   get workspace() {
     return {
-      clipMaxDurationSeconds: this.get('CLIP_MAX_DURATION_SECONDS'),
-      exportZipMaxMeetings: this.get('EXPORT_ZIP_MAX_MEETINGS'),
-      exportZipMaxBytes: this.get('EXPORT_ZIP_MAX_SIZE_BYTES'),
+      clipMaxDurationSeconds: this.resolveSync<number>(
+        'limits.clipMaxDurationSeconds',
+        'CLIP_MAX_DURATION_SECONDS',
+        300,
+      ),
+      exportZipMaxMeetings: this.resolveSync<number>(
+        'limits.exportZipMaxMeetings',
+        'EXPORT_ZIP_MAX_MEETINGS',
+        100,
+      ),
+      exportZipMaxBytes: this.resolveSync<number>(
+        'limits.exportZipMaxBytes',
+        'EXPORT_ZIP_MAX_SIZE_BYTES',
+        21_474_836_480,
+      ),
 
-      maxApiKeysPerUser: this.get('MAX_API_KEYS_PER_USER'),
-      maxWebhookSubscriptionsPerUser: this.get('MAX_WEBHOOK_SUBSCRIPTIONS_PER_USER'),
-      maxDestinationsPerUser: this.get('MAX_DESTINATIONS_PER_USER'),
-      maxTagsPerUser: this.get('MAX_TAGS_PER_USER'),
-      maxUserTemplatesPerUser: this.get('MAX_USER_TEMPLATES_PER_USER'),
+      maxApiKeysPerUser: this.resolveSync<number>(
+        'limits.maxApiKeysPerUser',
+        'MAX_API_KEYS_PER_USER',
+        10,
+      ),
+      maxWebhookSubscriptionsPerUser: this.resolveSync<number>(
+        'limits.maxWebhookSubscriptionsPerUser',
+        'MAX_WEBHOOK_SUBSCRIPTIONS_PER_USER',
+        20,
+      ),
+      maxDestinationsPerUser: this.resolveSync<number>(
+        'limits.maxDestinationsPerUser',
+        'MAX_DESTINATIONS_PER_USER',
+        20,
+      ),
+      maxTagsPerUser: this.resolveSync<number>(
+        'limits.maxTagsPerUser',
+        'MAX_TAGS_PER_USER',
+        50,
+      ),
+      maxUserTemplatesPerUser: this.resolveSync<number>(
+        'limits.maxUserTemplatesPerUser',
+        'MAX_USER_TEMPLATES_PER_USER',
+        20,
+      ),
 
-      maxChatRequestsPerDay: this.get('MAX_CHAT_REQUESTS_PER_DAY'),
-      maxChatTokensPerDay: this.get('MAX_CHAT_TOKENS_PER_DAY'),
-      maxRenderJobsPerHour: this.get('MAX_RENDER_JOBS_PER_HOUR'),
-      maxBulkExportsPerDay: this.get('MAX_BULK_EXPORTS_PER_DAY'),
-      maxRegeneratePerMeetingPerDay: this.get('MAX_REGENERATE_PER_MEETING_PER_DAY'),
-      maxMeetingsCreatedPerDayViaApi: this.get('MAX_MEETINGS_CREATED_PER_DAY_VIA_API'),
-      maxEmbeddingTokensPerMonth: this.get('MAX_EMBEDDING_TOKENS_PER_MONTH_PER_USER'),
+      maxChatRequestsPerDay: this.resolveSync<number>(
+        'limits.maxChatRequestsPerDay',
+        'MAX_CHAT_REQUESTS_PER_DAY',
+        200,
+      ),
+      maxChatTokensPerDay: this.resolveSync<number>(
+        'limits.maxChatTokensPerDay',
+        'MAX_CHAT_TOKENS_PER_DAY',
+        2_000_000,
+      ),
+      maxRenderJobsPerHour: this.resolveSync<number>(
+        'limits.maxRenderJobsPerHour',
+        'MAX_RENDER_JOBS_PER_HOUR',
+        10,
+      ),
+      maxBulkExportsPerDay: this.resolveSync<number>(
+        'limits.maxBulkExportsPerDay',
+        'MAX_BULK_EXPORTS_PER_DAY',
+        5,
+      ),
+      maxRegeneratePerMeetingPerDay: this.resolveSync<number>(
+        'limits.maxRegeneratePerMeetingPerDay',
+        'MAX_REGENERATE_PER_MEETING_PER_DAY',
+        5,
+      ),
+      maxMeetingsCreatedPerDayViaApi: this.resolveSync<number>(
+        'limits.maxMeetingsCreatedPerDayViaApi',
+        'MAX_MEETINGS_CREATED_PER_DAY_VIA_API',
+        100,
+      ),
+      maxEmbeddingTokensPerMonth: this.resolveSync<number>(
+        'limits.maxEmbeddingTokensPerMonthPerUser',
+        'MAX_EMBEDDING_TOKENS_PER_MONTH_PER_USER',
+        10_000_000,
+      ),
 
-      maxHighlightsPerMeeting: this.get('MAX_HIGHLIGHTS_PER_MEETING'),
-      maxBulkOperationIds: this.get('MAX_BULK_OPERATION_IDS'),
-      maxChatMessageChars: this.get('MAX_CHAT_MESSAGE_CHARS'),
-      maxRoomMessageChars: this.get('MAX_ROOM_MESSAGE_CHARS'),
+      maxHighlightsPerMeeting: this.resolveSync<number>(
+        'limits.maxHighlightsPerMeeting',
+        'MAX_HIGHLIGHTS_PER_MEETING',
+        50,
+      ),
+      maxBulkOperationIds: this.resolveSync<number>(
+        'limits.maxBulkOperationIds',
+        'MAX_BULK_OPERATION_IDS',
+        200,
+      ),
+      maxChatMessageChars: this.resolveSync<number>(
+        'limits.maxChatMessageChars',
+        'MAX_CHAT_MESSAGE_CHARS',
+        8_000,
+      ),
+      maxRoomMessageChars: this.resolveSync<number>(
+        'limits.maxRoomMessageChars',
+        'MAX_ROOM_MESSAGE_CHARS',
+        2_000,
+      ),
 
-      maxCardsPerUser: this.get('MAX_CARDS_PER_USER'),
-      maxCardRollupsPerDay: this.get('MAX_CARD_ROLLUPS_PER_DAY'),
+      maxCardsPerUser: this.resolveSync<number>(
+        'limits.maxCardsPerUser',
+        'MAX_CARDS_PER_USER',
+        500,
+      ),
+      maxCardRollupsPerDay: this.resolveSync<number>(
+        'limits.maxCardRollupsPerDay',
+        'MAX_CARD_ROLLUPS_PER_DAY',
+        100,
+      ),
       /** Phase 9: ручной пересчёт strategic-alignment по Goal (на Org). */
-      maxGoalRecomputePerDay: this.get('MAX_GOAL_RECOMPUTE_PER_DAY'),
+      maxGoalRecomputePerDay: this.resolveSync<number>(
+        'limits.maxGoalRecomputePerDay',
+        'MAX_GOAL_RECOMPUTE_PER_DAY',
+        5,
+      ),
     } as const;
   }
 
@@ -1254,6 +1348,11 @@ export class TypedConfigService {
       version: String(this.get('DATACLASS_POLICY_VERSION') ?? 'v1'),
       // W4.2 (2026-05-25) — фейлить persist без audit при enforce.
       auditRequired: Boolean(this.get('DATACLASS_AUDIT_REQUIRED') ?? true),
+      // W4.3 (2026-05-25) — kill-switch outbound gating каналов. Если false —
+      // `DataClassPolicyService.canEmit` всегда возвращает `allowed=true`.
+      outboundGatingEnabled: Boolean(
+        this.get('DATACLASS_OUTBOUND_GATING_ENABLED') ?? true,
+      ),
     } as const;
   }
 

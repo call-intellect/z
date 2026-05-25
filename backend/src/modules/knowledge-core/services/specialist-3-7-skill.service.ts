@@ -33,6 +33,7 @@ import {
   SKILL_TRAIT_MERGE_USER_TEMPLATE,
 } from '../prompts/skill-trait-merge.prompt';
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { SkillTraitConceptService } from './skill-trait-concept.service';
 import { Specialist37ProbeService } from './specialist-3-7-skill-probe.service';
 
 /**
@@ -78,6 +79,8 @@ export class Specialist37Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(Specialist37ProbeService)
     private readonly probes: Specialist37ProbeService,
+    @Inject(SkillTraitConceptService)
+    private readonly concepts: SkillTraitConceptService,
   ) {}
 
   /**
@@ -864,6 +867,30 @@ export class Specialist37Service {
         } catch {
           // best-effort
         }
+      }
+      // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — привязать trait к
+      // смысловому блоку навыка (SkillTraitConcept). Best-effort: ошибка не
+      // должна валить insert уже созданного trait'а.
+      try {
+        const concept = await this.concepts.findOrCreateConcept({
+          tenantId: args.profile.tenantId,
+          category: args.draft.category,
+          statement: args.draft.statement,
+        });
+        if (concept) {
+          await this.prisma.skillTrait.update({
+            where: { id: trait.id },
+            data: { conceptId: concept.id },
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          {
+            traitId: trait.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-7.createNewTraitRaw: concept-link упал — trait остаётся без concept (подхватит cron)',
+        );
       }
       return trait.id;
     } catch (err) {

@@ -58,6 +58,7 @@ import { AdminOrgsService } from './services/admin-orgs.service';
 import { AdminPricesService } from './services/admin-prices.service';
 import { AdminUsageService } from './services/admin-usage.service';
 import { OrgAdminKnowledgeService } from './services/org-admin-knowledge.service';
+import { AdminSkillTraitConceptsModule } from './skill-trait-concepts/skill-trait-concepts.module';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 import { AdminTelegramBotController } from './system/telegram-bot/admin-telegram-bot.controller';
 import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bot.service';
@@ -102,6 +103,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     // Admin-redesign Фаза 8 — Платформа: BullMQ workers inspector, лимиты,
     // feature flags, security-настройки, maintenance статус.
     PlatformAdminModule,
+    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
+    AdminSkillTraitConceptsModule,
   ],
   controllers: [
     IntegrationKeysAdminController,

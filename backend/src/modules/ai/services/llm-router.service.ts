@@ -142,6 +142,12 @@ export type LlmTaskType =
   | 'skill-trait-merge'
   | 'executable-persona-compile'
   | 'clone-respond'
+  // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
+  // 'skill-trait-concept-name' — лёгкий агент: получает N формулировок одной
+  //   черты (после слияния SkillTraitConcept в cron-нормализаторе) и предлагает
+  //   короткое каноническое имя (3-6 слов). Вызывается ТОЛЬКО при слиянии 2+
+  //   концептов; при создании одиночной черты — берётся category как есть.
+  | 'skill-trait-concept-name'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -370,6 +376,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'skill-trait-merge',
   'executable-persona-compile',
   'clone-respond',
+  // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2
+  'skill-trait-concept-name',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',

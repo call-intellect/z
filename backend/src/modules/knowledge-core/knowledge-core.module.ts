@@ -22,6 +22,7 @@ import { EntityResolutionService } from './services/entity-resolution.service';
 import { AxisClassifierService } from './services/axis-classifier.service';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
+import { SkillTraitConceptService } from './services/skill-trait-concept.service';
 import { Specialist31ProbeService } from './services/specialist-3-1-probe.service';
 import { Specialist31Service } from './services/specialist-3-1-regulations.service';
 import { Specialist32Service } from './services/specialist-3-2-knowledge-clone.service';
@@ -148,6 +149,8 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // SBA γ-1 доделки: ExecutablePersonaVersioningService + trigger-watcher cron.
     ExecutablePersonaVersioningService,
     ExecutablePersonaTriggerWatcherCron,
+    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
+    SkillTraitConceptService,
   ],
   exports: [
     SegmentBuilderService,
@@ -212,6 +215,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     ExecutablePersonaBuildService,
     // SBA γ-1 доделки.
     ExecutablePersonaVersioningService,
+    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — экспортируется,
+    // чтобы admin-модуль / cron-нормализатор / backfill-скрипт могли инжектить.
+    SkillTraitConceptService,
   ],
 })
 export class KnowledgeCoreModule {}

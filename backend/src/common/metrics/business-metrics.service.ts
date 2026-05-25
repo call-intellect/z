@@ -353,6 +353,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private executablePersonaSnapshotLagSeconds!: Gauge<'tenant_top'>;
   // ── clone-reliability-hardening Фаза 5 — реактивная пересборка персоны ──
   private personaRebuildTriggeredTotal!: Counter<'reason'>;
+  // ── clone-reliability-hardening Фаза 2 — Смысловые блоки навыка ──
+  private skillTraitConceptsTotal!: Gauge<'status'>;
+  private skillTraitConceptsMergedTotal!: Counter<never>;
 
   // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
   private axisLabelsTotal!: Counter<'tenant_top' | 'axis' | 'source'>;
@@ -1588,6 +1591,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'persona_rebuild_triggered_total',
       help: 'Фаза 5 clone-reliability — сколько раз cron-watcher триггернул rebuild ExecutablePersona по reason: trait_delta | max_age.',
       labelNames: ['reason'] as const,
+    });
+
+    // ── clone-reliability-hardening Фаза 2 — Смысловые блоки навыка ──
+    this.skillTraitConceptsTotal = this.getOrCreateGauge({
+      name: 'skill_trait_concepts_total',
+      help: 'Фаза 2 clone-reliability — количество SkillTraitConcept по статусу (active|merged_into|archived). Гейдж обновляется cron-нормализатором раз в сутки.',
+      labelNames: ['status'] as const,
+    });
+    this.skillTraitConceptsMergedTotal = this.getOrCreateCounter({
+      name: 'skill_trait_concepts_merged_total',
+      help: 'Фаза 2 clone-reliability — общее число операций слияния SkillTraitConcept в cron-нормализаторе.',
+      labelNames: [] as const,
     });
 
     // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
@@ -3717,6 +3732,29 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: 'trait_delta' | 'max_age';
   }): void {
     this.personaRebuildTriggeredTotal.inc({ reason: args.reason });
+  }
+
+  // ────────────────────── clone-reliability-hardening Фаза 2 (Смысловые блоки) ──
+
+  /**
+   * Фаза 2 — gauge числа SkillTraitConcept по статусу. Обновляется
+   * cron-нормализатором раз в сутки.
+   */
+  setSkillTraitConceptsTotal(args: {
+    status: 'active' | 'merged_into' | 'archived';
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.skillTraitConceptsTotal.set({ status: args.status }, args.value);
+  }
+
+  /**
+   * Фаза 2 — counter операций слияния SkillTraitConcept в cron-нормализаторе.
+   * Инкрементируется один раз на каждый кластер из 2+ концептов, слитый
+   * в опорный.
+   */
+  incSkillTraitConceptsMerged(): void {
+    this.skillTraitConceptsMergedTotal.inc();
   }
 
   // ────────────────────── SBA α-9 wave 3 (Company Foundation) ──────────

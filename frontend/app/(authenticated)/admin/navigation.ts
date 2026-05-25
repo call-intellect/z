@@ -213,6 +213,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         icon: DatabaseZap,
         matchPrefix: '/admin/ai/embeddings',
       },
+      {
+        href: '/admin/skill-trait-concepts',
+        label: 'Смысловые блоки навыка',
+        icon: Brain,
+        matchPrefix: '/admin/skill-trait-concepts',
+      },
     ],
   },
 

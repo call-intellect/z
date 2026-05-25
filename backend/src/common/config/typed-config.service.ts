@@ -601,6 +601,10 @@ export class TypedConfigService {
       lookbackMonths: this.get('KNOWLEDGE_CLONE_LOOKBACK_MONTHS'),
       debounceMs: this.get('KNOWLEDGE_CLONE_DEBOUNCE_MS'),
       minBlocksForProfile: this.get('KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE'),
+      embeddingFallbackThreshold: this.get(
+        'KNOWLEDGE_CLONE_EMBEDDING_FALLBACK_THRESHOLD',
+      ),
+      minMatchScore: this.get('KNOWLEDGE_CLONE_MIN_MATCH_SCORE'),
     } as const;
   }
 
@@ -737,6 +741,10 @@ export class TypedConfigService {
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',
       ),
       personaRebuildMaxAgeHours: this.get('PERSONA_REBUILD_MAX_AGE_HOURS'),
+      // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 (смысловые блоки) ──
+      conceptMatchThreshold: this.get('CLONE_CONCEPT_MATCH_THRESHOLD'),
+      conceptMergeThreshold: this.get('CLONE_CONCEPT_MERGE_THRESHOLD'),
+      conceptArchiveAfterMonths: this.get('CLONE_CONCEPT_ARCHIVE_AFTER_MONTHS'),
     } as const;
   }
 

@@ -36,6 +36,7 @@ import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-d
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
 import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
+import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill-trait-concept-normalizer.cron';
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
@@ -185,6 +186,10 @@ import { VoxService } from './services/vox.service';
     SkillProfileRebuildWorker,
     // SBA γ-1 — cron `0 5 * * *`: daily decay confidence + archive старых traits.
     SkillProfileRecalibrateCron,
+    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — cron `0 3 * * *`:
+    // нормализация Смысловых блоков навыка (slияние близких SkillTraitConcept,
+    // архивация без активных traits старше N месяцев). За час до decay-cron.
+    SkillTraitConceptNormalizerCron,
     // SBA γ-1 — cron `0 6 * * SUN`: weekly сборка ExecutablePersona snapshots
     // (scope='person' + scope='role' aggregation).
     ExecutablePersonaBuildCron,

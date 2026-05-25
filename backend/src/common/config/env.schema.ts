@@ -771,12 +771,20 @@ const CurationSchema = z.object({
  *     (несколько подряд идущих диспатчей одного Person сложатся в один job).
  *   - KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE — порог: если блоков меньше,
  *     профиль не строится (мало материала — выйдет шум).
+ *   - KNOWLEDGE_CLONE_EMBEDDING_FALLBACK_THRESHOLD — ТЗ 2026-05-25 Фаза 4.
+ *     Если в БД меньше N embedding-строк per Org, getCardsForQuery
+ *     откатывается на substring-match (страховка до бэкфилла).
+ *   - KNOWLEDGE_CLONE_MIN_MATCH_SCORE — ТЗ 2026-05-25 Фаза 4. Минимальный
+ *     суммарный score Person'а (sum similarity*confidenceWeight) для попадания
+ *     в результаты. Ниже — отсекается как слабое совпадение.
  */
 const KnowledgeCloneSchema = z.object({
   KNOWLEDGE_CLONE_REBUILD_CRON: z.string().min(1).default('0 */6 * * *'),
   KNOWLEDGE_CLONE_LOOKBACK_MONTHS: z.coerce.number().int().positive().default(12),
   KNOWLEDGE_CLONE_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
   KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE: z.coerce.number().int().positive().default(10),
+  KNOWLEDGE_CLONE_EMBEDDING_FALLBACK_THRESHOLD: z.coerce.number().int().positive().default(5),
+  KNOWLEDGE_CLONE_MIN_MATCH_SCORE: z.coerce.number().default(1.0),
 });
 
 /**
@@ -879,6 +887,28 @@ const SkillSchema = z.object({
    * после превышения rebuild ставится даже без новых черт. Default 48.
    */
   PERSONA_REBUILD_MAX_AGE_HOURS: z.coerce.number().int().positive().default(48),
+  // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 (смысловые блоки) ──
+  /**
+   * Порог cosine similarity для совпадения новой черты с существующим
+   * SkillTraitConcept. similarity >= 0.85 → берём существующий концепт,
+   * иначе создаём новый. Default 0.85.
+   */
+  CLONE_CONCEPT_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  /**
+   * Порог cosine similarity для слияния двух активных SkillTraitConcept
+   * в cron-нормализаторе. Выше порога создания (0.85), потому что слияние
+   * деструктивно — должно быть очень уверенным. Default 0.92.
+   */
+  CLONE_CONCEPT_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
+  /**
+   * Сколько месяцев SkillTraitConcept может быть без активных traits до
+   * архивации в cron-нормализаторе. Default 6.
+   */
+  CLONE_CONCEPT_ARCHIVE_AFTER_MONTHS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(6),
 });
 
 /**

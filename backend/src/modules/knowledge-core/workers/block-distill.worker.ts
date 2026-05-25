@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import {
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { BlockMergeService } from '../services/block-merge.service';
+import { FactSupersedeService } from '../services/fact-supersede.service';
 
 /**
  * Block-distill worker (`core.block-distill` consumer).
@@ -51,6 +53,11 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BlockMergeService) private readonly merger: BlockMergeService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    // KC-Temporal W1.2 — Optional, потому что воркер также крутится в
+    // окружениях, где KnowledgeCoreModule пока не подключён (e2e/test).
+    @Optional()
+    @Inject(FactSupersedeService)
+    private readonly factSupersede?: FactSupersedeService,
   ) {}
 
   onModuleInit(): void {
@@ -149,6 +156,27 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
     this.logger.log({ blockId: block.id }, 'block-distill: canonical');
+
+    // KC-Temporal W1.2 — fact-supersede best-effort. Запускается только
+    // если включены оба флага (BITEMPORAL_ENABLED + BITEMPORAL_SUPERSEDE_ENABLED).
+    // Все ошибки сервиса проглатываются, чтобы не ронять воркер distill.
+    if (
+      this.factSupersede &&
+      this.cfg.bitemporal.enabled &&
+      this.cfg.bitemporal.supersedeEnabled
+    ) {
+      try {
+        await this.factSupersede.processNewBlock(block.id);
+      } catch (err) {
+        this.logger.warn(
+          {
+            blockId: block.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'block-distill: FactSupersedeService упал — продолжаем (best-effort)',
+        );
+      }
+    }
   }
 
   private async mergeInto(args: {

@@ -290,6 +290,22 @@ export class BusinessMetricsService implements OnModuleInit {
   // «как часто решения переписываются»).
   private decisionSupersedeChainLength!: Histogram<never>;
 
+  // ── KC-Temporal W1.2 (2026-05-25) — FactSupersedeService ──────────────
+  // verdict ∈ unrelated | extends | contradicts | supersedes | skip_*.
+  // skip_* — короткие замыкания до LLM-вызова (no_candidates, not_fact_signal,
+  // race_lost). Дают нам видимость cost burn-rate и accuracy.
+  private kcFactSupersedeVerdictsTotal!: Counter<'verdict'>;
+  // Длительность полного processNewBlock (от загрузки блока до commit'а
+  // transaction'а / no-op'а). Включает KNN + LLM + Prisma. Истинная стоимость
+  // фичи на каждый блок.
+  private kcFactSupersedeLatencyMs!: Histogram<never>;
+
+  // ── KC-Temporal W1.5 (2026-05-25) — EntityResolutionService ingest-path ──
+  // path ∈ exact | knn | create | cache_hit.
+  // Используется DoD «cache hit rate ≥ 60%» (= cache_hit / total).
+  private kcEntityResolvePathTotal!: Counter<'path'>;
+  private kcEntityResolveLatencyMs!: Histogram<never>;
+
   // ── SBA β-2 — Knowledge Clone (Specialist 3.2) — два специфичных метрик'а.
   private knowledgeCloneCategoriesPerProfile!: Histogram<never>;
   private knowledgeCloneProfileSizeKb!: Histogram<never>;
@@ -1363,6 +1379,32 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA β-3 — длина supersede-цепочек Decision (chain length = сколько раз решение переписывалось). 0 — изначальное, 1 — заменено один раз, и т.д.',
       labelNames: [] as const,
       buckets: [0, 1, 2, 3, 5, 8, 13, 21],
+    });
+
+    // KC-Temporal W1.2 — FactSupersedeService.
+    this.kcFactSupersedeVerdictsTotal = this.getOrCreateCounter({
+      name: 'kc_fact_supersede_verdicts_total',
+      help: 'KC-Temporal W1.2 — verdicts FactSupersedeService.processNewBlock (unrelated|extends|contradicts|supersedes|skip_*).',
+      labelNames: ['verdict'] as const,
+    });
+    this.kcFactSupersedeLatencyMs = this.getOrCreateHistogram({
+      name: 'kc_fact_supersede_latency_ms',
+      help: 'KC-Temporal W1.2 — длительность одного processNewBlock в миллисекундах (KNN + LLM + Prisma).',
+      labelNames: [] as const,
+      buckets: [10, 50, 100, 250, 500, 1000, 2500, 5000, 10_000],
+    });
+
+    // KC-Temporal W1.5 — EntityResolutionService ingest path.
+    this.kcEntityResolvePathTotal = this.getOrCreateCounter({
+      name: 'kc_entity_resolve_path_total',
+      help: 'KC-Temporal W1.5 — каким путём отрезолвилась сущность в findOrCreateEntity (exact|knn|create|cache_hit).',
+      labelNames: ['path'] as const,
+    });
+    this.kcEntityResolveLatencyMs = this.getOrCreateHistogram({
+      name: 'kc_entity_resolve_latency_ms',
+      help: 'KC-Temporal W1.5 — длительность одного findOrCreateEntity в миллисекундах.',
+      labelNames: [] as const,
+      buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500],
     });
 
     // ── SBA β-2 — Knowledge Clone (Specialist 3.2) ──
@@ -3447,6 +3489,42 @@ export class BusinessMetricsService implements OnModuleInit {
   observeDecisionSupersedeChainLength(length: number): void {
     if (length < 0) return;
     this.decisionSupersedeChainLength.observe(length);
+  }
+
+  // ─────────────────────── KC-Temporal W1.2 — FactSupersedeService ──────
+  /** Verdict от LLM или skip_* до LLM-вызова. */
+  incKcFactSupersedeVerdict(args: {
+    verdict:
+      | 'unrelated'
+      | 'extends'
+      | 'contradicts'
+      | 'supersedes'
+      | 'skip_no_candidates'
+      | 'skip_not_fact_signal'
+      | 'skip_race_lost'
+      | 'skip_llm_error';
+  }): void {
+    this.kcFactSupersedeVerdictsTotal.inc({ verdict: args.verdict });
+  }
+
+  /** Длительность одного processNewBlock в миллисекундах. */
+  observeKcFactSupersedeLatencyMs(ms: number): void {
+    if (ms < 0) return;
+    this.kcFactSupersedeLatencyMs.observe(ms);
+  }
+
+  // ─────────────────────── KC-Temporal W1.5 — EntityResolutionService ──
+  /** Каким путём отрезолвилась сущность в findOrCreateEntity. */
+  incKcEntityResolvePath(args: {
+    path: 'exact' | 'knn' | 'create' | 'cache_hit';
+  }): void {
+    this.kcEntityResolvePathTotal.inc({ path: args.path });
+  }
+
+  /** Длительность одного findOrCreateEntity в миллисекундах. */
+  observeKcEntityResolveLatencyMs(ms: number): void {
+    if (ms < 0) return;
+    this.kcEntityResolveLatencyMs.observe(ms);
   }
 
   /** SBA β-2 — наблюдение по числу категорий в построенном knowledgeProfile. */

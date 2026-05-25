@@ -468,6 +468,32 @@ export class TypedConfigService {
       enabled: this.get('BITEMPORAL_ENABLED') as boolean,
       supersedeEnabled: this.get('BITEMPORAL_SUPERSEDE_ENABLED') as boolean,
       factSignalTypes,
+      // KC-Temporal W1.2 — параметры FactSupersedeService.
+      // Cosine threshold выше дефолта block-distill (0.92), потому что
+      // supersede — закрытие блока, нужна высокая precision.
+      factSupersedeCosineThreshold: this.get(
+        'FACT_SUPERSEDE_COSINE_THRESHOLD',
+      ) as number,
+      factSupersedeKnnTopK: this.get('FACT_SUPERSEDE_KNN_TOP_K') as number,
+      factSupersedeCostAlertPct: this.get(
+        'FACT_SUPERSEDE_COST_ALERT_PCT',
+      ) as number,
+    } as const;
+  }
+
+  // ─────────────────────────── KC-Temporal W1.5 — Ingest-time KNN ──
+  /**
+   * Параметры синхронного resolver'а сущностей в block-ingest.worker'е
+   * (`EntityResolutionService.findOrCreateEntity`):
+   *   - `resolveThreshold` — cosine similarity, при котором без LLM
+   *     возвращаем существующую сущность (короткое замыкание).
+   *   - `cacheTtlSeconds` — TTL Redis-кеша resolved-сущности
+   *     (`entity-resolve:${tenantId}:${type}:${sha1(lowerName)}`).
+   */
+  get entityIngest() {
+    return {
+      resolveThreshold: this.get('ENTITY_INGEST_RESOLVE_THRESHOLD') as number,
+      cacheTtlSeconds: this.get('ENTITY_INGEST_RESOLVE_CACHE_TTL_S') as number,
     } as const;
   }
 

@@ -318,7 +318,15 @@ export type LlmTaskType =
   //   summary-v2 → meeting-quality-score для «быстрого» пользовательского
   //   отчёта. Capable модель + большой выход + thinking.
   //   Primary = deepseek-v4-pro; secondary = gpt-5.4-mini; tertiary = ollama qwen3.5:9b.
-  | 'meeting-report-fast';
+  | 'meeting-report-fast'
+  // KC-Temporal W1.2 (2026-05-25) — FactSupersedeService.
+  // 'fact-supersede-detect' — арбитр { unrelated | extends | contradicts |
+  //   supersedes } по новому factual-блоку и top-K KNN кандидатам с тем же
+  //   signalType. На supersedes — старый блок получает validUntil=now,
+  //   создаётся IdeaBlockLink(relationType='supersedes') + ConflictItem.
+  //   Дешёвый арбитр (≤700 input + ≤300 output): primary deepseek-v4-flash,
+  //   secondary openai gpt-5.4-mini, tertiary ollama qwen3:30b.
+  | 'fact-supersede-detect';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -442,6 +450,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'telegram-digest-formulate',
   // ТЗ 2026-05-25 — meeting-report-fast (Фаза 1).
   'meeting-report-fast',
+  // ТЗ 2026-05-25 KC-Temporal W1.2 — FactSupersedeService.
+  'fact-supersede-detect',
 ] as const;
 
 /**

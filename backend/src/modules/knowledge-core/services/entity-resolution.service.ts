@@ -1,7 +1,13 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type Entity, type EntityType, Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { RedisService } from '../../../common/redis/redis.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 
@@ -29,8 +35,32 @@ export class EntityResolutionService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    // KC-Temporal W1.5 — Optional, чтобы интеграционные spec'и могли
+    // сконструировать сервис с двумя аргументами (как делает уже существующий
+    // entity-resolution.service.spec.ts).
+    @Optional()
+    @Inject(RedisService)
+    private readonly redis?: RedisService,
+    @Optional()
+    @Inject(CoreQueueService)
+    private readonly coreQueue?: CoreQueueService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
+  /**
+   * KC-Temporal W1.5 — синхронный resolver: exact match (raw SQL, без findMany+filter)
+   *   → Redis cache hit
+   *   → KNN top-3 cosine raw SQL → если ≥ threshold (default 0.95) → reuse
+   *   → иначе создаём новую сущность + enqueue entity-resolver worker для глубокого LLM-арбитра.
+   *
+   * Метрики `kc_entity_resolve_path_total{path}` и `kc_entity_resolve_latency_ms`
+   * пишутся на каждый вызов. См. ТЗ §W1.5.
+   */
   async findOrCreateEntity(args: {
     tenantId: string;
     type: EntityType;
@@ -42,26 +72,91 @@ export class EntityResolutionService {
       throw new Error('EntityResolution: пустое имя сущности');
     }
     const lowered = normalized.toLowerCase();
+    const startedAt = Date.now();
+    const observeLatency = (): void => {
+      this.metrics?.observeKcEntityResolveLatencyMs(Date.now() - startedAt);
+    };
 
-    // findFirst по (tenantId, type) + ручная фильтрация по lower(canonicalName).
-    // На больших тенантах это упрётся — Шаг 4 заменит на ts_vector + KNN.
-    const candidates = await this.prisma.entity.findMany({
-      where: { tenantId: args.tenantId, type: args.type, mergedIntoId: null },
-      select: { id: true, canonicalName: true, metadata: true, mentionsCount: true },
-    });
-    const found = candidates.find(
-      (c) => c.canonicalName.trim().toLowerCase() === lowered,
+    // 1. Redis cache hit — горячее имя возвращаем без БД-вызова.
+    const cacheKey = this.buildCacheKey(args.tenantId, args.type, lowered);
+    const cachedId = await this.readCache(cacheKey);
+    if (cachedId) {
+      const cached = await this.prisma.entity.findUnique({
+        where: { id: cachedId },
+      });
+      // mergedIntoId ≠ null означает, что cache устарел: сущность слита.
+      if (cached && cached.mergedIntoId === null) {
+        const merged = this.mergeMetadata(cached.metadata, args.metadata);
+        const updated = await this.prisma.entity.update({
+          where: { id: cached.id },
+          data: {
+            mentionsCount: { increment: 1 },
+            ...(merged !== undefined ? { metadata: merged } : {}),
+          },
+        });
+        this.metrics?.incKcEntityResolvePath({ path: 'cache_hit' });
+        observeLatency();
+        return { entity: updated, created: false };
+      }
+      // Cache miss: запись устарела — удаляем ключ, дальше идём обычным путём.
+      await this.deleteCache(cacheKey);
+    }
+
+    // 2. Exact match — раз-запрос вместо findMany+filter (см. W1.5 §1).
+    const exact = await this.findExactByLowerName(
+      args.tenantId,
+      args.type,
+      lowered,
     );
-    if (found) {
-      const mergedMeta = this.mergeMetadata(found.metadata, args.metadata);
+    if (exact) {
+      const found = await this.prisma.entity.findUnique({
+        where: { id: exact.id },
+      });
+      if (found) {
+        const merged = this.mergeMetadata(found.metadata, args.metadata);
+        const updated = await this.prisma.entity.update({
+          where: { id: found.id },
+          data: {
+            mentionsCount: { increment: 1 },
+            ...(merged !== undefined ? { metadata: merged } : {}),
+          },
+        });
+        if (args.type === 'person') {
+          await this.linkEntityPerson({
+            tenantId: args.tenantId,
+            entityId: updated.id,
+          }).catch((err) => {
+            this.logger.warn(
+              {
+                entityId: updated.id,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'entity↔person линковка не удалась (продолжаем без линка)',
+            );
+          });
+        }
+        await this.writeCache(cacheKey, updated.id);
+        this.metrics?.incKcEntityResolvePath({ path: 'exact' });
+        observeLatency();
+        return { entity: updated, created: false };
+      }
+    }
+
+    // 3. KNN top-3 cosine.
+    const knnHit = await this.knnResolve({
+      tenantId: args.tenantId,
+      type: args.type,
+      name: normalized,
+    });
+    if (knnHit) {
+      const merged = this.mergeMetadata(knnHit.metadata, args.metadata);
       const updated = await this.prisma.entity.update({
-        where: { id: found.id },
+        where: { id: knnHit.id },
         data: {
           mentionsCount: { increment: 1 },
-          ...(mergedMeta !== undefined ? { metadata: mergedMeta } : {}),
+          ...(merged !== undefined ? { metadata: merged } : {}),
         },
       });
-      // Если это Person-Entity — попробуем найти/слинковать с Person.
       if (args.type === 'person') {
         await this.linkEntityPerson({
           tenantId: args.tenantId,
@@ -72,14 +167,17 @@ export class EntityResolutionService {
               entityId: updated.id,
               err: err instanceof Error ? err.message : String(err),
             },
-            'entity↔person линковка не удалась (продолжаем без линка)',
+            'entity↔person линковка не удалась (KNN-match, продолжаем)',
           );
         });
       }
+      await this.writeCache(cacheKey, updated.id);
+      this.metrics?.incKcEntityResolvePath({ path: 'knn' });
+      observeLatency();
       return { entity: updated, created: false };
     }
 
-    // Создаём новую entity. Embedding кладётся вторым шагом — через executeRaw.
+    // 4. Не нашли. Создаём + enqueue async resolver на глубокий LLM-арбитраж.
     const created = await this.prisma.entity.create({
       data: {
         tenantId: args.tenantId,
@@ -121,7 +219,167 @@ export class EntityResolutionService {
         );
       });
     }
+    // Async resolver — best-effort, не ронять flow на ошибке очереди.
+    if (this.coreQueue) {
+      await this.coreQueue
+        .enqueueEntityResolver(created.id)
+        .catch((err) => {
+          this.logger.debug(
+            {
+              entityId: created.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'entity-resolver enqueue упал (W1.5) — продолжаем',
+          );
+        });
+    }
+    await this.writeCache(cacheKey, created.id);
+    this.metrics?.incKcEntityResolvePath({ path: 'create' });
+    observeLatency();
     return { entity: created, created: true };
+  }
+
+  // ─────────────────────────── KC-Temporal W1.5 helpers ───────────────────
+  /**
+   * Exact match через raw SQL: `LOWER(canonicalName) = $3` + tenant/type/
+   * mergedIntoId IS NULL. Возвращает {id} или null. Замена findMany+filter,
+   * чтобы не тянуть всех сущностей тенанта в память.
+   */
+  private async findExactByLowerName(
+    tenantId: string,
+    type: EntityType,
+    loweredName: string,
+  ): Promise<{ id: string } | null> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `
+      SELECT id
+      FROM "Entity"
+      WHERE "tenantId" = $1
+        AND "type"::text = $2
+        AND LOWER("canonicalName") = $3
+        AND "mergedIntoId" IS NULL
+      LIMIT 1
+      `,
+      tenantId,
+      type,
+      loweredName,
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * KNN top-3 cosine raw SQL. Если best similarity >= threshold
+   * (cfg.entityIngest.resolveThreshold, default 0.95) — возвращает
+   * сущность для reuse. Иначе null.
+   *
+   * pgvector: `embedding <=> $1::vector` → cosine distance ([0..2]; для
+   * нормированных embedding'ов text-embedding-3-small это [0..1]).
+   * similarity = 1 - distance.
+   */
+  private async knnResolve(args: {
+    tenantId: string;
+    type: EntityType;
+    name: string;
+  }): Promise<Entity | null> {
+    if (!this.embeddings) return null;
+    let vec: number[] | undefined;
+    try {
+      const out = await this.embeddings.embedEntityNames([args.name]);
+      vec = out[0];
+    } catch (err) {
+      this.logger.debug(
+        {
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'entity-resolution KNN: embed упал — fallback на create',
+      );
+      return null;
+    }
+    if (!vec || vec.length === 0) return null;
+
+    const threshold = this.cfg?.entityIngest.resolveThreshold ?? 0.95;
+    interface Row {
+      id: string;
+      distance: string | number;
+    }
+    let rows: Row[] = [];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT id, embedding <=> $1::vector(1536) AS distance
+        FROM "Entity"
+        WHERE "tenantId" = $2
+          AND "type"::text = $3
+          AND "mergedIntoId" IS NULL
+          AND embedding IS NOT NULL
+        ORDER BY distance ASC
+        LIMIT 3
+        `,
+        this.toVectorLiteral(vec),
+        args.tenantId,
+        args.type,
+      );
+    } catch (err) {
+      // Если KNN-запрос упал (например, нет pgvector в test DB) — мягкий fallback.
+      this.logger.debug(
+        {
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'entity-resolution KNN: pgvector query упал — fallback на create',
+      );
+      return null;
+    }
+    if (rows.length === 0) return null;
+    const best = rows[0];
+    if (!best) return null;
+    const dist =
+      typeof best.distance === 'string' ? Number(best.distance) : best.distance;
+    if (!Number.isFinite(dist)) return null;
+    const similarity = 1 - dist;
+    if (similarity < threshold) return null;
+    const entity = await this.prisma.entity.findUnique({
+      where: { id: best.id },
+    });
+    return entity;
+  }
+
+  /** Redis ключ кеша resolved-сущности. */
+  private buildCacheKey(
+    tenantId: string,
+    type: EntityType,
+    loweredName: string,
+  ): string {
+    const hash = createHash('sha1').update(loweredName).digest('hex');
+    return `entity-resolve:${tenantId}:${type}:${hash}`;
+  }
+
+  private async readCache(key: string): Promise<string | null> {
+    if (!this.redis) return null;
+    try {
+      const v = await this.redis.client.get(key);
+      return v ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeCache(key: string, entityId: string): Promise<void> {
+    if (!this.redis) return;
+    const ttl = this.cfg?.entityIngest.cacheTtlSeconds ?? 3600;
+    try {
+      await this.redis.client.set(key, entityId, 'EX', ttl);
+    } catch {
+      // fail-open: cache недоступен — не ломаем основной flow.
+    }
+  }
+
+  private async deleteCache(key: string): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.client.del(key);
+    } catch {
+      // молча.
+    }
   }
 
   // ─────────────────────────── Фаза 0b: hint resolvers ─────────────────────

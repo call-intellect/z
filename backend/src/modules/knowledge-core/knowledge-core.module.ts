@@ -20,6 +20,7 @@ import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
+import { FactSupersedeService } from './services/fact-supersede.service';
 import { AxisClassifierService } from './services/axis-classifier.service';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
@@ -161,6 +162,10 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // shadow-режиме: специалисты вызывают `compareWithLegacy` рядом с
     // легаси-вычислением; реальный write пока legacy. См. ТЗ §W4.1.
     DataClassPolicyService,
+    // KC-Temporal W1.2 (2026-05-25) — FactSupersedeService.
+    // Запускается best-effort из BlockDistillWorker после markCanonical
+    // при cfg.bitemporal.enabled && cfg.bitemporal.supersedeEnabled.
+    FactSupersedeService,
   ],
   exports: [
     SegmentBuilderService,
@@ -233,6 +238,9 @@ import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
     // W4.1 — экспортируется для специалистов 3.1–3.6 (shadow-вызовы) и
     // будущих enforce-call'ов на W4.2 + W4.3.
     DataClassPolicyService,
+    // KC-Temporal W1.2 — экспортируется для BlockDistillWorker (WorkersModule)
+    // и тестов.
+    FactSupersedeService,
   ],
 })
 export class KnowledgeCoreModule {}

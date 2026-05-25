@@ -637,6 +637,49 @@ const KnowledgeCoreSchema = z.object({
   BITEMPORAL_FACT_SIGNAL_TYPES: z
     .string()
     .default('fact,commitment,commitment_status,plan_item,done_item,client_request'),
+
+  // ── KC-Temporal W1.2 (2026-05-25) — FactSupersedeService ──────────────
+  /**
+   * Cosine-порог отбора кандидатов в KNN-арбитра supersede. Берём pgvector
+   * cosine SIMILARITY (1 - distance), embedding'и нормированы. Поднимаем
+   * выше дефолта block-distill (0.92), потому что supersede — критичная
+   * операция: блок закрывается, исчезает из активного поиска. См. ТЗ §W1.2.
+   */
+  FACT_SUPERSEDE_COSINE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  /**
+   * Сколько KNN-кандидатов передавать LLM-арбитру fact-supersede-detect.
+   * 5 — баланс recall vs cost: больше — больше токенов на каждый блок.
+   */
+  FACT_SUPERSEDE_KNN_TOP_K: z.coerce.number().int().positive().default(5),
+  /**
+   * Процент прироста недельного AI-биллинга по taskType=fact-supersede-detect,
+   * при превышении которого alert правило `fact_supersede_cost_spike` пейджит
+   * on-call. Используется Prometheus alert rule + sanity-check в тестах.
+   */
+  FACT_SUPERSEDE_COST_ALERT_PCT: z.coerce.number().min(0).max(100).default(5),
+
+  // ── KC-Temporal W1.5 (2026-05-25) — Ingest-time KNN resolver ─────────
+  /**
+   * Cosine-порог короткого замыкания в `EntityResolutionService.findOrCreateEntity`.
+   * При best KNN-similarity >= порога — возвращаем существующую сущность
+   * без LLM-арбитра. Выше асинхронного worker'а (0.88), потому что синхронный
+   * матч должен быть «почти точным» (один LLM-вызов на каждое сомнение очень дорог).
+   * См. ТЗ §W1.5.
+   */
+  ENTITY_INGEST_RESOLVE_THRESHOLD: z.coerce
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.95),
+  /**
+   * TTL кеша resolved-сущности (Redis). 1 час — горячие имена («OpenAI»,
+   * «Иван Петров») переиспользуются между ingest-job'ами без удара в БД.
+   */
+  ENTITY_INGEST_RESOLVE_CACHE_TTL_S: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600),
 });
 
 /** Шеринг (длительность ссылок). */

@@ -121,7 +121,7 @@ docker-образ `livekit/livekit-server` (и egress) до совместимо
 
 **ESLint-правило** для запрета `cypher(` в файлах вне `common/graph/` — TODO Фазы 0d (через `no-restricted-syntax` или кастомное правило).
 
-## Промты — защита от инъекций (analyze.worker)
+## Промты — защита от инъекций (analyze.worker + knowledge-core / chat-v2 / dialog-layer)
 
 С [ТЗ 2026-05-24 §4 (F1)](../../plans/tz/2026-05-24-prompts-hardening.md#4-f1-prompt-injection-guard) `analyze.worker` подаёт LLM пользовательский ввод (транскрипт, room chat, `customPrompt`, заголовок встречи) **только внутри маркеров данных**:
 
@@ -144,9 +144,43 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 
 **Feature-flag `PROMPT_INJECTION_GUARD_ENABLED`** (default: `true`, см. [`env.schema.ts`](../../backend/src/common/config/env.schema.ts), геттер `cfg.aiFeatures.promptInjectionGuardEnabled`). При `false` — `analyze.worker` возвращается к старому поведению (customPrompt напрямую в system, маркеров и sanitize нет). Для быстрого rollback по [§13 ТЗ](../../plans/tz/2026-05-24-prompts-hardening.md#13-откат-rollback).
 
-**Что НЕ покрыто текущей фазой:** knowledge-core (block-ingest, role-map-extract, decision-extract, idea-extract), chat-v2 (synthesize), dialog-layer (contextualize/multi-query/summarize). Это следующая подзадача в рамках F1; в `analyze.worker` уже всё (`runSummary`, `runStructuredReport`, `runFollowUp`, `runTasks`, `runCustomPrompt`).
+**F1.2 — распространение guard'а на остальные LLM-вызовы (2026-05-25).** После закрытия `analyze.worker` тот же паттерн (`wrapUserData` + `withInjectionGuard` + feature-flag) применён ко всем оркестраторам, где user-блок собирается из пользовательского ввода (транскрипт, контент блока, вопрос чата). Полный список покрытых файлов:
 
-**Метрика для Grafana-алёрта:** `z_prompt_injection_attempt_total{source,pattern}` — рост в окне 1ч намекает на массовую атаку или ложноположительный regex (обновить `FORBIDDEN_PATTERNS`).
+  - **chat-v2** (`source='chat'` + sanitize-метрика по user-вопросу/сообщениям):
+    - `backend/src/modules/chat-v2/services/conversations.service.ts` (`generateTitle`),
+    - `backend/src/modules/knowledge-core/services/chat-v2.service.ts` (`ask`).
+  - **dialog-layer** (`source='chat'`, sanitize по question/messages):
+    - `services/contextualizer.service.ts`,
+    - `services/query-classifier.service.ts`,
+    - `services/multi-query-expansion.service.ts`,
+    - `services/confidence-estimator.service.ts`,
+    - `workers/conversation-summarizer.cron.ts`.
+  - **knowledge-core** (`source='transcript'`, без sanitize — естественная речь даёт false positives):
+    - `services/block-extraction.service.ts` (`block-ingest`),
+    - `services/block-link.service.ts`, `block-merge.service.ts`,
+    - `services/entity-graph.service.ts`, `entity-merge.service.ts`,
+    - `services/axis-classifier.service.ts`, `theme-classification.service.ts`,
+    - `services/card-rollup-v2.service.ts`,
+    - `services/chapters-extractor-v2.service.ts`, `tasks-extractor-v2.service.ts`, `summary-extractor-v2.service.ts`,
+    - `services/specialist-3-1-regulations.service.ts` (extract + dedupe),
+    - `services/specialist-3-2-knowledge-clone.service.ts` (extract + merge),
+    - `services/specialist-3-3-decisions.service.ts` (extract + supersede-detect),
+    - `services/specialist-3-5-insights.service.ts` (extract + link-to-decisions),
+    - `services/specialist-3-6-ideas.service.ts`,
+    - `services/specialist-3-7-skill.service.ts` (detect + merge),
+    - `services/specialist-3-9-experiments.service.ts`,
+    - `services/ideas-closing-loop.handler.ts`,
+    - `services/executable-persona-build.service.ts`,
+    - `services/router.service.ts` (`router-fallback`),
+    - `workers/idea-clusterer.cron.ts`, `reframing.cron.ts` (×2 вызова), `strategic-alignment.worker.ts`.
+  - **role-map / specialist-3-8-helpfulness:**
+    - `role-map/workers/role-map-builder.worker.ts`,
+    - `specialist-3-8-helpfulness/services/specialist-3-8-helpfulness.service.ts` (detect + merge),
+    - `specialist-3-8-helpfulness/cron/helpfulness-spotlight.cron.ts`.
+
+  Везде применяется единый паттерн: `cfg.aiFeatures.promptInjectionGuardEnabled` (defensive try/catch, `@Optional()` cfg для сервисов с историческими unit-тестами без `TypedConfigService`), `withInjectionGuard(system)` + `wrapUserData(user)`. Retry-suffix у v2-extractor'ов остаётся СНАРУЖИ маркеров (это системное сообщение оркестратора, не пользовательские данные).
+
+**Метрика для Grafana-алёрта:** `z_prompt_injection_attempt_total{source,pattern}` — рост в окне 1ч намекает на массовую атаку или ложноположительный regex (обновить `FORBIDDEN_PATTERNS`). После F1.2 ожидается всплеск по `source='chat'` (мы там подключили sanitize); по `source='transcript'` метрика остаётся нулевой по дизайну.
 
 ## Confidence — единая калибровка (ТЗ 2026-05-24 §5 / F2)
 
@@ -157,6 +191,8 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 **Enum-промты (low/medium/high)** — это отдельный случай (`skill-trait-detect`, `knowledge-clone-extract`, `helpfulness-trait-merge`). У них уже свои внутренние якоря (типа «low = 1–2 наблюдения, high = 6+»). К ним `withConfidenceCalibration` **не применять** — будет дубль и противоречие. Для соответствия enum↔float используется таблица `CONFIDENCE_ENUM_TO_FLOAT = { low: 0.3, medium: 0.6, high: 0.85 }` + helper'ы `confidenceEnumToFloat` / `confidenceFloatToEnum` в том же `common.ts`. UI всегда отображает confidence через mapper — пользователь видит единый scale, даже если backend возвращает enum.
 
 **Качественные шкалы (severity / interest_level / churn_risk / role_fit)** — это НЕ confidence. Якоря для них живут прямо в тексте промта (см. `type-sales`, `type-customer_success`, `type-interview`, `meeting-quality-score`). При добавлении новой качественной шкалы — добавляй якоря в текст промта одним предложением per уровень (формат `- {уровень} — {критерий}`).
+
+**Гибридная онтология (F16, 2026-05-24):** в Z живут одновременно два представления confidence — `float [0,1]` (новые промты) и `enum low/medium/high` (legacy `skill-trait-detect`, `knowledge-clone-extract`, `helpfulness-detect`). Миграция enum→float **не делается** массово — это риск регрессии + завязка UI. Любая агрегация / отображение confidence идёт через mapper `CONFIDENCE_ENUM_TO_FLOAT` + helper'ы `confidenceEnumToFloat` / `confidenceFloatToEnum` в [`common.ts`](../../backend/src/modules/ai/services/prompts/common.ts). Полное правило — в скиле [`.claude/skills/z-ai-agent-rules/SKILL.md`](../../.claude/skills/z-ai-agent-rules/SKILL.md) (раздел «Confidence — единая онтология»).
 
 **Применено в (F2 wave 1, 2026-05-24):** `tasks.ts` (TASKS_SYSTEM + MEETING_EXTRACT_ACTIONS_SYSTEM), `tasks-structured.ts`, `decision-extract`, `idea-extract`, `insight-extract` (удалены mini-якоря волны F8), `experiment-extract` (удалены mini-якоря), `process-template-extract`, `regulation-extract`, `idea-cluster-merge` (удалены mini-якоря), `role-map-extract`, `helpfulness-detect` (удалён mini-якорь для confidence — intensity сохранён, это другая шкала), `block-ingest`.
 
@@ -169,5 +205,27 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 **Как обойти:** удалить кэш руками — `Remove-Item -Recurse -Force .next\types` (через **PowerShell**, не Bash — `rm -rf .next/types` блокируется sandbox в Claude Code). Или просто запустить `next dev`/`next build` один раз, чтобы регенерировать.
 
 **Когда возникает:** любая операция `git mv` папки внутри `app/`. Также при переименовании файлов внутри page-сегментов.
+
+## Snapshot-тесты промтов (`*.snapshot.spec.ts`)
+
+**Что это:** unit-тест, который вызывает `buildPrompt(input)` / `buildXxxUserPrompt(args)` или фиксирует константные system-промты и сохраняет результирующую строку через `expect(...).toMatchSnapshot('label')`. Файл хранится рядом в `__snapshots__/<file>.snap` (или inline для коротких — `toMatchInlineSnapshot`). Тест падает, если строка изменилась.
+
+**Зачем:** ловить регрессии в **сборке** промта — порядок применения wrap'еров (`withRoomChatNote` / `withConfidenceCalibration` / `withInjectionGuard` / `withToolInstructions`), дублирование/удаление кусочков, случайные правки констант. Покрыто в F15 (ТЗ `2026-05-24-prompts-hardening.md`): топ-10 промтов — `type-sales`, `type-interview`, `meeting-quality-score`, `tasks-unified`, `decision-extract`, `idea-extract`, `skill-trait-detect`, `chat-v2-synthesize`, `recognition-formulate`, `multi-query` (+ `contextualize` вместо нерабочего chat-v2 build'а).
+
+**Что snapshot НЕ проверяет:**
+- качество LLM-вывода — для этого SPO (`2026-05-24-supervised-prompt-optimization.md`), judge-rubric 0..5 на golden set;
+- семантическую корректность системы — это unit-тесты на schema (`tasks-unified.spec.ts` уже есть, см. рядом).
+
+**Когда обновлять (только осознанно!):**
+1. Если ты редактируешь текст промта (правишь якоря, добавляешь блок, меняешь wrap-helper) — запусти `bunx vitest run snapshot.spec`, посмотри diff в выводе vitest. Если diff соответствует твоей правке → `bunx vitest run snapshot.spec --update`. Закоммить `.snap` файлы вместе с правкой промта.
+2. После обновления `.snap` — глазами ещё раз перечитай diff в `git diff backend/src/modules/**/__snapshots__/`. Если промт раздулся вдвое или исчез блок — это сигнал, что что-то сломалось.
+
+**Антипаттерны (что НЕ делать):**
+- **Обновлять snapshot, не понимая diff'а.** Если тест упал «на ровном месте» — снимок зафиксировал реальную регрессию, иди разбирайся, а не маши `--update`. Любое `--update` без ревью = пропущенная регрессия.
+- **Snapshot для проверки качества LLM-вывода.** Snapshot — про детерминированный input → детерминированный текст промта. Качество вывода LLM измеряется через SPO judge-rubric.
+- **Включать в snapshot динамические данные** (`new Date().toISOString()`, `Math.random()`, абсолютные пути). Если build-функция использует «сейчас» — снимок будет flakey. Передавай детерминированный input (как в `meeting-quality-score.snapshot.spec.ts` — фиксированный `transcriptCondensed`, без `Date.now()`).
+- **Snapshot для промта, который требует DI / NestJS-сервиса.** Snapshot имеет смысл только для **чистых** build-функций. Если промт собирается внутри `@Injectable()` сервиса с зависимостями — выноси саму строковую сборку в pure-функцию, тестируй её отдельно.
+
+**Где живут:** рядом с промтом, имя `<prompt-name>.snapshot.spec.ts`. Snapshot-файлы — в `__snapshots__/` рядом (vitest создаёт автоматически). Inline-snapshots — прямо в spec для коротких (<2KB) строк.
 
 [[../index|← index]]

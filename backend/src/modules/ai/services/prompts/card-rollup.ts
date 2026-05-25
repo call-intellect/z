@@ -1,5 +1,19 @@
 /**
- * Промпты для card-rollup — обзор всех встреч в карточке.
+ * card-rollup **v1 (legacy)** — обзор встреч карточки по `AiResult.summary`.
+ *
+ * **СФЕРА ПРИМЕНЕНИЯ (НЕ СМЕШИВАТЬ С v2):**
+ * - v1 (этот файл) — используется в `ai/services/card-rollup.service.ts` и
+ *   `ai/workers/card-rollup.worker.ts` для legacy `Card.summaryCache` поверх
+ *   `AiResult.summary` (саммари встреч уровня analyze.worker).
+ * - **v2** — `knowledge-core/prompts/card-rollup-v2.prompts.ts` +
+ *   `knowledge-core/services/card-rollup-v2.service.ts` — работает по
+ *   `IdeaBlock` (вопрос ↔ доверенный ответ + теги + цитаты), используется
+ *   в `CardRollupV2Worker` поверх `CORE_QUEUE_NAMES.CARD_ROLLUP_V2`.
+ *
+ * Между v1 и v2 разный input (summary-строки vs IdeaBlock-граф) и разный
+ * выходной формат. Не унифицировать «одним промтом» — это два независимых
+ * pipeline'а с разной семантикой данных. См. F14 в
+ * `plans/tz/2026-05-24-prompts-hardening.md`.
  *
  * Промпты отличаются по `kind` карточки:
  *   client  — как развивается работа с клиентом

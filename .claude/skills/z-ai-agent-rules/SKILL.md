@@ -292,6 +292,64 @@ GRSAI_API_KEY=sk-cc8ea...
 
 ---
 
+## Версионирование code-fallback промтов (F10)
+
+При **изменении существующей** `SYSTEM_PROMPT` константы в `backend/src/modules/**/prompts/**/*.ts` (то есть в code-fallback, до миграции в БД-registry):
+
+- Создавай **новую константу** с суффиксом `_V2` (или `_V3` и т.д.), не правь существующую.
+- В jsdoc новой версии указывай дату создания и причину изменения.
+- Старую версию **не удаляй сразу** — оставляй на 1-2 деплоя для shadow-run через `PromptResolver`.
+- Удаляй только когда есть подтверждение, что новая версия работает стабильнее по метрикам (latency / refusal-rate / judge-rubric SPO).
+
+Это даёт:
+- историю изменений промтов прямо в git;
+- возможность A/B-сравнения через `PromptResolver` shadow-run;
+- безопасный rollback (revert последнего коммита возвращает указатель на старую версию).
+
+**Не применяется** к промтам, уже мигрированным в БД-registry — там version history через `PromptTemplateVersion` (поля `version`, `createdAt`, ссылка `previousVersionId`).
+
+Пример:
+
+```typescript
+// 2026-04-15 — исходная версия
+export const TASKS_SYSTEM = `...старый текст...`;
+
+// 2026-05-24 — добавили якоря suggestedPriority, нужна на 1-2 деплоя
+// параллельно для shadow-run, потом TASKS_SYSTEM убираем.
+/**
+ * @since 2026-05-24
+ * @reason Якоря suggestedPriority + clamp confidence в [0,1].
+ */
+export const TASKS_SYSTEM_V2 = `...новый текст с якорями...`;
+```
+
+`PromptResolver` в коде выбирает версию по ENV-флагу или процентному split'у, метрика `z_prompt_version_used{key, version}` показывает реальный трафик.
+
+---
+
+## Confidence — единая онтология (F16)
+
+В Z/Кора используется **гибридная** confidence-онтология:
+
+- **Новые промты** **обязаны** возвращать `confidence: float ∈ [0, 1]` (continuous). Применять `withConfidenceCalibration(systemBody)` из [`common.ts`](../../../backend/src/modules/ai/services/prompts/common.ts) — он подмешивает единый текст шкалы `CONFIDENCE_CALIBRATION`.
+- **Существующие enum-промты** (`skill-trait-detect`, `knowledge-clone-extract`, `helpfulness-detect`) **НЕ мигрируются**: риск регрессии + UI завязан на enum-категории (badge low/medium/high). К ним `withConfidenceCalibration` **не применять** — будет дубль и противоречие.
+- **UI всегда отображает confidence через mapper** — `CONFIDENCE_ENUM_TO_FLOAT = { low: 0.3, medium: 0.6, high: 0.85 }`. Пользователь видит единый scale 0–100% или одинаковые badge-цвета, даже если backend вернул enum.
+
+Точечная миграция enum→float — только когда конкретная бизнес-логика этого потребует (например, для агрегации/среднего по traits в дашборде).
+
+Helper'ы в [`backend/src/modules/ai/services/prompts/common.ts`](../../../backend/src/modules/ai/services/prompts/common.ts):
+
+```typescript
+export const CONFIDENCE_ENUM_TO_FLOAT = { low: 0.3, medium: 0.6, high: 0.85 } as const;
+export type ConfidenceEnum = 'low' | 'medium' | 'high';
+export function confidenceEnumToFloat(v: ConfidenceEnum): number;
+export function confidenceFloatToEnum(v: number): ConfidenceEnum;
+```
+
+**Качественные шкалы** (`severity` / `interest_level` / `churn_risk` / `role_fit`) — это **НЕ** confidence. Якоря для них живут прямо в тексте промта (см. `type-sales`, `type-customer_success`, `type-interview`, `meeting-quality-score`). При добавлении новой качественной шкалы — добавляй якоря в текст промта одним предложением per уровень (формат `- {уровень} — {критерий}`), не подмешивай `CONFIDENCE_CALIBRATION`.
+
+---
+
 ## Чеклист нового AI-агента
 
 - [ ] Worker в правильной директории

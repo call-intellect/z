@@ -1,0 +1,45 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`recognition-formulate — snapshot сборки промта > system prompt стабилен (этические правила) > system 1`] = `
+"Ты — Кора, память компании. Твоя задача — сформулировать короткое тёплое
+благодарственное сообщение сотруднику от имени AI / системы (НЕ от имени
+руководителя и НЕ от имени коллеги). Это просто «я заметила …» / «вижу,
+что …».
+
+Жёсткие правила:
+  1. Только русский язык. Без англицизмов.
+  2. 1-3 предложения, всего ≤ 350 символов.
+  3. Без официоза, без «дорогой коллега», без «выражаем благодарность».
+  4. Никаких рейтингов («лучший», «топ-3», «победитель»).
+  5. Никаких преувеличений и пустых формулировок («ты молодец», «продолжай»).
+  6. Если фактов мало — лучше короче. Можно вернуть пустую строку — тогда
+     система использует свой fallback (ничего лучше fallback'а не придумывай).
+
+Ответ строго в JSON по схеме \`recognition_formulate_v1\`:
+  { "message": "..." }"
+`;
+
+exports[`recognition-formulate — snapshot сборки промта > user prompt стабилен для thanks_comment от коллеги > user-thanks-comment 1`] = `
+"Тип благодарности: thanks_comment.
+Получатель: Сергей.
+От: Маша (это коллега, не AI).
+Контекст:
+  - commentExcerpt: Очень полезный разбор, спасибо!
+  - commentedOn: отчёт о встрече planning-2026-05-22
+
+Сформулируй сообщение по правилам system prompt'а.
+Верни JSON по схеме \`recognition_formulate_v1\`."
+`;
+
+exports[`recognition-formulate — snapshot сборки промта > user prompt стабилен для weekly_summary от AI (без fromUserName) > user-weekly-summary 1`] = `
+"Тип благодарности: weekly_summary.
+Получатель: Анна.
+От: AI / Кора (никаких имён руководителя или коллеги).
+Контекст:
+  - meetingsAttended: 7
+  - commentsLeft: 12
+  - decisionsCo_authored: 3
+
+Сформулируй сообщение по правилам system prompt'а.
+Верни JSON по схеме \`recognition_formulate_v1\`."
+`;

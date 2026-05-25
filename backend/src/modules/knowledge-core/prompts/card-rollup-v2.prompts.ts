@@ -1,5 +1,19 @@
 /**
- * SBA α-6 — system-промпты card-rollup-v2 по `Card.kind`.
+ * SBA α-6 — system-промпты **card-rollup v2** по `Card.kind`.
+ *
+ * **СФЕРА ПРИМЕНЕНИЯ (НЕ СМЕШИВАТЬ С v1):**
+ * - v2 (этот файл) — работает поверх `IdeaBlock` (вопрос ↔ доверенный ответ
+ *   + теги + цитаты), используется в `CardRollupV2Service` /
+ *   `CardRollupV2Worker` (`CORE_QUEUE_NAMES.CARD_ROLLUP_V2`). Это knowledge-
+ *   core свёртка — данные приходят из графа после block-ingest + theme-кластеризации.
+ * - **v1 (legacy)** — `ai/services/prompts/card-rollup.ts` +
+ *   `ai/services/card-rollup.service.ts` — собирает обзор по
+ *   `AiResult.summary` (саммари встреч уровня analyze.worker). Заполняет
+ *   `Card.summaryCache`.
+ *
+ * Не унифицировать одним промтом: у v1 input — массив строк-саммари, у v2 —
+ * IdeaBlock-граф с цитатами и тегами. Разная семантика данных → разные
+ * якоря промта. См. F14 в `plans/tz/2026-05-24-prompts-hardening.md`.
  *
  * Промпты вынесены из CardRollupV2Service в отдельный модуль, чтобы:
  *   - один таблица соответствий kind → prompt key (для prompt-registry в будущем);

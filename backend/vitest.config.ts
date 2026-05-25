@@ -20,6 +20,10 @@ export default defineConfig({
       // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 —
       // snapshot-тесты на seed-скрипты критичных LLM-роутов.
       'scripts/**/*.spec.ts',
+      // ТЗ 2026-05-25 KC-Temporal, W2.1 — golden-set knowledge-core.
+      // Лежит в `tests/` (множ. число) намеренно, чтобы отделить от `test/`
+      // unit/integration/e2e — у golden другой life-cycle и owner workflow.
+      'tests/**/*.spec.ts',
     ],
     fileParallelism: false,
     setupFiles: ['./test/setup-test-env.ts'],

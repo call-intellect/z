@@ -29,6 +29,6 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts", "test/**/*.ts"],
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "test/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist", "vitest.config.ts"]
 }

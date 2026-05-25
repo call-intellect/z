@@ -3,7 +3,61 @@
 Status: **TODO**. Golden-set встреч и метрики ещё не подготовлены — это блокер
 релиза Фазы 2 в прод.
 
-## Цель (из ТЗ строки 599 и 944-951)
+> **2026-05-25 (W2.1 scaffolding):** создан каркас golden-set'а в
+> `backend/tests/golden/knowledge-core/`. Реальная разметка 50 встреч ещё не
+> сделана — это **ручная работа owner'а**, см. раздел «Golden-set W2.1» ниже
+> и инструкцию в `backend/tests/golden/knowledge-core/README.md`.
+
+---
+
+## Golden-set W2.1 (новая регресс-инфраструктура)
+
+Источник: ТЗ `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md`,
+§W2.1.
+
+### Текущий baseline
+
+| Метрика                       | Порог | Текущее значение |
+| ----------------------------- | ----- | ---------------- |
+| `signalTypeMacroF1`           | 0.7   | _не измерено_    |
+| `entityRecallAt10`            | 0.85  | _не измерено_    |
+| `blockNameCosineSimilarity`   | 0.8   | _не измерено_    |
+| `top3SearchHitRate`           | 0.8   | _не измерено_    |
+
+Цель: 50 размеченных встреч к **TODO (owner: проставить дату)**. Дальше — рост
+до 200-300 встреч.
+
+### Как пополнять
+
+Подробная инструкция со схемами JSON-фикстур и примерами —
+`backend/tests/golden/knowledge-core/README.md`.
+
+Кратко:
+1. Положить транскрипт (анонимизированный!) в
+   `backend/tests/golden/knowledge-core/meetings/NNN-name.json`.
+2. Разметить ожидаемые блоки/entities/queries в
+   `backend/tests/golden/knowledge-core/expected/NNN-name.expected.json`.
+3. Прогнать `cd backend && bun run golden:knowledge-core`.
+4. Когда встреч ≥ 50 — снять `it.skip` для блокирующего CI gate.
+
+### Команды
+
+```
+bun run golden:knowledge-core           # запустить suite
+bun run golden:knowledge-core:update    # обновить expected после намеренного изменения промптов
+```
+
+### Связанные файлы
+
+- Suite: `backend/tests/golden/knowledge-core/golden.spec.ts`
+- Конфиг и типы: `backend/tests/golden/knowledge-core/fixtures/golden.config.ts`
+- Инструкция: `backend/tests/golden/knowledge-core/README.md`
+
+---
+
+## Исторический контекст (до W2.1)
+
+### Цель (из ТЗ строки 599 и 944-951)
 
 - top-3 hit rate ≥ +50% относительно старого chunk-RAG (baseline — `chat.service`
   поверх `MeetingTranscriptChunk`).
@@ -12,14 +66,14 @@ Status: **TODO**. Golden-set встреч и метрики ещё не подг
   ожидаемый набор Entity (по типам person / project / client / product) —
   считается % найденных.
 
-## Источники истины
+### Источники истины
 
 - ТЗ: `plans/tz/2026-05-10-knowledge-core-tz.md`, раздел «Фаза 2 → Шаг 6».
 - Архитектура: `second-brain/02_architecture/knowledge-core.md`.
 - Скелет: `backend/scripts/benchmark-knowledge-core.ts` — печатает структурные
   метрики Org. Реальный harness golden-set'а нужно писать поверх него.
 
-## TODO
+### TODO
 
 - [ ] Подготовить golden-set 5-10 встреч из dev-БД с ручными «ожидаемыми
       ответами» на 3-5 вопросов каждой.
@@ -33,14 +87,14 @@ Status: **TODO**. Golden-set встреч и метрики ещё не подг
 - [ ] Зафиксировать baseline в этом файле + создать дашборд в Grafana
       (panel «KC top-3 hit rate», `panel «KC compression ratio»).
 
-## Текущий статус по структурным метрикам
+### Текущий статус по структурным метрикам
 
 Команда: `bun run scripts/benchmark-knowledge-core.ts <orgId>` — печатает
 JSON со счётчиками IdeaBlock / Entity / Evidence / IdeaBlockEntity / RawEvent
 для конкретного Org. Не предоставляет hit rate, только compression и
 покрытие.
 
-## Заметки
+### Заметки
 
 - pgvector cosine `<=>` против text-embedding-3-small (1536-dim) на нашей
   HNSW-индексной таблице даёт стабильный latency ~10-30мс для top-5.

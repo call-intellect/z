@@ -18,6 +18,8 @@
     "test:integration": "vitest run test/integration",
     "test:integration:knowledge-core": "vitest run src/modules/knowledge-core/api src/modules/knowledge-core/services/entity-resolution.service.spec.ts",
     "test:e2e": "vitest run test/e2e",
+    "golden:knowledge-core": "vitest run tests/golden/knowledge-core/golden.spec.ts",
+    "golden:knowledge-core:update": "vitest run tests/golden/knowledge-core/golden.spec.ts -- --update-snapshots",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
     "prisma:generate": "prisma generate",

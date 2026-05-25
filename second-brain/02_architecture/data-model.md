@@ -855,6 +855,31 @@ model WeeklyOperationsDigest {
 
 **`Org` (расширение):** добавлено поле `timezone String? @default("Europe/Moscow")`. Backfill — `backend/scripts/patch-org-timezone-default.ts`.
 
+### SBA β-8.3 — DailyOperationsDigest (2026-05-25)
+
+**Источник:** [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
+
+**`DailyOperationsDigest` (новая, зеркало `WeeklyOperationsDigest` в окне 1 день МСК):**
+
+```prisma
+model DailyOperationsDigest {
+  id              String   @id @default(cuid())
+  tenantId        String
+  dateLocal       String   // YYYY-MM-DD в локали Org (Europe/Moscow)
+  bodyMarkdown    String   @db.Text
+  shortSummary    String?  @db.Text   // короткая выжимка для Telegram-доставки
+  metricsJson     Json     // структурированные показатели для виджетов/деталей
+  sourcesJson     Json     // провенанс: id блокеров/инсайтов/целей/решений за день
+  llmTaskRouteId  String?
+  deliveredAt     DateTime?            // когда отправили в Telegram (если включено)
+  createdAt       DateTime @default(now())
+  @@unique([tenantId, dateLocal])     // идемпотентность глобального cron'а
+  @@map("daily_operations_digests")
+}
+```
+
+Глобальный cron `operations-daily-digest` (`0 22 * * *` UTC = 01:00 МСК, см. [[../01_projects/workers-queues|workers-queues]]) собирает запись на каждую `Org` за вчера. Тумблеры через `AdminSetting`: `operations.daily_digest.enabled`, `operations.daily_digest.deliver_to_telegram` (default false). Telegram-рассылка через `ConversationalService.sendNotification(eventType='operations.daily_digest')` — получатели **только `coo+owner`** (admin исключён). Метрики Prometheus: `coo_daily_digest_generated_total`, `coo_daily_digest_failed_total{reason}`, `coo_daily_digest_delivered_total{channel}`, `coo_daily_digest_age_seconds` (gauge).
+
 ### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)
 
 **Источник:** [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).

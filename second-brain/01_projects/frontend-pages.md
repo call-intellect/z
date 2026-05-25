@@ -173,8 +173,9 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 | Путь | Что показывает | Фаза |
 |---|---|---|
-| `/dashboard/operations` (расширена) | Существующая панель + новый виджет `TeamTemperatureWidget` (зелёный/жёлтый/красный по 7 дням) + виджет «Открытые обещания» | β-8.1 + β-8.2 |
+| `/dashboard/operations` (расширена) | Существующая панель + новый виджет `TeamTemperatureWidget` (зелёный/жёлтый/красный по 7 дням) + виджет «Открытые обещания» + (β-8.3) `CauseCategoryMapWidget` (8 горизонтальных столбиков по `Insight.causeCategory`) + `MaturityWidget` (SVG-кольцо score зрелости + weakest/top FunctionalDomain) + блок «Вчерашний отчёт» (превью `DailyOperationsDigest`). `OperationsDashboardClient` обновлён под новые поля overview (`insightsByCauseCategory`, `maturity`). | β-8.1 + β-8.2 + β-8.3 |
 | `/dashboard/operations/weekly?weekStart=YYYY-MM-DD` | `WeeklyDigestClient` — рендер `WeeklyOperationsDigest` с навигацией по неделям. Доступ — `coo`/`owner`/`admin`. | β-8.1 |
+| `/dashboard/operations/daily?date=YYYY-MM-DD` | **β-8.3** — `DailyDigestClient`: date-picker + markdown-рендер `DailyOperationsDigest` + секции метрик и провенанса. Доступ — `coo`/`owner`/`admin`. Пункт «Ежедневный отчёт» в группе «Операции» sidebar. | β-8.3 |
 | `/me/promises` | `MyPromisesClient` — таблица обещаний сотрудника + фильтр (open/asked/all) + действия (Сделано / Не сделано / Отменить) | β-8.2 |
 | `/persons/[id]` (расширена) | Секция «Обещания» в `PersonDetailClient.tsx` (через `PersonCommitmentsSection`): исходящие («что обещал») + входящие («что обещали ему»). Видна `owner`/`admin`/`coo`/`super_admin`. Запрос идёт по `entityId` (бэк сам резолвит `Person.id` через `Person.entityId`). | β-8.2 |
 
@@ -189,5 +190,6 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.
 - **2026-05-25 (UI/API modernization):** добавлена секция про design-preview / 7 новых shared-компонентов / 2 hooks / OKLCH-токены / sonner-миграцию / mobile-адаптацию.
 - **2026-05-25 (β-8.1/β-8.2):** добавлены страницы `/dashboard/operations/weekly` и `/me/promises`, виджеты `TeamTemperatureWidget` и «Открытые обещания», роль `coo` во фронтенд-типах.
+- **2026-05-25 (β-8.3):** добавлена страница `/dashboard/operations/daily` + новые виджеты `CauseCategoryMapWidget` и `MaturityWidget` на `/dashboard/operations` + блок «Вчерашний отчёт» + кликабельные бэйджи `cause_category` в `InsightsTopWidget` (deep-link `/insights?cause_category=…`). Файл `frontend/src/lib/cause-category-presentation.ts` — 8 русских лейблов + Tailwind палитра.
 
 [[../index|← index]]

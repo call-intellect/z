@@ -1810,24 +1810,32 @@ mail-inbound/
 - Period-селекторы унифицированы на `day/week/month` (Фаза 9); legacy `24h/7d/30d` остался только в API-вызовах через UI-mapper.
 - `/admin/ai-usage` — 308-redirect на `/admin/analytics/functions` (Фаза 9).
 
-### SBA β-8.1 + β-8.2 — модуль `operations/` расширен (2026-05-25)
+### SBA β-8.1 + β-8.2 + β-8.3 — модуль `operations/` расширен (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md).
+**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 
 `backend/src/modules/operations/` — расширения поверх готового β-8:
 
-| Слой | β-8 (уже было) | β-8.1 (новое) | β-8.2 (новое) |
-|---|---|---|---|
-| Контроллеры | `operations-dashboard`, `my-check-ins`, `personal-relations` | `weekly-digest` + extension `operations-dashboard.team-temperature` | `my-promises` + extensions `operations-dashboard.open-commitments`, `personal-relations.commitments` |
-| Сервисы | `daily-checkin`, `personal-relation`, `goal-cascade`, `operations-dashboard`, `checkin-parser`, `checkin-response.handler` | `weekly-digest.service` | `commitments.service`, `specialist-3-9-promise-keeper.service`, `commitment-response.handler` |
-| Воркеры/cron | `daily-checkin-prompt.cron`, `personal-relation-builder.worker` | `checkin-sentiment-analyzer.worker` (@OnEvent), `operations-weekly-digest.cron` | `commitment-followup.cron` |
-| Промпты | — | `checkin-sentiment`, `weekly-digest` | — (использует общий `block-ingest.prompt` с двумя новыми guess-полями) |
-| Скрипты | — | `patch-org-timezone-default.ts`, `seed-llm-task-routes-beta-8-1.ts` | `backfill-commitment-due-dates.ts`, `seed-llm-task-routes-beta-8-2.ts` |
+| Слой | β-8 (уже было) | β-8.1 (новое) | β-8.2 (новое) | β-8.3 (новое) |
+|---|---|---|---|---|
+| Контроллеры | `operations-dashboard`, `my-check-ins`, `personal-relations` | `weekly-digest` + extension `operations-dashboard.team-temperature` | `my-promises` + extensions `operations-dashboard.open-commitments`, `personal-relations.commitments` | `daily-digest.controller` (GET/POST + `/latest`) + extensions `operations-dashboard.overview` (поля `insightsByCauseCategory`, `maturity`) |
+| Сервисы | `daily-checkin`, `personal-relation`, `goal-cascade`, `operations-dashboard`, `checkin-parser`, `checkin-response.handler` | `weekly-digest.service` | `commitments.service`, `specialist-3-9-promise-keeper.service`, `commitment-response.handler` | `daily-digest.service` (двухстадийная сборка: агрегат → LLM) |
+| Воркеры/cron | `daily-checkin-prompt.cron`, `personal-relation-builder.worker` | `checkin-sentiment-analyzer.worker` (@OnEvent), `operations-weekly-digest.cron` | `commitment-followup.cron` | `operations-daily-digest.cron` (`0 22 * * *` UTC, **глобальный, не per-Org**) |
+| Промпты | — | `checkin-sentiment`, `weekly-digest` | — (использует общий `block-ingest.prompt` с двумя новыми guess-полями) | `operations-daily-digest` |
+| Скрипты | — | `patch-org-timezone-default.ts`, `seed-llm-task-routes-beta-8-1.ts` | `backfill-commitment-due-dates.ts`, `seed-llm-task-routes-beta-8-2.ts` | `seed-llm-task-routes-beta-8-3.ts`, `seed-admin-setting-daily-digest.ts` |
 
 **Внешние пересечения β-8.2:**
 - `knowledge-core/services/router.service.ts` — снята заглушка `commitment_status: no-op`, теперь эмитит `commitment.status_received` через `EventEmitter2`.
 - `knowledge-core/prompts/block-ingest.prompt.ts` + `services/block-extraction.service.ts` + `workers/block-ingest.worker.ts` — извлечение `commitmentDueDateGuess` и `commitmentRecipientNameGuess` из текста встреч/чек-инов; fuzzy-match Person по имени.
 - `tracker/tracker.module.ts` — `HolidayService` экспортируется наружу (нужен PromiseKeeper'у для «5 рабочих дней» и «следующий рабочий день»).
 - `rbac/policies/policy.csv` + `rbac/rbac.service.ts` — новые ресурсы `dashboard_operations_temperature`, `dashboard_operations_weekly`, `commitment`.
+
+**Внешние пересечения β-8.3:**
+- `prisma/schema.prisma` — новая модель `DailyOperationsDigest` (см. [[data-model|data-model]]).
+- `common/config/env.schema.ts` — `COO_DAILY_DIGEST_ENABLED`, `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`, `COO_DAILY_DIGEST_HOUR_UTC`.
+- `admin/admin-setting.service.ts` — два тумблера `operations.daily_digest.{enabled,deliver_to_telegram}`.
+- `ai/services/llm-router.service.ts` — новый taskType `operations-daily-digest` (DeepSeek-chat → OpenAI-via-proxy `gpt-5.4-nano` → Ollama `qwen3.5:9b`).
+- `conversational/conversational.service.ts` — eventType `operations.daily_digest` (получатели **только `coo+owner`**, admin исключён).
+- `metrics/business-metrics.service.ts` — `coo_daily_digest_{generated,failed,delivered}_total` + `coo_daily_digest_age_seconds`, `coo_insights_by_cause_total{cause}`, `coo_company_maturity_score`.
 
 [[../index|← index]]

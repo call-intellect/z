@@ -93,6 +93,9 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 | **GET** | `/api/v1/dashboard/operations/team-temperature?days=7` | Агрегат `sentiment` чек-инов по людям/командам | `coo` `owner` `admin` | **β-8.1** |
 | **GET** | `/api/v1/dashboard/operations/weekly-digest?weekStart=YYYY-MM-DD` | Сохранённый `WeeklyOperationsDigest` или 404 | `coo` `owner` `admin` | **β-8.1** |
 | **POST** | `/api/v1/dashboard/operations/weekly-digest/generate?weekStart=…` | Принудительная перегенерация | `admin` `super_admin` | **β-8.1** |
+| **GET** | `/api/v1/dashboard/operations/daily-digest?date=YYYY-MM-DD` | Сохранённый `DailyOperationsDigest` за дату в МСК или 404 | `coo` `owner` `admin` | **β-8.3** |
+| **GET** | `/api/v1/dashboard/operations/daily-digest/latest` | Последний сгенерированный отчёт (для блока «Вчерашний отчёт» на `/dashboard/operations`) | `coo` `owner` `admin` | **β-8.3** |
+| **POST** | `/api/v1/dashboard/operations/daily-digest/generate?date=YYYY-MM-DD` | Принудительная перегенерация (двухстадийная сборка) | `admin` `super_admin` | **β-8.3** |
 | **GET** | `/api/v1/dashboard/operations/open-commitments?days=14` | Висящие обещания в команде с именами | `coo` `owner` `admin` | **β-8.2** |
 | GET | `/api/v1/me/check-ins?date=&kind=` | Свои чек-ины (`sentiment*` поля **всегда скрыты**, даже если у юзера есть роль `coo`) | self | β-8 / β-8.1 |
 | POST | `/api/v1/me/check-ins` | Manual upsert | self | β-8 |
@@ -229,6 +232,7 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.
 - **2026-05-25 (β-8.1/β-8.2):** добавлены `team-temperature`, `weekly-digest`, `open-commitments`, `/me/promises`, `personal-relations/commitments` endpoints; зафиксирована fail-safe privacy для поля `sentiment`.
+- **2026-05-25 (β-8.3):** добавлены `daily-digest` (GET/POST + `/latest`) endpoints — ежедневный отчёт COO в окне 1 день МСК. См. [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 - **2026-05-25 (admin-redesign Фазы 0-9):** добавлен раздел «Admin (Z-Admin) — новые эндпоинты Фаз 0-9» с полным списком префиксов `/api/v1/admin/{settings,crons,audit,incidents,analytics,ai,orgs/{plans,entitlements,:id/*},content/*,integrations/*,media/*,platform/*,llm-routes}`.
 
 [[../index|← index]]

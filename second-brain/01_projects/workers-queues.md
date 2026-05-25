@@ -64,6 +64,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | **`imap-poll` (T5)** | `MAIL_INBOX_POLL_CRON` default `*/2 * * * *` | `mail-inbound/cron/imap-poll.cron.ts` | **Финальный handoff 2026-05-25.** IMAP fetch unseen → парсит → routing на Project |
 | **`operations-weekly-digest` (β-8.1)** | `0 * * * *` (фильтр по `Org.timezone`, понедельник `COO_WEEKLY_DIGEST_LOCAL_HOUR`) | `operations/workers/operations-weekly-digest.cron.ts` | Идемпотентно по `(tenantId, weekStart)`. Отправка `coo+owner` через `ConversationalService` (eventType `operations.weekly_digest`). |
 | **`commitment-followup` (β-8.2)** | `0 * * * *` (фильтр по `Org.timezone`, `COMMITMENT_FOLLOWUP_LOCAL_HOUR` default 9) | `operations/workers/commitment-followup.cron.ts` | Ищет `commitmentStatus='open'` со сроком прошедшим (+1 рабочий день через `HolidayService`) → `ProbeService.suggest(reason='commitment.followup')`. Эскалация ролям `coo`/`owner` после `COMMITMENT_ESCALATION_DAYS` молчания. |
+| **`operations-daily-digest` (β-8.3)** | `0 22 * * *` UTC (= 01:00 МСК, час настраивается `COO_DAILY_DIGEST_HOUR_UTC`) — **глобальный, не per-Org** | `operations/workers/operations-daily-digest.cron.ts` | Идемпотентно по `(tenantId, dateLocal)` в окне 1 день МСК. Двухстадийная сборка (агрегат → LLM taskType `operations-daily-digest`). Тумблер `AdminSetting.operations.daily_digest.enabled` (+ kill-switch ENV `COO_DAILY_DIGEST_ENABLED`). Отправка в Telegram **только `coo+owner`** (admin исключён) через `ConversationalService.sendNotification(eventType='operations.daily_digest')` — гейтится `AdminSetting.operations.daily_digest.deliver_to_telegram` (default false). |
 
 ## Финальный handoff Wave 1-3 — новые воркеры (2026-05-25)
 
@@ -115,5 +116,6 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 
 - **2026-05-25:** создан в рамках финального handoff Wave 1-3. Добавлен `imap-poll` cron (T5), документировано отсутствие воркера для voice WS (T4).
 - **2026-05-25 (β-8.1/β-8.2):** добавлены `operations-weekly-digest` и `commitment-followup` cron'ы + event-driven worker'ы `CheckinSentimentAnalyzerWorker` и `CommitmentResponseHandler`.
+- **2026-05-25 (β-8.3):** добавлен глобальный cron `operations-daily-digest` (`0 22 * * *` UTC = 01:00 МСК) + сервис `DailyDigestService` (двухстадийная сборка). См. [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 
 [[../index|← index]]

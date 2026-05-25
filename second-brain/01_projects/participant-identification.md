@@ -77,7 +77,10 @@ Cardinality безопасна: tenant + 2 reason = ~2N рядов на N тен
 - **Entity.userId** для графа знаний — отдельный план.
 - **Матчинг гостей по email/календарю** — отдельный план.
 - **Frontend UI**: аватар, ссылка на профиль, фильтр «мои задачи» — отдельная UI-волна. Backend уже отдаёт `assigneeUserId` в `TaskResponseDto`.
-- **Динамическая JSON Schema для `tasks-structured`** — на module-load schema собирается без participants, поэтому при strict-провайдерах (OpenAI/DeepSeek) поле `assigneeUserId` не пройдёт. Основная ветка (`tasks-v2`) — без этой проблемы (schema включает поле всегда).
+
+## Закрытые gap'ы
+
+- **Динамическая JSON Schema для `tasks-structured`** — закрыто follow-up'ом к ТЗ 2026-05-25. Раньше `TASKS_STRUCTURED_JSON_SCHEMA` была module-level const без `participants` — на strict-провайдерах (OpenAI/DeepSeek через `response_format: json_schema strict`) LLM физически не мог вернуть `assigneeUserId`. Теперь схема собирается через `buildTasksStructuredJsonSchema(participants)` в `task-extraction.service.ts`: при непустом списке участников поле `assigneeUserId` (nullable string) включается в strict-схему. Без participants — поведение прежнее (обратная совместимость).
 
 ## Связь с другими заметками
 

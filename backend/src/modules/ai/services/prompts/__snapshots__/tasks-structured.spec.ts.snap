@@ -1,0 +1,184 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildTasksStructuredJsonSchema > snapshot — без participants > json-schema-no-participants 1`] = `
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "tasks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assigneeRaw": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "sourceEndMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "sourceQuote": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string",
+          },
+          "sourceStartMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+          "sourceStartMs",
+          "sourceEndMs",
+          "sourceQuote",
+          "confidence",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+  },
+  "required": [
+    "tasks",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`buildTasksStructuredJsonSchema > snapshot — с одним участником > json-schema-with-participants 1`] = `
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "tasks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assigneeRaw": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "assigneeUserId": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string",
+              },
+              {
+                "type": "null",
+              },
+            ],
+          },
+          "sourceEndMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "sourceQuote": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string",
+          },
+          "sourceStartMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+          "sourceStartMs",
+          "sourceEndMs",
+          "sourceQuote",
+          "confidence",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+  },
+  "required": [
+    "tasks",
+  ],
+  "type": "object",
+}
+`;

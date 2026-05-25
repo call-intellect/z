@@ -7,10 +7,10 @@ import type { DialogTurn } from './prompts/common';
 import type { AiParticipantContext } from './prompts/participant-context';
 import {
   type TaskExtracted,
-  TASKS_STRUCTURED_JSON_SCHEMA,
   TASKS_STRUCTURED_TASK_TYPE,
   TasksExtractedArraySchema,
   TasksStructuredResponseSchema,
+  buildTasksStructuredJsonSchema,
   buildTasksStructuredPrompt,
 } from './prompts/tasks-structured';
 
@@ -60,14 +60,15 @@ export class TaskExtractionService {
       dialog: input.dialog,
       ...(participants.length > 0 ? { participants } : {}),
     });
-    // ВАЖНО: `TASKS_STRUCTURED_JSON_SCHEMA` собирается на module-load БЕЗ
-    // `participants` (он module-level const), поэтому в strict JSON Schema
-    // нет поля `assigneeUserId`. На strict-провайдерах (OpenAI/DeepSeek) LLM
-    // не сможет вернуть это поле через json_schema strict — соответственно
-    // assigneeUserId будет null. Это пограничный кейс legacy-пути: основная
-    // ветка извлечения задач — `meeting-analyze-v2.worker` (через tasks-v2.prompt),
-    // там JSON Schema поле включает. Если потребуется обогатить и legacy-путь —
-    // выделить отдельную динамическую сборку schema (см. ТЗ §4.6 vNext).
+    // ТЗ 2026-05-25 hard-participant-identification (gap закрыт):
+    // JSON Schema собирается динамически — когда передан непустой список
+    // participants, в схему включается поле `assigneeUserId` (nullable string).
+    // На strict-провайдерах (OpenAI/DeepSeek) LLM теперь может вернуть это
+    // поле через `json_schema strict`. Без participants — поведение
+    // идентично прежнему (legacy schema без поля).
+    const responseSchema = buildTasksStructuredJsonSchema(
+      participants.length > 0 ? participants : null,
+    );
     const minConfidence =
       input.minConfidence ?? TaskExtractionService.DEFAULT_MIN_CONFIDENCE;
 
@@ -95,7 +96,7 @@ export class TaskExtractionService {
           type: 'json_schema',
           name: 'tasks_structured_response',
           strict: true,
-          schema: TASKS_STRUCTURED_JSON_SCHEMA,
+          schema: responseSchema,
         },
         sourceRef: { type: 'meeting', id: input.meetingId },
       });

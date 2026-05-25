@@ -71,14 +71,31 @@ export const TASKS_STRUCTURED_OPTIONS = {
 } as const;
 
 /**
- * T7-F6: JSON Schema для `responseFormat: { type: 'json_schema', strict: true }`.
- * Собирается через `buildTasksSchemaUnified` → `z.toJSONSchema` (zod v4
- * имеет встроенный конвертер, внешний `zod-to-json-schema` не нужен).
+ * ТЗ 2026-05-25 hard-participant-identification (закрытие vNext-gap):
+ * builder JSON Schema для `responseFormat: { type: 'json_schema', strict: true }`.
+ *
+ * Раньше схема собиралась как module-level const БЕЗ participants — на
+ * strict-провайдерах (OpenAI/DeepSeek) LLM физически не мог вернуть
+ * `assigneeUserId` через `json_schema strict`. Теперь caller передаёт список
+ * участников встречи, и поле `assigneeUserId` динамически добавляется в схему
+ * (nullable string), когда participants непустой. Без participants поведение
+ * идентично прежнему (для обратной совместимости).
+ *
+ * Под капотом — `buildTasksSchemaUnified(opts)` → `z.toJSONSchema` (zod v4
+ * имеет встроенный конвертер).
  */
-export const TASKS_STRUCTURED_JSON_SCHEMA = z.toJSONSchema(
-  buildTasksSchemaUnified({ ...TASKS_STRUCTURED_OPTIONS }),
-  { target: 'draft-7' },
-) as Record<string, unknown>;
+export function buildTasksStructuredJsonSchema(
+  participants?: readonly AiParticipantContext[] | null,
+): Record<string, unknown> {
+  const hasParticipants = Array.isArray(participants) && participants.length > 0;
+  return z.toJSONSchema(
+    buildTasksSchemaUnified({
+      ...TASKS_STRUCTURED_OPTIONS,
+      ...(hasParticipants ? { participants } : {}),
+    }),
+    { target: 'draft-7' },
+  ) as Record<string, unknown>;
+}
 
 export interface TasksStructuredPromptInput {
   meeting: { id: string; type: string; title: string };
@@ -106,10 +123,11 @@ export interface TasksStructuredPromptInput {
  * (`TaskExtractionService`) принимает оба варианта (новый объект-обёртку и
  * легаси голый массив, на случай если провайдер игнорирует schema).
  *
- * ТЗ 2026-05-25: пробрасываем `participants` в unified builder. JSON Schema
- * на module-evaluation остаётся без поля `assigneeUserId` (используется в
- * legacy-режиме без participants), но caller может передать participants —
- * тогда LLM получит блок с participants в user-сообщении.
+ * ТЗ 2026-05-25 (gap закрыт): пробрасываем `participants` в unified builder.
+ * Caller (`TaskExtractionService`) при наличии participants собирает JSON
+ * Schema через `buildTasksStructuredJsonSchema(participants)` — поле
+ * `assigneeUserId` динамически добавляется в strict-схему. Без participants
+ * поведение прежнее (legacy schema без поля).
  */
 export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
   system: string;

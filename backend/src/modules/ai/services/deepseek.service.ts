@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
+import { isThinkingModel } from './llm-thinking-models';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
@@ -58,6 +59,12 @@ export class DeepSeekService {
 
     if (autoConvertedToolName) {
       this.metrics?.incDeepseekSchemaToToolConversion({ model });
+      // ТЗ 2026-05-25 Фаза 1 — также инкрементируем универсальный guard-counter
+      // (используется и адаптером openai-chat для одного и того же события).
+      this.metrics?.incLlmThinkingModelGuard({
+        kind: 'schema-to-tool',
+        model,
+      });
       this.logger.debug(
         `DeepSeek-Pro: автоконвертация json_schema → tool model=${model} schemaName=${autoConvertedToolName}`,
       );
@@ -125,12 +132,12 @@ export class DeepSeekService {
     const fmt = input.responseFormat;
     const callerHasTools = !!(input.tools && input.tools.length > 0);
 
-    // ТЗ 2026-05-25 — автоконвертация json_schema → tool на Pro.
-    // Pro+thinking падает на strict json_schema (400) — переключаемся
-    // на эквивалентный tool + tool_choice='auto'.
-    const isProModel = model.includes('pro');
+    // ТЗ 2026-05-25 §4 + Фаза 1 — детектор thinking-моделей через единый helper
+    // (`llm-thinking-models.ts`). Pro / *-pro / *-thinking падают 400 на strict
+    // json_schema и forced tool_choice.
+    const isThinking = isThinkingModel(model);
     const autoConvert =
-      isProModel && fmt?.type === 'json_schema' && !callerHasTools;
+      isThinking && fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
 
@@ -154,7 +161,22 @@ export class DeepSeekService {
       }
       // response_format НЕ выставляем — модель ответит через tool_calls.
     } else if (fmt) {
-      if (fmt.type === 'json_object') {
+      // ТЗ 2026-05-25 Фаза 1 — на thinking-модели НИКОГДА не выставляем strict
+      // json_schema: даже если caller сам передал tools (forced-конверт не
+      // нужен, но strict json_schema всё равно 400). Снимаем тихо до
+      // json_object, чтобы caller получил хотя бы JSON-mode.
+      const skipStrictOnThinking =
+        isThinking && fmt.type === 'json_schema' && callerHasTools;
+      if (skipStrictOnThinking) {
+        // Метрика + лог для observability — caller передал лишний параметр.
+        this.metrics?.incLlmThinkingModelGuard({
+          kind: 'strict-stripped',
+          model,
+        });
+        this.logger.warn(
+          `DeepSeek-thinking: strict json_schema снят на ${model}; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем только tools + tool_choice='auto'.`,
+        );
+      } else if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };
       } else if (fmt.type === 'json_schema') {
         params['response_format'] = {
@@ -177,9 +199,10 @@ export class DeepSeekService {
           parameters: t.input_schema,
         },
       }));
+      // tool_choice всегда 'auto' — forced/required не поддерживается thinking.
       params['tool_choice'] = 'auto';
     }
-    if (input.reasoningEffort && isProModel) {
+    if (input.reasoningEffort && isThinking) {
       params['reasoning'] = { effort: input.reasoningEffort };
     }
     return { params, autoConvertedToolName };

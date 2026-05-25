@@ -1,0 +1,248 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { TypedConfigService } from '../../../../../common/config/index';
+import type { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
+
+import type { ProtocolAdapterProviderInfo } from '../protocol-adapter.types';
+
+/**
+ * ТЗ 2026-05-25 Фаза 1 — OpenAiChatProtocolAdapter должен:
+ *   1. flash + json_schema → response_format strict json_schema (как было).
+ *   2. pro + json_schema (без tools) → автоконверт в submit_<name> tool +
+ *      tool_choice='auto' + hint в user.
+ *   3. pro + caller tools + json_schema → strict json_schema снят,
+ *      guard.strict-stripped инкрементируется.
+ *   4. pro + json_object → response_format: json_object (без конвертации).
+ */
+
+interface FakeChatCompletions {
+  create: ReturnType<typeof vi.fn>;
+}
+
+// SDK создаётся внутри метода complete(), поэтому используем `nextCreateImpl`
+// чтобы перед каждым вызовом подготовить mock-возврат, а затем уже создавать
+// fake-инстанс с такой реализацией.
+let nextCreateImpl: ((p: unknown) => Promise<unknown>) | null = null;
+let lastCallArgs: Record<string, unknown> | null = null;
+
+vi.mock('openai', () => {
+  return {
+    default: class FakeOpenAI {
+      chat: { completions: FakeChatCompletions };
+      constructor(_opts: unknown) {
+        const create = vi.fn(async (p: unknown) => {
+          lastCallArgs = p as Record<string, unknown>;
+          if (!nextCreateImpl) {
+            throw new Error('nextCreateImpl не задан перед complete()');
+          }
+          return nextCreateImpl(p);
+        });
+        this.chat = { completions: { create } };
+      }
+    },
+  };
+});
+
+// Импорт после vi.mock.
+import { OpenAiChatProtocolAdapter } from './openai-chat.adapter';
+
+function makeCfg(): TypedConfigService {
+  return {} as unknown as TypedConfigService;
+}
+
+function makeMetricsMock(): {
+  metrics: BusinessMetricsService;
+  guard: ReturnType<typeof vi.fn>;
+} {
+  const guard = vi.fn();
+  const metrics = {
+    incLlmThinkingModelGuard: guard,
+  } as unknown as BusinessMetricsService;
+  return { metrics, guard };
+}
+
+function makeProvider(): ProtocolAdapterProviderInfo {
+  return {
+    name: 'deepseek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'sk-test',
+    defaultModel: 'deepseek-v4-flash',
+  } as unknown as ProtocolAdapterProviderInfo;
+}
+
+function okResponse(opts?: {
+  content?: string;
+  toolCalls?: Array<{ name: string; arguments: string }>;
+}): unknown {
+  return {
+    choices: [
+      {
+        message: {
+          content: opts?.content ?? '',
+          tool_calls: opts?.toolCalls?.map((tc) => ({
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
+  };
+}
+
+const FACTS_SCHEMA = {
+  type: 'object' as const,
+  additionalProperties: false,
+  required: ['facts'],
+  properties: { facts: { type: 'array', items: { type: 'string' } } },
+};
+
+describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
+  beforeEach(() => {
+    nextCreateImpl = null;
+    lastCallArgs = null;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('flash + json_schema → response_format strict json_schema (без автоконверта)', async () => {
+    const { metrics, guard } = makeMetricsMock();
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
+    nextCreateImpl = async () => okResponse({ content: '{"facts":["a"]}' });
+
+    const out = await adapter.complete({
+      provider: makeProvider(),
+      input: {
+        system: { text: 'sys' },
+        user: 'u',
+        model: 'deepseek-v4-flash',
+        responseFormat: {
+          type: 'json_schema',
+          name: 'facts',
+          schema: FACTS_SCHEMA,
+          strict: true,
+        },
+      },
+    });
+
+    expect(out.text).toBe('{"facts":["a"]}');
+    expect(guard).not.toHaveBeenCalled();
+    expect(lastCallArgs?.['response_format']).toEqual({
+      type: 'json_schema',
+      json_schema: { name: 'facts', strict: true, schema: FACTS_SCHEMA },
+    });
+    expect(lastCallArgs?.['tools']).toBeUndefined();
+    expect(lastCallArgs?.['tool_choice']).toBeUndefined();
+  });
+
+  it('pro + json_schema (без tools) → автоконверт в tool + tool_choice=auto + hint + guard.schema-to-tool', async () => {
+    const { metrics, guard } = makeMetricsMock();
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
+    nextCreateImpl = async () =>
+      okResponse({
+        toolCalls: [
+          { name: 'submit_facts', arguments: '{"facts":["x","y"]}' },
+        ],
+      });
+
+    const out = await adapter.complete({
+      provider: makeProvider(),
+      input: {
+        system: { text: 'sys' },
+        user: 'извлеки факты',
+        model: 'deepseek-v4-pro',
+        responseFormat: {
+          type: 'json_schema',
+          name: 'facts',
+          schema: FACTS_SCHEMA,
+          strict: true,
+        },
+      },
+    });
+
+    expect(out.text).toBe('{"facts":["x","y"]}');
+    expect(out.toolCalls).toEqual([
+      { name: 'submit_facts', input: { facts: ['x', 'y'] } },
+    ]);
+    expect(guard).toHaveBeenCalledWith({
+      kind: 'schema-to-tool',
+      model: 'deepseek-v4-pro',
+    });
+    expect(lastCallArgs?.['response_format']).toBeUndefined();
+    expect(lastCallArgs?.['tool_choice']).toBe('auto');
+    expect(lastCallArgs?.['tools']).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'submit_facts',
+          description: expect.stringContaining('facts'),
+          parameters: FACTS_SCHEMA,
+        },
+      },
+    ]);
+    const messages = lastCallArgs?.['messages'] as Array<{
+      role: string;
+      content: string;
+    }>;
+    const userMsg = messages.find((m) => m.role === 'user');
+    expect(userMsg?.content).toContain('извлеки факты');
+    expect(userMsg?.content).toContain('submit_facts');
+  });
+
+  it('pro + caller tools + json_schema → strict json_schema снят, guard.strict-stripped', async () => {
+    const { metrics, guard } = makeMetricsMock();
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
+    nextCreateImpl = async () => okResponse({ content: 'ответ' });
+
+    await adapter.complete({
+      provider: makeProvider(),
+      input: {
+        system: { text: 'sys' },
+        user: 'u',
+        model: 'deepseek-v4-pro',
+        tools: [
+          {
+            name: 'my_tool',
+            description: 'desc',
+            input_schema: { type: 'object', properties: {} },
+          },
+        ],
+        responseFormat: {
+          type: 'json_schema',
+          name: 'irrelevant',
+          schema: FACTS_SCHEMA,
+          strict: true,
+        },
+      },
+    });
+
+    expect(guard).toHaveBeenCalledWith({
+      kind: 'strict-stripped',
+      model: 'deepseek-v4-pro',
+    });
+    expect(lastCallArgs?.['response_format']).toBeUndefined();
+    expect(lastCallArgs?.['tool_choice']).toBe('auto');
+    expect(lastCallArgs?.['tools']).toBeDefined();
+  });
+
+  it('pro + json_object → response_format: json_object без конвертации', async () => {
+    const { metrics, guard } = makeMetricsMock();
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
+    nextCreateImpl = async () => okResponse({ content: '{"ok":true}' });
+
+    await adapter.complete({
+      provider: makeProvider(),
+      input: {
+        system: { text: 's' },
+        user: 'u',
+        model: 'deepseek-v4-pro',
+        responseFormat: { type: 'json_object' },
+      },
+    });
+
+    expect(guard).not.toHaveBeenCalled();
+    expect(lastCallArgs?.['response_format']).toEqual({ type: 'json_object' });
+    expect(lastCallArgs?.['tools']).toBeUndefined();
+    expect(lastCallArgs?.['tool_choice']).toBeUndefined();
+  });
+});

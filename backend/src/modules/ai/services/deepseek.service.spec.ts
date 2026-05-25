@@ -55,12 +55,15 @@ function makeCfg(): TypedConfigService {
 function makeMetricsMock(): {
   metrics: BusinessMetricsService;
   inc: ReturnType<typeof vi.fn>;
+  guard: ReturnType<typeof vi.fn>;
 } {
   const inc = vi.fn();
+  const guard = vi.fn();
   const metrics = {
     incDeepseekSchemaToToolConversion: inc,
+    incLlmThinkingModelGuard: guard,
   } as unknown as BusinessMetricsService;
-  return { metrics, inc };
+  return { metrics, inc, guard };
 }
 
 function okResponse(opts?: {
@@ -139,7 +142,7 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
   });
 
   it('pro + json_schema (без tools) → автоконверт в tool + tool_choice=auto + hint + метрика', async () => {
-    const { metrics, inc } = makeMetricsMock();
+    const { metrics, inc, guard } = makeMetricsMock();
     const svc = new DeepSeekService(makeCfg(), metrics);
     if (!lastSdkInstance) throw new Error('sdk not constructed');
     lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
@@ -173,6 +176,11 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
 
     expect(inc).toHaveBeenCalledTimes(1);
     expect(inc).toHaveBeenCalledWith({ model: 'deepseek-v4-pro' });
+    // ТЗ 2026-05-25 Фаза 1 — универсальный guard-counter тоже инкрементируется.
+    expect(guard).toHaveBeenCalledWith({
+      kind: 'schema-to-tool',
+      model: 'deepseek-v4-pro',
+    });
 
     const callArgs =
       lastSdkInstance.chat.completions.create.mock.calls[0]![0];
@@ -195,8 +203,8 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
     expect(userMsg.content).toContain('submit_facts');
   });
 
-  it('pro + caller передал tools → автоконверта нет, tool_choice=auto, метрика не растёт', async () => {
-    const { metrics, inc } = makeMetricsMock();
+  it('pro + caller передал tools + json_schema → strict json_schema снят (Pro его не поддерживает), tool_choice=auto, guard.strict-stripped', async () => {
+    const { metrics, inc, guard } = makeMetricsMock();
     const svc = new DeepSeekService(makeCfg(), metrics);
     if (!lastSdkInstance) throw new Error('sdk not constructed');
     lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
@@ -217,7 +225,8 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
           },
         },
       ],
-      // json_schema присутствует, но caller сам управляет tools — не конвертируем.
+      // ТЗ 2026-05-25 Фаза 1 — caller передал и tools, и strict json_schema.
+      // Pro+thinking не поддерживает strict json_schema → снимаем тихо.
       responseFormat: {
         type: 'json_schema',
         name: 'irrelevant',
@@ -226,7 +235,13 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
       },
     });
 
+    // schema-to-tool не растёт (это другой kind — был caller-tools).
     expect(inc).not.toHaveBeenCalled();
+    // guard.strict-stripped инкрементирован.
+    expect(guard).toHaveBeenCalledWith({
+      kind: 'strict-stripped',
+      model: 'deepseek-v4-pro',
+    });
 
     const callArgs =
       lastSdkInstance.chat.completions.create.mock.calls[0]![0];
@@ -244,7 +259,47 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
         },
       },
     ]);
-    // response_format на этой ветке выставляется по старой логике.
+    // strict json_schema снят — НЕ передаём response_format на Pro.
+    expect(callArgs.response_format).toBeUndefined();
+    const userMsg = callArgs.messages.find(
+      (m: { role: string }) => m.role === 'user',
+    );
+    expect(userMsg.content).toBe('u');
+  });
+
+  it('flash + caller передал tools + json_schema → strict json_schema СОХРАНЯЕТСЯ (flash без thinking поддерживает strict)', async () => {
+    const { metrics, inc, guard } = makeMetricsMock();
+    const svc = new DeepSeekService(makeCfg(), metrics);
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({ content: 'ответ' }),
+    );
+
+    await svc.complete({
+      system: { text: 'sys' },
+      user: 'u',
+      model: 'deepseek-v4-flash',
+      tools: [
+        {
+          name: 'my_tool',
+          description: 'desc',
+          input_schema: { type: 'object', properties: {} },
+        },
+      ],
+      responseFormat: {
+        type: 'json_schema',
+        name: 'irrelevant',
+        schema: FACTS_SCHEMA,
+        strict: true,
+      },
+    });
+
+    expect(inc).not.toHaveBeenCalled();
+    expect(guard).not.toHaveBeenCalled();
+
+    const callArgs =
+      lastSdkInstance.chat.completions.create.mock.calls[0]![0];
+    expect(callArgs.tool_choice).toBe('auto');
     expect(callArgs.response_format).toEqual({
       type: 'json_schema',
       json_schema: {
@@ -253,10 +308,6 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
         schema: FACTS_SCHEMA,
       },
     });
-    const userMsg = callArgs.messages.find(
-      (m: { role: string }) => m.role === 'user',
-    );
-    expect(userMsg.content).toBe('u');
   });
 
   it('pro + json_object → response_format: json_object без автоконвертации', async () => {

@@ -1,9 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 
+import { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
+import { isThinkingModel } from '../../llm-thinking-models';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
+  LlmToolCall,
 } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import type {
@@ -33,6 +36,9 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
 
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   async complete(args: {
@@ -57,29 +63,85 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
     // OpenAI-chat compat не имеет Anthropic-style cache_control; распаковываем.
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+      { role: 'system', content: input.system.text },
+      { role: 'user', content: userText },
+    ];
     const body: Record<string, unknown> = {
       model,
       stream: false,
-      messages: [
-        { role: 'system', content: input.system.text },
-        { role: 'user', content: userText },
-      ],
+      messages,
     };
     if (input.maxTokens !== undefined) body['max_tokens'] = input.maxTokens;
     if (input.temperature !== undefined) body['temperature'] = input.temperature;
-    if (input.responseFormat) {
-      if (input.responseFormat.type === 'json_object') {
+
+    // ТЗ 2026-05-25 §4 + Фаза 1 — детектор thinking-моделей. На *-pro /
+    // *-thinking strict json_schema и forced tool_choice = 400. См.
+    // backend/src/modules/ai/services/llm-thinking-models.ts.
+    const isThinking = isThinkingModel(model);
+    const callerHasTools = !!(input.tools && input.tools.length > 0);
+    const fmt = input.responseFormat;
+    const autoConvert =
+      isThinking && fmt?.type === 'json_schema' && !callerHasTools;
+
+    let autoConvertedToolName: string | undefined;
+
+    if (autoConvert && fmt?.type === 'json_schema') {
+      autoConvertedToolName = `submit_${fmt.name}`;
+      body['tools'] = [
+        {
+          type: 'function',
+          function: {
+            name: autoConvertedToolName,
+            description: `Отдать структурированный результат по схеме ${fmt.name}.`,
+            parameters: fmt.schema,
+          },
+        },
+      ];
+      body['tool_choice'] = 'auto';
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        lastMsg.content += `\n\nВажно: верни результат через вызов инструмента ${autoConvertedToolName}.`;
+      }
+      this.metrics?.incLlmThinkingModelGuard({ kind: 'schema-to-tool', model });
+      this.logger.debug(
+        `openai-chat thinking: автоконвертация json_schema → tool model=${model} schemaName=${fmt.name}`,
+      );
+    } else if (fmt) {
+      const skipStrictOnThinking =
+        isThinking && fmt.type === 'json_schema' && callerHasTools;
+      if (skipStrictOnThinking) {
+        this.metrics?.incLlmThinkingModelGuard({
+          kind: 'strict-stripped',
+          model,
+        });
+        this.logger.warn(
+          `openai-chat thinking: strict json_schema снят на ${model}; caller передал tools + json_schema(${fmt.name}). Оставляем только tools + tool_choice='auto'.`,
+        );
+      } else if (fmt.type === 'json_object') {
         body['response_format'] = { type: 'json_object' };
-      } else if (input.responseFormat.type === 'json_schema') {
+      } else if (fmt.type === 'json_schema') {
         body['response_format'] = {
           type: 'json_schema',
           json_schema: {
-            name: input.responseFormat.name,
-            strict: input.responseFormat.strict,
-            schema: input.responseFormat.schema,
+            name: fmt.name,
+            strict: fmt.strict,
+            schema: fmt.schema,
           },
         };
       }
+    }
+
+    if (callerHasTools) {
+      body['tools'] = input.tools!.map((t) => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.input_schema,
+        },
+      }));
+      body['tool_choice'] = 'auto';
     }
 
     try {
@@ -91,7 +153,12 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
                 p: Record<string, unknown>,
               ) => Promise<{
                 choices?: Array<{
-                  message?: { content?: string };
+                  message?: {
+                    content?: string | null;
+                    tool_calls?: Array<{
+                      function?: { name?: string; arguments?: string };
+                    }>;
+                  };
                 }>;
                 usage?: {
                   prompt_tokens?: number;
@@ -103,14 +170,42 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
           };
         }
       ).chat.completions.create(body)) as {
-        choices?: Array<{ message?: { content?: string } }>;
+        choices?: Array<{
+          message?: {
+            content?: string | null;
+            tool_calls?: Array<{
+              function?: { name?: string; arguments?: string };
+            }>;
+          };
+        }>;
         usage?: {
           prompt_tokens?: number;
           completion_tokens?: number;
           prompt_tokens_details?: { cached_tokens?: number };
         };
       };
-      const text = resp.choices?.[0]?.message?.content ?? '';
+      const choice = resp.choices?.[0];
+      let text = choice?.message?.content ?? '';
+      const toolCalls: LlmToolCall[] = [];
+      for (const tc of choice?.message?.tool_calls ?? []) {
+        const name = tc.function?.name ?? '';
+        const argsRaw = tc.function?.arguments ?? '';
+        let parsed: unknown = {};
+        try {
+          parsed = JSON.parse(argsRaw);
+        } catch {
+          parsed = { raw: argsRaw };
+        }
+        if (name) toolCalls.push({ name, input: parsed });
+      }
+      // ТЗ 2026-05-25 Фаза 1 — если был автоконверт, caller ждал JSON в `text`.
+      // Кладём args обратно в text стрингификацией (как DeepSeekService).
+      if (autoConvertedToolName && !text) {
+        const autoTc = toolCalls.find((tc) => tc.name === autoConvertedToolName);
+        if (autoTc) {
+          text = JSON.stringify(autoTc.input);
+        }
+      }
       const usage = resp.usage ?? {};
       return {
         text,
@@ -119,6 +214,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
         model,
         provider: this.normalizeProviderName(provider.name),
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

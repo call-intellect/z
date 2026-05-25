@@ -62,6 +62,17 @@ export class BusinessMetricsService implements OnModuleInit {
   // pattern — стабильный id regex'а из sanitize-custom-prompt.FORBIDDEN_PATTERNS.
   private promptInjectionAttemptTotal!: Counter<'source' | 'pattern'>;
 
+  // ── prompt invalid response (ТЗ 2026-05-24 §9 F6 — tool_use / json_schema) ──
+  // task_type — taskType из LlmRouter (chapters / tasks / dialog-classify / ...).
+  // model — фактическая модель, ответившая невалидным JSON'ом.
+  // reason ∈ json_parse | schema | tool_missing.
+  //   - json_parse — JSON.parse упал.
+  //   - schema     — JSON распарсился, но не прошёл Zod-валидацию.
+  //   - tool_missing — caller просил json_schema через tool_use, но провайдер
+  //                    вернул text вместо tool_use (Anthropic игнорирует
+  //                    tool_choice в редких случаях).
+  private promptInvalidResponseTotal!: Counter<'task_type' | 'model' | 'reason'>;
+
   // ── prompt templates admin (Фаза A.2) ───────────────────────────────
   private promptTemplateActiveCount!: Gauge<'scope'>;
   private promptTemplatePreviewTotal!: Counter<'result'>;
@@ -653,6 +664,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_prompt_injection_attempt_total',
       help: 'Попытки prompt-injection (ТЗ 2026-05-24 §4): сработавший regex-паттерн в пользовательском вводе. Сама попытка не блокирует — структурный слой обернёт текст в маркеры. Метрика для observability/alertов.',
       labelNames: ['source', 'pattern'] as const,
+    });
+
+    this.promptInvalidResponseTotal = this.getOrCreateCounter({
+      name: 'z_prompt_invalid_response_total',
+      help: 'Невалидный ответ LLM (ТЗ 2026-05-24 §9 F6): не парсится JSON / не проходит Zod-схему / отсутствует ожидаемый tool_use. Накапливается на каждый retry, не только финальный fail.',
+      labelNames: ['task_type', 'model', 'reason'] as const,
     });
 
     this.promptTemplateActiveCount = this.getOrCreateGauge({
@@ -2078,6 +2095,31 @@ export class BusinessMetricsService implements OnModuleInit {
     this.promptInjectionAttemptTotal.inc({
       source: args.source,
       pattern: args.pattern,
+    });
+  }
+
+  /**
+   * Prompt invalid response (ТЗ 2026-05-24 §9 F6 — tool_use / json_schema):
+   * инкрементирует на каждый невалидный ответ LLM, который заставил caller'а
+   * сделать retry. Накапливается, не только при финальном fail.
+   *
+   *   - task_type — taskType из LlmRouter (chapters / tasks / dialog-classify ...).
+   *   - model — фактическая модель (`provider:model`), которая ответила невалидно.
+   *     При неизвестной модели — 'unknown'.
+   *   - reason ∈ 'json_parse' | 'schema' | 'tool_missing'.
+   *
+   * Cardinality безопасна: ~80 taskType × ~10 моделей × 3 reasons ≈ 2400
+   * рядов в худшем случае.
+   */
+  incPromptInvalidResponse(args: {
+    taskType: string;
+    model: string;
+    reason: 'json_parse' | 'schema' | 'tool_missing';
+  }): void {
+    this.promptInvalidResponseTotal.inc({
+      task_type: args.taskType,
+      model: args.model,
+      reason: args.reason,
     });
   }
 

@@ -479,13 +479,11 @@ describe('Legacy buildMeetingExtractActionsPrompt (tasks.ts) — обратна�
 });
 
 describe('Legacy buildTasksStructuredPrompt (tasks-structured.ts) — обратная совместимость', () => {
-  it('system содержит «JSON only» инструкцию + assigneeRaw + sourceStartMs/EndMs', () => {
+  it('system содержит structured-поля + tool-use инструкцию (T7-F6: убрали bare-array)', () => {
     const out = buildTasksStructuredPrompt({
       meeting: { id: 'm-1', type: 'team', title: 'Sample' },
       dialog: SAMPLE_INPUT.dialog,
     });
-    // structured-путь требует голый JSON-массив
-    expect(out.system).toContain('ТОЛЬКО валидный JSON-массив');
     // structured-контракт Task: assigneeRaw + description вместо assignee
     expect(out.system).toContain('assigneeRaw');
     expect(out.system).toContain('description');
@@ -496,15 +494,24 @@ describe('Legacy buildTasksStructuredPrompt (tasks-structured.ts) — обрат
     expect(out.system).toContain('sourceQuote');
     expect(out.system).toContain('confidence');
     expect(out.system).toContain('Шкала confidence');
-    // НЕ должно быть tool-use инструкции — это JSON-only путь
-    expect(out.system).not.toContain('Вызови инструмент');
+    // T7-F6: теперь builder использует unified tool-use, а не bare-array.
+    // Раньше тут была "ТОЛЬКО валидный JSON-массив" (responseAsBareArray:true).
+    // Теперь caller (TaskExtractionService) пробрасывает responseFormat:json_schema
+    // и парсит { tasks: [...] } обёртку.
+    expect(out.system).toContain(TASKS_UNIFIED_TOOL_NAME);
+    expect(out.system).not.toContain('ТОЛЬКО валидный JSON-массив');
   });
 
-  it('user содержит инструкцию «Reply with valid JSON only»', () => {
+  it('user не содержит legacy «Reply with valid JSON only» (T7-F6)', () => {
     const out = buildTasksStructuredPrompt({
       meeting: { id: 'm-1', type: 'team', title: 'Sample' },
       dialog: SAMPLE_INPUT.dialog,
     });
-    expect(out.user).toContain('Reply with valid JSON only');
+    // T7-F6: эта инструкция была частью responseAsBareArray:true пути,
+    // который мы убрали (структурный strict JSON Schema надёжнее).
+    expect(out.user).not.toContain('Reply with valid JSON only');
+    // user всё ещё содержит meta встречи и диалог.
+    expect(out.user).toContain('Тип встречи: team');
+    expect(out.user).toContain('Заголовок: Sample');
   });
 });

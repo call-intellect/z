@@ -4,6 +4,12 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import {
+  DIALOG_CONFIDENCE_JSON_SCHEMA,
   DIALOG_CONFIDENCE_SYSTEM_PROMPT,
   buildConfidenceUserPrompt,
 } from '../prompts/confidence.prompt';
@@ -48,6 +54,19 @@ export class ConfidenceEstimatorService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
   async estimate(input: ConfidenceInput): Promise<ConfidenceResult> {
     const startedAt = Date.now();
     const threshold = this.cfg.dialogLayer.contextualizerConfidenceMin;
@@ -69,21 +88,53 @@ export class ConfidenceEstimatorService {
     }
 
     try {
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательские формулировки
+      // (original + standalone) в маркеры данных + INJECTION_GUARD_NOTE в
+      // system. Источник = 'chat'. Sanitize гоняем по обоим текстам, чтобы
+      // observability ловила инъекцию и в original, и в standalone.
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      if (guardOn) {
+        for (const q of [input.originalQuestion, input.standaloneQuestion]) {
+          const sanitized = sanitizeCustomPrompt(q);
+          for (const pattern of sanitized.reasons) {
+            this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+          }
+        }
+      }
+      const rawUser = buildConfidenceUserPrompt({
+        originalQuestion: input.originalQuestion,
+        standaloneQuestion: input.standaloneQuestion,
+      });
+      const systemText = guardOn
+        ? withInjectionGuard(DIALOG_CONFIDENCE_SYSTEM_PROMPT)
+        : DIALOG_CONFIDENCE_SYSTEM_PROMPT;
+      const userText = guardOn ? wrapUserData(rawUser) : rawUser;
       const result = await this.llm.call({
         taskType: 'dialog-confidence',
         tenantId: input.tenantId,
         userId: input.userId,
-        systemPrompt: DIALOG_CONFIDENCE_SYSTEM_PROMPT,
-        userMessage: buildConfidenceUserPrompt({
-          originalQuestion: input.originalQuestion,
-          standaloneQuestion: input.standaloneQuestion,
-        }),
+        systemPrompt: systemText,
+        userMessage: userText,
         maxTokens: 120,
+        // T7-F6: strict JSON Schema.
+        responseFormat: {
+          type: 'json_schema',
+          name: 'dialog_confidence_response',
+          strict: true,
+          schema: DIALOG_CONFIDENCE_JSON_SCHEMA,
+        },
         sourceRef: input.conversationId
           ? { type: 'chat_v2_conversation', id: input.conversationId }
           : null,
       });
       const parsed = parseConfidenceJson(result.text);
+      if (parsed.parseError) {
+        this.metrics.incPromptInvalidResponse({
+          taskType: 'dialog-confidence',
+          model: result.modelUsed,
+          reason: 'json_parse',
+        });
+      }
       const confidence = parsed.confidence;
       const shouldFallback = confidence < threshold;
       if (shouldFallback) {
@@ -125,7 +176,17 @@ export class ConfidenceEstimatorService {
   }
 }
 
-function parseConfidenceJson(text: string): { confidence: number; reason: string } {
+/**
+ * T7-F6: добавлено поле `parseError` — caller инкрементирует метрику
+ * `z_prompt_invalid_response_total{reason='json_parse'}`. На уровне семантики
+ * мы продолжаем фолбэк-ить на «safe high confidence», чтобы не блокировать
+ * pipeline, но метрика теперь видит проблему.
+ */
+function parseConfidenceJson(text: string): {
+  confidence: number;
+  reason: string;
+  parseError: boolean;
+} {
   try {
     const cleaned = stripCodeFence(text).trim();
     const parsed = JSON.parse(cleaned) as {
@@ -138,9 +199,13 @@ function parseConfidenceJson(text: string): { confidence: number; reason: string
         : 1.0;
     const reason =
       typeof parsed.reason === 'string' ? parsed.reason : '';
-    return { confidence: conf, reason };
+    return { confidence: conf, reason, parseError: false };
   } catch {
-    return { confidence: 1.0, reason: 'parse error — assume safe' };
+    return {
+      confidence: 1.0,
+      reason: 'parse error — assume safe',
+      parseError: true,
+    };
   }
 }
 

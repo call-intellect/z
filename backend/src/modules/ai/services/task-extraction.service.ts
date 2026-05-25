@@ -1,11 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import { LlmRouterService } from './llm-router.service';
 import type { DialogTurn } from './prompts/common';
 import {
   type TaskExtracted,
+  TASKS_STRUCTURED_JSON_SCHEMA,
   TASKS_STRUCTURED_TASK_TYPE,
   TasksExtractedArraySchema,
+  TasksStructuredResponseSchema,
   buildTasksStructuredPrompt,
 } from './prompts/tasks-structured';
 
@@ -35,7 +39,12 @@ export class TaskExtractionService {
   private static readonly MAX_RETRIES = 3;
   private static readonly DEFAULT_MIN_CONFIDENCE = 0.5;
 
-  constructor(@Inject(LlmRouterService) private readonly router: LlmRouterService) {}
+  constructor(
+    @Inject(LlmRouterService) private readonly router: LlmRouterService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
+  ) {}
 
   async extractTasks(input: ExtractTasksInput): Promise<TaskExtracted[]> {
     const prompt = buildTasksStructuredPrompt({
@@ -50,7 +59,7 @@ export class TaskExtractionService {
       const userMessage =
         attempt === 0
           ? prompt.user
-          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON-массивом задач. Верни ТОЛЬКО JSON-массив без markdown.`;
+          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект {"tasks":[...]} без markdown.`;
       const result = await this.router.call({
         taskType: TASKS_STRUCTURED_TASK_TYPE,
         systemPrompt: prompt.system,
@@ -61,21 +70,45 @@ export class TaskExtractionService {
         ...(input.jobId !== undefined && input.jobId !== null
           ? { jobId: input.jobId }
           : {}),
-        responseFormat: { type: 'json_object' },
+        // T7-F6: strict JSON Schema. Wrapper `{ tasks: [...] }` нужен потому,
+        // что DeepSeek/OpenAI strict требуют object на верхнем уровне.
+        // Если провайдер не поддерживает (Ollama / KIE) — LlmRouter перейдёт
+        // на следующего.
+        responseFormat: {
+          type: 'json_schema',
+          name: 'tasks_structured_response',
+          strict: true,
+          schema: TASKS_STRUCTURED_JSON_SCHEMA,
+        },
         sourceRef: { type: 'meeting', id: input.meetingId },
       });
       const parsed = parseJsonTasks(result.text);
       if (!parsed.success) {
         lastError = parsed.error;
+        this.metrics?.incPromptInvalidResponse({
+          taskType: TASKS_STRUCTURED_TASK_TYPE,
+          model: result.modelUsed,
+          reason: 'json_parse',
+        });
         this.logger.warn(
           { meetingId: input.meetingId, attempt, modelUsed: result.modelUsed },
           'extractTasks: invalid JSON, ретрай',
         );
         continue;
       }
-      const validated = TasksExtractedArraySchema.safeParse(parsed.data);
+      // T7-F6: гибко принимаем и { tasks: [...] } (новый формат), и голый
+      // массив (legacy, если провайдер игнорирует schema).
+      const wrappedResult = TasksStructuredResponseSchema.safeParse(parsed.data);
+      const validated = wrappedResult.success
+        ? { success: true as const, data: wrappedResult.data.tasks }
+        : TasksExtractedArraySchema.safeParse(parsed.data);
       if (!validated.success) {
         lastError = validated.error;
+        this.metrics?.incPromptInvalidResponse({
+          taskType: TASKS_STRUCTURED_TASK_TYPE,
+          model: result.modelUsed,
+          reason: 'schema',
+        });
         this.logger.warn(
           { meetingId: input.meetingId, attempt, issues: validated.error.issues.length },
           'extractTasks: schema mismatch, ретрай',

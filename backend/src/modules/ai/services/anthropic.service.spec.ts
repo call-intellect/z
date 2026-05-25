@@ -148,3 +148,131 @@ describe('AnthropicService.complete', () => {
     expect(result.toolCalls).toEqual([{ name: 'extract_x', input: { foo: 'bar' } }]);
   });
 });
+
+/**
+ * T7-F6 — responseFormat: json_schema через synthetic tool_use.
+ *
+ * Покрытие:
+ *   1. system + responseFormat:json_schema → в request улетают
+ *      tools=[json_response] + tool_choice={ type: 'tool', name: 'json_response' }.
+ *   2. ответ tool_use { name: 'json_response', input: {...} } сериализуется
+ *      в result.text как JSON.stringify(input).
+ *   3. если root schema — не-object (примитив/массив) — модель отдаёт
+ *      { result: <payload> }, mapper извлекает .result в result.text.
+ */
+describe('AnthropicService.complete: T7-F6 responseFormat:json_schema → tool_use', () => {
+  beforeEach(() => {
+    lastSdkInstance = null;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('object-схема: request содержит synthetic tool + tool_choice', async () => {
+    const svc = new AnthropicService(makeCfg());
+    if (!lastSdkInstance) throw new Error('sdk not set');
+    const sdk = lastSdkInstance;
+    sdk.messages.stream.mockReturnValueOnce({
+      finalMessage: async () => ({
+        content: [
+          {
+            type: 'tool_use',
+            name: 'json_response',
+            input: { intent: 'factual' },
+          },
+        ],
+        usage: { input_tokens: 30, output_tokens: 10 },
+      }),
+    });
+
+    const schema = {
+      type: 'object',
+      properties: { intent: { type: 'string' } },
+      required: ['intent'],
+      additionalProperties: false,
+    };
+
+    const result = await svc.complete({
+      system: { text: 's' },
+      user: 'u',
+      responseFormat: {
+        type: 'json_schema',
+        name: 'classify_response',
+        strict: true,
+        schema,
+      },
+    });
+
+    // tool_use → JSON-сериализованный text для совместимости с JSON.parse.
+    expect(result.text).toBe(JSON.stringify({ intent: 'factual' }));
+
+    // Проверим, что request включал synthetic tool + tool_choice.
+    const calls = sdk.messages.stream.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const req = calls[0]?.[0] as {
+      tools?: Array<{ name: string }>;
+      tool_choice?: { type: string; name?: string };
+    };
+    expect(req.tools).toBeDefined();
+    expect(req.tools?.[0]?.name).toBe('json_response');
+    expect(req.tool_choice).toEqual({ type: 'tool', name: 'json_response' });
+  });
+
+  it('non-object root: модель возвращает { result: [...] }, mapper извлекает .result', async () => {
+    const svc = new AnthropicService(makeCfg());
+    if (!lastSdkInstance) throw new Error('sdk not set');
+    const sdk = lastSdkInstance;
+    // Голый массив на root — теоретически нашими промтами не используется
+    // (мы оборачиваем в { tasks: [...] } / { chapters: [...] }), но проверяем
+    // механику нормализации.
+    sdk.messages.stream.mockReturnValueOnce({
+      finalMessage: async () => ({
+        content: [
+          {
+            type: 'tool_use',
+            name: 'json_response',
+            input: { result: [1, 2, 3] },
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    });
+
+    const result = await svc.complete({
+      system: { text: 's' },
+      user: 'u',
+      responseFormat: {
+        type: 'json_schema',
+        name: 'arr_response',
+        strict: true,
+        schema: { type: 'array', items: { type: 'number' } },
+      },
+    });
+
+    expect(result.text).toBe(JSON.stringify([1, 2, 3]));
+  });
+
+  it('без responseFormat: tools/tool_choice НЕ передаются', async () => {
+    const svc = new AnthropicService(makeCfg());
+    if (!lastSdkInstance) throw new Error('sdk not set');
+    const sdk = lastSdkInstance;
+    sdk.messages.stream.mockReturnValueOnce({
+      finalMessage: async () => ({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: 5, output_tokens: 5 },
+      }),
+    });
+
+    await svc.complete({
+      system: { text: 's' },
+      user: 'u',
+    });
+
+    const req = sdk.messages.stream.mock.calls[0]?.[0] as {
+      tools?: unknown;
+      tool_choice?: unknown;
+    };
+    expect(req.tools).toBeUndefined();
+    expect(req.tool_choice).toBeUndefined();
+  });
+});

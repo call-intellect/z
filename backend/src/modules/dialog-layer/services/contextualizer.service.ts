@@ -1,7 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import {
   DIALOG_CONTEXTUALIZE_SYSTEM_PROMPT,
   buildContextualizeUserPrompt,
@@ -42,7 +48,21 @@ export class ContextualizerService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async contextualize(
     input: ContextualizeInput,
@@ -66,16 +86,32 @@ export class ContextualizerService {
     }
 
     try {
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский ввод (question +
+      // history + summary) в маркеры данных + INJECTION_GUARD_NOTE в system.
+      // Источник для метрики = 'chat'. Лёгкая sanitize-проверка по самому
+      // user-вопросу — даёт observability на самой явной точке инъекции.
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      if (guardOn) {
+        const sanitized = sanitizeCustomPrompt(input.question);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+      const rawUser = buildContextualizeUserPrompt({
+        summary: input.summary,
+        history: input.history,
+        question: input.question,
+      });
+      const systemText = guardOn
+        ? withInjectionGuard(DIALOG_CONTEXTUALIZE_SYSTEM_PROMPT)
+        : DIALOG_CONTEXTUALIZE_SYSTEM_PROMPT;
+      const userText = guardOn ? wrapUserData(rawUser) : rawUser;
       const result = await this.llm.call({
         taskType: 'dialog-contextualize',
         tenantId: input.tenantId,
         userId: input.userId,
-        systemPrompt: DIALOG_CONTEXTUALIZE_SYSTEM_PROMPT,
-        userMessage: buildContextualizeUserPrompt({
-          summary: input.summary,
-          history: input.history,
-          question: input.question,
-        }),
+        systemPrompt: systemText,
+        userMessage: userText,
         maxTokens: 200,
         sourceRef: input.conversationId
           ? { type: 'chat_v2_conversation', id: input.conversationId }

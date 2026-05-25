@@ -24,6 +24,20 @@ export const DIALOG_CONFIDENCE_SYSTEM_PROMPT = `Ты — оценщик каче
 {"confidence": <число от 0 до 1>, "reason": "<краткое пояснение>"}
 без markdown-блоков, без префиксов.`;
 
+/**
+ * T7-F6: JSON Schema strict для DeepSeek/OpenAI/Anthropic. Fallback —
+ * текст в system (Ollama и проч.).
+ */
+export const DIALOG_CONFIDENCE_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    reason: { type: 'string' },
+  },
+  required: ['confidence', 'reason'],
+  additionalProperties: false,
+};
+
 export function buildConfidenceUserPrompt(args: {
   originalQuestion: string;
   standaloneQuestion: string;

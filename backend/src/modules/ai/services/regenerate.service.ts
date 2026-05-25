@@ -1,12 +1,14 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai-queue.service';
 
 import { LlmRouterService } from './llm-router.service';
 import {
+  REGENERATE_SECTION_JSON_SCHEMA,
   REGENERATE_SECTION_TASK_TYPE,
   buildRegenerateSectionPrompt,
 } from './prompts/regenerate-section';
@@ -74,6 +76,9 @@ export class RegenerateService {
     @Inject(AiQueueService) private readonly queue: AiQueueService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   async regenerateMeeting(
@@ -237,17 +242,43 @@ export class RegenerateService {
       tenantId: meeting.tenantId,
       meetingId: input.meetingId,
       userId: input.userId,
-      responseFormat: { type: 'json_object' },
+      // T7-F6: strict JSON Schema через wrapper { value: <any> }. Для
+      // провайдеров без strict (Ollama / KIE / GRSAI) LlmRouter перейдёт на
+      // следующего — DeepSeek/OpenAI/Anthropic справятся.
+      responseFormat: {
+        type: 'json_schema',
+        name: 'regenerate_section_response',
+        strict: true,
+        schema: REGENERATE_SECTION_JSON_SCHEMA,
+      },
       sourceRef: { type: 'meeting', id: input.meetingId },
     });
 
     const stripped = stripCodeFence(result.text);
     let newSectionValue: unknown;
     try {
-      newSectionValue = JSON.parse(stripped);
+      const parsed = JSON.parse(stripped) as unknown;
+      // T7-F6: гибко принимаем и { value: ... } (новый wrapper), и голый
+      // payload (legacy провайдер). Если структура { value } — извлекаем,
+      // иначе берём как есть.
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        'value' in (parsed as Record<string, unknown>)
+      ) {
+        newSectionValue = (parsed as { value: unknown }).value;
+      } else {
+        newSectionValue = parsed;
+      }
     } catch {
       // Если LLM вернул не-JSON (например, простую строку без кавычек) —
       // сохраняем сырой текст. Это допустимо, т.к. секция может быть просто строкой.
+      this.metrics?.incPromptInvalidResponse({
+        taskType: REGENERATE_SECTION_TASK_TYPE,
+        model: result.modelUsed,
+        reason: 'json_parse',
+      });
       newSectionValue = stripped;
     }
 

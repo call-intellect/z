@@ -1,8 +1,15 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import {
+  DIALOG_CLASSIFY_JSON_SCHEMA,
   DIALOG_CLASSIFY_SYSTEM_PROMPT,
   buildClassifyUserPrompt,
 } from '../prompts/classify.prompt';
@@ -88,7 +95,21 @@ export class QueryClassifierService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   async classify(input: ClassifyInput): Promise<ClassifyResult> {
     const startedAt = Date.now();
@@ -103,24 +124,54 @@ export class QueryClassifierService {
     }
 
     try {
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский вопрос в маркеры
+      // данных + INJECTION_GUARD_NOTE в system. Источник = 'chat'.
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      if (guardOn) {
+        const sanitized = sanitizeCustomPrompt(input.question);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+      const rawUser = buildClassifyUserPrompt({ question: input.question });
+      const systemText = guardOn
+        ? withInjectionGuard(DIALOG_CLASSIFY_SYSTEM_PROMPT)
+        : DIALOG_CLASSIFY_SYSTEM_PROMPT;
+      const userText = guardOn ? wrapUserData(rawUser) : rawUser;
       const result = await this.llm.call({
         taskType: 'dialog-classify',
         tenantId: input.tenantId,
         userId: input.userId,
-        systemPrompt: DIALOG_CLASSIFY_SYSTEM_PROMPT,
-        userMessage: buildClassifyUserPrompt({ question: input.question }),
+        systemPrompt: systemText,
+        userMessage: userText,
         maxTokens: 60,
+        // T7-F6: strict JSON Schema. Ollama выдаст LlmFormatNotSupportedError —
+        // LlmRouter перейдёт на следующего провайдера в цепочке.
+        responseFormat: {
+          type: 'json_schema',
+          name: 'dialog_classify_response',
+          strict: true,
+          schema: DIALOG_CLASSIFY_JSON_SCHEMA,
+        },
         sourceRef: input.conversationId
           ? { type: 'chat_v2_conversation', id: input.conversationId }
           : null,
       });
       const parsed = parseClassifyJson(result.text);
+      if (parsed === null) {
+        this.metrics.incPromptInvalidResponse({
+          taskType: 'dialog-classify',
+          model: result.modelUsed,
+          reason: 'json_parse',
+        });
+      }
+      const finalIntent = parsed ?? 'factual';
       const durationSeconds = (Date.now() - startedAt) / 1000;
       this.metrics.observeDialogProcessingDuration({
         step: 'classify',
         seconds: durationSeconds,
       });
-      return { intent: parsed, source: 'llm', durationSeconds };
+      return { intent: finalIntent, source: 'llm', durationSeconds };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
@@ -153,7 +204,13 @@ function heuristicClassify(q: string): DialogIntent | null {
   return null;
 }
 
-function parseClassifyJson(text: string): DialogIntent {
+/**
+ * T7-F6: возвращает `null`, если JSON не парсится — caller инкрементирует
+ * метрику `z_prompt_invalid_response_total` и фолбэкается на 'factual'.
+ * Раньше возвращали 'factual' и в success-, и в error-кейсе — метрика
+ * была бы неинформативной.
+ */
+function parseClassifyJson(text: string): DialogIntent | null {
   try {
     const cleaned = stripCodeFence(text).trim();
     const parsed = JSON.parse(cleaned) as { intent?: unknown };
@@ -170,9 +227,9 @@ function parseClassifyJson(text: string): DialogIntent {
     if (raw === 'clone-roleplay' || raw === 'clone style' || raw === 'clone') {
       return 'clone_roleplay';
     }
-    return 'factual';
+    return null;
   } catch {
-    return 'factual';
+    return null;
   }
 }
 

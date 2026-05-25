@@ -4,6 +4,12 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import {
+  DIALOG_MULTI_QUERY_JSON_SCHEMA,
   DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
   buildMultiQueryUserPrompt,
 } from '../prompts/multi-query.prompt';
@@ -47,6 +53,19 @@ export class MultiQueryExpansionService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
   async expand(input: MultiQueryInput): Promise<MultiQueryResult> {
     const startedAt = Date.now();
     const enabled = this.cfg.dialogLayer.multiQueryExpansionEnabled;
@@ -67,18 +86,49 @@ export class MultiQueryExpansionService {
     }
 
     try {
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский вопрос в маркеры
+      // данных + INJECTION_GUARD_NOTE в system. Источник = 'chat'.
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      if (guardOn) {
+        const sanitized = sanitizeCustomPrompt(input.question);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+      const rawUser = buildMultiQueryUserPrompt({ question: input.question });
+      const systemText = guardOn
+        ? withInjectionGuard(DIALOG_MULTI_QUERY_SYSTEM_PROMPT)
+        : DIALOG_MULTI_QUERY_SYSTEM_PROMPT;
+      const userText = guardOn ? wrapUserData(rawUser) : rawUser;
       const result = await this.llm.call({
         taskType: 'dialog-multi-query',
         tenantId: input.tenantId,
         userId: input.userId,
-        systemPrompt: DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
-        userMessage: buildMultiQueryUserPrompt({ question: input.question }),
+        systemPrompt: systemText,
+        userMessage: userText,
         maxTokens: 300,
+        // T7-F6: strict JSON Schema. Wrapper { queries: [...] } — root object.
+        responseFormat: {
+          type: 'json_schema',
+          name: 'dialog_multi_query_response',
+          strict: true,
+          schema: DIALOG_MULTI_QUERY_JSON_SCHEMA,
+        },
         sourceRef: input.conversationId
           ? { type: 'chat_v2_conversation', id: input.conversationId }
           : null,
       });
       const expansions = parseMultiQueryJson(result.text);
+      // T7-F6: если парсер вернул пустой массив на непустой ответ — невалидный
+      // ответ. Пустой ответ от провайдера тоже считаем за невалидный
+      // (модель должна вернуть ≥1 формулировку).
+      if (expansions.length === 0 && result.text.length > 0) {
+        this.metrics.incPromptInvalidResponse({
+          taskType: 'dialog-multi-query',
+          model: result.modelUsed,
+          reason: 'json_parse',
+        });
+      }
       const durationSeconds = (Date.now() - startedAt) / 1000;
       this.metrics.observeDialogProcessingDuration({
         step: 'multi-query',

@@ -1,10 +1,14 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import { LlmRouterService } from './llm-router.service';
 import {
+  CHAPTERS_JSON_SCHEMA,
   type ChapterDraft,
   CHAPTERS_TASK_TYPE,
   ChaptersArraySchema,
+  ChaptersResponseSchema,
   buildChaptersPrompt,
 } from './prompts/chapters';
 import type { DialogTurn } from './prompts/common';
@@ -25,6 +29,10 @@ export interface ExtractChaptersInput {
  * Для каждой главы возвращает `startMs/endMs/title/summary/order`.
  * До 3 попыток на парсинг — если LLM вернул невалидный JSON.
  *
+ * T7-F6: использует `responseFormat: { type: 'json_schema', strict: true }`
+ * с обёрткой `{ chapters: [...] }`. Если результат — голый массив (legacy
+ * провайдер, который ответил без обёртки) — гибко принимаем оба варианта.
+ *
  * НЕ пишет в БД — это ответственность caller'а (`chapters.worker`).
  */
 @Injectable()
@@ -32,7 +40,12 @@ export class ChapterExtractionService {
   private readonly logger = new Logger(ChapterExtractionService.name);
   private static readonly MAX_RETRIES = 3;
 
-  constructor(@Inject(LlmRouterService) private readonly router: LlmRouterService) {}
+  constructor(
+    @Inject(LlmRouterService) private readonly router: LlmRouterService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
+  ) {}
 
   async extractChapters(input: ExtractChaptersInput): Promise<ChapterDraft[]> {
     const prompt = buildChaptersPrompt({
@@ -45,7 +58,7 @@ export class ChapterExtractionService {
       const userMessage =
         attempt === 0
           ? prompt.user
-          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON-массивом глав. Верни ТОЛЬКО JSON-массив без markdown.`;
+          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект {"chapters":[...]} без markdown.`;
       const result = await this.router.call({
         taskType: CHAPTERS_TASK_TYPE,
         systemPrompt: prompt.system,
@@ -56,21 +69,43 @@ export class ChapterExtractionService {
         ...(input.jobId !== undefined && input.jobId !== null
           ? { jobId: input.jobId }
           : {}),
-        responseFormat: { type: 'json_object' },
+        // T7-F6: strict JSON Schema. Если провайдер не поддерживает
+        // (Ollama / KIE / GRSAI) — LlmRouter перейдёт на следующего.
+        responseFormat: {
+          type: 'json_schema',
+          name: 'chapters_response',
+          strict: true,
+          schema: CHAPTERS_JSON_SCHEMA,
+        },
         sourceRef: { type: 'meeting', id: input.meetingId },
       });
       const parsed = parseJsonChapters(result.text);
       if (!parsed.success) {
         lastError = parsed.error;
+        this.metrics?.incPromptInvalidResponse({
+          taskType: CHAPTERS_TASK_TYPE,
+          model: result.modelUsed,
+          reason: 'json_parse',
+        });
         this.logger.warn(
           { meetingId: input.meetingId, attempt, modelUsed: result.modelUsed },
           'extractChapters: invalid JSON, ретрай',
         );
         continue;
       }
-      const validated = ChaptersArraySchema.safeParse(parsed.data);
+      // T7-F6: гибко принимаем и { chapters: [...] } (новый формат), и голый
+      // массив (legacy, если провайдер проигнорировал schema).
+      const wrappedResult = ChaptersResponseSchema.safeParse(parsed.data);
+      const validated = wrappedResult.success
+        ? { success: true as const, data: wrappedResult.data.chapters }
+        : ChaptersArraySchema.safeParse(parsed.data);
       if (!validated.success) {
         lastError = validated.error;
+        this.metrics?.incPromptInvalidResponse({
+          taskType: CHAPTERS_TASK_TYPE,
+          model: result.modelUsed,
+          reason: 'schema',
+        });
         this.logger.warn(
           { meetingId: input.meetingId, attempt, issues: validated.error.issues.length },
           'extractChapters: schema mismatch, ретрай',

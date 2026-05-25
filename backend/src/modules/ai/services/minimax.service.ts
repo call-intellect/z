@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TypedConfigService } from '../../../common/config/index';
 
 import {
+  buildAnthropicToolBindings,
   buildSystemBlocks,
   buildUserContent,
   mapAnthropicResponseToOutput,
@@ -34,16 +35,24 @@ export class MinimaxService {
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
     try {
+      // T7-F6: тот же tool_use-эмулятор responseFormat:json_schema, что и у Anthropic.
+      const { tools, toolChoice } = buildAnthropicToolBindings(input);
       const message = await this.client.messages.create({
         model,
         max_tokens: input.maxTokens ?? 4096,
         ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
         system: buildSystemBlocks(input.system),
         messages: [{ role: 'user', content: buildUserContent(input.user) }],
-        ...(input.tools ? { tools: input.tools } : {}),
+        ...(tools ? { tools } : {}),
+        ...(toolChoice ? { tool_choice: toolChoice } : {}),
         stream: false,
       });
-      return mapAnthropicResponseToOutput(message, model, 'minimax');
+      return mapAnthropicResponseToOutput(
+        message,
+        model,
+        'minimax',
+        input.responseFormat,
+      );
     } catch (err) {
       const status = extractStatus(err);
       this.logger.warn(`MiniMax complete (${status ?? 'no-status'}): ${errMsg(err)}`);

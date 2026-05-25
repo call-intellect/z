@@ -6,6 +6,12 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import {
+  DIALOG_SUMMARIZE_JSON_SCHEMA,
   DIALOG_SUMMARIZE_SYSTEM_PROMPT,
   buildSummarizeUserPrompt,
 } from '../prompts/summarize.prompt';
@@ -41,6 +47,19 @@ export class ConversationSummarizerCron {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
+
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Запускается по cron'у `DIALOG_SUMMARIZER_CRON` (default `*\/30 * * * *`).
@@ -149,15 +168,40 @@ export class ConversationSummarizerCron {
     });
 
     const startedAt = Date.now();
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательские сообщения диалога
+    // (messages + previousSummary) в маркеры данных + INJECTION_GUARD_NOTE
+    // в system. Источник = 'chat'. Sanitize гоняем по тексту user-сообщений
+    // (assistant-ответы тоже могут содержать echo инъекции).
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      for (const m of messages) {
+        const sanitized = sanitizeCustomPrompt(m.text);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+    }
+    const rawUser = buildSummarizeUserPrompt({
+      messages: messages.map((m) => ({ role: m.role, content: m.text })),
+      previousSummary: previous?.summary ?? null,
+    });
+    const systemText = guardOn
+      ? withInjectionGuard(DIALOG_SUMMARIZE_SYSTEM_PROMPT)
+      : DIALOG_SUMMARIZE_SYSTEM_PROMPT;
+    const userText = guardOn ? wrapUserData(rawUser) : rawUser;
     const result = await this.llm.call({
       taskType: 'dialog-summarize',
       tenantId: conv.tenantId,
-      systemPrompt: DIALOG_SUMMARIZE_SYSTEM_PROMPT,
-      userMessage: buildSummarizeUserPrompt({
-        messages: messages.map((m) => ({ role: m.role, content: m.text })),
-        previousSummary: previous?.summary ?? null,
-      }),
+      systemPrompt: systemText,
+      userMessage: userText,
       maxTokens: 600,
+      // T7-F6: strict JSON Schema. Wrapper { summary, entities[] } — root object.
+      responseFormat: {
+        type: 'json_schema',
+        name: 'dialog_summarize_response',
+        strict: true,
+        schema: DIALOG_SUMMARIZE_JSON_SCHEMA,
+      },
       sourceRef: { type: 'chat_v2_conversation', id: conv.id },
     });
     const durationSeconds = (Date.now() - startedAt) / 1000;
@@ -167,6 +211,15 @@ export class ConversationSummarizerCron {
     });
 
     const parsed = parseSummaryJson(result.text);
+    if (parsed.parseError) {
+      // T7-F6: ответ не парсится → метрика для observability. Не падаем —
+      // следующий cron-tick попробует ещё раз с актуальной историей.
+      this.metrics.incPromptInvalidResponse({
+        taskType: 'dialog-summarize',
+        model: result.modelUsed,
+        reason: 'json_parse',
+      });
+    }
     if (!parsed.summary || parsed.summary.length === 0) {
       this.logger.warn(
         { conversationId: conv.id },
@@ -203,6 +256,7 @@ export class ConversationSummarizerCron {
 function parseSummaryJson(text: string): {
   summary: string;
   entities: string[];
+  parseError: boolean;
 } {
   try {
     const cleaned = stripCodeFence(text).trim();
@@ -217,9 +271,9 @@ function parseSummaryJson(text: string): {
           .filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
           .slice(0, 20)
       : [];
-    return { summary, entities };
+    return { summary, entities, parseError: false };
   } catch {
-    return { summary: '', entities: [] };
+    return { summary: '', entities: [], parseError: true };
   }
 }
 

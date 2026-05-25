@@ -6,6 +6,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
+  LlmTool,
   LlmToolCall,
 } from './llm.types';
 import { LlmError } from './llm.types';
@@ -74,33 +75,47 @@ export class AnthropicService {
     input: LlmCompleteInput,
     model: string,
   ): Promise<LlmCompleteOutput> {
+    const { tools, toolChoice } = buildAnthropicToolBindings(input);
     const stream = await this.client.messages.stream({
       model,
       max_tokens: input.maxTokens ?? 4096,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
       system: buildSystemBlocks(input.system),
       messages: [{ role: 'user', content: buildUserContent(input.user) }],
-      ...(input.tools ? { tools: input.tools } : {}),
+      ...(tools ? { tools } : {}),
+      ...(toolChoice ? { tool_choice: toolChoice } : {}),
     });
 
     const final = await stream.finalMessage();
-    return mapAnthropicResponseToOutput(final, model, 'anthropic');
+    return mapAnthropicResponseToOutput(
+      final,
+      model,
+      'anthropic',
+      input.responseFormat,
+    );
   }
 
   private async completeNonStreaming(
     input: LlmCompleteInput,
     model: string,
   ): Promise<LlmCompleteOutput> {
+    const { tools, toolChoice } = buildAnthropicToolBindings(input);
     const message = await this.client.messages.create({
       model,
       max_tokens: input.maxTokens ?? 4096,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
       system: buildSystemBlocks(input.system),
       messages: [{ role: 'user', content: buildUserContent(input.user) }],
-      ...(input.tools ? { tools: input.tools } : {}),
+      ...(tools ? { tools } : {}),
+      ...(toolChoice ? { tool_choice: toolChoice } : {}),
       stream: false,
     });
-    return mapAnthropicResponseToOutput(message, model, 'anthropic');
+    return mapAnthropicResponseToOutput(
+      message,
+      model,
+      'anthropic',
+      input.responseFormat,
+    );
   }
 }
 
@@ -159,6 +174,97 @@ export function buildUserContent(
 }
 
 /**
+ * T7-F6 — синтетическое имя tool'а, который Anthropic Messages API использует
+ * для эмуляции `responseFormat: json_schema`. JSON Schema из caller'а
+ * становится `input_schema` этого tool'а, `tool_choice` принуждает модель его
+ * вызвать. В ответе `block.type === 'tool_use'` → сериализуем `block.input`
+ * как text-ответ (caller всё равно делает JSON.parse). См. T7-F6.
+ */
+export const ANTHROPIC_JSON_SCHEMA_TOOL_NAME = 'json_response';
+
+/**
+ * T7-F6 — собирает `tools` и `tool_choice` для Anthropic Messages API:
+ *  - Если caller передал `responseFormat: json_schema` — превращаем в
+ *    synthetic tool с принудительным `tool_choice: { type: 'tool', name }`.
+ *    Это надёжнее «JSON only» в system: Anthropic гарантирует, что
+ *    `block.input` соответствует `input_schema`.
+ *  - Если caller передал свои `tools` (без json_schema) — отдаём как есть.
+ *  - Иначе — без tools.
+ *
+ * `responseFormat: json_object` не имеет нативного эквивалента в Anthropic —
+ * полагаемся на текст из system-промта («верни JSON»). Caller всё равно
+ * парсит result.text через JSON.parse.
+ */
+export function buildAnthropicToolBindings(input: LlmCompleteInput): {
+  tools?: LlmTool[];
+  toolChoice?: { type: 'tool'; name: string } | { type: 'auto' };
+} {
+  const fmt = input.responseFormat;
+  if (fmt && fmt.type === 'json_schema') {
+    const syntheticTool: LlmTool = {
+      name: ANTHROPIC_JSON_SCHEMA_TOOL_NAME,
+      description: `Возвращает структурированный JSON-ответ согласно схеме (${fmt.name}). Используй ТОЛЬКО этот инструмент для ответа.`,
+      input_schema: normalizeAnthropicInputSchema(fmt.schema),
+    };
+    const extraTools = input.tools ?? [];
+    return {
+      tools: [syntheticTool, ...extraTools],
+      toolChoice: { type: 'tool', name: ANTHROPIC_JSON_SCHEMA_TOOL_NAME },
+    };
+  }
+  if (input.tools && input.tools.length > 0) {
+    return { tools: input.tools };
+  }
+  return {};
+}
+
+/**
+ * Anthropic Messages API требует, чтобы `input_schema` был object с
+ * `properties`. Если caller передал примитивную схему (например для голого
+ * массива), оборачиваем её в `{ type: 'object', properties: { result: ... } }`.
+ * Caller увидит это в `block.input.result` через обёртку в
+ * `mapAnthropicResponseToOutput`.
+ *
+ * NB: для подавляющего большинства наших промтов (chapters / tasks / dialog)
+ * Zod-схема — массив или объект, и здесь нужна только нормализация
+ * `additionalProperties: false` + удаление `$schema`.
+ */
+function normalizeAnthropicInputSchema(
+  schema: Record<string, unknown>,
+): {
+  type: 'object';
+  properties: Record<string, unknown>;
+  required?: string[];
+  additionalProperties?: boolean;
+} {
+  // Удаляем JSON Schema мета-поля, которые Anthropic не понимает.
+  const cleaned: Record<string, unknown> = { ...schema };
+  delete cleaned['$schema'];
+  delete cleaned['$id'];
+
+  if (cleaned['type'] === 'object') {
+    return {
+      type: 'object',
+      properties: (cleaned['properties'] as Record<string, unknown>) ?? {},
+      ...(Array.isArray(cleaned['required'])
+        ? { required: cleaned['required'] as string[] }
+        : {}),
+      additionalProperties:
+        typeof cleaned['additionalProperties'] === 'boolean'
+          ? (cleaned['additionalProperties'] as boolean)
+          : false,
+    };
+  }
+  // Не-object root (массив / примитив) → оборачиваем в { result }.
+  return {
+    type: 'object',
+    properties: { result: cleaned },
+    required: ['result'],
+    additionalProperties: false,
+  };
+}
+
+/**
  * Маппит ответ Anthropic SDK в `LlmCompleteOutput`.
  * Используется и AnthropicService, и MinimaxService (тот же SDK).
  *
@@ -171,11 +277,17 @@ export function buildUserContent(
  *    `inputTokens` — иначе billing/quota по `input_tokens_total` занижен.
  *    Cost-расчёт в LlmRouterService.computeCostUsd корректно вычитает
  *    `cachedTokens` (cached_per_1M < input_per_1M), так что overcount-а нет.
+ *
+ * T7-F6: если был передан `responseFormat: json_schema` — synthetic tool_use
+ * сериализуется в `text` (JSON-stringify), чтобы caller мог продолжать
+ * парсить через `JSON.parse(result.text)`. Если root схемы был не-object
+ * (массив/примитив) — извлекаем `.result`.
  */
 export function mapAnthropicResponseToOutput(
   message: Anthropic.Message,
   model: string,
   provider: LlmCompleteOutput['provider'],
+  responseFormat?: LlmCompleteInput['responseFormat'],
 ): LlmCompleteOutput {
   let text = '';
   const toolCalls: LlmToolCall[] = [];
@@ -184,6 +296,28 @@ export function mapAnthropicResponseToOutput(
       text += block.text;
     } else if (block.type === 'tool_use') {
       toolCalls.push({ name: block.name, input: block.input });
+    }
+  }
+
+  // T7-F6: если caller просил json_schema — конвертируем synthetic tool_use
+  // обратно в text для совместимости с парсерами вида JSON.parse(result.text).
+  if (
+    responseFormat?.type === 'json_schema' &&
+    text.length === 0 &&
+    toolCalls.length > 0
+  ) {
+    const jsonCall = toolCalls.find(
+      (tc) => tc.name === ANTHROPIC_JSON_SCHEMA_TOOL_NAME,
+    );
+    if (jsonCall) {
+      const rootIsObject =
+        typeof responseFormat.schema['type'] === 'string' &&
+        responseFormat.schema['type'] === 'object';
+      const payload =
+        rootIsObject
+          ? jsonCall.input
+          : (jsonCall.input as { result?: unknown })?.result ?? jsonCall.input;
+      text = JSON.stringify(payload);
     }
   }
   // SDK типизация: cache_*_input_tokens могут быть null/undefined у не-кешируемых

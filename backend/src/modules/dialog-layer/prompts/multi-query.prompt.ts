@@ -25,6 +25,25 @@ export const DIALOG_MULTI_QUERY_SYSTEM_PROMPT = `Ты — помощник по 
 {"queries": ["<формулировка 1>", "<формулировка 2>", "<формулировка 3>"]}
 без markdown-блоков, без префиксов.`;
 
+/**
+ * T7-F6: JSON Schema strict для DeepSeek/OpenAI/Anthropic. Fallback —
+ * текст в system. minItems=1, maxItems=3 чтобы провайдер не сгенерировал
+ * 0 или 10 формулировок.
+ */
+export const DIALOG_MULTI_QUERY_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    queries: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      minItems: 1,
+      maxItems: 3,
+    },
+  },
+  required: ['queries'],
+  additionalProperties: false,
+};
+
 export function buildMultiQueryUserPrompt(args: { question: string }): string {
   return `Оригинальный вопрос: ${args.question}\n\n3 формулировки:`;
 }

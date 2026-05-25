@@ -27,6 +27,25 @@ export const DIALOG_SUMMARIZE_SYSTEM_PROMPT = `Ты — помощник по с
 
 Не выдумывай факты, которых нет в истории. Сохраняй язык оригинала.`;
 
+/**
+ * T7-F6: JSON Schema strict для DeepSeek/OpenAI/Anthropic. Fallback —
+ * текст в system. maxItems=20 на entities — соответствует логике парсера
+ * (`.slice(0, 20)` в cron'е).
+ */
+export const DIALOG_SUMMARIZE_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string', minLength: 1, maxLength: 4000 },
+    entities: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      maxItems: 20,
+    },
+  },
+  required: ['summary', 'entities'],
+  additionalProperties: false,
+};
+
 export function buildSummarizeUserPrompt(args: {
   messages: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
   previousSummary: string | null;

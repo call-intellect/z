@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { type DialogTurn } from './common';
-import { buildTasksPromptUnified } from './tasks-unified';
+import { buildTasksPromptUnified, buildTasksSchemaUnified } from './tasks-unified';
 
 /**
  * Промпт для извлечения action items с расширенными полями (для модели `Task`):
@@ -39,6 +39,40 @@ export type TaskExtracted = z.infer<typeof TaskExtractedSchema>;
 
 export const TasksExtractedArraySchema = z.array(TaskExtractedSchema);
 
+/**
+ * T7-F6: wrapper-схема `{ tasks: [...] }` для strict JSON Schema.
+ * Root JSON Schema требует object на верхнем уровне (DeepSeek strict,
+ * OpenAI strict, Anthropic tool_use). Голый массив больше не используем —
+ * caller (`TaskExtractionService`) гибко принимает оба варианта.
+ */
+export const TasksStructuredResponseSchema = z
+  .object({ tasks: TasksExtractedArraySchema })
+  .strict();
+
+/**
+ * T7-F6: builder опций для unified-tasks, выровненный со structured-путём.
+ * Используется и `buildTasksStructuredPrompt`, и `TaskExtractionService`
+ * (последний достаёт JSON Schema через `buildTasksSchemaUnified(opts)`
+ * → `z.toJSONSchema`).
+ */
+export const TASKS_STRUCTURED_OPTIONS = {
+  enriched: false,
+  useAssigneeRaw: true,
+  withFragmentBounds: true,
+  withSourceQuote: true,
+  withConfidence: true,
+} as const;
+
+/**
+ * T7-F6: JSON Schema для `responseFormat: { type: 'json_schema', strict: true }`.
+ * Собирается через `buildTasksSchemaUnified` → `z.toJSONSchema` (zod v4
+ * имеет встроенный конвертер, внешний `zod-to-json-schema` не нужен).
+ */
+export const TASKS_STRUCTURED_JSON_SCHEMA = z.toJSONSchema(
+  buildTasksSchemaUnified({ ...TASKS_STRUCTURED_OPTIONS }),
+  { target: 'draft-7' },
+) as Record<string, unknown>;
+
 export interface TasksStructuredPromptInput {
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
@@ -53,16 +87,11 @@ export interface TasksStructuredPromptInput {
  *   - `withFragmentBounds: true` → поля `sourceStartMs` / `sourceEndMs`.
  *   - `withSourceQuote: true` → обязательная цитата.
  *   - `withConfidence: true`  → обязательное число 0..1 (с шкалой).
- *   - `responseAsBareArray: true` → ответ голым JSON-массивом
- *     (`TaskExtractionService` парсит через `JSON.parse(result.text)`
- *     при `responseFormat: { type: 'json_object' }`).
  *
- * `tasks-unified` builder возвращает `{ system, user }` под унифицированный
- * tool-flow (объект `{ tasks: [...] }`). В structured-пути caller ждёт
- * голый JSON-массив, поэтому здесь оборачиваем user-вывод так, чтобы
- * сохранить исторический контракт: убираем строку «Тип встречи / Заголовок»
- * не нужно — она уже есть в unified; добавляем явную инструкцию
- * вернуть массив (это делает `responseAsBareArray: true` внутри builder'а).
+ * T7-F6: убрали `responseAsBareArray: true` — теперь возвращаем
+ * `{ tasks: [...] }`, что совместимо с json_schema strict. Caller
+ * (`TaskExtractionService`) принимает оба варианта (новый объект-обёртку и
+ * легаси голый массив, на случай если провайдер игнорирует schema).
  */
 export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
   system: string;
@@ -77,13 +106,6 @@ export function buildTasksStructuredPrompt(input: TasksStructuredPromptInput): {
       },
       dialog: input.dialog,
     },
-    {
-      enriched: false,
-      useAssigneeRaw: true,
-      withFragmentBounds: true,
-      withSourceQuote: true,
-      withConfidence: true,
-      responseAsBareArray: true,
-    },
+    { ...TASKS_STRUCTURED_OPTIONS },
   );
 }

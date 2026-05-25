@@ -32,9 +32,12 @@ const CARD_ROLLUP_V2_TOP_THEMES = 3;
 /**
  * Дефолтный confidence для rollup'а: текущие промпты возвращают свободный
  * текст без structured output, поэтому модель не отдаёт confidence явно.
- * 0.9 = выше autoThreshold (0.85) → по дефолту auto-canonical. Когда
- * TODO(owner-product) согласует промпт с JSON Schema, confidence будет
- * приходить от модели.
+ * 0.9 = выше autoThreshold (0.85) → по дефолту auto-canonical.
+ *
+ * TODO(structured-output): когда промпты card-rollup-v2 переведут на JSON
+ * Schema с полем confidence (фаза SPO), брать значение от модели. Сейчас
+ * статический дефолт оправдан — rollup-промпты целенаправленно возвращают
+ * связный prose, не JSON.
  */
 const CARD_ROLLUP_V2_DEFAULT_CONFIDENCE = 0.9;
 

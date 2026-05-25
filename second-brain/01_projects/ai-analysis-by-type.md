@@ -132,4 +132,42 @@ type: project
 9. Сохраняем результат в БД
 ```
 
+## Tasks-промты — единый builder (F5, ТЗ 2026-05-24 prompts-hardening)
+
+С 2026-05-24 все три исторических tasks-промта собираются из **единого источника правды** — [`backend/src/modules/ai/services/prompts/tasks-unified.ts`](../../backend/src/modules/ai/services/prompts/tasks-unified.ts). Файл предоставляет:
+
+- `buildTasksPromptUnified(input, opts)` — system + user.
+- `buildTasksToolUnified(opts)` — `LlmTool` с JSON-Schema.
+- `buildTasksSchemaUnified(opts)` / `buildTaskItemSchemaUnified(opts)` — Zod-схема.
+- `TASKS_UNIFIED_TOOL_NAME = 'extract_tasks'` — единое имя tool'а.
+
+Опции (`TasksPromptOptions`):
+
+| Опция | Эффект |
+|---|---|
+| `enriched` | `suggestedAssigneeHint`, `suggestedDueDate`, `suggestedPriority` + блок про контекст организации |
+| `withConfidence` | `confidence ∈ [0,1]` (required) + `CONFIDENCE_CALIBRATION` в system (F2) |
+| `withSourceQuote` | `sourceQuote` (required) — обязательная цитата |
+| `withFragmentBounds` | `sourceStartMs`/`sourceEndMs` — миллисекунды от начала встречи |
+| `useAssigneeRaw` | `assigneeRaw` + `description` вместо `assignee` (контракт модели `Task`) |
+| `responseAsBareArray` | Ответ голым JSON-массивом (без tool-use) — для `responseFormat: json_object` |
+| `meetingDateIso` | Дата встречи (ISO) — опора для относительных сроков |
+| `orgContext` | `projects` / `goals` / `people` подмешиваются в user |
+
+### 3 legacy-обёртки (для обратной совместимости)
+
+Caller'ы продолжают работать через тонкие обёртки — менять их не нужно:
+
+| Caller | Legacy-обёртка | Опции unified |
+|---|---|---|
+| `analyze.worker.runTasks` | `buildTasksPrompt` ([tasks.ts](../../backend/src/modules/ai/services/prompts/tasks.ts)) | `{ enriched: false, withConfidence: true }` |
+| `MeetingExtractActionsService.extract` (Wave 3) | `buildMeetingExtractActionsPrompt` ([tasks.ts](../../backend/src/modules/ai/services/prompts/tasks.ts)) | `{ enriched: true, withConfidence: true, withSourceQuote: true }` |
+| `TaskExtractionService.extractTasks` | `buildTasksStructuredPrompt` ([tasks-structured.ts](../../backend/src/modules/ai/services/prompts/tasks-structured.ts)) | `{ useAssigneeRaw: true, withFragmentBounds: true, withSourceQuote: true, withConfidence: true, responseAsBareArray: true }` |
+
+### Правило для нового кода
+
+При создании нового caller'а (новый воркер / сервис), которому нужно извлечь задачи из встречи, — использовать `buildTasksPromptUnified` напрямую. Не плодить новых обёрток, не дублировать system-текст. Если требуется новая опция (например, `withGoalHint`) — добавлять её в `TasksPromptOptions`, а не в caller.
+
+`MEETING_EXTRACT_ACTIONS_SYSTEM` помечена `@deprecated` — это синхронизированный getter (вычисляется через builder при загрузке модуля), оставлен только для backward-compat существующих внешних скриптов и тестов, которые могли импортировать SYSTEM-текст напрямую.
+
 [[../index|← index]]

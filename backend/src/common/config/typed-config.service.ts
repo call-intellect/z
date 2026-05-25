@@ -1,7 +1,27 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 
 import type { Env } from './env.schema';
+
+/**
+ * Минимальный интерфейс `AdminSettingsService`, чтобы не импортировать
+ * сам класс (живёт в `modules/admin/`, а это `common/` — нельзя плодить
+ * круговую зависимость). На рантайме провайдер достаётся через
+ * `ModuleRef.get(...)` по строковому токену.
+ */
+export interface DynamicAdminSettingsReader {
+  get<T>(key: string, defaultValue?: T): Promise<T | undefined>;
+}
+
+/**
+ * DI-токен для строковой резолвинга через ModuleRef. Если провайдер не
+ * зарегистрирован (например в тестах без AdminSettingsModule) — `getDynamic`
+ * мягко падает на ENV/default. Совпадает с именем класса для удобства DI:
+ * `provide: 'AdminSettingsService'` или авторегистрация по классу-токену —
+ * в обоих случаях lookup сработает.
+ */
+export const ADMIN_SETTINGS_READER_TOKEN = 'AdminSettingsService' as const;
 
 /**
  * Типизированная обёртка над `ConfigService`.
@@ -14,11 +34,19 @@ import type { Env } from './env.schema';
  */
 @Injectable()
 export class TypedConfigService {
+  private readonly logger = new Logger(TypedConfigService.name);
+  /**
+   * Кеш AdminSettingsService на инстанс. lazy resolve через ModuleRef один раз
+   * (повторные lookup'ы при отсутствии — без шума в логе).
+   */
+  private adminReader: DynamicAdminSettingsReader | null | undefined = undefined;
+
   constructor(
     // NB: убрали generic ConfigService<Env, true> — на агрегированной схеме
     // (~50 .merge), Env-union триггерит TS2589 ещё при объявлении конструктора.
     // Типизация Env-значений делается на уровне приватного `get` ниже.
     @Inject(ConfigService) private readonly raw: ConfigService,
+    @Optional() @Inject(ModuleRef) private readonly moduleRef: ModuleRef | null = null,
   ) {}
 
   /**
@@ -1134,5 +1162,69 @@ export class TypedConfigService {
   // Удобный шорткат для main.ts
   get port(): number {
     return this.runtime.port;
+  }
+
+  // ─────────────────────────── dynamic (admin-redesign Фаза 0) ─────────
+  /**
+   * Прочитать «живую» настройку: сначала из `AdminSetting` (через
+   * `AdminSettingsService.get(key)`), затем — fallback на ENV (`envFallbackKey`),
+   * затем — `defaultValue`. Бросает `Error`, только если все три источника
+   * не дали значения.
+   *
+   * Lazy-инжекция через `ModuleRef.get(...)` нужна, чтобы избежать
+   * круговой зависимости `common/config → modules/admin/settings`. Если
+   * `AdminSettingsService` не зарегистрирован (тесты, минимальный bootstrap),
+   * метод тихо переходит на ENV/default.
+   */
+  async getDynamic<T>(
+    key: string,
+    envFallbackKey?: keyof Env,
+    defaultValue?: T,
+  ): Promise<T> {
+    const reader = this.resolveAdminReader();
+    if (reader) {
+      try {
+        const fromDb = await reader.get<T>(key);
+        if (fromDb !== undefined && fromDb !== null) {
+          return fromDb;
+        }
+      } catch (err) {
+        // Сбой чтения админ-настройки не должен ломать бизнес-логику —
+        // даём шанс ENV/default.
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err), key },
+          'getDynamic: AdminSettingsService.get() сбой, падаем на ENV',
+        );
+      }
+    }
+    if (envFallbackKey !== undefined) {
+      const fromEnv = this.get(envFallbackKey as unknown as string);
+      if (fromEnv !== undefined && fromEnv !== null) {
+        return fromEnv as T;
+      }
+    }
+    if (defaultValue !== undefined) return defaultValue;
+    throw new Error(
+      `TypedConfigService.getDynamic: значение для "${key}" не найдено ни в AdminSetting, ни в ENV${envFallbackKey ? ` (${String(envFallbackKey)})` : ''}, ни в defaultValue`,
+    );
+  }
+
+  private resolveAdminReader(): DynamicAdminSettingsReader | null {
+    if (this.adminReader !== undefined) return this.adminReader;
+    if (!this.moduleRef) {
+      this.adminReader = null;
+      return null;
+    }
+    try {
+      // strict: false — ищем в любом модуле приложения.
+      const svc = this.moduleRef.get<DynamicAdminSettingsReader>(
+        ADMIN_SETTINGS_READER_TOKEN,
+        { strict: false },
+      );
+      this.adminReader = svc ?? null;
+    } catch {
+      this.adminReader = null;
+    }
+    return this.adminReader;
   }
 }

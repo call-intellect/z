@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 import { AdminAiModelsController } from './ai-models/ai-models.controller';
 import { AdminAiModelsService } from './ai-models/ai-models.service';
+import { AdminCronsModule } from './crons/admin-crons.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
 import { AdminLlmModelsController } from './economics/admin-llm-models.controller';
 import { AdminLlmModelsService } from './economics/admin-llm-models.service';
@@ -38,6 +39,7 @@ import { AdminPromptTemplatesController } from './prompt-templates/prompt-templa
 import { PromptTemplatesPreviewService } from './prompt-templates/prompt-templates-preview.service';
 import { AdminPromptTemplatesService } from './prompt-templates/prompt-templates.service';
 import { RecordingsAdminController } from './recordings-admin.controller';
+import { AdminSettingsModule } from './settings/admin-settings.module';
 import { AdminCacheService } from './services/admin-cache.service';
 import { AdminExperimentsService } from './services/admin-experiments.service';
 import { AdminFunctionsService } from './services/admin-functions.service';
@@ -47,6 +49,8 @@ import { AdminPricesService } from './services/admin-prices.service';
 import { AdminUsageService } from './services/admin-usage.service';
 import { OrgAdminKnowledgeService } from './services/org-admin-knowledge.service';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
+import { AdminTelegramBotController } from './system/telegram-bot/admin-telegram-bot.controller';
+import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bot.service';
 
 /**
  * Admin-модуль (Phase 8.2).
@@ -60,6 +64,12 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
  */
 @Global()
 @Module({
+  imports: [
+    // Admin-redesign Фаза 0 — глобальные модули для динамических настроек
+    // и менеджмента cron-джобов.
+    AdminSettingsModule,
+    AdminCronsModule,
+  ],
   controllers: [
     IntegrationKeysAdminController,
     MeetingsAdminController,
@@ -84,6 +94,8 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     AdminLlmModelsController,
     AdminEconomicsController,
     OrgEconomicsController,
+    // β-9 Phase 4 — главная админка Z, глобальный Telegram-бот.
+    AdminTelegramBotController,
   ],
   providers: [
     AdminAuditInterceptor,
@@ -112,6 +124,9 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
     BudgetAlertCron,
     CurrencyRateSyncCron,
     ProviderSmokeTestCron,
+    // β-9 Phase 4 — service для админки Telegram-бота. TelegramApiClient
+    // импортируется из ConversationalModule (global).
+    AdminTelegramBotService,
   ],
   exports: [
     AdminAuditInterceptor,

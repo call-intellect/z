@@ -3127,6 +3127,8 @@ model SuperAdminAccessLog {
   route            String
   method           String
   params           Json?
+  /// Обязательна для severity high/destructive операций (admin-redesign Фаза 0).
+  reason           String?
   createdAt        DateTime @default(now())
 
   @@index([superAdminUserId, createdAt])
@@ -7086,4 +7088,178 @@ model PushSubscription {
 
   @@unique([userId, endpoint])
   @@index([tenantId, userId])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Admin Redesign Фаза 0 — Foundation (2026-05-25)
+// План: plans/tz/2026-05-25-admin-redesign-tz.md
+// Цель: вынести ~140 тюнинг-ENV в БД, дать UI управления продуктом super_admin'у.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// AdminSetting — динамическая настройка, перекрывающая ENV-default.
+/// Чтение через TypedConfigService.getDynamic(key, envFallbackKey?, default?).
+/// При записи через AdminSettingsService: история в AdminSettingHistory + Redis
+/// pub/sub 'admin:setting:invalidate' для перечитки в воркер-процессах.
+model AdminSetting {
+  key         String   @id
+  value       Json
+  /// "ai" | "platform" | "content" | "tenants" | "media" | "integrations" | "analytics" | "operations"
+  category    String
+  /// внутри категории: "knowledge-core" | "crons" | "retention" | ...
+  section     String
+  /// "low" | "medium" | "high" | "destructive" — определяет, обязательна ли reason при изменении.
+  severity    String   @default("low")
+  /// Идентификатор Zod-схемы из registry (для валидации значения и автогенерации UI-поля).
+  schemaId    String?
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+  /// Последняя причина изменения (для high/destructive обязательна, минимум 10 символов).
+  comment     String?
+
+  @@index([category, section])
+}
+
+/// История изменений AdminSetting. Полный audit-trail для UI вкладки «История».
+model AdminSettingHistory {
+  id        String   @id @default(cuid())
+  key       String
+  prevValue Json
+  newValue  Json
+  changedBy String
+  reason    String?
+  changedAt DateTime @default(now())
+
+  @@index([key, changedAt])
+}
+
+/// Plan — глобальный план продукта (basic/pro/enterprise/...). Содержит
+/// фичи и квоты по умолчанию. Конкретная Org ссылается через OrgEntitlement.tier
+/// (string, без foreign key — чтобы можно было soft-deactivate план).
+model Plan {
+  id              String   @id
+  displayName     String
+  description     String?
+  /// { "ai_chat": true, "employee_clones": false, ... }
+  features        Json
+  /// { "max_meetings_per_day": 100, "max_chat_tokens_per_day": 2000000, ... }
+  quotas          Json
+  monthlyPriceRub Int?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// FeatureFlag — глобальный фиче-флаг с тремя уровнями: default → orgOverrides
+/// → rolloutPercent (hash-based). Resolution: if key in orgOverrides → return;
+/// if rolloutPercent && hash(orgId + key) % 100 < rolloutPercent → true; else default.
+model FeatureFlag {
+  key            String   @id
+  description    String
+  defaultValue   Boolean
+  /// { "tenant_xxx": true, "tenant_yyy": false }
+  orgOverrides   Json     @default("{}")
+  rolloutPercent Int?
+  /// "ai" | "ui" | "experimental" | "billing" | ...
+  category       String
+  updatedBy      String?
+  updatedAt      DateTime @updatedAt
+}
+
+/// EmailTemplate — Handlebars-source plain text (как сейчас в mail.templates.ts).
+/// htmlBody опционален — для маркетинговых писем в будущем.
+model EmailTemplate {
+  key       String   @id
+  subject   String
+  body      String   @db.Text
+  htmlBody  String?  @db.Text
+  /// { "name": "имя получателя", "magicLinkUrl": "ссылка на вход", ... }
+  variables Json
+  /// "transactional" | "marketing" | "system"
+  category  String
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+/// MeetingTypeConfig — конфигурация типов встреч (9 в MVP), редактируется
+/// из админки. Сам enum MeetingType остаётся для type-safety, конфиг хранит
+/// отображаемые поля и привязку к промпту отчёта. id матчится с MeetingType
+/// enum-значением как строка.
+/// reportPromptKey — FK на PromptTemplate.key (без явной relation, чтобы
+/// можно было soft-rename промпта без миграции).
+model MeetingTypeConfig {
+  id              String   @id
+  displayName     String
+  description     String?
+  icon            String?
+  reportPromptKey String?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  updatedBy       String?
+  updatedAt       DateTime @updatedAt
+}
+
+/// SystemMessage — баннеры пользователю / maintenance-режим / алерты.
+/// targetOrgs пустой массив = показать всем; иначе — только перечисленным.
+model SystemMessage {
+  id         String    @id @default(cuid())
+  /// "banner" | "maintenance" | "alert"
+  type       String
+  /// "info" | "warning" | "critical"
+  severity   String
+  body       String    @db.Text
+  startsAt   DateTime?
+  endsAt     DateTime?
+  isActive   Boolean   @default(true)
+  /// Пустой массив = все Org.
+  targetOrgs String[]
+  createdBy  String
+  createdAt  DateTime  @default(now())
+
+  @@index([isActive, startsAt])
+}
+
+/// RetentionPolicy — глобальные сроки хранения данных по типу. Заменяет
+/// *_RETENTION_DAYS ENV. type — стабильный идентификатор: "meeting_recording",
+/// "share_view", "api_access_log", "webhook_delivery", "soft_delete_grace".
+model RetentionPolicy {
+  type        String   @id
+  days        Int
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+}
+
+/// CronSchedule — расписание @Cron-джоба, override'ит bootstrap-дефолт из
+/// @Cron(EXPRESSION). CronManagerService.onModuleInit() читает таблицу и
+/// перевешивает SchedulerRegistry. Pub/sub 'cron.schedule.updated' для
+/// hot-reload без рестарта.
+model CronSchedule {
+  name              String    @id
+  expression        String
+  /// Bootstrap-дефолт из @Cron(...) — для сравнения и кнопки «Сбросить».
+  defaultExpression String
+  enabled           Boolean   @default(true)
+  description       String?
+  lastRunAt         DateTime?
+  lastRunDurationMs Int?
+  lastRunError      String?
+  updatedBy         String?
+  updatedAt         DateTime  @updatedAt
+}
+
+/// CronRunHistory — журнал запусков кронов (scheduled + manual). triggeredBy
+/// null = scheduled, иначе userId super_admin'а который запустил вручную.
+model CronRunHistory {
+  id          String   @id @default(cuid())
+  cronName    String
+  startedAt   DateTime @default(now())
+  durationMs  Int?
+  /// "success" | "failed" | "running"
+  status      String
+  error       String?
+  triggeredBy String?
+
+  @@index([cronName, startedAt])
 }

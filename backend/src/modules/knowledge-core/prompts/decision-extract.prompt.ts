@@ -14,10 +14,14 @@
  * name-match выполняет сервис.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
-export const DECISION_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
-  [
+export const DECISION_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(
+    [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксировано решение, либо обоснование решения.',
     'Твоя задача — извлечь структурированный черновик решения на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
     'Не выдумывай факты вне блока. Если в блоке нет нужного поля — оставь его null.',
@@ -42,7 +46,8 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     'Что НЕ делать (edge case — пожелание без обязательства):',
     'Блок «Дизайн админки» (idea?). Цитаты: «Анна: хорошо бы когда-нибудь переделать админку под тёмную тему. Иван: да, не помешало бы».',
     'Вывод: {"statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. Пояснение: «хорошо бы когда-нибудь» — пожелание, не решение; ответственного нет, срока нет → низкий confidence, status=proposed.',
-  ].join('\n'),
+    ].join('\n'),
+  ),
 );
 
 export const DECISION_EXTRACT_USER_TEMPLATE = (args: {

@@ -11,10 +11,14 @@
  * Цель: 1 блок → 1 черновик карточки, в краткой и последовательной форме.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
-export const REGULATION_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
-  [
+export const REGULATION_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(
+    [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором упомянут регламент / процесс / политика компании.',
     'Твоя задача — извлечь структурированный черновик нужной сущности на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
     'Не выдумывай факты вне блока. Если в блоке нет нужного поля — оставь его null.',
@@ -26,7 +30,8 @@ export const REGULATION_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     '- standard — внешний стандарт (например, ISO 9001), на который ссылается регламент.',
     '',
     'Если блок описывает шаг процесса, верни kind="process" и заполни поле processStepHint.',
-  ].join('\n'),
+    ].join('\n'),
+  ),
 );
 
 export const REGULATION_EXTRACT_USER_TEMPLATE = (args: {

@@ -9,10 +9,14 @@
  * null / пустой массив.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
-export const IDEA_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
-  [
+export const IDEA_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(
+    [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксирована идея, предложение или запрос на доработку.',
     'Твоя задача — извлечь структурированный черновик идеи (Idea) на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
     'Не выдумывай факты вне блока. Если в блоке нет нужного поля — null или пустой массив.',
@@ -36,7 +40,8 @@ export const IDEA_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     'Что НЕ делать (edge case — риторический вопрос, не идея):',
     'Блок «Обсуждение продукта». Цитаты: «Анна: а вообще, может стоит вообще всё переписать?». Никто не подхватил, дальше другая тема.',
     'Вывод: {"kind": "internal", "statement": "недостаточно сигнала для извлечения идеи", "rationale": null, "confidence": 0.15}. Пояснение: риторический вопрос без подхвата участниками и без конкретики — низкий confidence.',
-  ].join('\n'),
+    ].join('\n'),
+  ),
 );
 
 export const IDEA_EXTRACT_USER_TEMPLATE = (args: {

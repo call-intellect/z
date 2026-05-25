@@ -10,7 +10,10 @@
  * Регистрируется в LlmRouter через taskType='role-map-extract'.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
 export interface RoleMapExtractBlock {
   id: string;
@@ -144,7 +147,8 @@ export const ROLE_MAP_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export const ROLE_MAP_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(`Ты — аналитик «памяти компании». Извлекаешь нормализованную карту должности (Role Map) из наблюдений работы сотрудников.
+export const ROLE_MAP_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(`Ты — аналитик «памяти компании». Извлекаешь нормализованную карту должности (Role Map) из наблюдений работы сотрудников.
 
 Вход — батч блоков идей, относящихся к одной должности. Каждый блок имеет id, signalType (expertise / competence / methodology_step / decision_basis / process_step) и текст с фактом.
 
@@ -162,7 +166,8 @@ export const ROLE_MAP_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(`Ты �
 - confidence — 0..1 (как уверенно подтверждено в данных).
 - counterpartRoleId / counterpartDepartmentId — должны существовать в knownRoles / knownDepartments, иначе используй counterpartExternal.
 - Если категория пустая — возвращай пустой массив. Не fill'ай шаблоном.
-- Все строки на русском. Без markdown, без преамбул, только JSON по схеме.`);
+- Все строки на русском. Без markdown, без преамбул, только JSON по схеме.`),
+);
 
 export function buildRoleMapExtractUserMessage(
   ctx: RoleMapExtractContext,

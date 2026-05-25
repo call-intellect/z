@@ -10,10 +10,14 @@
  * `backend/scripts/seed-llm-task-routes-process-template.ts`).
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
-export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
-  [
+export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(
+    [
     'Ты — knowledge-инженер компании. Тебе дают пачку «атомов знаний»',
     '(критический вопрос ↔ доверенный ответ + цитаты из встреч/документов),',
     'описывающих повторяющиеся процессы и методики в компании.',
@@ -30,7 +34,8 @@ export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     'inputArtifact и outputArtifact (если упомянуты).',
     '',
     'Отвечай строго в JSON по схеме process_template_extract_v1.',
-  ].join('\n'),
+    ].join('\n'),
+  ),
 );
 
 export const PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE = (args: {

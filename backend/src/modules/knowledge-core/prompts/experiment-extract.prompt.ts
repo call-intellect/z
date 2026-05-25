@@ -6,12 +6,18 @@
  * с одной сущностью.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
 // F2 (2026-05-24): mini-якоря для confidence (hypothesis = 0.4-0.6, result =
 // 0.85+) удалены — теперь общий источник правды — `CONFIDENCE_CALIBRATION`.
-export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
-  [
+// F9 (2026-05-24): добавлен `withEdgeCasePolicy` — единая политика пустых
+// входов и относительных сроков.
+export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(
+    [
     'Ты — аналитик корпоративных экспериментов. Тебе дают один атом знаний (IdeaBlock).',
     'Атом может быть: hypothesis (что хотят попробовать), result (что вышло), lesson (вывод).',
     'Твоя задача — извлечь или дополнить «Experiment»-карточку, которая фиксирует:',
@@ -27,7 +33,8 @@ export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     '    (а не общую мысль). Якоря шкалы — ниже.',
     '',
     'Отвечай СТРОГО валидным JSON по схеме. Никакого текста снаружи.',
-  ].join('\n'),
+    ].join('\n'),
+  ),
 );
 
 export const EXPERIMENT_EXTRACT_USER_TEMPLATE = (args: {

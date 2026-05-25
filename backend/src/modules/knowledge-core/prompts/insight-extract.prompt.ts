@@ -12,14 +12,20 @@
  * hint'ами, резолв через EntityResolutionService.findOrCreateEntity.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withConfidenceCalibration,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
 
 // F2 (2026-05-24): mini-якоря для confidence (волна F8) удалены — теперь
 // единый источник правды — `CONFIDENCE_CALIBRATION` из common.ts (через
 // `withConfidenceCalibration`). Якорь для `severity` остаётся в тексте
 // промта — это качественная шкала, не connected к confidence.
-export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
-  [
+// F9 (2026-05-24): добавлен `withEdgeCasePolicy` — единая политика
+// пустых/противоречивых входов и относительных сроков.
+export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+  withConfidenceCalibration(
+    [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксирована проблема, риск, блокер или неэффективность.',
     'Твоя задача — извлечь структурированный черновик сигнала (Insight) на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
     'Не выдумывай факты вне блока. Если в блоке нет нужного поля — null или пустой массив.',
@@ -41,7 +47,8 @@ export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     '    * "unknown" — недостаточно данных, чтобы классифицировать.',
     '  Это поле обязательное. Если в блоке прямо не указано — выбери наиболее правдоподобное по контексту; если совсем неясно — "unknown".',
     '- `confidence` — насколько уверенно ты извлёк суть сигнала (0..1). Якоря см. ниже.',
-  ].join('\n'),
+    ].join('\n'),
+  ),
 );
 
 export const INSIGHT_EXTRACT_USER_TEMPLATE = (args: {

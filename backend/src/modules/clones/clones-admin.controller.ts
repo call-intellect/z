@@ -2,39 +2,70 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Logger,
   Param,
+  Patch,
   Post,
+  Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { AdminAuditInterceptor } from '../admin/admin.audit.interceptor';
 import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { OrgAdminGuard } from '../auth/guards/org-admin.guard';
 import { RoleClonePersonaVersioningHandler } from '../knowledge-core/services/role-clone-persona-versioning.handler';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
+
+import {
+  AccessGrantListQuerySchema,
+  AccessGrantPerCloneQuerySchema,
+  CloneTypeSchema,
+  CreateAccessGrantSchema,
+  UpdateAccessGrantSchema,
+  type AccessGrantDto,
+  type AccessGrantListQueryDto,
+  type AccessGrantListResponseDto,
+  type AccessGrantPerCloneQueryDto,
+  type CreateAccessGrantDto,
+  type UpdateAccessGrantDto,
+} from './dto/clone-access-grant.dto';
+import { ClonesAdminService } from './services/clones-admin.service';
 
 /**
  * Clones=Roles Ф2 — admin-роутер для ручных операций над клонами ролей.
  *
  * Эндпоинты:
  *   - POST /api/v1/admin/clones/:roleId/force-new-version — принудительно
- *     создать новую версию ExecutablePersona(scope='role') для роли. Используется
- *     для отладки и ручной пересборки после изменений в SkillProfile'ах
- *     носителя. Body опционален: если `newPersonId` не передан — берём
- *     текущего активного носителя (Appointment с validTo IS NULL, max loadPercent).
+ *     создать новую версию ExecutablePersona(scope='role') для роли (старый).
  *
- * RBAC: только `clone_persona` write (owner/admin Org).
+ *   ТЗ 2026-05-26 (clone-access-grant-admin-api) — admin CRUD для
+ *   `CloneAccessGrant` (§2.1–§2.5):
+ *   - GET    /api/v1/admin/clones/access-grants                       — list с фильтрами + pagination.
+ *   - POST   /api/v1/admin/clones/access-grants                       — выдать грант.
+ *   - DELETE /api/v1/admin/clones/access-grants/:id                   — soft-revoke.
+ *   - PATCH  /api/v1/admin/clones/access-grants/:id                   — продлить / поменять expiresAt.
+ *   - GET    /api/v1/admin/clones/:cloneType/:cloneRefId/access-grants — per-clone view.
+ *
+ * RBAC: owner / admin Org / super_admin (через `OrgAdminGuard`); audit —
+ * через `AdminAuditInterceptor` (см. `classifyAction` для трёх новых действий).
+ * Все тексты ошибок — на русском.
  */
 const ForceNewVersionBodySchema = z.object({
   newPersonId: z.string().min(1).optional(),
@@ -44,7 +75,8 @@ type ForceNewVersionBody = z.infer<typeof ForceNewVersionBodySchema>;
 
 @ApiTags('admin-clones')
 @Controller('api/v1/admin/clones')
-@UseGuards(CookieAuthGuard, TenantGuard)
+@UseGuards(CookieAuthGuard, TenantGuard, OrgAdminGuard)
+@UseInterceptors(AdminAuditInterceptor)
 export class ClonesAdminController {
   private readonly logger = new Logger(ClonesAdminController.name);
 
@@ -53,7 +85,11 @@ export class ClonesAdminController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(RoleClonePersonaVersioningHandler)
     private readonly versioning: RoleClonePersonaVersioningHandler,
+    @Inject(ClonesAdminService)
+    private readonly admin: ClonesAdminService,
   ) {}
+
+  // ─────────────────────────── force-new-version (legacy) ───────────────────────────
 
   @Post(':roleId/force-new-version')
   @ApiOperation({
@@ -128,6 +164,128 @@ export class ClonesAdminController {
     }
 
     return { ok: true, personaId };
+  }
+
+  // ─────────────────────────── §2.1 GET list ───────────────────────────
+
+  @Get('access-grants')
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.1: список грантов доступа к клонам с фильтрами и pagination.',
+  })
+  @ApiResponse({ status: 200, description: 'Список грантов с enrichment' })
+  async listAccessGrants(
+    @CurrentOrg() tenantId: string | undefined,
+    @Query(new ZodValidationPipe(AccessGrantListQuerySchema))
+    query: AccessGrantListQueryDto,
+  ): Promise<AccessGrantListResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.admin.listAccessGrants({ tenantId: t, query });
+  }
+
+  // ─────────────────────────── §2.2 POST create ───────────────────────────
+
+  @Post('access-grants')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.2: выдать грант доступа к клону (owner/admin Org).',
+  })
+  @ApiResponse({ status: 201, description: 'Грант создан (или возвращён существующий)' })
+  @ApiResponse({ status: 400, description: 'user_not_in_org / invalid_payload' })
+  @ApiResponse({ status: 404, description: 'role_not_found / person_not_found' })
+  async createAccessGrant(
+    @CurrentOrg() tenantId: string | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body(new ZodValidationPipe(CreateAccessGrantSchema))
+    dto: CreateAccessGrantDto,
+  ): Promise<AccessGrantDto> {
+    const t = this.requireTenant(tenantId);
+    return this.admin.createAccessGrant({
+      tenantId: t,
+      actorUserId: user.id,
+      dto,
+    });
+  }
+
+  // ─────────────────────────── §2.3 DELETE revoke ───────────────────────────
+
+  @Delete('access-grants/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.3: soft-revoke гранта (запись остаётся для audit-trail).',
+  })
+  @ApiResponse({ status: 200, description: 'Грант помечен как отозванный' })
+  @ApiResponse({ status: 400, description: 'already_revoked' })
+  @ApiResponse({ status: 404, description: 'not_found' })
+  async revokeAccessGrant(
+    @CurrentOrg() tenantId: string | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ): Promise<AccessGrantDto> {
+    const t = this.requireTenant(tenantId);
+    return this.admin.revokeAccessGrant({
+      tenantId: t,
+      actorUserId: user.id,
+      id,
+    });
+  }
+
+  // ─────────────────────────── §2.4 PATCH extend ───────────────────────────
+
+  @Patch('access-grants/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.4: продление / изменение expiresAt гранта (нельзя для отозванных).',
+  })
+  @ApiResponse({ status: 200, description: 'expiresAt обновлён' })
+  @ApiResponse({ status: 400, description: 'cannot_update_revoked / invalid_payload' })
+  @ApiResponse({ status: 404, description: 'not_found' })
+  async extendAccessGrant(
+    @CurrentOrg() tenantId: string | undefined,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateAccessGrantSchema))
+    dto: UpdateAccessGrantDto,
+  ): Promise<AccessGrantDto> {
+    const t = this.requireTenant(tenantId);
+    return this.admin.extendAccessGrant({ tenantId: t, id, dto });
+  }
+
+  // ─────────────────────────── §2.5 GET per-clone ───────────────────────────
+
+  @Get(':cloneType/:cloneRefId/access-grants')
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.5: список всех грантов на конкретного клона (для страницы «Управление доступом»).',
+  })
+  @ApiResponse({ status: 200, description: 'Список грантов на клона' })
+  @ApiResponse({ status: 404, description: 'role_not_found / person_not_found' })
+  async listAccessGrantsByClone(
+    @CurrentOrg() tenantId: string | undefined,
+    @Param('cloneType') cloneTypeRaw: string,
+    @Param('cloneRefId') cloneRefId: string,
+    @Query(new ZodValidationPipe(AccessGrantPerCloneQuerySchema))
+    query: AccessGrantPerCloneQueryDto,
+  ): Promise<AccessGrantListResponseDto> {
+    const t = this.requireTenant(tenantId);
+    const parsedType = CloneTypeSchema.safeParse(cloneTypeRaw);
+    if (!parsedType.success) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_clone_type',
+          message: 'cloneType должен быть `person` или `role`',
+        },
+      });
+    }
+    return this.admin.listAccessGrantsByClone({
+      tenantId: t,
+      cloneType: parsedType.data,
+      cloneRefId,
+      includeInactive: query.includeInactive,
+    });
   }
 
   private requireTenant(tenantId: string | undefined): string {

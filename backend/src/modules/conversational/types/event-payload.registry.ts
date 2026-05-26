@@ -201,6 +201,35 @@ const OperationsWeeklyDigestPayloadSchema = z
   .strict();
 
 /**
+ * ТЗ 2026-05-26 (clone-access-grant-admin-api) §5 — payload уведомления
+ * `clone.access_granted`. Отправляется получателю гранта (`grantedToUserId`)
+ * один раз, при успешном POST `/api/v1/admin/clones/access-grants`.
+ *
+ * `cloneLabel` — публичное имя клона ('Клон Маркетолога v3' или Person.name),
+ * чтобы канал мог отрисовать карточку без дозапроса. `grantedByName` — имя
+ * админа, выдавшего грант (для контекста: «Алексей выдал тебе доступ к ...»).
+ *
+ * Не отправляется при revoke/extend — это admin-операции, пользователь
+ * остаётся в неведении (см. §5.1).
+ */
+const CloneAccessGrantedPayloadSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    body: z
+      .object({
+        cloneType: z.enum(['person', 'role']),
+        cloneRefId: z.string().min(1).max(80),
+        cloneLabel: z.string().min(1).max(200),
+        grantedByUserId: z.string().min(1).max(80),
+        grantedByName: z.string().min(1).max(200),
+        grantedAt: z.string().datetime(),
+        expiresAt: z.string().datetime().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/**
  * Calendar MVP (2026-05-25) — payload `event.reminder` для напоминания
  * о событии календаря. Доставляется через ConversationalService.sendNotification
  * по каналу telegram_bot / push / email.
@@ -240,6 +269,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['issue.mention', IssueMentionPayloadSchema],
   // Calendar MVP (2026-05-25) — напоминание о событии календаря.
   ['event.reminder', EventReminderPayloadSchema],
+  // ТЗ 2026-05-26 — уведомление о выдаче гранта на клона.
+  ['clone.access_granted', CloneAccessGrantedPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

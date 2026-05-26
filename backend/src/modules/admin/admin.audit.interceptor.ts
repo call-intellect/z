@@ -54,6 +54,24 @@ function classifyAction(
     }
   }
 
+  // ТЗ 2026-05-26 — admin CRUD для CloneAccessGrant (§4.2).
+  // POST /api/v1/admin/clones/access-grants
+  if (/\/api\/v1\/admin\/clones\/access-grants\/?$/.test(path)) {
+    if (method === 'POST') {
+      return { action: 'grant_clone_access', targetType: 'CloneAccessGrant' };
+    }
+  }
+  // DELETE /api/v1/admin/clones/access-grants/:id
+  // PATCH  /api/v1/admin/clones/access-grants/:id
+  if (/\/api\/v1\/admin\/clones\/access-grants\/[^/]+\/?$/.test(path)) {
+    if (method === 'DELETE') {
+      return { action: 'revoke_clone_access', targetType: 'CloneAccessGrant' };
+    }
+    if (method === 'PATCH') {
+      return { action: 'extend_clone_access', targetType: 'CloneAccessGrant' };
+    }
+  }
+
   return null;
 }
 
@@ -63,7 +81,9 @@ function classifyAction(
  */
 function extractTargetIdFromPath(url: string): string {
   const path = url.split('?')[0] ?? '';
-  const m = /\/(?:integration-keys|meetings)\/([^/?]+)/.exec(path);
+  // ТЗ 2026-05-26 — добавлен `access-grants` для CloneAccessGrant
+  // (`/api/v1/admin/clones/access-grants/:id`).
+  const m = /\/(?:integration-keys|meetings|access-grants)\/([^/?]+)/.exec(path);
   return m?.[1] ?? 'unknown';
 }
 

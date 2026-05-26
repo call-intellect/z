@@ -29,6 +29,10 @@ import { ExecutablePersonaVersioningService } from '../../knowledge-core/service
 import { RbacService } from '../../rbac/rbac.service';
 
 import type {
+  CloneConversationListItemDto,
+  CloneConversationsListResponseDto,
+} from '../dto/clone-conversations.dto';
+import type {
   AskCloneResponseDto,
   CloneCitationDto,
   CloneHistoryResponseDto,
@@ -1059,6 +1063,125 @@ export class ClonesService {
       select: { id: true },
     });
     return { conversationId: created.id };
+  }
+
+  /**
+   * ТЗ 2026-05-26 §2.7 — `GET /api/v1/clones/conversations`.
+   *
+   * Возвращает список диалогов текущего пользователя с конкретным клоном
+   * (отсортировано по `updatedAt DESC`, cursor-based pagination).
+   *
+   * RBAC: только активный `CloneAccessGrant` (через
+   * `RbacService.canAccessPersonClone/canAccessRoleClone` c
+   * `cloneV2Enabled=true`). Этот эндпоинт показывает историю — не имеет смысла
+   * показывать её тем, у кого нет доступа к самому клону.
+   *
+   * Маппинг к схеме:
+   *   - `cloneType + cloneRefId` → `ChatV2Conversation.scope='card'` +
+   *     `scopeRefId=cloneRefId` (см. `createCloneConversation`).
+   *   - Соответствие cloneType валидируется проверкой существования Role или
+   *     Person в текущем тенанте (404 при отсутствии).
+   *   - У `ChatV2Conversation` нет `deletedAt` — фильтруем `status: 'active'`.
+   */
+  async listMyCloneConversations(args: {
+    tenantId: string;
+    requesterUserId: string;
+    cloneType: 'person' | 'role';
+    cloneRefId: string;
+    limit: number;
+    cursor?: string;
+  }): Promise<CloneConversationsListResponseDto> {
+    // 1. Существование клона в тенанте (для отдельного 404 — иначе пустой
+    //    список не отличался бы от «клона нет»).
+    if (args.cloneType === 'role') {
+      const role = await this.prisma.role.findFirst({
+        where: { id: args.cloneRefId, tenantId: args.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!role) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'role_not_found', message: 'Роль не найдена' },
+        });
+      }
+    } else {
+      const person = await this.prisma.person.findFirst({
+        where: { id: args.cloneRefId, tenantId: args.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!person) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'person_not_found', message: 'Сотрудник не найден' },
+        });
+      }
+    }
+
+    // 2. RBAC: активный грант (или legacy-доступ, если CLONE_V2_ENABLED=false).
+    const v2 = this.isCloneV2Enabled();
+    const access =
+      args.cloneType === 'role'
+        ? await this.rbac.canAccessRoleClone({
+            tenantId: args.tenantId,
+            requesterUserId: args.requesterUserId,
+            roleId: args.cloneRefId,
+            cloneV2Enabled: v2,
+          })
+        : await this.rbac.canAccessPersonClone({
+            tenantId: args.tenantId,
+            requesterUserId: args.requesterUserId,
+            personId: args.cloneRefId,
+            cloneV2Enabled: v2,
+          });
+    if (!access.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'clone_access_denied',
+          message: 'Нет доступа к диалогам с этим клоном',
+        },
+      });
+    }
+
+    // 3. Cursor pagination. take = limit + 1, чтобы определить hasMore без
+    //    дополнительного count-запроса.
+    const conversations = await this.prisma.chatV2Conversation.findMany({
+      where: {
+        tenantId: args.tenantId,
+        userId: args.requesterUserId,
+        scope: 'card',
+        scopeRefId: args.cloneRefId,
+        status: 'active',
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: args.limit + 1,
+      ...(args.cursor
+        ? { cursor: { id: args.cursor }, skip: 1 }
+        : {}),
+      select: {
+        id: true,
+        title: true,
+        updatedAt: true,
+        createdAt: true,
+        _count: { select: { messages: true } },
+      },
+    });
+
+    const hasMore = conversations.length > args.limit;
+    const sliced = hasMore
+      ? conversations.slice(0, args.limit)
+      : conversations;
+    const items: CloneConversationListItemDto[] = sliced.map((c) => ({
+      id: c.id,
+      title: c.title,
+      lastMessageAt: c.updatedAt.toISOString(),
+      messageCount: c._count.messages,
+      createdAt: c.createdAt.toISOString(),
+    }));
+    const nextCursor =
+      hasMore && items.length > 0 ? items[items.length - 1]!.id : null;
+
+    return { items, nextCursor };
   }
 
   // ─────────────────────── skill-profile read ───────────────────────

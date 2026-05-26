@@ -20,6 +20,12 @@ import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 
+import type { MyCloneAccessResponseDto } from './dto/clone-access-grant.dto';
+import {
+  CloneConversationsQuerySchema,
+  type CloneConversationsQuery,
+  type CloneConversationsListResponseDto,
+} from './dto/clone-conversations.dto';
 import {
   AskCloneBodySchema,
   ClonesListQuerySchema,
@@ -34,6 +40,7 @@ import {
   type SkillProfileDto,
   type RoleSkillProfileDto,
 } from './dto/clones.dto';
+import { ClonesAdminService } from './services/clones-admin.service';
 import { ClonesService } from './services/clones.service';
 
 /**
@@ -69,6 +76,28 @@ export class ClonesController {
       tenantId: t,
       requesterUserId: user.id,
       query,
+    });
+  }
+
+  @Get('conversations')
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.7: список диалогов текущего пользователя с клоном (для боковой панели /clones UI)',
+  })
+  async listMyCloneConversations(
+    @Query(new ZodValidationPipe(CloneConversationsQuerySchema))
+    query: CloneConversationsQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CloneConversationsListResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.listMyCloneConversations({
+      tenantId: t,
+      requesterUserId: user.id,
+      cloneType: query.cloneType,
+      cloneRefId: query.cloneRefId,
+      limit: query.limit,
+      cursor: query.cursor,
     });
   }
 
@@ -253,5 +282,47 @@ export class ClonesController {
       });
     }
     return tenantId;
+  }
+}
+
+/**
+ * ТЗ 2026-05-26 (clone-access-grant-admin-api) §2.6 — user-эндпоинт
+ * `GET /api/v1/me/clone-access`. Возвращает id-ы активных грантов текущего
+ * пользователя в текущем тенанте (без enrichment — фронт сам мапит, имея
+ * уже загруженный список клонов).
+ *
+ * Не admin-эндпоинт: доступен любому залогиненному member'у Org. Используется
+ * фронтом для оптимистичной фильтрации карточек в маркетплейсе клонов
+ * (`useMyCloneAccess()` hook).
+ *
+ * Отдельный @Controller-класс с префиксом `api/v1/me` — чтобы сохранить путь
+ * без префикса `/clones`. Регистрируется в `ClonesModule` рядом с
+ * `ClonesController`.
+ */
+@ApiTags('clones')
+@Controller('api/v1/me')
+@UseGuards(CookieAuthGuard, TenantGuard)
+export class MeCloneAccessController {
+  constructor(
+    @Inject(ClonesAdminService)
+    private readonly admin: ClonesAdminService,
+  ) {}
+
+  @Get('clone-access')
+  @ApiOperation({
+    summary:
+      'ТЗ 2026-05-26 §2.6: id-ы активных грантов на клонов для текущего пользователя.',
+  })
+  async getMyCloneAccess(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MyCloneAccessResponseDto> {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Организация не определена' },
+      });
+    }
+    return this.admin.getMyCloneAccess({ tenantId, userId: user.id });
   }
 }

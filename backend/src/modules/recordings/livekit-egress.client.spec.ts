@@ -1,3 +1,4 @@
+import type * as LivekitSdk from 'livekit-server-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Перехватываем конструктор EgressClient до импорта тестируемого файла:
@@ -7,7 +8,7 @@ const mockStartTrackEgress = vi.fn();
 const mockStopEgress = vi.fn();
 
 vi.mock('livekit-server-sdk', async () => {
-  const actual = await vi.importActual<typeof import('livekit-server-sdk')>(
+  const actual = await vi.importActual<typeof LivekitSdk>(
     'livekit-server-sdk',
   );
   class EgressClientMock {

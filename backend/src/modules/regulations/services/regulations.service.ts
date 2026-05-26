@@ -14,6 +14,7 @@ import type {
   RegulationDetailDto,
   RegulationHistoryResponse,
   RegulationKindDto,
+  RegulationListItemDto,
   SupersedeRegulationBody,
 } from '../dto/regulations.dto';
 
@@ -401,7 +402,7 @@ export class RegulationsService {
     r: Awaited<ReturnType<PrismaService['regulation']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
-  ): import('../dto/regulations.dto').RegulationListItemDto {
+  ): RegulationListItemDto {
     return {
       id: r.id,
       kind: r.category === 'standard' ? 'standard' : 'regulation',
@@ -423,7 +424,7 @@ export class RegulationsService {
     p: Awaited<ReturnType<PrismaService['process']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
-  ): import('../dto/regulations.dto').RegulationListItemDto {
+  ): RegulationListItemDto {
     return {
       id: p.id,
       kind: 'process',
@@ -445,7 +446,7 @@ export class RegulationsService {
     p: Awaited<ReturnType<PrismaService['policy']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
-  ): import('../dto/regulations.dto').RegulationListItemDto {
+  ): RegulationListItemDto {
     return {
       id: p.id,
       kind: 'policy',

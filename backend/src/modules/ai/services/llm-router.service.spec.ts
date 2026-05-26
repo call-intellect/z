@@ -6,6 +6,8 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AiUsageLogService } from './ai-usage-log.service';
 import type { AnthropicService } from './anthropic.service';
 import type { DeepSeekService } from './deepseek.service';
+import type { GrsaiService } from './grsai.service';
+import type { KieService } from './kie.service';
 import {
   LlmRouterAllProvidersFailedError,
   LlmRouterService,
@@ -81,10 +83,10 @@ function build(opts: BuildOpts) {
   } as unknown as OllamaService;
   const kie = {
     complete: vi.fn(async () => makeOutput('kie', 'gemini-3-pro')),
-  } as unknown as import('./kie.service').KieService;
+  } as unknown as KieService;
   const grsai = {
     complete: vi.fn(async () => makeOutput('grsai', 'gemini-3-pro')),
-  } as unknown as import('./grsai.service').GrsaiService;
+  } as unknown as GrsaiService;
 
   const usageRecord = vi.fn();
   const usage = { record: usageRecord } as unknown as AiUsageLogService;

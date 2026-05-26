@@ -10,6 +10,7 @@ import { type Job, Worker } from 'bullmq';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ParticipantContextService } from '../../ai/services/participant-context.service';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import {
   CORE_QUEUE_NAMES,
   type MeetingAnalyzeV2JobData,
@@ -311,7 +312,7 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
       evidenceBlockIds: string[];
       confidence: number;
     }>;
-    participants: readonly import('../../ai/services/prompts/participant-context').AiParticipantContext[];
+    participants: readonly AiParticipantContext[];
   }): Promise<void> {
     if (args.tasks.length === 0) return;
 

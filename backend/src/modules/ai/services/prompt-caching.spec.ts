@@ -7,6 +7,8 @@ import type { AiUsageLogService } from './ai-usage-log.service';
 import type { AnthropicService } from './anthropic.service';
 import { buildSystemBlocks, buildUserContent } from './anthropic.service';
 import type { DeepSeekService } from './deepseek.service';
+import type { GrsaiService } from './grsai.service';
+import type { KieService } from './kie.service';
 import { LlmFallbackService } from './llm-fallback.service';
 import { LlmRouterService, type LlmTaskType } from './llm-router.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
@@ -124,8 +126,8 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       { complete: vi.fn() } as unknown as OpenAiProxyService,
       { complete: vi.fn() } as unknown as DeepSeekService,
       { complete: vi.fn() } as unknown as OllamaService,
-      { complete: vi.fn() } as unknown as import('./kie.service').KieService,
-      { complete: vi.fn() } as unknown as import('./grsai.service').GrsaiService,
+      { complete: vi.fn() } as unknown as KieService,
+      { complete: vi.fn() } as unknown as GrsaiService,
       usage,
       metrics,
     );
@@ -184,8 +186,8 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       { complete: vi.fn() } as unknown as OpenAiProxyService,
       { complete: vi.fn() } as unknown as DeepSeekService,
       { complete: vi.fn() } as unknown as OllamaService,
-      { complete: vi.fn() } as unknown as import('./kie.service').KieService,
-      { complete: vi.fn() } as unknown as import('./grsai.service').GrsaiService,
+      { complete: vi.fn() } as unknown as KieService,
+      { complete: vi.fn() } as unknown as GrsaiService,
       { record: usageRecord } as unknown as AiUsageLogService,
       {
         incLlmRouterDispatch: vi.fn(),

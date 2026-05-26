@@ -1,4 +1,9 @@
+import nodemailer from 'nodemailer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { TypedConfigService } from '../../common/config/index';
+
+import { MailService } from './mail.service';
 
 vi.mock('nodemailer', () => {
   return {
@@ -7,12 +12,6 @@ vi.mock('nodemailer', () => {
     },
   };
 });
-
-import nodemailer from 'nodemailer';
-
-import type { TypedConfigService } from '../../common/config/index';
-
-import { MailService } from './mail.service';
 
 /**
  * Юнит-тесты MailService.

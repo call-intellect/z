@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { SkillTraitConceptService } from '../../../knowledge-core/services/skill-trait-concept.service';
@@ -41,7 +42,7 @@ export class AdminSkillTraitConceptsService {
     page: number;
     pageSize: number;
   }> {
-    const where: import('@prisma/client').Prisma.SkillTraitConceptWhereInput = {
+    const where: Prisma.SkillTraitConceptWhereInput = {
       tenantId: args.tenantId,
     };
     if (args.query.status) where.status = args.query.status;

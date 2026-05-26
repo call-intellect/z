@@ -6,6 +6,8 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
 import type { DisposableEmailService } from '../mail/disposable-email.service';
 import type { MailService } from '../mail/mail.service';
+import type { OrgInvitationsService } from '../orgs/org-invitations.service';
+import type { OrgsService } from '../orgs/orgs.service';
 
 import type { AccountsRepository } from './accounts.repository';
 import { AccountsService } from './accounts.service';
@@ -148,12 +150,12 @@ describe('AccountsService', () => {
       mail as unknown as MailService,
       disposable as unknown as DisposableEmailService,
       cfg,
-      orgs as unknown as import('../orgs/orgs.service').OrgsService,
+      orgs as unknown as OrgsService,
       redis as unknown as RedisService,
       metrics as unknown as BusinessMetricsService,
       // β-9: OrgInvitationsService — для acceptInvitationMagicLink.
       // Не нужен в текущих тестах, поэтому пустой stub.
-      {} as unknown as import('../orgs/org-invitations.service').OrgInvitationsService,
+      {} as unknown as OrgInvitationsService,
     );
   }
 

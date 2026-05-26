@@ -3,6 +3,7 @@ import {
   type ExecutionContext,
   Inject,
   Injectable,
+  SetMetadata,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -17,7 +18,6 @@ import type { RequestWithApiKey } from './current-api-key.decorator';
  */
 export const REQUIRE_SCOPE_KEY = 'api_key_required_scope';
 
-import { SetMetadata } from '@nestjs/common';
 export const RequireScope = (scope: ApiKeyScope): MethodDecorator =>
   SetMetadata(REQUIRE_SCOPE_KEY, scope);
 

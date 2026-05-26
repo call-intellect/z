@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Prisma } from '@prisma/client';
+import { type EntityType, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -258,7 +258,7 @@ export class ThemeClustererCron {
     const entityMentionsByEntity = new Map<string, number>();
     const entityMeta = new Map<
       string,
-      { id: string; canonicalName: string; type: import('@prisma/client').EntityType }
+      { id: string; canonicalName: string; type: EntityType }
     >();
     for (const row of entityRows) {
       const e = row.entity;

@@ -301,7 +301,7 @@ export class ExecutablePersonaBuildService {
       // dataClass всегда `internal` (floor поднимает любой источник).
       // Используем `DataClassPolicyService.derive(kind='executable_persona')`.
       // Audit-trail сохраняем в `dataClassAudit` (W4.2-поле).
-      let dataClassAudit: import('@prisma/client').Prisma.InputJsonValue | undefined;
+      let dataClassAudit: Prisma.InputJsonValue | undefined;
       if (this.dataClassPolicy) {
         const derived = this.dataClassPolicy.derive({
           sources: aggregatedTraits.map((t) => ({
@@ -318,7 +318,7 @@ export class ExecutablePersonaBuildService {
           kind: 'executable_persona',
           sourceIds: aggregatedTraits.map((t) => t.id),
         });
-        dataClassAudit = derived.audit as unknown as import('@prisma/client').Prisma.InputJsonValue;
+        dataClassAudit = derived.audit as unknown as Prisma.InputJsonValue;
       }
 
       // Clones=Roles Ф2 — пересборка для role-scope должна также

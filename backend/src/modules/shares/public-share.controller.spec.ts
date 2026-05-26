@@ -11,6 +11,9 @@
  *     PublicShareHeadersInterceptor ответ всегда `Referrer-Policy: no-referrer`,
  *     поэтому исходящие ответы не утекают referrer.
  */
+import type * as fsModule from 'node:fs';
+import type * as pathModule from 'node:path';
+
 import { GoneException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -156,9 +159,9 @@ describe('PublicShareController', () => {
   // Если кто-то удалит декоратор — этот тест упадёт.
   describe('@Throttle декоратор для anti-brute-force (статическая проверка)', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('node:fs') as typeof import('node:fs');
+    const fs = require('node:fs') as typeof fsModule;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = require('node:path') as typeof import('node:path');
+    const path = require('node:path') as typeof pathModule;
     const src = fs.readFileSync(
       path.join(__dirname, 'public-share.controller.ts'),
       'utf8',

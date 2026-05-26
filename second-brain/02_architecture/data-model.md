@@ -978,35 +978,53 @@ model FeedbackItem {
 
 ## Clones v2 — CloneAccessGrant (Фаза 7 §9, 2026-05-26)
 
-**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
+**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2) + расширение из [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) (admin CRUD + soft-revoke + срок действия). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
 
-Многотуровый чат с клоном (persona или role) теперь требует явного гранта доступа — раньше доступ резолвился чисто RBAC-правилом owner/admin/self/manager, теперь добавляется per-pair (subject × invitee) ACL для коллабораций «дай мне поговорить с твоим клоном».
+Многотуровый чат с клоном (persona или role) теперь требует явного гранта доступа — раньше доступ резолвился чисто RBAC-правилом owner/admin/self/manager, теперь добавляется per-pair (grantee × clone) ACL для коллабораций «дай мне поговорить с твоим клоном».
+
+### Реальная схема (источник — `backend/prisma/schema.prisma:2218`, после ТЗ 2026-05-26)
 
 ```prisma
 model CloneAccessGrant {
-  id           String   @id @default(cuid())
-  tenantId     String   @index
-  // Кому открыли доступ
-  granteeUserId String  @index
-  // К какому клону: либо персональный (personId), либо ролевой (roleId) — XOR
-  subjectPersonId String? @index
-  subjectRoleId   String? @index
-  // Кто разрешил (owner / admin / сам носитель / direct manager)
-  grantedByUserId String
-  // Срок действия (null = бессрочно до revoke)
-  expiresAt    DateTime?
-  revokedAt    DateTime?
-  createdAt    DateTime @default(now())
+  id              String    @id @default(cuid())
+  tenantId        String
+  grantedToUserId String                              // кому выдано
+  cloneType       String                              // 'person' | 'role' — двойная природа без формального FK
+  cloneRefId      String                              // personId или roleId
+  grantedById     String                              // кто выдал
+  grantedAt       DateTime  @default(now())
 
-  @@unique([tenantId, granteeUserId, subjectPersonId])
-  @@unique([tenantId, granteeUserId, subjectRoleId])
-  @@index([tenantId, subjectPersonId])
-  @@index([tenantId, subjectRoleId])
+  // ТЗ 2026-05-26 — soft-revoke + опц. срок действия:
+  revokedAt       DateTime?
+  revokedBy       String?
+  expiresAt       DateTime?
+
+  tenant     Org   @relation(...)
+  grantedTo  User  @relation("CloneAccessGrant_grantedTo", ...)
+  grantedBy  User  @relation("CloneAccessGrant_grantedBy", ...)
+  revokedByU User? @relation("CloneAccessGrant_revokedBy", ...)
+
+  @@unique([tenantId, grantedToUserId, cloneType, cloneRefId])
+  @@index([tenantId, grantedToUserId])
+  @@index([tenantId, cloneType, cloneRefId])
+  @@index([revokedAt])                                // фильтр активности
+  @@index([expiresAt])                                // фильтр срока
 }
 ```
 
-Используется в guard'ах новых endpoint'ов `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` (см. [[../01_projects/api-layer]] §Clones). Старые one-shot `POST /clones/.../ask` остаются на прежнем RBAC.
+### Доработки 2026-05-26 (коммиты `fc3d6fe` + `c96505a` + `87fef5d`)
 
-Флаг включения цепочки v2 — `CLONE_V2_ENABLED` (default off, A/B параллельно со старым clone-respond).
+- **Поля `revokedAt` / `revokedBy` / `expiresAt`** — soft-revoke (запись остаётся в таблице как audit-trail; при re-grant старая revoked-запись удаляется в транзакции, чтобы не падать на unique-индексе) + опц. срок действия. По умолчанию из UI — `null` (бессрочно).
+- **Индексы `@@index([revokedAt])` и `@@index([expiresAt])`** — нужны фильтру активности грантов в RbacService.
+- **Скрытый баг RBAC исправлен**: `RbacService.canAccessPersonClone` / `canAccessRoleClone` раньше делали `findUnique` и не отсеивали revoked/expired гранты. Теперь это `findFirst` с фильтром `revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())` (helpers `RbacService.buildActiveGrantWhere` для SQL и `isGrantActive` для in-memory). Покрыто 14 кейсами в `rbac-clone-access.spec.ts`.
+- **Идемпотентный patch-скрипт первичной миграции** — `backend/scripts/patch-migrate-clone-access.ts`. Правила B: носитель роли получает свой role-клон; manager того же department (`Membership.role='manager'` + `primaryDepartmentId`) — клоны подчинённых; owner/admin Org — все активные role-клоны. **Person-клоны (`cloneType='person'`) НЕ выдаются** — клоны ролевые. Через `createMany({ skipDuplicates: true })` (повторный запуск = no-op). На пустом проде — 0 записей.
+
+### Где используется
+
+- В guard'ах endpoint'ов `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` (см. [[../01_projects/api-layer]] §Clones) и `GET /api/v1/clones/conversations` / `GET /api/v1/me/clone-access` (user-side).
+- В admin CRUD `/api/v1/admin/clones/access-grants` (5 endpoints: list/create/revoke/extend/per-clone-view).
+- В UI `/admin/clones` (модалы CreateGrantDialog / RevokeGrantDialog / ExtendGrantDialog) — управляет полем `expiresAt` и переводом гранта в revoked-состояние.
+
+Старые one-shot `POST /clones/.../ask` остаются на прежнем RBAC. Флаг включения цепочки v2 — `CLONE_V2_ENABLED` (default off, A/B параллельно со старым clone-respond).
 
 [[../index|← index]]

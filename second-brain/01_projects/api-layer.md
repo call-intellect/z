@@ -149,8 +149,24 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | POST | `/api/v1/clones/skill-traits/:traitId/mark-misleading` | Manager/admin помечает trait как неверный (postфактум-контроль) | owner/admin/direct manager | γ-1 |
 | **POST** | `/api/v1/clones/persons/:personId/conversations` | **Многотуровый диалог с клоном сотрудника v2** — dialog-layer (multi-query expansion + temporal filter), режимы `factual` / `judgmental`. taskType `dialog-multi-query-clone` (DeepSeek V4 Pro). Доступ через `CloneAccessGrant`. Флаг `CLONE_V2_ENABLED`. | owner/admin/granted (через CloneAccessGrant) | **Фаза 7 §9 (2026-05-26)** |
 | **POST** | `/api/v1/clones/roles/:roleId/conversations` | **Многотуровый диалог с клоном роли v2** — те же dialog-layer / режимы. Агрегатный клон роли. | owner/admin/granted | **Фаза 7 §9 (2026-05-26)** |
+| **GET** | `/api/v1/clones/conversations?cloneType&cloneRefId&cursor&limit` | Мои диалоги с конкретным клоном (cursor-pagination, маппинг на `ChatV2Conversation(scope='card')` — отдельной модели `CloneConversation` нет). | granted через CloneAccessGrant | **2026-05-26** |
+| **GET** | `/api/v1/me/clone-access` | Что мне выдано (для frontend-хука `useMyCloneAccess`). Грейсфул на 404 — пустой массив. | authenticated | **2026-05-26** |
 
-⚠ **Ролевые клоны (решение 2026-05-25).** ExecutablePersona строится по должности, а не по сотруднику. UI-страницы — только `/clones` и `/roles/[id]/clone`; старые `/me/clone` и `/persons/[id]/skill-profile` удалены. См. [[skill-and-clone]].
+⚠ **Ролевые клоны (решение 2026-05-25).** ExecutablePersona строится по должности, а не по сотруднику. UI-страницы — только `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]` и `/admin/clones`. Старые `/me/clone` и `/persons/[id]/skill-profile` удалены. См. [[skill-and-clone]].
+
+### Clones admin (2026-05-26 — Фаза 7 §9 рост)
+
+Все endpoints под `OrgAdminGuard` + `AdminAuditInterceptor` (severity `high` — `reason` обязателен в payload для grant / revoke / extend). Префикс `/api/v1/admin/clones`. См. [[admin]] §«/admin/clones».
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/clones/access-grants?cloneType=&search=&onlyActive=&page=&pageSize=` | Список грантов с фильтрами + server-side pagination + batch-enrichment (`cloneLabel` / `userName` / `userEmail` / `grantedBy`) без N+1. |
+| POST | `/admin/clones/access-grants` | Выдать грант (идемпотентно: re-grant поверх revoked удаляет старую запись в транзакции). Body: `{ cloneType, cloneRefId, grantedToUserId, expiresAt?, reason }`. Эмитит `clone.access_granted` через `ConversationalService` (in-app + Telegram, warn-log при ошибке — grant не откатывается). |
+| DELETE | `/admin/clones/access-grants/:id` | Soft-revoke (`revokedAt` + `revokedBy`). Запись остаётся как audit. Body: `{ reason }`. |
+| PATCH | `/admin/clones/access-grants/:id` | Продлить / изменить `expiresAt` (включая «бессрочно» = null). Body: `{ expiresAt: ISO \| null, reason }`. |
+| GET | `/admin/clones/:cloneType/:cloneRefId/access-grants` | Per-clone view — кому уже выдан этот клон (для модалки CreateGrantDialog). |
+
+**ТЗ:** [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md).
 
 ## WebSocket gateways
 
@@ -281,5 +297,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-05-25 (admin-redesign Фазы 0-9):** добавлен раздел «Admin (Z-Admin) — новые эндпоинты Фаз 0-9» с полным списком префиксов `/api/v1/admin/{settings,crons,audit,incidents,analytics,ai,orgs/{plans,entitlements,:id/*},content/*,integrations/*,media/*,platform/*,llm-routes}`.
 - **2026-05-25 (feedback):** добавлен раздел «Feedback — канал обратной связи + AI-кластеризация» с пользовательскими и админскими эндпоинтами `/api/v1/feedback/*` и `/api/v1/admin/feedback/*`. Полная заметка фичи — [[feedback]].
 - **2026-05-26 (clones v2, Фаза 7 §9):** добавлены `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` — многотуровый диалог с клоном, dialog-layer, режимы factual / judgmental, taskType `dialog-multi-query-clone` на DeepSeek V4 Pro. Доступ через модель `CloneAccessGrant`, флаг `CLONE_V2_ENABLED`. См. [[skill-and-clone]] §«Доработки 2026-05-26».
+- **2026-05-26 (clones admin CRUD + user list):** добавлены 5 admin endpoints `/api/v1/admin/clones/access-grants` (list / create / revoke / extend / per-clone-view) + 2 user endpoints `/api/v1/clones/conversations` (мои диалоги с клоном) и `/api/v1/me/clone-access` (что мне выдано). `AdminAuditInterceptor.classifyAction` расширен 3 ветками (grant/revoke/extend, severity high). `RbacService.canAccess*Clone` исправлен: теперь фильтрует активность грантов (`revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())`). См. [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md).
 
 [[../index|← index]]

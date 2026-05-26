@@ -1130,7 +1130,40 @@ PERSONA_ROLE_AGG_MIN_PERSONS=2
 - Реальный smoke на dev-сотрудниках после deploy (γ-1.20 — документация SMOKE.md создана).
 - Manager validation note: 1–2 dev-куратора подтверждают «traits похожи на правду» (не блокирует DoD).
 
-Подробности: [[../01_projects/skill-and-clone|01_projects/skill-and-clone.md]].
+### Доработки 2026-05-26 — admin CRUD CloneAccessGrant + frontend marketplace (Фаза 7 §9 рост)
+
+**Источник:** [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) + [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md). Коммиты `fc3d6fe` (rbac+schema), `c96505a` (admin/user API), `87fef5d` (patch-скрипт миграции), `578a777` (user frontend), `eab4d8f` (admin frontend).
+
+**Backend (расширение модуля `clones/`):**
+- `services/clones-admin.service.ts` (новый, ~570 строк) — list / create / revoke / extend + per-clone view + enrichment (`cloneLabel` / `userName` / `userEmail` / `grantedBy`) батч-запросом без N+1. Re-grant поверх revoked делает физическое удаление старой revoked-записи в транзакции (audit-trail остаётся в `AdminAuditLog`).
+- `clones-admin.controller.ts` (расширен 5 endpoints: GET list + POST + DELETE + PATCH + GET per-clone) под `OrgAdminGuard` + `AdminAuditInterceptor`.
+- `services/clones.service.ts` — добавлен `listConversations` (cursor-pagination, маппинг на `ChatV2Conversation(scope='card')` — отдельной модели `CloneConversation` в проекте нет, отделил как dialog-уровень над chat-v2).
+- `clones.controller.ts` — `GET /api/v1/me/clone-access` (что мне выдано — для `useMyCloneAccess` хука) + `GET /api/v1/clones/conversations?cloneType&cloneRefId` (мои диалоги с клоном).
+- DTO: `dto/clone-access-grant.dto.ts` (~140 строк), `dto/clone-conversations.dto.ts` (~65 строк) — Zod + Swagger.
+- `admin.audit.interceptor.ts` расширен 3 ветками `classifyAction`: `grant_clone_access`, `revoke_clone_access`, `extend_clone_access` (severity high → reason обязателен).
+- `conversational/types/event-payload.registry.ts` — eventType `clone.access_granted` (in-app + Telegram). `ConversationalService.sendNotification` вызывается **только при grant** (не при revoke / extend). Try/catch вокруг — notification-failure не откатывает grant (warn-log).
+
+**Patch-script** `backend/scripts/patch-migrate-clone-access.ts` (~330 строк) — заменил предыдущую заглушку: идемпотентная первичная миграция грантов перед включением `CLONE_V2_ENABLED=true` на проде. Правила B (детально — в [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26»). `grantedById` = первый owner Org по `joinedAt asc` (детерминированно); если нет — первый admin; иначе пропуск тенанта с warn. Флаг `--tenant <orgId>` для одного тенанта (отладка).
+
+**Frontend (новый маркетплейс + admin-страница):**
+- `app/(authenticated)/clones/ClonesMarketplaceClient.tsx` — `/clones` маркетплейс с группировкой по department + поиск.
+- `app/(authenticated)/clones/[roleId]/CloneDetailClient.tsx` — карточка клона + последние диалоги + кнопка «+ Новый диалог».
+- `app/(authenticated)/clones/[roleId]/chat/[conversationId]/CloneChatClient.tsx` — чат с боковой панелью диалогов (sticky desktop / drawer mobile).
+- `app/(authenticated)/roles/[id]/clone/page.tsx` — теперь redirect на `/clones/[id]` (legacy совместимость).
+- `app/(authenticated)/admin/clones/ClonesAccessClient.tsx` + 3 диалога (`CreateGrantDialog` / `RevokeGrantDialog` / `ExtendGrantDialog`) + `page.tsx`. Permission-gate через `useAuth` (защита поверх backend `OrgAdminGuard`).
+- `app/(authenticated)/admin/navigation.ts` — новый пункт «Доступы к клонам» (иконка ShieldCheck) в разделе «AI и модели».
+- `src/ui/clones/`: `CloneAvatar.tsx` (SVG-иконка с инициалом роли, 12-цветная палитра Tailwind-600, детерминированный хеш по `departmentId` — без фото человека) + `CloneCard.tsx` (состояния grant / no-grant — кнопка «Спросить» или «Запросить доступ») + `CloneChatSidebar` + `CloneSearchInput` + `DepartmentSection` + `EmptyCloneList`.
+- `src/api/clones.api.ts` расширен (`createRoleConversation`, `listMyCloneConversations`, `requestAccess`) + `me-clone-access.api.ts` + `admin-clones.api.ts` (5 методов).
+- `src/hooks/`: `useClones` / `useCloneByRoleId` / `useCloneConversations` / `useMyCloneAccess` / `useInvalidateClones` / `useUnseenCloneGrants`.
+- **Удалено (legacy первой итерации Clones-Roles):** `ClonesListClient.tsx`, `RoleCloneClient.tsx`.
+
+**Тесты (без регрессий):** 13 unit'ов `ClonesAdminService` + 9 `clones-conversations.controller.spec.ts` + 25 `rbac-clone-access.spec.ts` (расширены 14 кейсами активности/expired/revoked) + 9 frontend `CloneAvatar.spec.ts`. 224 admin interceptor + 86 rbac без регрессий.
+
+Подробности: [[../01_projects/skill-and-clone|01_projects/skill-and-clone.md]] и [[../01_projects/admin|01_projects/admin.md]].
+
+---
+
+Подробности базовой γ-1: [[../01_projects/skill-and-clone|01_projects/skill-and-clone.md]].
 
 ## Tracker — задачный модуль (2026-05-24, Sprint 1)
 

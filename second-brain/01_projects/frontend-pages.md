@@ -68,21 +68,47 @@ covers: реестр всех страниц Next.js App Router
 | `/me/check-ins` | Мои чек-ины |
 | `/me/contributions` | **T1 — Мои вклады (Recognition)** |
 | `/me/social-contribution` | **T2 — Мой социальный профиль (Helpfulness)** |
-| `/me/clone` | Мой клон (γ-1, обязательная для DoD) |
 | `/me/knowledge-profile` | Мой профиль знаний (β-2) |
 | `/persons/[id]/contributions` | **T1 — Вклад коллеги** |
 | `/persons/[id]/social-contribution` | **T2 — Соц. профиль коллеги** |
-| `/persons/[id]/skill-profile` | Skill-профиль (γ-1, manager UI) |
 | `/persons/[id]/knowledge-profile` | Профиль знаний коллеги (β-2) |
 | `/feed/spotlights` | Spotlights + **T1/T2 виджеты** |
 | `/feed` | Activity Feed (Wave 2) |
 | `/intake` | Triage очередь (AI suggestions) |
+
+## Clones — маркетплейс (2026-05-26, Clones=Roles финальный UI)
+
+**Источник:** [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md). Коммит `578a777` (user) + `eab4d8f` (admin).
+
+| Путь | Назначение |
+|---|---|
+| `/clones` | **Маркетплейс клонов** — список ролевых клонов компании с группировкой по department и поиском. `ClonesMarketplaceClient.tsx`. Карточки `CloneCard` показывают либо «Спросить» (если есть грант), либо «Запросить доступ». |
+| `/clones/[roleId]` | Карточка клона роли + последние диалоги + кнопка «+ Новый диалог». `CloneDetailClient.tsx`. |
+| `/clones/[roleId]/chat/[conversationId]` | Чат с клоном с боковой панелью диалогов (sticky desktop / drawer mobile, mobile-first 1→2→3→4 колонки, safe-area-inset в composer). `CloneChatClient.tsx`. |
+| `/roles/[id]/clone` | Redirect на `/clones/[id]` — legacy совместимость после первой итерации Clones-Roles рефакторинга. |
+
+**Удалено (legacy первой итерации Clones-Roles, не наша работа — рефакторинг 2026-05-25):** `/me/clone`, `/persons/[id]/skill-profile`. См. memory `project_clones_are_role_based.md`.
+
+**Компоненты (`frontend/src/ui/clones/`):**
+- `CloneAvatar.tsx` — SVG-иконка с инициалом роли, 12-цветная палитра Tailwind-600, детерминированный хеш по `departmentId` (без фото человека). 9 unit-кейсов покрывают детерминированность цвета, фолбэк инициала и accessibility.
+- `CloneCard.tsx`, `CloneChatSidebar.tsx`, `CloneSearchInput.tsx`, `DepartmentSection.tsx`, `EmptyCloneList.tsx`.
+
+**API + hooks:**
+- `src/api/clones.api.ts` расширен (`createRoleConversation`, `listMyCloneConversations`, `requestAccess`).
+- `src/api/me-clone-access.api.ts` — грейсфул на 404 (пустой массив).
+- `src/api/admin-clones.api.ts` — 5 методов admin CRUD.
+- `src/domain/clone.ts` расширен, новый `src/domain/admin-clone-access-grant.ts` (типы + мапперы + русские лейблы).
+- Хуки `src/hooks/useClones.ts`: `useClones` / `useCloneByRoleId` / `useCloneConversations` / `useMyCloneAccess` / `useInvalidateClones` (SWR).
+- `src/hooks/useUnseenCloneGrants.ts` — in-app точка («тебе только что выдали клона»).
+
+Только русский язык в UI. Mobile-first.
 
 ## Admin
 
 | Путь | Назначение |
 |---|---|
 | `/admin` | Дашборд админки (Org-Admin) |
+| `/admin/clones` | **Доступы к клонам (2026-05-26)** — управление гранатами `CloneAccessGrant` (`owner`/`admin` Org): таблица с фильтрами + модалы `CreateGrantDialog` / `RevokeGrantDialog` / `ExtendGrantDialog`. Пункт «Доступы к клонам» в группе «AI и модели» (иконка `ShieldCheck`). См. [[admin]]. |
 | `/admin/helpfulness-overview` | **T2 — Team-map + unanswered** |
 | `/admin/ai-models` | Управление LLM-моделями (Org-overrides) |
 | `/admin/llm/catalog` | Каталог моделей (super_admin) |
@@ -200,5 +226,6 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-05-25 (β-8.1/β-8.2):** добавлены страницы `/dashboard/operations/weekly` и `/me/promises`, виджеты `TeamTemperatureWidget` и «Открытые обещания», роль `coo` во фронтенд-типах.
 - **2026-05-25 (β-8.3):** добавлена страница `/dashboard/operations/daily` + новые виджеты `CauseCategoryMapWidget` и `MaturityWidget` на `/dashboard/operations` + блок «Вчерашний отчёт» + кликабельные бэйджи `cause_category` в `InsightsTopWidget` (deep-link `/insights?cause_category=…`). Файл `frontend/src/lib/cause-category-presentation.ts` — 8 русских лейблов + Tailwind палитра.
 - **2026-05-25 (feedback):** добавлены страницы `/feedback` (пользователь), `/admin/feedback` (super_admin дашборд блоков), `/admin/feedback/[topicId]` (детали блока). Полная заметка фичи — [[feedback]].
+- **2026-05-26 (clones marketplace + admin):** добавлены маршруты `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]` (маркетплейс ролевых клонов + чат с боковой панелью диалогов), `/roles/[id]/clone` теперь redirect на `/clones/[id]`, новая admin-страница `/admin/clones` (управление `CloneAccessGrant`). Удалены `/me/clone` и `/persons/[id]/skill-profile` (legacy первой итерации Clones-Roles). См. [plans/tz/2026-05-26-clones-marketplace-frontend.md](../../plans/tz/2026-05-26-clones-marketplace-frontend.md).
 
 [[../index|← index]]

@@ -49,6 +49,16 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | **specialists combined (Фаза 6 §3, 2026-05-26)** | `knowledge-specialists-combined` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4` → Ollama `qwen3.5:9b`. Б+ объединённый вызов: один LLM-запрос извлекает 8 типов сущностей (decisions / ideas / insights / experiments / regulations / knowledge_categories / skill_traits / helpfulness_traits) вместо 8 раздельных. ~3.7× дешевле при сопоставимом качестве (eval `backend/scripts/eval/judge-specialists-bplus-vs-g.ts`). Воркер — `SpecialistsCombinedWorker`, очередь `core.specialists-combined`. Флаг `SPECIALISTS_COMBINED_ENABLED` (default off, A/B параллельно со старыми). |
 | **clones v2 (Фаза 7 §9, 2026-05-26)** | `dialog-multi-query-clone` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4` → Ollama `qwen3.5:9b`. Клон-respond v2 с dialog-layer: multi-query expansion + temporal filter + factual/judgmental режимы. Используется в новых endpoint'ах `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations`. Флаг `CLONE_V2_ENABLED`. Доступ ролевой — модель `CloneAccessGrant`. См. [`skill-and-clone.md`](skill-and-clone.md) §«Доработки 2026-05-26». |
 
+## Откатный скрипт миграции LLM (2026-05-26)
+
+**Источник:** [`plans/tz/2026-05-26-llm-migration-smoke-checklist.md`](../../plans/tz/2026-05-26-llm-migration-smoke-checklist.md) §5. Подробности — в [[workers-queues]] §«Скрипт отката миграции LLM».
+
+`backend/scripts/patch-rollback-to-deepseek-flash.ts` — идемпотентный откат 26 taskType'ов с `deepseek-v4-pro` на `deepseek-v4-flash` при инциденте. Уважает `editedByAdmin=true`, требует `--update-existing` для реальной записи. **Не трогает** `clone-respond-v2` и `knowledge-specialists-combined` (выключаются ENV-флагами, а не сменой провайдера).
+
+## Расширение метрики reason-label (2026-05-26)
+
+`BusinessMetricsService.cooSentimentFailedTotal` получил опц. label `reason` (`'invalid_element' | 'other'`, default `'other'`). Cardinality `2 × ≤101 tenant_top = ≤202` series. Используется в `checkin-sentiment-batch` для silent skip невалидных элементов парсера без падения батча.
+
 ## Массовая миграция на DeepSeek V4 Pro (2026-05-26)
 
 В рамках Фаз 0-8 ТЗ [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) primary capable модель (γ-1) — `deepseek:deepseek-v4-pro` — раскатана на:

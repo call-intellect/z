@@ -163,3 +163,40 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 - DB: новая модель `CloneAccessGrant` в [[../02_architecture/data-model]].
 
 ⚠ **Ролевые клоны** (решение 2026-05-25, см. memory `project_clones_are_role_based`) сохраняются: ExecutablePersona строится по должности; UI — только `/clones` и `/roles/[id]/clone`. v2-эндпоинты под persona предусмотрены ради коллабораций («дай мне поговорить с клоном Маши»), но в UI остаются ролевые карточки, а персональный доступ закрывается через `CloneAccessGrant`.
+
+## Доработки 2026-05-26 — CloneAccessGrant admin CRUD + frontend marketplace
+
+**Источники:**
+- [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) — admin CRUD + патч-миграция + фикс RBAC (Задачи 1/2/4 копилки follow-up).
+- [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md) — frontend маркетплейс + admin-страница.
+
+Коммиты: `fc3d6fe` (rbac+schema), `c96505a` (admin/user API), `87fef5d` (patch-скрипт), `578a777` (user UI), `eab4d8f` (admin UI).
+
+### Модель доступа CloneAccessGrant — финальные правила
+
+| Правило B | Кто получает грант | Когда |
+|---|---|---|
+| Носитель роли | Свой role-клон | Active `Appointment` (validTo IS NULL, status IN active/acting), у Person есть `userId` |
+| Manager того же department | Role-клоны подчинённых | `Membership.role='manager'` + Person в том же `primaryDepartmentId` |
+| Owner / admin Org | Все активные role-клоны Org | По одному гранту на каждый клон |
+| Person-клоны (`cloneType='person'`) | **НЕ выдаются автоматически** | Клоны ролевые — личные доступы открывает админ point-and-click через `/admin/clones` |
+
+**Поля схемы** (см. [[../02_architecture/data-model]] §Clones v2): `cloneType` + `cloneRefId` + `grantedToUserId` + `grantedById` + `grantedAt` + (новое 2026-05-26) `revokedAt` + `revokedBy` + `expiresAt`. Unique-индекс `(tenantId, grantedToUserId, cloneType, cloneRefId)` гарантирует одну активную/revoked запись на пару (получатель × клон). При re-grant поверх revoked старая запись физически удаляется в транзакции — audit-trail остаётся в `AdminAuditLog`.
+
+**Фильтр активности (фикс RBAC).** `RbacService.canAccessPersonClone` / `canAccessRoleClone` теперь делают `findFirst` с условием `revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())`. Helper'ы `RbacService.buildActiveGrantWhere(tenantId, userId, cloneType, cloneRefId)` (SQL where) и `isGrantActive(grant)` (in-memory). До фикса `findUnique` принимал revoked/expired гранты как валидные — скрытый баг, теперь покрыт 14 кейсами в `rbac-clone-access.spec.ts`.
+
+### Идемпотентный patch-скрипт первичной миграции
+
+`backend/scripts/patch-migrate-clone-access.ts` — запускается перед включением `CLONE_V2_ENABLED=true` на проде. На пустом проде даёт 0 записей (мы стартуем без активных Appointment'ов с userId). Через `createMany({ skipDuplicates: true })` опираясь на unique-индекс — повторный запуск = no-op. Флаг `--tenant <orgId>` для отладки. `grantedById` — первый owner Org по `joinedAt asc` (детерминированно), иначе первый admin, иначе пропуск тенанта с warn-лог.
+
+### Admin CRUD + in-app уведомления
+
+5 endpoints под `/api/v1/admin/clones/access-grants` (см. [[api-layer]] §Clones admin). `AdminAuditInterceptor.classifyAction` расширен 3 ветками: `grant_clone_access` / `revoke_clone_access` / `extend_clone_access` (severity `high` — `reason` обязателен).
+
+При создании гранта (НЕ при revoke / extend) `ConversationalService.sendNotification` шлёт `eventType=clone.access_granted` (in-app + Telegram). Try/catch вокруг — notification-failure не откатывает grant (warn-log). Frontend подсвечивает новые гранты через хук `useUnseenCloneGrants`.
+
+### User API + frontend маркетплейс
+
+- `GET /api/v1/me/clone-access` — что мне выдано (для `useMyCloneAccess` хука; грейсфул на 404).
+- `GET /api/v1/clones/conversations?cloneType&cloneRefId` — мои диалоги с клоном. Cursor-pagination (cursor — UUID, **не cuid** — ловушка из исходной ТЗ). Маппинг на `ChatV2Conversation(scope='card')` — отдельной модели `CloneConversation` в проекте нет, диалог это «обёртка над chat-v2».
+- Маршруты `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]`, `/admin/clones` — см. [[frontend-pages]] §«Clones — маркетплейс».

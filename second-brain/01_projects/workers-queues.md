@@ -68,7 +68,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | **`commitment-followup` (β-8.2)** | `0 * * * *` (фильтр по `Org.timezone`, `COMMITMENT_FOLLOWUP_LOCAL_HOUR` default 9) | `operations/workers/commitment-followup.cron.ts` | Ищет `commitmentStatus='open'` со сроком прошедшим (+1 рабочий день через `HolidayService`) → `ProbeService.suggest(reason='commitment.followup')`. Эскалация ролям `coo`/`owner` после `COMMITMENT_ESCALATION_DAYS` молчания. |
 | **`operations-daily-digest` (β-8.3)** | `0 22 * * *` UTC (= 01:00 МСК, час настраивается `COO_DAILY_DIGEST_HOUR_UTC`) — **глобальный, не per-Org** | `operations/workers/operations-daily-digest.cron.ts` | Идемпотентно по `(tenantId, dateLocal)` в окне 1 день МСК. Двухстадийная сборка (агрегат → LLM taskType `operations-daily-digest`). Тумблер `AdminSetting.operations.daily_digest.enabled` (+ kill-switch ENV `COO_DAILY_DIGEST_ENABLED`). Отправка в Telegram **только `coo+owner`** (admin исключён) через `ConversationalService.sendNotification(eventType='operations.daily_digest')` — гейтится `AdminSetting.operations.daily_digest.deliver_to_telegram` (default false). |
 | **`feedback-digest` (2026-05-25)** | `0 1 * * *` UTC — **глобальный, не per-Org** | `feedback/workers/feedback-digest.cron.ts` | Producer ночного job'а в очередь `core.feedback-digest`. Сам `runDigest()` берёт Redis-lock `feedback:digest:lock` (SET NX EX 1800), забирает батч `FeedbackMessage` (`processedAt=null AND failedRuns<3`, take 1000), зовёт LLM `feedback-cluster` с 2 попытками, транзакционно создаёт `FeedbackTopic` + `FeedbackItem` + `processedAt=now()`. Метрики `feedback_digest_runs_total{result}` + 3 счётчика. См. [[feedback]]. |
-| **`checkin-sentiment-batch` (Фаза 2 §6, 2026-05-26)** | `*/5 * * * *` каждые 5 минут | `operations/workers/checkin-sentiment-batch.cron.ts` | `CheckinSentimentBatchCron` забирает накопленные вечерние чек-ины с `sentiment=null` и обрабатывает одним LLM-батчем `checkin-sentiment-batch` (DeepSeek-flash → gpt-5.4-mini → qwen3.5:9b). Заменяет per-event `CheckinSentimentAnalyzerWorker` для экономии токенов и стабильного RPS — старый воркер можно выключить флагом. `max_tokens` поднят пропорционально размеру батча. |
+| **`checkin-sentiment-batch` (Фаза 2 §6, 2026-05-26)** | `*/5 * * * *` каждые 5 минут | `operations/workers/checkin-sentiment-batch.cron.ts` | `CheckinSentimentBatchCron` забирает накопленные вечерние чек-ины с `sentiment=null` и обрабатывает одним LLM-батчем `checkin-sentiment-batch` (DeepSeek-flash → gpt-5.4-mini → qwen3.5:9b). Заменяет per-event `CheckinSentimentAnalyzerWorker` для экономии токенов и стабильного RPS — старый воркер можно выключить флагом. `max_tokens` поднят пропорционально размеру батча. **Покрыт unit-тестами 2026-05-26** (см. ниже §«Тесты CheckinSentimentBatchCron»). |
 
 ## Финальный handoff Wave 1-3 — новые воркеры (2026-05-25)
 
@@ -122,5 +122,39 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 - **2026-05-25 (β-8.1/β-8.2):** добавлены `operations-weekly-digest` и `commitment-followup` cron'ы + event-driven worker'ы `CheckinSentimentAnalyzerWorker` и `CommitmentResponseHandler`.
 - **2026-05-25 (β-8.3):** добавлен глобальный cron `operations-daily-digest` (`0 22 * * *` UTC = 01:00 МСК) + сервис `DailyDigestService` (двухстадийная сборка). См. [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 - **2026-05-26 (миграция LLM на DeepSeek V4 Pro, Фазы 0-8):** добавлен `CheckinSentimentBatchCron` (`*/5 * * * *`, batch-режим вместо per-event) и `SpecialistsCombinedWorker` на новой очереди `core.specialists-combined` (Б+ объединённый вызов 8 сущностей одним LLM, флаг `SPECIALISTS_COMBINED_ENABLED`). См. [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md).
+- **2026-05-26 (follow-up Задача 1 + Задача 3):** добавлены unit-тесты `CheckinSentimentBatchCron` + парсера (8 + 10 кейсов) и откатный скрипт миграции LLM (см. ниже).
+
+## Тесты CheckinSentimentBatchCron (2026-05-26)
+
+**Источник:** [`plans/tz/2026-05-26-checkin-batch-cron-tests.md`](../../plans/tz/2026-05-26-checkin-batch-cron-tests.md). Закрытие gap из Фазы 2 миграции LLM.
+
+- `checkin-sentiment-batch.cron.spec.ts` — 8 кейсов (батчинг 25→10+10+5, отсутствие tool_calls, невалидные элементы с подсчётом скипов, `sentimentEnabled=false`, окно 60 минут, два tenant, дубликат checkInId, пустой findMany).
+- `checkin-sentiment.prompt.spec.ts` — 10 кейсов (валидный, невалидный input ×5, results не массив ×4, невалидный enum, не-строковой checkInId, rationale ×3, пустой results, дубликат checkInId). Итого 18 passed.
+
+**Поведенческие решения** (2026-05-26):
+- Silent skip невалидных элементов парсером + инкремент `coo_sentiment_failed_total{reason="invalid_element"}` на каждый пропуск — видимость без падения батча.
+- Throw на дубликат `checkInId` в парсере + внешний try/catch cron'а считает весь батч failed (дубликат = модель сглючила, всему батчу веры нет).
+
+**Расширение `BusinessMetricsService`:** `cooSentimentFailedTotal` получил опц. label `reason` (`'invalid_element' | 'other'`), default `'other'` — обратная совместимость со всеми существующими вызовами. Cardinality `2 × ≤101 tenant_top = ≤202 series` (безопасно).
+
+## Скрипт отката миграции LLM на DeepSeek-Pro (2026-05-26)
+
+**Источник:** [`plans/tz/2026-05-26-llm-migration-smoke-checklist.md`](../../plans/tz/2026-05-26-llm-migration-smoke-checklist.md) §5.
+
+`backend/scripts/patch-rollback-to-deepseek-flash.ts` — идемпотентный массовый откат taskType'ов с `deepseek-v4-pro` на `deepseek-v4-flash` при инциденте после миграции (Фаза 4 ТЗ архитектурных изменений).
+
+**Цели (26):**
+- `ROLLBACK_TARGETS` (20) — зеркало `patch-mass-migrate-to-deepseek-pro`: merge (9) + cron (5) + formulate (3) + chat (1) + rollup (1) + classifier (1).
+- `EXTRA_TARGETS` (6) — chat-v2 + 5 dialog-layer (chat-v2 Фаза 4).
+- **Закомментированы:** `clone-respond-v2`, `knowledge-specialists-combined` (под флагами `CLONE_V2_ENABLED` / `SPECIALISTS_COMBINED_ENABLED`, выключаются ENV'ом, а не откатом провайдера).
+
+**Идемпотентность:**
+- `editedByAdmin=true` → skip всегда (не перебиваем ручную правку через UI `/admin/llm/routes`).
+- Already `deepseek-flash` → ok, без записи.
+- Not-found → skip (не создаём новые записи).
+- Без `--update-existing` → no-op (защита от случайного запуска).
+- Повторный запуск после успешного отката = no-op.
+
+**Флаги:** `--dry-run`, `--update-existing`, `--task <name>` (один taskType для отладки). Работает только с `tenantId=null` (глобальные дефолты); per-tenant откат — отдельный сценарий через `/admin/llm-routes`.
 
 [[../index|← index]]

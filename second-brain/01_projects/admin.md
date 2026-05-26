@@ -1,6 +1,6 @@
 ---
 title: Z-Admin — карта страниц
-updated: 2026-05-25
+updated: 2026-05-26
 ---
 
 # Z-Admin (super_admin)
@@ -35,6 +35,29 @@ updated: 2026-05-25
   - Для DeepSeek-Pro в модалке предупреждение про автоконвертацию
     `json_schema → tools` (ТЗ `deepseek-pro-output-format-fix`).
 - **ТЗ:** [plans/tz/2026-05-25-admin-llm-routes-frontend.md](../../plans/tz/2026-05-25-admin-llm-routes-frontend.md).
+
+### `/admin/clones` — Доступы к клонам (2026-05-26)
+
+Страница для `owner` / `admin` Org: управление гранатами `CloneAccessGrant` (выдача, soft-revoke, продление срока действия). Создана 2026-05-26 в рамках Фазы 7 §9 clone-respond v2.
+
+- **API:** 5 endpoints под `/api/v1/admin/clones/access-grants` (см. [api-layer.md](api-layer.md) §Clones admin), guard `OrgAdminGuard` + `AdminAuditInterceptor` (severity `high` — `reason` обязателен для grant/revoke/extend).
+- **Защита:** `CookieAuthGuard` + `OrgAdminGuard`. Permission-gate во фронте через `useAuth` (поверх backend).
+- **Фронт:**
+  - `frontend/app/(authenticated)/admin/clones/page.tsx`
+  - `frontend/app/(authenticated)/admin/clones/ClonesAccessClient.tsx`
+  - `frontend/app/(authenticated)/admin/clones/CreateGrantDialog.tsx` — поиск member'а через `orgMembersApi.search` (debounce 250 мс), выбор role-клона из `useClones`, опц. `expiresAt` под кнопкой «Дополнительно».
+  - `frontend/app/(authenticated)/admin/clones/RevokeGrantDialog.tsx` — подтверждение soft-revoke с danger-кнопкой.
+  - `frontend/app/(authenticated)/admin/clones/ExtendGrantDialog.tsx` — `datetime-local` + чекбокс «бессрочно».
+  - `frontend/src/api/admin-clones.api.ts` — 5 методов (list / create / revoke / extend / listByClone).
+  - `frontend/src/domain/admin-clone-access-grant.ts` — типы + мапперы + русские лейблы для статус-chip («Активен» / «Отозван» / «Истёк»).
+- **Навигация:** новый пункт «Доступы к клонам» (иконка `ShieldCheck`) в разделе «AI и модели» admin-навигации (`frontend/app/(authenticated)/admin/navigation.ts`).
+- **Особенности:**
+  - Фильтры — `cloneType` select, поиск по имени получателя, toggle «только активные».
+  - Таблица с enriched-полями: `cloneLabel`, `userName` / `userEmail`, `grantedBy`, статус, `expiresAt` или «бессрочно».
+  - Server-side pagination (`page` + `pageSize=50`).
+  - Re-grant поверх revoked — физическое удаление старой записи в транзакции (audit остаётся в `AdminAuditLog`).
+  - При `grant` уведомление получателя — `eventType=clone.access_granted` (in-app + Telegram через `ConversationalService`). Notification-failure не откатывает grant (warn-log).
+- **ТЗ:** [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) + frontend часть в [plans/tz/2026-05-26-clones-marketplace-frontend.md](../../plans/tz/2026-05-26-clones-marketplace-frontend.md) §2-§3.
 
 ## Обратная связь
 

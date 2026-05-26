@@ -122,14 +122,22 @@
 
 | Что изменил | Что обновить в second-brain (помимо профильной 01_projects/<feature>.md) |
 |---|---|
-| Новая колонка/таблица в БД | `02_architecture/data-model.md` |
+| Новая колонка/таблица в БД | `02_architecture/data-model.md` + **`docs/operations/prod-deploy-log.md` Шаг 4** |
 | Новый модуль/контроллер | `02_architecture/module-map.md` |
-| Новый AI-агент / воркер / job | `01_projects/ai-jobs.md`, `01_projects/workers-queues.md` |
+| Новый AI-агент / воркер / job | `01_projects/ai-jobs.md`, `01_projects/workers-queues.md` + **`prod-deploy-log.md` Шаг 12** (smoke) |
 | Новая admin-страница | `01_projects/admin.md` |
-| Новый API-эндпоинт | `01_projects/api-layer.md` |
+| Новый API-эндпоинт | `01_projects/api-layer.md` + **`prod-deploy-log.md` Шаг 12** (Swagger smoke) |
 | Новая публичная страница | `01_projects/frontend-pages.md` |
 | Новый context/hook | `01_projects/frontend-contexts-hooks.md` |
 | Новый план в `plans/` | `second-brain/index.md` (если крупный) |
+| Новый `backend/scripts/patch-*.ts` | **`prod-deploy-log.md` Шаг 6** |
+| Новый `backend/scripts/seed-*.ts` | **`prod-deploy-log.md` Шаг 7** |
+| Новый `backend/scripts/backfill-*.ts` | **`prod-deploy-log.md` Шаг 8** |
+| Новый `backend/scripts/migrate-*.ts` | **`prod-deploy-log.md` Шаг 9** |
+| Новый `backend/scripts/setup-*.ts` | **`prod-deploy-log.md` Шаг 10** |
+| Изменения в `backend/scripts/postgres-init.sql` | **`prod-deploy-log.md` Шаг 5** (новые HNSW/GIN/partial/extension) |
+| Новая ENV в `backend/src/common/config/env.schema.ts` | **`prod-deploy-log.md` Шаг 1** |
+| Включение нового feature-flag по умолчанию | **`prod-deploy-log.md` Шаг 1** (раздел kill-switch) |
 
 3. **Запиши рефлексию** в `second-brain/05_история/YYYY-MM-DD-краткое-название.md`:
    - что было поставлено
@@ -139,9 +147,28 @@
 
 4. **Закоммить и запушь рефлексию** отдельным `docs(second-brain): рефлексия — ...` коммитом.
 
-5. **Напомни про prod-операции** — если в коммитах изменились файлы, чьи данные хранятся в БД и редактируются админкой / требуют миграций / изменений конфига. Подсказка выдаётся ОДИН раз, в виде блока «Для применения на проде выполни: …». Команды должны быть копи-пейст-готовые.
+5. **Обнови `docs/operations/prod-deploy-log.md`** — это **единый кумулятивный реестр** prod-операций. Запусти `git show --stat HEAD` (и `git diff HEAD~N --name-only` если push содержит несколько коммитов), и для каждого попавшего файла из списка ниже добавь/обнови запись в нужном Шаге раздела «🚨 Накоплено к выкату»:
+   - `backend/prisma/schema.prisma` → Шаг 4 (новые модели / опасные изменения / enum)
+   - `backend/scripts/postgres-init.sql` → Шаг 5 (новые HNSW/GIN/partial/extension)
+   - `backend/scripts/patch-*.ts` → Шаг 6
+   - `backend/scripts/seed-*.ts` → Шаг 7
+   - `backend/scripts/backfill-*.ts` → Шаг 8
+   - `backend/scripts/migrate-*.ts` → Шаг 9
+   - `backend/scripts/setup-*.ts` → Шаг 10
+   - `backend/src/common/config/env.schema.ts` → Шаг 1
+   - Новые BullMQ-очереди / cron / @Cron → Шаг 12 (smoke grep)
+   - Новые REST-разделы / Swagger-теги → Шаг 12
 
-6. **Сформируй полную prod-инструкцию для программиста** — пошагово, в чате (не файлом), включая только применимые шаги под фактический набор изменений.
+   Стиль строки: `bun run scripts/<file>.ts` + однострочный комментарий что делает / опц. флаги.
+   Если переименовываешь существующий — обнови запись inline, не дублируй.
+   Если запись становится неактуальной (фича откатилась) — удали.
+
+6. **Сформируй prod-инструкцию для программиста в чате** — НЕ повторяй весь файл, а:
+   - сошлись на `docs/operations/prod-deploy-log.md` («полная актуальная инструкция там»),
+   - выпиши в чат ТОЛЬКО diff: что добавилось за этот push (новые команды по шагам).
+   Если push не требует ни одного prod-действия (только рефакторинг внутри backend без миграций/seed/ENV) — явно скажи «prod-операций нет».
+
+   **Триггер «выкатили на прод»** (фразы пользователя: «выкатил», «прод обновлён», «применил все шаги», «cut done»): перенести блок «🚨 Накоплено к выкату» целиком в `## 📂 Архив применённых` → `### 2026-MM-DD — выкат N` (с пометкой кто выкатил и инциденты, если были); раздел «Накоплено» обнулить до Pre-flight + пустых шагов 1–12.
 
 ### Триггер 2: пользователь говорит «всё», «закругляемся», «спасибо», «ок»
 

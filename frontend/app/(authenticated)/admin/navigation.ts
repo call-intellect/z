@@ -220,6 +220,15 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         icon: Brain,
         matchPrefix: '/admin/skill-trait-concepts',
       },
+      // ТЗ 2026-05-26 clones-marketplace-frontend (волна 3B) — admin CRUD
+      // по `CloneAccessGrant`: владелец/админ Org выдаёт и отзывает доступы
+      // сотрудников к ролевым клонам.
+      {
+        href: '/admin/clones',
+        label: 'Доступы к клонам',
+        icon: ShieldCheck,
+        matchPrefix: '/admin/clones',
+      },
       // W2.3 KC-Temporal (2026-05-25) — preference-dataset для retraining'а
       // few-shot'ов специалистов LLM.
       {

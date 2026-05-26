@@ -62,6 +62,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | `push-cleanup` | `0 3 * * *` | `push/cron/push-cleanup.cron.ts` | Wave 2 — удаляет subscriptions с failureCount ≥ PUSH_MAX_FAILURES |
 | `strategic-alignment` (issue-based) | `0 6 * * *` (06:00 UTC) | `goals/cron/strategic-alignment.cron.ts` | Sprint 3 B1-3.2 |
 | `telegram-digest` | `0 9 * * *` | tracker Wave 3 | Telegram дайджест моих задач |
+| **`telegram-proxy-health` (2026-05-26)** | `*/<TELEGRAM_PROXY_HEALTH_INTERVAL_SEC> * * * * *` (default 30с) | `conversational/adapters/telegram-bot/telegram-proxy-health.cron.ts` | Пингует прокси `telegram.crossmark.ru`, пишет `tg:proxy:healthy` в Redis (читает `AdminTelegramBotService.getSettings`). Лидер-выбор через `SET NX EX`. Метрика `telegram_proxy_health_check_total{outcome}`. ТЗ: plans/tz/2026-05-26-telegram-via-crossmark-proxy.md. |
 | `cycle-rollover` | (на end of cycle) | tracker | Auto-rollover незакрытых задач |
 | **`imap-poll` (T5)** | `MAIL_INBOX_POLL_CRON` default `*/2 * * * *` | `mail-inbound/cron/imap-poll.cron.ts` | **Финальный handoff 2026-05-25.** IMAP fetch unseen → парсит → routing на Project |
 | **`operations-weekly-digest` (β-8.1)** | `0 * * * *` (фильтр по `Org.timezone`, понедельник `COO_WEEKLY_DIGEST_LOCAL_HOUR`) | `operations/workers/operations-weekly-digest.cron.ts` | Идемпотентно по `(tenantId, weekStart)`. Отправка `coo+owner` через `ConversationalService` (eventType `operations.weekly_digest`). |

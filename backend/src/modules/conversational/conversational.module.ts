@@ -14,6 +14,8 @@ import { TelegramApiClient } from './adapters/telegram-bot/telegram-api-client';
 import { TelegramBotMessageHandler } from './adapters/telegram-bot/telegram-bot-message.handler';
 import { TelegramBotChannelAdapter } from './adapters/telegram-bot/telegram-bot.adapter';
 import { TelegramDigestCron } from './adapters/telegram-bot/telegram-digest.cron';
+import { TelegramProxyAdminClient } from './adapters/telegram-bot/telegram-proxy-admin.client';
+import { TelegramProxyHealthCron } from './adapters/telegram-bot/telegram-proxy-health.cron';
 import { TelegramTaskParserService } from './adapters/telegram-bot/telegram-task-parser.service';
 import { TelegramWebhooksController } from './adapters/telegram-bot/telegram-webhooks.controller';
 import { ChannelRegistry } from './channel-registry';
@@ -88,6 +90,15 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     EmailSmtpChannelAdapter,
     // SBA β-1 — Telegram bot.
     TelegramApiClient,
+    // 2026-05-26 — admin-клиент прокси telegram.crossmark.ru (ТЗ
+    // plans/tz/2026-05-26-telegram-via-crossmark-proxy.md). Используется
+    // AdminTelegramBotService.resetWebhook → upsertBot и patch-скриптом
+    // регистрации в прокси.
+    TelegramProxyAdminClient,
+    // 2026-05-26 Фаза 5 — periodical health-check прокси, пишет
+    // `tg:proxy:healthy` в Redis для админки. Интервал =
+    // `TELEGRAM_PROXY_HEALTH_INTERVAL_SEC`.
+    TelegramProxyHealthCron,
     TelegramBotChannelAdapter,
     // Wave 3 / Tracker Phase 4 РФ (2026-05-24) — «Telegram-бот для задач».
     // TelegramTaskParserService — LLM-уровень (4 LlmTaskType).
@@ -113,6 +124,9 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // β-9 Phase 4 — нужен AdminTelegramBotService (валидация токена через
     // getMe, перенастройка webhook через setWebhook).
     TelegramApiClient,
+    // 2026-05-26 — нужен AdminTelegramBotService.resetWebhook (через прокси)
+    // и patch-скрипт регистрации бота в прокси.
+    TelegramProxyAdminClient,
     // β-9 Phase ? — AdminBotsService инжектит MaxApiClient (симметрично
     // TelegramApiClient). Без этого экспорта Nest не резолвит зависимость.
     MaxApiClient,

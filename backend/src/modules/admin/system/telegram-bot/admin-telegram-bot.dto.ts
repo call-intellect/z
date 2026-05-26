@@ -43,10 +43,42 @@ export const TelegramBotSettingsResponseSchema = z.object({
     employeeOffboarded: z.string(),
     orgFrozen: z.string(),
   }),
+  /**
+   * Транспорт через прокси telegram.crossmark.ru (ТЗ 2026-05-26).
+   *   - `enabled` — ENV-флаг `TELEGRAM_PROXY_ENABLED`.
+   *   - `apiBase` — текущий базовый URL (для подсказки в UI).
+   *   - `healthy` — последний результат health-cron'а (null если cron ещё не отработал).
+   *   - `botId` — ID бота в прокси после регистрации.
+   *   - `registeredAt` — когда мы последний раз дёрнули upsertBot.
+   *   - `lastSyncError` — последняя ошибка регистрации (если есть).
+   */
+  proxy: z.object({
+    enabled: z.boolean(),
+    apiBase: z.string(),
+    healthy: z.boolean().nullable(),
+    botId: z.string().nullable(),
+    registeredAt: z.string().nullable(),
+    lastSyncError: z.string().nullable(),
+  }),
   updatedAt: z.string(),
 });
 export type TelegramBotSettingsResponseDto = z.infer<
   typeof TelegramBotSettingsResponseSchema
+>;
+
+// ────────────────────────── POST /admin/system/telegram-bot/ping ────────
+
+/**
+ * Результат синхронного пинга прокси. `ok=true` если прокси отвечает 2xx.
+ */
+export const TelegramProxyPingResponseSchema = z.object({
+  ok: z.boolean(),
+  status: z.number().int(),
+  durationMs: z.number().int(),
+  error: z.string().nullable(),
+});
+export type TelegramProxyPingResponseDto = z.infer<
+  typeof TelegramProxyPingResponseSchema
 >;
 
 // ────────────────────────── PUT /admin/system/telegram-bot/token ────────

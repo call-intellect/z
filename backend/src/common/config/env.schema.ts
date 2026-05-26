@@ -786,6 +786,41 @@ const TelegramBotChannelSchema = z.object({
 });
 
 /**
+ * Транспорт Telegram через прокси `telegram.crossmark.ru` (ТЗ
+ * plans/tz/2026-05-26-telegram-via-crossmark-proxy.md).
+ *
+ *   - TELEGRAM_PROXY_ENABLED — главный switch. При `true` (default в
+ *     проде) все outbound Bot API-вызовы идут через прокси, а
+ *     `setWebhook` у Telegram дёргает прокси (не мы). При `false` —
+ *     прямой `api.telegram.org` (legacy, аварийный rollback или dev).
+ *   - TELEGRAM_PROXY_API_BASE — базовый URL прокси для Bot API (drop-in
+ *     `api.telegram.org`).
+ *   - TELEGRAM_PROXY_FILE_BASE — базовый URL для `/file/bot<token>/<path>`
+ *     (обычно совпадает с `apiBase`).
+ *   - TELEGRAM_PROXY_ADMIN_EMAIL / TELEGRAM_PROXY_ADMIN_PASSWORD —
+ *     креды учётки в прокси, через которые регистрируется бот и
+ *     ротируется `webhookSecret`. Не required: если proxy выключен —
+ *     не используются. Если включён и пусты — `TelegramProxyAdminClient`
+ *     бросит ошибку при первом обращении.
+ *   - TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC — за сколько секунд до `exp`
+ *     обновлять JWT.
+ *   - TELEGRAM_PROXY_REQUEST_TIMEOUT_MS — timeout каждого вызова к прокси
+ *     (admin API + outbound Bot API). 0 → без timeout.
+ *   - TELEGRAM_PROXY_HEALTH_INTERVAL_SEC — интервал health-check'а
+ *     прокси (cron). 0 → cron выключен (для тестов).
+ */
+const TelegramProxySchema = z.object({
+  TELEGRAM_PROXY_ENABLED: zBool(true),
+  TELEGRAM_PROXY_API_BASE: z.string().url().default('https://telegram.crossmark.ru'),
+  TELEGRAM_PROXY_FILE_BASE: z.string().url().default('https://telegram.crossmark.ru'),
+  TELEGRAM_PROXY_ADMIN_EMAIL: z.string().email().optional(),
+  TELEGRAM_PROXY_ADMIN_PASSWORD: z.string().min(1).optional(),
+  TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC: z.coerce.number().int().nonnegative().default(60),
+  TELEGRAM_PROXY_REQUEST_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(15_000),
+  TELEGRAM_PROXY_HEALTH_INTERVAL_SEC: z.coerce.number().int().nonnegative().default(30),
+});
+
+/**
  * SBA β-1 — MAX Bot channel (mssgr.ru / dev.max.ru).
  *
  *   - MAX_BOT_API_BASE — базовый URL Platform API. По умолчанию —
@@ -1544,6 +1579,7 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   .merge(ExtractionSchema)
   .merge(ConversationalSchema)
   .merge(TelegramBotChannelSchema)
+  .merge(TelegramProxySchema)
   .merge(MaxBotChannelSchema)
   .merge(RouterSchema)
   .merge(CurationSchema)

@@ -5,7 +5,13 @@ import type { TypedConfigService } from '../../../../common/config/index';
 import type { CryptoService } from '../../../../common/crypto/crypto.service';
 import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
+import type { RedisService } from '../../../../common/redis/redis.service';
 import type { TelegramApiClient } from '../../../conversational/adapters/telegram-bot/telegram-api-client';
+import type {
+  TelegramProxyAdminClient,
+  TelegramProxyBotInfo,
+} from '../../../conversational/adapters/telegram-bot/telegram-proxy-admin.client';
+import { TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC } from '../../../conversational/topics';
 
 import { AdminTelegramBotService } from './admin-telegram-bot.service';
 
@@ -27,7 +33,9 @@ function makeMockServices(): {
   crypto: CryptoService;
   cfg: TypedConfigService;
   tgApi: TelegramApiClient;
+  proxyAdmin: TelegramProxyAdminClient;
   metrics: BusinessMetricsService;
+  redis: RedisService;
   prismaSpies: {
     findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -47,6 +55,12 @@ function makeMockServices(): {
   tgSpies: {
     getMe: ReturnType<typeof vi.fn>;
     setWebhook: ReturnType<typeof vi.fn>;
+  };
+  proxySpies: {
+    upsertBot: ReturnType<typeof vi.fn>;
+  };
+  redisSpies: {
+    publish: ReturnType<typeof vi.fn>;
   };
   metricsSpy: ReturnType<typeof vi.fn>;
 } {
@@ -84,6 +98,10 @@ function makeMockServices(): {
 
   const cfg = {
     publicHostUrl: 'https://app.example.org',
+    // По умолчанию в тестах прокси выключен — это сохраняет старое
+    // поведение (legacy setWebhook) и не требует обновления уже
+    // существующих тестов. Тесты Фазы 3 переключают enabled=true явно.
+    telegramProxy: { enabled: false } as { enabled: boolean },
   } as unknown as TypedConfigService;
 
   const getMe = vi.fn(async () => ({
@@ -94,17 +112,33 @@ function makeMockServices(): {
   const setWebhook = vi.fn(async () => undefined);
   const tgApi = { getMe, setWebhook } as unknown as TelegramApiClient;
 
+  const upsertBot = vi.fn(
+    async (_args: {
+      token: string;
+      secretToken: string;
+      targetUrl: string;
+    }): Promise<TelegramProxyBotInfo> => ({ id: 'proxy-bot-1' }),
+  );
+  const proxyAdmin = { upsertBot } as unknown as TelegramProxyAdminClient;
+
   const metricsSpy = vi.fn();
   const metrics = {
     incAdminTelegramBotAction: metricsSpy,
   } as unknown as BusinessMetricsService;
+
+  const publish = vi.fn(async () => 1);
+  const redis = {
+    client: { publish },
+  } as unknown as RedisService;
 
   return {
     prisma,
     crypto,
     cfg,
     tgApi,
+    proxyAdmin,
     metrics,
+    redis,
     prismaSpies: {
       findFirst,
       update,
@@ -118,6 +152,8 @@ function makeMockServices(): {
     },
     cryptoSpies: { encrypt, decrypt, isEncrypted },
     tgSpies: { getMe, setWebhook },
+    proxySpies: { upsertBot },
+    redisSpies: { publish },
     metricsSpy,
   };
 }
@@ -150,7 +186,9 @@ describe('AdminTelegramBotService', () => {
       m.crypto,
       m.cfg,
       m.tgApi,
+      m.proxyAdmin,
       m.metrics,
+      m.redis,
     );
   });
 
@@ -320,6 +358,118 @@ describe('AdminTelegramBotService', () => {
       expect(updatedConfig['botToken']).toBe('gcm:v1:enc(abc)');
       expect(m.metricsSpy).toHaveBeenCalledWith({
         action: 'templates_updated',
+      });
+    });
+  });
+
+  describe('resetWebhook (proxy mode, 2026-05-26)', () => {
+    it('proxy enabled → upsertBot, setWebhook напрямую НЕ вызывается, в config сохраняется proxyBotId', async () => {
+      (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
+
+      const existing = makeChannel({
+        config: {
+          botToken: 'gcm:v1:enc(token-plain-1234)',
+        } as never,
+      });
+      m.prismaSpies.findFirst
+        .mockResolvedValueOnce(existing) // initial find в resetWebhook
+        .mockResolvedValueOnce(existing) // upsertGlobalChannel.find
+        .mockResolvedValueOnce(existing); // getSettings() в конце
+      let savedConfig: Record<string, unknown> | null = null;
+      m.prismaSpies.update.mockImplementation((args: {
+        data: { config: Record<string, unknown> };
+      }) => {
+        savedConfig = args.data.config;
+        return Promise.resolve(makeChannel({ config: args.data.config as never }));
+      });
+
+      await svc.resetWebhook();
+
+      expect(m.proxySpies.upsertBot).toHaveBeenCalledOnce();
+      const call = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
+        token: string;
+        secretToken: string;
+        targetUrl: string;
+      };
+      expect(call.token).toBe('token-plain-1234');
+      expect(call.targetUrl).toBe('https://app.example.org/api/v1/webhooks/telegram-bot');
+      expect(call.secretToken).toMatch(/^[a-f0-9]{32}$/);
+      // legacy setWebhook не вызывается.
+      expect(m.tgSpies.setWebhook).not.toHaveBeenCalled();
+      // в config сохранены proxyBotId / proxyRegisteredAt.
+      expect(savedConfig).not.toBeNull();
+      const cfg = savedConfig as unknown as Record<string, unknown>;
+      expect(cfg['proxyBotId']).toBe('proxy-bot-1');
+      expect(typeof cfg['proxyRegisteredAt']).toBe('string');
+      expect(cfg['proxyLastSyncError']).toBeNull();
+      expect(typeof cfg['webhookSecret']).toBe('string');
+      expect(m.metricsSpy).toHaveBeenCalledWith({ action: 'webhook_reset' });
+      // Фаза 4: pub/sub-инвалидация in-process кэша во всех нодах.
+      expect(m.redisSpies.publish).toHaveBeenCalledWith(
+        TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC,
+        expect.stringContaining('webhook_reset'),
+      );
+    });
+
+    it('proxy enabled, upsertBot падает → BadRequest, токен/секрет в БД не пишутся', async () => {
+      (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
+
+      m.prismaSpies.findFirst.mockResolvedValue(
+        makeChannel({
+          config: { botToken: 'gcm:v1:enc(token-x)' } as never,
+        }),
+      );
+      m.proxySpies.upsertBot.mockRejectedValue(new Error('proxy down'));
+
+      const err = await svc.resetWebhook().catch((e) => e);
+      const response = (err as { getResponse?: () => unknown }).getResponse?.();
+      expect(response).toMatchObject({
+        ok: false,
+        error: { code: 'telegram_proxy_upsert_failed' },
+      });
+      expect(m.prismaSpies.update).not.toHaveBeenCalled();
+      expect(m.prismaSpies.create).not.toHaveBeenCalled();
+      expect(m.tgSpies.setWebhook).not.toHaveBeenCalled();
+    });
+
+    it('proxy disabled (legacy) → дёргается tgApi.setWebhook, upsertBot НЕ вызывается', async () => {
+      // cfg.telegramProxy.enabled = false (default makeMockServices()).
+      const existing = makeChannel({
+        config: {
+          botToken: 'gcm:v1:enc(legacy-token-5678)',
+        } as never,
+      });
+      m.prismaSpies.findFirst
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(existing);
+      m.prismaSpies.update.mockResolvedValue(existing);
+
+      await svc.resetWebhook();
+
+      expect(m.tgSpies.setWebhook).toHaveBeenCalledOnce();
+      expect(m.proxySpies.upsertBot).not.toHaveBeenCalled();
+    });
+
+    it('канала нет → BadRequest channel_not_configured', async () => {
+      m.prismaSpies.findFirst.mockResolvedValue(null);
+      const err = await svc.resetWebhook().catch((e) => e);
+      const response = (err as { getResponse?: () => unknown }).getResponse?.();
+      expect(response).toMatchObject({
+        ok: false,
+        error: { code: 'channel_not_configured' },
+      });
+    });
+
+    it('токен не задан → BadRequest token_not_set', async () => {
+      m.prismaSpies.findFirst.mockResolvedValue(
+        makeChannel({ config: {} as never }),
+      );
+      const err = await svc.resetWebhook().catch((e) => e);
+      const response = (err as { getResponse?: () => unknown }).getResponse?.();
+      expect(response).toMatchObject({
+        ok: false,
+        error: { code: 'token_not_set' },
       });
     });
   });

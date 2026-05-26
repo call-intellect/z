@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   Eye,
@@ -11,6 +12,7 @@ import {
   PowerOff,
   RefreshCw,
   Send,
+  ServerCog,
   Webhook,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -193,10 +195,144 @@ function SettingsBlocks({
       </Card>
 
       <TokenSection data={data} onChanged={onChanged} />
+      <ProxySection data={data} onChanged={onChanged} />
       <WebhookSection data={data} onChanged={onChanged} />
       <GlobalSwitchSection data={data} onChanged={onChanged} />
       <TemplatesSection data={data} onChanged={onChanged} />
     </div>
+  );
+}
+
+// ─────────────────────────── Прокси telegram.crossmark.ru ───────
+
+function ProxySection({
+  data,
+  onChanged: _onChanged,
+}: {
+  data: TelegramBotDomain;
+  onChanged: () => void;
+}) {
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState<string | null>(null);
+  const [pingKind, setPingKind] = useState<'ok' | 'error'>('ok');
+
+  async function onPing() {
+    setPinging(true);
+    setPingResult(null);
+    try {
+      const r = await adminSystemTelegramBotApi.pingProxy();
+      if (r.ok) {
+        setPingResult(
+          `Прокси доступен. HTTP ${r.status}, ${r.durationMs} мс.`,
+        );
+        setPingKind('ok');
+      } else {
+        setPingResult(
+          `Прокси не отвечает: ${r.error ?? `HTTP ${r.status}`} (${r.durationMs} мс).`,
+        );
+        setPingKind('error');
+      }
+    } catch (e) {
+      setPingResult(
+        e instanceof ApiError
+          ? e.message
+          : 'Не удалось проверить прокси (ошибка сети).',
+      );
+      setPingKind('error');
+    } finally {
+      setPinging(false);
+    }
+  }
+
+  const proxy = data.proxy;
+  const trafficLightClass: Record<typeof proxy.trafficLight, string> = {
+    green: 'bg-success/15 text-success',
+    yellow: 'bg-warning/15 text-warning',
+    red: 'bg-danger/15 text-danger',
+    gray: 'bg-bg-overlay text-fg-tertiary',
+  };
+  const trafficLightLabel: Record<typeof proxy.trafficLight, string> = {
+    green: 'Прокси работает, бот зарегистрирован',
+    yellow: 'Прокси работает, но бот ещё не зарегистрирован',
+    red: proxy.lastSyncError
+      ? `Ошибка регистрации: ${proxy.lastSyncError}`
+      : 'Прокси не отвечает',
+    gray: proxy.enabled
+      ? 'Нет данных (health-check ещё не запускался)'
+      : 'Прокси выключен в настройках сервера',
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ServerCog size={16} /> Прокси telegram.crossmark.ru
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div
+          className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm ${trafficLightClass[proxy.trafficLight]}`}
+        >
+          <Activity size={14} />
+          {trafficLightLabel[proxy.trafficLight]}
+        </div>
+
+        <div className="space-y-1 text-xs">
+          <p>
+            <span className="text-fg-tertiary">Адрес прокси: </span>
+            <code className="rounded bg-bg-overlay px-1.5 py-0.5">
+              {proxy.apiBase}
+            </code>
+          </p>
+          {proxy.botId && (
+            <p>
+              <span className="text-fg-tertiary">ID бота в прокси: </span>
+              <code className="rounded bg-bg-overlay px-1.5 py-0.5">
+                {proxy.botId}
+              </code>
+            </p>
+          )}
+          {proxy.registeredAt && (
+            <p className="text-fg-tertiary">
+              Зарегистрирован: {proxy.registeredAt.toLocaleString('ru-RU')}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onPing}
+            disabled={pinging || !proxy.enabled}
+          >
+            {pinging ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+            Проверить прокси сейчас
+          </Button>
+        </div>
+
+        {pingResult && (
+          <p
+            className={`text-xs ${
+              pingKind === 'ok' ? 'text-success' : 'text-danger'
+            }`}
+          >
+            {pingResult}
+          </p>
+        )}
+        {!proxy.enabled && (
+          <p className="text-xs text-fg-tertiary">
+            Прокси выключен переменной окружения{' '}
+            <code>TELEGRAM_PROXY_ENABLED=false</code>. В этом режиме
+            бэкенд работает напрямую с api.telegram.org (legacy/dev).
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

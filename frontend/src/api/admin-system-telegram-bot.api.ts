@@ -13,6 +13,7 @@
 import { apiClient } from './api-client';
 import type {
   TelegramBotBindingsPageApiDto,
+  TelegramBotProxyPingApiDto,
   TelegramBotSettingsApiDto,
 } from '@/domain/admin-telegram-bot';
 
@@ -87,4 +88,14 @@ export const adminSystemTelegramBotApi = {
       `/api/v1/admin/system/telegram-bot/bindings${qs ? `?${qs}` : ''}`,
     );
   },
+
+  /**
+   * Синхронный пинг прокси telegram.crossmark.ru. Возвращает результат
+   * (не пишет в БД). Кнопка «Проверить прокси сейчас» в админке.
+   */
+  pingProxy: (): Promise<TelegramBotProxyPingApiDto> =>
+    apiClient.post<TelegramBotProxyPingApiDto>(
+      '/api/v1/admin/system/telegram-bot/ping',
+      {},
+    ),
 };

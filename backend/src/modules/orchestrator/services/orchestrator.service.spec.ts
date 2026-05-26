@@ -63,13 +63,11 @@ describe('OrchestratorService (δ-1)', () => {
     process.env['ORCHESTRATOR_ENABLED'] = 'false';
     const prisma = mkPrismaMock();
     const svc = new OrchestratorService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prisma as any,
       {} as never,
       {} as never,
       {} as never,
       {} as never,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { incOrchestratorRun: vi.fn(), observeOrchestratorRunDurationSeconds: vi.fn() } as any,
     );
     const events: OrchestratorStreamEvent[] = [];
@@ -134,17 +132,11 @@ describe('OrchestratorService (δ-1)', () => {
     };
 
     const svc = new OrchestratorService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prisma as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       planning as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       spawner as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       synthesis as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       verification as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       metrics as any,
     );
 

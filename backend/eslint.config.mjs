@@ -43,6 +43,16 @@ export default tseslint.config(
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+  // В тестах `any` — норма для моков (DeepMocked, vi.mocked, ad-hoc
+  // fixtures). Ужесточать имеет смысл только в проде; tests должны
+  // оставаться лёгкими и не требовать reverse-engineering приватных
+  // типов сервисов под каждый assert.
+  {
+    files: ['src/**/*.spec.ts', 'src/**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
   // Phase 0a — запрет прямого Cypher вне `common/graph/`.
   //
   // Все обращения к Apache AGE — через `GraphService` (двойная запись

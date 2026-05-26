@@ -77,7 +77,6 @@ function makeGateway(opts: {
     tenantId = 'tenant-1',
   ): void => {
     // socketContext — private; через any для теста.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (gw as any).socketContext.set(socketId, {
       userId,
       email: `${userId}@example.com`,

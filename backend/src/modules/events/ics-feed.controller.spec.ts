@@ -302,7 +302,6 @@ describe('IcsFeedController + IcsFeedService', () => {
             visibility: 'company',
             participants: [],
             reminders: [],
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any,
         ],
         issues: [],

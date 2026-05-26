@@ -50,6 +50,7 @@
  */
 
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — ленивая инициализация
 // PrismaClient, чтобы snapshot-тест мог импортировать `SEEDS` без поднятия БД
@@ -57,7 +58,7 @@ import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 let prismaInstance: PrismaClient | null = null;
 function getPrisma(): PrismaClient {
   if (!prismaInstance) {
-    prismaInstance = new PrismaClient();
+    prismaInstance = createPrismaClient();
   }
   return prismaInstance;
 }

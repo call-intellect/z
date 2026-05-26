@@ -30,6 +30,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 import * as dotenv from 'dotenv';
 
 interface CliArgs {
@@ -162,7 +163,7 @@ async function main(): Promise<void> {
   console.log('[setup-max-bot] /subscriptions ok');
 
   // 3. Upsert Channel.
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     const config = {
       accessToken: encryptForCryptoService(args.token),

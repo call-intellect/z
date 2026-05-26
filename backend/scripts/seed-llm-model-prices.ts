@@ -16,10 +16,11 @@
  */
 
 import { Prisma, PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import { MODEL_PRICES } from '../src/modules/ai/services/model-prices';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 /**
  * Определяем provider по префиксу model name.

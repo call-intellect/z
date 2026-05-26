@@ -17,6 +17,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 const TASK_TYPE = 'role-profile-build';
 const VERSION = 'v1';
@@ -43,7 +44,7 @@ const SYSTEM_PROMPT = `Ты — аналитик «памяти компании
 Ответ — строго JSON, валидный по схеме. Никакого markdown, преамбул, объяснений.`;
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
 
   // `Prompt` модель в проекте Z — посмотри по факту, как называется. На дату
   // создания (2026-05-21) prompt registry может быть либо в отдельной модели,

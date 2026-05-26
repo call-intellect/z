@@ -36,8 +36,9 @@
 
 import { Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 const log = new Logger('backfill-meeting-tenant-id');
 
 interface CliFlags {

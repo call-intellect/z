@@ -27,8 +27,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const TASK_TYPE = 'custom-report' as const;
 

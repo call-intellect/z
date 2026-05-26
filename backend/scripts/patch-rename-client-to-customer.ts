@@ -20,11 +20,12 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     /* eslint-disable no-console */
     console.log(

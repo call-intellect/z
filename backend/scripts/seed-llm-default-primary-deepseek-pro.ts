@@ -26,10 +26,11 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import { ALL_LLM_TASK_TYPES } from '../src/modules/ai/services/llm-router.service';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const TARGET_PROVIDER = 'deepseek';
 const TARGET_MODEL = 'deepseek-v4-pro';

@@ -31,6 +31,7 @@
  */
 
 import { PrismaClient, type MeetingType, type PromptTemplateScope, type PromptTemplateStatus } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import * as customDev from '../src/modules/ai/services/prompts/type-custdev';
 import * as customerSuccess from '../src/modules/ai/services/prompts/type-customer_success';
@@ -54,7 +55,7 @@ import {
 import { buildCardRollupSystemPrompt } from '../src/modules/ai/services/prompts/card-rollup';
 import { buildChaptersPrompt } from '../src/modules/ai/services/prompts/chapters';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 interface PromptModule {
   readonly TOOL_NAME: string;

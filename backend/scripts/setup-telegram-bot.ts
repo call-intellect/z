@@ -34,6 +34,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 import * as dotenv from 'dotenv';
 
 interface CliArgs {
@@ -181,7 +182,7 @@ async function main(): Promise<void> {
   // 4. Upsert ГЛОБАЛЬНОГО Channel'а (tenantId IS NULL).
   //    Prisma upsert по composite-unique с null невозможен — делаем
   //    find-then-update / find-then-create вручную.
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     const config = {
       botToken: encryptForCryptoService(args.token),

@@ -49,8 +49,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 type GrantInput = {
   tenantId: string;

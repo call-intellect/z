@@ -31,6 +31,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 import { nanoid } from 'nanoid';
 
 import { TypedConfigService } from '../src/common/config/typed-config.service';
@@ -45,7 +46,7 @@ import { MinimaxService } from '../src/modules/ai/services/minimax.service';
 import { OllamaService } from '../src/modules/ai/services/ollama.service';
 import { OpenAiProxyService } from '../src/modules/ai/services/openai-proxy.service';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function ensureTestOrg(): Promise<{ orgId: string; tag: string }> {
   // Берём первый существующий Org (иначе создаём новый smoke-org).

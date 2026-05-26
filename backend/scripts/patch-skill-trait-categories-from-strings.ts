@@ -23,6 +23,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import { SkillTraitCategoryService } from '../src/modules/skills/services/skill-trait-categories.service';
 
@@ -37,7 +38,7 @@ interface OrgCounters {
 }
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   // Локальный slugify — берём из SkillTraitCategoryService.prototype.slugify
   // через instance с заглушками (нам нужна только чистая функция).
   const slugifyHelper = new SkillTraitCategoryService(

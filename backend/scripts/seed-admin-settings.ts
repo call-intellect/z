@@ -18,6 +18,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import {
   INVITE_DIRECTOR_TIMEOUT_TEMPLATE,
@@ -27,7 +28,7 @@ import {
   REGISTER_TEMP_PASSWORD_TEMPLATE,
 } from '../src/modules/mail/mail.templates';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 // ─────────────────────────────── helpers ─────────────────────────────────
 

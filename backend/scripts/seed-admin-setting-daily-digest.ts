@@ -21,8 +21,9 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 type Severity = 'low' | 'medium' | 'high' | 'destructive';
 

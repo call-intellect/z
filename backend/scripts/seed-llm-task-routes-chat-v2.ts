@@ -40,8 +40,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const TASK_TYPES = [
   'chat-v2-conversation-title',

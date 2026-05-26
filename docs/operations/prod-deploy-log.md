@@ -21,6 +21,33 @@
 
 ---
 
+## 🚀 TL;DR — одна команда
+
+Все seed/patch/backfill/migrate агрегированы в `scripts/apply-prod-deploy.ts`. Не надо копипастить ~80 команд — достаточно:
+
+```bash
+# A. Обновление работающего прода (с patch/backfill/migrate для legacy):
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update
+
+# B. Чистый старт (только seed, без patch/backfill/migrate — нечего бэкфилить):
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode bootstrap
+
+# All (bootstrap + update подряд) — по умолчанию:
+docker compose exec backend bun run scripts/apply-prod-deploy.ts
+
+# Полезные флаги:
+#   --dry-run            показать что будет запущено, не выполнять
+#   --continue-on-fail   продолжать после ошибки скрипта (default: stop)
+```
+
+В конце выводится `SUMMARY: OK=NN FAIL=N` со списком упавших. Если есть фейлы — `exit 1`.
+
+**Это не отменяет ручные шаги 1-7, 10-12** (бэкап, pull, ENV, build, up, setup ботов, smoke). Агрегатор покрывает Шаги 6 (patch), 7 (seed), 8 (backfill), 9 (migrate), плюс bootstrap super-admin (Шаг B.6).
+
+> При добавлении нового `seed-*` / `patch-*` / `backfill-*` / `migrate-*` скрипта **обязательно** допиши его в массив `STEPS` в `backend/scripts/apply-prod-deploy.ts` — иначе на проде он не запустится.
+
+---
+
 ## Два сценария выката
 
 | Сценарий | Когда | Куда смотреть |

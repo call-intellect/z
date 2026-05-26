@@ -18,9 +18,10 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
 
   const before = await prisma.entityLink.count({
     where: { OR: [{ fromType: null }, { toType: null }] },

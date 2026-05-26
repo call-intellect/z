@@ -40,8 +40,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Prisma, PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 function sha256Hex(s: string): string {
   return createHash('sha256').update(s, 'utf8').digest('hex');

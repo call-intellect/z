@@ -22,6 +22,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 const TASK_TYPE = 'block-ingest';
 const VERSION = 'v2';
@@ -35,7 +36,7 @@ const PROMPT_SUMMARY = `block-ingest v2 (Фаза 0b): расширенный JS
 Mission/Vision/Strategy всегда null (EXTRACTION_ENABLE_TOP_LEVEL=false).`;
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     // eslint-disable-next-line no-console
     console.log(

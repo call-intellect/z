@@ -19,6 +19,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import {
   BASE_FUNCTIONAL_DOMAINS,
@@ -26,7 +27,7 @@ import {
   type IndustrySlug,
 } from '../src/modules/company-foundation/services/functional-domain.seeds';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 interface Stats {
   orgsScanned: number;

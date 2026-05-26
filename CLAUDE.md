@@ -147,7 +147,20 @@
 
 4. **Закоммить и запушь рефлексию** отдельным `docs(second-brain): рефлексия — ...` коммитом.
 
-5. **Обнови `docs/operations/prod-deploy-log.md`** — это **единый кумулятивный реестр** prod-операций. **ВСЕ команды этого файла — через `docker compose exec backend ...` (или `docker compose run --rm backend ...` для pre-up-сценариев). Никаких прямых `cd backend && bun run ...` или `bun install` — Z в проде целиком в docker-compose.** Запусти `git show --stat HEAD` (и `git diff HEAD~N --name-only` если push содержит несколько коммитов), и для каждого попавшего файла из списка ниже добавь/обнови запись в нужном Шаге раздела «🚨 Накоплено к выкату»:
+5. **Обнови `docs/operations/prod-deploy-log.md`** — это **единый кумулятивный реестр** prod-операций. **ВСЕ команды этого файла — через `docker compose exec backend ...` (или `docker compose run --rm backend ...` для pre-up-сценариев). Никаких прямых `cd backend && bun run ...` или `bun install` — Z в проде целиком в docker-compose.** Запусти `git show --stat HEAD` (и `git diff HEAD~N --name-only` если push содержит несколько коммитов), и для каждого попавшего файла из списка ниже добавь/обнови запись в нужном Шаге раздела «🚨 Накоплено к выкату».
+
+   **ВАЖНО — агрегатор:** все seed/patch/backfill/migrate-скрипты должны быть зарегистрированы в `backend/scripts/apply-prod-deploy.ts` (массив `STEPS`). Это единая точка прогона на проде: `docker compose exec backend bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all]`. Если добавляешь новый `seed-*` / `patch-*` / `backfill-*` / `migrate-*` файл — обязательно добавь его в `STEPS` с правильной `phase` и флагами (`skipBootstrap` для patch/backfill/migrate которые нужны только при апгрейде). Без этого новый скрипт не попадёт в продакшен.
+
+   **ВАЖНО — PrismaClient в скриптах:** в Prisma 7 голый `new PrismaClient()` падает с `needs to be constructed with non-empty PrismaClientOptions`. В скриптах используй `createPrismaClient()` из `backend/scripts/_lib/prisma.ts` (он подкладывает driver adapter автоматически):
+   ```ts
+   import { createPrismaClient } from './_lib/prisma';
+   const prisma = createPrismaClient();
+   ```
+   Никогда не пиши `new PrismaClient()` в новых скриптах.
+
+   **ВАЖНО — импорты из `../src`:** prod-runner Dockerfile копирует `backend/src/` целиком, так что импорты вида `import { X } from '../src/modules/...'` работают. Не используй `import { X } from '../dist/...'` — dist в runtime тоже есть, но для скриптов канон — `../src`.
+
+   Список файлов которые тригерят обновление шагов:
    - `backend/prisma/schema.prisma` → Шаг 4 (новые модели / опасные изменения / enum)
    - `backend/scripts/postgres-init.sql` → Шаг 5 (новые HNSW/GIN/partial/extension)
    - `backend/scripts/patch-*.ts` → Шаг 6

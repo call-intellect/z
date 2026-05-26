@@ -14,8 +14,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console

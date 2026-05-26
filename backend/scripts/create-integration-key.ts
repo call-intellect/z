@@ -18,6 +18,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 function generateKey(): string {
   return randomBytes(32).toString('hex');
@@ -44,7 +45,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     const plainKey = generateKey();
     const keyHash = hashKey(plainKey);

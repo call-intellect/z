@@ -18,6 +18,7 @@
 
 import bcrypt from 'bcrypt';
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     const existing = await prisma.user.findFirst({
       where: {

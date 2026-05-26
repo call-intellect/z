@@ -9,11 +9,12 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import { seedBaseBadges } from '../src/modules/recognition/seed/badge-seed';
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     // eslint-disable-next-line no-console
     console.log('=== seed-badges START ===');

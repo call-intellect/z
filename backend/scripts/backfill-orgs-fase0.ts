@@ -19,8 +19,9 @@
  */
 
 import { PrismaClient, type User } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 function slugify(input: string): string {
   return input

@@ -18,8 +18,9 @@
  */
 
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 interface TierEntry {
   tier: LlmRouteTier;

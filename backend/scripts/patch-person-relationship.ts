@@ -18,6 +18,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const BATCH_SIZE = 1000;
@@ -30,7 +31,7 @@ interface Counters {
 }
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   const counters: Counters = {
     scanned: 0,
     setEmployee: 0,

@@ -20,9 +20,10 @@
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 const APPLY = process.argv.includes('--apply');
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 interface Counters {
   orgsScanned: number;

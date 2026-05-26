@@ -20,8 +20,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const DEFAULT_USE_CASE = 'reference';
 const BATCH_SIZE = 500;

@@ -11,11 +11,12 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import { seedSystemTeamTemplates } from '../src/modules/tracker/seed/team-templates-seed';
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     // eslint-disable-next-line no-console
     console.log('=== seed-team-templates START ===');

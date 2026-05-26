@@ -26,11 +26,12 @@
  */
 
 import { Prisma, PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 import { resolveAppointmentStatus } from '../src/modules/appointments/services/tenant-top';
 
 const APPLY = process.argv.includes('--apply');
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 interface Counters {
   totalPersonRoles: number;

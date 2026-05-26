@@ -25,8 +25,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const BEHAVIOR_REFINE_PROVIDERS = [
   // Primary — короткий yes/no JSON-классификатор; gpt-5.4-nano самый дешёвый

@@ -51,6 +51,12 @@ RUN bunx prisma generate
 # Скомпилированный код.
 COPY --from=builder /app/dist ./dist
 
+# Исходники src/ — нужны для prod-скриптов, которые импортируют из `../src/...`
+# (например, seed-llm-model-prices.ts → '../src/modules/ai/services/model-prices').
+# Bun исполняет .ts напрямую — компиляция не нужна. Размер +5-10 MB к образу.
+COPY src ./src
+COPY tsconfig.json ./
+
 # Все prod-скрипты (patch/seed/backfill/migrate/setup/apply-postgres-init).
 # Нужны в runner-образе для prod-операций: миграция через compose-сервис `migrate`,
 # а также `docker compose exec backend bun run scripts/<name>.ts` для ручных операций

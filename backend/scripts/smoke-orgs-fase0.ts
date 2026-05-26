@@ -14,9 +14,10 @@
 import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 import { nanoid } from 'nanoid';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function main(): Promise<void> {
   const tag = `smoke-${randomBytes(3).toString('hex')}`;

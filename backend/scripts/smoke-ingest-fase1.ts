@@ -35,10 +35,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Prisma, PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const QUEUE_NAME = 'core.raw-events';
 

@@ -34,6 +34,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
 type IssueStateCategory =
   | 'backlog'
@@ -551,7 +552,7 @@ async function main(): Promise<void> {
   if (flags.orgId) console.log(`Scope: org=${flags.orgId}`);
   else console.log('Scope: ВСЕ организации');
 
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   const allStats: OrgStats[] = [];
 
   try {

@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { OllamaService } from '../../ollama.service';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
 } from '../../llm.types';
 import { LlmError } from '../../llm.types';
+import { OllamaService } from '../../ollama.service';
 import type {
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,

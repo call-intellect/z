@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   type LlmCallResult,
@@ -14,7 +14,6 @@ import {
 } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
-
 import {
   KNOWLEDGE_CLONE_EXTRACT_JSON_SCHEMA,
   KNOWLEDGE_CLONE_EXTRACT_SCHEMA_NAME,
@@ -28,6 +27,7 @@ import {
   KNOWLEDGE_CLONE_MERGE_SYSTEM_PROMPT,
   KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE,
 } from '../prompts/knowledge-clone-merge.prompt';
+
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';

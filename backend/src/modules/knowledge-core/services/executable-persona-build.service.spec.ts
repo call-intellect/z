@@ -8,13 +8,14 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { ExecutablePersonaBuildService } from './executable-persona-build.service';
 
-import type { DataClassPolicyService } from './dataclass-policy.service';
-import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
+
+import type { DataClassPolicyService } from './dataclass-policy.service';
+import { ExecutablePersonaBuildService } from './executable-persona-build.service';
 
 describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation', () => {
   it('создаёт ExecutablePersona(scope=role) с dataClass=internal', async () => {

@@ -7,7 +7,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { S3Service } from '../../recordings/s3.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
-
 import {
   deterministicClean,
   turnsToCleanerInput,

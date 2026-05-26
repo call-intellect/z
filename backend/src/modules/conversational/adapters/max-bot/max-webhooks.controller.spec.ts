@@ -14,11 +14,12 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MaxWebhooksController } from './max-webhooks.controller';
 
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { ConversationalService } from '../../conversational.service';
+
 import type { MaxBotChannelAdapter } from './max-bot.adapter';
+import { MaxWebhooksController } from './max-webhooks.controller';
 
 const SECRET = 'max-secret-shared-32characters!!';
 

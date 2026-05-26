@@ -10,7 +10,6 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurationService } from '../../curation/services/curation.service';
-
 import type {
   KnowledgeProfileCategoryDto,
   KnowledgeProfileDto,

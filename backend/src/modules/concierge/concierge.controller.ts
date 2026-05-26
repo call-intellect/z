@@ -16,8 +16,9 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TypedConfigService } from '../../common/config/index';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -36,9 +37,8 @@ import {
   type UndoConciergeBodyDto,
 } from './dto/concierge.dto';
 import { ConciergeQuotaService } from './services/concierge-quota.service';
-import { ConciergeService } from './services/concierge.service';
 import { ConciergeUndoLogService } from './services/concierge-undo-log.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { ConciergeService } from './services/concierge.service';
 
 /**
  * SBA γ-2 — REST API Concierge Agent.

@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type EntityLinkType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type {
   PersonalRelationDto,
   PersonalRelationListDto,

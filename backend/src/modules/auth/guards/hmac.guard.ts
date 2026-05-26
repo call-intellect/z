@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import { type CanActivate, type ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   IdempotencyConflictError,
   IntegrationKeyInvalidError,
 } from '../../../common/errors/domain-errors';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HmacService } from '../services/hmac.service';
 
 

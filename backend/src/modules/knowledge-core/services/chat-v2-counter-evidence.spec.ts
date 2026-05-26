@@ -14,13 +14,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ChatV2Service } from './chat-v2.service';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
+
 import type { ChatV2RetrievalService } from './chat-v2-retrieval.service';
+import { ChatV2Service } from './chat-v2.service';
 
 function makeService(args: {
   contradictsLinks?: Array<{

@@ -1,9 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ListObjectsV2Command,
   S3Client,
   type ListObjectsV2CommandOutput,
 } from '@aws-sdk/client-s3';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../../common/config/index';
 import { AdminSettingsService } from '../../settings/admin-settings.service';

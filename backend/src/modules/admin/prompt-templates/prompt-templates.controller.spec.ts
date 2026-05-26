@@ -14,12 +14,12 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 
-import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import { AdminPromptTemplatesController } from './prompt-templates.controller';
 import type { PromptTemplatesPreviewService } from './prompt-templates-preview.service';
+import { AdminPromptTemplatesController } from './prompt-templates.controller';
 import type { AdminPromptTemplatesService } from './prompt-templates.service';
 
 const sampleUser: CurrentUserPayload = {

@@ -15,13 +15,19 @@ import { MeetingsService } from '../../meetings/meetings.service';
 import { MeetingExtractActionsService } from '../../tracker/services/meeting-extract-actions.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
-
 import { AiUsageLogService } from '../services/ai-usage-log.service';
 import { LlmFallbackService } from '../services/llm-fallback.service';
 import type { LlmCompleteOutput, LlmTool } from '../services/llm.types';
 import { calcCostUsd } from '../services/model-prices';
 import { PromptResolverService } from '../services/prompt-resolver.service';
 import type { ResolvedPrompt } from '../services/prompt-resolver.types';
+import {
+  ROOM_CHAT_SYSTEM_NOTE,
+  formatChatTime,
+  withInjectionGuard,
+  wrapUserData,
+} from '../services/prompts/common';
+import type { DialogTurn, RoomChatMessage } from '../services/prompts/common';
 import {
   FOLLOW_UP_SCHEMA,
   FOLLOW_UP_TOOL,
@@ -33,12 +39,6 @@ import {
   typeNeedsFollowUp,
   typeNeedsTasks,
 } from '../services/prompts/index';
-import {
-  ROOM_CHAT_SYSTEM_NOTE,
-  formatChatTime,
-  withInjectionGuard,
-  wrapUserData,
-} from '../services/prompts/common';
 import { sanitizeCustomPrompt } from '../services/prompts/sanitize-custom-prompt';
 import {
   SUMMARY_TOOL_NAME,
@@ -50,7 +50,6 @@ import {
   TASKS_TOOL_NAME,
   buildTasksPrompt,
 } from '../services/prompts/tasks';
-import type { DialogTurn, RoomChatMessage } from '../services/prompts/common';
 
 /**
  * Worker стадии `ai.analyze`.

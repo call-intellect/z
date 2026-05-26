@@ -9,9 +9,9 @@ import type {
   MaturityScopeDetailDto,
   RebuildMaturityResponseDto,
 } from '../dto/maturity.dto';
+import { tenantTopLabel } from '../utils/tenant-top';
 
 import { CompanyProfileService } from './company-profile.service';
-import { tenantTopLabel } from '../utils/tenant-top';
 
 /**
  * SBA α-9 wave 3 — MaturityScorerService.

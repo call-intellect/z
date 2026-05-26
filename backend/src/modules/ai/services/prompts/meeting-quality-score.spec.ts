@@ -13,11 +13,11 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { DialogTurn } from './common';
 import {
   MEETING_QUALITY_SCORE_SCHEMA,
   condenseTranscriptForQualityScore,
 } from './meeting-quality-score';
-import type { DialogTurn } from './common';
 
 function buildTurns(durationSec: number, intervalSec = 5): DialogTurn[] {
   const turns: DialogTurn[] = [];

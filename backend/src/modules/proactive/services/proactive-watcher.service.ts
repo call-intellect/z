@@ -7,7 +7,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
-
 import { getProactiveLocalDate } from '../utils/local-date';
 
 import { ProactiveDedupService } from './proactive-dedup.service';
@@ -779,7 +778,7 @@ export class ProactiveWatcherService {
   }
 
   /** Для метрик и логирования: hash bucket tenant-top (как в operations utils). */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private tenantTop(tenantId: string): string {
     if (!tenantId) return 'other';
     try {

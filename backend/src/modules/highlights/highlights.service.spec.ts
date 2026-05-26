@@ -9,9 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AiQueueService } from '../ai/ai-queue.service';
-import type { S3Service } from '../recordings/s3.service';
-import type { QuotaService } from '../quotas/quota.service';
 import { QuotaExceededError } from '../quotas/quota.errors';
+import type { QuotaService } from '../quotas/quota.service';
+import type { S3Service } from '../recordings/s3.service';
 
 import { ClipRenderService } from './clip-render.service';
 import type { HighlightsRepository } from './highlights.repository';

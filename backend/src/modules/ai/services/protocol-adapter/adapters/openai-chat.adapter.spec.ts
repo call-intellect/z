@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../../../common/config/index';
 import type { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
-
 import type { ProtocolAdapterProviderInfo } from '../protocol-adapter.types';
 
 /**

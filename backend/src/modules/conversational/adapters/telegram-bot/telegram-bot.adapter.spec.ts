@@ -6,13 +6,13 @@ import type { CryptoService } from '../../../../common/crypto/crypto.service';
 import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../../common/redis/redis.service';
+import type { AccountsService } from '../../../accounts/accounts.service';
 import type { VoxService } from '../../../ai/services/vox.service';
 import type { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
 import type { DocumentsService } from '../../../documents/documents.service';
 import type { ChannelRegistry } from '../../channel-registry';
 import type { ConversationalLinkCodeService } from '../../link-code.service';
 
-import type { AccountsService } from '../../../accounts/accounts.service';
 
 import type { TelegramApiClient } from './telegram-api-client';
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';

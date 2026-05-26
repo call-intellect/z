@@ -10,9 +10,9 @@ import type { MeetingChapter } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai/ai-queue.service';
 
+import { ChaptersRepository } from './chapters.repository';
 import type { CreateChapterDto } from './dto/create-chapter.dto';
 import type { UpdateChapterDto } from './dto/update-chapter.dto';
-import { ChaptersRepository } from './chapters.repository';
 
 /**
  * Сервис глав встречи. Генерация — через `AiQueueService.enqueueChapters`

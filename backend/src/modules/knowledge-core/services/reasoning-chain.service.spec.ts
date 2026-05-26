@@ -14,9 +14,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+
 import { ReasoningChainService } from './reasoning-chain.service';
 
-import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 interface BlockRow {
   id: string;

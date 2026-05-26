@@ -16,12 +16,13 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ProjectionRebuilderService } from './projection-rebuilder.service';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CoreQueueService } from '../../core-queue/core-queue.service';
+
+import { ProjectionRebuilderService } from './projection-rebuilder.service';
 
 /**
  * Минимальная фабрика моков. Все Prisma-findMany по умолчанию возвращают

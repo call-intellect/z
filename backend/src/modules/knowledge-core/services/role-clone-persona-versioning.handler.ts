@@ -261,6 +261,6 @@ export class RoleClonePersonaVersioningHandler {
    * на роль). Вызывается из ClonesService.getCloneHistory (после count).
    */
   // оставлено для будущего; основные счётчики идут через metrics в момент create.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private _placeholder(_p: Prisma.ExecutablePersonaWhereInput): void {}
 }

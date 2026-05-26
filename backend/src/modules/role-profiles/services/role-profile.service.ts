@@ -10,6 +10,7 @@ import {
   RoleProfileSchema,
   type RoleProfileSummary,
 } from '../../knowledge-core/prompts/role-profile-build.prompt';
+
 import { RoleProfileContextBuilder } from './context-builder.service';
 
 export const ROLE_PROFILE_TASK_TYPE = 'role-profile-build';

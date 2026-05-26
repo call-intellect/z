@@ -3,17 +3,16 @@ import { Prisma } from '@prisma/client';
 import type { AudioTrack } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { MeetingsService } from '../../meetings/meetings.service';
-import { S3Service } from '../../recordings/s3.service';
 import { extractKeyFromUrl } from '../../recordings/s3-keys';
+import { S3Service } from '../../recordings/s3.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
-
 import { AiUsageLogService } from '../services/ai-usage-log.service';
-import { TypedConfigService } from '../../../common/config/index';
 import { VoxService } from '../services/vox.service';
 
 /**

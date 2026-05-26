@@ -16,11 +16,11 @@ import { SsrfGuardService } from '../security/ssrf-guard.service';
 
 import { SubscriptionsRepository } from './subscriptions.repository';
 import { WebhookDispatcherService } from './webhook-dispatcher.service';
-import { WebhookSigningService } from './webhook-signing.service';
 import {
   WEBHOOK_DELIVERY_QUEUE,
   type WebhookDeliveryJobData,
 } from './webhook-queue';
+import { WebhookSigningService } from './webhook-signing.service';
 
 /**
  * Worker очереди `webhook.delivery`.

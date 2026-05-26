@@ -10,7 +10,6 @@ import type { Source } from '@prisma/client';
 import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
-
 import type { SourceTestResultDto } from '../../../sources/dto/source.dto';
 
 import { parseTelegramConfig } from './telegram-config.schema';

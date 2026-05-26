@@ -4,11 +4,11 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ListPersonsQuerySchema } from './dto/persons.dto';
-import { PersonsController } from './persons.controller';
-
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import type { RbacService } from '../rbac/rbac.service';
+
+import { ListPersonsQuerySchema } from './dto/persons.dto';
+import { PersonsController } from './persons.controller';
 import type { PersonsService } from './services/persons.service';
 
 const userA: CurrentUserPayload = { id: 'u-1', email: 'u@x', role: 'user' };

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../common/config/index';
 import {
   MeetingNotFoundError,
   NotAuthorizedError,
@@ -8,7 +9,6 @@ import {
   RecordingNotReadyError,
 } from '../../common/errors/domain-errors';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
-import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { MeetingsService } from '../meetings/meetings.service';
 

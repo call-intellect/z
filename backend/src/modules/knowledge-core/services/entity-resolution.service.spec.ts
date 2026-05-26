@@ -21,11 +21,10 @@ import {
   buildKnowledgeCoreFixture,
   cleanupByPrefix,
 } from '../../../../test/integration/knowledge-core/fixtures';
-
-import { EntityResolutionService } from './entity-resolution.service';
-
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+
 import type { KnowledgeEmbeddingService } from './embedding.service';
+import { EntityResolutionService } from './entity-resolution.service';
 
 const PREFIX = 'kc-entres-spec';
 

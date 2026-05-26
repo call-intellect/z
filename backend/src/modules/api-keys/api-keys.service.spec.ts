@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../common/config/index';
 import type { AuditLogService } from '../audit/audit-log.service';
 
-import { ApiKeysService, sha256 } from './api-keys.service';
 import type { ApiKeysRepository } from './api-keys.repository';
+import { ApiKeysService, sha256 } from './api-keys.service';
 
 function makeCfg(maxApiKeys = 10): TypedConfigService {
   return {

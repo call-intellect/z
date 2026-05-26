@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 /**

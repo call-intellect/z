@@ -6,9 +6,9 @@
  * объект с jest-стилем (vi.fn() / vi.mocked).
  */
 
+import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { Prisma } from '@prisma/client';
 
 import { SPECIALISTS_COMBINED_TOOL_NAME } from '../prompts/specialists-combined.prompt';
 

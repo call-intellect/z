@@ -4,16 +4,16 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type {
+  BlockSearchItemDto,
+  EntityItemDto,
+  EvidenceItemDto,
+} from './dto/search.dto';
+import type {
   SnapshotBlockItemDto,
   SnapshotEntityLinkDto,
   SnapshotResponseDto,
   SnapshotServiceArgs,
 } from './dto/snapshot.dto';
-import type {
-  BlockSearchItemDto,
-  EntityItemDto,
-  EvidenceItemDto,
-} from './dto/search.dto';
 
 /**
  * KC-Temporal W1.3 (2026-05-25) — `SnapshotService`.

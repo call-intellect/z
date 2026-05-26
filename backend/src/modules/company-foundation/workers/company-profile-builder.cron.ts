@@ -3,7 +3,6 @@ import { Cron } from '@nestjs/schedule';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import { CompanyProfileService } from '../services/company-profile.service';
 
 /**

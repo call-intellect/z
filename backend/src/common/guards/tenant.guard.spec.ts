@@ -12,13 +12,13 @@
  *   - tenantId не определён → ForbiddenException.
  *   - Пользователь без membership в указанной Org → ForbiddenException.
  */
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import type { ExecutionContext} from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TenantGuard } from '../../modules/rbac/guards/tenant.guard';
-
-import type { PrismaService } from '../prisma/prisma.service';
 import type { RbacService } from '../../modules/rbac/rbac.service';
+import type { PrismaService } from '../prisma/prisma.service';
 
 interface ReqShape {
   user?: { id?: string } | null;

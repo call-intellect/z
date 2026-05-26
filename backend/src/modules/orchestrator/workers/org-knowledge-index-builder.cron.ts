@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import { OrgKnowledgeIndexService } from '../services/org-knowledge-index.service';
 
 /**

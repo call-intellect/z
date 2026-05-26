@@ -11,7 +11,6 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RecognitionService } from '../../recognition/services/recognition.service';
-
 import type {
   HelpfulnessSpotlightDto,
   HelpfulnessTraitDto,
@@ -21,6 +20,7 @@ import type {
   TeamHelperRow,
   UnansweredQuestionRow,
 } from '../dto/helpfulness.dto';
+
 import {
   PRIVATE_TRAIT_TYPES,
   Specialist38HelpfulnessService,

@@ -15,8 +15,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 
-import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -27,6 +27,7 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 
+import type { BlockSearchItemDto, EntityItemDto } from './dto/search.dto';
 import {
   type ListThemesQuery,
   ListThemesQuerySchema,
@@ -37,7 +38,6 @@ import {
   type ThemeItemDto,
   type ThemeSavedAsCardDto,
 } from './dto/theme.dto';
-import type { BlockSearchItemDto, EntityItemDto } from './dto/search.dto';
 
 const THEME_DETAIL_BLOCKS_LIMIT = 20;
 const THEME_DETAIL_ENTITIES_LIMIT = 50;

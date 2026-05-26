@@ -18,13 +18,12 @@ import {
   getPrismaClient,
 } from '../../../../test/integration/knowledge-core/db-availability';
 import { buildKnowledgeCoreFixture } from '../../../../test/integration/knowledge-core/fixtures';
-
-import { GraphNeighborsQuerySchema } from './dto/graph.dto';
-import { KnowledgeGraphController } from './graph.controller';
-
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
+
+import { GraphNeighborsQuerySchema } from './dto/graph.dto';
+import { KnowledgeGraphController } from './graph.controller';
 
 const PREFIX = 'kc-graph-spec';
 

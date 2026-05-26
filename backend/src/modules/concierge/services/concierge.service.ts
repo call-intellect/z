@@ -5,11 +5,10 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TypedConfigService } from '../../../common/config/index';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-
 import type { PageContextDto } from '../dto/concierge.dto';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
@@ -118,7 +117,7 @@ export class ConciergeService {
     });
 
     // Conversation: get or create.
-    let conversation = await this.loadOrCreateConversation(input);
+    const conversation = await this.loadOrCreateConversation(input);
     yield { type: 'started', conversationId: conversation.id };
 
     // Save user message.

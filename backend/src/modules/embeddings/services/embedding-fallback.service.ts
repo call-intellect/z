@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
-
 import {
   type EmbeddingProvider,
   EmbeddingsAllProvidersFailedError,

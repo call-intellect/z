@@ -17,7 +17,6 @@ import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
-
 import {
   CreateCheckInSchema,
   type CreateCheckInInput,

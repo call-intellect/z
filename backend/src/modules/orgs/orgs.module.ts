@@ -5,11 +5,11 @@ import { ConversationalLinkCodeService } from '../conversational/link-code.servi
 import { MailModule } from '../mail/mail.module';
 
 import { OrgInvitationRemindersCron } from './cron/org-invitation-reminders.cron';
+import { OrgInvitationsService } from './org-invitations.service';
 import {
   OrgInvitationsAcceptController,
   OrgsController,
 } from './orgs.controller';
-import { OrgInvitationsService } from './org-invitations.service';
 import { OrgsService } from './orgs.service';
 
 /**

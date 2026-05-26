@@ -20,7 +20,6 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-
 import {
   type HelpfulnessSpotlightDto,
   type HelpfulnessTraitDto,

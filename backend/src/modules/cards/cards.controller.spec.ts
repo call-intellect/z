@@ -12,10 +12,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CardsController } from './cards.controller';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
+
+import { CardsController } from './cards.controller';
 import type { CardsService } from './cards.service';
 
 const userAlice: CurrentUserPayload = { id: 'u-alice', email: 'a@x', role: 'user' };

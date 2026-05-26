@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpfulness.service';
 
 /**

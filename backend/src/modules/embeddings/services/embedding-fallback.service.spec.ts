@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
-
-import { EmbeddingFallbackService } from './embedding-fallback.service';
 import {
   EmbeddingsAllProvidersFailedError,
   type EmbeddingProvider,
   LocalEmbeddingNotConfiguredError,
 } from '../embeddings.types';
+
+import { EmbeddingFallbackService } from './embedding-fallback.service';
 import type { LocalEmbeddingService } from './local-embedding.service';
 import type { OpenAiProxyEmbeddingService } from './openai-proxy-embedding.service';
 

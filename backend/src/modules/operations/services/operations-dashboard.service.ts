@@ -5,7 +5,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-
 import type {
   InsightCauseCategoryAggregateDto,
   MaturitySnapshotDto,

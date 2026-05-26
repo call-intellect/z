@@ -43,17 +43,17 @@ import type {
   FeedbackItemMessageResponse,
   FeedbackItemsListResponse,
 } from '../dto/feedback-item.dto';
+import type {
+  FeedbackTopicDetail,
+  FeedbackTopicSummary,
+  FeedbackTopicsListResponse,
+} from '../dto/feedback-topic.dto';
 import type { MergeTopicsBody } from '../dto/merge-topics.dto';
 import type { RenameTopicBody } from '../dto/rename-topic.dto';
 import type {
   FeedbackTopicWindow,
   TopicListFilters,
 } from '../dto/topic-list-filters.dto';
-import type {
-  FeedbackTopicDetail,
-  FeedbackTopicSummary,
-  FeedbackTopicsListResponse,
-} from '../dto/feedback-topic.dto';
 
 @Injectable()
 export class FeedbackTopicManagerService {

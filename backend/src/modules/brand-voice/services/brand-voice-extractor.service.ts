@@ -17,6 +17,7 @@ import {
   type BrandVoiceExtractDocument,
 } from '../prompts/brand-voice-extract.prompt';
 import { brandVoiceTenantTop } from '../utils/tenant-top';
+
 import { BrandVoiceService } from './brand-voice.service';
 
 /**

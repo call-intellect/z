@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import type { IdeaKind, IdeaStatus } from '@prisma/client';
+import { z } from 'zod';
 
 export const IdeaKindSchema = z.enum(['internal', 'client_request']);
 export const IdeaStatusSchema = z.enum([

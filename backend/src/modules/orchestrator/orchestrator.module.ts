@@ -3,8 +3,8 @@ import { Module } from '@nestjs/common';
 import { KnowledgeCoreModule } from '../knowledge-core/knowledge-core.module';
 
 import { OrchestratorController } from './orchestrator.controller';
-import { OrchestratorService } from './services/orchestrator.service';
 import { OrchestratorSubagentQueue } from './services/orchestrator-subagent.queue';
+import { OrchestratorService } from './services/orchestrator.service';
 import { OrgKnowledgeIndexService } from './services/org-knowledge-index.service';
 import { PlanningService } from './services/planning.service';
 import { SubagentSpawnerService } from './services/subagent-spawner.service';

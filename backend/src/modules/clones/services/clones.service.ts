@@ -27,7 +27,6 @@ import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embeddi
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from '../../knowledge-core/services/executable-persona-versioning.service';
 import { RbacService } from '../../rbac/rbac.service';
-
 import type {
   CloneConversationListItemDto,
   CloneConversationsListResponseDto,
@@ -1325,7 +1324,7 @@ export class ClonesService {
     const personIds = [...new Set(personRoles.map((p) => p.personId))];
 
     const people: RoleSkillProfileDto['people'] = [];
-    let topTraitsMap = new Map<string, { statement: string; count: number }>();
+    const topTraitsMap = new Map<string, { statement: string; count: number }>();
 
     if (personIds.length > 0) {
       const profiles = await this.prisma.skillProfile.findMany({

@@ -15,9 +15,10 @@
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+
 import { EntityLinkService } from './entity-link.service';
 
-import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 function makeMocks() {
   const findUnique = vi.fn();

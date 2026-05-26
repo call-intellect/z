@@ -21,7 +21,6 @@ import {
 } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
-
 import {
   DECISION_EXTRACT_JSON_SCHEMA,
   DECISION_EXTRACT_SCHEMA_NAME,
@@ -34,6 +33,7 @@ import {
   DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT,
   DECISION_SUPERSEDE_DETECT_USER_TEMPLATE,
 } from '../prompts/decision-supersede-detect.prompt';
+
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';

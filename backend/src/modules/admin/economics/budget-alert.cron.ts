@@ -6,8 +6,8 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 
-import { OrgEconomicsCron } from './org-economics.cron';
 import { CurrencyRateService } from './currency-rate.service';
+import { OrgEconomicsCron } from './org-economics.cron';
 
 /**
  * SBA α-10 wave 3 — BudgetAlertCron.

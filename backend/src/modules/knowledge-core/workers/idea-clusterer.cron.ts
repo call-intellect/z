@@ -19,6 +19,7 @@ import {
   IDEA_CLUSTER_MERGE_SYSTEM_PROMPT,
   IDEA_CLUSTER_MERGE_USER_TEMPLATE,
 } from '../prompts/idea-cluster-merge.prompt';
+
 import { KnowledgeEmbeddingService } from './../services/embedding.service';
 
 interface ClusterMergeVerdict {

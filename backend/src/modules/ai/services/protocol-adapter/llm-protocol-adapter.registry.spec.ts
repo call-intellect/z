@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { LlmCompleteOutput } from '../llm.types';
 
-import { AnthropicMessagesProtocolAdapter } from './adapters/anthropic-messages.adapter';
-import { CustomHttpProtocolAdapter } from './adapters/custom-http.adapter';
-import { OllamaNativeProtocolAdapter } from './adapters/ollama-native.adapter';
-import { OpenAiChatProtocolAdapter } from './adapters/openai-chat.adapter';
-import { OpenAiResponsesProtocolAdapter } from './adapters/openai-responses.adapter';
+import type { AnthropicMessagesProtocolAdapter } from './adapters/anthropic-messages.adapter';
+import type { CustomHttpProtocolAdapter } from './adapters/custom-http.adapter';
+import type { OllamaNativeProtocolAdapter } from './adapters/ollama-native.adapter';
+import type { OpenAiChatProtocolAdapter } from './adapters/openai-chat.adapter';
+import type { OpenAiResponsesProtocolAdapter } from './adapters/openai-responses.adapter';
 import { LlmProtocolAdapterRegistry } from './llm-protocol-adapter.registry';
 
 /**

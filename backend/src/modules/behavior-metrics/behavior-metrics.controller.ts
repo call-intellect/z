@@ -17,8 +17,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,

@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
 

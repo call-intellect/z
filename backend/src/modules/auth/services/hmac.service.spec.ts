@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
+
 import { HmacService } from './hmac.service';
 
 /**

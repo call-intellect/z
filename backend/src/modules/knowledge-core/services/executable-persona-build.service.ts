@@ -17,7 +17,6 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { tenantTopLabel } from '../../company-foundation/utils/tenant-top';
-
 import {
   EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
   EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE,

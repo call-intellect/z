@@ -22,12 +22,12 @@ import { AUDIT } from '../audit/audit.types';
 import { S3Service } from '../recordings/s3.service';
 
 import type { BulkExportDto } from './dto/export.dto';
-import { ExportsRepository } from './exports.repository';
 import {
   EXPORT_QUEUE,
   EXPORT_JOB_OPTIONS,
   type ExportJobData,
 } from './exports-queue';
+import { ExportsRepository } from './exports.repository';
 
 /**
  * Бизнес-сервис экспортов. Постановка job в очередь, выдача presigned URL,

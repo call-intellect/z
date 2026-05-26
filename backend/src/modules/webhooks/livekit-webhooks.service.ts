@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Counter } from 'prom-client';
-import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Prisma } from '@prisma/client';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { type WebhookEvent } from 'livekit-server-sdk';
+import { Counter } from 'prom-client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+
 import { LivekitEventsHandler } from './livekit-events.handler';
 import { LivekitSignatureVerifier } from './livekit-signature.verifier';
 

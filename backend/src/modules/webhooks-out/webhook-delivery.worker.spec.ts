@@ -7,8 +7,8 @@ import type { EncryptionService } from '../security/encryption.service';
 import type { SsrfGuardService } from '../security/ssrf-guard.service';
 
 import type { SubscriptionsRepository } from './subscriptions.repository';
-import type { WebhookDispatcherService } from './webhook-dispatcher.service';
 import { WebhookDeliveryWorker } from './webhook-delivery.worker';
+import type { WebhookDispatcherService } from './webhook-dispatcher.service';
 import { WebhookSigningService } from './webhook-signing.service';
 
 function makeRedis(): RedisService {

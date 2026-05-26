@@ -11,16 +11,15 @@ import { type Job, Worker } from 'bullmq';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-
-import { SubagentSpawnerService } from '../services/subagent-spawner.service';
-import {
-  ORCHESTRATOR_SUBAGENTS_QUEUE,
-  type OrchestratorSubagentJobData,
-} from '../services/orchestrator-subagent.queue';
 import type {
   OrchestratorAgentType,
   OrchestratorPlanStep,
 } from '../orchestrator.types';
+import {
+  ORCHESTRATOR_SUBAGENTS_QUEUE,
+  type OrchestratorSubagentJobData,
+} from '../services/orchestrator-subagent.queue';
+import { SubagentSpawnerService } from '../services/subagent-spawner.service';
 
 /**
  * SBA δ-1 — `OrchestratorSubagentWorker`.

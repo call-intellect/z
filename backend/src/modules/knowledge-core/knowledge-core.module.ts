@@ -6,23 +6,30 @@ import { CurationModule } from '../curation/curation.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { SearchService } from './api/search.service';
+import { AxisClassifierService } from './services/axis-classifier.service';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockFetchService, KnowledgeBlockResolver } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChaptersExtractorV2Service } from './services/chapters-extractor-v2.service';
-import { DataClassPolicyService } from './services/dataclass-policy.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
 import { ChatV2Service } from './services/chat-v2.service';
 import { ClusteringService } from './services/clustering.service';
+import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
+import { DataClassPolicyService } from './services/dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './services/embedding.service';
 import { EntityGraphService } from './services/entity-graph.service';
 import { EntityLinkService } from './services/entity-link.service';
 import { EntityMergeService } from './services/entity-merge.service';
 import { EntityResolutionService } from './services/entity-resolution.service';
+import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
+import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
-import { AxisClassifierService } from './services/axis-classifier.service';
+import { PreferenceDatasetService } from './services/preference-dataset.service';
+import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
+import { ReasoningChainService } from './services/reasoning-chain.service';
+import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
 import { SkillTraitConceptService } from './services/skill-trait-concept.service';
@@ -37,35 +44,28 @@ import { Specialist35Service } from './services/specialist-3-5-insights.service'
 import { Specialist35ProbeService } from './services/specialist-3-5-probe.service';
 import { Specialist36Service } from './services/specialist-3-6-ideas.service';
 import { Specialist36ProbeService } from './services/specialist-3-6-probe.service';
-import { Specialist37Service } from './services/specialist-3-7-skill.service';
 import { Specialist37ProbeService } from './services/specialist-3-7-skill-probe.service';
+import { Specialist37Service } from './services/specialist-3-7-skill.service';
 import { Specialist39ExperimentProbeService } from './services/specialist-3-9-experiment-probe.service';
 import { Specialist39ExperimentsService } from './services/specialist-3-9-experiments.service';
-import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
-import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
-import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
-import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
+import { SpecialistsCombinedService } from './services/specialists-combined.service';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
+import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
+import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
 import { CoreMetricsSnapshotCron } from './workers/core-metrics-snapshot.cron';
+import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.cron';
+import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
 // KC-Temporal волна 3 (W3.1 + W3.2, 2026-05-25).
-import { ReasoningChainService } from './services/reasoning-chain.service';
 // KC-Temporal W3.5 (2026-05-25) — Materialized projections rebuild.
-import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
 // Один LLM-вызов на все блоки встречи извлекает 8 типов сущностей.
 // Параллельно со старыми 3-1..3-9 под флагом SPECIALISTS_COMBINED_ENABLED.
-import { SpecialistsCombinedService } from './services/specialists-combined.service';
 // W2.2 + W2.3 + W2.4 + G.2 + W4.2 KC-Temporal (2026-05-25).
-import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
-import { PreferenceDatasetService } from './services/preference-dataset.service';
-import { TemporalProbeService } from './services/temporal-probe.service';
-import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
-import { TemporalProbeCron } from './workers/temporal-probe.cron';
 import { SignalTypeStatsCron } from './workers/signal-type-stats.cron';
-import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.cron';
+import { TemporalProbeCron } from './workers/temporal-probe.cron';
 
 /**
  * KnowledgeCoreModule — оркестрация ingest → distill для IdeaBlock'ов.

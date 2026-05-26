@@ -2,10 +2,10 @@ import { Global, Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
-import { SkillTraitCategoriesController } from './skill-trait-categories.controller';
-import { SkillsController } from './skills.controller';
 import { SkillTraitCategoryService } from './services/skill-trait-categories.service';
 import { SkillsService } from './services/skills.service';
+import { SkillTraitCategoriesController } from './skill-trait-categories.controller';
+import { SkillsController } from './skills.controller';
 
 /**
  * SkillsModule.

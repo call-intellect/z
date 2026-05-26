@@ -8,7 +8,6 @@ import {
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { SkillTraitConceptService } from '../../../knowledge-core/services/skill-trait-concept.service';
-
 import type {
   ArchiveSkillTraitConceptDto,
   ListSkillTraitConceptsQueryDto,

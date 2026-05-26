@@ -3,17 +3,16 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
-import { ComparisonStrategy } from '../strategies/comparison.strategy';
-import { EntityResearchStrategy } from '../strategies/entity-research.strategy';
-import { TimelineConstructionStrategy } from '../strategies/timeline-construction.strategy';
-import { TopicSummaryStrategy } from '../strategies/topic-summary.strategy';
-import type { SubagentStrategy } from '../strategies/subagent-strategy';
 import type {
   OrchestratorAgentType,
   OrchestratorPlanStep,
   OrchestratorSubagentResult,
 } from '../orchestrator.types';
+import { ComparisonStrategy } from '../strategies/comparison.strategy';
+import { EntityResearchStrategy } from '../strategies/entity-research.strategy';
+import type { SubagentStrategy } from '../strategies/subagent-strategy';
+import { TimelineConstructionStrategy } from '../strategies/timeline-construction.strategy';
+import { TopicSummaryStrategy } from '../strategies/topic-summary.strategy';
 
 import { OrchestratorSubagentQueue } from './orchestrator-subagent.queue';
 

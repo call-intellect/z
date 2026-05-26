@@ -22,7 +22,6 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { CurationService } from '../../curation/services/curation.service';
-
 import {
   INSIGHT_CAUSE_CATEGORIES,
   INSIGHT_EXTRACT_JSON_SCHEMA,
@@ -37,6 +36,7 @@ import {
   INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT,
   INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE,
 } from '../prompts/insight-link-to-decisions.prompt';
+
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';

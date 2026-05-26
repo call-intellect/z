@@ -16,12 +16,11 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { BearerAuthGuard, RequireScope } from '../api-keys/bearer-auth.guard';
 import { CurrentApiUserId } from '../api-keys/current-api-key.decorator';
 import { CardsService } from '../cards/cards.service';
-import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import {
   type CreateCardDto,
   CreateCardSchema,
@@ -34,6 +33,7 @@ import {
   type UpdateCardDto,
   UpdateCardSchema,
 } from '../cards/dto/update-card.dto';
+import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 
 import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 

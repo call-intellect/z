@@ -13,9 +13,10 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+
 import { SnapshotService } from './snapshot.service';
 
-import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 interface FakeBlock {
   id: string;

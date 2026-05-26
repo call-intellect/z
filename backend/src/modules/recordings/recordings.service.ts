@@ -15,12 +15,12 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { MeetingsService } from '../meetings/meetings.service';
 
 import { LivekitEgressClient } from './livekit-egress.client';
-import { S3Service } from './s3.service';
 import {
   audioTrackKey,
   compositeKey,
   extractKeyFromUrl,
 } from './s3-keys';
+import { S3Service } from './s3.service';
 
 /**
  * Сервис управления записями встреч.

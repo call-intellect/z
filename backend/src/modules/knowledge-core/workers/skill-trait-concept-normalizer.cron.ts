@@ -7,7 +7,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ProbeService } from '../../probe/probe.service';
-
 import {
   SKILL_TRAIT_CONCEPT_NAME_JSON_SCHEMA,
   SKILL_TRAIT_CONCEPT_NAME_SCHEMA_NAME,

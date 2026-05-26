@@ -12,14 +12,15 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EntityResolutionService } from './entity-resolution.service';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { CoreQueueService } from '../../core-queue/core-queue.service';
+
 import type { KnowledgeEmbeddingService } from './embedding.service';
+import { EntityResolutionService } from './entity-resolution.service';
 
 function makeMocks(opts: { threshold?: number; cacheTtl?: number } = {}) {
   // Prisma — последовательность $queryRawUnsafe вызовов разная в каждом тесте;

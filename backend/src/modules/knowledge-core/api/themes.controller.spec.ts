@@ -22,16 +22,15 @@ import {
   getPrismaClient,
 } from '../../../../test/integration/knowledge-core/db-availability';
 import { buildKnowledgeCoreFixture } from '../../../../test/integration/knowledge-core/fixtures';
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
+import type { RbacService } from '../../rbac/rbac.service';
 
 import {
   ListThemesQuerySchema,
   SaveThemeAsCardSchema,
 } from './dto/theme.dto';
 import { KnowledgeThemesController } from './themes.controller';
-
-import type { PrismaService } from '../../../common/prisma/prisma.service';
-import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
-import type { RbacService } from '../../rbac/rbac.service';
 
 const PREFIX = 'kc-themes-spec';
 

@@ -9,10 +9,10 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { RbacService } from '../rbac/rbac.service';
+
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { DirectorDashboardQuerySchema } from './dto/director-dashboard.dto';
-
-import type { RbacService } from '../rbac/rbac.service';
 import type { DirectorDashboardService } from './services/director-dashboard.service';
 
 function build(opts: { canView?: boolean } = {}) {

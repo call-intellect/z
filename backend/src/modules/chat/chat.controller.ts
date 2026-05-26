@@ -17,9 +17,9 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
+import { ChatService } from './chat.service';
 import { ChatV2AskSchema, type ChatV2AskDto } from './dto/chat-v2.dto';
 import { ChatAskSchema, type ChatAskDto } from './dto/chat.dto';
-import { ChatService } from './chat.service';
 
 /**
  * Эндпоинты AI-чата.

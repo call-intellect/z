@@ -10,8 +10,8 @@ import type { Channel } from '@prisma/client';
 import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
-import { TelegramApiClient } from '../../../conversational/adapters/telegram-bot/telegram-api-client';
 import { MaxApiClient } from '../../../conversational/adapters/max-bot/max-api-client';
+import { TelegramApiClient } from '../../../conversational/adapters/telegram-bot/telegram-api-client';
 import { AdminSettingsService } from '../../settings/admin-settings.service';
 
 import type {

@@ -15,8 +15,8 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { Request as ExpressRequest } from 'express';
 
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { TenantGuard } from '../rbac/guards/tenant.guard';

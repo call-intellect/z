@@ -10,7 +10,7 @@ import type { Task } from '@prisma/client';
  */
 @Injectable()
 export class TasksDispatcherService {
-  // eslint-disable-next-line @typescript-eslint/require-await
+   
   async sendTask(_task: Task, _destinationId: string): Promise<void> {
     throw new NotImplementedException({
       ok: false,

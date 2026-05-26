@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type DataClass,
   type Idea,
@@ -7,7 +8,6 @@ import {
   type IdeaKind,
   Prisma,
 } from '@prisma/client';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -22,13 +22,13 @@ import {
 } from '../../ai/services/prompts/common';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
-
 import {
   IDEA_EXTRACT_JSON_SCHEMA,
   IDEA_EXTRACT_SCHEMA_NAME,
   IDEA_EXTRACT_SYSTEM_PROMPT,
   IDEA_EXTRACT_USER_TEMPLATE,
 } from '../prompts/idea-extract.prompt';
+
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 

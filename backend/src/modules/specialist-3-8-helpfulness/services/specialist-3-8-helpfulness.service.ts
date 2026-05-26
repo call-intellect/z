@@ -13,7 +13,6 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
-
 import {
   HELPFULNESS_DETECT_JSON_SCHEMA,
   HELPFULNESS_DETECT_SCHEMA_NAME,

@@ -114,7 +114,7 @@ export class ConciergeAnalyticsService {
     this.hasMessageModel = Boolean(p['conciergeMessage']);
     this.hasConversationModel = Boolean(p['conciergeConversation']);
     if (!this.hasMessageModel || !this.hasConversationModel) {
-      // eslint-disable-next-line no-console
+       
       console.warn(
         '[ConciergeAnalyticsService] ConciergeMessage/ConciergeConversation не найдены в Prisma client — аналитика вернёт пустые данные.',
       );

@@ -5,7 +5,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
-
 import { WeeklyDigestService } from '../services/weekly-digest.service';
 import { getLocalDate, getLocalHour } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';

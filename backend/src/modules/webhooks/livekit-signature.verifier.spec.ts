@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
 import { IntegrationKeyInvalidError } from '../../common/errors/domain-errors';
+
 import { LivekitSignatureVerifier } from './livekit-signature.verifier';
 
 /**

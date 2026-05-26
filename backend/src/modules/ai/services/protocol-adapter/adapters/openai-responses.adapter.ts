@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { OpenAiProxyService } from '../../openai-proxy.service';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
 } from '../../llm.types';
 import { LlmError } from '../../llm.types';
+import { OpenAiProxyService } from '../../openai-proxy.service';
 import type {
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,

@@ -4,9 +4,9 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { ConversationalService } from '../../conversational/conversational.service';
 import { LlmProtocolAdapterRegistry } from '../../ai/services/protocol-adapter/llm-protocol-adapter.registry';
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
+import { ConversationalService } from '../../conversational/conversational.service';
 
 /**
  * SBA α-10 wave 3 — ProviderSmokeTestCron.

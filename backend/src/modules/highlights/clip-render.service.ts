@@ -11,8 +11,8 @@ import type { MeetingHighlight } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { AiQueueService } from '../ai/ai-queue.service';
-import { S3Service } from '../recordings/s3.service';
 import { QuotaService } from '../quotas/quota.service';
+import { S3Service } from '../recordings/s3.service';
 
 import { HighlightsRepository } from './highlights.repository';
 

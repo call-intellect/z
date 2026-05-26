@@ -180,6 +180,6 @@ export class SharesRepository {
   /**
    * Тип `MeetingShareView` экспортируем для удобства потребителей.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   __types?: Prisma.MeetingShareViewWhereInput;
 }

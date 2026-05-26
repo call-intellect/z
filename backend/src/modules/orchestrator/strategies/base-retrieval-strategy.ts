@@ -3,12 +3,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ChatV2RetrievalService } from '../../knowledge-core/services/chat-v2-retrieval.service';
-
 import type {
   OrchestratorAgentType,
   OrchestratorPlanStep,
   OrchestratorSubagentResult,
 } from '../orchestrator.types';
+
 import type {
   SubagentExecuteInput,
   SubagentStrategy,

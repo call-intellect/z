@@ -21,13 +21,13 @@ import { CookieAuthGuard } from '../../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../../super-admin.audit.interceptor';
 
+import { CopyStringsAdminService } from './copy-strings-admin.service';
 import {
   BulkImportCopyStringsSchema,
   type BulkImportCopyStringsDto,
   UpdateCopyStringSchema,
   type UpdateCopyStringDto,
 } from './dto/copy-strings-admin.dto';
-import { CopyStringsAdminService } from './copy-strings-admin.service';
 
 /**
  * Admin-redesign Фаза 5 — `CopyStringsAdminController`.

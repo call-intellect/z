@@ -2,9 +2,9 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { type OrgTier, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import type { AdminPeriod } from '../dto/admin-usage.dto';
 
 import { periodToRange } from './admin-usage.service';
-import type { AdminPeriod } from '../dto/admin-usage.dto';
 
 export interface AdminOrgRow {
   id: string;

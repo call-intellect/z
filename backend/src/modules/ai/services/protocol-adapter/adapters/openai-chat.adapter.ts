@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 
+import { TypedConfigService } from '../../../../../common/config/index';
 import { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
 import { isThinkingModel } from '../../llm-thinking-models';
 import type {
@@ -15,7 +16,6 @@ import type {
   ProtocolKind,
 } from '../protocol-adapter.types';
 
-import { TypedConfigService } from '../../../../../common/config/index';
 
 /**
  * SBA α-10 wave 3 — OpenAI Chat Completions API адаптер.

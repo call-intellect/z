@@ -84,7 +84,7 @@ export class HolidayService {
   }): Promise<Date> {
     let candidate = HolidayService.normalizeUtcDate(args.date);
     for (let i = 0; i < HolidayService.MAX_LOOKAHEAD_DAYS; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
+       
       const holiday = await this.isHoliday({
         tenantId: args.tenantId,
         date: candidate,

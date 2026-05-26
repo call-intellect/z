@@ -12,7 +12,6 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
-
 import {
   HELPFULNESS_SPOTLIGHT_FORMULATE_JSON_SCHEMA,
   HELPFULNESS_SPOTLIGHT_FORMULATE_SCHEMA_NAME,

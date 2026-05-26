@@ -5,7 +5,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ProbeService } from '../../probe/probe.service';
-
 import type { ProcessTemplateDefinitionDto } from '../dto/processes.dto';
 
 /**

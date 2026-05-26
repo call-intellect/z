@@ -11,7 +11,6 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
-
 import {
   FACT_SUPERSEDE_DETECT_JSON_SCHEMA,
   FACT_SUPERSEDE_DETECT_SCHEMA_NAME,

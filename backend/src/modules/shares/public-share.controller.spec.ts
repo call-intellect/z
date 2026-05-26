@@ -15,7 +15,6 @@ import { GoneException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PublicShareController } from './public-share.controller';
-
 import type { SharesService } from './shares.service';
 
 function build(opts: { meetingFails?: 'revoked' | 'expired' | 'not_found' } = {}) {

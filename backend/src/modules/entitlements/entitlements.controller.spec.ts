@@ -13,15 +13,16 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PatchEntitlementSchema } from './dto/entitlement.dto';
-import { EntitlementsController } from './entitlements.controller';
 
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import type { RbacService } from '../rbac/rbac.service';
+
+import { PatchEntitlementSchema } from './dto/entitlement.dto';
 import type {
   EntitlementService,
   ResolvedEntitlement,
 } from './entitlement.service';
+import { EntitlementsController } from './entitlements.controller';
 
 const userOwner: CurrentUserPayload = {
   id: 'u-owner',

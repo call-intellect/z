@@ -10,9 +10,9 @@ import type { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import type { RequestWithApiKey } from '../api-keys/current-api-key.decorator';
 import { IpHashingService } from '../security/ip-hashing.service';
 
-import type { RequestWithApiKey } from '../api-keys/current-api-key.decorator';
 
 /**
  * Логирует каждый Public API запрос в `ApiAccessLog`. Запись fire-and-forget

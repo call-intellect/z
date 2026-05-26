@@ -8,8 +8,8 @@ import {
 } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { CronJob } from 'cron';
 import type { Prisma } from '@prisma/client';
+import { CronJob } from 'cron';
 import IORedis, { type Redis } from 'ioredis';
 
 import { TypedConfigService } from '../../../common/config/index';

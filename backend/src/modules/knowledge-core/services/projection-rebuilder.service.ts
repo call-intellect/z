@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
+
 import { RouterService } from './router.service';
 
 /**

@@ -135,7 +135,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
   // ─────────────────────────────── ingest ──────────────────────────
 
   async ingest(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _rawMessage: ConversationalJson,
   ): Promise<InboundMessage> {
     throw new Error(
@@ -173,7 +173,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
   // ─────────────────────────────── parseResponse (stub) ─────────────
 
   async parseResponse(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _args: {
       rawMessage: ConversationalJson;
       openProbes: Notification[];

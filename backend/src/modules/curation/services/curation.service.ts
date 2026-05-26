@@ -20,9 +20,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { SkillTraitCategoryService } from '../../skills/services/skill-trait-categories.service';
-
-import { CuratorRoutingService } from './curator-routing.service';
-
 import type {
   CurationDecisionDto,
   CurationDecisionTypeDto,
@@ -34,6 +31,9 @@ import type {
   ListCurationQueueResponse,
   UpdateCurationSettingsBody,
 } from '../dto/curation.dto';
+
+import { CuratorRoutingService } from './curator-routing.service';
+
 
 /** Входной payload для `CurationService.triage`. Вызывается специалистами Слоя 3. */
 export interface TriageInput {

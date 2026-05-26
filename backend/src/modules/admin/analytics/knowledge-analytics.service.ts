@@ -95,7 +95,7 @@ export class KnowledgeAnalyticsService {
     ];
     for (const key of required) {
       if (!p[key]) {
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `[KnowledgeAnalyticsService] Prisma-модель "${key}" не найдена — соответствующая статистика будет возвращать нули.`,
         );

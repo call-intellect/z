@@ -14,15 +14,15 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
-import type { ActivityFeedService } from '../services/activity-feed.service';
 import type {
   FeedItemDto,
   ListFeedQuery,
   ReactBody,
 } from '../dto/activity-feed.dto';
+import type { ActivityFeedService } from '../services/activity-feed.service';
 
 import { FeedController } from './feed.controller';
 

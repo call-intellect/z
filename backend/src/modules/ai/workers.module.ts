@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 
 import { CurationModule } from '../curation/curation.module';
-import { ProcessesModule } from '../processes/processes.module';
-import { TrackerModule } from '../tracker/tracker.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -12,39 +10,46 @@ import { CardRollupV2Worker } from '../knowledge-core/workers/card-rollup-v2.wor
 import { EntityGraphBuilderCron } from '../knowledge-core/workers/entity-graph-builder.cron';
 import { EntityResolverCronService } from '../knowledge-core/workers/entity-resolver.cron';
 import { EntityResolverWorker } from '../knowledge-core/workers/entity-resolver.worker';
-import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
-import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
-import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-report-fast.worker';
-// ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
-import { SpecialistsCombinedWorker } from '../knowledge-core/workers/specialists-combined.worker';
-import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
-import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
-import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
-import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
-import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
-import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
-import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
-import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
-import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
-import { Specialist35InsightsWorker } from '../knowledge-core/workers/specialist-3-5-insights.worker';
-import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
-import { Specialist36IdeasWorker } from '../knowledge-core/workers/specialist-3-6-ideas.worker';
-import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
-import { Specialist37SkillWorker } from '../knowledge-core/workers/specialist-3-7-skill.worker';
-import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
-import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable-persona-build.cron';
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
+import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
+import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
+// ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
+import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
+import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
+import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
+import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-report-fast.worker';
+import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
+import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
+import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
+import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
+import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill-trait-concept-normalizer.cron';
+import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
+import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
+import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
+import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
+import { Specialist35InsightsWorker } from '../knowledge-core/workers/specialist-3-5-insights.worker';
+import { Specialist36IdeasWorker } from '../knowledge-core/workers/specialist-3-6-ideas.worker';
+import { Specialist37SkillWorker } from '../knowledge-core/workers/specialist-3-7-skill.worker';
+import { SpecialistsCombinedWorker } from '../knowledge-core/workers/specialists-combined.worker';
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 // SBA β-8 — PersonalRelationBuilderWorker.
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
+import { ProcessesModule } from '../processes/processes.module';
+import { TrackerModule } from '../tracker/tracker.module';
 
+import { AnthropicService } from './services/anthropic.service';
+import { LlmFallbackService } from './services/llm-fallback.service';
+import { MinimaxService } from './services/minimax.service';
+import { OpenAiProxyService } from './services/openai-proxy.service';
+import { VoxService } from './services/vox.service';
 import { AnalyzeWorker } from './workers/analyze.worker';
 import { BehaviorMetricsWorker } from './workers/behavior-metrics.worker';
 import { CardRollupWorker } from './workers/card-rollup.worker';
@@ -58,11 +63,6 @@ import { TasksExtractWorker } from './workers/tasks-extract.worker';
 import { TranscribeWorker } from './workers/transcribe.worker';
 import { TranscriptCleanWorker } from './workers/transcript-clean.worker';
 import { TranscriptIndexWorker } from './workers/transcript-index.worker';
-import { AnthropicService } from './services/anthropic.service';
-import { LlmFallbackService } from './services/llm-fallback.service';
-import { MinimaxService } from './services/minimax.service';
-import { OpenAiProxyService } from './services/openai-proxy.service';
-import { VoxService } from './services/vox.service';
 
 /**
  * WorkersModule — AI- и knowledge-core-воркеры/cron'ы.

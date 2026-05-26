@@ -9,13 +9,13 @@
  *   5) list — отдаёт объединённый результат БД + handler-mapping'а.
  */
 
+import type { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
+import type { SchedulerRegistry } from '@nestjs/schedule';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
-import type { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
-import type { SchedulerRegistry } from '@nestjs/schedule';
 
 import { CronManagerService } from './cron-manager.service';
 

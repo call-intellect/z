@@ -29,6 +29,7 @@ import {
   ENTITY_TYPE_VALUES,
   SIGNAL_TYPE_VALUES,
 } from '../prompts/block-ingest.prompt';
+import { AxisClassifierService } from '../services/axis-classifier.service';
 import {
   BlockExtractionService,
   type ExtractedBlock,
@@ -36,7 +37,6 @@ import {
 } from '../services/block-extraction.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
-import { AxisClassifierService } from '../services/axis-classifier.service';
 import { RouterService } from '../services/router.service';
 import { SegmentBuilderService } from '../services/segment-builder.service';
 

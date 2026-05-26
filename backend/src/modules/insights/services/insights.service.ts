@@ -16,7 +16,6 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type {
   ChangeInsightStatusBody,
   ChangeSeverityBody,

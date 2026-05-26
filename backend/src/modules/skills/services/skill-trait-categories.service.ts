@@ -12,7 +12,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
 import { tenantTopLabel } from '../../company-foundation/utils/tenant-top';
-
 import type {
   CreateSkillTraitCategoryDto,
   ListSkillTraitCategoriesQuery,

@@ -5,7 +5,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-
 import {
   CHECKIN_SENTIMENT_BATCH_PROMPT_VERSION,
   CHECKIN_SENTIMENT_BATCH_SIZE,

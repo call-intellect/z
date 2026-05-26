@@ -16,8 +16,8 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { S3Service } from '../../recordings/s3.service';
-import type { LlmRouterService } from '../services/llm-router.service';
 import type { CustomReportJobData } from '../queues';
+import type { LlmRouterService } from '../services/llm-router.service';
 
 import { CustomReportWorker } from './custom-report.worker';
 

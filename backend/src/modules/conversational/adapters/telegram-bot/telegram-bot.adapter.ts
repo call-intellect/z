@@ -215,7 +215,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
    * поэтому webhook controller вызывает напрямую `ingestUpdate(...)`.
    */
   async ingest(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _rawMessage: ConversationalJson,
   ): Promise<InboundMessage> {
     throw new Error(
@@ -561,7 +561,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
   // ─────────────────────────────── parseResponse (stub) ─────────────
 
   async parseResponse(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _args: {
       rawMessage: ConversationalJson;
       openProbes: Notification[];
@@ -1139,7 +1139,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private maybeReplyToMessageId(_delivery: NotificationDelivery): number | undefined {
     return undefined;
   }

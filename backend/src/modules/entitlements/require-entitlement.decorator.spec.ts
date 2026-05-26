@@ -16,12 +16,11 @@ import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntitlementGuard } from './entitlement.guard';
+import type { EntitlementService, ResolvedEntitlement } from './entitlement.service';
 import {
   REQUIRE_ENTITLEMENT_KEY,
   RequireEntitlement,
 } from './require-entitlement.decorator';
-
-import type { EntitlementService, ResolvedEntitlement } from './entitlement.service';
 import type { FeatureKey } from './tier-config';
 
 function buildExecCtx(opts: {

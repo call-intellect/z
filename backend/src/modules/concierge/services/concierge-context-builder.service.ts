@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type { PageContextDto } from '../dto/concierge.dto';
 
 /**

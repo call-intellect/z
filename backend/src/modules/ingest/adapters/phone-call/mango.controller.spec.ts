@@ -15,9 +15,9 @@
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MangoCallWebhookController } from './mango.controller';
-
 import type { IngestService } from '../../ingest.service';
+
+import { MangoCallWebhookController } from './mango.controller';
 import type { MangoAdapterService } from './mango.service';
 
 const validEvent = {

@@ -12,9 +12,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../common/prisma/prisma.service';
+
 import { RbacService } from './rbac.service';
 
-import type { PrismaService } from '../../common/prisma/prisma.service';
 
 interface BuildOpts {
   isSuperAdmin?: boolean;

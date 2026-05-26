@@ -1,13 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { OrgRetentionPolicy, RawEvent } from '@prisma/client';
 
+import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { TypedConfigService } from '../../common/config/index';
 import { AuditLogService } from '../audit/audit-log.service';
 import { AUDIT } from '../audit/audit.types';
-import { S3Service } from '../recordings/s3.service';
 import { extractKeyFromUrl } from '../recordings/s3-keys';
+import { S3Service } from '../recordings/s3.service';
 
 import { RetentionPolicyService } from './retention-policy.service';
 

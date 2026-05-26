@@ -12,7 +12,6 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type {
   CreateCheckInInput,
   DailyCheckInDto,

@@ -7,7 +7,6 @@ import {
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
-
 import {
   type EmbeddingProvider,
   LocalEmbeddingNotConfiguredError,

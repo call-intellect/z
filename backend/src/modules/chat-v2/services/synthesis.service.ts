@@ -5,15 +5,15 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
 import { ClonesService } from '../../clones/services/clones.service';
 import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
-import { CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT } from '../prompts/clone-style.prompt';
-import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../prompts/factual.prompt';
-import { CHAT_V2_SYNTHETIC_SYSTEM_PROMPT } from '../prompts/synthetic.prompt';
 import {
   ChatV2Service as KnowledgeCoreChatV2Service,
   type ChatV2Citation,
   type ChatV2Output,
   type ChatV2Scope as KnowledgeChatV2Scope,
 } from '../../knowledge-core/services/chat-v2.service';
+import { CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT } from '../prompts/clone-style.prompt';
+import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../prompts/factual.prompt';
+import { CHAT_V2_SYNTHETIC_SYSTEM_PROMPT } from '../prompts/synthetic.prompt';
 
 /**
  * SBA α-5 — SynthesisService.

@@ -8,7 +8,6 @@ import {
 import { Queue } from 'bullmq';
 
 import { RedisService } from '../../../common/redis/redis.service';
-
 import {
   INTAKE_AUTO_TRIAGE_JOB_OPTIONS,
   type IntakeAutoTriageJobData,

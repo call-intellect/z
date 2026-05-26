@@ -23,7 +23,6 @@ import {
 } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
-
 import {
   REGULATION_DEDUPE_JSON_SCHEMA,
   REGULATION_DEDUPE_SCHEMA_NAME,
@@ -36,6 +35,7 @@ import {
   REGULATION_EXTRACT_SYSTEM_PROMPT,
   REGULATION_EXTRACT_USER_TEMPLATE,
 } from '../prompts/regulation-extract.prompt';
+
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist31ProbeService } from './specialist-3-1-probe.service';

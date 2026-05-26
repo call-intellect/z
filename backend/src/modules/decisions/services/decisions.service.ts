@@ -16,7 +16,6 @@ import {
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
-
 import type {
   ChangeStatusBody,
   CreateDecisionBody,

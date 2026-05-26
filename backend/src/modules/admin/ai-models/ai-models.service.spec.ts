@@ -12,9 +12,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { AdminAiModelsService } from './ai-models.service';
-import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 function build(routesInDb: Array<Record<string, unknown>> = []) {
   let nextId = 1;

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+
 import type { EmbeddingFallbackService } from './embedding-fallback.service';
 import {
   TranscriptIndexerService,

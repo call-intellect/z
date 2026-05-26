@@ -9,7 +9,6 @@ import { type Idea, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Specialist36Service } from '../../knowledge-core/services/specialist-3-6-ideas.service';
-
 import {
   type ChangeIdeaStatusBody,
   type IdeaClusterDto,

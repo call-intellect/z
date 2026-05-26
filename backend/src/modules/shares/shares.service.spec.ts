@@ -8,8 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
-import type { S3Service } from '../recordings/s3.service';
 import type { AuditLogService } from '../audit/audit-log.service';
+import type { S3Service } from '../recordings/s3.service';
 
 import type { SharesRepository } from './shares.repository';
 import { SharesService } from './shares.service';

@@ -1,14 +1,14 @@
 import {
+  HeadBucketCommand,
+  S3Client,
+  type S3ClientConfig,
+} from '@aws-sdk/client-s3';
+import {
   Inject,
   Injectable,
   Logger,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import {
-  HeadBucketCommand,
-  S3Client,
-  type S3ClientConfig,
-} from '@aws-sdk/client-s3';
 import { Queue } from 'bullmq';
 import { RoomServiceClient } from 'livekit-server-sdk';
 

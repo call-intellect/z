@@ -19,7 +19,6 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
-
 import {
   SKILL_TRAIT_DETECT_JSON_SCHEMA,
   SKILL_TRAIT_DETECT_SCHEMA_NAME,
@@ -32,6 +31,7 @@ import {
   SKILL_TRAIT_MERGE_SYSTEM_PROMPT,
   SKILL_TRAIT_MERGE_USER_TEMPLATE,
 } from '../prompts/skill-trait-merge.prompt';
+
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { SkillTraitConceptService } from './skill-trait-concept.service';
 import { Specialist37ProbeService } from './specialist-3-7-skill-probe.service';

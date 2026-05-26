@@ -1,6 +1,6 @@
+import type { ProbeStatus } from '@prisma/client';
 import { z } from 'zod';
 
-import type { ProbeStatus } from '@prisma/client';
 
 export const ListProbeQueueQuerySchema = z
   .object({

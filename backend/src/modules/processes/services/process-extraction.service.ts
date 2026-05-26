@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma, IdeaBlock } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { TypedConfigService } from '../../../common/config/index';
 import {
   type LlmCallResult,
   LlmRouterService,
@@ -14,7 +14,6 @@ import {
   PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT,
   PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE,
 } from '../../knowledge-core/prompts/process-template-extract.prompt';
-
 import type { ProcessTemplateDefinitionDto } from '../dto/processes.dto';
 
 import { CrossFunctionalDetectorService } from './cross-functional-detector.service';

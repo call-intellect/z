@@ -11,11 +11,11 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { AUDIT } from '../audit/audit.types';
 import { EncryptionService } from '../security/encryption.service';
 
+import { DestinationsRepository } from './destinations.repository';
 import type {
   CreateDestinationDto,
   UpdateDestinationDto,
 } from './dto/destination.dto';
-import { DestinationsRepository } from './destinations.repository';
 import { SenderFactory } from './senders/sender.factory';
 
 /**

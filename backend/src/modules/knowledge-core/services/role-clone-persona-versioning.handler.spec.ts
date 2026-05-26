@@ -15,14 +15,15 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
+import type { PrismaService } from '../../../common/prisma/prisma.service';
+
+import type { ExecutablePersonaBuildService } from './executable-persona-build.service';
 import {
   RoleClonePersonaVersioningHandler,
   type RoleBearerChangedEvent,
 } from './role-clone-persona-versioning.handler';
-
-import type { ExecutablePersonaBuildService } from './executable-persona-build.service';
-import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
-import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 // ─────────────────────────── helpers ───────────────────────────
 

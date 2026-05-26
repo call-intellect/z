@@ -16,7 +16,6 @@ import {
   type SpecialistRoutingJobData,
 } from '../../core-queue/queues';
 import { RouterService } from '../../knowledge-core/services/router.service';
-
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 /**

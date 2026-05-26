@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AnthropicService } from '../../anthropic.service';
-import { MinimaxService } from '../../minimax.service';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
 } from '../../llm.types';
 import { LlmError } from '../../llm.types';
+import { MinimaxService } from '../../minimax.service';
 import type {
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,

@@ -7,7 +7,6 @@ import {
 import { type Experiment, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type {
   CreateExperimentBody,
   ExperimentDetailDto,

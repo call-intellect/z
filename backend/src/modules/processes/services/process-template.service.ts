@@ -12,7 +12,6 @@ import type {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type {
   CreateProcessTemplateBody,
   CreateProcessTemplateVersionBody,

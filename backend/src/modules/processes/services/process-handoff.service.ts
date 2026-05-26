@@ -6,7 +6,6 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import type {
   CreateProcessHandoffBody,
   ListProcessHandoffsQuery,

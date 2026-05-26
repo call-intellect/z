@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-
 import type {
   WeeklyDigestMetricsDto,
   WeeklyDigestSourcesDto,

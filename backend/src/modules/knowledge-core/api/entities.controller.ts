@@ -16,8 +16,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 
-import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,

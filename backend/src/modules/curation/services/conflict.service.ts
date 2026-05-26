@@ -14,7 +14,6 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
-
 import type {
   ConflictItemDto,
   ConflictResolutionDto,

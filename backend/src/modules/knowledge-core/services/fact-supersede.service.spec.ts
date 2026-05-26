@@ -13,7 +13,6 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FactSupersedeService } from './fact-supersede.service';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -21,6 +20,8 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { ConflictService } from '../../curation/services/conflict.service';
+
+import { FactSupersedeService } from './fact-supersede.service';
 
 /**
  * Минимальная фабрика моков. Каждый тест уточняет нужное поведение.

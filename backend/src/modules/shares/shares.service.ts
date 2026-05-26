@@ -14,9 +14,9 @@ import type { HighlightShare, MeetingShare } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { S3Service } from '../recordings/s3.service';
-import { extractKeyFromUrl } from '../recordings/s3-keys';
 import { AuditLogService } from '../audit/audit-log.service';
+import { extractKeyFromUrl } from '../recordings/s3-keys';
+import { S3Service } from '../recordings/s3.service';
 
 import type {
   CreateHighlightShareDto,

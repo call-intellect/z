@@ -16,11 +16,11 @@ import { RedisService } from '../../common/redis/redis.service';
 import { S3Service } from '../recordings/s3.service';
 import { WebhookDispatcherService } from '../webhooks-out/webhook-dispatcher.service';
 
+import { EXPORT_QUEUE, type ExportJobData } from './exports-queue';
+import { ExportsRepository } from './exports.repository';
 import { BulkZipGenerator } from './generators/bulk-zip.generator';
 import { DocxGenerator } from './generators/docx.generator';
 import { MdGenerator } from './generators/md.generator';
-import { ExportsRepository } from './exports.repository';
-import { EXPORT_QUEUE, type ExportJobData } from './exports-queue';
 
 const EXPORT_TTL_DAYS = 7;
 

@@ -1,4 +1,4 @@
-import { MeetingStatus } from '@prisma/client';
+import type { MeetingStatus } from '@prisma/client';
 
 import { InvalidFsmTransitionError } from '../../../common/errors/domain-errors';
 

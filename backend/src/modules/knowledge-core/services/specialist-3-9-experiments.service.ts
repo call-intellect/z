@@ -19,16 +19,16 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { CurationService } from '../../curation/services/curation.service';
-
 import {
   EXPERIMENT_EXTRACT_JSON_SCHEMA,
   EXPERIMENT_EXTRACT_SCHEMA_NAME,
   EXPERIMENT_EXTRACT_SYSTEM_PROMPT,
   EXPERIMENT_EXTRACT_USER_TEMPLATE,
 } from '../prompts/experiment-extract.prompt';
-import { resolveAxisTenantTop } from './tenant-top';
 
 import { Specialist39ExperimentProbeService } from './specialist-3-9-experiment-probe.service';
+import { resolveAxisTenantTop } from './tenant-top';
+
 
 /**
  * SBA β-6 — Specialist39ExperimentsService.

@@ -9,11 +9,11 @@
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SearchRequestSchema } from './dto/search.dto';
-import { KnowledgeSearchController } from './search.controller';
-
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
+
+import { SearchRequestSchema } from './dto/search.dto';
+import { KnowledgeSearchController } from './search.controller';
 import type { SearchService } from './search.service';
 
 const userA: CurrentUserPayload = { id: 'u-A', email: 'a@x', role: 'user' };

@@ -13,9 +13,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../common/prisma/prisma.service';
+
 import { RbacService, type Action, type ResourceType } from './rbac.service';
 
-import type { PrismaService } from '../../common/prisma/prisma.service';
 
 interface MockedMembership {
   role: 'owner' | 'admin' | 'manager' | 'coo';

@@ -148,7 +148,7 @@ async function bootstrap(): Promise<void> {
 
 bootstrap().catch((err: unknown) => {
   // Если до получения логгера упали — пишем в stderr.
-  // eslint-disable-next-line no-console
+   
   console.error('[bootstrap] Не удалось запустить приложение:', err);
   process.exit(1);
 });

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import { BadgeConditionsService } from '../services/badge-conditions.service';
 
 import { BadgeAwarderCron } from './badge-awarder.cron';
-import { BadgeConditionsService } from '../services/badge-conditions.service';
 
 function mkCron(opts: {
   badges: Array<{ id: string; condition: unknown }>;

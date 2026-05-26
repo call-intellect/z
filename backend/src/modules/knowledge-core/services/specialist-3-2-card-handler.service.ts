@@ -13,6 +13,7 @@ import {
   type CardSpecialistResult,
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
+
 import { KnowledgeEmbeddingService } from './embedding.service';
 
 /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
+
 import { JwtService } from './jwt.service';
 
 /**

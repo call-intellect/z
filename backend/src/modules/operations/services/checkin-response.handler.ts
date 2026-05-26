@@ -3,11 +3,11 @@ import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { CheckinParserService } from './checkin-parser.service';
 import { DailyCheckInService } from './daily-checkin.service';
 import { OperationsDashboardService } from './operations-dashboard.service';
-import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 /**
  * SBA β-8 — CheckinResponseHandler.

@@ -5,8 +5,6 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { RawEvent } from '@prisma/client';
-
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   IngestService,

@@ -605,7 +605,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     const experimentGroup = resolved?.experimentGroup ?? null;
 
     let lastError: unknown = null;
-    let model = 'unknown';
+    let model: string;
     // ТЗ 2026-05-24 §4 (F1) — обернуть system + user. retry-suffix остаётся
     // СНАРУЖИ маркеров (это системное сообщение оркестратора, а не
     // пользовательские данные).

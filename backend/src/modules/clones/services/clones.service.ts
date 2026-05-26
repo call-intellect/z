@@ -2190,7 +2190,7 @@ export class ClonesService {
       };
     }
 
-    let questionEmbedding: number[] | null = null;
+    let questionEmbedding: number[] | null;
     try {
       questionEmbedding = await this.embedder.embedQuery(args.question);
     } catch (err) {

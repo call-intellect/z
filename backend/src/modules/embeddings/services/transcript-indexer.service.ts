@@ -19,10 +19,6 @@ interface MergedTranscriptTurn {
   endSec: number;
 }
 
-interface MergedTranscript {
-  turns?: MergedTranscriptTurn[];
-}
-
 /**
  * Индексер транскрипта: чанкование + batched embed + запись в
  * `MeetingTranscriptChunk` (поле `embedding` — `vector(1536)`, доступно

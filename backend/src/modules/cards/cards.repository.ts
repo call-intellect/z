@@ -3,8 +3,6 @@ import { type Card, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-import type { ListCardsQuery } from './dto/list-cards.dto';
-
 /**
  * Тонкий слой над Prisma для модели `Card`. Все запросы фильтруют по
  * `ownerId` — кросс-юзерский доступ не должен быть возможен на уровне

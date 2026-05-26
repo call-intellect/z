@@ -12,7 +12,7 @@
  * используем `as any` cast. Это допустимо: метод проверяется в полной
  * intent unit-режим, без NestJS setup.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';

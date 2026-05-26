@@ -148,7 +148,7 @@ export class ConciergeService {
         history,
       });
 
-      let llmText = '';
+      let llmText: string;
       try {
         const out = await this.llm.call({
           taskType: 'concierge-respond',

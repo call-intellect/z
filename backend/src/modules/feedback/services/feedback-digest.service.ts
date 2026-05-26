@@ -314,6 +314,7 @@ export class FeedbackDigestService {
           throw new Error(
             `JSON.parse failed on attempt=${attempt.label} model=${result.modelUsed}: ` +
               (err instanceof Error ? err.message : String(err)),
+            { cause: err },
           );
         }
         // 2) Zod

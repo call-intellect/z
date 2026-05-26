@@ -114,7 +114,7 @@ export class TasksExtractorV2Service {
     const guardedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
     const wrappedUserBase = guardOn ? wrapUserData(prompt.user) : prompt.user;
     let lastError: unknown = null;
-    let modelUsed = 'unknown';
+    let modelUsed: string;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const userMessage =
         attempt === 0

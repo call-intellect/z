@@ -12,7 +12,6 @@ import { AuditLogService } from '../../audit/audit-log.service';
 import type {
   BatchCreateSkillsDto,
   CreateSkillDto,
-  ListSkillsQuery,
   SkillDto,
   SkillListItemDto,
   UpdateSkillDto,

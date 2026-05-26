@@ -11,7 +11,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import type { Export, ExportType } from '@prisma/client';
+import type { Export } from '@prisma/client';
 import { Queue } from 'bullmq';
 
 import { TypedConfigService } from '../../common/config/index';

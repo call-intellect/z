@@ -15,6 +15,7 @@ vi.mock('@anthropic-ai/sdk', () => {
           create: vi.fn(),
           stream: vi.fn(),
         };
+        // eslint-disable-next-line @typescript-eslint/no-this-alias -- тест-фейк: захватываем созданный SDK-инстанс в module-scope для assertions
         lastSdkInstance = this;
       }
     },

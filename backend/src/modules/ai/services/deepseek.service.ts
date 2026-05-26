@@ -236,7 +236,7 @@ export class DeepSeekService {
     for (const tc of choice?.message?.tool_calls ?? []) {
       const name = tc.function?.name ?? '';
       const argsRaw = tc.function?.arguments ?? '';
-      let parsed: unknown = {};
+      let parsed: unknown;
       try {
         parsed = JSON.parse(argsRaw);
       } catch {

@@ -106,7 +106,7 @@ export class BehaviorLlmRefineService {
       fillers: candidates.fillers.slice(0, BEHAVIOR_REFINE_MAX_FILLERS_PER_CALL),
     };
 
-    let decisions: BehaviorRefineOutput | null = null;
+    let decisions: BehaviorRefineOutput | null;
     const startedAt = Date.now();
     try {
       const out = await this.llm.call({

@@ -15,7 +15,6 @@ import type {
   CreateDepartmentDto,
   DepartmentDto,
   DepartmentListItemDto,
-  ListDepartmentsQuery,
   UpdateDepartmentDto,
 } from '../dto/departments.dto';
 

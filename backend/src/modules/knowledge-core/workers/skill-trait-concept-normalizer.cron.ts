@@ -94,7 +94,7 @@ export class SkillTraitConceptNormalizerCron {
 
     for (const org of orgs) {
       const lockKey = `skill-trait-concept-normalizer:lock:${org.id}`;
-      let locked = false;
+      let locked: boolean;
       try {
         const setRes = await this.redis.client.set(
           lockKey,

@@ -1116,7 +1116,7 @@ const DialogLayerSchema = z.object({
  * .merge() ниже — отдельный геттер `cfg.concierge`. Это снижает глубину
  * .merge цепочки EnvSchema (см. NB про TS2589 выше).
  */
-const ExperimentSchema = z.object({
+const _ExperimentSchema = z.object({
   // EXPERIMENT_* keys и CONCIERGE_* keys (SBA γ-2) теперь живут в PersonaSchema
   // ниже — это снижает глубину .merge цепочки и помогает обходить TS2589
   // (см. NB перед EnvSchema). Эта схема сохранена пустой как placeholder для

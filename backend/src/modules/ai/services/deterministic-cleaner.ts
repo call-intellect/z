@@ -328,7 +328,7 @@ function collapseRepeats(text: string): {
   // подряд. Жадный квантификатор схлопывает любое количество подряд (4, 5, …)
   // в одно слово за один проход. Финальный (?![\p{L}\p{N}]) — unicode-граница
   // (\b в JS RegExp не работает на кириллице).
-  const re = /(\p{L}[\p{L}\-]*)(?:\s+\1)+(?![\p{L}\p{N}])/giu;
+  const re = /(\p{L}[\p{L}-]*)(?:\s+\1)+(?![\p{L}\p{N}])/giu;
   let count = 0;
   const removed: string[] = [];
   const out = text.replace(re, (full, word: string) => {

@@ -251,7 +251,7 @@ export class RecordingsService {
       'ensureTrackEgress: запускаем track egress',
     );
 
-    let egressId: string | null = null;
+    let egressId: string | null;
     try {
       const result = await this.egress.startTrackEgress(meeting, track.sid, {
         bucket: this.cfg.s3.bucket,

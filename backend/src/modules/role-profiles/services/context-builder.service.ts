@@ -87,7 +87,7 @@ export class RoleProfileContextBuilder {
 
     // Подтягиваем имена источников (Meeting.title / Document.name).
     const meetingIdsFromEvidence: string[] = [];
-    const documentIdsFromEvidence: string[] = [];
+    const _documentIdsFromEvidence: string[] = [];
     for (const b of blocks) {
       const ev = b.evidence[0];
       if (!ev) continue;

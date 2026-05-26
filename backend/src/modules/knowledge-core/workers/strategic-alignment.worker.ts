@@ -431,6 +431,7 @@ function parseLlmResponse(raw: string): {
   } catch (err) {
     throw new Error(
       `LLM вернул невалидный JSON: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
   const validated = GoalAlignmentResponseSchema.safeParse(parsedRaw);

@@ -78,4 +78,4 @@ export interface DepartmentListItemDto {
   deletedAt: string | null;
 }
 
-export interface DepartmentDto extends DepartmentListItemDto {}
+export type DepartmentDto = DepartmentListItemDto;

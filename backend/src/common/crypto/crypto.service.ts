@@ -94,6 +94,7 @@ export class CryptoService {
     } catch (err) {
       throw new Error(
         `CryptoService: CRYPTO_MASTER_KEY не парсится как base64: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
       );
     }
     if (buf.length !== 32) {

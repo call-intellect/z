@@ -377,7 +377,7 @@ export class Specialist35Service {
     const text = args.queryText.trim().slice(0, 2_000);
     if (!text) return null;
 
-    let embedding: number[] | null = null;
+    let embedding: number[] | null;
     try {
       embedding = await this.embedder.embedQuery(text);
     } catch {

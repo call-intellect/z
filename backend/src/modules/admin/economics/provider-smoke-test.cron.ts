@@ -102,7 +102,7 @@ export class ProviderSmokeTestCron {
     error?: string;
   }> {
     const startedAt = Date.now();
-    let success = false;
+    let success: boolean;
     let error: string | undefined;
     try {
       const resolved = await this.providerInfo.resolveByName(providerName);

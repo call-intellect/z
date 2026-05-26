@@ -202,7 +202,7 @@ export class WeeklyDigestService {
   }): Promise<{ metrics: WeeklyDigestMetricsDto; sources: WeeklyDigestSourcesDto }> {
     const [
       checkIns,
-      prevCheckIns,
+      _prevCheckIns,
       blockerCheckIns,
       insights,
       goals,

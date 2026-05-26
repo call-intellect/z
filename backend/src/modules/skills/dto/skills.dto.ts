@@ -51,4 +51,4 @@ export interface SkillListItemDto {
   deletedAt: string | null;
 }
 
-export interface SkillDto extends SkillListItemDto {}
+export type SkillDto = SkillListItemDto;

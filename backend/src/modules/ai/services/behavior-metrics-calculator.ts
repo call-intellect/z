@@ -443,8 +443,8 @@ function countFillers(text: string): number {
   const lower = text.toLowerCase();
   for (const w of FILLER_WORDS_RU) {
     const re = fillerRegex(w);
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(lower)) !== null) {
+    let _match: RegExpExecArray | null;
+    while ((_match = re.exec(lower)) !== null) {
       total += 1;
     }
   }

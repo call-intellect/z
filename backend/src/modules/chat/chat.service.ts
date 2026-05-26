@@ -570,7 +570,7 @@ export class ChatService {
 
     // 3) История диалога — берём по самому узкому контексту:
     //    meeting → meeting history; card → card history; иначе cross-history.
-    let history: MeetingChatMessage[] = [];
+    let history: MeetingChatMessage[];
     if (persistMeetingId) {
       history = await this.repo.listMeetingHistory({
         userId: input.userId,

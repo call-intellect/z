@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
-import { LlmRouterService, type LlmTaskType, type LlmProviderName } from '../../ai/services/llm-router.service';
+import { LlmRouterService, type LlmProviderName } from '../../ai/services/llm-router.service';
 import { AdminFunctionsService } from '../services/admin-functions.service';
 
 import { TASK_TYPES_TUPLE, type PutLlmRouteDto } from './dto/llm-routes.dto';

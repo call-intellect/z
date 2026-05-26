@@ -13,7 +13,6 @@ import { AuditLogService } from '../../audit/audit-log.service';
 import type {
   BatchCreateRolesDto,
   CreateRoleDto,
-  ListRolesQuery,
   RoleDto,
   RoleListItemDto,
   UpdateRoleDto,

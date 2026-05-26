@@ -73,4 +73,4 @@ export interface RoleListItemDto {
   deletedAt: string | null;
 }
 
-export interface RoleDto extends RoleListItemDto {}
+export type RoleDto = RoleListItemDto;

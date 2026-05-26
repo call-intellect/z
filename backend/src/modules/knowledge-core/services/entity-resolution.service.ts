@@ -350,7 +350,7 @@ export class EntityResolutionService {
       id: string;
       distance: string | number;
     }
-    let rows: Row[] = [];
+    let rows: Row[];
     try {
       rows = await this.prisma.$queryRawUnsafe<Row[]>(
         `

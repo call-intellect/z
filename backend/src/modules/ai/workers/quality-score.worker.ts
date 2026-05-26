@@ -191,8 +191,8 @@ export class QualityScoreWorker implements OnModuleInit, OnModuleDestroy {
 
     // 5. LLM-вызов через router (tier-fallback в нём же).
     let llmText: string;
-    let tierActual: string | null = null;
-    let estimatedCostUsd = 0;
+    let tierActual: string | null;
+    let estimatedCostUsd: number;
     try {
       const out = await this.llm.call({
         taskType: 'meeting-quality-score',
@@ -236,6 +236,7 @@ export class QualityScoreWorker implements OnModuleInit, OnModuleDestroy {
       );
       throw new Error(
         `quality-score: invalid LLM JSON: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
       );
     }
 

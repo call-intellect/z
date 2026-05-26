@@ -443,7 +443,7 @@ export class Specialist33Service {
     const queryText = args.queryText.trim().slice(0, 2_000);
     if (!queryText) return [];
 
-    let embedding: number[] | null = null;
+    let embedding: number[] | null;
     try {
       embedding = await this.embedder.embedQuery(queryText);
     } catch {

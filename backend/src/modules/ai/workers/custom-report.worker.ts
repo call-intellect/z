@@ -30,7 +30,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { Prisma, type MeetingReport } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -169,7 +169,7 @@ export class CustomReportWorker implements OnModuleInit, OnModuleDestroy {
         { meetingReportId, err: message },
         'custom-report: не удалось прочитать merged.json',
       );
-      throw new Error(`merged_fetch_failed: ${message}`);
+      throw new Error(`merged_fetch_failed: ${message}`, { cause: err });
     }
 
     // 2. Рендерим промпт: system из версии шаблона + user из секций + транскрипт.
@@ -181,89 +181,84 @@ export class CustomReportWorker implements OnModuleInit, OnModuleDestroy {
       merged,
     );
 
-    // 3. LLM-вызов.
-    try {
-      const out = await this.llm.call({
-        taskType: 'custom-report',
-        systemPrompt,
-        userMessage,
-        tenantId: report.tenantId,
-        meetingId: report.meetingId,
-        jobId: job.id ?? undefined,
-        responseFormat: { type: 'json_object' },
-        dataClass: 'internal',
-        sourceRef: { type: 'meeting_report', id: report.id },
-      });
+    // 3. LLM-вызов. На любую ошибку — BullMQ ретраит; на последнем
+    //    `onJobFailed` переведёт status='failed' с сообщением.
+    const out = await this.llm.call({
+      taskType: 'custom-report',
+      systemPrompt,
+      userMessage,
+      tenantId: report.tenantId,
+      meetingId: report.meetingId,
+      jobId: job.id ?? undefined,
+      responseFormat: { type: 'json_object' },
+      dataClass: 'internal',
+      sourceRef: { type: 'meeting_report', id: report.id },
+    });
 
-      // 4. Парс.
-      const parsed = tryParseJson(out.text);
+    // 4. Парс.
+    const parsed = tryParseJson(out.text);
 
-      // 5. Cost-guard. Точная стоимость — в AiUsageLog (LlmRouter её туда пишет).
-      //    Здесь оценочная — для метрики и для решения «cost_limit».
-      const estimatedCostUsd = approxCostFromTokens(
-        out.inputTokens,
-        out.outputTokens,
-      );
-      const isCostLimit = estimatedCostUsd > COST_LIMIT_USD;
+    // 5. Cost-guard. Точная стоимость — в AiUsageLog (LlmRouter её туда пишет).
+    //    Здесь оценочная — для метрики и для решения «cost_limit».
+    const estimatedCostUsd = approxCostFromTokens(
+      out.inputTokens,
+      out.outputTokens,
+    );
+    const isCostLimit = estimatedCostUsd > COST_LIMIT_USD;
 
-      const completedAt = new Date();
-      const durationMs = Date.now() - startedAt;
+    const completedAt = new Date();
+    const durationMs = Date.now() - startedAt;
 
-      if (isCostLimit) {
-        await this.prisma.meetingReport.update({
-          where: { id: report.id },
-          data: {
-            status: 'failed',
-            errorMessage: 'cost_limit',
-            llmCostUsd: new Prisma.Decimal(estimatedCostUsd),
-            llmDurationMs: durationMs,
-            completedAt,
-          },
-        });
-        this.metrics?.incMeetingReportFailed?.({ reason: 'cost_limit' });
-        this.logger.warn(
-          {
-            meetingReportId,
-            estimatedCostUsd,
-            limit: COST_LIMIT_USD,
-          },
-          'custom-report: превышен cost-limit — status=failed',
-        );
-        return;
-      }
-
+    if (isCostLimit) {
       await this.prisma.meetingReport.update({
         where: { id: report.id },
         data: {
-          status: 'ready',
-          output: parsed as Prisma.InputJsonValue,
+          status: 'failed',
+          errorMessage: 'cost_limit',
           llmCostUsd: new Prisma.Decimal(estimatedCostUsd),
           llmDurationMs: durationMs,
           completedAt,
-          errorMessage: null,
         },
       });
-
-      this.metrics?.incMeetingReportGenerated?.();
-      if (estimatedCostUsd > 0) {
-        this.metrics?.incMeetingReportLlmCost?.(estimatedCostUsd);
-      }
-      this.metrics?.observeMeetingReportDuration?.(durationMs / 1000);
-      this.logger.log(
+      this.metrics?.incMeetingReportFailed?.({ reason: 'cost_limit' });
+      this.logger.warn(
         {
           meetingReportId,
-          meetingId: report.meetingId,
-          templateId: report.promptTemplateId,
-          durationMs,
-          tier: out.tier,
+          estimatedCostUsd,
+          limit: COST_LIMIT_USD,
         },
-        'custom-report: успешно сгенерирован',
+        'custom-report: превышен cost-limit — status=failed',
       );
-    } catch (err) {
-      // На любую ошибку — BullMQ ретраит. На последнем — `onJobFailed`
-      // переведёт status='failed' с сообщением.
-      throw err;
+      return;
     }
+
+    await this.prisma.meetingReport.update({
+      where: { id: report.id },
+      data: {
+        status: 'ready',
+        output: parsed as Prisma.InputJsonValue,
+        llmCostUsd: new Prisma.Decimal(estimatedCostUsd),
+        llmDurationMs: durationMs,
+        completedAt,
+        errorMessage: null,
+      },
+    });
+
+    this.metrics?.incMeetingReportGenerated?.();
+    if (estimatedCostUsd > 0) {
+      this.metrics?.incMeetingReportLlmCost?.(estimatedCostUsd);
+    }
+    this.metrics?.observeMeetingReportDuration?.(durationMs / 1000);
+    this.logger.log(
+      {
+        meetingReportId,
+        meetingId: report.meetingId,
+        templateId: report.promptTemplateId,
+        durationMs,
+        tier: out.tier,
+      },
+      'custom-report: успешно сгенерирован',
+    );
   }
 
   // ────────────────────────── private ──────────────────────────

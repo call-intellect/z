@@ -111,4 +111,4 @@ export interface PersonListItemDto {
   deletedAt: string | null;
 }
 
-export interface PersonDto extends PersonListItemDto {}
+export type PersonDto = PersonListItemDto;

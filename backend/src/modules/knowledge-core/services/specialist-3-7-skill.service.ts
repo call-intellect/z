@@ -605,7 +605,7 @@ export class Specialist37Service {
       sourceBlockIds: string[];
     }> = [];
 
-    let embedding: number[] | null = null;
+    let embedding: number[] | null;
     try {
       embedding = await this.embedder.embedQuery(
         `${args.draft.category}. ${args.draft.statement}`.slice(0, 2_000),

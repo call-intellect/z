@@ -14,7 +14,6 @@ import type {
   CreateJobDescriptionDto,
   JobDescriptionDto,
   JobDescriptionListItemDto,
-  ListJobDescriptionsQuery,
   UpdateJobDescriptionDto,
 } from '../dto/job-descriptions.dto';
 

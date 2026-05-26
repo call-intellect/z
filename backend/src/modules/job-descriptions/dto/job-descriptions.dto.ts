@@ -59,4 +59,4 @@ export interface JobDescriptionListItemDto {
   deletedAt: string | null;
 }
 
-export interface JobDescriptionDto extends JobDescriptionListItemDto {}
+export type JobDescriptionDto = JobDescriptionListItemDto;

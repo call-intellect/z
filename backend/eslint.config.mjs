@@ -1,7 +1,8 @@
 // ESLint 10 flat config (заменил .eslintrc.json — eslintrc больше не поддерживается).
 import js from '@eslint/js';
 import prettier from 'eslint-config-prettier';
-import importPlugin from 'eslint-plugin-import-x';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
+import importPlugin, { createNodeResolver } from 'eslint-plugin-import-x';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -17,7 +18,10 @@ export default tseslint.config(
     },
     plugins: { 'import-x': importPlugin },
     settings: {
-      'import-x/resolver': { typescript: { project: './tsconfig.json' }, node: true },
+      'import-x/resolver-next': [
+        createTypeScriptImportResolver({ project: './tsconfig.json', alwaysTryTypes: true }),
+        createNodeResolver(),
+      ],
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',

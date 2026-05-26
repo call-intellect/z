@@ -73,6 +73,8 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useEntitlement } from '@/hooks/useEntitlement';
 import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
+// ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
+import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
 import {
   FEATURE_MIN_TIER,
   tierLabel,
@@ -124,6 +126,12 @@ type NavItem = {
    * undefined — бейдж скрыт. >99 показывается как «99+».
    */
   badgeCount?: number;
+  /**
+   * ТЗ 2026-05-26 §5.5: рисуем маленькую точку справа от подписи —
+   * «есть что-то новое, на что пользователь ещё не смотрел». Сейчас
+   * используется для пункта «Клоны» (новый CloneAccessGrant).
+   */
+  showDot?: boolean;
 };
 
 type NavGroup = {
@@ -277,6 +285,10 @@ export function Sidebar({
     currentOrgId,
     canTriage,
   );
+  // ТЗ 2026-05-26 §5.5 — точка возле «Клоны», если выдан новый grant,
+  // который пользователь ещё не видел (сравнение по количеству grants
+  // в localStorage). Тушится при заходе на /clones.
+  const hasUnseenCloneGrants = useUnseenCloneGrants(currentOrgId);
 
   // Динамические admin-пункты (Фаза 7) — отдельная подгруппа в «Настройках».
   const adminItems: NavItem[] = [];
@@ -346,7 +358,15 @@ export function Sidebar({
     return { ...OPERATIONS_GROUP, items };
   })();
 
-  const groups: NavGroup[] = [COMPANY_GROUP, operationsGroup, settingsGroup];
+  // ТЗ 2026-05-26 §5.5 — пробрасываем showDot к пункту «Клоны».
+  const companyGroup: NavGroup = (() => {
+    const items: NavItem[] = COMPANY_GROUP.items.map((i) =>
+      i.href === '/clones' ? { ...i, showDot: hasUnseenCloneGrants } : i,
+    );
+    return { ...COMPANY_GROUP, items };
+  })();
+
+  const groups: NavGroup[] = [companyGroup, operationsGroup, settingsGroup];
 
   // Собираем все пункты в один плоский массив, чтобы вычислить «победителя»
   // по matchPrefix один раз — поведение, как было в плоском Sidebar (см.
@@ -626,6 +646,12 @@ function SidebarNavLink({
         >
           {badge}
         </span>
+      )}
+      {!badge && item.showDot && (
+        <span
+          aria-label="Новое"
+          className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent"
+        />
       )}
       {isComingSoon && (
         <Clock4

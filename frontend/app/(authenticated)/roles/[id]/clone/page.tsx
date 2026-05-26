@@ -1,25 +1,14 @@
-import type { Metadata } from 'next';
-
-import { RoleCloneClient } from './RoleCloneClient';
-
-export const metadata: Metadata = {
-  title: 'Клон должности — Кора',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * `/roles/:id/clone` (Clones=Roles Ф4) — детали ролевого клона.
- *
- * Шапка: «Клон <Role.name> v<N>», текущий носитель, confidence-бар,
- * lastBuildAt. Кнопка «Спросить клона» → диалог через
- * `clonesApi.askRole(roleId, question)`. Кнопка «История версий» →
- * `/roles/:id/clone/history`. Кнопка «Обновить клона» (manual rebuild)
- * на Ф4 — заглушка с tooltip «доступно владельцу/администратору» (RBAC
- * для ролевого rebuild ещё не реализован на бэке).
+ * Legacy `/roles/[id]/clone` — после ТЗ 2026-05-26 канонический URL клона
+ * переехал в `/clones/[roleId]`. Этот файл — перманентный редирект,
+ * чтобы старые ссылки (письма, чат, история браузера) не ломались.
  */
-export default function RoleClonePage({
+export default function LegacyRoleClonePage({
   params,
 }: {
   params: { id: string };
 }) {
-  return <RoleCloneClient roleId={params.id} />;
+  redirect(`/clones/${encodeURIComponent(params.id)}`);
 }

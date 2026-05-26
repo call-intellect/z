@@ -1,21 +1,23 @@
 import type { Metadata } from 'next';
 
-import { ClonesListClient } from './ClonesListClient';
+import { ClonesMarketplaceClient } from './ClonesMarketplaceClient';
 
 export const metadata: Metadata = {
   title: 'Клоны должностей — Кора',
 };
 
 /**
- * `/clones` (Clones=Roles Ф4) — публичная витрина клонов должностей.
+ * `/clones` (ТЗ 2026-05-26 «Маркетплейс клонов») — публичная витрина
+ * ролевых клонов Org. Виден всем member'ам, но «Спросить» возможна
+ * только при наличии активного CloneAccessGrant.
  *
- * Клоны теперь ролевые, а не персональные: на каждую Role в Org может
- * существовать активный `ExecutablePersona(scope='role')` — «Клон
- * Маркетолога v2». Здесь — сетка карточек этих клонов с фильтрами,
- * сортировкой и переходом в `/roles/:id/clone`.
+ * Заменил прежний ClonesListClient (Ф4 Clones=Roles), оставив пути:
+ *   /clones                            — маркетплейс
+ *   /clones/[roleId]                   — карточка клона
+ *   /clones/[roleId]/chat/[id]         — чат с боковой панелью диалогов
  *
- * См. plans/tz/2026-05-25-clones-role-based-rebrand.md (Ф4).
+ * См. plans/tz/2026-05-26-clones-marketplace-frontend.md.
  */
 export default function ClonesPage() {
-  return <ClonesListClient />;
+  return <ClonesMarketplaceClient />;
 }

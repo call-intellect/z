@@ -32,6 +32,16 @@ export interface AskCloneResponseApi {
   mode: 'clone_style';
   /** true — носитель спрашивает своего же клона. */
   isOwner: boolean;
+  /**
+   * Фаза 1 «clone reliability hardening» — клон отказался отвечать
+   * (анти-deepfake). Может отсутствовать в старых ответах — трактуем как false.
+   */
+  refused?: boolean;
+  /**
+   * Машинно-читаемая причина отказа клона отвечать.
+   * Известные коды: `'topic_starved'` — в архиве недостаточно обсуждений по теме.
+   */
+  refusalReason?: string | null;
 }
 
 export interface AskCloneRequestApi {
@@ -137,7 +147,12 @@ export interface CloneListItemApi {
   departmentId: string | null;
   version: number;
   publicName: string;
-  status: 'active' | 'superseded';
+  /**
+   * Clones=Roles Ф2 (2026-05-25) — добавлен `pending_rebuild`: после смены
+   * носителя роли создаётся новая версия без personaPrompt; следующий
+   * `executable-persona-build` его дозаполнит и переключит на `active`.
+   */
+  status: 'active' | 'superseded' | 'pending_rebuild';
   currentBearer: { personId: string; personName: string } | null;
   confidence: number;
   traitsCount: number;
@@ -164,7 +179,7 @@ export interface CloneVersionApi {
   roleId: string;
   version: number;
   publicName: string;
-  status: 'active' | 'superseded';
+  status: 'active' | 'superseded' | 'pending_rebuild';
   bearer: { personId: string; personName: string } | null;
   validFrom: string;
   validUntil: string | null;
@@ -176,6 +191,42 @@ export interface CloneHistoryResponseApi {
   roleId: string;
   roleName: string;
   versions: CloneVersionApi[];
+}
+
+// ─────────── ТЗ 2026-05-26 §2.7 + §9.4.7 — clone-conversations ───────────
+
+/**
+ * Один диалог пользователя с клоном из боковой панели.
+ * Поля совпадают с backend `CloneConversationListItemDto`:
+ *   - id            : ChatV2Conversation.id (UUID)
+ *   - title         : null до первой LLM-генерации title'а
+ *   - lastMessageAt : ISO (= ChatV2Conversation.updatedAt)
+ *   - messageCount  : общее число сообщений
+ *   - createdAt     : ISO
+ */
+export interface CloneConversationListItemApi {
+  id: string;
+  title: string | null;
+  lastMessageAt: string;
+  messageCount: number;
+  createdAt: string;
+}
+
+export interface CloneConversationsListResponseApi {
+  items: CloneConversationListItemApi[];
+  /** id последнего элемента для следующей страницы или null если больше нет. */
+  nextCursor: string | null;
+}
+
+export interface CloneConversationsListParams {
+  cloneType: 'role' | 'person';
+  cloneRefId: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface CreateCloneConversationResponseApi {
+  conversationId: string;
 }
 
 export const clonesApi = {
@@ -236,6 +287,74 @@ export const clonesApi = {
   getCloneHistory: (orgId: string, roleId: string) =>
     apiClient.get<CloneHistoryResponseApi>(
       `/api/v1/clones/${encodeURIComponent(roleId)}/history`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // ─────────── ТЗ 2026-05-26 §9.4.7 — «Новый диалог» ───────────
+
+  /**
+   * Создать новый пустой ChatV2Conversation с клоном роли.
+   * Backend: `POST /api/v1/clones/roles/:roleId/conversations`.
+   * Используется кнопкой «+ Новый диалог» в карточке клона и в sidebar.
+   */
+  createRoleConversation: (orgId: string, roleId: string) =>
+    apiClient.post<CreateCloneConversationResponseApi>(
+      `/api/v1/clones/roles/${encodeURIComponent(roleId)}/conversations`,
+      {},
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Создать новый пустой ChatV2Conversation с клоном персоны.
+   * Backend: `POST /api/v1/clones/persons/:personId/conversations`.
+   * В маркетплейсе member-view не используется (person-клоны не выставляются),
+   * но клиент держим для admin-debug / Concierge.
+   */
+  createPersonConversation: (orgId: string, personId: string) =>
+    apiClient.post<CreateCloneConversationResponseApi>(
+      `/api/v1/clones/persons/${encodeURIComponent(personId)}/conversations`,
+      {},
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // ─────────── ТЗ 2026-05-26 §2.7 — список диалогов member ───────────
+
+  /**
+   * Список диалогов текущего пользователя с конкретным клоном.
+   * Backend: `GET /api/v1/clones/conversations?cloneType=role&cloneRefId=:id`.
+   * Сортировка: lastMessageAt DESC. Cursor-based pagination.
+   */
+  listMyCloneConversations: (
+    orgId: string,
+    params: CloneConversationsListParams,
+  ) => {
+    const qs = buildQuery({
+      cloneType: params.cloneType,
+      cloneRefId: params.cloneRefId,
+      limit: params.limit,
+      cursor: params.cursor,
+    });
+    return apiClient.get<CloneConversationsListResponseApi>(
+      `/api/v1/clones/conversations${qs}`,
+      { headers: orgHeaders(orgId) },
+    );
+  },
+
+  /**
+   * Запросить доступ к клону у админа (in-app сигнал).
+   * Backend endpoint — опциональный (Задача 4 §2.6). Если ещё не задеплоен —
+   * вернётся 404 / `not_found`, UI трактует как «функция временно недоступна».
+   */
+  requestAccess: (
+    orgId: string,
+    cloneType: 'role' | 'person',
+    cloneRefId: string,
+  ) =>
+    apiClient.post<{ ok: true } | { ok: false; reason: string }>(
+      `/api/v1/clones/${cloneType}s/${encodeURIComponent(
+        cloneRefId,
+      )}/access-grants/request`,
+      {},
       { headers: orgHeaders(orgId) },
     ),
 };

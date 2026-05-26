@@ -13,6 +13,13 @@ prisma/.tmp
 test
 **/*.spec.ts
 **/*.test.ts
+
+# Тяжёлое и dev-only внутри scripts/ — не нужно в prod-образе
+scripts/eval
+scripts/__snapshots__
+scripts/benchmark-*.ts
+scripts/e2e-*.ts
+
 Dockerfile
 .dockerignore
 README.md

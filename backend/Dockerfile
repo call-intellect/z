@@ -51,10 +51,12 @@ RUN bunx prisma generate
 # Скомпилированный код.
 COPY --from=builder /app/dist ./dist
 
-# Скрипт инициализации pgvector-индексов (HNSW/GIN) + его SQL.
-# Запускается отдельным compose-сервисом `migrate` (bun scripts/apply-postgres-init.ts).
-# Зависит только от `pg` (prod-dep) — без импортов из src.
-COPY scripts/apply-postgres-init.ts scripts/postgres-init.sql ./scripts/
+# Все prod-скрипты (patch/seed/backfill/migrate/setup/apply-postgres-init).
+# Нужны в runner-образе для prod-операций: миграция через compose-сервис `migrate`,
+# а также `docker compose exec backend bun run scripts/<name>.ts` для ручных операций
+# по prod-deploy-log.md. Bun исполняет .ts напрямую, зависимости — только prod-deps.
+# Исключения через .dockerignore (см. __snapshots__/, eval/, benchmark-*).
+COPY scripts ./scripts
 
 # Непривилегированный пользователь.
 RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app

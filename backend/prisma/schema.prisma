@@ -937,6 +937,8 @@ model User {
   /// person/role-клону. Без CLONE_V2_ENABLED не используется (legacy RBAC).
   cloneAccessGrantsReceived CloneAccessGrant[] @relation("CloneAccessGrant_grantedTo")
   cloneAccessGrantsGiven    CloneAccessGrant[] @relation("CloneAccessGrant_grantedBy")
+  /// ТЗ 2026-05-26 — обратная relation для soft-revoke (см. CloneAccessGrant.revokedBy).
+  cloneAccessGrantsRevoked  CloneAccessGrant[] @relation("CloneAccessGrant_revokedBy")
 
   @@unique([email, signupSource])
   @@index([email])
@@ -2214,7 +2216,7 @@ model Membership {
 /// (отдельная подзадача). Скрипт первичной миграции грантов —
 /// `backend/scripts/patch-migrate-clone-access.ts` (заглушка на этом этапе).
 model CloneAccessGrant {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   tenantId        String
   /// Пользователь, получающий право спрашивать клона.
   grantedToUserId String
@@ -2224,15 +2226,29 @@ model CloneAccessGrant {
   cloneRefId      String
   /// Кто выдал галочку (admin Org).
   grantedById     String
-  grantedAt       DateTime @default(now())
+  grantedAt       DateTime  @default(now())
 
-  tenant    Org  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  grantedTo User @relation("CloneAccessGrant_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
-  grantedBy User @relation("CloneAccessGrant_grantedBy", fields: [grantedById], references: [id])
+  /// ТЗ 2026-05-26 — soft-revoke. Запись не удаляется, чтобы остался audit-trail.
+  /// При повторной выдаче этому же пользователю на этот же клон старая revoked-запись
+  /// физически удаляется в транзакции create, чтобы не падать на unique-индексе.
+  revokedAt DateTime?
+  revokedBy String?
+
+  /// ТЗ 2026-05-26 — опциональный срок действия. Из UI на старте всегда null
+  /// (UI с date-picker появится позже). При expiresAt <= now() грант считается
+  /// неактивным (см. RbacService.isGrantActive / canAccess*Clone).
+  expiresAt DateTime?
+
+  tenant     Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grantedTo  User  @relation("CloneAccessGrant_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
+  grantedBy  User  @relation("CloneAccessGrant_grantedBy", fields: [grantedById], references: [id])
+  revokedByU User? @relation("CloneAccessGrant_revokedBy", fields: [revokedBy], references: [id])
 
   @@unique([tenantId, grantedToUserId, cloneType, cloneRefId])
   @@index([tenantId, grantedToUserId])
   @@index([tenantId, cloneType, cloneRefId])
+  @@index([revokedAt])
+  @@index([expiresAt])
 }
 
 model OrgInvitation {

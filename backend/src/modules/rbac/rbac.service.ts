@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import type { MembershipRole, OrgVisibilityMode } from '@prisma/client';
+import type { CloneAccessGrant, MembershipRole, OrgVisibilityMode, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -314,6 +314,40 @@ export class RbacService implements OnModuleInit {
   }
 
   /**
+   * ТЗ 2026-05-26 §3.5 — единый фильтр «активности» гранта (`CloneAccessGrant`).
+   *
+   * Грант считается активным, если:
+   *  - `revokedAt IS NULL` — админ его не отзывал, И
+   *  - `expiresAt IS NULL OR expiresAt > now()` — срок не истёк (или бессрочный).
+   *
+   * Используется в `canAccessPersonClone` / `canAccessRoleClone` и в admin-сервисе
+   * (фильтр `isActive=true`). Вынесено в helper, чтобы не дублировать where-условия
+   * между разными запросами и не разъехались семантика SQL и in-memory проверки
+   * (`isGrantActive`).
+   */
+  static buildActiveGrantWhere(now: Date): Prisma.CloneAccessGrantWhereInput {
+    return {
+      revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    };
+  }
+
+  /**
+   * In-memory вариант `buildActiveGrantWhere` — для уже загруженного гранта.
+   * Семантика идентична SQL-фильтру: revokedAt пустой И срок не вышел.
+   */
+  static isGrantActive(
+    grant: Pick<CloneAccessGrant, 'revokedAt' | 'expiresAt'>,
+    now: Date,
+  ): boolean {
+    if (grant.revokedAt !== null) return false;
+    if (grant.expiresAt !== null && grant.expiresAt.getTime() <= now.getTime()) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Главный метод проверки. Возвращает true если действие разрешено.
    *
    * Алгоритм:
@@ -484,14 +518,17 @@ export class RbacService implements OnModuleInit {
     relation: 'owner_admin' | 'self' | 'manager' | 'grant' | 'none';
   }> {
     if (args.cloneV2Enabled) {
-      const grant = await this.prisma.cloneAccessGrant.findUnique({
+      // ТЗ 2026-05-26 §3.5 — учитываем soft-revoke и expiresAt: findFirst
+      // с активным фильтром (revokedAt IS NULL AND (expiresAt IS NULL OR > now)).
+      // Раньше тут был findUnique — отозванный/просроченный грант ошибочно давал
+      // доступ.
+      const grant = await this.prisma.cloneAccessGrant.findFirst({
         where: {
-          tenantId_grantedToUserId_cloneType_cloneRefId: {
-            tenantId: args.tenantId,
-            grantedToUserId: args.requesterUserId,
-            cloneType: 'person',
-            cloneRefId: args.personId,
-          },
+          tenantId: args.tenantId,
+          grantedToUserId: args.requesterUserId,
+          cloneType: 'person',
+          cloneRefId: args.personId,
+          ...RbacService.buildActiveGrantWhere(new Date()),
         },
         select: { id: true },
       });
@@ -515,14 +552,15 @@ export class RbacService implements OnModuleInit {
     cloneV2Enabled: boolean;
   }): Promise<{ allowed: boolean; relation: 'grant' | 'role_read' | 'none' }> {
     if (args.cloneV2Enabled) {
-      const grant = await this.prisma.cloneAccessGrant.findUnique({
+      // ТЗ 2026-05-26 §3.5 — учитываем soft-revoke и expiresAt: findFirst
+      // с активным фильтром. Раньше findUnique игнорировал revokedAt/expiresAt.
+      const grant = await this.prisma.cloneAccessGrant.findFirst({
         where: {
-          tenantId_grantedToUserId_cloneType_cloneRefId: {
-            tenantId: args.tenantId,
-            grantedToUserId: args.requesterUserId,
-            cloneType: 'role',
-            cloneRefId: args.roleId,
-          },
+          tenantId: args.tenantId,
+          grantedToUserId: args.requesterUserId,
+          cloneType: 'role',
+          cloneRefId: args.roleId,
+          ...RbacService.buildActiveGrantWhere(new Date()),
         },
         select: { id: true },
       });

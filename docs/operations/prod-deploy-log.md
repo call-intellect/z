@@ -38,12 +38,14 @@
 См. `second-brain/02_architecture/age-deployment-decision.md`.
 
 **0.2. Бэкап БД.** Обязательно перед `prisma:push` (Шаг 4) и `patch-*` (Шаг 6).
+
 ```bash
-mkdir -p backups
-docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
-  > "backups/z_main_$(date +%F-%H%M).dump"
-ls -lh backups/
+# Одной командой — mkdir + pg_dump (директория backups/ может ещё не существовать на свежем сервере):
+mkdir -p backups && docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "backups/z_main_$(date +%F-%H%M).dump" && ls -lh backups/ | tail -3
 ```
+
+> ⚠ `$POSTGRES_USER` и `$POSTGRES_DB` берутся из shell-окружения хоста. Если они не экспортированы — подставь явные значения (`-U z_app -d z_main`) или сначала `set -a && source .env && set +a`.
+
 Восстановление:
 ```bash
 docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists \

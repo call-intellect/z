@@ -6,6 +6,8 @@
 >
 > **Прод-программист:** открой раздел «Накоплено к выкату», иди сверху вниз — это твоя готовая копи-пейст-инструкция.
 > **Агент (Claude):** правила обновления см. в [🔄 Правила поддержки файла](#-правила-поддержки-файла) и в `CLAUDE.md` → «Триггер 1: после `git push`».
+>
+> ⚠️ **ПРАВИЛО №1.** Z на проде живёт целиком внутри `docker-compose.yml` (postgres + redis + migrate + backend + frontend, единый стек). Все команды этого файла — через `docker compose exec backend …` (для запущенного backend) или `docker compose run --rm backend …` (для разового запуска). **Никаких прямых `cd backend && bun run …` или `bun install` на хосте.** Хост — только `git pull` + `docker compose build/up/down`.
 
 ---
 
@@ -15,23 +17,46 @@
 **Источник:** все рефлексии в `second-brain/05_история/` с этой даты + git log dev.
 **Содержит:** ~80 prod-скриптов (patch/seed/migrate/backfill/setup) + ~165 новых Prisma-моделей + ~100 новых ENV (все опциональные) + 2 опасных schema-изменения.
 
+> Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
+
 ---
 
 ### Шаг 0 — Pre-flight (один раз перед выкатом)
 
-**0.1. Apache AGE extension** — критичный блокер.
-`apply-postgres-init` (Шаг 4) создаёт `CREATE EXTENSION age` и `ag_catalog.create_graph('z_graph')` для онтологии компании (Фаза 0). Если кластер PostgreSQL **не настроен под AGE — Шаг 4 упадёт** с `extension "age" is not available`.
+**0.1. Apache AGE в postgres-образе.**
+`migrate`-сервис compose выполняет `bunx prisma db push && bun scripts/apply-postgres-init.ts`. Последний создаёт `CREATE EXTENSION age` и `ag_catalog.create_graph('z_graph')` для онтологии (Фаза 0).
 
-Что сделать ДО выката:
-- Yandex Cloud Managed PostgreSQL 16 / SberCloud / Selectel Managed: в настройках кластера прописать `shared_preload_libraries = 'age'` → рестарт инстанса.
-- Self-hosted: composite-образ с AGE; см. `infra/postgres/Dockerfile` (если есть) или собрать вручную.
-- Проверить: `psql -c "SHOW shared_preload_libraries"` → должно содержать `age`.
+В `docker-compose.yml` (корневой) postgres-сервис собирается из `infra/postgres/Dockerfile` — composite-образ `z-postgres-age-pgvector:pg16` с уже включёнными `age 1.5+`, `pgvector 0.8+` и `shared_preload_libraries = 'age'`. Ничего отдельно настраивать не нужно — образ соберётся при первом `docker compose build`.
+
+Если у тебя на проде **managed Postgres** (Yandex / Selectel) вместо composite-образа:
+- В настройках кластера прописать `shared_preload_libraries = 'age'` → рестарт инстанса.
+- Проверить:
+  ```bash
+  docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SHOW shared_preload_libraries;"
+  ```
 
 См. `second-brain/02_architecture/age-deployment-decision.md`.
 
-**0.2. Бэкап БД** — обязательно перед `prisma:push` (Шаг 3) и `patch-*` (Шаг 5).
+**0.2. Бэкап БД.** Обязательно перед `prisma:push` (Шаг 4) и `patch-*` (Шаг 6).
+```bash
+mkdir -p backups
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
+  > "backups/z_main_$(date +%F-%H%M).dump"
+ls -lh backups/
+```
+Восстановление:
+```bash
+docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists \
+  < backups/z_main_<TIMESTAMP>.dump
+```
 
-**0.3. ENV** — см. Шаг 1.
+**0.3. Lockfile-санитизация (одноразовое).**
+Если `bun.lock` в репо ссылается на `cdn.npmmirror.com` (китайский CDN — пакеты оттуда удаляются произвольно), `docker compose build` упадёт на `error: GET https://cdn.npmmirror.com/... - 404`. Фикс уже закоммичен (`backend/bunfig.toml` + `frontend/bunfig.toml` с `registry = "https://registry.npmjs.org"` + перегенерированные `bun.lock`). Проверка:
+```bash
+grep -c npmmirror backend/bun.lock frontend/bun.lock     # должно быть по 0
+```
+
+**0.4. ENV** — см. Шаг 1.
 
 ---
 
@@ -50,11 +75,11 @@ INACTIVE_BINDING_DAYS=30
 
 # === Web Push (если включается push-уведомления) ===
 # ВНИМАНИЕ: VAPID_* НЕ в EnvSchema → опечатки не валидируются zod'ом, фича просто молча отключится.
-VAPID_PUBLIC_KEY=<сгенерировать: bunx web-push generate-vapid-keys>
+VAPID_PUBLIC_KEY=<docker compose run --rm backend bunx web-push generate-vapid-keys>
 VAPID_PRIVATE_KEY=<...>
 VAPID_SUBJECT=mailto:noreply@kora.app
 PUSH_MAX_FAILURES=5
-# Frontend (.env.production) — тот же public key:
+# Frontend (build-arg!) — тот же public key:
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=<тот же public>
 
 # === Email-to-task (T5, опц., default OFF) ===
@@ -72,62 +97,79 @@ MAIL_INBOX_MAX_PER_RUN=50
 # === T3 LLM провайдеры (kie + grsai) ===
 KIE_API_KEY=<secret>
 GRSAI_API_KEY=<secret>
-# KIE_BASE_URL и GRSAI_BASE_URL имеют дефолты — править только при кастомных эндпоинтах
 
-# === Kill-switch'и для безопасного запуска (все уже false по умолчанию — можно не дублировать) ===
-BITEMPORAL_ENABLED=false                 # KC-Temporal — поэтапное включение
+# === Kill-switch'и (все default false — можно не дублировать) ===
+BITEMPORAL_ENABLED=false
 BITEMPORAL_SUPERSEDE_ENABLED=false
-CLONE_V2_ENABLED=false                   # clone-respond v2; переключить в true ТОЛЬКО ПОСЛЕ Шага 6.10 (миграция грантов CloneAccessGrant) — иначе у пользователей пропадёт доступ к клонам
-SPECIALISTS_COMBINED_ENABLED=false       # Variant Б+
+CLONE_V2_ENABLED=false                   # ТОЛЬКО ПОСЛЕ Шага 6.10 (patch-migrate-clone-access)
+SPECIALISTS_COMBINED_ENABLED=false
 COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM=false
-
-# === Опционально включить уже — но проверь dataclass enforcement ===
 DATACLASS_POLICY_ENFORCEMENT=shadow      # off | shadow | enforce — на проде сначала shadow
 ```
 
-Полный список новых ENV (домены: LLM, Channels, Email, COO, Tracker, KC-Temporal, Skill/Clone, Curation, Dialog Layer, Push, Voice) — в `backend/src/common/config/env.schema.ts`. Часть ENV (VAPID_*, CONCIERGE_*) **сознательно вне EnvSchema** из-за TS2589 при глубоких .merge() — читаются runtime'ом через `process.env`.
+**Применение в compose.** ENV читаются из корневого `.env` через `env_file: [.env]` (см. `docker-compose.yml`). После правки `.env`:
+```bash
+docker compose up -d --force-recreate backend
+```
+(`restart` НЕ перечитает env-переменные — нужен именно `--force-recreate`.)
+
+⚠️ **NEXT_PUBLIC_\*** вшиваются в frontend-бандл во время **сборки** (build-args). При смене любой `NEXT_PUBLIC_*` — обязательная пересборка:
+```bash
+docker compose up -d --build frontend
+```
+
+Полный список — `backend/src/common/config/env.schema.ts`. VAPID_*, CONCIERGE_* сознательно вне EnvSchema (TS2589 при глубоких `.merge()`) — читаются через `process.env` напрямую.
 
 ---
 
-### Шаг 2 — Pull + install
+### Шаг 2 — Pull + сборка образов
 
 ```bash
-cd c:/work/z
+# на хосте, в корне репо
 git pull origin dev
-cd backend && bun install
-cd ../frontend && bun install
-cd ../backend
+
+# Пересобрать backend + frontend + postgres-композит (если изменился infra/postgres/Dockerfile).
+docker compose build
 ```
+
+`docker compose build` использует `bun install --frozen-lockfile` внутри Dockerfile и `bunfig.toml` (registry = npmjs.org). Никакого `bun install` на хосте не нужно.
 
 ---
 
-### Шаг 3 — PRE-MIGRATION gate (защитный backfill ДО prisma:push)
+### Шаг 3 — PRE-MIGRATION gate (защитный backfill ДО `migrate`-сервиса)
 
-`prisma:push` ниже сделает `Meeting.tenantId` NOT NULL. Если есть legacy-Meeting с NULL — push упадёт. Сначала чиним:
+`prisma db push` (внутри `migrate`-сервиса) сделает `Meeting.tenantId` NOT NULL. Если есть legacy-Meeting с NULL — push упадёт и весь `docker compose up` зависнет.
+
+Сначала чиним — через `run --rm backend` (одноразовый контейнер с новым кодом, postgres уже запущен с прошлого выката):
 
 ```bash
-bun run scripts/backfill-orgs-fase0.ts                  # создаёт personal-Org для legacy users (если ещё не запускалось)
-bun run scripts/backfill-meeting-tenant-id.ts           # dry-run по умолчанию
-bun run scripts/backfill-meeting-tenant-id.ts --apply   # реальный прогон
-bun run scripts/tighten-meeting-tenant-not-null.ts      # exit 1 если остался хоть один NULL — это GATE
+# postgres должен быть up (со старого деплоя). Если нет:
+docker compose up -d postgres redis
+
+docker compose run --rm backend bun run scripts/backfill-orgs-fase0.ts
+docker compose run --rm backend bun run scripts/backfill-meeting-tenant-id.ts                  # dry-run
+docker compose run --rm backend bun run scripts/backfill-meeting-tenant-id.ts --apply          # реальный прогон
+docker compose run --rm backend bun run scripts/tighten-meeting-tenant-not-null.ts             # exit 1 == STOP
 ```
 
-Если `tighten-*` падает → разбирайся, не запускай Шаг 4 пока не вернёт 0.
+Если `tighten-*` падает → разбирайся, **не запускай Шаг 4** пока не вернёт 0.
 
 ---
 
-### Шаг 4 — Prisma schema (несколько опасных моментов)
+### Шаг 4 — Прогон миграций (автоматически через `migrate`-сервис)
+
+Запуск всего стека. `migrate` отработает первым (`prisma db push` + `apply-postgres-init.ts`), потом стартанёт `backend`.
 
 ```bash
-bun run prisma:push
-bun run prisma:generate
+docker compose up -d
+docker compose logs -f migrate     # пока не увидишь "DONE" / exit 0
 ```
 
 ⚠️ **`prisma:push` спросит подтверждение на:**
-1. **DROP колонки `Transcript.rawIndexS3Url`** (NOT NULL) — данные перенесены в новую модель `TranscriptTrack`. Согласиться `--accept-data-loss` (если попросит). Перед этим убедиться, что нет внешних потребителей S3-ключа из этой колонки.
+1. **DROP колонки `Transcript.rawIndexS3Url`** (NOT NULL) — данные перенесены в новую модель `TranscriptTrack`. Если потребуется — добавь `--accept-data-loss` в команду `migrate`-сервиса (`docker-compose.yml` → `migrate.command`) и пересобери. Перед этим убедиться, что нет внешних потребителей S3-ключа.
 2. **`Meeting.tenantId` → NOT NULL** — gate из Шага 3 должен был всё прибрать. Если не сработал — вернись.
 
-Что нового в схеме (за окно ~165 новых моделей):
+**Что нового в схеме** (за окно ~165 новых моделей):
 - Kora-v2 фундамент: AdminSetting, EmailTemplate, RetentionPolicy, CronSchedule, FeatureFlag
 - knowledge-core graph: Decision, Insight, Idea, IdeaCluster, IdeaBlockLink, EntityLink, Interaction
 - Tracker (~20 моделей): Issue, IssueState, IssueComment, IssueAttachment, IssueLink, IssueRelation, IssueWebhook, IssueWebhookLog, IntakeIssue, Project, ProjectMember, Label, Cycle, Plan, ImportLog, HolidayCalendar
@@ -148,12 +190,12 @@ bun run prisma:generate
 - `AiUsageLog`: +inputCostPerMillionTokensSnapshot, +costRub, +dataClassAudit
 - `Task`: +assigneeUserId (FK на User)
 - `User`: +calendarFeedToken (VarChar 80)
-- `CloneAccessGrant` (2026-05-26, коммит `fc3d6fe`): +`revokedAt DateTime?`, +`revokedBy String?`, +`expiresAt DateTime?` + 2 индекса (`@@index([revokedAt])`, `@@index([expiresAt])`). Все поля nullable — обратно совместимо, простой db push без `--accept-data-loss`. Фикс скрытого бага: `canAccess*Clone` теперь фильтрует по `revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > NOW())`.
+- `CloneAccessGrant` (2026-05-26, коммит `fc3d6fe`): +`revokedAt DateTime?`, +`revokedBy String?`, +`expiresAt DateTime?` + 2 индекса. Все поля nullable — обратно совместимо, простой db push.
 
 Enum расширения (без удалений — Postgres не умеет DROP VALUE):
 - `MeetingType`: +review, +retrospective, +task_discussion
-- `SignalType`: +30 значений (task_*, helpfulness, gamification, reasoning, plan_item, …)
-- `EntityType`: +customer, +vendor, +document, +goal, +event, +technology, +metric, +market, +org_unit (client/custom помечены @deprecated)
+- `SignalType`: +30 значений
+- `EntityType`: +customer, +vendor, +document, +goal, +event, +technology, +metric, +market, +org_unit
 - `EntityLinkType`: +30 значений
 - `IdeaBlockLinkType`: +resolves, +supersedes
 - `MembershipRole`: +coo
@@ -165,203 +207,203 @@ Enum расширения (без удалений — Postgres не умеет 
 
 ### Шаг 5 — Postgres-init (HNSW + GIN + partial unique + AGE graph)
 
+Выполняется автоматически внутри `migrate`-сервиса (см. Шаг 4) после `prisma db push`. Если нужно прогнать вручную (например, после ручной правки SQL):
 ```bash
-bun run apply-postgres-init
+docker compose run --rm backend bun run apply-postgres-init
 ```
 
-Что создаст (всё через `IF NOT EXISTS`, идемпотентно):
+Что создаёт (всё через `IF NOT EXISTS`, идемпотентно):
 - **Extensions:** `vector`, `age` (+ `LOAD 'age'`, `SET search_path`)
 - **Graph:** `ag_catalog.create_graph('z_graph')`
 - **HNSW (cosine) на embedding-колонках:** Decision, Insight, Idea, IdeaCluster, SkillTrait, SkillTraitConcept, PersonKnowledgeCategoryEmbedding, HelpfulnessTrait, Issue, MeetingTranscriptChunk, IdeaBlock, Entity
 - **GENERATED tsvector + GIN (словарь `russian`):** IdeaBlock.search_tsv, decisions.decision_search_tsv, insights.insight_search_tsv
 - **GIN на массивах:** Event.participantsPersonIds, Vendor.contractIds, decisions/insights/ideas/EntityLink.* массивы IDs
-- **Partial unique индексы (Prisma не умеет):**
-  - `meeting_report_pending_unique` ON MeetingReport (meetingId, promptTemplateId) WHERE status IN ('pending','running')
-  - `Vendor_tenantId_inn_unique_idx` ON Vendor (tenantId, inn) WHERE inn NOT NULL AND deletedAt NULL
-  - `Entity_strong_inn_uniq`, `Entity_strong_ogrn_uniq`, `Entity_strong_email_uniq`, `Entity_strong_domain_uniq` (KC-Temporal W3.4)
-  - `channels_global_unique` ON channels (kind) WHERE tenantId NULL — для β-9 глобального Telegram-бота
-- **Composite:** probe_events_tenant_status_created_idx, Entity_strong_phone_idx (не unique)
+- **Partial unique индексы:** meeting_report_pending_unique, Vendor_tenantId_inn_unique_idx, Entity_strong_inn/ogrn/email/domain_uniq, channels_global_unique
+- **Composite:** probe_events_tenant_status_created_idx, Entity_strong_phone_idx
 
 ---
 
 ### Шаг 6 — One-off patch-скрипты (порядок важен!)
 
+> Все patch-скрипты — через `exec backend` (контейнер уже запущен после Шага 4).
+
 ```bash
 # 6.1 — Knowledge-core: переименования + entityId
-bun run scripts/patch-rename-client-to-customer.ts --dry-run
-bun run scripts/patch-rename-client-to-customer.ts
-bun run scripts/patch-migrate-entity-custom-to-topic.ts
-bun run scripts/patch-backfill-entity-id-document.ts
-bun run scripts/patch-backfill-entity-id-goal.ts
-bun run scripts/patch-backfill-entity-id-person.ts
+docker compose exec backend bun run scripts/patch-rename-client-to-customer.ts --dry-run
+docker compose exec backend bun run scripts/patch-rename-client-to-customer.ts
+docker compose exec backend bun run scripts/patch-migrate-entity-custom-to-topic.ts
+docker compose exec backend bun run scripts/patch-backfill-entity-id-document.ts
+docker compose exec backend bun run scripts/patch-backfill-entity-id-goal.ts
+docker compose exec backend bun run scripts/patch-backfill-entity-id-person.ts
 # либо composite alias (запускает все три выше):
-# bun run patch:backfill-entity-id
-bun run scripts/patch-person-relationship.ts
+# docker compose exec backend bun run patch:backfill-entity-id
+docker compose exec backend bun run scripts/patch-person-relationship.ts
 
 # 6.2 — Card versioning + document defaults
-bun run scripts/patch-backfill-card-versions.ts
-bun run scripts/patch-document-use-cases-default.ts
+docker compose exec backend bun run scripts/patch-backfill-card-versions.ts
+docker compose exec backend bun run scripts/patch-document-use-cases-default.ts
 
 # 6.3 — Org / Person timezone (Europe/Moscow по умолчанию)
-bun run scripts/patch-org-timezone-default.ts
-bun run scripts/patch-person-timezone-default.ts
+docker compose exec backend bun run scripts/patch-org-timezone-default.ts
+docker compose exec backend bun run scripts/patch-person-timezone-default.ts
 
 # 6.4 — Mission/Vision/Strategy → CompanyProfile (по умолчанию dry-run!)
-bun run scripts/patch-migrate-mvs-to-company-profile.ts            # dry-run
-bun run scripts/patch-migrate-mvs-to-company-profile.ts --apply    # запись
+docker compose exec backend bun run scripts/patch-migrate-mvs-to-company-profile.ts            # dry-run
+docker compose exec backend bun run scripts/patch-migrate-mvs-to-company-profile.ts --apply    # запись
 
 # 6.5 — PersonRole → Appointment (по умолчанию dry-run!)
-bun run scripts/patch-migrate-person-role-to-appointment.ts            # dry-run
-bun run scripts/patch-migrate-person-role-to-appointment.ts --apply    # запись
+docker compose exec backend bun run scripts/patch-migrate-person-role-to-appointment.ts            # dry-run
+docker compose exec backend bun run scripts/patch-migrate-person-role-to-appointment.ts --apply    # запись
 
 # 6.6 — Skill traits категории (γ-1)
-bun run scripts/patch-skill-trait-categories-from-strings.ts --dry-run
-bun run scripts/patch-skill-trait-categories-from-strings.ts
+docker compose exec backend bun run scripts/patch-skill-trait-categories-from-strings.ts --dry-run
+docker compose exec backend bun run scripts/patch-skill-trait-categories-from-strings.ts
 
 # 6.7 — KC-Temporal (bitemporal + dataclass + strong-ids + channel-binding)
-bun run scripts/patch-bitemporal-backfill.ts --dry-run
-bun run scripts/patch-bitemporal-backfill.ts
-bun run scripts/patch-clones-role-versioning.ts
-bun run scripts/patch-clones-dataclass-update.ts
-bun run scripts/patch-backfill-dataclass-audit.ts
-bun run scripts/patch-channel-binding-defaults.ts
-bun run scripts/patch-extract-strong-ids.ts
+docker compose exec backend bun run scripts/patch-bitemporal-backfill.ts --dry-run
+docker compose exec backend bun run scripts/patch-bitemporal-backfill.ts
+docker compose exec backend bun run scripts/patch-clones-role-versioning.ts
+docker compose exec backend bun run scripts/patch-clones-dataclass-update.ts
+docker compose exec backend bun run scripts/patch-backfill-dataclass-audit.ts
+docker compose exec backend bun run scripts/patch-channel-binding-defaults.ts
+docker compose exec backend bun run scripts/patch-extract-strong-ids.ts
 
 # 6.8 — Prompt registry no-op (для будущей совместимости; сейчас ничего не пишут)
-bun run scripts/patch-prompt-block-ingest-v2-fase0b.ts
-bun run scripts/patch-prompt-role-profile-build-fase0d.ts
+docker compose exec backend bun run scripts/patch-prompt-block-ingest-v2-fase0b.ts
+docker compose exec backend bun run scripts/patch-prompt-role-profile-build-fase0d.ts
 
 # 6.9 — LLM миграция на DeepSeek-V4-Pro (chat-v2 + 19 одиночек)
-bun run scripts/patch-chat-v2-to-pro.ts
-bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
-bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
+docker compose exec backend bun run scripts/patch-chat-v2-to-pro.ts
+docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
+docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
 
 # 6.10 — Первичная миграция грантов CloneAccessGrant (2026-05-26, коммит 87fef5d)
 # ОБЯЗАТЕЛЬНО ДО переключения CLONE_V2_ENABLED=true (см. Шаг 1).
-# Выдаёт первичные CloneAccessGrant по правилам B:
-#   - носители ролей (Appointment validTo IS NULL, status active/acting) → грант на свой role-клон
-#   - manager того же department → грант на клон подчинённого
-#   - owner/admin Org → гранты на все role-клоны Org
-# Person-клоны НЕ выдаются. Идемпотентен (createMany skipDuplicates по unique-индексу).
-bun run scripts/patch-migrate-clone-access.ts
+docker compose exec backend bun run scripts/patch-migrate-clone-access.ts
 # опц. для одного тенанта:
-# bun run scripts/patch-migrate-clone-access.ts --tenant <orgId>
+# docker compose exec backend bun run scripts/patch-migrate-clone-access.ts --tenant <orgId>
 ```
 
 ⚠️ **НЕ запускать на проде** (помечен внутри файла «без согласования»):
 - `backfill-task-assignee-userid.ts`
 
 ℹ️ **Доступно оператору при инциденте — НЕ плановая операция** (коммит `177e465`):
-- `patch-rollback-to-deepseek-flash.ts` — массовый откат всех LlmTaskRoute с `deepseek-v4-pro` обратно на `deepseek-v4-flash` (26 целей: 20 базовых ROLLBACK_TARGETS + 6 EXTRA для chat-v2/dialog-layer). Защищён флагом `--update-existing` от случайного запуска; не трогает `editedByAdmin=true`. Запуск только при подтверждённой регрессии:
+- `patch-rollback-to-deepseek-flash.ts` — массовый откат всех LlmTaskRoute с `deepseek-v4-pro` обратно на `deepseek-v4-flash`. Запуск только при подтверждённой регрессии:
   ```bash
-  cd backend
-  bun run scripts/patch-rollback-to-deepseek-flash.ts --dry-run --update-existing   # посмотреть план
-  bun run scripts/patch-rollback-to-deepseek-flash.ts --update-existing             # применить
+  docker compose exec backend bun run scripts/patch-rollback-to-deepseek-flash.ts --dry-run --update-existing
+  docker compose exec backend bun run scripts/patch-rollback-to-deepseek-flash.ts --update-existing
   ```
 
-### Шаг 6.11 — Переключение CLONE_V2_ENABLED (после Шага 6.10)
+### Шаг 6.11 — Переключение `CLONE_V2_ENABLED` (после Шага 6.10)
 
-После того как миграция грантов отработала и владелец сверил список выданных грантов в `/admin/clones`:
+После того как миграция грантов отработала и владелец сверил список в `/admin/clones`:
 
-1. В `.env` прода выставить `CLONE_V2_ENABLED=true`.
-2. Перезапустить backend + worker (Шаг 11).
-3. Финализирует переход на единственный источник правды о доступе к клонам — таблицу `CloneAccessGrant`.
+```bash
+# 1. правка .env на хосте:
+#    CLONE_V2_ENABLED=true
+# 2. подхват без пересборки (force-recreate перечитывает env_file):
+docker compose up -d --force-recreate backend
+```
 
-Откат: `CLONE_V2_ENABLED=false` + рестарт (мгновенно возвращает старые правила в коде).
+Откат:
+```bash
+# .env: CLONE_V2_ENABLED=false
+docker compose up -d --force-recreate backend
+```
 
 ---
 
 ### Шаг 7 — Seed-скрипты
 
 ```bash
-# 7.1 — Базовый каркас LLM (порядок важен внутри: providers → models → prices → routes)
-bun run scripts/seed-default-llm-providers-and-models.ts
-bun run scripts/seed-llm-model-prices.ts
-bun run scripts/seed-prompt-templates.ts                          # 13 системных шаблонов (A.1)
-bun run scripts/seed-llm-task-routes-default.ts                   # дефолтные цепочки для всех LlmTaskType (A.4)
+# 7.1 — Базовый каркас LLM (порядок важен: providers → models → prices → routes)
+docker compose exec backend bun run scripts/seed-default-llm-providers-and-models.ts
+docker compose exec backend bun run scripts/seed-llm-model-prices.ts
+docker compose exec backend bun run scripts/seed-prompt-templates.ts                          # 13 системных шаблонов
+docker compose exec backend bun run scripts/seed-llm-task-routes-default.ts                   # дефолтные цепочки
 
 # 7.2 — Тарифы / Entitlements / Retention / Календарь / Шаблоны команд / Домены
-bun run scripts/seed-entitlements.ts                              # OrgEntitlement(tier_pro) per Org
-bun run scripts/seed-retention-policies.ts
-bun run scripts/seed-holiday-calendar-ru-2026.ts                  # производственный календарь РФ
-bun run scripts/seed-team-templates.ts                            # 10+5 системных TeamTemplate
-bun run scripts/seed-functional-domains.ts                        # 8 базовых FunctionalDomain per Org
+docker compose exec backend bun run scripts/seed-entitlements.ts                              # OrgEntitlement(tier_pro)
+docker compose exec backend bun run scripts/seed-retention-policies.ts
+docker compose exec backend bun run scripts/seed-holiday-calendar-ru-2026.ts                  # производственный календарь РФ
+docker compose exec backend bun run scripts/seed-team-templates.ts                            # 10+5 системных TeamTemplate
+docker compose exec backend bun run scripts/seed-functional-domains.ts                        # 8 базовых FunctionalDomain per Org
 
-# 7.3 — Admin settings (синк cfg.* → AdminSetting)
-bun run scripts/seed-admin-settings.ts
-bun run scripts/seed-admin-setting-daily-digest.ts                # operations.daily_digest.enabled/deliver_to_telegram
+# 7.3 — Admin settings
+docker compose exec backend bun run scripts/seed-admin-settings.ts
+docker compose exec backend bun run scripts/seed-admin-setting-daily-digest.ts
 
 # 7.4 — Бейджи (gamification T1)
-bun run scripts/seed-badges.ts                                    # 5 базовых (ideator/expert/helper/aligned/consistent)
+docker compose exec backend bun run scripts/seed-badges.ts                                    # 5 базовых
 
 # 7.5 — Глобальный Telegram канал (β-9)
-bun run scripts/seed-global-channels.ts
+docker compose exec backend bun run scripts/seed-global-channels.ts
 
 # 7.6 — LLM TaskRoutes для всех новых taskType (за период, безопасно идемпотентно)
-bun run scripts/seed-llm-task-routes-phase-B.ts                   # behavior-refine
-bun run scripts/seed-llm-task-routes-phase-C.ts                   # meeting-quality-score
-bun run scripts/seed-llm-task-routes-phase-D.ts                   # transcript-clean-refine
-bun run scripts/seed-llm-task-routes-phase-E.ts                   # custom-report
-bun run scripts/seed-llm-task-routes-regulations.ts
-bun run scripts/seed-llm-task-routes-knowledge-clone.ts
-bun run scripts/seed-llm-task-routes-knowledge-core.ts
-bun run scripts/seed-llm-task-routes-decisions.ts
-bun run scripts/seed-llm-task-routes-insights.ts
-bun run scripts/seed-llm-task-routes-ideas-and-probe.ts
-bun run scripts/seed-llm-task-routes-skill-and-clone.ts
-bun run scripts/seed-llm-task-routes-skill-concept.ts             # skill-trait-concept-name
-bun run scripts/seed-llm-task-routes-chat-v2.ts                   # chat-v2-conversation-title, chat-v2-cite-select
-bun run scripts/seed-llm-task-routes-recognition.ts               # recognition-formulate
-bun run scripts/seed-llm-task-routes-helpfulness.ts               # 3 helpfulness taskType
-bun run scripts/seed-llm-task-routes-beta-8.ts                    # checkin-parse, operations-summary
-bun run scripts/seed-llm-task-routes-beta-8-1.ts                  # checkin-sentiment(+batch), operations-weekly-digest
-bun run scripts/seed-llm-task-routes-beta-8-2.ts                  # commitment-extract-dates/status
-bun run scripts/seed-llm-task-routes-beta-8-3.ts                  # operations-daily-digest
-bun run scripts/seed-llm-task-routes-axis-classify.ts             # axis-classify, router-fallback
-bun run scripts/seed-llm-task-routes-brand-voice.ts
-bun run scripts/seed-llm-task-routes-company-foundation.ts        # department-extract, domain-expand, maturity-rationale
-bun run scripts/seed-llm-task-routes-concierge.ts                 # concierge-respond, concierge-toolcall-validate
-bun run scripts/seed-llm-task-routes-cross-functional.ts          # cross-functional-friction-summary
-bun run scripts/seed-llm-task-routes-experiments.ts
-bun run scripts/seed-llm-task-routes-process-template.ts
-bun run scripts/seed-llm-task-routes-role-map.ts                  # role-map-extract, role-completeness-rationale
-bun run scripts/seed-llm-task-routes-orchestrator.ts              # 4 orchestrator-*
-bun run scripts/seed-llm-task-routes-proactive.ts                 # proactive-message-craft
-bun run scripts/seed-llm-task-routes-tracker-phase3.ts            # meeting-extract-actions, intake-auto-triage
-bun run scripts/seed-llm-task-routes-tracker-phase3-c.ts          # issue-infer-fields, issue-goal-suggest
-bun run scripts/seed-llm-task-routes-tracker-phase4-telegram.ts   # telegram-create-task и др. (4 шт.)
-bun run scripts/seed-llm-task-routes-feedback-cluster.ts          # feedback.cluster (4 уровня)
-bun run scripts/seed-llm-task-routes-clone-v2.ts                  # dialog-multi-query-clone, clone-respond v2 → deepseek-v4-pro
-bun run scripts/seed-llm-task-routes-specialists-combined.ts      # knowledge-specialists-combined (Variant Б+)
-bun run scripts/seed-llm-task-routes-dialog-layer.ts              # 5 dialog-* taskType
-bun run scripts/seed-llm-task-routes-temporal.ts                  # fact-supersede-detect
-bun run scripts/seed-llm-task-routes-kie-grsai-ab.ts              # A/B на dialog-multi-query (status=draft)
+docker compose exec backend bun run scripts/seed-llm-task-routes-phase-B.ts                   # behavior-refine
+docker compose exec backend bun run scripts/seed-llm-task-routes-phase-C.ts                   # meeting-quality-score
+docker compose exec backend bun run scripts/seed-llm-task-routes-phase-D.ts                   # transcript-clean-refine
+docker compose exec backend bun run scripts/seed-llm-task-routes-phase-E.ts                   # custom-report
+docker compose exec backend bun run scripts/seed-llm-task-routes-regulations.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-knowledge-clone.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-knowledge-core.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-decisions.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-insights.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-ideas-and-probe.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-skill-and-clone.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-skill-concept.ts             # skill-trait-concept-name
+docker compose exec backend bun run scripts/seed-llm-task-routes-chat-v2.ts                   # chat-v2-conversation-title, chat-v2-cite-select
+docker compose exec backend bun run scripts/seed-llm-task-routes-recognition.ts               # recognition-formulate
+docker compose exec backend bun run scripts/seed-llm-task-routes-helpfulness.ts               # 3 helpfulness taskType
+docker compose exec backend bun run scripts/seed-llm-task-routes-beta-8.ts                    # checkin-parse, operations-summary
+docker compose exec backend bun run scripts/seed-llm-task-routes-beta-8-1.ts                  # checkin-sentiment(+batch), operations-weekly-digest
+docker compose exec backend bun run scripts/seed-llm-task-routes-beta-8-2.ts                  # commitment-extract-dates/status
+docker compose exec backend bun run scripts/seed-llm-task-routes-beta-8-3.ts                  # operations-daily-digest
+docker compose exec backend bun run scripts/seed-llm-task-routes-axis-classify.ts             # axis-classify, router-fallback
+docker compose exec backend bun run scripts/seed-llm-task-routes-brand-voice.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-company-foundation.ts        # department-extract, domain-expand, maturity-rationale
+docker compose exec backend bun run scripts/seed-llm-task-routes-concierge.ts                 # concierge-respond, concierge-toolcall-validate
+docker compose exec backend bun run scripts/seed-llm-task-routes-cross-functional.ts          # cross-functional-friction-summary
+docker compose exec backend bun run scripts/seed-llm-task-routes-experiments.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-process-template.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-role-map.ts                  # role-map-extract, role-completeness-rationale
+docker compose exec backend bun run scripts/seed-llm-task-routes-orchestrator.ts              # 4 orchestrator-*
+docker compose exec backend bun run scripts/seed-llm-task-routes-proactive.ts                 # proactive-message-craft
+docker compose exec backend bun run scripts/seed-llm-task-routes-tracker-phase3.ts            # meeting-extract-actions, intake-auto-triage
+docker compose exec backend bun run scripts/seed-llm-task-routes-tracker-phase3-c.ts          # issue-infer-fields, issue-goal-suggest
+docker compose exec backend bun run scripts/seed-llm-task-routes-tracker-phase4-telegram.ts   # telegram-create-task и др. (4 шт.)
+docker compose exec backend bun run scripts/seed-llm-task-routes-feedback-cluster.ts          # feedback.cluster (4 уровня)
+docker compose exec backend bun run scripts/seed-llm-task-routes-clone-v2.ts                  # dialog-multi-query-clone, clone-respond v2 → deepseek-v4-pro
+docker compose exec backend bun run scripts/seed-llm-task-routes-specialists-combined.ts      # knowledge-specialists-combined (Variant Б+)
+docker compose exec backend bun run scripts/seed-llm-task-routes-dialog-layer.ts              # 5 dialog-* taskType
+docker compose exec backend bun run scripts/seed-llm-task-routes-temporal.ts                  # fact-supersede-detect
+docker compose exec backend bun run scripts/seed-llm-task-routes-kie-grsai-ab.ts              # A/B на dialog-multi-query (status=draft)
 
 # 7.7 — Глобальный default: DeepSeek-V4-Pro primary на ВСЕ taskType
-bun run scripts/seed-llm-default-primary-deepseek-pro.ts
-# Если хочешь перебить уже существующие primary (gpt-4o, deepseek-v4-flash и т.п.):
-# bun run scripts/seed-llm-default-primary-deepseek-pro.ts --update-existing
+docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pro.ts
+# Если хочешь перебить уже существующие primary:
+# docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pro.ts --update-existing
 ```
 
-ℹ️ Большинство `seed-llm-task-routes-*` принимают `--update-existing` — без него существующие записи не трогаются. Защита `editedByAdmin` блокирует затирание ручных правок админа везде.
+ℹ️ Большинство `seed-llm-task-routes-*` принимают `--update-existing` — без него существующие записи не трогаются. Защита `editedByAdmin` блокирует затирание ручных правок.
 
 ---
 
 ### Шаг 8 — Backfill (после schema + seed)
 
 ```bash
-bun run scripts/backfill-meeting-sources-fase1.ts                 # дефолтный Source(type=meeting) per Org
-bun run scripts/backfill-entity-link-types-fase0.ts               # EntityLink.fromType/toType → 'entity'
-bun run scripts/backfill-commitment-due-dates.ts --dry-run
-bun run scripts/backfill-commitment-due-dates.ts                  # β-8.2: проставить open + срок для legacy commitment'ов
+docker compose exec backend bun run scripts/backfill-meeting-sources-fase1.ts                 # дефолтный Source(type=meeting) per Org
+docker compose exec backend bun run scripts/backfill-entity-link-types-fase0.ts               # EntityLink.fromType/toType → 'entity'
+docker compose exec backend bun run scripts/backfill-commitment-due-dates.ts --dry-run
+docker compose exec backend bun run scripts/backfill-commitment-due-dates.ts                  # β-8.2
 
 # Опционально (дорого по LLM-quota):
-bun run scripts/skill-trait-concepts-backfill.ts
-bun run scripts/person-knowledge-embeddings-backfill.ts --dry-run
-bun run scripts/person-knowledge-embeddings-backfill.ts
+docker compose exec backend bun run scripts/skill-trait-concepts-backfill.ts
+docker compose exec backend bun run scripts/person-knowledge-embeddings-backfill.ts --dry-run
+docker compose exec backend bun run scripts/person-knowledge-embeddings-backfill.ts
 
 # НЕ запускать (помечен «без согласования»):
-# bun run scripts/backfill-task-assignee-userid.ts
+# docker compose exec backend bun run scripts/backfill-task-assignee-userid.ts
 ```
 
 ---
@@ -370,14 +412,15 @@ bun run scripts/person-knowledge-embeddings-backfill.ts
 
 ```bash
 # β-9: per-tenant Telegram-каналы → один глобальный
-bun run scripts/migrate-telegram-channels-to-global.ts --dry-run
+docker compose exec backend bun run scripts/migrate-telegram-channels-to-global.ts --dry-run
 # Изучи output (cases A/B/C/D/E). Если ок:
-bun run scripts/migrate-telegram-channels-to-global.ts
-# Аварийный откат: bun run scripts/migrate-telegram-channels-back.ts
+docker compose exec backend bun run scripts/migrate-telegram-channels-to-global.ts
+# Аварийный откат:
+# docker compose exec backend bun run scripts/migrate-telegram-channels-back.ts
 
 # Tracker: legacy Task → Issue (по умолчанию dry-run!)
-bun run migrate-task-to-issue                # alias = bun run scripts/migrate-task-to-issue.ts (dry-run)
-bun run migrate-task-to-issue --apply        # реальная запись
+docker compose exec backend bun run migrate-task-to-issue                # = bun run scripts/migrate-task-to-issue.ts (dry-run)
+docker compose exec backend bun run migrate-task-to-issue --apply        # реальная запись
 ```
 
 ---
@@ -386,39 +429,47 @@ bun run migrate-task-to-issue --apply        # реальная запись
 
 ```bash
 # Telegram (β-9, 2026-05-25): теперь ГЛОБАЛЬНЫЙ — один на всю инсталляцию, без --tenant-id!
-bun run setup:telegram-bot -- --token=$TG_TOKEN --public-host-url=https://prod.host --webhook-secret=<секрет>
+docker compose exec backend bun run setup:telegram-bot \
+  -- --token=$TG_TOKEN --public-host-url=https://prod.host --webhook-secret=<секрет>
 
 # MAX (платформа Дзен): пока per-tenant
-bun run setup:max-bot -- --token=$MAX_TOKEN --tenant-id=$ORG_ID --public-host-url=https://prod.host --webhook-secret=<секрет>
+docker compose exec backend bun run setup:max-bot \
+  -- --token=$MAX_TOKEN --tenant-id=$ORG_ID --public-host-url=https://prod.host --webhook-secret=<секрет>
 ```
 
 ⚠️ В старых рефлексиях `setup-telegram-bot` мог упоминаться с `--tenant-id` — **это устарело с β-9**.
 
 ---
 
-### Шаг 11 — Build + restart (HTTP + worker — два процесса!)
+### Шаг 11 — Рестарт после ENV / кода
 
 ```bash
-cd ../frontend && bun run build
-cd ../backend && bun run build
+# Поднять / пересоздать с новым образом (миграция уже отработала в Шаге 4):
+docker compose up -d --build
 
-# Если backend и worker в одном compose:
-docker compose up -d --build backend
+# Только подхватить новый .env (без пересборки кода):
+docker compose up -d --force-recreate backend
 
-# Если worker — отдельный сервис (рекомендуется в проде):
-docker compose restart backend
-docker compose restart worker
+# Если worker'ы вынесены в отдельный сервис (см. ниже) — рестарт его тоже:
+# docker compose up -d --force-recreate worker
 ```
 
-⚠️ **Воркер — отдельный процесс** (`backend/src/workers/main.ts`). Без рестарта worker'а новые BullMQ-очереди и `@Cron`'ы не подцепятся. Без рестарта backend — не подцепятся новые REST/WS-роуты.
+⚠️ В текущем `docker-compose.yml` **backend и BullMQ-воркеры — один контейнер** (worker'ы in-process по `backend/src/workers/main.ts`, который тоже грузится в HTTP-приложение). Один рестарт `backend` подхватывает и новые REST/WS-роуты, и новые BullMQ-очереди, и новые `@Cron`'ы.
+
+Если когда-нибудь будет добавлен отдельный сервис `worker` — рестарт строго оба, иначе новые очереди не подцепятся.
 
 ---
 
 ### Шаг 12 — Smoke-проверка
 
 ```bash
+# Health endpoints (изнутри compose-сети nginx → backend):
 curl https://prod.host/health
 curl https://prod.host/api/docs                  # Swagger UI
+
+# Или напрямую к контейнеру (если nginx ещё не настроен):
+docker compose exec backend wget -qO- http://127.0.0.1:3000/health
+docker compose exec backend wget -qO- http://127.0.0.1:3000/health/ready
 ```
 
 В Swagger должны появиться разделы: **tracker, projects, issues, cycles, intake, webhooks, comments, labels, attachments, relations, team-templates, chat-v2, conversational, curation, decisions, events, ideas, insights, knowledge-clone, clones, probe, regulations, vendors, calendar (events)**.
@@ -430,7 +481,7 @@ curl https://prod.host/metrics | grep -E 'z_voice_ws|z_mail_inbound|z_llm_cache|
 Должны быть `bullmq_*` метрики под новые очереди: `probe-*, conversational-send, chat-v2-cleanup, card-stale-detector, idea-clusterer, insight-clusterer, knowledge-clone-rebuild, skill-profile-*, executable-persona-build, skill-manager-digest, tracker.webhook-delivery`.
 
 ```bash
-# Hot-reload Prometheus alerts (если изменялись правила):
+# Hot-reload Prometheus alerts (если изменялись правила, и Prometheus в этом же compose):
 docker compose exec prometheus kill -HUP 1
 ```
 
@@ -440,14 +491,14 @@ docker compose exec prometheus kill -HUP 1
 
 | Операция | Чем опасна | Защита |
 |---|---|---|
-| `prisma:push` + `--accept-data-loss` | Дроп `Transcript.rawIndexS3Url` — данные исчезнут | Данные перенесены в `TranscriptTrack` (Wave 5). Проверить отсутствие внешних потребителей S3-ключа. |
-| `apply-postgres-init` без AGE в shared_preload_libraries | Падение с `extension "age" is not available` | Шаг 0.1 |
-| `patch-mass-migrate-to-deepseek-pro.ts --update-existing` | Перезатирает primary провайдер у НЕ-admin-edited LlmTaskRoute | Сначала `--dry-run`, затем `--update-existing`. `editedByAdmin` защищён. |
-| `seed-llm-default-primary-deepseek-pro.ts --update-existing` | Меняет primary у ВСЕХ taskType | `editedByAdmin` НЕ трогается. Использовать ТОЛЬКО если действительно хочешь сбросить ручные настройки. |
-| `migrate-task-to-issue --apply` | Конвертирует legacy Task → Issue | Идемпотентен (externalSource+externalId). Сначала dry-run. Task не удаляется. |
-| `backfill-task-assignee-userid.ts` | В шапке файла стоит «НЕ ЗАПУСКАТЬ НА ПРОДЕ без согласования» | Пропустить в стандартной инструкции. |
-| `patch-rollback-to-deepseek-flash.ts --update-existing` | Массовый откат 26 LlmTaskRoute с pro→flash. Не плановая операция — только при инциденте после миграции на DeepSeek-V4-Pro | Защищён флагом `--update-existing`; `editedByAdmin=true` не трогает. Сначала `--dry-run --update-existing`. |
-| `CLONE_V2_ENABLED=true` без предварительного запуска `patch-migrate-clone-access.ts` | У всех пользователей пропадёт доступ к клонам — единственный источник правды CloneAccessGrant будет пуст | См. Шаг 6.10 + Шаг 6.11. Порядок: миграция грантов → сверка в `/admin/clones` → ENV true → рестарт. |
+| `prisma:push` + `--accept-data-loss` (внутри `migrate`-сервиса) | DROP `Transcript.rawIndexS3Url` — данные исчезнут | Данные перенесены в `TranscriptTrack` (Wave 5). Проверить отсутствие внешних потребителей S3-ключа. |
+| Запуск `migrate` без AGE в postgres-образе | Падение с `extension "age" is not available` | Шаг 0.1 |
+| `patch-mass-migrate-to-deepseek-pro.ts --update-existing` | Перезатирает primary провайдер у НЕ-admin-edited LlmTaskRoute | Сначала `--dry-run`. `editedByAdmin` защищён. |
+| `seed-llm-default-primary-deepseek-pro.ts --update-existing` | Меняет primary у ВСЕХ taskType | `editedByAdmin` НЕ трогается. ТОЛЬКО для сброса ручных настроек. |
+| `migrate-task-to-issue --apply` | Конвертирует legacy Task → Issue | Идемпотентен. Сначала dry-run. Task не удаляется. |
+| `backfill-task-assignee-userid.ts` | В шапке файла «НЕ ЗАПУСКАТЬ НА ПРОДЕ без согласования» | Пропустить. |
+| `patch-rollback-to-deepseek-flash.ts --update-existing` | Массовый откат 26 LlmTaskRoute pro→flash. Не плановая | Защищён флагом `--update-existing`; `editedByAdmin=true` не трогает. Сначала `--dry-run`. |
+| `CLONE_V2_ENABLED=true` без `patch-migrate-clone-access.ts` | У всех пользователей пропадёт доступ к клонам | См. Шаг 6.10 + 6.11. Порядок: миграция грантов → сверка в `/admin/clones` → ENV → `force-recreate backend`. |
 
 ---
 
@@ -459,13 +510,24 @@ _(пусто — это первый накопительный документ
 
 ## 🔄 Правила поддержки файла
 
-**Когда обновлять.** После каждого `git push` в `dev`/`main`, если push содержит:
+### Жёсткие правила формата команд
+
+1. **Все команды — через `docker compose`.** Никаких `cd backend && bun run ...` на хосте. Z в проде целиком в контейнерах.
+2. **Patch/seed/backfill/migrate-скрипты** — через `docker compose exec backend bun run scripts/<file>.ts` (backend уже запущен) ИЛИ `docker compose run --rm backend bun run scripts/<file>.ts` (одноразовый контейнер, если backend ещё не стартовал — например, в Шаге 3).
+3. **Schema/postgres-init** — автоматически через `migrate`-сервис при `docker compose up`. Вручную: `docker compose run --rm backend bun run apply-postgres-init`.
+4. **Бэкап БД** — только через `docker compose exec -T postgres pg_dump`, никаких локальных `pg_dump` к ip-сервера.
+5. **ENV** — правка корневого `.env` + `docker compose up -d --force-recreate backend` (для `NEXT_PUBLIC_*` — `--build frontend`).
+6. **Restart** — `docker compose up -d --build backend` (новый код) или `docker compose up -d --force-recreate backend` (новый ENV).
+
+### Когда обновлять
+
+После каждого `git push` в `dev`/`main`, если push содержит:
 
 | Что изменилось | Куда писать в разделе «Накоплено к выкату» |
 |---|---|
 | `backend/prisma/schema.prisma` (новая модель / nullable→NOT NULL / drop / новый enum) | Шаг 4 |
 | `backend/scripts/postgres-init.sql` (HNSW / GIN / partial unique / extension) | Шаг 5 |
-| Новый файл `backend/scripts/patch-*.ts` | Шаг 6 (выбрать подгруппу 6.x по теме) |
+| Новый файл `backend/scripts/patch-*.ts` | Шаг 6 |
 | Новый файл `backend/scripts/seed-*.ts` | Шаг 7 |
 | Новый файл `backend/scripts/backfill-*.ts` | Шаг 8 |
 | Новый файл `backend/scripts/migrate-*.ts` | Шаг 9 |
@@ -474,18 +536,24 @@ _(пусто — это первый накопительный документ
 | Новая модель worker / cron / BullMQ-очередь | Шаг 12 (smoke: добавить в grep по `bullmq_`) |
 | Новый REST/Swagger раздел | Шаг 12 (smoke: добавить в список разделов Swagger) |
 | Включение нового feature flag по умолчанию | Шаг 1 («Kill-switch'и») |
+| Изменения в `docker-compose.yml` (новые сервисы / порты / depends_on) | Pre-flight 0 или Шаг 11 |
+| Изменения в `Dockerfile` / `bunfig.toml` / `bun.lock` | Шаг 2 |
 
-**Как обновлять.**
+### Как обновлять
 
 1. После `git push` запусти у себя:
-   ```
+   ```bash
    git show --stat HEAD
-   git diff HEAD~N --name-only | grep -E '(prisma/schema|scripts/(seed|patch|migrate|backfill|setup|smoke)|postgres-init\.sql|env\.schema\.ts)'
+   git diff HEAD~N --name-only | grep -E '(prisma/schema|scripts/(seed|patch|migrate|backfill|setup|smoke)|postgres-init\.sql|env\.schema\.ts|Dockerfile|bunfig|docker-compose)'
    ```
-2. Для каждого попавшего файла добавь строчку в соответствующий шаг. Стиль — одна команда + комментарий: что делает / опц. флаги / опц. порядок.
+2. Для каждого попавшего файла добавь строчку в соответствующий шаг — **обязательно с префиксом `docker compose exec backend …`** (или `run --rm backend …` для pre-up сценариев).
 3. Если переименовываешь существующий скрипт или меняешь поведение — **обнови запись inline**, не дублируй.
 4. Если запись становится неактуальной (фича откатили) — удали из «Накоплено к выкату».
 
-**Когда переносить в архив.** После триггера «выкат прошёл / прод обновили / выкатили» — целиком копируешь блок «🚨 Накоплено к выкату» в новый подраздел `## 📂 Архив применённых` → `### 2026-MM-DD — выкат N` с пометкой кто выкатил и какие были инциденты. Раздел «Накоплено к выкату» обнуляется (Pre-flight + пустой Шаг 1..12).
+### Когда переносить в архив
 
-**Связь с рефлексией.** При записи рефлексии в `second-brain/05_история/` всегда ссылайся на этот файл («prod-инструкция обновлена → см. `docs/operations/prod-deploy-log.md`»), вместо того чтобы дублировать команды в рефлексии.
+После триггера «выкат прошёл / прод обновили / выкатили» — целиком копируешь блок «🚨 Накоплено к выкату» в новый подраздел `## 📂 Архив применённых` → `### 2026-MM-DD — выкат N` с пометкой кто выкатил и какие были инциденты. Раздел «Накоплено к выкату» обнуляется (Pre-flight + пустой Шаг 1..12).
+
+### Связь с рефлексией
+
+При записи рефлексии в `second-brain/05_история/` всегда ссылайся на этот файл («prod-инструкция обновлена → см. `docs/operations/prod-deploy-log.md`»), вместо того чтобы дублировать команды в рефлексии.

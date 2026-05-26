@@ -147,7 +147,7 @@
 
 4. **Закоммить и запушь рефлексию** отдельным `docs(second-brain): рефлексия — ...` коммитом.
 
-5. **Обнови `docs/operations/prod-deploy-log.md`** — это **единый кумулятивный реестр** prod-операций. Запусти `git show --stat HEAD` (и `git diff HEAD~N --name-only` если push содержит несколько коммитов), и для каждого попавшего файла из списка ниже добавь/обнови запись в нужном Шаге раздела «🚨 Накоплено к выкату»:
+5. **Обнови `docs/operations/prod-deploy-log.md`** — это **единый кумулятивный реестр** prod-операций. **ВСЕ команды этого файла — через `docker compose exec backend ...` (или `docker compose run --rm backend ...` для pre-up-сценариев). Никаких прямых `cd backend && bun run ...` или `bun install` — Z в проде целиком в docker-compose.** Запусти `git show --stat HEAD` (и `git diff HEAD~N --name-only` если push содержит несколько коммитов), и для каждого попавшего файла из списка ниже добавь/обнови запись в нужном Шаге раздела «🚨 Накоплено к выкату»:
    - `backend/prisma/schema.prisma` → Шаг 4 (новые модели / опасные изменения / enum)
    - `backend/scripts/postgres-init.sql` → Шаг 5 (новые HNSW/GIN/partial/extension)
    - `backend/scripts/patch-*.ts` → Шаг 6

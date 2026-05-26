@@ -60,6 +60,8 @@ import { AdminUsageService } from './services/admin-usage.service';
 import { OrgAdminKnowledgeService } from './services/org-admin-knowledge.service';
 import { AdminSkillTraitConceptsModule } from './skill-trait-concepts/skill-trait-concepts.module';
 import { LlmPreferenceDatasetController } from './llm-preference-dataset/llm-preference-dataset.controller';
+import { SignalTypeMonitorController } from './signal-type-monitor/signal-type-monitor.controller';
+import { SignalTypeMonitorService } from './signal-type-monitor/signal-type-monitor.service';
 import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 import { AdminTelegramBotController } from './system/telegram-bot/admin-telegram-bot.controller';
 import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bot.service';
@@ -135,6 +137,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminTelegramBotController,
     // W2.3 KC-Temporal (2026-05-25) — admin download preference-dataset.
     LlmPreferenceDatasetController,
+    // G.2 KC-Temporal (2026-05-25) — admin view матрицы переходов signalType.
+    SignalTypeMonitorController,
   ],
   providers: [
     AdminAuditInterceptor,
@@ -166,6 +170,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     // β-9 Phase 4 — service для админки Telegram-бота. TelegramApiClient
     // импортируется из ConversationalModule (global).
     AdminTelegramBotService,
+    // G.2 KC-Temporal (2026-05-25) — чтение AdminSetting{key=signal_type_transition_matrix:*}.
+    SignalTypeMonitorService,
   ],
   exports: [
     AdminAuditInterceptor,

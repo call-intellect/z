@@ -1,0 +1,102 @@
+# Prometheus alert rules для Knowledge-Core Temporal (ТЗ 2026-05-25):
+# DataClassPolicy outbound-блокировки (W4.3), стоимость fact-supersede-detect
+# (W1.2) и дрейф распределения signalType (G.2).
+#
+# Метрики:
+#   - kc_dataclass_violation_blocked_total{sink, requested, max_allowed}  (counter)
+#       инкремент на каждый `allowed: false` из DataClassPolicyService.canEmit.
+#       Бизнес-инвариант: любой инцидент критичен — мы пытались отдать
+#       данные класса выше, чем разрешено для outbound-канала.
+#       sink ∈ webhook | share | export | concierge | …
+#   - ai_cost_usd_total_labeled{tenant_top, task_type, provider, model}   (counter)
+#       суммарная стоимость AI-вызовов в USD. Используем фильтр
+#       task_type="fact-supersede-detect" для weekly-cost spike alert (W1.2).
+#       Порог 5% задаётся через ENV FACT_SUPERSEDE_COST_ALERT_PCT
+#       (env.schema.ts:659) — здесь захардкожен в expr.
+#   - kc_signal_type_distribution{signal_type, org_id}                     (gauge)
+#       распределение signalType за последние 7д (SignalTypeStatsCron, G.2).
+#       Алёрт ловит дрейф classifier'а: текущее значение vs 30-дневное
+#       среднее > 50%.
+#
+# Подключаются через prometheus.yml → `rule_files: [/etc/prometheus/alerts/*.yml]`.
+# Лейблы: component=kc (паттерн проекта), team=kc-temporal (маршрутизация в Alertmanager).
+groups:
+  - name: z-kc-dataclass-policy
+    interval: 30s
+    rules:
+      - alert: KcDataClassViolationBlocked
+        # Outbound-gating сработал: попытка отправить данные класса выше
+        # разрешённого для канала. Любое значение > 0 — page on-call.
+        # Считаем rate за 5 минут — реагируем на ОДИН blocked-вызов в окне.
+        expr: |
+          sum by (sink, requested, max_allowed) (
+            rate(kc_dataclass_violation_blocked_total[5m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: kc
+          team: kc-temporal
+        annotations:
+          summary: "DataClassPolicy заблокировала outbound: sink={{ $labels.sink }}, requested={{ $labels.requested }}, max={{ $labels.max_allowed }}"
+          description: "За последние 5 минут зафиксированы блокировки `kc_dataclass_violation_blocked_total` > 0 (текущее значение = {{ $value | humanize }}). Это означает, что DataClassPolicyService.canEmit вернул `allowed: false` — попытка отправить данные класса {{ $labels.requested }} в канал {{ $labels.sink }} с разрешённым максимумом {{ $labels.max_allowed }}. Метрика — бизнес-инвариант; runbook: docs/policies/outbound-gating-runbook.md. Откройте /admin/policy/dataclass для деталей."
+
+  - name: z-kc-fact-supersede-cost
+    interval: 5m
+    rules:
+      - alert: FactSupersedeCostSpike
+        # Прирост недельных расходов LLM на fact-supersede-detect > 5%
+        # неделя-к-неделе. Порог 5% задаётся ENV FACT_SUPERSEDE_COST_ALERT_PCT;
+        # ENV → expr вручную (Prometheus не читает env runtime'а NestJS).
+        # Если меняешь порог в env.schema.ts:659 — синхронизируй здесь.
+        # При нулевой стоимости за прошлую неделю (новый агент) — алерт молчит
+        # (clamp_min защищает от деления на 0; знаменатель ниже 0.01 USD
+        # считаем «нет базы»).
+        expr: |
+          (
+            sum(increase(ai_cost_usd_total_labeled{task_type="fact-supersede-detect"}[7d]))
+              /
+            clamp_min(
+              sum(increase(ai_cost_usd_total_labeled{task_type="fact-supersede-detect"}[7d] offset 7d)),
+              0.01
+            )
+            - 1
+          ) > 0.05
+        for: 30m
+        labels:
+          severity: warning
+          component: kc
+          team: kc-temporal
+        annotations:
+          summary: "Стоимость LLM на fact-supersede-detect выросла > 5% за неделю"
+          description: "Неделя-к-неделе прирост по taskType=fact-supersede-detect превысил порог FACT_SUPERSEDE_COST_ALERT_PCT=5% (текущий прирост = {{ $value | humanizePercentage }}). Возможные причины: (1) объём ingest'а вырос (см. kc_facts_open_gauge), (2) FACT_SUPERSEDE_COSINE_THRESHOLD понижен (env.schema.ts:648) и KNN отдаёт больше кандидатов на LLM, (3) промпт fact-supersede-detect-v1 деградировал. Откройте /admin/analytics/economics для разбивки."
+
+  - name: z-kc-signal-type-drift
+    interval: 5m
+    rules:
+      - alert: SignalTypeDistributionDrift
+        # Дрейф classifier'а signalType: gauge kc_signal_type_distribution
+        # (распределение за последние 7д от SignalTypeStatsCron, G.2) отклонился
+        # от 30-дневного среднего более чем на 50% по любому signal_type.
+        # Subquery [30d:1h] — оптимально по точности vs нагрузке на TSDB
+        # (gauge обновляется раз в сутки cron'ом «0 2 * * *»).
+        # `> 50` блоков в знаменателе — защита от шума на редких типах;
+        # дрейф на 5 vs 2 блоках не несёт сигнала.
+        expr: |
+          (
+            abs(
+              kc_signal_type_distribution
+                -
+              avg_over_time(kc_signal_type_distribution[30d:1h])
+            )
+              /
+            clamp_min(avg_over_time(kc_signal_type_distribution[30d:1h]), 50)
+          ) > 0.5
+        for: 1h
+        labels:
+          severity: warning
+          component: kc
+          team: kc-temporal
+        annotations:
+          summary: "Дрейф classifier'а signalType: тип={{ $labels.signal_type }}, org={{ $labels.org_id }}"
+          description: "Распределение signalType={{ $labels.signal_type }} для org_id={{ $labels.org_id }} отклонилось от 30-дневного среднего более чем на 50% (текущее отклонение = {{ $value | humanizePercentage }}). Возможные причины: изменили промпт block-distill (классификатор «уехал»), появился новый источник rawEvent, регрессия в SignalTypeStatsCron. Откройте /admin/ai/signal-type-monitor для матрицы переходов и /admin/ai/knowledge-core для порогов classifier'а."

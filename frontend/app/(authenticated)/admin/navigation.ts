@@ -220,6 +220,22 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         icon: Brain,
         matchPrefix: '/admin/skill-trait-concepts',
       },
+      // W2.3 KC-Temporal (2026-05-25) — preference-dataset для retraining'а
+      // few-shot'ов специалистов LLM.
+      {
+        href: '/admin/ai/preference-dataset',
+        label: 'Preference dataset',
+        icon: Inbox,
+        matchPrefix: '/admin/ai/preference-dataset',
+      },
+      // G.2 KC-Temporal (2026-05-25) — мониторинг distribution + матрицы
+      // переходов signalType (дрейф классификатора).
+      {
+        href: '/admin/ai/signal-type-monitor',
+        label: 'Мониторинг signalType',
+        icon: LineChart,
+        matchPrefix: '/admin/ai/signal-type-monitor',
+      },
     ],
   },
 

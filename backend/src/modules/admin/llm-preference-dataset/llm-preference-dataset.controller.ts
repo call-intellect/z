@@ -56,4 +56,49 @@ export class LlmPreferenceDatasetController {
       limit: n,
     });
   }
+
+  /**
+   * JSON-список последних N сэмплов для UI-таблицы `/admin/ai/preference-dataset`.
+   * Дефолтный лимит 200 (страница не предназначена для bulk-выгрузки —
+   * для retraining'а используется `GET ./` без `/items`).
+   */
+  @Get('items')
+  async items(
+    @Query('taskType') taskType?: string,
+    @Query('label') label?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ): Promise<{
+    items: Awaited<ReturnType<PreferenceDatasetService['listItems']>>;
+  }> {
+    const fromDate = from ? new Date(from) : undefined;
+    const toDate = to ? new Date(to) : undefined;
+    const n = limit ? Number(limit) : 200;
+    const items = await this.svc.listItems({
+      taskType,
+      label,
+      from: fromDate && !isNaN(fromDate.getTime()) ? fromDate : undefined,
+      to: toDate && !isNaN(toDate.getTime()) ? toDate : undefined,
+      limit: n,
+    });
+    return { items };
+  }
+
+  /**
+   * Агрегаты для верхней панели страницы: всего сэмплов, разбивка по label
+   * и матрица (taskType × label). Один лёгкий groupBy-запрос.
+   */
+  @Get('stats')
+  async stats(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<Awaited<ReturnType<PreferenceDatasetService['stats']>>> {
+    const fromDate = from ? new Date(from) : undefined;
+    const toDate = to ? new Date(to) : undefined;
+    return this.svc.stats({
+      from: fromDate && !isNaN(fromDate.getTime()) ? fromDate : undefined,
+      to: toDate && !isNaN(toDate.getTime()) ? toDate : undefined,
+    });
+  }
 }

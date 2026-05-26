@@ -149,6 +149,36 @@ export class PreferenceDatasetService {
     to?: Date;
     limit?: number;
   }): Promise<string> {
+    const items = await this.listItems({ ...args, limit: args.limit ?? 10_000 });
+    return items.map((s) => JSON.stringify(s)).join('\n');
+  }
+
+  /**
+   * Структурированный список сэмплов (для admin-UI `/admin/ai/preference-dataset`).
+   * В отличие от exportJsonl возвращает массив, а не строку — UI рендерит таблицу
+   * + позволяет фильтровать. Дефолтный лимит ниже (200), потому что UI не должен
+   * грузить десятки тысяч записей.
+   */
+  async listItems(args: {
+    taskType?: string;
+    label?: string;
+    from?: Date;
+    to?: Date;
+    limit?: number;
+  }): Promise<
+    Array<{
+      id: string;
+      tenantId: string;
+      taskType: string;
+      inputContext: unknown;
+      modelOutput: unknown;
+      label: string;
+      reason: string | null;
+      recordedBy: string | null;
+      decisionId: string | null;
+      createdAt: string;
+    }>
+  > {
     const where: Prisma.LlmPreferenceSampleWhereInput = {};
     if (args.taskType) where.taskType = args.taskType;
     if (args.label) where.label = args.label;
@@ -160,24 +190,75 @@ export class PreferenceDatasetService {
     const samples = await this.prisma.llmPreferenceSample.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: args.limit ?? 10_000,
+      take: Math.max(1, Math.min(50_000, args.limit ?? 200)),
     });
-    return samples
-      .map((s) =>
-        JSON.stringify({
-          id: s.id,
-          tenantId: s.tenantId,
-          taskType: s.taskType,
-          inputContext: s.inputContext,
-          modelOutput: s.modelOutput,
-          label: s.label,
-          reason: s.reason,
-          recordedBy: s.recordedBy,
-          decisionId: s.decisionId,
-          createdAt: s.createdAt.toISOString(),
-        }),
-      )
-      .join('\n');
+    return samples.map((s) => ({
+      id: s.id,
+      tenantId: s.tenantId,
+      taskType: s.taskType,
+      inputContext: s.inputContext,
+      modelOutput: s.modelOutput,
+      label: s.label,
+      reason: s.reason,
+      recordedBy: s.recordedBy,
+      decisionId: s.decisionId,
+      createdAt: s.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Сводка для дашборда `/admin/ai/preference-dataset` — счётчики по
+   * `(taskType, label)` за период, плюс глобальный total. Хорошая «первая
+   * картинка» при открытии страницы.
+   */
+  async stats(args: { from?: Date; to?: Date }): Promise<{
+    total: number;
+    byLabel: Record<string, number>;
+    byTaskType: Array<{
+      taskType: string;
+      correct: number;
+      wrong: number;
+      misleading: number;
+      total: number;
+    }>;
+  }> {
+    const where: Prisma.LlmPreferenceSampleWhereInput = {};
+    if (args.from || args.to) {
+      where.createdAt = {};
+      if (args.from) where.createdAt.gte = args.from;
+      if (args.to) where.createdAt.lte = args.to;
+    }
+    const grouped = await this.prisma.llmPreferenceSample.groupBy({
+      by: ['taskType', 'label'],
+      where,
+      _count: { _all: true },
+    });
+    const byLabel: Record<string, number> = {};
+    const byTaskMap = new Map<
+      string,
+      { correct: number; wrong: number; misleading: number; total: number }
+    >();
+    let total = 0;
+    for (const row of grouped) {
+      const n = row._count._all;
+      total += n;
+      byLabel[row.label] = (byLabel[row.label] ?? 0) + n;
+      const cur = byTaskMap.get(row.taskType) ?? {
+        correct: 0,
+        wrong: 0,
+        misleading: 0,
+        total: 0,
+      };
+      cur.total += n;
+      if (row.label === 'correct') cur.correct += n;
+      else if (row.label === 'wrong') cur.wrong += n;
+      else if (row.label === 'misleading') cur.misleading += n;
+      byTaskMap.set(row.taskType, cur);
+    }
+    const byTaskType = Array.from(byTaskMap.entries())
+      .map(([taskType, v]) => ({ taskType, ...v }))
+      .sort((a, b) => b.total - a.total);
+    return { total, byLabel, byTaskType };
   }
 
   private getOrCreateCounter(): Counter<'task_type' | 'label'> {

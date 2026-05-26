@@ -21,6 +21,17 @@
 
 ---
 
+## Два сценария выката
+
+| Сценарий | Когда | Куда смотреть |
+|---|---|---|
+| **A. Обновление (данные сохраняем)** | Стандартный workflow: prod уже работает, данные пользователей важны | Шаги 0..12 ниже (с GATE-backfill'ами и patch/migrate-скриптами для legacy) |
+| **B. Чистый выкат с нуля (wipe & fresh)** | Beta/staging без важных данных; или postgres-volume несовместим с новым образом (например, был pg17 → стал composite pg16) | См. [📦 Сценарий B: Чистый выкат с нуля](#-сценарий-b-чистый-выкат-с-нуля) ниже. **Минует patch/backfill/migrate — на пустой БД они не нужны.** |
+
+⚠️ Если `docker compose up` падает с ошибкой про `database files are incompatible with server` или `migrate` exit 1 на CREATE EXTENSION — у тебя НЕ composite postgres-образ запущен (или volume старого PG). Перейди в [Сценарий B](#-сценарий-b-чистый-выкат-с-нуля).
+
+---
+
 ### Шаг 0 — Pre-flight (один раз перед выкатом)
 
 **0.1. Apache AGE в postgres-образе.**
@@ -486,6 +497,179 @@ curl https://prod.host/metrics | grep -E 'z_voice_ws|z_mail_inbound|z_llm_cache|
 # Hot-reload Prometheus alerts (если изменялись правила, и Prometheus в этом же compose):
 docker compose exec prometheus kill -HUP 1
 ```
+
+---
+
+## 📦 Сценарий B: Чистый выкат с нуля
+
+> Используй когда: данные в БД можно потерять (beta/staging), ИЛИ postgres-volume несовместим с composite-образом `z-postgres-age-pgvector:pg16` (например, был унаследован старый `pgvector/pgvector:pg17`). На чистой БД **не нужны** patch/backfill/migrate-скрипты (Шаги 6, 8, 9) — нечего бэкфилить.
+
+### B.1 — Down + wipe volumes
+
+```bash
+cd /home/docker/z         # путь к docker-compose.yml на проде
+docker compose down -v    # -v удаляет volumes: z_z-postgres-data, z_z-redis-data
+```
+
+⚠️ **Безвозвратно стирает БД и redis-AOF.** Если есть хоть какие-то данные, которые жалко — сначала `Шаг 0.2` бэкап.
+
+### B.2 — Pull + ENV
+
+```bash
+git pull origin dev
+set -a && source .env && set +a   # подтянуть POSTGRES_USER/DB в shell
+```
+
+**Обязательный минимум в `.env`:**
+```bash
+POSTGRES_DB=z_main
+POSTGRES_USER=z_app
+POSTGRES_PASSWORD=<openssl rand -hex 16>
+DATABASE_URL=postgresql://z_app:<тот_же_пароль>@postgres:5432/z_main
+
+JWT_SESSION_SECRET=<openssl rand -hex 32>
+JWT_DEEP_LINK_SECRET=<openssl rand -hex 32>
+WEBHOOK_SECRETS_ENCRYPTION_KEY=<openssl rand -base64 32>
+IP_HASH_DAILY_SALT=<openssl rand -hex 16>
+
+LIVEKIT_API_KEY=<совпадает с infra/livekit/livekit.yaml>
+LIVEKIT_API_SECRET=<совпадает>
+LIVEKIT_WEBHOOK_API_KEY=<тот же>
+LIVEKIT_WEBHOOK_API_SECRET=<тот же>
+
+# NEXT_PUBLIC_* — вшиваются в frontend-бандл на сборке
+NEXT_PUBLIC_API_BASE_URL=https://api.your-domain.tld
+NEXT_PUBLIC_BACKEND_URL=https://api.your-domain.tld
+NEXT_PUBLIC_LIVEKIT_URL=wss://media.your-domain.tld
+NEXT_PUBLIC_FRONTEND_URL=https://app.your-domain.tld
+
+# Первый супер-админ (создаётся через bun prisma/seed.ts в Шаге B.6)
+ADMIN_BOOTSTRAP_EMAIL=<твой email>
+ADMIN_BOOTSTRAP_NAME=Admin
+
+# Все Kill-switch'и оставь false:
+BITEMPORAL_ENABLED=false
+BITEMPORAL_SUPERSEDE_ENABLED=false
+CLONE_V2_ENABLED=false                   # на чистой БД сразу можно true (нет existing pol'ей)
+SPECIALISTS_COMBINED_ENABLED=false
+COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM=false
+DATACLASS_POLICY_ENFORCEMENT=shadow
+
+# Опциональное (если используешь Telegram-бот):
+KORA_BOT_USERNAME=kora_bot
+```
+
+### B.3 — Sanity-check + build
+
+```bash
+grep -c npmmirror backend/bun.lock frontend/bun.lock     # должно быть 0 / 0
+docker compose build                                     # 5-15 мин на холодную
+```
+
+### B.4 — Up (postgres → init.sql → migrate → backend → frontend)
+
+```bash
+docker compose up -d
+docker compose logs -f migrate
+# Жди:
+#   "✓ postgres-init.sql выполнен"
+#   "=== apply-postgres-init DONE ==="
+# затем Ctrl+C
+```
+
+### B.5 — Проверка composite-образа PG + extensions
+
+```bash
+docker compose ps postgres
+# IMAGE должно быть: z-postgres-age-pgvector:pg16
+
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT extname, extversion FROM pg_extension WHERE extname IN ('age','vector');"
+# 2 строки: age 1.5+, vector 0.8+
+
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT name FROM ag_catalog.ag_graph WHERE name = 'z_graph';"
+# 1 строка: z_graph
+```
+
+Если postgres image не composite — пересобери и форсируй recreate:
+```bash
+docker compose build postgres
+docker compose up -d --force-recreate postgres
+```
+
+### B.6 — Бутстрап первого супер-админа
+
+```bash
+docker compose run --rm backend bun prisma/seed.ts
+# Создаст User по ADMIN_BOOTSTRAP_EMAIL + Org "default" + role=admin.
+```
+
+### B.7 — Базовый каркас LLM (без него AI-фичи не работают)
+
+```bash
+docker compose exec backend bun run scripts/seed-default-llm-providers-and-models.ts
+docker compose exec backend bun run scripts/seed-llm-model-prices.ts
+docker compose exec backend bun run scripts/seed-prompt-templates.ts
+docker compose exec backend bun run scripts/seed-llm-task-routes-default.ts
+```
+
+### B.8 — Прочие seed'ы (тарифы, календарь, шаблоны, домены, бейджи, Telegram)
+
+```bash
+docker compose exec backend bun run scripts/seed-entitlements.ts
+docker compose exec backend bun run scripts/seed-retention-policies.ts
+docker compose exec backend bun run scripts/seed-holiday-calendar-ru-2026.ts
+docker compose exec backend bun run scripts/seed-team-templates.ts
+docker compose exec backend bun run scripts/seed-functional-domains.ts
+docker compose exec backend bun run scripts/seed-admin-settings.ts
+docker compose exec backend bun run scripts/seed-admin-setting-daily-digest.ts
+docker compose exec backend bun run scripts/seed-badges.ts
+docker compose exec backend bun run scripts/seed-global-channels.ts
+```
+
+### B.9 — LLM TaskRoutes для всех новых taskType (35 скриптов одним циклом)
+
+```bash
+for s in phase-B phase-C phase-D phase-E regulations knowledge-clone knowledge-core \
+         decisions insights ideas-and-probe skill-and-clone skill-concept chat-v2 \
+         recognition helpfulness beta-8 beta-8-1 beta-8-2 beta-8-3 axis-classify \
+         brand-voice company-foundation concierge cross-functional experiments \
+         process-template role-map orchestrator proactive tracker-phase3 \
+         tracker-phase3-c tracker-phase4-telegram feedback-cluster clone-v2 \
+         specialists-combined dialog-layer temporal kie-grsai-ab; do
+  echo "=== seed-llm-task-routes-$s ==="
+  docker compose exec backend bun run scripts/seed-llm-task-routes-$s.ts
+done
+
+# Глобальный primary: DeepSeek-V4-Pro
+docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pro.ts
+```
+
+### B.10 — Setup глобального Telegram-бота (если используешь)
+
+```bash
+docker compose exec backend bun run setup:telegram-bot \
+  -- --token=$TG_TOKEN --public-host-url=https://prod.host --webhook-secret=<секрет>
+```
+
+### B.11 — Smoke
+
+```bash
+curl https://prod.host/health
+curl https://prod.host/health/ready
+# {"ok":true,"checks":{"postgres":"ok","redis":"ok","livekit":"ok"}}
+
+curl -s https://prod.host/api/docs > /dev/null && echo "Swagger OK"
+curl -s https://prod.host/metrics | grep -E 'bullmq_(probe|conversational|chat-v2|knowledge-clone|skill|tracker)' | head
+```
+
+### Чего в Сценарии B НЕ делать
+
+- ❌ Шаг 3 (PRE-MIGRATION gate) — нет legacy Meeting с NULL tenantId.
+- ❌ Шаг 6 (patch-*) — нечего патчить, БД пустая. Исключение: `patch-migrate-clone-access.ts` безопасно запустить (no-op, нет existing Appointment), если планируешь сразу `CLONE_V2_ENABLED=true`.
+- ❌ Шаг 8 (backfill-*) — нечего бэкфилить.
+- ❌ Шаг 9 (migrate-telegram-channels-to-global / migrate-task-to-issue) — нет legacy данных.
 
 ---
 

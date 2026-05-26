@@ -210,20 +210,25 @@ p, owner, *, *, process, read
 p, owner, *, *, process, write
 p, owner, *, *, process, delete
 p, admin, *, *, process, read
+# ТЗ 2026-05-26-memory-section-ui §6 — manager видит регламенты по умолчанию.
+p, manager, *, *, process, read
 
 p, owner, *, *, process-step, read
 p, owner, *, *, process-step, write
 p, admin, *, *, process-step, read
+p, manager, *, *, process-step, read
 
 p, owner, *, *, regulation, read
 p, owner, *, *, regulation, write
 p, owner, *, *, regulation, delete
 p, admin, *, *, regulation, read
+p, manager, *, *, regulation, read
 
 p, owner, *, *, policy, read
 p, owner, *, *, policy, write
 p, owner, *, *, policy, delete
 p, admin, *, *, policy, read
+p, manager, *, *, policy, read
 
 p, owner, *, *, tool, read
 p, owner, *, *, tool, write

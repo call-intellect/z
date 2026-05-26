@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -73,6 +73,7 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useEntitlement } from '@/hooks/useEntitlement';
 import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
+import { useMemoryAccess } from '@/hooks/useMemoryAccess';
 // ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
 import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
 import {
@@ -134,15 +135,55 @@ type NavItem = {
   showDot?: boolean;
 };
 
+type NavSubgroup = {
+  label: string;
+  items: NavItem[];
+  defaultCollapsed: boolean;
+  /**
+   * Если задан — состояние раскрытия персистится в localStorage по этому ключу.
+   * Значение `'1'` = раскрыто, `'0'` = свёрнуто. По умолчанию (если ключа нет
+   * в storage) используется `defaultCollapsed`.
+   */
+  storageKey?: string;
+};
+
 type NavGroup = {
   label: string;
   items: NavItem[];
-  collapsibleSubgroup?: {
-    label: string;
-    items: NavItem[];
-    defaultCollapsed: boolean;
-  };
+  /**
+   * Подгруппы внутри группы — с собственным collapse/expand и localStorage.
+   * Рендерятся после `items`, сверху вниз. Если внутри одной из них активный
+   * пункт — она автоматически раскрывается (как и раньше).
+   */
+  collapsibleSubgroups?: NavSubgroup[];
 };
+
+/**
+ * Пункты подгруппы «Память компании» (ТЗ 2026-05-26-memory-section-ui).
+ *
+ * Это shared knowledge: то, что Кора извлекла из встреч и разговоров.
+ * Доступ — через `useMemoryAccess()`: manager+ всегда видит; member —
+ * только если admin Org включил соответствующий feature-флаг.
+ */
+const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
+  // SBA β-5 — реестр идей и запросов клиентов (доступ всем member по умолчанию).
+  { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
+  // SBA α-7 — Regulation / Process / Policy.
+  { href: '/regulations', label: 'Правила и стандарты', icon: ClipboardList, matchPrefix: '/regulations' },
+  // SBA β-3 — реестр решений компании.
+  { href: '/decisions', label: 'Решения', icon: ClipboardList, matchPrefix: '/decisions' },
+  // SBA β-4 — повторяющиеся сигналы (problems / risks / blockers).
+  { href: '/insights', label: 'Сигналы', icon: AlertTriangle, matchPrefix: '/insights' },
+  // ТЗ 2026-05-26 §3 — реестр сущностей (entity browser).
+  { href: '/entities', label: 'Сущности', icon: Network, matchPrefix: '/entities' },
+  {
+    href: '/themes',
+    label: 'Темы',
+    icon: Sparkles,
+    matchPrefix: '/themes',
+    gateFeature: 'feature.theme',
+  },
+];
 
 const COMPANY_GROUP: NavGroup = {
   label: 'Компания',
@@ -161,25 +202,12 @@ const COMPANY_GROUP: NavGroup = {
     // SBA α-3 — read-only список поставщиков и событий (категория A онтологии).
     { href: '/vendors', label: 'Поставщики', icon: Truck, matchPrefix: '/vendors' },
     { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
-    // SBA α-7 — единый master-detail для Regulation/Process/Policy.
-    { href: '/regulations', label: 'Регламенты', icon: ClipboardList, matchPrefix: '/regulations' },
-    // SBA β-3 — реестр решений компании (statement / rationale / supersedes).
-    { href: '/decisions', label: 'Решения', icon: ClipboardList, matchPrefix: '/decisions' },
-    // SBA β-4 — радар повторяющихся сигналов (problems / risks / blockers / inefficiencies).
-    { href: '/insights', label: 'Сигналы', icon: AlertTriangle, matchPrefix: '/insights' },
-    // SBA β-5 — реестр идей и запросов клиентов (internal / client_request).
-    { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
+    // ↓ ТЗ 2026-05-26: пункты /regulations, /decisions, /insights, /ideas, /themes
+    // перенесены в подгруппу «Память компании» (ниже в collapsibleSubgroups).
     // SBA β-6 — институциональная память: эксперименты и их уроки.
     { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
     // SBA β-7 — голос бренда (Specialist 3.10). Tone/values/taboos.
     { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
-    {
-      href: '/themes',
-      label: 'Темы',
-      icon: Sparkles,
-      matchPrefix: '/themes',
-      gateFeature: 'feature.theme',
-    },
     {
       href: '/goals',
       label: 'Цели и стратегия',
@@ -188,15 +216,25 @@ const COMPANY_GROUP: NavGroup = {
       gateFeature: 'feature.goals_strategy',
     },
   ],
-  collapsibleSubgroup: {
-    label: 'Будет в следующей фазе',
-    defaultCollapsed: true,
-    items: [
-      { href: '/processes', label: 'Процессы', icon: Workflow, matchPrefix: '/processes', comingSoon: true },
-      { href: '/policies', label: 'Политики', icon: Scale, matchPrefix: '/policies', comingSoon: true },
-      { href: '/metrics', label: 'Метрики', icon: Gauge, matchPrefix: '/metrics', comingSoon: true },
-    ],
-  },
+  collapsibleSubgroups: [
+    {
+      // ТЗ 2026-05-26 §5 — единая подгруппа «Память компании».
+      label: 'Память компании',
+      defaultCollapsed: false,
+      storageKey: 'sidebar.memory.open',
+      items: MEMORY_SUBGROUP_ITEMS,
+    },
+    {
+      label: 'Будет в следующей фазе',
+      defaultCollapsed: true,
+      items: [
+        // ТЗ 2026-05-26: /processes остаётся coming-soon (отдельное ТЗ).
+        { href: '/processes', label: 'Процессы', icon: Workflow, matchPrefix: '/processes', comingSoon: true },
+        { href: '/policies', label: 'Политики', icon: Scale, matchPrefix: '/policies', comingSoon: true },
+        { href: '/metrics', label: 'Метрики', icon: Gauge, matchPrefix: '/metrics', comingSoon: true },
+      ],
+    },
+  ],
 };
 
 const OPERATIONS_GROUP: NavGroup = {
@@ -314,11 +352,13 @@ export function Sidebar({
     items: SETTINGS_BASE_ITEMS,
     ...(adminItems.length
       ? {
-          collapsibleSubgroup: {
-            label: 'Админка',
-            defaultCollapsed: false,
-            items: adminItems,
-          },
+          collapsibleSubgroups: [
+            {
+              label: 'Админка',
+              defaultCollapsed: false,
+              items: adminItems,
+            },
+          ],
         }
       : {}),
   };
@@ -358,12 +398,32 @@ export function Sidebar({
     return { ...OPERATIONS_GROUP, items };
   })();
 
-  // ТЗ 2026-05-26 §5.5 — пробрасываем showDot к пункту «Клоны».
+  // ТЗ 2026-05-26 §6 — фильтруем пункты подгруппы «Память» в зависимости от
+  // того, что пользователю разрешено видеть (роль + entitlement-флаги).
+  const memoryAccess = useMemoryAccess();
+
+  // ТЗ 2026-05-26 §5.5 — пробрасываем showDot к пункту «Клоны»;
+  // одновременно фильтруем подгруппу «Память» по useMemoryAccess.
   const companyGroup: NavGroup = (() => {
     const items: NavItem[] = COMPANY_GROUP.items.map((i) =>
       i.href === '/clones' ? { ...i, showDot: hasUnseenCloneGrants } : i,
     );
-    return { ...COMPANY_GROUP, items };
+    const subgroups = COMPANY_GROUP.collapsibleSubgroups?.map((sg) => {
+      if (sg.storageKey !== 'sidebar.memory.open') return sg;
+      return {
+        ...sg,
+        items: sg.items.filter((it) => {
+          if (it.href === '/regulations') return memoryAccess.canReadRegulations;
+          if (it.href === '/entities') return memoryAccess.canReadEntities;
+          return true;
+        }),
+      };
+    });
+    return {
+      ...COMPANY_GROUP,
+      items,
+      ...(subgroups ? { collapsibleSubgroups: subgroups } : {}),
+    };
   })();
 
   const groups: NavGroup[] = [companyGroup, operationsGroup, settingsGroup];
@@ -373,7 +433,7 @@ export function Sidebar({
   // оригинальный код, фильтр по самому специфичному matchPrefix).
   const allItems: NavItem[] = groups.flatMap((g) => [
     ...g.items,
-    ...(g.collapsibleSubgroup?.items ?? []),
+    ...(g.collapsibleSubgroups?.flatMap((s) => s.items) ?? []),
   ]);
 
   const candidates = allItems
@@ -484,13 +544,14 @@ function SidebarGroup({
           />
         ))}
       </ul>
-      {group.collapsibleSubgroup && (
+      {group.collapsibleSubgroups?.map((sg) => (
         <SidebarSubgroup
-          subgroup={group.collapsibleSubgroup}
+          key={sg.label}
+          subgroup={sg}
           winnerHref={winnerHref}
           onNavigate={onNavigate}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -500,11 +561,41 @@ function SidebarSubgroup({
   winnerHref,
   onNavigate,
 }: {
-  subgroup: NonNullable<NavGroup['collapsibleSubgroup']>;
+  subgroup: NavSubgroup;
   winnerHref: string | null;
   onNavigate?: () => void;
 }) {
+  // ТЗ 2026-05-26 §5: подгруппа «Память компании» персистит состояние
+  // collapse в localStorage. При первом монтировании читаем сохранённое
+  // значение; если ключа нет — берём `defaultCollapsed`.
   const [collapsed, setCollapsed] = useState(subgroup.defaultCollapsed);
+
+  useEffect(() => {
+    if (!subgroup.storageKey) return;
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(subgroup.storageKey);
+      if (stored === '0') setCollapsed(false);
+      else if (stored === '1') setCollapsed(true);
+    } catch {
+      // localStorage недоступен (приватный режим, SSR) — игнорируем.
+    }
+  }, [subgroup.storageKey]);
+
+  const toggle = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (subgroup.storageKey && typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(subgroup.storageKey, next ? '1' : '0');
+        } catch {
+          // ignore
+        }
+      }
+      return next;
+    });
+  };
+
   // Если внутри подгруппы есть активный пункт — раскрываем автоматически.
   const hasActive = subgroup.items.some((i) => i.href === winnerHref);
   const effectiveCollapsed = hasActive ? false : collapsed;
@@ -513,7 +604,7 @@ function SidebarSubgroup({
     <div className="mt-1">
       <button
         type="button"
-        onClick={() => setCollapsed((c) => !c)}
+        onClick={toggle}
         className={cn(
           'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs uppercase tracking-wider text-fg-tertiary transition-colors',
           'hover:bg-bg-overlay hover:text-fg-secondary',

@@ -34,7 +34,10 @@ export type FeatureKey =
   | 'feature.goals_strategy'
   | 'feature.strict_visibility'
   // Фаза E — несколько AI-отчётов на одну встречу. См. backend tier-config.
-  | 'feature.multi_reports_per_meeting';
+  | 'feature.multi_reports_per_meeting'
+  // ТЗ 2026-05-26 §6 — открыть «Память» (правила/сущности) для роли member.
+  | 'feature.memory_regulations_for_members'
+  | 'feature.memory_entities_for_members';
 
 export type QuotaKey =
   | 'meetings_per_month'
@@ -65,6 +68,8 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.goals_strategy',
   'feature.strict_visibility',
   'feature.multi_reports_per_meeting',
+  'feature.memory_regulations_for_members',
+  'feature.memory_entities_for_members',
 ] as const;
 
 export const ALL_QUOTAS: readonly QuotaKey[] = [
@@ -111,6 +116,10 @@ export const FEATURE_MIN_TIER: Record<FeatureKey, TierKey> = {
   'feature.goals_strategy': 'tier_enterprise',
   'feature.strict_visibility': 'tier_enterprise',
   'feature.multi_reports_per_meeting': 'tier_pro',
+  // ТЗ 2026-05-26 §6 — не tier-привязанные feature-флаги, доступны на всех
+  // тарифах (по умолчанию false, включаются вручную admin Org).
+  'feature.memory_regulations_for_members': 'tier_basic',
+  'feature.memory_entities_for_members': 'tier_basic',
 };
 
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
@@ -131,6 +140,8 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   'feature.goals_strategy': 'Цели и стратегия',
   'feature.strict_visibility': 'Строгая видимость / приватность',
   'feature.multi_reports_per_meeting': 'Несколько отчётов на встречу',
+  'feature.memory_regulations_for_members': 'Правила/стандарты — для всех сотрудников',
+  'feature.memory_entities_for_members': 'Сущности — для всех сотрудников',
 };
 
 export const QUOTA_LABELS: Record<QuotaKey, string> = {

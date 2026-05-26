@@ -42,7 +42,19 @@ export type FeatureKey =
   /** Фаза A.3 — A/B-эксперименты на уровне промптов. */
   | 'feature.prompt_experiments'
   /** Фаза E — создание дополнительных отчётов на одну встречу (multi-report). */
-  | 'feature.multi_reports_per_meeting';
+  | 'feature.multi_reports_per_meeting'
+  /**
+   * ТЗ 2026-05-26-memory-section-ui §6 — открыть просмотр раздела
+   * «Правила и стандарты» для роли `member` (рядовых сотрудников).
+   * По умолчанию выключено на всех тарифах. Изменяется per-Org через
+   * админ-эндпоинт `/api/v1/admin/org/memory-access`.
+   */
+  | 'feature.memory_regulations_for_members'
+  /**
+   * ТЗ 2026-05-26-memory-section-ui §6 — открыть просмотр раздела
+   * «Сущности» для роли `member`. По умолчанию выключено.
+   */
+  | 'feature.memory_entities_for_members';
 
 /** Все quota-ключи.
  *
@@ -90,6 +102,9 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.custom_prompt_templates',
   'feature.prompt_experiments',
   'feature.multi_reports_per_meeting',
+  // ТЗ 2026-05-26 §6 — memory section per-role overrides.
+  'feature.memory_regulations_for_members',
+  'feature.memory_entities_for_members',
 ] as const;
 
 /** Полный список квот. */
@@ -187,6 +202,10 @@ const BASIC_FEATURES: Record<FeatureKey, boolean> = {
   'feature.prompt_experiments': false,
   // Фаза E — multi-report только pro+.
   'feature.multi_reports_per_meeting': false,
+  // ТЗ 2026-05-26 §6 — default false: member-role не видит регламенты / сущности,
+  // пока admin Org явно не откроет через `/api/v1/admin/org/memory-access`.
+  'feature.memory_regulations_for_members': false,
+  'feature.memory_entities_for_members': false,
 };
 
 const PRO_FEATURES: Record<FeatureKey, boolean> = {

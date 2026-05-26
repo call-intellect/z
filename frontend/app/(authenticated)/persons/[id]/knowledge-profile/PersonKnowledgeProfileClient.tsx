@@ -1,6 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { ArrowLeft, Calendar, ShieldCheck } from 'lucide-react';
@@ -9,18 +8,19 @@ import { ApiError } from '@/api/api-error';
 import { knowledgeCloneApi } from '@/api/knowledge-clone.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
-  KNOWLEDGE_PROFILE_CONFIDENCE_SHORT,
   mapKnowledgeProfile,
   type KnowledgeProfile,
-  type KnowledgeProfileCategory,
 } from '@/domain/knowledge-profile';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+import { Card, CardContent, CardHeader } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { SkillsTable } from '@/ui/components/knowledge-profile/SkillsTable';
 
 /**
- * Профиль знаний другого Person (без кнопки «помечу неверным»).
+ * Профиль знаний другого Person — read-only (без «помечу неверным»).
+ *
+ * ТЗ 2026-05-26 §4: используется тот же `<SkillsTable>`, что и для своего
+ * профиля, но без `onMarkWrong` → кнопка скрыта.
  *
  * Член Org видит сводку без цитат; owner/admin/self — с цитатами.
  * Поведение «без цитат» уже обеспечивается на бэке через RBAC-уровень
@@ -45,16 +45,6 @@ export function PersonKnowledgeProfileClient({
   );
 
   const profile: KnowledgeProfile | undefined = data ?? undefined;
-
-  const sortedCategories = useMemo(() => {
-    if (!profile) return [];
-    const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return [...profile.categories].sort((a, b) => {
-      const byConf = order[a.confidence] - order[b.confidence];
-      if (byConf !== 0) return byConf;
-      return b.observationCount - a.observationCount;
-    });
-  }, [profile]);
 
   if (isLoading) return null;
   if (!currentOrgId) {
@@ -126,19 +116,12 @@ export function PersonKnowledgeProfileClient({
       {!loadingProfile && profile && !profile.isEmpty && (
         <>
           <ProfileMeta profile={profile} />
-          <ul className="space-y-4">
-            {sortedCategories.map((cat) => (
-              <li key={cat.name}>
-                <CategoryCard category={cat} />
-              </li>
-            ))}
-          </ul>
+          {/* read-only: без onMarkWrong */}
+          <SkillsTable categories={profile.categories} />
           {profile.experienceHighlights.length > 0 && (
             <Card>
-              <CardHeader>
-                <CardTitle>Значимый опыт</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
+              <CardContent className="space-y-2 p-6 text-sm">
+                <p className="font-medium">Значимый опыт</p>
                 {profile.experienceHighlights.map((h, idx) => (
                   <p key={idx}>• {h.summary}</p>
                 ))}
@@ -182,52 +165,5 @@ function ProfileMeta({ profile }: { profile: KnowledgeProfile }) {
       </span>
       <span>Областей: {profile.categories.length}</span>
     </div>
-  );
-}
-
-function CategoryCard({ category }: { category: KnowledgeProfileCategory }) {
-  return (
-    <Card>
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-base">{category.name}</CardTitle>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <ConfidenceBadge confidence={category.confidence} />
-          <span>Наблюдений: {category.observationCount}</span>
-          <span>
-            Свежее: {new Date(category.lastObservedAt).toLocaleDateString('ru-RU')}
-          </span>
-        </div>
-      </CardHeader>
-      {category.sampleStatements.length > 0 && (
-        <CardContent className="space-y-2 text-sm">
-          {category.sampleStatements.map((s, idx) => (
-            <blockquote
-              key={`${s.blockId}-${idx}`}
-              className="border-l-2 border-muted-foreground/30 pl-3 text-muted-foreground"
-            >
-              «{s.quote}»
-            </blockquote>
-          ))}
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
-function ConfidenceBadge({
-  confidence,
-}: {
-  confidence: KnowledgeProfileCategory['confidence'];
-}) {
-  const variant =
-    confidence === 'high'
-      ? 'default'
-      : confidence === 'medium'
-        ? 'secondary'
-        : 'outline';
-  return (
-    <Badge variant={variant} className="capitalize">
-      {KNOWLEDGE_PROFILE_CONFIDENCE_SHORT[confidence]}
-    </Badge>
   );
 }

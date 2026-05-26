@@ -15,6 +15,7 @@ import { AdminOrgsController } from './controllers/admin-orgs.controller';
 import { AdminPricesController } from './controllers/admin-prices.controller';
 import { AdminUsageController } from './controllers/admin-usage.controller';
 import { OrgAdminKnowledgeController } from './controllers/org-admin-knowledge.controller';
+import { OrgAdminMemoryAccessController } from './controllers/org-admin-memory-access.controller';
 import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { AdminCronsModule } from './crons/admin-crons.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
@@ -128,6 +129,8 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminOrgsController,
     AdminHealthController,
     OrgAdminKnowledgeController,
+    // ТЗ 2026-05-26 §6 — управление доступом member к «Памяти компании».
+    OrgAdminMemoryAccessController,
     // SBA α-10 wave 3 — Admin LLM + Unit Economics.
     AdminLlmProvidersController,
     AdminLlmModelsController,

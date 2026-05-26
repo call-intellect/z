@@ -9,6 +9,7 @@ import {
   CircleDollarSign,
   Database,
   Download,
+  Eye,
   KeyRound,
   Link2,
   Palette,
@@ -47,6 +48,8 @@ const ITEMS: Item[] = [
 const ADMIN_ITEMS: Item[] = [
   { href: '/settings/admin/usage', label: 'Экономика', icon: CircleDollarSign },
   { href: '/settings/admin/knowledge-core', label: 'Ядро знаний', icon: Brain },
+  // ТЗ 2026-05-26 §6 — доступ к разделам «Памяти компании» для member.
+  { href: '/settings/admin/memory-access', label: 'Доступ к памяти', icon: Eye },
   { href: '/settings/sources', label: 'Источники', icon: Link2 },
 ];
 

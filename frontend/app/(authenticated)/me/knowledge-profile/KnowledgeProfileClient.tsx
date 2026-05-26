@@ -1,21 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 import useSWR, { mutate } from 'swr';
-import { AlertCircle, Calendar, Flag, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Calendar, Loader2, ShieldCheck } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { knowledgeCloneApi } from '@/api/knowledge-clone.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import {
-  KNOWLEDGE_PROFILE_CONFIDENCE_LABEL,
-  KNOWLEDGE_PROFILE_CONFIDENCE_SHORT,
   mapKnowledgeProfile,
   type KnowledgeProfile,
   type KnowledgeProfileCategory,
 } from '@/domain/knowledge-profile';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
   Card,
@@ -24,16 +22,20 @@ import {
   CardTitle,
 } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { SkillsTable } from '@/ui/components/knowledge-profile/SkillsTable';
 
 /**
  * `/me/knowledge-profile` (SBA β-2) — Read-only UI «Что Кора знает обо мне».
  *
+ * ТЗ 2026-05-26 §4: вместо списка карточек — компактная таблица скиллов
+ * с раскрывающимися строками (SkillsTable). Аккордеон показывает цитаты.
+ *
  * Поведение:
  *   - SWR грузит `/api/v1/me/knowledge-profile` в контексте текущей Org.
- *   - Список категорий с confidence (low/medium/high) и числом наблюдений.
- *   - Под категорией — sampleStatements (1–3 цитаты).
- *   - Кнопка «помечу неверным» → POST mark-wrong → toast.
- *   - Кнопка «попробовать своего клона» — disabled (доступно в γ-1).
+ *   - Таблица сортируется high → medium → low, внутри уровня по observationCount.
+ *   - Кнопка «Неверно» в строке → MarkWrongDialog → POST mark-wrong → toast.
+ *   - Кнопка «попробовать своего клона» ведёт на /clones (ТЗ §4: исправили
+ *     старый битый /me/clone → /clones).
  */
 export function KnowledgeProfileClient() {
   const { currentOrgId, isLoading } = useAuth();
@@ -53,16 +55,6 @@ export function KnowledgeProfileClient() {
   const [markBusy, setMarkBusy] = useState(false);
 
   const profile: KnowledgeProfile | undefined = data ?? undefined;
-
-  const sortedCategories = useMemo(() => {
-    if (!profile) return [];
-    const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return [...profile.categories].sort((a, b) => {
-      const byConf = order[a.confidence] - order[b.confidence];
-      if (byConf !== 0) return byConf;
-      return b.observationCount - a.observationCount;
-    });
-  }, [profile]);
 
   async function handleSubmitMark() {
     if (!activeMarkCategory || !currentOrgId) return;
@@ -142,19 +134,13 @@ export function KnowledgeProfileClient() {
       {!loadingProfile && profile && !profile.isEmpty && (
         <>
           <ProfileMeta profile={profile} />
-          <ul className="space-y-4">
-            {sortedCategories.map((cat) => (
-              <li key={cat.name}>
-                <CategoryCard
-                  category={cat}
-                  onMarkWrong={() => {
-                    setActiveMarkCategory(cat);
-                    setMarkReason('');
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
+          <SkillsTable
+            categories={profile.categories}
+            onMarkWrong={(cat) => {
+              setActiveMarkCategory(cat);
+              setMarkReason('');
+            }}
+          />
 
           {profile.experienceHighlights.length > 0 && (
             <Card>
@@ -182,7 +168,7 @@ export function KnowledgeProfileClient() {
             </p>
           </div>
           <Button asChild type="button">
-            <a href="/me/clone">Попробовать клона</a>
+            <Link href="/clones">Попробовать клона</Link>
           </Button>
         </CardContent>
       </Card>
@@ -221,71 +207,6 @@ function ProfileMeta({ profile }: { profile: KnowledgeProfile }) {
       </span>
       <span>Областей: {profile.categories.length}</span>
     </div>
-  );
-}
-
-function CategoryCard({
-  category,
-  onMarkWrong,
-}: {
-  category: KnowledgeProfileCategory;
-  onMarkWrong: () => void;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div className="space-y-1">
-          <CardTitle className="text-base">{category.name}</CardTitle>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <ConfidenceBadge confidence={category.confidence} />
-            <span>Наблюдений: {category.observationCount}</span>
-            <span>
-              Свежее: {new Date(category.lastObservedAt).toLocaleDateString('ru-RU')}
-            </span>
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={onMarkWrong}
-        >
-          <Flag className="mr-1.5 h-3.5 w-3.5" />
-          Помечу неверным
-        </Button>
-      </CardHeader>
-      {category.sampleStatements.length > 0 && (
-        <CardContent className="space-y-2 text-sm">
-          {category.sampleStatements.map((s, idx) => (
-            <blockquote
-              key={`${s.blockId}-${idx}`}
-              className="border-l-2 border-muted-foreground/30 pl-3 text-muted-foreground"
-            >
-              «{s.quote}»
-            </blockquote>
-          ))}
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
-function ConfidenceBadge({
-  confidence,
-}: {
-  confidence: KnowledgeProfileCategory['confidence'];
-}) {
-  const variant =
-    confidence === 'high'
-      ? 'default'
-      : confidence === 'medium'
-        ? 'secondary'
-        : 'outline';
-  return (
-    <Badge variant={variant} className="capitalize">
-      {KNOWLEDGE_PROFILE_CONFIDENCE_SHORT[confidence]}
-    </Badge>
   );
 }
 
@@ -376,5 +297,3 @@ function ProfileSkeleton() {
     </div>
   );
 }
-
-void KNOWLEDGE_PROFILE_CONFIDENCE_LABEL;

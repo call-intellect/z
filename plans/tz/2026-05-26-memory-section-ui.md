@@ -1,12 +1,127 @@
 ---
 title: "ТЗ: Раздел «Память компании» — 6 UI-задач"
-status: [ ] в работе
+status: [x] реализовано 2026-05-26
 created: 2026-05-26
-area: frontend
+area: frontend, backend (entitlements)
 backend-ready: true
 ---
 
+## Итог реализации (2026-05-26)
+
+**Все 3 волны выполнены.** `bun run typecheck` и `bun run lint` чистые
+в обоих стеках (один warning в `telegram-proxy-health.cron.ts` — не от
+этих изменений).
+
+### Затронутые файлы
+
+**Backend:**
+- [tier-config.ts](../../backend/src/modules/entitlements/tier-config.ts) — 2 новых feature-ключа.
+- [policy.csv](../../backend/src/modules/rbac/policies/policy.csv) — manager read на regulation/process/policy.
+- [org-admin-memory-access.controller.ts](../../backend/src/modules/admin/controllers/org-admin-memory-access.controller.ts) — новый.
+- [admin.module.ts](../../backend/src/modules/admin/admin.module.ts) — регистрация контроллера.
+
+**Frontend:**
+- [Sidebar.tsx](../../frontend/src/ui/components/app-shell/Sidebar.tsx) — подгруппа «Память компании» (localStorage-collapse + useMemoryAccess).
+- [SkillsTable.tsx](../../frontend/src/ui/components/knowledge-profile/SkillsTable.tsx) — новый shared-компонент.
+- [KnowledgeProfileClient.tsx](../../frontend/app/(authenticated)/me/knowledge-profile/KnowledgeProfileClient.tsx) — переработан на SkillsTable.
+- [PersonKnowledgeProfileClient.tsx](../../frontend/app/(authenticated)/persons/[id]/knowledge-profile/PersonKnowledgeProfileClient.tsx) — переработан на SkillsTable.
+- [RegulationsListClient.tsx](../../frontend/app/(authenticated)/regulations/RegulationsListClient.tsx) — chips/history/supersede/toast.
+- [IdeasListClient.tsx](../../frontend/app/(authenticated)/ideas/IdeasListClient.tsx) — tabs/clusters/EmptyState/IDEA_STATUS_TRANSITIONS/ConfirmDialog.
+- [idea.ts](../../frontend/src/domain/idea.ts) — domain types + transitions.
+- [entity.ts](../../frontend/src/domain/entity.ts), [entities.api.ts](../../frontend/src/api/entities.api.ts) — новые.
+- [entities/page.tsx](../../frontend/app/(authenticated)/entities/page.tsx), [EntitiesListClient.tsx](../../frontend/app/(authenticated)/entities/EntitiesListClient.tsx) — новая master-detail страница.
+- [useMemoryAccess.ts](../../frontend/src/hooks/useMemoryAccess.ts) — новый hook.
+- [admin-memory-access.api.ts](../../frontend/src/api/admin-memory-access.api.ts) — новый.
+- [settings/admin/memory-access/](../../frontend/app/(authenticated)/settings/admin/memory-access/) — новая страница (page.tsx + MemoryAccessClient.tsx).
+- [SettingsSidebar.tsx](../../frontend/app/(authenticated)/settings/SettingsSidebar.tsx) — пункт «Доступ к памяти».
+- [entitlement.ts](../../frontend/src/domain/entitlement.ts) — 2 новых feature-ключа.
+
+### Решения по ходу реализации
+
+1. **«member» роли в Z нет** — реализовали через `useMemoryAccess`:
+   manager+ всегда видят, на будущий `member` — entitlement-флаги.
+2. **policy.csv обновлён** — manager получил read на regulation/process/policy.
+3. **Без новых guards** — `OrgAdminGuard` + существующий RBAC достаточны.
+4. **Sidebar subgroups** — `collapsibleSubgroup?` → `collapsibleSubgroups?: NavSubgroup[]`
+   с поддержкой `storageKey` для localStorage-персистентности.
+5. **PolicySeverity** — реальный API использует `advisory/mandatory/blocking`
+   (не `critical/high/medium/low` из ТЗ).
+6. **`/persons/[id]/knowledge-profile`** — переведён на SkillsTable read-only.
+7. **`/me/clone` → `/clones`** — исправлена битая ссылка.
+8. **Hooks rules** — `useMemo` для `allLinks` перенесён до раннего return.
+
+---
+
 # ТЗ: Раздел «Память компании» — 6 UI-задач
+
+## Реальное состояние на 2026-05-26 (доработка плана)
+
+После аудита кодовой базы выяснено следующее — **корректирует scope ТЗ**:
+
+### Что уже есть (черновые версии — нужно довести до ТЗ)
+
+| Маршрут | Файл | Состояние |
+|---|---|---|
+| `/regulations` | [RegulationsListClient.tsx](../../frontend/app/(authenticated)/regulations/RegulationsListClient.tsx) | Базовый master-detail. Нет: pill-кнопки kind, severity-chip для policy, секция «Шаги процесса» по ТЗ, история версий, supersede-кнопка, "Подтвердить" toast через sonner |
+| `/ideas` | [IdeasListClient.tsx](../../frontend/app/(authenticated)/ideas/IdeasListClient.tsx) | Базовый master-detail. Нет: вкладка «По кластерам», поддерживающие с person/customer, IDEA_STATUS_TRANSITIONS (показывает все статусы), ConfirmDialog для status, EmptyState компонент |
+| `/entities/[id]/graph` | Существует | Граф для **одной** сущности |
+| `/me/knowledge-profile` | [KnowledgeProfileClient.tsx](../../frontend/app/(authenticated)/me/knowledge-profile/KnowledgeProfileClient.tsx) | Список карточек, нужна **таблица** |
+| `/persons/[id]/knowledge-profile` | Существует | Тоже карточки |
+
+### Что отсутствует полностью
+
+- **`/entities`** — нет index-страницы (список + детали). Только `[id]/graph`.
+- **Подгруппа «Память» в Sidebar** — пункты разбросаны в COMPANY_GROUP.
+- **`useMemoryAccess`, `/settings/admin/memory-access`** — не существует.
+
+### RBAC-модель Z vs термин «member» из ТЗ
+
+В Z есть **4 роли:** `owner`, `admin`, `manager`, `coo`. Роли **`member`** не существует (см. [schema.prisma:174](../../backend/prisma/schema.prisma#L174)).
+
+**Маппинг ТЗ → Z:**
+- ТЗ «member» (Teamly-роль рядового сотрудника) → нет аналога в Z. Будущий нижний уровень.
+- ТЗ «manager» → текущий `manager` в Z.
+- ТЗ «admin/owner/coo» → текущий `owner/admin/coo` в Z.
+
+**Текущий policy.csv** для `regulation`/`policy`/`process`:
+- read разрешён только `owner`/`admin`/`coo`. **`manager` не имеет read.**
+
+**Что меняем в RBAC:**
+- Добавить `manager` read для `regulation`/`policy`/`process` (соответствует ТЗ-матрице «manager ✅ видит правила»).
+- Для `entity` — `manager` уже имеет read (ничего не меняем).
+- Для `idea` — `manager` уже имеет read+write (write остаётся, ТЗ говорит status-change только owner/admin — но это работа сервиса; ради простоты не сужаем).
+
+**Что НЕ меняем в RBAC:**
+- Не добавляем новые guards `MemoryRegulationsGuard`/`MemoryEntitiesGuard` — лишний слой. Существующего RBAC достаточно. Entitlement-ключи добавляем для будущего `member` (когда появится).
+- Не сужаем существующие права (никто не теряет доступ).
+
+### Adjusted backend-scope для Задачи 6
+
+1. ✅ Добавить `feature.memory_regulations_for_members` и `feature.memory_entities_for_members` в `FeatureKey` (default `false`).
+2. ✅ Создать org-admin endpoint `GET/PATCH /api/v1/admin/org/memory-access` — UI-обвязка над `setOverride`.
+3. ✅ Обновить policy.csv: `manager` read для `regulation` / `process` / `policy`.
+4. ❌ Не добавляем `MemoryRegulationsGuard` / `MemoryEntitiesGuard`. RBAC достаточен.
+5. Frontend хук `useMemoryAccess`:
+   - Если `currentOrgRole ∈ {owner, admin, manager, coo}` → доступ есть.
+   - Иначе (будущий `member`) → проверить entitlement (через существующий `useEntitlement`).
+
+### Adjusted порядок реализации (волны)
+
+#### Волна 1 (видимое сразу)
+1.1. Sidebar: подгруппа «Память компании».
+1.2. SkillsTable + перевод `/me/knowledge-profile` и `/persons/[id]/knowledge-profile`.
+1.3. `/regulations` — довести до ТЗ (chips, история, supersede-dialog, toast).
+
+#### Волна 2 (фичи и backend)
+2.1. `/ideas` — вкладка «По кластерам», EmptyState, IDEA_STATUS_TRANSITIONS-логика, ConfirmDialog.
+2.2. Backend: 2 entitlement-ключа + admin endpoint + policy.csv (manager read regulation/process/policy).
+
+#### Волна 3
+3.1. `useMemoryAccess` hook, sidebar-guard, страница `/settings/admin/memory-access`.
+3.2. `/entities` index — list + detail + links (master-detail).
+3.3. Финальная проверка: `bun run typecheck`, `bun run lint`.
+
+---
 
 ## Контекст
 

@@ -241,6 +241,18 @@ MAGIC_LINK_TTL_MINUTES=15
 MAGIC_LINK_RATE_LIMIT_PER_HOUR=5
 INACTIVE_BINDING_DAYS=30
 
+# === Telegram через прокси telegram.crossmark.ru (2026-05-26) ===
+# ТЗ: plans/tz/2026-05-26-telegram-via-crossmark-proxy.md.
+# Прод по умолчанию через прокси — backend и Telegram не имеют прямой связи из ДЦ.
+TELEGRAM_PROXY_ENABLED=true                       # default true; false = аварийный rollback на api.telegram.org
+TELEGRAM_PROXY_API_BASE=https://telegram.crossmark.ru
+TELEGRAM_PROXY_FILE_BASE=https://telegram.crossmark.ru
+TELEGRAM_PROXY_ADMIN_EMAIL=<email учётки в прокси>   # регистрация — на /register прокси, один раз
+TELEGRAM_PROXY_ADMIN_PASSWORD=<секрет>               # хранить в vault; ротация раз в квартал
+TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC=60             # обновлять JWT за 60с до exp
+TELEGRAM_PROXY_REQUEST_TIMEOUT_MS=15000              # потолок одного outbound-вызова
+TELEGRAM_PROXY_HEALTH_INTERVAL_SEC=30                # интервал health-cron
+
 # === Web Push (если включается push-уведомления) ===
 # ВНИМАНИЕ: VAPID_* НЕ в EnvSchema → опечатки не валидируются zod'ом, фича просто молча отключится.
 VAPID_PUBLIC_KEY=<docker compose run --rm backend bunx web-push generate-vapid-keys>
@@ -450,6 +462,16 @@ docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.t
 docker compose exec backend bun run scripts/patch-migrate-clone-access.ts
 # опц. для одного тенанта:
 # docker compose exec backend bun run scripts/patch-migrate-clone-access.ts --tenant <orgId>
+
+# 6.11 — Регистрация глобального Telegram-бота в прокси telegram.crossmark.ru
+# (2026-05-26). Идемпотентен. Предусловия:
+#   - выставлены TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD в .env (см. Шаг 1);
+#   - в /admin/system/telegram-bot уже установлен токен бота (иначе скрипт
+#     выходит с инструкцией и кодом 0);
+#   - аккаунт зарегистрирован вручную на https://telegram.crossmark.ru/register.
+docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts
+# опц. — ротация webhookSecret (старый перестаёт работать сразу):
+# docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts --rotate-secret
 ```
 
 ⚠️ **НЕ запускать на проде** (помечен внутри файла «без согласования»):
@@ -647,6 +669,20 @@ curl https://prod.host/metrics | grep -E 'z_voice_ws|z_mail_inbound|z_llm_cache|
 ```
 
 Должны быть `bullmq_*` метрики под новые очереди: `probe-*, conversational-send, chat-v2-cleanup, card-stale-detector, idea-clusterer, insight-clusterer, knowledge-clone-rebuild, skill-profile-*, executable-persona-build, skill-manager-digest, tracker.webhook-delivery`.
+
+**Telegram через прокси (2026-05-26).** После Шага 6.11 проверь, что:
+
+```bash
+# Метрики прокси — outcome должен быть ok после первого outbound:
+curl https://prod.host/metrics | grep -E 'telegram_proxy_request_total|telegram_proxy_health_check_total'
+
+# Health-cron: после ~30с в Redis должен появиться ключ tg:proxy:healthy='1'.
+docker compose exec backend bun -e 'import("ioredis").then(m=>{const r=new m.default(process.env.REDIS_URL);r.get("tg:proxy:healthy").then(v=>{console.log("tg:proxy:healthy=",v);process.exit(0)})})'
+```
+
+В админке `/admin/system/telegram-bot` — карточка «Прокси telegram.crossmark.ru»
+должна быть зелёной (бот зарегистрирован, healthy=true). Кнопка
+«Проверить прокси сейчас» возвращает HTTP 200 и < 1000 мс.
 
 ```bash
 # Hot-reload Prometheus alerts (если изменялись правила, и Prometheus в этом же compose):

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Inject,
+  Post,
   Put,
   Query,
   UseGuards,
@@ -96,5 +97,15 @@ export class AdminTelegramBotController {
     query: ListBindingsQueryDto,
   ) {
     return this.svc.listBindings(query);
+  }
+
+  /**
+   * Синхронный пинг прокси telegram.crossmark.ru («Проверить прокси
+   * сейчас»). ТЗ 2026-05-26 §7 + §10. Не пишет в БД, не меняет
+   * Channel.config — только диагностика.
+   */
+  @Post('ping')
+  async pingProxy() {
+    return this.svc.pingProxy();
   }
 }

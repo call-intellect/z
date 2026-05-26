@@ -874,6 +874,37 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── telegram proxy (2026-05-26) ──────
+  /**
+   * Транспорт Telegram через прокси `telegram.crossmark.ru`. См.
+   * plans/tz/2026-05-26-telegram-via-crossmark-proxy.md.
+   *
+   *   - `enabled` — главный switch. При `true` (default в проде)
+   *     `TelegramApiClient` бьёт `apiBase` прокси; `setWebhook`
+   *     дёргает прокси сам (наш бэк не вызывает `setWebhook` напрямую).
+   *   - `apiBase` — базовый URL для Bot API через прокси (без trailing slash).
+   *   - `fileBase` — базовый URL для `/file/bot<token>/<path>`.
+   *   - `adminEmail` / `adminPassword` — креды учётки прокси для
+   *     `POST /auth/login`. Опциональны: если `enabled=false` — не нужны;
+   *     если `enabled=true` и пусты — `TelegramProxyAdminClient` бросит
+   *     внятную ошибку при первом обращении.
+   *   - `jwtPrefetchSec` — за сколько секунд до `exp` обновлять JWT.
+   *   - `requestTimeoutMs` — timeout каждого вызова. 0 → без timeout.
+   *   - `healthIntervalSec` — интервал health-check'а прокси.
+   */
+  get telegramProxy() {
+    return {
+      enabled: this.get('TELEGRAM_PROXY_ENABLED'),
+      apiBase: this.get('TELEGRAM_PROXY_API_BASE').replace(/\/+$/, ''),
+      fileBase: this.get('TELEGRAM_PROXY_FILE_BASE').replace(/\/+$/, ''),
+      adminEmail: this.get('TELEGRAM_PROXY_ADMIN_EMAIL'),
+      adminPassword: this.get('TELEGRAM_PROXY_ADMIN_PASSWORD'),
+      jwtPrefetchSec: this.get('TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC'),
+      requestTimeoutMs: this.get('TELEGRAM_PROXY_REQUEST_TIMEOUT_MS'),
+      healthIntervalSec: this.get('TELEGRAM_PROXY_HEALTH_INTERVAL_SEC'),
+    } as const;
+  }
+
   // ─────────────────────────── max bot (SBA β-1) ─────────────────
   /**
    * Глобальные параметры MAX Bot channel-адаптера. Per-tenant

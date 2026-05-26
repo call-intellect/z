@@ -201,6 +201,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
 
+  // ── telegram proxy (2026-05-26) — транспорт через telegram.crossmark.ru ─
+  // Различают «трансферный сбой между нами и прокси» vs «Telegram через
+  // прокси вернул ошибку». См. plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §1.1 п.6.
+  private telegramProxyRequestTotal!: Counter<'api_method' | 'outcome'>;
+  private telegramProxyRequestDurationSeconds!: Histogram<'api_method'>;
+  private telegramProxyHealthCheckTotal!: Counter<'outcome'>;
+
   // ── telegram bot — глобальный канал (β-9, 2026-05-25) ─────────────
   // Отдельные счётчики, чтобы при переходе с per-tenant на глобальный
   // путь видеть распределение трафика и количество писем от незнакомых
@@ -1183,6 +1190,25 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'telegram_bot_webhook_received_total',
       help: 'SBA β-1 — webhook Update от Telegram (type = message/callback_query/command/...).',
       labelNames: ['type'] as const,
+    });
+    // 2026-05-26 — транспорт через прокси telegram.crossmark.ru.
+    // outcome ∈ ok | proxy_5xx | proxy_4xx | telegram_5xx | telegram_4xx |
+    //           network. См. plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §1.1 п.6.
+    this.telegramProxyRequestTotal = this.getOrCreateCounter({
+      name: 'telegram_proxy_request_total',
+      help: '2026-05-26 — Outbound-вызовы Bot API через прокси telegram.crossmark.ru. outcome = ok | proxy_5xx | proxy_4xx | telegram_5xx | telegram_4xx | network.',
+      labelNames: ['api_method', 'outcome'] as const,
+    });
+    this.telegramProxyRequestDurationSeconds = this.getOrCreateHistogram({
+      name: 'telegram_proxy_request_duration_seconds',
+      help: '2026-05-26 — Длительность outbound-вызовов Bot API через прокси telegram.crossmark.ru (секунды, по api_method).',
+      labelNames: ['api_method'] as const,
+      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+    });
+    this.telegramProxyHealthCheckTotal = this.getOrCreateCounter({
+      name: 'telegram_proxy_health_check_total',
+      help: '2026-05-26 — Результаты периодического health-check прокси telegram.crossmark.ru. outcome = ok | fail.',
+      labelNames: ['outcome'] as const,
     });
     // β-9 (2026-05-25) — глобальный webhook без `:tenantId` в URL.
     // Идёт параллельно с старой `telegram_bot_webhook_received_total` для
@@ -3146,6 +3172,42 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Принят webhook Update от Telegram. type ∈ {message, callback_query, command, edited_message, ignored, unknown}. */
   incTelegramBotWebhookReceived(args: { type: string }): void {
     this.telegramBotWebhookReceivedTotal.inc({ type: args.type });
+  }
+
+  // ────────────────────── telegram proxy (2026-05-26) ─────────────────
+
+  /**
+   * Outbound-вызов Bot API через прокси telegram.crossmark.ru.
+   * outcome ∈ ok | proxy_5xx | proxy_4xx | telegram_5xx | telegram_4xx | network.
+   * См. plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §1.1 п.6.
+   */
+  incTelegramProxyRequest(args: {
+    apiMethod: string;
+    outcome: 'ok' | 'proxy_5xx' | 'proxy_4xx' | 'telegram_5xx' | 'telegram_4xx' | 'network';
+  }): void {
+    this.telegramProxyRequestTotal.inc({
+      api_method: args.apiMethod,
+      outcome: args.outcome,
+    });
+  }
+
+  /** Длительность outbound-вызова Bot API через прокси (секунды). */
+  observeTelegramProxyRequestDuration(args: {
+    apiMethod: string;
+    durationSec: number;
+  }): void {
+    this.telegramProxyRequestDurationSeconds.observe(
+      { api_method: args.apiMethod },
+      args.durationSec,
+    );
+  }
+
+  /**
+   * Tick health-check cron'а для прокси. outcome ∈ ok | fail.
+   * См. `TelegramProxyHealthCron`.
+   */
+  incTelegramProxyHealthCheck(args: { outcome: 'ok' | 'fail' }): void {
+    this.telegramProxyHealthCheckTotal.inc({ outcome: args.outcome });
   }
 
   // ────────────────────── telegram bot — глобальный (β-9) ─────────────

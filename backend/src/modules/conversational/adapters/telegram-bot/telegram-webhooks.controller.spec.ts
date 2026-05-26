@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
+import type { RedisService } from '../../../../common/redis/redis.service';
 import type { ConversationalService } from '../../conversational.service';
 
 import type { TelegramBotChannelAdapter } from './telegram-bot.adapter';
@@ -73,13 +74,26 @@ function build(opts: {
     incTelegramBotGlobalWebhookReceived: vi.fn(),
   } as unknown as BusinessMetricsService;
 
+  // Minimal Redis stub. duplicate() возвращает subscriber-объект с no-op
+  // методами; в unit'ах pub/sub-инвалидация не интегрируется, тестируется
+  // отдельно в Фазе 4.
+  const subscriber = {
+    subscribe: vi.fn(async () => undefined),
+    on: vi.fn(),
+    quit: vi.fn(async () => undefined),
+  };
+  const redis = {
+    client: { duplicate: vi.fn(() => subscriber) },
+  } as unknown as RedisService;
+
   const ctrl = new TelegramWebhooksController(
     prisma,
     adapter,
     conversational,
     metrics,
+    redis,
   );
-  return { ctrl, prisma, adapter, conversational, metrics };
+  return { ctrl, prisma, adapter, conversational, metrics, redis, subscriber };
 }
 
 const validBody = {
@@ -192,5 +206,56 @@ describe('TelegramWebhooksController — legacy :tenantId путь', () => {
     await expect(
       ctrl.receive('tenant-x', validBody as never, SECRET),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('TelegramWebhooksController — pub/sub invalidation (2026-05-26 Phase 4)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('onModuleInit подписывается на TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC', async () => {
+    const { ctrl, subscriber } = build();
+    await ctrl.onModuleInit();
+    expect(subscriber.subscribe).toHaveBeenCalledWith(
+      'conversational:channel:updated:telegram_bot',
+    );
+    expect(subscriber.on).toHaveBeenCalledWith('message', expect.any(Function));
+  });
+
+  it('после события pub/sub кэш сбрасывается и при следующем webhook делается новый findFirst', async () => {
+    const { ctrl, prisma, subscriber } = build();
+    await ctrl.onModuleInit();
+    // Первый запрос — кэш промахивается, findFirst вызывается.
+    await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
+    // Второй запрос — кэш hit, findFirst НЕ дёргается.
+    await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
+    // Эмулируем pub/sub-сообщение → сбрасывает кэш.
+    const handler = (subscriber.on as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as (channel: string) => void;
+    handler('conversational:channel:updated:telegram_bot');
+    // Третий запрос — снова промах, findFirst дёргается.
+    await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(prisma.channel.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it('сообщение в чужом топике не сбрасывает кэш', async () => {
+    const { ctrl, prisma, subscriber } = build();
+    await ctrl.onModuleInit();
+    await ctrl.receiveGlobal(validBody as never, SECRET);
+    expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
+    const handler = (subscriber.on as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as (channel: string) => void;
+    handler('some:other:topic');
+    await ctrl.receiveGlobal(validBody as never, SECRET);
+    // Только один findFirst — кэш не сбросился.
+    expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it('onModuleDestroy закрывает subscriber-соединение', async () => {
+    const { ctrl, subscriber } = build();
+    await ctrl.onModuleInit();
+    await ctrl.onModuleDestroy();
+    expect(subscriber.quit).toHaveBeenCalledOnce();
   });
 });

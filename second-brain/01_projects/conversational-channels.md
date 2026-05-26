@@ -189,11 +189,77 @@ Per-event-type defaults в α-1:
 
 `backend/src/modules/conversational/adapters/telegram-bot/`:
 - `telegram-bot.adapter.ts` — `IChannel`-адаптер: `send`, `ingestUpdate`, intent classify + Vox ASR + DocumentsService.upload.
-- `telegram-api-client.ts` — тонкий клиент Bot API (`sendMessage`, `setWebhook`, `setMyCommands` (с пустым списком), `getMe`, `deleteWebhook`, `getFile`, `downloadFile`) с throttle через Redis-bucket (`cfg.telegramBot.globalRps`).
-- `telegram-webhooks.controller.ts` — `POST /api/v1/webhooks/telegram-bot/:tenantId` с `X-Telegram-Bot-Api-Secret-Token` timing-safe verification.
+- `telegram-api-client.ts` — тонкий клиент Bot API (`sendMessage`, `setWebhook`, `setMyCommands` (с пустым списком), `getMe`, `deleteWebhook`, `getFile`, `downloadFile`) с throttle через Redis-bucket (`cfg.telegramBot.globalRps`). С 2026-05-26 транспорт идёт через прокси `telegram.crossmark.ru` (см. ниже «Транспорт Telegram через прокси»).
+- `telegram-webhooks.controller.ts` — `POST /api/v1/webhooks/telegram-bot/:tenantId` с `X-Telegram-Bot-Api-Secret-Token` timing-safe verification. Также подписан на Redis pub/sub `conversational:channel:updated:telegram_bot` — после ротации `webhookSecret` в админке кэш `globalChannelCache` сбрасывается без рестарта.
+- `telegram-proxy-admin.client.ts` (2026-05-26) — REST-клиент к админ-API прокси: `login()` с JWT-кэшем в Redis, `upsertBot()`, `getBotByToken()`, `apiRequest()` с retry-on-401, `ping()`.
+- `telegram-proxy-health.cron.ts` (2026-05-26) — раз в `TELEGRAM_PROXY_HEALTH_INTERVAL_SEC` секунд (default 30) пингует прокси, пишет `tg:proxy:healthy` в Redis. Лидер-выбор по `SET NX EX`.
 - `telegram.types.ts` — типизированный subset Update / Message / Voice / Document / SendMessage. Без `reply_markup`, без `callback_query`, без `BotCommand`.
 - `SMOKE.md` — инструкция ручного smoke на проде.
 - `telegram-bot.adapter.spec.ts` — unit-тесты (`/start <token>`, голый код, voice → ASR, document → upload, free text classify, rate-limit, незалинкованный юзер).
+- `telegram-api-client.spec.ts`, `telegram-proxy-admin.client.spec.ts`, `telegram-webhooks.controller.spec.ts` — модульные тесты transport / proxy / pub-sub invalidation.
+
+### Транспорт Telegram через прокси (2026-05-26)
+
+> ТЗ: [plans/tz/2026-05-26-telegram-via-crossmark-proxy.md](../../plans/tz/2026-05-26-telegram-via-crossmark-proxy.md).
+
+Z живёт в ДЦ Новосибирска. Прямые исходящие к `api.telegram.org` и
+входящие webhook'и от Telegram нестабильны/недоступны (региональные
+блокировки). Решение — пустить весь Telegram-трафик через сервис-прокси
+`https://telegram.crossmark.ru`.
+
+**Outbound** (Z → Telegram). `TelegramApiClient.call()` строит URL через
+`resolveApiBase()`: при `TELEGRAM_PROXY_ENABLED=true` (default в проде)
+— `cfg.telegramProxy.apiBase` (`telegram.crossmark.ru`), иначе legacy
+`cfg.telegramBot.apiBase` (`api.telegram.org`). Прокси прозрачный по
+форматам запросов/ответов — каждый Bot API метод и каждый Content-Type
+(включая `multipart/form-data`).
+
+**Inbound** (Telegram → Z). Прокси регистрирует у Telegram свой URL
+`/webhook/<secret>`, принимает Update и форвардит на наш
+`targetWebhookUrl` (`POST /api/v1/webhooks/telegram-bot`), проставляя
+`X-Telegram-Bot-Api-Secret-Token`. Прокси гарантирует до 3 ретраев с
+возрастающей задержкой на не-2xx нашего ответа. Наш контроллер
+верифицирует секрет через `timingSafeEqual`.
+
+**Регистрация бота в прокси.** Через админку Z
+(`/admin/system/telegram-bot` → «Перенастроить webhook») — вызывает
+`AdminTelegramBotService.resetWebhook → TelegramProxyAdminClient.upsertBot`.
+Прокси сам дёргает `setWebhook` у Telegram (Z не вызывает напрямую).
+Альтернативно — patch-скрипт `patch-telegram-register-in-proxy.ts`
+(идемпотентен, регистрируется в `apply-prod-deploy.ts`).
+
+**Аутентификация в админ-API прокси.** Через `POST /auth/login` JWT;
+кэшируется в Redis (`tg:proxy:admin:jwt`) с TTL ≈ `exp - prefetchSec`.
+Креды (`TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD`) — в ENV, не в БД (уровень
+инфры).
+
+**Кэш канала и ротация secret'а.** `TelegramWebhooksController` держит
+`globalChannelCache` в памяти процесса. При любой мутации
+`Channel.config` (token, webhook, status, templates)
+`AdminTelegramBotService` публикует в Redis pub/sub топик
+`conversational:channel:updated:telegram_bot`; контроллер сбрасывает
+кэш и при следующем webhook'е делает свежий `findFirst`. Без этого
+после ротации `webhookSecret` входящие webhook'и продолжали бы
+проверяться против старого секрета до рестарта.
+
+**Метрики.**
+- `telegram_proxy_request_total{api_method, outcome}` — outcome ∈ `ok | proxy_5xx | proxy_4xx | telegram_5xx | telegram_4xx | network`. Различают «прокси сам упал» (JSON-ответ не Telegram-формата) vs «Telegram через прокси вернул ошибку».
+- `telegram_proxy_request_duration_seconds{api_method}` — histogram.
+- `telegram_proxy_health_check_total{outcome}` — `ok | fail` (раз в 30 секунд).
+
+**Аварийный rollback на прямой Telegram.** Переменная
+`TELEGRAM_PROXY_ENABLED=false` + рестарт backend → outbound идёт в
+`api.telegram.org` (legacy), `setWebhook` дёргает наш бэк. Inbound при
+этом не дойдёт пока прокси настроен у Telegram, нужно либо
+зарегистрировать webhook напрямую (через legacy CLI
+`setup-telegram-bot.ts`), либо смириться, что бот «слепо-глухой» на
+исходящие до восстановления прокси.
+
+**Известное ограничение.** `modules/ingest/adapters/telegram/*` —
+per-source бот для ingest. В прокси-режиме `setWebhook` для бота, не
+зарегистрированного в прокси, вернёт 401/403. На основной conversational-flow
+(`@kora_bot`) это не влияет — для него регистрация в прокси выполняется
+patch-скриптом или через админку.
 
 `backend/src/modules/conversational/adapters/max-bot/` — то же для MAX (api base `https://platform-api.max.ru`):
 - `max-bot.adapter.ts` / `max-api-client.ts` (включая `downloadAttachment`) / `max-webhooks.controller.ts` / `max.types.ts` (без MaxCallback и MaxInlineKeyboard*).

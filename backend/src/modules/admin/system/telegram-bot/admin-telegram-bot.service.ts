@@ -16,7 +16,10 @@ import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import { RedisService } from '../../../../common/redis/redis.service';
 import { TelegramApiClient } from '../../../conversational/adapters/telegram-bot/telegram-api-client';
+import { TelegramProxyAdminClient } from '../../../conversational/adapters/telegram-bot/telegram-proxy-admin.client';
+import { TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC } from '../../../conversational/topics';
 
 import type {
   BindingRowDto,
@@ -24,6 +27,7 @@ import type {
   BindingStatus,
   ListBindingsQueryDto,
   TelegramBotSettingsResponseDto,
+  TelegramProxyPingResponseDto,
   UpdateTemplatesDto,
 } from './admin-telegram-bot.dto';
 
@@ -54,6 +58,12 @@ const DEFAULT_TEMPLATES = {
 const INACTIVE_THRESHOLD_DAYS = 30;
 
 /**
+ * Ключ Redis в котором health-cron хранит булев результат пинга
+ * прокси. См. `TelegramProxyHealthCron` (Фаза 5).
+ */
+export const TELEGRAM_PROXY_HEALTHY_REDIS_KEY = 'tg:proxy:healthy';
+
+/**
  * AdminTelegramBotService (β-9 Phase 4).
  *
  * Управляет глобальным каналом Telegram-бота из админки Z. Записывает токен
@@ -73,8 +83,11 @@ export class AdminTelegramBotService {
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(TelegramApiClient) private readonly tgApi: TelegramApiClient,
+    @Inject(TelegramProxyAdminClient)
+    private readonly proxyAdmin: TelegramProxyAdminClient,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(RedisService) private readonly redis: RedisService,
   ) {}
 
   // ─────────────────────────────── settings ────────────────────────────
@@ -88,6 +101,8 @@ export class AdminTelegramBotService {
     const channel = await this.findGlobalChannel();
     this.metrics.incAdminTelegramBotAction({ action: 'settings_read' });
 
+    const proxyHealthy = await this.readProxyHealthy();
+
     if (!channel) {
       return {
         channelExists: false,
@@ -100,6 +115,14 @@ export class AdminTelegramBotService {
         status: 'disabled',
         brokenReason: null,
         templates: { ...DEFAULT_TEMPLATES },
+        proxy: {
+          enabled: this.cfg.telegramProxy.enabled,
+          apiBase: this.cfg.telegramProxy.apiBase,
+          healthy: proxyHealthy,
+          botId: null,
+          registeredAt: null,
+          lastSyncError: null,
+        },
         updatedAt: new Date().toISOString(),
       };
     }
@@ -112,6 +135,18 @@ export class AdminTelegramBotService {
       ? this.maskToken(decryptedToken)
       : null;
 
+    const raw = (channel.config as Record<string, unknown> | null) ?? {};
+    const proxyBotId =
+      typeof raw['proxyBotId'] === 'string' ? (raw['proxyBotId'] as string) : null;
+    const proxyRegisteredAt =
+      typeof raw['proxyRegisteredAt'] === 'string'
+        ? (raw['proxyRegisteredAt'] as string)
+        : null;
+    const proxyLastSyncError =
+      typeof raw['proxyLastSyncError'] === 'string' && raw['proxyLastSyncError']
+        ? (raw['proxyLastSyncError'] as string)
+        : null;
+
     return {
       channelExists: true,
       channelId: channel.id,
@@ -123,7 +158,40 @@ export class AdminTelegramBotService {
       status: channel.status,
       brokenReason: channel.brokenReason,
       templates: this.mergeTemplates(config.templates),
+      proxy: {
+        enabled: this.cfg.telegramProxy.enabled,
+        apiBase: this.cfg.telegramProxy.apiBase,
+        healthy: proxyHealthy,
+        botId: proxyBotId,
+        registeredAt: proxyRegisteredAt,
+        lastSyncError: proxyLastSyncError,
+      },
       updatedAt: channel.updatedAt.toISOString(),
+    };
+  }
+
+  // ─────────────────────────────── ping ────────────────────────────────
+
+  /**
+   * Синхронный пинг прокси из админки («Проверить прокси сейчас»). Не
+   * пишет в Channel.config — это диагностика. Сам результат не
+   * кэширует; health-cron хранит долгосрочный статус отдельно.
+   */
+  async pingProxy(): Promise<TelegramProxyPingResponseDto> {
+    if (!this.cfg.telegramProxy.enabled) {
+      return {
+        ok: false,
+        status: 0,
+        durationMs: 0,
+        error: 'TELEGRAM_PROXY_ENABLED=false — прокси выключен',
+      };
+    }
+    const r = await this.proxyAdmin.ping();
+    return {
+      ok: r.ok,
+      status: r.status,
+      durationMs: r.durationMs,
+      error: r.error ?? null,
     };
   }
 
@@ -159,15 +227,23 @@ export class AdminTelegramBotService {
       `admin: глобальный Telegram-токен обновлён channelId=${channel.id} botUsername=${botUsername ?? 'unknown'}`,
     );
     this.metrics.incAdminTelegramBotAction({ action: 'token_changed' });
+    await this.publishChannelUpdated({ channelId: channel.id, reason: 'token_changed' });
     return this.getSettings();
   }
 
   // ─────────────────────────────── webhook ────────────────────────────
 
   /**
-   * Перенастроить webhook в Telegram: генерим новый secret (если ещё нет),
-   * пишем его в `Channel.config.webhookSecret`, вызываем `setWebhook`.
-   * Без токена — 400.
+   * Перенастроить webhook: генерим новый secret, регистрируем (или
+   * обновляем) бота в прокси `telegram.crossmark.ru`. После успеха
+   * прокси сам вызывает `setWebhook` у Telegram, указывая свой
+   * `/webhook/<secret>` как URL. Без токена — 400.
+   *
+   * Legacy-режим (`TELEGRAM_PROXY_ENABLED=false`, для dev и аварийного
+   * rollback) — старое поведение: дёргаем `setWebhook` напрямую через
+   * `TelegramApiClient`.
+   *
+   * См. ТЗ plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §3 п.9 и §7.
    */
   async resetWebhook(args?: {
     webhookUrl?: string;
@@ -195,8 +271,6 @@ export class AdminTelegramBotService {
       });
     }
 
-    // Генерим новый secret каждый раз — старый перестаёт работать сразу
-    // после успешного `setWebhook`. Это обнуляет в том числе и риски утечки.
     const newSecret = this.generateWebhookSecret();
     const webhookUrl = (args?.webhookUrl ?? this.computeWebhookUrl()).trim();
     if (!/^https:\/\//i.test(webhookUrl)) {
@@ -209,33 +283,65 @@ export class AdminTelegramBotService {
       });
     }
 
-    try {
-      await this.tgApi.setWebhook({
-        token,
-        url: webhookUrl,
-        secretToken: newSecret,
-      });
-    } catch (err) {
-      throw new BadRequestException({
-        ok: false,
-        error: {
-          code: 'telegram_set_webhook_failed',
-          message: `Telegram отверг setWebhook: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
-        },
-      });
+    const useProxy = this.cfg.telegramProxy.enabled;
+    let proxyBotId: string | undefined;
+    let proxyRegisteredAt: string | undefined;
+    let proxyLastSyncError: string | null = null;
+
+    if (useProxy) {
+      try {
+        const info = await this.proxyAdmin.upsertBot({
+          token,
+          secretToken: newSecret,
+          targetUrl: webhookUrl,
+        });
+        proxyBotId = info.id;
+        proxyRegisteredAt = new Date().toISOString();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'неизвестная ошибка';
+        proxyLastSyncError = message;
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'telegram_proxy_upsert_failed',
+            message: `Прокси отверг регистрацию бота: ${message}`,
+          },
+        });
+      }
+    } else {
+      // Legacy direct mode: дёргаем setWebhook у Telegram сами.
+      try {
+        await this.tgApi.setWebhook({
+          token,
+          url: webhookUrl,
+          secretToken: newSecret,
+        });
+      } catch (err) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'telegram_set_webhook_failed',
+            message: `Telegram отверг setWebhook: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          },
+        });
+      }
     }
 
     const newSecretEnc = this.crypto.encrypt(newSecret);
-    await this.upsertGlobalChannel((existingConfig) => ({
+    const updated = await this.upsertGlobalChannel((existingConfig) => ({
       ...existingConfig,
       webhookSecret: newSecretEnc,
       webhookUrl,
+      ...(proxyBotId ? { proxyBotId } : {}),
+      ...(proxyRegisteredAt ? { proxyRegisteredAt } : {}),
+      proxyLastSyncError,
     }));
 
     this.logger.log(
-      `admin: webhook глобального Telegram-бота перенастроен на ${webhookUrl}`,
+      `admin: webhook глобального Telegram-бота перенастроен на ${webhookUrl} (proxy=${useProxy ? 'on' : 'off'}${proxyBotId ? `, botId=${proxyBotId}` : ''})`,
     );
     this.metrics.incAdminTelegramBotAction({ action: 'webhook_reset' });
+    await this.publishChannelUpdated({ channelId: updated.id, reason: 'webhook_reset' });
     return this.getSettings();
   }
 
@@ -262,6 +368,7 @@ export class AdminTelegramBotService {
       `admin: шаблоны глобального Telegram-бота обновлены channelId=${channel.id}`,
     );
     this.metrics.incAdminTelegramBotAction({ action: 'templates_updated' });
+    await this.publishChannelUpdated({ channelId: channel.id, reason: 'templates_updated' });
     return this.getSettings();
   }
 
@@ -289,6 +396,7 @@ export class AdminTelegramBotService {
       `admin: статус глобального Telegram-бота → ${nextStatus} (channelId=${channel.id})`,
     );
     this.metrics.incAdminTelegramBotAction({ action: 'status_toggled' });
+    await this.publishChannelUpdated({ channelId: channel.id, reason: 'status_toggled' });
     return this.getSettings();
   }
 
@@ -421,10 +529,56 @@ export class AdminTelegramBotService {
 
   // ─────────────────────────────── helpers ────────────────────────────
 
+  /**
+   * Публикует в Redis pub/sub `TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC`
+   * для инвалидации in-process кэша глобального канала во всех
+   * нодах/воркерах. ТЗ 2026-05-26 §2 — без этого после ротации
+   * `webhookSecret` входящие webhook'и продолжат проверяться против
+   * старого секрета до рестарта.
+   *
+   * Best-effort: если publish упал — пишем warn и продолжаем (config
+   * уже сохранён в БД, после ближайшего рестарта подхватится).
+   */
+  private async publishChannelUpdated(args: {
+    channelId: string;
+    reason: string;
+  }): Promise<void> {
+    try {
+      await this.redis.client.publish(
+        TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC,
+        JSON.stringify({ channelId: args.channelId, reason: args.reason }),
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err), reason: args.reason },
+        'admin telegram bot: publish channel:updated failed — subscribers получат стейл-кэш до рестарта',
+      );
+    }
+  }
+
   private async findGlobalChannel(): Promise<Channel | null> {
     return this.prisma.channel.findFirst({
       where: { tenantId: null, kind: TELEGRAM_GLOBAL_CHANNEL_KIND },
     });
+  }
+
+  /**
+   * Читает свежесть прокси из Redis (записывает `TelegramProxyHealthCron`).
+   * `null` — cron ещё не отрабатывал; UI рисует серым «нет данных».
+   */
+  private async readProxyHealthy(): Promise<boolean | null> {
+    try {
+      const v = await this.redis.client.get(TELEGRAM_PROXY_HEALTHY_REDIS_KEY);
+      if (v === '1' || v === 'true') return true;
+      if (v === '0' || v === 'false') return false;
+      return null;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'admin telegram bot: не удалось прочитать прокси-health из Redis',
+      );
+      return null;
+    }
   }
 
   /**

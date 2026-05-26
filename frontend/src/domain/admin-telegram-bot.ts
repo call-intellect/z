@@ -24,6 +24,24 @@ export type TelegramBotTemplatesApi = {
   orgFrozen: string;
 };
 
+/**
+ * Транспорт Telegram через прокси telegram.crossmark.ru (ТЗ
+ * plans/tz/2026-05-26-telegram-via-crossmark-proxy.md).
+ *   - enabled — backend-флаг TELEGRAM_PROXY_ENABLED;
+ *   - apiBase — текущий URL прокси (для подсказки в UI);
+ *   - healthy — последний результат health-cron'а (null = нет данных);
+ *   - botId / registeredAt — текущая регистрация в прокси;
+ *   - lastSyncError — последняя ошибка upsertBot.
+ */
+export type TelegramBotProxyStatusApi = {
+  enabled: boolean;
+  apiBase: string;
+  healthy: boolean | null;
+  botId: string | null;
+  registeredAt: string | null;
+  lastSyncError: string | null;
+};
+
 export type TelegramBotSettingsApiDto = {
   channelExists: boolean;
   channelId: string | null;
@@ -35,7 +53,16 @@ export type TelegramBotSettingsApiDto = {
   status: TelegramBotStatusApi;
   brokenReason: string | null;
   templates: TelegramBotTemplatesApi;
+  proxy: TelegramBotProxyStatusApi;
   updatedAt: string;
+};
+
+/** Результат POST /admin/system/telegram-bot/ping. */
+export type TelegramBotProxyPingApiDto = {
+  ok: boolean;
+  status: number;
+  durationMs: number;
+  error: string | null;
 };
 
 export type TelegramBotBindingStatusApi =
@@ -68,6 +95,25 @@ export type TelegramBotBindingsPageApiDto = {
 
 // ────────────────────────── DomainModel ──────────────────────────
 
+export type TelegramBotProxyStatusDomain = {
+  enabled: boolean;
+  apiBase: string;
+  /** null — health-cron ещё не отрабатывал, UI рисует серым. */
+  healthy: boolean | null;
+  botId: string | null;
+  registeredAt: Date | null;
+  lastSyncError: string | null;
+  /**
+   * Удобный сводный флаг: `'green' | 'yellow' | 'red' | 'gray'` для
+   * вывода индикатора в UI.
+   *   green   = enabled + healthy=true + botId есть;
+   *   yellow  = enabled + healthy=true + botId нет (ещё не регистрировались);
+   *   red     = enabled + healthy=false (или lastSyncError не пуст);
+   *   gray    = !enabled или healthy=null.
+   */
+  trafficLight: 'green' | 'yellow' | 'red' | 'gray';
+};
+
 export type TelegramBotDomain = {
   channelExists: boolean;
   channelId: string | null;
@@ -83,6 +129,7 @@ export type TelegramBotDomain = {
   isGloballyDisabled: boolean;
   brokenReason: string | null;
   templates: TelegramBotTemplatesApi;
+  proxy: TelegramBotProxyStatusDomain;
   updatedAt: Date;
 };
 
@@ -112,6 +159,31 @@ export type TelegramBotBindingsPageDomain = {
 
 // ────────────────────────── Mappers ──────────────────────────
 
+function proxyFromApi(api: TelegramBotProxyStatusApi): TelegramBotProxyStatusDomain {
+  const registeredAt = api.registeredAt ? new Date(api.registeredAt) : null;
+  let trafficLight: TelegramBotProxyStatusDomain['trafficLight'];
+  if (!api.enabled) {
+    trafficLight = 'gray';
+  } else if (api.healthy === null) {
+    trafficLight = 'gray';
+  } else if (!api.healthy || api.lastSyncError) {
+    trafficLight = 'red';
+  } else if (!api.botId) {
+    trafficLight = 'yellow';
+  } else {
+    trafficLight = 'green';
+  }
+  return {
+    enabled: api.enabled,
+    apiBase: api.apiBase,
+    healthy: api.healthy,
+    botId: api.botId,
+    registeredAt,
+    lastSyncError: api.lastSyncError,
+    trafficLight,
+  };
+}
+
 export function telegramBotFromApi(
   api: TelegramBotSettingsApiDto,
 ): TelegramBotDomain {
@@ -132,6 +204,7 @@ export function telegramBotFromApi(
     isGloballyDisabled: api.status === 'global_disabled',
     brokenReason: api.brokenReason,
     templates: api.templates,
+    proxy: proxyFromApi(api.proxy),
     updatedAt: new Date(api.updatedAt),
   };
 }

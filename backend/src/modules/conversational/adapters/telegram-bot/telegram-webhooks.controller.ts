@@ -10,15 +10,20 @@ import {
   Inject,
   Logger,
   NotFoundException,
+  type OnModuleDestroy,
+  type OnModuleInit,
   Param,
   Post,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { Channel } from '@prisma/client';
+import type { Redis } from 'ioredis';
 
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import { RedisService } from '../../../../common/redis/redis.service';
 import { ConversationalService } from '../../conversational.service';
+import { TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC } from '../../topics';
 
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import type { TelegramUpdate } from './telegram.types';
@@ -48,11 +53,23 @@ import type { TelegramUpdate } from './telegram.types';
  */
 @ApiExcludeController()
 @Controller('api/v1/webhooks/telegram-bot')
-export class TelegramWebhooksController {
+export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramWebhooksController.name);
 
-  /** Кэш глобального Channel'а — один на процесс. Сбрасывается при рестарте. */
+  /**
+   * Кэш глобального Channel'а — один на процесс. Сбрасывается:
+   *   - на старте процесса (значение null),
+   *   - при изменении Channel.config (через Redis pub/sub
+   *     `TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC`).
+   *
+   * ТЗ §2: иначе после ротации `webhookSecret` через `/admin/.../webhook`
+   * входящие webhook'и продолжат проверяться против старого секрета и
+   * отвергаться с `invalid_webhook_secret` до рестарта.
+   */
   private globalChannelCache: Channel | null = null;
+
+  /** Subscriber connection для pub/sub (отдельный от основного). */
+  private subscriber: Redis | null = null;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -62,7 +79,47 @@ export class TelegramWebhooksController {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(RedisService)
+    private readonly redis: RedisService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Отдельное подключение для subscribe (ioredis блокирует канал для
+    // других операций когда сделан subscribe). При ошибке инициализации —
+    // логируем и работаем без invalidation (cache сбрасывается только на
+    // рестарт). Это деградация, не блокер.
+    try {
+      this.subscriber = this.redis.client.duplicate();
+      await this.subscriber.subscribe(TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC);
+      this.subscriber.on('message', (channel) => {
+        if (channel === TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC) {
+          this.globalChannelCache = null;
+          this.logger.log(
+            'telegram webhook: globalChannelCache сброшен по pub/sub-сигналу',
+          );
+        }
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'telegram webhook: не удалось подписаться на pub/sub — invalidation кэша работать не будет (рестарт нужен)',
+      );
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (!this.subscriber) return;
+    try {
+      await this.subscriber.quit();
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'telegram webhook: ошибка при закрытии subscriber',
+      );
+    } finally {
+      this.subscriber = null;
+    }
+  }
 
   /**
    * β-9 — Главный путь. Без `:tenantId` в URL. Лукапит глобальный

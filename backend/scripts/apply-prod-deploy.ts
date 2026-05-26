@@ -116,6 +116,11 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-mass-migrate-to-deepseek-pro.ts', args: ['--update-existing'], skipBootstrap: true },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
+  // 2026-05-26 — регистрация глобального Telegram-бота в прокси
+  // telegram.crossmark.ru. Идемпотентен. Требует уже настроенного токена
+  // в /admin/system/telegram-bot (на чистом старте — no-op с инструкцией).
+  // ТЗ: plans/tz/2026-05-26-telegram-via-crossmark-proxy.md.
+  { phase: 'patch', script: 'scripts/patch-telegram-register-in-proxy.ts', hint: 'регистрация бота в telegram.crossmark.ru', skipBootstrap: true },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },

@@ -10,6 +10,7 @@ import type { Source } from '@prisma/client';
 import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import { TelegramApiClient } from '../../../conversational/adapters/telegram-bot/telegram-api-client';
 import type { SourceTestResultDto } from '../../../sources/dto/source.dto';
 
 import { parseTelegramConfig } from './telegram-config.schema';
@@ -22,18 +23,28 @@ import { parseTelegramConfig } from './telegram-config.schema';
  *   - `test(source)`                — `getMe` для smoke-теста.
  *   - `getDecryptedToken(source)`   — расшифровывает botToken для контроллера.
  *
- * Bot API: https://api.telegram.org/bot<token>/<method>.
+ * 2026-05-26 (ТЗ plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §3 п.10):
+ * транспорт идёт через единый `TelegramApiClient` — он сам выбирает между
+ * прокси `telegram.crossmark.ru` и `api.telegram.org`. Дублирующая
+ * реализация `callBotApi` удалена.
+ *
+ * ⚠ Известное ограничение в прокси-режиме: per-source `setWebhook`/
+ * `deleteWebhook` будет отвергнут прокси, т.к. прокси пропускает только
+ * заранее зарегистрированных в нём ботов (см. /guide). Этот ingest-flow
+ * нужно либо отключить (`TELEGRAM_PROXY_ENABLED=false`), либо
+ * зарегистрировать бота в админке прокси отдельно. В основном
+ * conversational-flow (один глобальный `@kora_bot`) проблемы нет —
+ * `setWebhook` дёргает сам прокси при `upsertBot`.
  */
 @Injectable()
 export class TelegramAdapterService {
   private readonly logger = new Logger(TelegramAdapterService.name);
 
-  static readonly BASE_API = 'https://api.telegram.org';
-
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(TelegramApiClient) private readonly tgApi: TelegramApiClient,
   ) {}
 
   /**
@@ -62,19 +73,25 @@ export class TelegramAdapterService {
     const cfg = parseTelegramConfig(source.config);
     const token = this.decryptIfNeeded(cfg.botToken);
     const url = this.buildWebhookUrl(sourceId);
-    const body = {
-      url,
-      secret_token: cfg.webhookSecret,
-      allowed_updates: ['message', 'channel_post'],
-    };
-    const res = await this.callBotApi(token, 'setWebhook', body);
-    if (!res.ok) {
+    if (this.cfg.telegramProxy.enabled) {
       this.logger.warn(
-        { sourceId, description: res.description ?? 'unknown' },
+        { sourceId },
+        'telegram.registerWebhook: TELEGRAM_PROXY_ENABLED=true — прокси пропускает только зарегистрированные боты. Per-source ingest setWebhook может вернуть 401/403.',
+      );
+    }
+    try {
+      await this.tgApi.setWebhook({
+        token,
+        url,
+        secretToken: cfg.webhookSecret,
+        allowedUpdates: ['message'],
+      });
+      this.logger.log({ sourceId, url }, 'telegram.registerWebhook: ok');
+    } catch (err) {
+      this.logger.warn(
+        { sourceId, err: err instanceof Error ? err.message : String(err) },
         'telegram.registerWebhook: setWebhook failed',
       );
-    } else {
-      this.logger.log({ sourceId, url }, 'telegram.registerWebhook: ok');
     }
   }
 
@@ -83,12 +100,11 @@ export class TelegramAdapterService {
     if (!source) return;
     const cfg = parseTelegramConfig(source.config);
     const token = this.decryptIfNeeded(cfg.botToken);
-    const res = await this.callBotApi(token, 'deleteWebhook', {
-      drop_pending_updates: false,
-    });
-    if (!res.ok) {
+    try {
+      await this.tgApi.deleteWebhook({ token });
+    } catch (err) {
       this.logger.warn(
-        { sourceId, description: res.description ?? 'unknown' },
+        { sourceId, err: err instanceof Error ? err.message : String(err) },
         'telegram.unregisterWebhook: deleteWebhook failed',
       );
     }
@@ -106,18 +122,21 @@ export class TelegramAdapterService {
     }
     const cfg = parseTelegramConfig(source.config);
     const token = this.decryptIfNeeded(cfg.botToken);
-    const res = await this.callBotApi(token, 'getMe', undefined);
-    if (!res.ok) {
-      return { ok: false, errorMessage: res.description ?? 'getMe failed' };
+    try {
+      const me = await this.tgApi.getMe({ token });
+      return {
+        ok: true,
+        details: {
+          botUsername: me.username ?? cfg.botUsername,
+          canReceiveUpdates: true,
+        },
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      };
     }
-    const result = res.result as { username?: string } | undefined;
-    return {
-      ok: true,
-      details: {
-        botUsername: result?.username ?? cfg.botUsername,
-        canReceiveUpdates: true,
-      },
-    };
   }
 
   /**
@@ -157,35 +176,5 @@ export class TelegramAdapterService {
       return this.crypto.decrypt(value);
     }
     return value;
-  }
-
-  private async callBotApi(
-    token: string,
-    method: string,
-    body: unknown,
-  ): Promise<{ ok: boolean; result?: unknown; description?: string }> {
-    const url = `${TelegramAdapterService.BASE_API}/bot${token}/${method}`;
-    const init: RequestInit = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    };
-    let res: Response;
-    try {
-      res = await fetch(url, init);
-    } catch (err) {
-      this.logger.warn(
-        { method, err: err instanceof Error ? err.message : String(err) },
-        'telegram.callBotApi: network error',
-      );
-      return { ok: false, description: err instanceof Error ? err.message : String(err) };
-    }
-    let json: { ok: boolean; result?: unknown; description?: string };
-    try {
-      json = (await res.json()) as { ok: boolean; result?: unknown; description?: string };
-    } catch {
-      return { ok: false, description: `non-JSON response: ${res.status}` };
-    }
-    return json;
   }
 }

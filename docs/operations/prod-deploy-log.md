@@ -77,7 +77,7 @@ GRSAI_API_KEY=<secret>
 # === Kill-switch'и для безопасного запуска (все уже false по умолчанию — можно не дублировать) ===
 BITEMPORAL_ENABLED=false                 # KC-Temporal — поэтапное включение
 BITEMPORAL_SUPERSEDE_ENABLED=false
-CLONE_V2_ENABLED=false                   # clone-respond v2
+CLONE_V2_ENABLED=false                   # clone-respond v2; переключить в true ТОЛЬКО ПОСЛЕ Шага 6.10 (миграция грантов CloneAccessGrant) — иначе у пользователей пропадёт доступ к клонам
 SPECIALISTS_COMBINED_ENABLED=false       # Variant Б+
 COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM=false
 
@@ -148,6 +148,7 @@ bun run prisma:generate
 - `AiUsageLog`: +inputCostPerMillionTokensSnapshot, +costRub, +dataClassAudit
 - `Task`: +assigneeUserId (FK на User)
 - `User`: +calendarFeedToken (VarChar 80)
+- `CloneAccessGrant` (2026-05-26, коммит `fc3d6fe`): +`revokedAt DateTime?`, +`revokedBy String?`, +`expiresAt DateTime?` + 2 индекса (`@@index([revokedAt])`, `@@index([expiresAt])`). Все поля nullable — обратно совместимо, простой db push без `--accept-data-loss`. Фикс скрытого бага: `canAccess*Clone` теперь фильтрует по `revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > NOW())`.
 
 Enum расширения (без удалений — Postgres не умеет DROP VALUE):
 - `MeetingType`: +review, +retrospective, +task_discussion
@@ -234,13 +235,39 @@ bun run scripts/patch-prompt-role-profile-build-fase0d.ts
 bun run scripts/patch-chat-v2-to-pro.ts
 bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
 bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
+
+# 6.10 — Первичная миграция грантов CloneAccessGrant (2026-05-26, коммит 87fef5d)
+# ОБЯЗАТЕЛЬНО ДО переключения CLONE_V2_ENABLED=true (см. Шаг 1).
+# Выдаёт первичные CloneAccessGrant по правилам B:
+#   - носители ролей (Appointment validTo IS NULL, status active/acting) → грант на свой role-клон
+#   - manager того же department → грант на клон подчинённого
+#   - owner/admin Org → гранты на все role-клоны Org
+# Person-клоны НЕ выдаются. Идемпотентен (createMany skipDuplicates по unique-индексу).
+bun run scripts/patch-migrate-clone-access.ts
+# опц. для одного тенанта:
+# bun run scripts/patch-migrate-clone-access.ts --tenant <orgId>
 ```
 
 ⚠️ **НЕ запускать на проде** (помечен внутри файла «без согласования»):
 - `backfill-task-assignee-userid.ts`
 
-⚠️ **Заглушка (no-op до волны 2):**
-- `patch-migrate-clone-access.ts` — можно запускать, эффекта не будет.
+ℹ️ **Доступно оператору при инциденте — НЕ плановая операция** (коммит `177e465`):
+- `patch-rollback-to-deepseek-flash.ts` — массовый откат всех LlmTaskRoute с `deepseek-v4-pro` обратно на `deepseek-v4-flash` (26 целей: 20 базовых ROLLBACK_TARGETS + 6 EXTRA для chat-v2/dialog-layer). Защищён флагом `--update-existing` от случайного запуска; не трогает `editedByAdmin=true`. Запуск только при подтверждённой регрессии:
+  ```bash
+  cd backend
+  bun run scripts/patch-rollback-to-deepseek-flash.ts --dry-run --update-existing   # посмотреть план
+  bun run scripts/patch-rollback-to-deepseek-flash.ts --update-existing             # применить
+  ```
+
+### Шаг 6.11 — Переключение CLONE_V2_ENABLED (после Шага 6.10)
+
+После того как миграция грантов отработала и владелец сверил список выданных грантов в `/admin/clones`:
+
+1. В `.env` прода выставить `CLONE_V2_ENABLED=true`.
+2. Перезапустить backend + worker (Шаг 11).
+3. Финализирует переход на единственный источник правды о доступе к клонам — таблицу `CloneAccessGrant`.
+
+Откат: `CLONE_V2_ENABLED=false` + рестарт (мгновенно возвращает старые правила в коде).
 
 ---
 
@@ -419,6 +446,8 @@ docker compose exec prometheus kill -HUP 1
 | `seed-llm-default-primary-deepseek-pro.ts --update-existing` | Меняет primary у ВСЕХ taskType | `editedByAdmin` НЕ трогается. Использовать ТОЛЬКО если действительно хочешь сбросить ручные настройки. |
 | `migrate-task-to-issue --apply` | Конвертирует legacy Task → Issue | Идемпотентен (externalSource+externalId). Сначала dry-run. Task не удаляется. |
 | `backfill-task-assignee-userid.ts` | В шапке файла стоит «НЕ ЗАПУСКАТЬ НА ПРОДЕ без согласования» | Пропустить в стандартной инструкции. |
+| `patch-rollback-to-deepseek-flash.ts --update-existing` | Массовый откат 26 LlmTaskRoute с pro→flash. Не плановая операция — только при инциденте после миграции на DeepSeek-V4-Pro | Защищён флагом `--update-existing`; `editedByAdmin=true` не трогает. Сначала `--dry-run --update-existing`. |
+| `CLONE_V2_ENABLED=true` без предварительного запуска `patch-migrate-clone-access.ts` | У всех пользователей пропадёт доступ к клонам — единственный источник правды CloneAccessGrant будет пуст | См. Шаг 6.10 + Шаг 6.11. Порядок: миграция грантов → сверка в `/admin/clones` → ENV true → рестарт. |
 
 ---
 

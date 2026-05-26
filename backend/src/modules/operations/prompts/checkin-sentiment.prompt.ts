@@ -154,6 +154,13 @@ export interface CheckinSentimentBatchResult {
  * Парсер tool_call `submit_batch_sentiments`. Безопасный: при любых
  * нарушениях схемы возвращает только валидные элементы (некорректные
  * молча пропускаются, чтобы один кривой пункт не сломал весь батч).
+ *
+ * Исключение — **дубликат `checkInId`** в результате: бросаем `Error`.
+ * Решение пользователя 2026-05-26 (см. ТЗ §1 пункт 4 / §2.2 Кейс 8):
+ * лучше упасть на одном пакете и переобработать его, чем тихо писать
+ * случайные данные в БД (с риском перепутать настроение разных людей).
+ * Внешний try/catch в cron'е поймает throw и инкрементит
+ * `coo_sentiment_failed_total` на каждый элемент батча.
  */
 export function parseCheckinSentimentBatchToolInput(
   input: unknown,
@@ -178,6 +185,18 @@ export function parseCheckinSentimentBatchToolInput(
     const rationale =
       typeof obj.rationale === 'string' ? obj.rationale.slice(0, 1_000) : '';
     out.push({ checkInId, sentiment, rationale });
+  }
+  // Детекция дубликата checkInId — ПОСЛЕ валидации каждого элемента,
+  // ДО возврата. Если LLM вернул один id дважды — неизвестно какой
+  // sentiment правильный, поэтому весь батч считаем failed.
+  const seen = new Set<string>();
+  for (const item of out) {
+    if (seen.has(item.checkInId)) {
+      throw new Error(
+        `checkin-sentiment-batch: дубликат checkInId в результате LLM: ${item.checkInId}`,
+      );
+    }
+    seen.add(item.checkInId);
   }
   return out;
 }

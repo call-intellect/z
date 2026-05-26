@@ -479,7 +479,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── SBA β-8.1 — добивка панели операционного директора ────────────
   // Cardinality-safe: tenant_top — top-100 bucket; sentiment — 'green'|'yellow'|'red'.
   private cooSentimentAnalyzedTotal!: Counter<'tenant_top' | 'sentiment'>;
-  private cooSentimentFailedTotal!: Counter<'tenant_top'>;
+  // reason: 'invalid_element' — silent-skip кривого элемента batch-парсером;
+  //         'other' — LLM упал/timeout/нет tool_call/update в БД упал.
+  // Cardinality: 2 значения reason × ≤101 tenant_top = ≤202 series.
+  private cooSentimentFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
@@ -1941,8 +1944,8 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.cooSentimentFailedTotal = this.getOrCreateCounter({
       name: 'coo_sentiment_failed_total',
-      help: 'SBA β-8.1 — счётчик отказов LLM при анализе настроения чек-ина.',
-      labelNames: ['tenant_top'] as const,
+      help: 'SBA β-8.1 — счётчик отказов LLM при анализе настроения чек-ина. reason: invalid_element (silent-skip батч-парсером) | other (LLM down / нет tool_call / update упал).',
+      labelNames: ['tenant_top', 'reason'] as const,
     });
     this.cooWeeklyDigestGeneratedTotal = this.getOrCreateCounter({
       name: 'coo_weekly_digest_generated_total',
@@ -4427,9 +4430,21 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
-  /** Counter `coo_sentiment_failed_total{tenant_top}`. */
-  incCooSentimentFailed(args: { tenantTop: string }): void {
-    this.cooSentimentFailedTotal.inc({ tenant_top: args.tenantTop });
+  /**
+   * Counter `coo_sentiment_failed_total{tenant_top, reason}`.
+   *
+   * `reason` — необязательный для обратной совместимости с существующими
+   * вызовами; default `'other'`. Batch-парсер silent-skip'ает кривые
+   * элементы → cron должен звать с `reason: 'invalid_element'`.
+   */
+  incCooSentimentFailed(args: {
+    tenantTop: string;
+    reason?: 'invalid_element' | 'other';
+  }): void {
+    this.cooSentimentFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason ?? 'other',
+    });
   }
 
   /** Counter `coo_weekly_digest_generated_total{tenant_top}`. */

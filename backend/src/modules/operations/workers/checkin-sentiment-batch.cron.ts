@@ -215,6 +215,21 @@ export class CheckinSentimentBatchCron {
       }
 
       const parsed = parseCheckinSentimentBatchToolInput(toolCall.input);
+
+      // Silent-skip элементов парсером (невалидный sentiment-enum, не
+      // строковой checkInId, не-объект и т.п.) — фиксируем как
+      // `invalid_element`. Решение пользователя 2026-05-26 (ТЗ §1.4).
+      const skippedByParser = Math.max(
+        0,
+        args.items.length - parsed.length,
+      );
+      for (let i = 0; i < skippedByParser; i++) {
+        this.metrics.incCooSentimentFailed({
+          tenantTop,
+          reason: 'invalid_element',
+        });
+      }
+
       if (parsed.length === 0) {
         this.logger.warn(
           {
@@ -223,15 +238,13 @@ export class CheckinSentimentBatchCron {
           },
           'checkin-sentiment-batch: tool_call вернул 0 валидных элементов',
         );
-        for (let i = 0; i < args.items.length; i++) {
-          this.metrics.incCooSentimentFailed({ tenantTop });
-        }
         return { classified: 0, failed: args.items.length };
       }
 
       const version = `${CHECKIN_SENTIMENT_BATCH_PROMPT_VERSION}+${result.modelUsed}`;
       const idsInBatch = new Set(args.items.map((i) => i.checkInId));
       let classified = 0;
+      let updateFailed = 0;
       for (const r of parsed) {
         if (!idsInBatch.has(r.checkInId)) continue;
         try {
@@ -250,6 +263,7 @@ export class CheckinSentimentBatchCron {
             sentiment: r.sentiment,
           });
         } catch (err) {
+          updateFailed++;
           this.metrics.incCooSentimentFailed({ tenantTop });
           this.logger.warn(
             {
@@ -261,13 +275,21 @@ export class CheckinSentimentBatchCron {
           );
         }
       }
-      const failed = args.items.length - classified;
-      for (let i = 0; i < failed; i++) {
+      // Итог failed = парсер выкинул + update упал + LLM не вернул id из батча.
+      // skippedByParser уже посчитан выше; updateFailed уже инкрементирован
+      // в catch'е. Остаток (id не найден в parsed) — это «ничего не сделано
+      // для записи», fail-метрику пишем тут же.
+      const notReturnedByLlm =
+        args.items.length - classified - skippedByParser - updateFailed;
+      for (let i = 0; i < Math.max(0, notReturnedByLlm); i++) {
         this.metrics.incCooSentimentFailed({ tenantTop });
       }
+      const failed = args.items.length - classified;
       return { classified, failed };
     } catch (err) {
       // Весь батч упал — каждый элемент считается failed.
+      // Сюда же попадает throw парсера на дубликат checkInId
+      // (см. parseCheckinSentimentBatchToolInput, §1.4 ТЗ).
       for (let i = 0; i < args.items.length; i++) {
         this.metrics.incCooSentimentFailed({ tenantTop });
       }

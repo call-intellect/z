@@ -45,6 +45,24 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | **operations (β-8.2, 2026-05-25)** | `commitment-extract-dates`, `commitment-extract-status` | DeepSeek-chat → OpenAI-mini → Ollama qwen3.5:9b |
 | **operations (β-8.3, 2026-05-25)** | `operations-daily-digest` | DeepSeek-chat → OpenAI via proxy `gpt-5.4-nano` → Ollama `qwen3.5:9b`. Seed — `backend/scripts/seed-llm-task-routes-beta-8-3.ts`. Используется глобальным cron'ом `operations-daily-digest` (01:00 МСК) для двухстадийной сборки ежедневного отчёта COO. |
 | **feedback (2026-05-25)** | `feedback-cluster` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4-mini` → Ollama `qwen3.5:9b`. Seed — `backend/scripts/seed-llm-task-routes-feedback-cluster.ts`. Используется ночным cron'ом `feedback-digest` (`0 1 * * *` UTC) для кластеризации пользовательского фидбэка в смысловые блоки. Полная заметка фичи — [`feedback.md`](feedback.md). |
+| **operations (β-8.1 batch, 2026-05-26)** | `checkin-sentiment-batch` | DeepSeek-flash → OpenAI via proxy `gpt-5.4-mini` → Ollama `qwen3.5:9b`. Cron `CheckinSentimentBatchCron` (`*/5 * * * *`) собирает накопленные вечерние чек-ины (sentiment=null) и обрабатывает одним батч-вызовом — заменяет per-event `CheckinSentimentAnalyzerWorker` для экономии токенов. `max_tokens` поднят на батч. |
+| **specialists combined (Фаза 6 §3, 2026-05-26)** | `knowledge-specialists-combined` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4` → Ollama `qwen3.5:9b`. Б+ объединённый вызов: один LLM-запрос извлекает 8 типов сущностей (decisions / ideas / insights / experiments / regulations / knowledge_categories / skill_traits / helpfulness_traits) вместо 8 раздельных. ~3.7× дешевле при сопоставимом качестве (eval `backend/scripts/eval/judge-specialists-bplus-vs-g.ts`). Воркер — `SpecialistsCombinedWorker`, очередь `core.specialists-combined`. Флаг `SPECIALISTS_COMBINED_ENABLED` (default off, A/B параллельно со старыми). |
+| **clones v2 (Фаза 7 §9, 2026-05-26)** | `dialog-multi-query-clone` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4` → Ollama `qwen3.5:9b`. Клон-respond v2 с dialog-layer: multi-query expansion + temporal filter + factual/judgmental режимы. Используется в новых endpoint'ах `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations`. Флаг `CLONE_V2_ENABLED`. Доступ ролевой — модель `CloneAccessGrant`. См. [`skill-and-clone.md`](skill-and-clone.md) §«Доработки 2026-05-26». |
+
+## Массовая миграция на DeepSeek V4 Pro (2026-05-26)
+
+В рамках Фаз 0-8 ТЗ [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) primary capable модель (γ-1) — `deepseek:deepseek-v4-pro` — раскатана на:
+- **chat-v2 + dialog-layer** (Фаза 4 §2): 5 шагов диалогового слоя + 19 одиночек, ранее на flash.
+- **specialists combined** (Фаза 6 §3): новый `knowledge-specialists-combined`.
+- **clone-respond v2** (Фаза 7 §9): новый `dialog-multi-query-clone`.
+- **operations checkin batch** (Фаза 2 §6): `checkin-sentiment-batch`.
+- ранее (γ-1 hardening): `skill-trait-detect`, `summary-v2`, `goal-alignment`, `meeting-report-fast`.
+
+`max_tokens` аудит (Фаза 3 §10.4): `executable-persona-compile=8000`, `role-profile-build=16000`, `card-rollup-v2 / summary-v2 = 8000`, `dashboard-summary=4000`, `goal-alignment=2000`. Reasoning-моделям бюджет на скрытое рассуждение обязателен.
+
+Формат-фикс для thinking-моделей (Фаза 1 §4): `isThinkingModel` helper + автоконверт `json_schema` → `tools + tool_choice='auto'` в `DeepSeekService.buildParams` (метрика `z_deepseek_schema_to_tool_conversion_total{model}`).
+
+Промпт-вынос (Фаза 8 §10.4 Find 2): 5 embedded-промптов вынесены в отдельные файлы `prompts/*.prompt.ts` — `block-distill`, `block-linker`, `theme-classify`, `reframing`, `entity-merge-arbiter` (+ 14 snapshot-тестов, фиксируют формулировки от тихих регрессий).
 
 ## Финальный handoff Wave 1-3 — изменения (2026-05-25)
 

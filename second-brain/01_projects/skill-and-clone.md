@@ -139,3 +139,27 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 4. `pinnedVersionNote` для `skill-trait-detect` заполнено прямо в seed (поле в `LlmTaskRoute`, синхронизируется на все tier-записи) с описанием результатов прогона.
 
 Применить на проде: `bun run scripts/seed-llm-task-routes-skill-and-clone.ts --update-existing` (если у Org нет `editedByAdmin=true` на этих роутах) ИЛИ через UI `/admin/llm-routes` вручную для каждой Org.
+
+## Доработки 2026-05-26 — clone-respond v2 (Фаза 7 §9)
+
+**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9. Раскатана в рамках общей миграции LLM на DeepSeek V4 Pro.
+
+Цель — поднять качество диалога с клоном на уровень chat-v2 (multi-query expansion + temporal filter + history) без потери антифальшивки и сохранить дешёвую one-shot ветку для quick-look сценариев.
+
+| Аспект | Было (γ-1) | Стало (v2, под флагом `CLONE_V2_ENABLED`) |
+|---|---|---|
+| Сценарий | Только one-shot `POST /clones/.../ask` (без памяти диалога) | + новый многотуровый `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` поверх `ChatV2Conversation(mode='clone_style')` |
+| TaskType | `clone-respond` (DeepSeek flash) | `dialog-multi-query-clone` (**DeepSeek V4 Pro** → gpt-5.4 → qwen3.5:9b) |
+| Retrieval | Прямой KNN по embeddings вопроса | Dialog-layer: расширение запроса (multi-query) + temporal-фильтр `validAt` (поддержка «что мы знали тогда», как у chat-v2 SBA α-5) |
+| Режимы | Только нейтральный | `factual` (только подтверждённые блоки) и `judgmental` (можно делать выводы / оценки на стиле носителя — но с тем же дисклеймером и антифальшивкой) |
+| Доступ | Чистый RBAC (owner/admin/self/manager) | + явный ACL через модель **`CloneAccessGrant`** (см. [[../02_architecture/data-model]] §Clones v2) — per-pair (grantee × subject) с опц. `expiresAt` и `revokedAt` |
+| Антифальшивка | ≥2 reasoning-блока с cosine≥0.70 | **Без изменений** — программное правило живёт до LLM, действует одинаково на v1 и v2 |
+| Дисклеймер | Обязательный «(клон; могу ошибаться)» | **Без изменений** |
+| Флаг | — | `CLONE_V2_ENABLED` (default off). v1 и v2 живут параллельно для A/B. |
+
+Связанные изменения:
+- API: добавлены 2 endpoint'а в [[api-layer]] §Clones.
+- LLM: добавлен taskType `dialog-multi-query-clone` в [[ai-jobs]] (массовая миграция на Pro).
+- DB: новая модель `CloneAccessGrant` в [[../02_architecture/data-model]].
+
+⚠ **Ролевые клоны** (решение 2026-05-25, см. memory `project_clones_are_role_based`) сохраняются: ExecutablePersona строится по должности; UI — только `/clones` и `/roles/[id]/clone`. v2-эндпоинты под persona предусмотрены ради коллабораций («дай мне поговорить с клоном Маши»), но в UI остаются ролевые карточки, а персональный доступ закрывается через `CloneAccessGrant`.

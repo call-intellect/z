@@ -123,6 +123,24 @@ owner: architecture
 
 **Process detector** (без номера). `workers/process-detector.worker.ts` + `workers/process-template-completeness.cron.ts` + промпты `process-steps-extract.prompt.ts`, `process-template-extract.prompt.ts`. Детектит процессы из блоков, проверяет полноту шаблонов процессов.
 
+#### 2.4.3. SpecialistsCombined — Б+ объединённый вызов (Фаза 6 §3, 2026-05-26)
+
+**Гипотеза владельца:** «Б+ один unified call на 8 типов сущностей ≈ Г восемь раздельных по качеству, но в ~3.7× дешевле». Подтверждено эвалом `backend/scripts/eval/judge-specialists-bplus-vs-g.ts` (judge — DeepSeek V4 Pro с маскированием меток).
+
+| Аспект | Детали |
+|---|---|
+| **Воркер** | `workers/specialists-combined.worker.ts` (`SpecialistsCombinedWorker`) |
+| **Очередь** | `core.specialists-combined` (новая, рядом со старой `core.specialist-routing` для A/B) |
+| **Producer** | `block-distill.worker` после canonical-блока — **если** `SPECIALISTS_COMBINED_ENABLED=true` |
+| **LLM** | TaskType `knowledge-specialists-combined` — primary **DeepSeek V4 Pro** → fallback `gpt-5.4` → `qwen3.5:9b` |
+| **Что извлекает за один вызов** | `decisions` / `ideas` / `insights` / `experiments` / `regulations` / `knowledge_categories` / `skill_traits` / `helpfulness_traits` — 8 типов в одной JSON-схеме (через tool-call из-за thinking-режима Pro) |
+| **Триаж и persistence** | Каждый блок результата проходит обычный `CurationService.triage` своего специалиста + сохраняется через те же сервисы (`Specialist33DecisionsService.upsertDecision` и т.д.) для сохранения семантики probe / merge / dedupe |
+| **Флаг** | `SPECIALISTS_COMBINED_ENABLED` (default off). Параллельная работа со старыми 8 воркерами для контролируемой раскатки. |
+| **Eval-скрипты** | `judge-specialists-bplus-vs-g.ts`, `judge-dialog-deepseek.ts` (5 раздельных vs 1 объединённый dialog-layer), `judge-kie-claude.ts` (meeting-report-fast 4 vs 1) |
+| **Источник** | [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) Фаза 6 §3 |
+
+**Когда снимать флаг и убирать старые специалисты:** после положительного A/B на dev-трафике и проверки, что probe-трассировка не теряется (Specialist combined пишет тот же `sourceBlockIds`/`triageResult` per-entity).
+
 ### 2.5. Граф знаний (entity-resolution + linking)
 
 | Агент | Файл | Расписание | Что делает | LLM |
@@ -557,14 +575,23 @@ options: ["Я", "Мария Иванова", "Команда продаж", "Р�
 
 | Слой | Provider | Модель | Применение |
 |---|---|---|---|
-| Primary capable (γ-1) | DeepSeek | `deepseek-v4-pro` | summary-v2, goal-alignment, meeting-report-fast, skill-trait-detect (96% golden, $0.02 vs $0.10 у gpt-5.4) |
-| Primary стандарт | DeepSeek | `deepseek-v4-flash` | block-ingest, chat-v2, knowledge-core |
-| Fallback top | OpenAI via proxy | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` | summary-v2, универсальные |
+| **Primary capable (γ-1 + Фазы 0-8, 2026-05-26)** | DeepSeek | `deepseek-v4-pro` | summary-v2, goal-alignment, meeting-report-fast, skill-trait-detect (96% golden), **chat-v2 + dialog-layer (5 шагов + 19 одиночек)**, **knowledge-specialists-combined (Б+ один вызов 8 сущностей)**, **dialog-multi-query-clone (clone-respond v2)**, **feedback-cluster**. Формат: `tools + tool_choice='auto'` (thinking-режим не поддерживает strict json_schema / forced tool_choice). Auto-конверт `json_schema → tools` в `DeepSeekService.buildParams`. |
+| Primary стандарт | DeepSeek | `deepseek-v4-flash` | block-ingest, block-distill, block-linker, axis-classify, theme-classify, card-rollup-v2, специалисты 3-1..3-8 (текущая «Г-ветка» в A/B с combined) |
+| Fallback top | OpenAI via proxy | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` | summary-v2, универсальные, secondary для всех таски на Pro |
 | Tool-use | OpenAI via proxy | `gpt-4o`, `gpt-4.1` | concierge-respond |
 | Tertiary | Ollama (self-hosted) | `qwen3.5:9b` | last-resort |
 | A/B (с 2026-05-25) | KIE | Claude Opus 4.7, GPT-5-4, Gemini | эксперименты |
 | A/B | GRSAI | Gemini через прокси | эксперименты |
 | **Embeddings (единственный)** | proxy | `text-embedding-3-small` (dim=1536) | для pgvector |
+
+**Массовая миграция на DeepSeek V4 Pro (2026-05-26, Фазы 0-8 ТЗ `2026-05-25-llm-architecture-changes-from-experiments.md`):**
+- Фаза 1 §4 — `isThinkingModel` helper + автоконверт `json_schema → tools` для Pro (метрика `z_deepseek_schema_to_tool_conversion_total`).
+- Фаза 2 §6/§8 — `checkin-sentiment-batch` (per-event → батч `*/5`), skill-trait-detect verified.
+- Фаза 3 §10.4 — аудит `max_tokens`: `executable-persona=8000`, `role-profile=16000`, `card-rollup/summary=8000`, `dashboard-summary=4000`, `goal-alignment=2000`.
+- Фаза 4 §2 — chat-v2 + dialog-layer (5 шагов) + 19 одиночек на Pro.
+- Фаза 6 §3 — SpecialistsCombined (§2.4.3 этой карты).
+- Фаза 7 §9 — clone-respond v2: dialog-layer + factual/judgmental + новая модель `CloneAccessGrant`, новый taskType `dialog-multi-query-clone`, flag `CLONE_V2_ENABLED`.
+- Фаза 8 §10.4 Find 2 — вынос 5 embedded-промптов в `prompts/*.prompt.ts` (block-distill, block-linker, theme-classify, reframing, entity-merge-arbiter) + 14 snapshot-тестов от тихих регрессий.
 
 Anthropic в продакшене **не используется** (нет ключа, не закупаем). Ollama для embeddings/chat не входит в основной поток (qwen3.5:9b только tertiary).
 

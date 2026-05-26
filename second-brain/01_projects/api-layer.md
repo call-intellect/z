@@ -138,6 +138,20 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 ⚠ **Privacy `sentiment`:** в `/me/check-ins` маппер `stripSentimentForRole` всегда вызывается с `role=null` — fail-safe двойная защита (RBAC + DTO-фильтр) против утечки настроения сотруднику. Покрыто 9 тестами.
 
+## Clones (Skill & Persona, γ-1 + v2)
+
+| Метод | Путь | Назначение | Доступ | Фаза |
+|---|---|---|---|---|
+| POST | `/api/v1/clones/persons/:personId/ask` | One-shot вопрос клону сотрудника (rate-limit 20/сутки, mode=`clone_style`, антифальшивка ≥2 reasoning-блока с cosine≥0.70) | owner/admin/self/direct manager | γ-1 |
+| POST | `/api/v1/clones/roles/:roleId/ask` | One-shot вопрос агрегатному клону роли (top traits всех employee'ев роли) | owner/admin/manager | γ-1 |
+| GET | `/api/v1/clones/persons/:personId/skill-profile` | Read профиля + traits | manager/admin/self | γ-1 |
+| GET | `/api/v1/clones/roles/:roleId/skill-profile` | Агрегатный профиль роли + список людей | manager/admin | γ-1 |
+| POST | `/api/v1/clones/skill-traits/:traitId/mark-misleading` | Manager/admin помечает trait как неверный (postфактум-контроль) | owner/admin/direct manager | γ-1 |
+| **POST** | `/api/v1/clones/persons/:personId/conversations` | **Многотуровый диалог с клоном сотрудника v2** — dialog-layer (multi-query expansion + temporal filter), режимы `factual` / `judgmental`. taskType `dialog-multi-query-clone` (DeepSeek V4 Pro). Доступ через `CloneAccessGrant`. Флаг `CLONE_V2_ENABLED`. | owner/admin/granted (через CloneAccessGrant) | **Фаза 7 §9 (2026-05-26)** |
+| **POST** | `/api/v1/clones/roles/:roleId/conversations` | **Многотуровый диалог с клоном роли v2** — те же dialog-layer / режимы. Агрегатный клон роли. | owner/admin/granted | **Фаза 7 §9 (2026-05-26)** |
+
+⚠ **Ролевые клоны (решение 2026-05-25).** ExecutablePersona строится по должности, а не по сотруднику. UI-страницы — только `/clones` и `/roles/[id]/clone`; старые `/me/clone` и `/persons/[id]/skill-profile` удалены. См. [[skill-and-clone]].
+
 ## WebSocket gateways
 
 | Namespace | Назначение |
@@ -266,5 +280,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-05-25 (β-8.3):** добавлены `daily-digest` (GET/POST + `/latest`) endpoints — ежедневный отчёт COO в окне 1 день МСК. См. [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 - **2026-05-25 (admin-redesign Фазы 0-9):** добавлен раздел «Admin (Z-Admin) — новые эндпоинты Фаз 0-9» с полным списком префиксов `/api/v1/admin/{settings,crons,audit,incidents,analytics,ai,orgs/{plans,entitlements,:id/*},content/*,integrations/*,media/*,platform/*,llm-routes}`.
 - **2026-05-25 (feedback):** добавлен раздел «Feedback — канал обратной связи + AI-кластеризация» с пользовательскими и админскими эндпоинтами `/api/v1/feedback/*` и `/api/v1/admin/feedback/*`. Полная заметка фичи — [[feedback]].
+- **2026-05-26 (clones v2, Фаза 7 §9):** добавлены `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` — многотуровый диалог с клоном, dialog-layer, режимы factual / judgmental, taskType `dialog-multi-query-clone` на DeepSeek V4 Pro. Доступ через модель `CloneAccessGrant`, флаг `CLONE_V2_ENABLED`. См. [[skill-and-clone]] §«Доработки 2026-05-26».
 
 [[../index|← index]]

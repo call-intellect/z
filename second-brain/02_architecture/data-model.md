@@ -976,4 +976,37 @@ model FeedbackItem {
 - `feedback:ratelimit:{userId}:{YYYY-MM-DD-UTC}` — счётчик сабмитов на сутки, TTL до конца UTC-суток. Cap 5/сутки.
 - `feedback:digest:lock` — SET NX EX 1800 (30 минут). Только один прогон ночного digest'а на весь кластер одновременно.
 
+## Clones v2 — CloneAccessGrant (Фаза 7 §9, 2026-05-26)
+
+**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
+
+Многотуровый чат с клоном (persona или role) теперь требует явного гранта доступа — раньше доступ резолвился чисто RBAC-правилом owner/admin/self/manager, теперь добавляется per-pair (subject × invitee) ACL для коллабораций «дай мне поговорить с твоим клоном».
+
+```prisma
+model CloneAccessGrant {
+  id           String   @id @default(cuid())
+  tenantId     String   @index
+  // Кому открыли доступ
+  granteeUserId String  @index
+  // К какому клону: либо персональный (personId), либо ролевой (roleId) — XOR
+  subjectPersonId String? @index
+  subjectRoleId   String? @index
+  // Кто разрешил (owner / admin / сам носитель / direct manager)
+  grantedByUserId String
+  // Срок действия (null = бессрочно до revoke)
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@unique([tenantId, granteeUserId, subjectPersonId])
+  @@unique([tenantId, granteeUserId, subjectRoleId])
+  @@index([tenantId, subjectPersonId])
+  @@index([tenantId, subjectRoleId])
+}
+```
+
+Используется в guard'ах новых endpoint'ов `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` (см. [[../01_projects/api-layer]] §Clones). Старые one-shot `POST /clones/.../ask` остаются на прежнем RBAC.
+
+Флаг включения цепочки v2 — `CLONE_V2_ENABLED` (default off, A/B параллельно со старым clone-respond).
+
 [[../index|← index]]

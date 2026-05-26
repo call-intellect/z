@@ -21,28 +21,156 @@
 
 ---
 
-## 🚀 TL;DR — одна команда
+## 🚀 Полный чек-лист обновления (Сценарий A: данные сохраняем)
 
-Все seed/patch/backfill/migrate агрегированы в `scripts/apply-prod-deploy.ts`. Не надо копипастить ~80 команд — достаточно:
+> Стандартный workflow обновления работающего прода. Если БД жалко потерять — это твой путь.
 
 ```bash
-# A. Обновление работающего прода (с patch/backfill/migrate для legacy):
-docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update
+# ─── 1. SSH на сервер + в директорию проекта ───────────────────────
+ssh root@prod
+cd /home/docker/z
+set -a && source .env && set +a              # подтянуть POSTGRES_USER/DB в shell
 
-# B. Чистый старт (только seed, без patch/backfill/migrate — нечего бэкфилить):
-docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode bootstrap
+# ─── 2. БЭКАП БД ────────────────────────────────────────────────────
+mkdir -p backups && \
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
+  > "backups/z_main_$(date +%F-%H%M).dump" && \
+ls -lh backups/ | tail -3
+# Размер должен быть > 0 байт. Сохрани файл — нужен для отката.
 
-# All (bootstrap + update подряд) — по умолчанию:
-docker compose exec backend bun run scripts/apply-prod-deploy.ts
+# ─── 3. Pull кода ──────────────────────────────────────────────────
+git pull origin dev
+git log -1 --oneline                          # увидь последний коммит
+
+# ─── 4. Sanity-check lockfile ──────────────────────────────────────
+grep -c npmmirror backend/bun.lock frontend/bun.lock   # должно быть 0 и 0
+
+# ─── 5. .env — проверить новые ENV ─────────────────────────────────
+# Открой .env и сверься с разделом «Шаг 1 — ENV» ниже.
+# Если добавлял новые NEXT_PUBLIC_* — нужна пересборка frontend в Шаге 9.
+nano .env
+set -a && source .env && set +a
+
+# ─── 6. GATE — защитный backfill ДО migrate ────────────────────────
+# Только если у тебя legacy Meeting с tenantId=NULL (есть до этого выката).
+# postgres уже up с прошлого деплоя — `run --rm` стартует одноразовый контейнер.
+docker compose run --rm backend bun run scripts/backfill-orgs-fase0.ts
+docker compose run --rm backend bun run scripts/backfill-meeting-tenant-id.ts --apply
+docker compose run --rm backend bun run scripts/tighten-meeting-tenant-not-null.ts
+# Последняя команда: exit 0 = можно идти дальше, exit 1 = STOP, разбирайся.
+
+# ─── 7. Build + up (миграция автоматически через migrate-сервис) ───
+docker compose build                          # 5-15 минут на холодную, 1 на инкремент
+docker compose up -d --build                  # postgres + redis + migrate (one-shot) + backend + frontend
+
+# Дождаться миграции:
+docker compose logs -f migrate
+# Жди: "✓ postgres-init.sql выполнен" + "=== apply-postgres-init DONE ===", Ctrl+C
+docker compose ps                             # все 4 контейнера healthy
+
+# ─── 8. Подхват новых ENV / NEXT_PUBLIC_* ──────────────────────────
+# Если правил .env (Шаг 5):
+docker compose up -d --force-recreate backend
+# Если правил NEXT_PUBLIC_*:
+docker compose up -d --build frontend
+
+# ─── 9. ОДНА КОМАНДА: применить patch + seed + backfill + migrate ──
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update --continue-on-fail
+# В конце: "=== SUMMARY === Всего: NN, OK: M, FAIL: K"
+# Если есть FAIL — посмотри список упавших, разбирайся индивидуально.
+
+# ─── 10. Per-tenant setup (опц., только если меняются токены/URL) ──
+# Telegram (глобальный, БЕЗ --tenant-id):
+docker compose exec backend bun run setup:telegram-bot \
+  -- --token=$TG_TOKEN --public-host-url=https://api.prod.host --webhook-secret=<секрет>
+
+# ─── 11. Включение CLONE_V2_ENABLED (только если бизнес-готово) ────
+# Убедись что в /admin/clones корректно отображаются гранты после
+# patch-migrate-clone-access (он внутри агрегатора). Только тогда:
+# В .env: CLONE_V2_ENABLED=true
+# Подхват:
+# docker compose up -d --force-recreate backend
+
+# ─── 12. nginx (только если меняешь BACKEND_HOST_PORT/FRONTEND_HOST_PORT) ─
+# sudo nginx -t && sudo systemctl reload nginx
+
+# ─── 13. Smoke ─────────────────────────────────────────────────────
+curl https://api.prod.host/health
+curl https://api.prod.host/health/ready       # пара post/redis/livekit = ok
+curl -s https://api.prod.host/api/docs > /dev/null && echo "Swagger OK"
+curl -s https://api.prod.host/metrics | grep -E 'bullmq_(probe|conversational|chat-v2|knowledge-clone|skill|tracker)' | head
+```
+
+**Если что-то пошло не так — см. [🆘 Troubleshooting](#-troubleshooting) внизу.**
+
+---
+
+## 🆕 Полный чек-лист для чистого старта (Сценарий B: данные сносим)
+
+> Beta/staging, или прод где volume PG несовместим с composite-образом. **Все данные пользователей будут потеряны.**
+
+```bash
+ssh root@prod
+cd /home/docker/z
+set -a && source .env && set +a
+
+# ─── 1. (опц.) Бэкап перед wipe — на случай если передумаешь ──────
+mkdir -p backups && \
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
+  > "backups/z_main_before_wipe_$(date +%F-%H%M).dump" 2>/dev/null || echo "БД уже сломана — пропускаем бэкап"
+
+# ─── 2. WIPE: down -v снесёт volumes (БД + redis-AOF) ─────────────
+docker compose down -v --remove-orphans
+docker volume ls | grep z_                    # должно быть пусто
+
+# ─── 3. Pull + проверка lockfile + .env ────────────────────────────
+git pull origin dev
+grep -c npmmirror backend/bun.lock frontend/bun.lock     # 0 и 0
+# Минимальный .env (см. ниже «Шаг 1 — ENV»):
+nano .env
+set -a && source .env && set +a
+
+# ─── 4. Build + up (на чистой БД gate не нужен) ────────────────────
+docker compose build
+docker compose up -d
+docker compose logs -f migrate                # жди "DONE", Ctrl+C
+docker compose ps                             # все healthy
+
+# ─── 5. Проверка composite-образа postgres + расширений ───────────
+docker compose ps postgres                    # IMAGE: z-postgres-age-pgvector:pg16
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT extname, extversion FROM pg_extension WHERE extname IN ('age','vector');"
+# Должно вернуть 2 строки
+
+# ─── 6. ОДНА КОМАНДА: bootstrap super-admin + все seed'ы ──────────
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode bootstrap --continue-on-fail
+# Минует patch/backfill/migrate (на пустой БД нечего бэкфилить).
+
+# ─── 7. Setup ботов + smoke ────────────────────────────────────────
+docker compose exec backend bun run setup:telegram-bot \
+  -- --token=$TG_TOKEN --public-host-url=https://api.prod.host --webhook-secret=<секрет>
+
+curl https://api.prod.host/health
+curl https://api.prod.host/health/ready
+```
+
+---
+
+## 🚀 TL;DR — что делает агрегатор
+
+`backend/scripts/apply-prod-deploy.ts` — единая точка для всех ~80 prod-операций:
+
+```bash
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode bootstrap   # чистый старт
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update      # обновление
+docker compose exec backend bun run scripts/apply-prod-deploy.ts                    # all (default)
 
 # Полезные флаги:
 #   --dry-run            показать что будет запущено, не выполнять
 #   --continue-on-fail   продолжать после ошибки скрипта (default: stop)
 ```
 
-В конце выводится `SUMMARY: OK=NN FAIL=N` со списком упавших. Если есть фейлы — `exit 1`.
-
-**Это не отменяет ручные шаги 1-7, 10-12** (бэкап, pull, ENV, build, up, setup ботов, smoke). Агрегатор покрывает Шаги 6 (patch), 7 (seed), 8 (backfill), 9 (migrate), плюс bootstrap super-admin (Шаг B.6).
+В конце: `=== SUMMARY === Всего: NN, OK: M, FAIL: K` + список упавших. Если есть FAIL — `exit 1`.
 
 > При добавлении нового `seed-*` / `patch-*` / `backfill-*` / `migrate-*` скрипта **обязательно** допиши его в массив `STEPS` в `backend/scripts/apply-prod-deploy.ts` — иначе на проде он не запустится.
 
@@ -697,6 +825,102 @@ curl -s https://prod.host/metrics | grep -E 'bullmq_(probe|conversational|chat-v
 - ❌ Шаг 6 (patch-*) — нечего патчить, БД пустая. Исключение: `patch-migrate-clone-access.ts` безопасно запустить (no-op, нет existing Appointment), если планируешь сразу `CLONE_V2_ENABLED=true`.
 - ❌ Шаг 8 (backfill-*) — нечего бэкфилить.
 - ❌ Шаг 9 (migrate-telegram-channels-to-global / migrate-task-to-issue) — нет legacy данных.
+
+---
+
+## 🆘 Troubleshooting
+
+### `apply-prod-deploy.ts` упал на конкретном скрипте
+
+Запусти с `--continue-on-fail` — увидишь полный список упавших. Идемпотентные скрипты безопасно перезапустить, уже сделанные пройдут как `skipped`:
+
+```bash
+docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode bootstrap --continue-on-fail
+```
+
+### `Cron Job with the given name (...) already exists`
+
+9 скриптов используют `NestFactory(AppModule)` и поднимают весь Nest — это может конфликтовать с уже запущенными `@Cron`-декораторами. Известный технический долг, скрипты:
+
+- `seed-global-channels.ts`
+- `migrate-telegram-channels-to-global.ts` / `migrate-telegram-channels-back.ts`
+- `patch-backfill-dataclass-audit.ts`
+- `backfill-commitment-due-dates.ts`
+- `backfill-task-assignee-userid.ts`
+- `person-knowledge-embeddings-backfill.ts`
+- `skill-trait-concepts-backfill.ts`
+- `e2e-feedback-clustering.ts`
+
+Обходные пути:
+1. **Запускать в одноразовом контейнере** (где Nest ещё не работает с @Cron):
+   ```bash
+   docker compose run --rm backend bun run scripts/seed-global-channels.ts
+   ```
+   НЕ через `exec backend` (там Nest уже инициализирован с cron'ами в основном процессе).
+2. **Долгосрочно** — переписать эти скрипты на `createPrismaClient()` из `_lib/prisma`, без `NestFactory`. См. правило в `CLAUDE.md` → Триггер 1 → Шаг 5.
+
+### `migrate` exit 1 при `docker compose up`
+
+Смотри логи:
+```bash
+docker compose logs --tail=100 migrate
+```
+
+Типичные причины:
+| Лог | Что делать |
+|---|---|
+| `extension "age" is not available` | Postgres-контейнер НЕ composite-образ. Проверь `docker compose ps postgres` → IMAGE должно быть `z-postgres-age-pgvector:pg16`. Если нет — `docker compose build postgres && docker compose up -d --force-recreate postgres`. |
+| `database files are incompatible with server` | Старый volume (от другой версии PG) и новый образ несовместимы. Только Сценарий B (wipe). |
+| `Meeting.tenantId NOT NULL violation` | Не запустил GATE (Шаг 6 в Сценарии A). Сначала backfill, потом retry migrate. |
+| `Cannot find module '../src/...'` | Старый backend-образ без `src/` в runner. Пересобери: `docker compose build backend && docker compose up -d --force-recreate backend`. |
+
+### `bun install` падает на `cdn.npmmirror.com - 404` в docker build
+
+Lockfile прибит к китайскому зеркалу. Проверь:
+```bash
+grep -c npmmirror backend/bun.lock frontend/bun.lock     # должно быть 0 и 0
+```
+Если ≠ 0 — что-то пошло не так с pull или последний коммит откатил фикс. Перегенерация:
+```bash
+cd backend && rm bun.lock && bun install && cd ..
+cd frontend && rm bun.lock && bun install && cd ..
+git diff bun.lock                              # проверь что нет npmmirror
+git add backend/bun.lock frontend/bun.lock && git commit -m "fix(deploy): regen bun.lock"
+```
+
+### Backend не стартует после `docker compose up`
+
+```bash
+docker compose logs --tail=200 backend
+```
+
+Чаще всего:
+- **Невалидный ENV** (zod fail): в логе будет «Невалидная конфигурация ENV» + поле. Открой `.env`, исправь, `docker compose up -d --force-recreate backend`.
+- **DATABASE_URL** не дозвонился до postgres: проверь `docker compose ps postgres` — должен быть healthy. URL внутри compose: `postgres:5432`, не `localhost`.
+
+### LiveKit `fail` в `/health/ready`
+
+```json
+{"checks":{"livekit":"fail:Unable to connect..."}}
+```
+
+`LIVEKIT_URL` из `.env` (внутри backend-контейнера) не дозвонился до media-сервера. Проверь:
+- `LIVEKIT_URL` в `.env` указывает на доступный domain/IP (НЕ `localhost` если media в другом контейнере/сети).
+- Media-сервер запущен и порт 7880/443 доступен.
+- `LIVEKIT_API_KEY/SECRET` совпадают с `infra/livekit/livekit.yaml` на media-сервере.
+
+### Откатить выкат
+
+```bash
+# 1. Откатить код
+git log --oneline -10
+git reset --hard <previous_commit>
+# 2. Откатить БД из бэкапа
+docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  --clean --if-exists < backups/z_main_<TIMESTAMP>.dump
+# 3. Поднять с откатанным кодом
+docker compose up -d --build
+```
 
 ---
 

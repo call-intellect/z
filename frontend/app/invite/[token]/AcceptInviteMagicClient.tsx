@@ -51,7 +51,8 @@ export function AcceptInviteMagicClient({ magicToken }: { magicToken: string }) 
       <div className="mx-auto max-w-md py-16 text-center">
         <h1 className="mb-2 text-xl font-semibold">Здравствуйте, {accepted.userName}!</h1>
         <p className="text-sm text-fg-secondary">
-          Вы вошли в Кору. Сейчас перенесём вас в кабинет…
+          Вы вошли в Кору. Сейчас откроется страница смены пароля —
+          приготовьте одноразовый пароль из письма приглашения.
         </p>
       </div>
     );

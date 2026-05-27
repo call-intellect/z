@@ -22,6 +22,7 @@ import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import { AccountsService } from './accounts.service';
 import { ChangePasswordSchema, type ChangePasswordDto } from './dto/change-password.dto';
+import { SetInitialPasswordSchema, type SetInitialPasswordDto } from './dto/set-initial-password.dto';
 import { ForgotPasswordSchema, type ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginSchema, type LoginDto } from './dto/login.dto';
 import {
@@ -279,6 +280,29 @@ export class AccountsController {
       currentJti: jti,
       currentPassword: body.currentPassword,
       newPassword: body.newPassword,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * β-10 (2026-05-27) — установить пароль без знания текущего.
+   * Только для `mustChangePassword=true` аккаунтов, созданных через magic-link
+   * без email (placeholder @kora.local). Email-пользователи используют
+   * `change-password` со старым паролем из письма.
+   */
+  @Post('me/set-initial-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CookieAuthGuard)
+  async setInitialPassword(
+    @Body(new ZodValidationPipe(SetInitialPasswordSchema)) body: SetInitialPasswordDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<{ ok: true }> {
+    const jti = (req.user as { jti?: string } | null | undefined)?.jti ?? null;
+    await this.accounts.setInitialPassword({
+      userId: user.id,
+      newPassword: body.newPassword,
+      currentJti: jti,
     });
     return { ok: true };
   }

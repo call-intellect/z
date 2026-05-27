@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { User } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -514,25 +514,28 @@ export class AccountsService {
     const result = await this.orgInvitations.acceptViaMagicLink({
       magicToken: input.magicToken,
       upsertUserByEmail: async (args) => {
-        const tempPassword = AccountsService.generateTempPassword();
-        const passwordHash = await this.passwords.hash(tempPassword);
+        // β-10: если в инвайте есть tempPasswordHash (β-10+), используем его напрямую
+        // (пользователь знает пароль из письма). Иначе генерируем новый — legacy-путь.
+        const passwordHash = args.passwordHash
+          ?? await this.passwords.hash(AccountsService.generateTempPassword());
         const user = await this.repo.upsertStandalone({
           email: args.email,
           name: args.name,
           passwordHash,
-          mustChangePassword: false,
+          mustChangePassword: true,
         });
         return { id: user.id, email: user.email, role: user.role };
       },
       createUserWithoutEmail: async (args) => {
-        const tempPassword = AccountsService.generateTempPassword();
-        const passwordHash = await this.passwords.hash(tempPassword);
+        // No-email: placeholder-пароль (пользователь задаст через setInitialPassword).
+        const passwordHash = args.passwordHash
+          ?? await this.passwords.hash(AccountsService.generateTempPassword());
         const placeholderEmail = `noemail-${randomBytes(12).toString('hex')}@kora.local`;
         const user = await this.repo.upsertStandalone({
           email: placeholderEmail,
           name: args.name,
           passwordHash,
-          mustChangePassword: false,
+          mustChangePassword: true,
         });
         return { id: user.id, email: user.email, role: user.role };
       },
@@ -586,6 +589,39 @@ export class AccountsService {
     } else {
       // Если jti отсутствует (legacy session), отзываем все —
       // пользователю придётся зайти заново.
+      await this.sessions.revokeAll(user.id);
+    }
+  }
+
+  // ─────────────────── set initial password (no-email / β-10) ──
+
+  /**
+   * β-10 (2026-05-27) — установка пароля без знания «старого» пароля.
+   * Разрешено только если `mustChangePassword=true` (иначе ForbiddenException).
+   * Используется для no-email пользователей (placeholder @kora.local), которые
+   * вошли через magic-link и не знают своего placeholder-пароля.
+   */
+  async setInitialPassword(input: {
+    userId: string;
+    newPassword: string;
+    currentJti: string | null;
+  }): Promise<void> {
+    const user = await this.repo.findById(input.userId);
+    if (!user || !user.mustChangePassword) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Установка начального пароля недоступна для этого аккаунта',
+        },
+      });
+    }
+    const newHash = await this.passwords.hash(input.newPassword);
+    await this.repo.updatePassword(user.id, newHash, false);
+
+    if (input.currentJti) {
+      await this.sessions.revokeAllExcept(user.id, input.currentJti);
+    } else {
       await this.sessions.revokeAll(user.id);
     }
   }

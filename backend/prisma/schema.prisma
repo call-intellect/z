@@ -2313,6 +2313,11 @@ model OrgInvitation {
   /// без пароля. NULL для legacy-приглашений.
   magicTokenHash     String?             @unique
   magicTokenUsedAt   DateTime?
+  /// β-10 (2026-05-27) — sha256(tempPassword), сгенерированного при создании
+  /// приглашения и отправленного в письме как одноразовый пароль для входа.
+  /// При acceptViaMagicLink этот хеш используется как passwordHash нового User
+  /// → mustChangePassword=true. NULL для legacy-приглашений до β-10.
+  tempPasswordHash   String?
   /// β-9 (2026-05-25) — когда крон `org-invitation-reminders` отправил
   /// напоминание сотруднику (на 7-й день после `createdAt`). NULL = не отправляли.
   reminderSentAt     DateTime?

@@ -1707,6 +1707,103 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── billing (Tochka + DaData + InnLookup) ──
+  /**
+   * Биллинг + интеграция с Точкой + DaData + ИНН-лукап.
+   * См. ТЗ plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §5.
+   *
+   *   - `provider` — выбор `BillingProviderPort` через фабрику в BillingModule.
+   *   - `features.*` — feature-flags для постепенного включения сценариев.
+   *   - `legalEntity` — реквизиты Z, попадают в шапку PDF-счёта.
+   *   - `tochka` — режим/url/OAuth/webhook параметры Точки.
+   *   - `dadata` / `innLookup` — параметры lookup'а по ИНН.
+   */
+  get billing() {
+    const provider = String(this.get('BILLING_PROVIDER') ?? 'manual') as
+      | 'tochka'
+      | 'manual';
+    const tochkaMode = String(this.get('TOCHKA_MODE') ?? 'sandbox') as
+      | 'sandbox'
+      | 'production';
+    const customDadataKey = String(this.get('DADATA_API_KEY') ?? '').trim();
+
+    return {
+      provider,
+      features: {
+        tochka: this.get('FEATURE_BILLING_TOCHKA') === true,
+        cardRecurring: this.get('FEATURE_BILLING_CARD_RECURRING') === true,
+        bankInvoice: this.get('FEATURE_BILLING_BANK_INVOICE') === true,
+      },
+      publicApiUrl: this.get('BILLING_PUBLIC_API_URL') as string | undefined,
+      successRedirectUrl: this.get('BILLING_SUCCESS_REDIRECT_URL') as
+        | string
+        | undefined,
+      failRedirectUrl: this.get('BILLING_FAIL_REDIRECT_URL') as
+        | string
+        | undefined,
+      legalEntity: {
+        name: this.get('BILLING_LEGAL_ENTITY_NAME') as string | undefined,
+        inn: this.get('BILLING_LEGAL_ENTITY_INN') as string | undefined,
+        kpp: this.get('BILLING_LEGAL_ENTITY_KPP') as string | undefined,
+        address: this.get('BILLING_LEGAL_ENTITY_ADDRESS') as string | undefined,
+        bik: this.get('BILLING_LEGAL_ENTITY_BIK') as string | undefined,
+        account: this.get('BILLING_LEGAL_ENTITY_ACCOUNT') as string | undefined,
+      },
+      tochka: {
+        mode: tochkaMode,
+        isProduction: tochkaMode === 'production',
+        isSandbox: tochkaMode === 'sandbox',
+        apiVersion: String(this.get('TOCHKA_API_VERSION') ?? 'v1.0'),
+        baseUrl:
+          (this.get('TOCHKA_API_BASE_URL') as string | undefined) ??
+          (tochkaMode === 'production'
+            ? 'https://enter.tochka.com/uapi/'
+            : 'https://enter.tochka.com/sandbox/v2/'),
+        customerCode: this.get('TOCHKA_CUSTOMER_CODE') as string | undefined,
+        accountId: this.get('TOCHKA_ACCOUNT_ID') as string | undefined,
+        merchantId: this.get('TOCHKA_MERCHANT_ID') as string | undefined,
+        clientId: this.get('TOCHKA_CLIENT_ID') as string | undefined,
+        clientSecret: this.get('TOCHKA_CLIENT_SECRET') as string | undefined,
+        redirectUri: this.get('TOCHKA_REDIRECT_URI') as string | undefined,
+        jwtToken: this.get('TOCHKA_JWT_TOKEN') as string | undefined,
+        oauthScopes: String(this.get('TOCHKA_OAUTH_SCOPES') ?? '')
+          .split(/[,\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+        oauthPermissions: String(this.get('TOCHKA_OAUTH_PERMISSIONS') ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        oauthConsentExpiresAt: this.get('TOCHKA_OAUTH_CONSENT_EXPIRES_AT') as
+          | string
+          | undefined,
+        webhookUrl: this.get('TOCHKA_WEBHOOK_URL') as string | undefined,
+        webhookEventTypes: String(
+          this.get('TOCHKA_WEBHOOK_EVENT_TYPES') ?? 'acquiringInternetPayment',
+        )
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        webhookAutoRegister: this.get('TOCHKA_WEBHOOK_AUTO_REGISTER') === true,
+        webhookPublicKeyUrl: String(
+          this.get('TOCHKA_WEBHOOK_PUBLIC_KEY_URL') ??
+            'https://enter.tochka.com/doc/openapi/static/keys/public',
+        ),
+      },
+      dadata: {
+        apiKey: customDadataKey.length > 0 ? customDadataKey : undefined,
+        isConfigured: customDadataKey.length > 0,
+      },
+      innLookup: {
+        provider: String(this.get('INN_LOOKUP_PROVIDER') ?? 'mock') as
+          | 'mock'
+          | 'dadata'
+          | 'tochka_then_dadata',
+        cacheTtlDays: Number(this.get('INN_LOOKUP_CACHE_TTL_DAYS') ?? 30),
+      },
+    } as const;
+  }
+
   // Удобный шорткат для main.ts
   get port(): number {
     return this.runtime.port;

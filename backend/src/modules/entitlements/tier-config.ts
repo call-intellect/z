@@ -11,8 +11,18 @@
  * до `tier_basic` + log warning.
  */
 
-/** Ключ тарифа. Хранится в `OrgEntitlement.tier` строкой (не enum-Prisma). */
-export type TierKey = 'tier_basic' | 'tier_pro' | 'tier_enterprise';
+/**
+ * Ключ тарифа. Хранится в `OrgEntitlement.tier` строкой (не enum-Prisma).
+ *
+ * ТЗ 2026-05-27 (billing-tochka-referral-dadata-z):
+ * Целевой тариф — `tier_standard` (все фичи `true`, единый прайс 60 000 ₽/мес).
+ * Старые тиры (`tier_basic`/`tier_pro`/`tier_enterprise`) сохранены в типе
+ * как **legacy** — чтобы не ломать существующие call-site'ы. Все existing
+ * OrgEntitlement переводятся в `tier_standard` через patch-script
+ * `backend/scripts/migrate-entitlements-to-standard.ts`. Полное удаление
+ * legacy-тиров — отдельной задачей в Фазе 3 (см. ТЗ §14, Фаза 3).
+ */
+export type TierKey = 'tier_standard' | 'tier_basic' | 'tier_pro' | 'tier_enterprise';
 
 /** Все feature-флаги knowledge-core. См. ТЗ Фазы 12 §Шаг 2.
  *
@@ -121,8 +131,12 @@ export const ALL_QUOTAS: readonly QuotaKey[] = [
   'multi_reports_limit_per_meeting',
 ] as const;
 
-/** Все известные tier-ключи (для валидации в DTO). */
+/** Все известные tier-ключи (для валидации в DTO).
+ *
+ * Порядок: `tier_standard` — целевой (default), legacy в конце.
+ */
 export const ALL_TIERS: readonly TierKey[] = [
+  'tier_standard',
   'tier_basic',
   'tier_pro',
   'tier_enterprise',
@@ -230,6 +244,30 @@ const ENTERPRISE_FEATURES: Record<FeatureKey, boolean> = {
   'feature.strict_visibility': true,
 };
 
+// ──────────────────────────── Целевой тариф (ТЗ 2026-05-27) ────────────────────────────
+
+/**
+ * `tier_standard` — целевой тариф после реализации
+ * `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md`. Все фичи `true`.
+ * Квоты — максимальные (anti-abuse), `meetings_per_month` остаётся
+ * совместимым значением до Фазы 3, когда переезжаем на MeetingsBalance.
+ */
+const STANDARD_FEATURES: Record<FeatureKey, boolean> = {
+  ...ENTERPRISE_FEATURES,
+  // Все memory_* фичи — выключены по умолчанию (per-Org override через
+  // admin-эндпоинт `/api/v1/admin/org/memory-access`).
+  'feature.memory_regulations_for_members': false,
+  'feature.memory_entities_for_members': false,
+};
+
+const STANDARD_QUOTAS: Record<QuotaKey, number> = {
+  ...ENTERPRISE_QUOTAS,
+  // ТЗ 2026-05-27 §3: `meetings_per_month` остаётся в схеме до Фазы 3
+  // (заменяется на MeetingsBalance). Значение — максимальное, чтобы
+  // не блокировать существующие checks до миграции.
+  meetings_per_month: 1_000_000,
+};
+
 // ──────────────────────────── Реестр ────────────────────────────
 
 /**
@@ -238,6 +276,10 @@ const ENTERPRISE_FEATURES: Record<FeatureKey, boolean> = {
  * features/quotas (опечатки ловятся компилятором).
  */
 export const TIER_CONFIG: Record<TierKey, TierConfig> = {
+  tier_standard: {
+    features: STANDARD_FEATURES,
+    quotas: STANDARD_QUOTAS,
+  },
   tier_basic: {
     features: BASIC_FEATURES,
     quotas: BASIC_QUOTAS,

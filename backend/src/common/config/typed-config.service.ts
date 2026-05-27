@@ -1475,6 +1475,11 @@ export class TypedConfigService {
    *     админку). Анти-abuse.
    *   - `sseHeartbeatSeconds` — интервал heartbeat-комментариев в SSE
    *     stream, чтобы прокси/CDN не закрывали соединение по idle.
+   *   - `dialogLayerEnabled` — фича-флаг ТЗ 2026-05-27 (Concierge → dialog-layer).
+   *     При `true` и инджекте `DialogService` `ConciergeService.process()`
+   *     перед основным tool-loop'ом вызывает `DialogService.process()`
+   *     (контекстуализация + classify + multi-query + answer-cache).
+   *     Default — `false` (в отличие от мастер-флага `CONCIERGE_ENABLED`).
    */
   get concierge() {
     // NB: ключи CONCIERGE_* читаем из process.env, а не через ConfigService.
@@ -1490,6 +1495,10 @@ export class TypedConfigService {
       const n = Number(raw);
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
     };
+    const dialogLayerRaw = process.env.CONCIERGE_DIALOG_LAYER_ENABLED;
+    const dialogLayerEnabled =
+      dialogLayerRaw !== undefined &&
+      ['true', '1', 'yes', 'on'].includes(dialogLayerRaw.trim().toLowerCase());
     return {
       enabled,
       dailyMessagesLimit: parseInt(process.env.CONCIERGE_DAILY_MESSAGES_LIMIT, 100),
@@ -1501,6 +1510,7 @@ export class TypedConfigService {
         process.env.CONCIERGE_SSE_HEARTBEAT_SECONDS,
         15,
       ),
+      dialogLayerEnabled,
     } as const;
   }
 

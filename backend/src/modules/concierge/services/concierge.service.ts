@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type ConciergeConversation,
   type ConciergeMessage,
@@ -9,6 +9,10 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  DialogService,
+  type DialogProcessResult,
+} from '../../dialog-layer/services/dialog.service';
 import type { PageContextDto } from '../dto/concierge.dto';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
@@ -138,6 +142,16 @@ export class ConciergeService {
     @Inject(ConciergeQuotaService) private readonly quota: ConciergeQuotaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    /**
+     * ТЗ 2026-05-27 Фаза 2 — dialog-layer фасад. `@Optional()` — фича
+     * включается флагом `CONCIERGE_DIALOG_LAYER_ENABLED` (default false);
+     * существующие unit-тесты, мокающие конструктор без 11-го аргумента,
+     * остаются совместимыми. `DialogLayerModule` @Global — явный import
+     * в `ConciergeModule` не требуется.
+     */
+    @Optional()
+    @Inject(DialogService)
+    private readonly dialog: DialogService | null = null,
   ) {}
 
   /**
@@ -176,6 +190,60 @@ export class ConciergeService {
       content: input.userMessage,
     });
 
+    // ТЗ 2026-05-27 Фаза 2 — dialog-layer препроцессор (за флагом).
+    // Контекстуализирует вопрос (follow-up'ы → standalone), классифицирует
+    // intent и проверяет AnswerCache. При cache-hit возвращаем ответ без
+    // LLM-вызова (short-circuit ниже).
+    let dialogResult: DialogProcessResult | null = null;
+    if (this.isDialogLayerEnabled()) {
+      try {
+        dialogResult = await this.dialog!.process({
+          tenantId: input.tenantId,
+          userId: input.userId,
+          userMessage: input.userMessage,
+          conversationId: conversation.id,
+          scope: 'concierge',
+          scopeRefId: conversation.id,
+          validAt: null,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'concierge dialog-layer process failed (fallback to legacy)',
+        );
+        dialogResult = null;
+      }
+
+      // Cache short-circuit: AnswerCache hit — отдаём ответ без LLM-цикла.
+      if (dialogResult?.cachedAnswer != null) {
+        yield { type: 'thinking', text: 'Нашёл ответ в кэше' };
+        const cachedText = dialogResult.cachedAnswer.text;
+        const cachedMsg = await this.appendMessage({
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: cachedText,
+          toolCalls: {
+            dialogLayer: {
+              enabled: true,
+              intent: dialogResult.intent,
+              confidence: dialogResult.confidence,
+              queriesCount: dialogResult.queries.length,
+              cacheHit: true,
+            },
+          },
+        });
+        yield { type: 'message', text: cachedText };
+        yield { type: 'done', messageId: cachedMsg.id };
+        await this.prisma.conciergeConversation.update({
+          where: { id: conversation.id },
+          data: { lastMessageAt: new Date() },
+        });
+        return;
+      }
+    }
+
+    const effectiveQuestion = dialogResult?.standaloneQuestion ?? input.userMessage;
+
     // Build context.
     const contextBlock = await this.contextBuilder.build({
       tenantId: input.tenantId,
@@ -192,7 +260,7 @@ export class ConciergeService {
 
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
       const userBlock = composeUserMessageForIteration({
-        userMessage: input.userMessage,
+        userMessage: effectiveQuestion,
         toolMessages,
         history,
         summary: conversation.summary,
@@ -319,6 +387,17 @@ export class ConciergeService {
       conversationId: conversation.id,
       role: 'assistant',
       content: finalText,
+      toolCalls: dialogResult
+        ? {
+            dialogLayer: {
+              enabled: true,
+              intent: dialogResult.intent,
+              confidence: dialogResult.confidence,
+              queriesCount: dialogResult.queries.length,
+              cacheHit: false,
+            },
+          }
+        : undefined,
     });
 
     yield { type: 'message', text: finalText };
@@ -332,6 +411,22 @@ export class ConciergeService {
   }
 
   // ──────────────────────────── private ────────────────────────────────
+
+  /**
+   * ТЗ 2026-05-27 Фаза 2: dialog-layer запускается только при включённом
+   * флаге `CONCIERGE_DIALOG_LAYER_ENABLED` И при инджекте `DialogService`
+   * (опциональный — старые unit-тесты передают `null`).
+   *
+   * `try/catch` на чтении геттера — защита от случаев, когда мок
+   * `TypedConfigService` в тестах не предоставляет `concierge.*`.
+   */
+  private isDialogLayerEnabled(): boolean {
+    try {
+      return this.cfg.concierge.dialogLayerEnabled === true && this.dialog !== null;
+    } catch {
+      return false;
+    }
+  }
 
   private async loadOrCreateConversation(
     input: ProcessInput,

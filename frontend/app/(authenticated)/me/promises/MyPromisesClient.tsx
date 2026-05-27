@@ -143,7 +143,7 @@ export function MyPromisesClient() {
                       type="button"
                       onClick={() => mark(c.id, 'fulfilled')}
                       disabled={busyId === c.id}
-                      className="rounded bg-success px-2 py-1 text-xs text-white disabled:opacity-50"
+                      className="rounded bg-success px-2 py-1 text-xs text-success-fg disabled:opacity-50"
                     >
                       Сделано
                     </button>
@@ -151,7 +151,7 @@ export function MyPromisesClient() {
                       type="button"
                       onClick={() => mark(c.id, 'missed')}
                       disabled={busyId === c.id}
-                      className="rounded bg-danger px-2 py-1 text-xs text-white disabled:opacity-50"
+                      className="rounded bg-danger px-2 py-1 text-xs text-danger-fg disabled:opacity-50"
                     >
                       Не сделано
                     </button>

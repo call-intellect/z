@@ -104,7 +104,7 @@ export function ChatV2Client(): ReactElement {
             <h2 className="text-base font-semibold">Диалоги</h2>
             <button
               type="button"
-              className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent/90"
+              className="rounded bg-accent px-3 py-1 text-xs font-medium text-accent-fg hover:bg-accent/90"
               onClick={() => handleSelect(null)}
             >
               <Plus size={14} className="inline" /> Новый
@@ -118,7 +118,7 @@ export function ChatV2Client(): ReactElement {
                 onClick={() => setStatusFilter(s)}
                 className={`rounded px-2 py-1 text-xs ${
                   statusFilter === s
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-accent-fg'
                     : 'bg-bg text-fg-secondary hover:bg-surface-hover'
                 }`}
               >
@@ -409,7 +409,7 @@ function ConversationDetail({
         <button
           type="submit"
           disabled={sending || !input.trim()}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+          className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:bg-accent/90 disabled:opacity-50"
         >
           <Send size={16} />
         </button>
@@ -445,7 +445,7 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
       <div
         className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
           isUser
-            ? 'bg-accent text-white'
+            ? 'bg-accent text-accent-fg'
             : 'bg-surface border border-border text-fg-primary'
         }`}
       >

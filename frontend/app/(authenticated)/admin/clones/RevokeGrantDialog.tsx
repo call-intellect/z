@@ -88,8 +88,8 @@ export function RevokeGrantDialog({
             Отмена
           </Button>
           <Button
+            variant="destructive"
             size="sm"
-            className="bg-danger text-white hover:bg-danger/90"
             onClick={() => void handleRevoke()}
             disabled={submitting}
           >

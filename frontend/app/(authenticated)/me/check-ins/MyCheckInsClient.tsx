@@ -136,7 +136,7 @@ export function MyCheckInsClient() {
             type="button"
             onClick={submit}
             disabled={submitting}
-            className="rounded bg-info px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded bg-info px-4 py-1.5 text-sm font-medium text-info-fg disabled:opacity-50"
           >
             {submitting ? 'Сохраняем…' : 'Сохранить'}
           </button>

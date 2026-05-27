@@ -639,7 +639,7 @@ function InsightDetailView({
             onClick={() => {
               void onSaveMitigation();
             }}
-            className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+            className="rounded bg-accent px-3 py-1 text-xs font-medium text-accent-fg hover:opacity-90"
             disabled={
               mitigationDraft.trim().length === 0 ||
               mitigationDraft === (detail.mitigationPlan ?? '')

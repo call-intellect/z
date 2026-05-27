@@ -228,7 +228,7 @@ function PersonDetailContent({
           <Button
             variant="destructive"
             onClick={() => setDialogOpen(true)}
-            className="bg-danger text-white hover:bg-danger/90"
+            className="bg-danger text-danger-fg hover:bg-danger/90"
           >
             <Trash2 size={14} className="mr-1.5" />
             Удалить все данные о персоне
@@ -395,7 +395,7 @@ function ErasePersonDialog({
               <Button
                 onClick={() => void handleErase()}
                 disabled={!reasonValid || submitting}
-                className="bg-danger text-white hover:bg-danger/90"
+                className="bg-danger text-danger-fg hover:bg-danger/90"
               >
                 {submitting ? (
                   <>

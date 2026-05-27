@@ -527,6 +527,14 @@ export class BusinessMetricsService implements OnModuleInit {
   private conciergeToolCallsTotal!: Counter<'tenant_top' | 'tool' | 'status'>;
   private conciergeUndoTotal!: Counter<'tenant_top' | 'tool'>;
   private conciergeQuotaExceededTotal!: Counter<'tenant_top' | 'scope'>;
+  // ТЗ 2026-05-27 Фаза 4 — dialog-layer наблюдаемость.
+  // Cardinality-safe: `intent` — фиксированный whitelist (factual|exploratory|
+  // analytical|clone_roleplay|unknown), значения обрезаются по 32 символа
+  // для защиты от мусора. `cache_hit` — без labels. `pre_retrieval_hits` —
+  // histogram (sample = total hits across queries).
+  private conciergeDialogLayerUsedTotal!: Counter<'intent'>;
+  private conciergeCacheHitTotal!: Counter<string>;
+  private conciergePreRetrievalHitsCount!: Histogram<string>;
 
   // ── SBA δ-1 — Orchestrator (multi-agent research) ───────────────────
   // Cardinality-safe: `status` ∈ done|failed|timeout|cancelled;
@@ -2075,6 +2083,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'concierge_quota_exceeded_total',
       help: 'SBA γ-2 — попытки сверх лимита (scope ∈ daily|monthly).',
       labelNames: ['tenant_top', 'scope'] as const,
+    });
+    // ТЗ 2026-05-27 Фаза 4 — dialog-layer + AnswerCache + pre-retrieval observability.
+    this.conciergeDialogLayerUsedTotal = this.getOrCreateCounter({
+      name: 'concierge_dialog_layer_used_total',
+      help: 'ТЗ 2026-05-27 Фаза 4 — сколько раз dialog-layer препроцессор применился к запросу Concierge. intent ∈ factual|exploratory|analytical|clone_roleplay|unknown.',
+      labelNames: ['intent'] as const,
+    });
+    this.conciergeCacheHitTotal = this.getOrCreateCounter({
+      name: 'concierge_cache_hit_total',
+      help: 'ТЗ 2026-05-27 Фаза 4 — сколько раз dialog-layer AnswerCache вернул готовый ответ (short-circuit без LLM).',
+      labelNames: [] as const,
+    });
+    this.conciergePreRetrievalHitsCount = this.getOrCreateHistogram({
+      name: 'concierge_pre_retrieval_hits_count',
+      help: 'ТЗ 2026-05-27 Фаза 4 — суммарное число hits pre-retrieval search_knowledge по всем queries dialog-layer (для калибровки topK).',
+      labelNames: [] as const,
+      buckets: [0, 1, 3, 5, 10, 15, 25, 50],
     });
 
     // ── SBA δ-1 — Orchestrator ────────────────────────────────────────
@@ -4770,6 +4795,38 @@ export class BusinessMetricsService implements OnModuleInit {
       tenant_top: args.tenantTop,
       scope: args.scope,
     });
+  }
+
+  // ────────────────────── ТЗ 2026-05-27 Фаза 4 (dialog-layer obs) ──────
+
+  /**
+   * Counter `concierge_dialog_layer_used_total{intent}` — сколько раз
+   * dialog-layer препроцессор применился к запросу Concierge. Лейбл
+   * `intent` обрезается по 32 символа для защиты от мусора (фиксированный
+   * whitelist всё равно короче, но lower-bound защищает от регрессий
+   * классификатора).
+   */
+  incConciergeDialogLayerUsed(args: { intent: string }): void {
+    this.conciergeDialogLayerUsedTotal.inc({ intent: args.intent.slice(0, 32) });
+  }
+
+  /**
+   * Counter `concierge_cache_hit_total` — AnswerCache short-circuit
+   * (без LLM-вызова). Без labels: tenant-агрегацию делает Grafana
+   * поверх БД, intent уже учтён через `concierge_dialog_layer_used_total`.
+   */
+  incConciergeCacheHit(): void {
+    this.conciergeCacheHitTotal.inc();
+  }
+
+  /**
+   * Histogram `concierge_pre_retrieval_hits_count` — суммарное число hits
+   * pre-retrieval `search_knowledge` по всем queries dialog-layer.
+   * Используется для калибровки `CONCIERGE_PRE_RETRIEVAL_TOP_K`.
+   */
+  observeConciergePreRetrievalHits(count: number): void {
+    if (!Number.isFinite(count) || count < 0) return;
+    this.conciergePreRetrievalHitsCount.observe(count);
   }
 
   // ────────────────────── SBA δ-1 (Orchestrator) ─────────────────────

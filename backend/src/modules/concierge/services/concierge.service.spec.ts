@@ -229,8 +229,15 @@ function buildConciergeService(opts: BuildOpts) {
     tryConsume: vi.fn(async () => null),
   } as unknown as ConciergeQuotaService;
 
+  const metricsIncConciergeMessage = vi.fn();
+  const metricsIncConciergeDialogLayerUsed = vi.fn();
+  const metricsIncConciergeCacheHit = vi.fn();
+  const metricsObserveConciergePreRetrievalHits = vi.fn();
   const metrics = {
-    incConciergeMessage: vi.fn(),
+    incConciergeMessage: metricsIncConciergeMessage,
+    incConciergeDialogLayerUsed: metricsIncConciergeDialogLayerUsed,
+    incConciergeCacheHit: metricsIncConciergeCacheHit,
+    observeConciergePreRetrievalHits: metricsObserveConciergePreRetrievalHits,
   } as unknown as BusinessMetricsService;
 
   const dialog = (opts.dialog ?? null) as unknown as DialogService | null;
@@ -261,6 +268,10 @@ function buildConciergeService(opts: BuildOpts) {
       serviceMap,
       toolRouter,
       dialog: opts.dialog,
+      metricsIncConciergeMessage,
+      metricsIncConciergeDialogLayerUsed,
+      metricsIncConciergeCacheHit,
+      metricsObserveConciergePreRetrievalHits,
     },
   };
 }
@@ -558,5 +569,80 @@ describe('ConciergeService.preRetrieve() — Фаза 3', () => {
       Array<{ toolName?: string }>
     >;
     expect(execCalls.some((c) => c[0]?.toolName === 'search_knowledge')).toBe(true);
+  });
+});
+
+// ───────────────────────── ConciergeService — Фаза 4 metrics ─────────────────
+//
+// ТЗ 2026-05-27 Фаза 4: проверяем что наблюдательные метрики дёргаются в
+// нужных ветках. Cache-hit имеет свой счётчик; dialog-layer всегда инкремент
+// при `dialogResult != null`; pre-retrieval histogram — при попытке pre-retrieve.
+
+describe('ConciergeService.process() — Фаза 4 metrics', () => {
+  it('(л) enabled + no cache + pre-retrieval с 2 items → dialog/preRetrieval метрики дёрнуты, cacheHit НЕ дёрнут', async () => {
+    const dialogResult: DialogProcessResult = {
+      enabled: true,
+      standaloneQuestion: 'Что мы решили по проекту X?',
+      intent: 'factual',
+      queries: ['Q1', 'Q2'],
+      confidence: 0.9,
+      cachedAnswer: null,
+      steps: {
+        contextualize: 0,
+        confidence: 0,
+        classify: 0,
+        multiQuery: 0,
+        total: 0,
+      },
+    };
+    const dialogProcess = vi.fn(async () => dialogResult);
+    const { svc, mocks } = buildConciergeService({
+      dialogLayerEnabled: true,
+      dialog: { process: dialogProcess },
+      llmResponseText: 'Финальный ответ',
+    });
+    const toolRouterExec = (mocks.toolRouter as unknown as {
+      execute: ReturnType<typeof vi.fn>;
+    }).execute;
+    // 2 query, в каждой по 1 item с разным id → totalHits=2, uniqueIds=2.
+    toolRouterExec
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        result: { items: [{ id: 'a' }] },
+        tool: { name: 'search_knowledge' },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        result: { items: [{ id: 'b' }] },
+        tool: { name: 'search_knowledge' },
+      });
+
+    await collect(
+      svc.process({
+        userMessage: 'Что мы решили по проекту X?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    // dialog-layer used — ровно 1 раз с intent='factual'.
+    expect(mocks.metricsIncConciergeDialogLayerUsed).toHaveBeenCalledTimes(1);
+    expect(mocks.metricsIncConciergeDialogLayerUsed).toHaveBeenCalledWith({
+      intent: 'factual',
+    });
+
+    // pre-retrieval histogram — дёрнут хотя бы раз (с числом ≥ 0).
+    expect(mocks.metricsObserveConciergePreRetrievalHits).toHaveBeenCalled();
+    const observeCalls =
+      mocks.metricsObserveConciergePreRetrievalHits.mock.calls as Array<[number]>;
+    const lastObserved = observeCalls[observeCalls.length - 1]?.[0] ?? -1;
+    expect(typeof lastObserved).toBe('number');
+    expect(lastObserved).toBeGreaterThanOrEqual(0);
+
+    // cache-hit метрика НЕ дёрнута (cachedAnswer=null).
+    expect(mocks.metricsIncConciergeCacheHit).not.toHaveBeenCalled();
   });
 });

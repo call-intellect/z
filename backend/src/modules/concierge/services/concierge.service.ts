@@ -215,8 +215,29 @@ export class ConciergeService {
         dialogResult = null;
       }
 
+      // ТЗ 2026-05-27 Фаза 4 — метрика+лог dialog-layer применения.
+      if (dialogResult != null) {
+        this.metrics.incConciergeDialogLayerUsed?.({
+          intent: dialogResult.intent,
+        });
+        this.logger.debug(
+          {
+            feature: 'concierge',
+            stage: 'dialog-layer',
+            intent: dialogResult.intent,
+            confidence: dialogResult.confidence,
+            queriesCount: dialogResult.queries.length,
+            cacheHit: dialogResult.cachedAnswer !== null,
+            conversationId: conversation.id,
+          },
+          'dialog-layer applied',
+        );
+      }
+
       // Cache short-circuit: AnswerCache hit — отдаём ответ без LLM-цикла.
       if (dialogResult?.cachedAnswer != null) {
+        // ТЗ 2026-05-27 Фаза 4 — метрика cache-hit.
+        this.metrics.incConciergeCacheHit?.();
         yield { type: 'thinking', text: 'Нашёл ответ в кэше' };
         const cachedText = dialogResult.cachedAnswer.text;
         const cachedMsg = await this.appendMessage({
@@ -248,26 +269,54 @@ export class ConciergeService {
     // ТЗ 2026-05-27 Фаза 3 — pre-retrieval: параллельный поиск по `queries[]`
     // через ToolRouter ДО первой LLM-итерации. Результаты подмешиваются в
     // системный промпт (один на весь loop), не дублируются в follow-up'ах.
-    const preHits =
-      dialogResult && !dialogResult.cachedAnswer
-        ? await this.preRetrieve({
-            queries: dialogResult.queries,
-            intent: dialogResult.intent,
-            userId: input.userId,
-            tenantId: input.tenantId,
-            baseUrl: input.baseUrl,
-            ...(input.authCookie ? { authCookie: input.authCookie } : {}),
-          })
-        : [];
+    const preRetrievalAttempted = dialogResult != null && !dialogResult.cachedAnswer;
+    const preRetrievalStart = preRetrievalAttempted ? Date.now() : 0;
+    const preHits = preRetrievalAttempted
+      ? await this.preRetrieve({
+          queries: dialogResult!.queries,
+          intent: dialogResult!.intent,
+          userId: input.userId,
+          tenantId: input.tenantId,
+          baseUrl: input.baseUrl,
+          ...(input.authCookie ? { authCookie: input.authCookie } : {}),
+        })
+      : [];
+
+    // ТЗ 2026-05-27 Фаза 4 — метрики+логи pre-retrieval.
+    let totalHits = 0;
+    let uniqueIdsCount = 0;
+    if (preRetrievalAttempted) {
+      const seenIds = new Set<string>();
+      for (const hit of preHits) {
+        const items = this.extractItems(hit.result);
+        totalHits += items.length;
+        for (const item of items) {
+          const id = this.extractId(item);
+          if (id != null) seenIds.add(id);
+        }
+      }
+      uniqueIdsCount = seenIds.size;
+      this.metrics.observeConciergePreRetrievalHits?.(totalHits);
+      this.logger.debug(
+        {
+          feature: 'concierge',
+          stage: 'pre-retrieval',
+          intent: dialogResult!.intent,
+          queriesCount: dialogResult!.queries.length,
+          queriesUsed: preHits.length,
+          hits: totalHits,
+          uniqueIds: uniqueIdsCount,
+          durationMs: Date.now() - preRetrievalStart,
+          conversationId: conversation.id,
+        },
+        'pre-retrieval done',
+      );
+    }
 
     if (preHits.length > 0) {
-      const total = preHits.reduce(
-        (acc, h) => acc + (Array.isArray(h.result) ? h.result.length : 0),
-        0,
-      );
       yield {
         type: 'thinking',
-        text: `Нашёл ${total} релевантных записей в графе`,
+        text: `Нашёл ${totalHits} релевантных записей в графе`,
       };
     }
 
@@ -422,6 +471,11 @@ export class ConciergeService {
               confidence: dialogResult.confidence,
               queriesCount: dialogResult.queries.length,
               cacheHit: false,
+            },
+            preRetrieval: {
+              hits: totalHits,
+              uniqueIds: uniqueIdsCount,
+              queriesUsed: preHits.length,
             },
           }
         : undefined,

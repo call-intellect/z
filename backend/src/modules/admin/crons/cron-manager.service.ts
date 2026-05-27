@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
   type OnModuleInit,
   type OnModuleDestroy,
 } from '@nestjs/common';
@@ -54,7 +55,9 @@ interface CronHandlerEntry {
 }
 
 @Injectable()
-export class CronManagerService implements OnModuleInit, OnModuleDestroy {
+export class CronManagerService
+  implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy
+{
   private readonly logger = new Logger(CronManagerService.name);
 
   /** Реестр всех @Cron-обработчиков, найденных через DiscoveryService. */
@@ -76,9 +79,21 @@ export class CronManagerService implements OnModuleInit, OnModuleDestroy {
   // ──────────────────────────── lifecycle ──────────────────────────────
 
   async onModuleInit(): Promise<void> {
+    // collectHandlers + subscribeInvalidations не трогают SchedulerRegistry,
+    // поэтому безопасны на этом этапе. Сами override'ы из БД накатываем в
+    // onApplicationBootstrap — иначе ScheduleModule (его SchedulerOrchestrator)
+    // позже попытается зарегистрировать @Cron под тем же именем и упадёт с
+    // DUPLICATE_SCHEDULER, потому что мы уже положили туда свой CronJob.
     this.collectHandlers();
-    await this.applyOverridesFromDb();
     await this.subscribeInvalidations();
+  }
+
+  async onApplicationBootstrap(): Promise<void> {
+    // На этом этапе SchedulerOrchestrator уже смонтировал @Cron-джобы (он
+    // тоже implements OnApplicationBootstrap, а зависимости от него гарантируют
+    // более ранний хук). Теперь deleteCronJob фактически удалит дефолтный
+    // cron, и addCronJob чисто положит override.
+    await this.applyOverridesFromDb();
   }
 
   async onModuleDestroy(): Promise<void> {

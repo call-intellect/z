@@ -96,6 +96,7 @@ import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { RecognitionModule } from './modules/recognition/recognition.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
 import { RegulationsModule } from './modules/regulations/regulations.module';
 import { RetentionModule } from './modules/retention/retention.module';
 import { RoleMapModule } from './modules/role-map/role-map.module';
@@ -450,6 +451,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // BillingProviderPort с ManualBillingProvider-заглушкой.
     // Controllers/cron подъезжают в Фазе 4b, TochkaBillingProvider — в Фазе 5.
     BillingModule,
+
+    // ТЗ 2026-05-27 — реферальная программа (Фаза 6).
+    // ReferralPayoutService подписан на billing.invoice.paid через @OnEvent —
+    // регистрируется ПОСЛЕ BillingModule.
+    ReferralsModule,
 
     // Wave 2 (2026-05-24) — Activity Feeds: единая лента активности AI-агентов
     // и пользователей. @Global ActivityFeedService.publish() вызывают

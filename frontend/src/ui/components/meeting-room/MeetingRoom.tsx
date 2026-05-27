@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   GridLayout,
   LiveKitRoom,
@@ -57,6 +57,21 @@ export function MeetingRoom({
   const isHost = role === 'host';
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  }, []);
   const identityMap = useMemo(
     () => identityToParticipantId ?? {},
     [identityToParticipantId],
@@ -150,6 +165,7 @@ export function MeetingRoom({
         isHost={isHost}
         isRecording={isRecording}
         recordByDefault={recordByDefault}
+        isFullscreen={isFullscreen}
         onLeave={onLeave}
         onToggleParticipants={() => {
           setChatOpen(false);
@@ -159,6 +175,7 @@ export function MeetingRoom({
           setParticipantsOpen(false);
           setChatOpen((v) => !v);
         }}
+        onToggleFullscreen={() => { void toggleFullscreen(); }}
       />
     </LiveKitRoom>
   );

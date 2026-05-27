@@ -42,6 +42,7 @@ import { TochkaWebhookRegistrarService } from './providers/tochka/tochka-webhook
 import { TochkaWebhookVerifierService } from './providers/tochka/tochka-webhook-verifier.service';
 import { BillingCycleCron } from './services/billing-cycle.cron';
 import { BillingEventService } from './services/billing-event.service';
+import { BillingOverviewService } from './services/billing-overview.service';
 import { BillingService } from './services/billing.service';
 import { InvoiceNumberService } from './services/invoice-number.service';
 import { InvoiceStatusSyncCron } from './services/invoice-status-sync.cron';
@@ -69,6 +70,7 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
     InvoiceService,
     BillingEventService,
     ManualBillingService,
+    BillingOverviewService,
 
     // Tochka-провайдер (Фаза 5).
     TochkaOAuthService,

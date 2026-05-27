@@ -14,6 +14,7 @@ import type {
   AdminMarkPaidBody,
   AdminOrgBillingResponseApi,
   AdminVoidInvoiceBody,
+  BillingOverviewApi,
   InvoiceListResponseApi,
   InvoiceViewApi,
   MeetingsBalanceApi,
@@ -51,6 +52,10 @@ export const billingApi = {
     apiClient.post<PaymentStartResultApi>(`${BASE}/pay/card`, body),
   payBankInvoice: (body: StartBankInvoiceBody) =>
     apiClient.post<PaymentStartResultApi>(`${BASE}/pay/bank-invoice`, body),
+
+  // ── Admin (overview) ──
+  adminGetOverview: () =>
+    apiClient.get<BillingOverviewApi>(`${ADMIN}/billing/overview`),
 
   // ── Admin (per-Org) ──
   adminGetOrgBilling: (tenantId: string) =>

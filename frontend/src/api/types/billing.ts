@@ -145,3 +145,37 @@ export interface SubscriptionEventApi {
   reason: string | null;
   createdAt: string;
 }
+
+export interface BillingOverviewApi {
+  asOf: string;
+  subscriptions: {
+    active: number;
+    activePaid: number;
+    activeBonus: number;
+    pastDue: number;
+    suspended: number;
+    canceled: number;
+    expired: number;
+    demo: number;
+    total: number;
+  };
+  revenue: {
+    mrrKopecks: number;
+    arrKopecks: number;
+    totalPaidKopecks: number;
+    currentMonthPaidKopecks: number;
+  };
+  referrals: {
+    totalActivePartners: number;
+    payoutsPending: number;
+    payoutsPendingKopecks: number;
+    payoutsPaidThisMonth: number;
+    payoutsPaidThisMonthKopecks: number;
+  };
+  invoices: {
+    totalIssued: number;
+    totalPaid: number;
+    totalVoid: number;
+    paidThisMonth: number;
+  };
+}

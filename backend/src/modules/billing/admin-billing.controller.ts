@@ -65,6 +65,10 @@ import {
   type InvoiceViewBody,
   type SubscriptionViewBody,
 } from './dto/billing.dto';
+import {
+  BillingOverviewService,
+  type BillingOverviewView,
+} from './services/billing-overview.service';
 import { InvoiceService } from './services/invoice.service';
 import { ManualBillingService } from './services/manual-billing.service';
 import { SubscriptionService } from './services/subscription.service';
@@ -80,7 +84,20 @@ export class AdminBillingController {
     private readonly subscriptions: SubscriptionService,
     @Inject(InvoiceService) private readonly invoices: InvoiceService,
     @Inject(ManualBillingService) private readonly manual: ManualBillingService,
+    @Inject(BillingOverviewService)
+    private readonly overview: BillingOverviewService,
   ) {}
+
+  // ──────────────────── Глобальный overview ────────────────────
+
+  @Get('billing/overview')
+  @ApiOperation({
+    summary:
+      'Метрики биллинга: MRR/ARR, число подписок по статусам, инвойсы, реф-выплаты.',
+  })
+  async getOverview(): Promise<BillingOverviewView> {
+    return this.overview.getOverview();
+  }
 
   // ──────────────────── Подписка (per-Org) ────────────────────
 

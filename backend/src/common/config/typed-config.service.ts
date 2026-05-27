@@ -1480,6 +1480,14 @@ export class TypedConfigService {
    *     перед основным tool-loop'ом вызывает `DialogService.process()`
    *     (контекстуализация + classify + multi-query + answer-cache).
    *     Default — `false` (в отличие от мастер-флага `CONCIERGE_ENABLED`).
+   *   - `preRetrievalTopK` — ТЗ 2026-05-27 Фаза 3: максимум записей графа,
+   *     которые подмешиваются в системный промпт после параллельного
+   *     `search_knowledge` по `dialogResult.queries[]`. Default 12. ENV
+   *     `CONCIERGE_PRE_RETRIEVAL_TOP_K`. Cumulative по нескольким queries
+   *     после дедупа по `id`.
+   *   - `preRetrievalTimeoutMs` — ТЗ 2026-05-27 Фаза 3: per-query тайм-аут
+   *     на pre-retrieval. По истечении конкретный поиск skip-ается,
+   *     остальные продолжают. Default 3000ms. ENV `CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS`.
    */
   get concierge() {
     // NB: ключи CONCIERGE_* читаем из process.env, а не через ConfigService.
@@ -1511,6 +1519,11 @@ export class TypedConfigService {
         15,
       ),
       dialogLayerEnabled,
+      preRetrievalTopK: parseInt(process.env.CONCIERGE_PRE_RETRIEVAL_TOP_K, 12),
+      preRetrievalTimeoutMs: parseInt(
+        process.env.CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS,
+        3000,
+      ),
     } as const;
   }
 

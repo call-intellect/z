@@ -13,6 +13,7 @@ import {
   DialogService,
   type DialogProcessResult,
 } from '../../dialog-layer/services/dialog.service';
+import type { DialogIntent } from '../../dialog-layer/services/query-classifier.service';
 import type { PageContextDto } from '../dto/concierge.dto';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
@@ -244,6 +245,32 @@ export class ConciergeService {
 
     const effectiveQuestion = dialogResult?.standaloneQuestion ?? input.userMessage;
 
+    // ТЗ 2026-05-27 Фаза 3 — pre-retrieval: параллельный поиск по `queries[]`
+    // через ToolRouter ДО первой LLM-итерации. Результаты подмешиваются в
+    // системный промпт (один на весь loop), не дублируются в follow-up'ах.
+    const preHits =
+      dialogResult && !dialogResult.cachedAnswer
+        ? await this.preRetrieve({
+            queries: dialogResult.queries,
+            intent: dialogResult.intent,
+            userId: input.userId,
+            tenantId: input.tenantId,
+            baseUrl: input.baseUrl,
+            ...(input.authCookie ? { authCookie: input.authCookie } : {}),
+          })
+        : [];
+
+    if (preHits.length > 0) {
+      const total = preHits.reduce(
+        (acc, h) => acc + (Array.isArray(h.result) ? h.result.length : 0),
+        0,
+      );
+      yield {
+        type: 'thinking',
+        text: `Нашёл ${total} релевантных записей в графе`,
+      };
+    }
+
     // Build context.
     const contextBlock = await this.contextBuilder.build({
       tenantId: input.tenantId,
@@ -251,7 +278,7 @@ export class ConciergeService {
       pageContext: input.pageContext ?? null,
     });
 
-    const systemPrompt = this.buildSystemPrompt(contextBlock);
+    const systemPrompt = this.buildSystemPrompt(contextBlock, preHits);
     const history = await this.loadRecentHistory(conversation.id, K_RECENT_MESSAGES);
 
     // Tool-use loop (эмулируется через JSON в ответе LLM).
@@ -481,15 +508,30 @@ export class ConciergeService {
     return messages.reverse();
   }
 
-  private buildSystemPrompt(contextBlock: string): string {
+  private buildSystemPrompt(
+    contextBlock: string,
+    preHits: Array<{ query: string; result: unknown }> = [],
+  ): string {
     const toolFragment = this.serviceMap.buildToolUsePromptFragment();
-    return [
+    const parts: string[] = [
       'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
       'Отвечай по-русски, кратко и по делу.',
       '',
       '=== КОНТЕКСТ ===',
       contextBlock || '(контекст недоступен)',
       '',
+    ];
+    // ТЗ 2026-05-27 Фаза 3: блок предварительных результатов pre-retrieval.
+    if (preHits.length > 0) {
+      parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
+      parts.push(
+        'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
+      );
+      parts.push('');
+      parts.push(JSON.stringify(preHits, null, 2));
+      parts.push('');
+    }
+    parts.push(
       '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
       'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
       '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
@@ -501,7 +543,8 @@ export class ConciergeService {
       '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
       '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
       '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
-    ].join('\n');
+    );
+    return parts.join('\n');
   }
 
   /**
@@ -544,6 +587,114 @@ export class ConciergeService {
     } catch {
       return '(нечитаемый ответ)';
     }
+  }
+
+  /**
+   * ТЗ 2026-05-27 Фаза 3 — pre-retrieval.
+   *
+   * До первой LLM-итерации параллельно бьёт `search_knowledge` по
+   * `dialogResult.queries[]`, дедуплицирует по `id` и обрезает Top-K.
+   * Никаких записей в `ConciergeMessage`/`ConciergeUndoLog` — это служебный
+   * вызов, нужен только чтобы подложить контекст в системный промпт.
+   *
+   * Skip для intent'ов не из {factual, exploratory, analytical} —
+   * например `clone_roleplay` не нуждается в графовом поиске.
+   */
+  private async preRetrieve(args: {
+    queries: string[];
+    intent: DialogIntent;
+    userId: string;
+    tenantId: string;
+    baseUrl: string;
+    authCookie?: string;
+  }): Promise<Array<{ query: string; result: unknown }>> {
+    if (!['factual', 'exploratory', 'analytical'].includes(args.intent)) {
+      return [];
+    }
+    const topK = this.cfg.concierge.preRetrievalTopK;
+    const timeoutMs = this.cfg.concierge.preRetrievalTimeoutMs;
+
+    const uniqueQueries = Array.from(
+      new Set(args.queries.filter((q) => q.trim())),
+    ).slice(0, 3);
+    const results = await Promise.all(
+      uniqueQueries.map(async (q) => {
+        const exec = this.toolRouter.execute({
+          toolName: 'search_knowledge',
+          args: { q },
+          userId: args.userId,
+          tenantId: args.tenantId,
+          baseUrl: args.baseUrl,
+          ...(args.authCookie ? { authCookie: args.authCookie } : {}),
+        });
+        const timeout = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), timeoutMs),
+        );
+        try {
+          const out = await Promise.race([exec, timeout]);
+          if (!out) return null;
+          if (!out.ok) return null;
+          return { query: q, result: out.result };
+        } catch (err) {
+          this.logger.warn(
+            { err: err instanceof Error ? err.message : String(err), query: q },
+            'preRetrieve: search_knowledge failed',
+          );
+          return null;
+        }
+      }),
+    );
+    const hits = results.filter(
+      (x): x is { query: string; result: unknown } => x !== null,
+    );
+    // Дедуп по id внутри result (если есть массив items).
+    const seenIds = new Set<string>();
+    const dedupHits: Array<{ query: string; result: unknown }> = [];
+    for (const hit of hits) {
+      const items = this.extractItems(hit.result);
+      const filtered = items.filter((item) => {
+        const id = this.extractId(item);
+        if (id == null) return true;
+        if (seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      });
+      if (filtered.length > 0) {
+        dedupHits.push({ query: hit.query, result: filtered });
+      }
+    }
+    // Top-K cumulative.
+    let total = 0;
+    const capped: typeof dedupHits = [];
+    for (const h of dedupHits) {
+      const items = Array.isArray(h.result) ? h.result : [];
+      if (total >= topK) break;
+      const remaining = topK - total;
+      const slice = items.slice(0, remaining);
+      capped.push({ query: h.query, result: slice });
+      total += slice.length;
+    }
+    return capped;
+  }
+
+  private extractItems(result: unknown): unknown[] {
+    if (Array.isArray(result)) return result;
+    if (typeof result === 'object' && result !== null) {
+      const obj = result as Record<string, unknown>;
+      if (Array.isArray(obj.items)) return obj.items;
+      if (Array.isArray(obj.results)) return obj.results;
+      if (Array.isArray(obj.data)) return obj.data;
+    }
+    return [];
+  }
+
+  private extractId(item: unknown): string | null {
+    if (typeof item === 'object' && item !== null) {
+      const obj = item as Record<string, unknown>;
+      if (typeof obj.id === 'string') return obj.id;
+      if (typeof obj.id === 'number') return String(obj.id);
+    }
+    return null;
   }
 
   private tenantTop(tenantId: string): string {

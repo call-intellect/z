@@ -17,6 +17,12 @@
  *   (д) dialog-layer disabled — старый путь, dialog НЕ вызывается;
  *   (е) dialog-layer enabled, cache-hit — LLM не вызывается, текст из cache;
  *   (ж) dialog-layer enabled, без cache — `standaloneQuestion` подаётся в LLM.
+ *
+ * ТЗ 2026-05-27 Фаза 3: ниже — describe `ConciergeService.preRetrieve()` + e2e
+ * проверка системного промпта с предварительными результатами:
+ *   (з) preRetrieve skip для intent='clone_roleplay' — toolRouter НЕ вызывается;
+ *   (и) preRetrieve дедуп по id из items[] двух query;
+ *   (к) полный flow Фаза 3 — preHits попадают в systemPrompt + событие thinking.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -195,6 +201,8 @@ function buildConciergeService(opts: BuildOpts) {
       monthlyMessagesLimit: 3000,
       sseHeartbeatSeconds: 15,
       dialogLayerEnabled: opts.dialogLayerEnabled,
+      preRetrievalTopK: 12,
+      preRetrievalTimeoutMs: 3000,
     },
   } as unknown as TypedConfigService;
 
@@ -391,5 +399,164 @@ describe('ConciergeService.process() — dialog-layer integration (Фаза 2)',
     expect(messageEvent && messageEvent.type === 'message' && messageEvent.text).toBe(
       'Ответ по реформулированному вопросу',
     );
+  });
+});
+
+// ───────────────────────── ConciergeService.preRetrieve() ─────────────────────────
+//
+// ТЗ 2026-05-27 Фаза 3: pre-retrieval по queries[] через ToolRouter перед первой
+// LLM-итерацией. Дёргаем private метод напрямую через `(svc as any).preRetrieve`.
+
+describe('ConciergeService.preRetrieve() — Фаза 3', () => {
+  it('(з) intent=clone_roleplay → skip, toolRouter.execute НЕ вызывается', async () => {
+    const { svc, mocks } = buildConciergeService({
+      dialogLayerEnabled: true,
+      dialog: { process: vi.fn() },
+    });
+    const toolRouterExec = (mocks.toolRouter as unknown as {
+      execute: ReturnType<typeof vi.fn>;
+    }).execute;
+
+    const result = await (
+      svc as unknown as {
+        preRetrieve: (args: {
+          queries: string[];
+          intent: string;
+          userId: string;
+          tenantId: string;
+          baseUrl: string;
+        }) => Promise<Array<{ query: string; result: unknown }>>;
+      }
+    ).preRetrieve({
+      queries: ['кто я?', 'играй роль X'],
+      intent: 'clone_roleplay',
+      userId: 'u-1',
+      tenantId: 't-1',
+      baseUrl: 'http://localhost:3000',
+    });
+
+    expect(result).toEqual([]);
+    expect(toolRouterExec).not.toHaveBeenCalled();
+  });
+
+  it('(и) дедуп по id из items[] двух query — `b` встречается один раз', async () => {
+    const { svc, mocks } = buildConciergeService({
+      dialogLayerEnabled: true,
+      dialog: { process: vi.fn() },
+    });
+    const toolRouterExec = (mocks.toolRouter as unknown as {
+      execute: ReturnType<typeof vi.fn>;
+    }).execute;
+    toolRouterExec
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        result: { items: [{ id: 'a' }, { id: 'b' }] },
+        tool: { name: 'search_knowledge' },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        result: { items: [{ id: 'b' }, { id: 'c' }] },
+        tool: { name: 'search_knowledge' },
+      });
+
+    const result = await (
+      svc as unknown as {
+        preRetrieve: (args: {
+          queries: string[];
+          intent: string;
+          userId: string;
+          tenantId: string;
+          baseUrl: string;
+        }) => Promise<Array<{ query: string; result: unknown }>>;
+      }
+    ).preRetrieve({
+      queries: ['Q1', 'Q2'],
+      intent: 'factual',
+      userId: 'u-1',
+      tenantId: 't-1',
+      baseUrl: 'http://localhost:3000',
+    });
+
+    // Соберём все id из результата.
+    const allIds: string[] = [];
+    for (const hit of result) {
+      const items = Array.isArray(hit.result)
+        ? (hit.result as Array<{ id?: unknown }>)
+        : [];
+      for (const it of items) {
+        if (typeof it.id === 'string') allIds.push(it.id);
+      }
+    }
+    expect(allIds.sort()).toEqual(['a', 'b', 'c']);
+    expect(allIds.length).toBeLessThanOrEqual(12); // topK
+  });
+
+  it('(к) полный flow Фаза 3: preHits попадают в systemPrompt и в событие thinking', async () => {
+    const dialogResult: DialogProcessResult = {
+      enabled: true,
+      standaloneQuestion: 'Что мы решили по проекту X?',
+      intent: 'factual',
+      queries: ['Q1', 'Q2'],
+      confidence: 0.9,
+      cachedAnswer: null,
+      steps: {
+        contextualize: 0,
+        confidence: 0,
+        classify: 0,
+        multiQuery: 0,
+        total: 0,
+      },
+    };
+    const dialogProcess = vi.fn(async () => dialogResult);
+    const { svc, mocks } = buildConciergeService({
+      dialogLayerEnabled: true,
+      dialog: { process: dialogProcess },
+      llmResponseText: 'Финальный ответ по найденным данным',
+    });
+    const toolRouterExec = (mocks.toolRouter as unknown as {
+      execute: ReturnType<typeof vi.fn>;
+    }).execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 200,
+      result: { items: [{ id: 'item-1', title: 'X' }] },
+      tool: { name: 'search_knowledge' },
+    });
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'Что мы решили по проекту X?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    // 1. Событие thinking 'Нашёл ... релевантных записей' было.
+    const thinkingEvents = events.filter(
+      (e): e is { type: 'thinking'; text: string } => e.type === 'thinking',
+    );
+    const hadPreRetrievalThinking = thinkingEvents.some((e) => /Нашёл/.test(e.text));
+    expect(hadPreRetrievalThinking).toBe(true);
+
+    // 2. LLM был вызван хотя бы раз.
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+
+    // 3. systemPrompt содержит блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ и item-1.
+    const llmCalls = mocks.llmCall.mock.calls as unknown as Array<
+      Array<{ systemPrompt?: string }>
+    >;
+    const llmArgs = llmCalls[0]?.[0] ?? {};
+    expect(llmArgs.systemPrompt ?? '').toContain('ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ');
+    expect(llmArgs.systemPrompt ?? '').toContain('item-1');
+
+    // 4. toolRouter.execute дёргался под `search_knowledge` (2 queries).
+    expect(toolRouterExec).toHaveBeenCalled();
+    const execCalls = toolRouterExec.mock.calls as unknown as Array<
+      Array<{ toolName?: string }>
+    >;
+    expect(execCalls.some((c) => c[0]?.toolName === 'search_knowledge')).toBe(true);
   });
 });

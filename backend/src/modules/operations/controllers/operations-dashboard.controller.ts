@@ -88,9 +88,21 @@ export class OperationsDashboardController {
   }
 
   @Get('capacity')
+  @ApiOperation({
+    summary:
+      'COO capacity — Person × Appointment.loadPercent. `projectId?` принимается ' +
+      'для совместимости с UI «Загруженность проекта» (parity Wave 2, 2026-05-27), ' +
+      'но сейчас игнорируется: модель Appointment не привязана к Project. ' +
+      'Per-project «загруженность по задачам трекера» — отдельный endpoint ' +
+      '/projects/:projectId/workload в tracker-модуле.',
+  })
   async capacity(
     @CurrentOrg() tenantId: string | undefined,
     @Req() req: Request,
+    // Tracker Project Overview Wave 2 (2026-05-27) — параметр принят для
+    // совместимости с фронтом-партнёром; внутри `getCapacity` пока не
+    // используется (см. ApiOperation выше).
+    @Query('projectId') _projectId?: string,
   ): Promise<OperationsDashboardCapacityListDto> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);

@@ -15,6 +15,7 @@ import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
+import { OverviewController } from './controllers/overview.controller';
 import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
@@ -32,6 +33,7 @@ import { HolidayService } from './services/holiday.service';
 import { ImportService } from './services/import.service';
 import { IntakeAutoTriageQueueService } from './services/intake-auto-triage-queue.service';
 import { IntakeService } from './services/intake.service';
+import { IntegrationsStatusService } from './services/integrations-status.service';
 import { IssueGoalSuggestService } from './services/issue-goal-suggest.service';
 import { IssueInferFieldsService } from './services/issue-infer-fields.service';
 import { IssueMeetingsService } from './services/issue-meetings.service';
@@ -39,6 +41,7 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MyMentionsService } from './services/my-mentions.service';
+import { OverviewService } from './services/overview.service';
 import { ProjectDocumentsService } from './services/project-documents.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
 import { ProjectsService } from './services/projects.service';
@@ -50,6 +53,7 @@ import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
 import { WebhookSigner } from './services/webhook-signer.service';
 import { WebhooksService } from './services/webhooks.service';
+import { WorkloadService } from './services/workload.service';
 import { Bitrix24ImportStrategy } from './strategies/bitrix24-import.strategy';
 import { TrelloImportStrategy } from './strategies/trello-import.strategy';
 import { YandexTrackerImportStrategy } from './strategies/yandex-tracker-import.strategy';
@@ -119,6 +123,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // Tracker Project Documents — отдельный controller для загрузки картинок
     // в редактор документа (POST /api/v1/uploads/document-asset).
     DocumentUploadsController,
+    // Tracker Project Overview (2026-05-27, plans/tz/2026-05-27-tracker-project-overview.md)
+    // — вкладки «Обзор» / «Загруженность» / «Приложения».
+    OverviewController,
   ],
   providers: [
     ActivityRecorderService,
@@ -198,6 +205,13 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     TrelloImportStrategy,
     Bitrix24ImportStrategy,
     YandexTrackerImportStrategy,
+    // Tracker Project Overview (2026-05-27) — три сервиса под вкладки
+    // /overview, /workload, /integrations-status.
+    // OverviewService подписан на `tracker.event_occurred` (@OnEvent) — на любую
+    // мутацию задачи инвалидирует Redis-кэш `project:overview:{projectId}`.
+    OverviewService,
+    WorkloadService,
+    IntegrationsStatusService,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не

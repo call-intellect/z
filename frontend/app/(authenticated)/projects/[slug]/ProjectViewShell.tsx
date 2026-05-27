@@ -20,9 +20,23 @@ interface Tab {
 }
 
 function buildTabs(slug: string): Tab[] {
+  // Wave 2 (2026-05-27): паритет Weeek/Kaiten — порядок табов
+  // Обзор → Доска/Список/Календарь/Гант → Документы → Приложения →
+  // Циклы → Входящие → Загруженность → Настройки.
+  // Группировка «Задачи ▾» не делаем (см. ТЗ overview §"Решение по группировке Задачи").
   return [
+    { href: `/projects/${slug}/overview`, label: 'Обзор' },
     { href: `/projects/${slug}/board`, label: 'Доска' },
     { href: `/projects/${slug}/list`, label: 'Список' },
+    { href: `/projects/${slug}/calendar`, label: 'Календарь' },
+    {
+      href: `/projects/${slug}/gantt`,
+      label: 'Гант',
+      show: (p) => p.gantViewEnabled,
+    },
+    // Tracker Project Documents (2026-05-27).
+    { href: `/projects/${slug}/documents`, label: 'Документы' },
+    { href: `/projects/${slug}/integrations`, label: 'Приложения' },
     {
       href: `/projects/${slug}/cycles`,
       label: 'Циклы',
@@ -33,15 +47,7 @@ function buildTabs(slug: string): Tab[] {
       label: 'Входящие',
       show: (p) => p.intakeViewEnabled,
     },
-    { href: `/projects/${slug}/calendar`, label: 'Календарь' },
-    {
-      href: `/projects/${slug}/gantt`,
-      label: 'Гант',
-      show: (p) => p.gantViewEnabled,
-    },
-    // Tracker Project Documents (2026-05-27) — вкладка «Документы».
-    // ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
-    { href: `/projects/${slug}/documents`, label: 'Документы' },
+    { href: `/projects/${slug}/workload`, label: 'Загруженность' },
     { href: `/projects/${slug}/settings`, label: 'Настройки' },
   ];
 }

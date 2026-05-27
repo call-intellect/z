@@ -110,7 +110,7 @@ export function CurationBanner({
               type="button"
               onClick={() => void decide('approve')}
               disabled={submitting}
-              className="rounded-md bg-accent px-3 py-1 text-xs text-white disabled:opacity-50"
+              className="rounded-md bg-accent px-3 py-1 text-xs text-accent-fg disabled:opacity-50"
             >
               Одобрить
             </button>

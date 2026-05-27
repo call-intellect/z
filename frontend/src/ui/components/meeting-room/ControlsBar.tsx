@@ -77,14 +77,14 @@ export function ControlsBar({
 
   return (
     <>
-      <div className="flex shrink-0 items-center justify-center gap-1 bg-[#1a1a2e] px-4 py-3">
+      <div className="flex shrink-0 items-center justify-center gap-1 bg-bg-elevated px-4 py-3">
 
         {/* Media controls */}
         <TrackToggle
           source={Track.Source.Microphone}
           className={clsx(
-            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
-            isMicrophoneEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-danger hover:opacity-90',
+            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
+            isMicrophoneEnabled ? 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80' : 'bg-danger text-danger-fg hover:opacity-90',
           )}
         >
           {isMicrophoneEnabled
@@ -96,8 +96,8 @@ export function ControlsBar({
         <TrackToggle
           source={Track.Source.Camera}
           className={clsx(
-            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
-            isCameraEnabled ? 'bg-slate-700 hover:bg-slate-600' : 'bg-danger hover:opacity-90',
+            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
+            isCameraEnabled ? 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80' : 'bg-danger text-danger-fg hover:opacity-90',
           )}
         >
           {isCameraEnabled
@@ -109,8 +109,8 @@ export function ControlsBar({
         <TrackToggle
           source={Track.Source.ScreenShare}
           className={clsx(
-            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors',
-            isScreenShareEnabled ? 'bg-info hover:opacity-90' : 'bg-slate-700 hover:bg-slate-600',
+            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
+            isScreenShareEnabled ? 'bg-info text-info-fg hover:opacity-90' : 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80',
           )}
         >
           {isScreenShareEnabled
@@ -158,7 +158,7 @@ export function ControlsBar({
             <button
               type="button"
               onClick={() => setConfirmFinish(true)}
-              className="flex flex-col items-center gap-1 rounded-xl bg-danger px-4 py-2 text-[10px] font-medium text-white transition-colors hover:opacity-90"
+              className="flex flex-col items-center gap-1 rounded-xl bg-danger px-4 py-2 text-[10px] font-medium text-danger-fg transition-colors hover:opacity-90"
             >
               <PhoneOff size={20} strokeWidth={1.75} />
               <span>Завершить</span>
@@ -168,11 +168,11 @@ export function ControlsBar({
 
         {!isHost && (
           <>
-            <div className="mx-2 h-10 w-px bg-slate-600" />
+            <div className="mx-2 h-10 w-px bg-border" />
             <button
               type="button"
               onClick={() => { void room.disconnect(); onLeave(); }}
-              className="flex flex-col items-center gap-1 rounded-xl bg-slate-700 px-4 py-2 text-[10px] font-medium text-white transition-colors hover:bg-slate-600"
+              className="flex flex-col items-center gap-1 rounded-xl bg-bg-overlay px-4 py-2 text-[10px] font-medium text-fg-primary transition-colors hover:bg-bg-overlay/80"
             >
               <PhoneOff size={20} strokeWidth={1.75} />
               <span>Выйти</span>
@@ -221,10 +221,10 @@ function IconBtn({
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium text-white transition-colors disabled:opacity-50',
+        'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors disabled:opacity-50',
         active
-          ? (activeClass ?? 'bg-warning hover:opacity-90')
-          : 'bg-slate-700 hover:bg-slate-600',
+          ? (activeClass ?? 'bg-warning text-warning-fg hover:opacity-90')
+          : 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80',
       )}
     >
       {icon}

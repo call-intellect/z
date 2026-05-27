@@ -675,7 +675,7 @@ function SidebarNavLink({
 
   let stateClass: string;
   if (isActive) {
-    stateClass = 'bg-accent-muted font-medium text-accent dark:shadow-accent-focus';
+    stateClass = 'bg-accent-muted font-medium text-accent-fg dark:shadow-accent-focus';
   } else if (isComingSoon) {
     stateClass =
       'text-fg-tertiary opacity-60 hover:bg-bg-overlay/60 hover:text-fg-secondary hover:opacity-100';
@@ -729,9 +729,7 @@ function SidebarNavLink({
         <span
           className={cn(
             'inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none',
-            isActive
-              ? 'bg-accent text-bg-base'
-              : 'bg-accent text-bg-base',
+            'bg-accent text-accent-fg',
           )}
           aria-label={`Непрочитанных: ${item.badgeCount}`}
         >

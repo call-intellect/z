@@ -115,10 +115,10 @@ export function MeetingRoom({
       <RoomAudioRenderer />
 
       {/* Header */}
-      <header className="flex shrink-0 items-center justify-between gap-3 bg-[#1a1a2e] px-5 py-2.5">
+      <header className="flex shrink-0 items-center justify-between gap-3 bg-bg-elevated px-5 py-2.5">
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-semibold text-white">{meeting.title}</span>
-          <span className="truncate text-[11px] text-slate-400">
+          <span className="truncate text-sm font-semibold text-fg-primary">{meeting.title}</span>
+          <span className="truncate text-[11px] text-fg-tertiary">
             {t(`meeting_types.${meeting.type}.label`)}
           </span>
         </div>
@@ -126,7 +126,7 @@ export function MeetingRoom({
       </header>
 
       {/* Main content */}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[#0d0d1a]">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-bg-base">
         <div className="flex flex-1 flex-col overflow-hidden">
           <VideoArea />
         </div>

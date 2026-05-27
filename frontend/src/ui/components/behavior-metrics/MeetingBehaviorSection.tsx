@@ -83,7 +83,7 @@ function FailedBox({ onRetry }: { onRetry: () => void }): JSX.Element {
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+        className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-danger-fg hover:opacity-90"
       >
         Обновить
       </button>
@@ -102,7 +102,7 @@ function ErrorBox({ onRetry }: { onRetry: () => void }): JSX.Element {
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg bg-warning px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+        className="rounded-lg bg-warning px-3 py-2 text-sm font-medium text-warning-fg hover:opacity-90"
       >
         Обновить
       </button>

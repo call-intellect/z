@@ -20,7 +20,7 @@ const variantClasses: Record<Variant, string> = {
   secondary:
     'bg-bg-subtle text-fg-primary hover:bg-bg-overlay disabled:opacity-50 disabled:text-fg-tertiary focus:ring-border-strong',
   danger:
-    'bg-danger text-white hover:opacity-90 disabled:opacity-50 focus:ring-danger',
+    'bg-danger text-danger-fg hover:opacity-90 disabled:opacity-50 focus:ring-danger',
   ghost:
     'bg-transparent text-fg-secondary hover:bg-bg-subtle disabled:text-fg-tertiary focus:ring-border',
 };

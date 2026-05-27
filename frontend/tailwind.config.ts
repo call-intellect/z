@@ -61,9 +61,13 @@ const config: Config = {
           'sand-fg': 'var(--chip-sand-fg)',
         },
         success: 'var(--success)',
+        'success-fg': 'var(--chip-success-fg)',
         warning: 'var(--warning)',
+        'warning-fg': 'var(--chip-warning-fg)',
         danger: 'var(--danger)',
+        'danger-fg': 'var(--chip-danger-fg)',
         info: 'var(--info)',
+        'info-fg': 'var(--chip-info-fg)',
       },
       fontFamily: {
         sans: ['var(--font-geist-sans)', 'var(--font-sans)'],

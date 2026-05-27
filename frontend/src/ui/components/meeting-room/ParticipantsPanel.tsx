@@ -64,10 +64,10 @@ export function ParticipantsPanel({
   return (
     <aside
       className={clsx(
-        'flex h-full w-80 flex-col border-l border-slate-700 bg-slate-900 text-slate-100',
+        'flex h-full w-80 flex-col border-l border-border bg-bg-elevated text-fg-primary',
       )}
     >
-      <header className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide">
           {t('room.participants_panel_title')} · {rows.length}
         </h2>
@@ -75,16 +75,16 @@ export function ParticipantsPanel({
           type="button"
           onClick={onClose}
           aria-label={t('common.close')}
-          className="rounded p-1 text-slate-300 hover:bg-slate-700 hover:text-white"
+          className="rounded p-1 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary"
         >
           ×
         </button>
       </header>
       <div className="flex-1 overflow-y-auto">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-slate-400">{t('room.no_participants')}</p>
+          <p className="p-4 text-sm text-fg-tertiary">{t('room.no_participants')}</p>
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-border">
             {rows.map(({ participant, isRaised }) => {
               const internalId = identityToParticipantId[participant.identity];
               const isLocal = participant.isLocal;
@@ -115,7 +115,7 @@ export function ParticipantsPanel({
                         onClick={() => {
                           void host.mute(internalId);
                         }}
-                        className="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600"
+                        className="rounded bg-bg-overlay px-2 py-1 text-xs hover:bg-bg-overlay/80"
                       >
                         {t('room.host_actions.mute')}
                       </button>
@@ -125,7 +125,7 @@ export function ParticipantsPanel({
                           onClick={() => {
                             void host.lowerHand(internalId);
                           }}
-                          className="rounded bg-slate-700 px-2 py-1 text-xs hover:bg-slate-600"
+                          className="rounded bg-bg-overlay px-2 py-1 text-xs hover:bg-bg-overlay/80"
                         >
                           {t('room.host_actions.lower_hand')}
                         </button>
@@ -135,7 +135,7 @@ export function ParticipantsPanel({
                         onClick={() => {
                           void host.kick(internalId);
                         }}
-                        className="rounded bg-danger/80 px-2 py-1 text-xs text-white hover:opacity-90"
+                        className="rounded bg-danger/80 px-2 py-1 text-xs text-danger-fg hover:opacity-90"
                       >
                         {t('room.host_actions.kick')}
                       </button>

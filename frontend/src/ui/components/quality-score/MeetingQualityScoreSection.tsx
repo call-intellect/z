@@ -307,7 +307,7 @@ function FailedBox({
         type="button"
         onClick={onRetry}
         disabled={busy}
-        className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+        className="rounded-lg bg-danger px-3 py-2 text-sm font-medium text-danger-fg hover:opacity-90 disabled:opacity-50"
       >
         {busy ? 'Перезапуск…' : 'Перезапустить оценку'}
       </button>
@@ -326,7 +326,7 @@ function ErrorBox({ onRetry }: { onRetry: () => void }) {
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-lg bg-warning px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+        className="rounded-lg bg-warning px-3 py-2 text-sm font-medium text-warning-fg hover:opacity-90"
       >
         Обновить
       </button>

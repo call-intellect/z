@@ -196,7 +196,7 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
       >
         <DropdownMenuLabel>Активная компания</DropdownMenuLabel>
         <DropdownMenuItem
-          className="font-medium text-accent focus:text-accent"
+          className="font-medium text-accent-fg focus:text-accent-fg"
           disabled
         >
           {activeOrg.name}

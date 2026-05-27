@@ -155,7 +155,7 @@ function SharedMeetingView({ data }: { data: PublicShareMeetingApi }) {
           <ol className="flex flex-col gap-1 rounded-xl border border-border-subtle bg-bg-card p-3">
             {data.chapters.map((c, i) => (
               <li key={c.id} className="flex items-center gap-3 px-2 py-2 text-sm">
-                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-muted font-mono text-[10px] text-accent">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-muted font-mono text-[10px] text-accent-fg">
                   {i + 1}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-fg-primary">{c.title}</span>

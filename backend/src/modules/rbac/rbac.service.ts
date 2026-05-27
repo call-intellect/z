@@ -609,7 +609,7 @@ export class RbacService implements OnModuleInit {
 }
 
 function isMembershipRole(s: string): s is MembershipRole {
-  return s === 'owner' || s === 'admin' || s === 'manager';
+  return s === 'owner' || s === 'admin' || s === 'manager' || s === 'coo';
 }
 function isVisibility(s: string): s is OrgVisibilityMode {
   return s === 'open' || s === 'strict';

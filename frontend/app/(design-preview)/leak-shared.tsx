@@ -33,7 +33,7 @@ export function PreviewSwitcher({ current }: { current: 'v1' | 'v2' }) {
             className={[
               'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
               it.key === current
-                ? 'border-accent-border bg-accent-muted text-accent'
+                ? 'border-accent-border bg-accent-muted text-accent-fg'
                 : 'border-border-subtle text-fg-secondary hover:border-accent-border hover:text-accent',
             ].join(' ')}
           >

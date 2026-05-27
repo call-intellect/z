@@ -471,7 +471,7 @@ function SuggestionChip({
         'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px]',
         muted
           ? 'border-border-subtle bg-bg-overlay text-fg-tertiary'
-          : 'border-accent-border bg-accent-muted text-accent',
+          : 'border-accent-border bg-accent-muted text-accent-fg',
       )}
     >
       {children}

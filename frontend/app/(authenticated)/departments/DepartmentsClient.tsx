@@ -187,7 +187,7 @@ function DepartmentsContent({
                     onClick={() => setSelectedId(d.id)}
                     className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                       d.id === selectedId
-                        ? 'bg-accent-muted text-accent'
+                        ? 'bg-accent-muted text-accent-fg'
                         : 'hover:bg-bg-overlay'
                     }`}
                   >

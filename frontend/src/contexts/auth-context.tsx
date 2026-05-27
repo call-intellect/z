@@ -66,8 +66,12 @@ type AuthContextValue = AuthState & {
   register: (
     email: string,
     name: string,
+    phone?: string,
     companyName?: string,
     honeypot?: string,
+    ref?: string,
+    consentDataProcessing?: boolean,
+    consentMarketing?: boolean,
   ) => Promise<{ emailSent: boolean }>;
 };
 
@@ -122,12 +126,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const register = useCallback(
-    async (email: string, name: string, companyName?: string, honeypot?: string) => {
+    async (
+      email: string,
+      name: string,
+      phone?: string,
+      companyName?: string,
+      honeypot?: string,
+      ref?: string,
+      consentDataProcessing?: boolean,
+      consentMarketing?: boolean,
+    ) => {
       const res = await accountsApi.register({
         email,
         name,
+        ...(phone ? { phone } : {}),
         ...(companyName ? { companyName } : {}),
         ...(honeypot !== undefined ? { honeypot } : {}),
+        ...(ref ? { ref } : {}),
+        ...(consentDataProcessing !== undefined ? { consentDataProcessing } : {}),
+        ...(consentMarketing !== undefined ? { consentMarketing } : {}),
       });
       return { emailSent: res.email_sent };
     },

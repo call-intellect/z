@@ -918,7 +918,7 @@ function PreviewStep({
         </div>
 
         <div className="mt-4 flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-fg-secondary">
-          <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent" />
+          <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent-fg" />
           <p>
             Импорт идемпотентен: если запустить повторно тот же экспорт — мы
             не создадим дубли. Уже импортированные задачи будут пропущены.

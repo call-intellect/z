@@ -31,10 +31,18 @@ export interface AccountUserApi {
 export interface AccountsRegisterRequest {
   email: string;
   name: string;
+  /** Опциональный номер телефона. */
+  phone?: string;
   /** Опциональное название компании. Если пусто — бэк подставит "Компания {name}". */
   companyName?: string;
   /** Honeypot — пустое поле, видимое только ботам. */
   honeypot?: string;
+  /** Реферральная ссылка из URL параметра. */
+  ref?: string;
+  /** Обязательное согласие на обработку персональных данных. */
+  consentDataProcessing?: boolean;
+  /** Опциональное согласие на маркетинговые рассылки. */
+  consentMarketing?: boolean;
 }
 
 export interface AccountsLoginRequest {

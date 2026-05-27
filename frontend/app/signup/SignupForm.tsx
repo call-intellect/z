@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
@@ -13,30 +14,34 @@ import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 
 /**
- * Lead-style регистрация: имя + email → бэкенд шлёт временный пароль письмом.
+ * Lead-style регистрация: имя + email + телефон → бэкенд шлёт временный пароль письмом.
  *
  * UX:
- *   - Honeypot-поле `hp_field` — невидимое, для отсева ботов. Если бот
- *     заполнит — backend silent OK без действий.
- *   - Чекбокс согласия с обработкой — обязательный (для PD compliance).
- *   - На success — заменяем форму на success-state (без редиректа: юзер
- *     не залогинен, ему нужно прочитать письмо и зайти).
+ *   - Honeypot-поле `hp_field` — невидимое, для отсева ботов.
+ *   - Скрытое поле `ref` — отслеживание реферральных ссылок из URL.
+ *   - Два чекбокса согласия: обработка ПД (обязательный) и маркетинг (опциональный).
+ *   - На success — заменяем форму на success-state (без редиректа).
  */
 export function SignupForm() {
   const { register } = useAuth();
+  const searchParams = useSearchParams();
+  const refParam = searchParams?.get('ref') || '';
+
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [honeypot, setHoneypot] = useState('');
-  const [consent, setConsent] = useState(false);
+  const [consentDataProcessing, setConsentDataProcessing] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting) return;
-    if (!consent) {
-      toast.error('Подтвердите согласие с обработкой данных.');
+    if (!consentDataProcessing) {
+      toast.error('Подтвердите согласие с обработкой персональных данных.');
       return;
     }
 
@@ -45,8 +50,12 @@ export function SignupForm() {
       const result = await register(
         email.trim(),
         name.trim(),
+        phone.trim() || undefined,
         companyName.trim() || undefined,
         honeypot,
+        refParam,
+        consentDataProcessing,
+        consentMarketing,
       );
       setSubmittedEmail(email.trim());
       if (!result.emailSent) {
@@ -142,6 +151,18 @@ export function SignupForm() {
         </div>
 
         <div className="space-y-1.5">
+          <Label htmlFor="signup-phone">Номер телефона (опционально)</Label>
+          <Input
+            id="signup-phone"
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            autoComplete="tel"
+            placeholder="+7 (999) 999-99-99"
+          />
+        </div>
+
+        <div className="space-y-1.5">
           <Label htmlFor="signup-company">Название компании (опционально)</Label>
           <Input
             id="signup-company"
@@ -154,6 +175,7 @@ export function SignupForm() {
         </div>
 
         {/* Honeypot — спрятан от пользователя, виден только ботам. */}
+        {/* Скрытое поле ref — отслеживание реферральных ссылок. */}
         <div
           aria-hidden
           style={{
@@ -174,22 +196,52 @@ export function SignupForm() {
             value={honeypot}
             onChange={(e) => setHoneypot(e.target.value)}
           />
+          <input
+            id="ref_field"
+            name="ref_field"
+            type="hidden"
+            value={refParam}
+            readOnly
+          />
         </div>
 
-        <div className="flex items-start gap-2.5 pt-1">
-          <Checkbox
-            id="signup-consent"
-            checked={consent}
-            onCheckedChange={(v) => setConsent(v === true)}
-            className="mt-0.5"
-          />
-          <Label
-            htmlFor="signup-consent"
-            className="text-xs font-normal leading-snug text-fg-secondary"
-          >
-            Согласен на обработку персональных данных и получение писем,
-            связанных с использованием сервиса.
-          </Label>
+        <div className="space-y-3 pt-1">
+          <div className="flex items-start gap-2.5">
+            <Checkbox
+              id="signup-consent-data"
+              checked={consentDataProcessing}
+              onCheckedChange={(v) => setConsentDataProcessing(v === true)}
+              className="mt-0.5"
+            />
+            <Label
+              htmlFor="signup-consent-data"
+              className="text-xs font-normal leading-snug text-fg-secondary"
+            >
+              Согласен с{' '}
+              <Link href="/terms" target="_blank" className="text-accent hover:underline">
+                обработкой персональных данных
+              </Link>
+              {' '}и{' '}
+              <Link href="/privacy" target="_blank" className="text-accent hover:underline">
+                политикой конфиденциальности
+              </Link>
+            </Label>
+          </div>
+
+          <div className="flex items-start gap-2.5">
+            <Checkbox
+              id="signup-consent-marketing"
+              checked={consentMarketing}
+              onCheckedChange={(v) => setConsentMarketing(v === true)}
+              className="mt-0.5"
+            />
+            <Label
+              htmlFor="signup-consent-marketing"
+              className="text-xs font-normal leading-snug text-fg-secondary"
+            >
+              Согласен получать письма о новостях, обновлениях и специальных предложениях
+            </Label>
+          </div>
         </div>
 
         <Button

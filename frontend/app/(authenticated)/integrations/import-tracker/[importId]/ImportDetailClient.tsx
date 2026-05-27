@@ -428,7 +428,7 @@ function StatusBadge({ status }: { status: ImportStatus }) {
         ? 'bg-danger/15 text-danger'
         : status === 'cancelled'
           ? 'bg-bg-overlay text-fg-tertiary'
-          : 'bg-accent-muted text-accent';
+          : 'bg-accent-muted text-accent-fg';
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}

@@ -137,7 +137,7 @@ function SidebarLink({
         className={cn(
           'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
           isActive
-            ? 'bg-accent-muted font-medium text-accent'
+            ? 'bg-accent-muted font-medium text-accent-fg'
             : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
         )}
       >

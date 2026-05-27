@@ -361,8 +361,26 @@ export function HomeClient() {
         </motion.div>
       </section>
 
-      <footer className="relative z-10 px-6 py-8 text-center text-xs tracking-[0.14em] text-fg-tertiary">
-        КОРА · ПАМЯТЬ ВАШЕЙ КОМПАНИИ
+      <footer className="relative z-10 border-t border-border-subtle px-6 py-8 text-center text-xs text-fg-tertiary">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 md:flex-row">
+          <div className="tracking-[0.14em]">КОРА · ПАМЯТЬ ВАШЕЙ КОМПАНИИ</div>
+          <nav className="flex gap-6 text-xs text-fg-secondary">
+            <Link
+              href="/terms"
+              target="_blank"
+              className="hover:text-accent hover:underline"
+            >
+              Договор оферты
+            </Link>
+            <Link
+              href="/privacy"
+              target="_blank"
+              className="hover:text-accent hover:underline"
+            >
+              Политика конфиденциальности
+            </Link>
+          </nav>
+        </div>
       </footer>
     </main>
   );

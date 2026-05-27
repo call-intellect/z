@@ -382,7 +382,7 @@ function GroupsStep({
         )}
 
         <div className="mt-4 flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-fg-secondary">
-          <ClipboardList size={14} className="mt-0.5 shrink-0 text-accent" />
+          <ClipboardList size={14} className="mt-0.5 shrink-0 text-accent-fg" />
           <p>
             Импортируем только указанные группы — задачи вне этих групп
             пропустим. Закрытые задачи и комментарии перенесём вместе с
@@ -458,7 +458,7 @@ function PreviewStep({
         </dl>
 
         <div className="mt-5 flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-fg-secondary">
-          <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent" />
+          <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent-fg" />
           <p>
             Импорт идемпотентен: повторный запуск не создаст дублей.
             Прогресс и журнал ошибок откроются на следующей странице.

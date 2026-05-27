@@ -143,7 +143,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
             <Card className="border-accent/40 bg-accent-muted/20">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <FlaskConical size={16} className="text-accent" />
+                  <FlaskConical size={16} className="text-accent-fg" />
                   Активный A/B-эксперимент
                 </CardTitle>
               </CardHeader>

@@ -92,7 +92,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <aside className="md:w-64 md:shrink-0">
           <div className="mb-3 flex items-center justify-between px-3 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
             <span className="flex items-center gap-2">
-              <Shield size={14} className="text-accent" />
+              <Shield size={14} className="text-accent-fg" />
               Z-Admin
             </span>
             <kbd className="hidden rounded border border-border-subtle bg-bg-overlay px-1.5 py-0.5 text-[10px] font-normal text-fg-tertiary md:inline-flex">
@@ -158,7 +158,7 @@ function SectionGroup({
           <Icon
             size={15}
             strokeWidth={1.75}
-            className={isActiveSection ? 'text-accent' : 'text-fg-tertiary'}
+            className={isActiveSection ? 'text-accent-fg' : 'text-fg-tertiary'}
           />
           <span
             className={cn(
@@ -205,7 +205,7 @@ function NavLink({ item, pathname }: { item: AdminNavItem; pathname: string }) {
       className={cn(
         'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
         isActive
-          ? 'bg-accent-muted font-medium text-accent'
+          ? 'bg-accent-muted font-medium text-accent-fg'
           : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
         item.isComingSoon && !isActive && 'opacity-60',
       )}

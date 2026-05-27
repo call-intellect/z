@@ -176,4 +176,17 @@ P2 (F6-F11) и P3 (F12-F16) — на следующую сессию. См. [`pl
 
 См. также [`concierge-voice.md`](concierge-voice.md) для voice-streaming контекста (T4).
 
+### Concierge dialog-layer integration (ТЗ 2026-05-27)
+
+Concierge (γ-2) подключён к 4 dialog-layer taskType'ам при `CONCIERGE_DIALOG_LAYER_ENABLED=true`:
+
+- `dialog-contextualize` — «а почему?» → standalone-вопрос с учётом истории.
+- `dialog-confidence` — оценка качества standalone (≥ threshold → используем; иначе fallback на raw).
+- `dialog-classify` — intent (`factual` / `exploratory` / `analytical` / `clone_roleplay`).
+- `dialog-multi-query` — 3 переформулировки для `exploratory`/`analytical`; для `factual` — оригинал.
+
+Все 4 — primary `DeepSeek V4 Pro` (γ-1 raised on Фаза 4 §2 LLM-migration, см. §«Массовая миграция на DeepSeek V4 Pro»). После dialog-layer → параллельный pre-retrieval через `ToolRouter.execute('search_knowledge')` (до 3 queries, per-query timeout 3000ms, cumulative top-K 12). Подробности pipeline и метрик — [`concierge-agent.md`](concierge-agent.md).
+
+Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dialog-multi-query-clone`, Фаза 7 §9), **Concierge (с ТЗ 2026-05-27)**.
+
 [[../index|← index]]

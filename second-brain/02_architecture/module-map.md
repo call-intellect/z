@@ -1906,5 +1906,49 @@ mail-inbound/
 - Lock-ключ `feedback:digest:lock` (SET NX EX 1800).
 - Rate-limit ключ `feedback:ratelimit:{userId}:{YYYY-MM-DD-UTC}` (TTL до конца UTC-суток).
 
+## Concierge γ-2 — dialog-layer integration (2026-05-27)
+
+ТЗ [`plans/tz/2026-05-27-concierge-dialog-layer-integration.md`](../../plans/tz/2026-05-27-concierge-dialog-layer-integration.md). Полная заметка фичи — [[../01_projects/concierge-agent|concierge-agent]].
+
+### `backend/src/modules/concierge/`
+
+Главный AI-агент кабинета (tool-use loop, 13 whitelist-tools). После Фаз 1-5 ТЗ 2026-05-27 pipeline расширен:
+
+- `services/concierge.service.ts` — основной orchestrator. При `CONCIERGE_DIALOG_LAYER_ENABLED=true`:
+  - читает `ConciergeConversation.summary` (генерится `concierge-conversation-summarizer.cron`);
+  - вызывает `DialogService.process({ scope: 'concierge', scopeRefId: conv.id })` — 5-шаговый pipeline (contextualize → confidence → classify → multi-query + answer-cache);
+  - на cache-hit делает short-circuit (`thinking → message → done`, без LLM);
+  - запускает **параллельный pre-retrieval** по `dialogResult.queries[]` (до 3) через `ToolRouterService.execute('search_knowledge')` — per-query timeout 3000ms (`CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS`), cumulative top-K 12 (`CONCIERGE_PRE_RETRIEVAL_TOP_K`), дедуп по id, skip для `intent='clone_roleplay'`;
+  - подаёт preHits в system-prompt блоком `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` перед tool whitelist;
+  - сохраняет debug-блок `{ dialogLayer, preRetrieval }` в `ConciergeMessage.toolCallsJson`.
+
+Legacy путь при `CONCIERGE_DIALOG_LAYER_ENABLED=false` — без dialog-layer, без pre-retrieval, summary не читается.
+
+### Зависимости (импорты)
+
+- `backend/src/modules/dialog-layer/` — `DialogService` (5-step preprocessor + AnswerCache в Redis).
+- `backend/src/modules/concierge/services/tool-router.service.ts` — `search_knowledge` invocation с RBAC от userId.
+- `backend/src/modules/ai/services/llm-router.service.ts` — `taskType='concierge-respond'`.
+
+### Метрики Prometheus (новые)
+
+- `concierge_dialog_layer_used_total{intent}` — счётчик использования dialog-layer препроцессинга.
+- `concierge_cache_hit_total` — short-circuit на AnswerCache.
+- `concierge_pre_retrieval_hits_count` (histogram, buckets `[0,1,3,5,10,15,25,50]`) — items после dedup.
+
+Pino-логи: `stage: 'dialog-layer' | 'pre-retrieval'`.
+
+### ENV
+
+- `CONCIERGE_DIALOG_LAYER_ENABLED` (default **false**) — мастер-флаг новой ветки pipeline.
+- `CONCIERGE_PRE_RETRIEVAL_TOP_K` (default 12) — cap items.
+- `CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS` (default 3000) — per-query timeout.
+
+Читаются через `process.env` в `TypedConfigService.concierge` (не в `EnvSchema` из-за `.merge` chain depth).
+
+### Тесты
+
+25 unit-тестов в `backend/src/modules/concierge/services/*.spec.ts` покрывают: contextualize-fallback, classify-skip-roleplay, parallel pre-retrieval с дедупом, timeout per-query, cache-hit short-circuit, summary injection.
+
 
 [[../index|← index]]

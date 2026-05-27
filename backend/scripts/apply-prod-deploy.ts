@@ -129,6 +129,10 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  // Tracker Boards (2026-05-27) — каждому проекту нужна default-доска
+  // (`Board { isDefault: true }`), и все issues с boardId=NULL должны быть
+  // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+  { phase: 'backfill', script: 'scripts/backfill-default-board.ts', hint: 'default Board + issues.boardId backfill', skipBootstrap: true },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

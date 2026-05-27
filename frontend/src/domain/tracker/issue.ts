@@ -37,6 +37,11 @@ export interface IssueApi {
   completedAt: string | null;
   cycleId: string | null;
   goalId: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — доска задачи. Nullable на схеме (legacy
+   * до backfill), фактически после миграции всегда заполнено.
+   */
+  boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
@@ -202,6 +207,11 @@ export interface Issue {
   completedAt: Date | null;
   cycleId: string | null;
   goalId: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — доска задачи. Nullable на схеме (legacy
+   * до backfill), фактически после миграции всегда заполнено.
+   */
+  boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
@@ -365,6 +375,8 @@ export function issueFromApi(api: IssueApi): Issue {
     completedAt,
     cycleId: api.cycleId,
     goalId: api.goalId,
+    // Tracker Boards (2026-05-27)
+    boardId: api.boardId ?? null,
     meetingId: api.meetingId,
     linkedMeetingIds: api.linkedMeetingIds ?? [],
     sourceBlockIds: api.sourceBlockIds ?? [],

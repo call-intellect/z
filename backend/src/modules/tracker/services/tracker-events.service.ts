@@ -1,9 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import type { BoardResponseDto } from '../dto/boards/board-response.dto';
 import type { CycleResponseDto } from '../dto/cycles/cycle-response.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 import type {
   ActivityFeedNewItemEvent,
+  BoardCreatedEvent,
+  BoardDeletedEvent,
+  BoardReorderedEvent,
+  BoardUpdatedEvent,
   CommentCreatedEvent,
   CommentDeletedEvent,
   CommentUpdatedEvent,
@@ -17,6 +22,7 @@ import type {
   IntakeTriagedEvent,
   IssueCreatedEvent,
   IssueDeletedEvent,
+  IssueMovedToBoardEvent,
   IssueUpdatedEvent,
   TrackerWsEvent,
 } from '../dto/ws-events';
@@ -303,6 +309,109 @@ export class TrackerEventsService {
       timestamp: new Date().toISOString(),
     };
     this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
+  }
+
+  // ── boards (Tracker Boards, 2026-05-27) ───────────────────────────────
+
+  publishBoardCreated(board: BoardResponseDto, tenantId: string): void {
+    const event: BoardCreatedEvent = {
+      type: 'board.created',
+      tenantId,
+      projectId: board.projectId,
+      board,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(board.projectId),
+    ]);
+  }
+
+  publishBoardUpdated(
+    board: BoardResponseDto,
+    tenantId: string,
+    changedFields: string[],
+  ): void {
+    const event: BoardUpdatedEvent = {
+      type: 'board.updated',
+      tenantId,
+      projectId: board.projectId,
+      board,
+      changedFields,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(board.projectId),
+    ]);
+  }
+
+  publishBoardDeleted(args: {
+    tenantId: string;
+    projectId: string;
+    boardId: string;
+    movedIssuesToBoardId: string;
+    movedIssuesCount: number;
+  }): void {
+    const event: BoardDeletedEvent = {
+      type: 'board.deleted',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      boardId: args.boardId,
+      movedIssuesToBoardId: args.movedIssuesToBoardId,
+      movedIssuesCount: args.movedIssuesCount,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishBoardReordered(args: {
+    tenantId: string;
+    projectId: string;
+    boardIds: string[];
+  }): void {
+    const event: BoardReorderedEvent = {
+      type: 'board.reordered',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      boardIds: args.boardIds,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  /**
+   * Tracker Boards (2026-05-27) — PATCH /issues/:id поменял `boardId`.
+   * Эмитим узко (`tenant:` + `project:` + `issue:`), чтобы фронт мог
+   * убрать карточку из старой доски и добавить в новую без перезагрузки.
+   */
+  publishIssueMovedToBoard(args: {
+    tenantId: string;
+    projectId: string;
+    issueId: string;
+    fromBoardId: string | null;
+    toBoardId: string;
+  }): void {
+    const event: IssueMovedToBoardEvent = {
+      type: 'issue.moved_to_board',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      issueId: args.issueId,
+      fromBoardId: args.fromBoardId,
+      toBoardId: args.toBoardId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
   }
 
   // ── internal ──────────────────────────────────────────────────────────

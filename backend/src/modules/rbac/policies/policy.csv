@@ -794,6 +794,22 @@ p, admin, *, *, issue_webhook, read
 p, admin, *, *, issue_webhook, write
 p, admin, *, *, issue_webhook, delete
 
+# ──────────────────────────── Tracker Boards (2026-05-27) ────────────────────────────
+# board — доска внутри проекта (Канбан-доска маркетинга/монтажа/релиза и т.п.).
+# Все members проекта могут читать/писать; защиту от удаления default-доски
+# делает сервис (BoardsService.delete → 409 если isDefault=true). Manager имеет
+# те же права что и member по доскам — это часть оперативной работы.
+# ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+p, owner, *, *, board, read
+p, owner, *, *, board, write
+p, owner, *, *, board, delete
+p, admin, *, *, board, read
+p, admin, *, *, board, write
+p, admin, *, *, board, delete
+p, manager, *, *, board, read
+p, manager, *, *, board, write
+p, coo, *, *, board, read
+
 # ──────────────────────────── Wave 2 — Activity Feeds (2026-05-24) ────────────────────────────
 # activity_feed_item — единая запись ленты активности (probe_question | insight |
 # decision | task | idea | conflict | knowledge_change). Read — все members

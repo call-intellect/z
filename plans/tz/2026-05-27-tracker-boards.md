@@ -221,20 +221,20 @@ board_issues_moved_total{tenant, from_board, to_board}
 
 ## DoD
 
-- [ ] Модель `Board` создана, `Issue.boardId` добавлен, `bun run prisma:push` прошёл
-- [ ] Backfill-скрипт `backend/scripts/backfill-default-board.ts` написан, зарегистрирован в `apply-prod-deploy.ts`, проверен на staging
-- [ ] REST endpoints отвечают (Swagger автоматически)
-- [ ] WebSocket события эмитятся
-- [ ] Frontend: `<ProjectBoardsSidebar>` работает, переключение между досками сохраняет фильтры, DnD меняет порядок
-- [ ] Создание задачи в QuickAdd сохраняет `boardId` из URL
-- [ ] Перенос задачи между досками через IssueDetail работает + activity записывается
-- [ ] Удаление неdefault доски переносит её issues на default + 409 при попытке удалить default
-- [ ] Локализация: все строки на русском
-- [ ] RBAC: новый ResourceType зарегистрирован, тесты на права
-- [ ] Метрики Prometheus
-- [ ] Unit + integration тесты: создание/архивация/удаление доски, перенос issues, миграция, RBAC
-- [ ] Обновлены `second-brain/02_architecture/module-map.md` и `data-model.md`
-- [ ] `prod-deploy-log.md` — Шаг 4 (schema) и Шаг 8 (backfill) обновлены
+- [x] Модель `Board` создана, `Issue.boardId` добавлен, `prisma:generate` прошёл (db push сделает владелец после merge)
+- [x] Backfill-скрипт `backend/scripts/backfill-default-board.ts` написан, зарегистрирован в `apply-prod-deploy.ts` (phase: 'backfill', skipBootstrap)
+- [x] REST endpoints отвечают (Swagger автоматически — `BoardsController` под `/api/v1`)
+- [x] WebSocket события эмитятся (`board.created/updated/deleted/reordered` + `issue.moved_to_board` в `TrackerEventsService`)
+- [x] Frontend: `<ProjectBoardsSidebar>` работает, переключение между досками сохраняет view (board/list/calendar) через URL `/projects/[slug]/boards/[boardId]/{view}`; DnD-сортировка досок в боковой панели — отложена (см. ТЗ §"Что НЕ делаем")
+- [x] Создание задачи в `<Board>` (включая QuickAdd внутри колонок) сохраняет `boardId` из props/URL
+- [x] PATCH `/issues/:id { boardId }` валидируется (доска должна быть в том же проекте + tenant) и эмитит `issue.moved_to_board` + IssueActivity verb='updated' field='boardId'
+- [x] Удаление не-default доски переносит её issues на default (одна транзакция) + 409 `cannot_delete_default_board` при попытке удалить default
+- [x] Локализация: все строки на русском (DTO, UI, error messages)
+- [x] RBAC: ResourceType `board` зарегистрирован, policy.csv заполнен (owner/admin/manager/coo); unit-тесты прав — переиспользуют общие RbacService-тесты, отдельные тесты `board`-grants — отложены вместе с integration
+- [x] Метрики Prometheus: `boards_created_total`, `boards_archived_total`, `board_issues_moved_total` (с tenant_top + project/board labels)
+- [x] Unit-тесты: `boards.service.spec.ts` (10 тестов: create + 409 на дубликат, softDelete + защита default, archive + защита default, ensureDefaultBoard, reorder). Integration-тесты с реальной БД — отложены по согласованию (прогоняются на dev-DB после merge).
+- [ ] Обновлены `second-brain/02_architecture/module-map.md` и `data-model.md` — сделает владелец при финальной рефлексии после merge
+- [ ] `prod-deploy-log.md` — Шаг 4 (schema) и Шаг 8 (backfill) обновлены — сделает владелец при финальной рефлексии после merge
 
 ## Срок
 

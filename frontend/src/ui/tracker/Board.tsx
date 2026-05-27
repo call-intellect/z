@@ -86,17 +86,27 @@ function defaultResolveCategory(issue: Issue): IssueStateCategory {
 export function Board({
   orgId,
   projectId,
+  boardId,
   resolveCategory = defaultResolveCategory,
 }: {
   orgId: string;
   projectId: string;
+  /**
+   * Tracker Boards (2026-05-27) — фильтр задач по выбранной доске.
+   * Если передан — показываются только задачи доски `boardId`. Если нет —
+   * ВСЕ задачи проекта (обратная совместимость для legacy-страниц).
+   * QuickAdd передаёт `boardId` в `issuesApi.create`, чтобы новая задача
+   * сразу попала в текущую доску.
+   */
+  boardId?: string;
   resolveCategory?: (issue: Issue) => IssueStateCategory;
 }) {
   const { issues, isLoading, error, mutate } = useIssues(orgId, projectId, {
     limit: 100,
-    // Tracker subtasks UI (2026-05-27) — нужно для badge «✓ N» в IssueCard.
-    // Backend делает один groupBy(parentId) — стоимость минимальная.
+    // Tracker subtasks UI (2026-05-27) — для badge «✓ N» в IssueCard.
     includeChildrenCount: true,
+    // Tracker Boards (2026-05-27) — фильтр по выбранной доске.
+    boardId,
   });
   const { states, isLoading: statesLoading } = useStates(orgId, projectId);
   const { mutate: globalMutate } = useSWRConfig();
@@ -126,6 +136,10 @@ export function Board({
         // Они опциональны (только если confidence ≥ 0.7 на стороне сервера).
         const created = await issuesApi.create(orgId, projectId, {
           title,
+          // Tracker Boards (2026-05-27) — закрепляем задачу за текущей
+          // доской. Если boardId не задан (legacy-страница без досок) —
+          // backend сам подставит default-доску проекта.
+          ...(boardId ? { boardId } : {}),
           inferSuggestions: true,
         });
         await mutate();
@@ -142,7 +156,7 @@ export function Board({
         setCreating(false);
       }
     },
-    [orgId, projectId, mutate],
+    [orgId, projectId, boardId, mutate],
   );
 
   const issuesById = useMemo(() => {

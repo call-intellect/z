@@ -650,6 +650,17 @@ export class BusinessMetricsService implements OnModuleInit {
   //   (HolidayService.adjustDueDate; интеграция в IssuesService — Sprint 10).
   private teamTemplateUsedTotal!: Counter<'tenant_top' | 'slug'>;
   private holidayDueDateAdjustedTotal!: Counter<'tenant_top'>;
+  // Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
+  // Cardinality-safe: tenant_top — top-100 bucket; project — UUID (десятки/сотни
+  // на tenant, приемлемо); board — board-UUID (используется только в moved-метрике,
+  // десятки на проект).
+  //   - boards_created_total{tenant_top, project}
+  //   - boards_archived_total{tenant_top, project}  (счёт архивации, без soft-delete)
+  //   - board_issues_moved_total{tenant_top, from_board, to_board}
+  // ТЗ: plans/tz/2026-05-27-tracker-boards.md §"Метрики Prometheus".
+  private boardsCreatedTotal!: Counter<'tenant_top' | 'project'>;
+  private boardsArchivedTotal!: Counter<'tenant_top' | 'project'>;
+  private boardIssuesMovedTotal!: Counter<'tenant_top' | 'from_board' | 'to_board'>;
   // Tracker Phase 4 (Email-to-task, T5, 2026-05-24) — поллинг общего IMAP-ящика
   // (`inbox.kora.app`) → routing по To:-alias → IssuesService.create().
   // Cardinality-safe: project — id (десятки/сотни на tenant; в проде следить).
@@ -2387,6 +2398,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'holiday_due_date_adjusted_total',
       help: 'Tracker Phase 4 — HolidayService сдвинул dueDate задачи на следующий рабочий день (попадание на праздник / выходной).',
       labelNames: ['tenant_top'] as const,
+    });
+    // Tracker Boards (2026-05-27) — несколько досок per project.
+    this.boardsCreatedTotal = this.getOrCreateCounter({
+      name: 'boards_created_total',
+      help: 'Tracker Boards — создание доски в проекте (BoardsService.create).',
+      labelNames: ['tenant_top', 'project'] as const,
+    });
+    this.boardsArchivedTotal = this.getOrCreateCounter({
+      name: 'boards_archived_total',
+      help: 'Tracker Boards — архивация доски (POST /boards/:id/archive). Не включает soft-delete.',
+      labelNames: ['tenant_top', 'project'] as const,
+    });
+    this.boardIssuesMovedTotal = this.getOrCreateCounter({
+      name: 'board_issues_moved_total',
+      help: 'Tracker Boards — задача перенесена между досками (PATCH /issues/:id { boardId }).',
+      labelNames: ['tenant_top', 'from_board', 'to_board'] as const,
     });
     // Tracker Phase 4 (Email-to-task, T5, 2026-05-24).
     this.mailInboundReceivedTotal = this.getOrCreateCounter({
@@ -5239,6 +5266,43 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incHolidayDueDateAdjusted(args: { tenantTop: string }): void {
     this.holidayDueDateAdjustedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Tracker Boards (2026-05-27) — создание доски в проекте.
+   * `tenantTop` — top-100 bucket (нормализация через `tenantTopOf`).
+   * `project` — UUID; в проде следить за cardinality (~100 проектов на tenant).
+   */
+  incBoardCreated(args: { tenantTop: string; project: string }): void {
+    this.boardsCreatedTotal.inc({
+      tenant_top: args.tenantTop,
+      project: args.project,
+    });
+  }
+
+  /** Tracker Boards — архивация доски (POST /boards/:id/archive). */
+  incBoardArchived(args: { tenantTop: string; project: string }): void {
+    this.boardsArchivedTotal.inc({
+      tenant_top: args.tenantTop,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Boards — задача перенесена между досками одного проекта
+   * (PATCH /issues/:id { boardId }). `fromBoard` может быть пустой строкой,
+   * если задача ранее не имела `boardId` (легаси до backfill).
+   */
+  incBoardIssueMoved(args: {
+    tenantTop: string;
+    fromBoard: string;
+    toBoard: string;
+  }): void {
+    this.boardIssuesMovedTotal.inc({
+      tenant_top: args.tenantTop,
+      from_board: args.fromBoard,
+      to_board: args.toBoard,
+    });
   }
 
   /**

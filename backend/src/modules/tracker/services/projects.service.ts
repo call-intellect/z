@@ -99,6 +99,19 @@ export class ProjectsService {
       await tx.projectMember.create({
         data: { projectId: created.id, userId, role: 20 },
       });
+      // Tracker Boards (2026-05-27) — создаём default-доску сразу с проектом.
+      // Идемпотентно через @@unique([projectId, name]) (если будет повтор —
+      // backfill подберёт; здесь race-free, т.к. в той же транзакции).
+      await tx.board.create({
+        data: {
+          tenantId,
+          projectId: created.id,
+          name: 'Доска',
+          color: '#5EEAD4',
+          sequence: 0,
+          isDefault: true,
+        },
+      });
       // Зафиксировать defaultStateId (необязательно — но удобно UI).
       if (defaultStateId) {
         return tx.project.update({

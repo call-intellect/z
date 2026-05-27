@@ -18,6 +18,12 @@ export interface IssueResponseDto {
   completedAt: string | null;
   cycleId: string | null;
   goalId: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — доска, на которой живёт задача. Nullable
+   * на уровне схемы (legacy/удалённая доска → SetNull), но фактически после
+   * `backfill-default-board.ts` всегда заполнено.
+   */
+  boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];

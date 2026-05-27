@@ -3,6 +3,7 @@
  */
 
 export * from './projects.api';
+export * from './boards.api';
 export * from './issues.api';
 export * from './states.api';
 export * from './cycles.api';

@@ -52,6 +52,8 @@ describe('TrackerEventsService', () => {
       completedAt: null,
       cycleId: null,
       goalId: null,
+      // Tracker Boards (2026-05-27)
+      boardId: null,
       meetingId: null,
       linkedMeetingIds: [],
       sourceBlockIds: [],

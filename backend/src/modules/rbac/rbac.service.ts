@@ -147,6 +147,9 @@ export const RESOURCE_TYPES = [
   'social_contribution_profile',
   // SBA β-8.2 — Promise Keeper
   'commitment',
+  // Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
+  // ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+  'board',
 ] as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[number];

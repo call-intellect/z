@@ -1,5 +1,6 @@
 import type { CommentResponseDto } from '../services/comments.service';
 
+import type { BoardResponseDto } from './boards/board-response.dto';
 import type { CycleResponseDto } from './cycles/cycle-response.dto';
 import type { IssueResponseDto } from './issues/issue-response.dto';
 
@@ -19,6 +20,7 @@ export type TrackerWsEventType =
   | 'issue.created'
   | 'issue.updated'
   | 'issue.deleted'
+  | 'issue.moved_to_board'
   | 'comment.created'
   | 'comment.updated'
   | 'comment.deleted'
@@ -30,7 +32,12 @@ export type TrackerWsEventType =
   | 'activity_feed.new_item'
   | 'import.progress'
   | 'import.completed'
-  | 'import.failed';
+  | 'import.failed'
+  // Tracker Boards (2026-05-27)
+  | 'board.created'
+  | 'board.updated'
+  | 'board.deleted'
+  | 'board.reordered';
 
 interface BaseTrackerWsEvent<T extends TrackerWsEventType> {
   type: T;
@@ -138,10 +145,57 @@ export interface ImportFailedEvent extends BaseTrackerWsEvent<'import.failed'> {
   error: string;
 }
 
+/**
+ * Tracker Boards (2026-05-27) — события CRUD доски + переноса задачи между
+ * досками. Эмитятся в `tenant:` + `project:`-room (доска привязана к проекту).
+ * Контракт RBAC: подписаны на эти события только участники проекта.
+ */
+
+export interface BoardCreatedEvent extends BaseTrackerWsEvent<'board.created'> {
+  projectId: string;
+  board: BoardResponseDto;
+}
+
+export interface BoardUpdatedEvent extends BaseTrackerWsEvent<'board.updated'> {
+  projectId: string;
+  board: BoardResponseDto;
+  /** Список изменённых полей (name|color|icon|description|sequence|archivedAt). */
+  changedFields: string[];
+}
+
+export interface BoardDeletedEvent extends BaseTrackerWsEvent<'board.deleted'> {
+  projectId: string;
+  boardId: string;
+  /** Доска, на которую перенесены задачи (всегда default). */
+  movedIssuesToBoardId: string;
+  /** Сколько задач перенеслось. */
+  movedIssuesCount: number;
+}
+
+export interface BoardReorderedEvent extends BaseTrackerWsEvent<'board.reordered'> {
+  projectId: string;
+  /** Новый порядок: massive [boardId] — индекс = новый sequence. */
+  boardIds: string[];
+}
+
+/**
+ * Tracker Boards (2026-05-27) — задача перенесена между досками одного
+ * проекта (PATCH /issues/:id { boardId }). Эмитится в tenant: + project:
+ * + issue: + два room'а для досок (старой и новой) если потребуется в будущем.
+ */
+export interface IssueMovedToBoardEvent
+  extends BaseTrackerWsEvent<'issue.moved_to_board'> {
+  projectId: string;
+  issueId: string;
+  fromBoardId: string | null;
+  toBoardId: string;
+}
+
 export type TrackerWsEvent =
   | IssueCreatedEvent
   | IssueUpdatedEvent
   | IssueDeletedEvent
+  | IssueMovedToBoardEvent
   | CommentCreatedEvent
   | CommentUpdatedEvent
   | CommentDeletedEvent
@@ -153,4 +207,8 @@ export type TrackerWsEvent =
   | ActivityFeedNewItemEvent
   | ImportProgressEvent
   | ImportCompletedEvent
-  | ImportFailedEvent;
+  | ImportFailedEvent
+  | BoardCreatedEvent
+  | BoardUpdatedEvent
+  | BoardDeletedEvent
+  | BoardReorderedEvent;

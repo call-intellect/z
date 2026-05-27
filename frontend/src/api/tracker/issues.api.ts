@@ -33,6 +33,8 @@ export interface ListIssuesRequest {
   labelId?: string;
   cycleId?: string;
   goalId?: string;
+  /** Tracker Boards (2026-05-27) — фильтр задач по доске. */
+  boardId?: string;
   priority?: IssuePriority;
   parentId?: string;
   includeArchived?: boolean;
@@ -62,6 +64,11 @@ export interface CreateIssueRequest {
   dueDate?: string | null;
   cycleId?: string | null;
   goalId?: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — доска новой задачи. Если не передано,
+   * backend подставит default-доску проекта.
+   */
+  boardId?: string | null;
   assigneeUserIds?: string[];
   labelIds?: string[];
   externalSource?: string | null;
@@ -89,6 +96,11 @@ export interface UpdateIssueRequest {
   dueDate?: string | null;
   cycleId?: string | null;
   goalId?: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — перенести задачу на другую доску.
+   * Доска должна принадлежать тому же проекту (валидируется backend'ом).
+   */
+  boardId?: string | null;
 }
 
 export interface TransitionIssueRequest {

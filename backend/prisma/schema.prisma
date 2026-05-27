@@ -6756,10 +6756,48 @@ model Project {
   states          IssueState[]
   labels          Label[]
   mailInboundLogs MailInboundLog[]
+  /// Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
+  /// При создании проекта одна доска isDefault=true создаётся автоматически
+  /// (см. `BoardsService.ensureDefaultBoard` + `backfill-default-board.ts`).
+  boards          Board[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
   @@index([tenantId, identifier])
+}
+
+/// Tracker Boards (2026-05-27) — доска внутри проекта (Канбан-доска маркетинга,
+/// бэклога, релиза и т.п.). У каждой задачи есть одна `boardId`; колонки доски —
+/// общий список `IssueState` проекта (не per-board). Одна доска per project
+/// помечается `isDefault=true` и не может быть удалена.
+///
+/// Бизнес-смысл: пользователь, привыкший к Weeek/Kaiten, разделяет работу
+/// внутри одного проекта по направлениям (Маркетинг / Монтаж / Личные задачи).
+/// ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+model Board {
+  id          String    @id @default(cuid())
+  tenantId    String
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name        String // «Доска маркетинга», «Бэклог», «Релиз 2.0»
+  color       String    @default("#5EEAD4")
+  icon        String? // emoji или slug иконки lucide
+  description String?   @db.Text
+
+  sequence    Int       @default(0) // порядок отображения в боковой панели
+  isDefault   Boolean   @default(false) // одна доска per project помечается как default
+  archivedAt  DateTime?
+
+  issues      Issue[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([projectId, name])
+  @@index([projectId, sequence])
+  @@index([tenantId])
 }
 
 /// M:M между User и Project. Роль числовая: 20=Admin, 15=Member, 5=Guest.
@@ -6865,6 +6903,12 @@ model Issue {
   // Циклы и модули
   cycleId String?
 
+  /// Tracker Boards (2026-05-27) — доска, к которой относится задача.
+  /// Nullable на схеме (для случая если доска удалена → onDelete:SetNull),
+  /// но фактически после backfill-default-board.ts всегда заполнено.
+  /// Колонки внутри доски = `IssueState` проекта (общий справочник).
+  boardId String?
+
   // СВЯЗИ С ДРУГИМИ СИСТЕМАМИ — критично для второго мозга
   goalId           String? // связь с Goal! (FK opt.)
   meetingId        String? // legacy compatibility
@@ -6900,6 +6944,10 @@ model Issue {
   state    IssueState? @relation(fields: [stateId], references: [id], onDelete: SetNull)
   cycle    Cycle?      @relation(fields: [cycleId], references: [id], onDelete: SetNull)
   goal     Goal?       @relation("IssueGoal", fields: [goalId], references: [id], onDelete: SetNull)
+  /// Tracker Boards (2026-05-27) — доска. onDelete: SetNull чтобы при удалении
+  /// доски задача не пропала (сервис boards.service.ts перевешивает её на default
+  /// в транзакции до удаления; SetNull — safety net).
+  board    Board?      @relation(fields: [boardId], references: [id], onDelete: SetNull)
   parent   Issue?      @relation("IssueSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
   children Issue[]     @relation("IssueSubtasks")
 
@@ -6930,6 +6978,8 @@ model Issue {
   @@index([tenantId, cycleId])
   @@index([tenantId, projectId, deletedAt])
   @@index([parentId])
+  /// Tracker Boards (2026-05-27) — фильтр задач по доске на канбане.
+  @@index([boardId])
 }
 
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.

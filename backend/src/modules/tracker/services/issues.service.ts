@@ -11,6 +11,7 @@ import { Prisma, type Issue } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
@@ -29,6 +30,7 @@ import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
+import { BoardsService } from './boards.service';
 import { HolidayService } from './holiday.service';
 import { IssueEmbedQueueService } from './issue-embed-queue.service';
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
@@ -85,8 +87,15 @@ export class IssuesService {
     @Optional()
     @Inject(HolidayService)
     private readonly holidayService?: HolidayService,
-    // Tracker subtasks UI (2026-05-27) — счётчик `subtasks_created_total`.
-    // Optional: unit-тесты могут собирать сервис без MetricsModule.
+    // Tracker Boards (2026-05-27) — резолв default-доски проекта на create
+    // (если фронт не передал `boardId`) и валидация целевой доски на PATCH.
+    // Optional: unit-тесты `IssuesService` без BoardsService → `boardId`
+    // сохраняется как есть (если передан) или null (если нет).
+    @Optional()
+    @Inject(BoardsService)
+    private readonly boards?: BoardsService,
+    // Tracker (2026-05-27) — Prometheus-метрики: subtasks_created_total,
+    // board_issues_moved_total. Optional: unit-тесты без MetricsModule.
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -109,10 +118,8 @@ export class IssuesService {
     if (dto.stateId) await this.requireStateInProject(dto.stateId, projectId);
 
     // Tracker subtasks UI (2026-05-27) — валидация parentId при создании.
-    // Та же логика что в update(): родитель должен принадлежать тому же
-    // tenant + project, не быть уже подзадачей (depth>2). Цикл невозможен
-    // на create (id ещё не существует), поэтому только parent-check.
-    // TODO (после tracker-boards): сверить boardId родителя.
+    // Родитель должен принадлежать тому же tenant + project, не быть уже
+    // подзадачей (depth>2). Цикл невозможен на create (id ещё не существует).
     if (dto.parentId) {
       await this.validateParentForIssue({
         candidateParentId: dto.parentId,
@@ -121,6 +128,16 @@ export class IssuesService {
         currentIssueId: null,
       });
     }
+
+    // Tracker Boards (2026-05-27) — резолвим boardId:
+    //   1. Если фронт явно передал boardId — валидируем, что доска в этом проекте.
+    //   2. Иначе — берём default-доску проекта (ленивая инициализация).
+    //   3. Если BoardsService не инжектился (unit-тест без Boards) — boardId=null.
+    const boardId = await this.resolveBoardIdForCreate({
+      tenantId,
+      projectId,
+      explicitBoardId: dto.boardId ?? null,
+    });
 
     // Wave 3 finishing (Sprint 10) — сдвигаем dueDate на ближайший рабочий
     // день, если попал на праздник/выходной. По умолчанию ВКЛ (default-on);
@@ -162,6 +179,8 @@ export class IssuesService {
           dueDate: adjustedDueDate,
           cycleId: dto.cycleId ?? null,
           goalId: dto.goalId ?? null,
+          // Tracker Boards (2026-05-27) — boardId резолвится выше.
+          boardId,
           externalSource: dto.externalSource ?? null,
           externalId: dto.externalId ?? null,
           createdById: userId,
@@ -337,6 +356,8 @@ export class IssuesService {
     if (query.parentId) where.parentId = query.parentId;
     if (query.cycleId) where.cycleId = query.cycleId;
     if (query.goalId) where.goalId = query.goalId;
+    // Tracker Boards (2026-05-27) — фильтр задач по выбранной доске.
+    if (query.boardId) where.boardId = query.boardId;
     if (query.assigneeUserId) {
       where.assignees = { some: { userId: query.assigneeUserId } };
     }
@@ -587,20 +608,27 @@ export class IssuesService {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
     // Tracker subtasks UI (2026-05-27) — валидация смены `parentId`.
-    // Проверяется ТОЛЬКО если поле передано в DTO. `parentId=null`
-    // (сделать задачу корневой) — всегда допустимо, проверки не нужны.
-    // Случай "то же значение" обрабатывается через equalsLoose в trackField
-    // ниже (новое activity не пишется).
-    //
-    // TODO (после tracker-boards): когда появится Issue.boardId — также
-    // проверять, что parent в том же boardId, и при переносе родителя на
-    // другую доску переносить всех детей в той же транзакции.
+    // `parentId=null` (сделать задачу корневой) — всегда допустимо.
     if (dto.parentId !== undefined && dto.parentId !== null) {
       await this.validateParentForIssue({
         candidateParentId: dto.parentId,
         projectId: existing.projectId,
         tenantId,
         currentIssueId: existing.id,
+      });
+    }
+
+    // Tracker Boards (2026-05-27) — если фронт меняет boardId на не-null,
+    // валидируем что доска принадлежит тому же проекту и tenant'у.
+    if (
+      dto.boardId &&
+      dto.boardId !== existing.boardId &&
+      this.boards
+    ) {
+      await this.boards.assertBoardInProject({
+        boardId: dto.boardId,
+        projectId: existing.projectId,
+        tenantId,
       });
     }
     // Wave 3 finishing (Sprint 10) — корректируем `dueDate` ДО формирования
@@ -660,6 +688,11 @@ export class IssuesService {
       trackField('dueDate', adjustedDueDate ?? undefined);
       trackField('cycleId', dto.cycleId ?? undefined);
       trackField('goalId', dto.goalId ?? undefined);
+      // Tracker Boards (2026-05-27) — фиксируем перенос между досками.
+      // verb остаётся 'updated', но IssueActivity.field='boardId' даёт
+      // ленте конкретную метку «перенос». В knowledge-core это событие
+      // не идёт (не семантика, организационное перекладывание).
+      trackField('boardId', dto.boardId ?? undefined);
 
       if (Object.keys(data).length === 0) {
         return;
@@ -703,6 +736,23 @@ export class IssuesService {
     const response = await this.assemble(id, tenantId);
     if (changedFields.length > 0) {
       this.events.publishIssueUpdated(response, tenantId, changedFields);
+      // Tracker Boards (2026-05-27) — если изменился boardId, эмитим узкое
+      // событие `issue.moved_to_board` (фронт может удалить карточку из
+      // старой доски и добавить в новую без перезагрузки + метрика).
+      if (changedFields.includes('boardId') && dto.boardId) {
+        this.events.publishIssueMovedToBoard({
+          tenantId,
+          projectId: existing.projectId,
+          issueId: id,
+          fromBoardId: existing.boardId,
+          toBoardId: dto.boardId,
+        });
+        this.metrics?.incBoardIssueMoved({
+          tenantTop: tenantTopOf(tenantId),
+          fromBoard: existing.boardId ?? '',
+          toBoard: dto.boardId,
+        });
+      }
       // Phase 3 (2026-05-24) — пересчёт embedding'а, если изменились
       // текстовые поля (title / description / descriptionStripped). Hash
       // защитит от лишних пересчётов, если описание тривиально перетёрли
@@ -1448,6 +1498,8 @@ export class IssuesService {
       completedAt: issue.completedAt?.toISOString() ?? null,
       cycleId: issue.cycleId,
       goalId: issue.goalId,
+      // Tracker Boards (2026-05-27).
+      boardId: issue.boardId,
       meetingId: issue.meetingId,
       linkedMeetingIds: issue.linkedMeetingIds,
       sourceBlockIds: issue.sourceBlockIds,
@@ -1464,6 +1516,49 @@ export class IssuesService {
       assigneeUserIds: issue.assignees.map((a) => a.userId),
       labelIds: issue.labels.map((l) => l.labelId),
     };
+  }
+
+  /**
+   * Tracker Boards (2026-05-27) — резолв `boardId` при создании задачи.
+   *
+   *   1. Если фронт явно передал boardId — проверяем что доска в этом
+   *      проекте + tenant'е через BoardsService.assertBoardInProject.
+   *   2. Иначе — резолвим default-доску проекта
+   *      (`BoardsService.resolveDefaultBoardId` — лениво создаёт если нет).
+   *   3. Если BoardsService недоступен (unit-тесты без модуля) — возвращаем
+   *      то, что передал клиент (или null). Schema допускает null.
+   */
+  private async resolveBoardIdForCreate(args: {
+    tenantId: string;
+    projectId: string;
+    explicitBoardId: string | null;
+  }): Promise<string | null> {
+    if (!this.boards) {
+      return args.explicitBoardId;
+    }
+    if (args.explicitBoardId) {
+      await this.boards.assertBoardInProject({
+        boardId: args.explicitBoardId,
+        projectId: args.projectId,
+        tenantId: args.tenantId,
+      });
+      return args.explicitBoardId;
+    }
+    try {
+      return await this.boards.resolveDefaultBoardId({
+        tenantId: args.tenantId,
+        projectId: args.projectId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          projectId: args.projectId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'IssuesService.resolveBoardIdForCreate: default-доска не разрешилась — создаём задачу без boardId',
+      );
+      return null;
+    }
   }
 
   /**

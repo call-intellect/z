@@ -52,6 +52,8 @@ export function useIssues(
           req.labelId ?? null,
           req.cycleId ?? null,
           req.goalId ?? null,
+          // Tracker Boards (2026-05-27) — фильтр по доске.
+          req.boardId ?? null,
           req.priority ?? null,
           req.parentId ?? null,
           req.includeArchived ?? false,

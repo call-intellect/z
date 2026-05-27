@@ -18,6 +18,12 @@ export const ListIssuesQuerySchema = z
     labelId: z.string().max(64).optional(),
     cycleId: z.string().max(64).optional(),
     goalId: z.string().max(64).optional(),
+    /**
+     * Tracker Boards (2026-05-27) — фильтр задач по доске. Без этого параметра
+     * возвращаются все задачи проекта (поведение до Boards-ТЗ — сохраняется
+     * для обратной совместимости фронта).
+     */
+    boardId: z.string().max(64).optional(),
     priority: IssuePrioritySchema.optional(),
     parentId: z.string().max(64).optional(),
     /** Включать ли архивные / удалённые (по умолчанию false). */

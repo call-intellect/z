@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
 import { AttachmentsController } from './controllers/attachments.controller';
+import { BoardsController } from './controllers/boards.controller';
 import { CommentsController } from './controllers/comments.controller';
 import { CyclesController } from './controllers/cycles.controller';
 import { HolidaysController } from './controllers/holidays.controller';
@@ -20,6 +21,7 @@ import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
 import { AttachmentsService } from './services/attachments.service';
+import { BoardsService } from './services/boards.service';
 import { CommentsService } from './services/comments.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
@@ -77,6 +79,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
   imports: [PrismaModule],
   controllers: [
     ProjectsController,
+    // Tracker Boards (2026-05-27) — несколько досок per project.
+    // ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+    BoardsController,
     IssuesController,
     CyclesController,
     IntakeController,
@@ -111,6 +116,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // Используется HolidaysController (read); интеграция с IssuesService —
     // см. отчёт оркестратора (Sprint 10).
     HolidayService,
+    // Tracker Boards (2026-05-27) — сервис управления досками + утилиты
+    // (ensureDefaultBoard, resolveDefaultBoardId, assertBoardInProject).
+    BoardsService,
     IssuesService,
     SimilarIssuesService,
     CyclesService,

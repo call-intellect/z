@@ -1,74 +1,83 @@
 /**
  * BillingModule — биллинг (Subscription/Invoice/Provider).
  *
- * **Фаза 4a (текущая, ТЗ §14):** провайдер-абстракция и pure-сервисы. Без
- * controllers, без cron, без EventEmitter-handlers. Цель — заложить
- * фундамент и протестировать формулы цены и FSM подписки.
- *
- * **Фаза 4b:** SubscriptionService (БД), InvoiceService, ManualBillingService,
- * BillingCycleCron, контроллеры.
- *
- * **Фаза 5+:** TochkaBillingProvider + OAuth + webhook.
+ * **Фаза 4 (текущая, ТЗ §14):** ManualBillingProvider + полный набор сервисов
+ * + контроллеры + cron + EventEmitter. Без TochkaBillingProvider (Фаза 5).
  *
  * Зависимости через @Global модули:
- *   - PrismaService — @Global, auto-imported (SubscriptionService 4b).
+ *   - PrismaService — @Global, auto-imported.
+ *   - RedisService — @Global, auto-imported.
  *   - EventEmitterModule.forRoot() — глобально в AppModule.
+ *
+ * Зависимость через @Module:
+ *   - AuthModule — CookieAuthGuard, SuperAdminGuard
+ *   - RbacModule — TenantGuard, @CurrentOrg() decorator
+ *   - MeetingsBalanceModule — grant при активации подписки
  *
  * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7 + §14.
  */
 
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { TypedConfigService } from '../../common/config/index';
+import { AuthModule } from '../auth/auth.module';
+import { MeetingsBalanceModule } from '../meetings-balance/meetings-balance.module';
+import { RbacModule } from '../rbac/rbac.module';
 
+import { AdminBillingController } from './admin-billing.controller';
+import { BillingController } from './billing.controller';
 import { BILLING_PROVIDER } from './billing.types';
 import { ManualBillingProvider } from './providers/manual-billing.provider';
+import { BillingCycleCron } from './services/billing-cycle.cron';
+import { BillingEventService } from './services/billing-event.service';
 import { InvoiceNumberService } from './services/invoice-number.service';
+import { InvoiceService } from './services/invoice.service';
+import { ManualBillingService } from './services/manual-billing.service';
 import { SeatService } from './services/seat.service';
-
-/**
- * Фабрика выбора провайдера. Возвращает `ManualBillingProvider` если:
- *   - `BILLING_PROVIDER=manual` (по умолчанию), либо
- *   - `FEATURE_BILLING_TOCHKA=false` (kill-switch при сохранённом
- *     `BILLING_PROVIDER=tochka`).
- *
- * В Фазе 5 фабрика будет также инжектить `TochkaBillingProvider` и
- * возвращать его если `provider === 'tochka' && features.tochka`.
- *
- * ConfigService инжектится для совместимости с typed-config API в Z
- * (TypedConfigService — обёртка над ним). Это позволяет использовать
- * фабрику и в тестах без полного DI-контейнера.
- */
-function provideBillingProvider(
-  manual: ManualBillingProvider,
-  cfg: TypedConfigService,
-) {
-  const wantsTochka =
-    cfg.billing.provider === 'tochka' && cfg.billing.features.tochka;
-  if (wantsTochka) {
-    // Фаза 5: вернуть TochkaBillingProvider. Пока — fallback на manual.
-    // Логируется при старте модуля.
-    return manual;
-  }
-  return manual;
-}
+import { SubscriptionService } from './services/subscription.service';
 
 @Module({
-  imports: [],
+  imports: [AuthModule, RbacModule, MeetingsBalanceModule],
+  controllers: [BillingController, AdminBillingController],
   providers: [
     // Pure-сервисы (Фаза 4a).
     SeatService,
     InvoiceNumberService,
+
+    // БД-сервисы (Фаза 4b).
+    SubscriptionService,
+    InvoiceService,
+    BillingEventService,
+    ManualBillingService,
+
+    // Cron.
+    BillingCycleCron,
+
     // Провайдеры.
     ManualBillingProvider,
     {
       provide: BILLING_PROVIDER,
-      inject: [ManualBillingProvider, TypedConfigService, ConfigService],
-      useFactory: (manual: ManualBillingProvider, cfg: TypedConfigService) =>
-        provideBillingProvider(manual, cfg),
+      inject: [ManualBillingProvider, TypedConfigService],
+      useFactory: (manual: ManualBillingProvider, cfg: TypedConfigService) => {
+        const wantsTochka =
+          cfg.billing.provider === 'tochka' && cfg.billing.features.tochka;
+        // Фаза 5: вернуть TochkaBillingProvider если wantsTochka.
+        // Пока — fallback на manual.
+        if (wantsTochka) {
+          return manual;
+        }
+        return manual;
+      },
     },
   ],
-  exports: [SeatService, InvoiceNumberService, BILLING_PROVIDER],
+  exports: [
+    SeatService,
+    InvoiceNumberService,
+    SubscriptionService,
+    InvoiceService,
+    BillingEventService,
+    ManualBillingService,
+    BILLING_PROVIDER,
+  ],
 })
 export class BillingModule {}

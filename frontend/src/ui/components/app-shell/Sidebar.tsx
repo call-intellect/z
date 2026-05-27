@@ -243,7 +243,7 @@ const OPERATIONS_GROUP: NavGroup = {
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings' },
     { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
-    { href: '/tasks', label: 'Задачи', icon: ListChecks, matchPrefix: '/tasks' },
+    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects' },
     {
       href: '/chat',
       label: 'Помощник компании',
@@ -341,7 +341,7 @@ export function Sidebar({
   if (isSuperAdmin) {
     adminItems.push({
       href: '/admin',
-      label: 'Z-Admin',
+      label: 'Суперадмин',
       icon: Shield,
       matchPrefix: '/admin',
     });
@@ -469,9 +469,9 @@ export function Sidebar({
           aria-label="На главную"
         >
           <div className="grid h-7 w-7 place-items-center rounded-md bg-accent font-mono text-sm font-bold text-accent-fg">
-            Z
+            К
           </div>
-          <span className="text-lg font-semibold tracking-tight text-fg-primary">Z</span>
+          <span className="text-lg font-semibold tracking-tight text-fg-primary">Кора</span>
         </Link>
       </div>
 

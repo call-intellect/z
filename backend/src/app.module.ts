@@ -57,6 +57,7 @@ import { HighlightsModule } from './modules/highlights/highlights.module';
 import { IdeasModule } from './modules/ideas/ideas.module';
 import { IngestEmailModule } from './modules/ingest/adapters/email/ingest-email.module';
 import { IngestModule } from './modules/ingest/ingest.module';
+import { InnLookupModule } from './modules/inn-lookup/inn-lookup.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { JobDescriptionsModule } from './modules/job-descriptions/job-descriptions.module';
@@ -433,6 +434,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // SBA β-4 — REST API `/api/v1/insights` (master-detail радара сигналов).
     // RBAC через `insight` ResourceType (см. policy.csv).
     InsightsModule,
+
+    // ТЗ 2026-05-27 — InnLookup (Mock + DaData; Tochka добавляется в Фазе 7).
+    // Используется при регистрации Org (автоподстановка реквизитов) и при
+    // верификации ИНН реферала. Redis-кэш TTL 30 дней.
+    InnLookupModule,
 
     // Wave 2 (2026-05-24) — Activity Feeds: единая лента активности AI-агентов
     // и пользователей. @Global ActivityFeedService.publish() вызывают

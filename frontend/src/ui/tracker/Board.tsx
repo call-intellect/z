@@ -94,6 +94,9 @@ export function Board({
 }) {
   const { issues, isLoading, error, mutate } = useIssues(orgId, projectId, {
     limit: 100,
+    // Tracker subtasks UI (2026-05-27) — нужно для badge «✓ N» в IssueCard.
+    // Backend делает один groupBy(parentId) — стоимость минимальная.
+    includeChildrenCount: true,
   });
   const { states, isLoading: statesLoading } = useStates(orgId, projectId);
   const { mutate: globalMutate } = useSWRConfig();

@@ -76,8 +76,45 @@ export function IssueCard({
               {issue.linkedMeetingIds.length} встреч
             </span>
           )}
+          {/* Badge-зона в правом нижнем углу карточки.
+              flex-1 spacer + badges. Если рядом будет badge от чек-листов
+              (другое ТЗ tracker-checklists, символ ☑) — он встанет слева
+              от нашего. Не имитируем чек-листы здесь — только подзадачи. */}
+          <span className="ml-auto inline-flex items-center gap-1.5">
+            <SubtaskBadge issue={issue} />
+          </span>
         </div>
       )}
     </Link>
+  );
+}
+
+/**
+ * Tracker subtasks UI (2026-05-27) — badge «✓ N/M» в карточке задачи.
+ *
+ * Виден только если backend вернул `childrenCount > 0`. Цвет:
+ *   - mint (`text-accent`) — есть выполненные подзадачи (`isCompleted`
+ *     родителя НЕ учитываем — счётчик считаем только по детям).
+ *     На текущем уровне без отдельного запроса `getChildren` мы не знаем
+ *     completed-долю, поэтому показываем символ ✓ + общее число.
+ *     Полный вид `N/M` появится, когда backend начнёт возвращать
+ *     `completedChildrenCount` (отдельное расширение API в будущем).
+ *   - серый — иначе.
+ *
+ * NB: NotaBene. На MVP отдельно `completedCount` не запрашиваем — добавим
+ * вторую цифру, когда у DTO появится `completedChildrenCount`. ТЗ требует
+ * именно badge с указанием прогресса; здесь ограничиваемся `✓ N`.
+ */
+function SubtaskBadge({ issue }: { issue: Issue }) {
+  const count = issue.childrenCount;
+  if (count === null || count === 0) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded bg-bg-overlay px-1.5 py-0.5 text-[10px] text-fg-secondary"
+      title="Подзадач"
+    >
+      <span aria-hidden="true">✓</span>
+      <span>{count}</span>
+    </span>
   );
 }

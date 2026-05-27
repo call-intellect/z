@@ -596,6 +596,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //    в БД. Решим вместе с командой DevOps при подключении Grafana.
   private issuesCreatedTotal!: Counter<'tenant' | 'project' | 'source'>;
   private issuesCompletedTotal!: Counter<'tenant' | 'project'>;
+  // Tracker (2026-05-27) — подзадачи (Issue с parentId !== null).
+  // Инкрементится в IssuesService.create() когда передан parentId.
+  // Контракт: plans/tz/2026-05-27-tracker-subtasks-ui.md "Метрики".
+  private subtasksCreatedTotal!: Counter<'tenant' | 'project'>;
   private intakeTriagedTotal!: Counter<'tenant' | 'decision'>;
   private trackerWebhookDeliveryTotal!: Counter<'tenant' | 'event' | 'success'>;
   private trackerWebhookRetryCount!: Counter<'tenant' | 'webhook_id'>;
@@ -2264,6 +2268,14 @@ export class BusinessMetricsService implements OnModuleInit {
     this.issuesCompletedTotal = this.getOrCreateCounter({
       name: 'issues_completed_total',
       help: 'Tracker — задачи, переведённые в done (закрытые штатно).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    // Tracker (2026-05-27) — подзадачи. Инкремент в IssuesService.create()
+    // когда передан parentId. Глубина >2 запрещена на уровне сервиса,
+    // поэтому это всегда «корневая задача → подзадача».
+    this.subtasksCreatedTotal = this.getOrCreateCounter({
+      name: 'subtasks_created_total',
+      help: 'Tracker — созданные подзадачи (Issue с parentId !== null).',
       labelNames: ['tenant', 'project'] as const,
     });
     this.intakeTriagedTotal = this.getOrCreateCounter({
@@ -5024,6 +5036,17 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Tracker — задача переведена в done (штатно закрытая). */
   incIssueCompleted(args: { tenant: string; project: string }): void {
     this.issuesCompletedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker (2026-05-27) — создана подзадача (Issue с parentId !== null).
+   * Вызов из IssuesService.create() сразу после успешной транзакции.
+   */
+  incSubtaskCreated(args: { tenant: string; project: string }): void {
+    this.subtasksCreatedTotal.inc({
       tenant: args.tenant,
       project: args.project,
     });

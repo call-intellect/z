@@ -39,6 +39,51 @@ export interface IssueResponseDto {
    * (для совместимости с типизированными клиентами поле опциональное).
    */
   aiSuggestions?: IssueAiSuggestionsDto | null;
+  /**
+   * Tracker subtasks UI (2026-05-27) — число прямых детей задачи
+   * (`deletedAt=null`). Возвращается только когда запросили
+   * `GET /projects/:projectId/issues?includeChildrenCount=true`.
+   * На прочих эндпоинтах поле отсутствует.
+   */
+  childrenCount?: number;
+}
+
+/**
+ * Tracker subtasks UI (2026-05-27) — упрощённый DTO ребёнка задачи,
+ * возвращаемый `GET /api/v1/issues/:id/children`.
+ *
+ * Контракт: `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"REST API".
+ *
+ * Содержит ровно те поля, что нужны для рендера блока «Подзадачи» в карточке
+ * родителя: чекбокс (stateCategory), title с identifier, исполнители, срок,
+ * прогресс (completedAt), вложенный childrenCount для индикации, что у
+ * ребёнка тоже есть подзадачи (на 2-м уровне глубины запрещено создавать
+ * новые подзадачи, но при импорте из других трекеров такая структура может
+ * существовать — UI просто покажет N/M ребёнка-родителя).
+ */
+export interface IssueChildResponseDto {
+  id: string;
+  identifier: string;
+  title: string;
+  stateId: string | null;
+  stateCategory:
+    | 'backlog'
+    | 'unstarted'
+    | 'started'
+    | 'completed'
+    | 'cancelled'
+    | null;
+  priority: string;
+  assigneeUserIds: string[];
+  dueDate: string | null;
+  completedAt: string | null;
+  childrenCount: number;
+  sortOrder: number;
+}
+
+export interface IssueChildrenResponseDto {
+  items: IssueChildResponseDto[];
+  total: number;
 }
 
 /**

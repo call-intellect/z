@@ -59,6 +59,12 @@ export interface IssueApi {
    *   `backend/src/modules/tracker/dto/issues/issue-response.dto.ts`.
    */
   aiSuggestions?: IssueAiSuggestionsApi | null;
+  /**
+   * Tracker subtasks UI (2026-05-27) — число прямых детей задачи. Приходит
+   * только в `GET /projects/:projectId/issues?includeChildrenCount=true`.
+   * Используется фронтом для badge «N/M» на канбан-карточке.
+   */
+  childrenCount?: number;
 }
 
 /** AI-подсказки для свежесозданной задачи (см. IssueApi.aiSuggestions). */
@@ -211,11 +217,59 @@ export interface Issue {
   deletedAt: Date | null;
   assigneeUserIds: string[];
   labelIds: string[];
+  /**
+   * Tracker subtasks UI (2026-05-27) — число прямых детей. Заполняется
+   * только когда фронт явно запрашивает `includeChildrenCount=true`.
+   * `null` = поле не запрашивалось / неизвестно.
+   */
+  childrenCount: number | null;
   // ─ computed ─
   /** dueDate < today (00:00) и задача не завершена. */
   isOverdue: boolean;
   isCompleted: boolean;
   isArchived: boolean;
+}
+
+/**
+ * Tracker subtasks UI (2026-05-27) — упрощённая модель ребёнка задачи
+ * из `GET /api/v1/issues/:id/children`. Используется блоком «Подзадачи».
+ *
+ * Контракт: `backend/src/modules/tracker/dto/issues/issue-response.dto.ts`
+ * (IssueChildResponseDto).
+ */
+export interface IssueChildApi {
+  id: string;
+  identifier: string;
+  title: string;
+  stateId: string | null;
+  stateCategory: IssueStateCategory | null;
+  priority: string;
+  assigneeUserIds: string[];
+  dueDate: string | null;
+  completedAt: string | null;
+  childrenCount: number;
+  sortOrder: number;
+}
+
+export interface IssueChildrenResponseApi {
+  items: IssueChildApi[];
+  total: number;
+}
+
+export interface IssueChild {
+  id: string;
+  identifier: string;
+  title: string;
+  stateId: string | null;
+  stateCategory: IssueStateCategory | null;
+  priority: IssuePriority;
+  assigneeUserIds: string[];
+  dueDate: Date | null;
+  completedAt: Date | null;
+  childrenCount: number;
+  sortOrder: number;
+  isCompleted: boolean;
+  isOverdue: boolean;
 }
 
 export interface IssueActivity {
@@ -326,9 +380,31 @@ export function issueFromApi(api: IssueApi): Issue {
     deletedAt: parseDate(api.deletedAt),
     assigneeUserIds: api.assigneeUserIds ?? [],
     labelIds: api.labelIds ?? [],
+    childrenCount: typeof api.childrenCount === 'number' ? api.childrenCount : null,
     isOverdue: computeIsOverdue(dueDate, completedAt),
     isCompleted: completedAt !== null,
     isArchived: api.archivedAt !== null,
+  };
+}
+
+/** Маппер `IssueChildApi → IssueChild`. */
+export function issueChildFromApi(api: IssueChildApi): IssueChild {
+  const dueDate = parseDate(api.dueDate);
+  const completedAt = parseDate(api.completedAt);
+  return {
+    id: api.id,
+    identifier: api.identifier,
+    title: api.title,
+    stateId: api.stateId,
+    stateCategory: api.stateCategory,
+    priority: parseIssuePriority(api.priority),
+    assigneeUserIds: api.assigneeUserIds ?? [],
+    dueDate,
+    completedAt,
+    childrenCount: api.childrenCount,
+    sortOrder: api.sortOrder,
+    isCompleted: completedAt !== null,
+    isOverdue: computeIsOverdue(dueDate, completedAt),
   };
 }
 

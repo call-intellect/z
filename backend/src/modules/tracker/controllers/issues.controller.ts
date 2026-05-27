@@ -30,6 +30,7 @@ import {
 } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
+  IssueChildrenResponseDto,
   IssueResponseDto,
   IssueVersionDto,
   ListIssuesResponse,
@@ -126,6 +127,23 @@ export class IssuesController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.svc.findById(id, t);
+  }
+
+  @Get('issues/:id/children')
+  @ApiOperation({
+    summary:
+      'Список прямых детей задачи (подзадачи). ' +
+      'Сортировка: sortOrder ASC, createdAt ASC. ' +
+      'Используется фронтом для блока «Подзадачи» в карточке родителя.',
+  })
+  async children(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueChildrenResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findChildren(id, t);
   }
 
   @Get('issues/by-identifier/:identifier')

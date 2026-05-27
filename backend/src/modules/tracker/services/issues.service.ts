@@ -9,11 +9,14 @@ import {
 } from '@nestjs/common';
 import { Prisma, type Issue } from '@prisma/client';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
   IssueAiSuggestionsDto,
+  IssueChildResponseDto,
+  IssueChildrenResponseDto,
   IssueResponseDto,
   IssueVersionDto,
   ListIssuesResponse,
@@ -82,6 +85,11 @@ export class IssuesService {
     @Optional()
     @Inject(HolidayService)
     private readonly holidayService?: HolidayService,
+    // Tracker subtasks UI (2026-05-27) — счётчик `subtasks_created_total`.
+    // Optional: unit-тесты могут собирать сервис без MetricsModule.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
@@ -99,6 +107,20 @@ export class IssuesService {
     // Если stateId не передан — используем defaultStateId проекта.
     const stateId = dto.stateId ?? project.defaultStateId ?? null;
     if (dto.stateId) await this.requireStateInProject(dto.stateId, projectId);
+
+    // Tracker subtasks UI (2026-05-27) — валидация parentId при создании.
+    // Та же логика что в update(): родитель должен принадлежать тому же
+    // tenant + project, не быть уже подзадачей (depth>2). Цикл невозможен
+    // на create (id ещё не существует), поэтому только parent-check.
+    // TODO (после tracker-boards): сверить boardId родителя.
+    if (dto.parentId) {
+      await this.validateParentForIssue({
+        candidateParentId: dto.parentId,
+        projectId,
+        tenantId,
+        currentIssueId: null,
+      });
+    }
 
     // Wave 3 finishing (Sprint 10) — сдвигаем dueDate на ближайший рабочий
     // день, если попал на праздник/выходной. По умолчанию ВКЛ (default-on);
@@ -193,6 +215,25 @@ export class IssuesService {
     });
 
     const response = await this.assemble(issue.id, tenantId);
+    // Tracker subtasks UI (2026-05-27) — отдельный счётчик подзадач, чтобы
+    // в Grafana отделить «корневые» задачи от подзадач. Метрика
+    // `subtasks_created_total{tenant, project}`.
+    if (issue.parentId) {
+      try {
+        this.metrics?.incSubtaskCreated({
+          tenant: tenantId,
+          project: projectId,
+        });
+      } catch (e) {
+        this.logger.warn(
+          {
+            issueId: issue.id,
+            err: e instanceof Error ? e.message : String(e),
+          },
+          'subtasks_created_total inc failed (best-effort)',
+        );
+      }
+    }
     // WS + outgoing webhooks (fire-and-forget; ошибки доставки логируются
     // самим dispatcher/events service'ом, не пропагируются).
     this.events.publishIssueCreated(response, tenantId);
@@ -322,12 +363,99 @@ export class IssuesService {
       }),
       this.prisma.issue.count({ where }),
     ]);
+    // Tracker subtasks UI (2026-05-27) — массовый подсчёт детей через
+    // groupBy, чтобы канбан-карточки могли отрисовать badge `N/M`.
+    // Один JOIN-эквивалент на весь список — стоимость минимальная.
+    let childrenCountByParent: Map<string, number> | null = null;
+    if (query.includeChildrenCount && items.length > 0) {
+      const parentIds = items.map((i) => i.id);
+      const grouped = await this.prisma.issue.groupBy({
+        by: ['parentId'],
+        where: {
+          tenantId,
+          parentId: { in: parentIds },
+          deletedAt: null,
+        },
+        _count: { _all: true },
+      });
+      childrenCountByParent = new Map();
+      for (const row of grouped) {
+        if (row.parentId) {
+          childrenCountByParent.set(row.parentId, row._count._all);
+        }
+      }
+    }
     return {
-      items: items.map((i) => this.toResponseFromInclude(i)),
+      items: items.map((i) => {
+        const base = this.toResponseFromInclude(i);
+        if (childrenCountByParent) {
+          return { ...base, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
+        }
+        return base;
+      }),
       total,
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Tracker subtasks UI (2026-05-27) — список прямых детей задачи.
+   *
+   * Возвращает упрощённый DTO без description/labelIds (фронт получает
+   * только то, что нужно блоку «Подзадачи» в карточке родителя).
+   *
+   * Сортировка: `sortOrder ASC, createdAt ASC` — стабильно и совпадает
+   * с порядком на канбан-доске родителя.
+   *
+   * Контракт: `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"REST API".
+   */
+  async findChildren(
+    issueId: string,
+    tenantId: string,
+  ): Promise<IssueChildrenResponseDto> {
+    await this.requireIssue(issueId, tenantId);
+    const rows = await this.prisma.issue.findMany({
+      where: { tenantId, parentId: issueId, deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        assignees: { select: { userId: true } },
+        state: { select: { category: true } },
+      },
+    });
+    // Подсчёт «внуков»: один groupBy(parentId) на весь список детей.
+    // На канбан-доске родителя такие случаи показаны на 2-м уровне, новые
+    // подзадачи на 3-м уровне запрещены validateParentForIssue.
+    let grandchildrenByParent: Map<string, number> | null = null;
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      const grouped = await this.prisma.issue.groupBy({
+        by: ['parentId'],
+        where: { tenantId, parentId: { in: ids }, deletedAt: null },
+        _count: { _all: true },
+      });
+      grandchildrenByParent = new Map();
+      for (const row of grouped) {
+        if (row.parentId) {
+          grandchildrenByParent.set(row.parentId, row._count._all);
+        }
+      }
+    }
+    const items: IssueChildResponseDto[] = rows.map((r) => ({
+      id: r.id,
+      identifier: r.identifier,
+      title: r.title,
+      stateId: r.stateId,
+      stateCategory:
+        (r.state?.category as IssueChildResponseDto['stateCategory']) ?? null,
+      priority: r.priority,
+      assigneeUserIds: r.assignees.map((a) => a.userId),
+      dueDate: r.dueDate?.toISOString() ?? null,
+      completedAt: r.completedAt?.toISOString() ?? null,
+      childrenCount: grandchildrenByParent?.get(r.id) ?? 0,
+      sortOrder: r.sortOrder,
+    }));
+    return { items, total: items.length };
   }
 
   /**
@@ -458,6 +586,23 @@ export class IssuesService {
     if (dto.stateId && dto.stateId !== existing.stateId) {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
+    // Tracker subtasks UI (2026-05-27) — валидация смены `parentId`.
+    // Проверяется ТОЛЬКО если поле передано в DTO. `parentId=null`
+    // (сделать задачу корневой) — всегда допустимо, проверки не нужны.
+    // Случай "то же значение" обрабатывается через equalsLoose в trackField
+    // ниже (новое activity не пишется).
+    //
+    // TODO (после tracker-boards): когда появится Issue.boardId — также
+    // проверять, что parent в том же boardId, и при переносе родителя на
+    // другую доску переносить всех детей в той же транзакции.
+    if (dto.parentId !== undefined && dto.parentId !== null) {
+      await this.validateParentForIssue({
+        candidateParentId: dto.parentId,
+        projectId: existing.projectId,
+        tenantId,
+        currentIssueId: existing.id,
+      });
+    }
     // Wave 3 finishing (Sprint 10) — корректируем `dueDate` ДО формирования
     // diff'а activity. Если dueDate в dto не передан — не трогаем (undefined
     // означает «оставить как есть»). Если передан null — это явное снятие,
@@ -487,8 +632,15 @@ export class IssuesService {
         const prev = existing[field];
         if (this.equalsLoose(prev, nextValue)) return;
         (data as Record<string, unknown>)[field as string] = nextValue;
+        // Tracker subtasks UI (2026-05-27) — отдельный verb 'parent_changed'
+        // для смены parentId (наряду с 'status_changed' для stateId).
+        // Это нужно для активити-фида: «перенесли подзадачу в KORA-200».
+        let verb: string;
+        if (field === 'stateId') verb = 'status_changed';
+        else if (field === 'parentId') verb = 'parent_changed';
+        else verb = 'updated';
         activities.push({
-          verb: field === 'stateId' ? 'status_changed' : 'updated',
+          verb,
           field: String(field),
           oldValue: prev,
           newValue: nextValue,
@@ -1117,6 +1269,120 @@ export class IssuesService {
       });
     }
     return issue;
+  }
+
+  /**
+   * Tracker subtasks UI (2026-05-27) — валидация родителя при create/update.
+   *
+   * Падает 400 в следующих случаях:
+   *   - `candidateParentId` совпадает с самой задачей (`currentIssueId`)
+   *     — `cyclic_parent_not_allowed`.
+   *   - кандидат-родитель не существует / в другом tenant'е — `parent_not_found`.
+   *   - кандидат в другом проекте — `parent_in_different_project`.
+   *   - кандидат сам является подзадачей (parentId !== null) — глубина >2
+   *     запрещена — `max_subtask_depth_exceeded`.
+   *   - кандидат — один из потомков текущей задачи (только при update,
+   *     когда `currentIssueId !== null`) — `cyclic_parent_not_allowed`.
+   *     На текущей модели подзадачи 3-го уровня запрещены, поэтому глубина
+   *     ≤2, и обход вниз — это ровно один уровень детей. Для устойчивости
+   *     к будущему расширению (если depth-limit поднимут) делаем BFS по
+   *     всему поддереву с защитой от циклов через `visited`.
+   *
+   * TODO (после tracker-boards): проверять boardId родителя.
+   */
+  private async validateParentForIssue(args: {
+    candidateParentId: string;
+    projectId: string;
+    tenantId: string;
+    /** id текущей задачи (null при create). */
+    currentIssueId: string | null;
+  }): Promise<void> {
+    if (
+      args.currentIssueId !== null &&
+      args.candidateParentId === args.currentIssueId
+    ) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'cyclic_parent_not_allowed',
+          message: 'Задача не может быть родителем самой себя',
+        },
+      });
+    }
+    const parent = await this.prisma.issue.findFirst({
+      where: {
+        id: args.candidateParentId,
+        tenantId: args.tenantId,
+        deletedAt: null,
+      },
+      select: { id: true, projectId: true, parentId: true },
+    });
+    if (!parent) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'parent_not_found',
+          message: 'Родительская задача не найдена',
+        },
+      });
+    }
+    if (parent.projectId !== args.projectId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'parent_in_different_project',
+          message: 'Родительская задача в другом проекте',
+        },
+      });
+    }
+    if (parent.parentId !== null) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'max_subtask_depth_exceeded',
+          message:
+            'Подзадача не может быть подзадачей: глубина больше 2 запрещена',
+        },
+      });
+    }
+    // Защита от цикла: при update убедимся, что кандидат не лежит в
+    // поддереве текущей задачи. BFS вниз, threshold 256 узлов
+    // (защита от случайно широких деревьев — на MVP всё равно глубина ≤2).
+    if (args.currentIssueId !== null) {
+      const visited = new Set<string>([args.currentIssueId]);
+      let frontier: string[] = [args.currentIssueId];
+      let guard = 0;
+      while (frontier.length > 0 && guard < 256) {
+        guard++;
+        const children = await this.prisma.issue.findMany({
+          where: {
+            tenantId: args.tenantId,
+            parentId: { in: frontier },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (children.length === 0) break;
+        const next: string[] = [];
+        for (const c of children) {
+          if (c.id === args.candidateParentId) {
+            throw new BadRequestException({
+              ok: false,
+              error: {
+                code: 'cyclic_parent_not_allowed',
+                message:
+                  'Нельзя назначить родителем потомка текущей задачи',
+              },
+            });
+          }
+          if (!visited.has(c.id)) {
+            visited.add(c.id);
+            next.push(c.id);
+          }
+        }
+        frontier = next;
+      }
+    }
   }
 
   private async requireStateInProject(

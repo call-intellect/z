@@ -224,6 +224,7 @@ export class CyclesService {
       cycleId,
       includeArchived: false,
       includeDeleted: false,
+      includeChildrenCount: false,
       page: 1,
       limit: 100,
     });

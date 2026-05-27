@@ -13,10 +13,12 @@
  */
 
 import {
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Inject,
+  Post,
   Query,
   UseGuards,
   UsePipes,
@@ -36,15 +38,22 @@ import { TenantGuard } from '../rbac/guards/tenant.guard';
 
 import {
   InvoiceListResponseDto,
+  PaymentStartResultDto,
   QuotaQuerySchema,
   QuotaResponseDto,
+  StartBankInvoicePaymentBodySchema,
+  StartCardPaymentBodySchema,
   SubscriptionViewDto,
   type InvoiceListResponseBody,
   type InvoiceViewBody,
+  type PaymentStartResultBody,
   type QuotaQueryBody,
+  type StartBankInvoicePaymentBody,
+  type StartCardPaymentBody,
   type QuotaResponseBody,
   type SubscriptionViewBody,
 } from './dto/billing.dto';
+import { BillingService } from './services/billing.service';
 import { InvoiceService } from './services/invoice.service';
 import { SeatService } from './services/seat.service';
 import { SubscriptionService } from './services/subscription.service';
@@ -59,6 +68,7 @@ export class BillingController {
     private readonly subscriptions: SubscriptionService,
     @Inject(InvoiceService) private readonly invoices: InvoiceService,
     @Inject(SeatService) private readonly seats: SeatService,
+    @Inject(BillingService) private readonly billing: BillingService,
   ) {}
 
   @Get('subscription')
@@ -92,6 +102,48 @@ export class BillingController {
       items: items.map((inv) => this.toInvoiceView(inv)),
       total,
     };
+  }
+
+  @Post('pay/card')
+  @ApiOperation({
+    summary:
+      'Старт оплаты картой через Tochka (recurring если autoRenew=true). ' +
+      'Возвращает paymentUrl страницы Точки.',
+  })
+  @ApiOkResponse({ type: PaymentStartResultDto })
+  @UsePipes(new ZodValidationPipe(StartCardPaymentBodySchema))
+  async payCard(
+    @Body() body: StartCardPaymentBody,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PaymentStartResultBody> {
+    const t = this.requireTenant(tenantId);
+    return this.billing.createCardPayment({
+      tenantId: t,
+      billingPeriod: body.billingPeriod,
+      seatsExtra: body.seatsExtra,
+      autoRenew: body.autoRenew,
+    });
+  }
+
+  @Post('pay/bank-invoice')
+  @ApiOperation({
+    summary:
+      'Выставить безналичный счёт через Tochka. Требует заполненных реквизитов Org.',
+  })
+  @ApiOkResponse({ type: PaymentStartResultDto })
+  @UsePipes(new ZodValidationPipe(StartBankInvoicePaymentBodySchema))
+  async payBankInvoice(
+    @Body() body: StartBankInvoicePaymentBody,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PaymentStartResultBody> {
+    const t = this.requireTenant(tenantId);
+    return this.billing.createBankInvoicePayment({
+      tenantId: t,
+      billingPeriod: body.billingPeriod,
+      seatsExtra: body.seatsExtra,
+      dueInDays: body.dueInDays,
+      sendToEmail: body.sendToEmail,
+    });
   }
 
   @Get('quote')

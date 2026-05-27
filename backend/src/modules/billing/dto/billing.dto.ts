@@ -134,3 +134,38 @@ export type AdminActivateResultBody = z.infer<typeof AdminActivateResultSchema>;
 export class AdminActivateResultDto extends createZodDto(
   AdminActivateResultSchema,
 ) {}
+
+// ────────────────────────── Pay-flow (Tochka) ──────────────────────────
+
+export const StartCardPaymentBodySchema = z.object({
+  billingPeriod: z.enum(['monthly', 'yearly']),
+  seatsExtra: z.number().int().min(0).max(10_000).default(0),
+  autoRenew: z.boolean().default(true),
+});
+export type StartCardPaymentBody = z.infer<typeof StartCardPaymentBodySchema>;
+export class StartCardPaymentBodyDto extends createZodDto(
+  StartCardPaymentBodySchema,
+) {}
+
+export const StartBankInvoicePaymentBodySchema = z.object({
+  billingPeriod: z.enum(['monthly', 'yearly']),
+  seatsExtra: z.number().int().min(0).max(10_000).default(0),
+  dueInDays: z.number().int().min(1).max(30).default(14),
+  sendToEmail: z.boolean().default(false),
+});
+export type StartBankInvoicePaymentBody = z.infer<
+  typeof StartBankInvoicePaymentBodySchema
+>;
+export class StartBankInvoicePaymentBodyDto extends createZodDto(
+  StartBankInvoicePaymentBodySchema,
+) {}
+
+export const PaymentStartResultSchema = z.object({
+  invoiceId: z.string(),
+  invoiceNumber: z.string(),
+  totalKopecks: z.number().int().nonnegative(),
+  paymentUrl: z.string().nullable(),
+  providerInvoiceId: z.string().nullable(),
+});
+export type PaymentStartResultBody = z.infer<typeof PaymentStartResultSchema>;
+export class PaymentStartResultDto extends createZodDto(PaymentStartResultSchema) {}

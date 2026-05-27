@@ -102,6 +102,14 @@ function makeMockPrisma(opts: MockOpts = {}): {
     id: 'reg-1',
     ...args.data,
   }));
+  // Tracker Boards (2026-05-27) — после `898bc20` сервис создаёт default Board
+  // внутри транзакции (`tx.board.create`). Mock возвращает фейк, чтобы тесты
+  // не падали с `Cannot read properties of undefined (reading 'create')`.
+  const boardCreate = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+    id: 'board-1',
+    isDefault: true,
+    ...args.data,
+  }));
 
   const txClient = {
     project: { create: projectCreate, update: projectUpdate },
@@ -110,6 +118,7 @@ function makeMockPrisma(opts: MockOpts = {}): {
     issue: { create: issueCreate },
     teamTemplate: { update: teamTemplateUpdate },
     regulation: { findUnique: regulationFindUnique, create: regulationCreate },
+    board: { create: boardCreate },
   };
 
   const $transaction = vi.fn(async (cb: any) => cb(txClient));

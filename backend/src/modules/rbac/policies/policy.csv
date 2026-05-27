@@ -830,6 +830,28 @@ p, manager, strict, self, project_document, write
 p, manager, strict, self, project_document, delete
 p, coo, *, *, project_document, read
 
+# ──────────────────────────── Sprints (2026-05-27) ────────────────────────────
+# sprint_hint — подсказки помощника по спринтам (Specialist 3-13).
+# Read — все members проекта (видят подсказки на странице спринта);
+# write — те же роли (могут закрыть / пометить выполненной). Удаление —
+# admin/owner (на случай ошибочной массовой генерации). Manager strict — self
+# (только подсказки своих циклов; service-уровень доуточняет по project membership).
+# ТЗ: plans/tz/2026-05-27-sprints.md §1.5.
+# NB: action `cycle:create` уже покрывается существующим `cycle, write` для owner/admin —
+# отдельная запись не нужна. Per-role override (manager имеет/не имеет write на cycle)
+# управляется существующими manager-правилами выше.
+p, owner, *, *, sprint_hint, read
+p, owner, *, *, sprint_hint, write
+p, owner, *, *, sprint_hint, delete
+p, admin, *, *, sprint_hint, read
+p, admin, *, *, sprint_hint, write
+p, admin, *, *, sprint_hint, delete
+p, manager, open, *, sprint_hint, read
+p, manager, open, *, sprint_hint, write
+p, manager, strict, self, sprint_hint, read
+p, manager, strict, self, sprint_hint, write
+p, coo, *, *, sprint_hint, read
+
 # ──────────────────────────── Wave 2 — Activity Feeds (2026-05-24) ────────────────────────────
 # activity_feed_item — единая запись ленты активности (probe_question | insight |
 # decision | task | idea | conflict | knowledge_change). Read — все members

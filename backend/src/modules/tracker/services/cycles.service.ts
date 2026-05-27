@@ -3,9 +3,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { Prisma, type Cycle } from '@prisma/client';
+import { Prisma, type Cycle, type Project } from '@prisma/client';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreateCycleDto } from '../dto/cycles/create-cycle.dto';
 import type {
@@ -21,6 +23,21 @@ import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
+
+/** Sprints (2026-05-27) — определяем «scope» проекта по его 4 опц. полям. */
+function detectProjectScopeKind(
+  p: Pick<Project, 'customerCardId' | 'vendorId' | 'subjectPersonId' | 'departmentId'>,
+): 'org' | 'customer' | 'vendor' | 'person' | 'department' | 'project' {
+  if (p.customerCardId) return 'customer';
+  if (p.vendorId) return 'vendor';
+  if (p.subjectPersonId) return 'person';
+  if (p.departmentId) return 'department';
+  // Если ни одно scope-поле не заполнено — это «спринт компании» (org).
+  // Если в будущем понадобится отличать «спринт проекта без scope» от
+  // «спринта компании» — добавим явный признак в Project, а пока трактуем
+  // отсутствие scope как org-уровень.
+  return 'org';
+}
 
 /**
  * CyclesService — циклы («неделя работы» / спринт). Поддерживает
@@ -41,6 +58,9 @@ export class CyclesService {
     private readonly events: TrackerEventsService,
     @Inject(WebhookDispatcher)
     private readonly webhooks: WebhookDispatcher,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /** Создать цикл в проекте. Доступ: project_admin / project_manager. */
@@ -50,7 +70,7 @@ export class CyclesService {
     tenantId: string,
     _userId: string,
   ): Promise<CycleResponseDto> {
-    await this.projects.requireProject(projectId, tenantId);
+    const project = await this.projects.requireProject(projectId, tenantId);
     const cycle = await this.prisma.cycle.create({
       data: {
         tenantId,
@@ -73,6 +93,15 @@ export class CyclesService {
           'cycle.created webhook dispatch failed',
         );
       });
+    // Sprints (2026-05-27) — метрика по виду scope.
+    try {
+      this.metrics?.incCycleCreated({
+        tenant: tenantId,
+        scopeKind: detectProjectScopeKind(project),
+      });
+    } catch {
+      // graceful
+    }
     return response;
   }
 
@@ -209,6 +238,11 @@ export class CyclesService {
             'cycle.completed webhook dispatch failed',
           );
         });
+    }
+    try {
+      this.metrics?.incCycleCompleted({ tenant: tenantId });
+    } catch {
+      // graceful
     }
 
     return { cycleId: id, movedIssueCount, rolledOverTo };

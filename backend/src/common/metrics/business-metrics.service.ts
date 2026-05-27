@@ -733,6 +733,20 @@ export class BusinessMetricsService implements OnModuleInit {
   private tourCompletedTotal!: Counter<'tenant' | 'tour_id'>;
   private tourSkippedTotal!: Counter<'tenant' | 'tour_id' | 'at_step'>;
 
+  // ── Sprints (ТЗ 2026-05-27) ───────────────────────────────────────────
+  // Cardinality-safe: tenant — id Org; scope_kind / kind / status / result —
+  // фиксированные enum'ы (≤10 значений).
+  private cyclesCreatedTotal!: Counter<'tenant' | 'scope_kind'>;
+  private cyclesCompletedTotal!: Counter<'tenant'>;
+  private sprintHintsTotal!: Counter<'tenant' | 'kind' | 'status'>;
+  private sprintHintDismissedTotal!: Counter<'tenant' | 'kind'>;
+  private sprintDashboardCacheHitTotal!: Counter<'tenant'>;
+  private sprintDashboardCacheMissTotal!: Counter<'tenant'>;
+  private sprintHelperRunsTotal!: Counter<'tenant' | 'status'>;
+  private sprintHelperDurationSeconds!: Histogram<'tenant'>;
+  private sprintReviewGenerationTotal!: Counter<'tenant' | 'status'>;
+  private sprintReviewGenerationDurationSeconds!: Histogram<'tenant'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -2576,6 +2590,60 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'tour_skipped_total',
       help: 'Onboarding-тур пропущен пользователем (PATCH с skipped=true). at_step — id шага, на котором нажали «Пропустить» (или "unknown", если клиент не передал).',
       labelNames: ['tenant', 'tour_id', 'at_step'] as const,
+    });
+
+    // Sprints (ТЗ 2026-05-27) — счётчики и гистограммы.
+    this.cyclesCreatedTotal = this.getOrCreateCounter({
+      name: 'cycles_created_total',
+      help: 'Создано циклов-спринтов (по виду scope: org/customer/vendor/person/department/project).',
+      labelNames: ['tenant', 'scope_kind'] as const,
+    });
+    this.cyclesCompletedTotal = this.getOrCreateCounter({
+      name: 'cycles_completed_total',
+      help: 'Завершено циклов-спринтов (POST /cycles/:id/complete).',
+      labelNames: ['tenant'] as const,
+    });
+    this.sprintHintsTotal = this.getOrCreateCounter({
+      name: 'sprint_hints_total',
+      help: 'Подсказки помощника по спринтам (Specialist 3-13) по виду и статусу.',
+      labelNames: ['tenant', 'kind', 'status'] as const,
+    });
+    this.sprintHintDismissedTotal = this.getOrCreateCounter({
+      name: 'sprint_hint_dismissed_total',
+      help: 'Подсказки помощника по спринтам, закрытые пользователем (dismiss).',
+      labelNames: ['tenant', 'kind'] as const,
+    });
+    this.sprintDashboardCacheHitTotal = this.getOrCreateCounter({
+      name: 'sprint_dashboard_cache_hit_total',
+      help: 'Redis-кэш дашборда спринта: попадание.',
+      labelNames: ['tenant'] as const,
+    });
+    this.sprintDashboardCacheMissTotal = this.getOrCreateCounter({
+      name: 'sprint_dashboard_cache_miss_total',
+      help: 'Redis-кэш дашборда спринта: промах.',
+      labelNames: ['tenant'] as const,
+    });
+    this.sprintHelperRunsTotal = this.getOrCreateCounter({
+      name: 'sprint_helper_runs_total',
+      help: 'Запуски воркера 3-13-sprint-helper (status: success/failed/skipped).',
+      labelNames: ['tenant', 'status'] as const,
+    });
+    this.sprintHelperDurationSeconds = this.getOrCreateHistogram({
+      name: 'sprint_helper_duration_seconds',
+      help: 'Длительность одного прогона помощника по спринту.',
+      labelNames: ['tenant'] as const,
+      buckets: [0.5, 1, 2, 5, 10, 20, 30, 60, 120],
+    });
+    this.sprintReviewGenerationTotal = this.getOrCreateCounter({
+      name: 'sprint_review_generation_total',
+      help: 'Генерация финального отчёта спринта (sprint-review-summary): ready/failed/retried.',
+      labelNames: ['tenant', 'status'] as const,
+    });
+    this.sprintReviewGenerationDurationSeconds = this.getOrCreateHistogram({
+      name: 'sprint_review_generation_duration_seconds',
+      help: 'Длительность генерации финального отчёта спринта.',
+      labelNames: ['tenant'] as const,
+      buckets: [1, 2, 5, 10, 20, 30, 60, 120, 300],
     });
   }
 
@@ -5700,6 +5768,74 @@ export class BusinessMetricsService implements OnModuleInit {
       tour_id: args.tour_id,
       at_step: args.at_step,
     });
+  }
+
+  // ── Sprints (ТЗ 2026-05-27) ───────────────────────────────────────────
+
+  incCycleCreated(args: {
+    tenant: string;
+    scopeKind: 'org' | 'customer' | 'vendor' | 'person' | 'department' | 'project';
+  }): void {
+    this.cyclesCreatedTotal.inc({ tenant: args.tenant, scope_kind: args.scopeKind });
+  }
+
+  incCycleCompleted(args: { tenant: string }): void {
+    this.cyclesCompletedTotal.inc({ tenant: args.tenant });
+  }
+
+  incSprintHint(args: {
+    tenant: string;
+    kind: string;
+    status: 'active' | 'dismissed' | 'resolved';
+  }): void {
+    this.sprintHintsTotal.inc({
+      tenant: args.tenant,
+      kind: args.kind,
+      status: args.status,
+    });
+  }
+
+  incSprintHintDismissed(args: { tenant: string; kind: string }): void {
+    this.sprintHintDismissedTotal.inc({ tenant: args.tenant, kind: args.kind });
+  }
+
+  incSprintDashboardCacheHit(args: { tenant: string }): void {
+    this.sprintDashboardCacheHitTotal.inc({ tenant: args.tenant });
+  }
+
+  incSprintDashboardCacheMiss(args: { tenant: string }): void {
+    this.sprintDashboardCacheMissTotal.inc({ tenant: args.tenant });
+  }
+
+  incSprintHelperRun(args: {
+    tenant: string;
+    status: 'success' | 'failed' | 'skipped';
+  }): void {
+    this.sprintHelperRunsTotal.inc({ tenant: args.tenant, status: args.status });
+  }
+
+  observeSprintHelperDuration(args: { tenant: string; seconds: number }): void {
+    this.sprintHelperDurationSeconds.observe({ tenant: args.tenant }, args.seconds);
+  }
+
+  incSprintReviewGeneration(args: {
+    tenant: string;
+    status: 'ready' | 'failed' | 'retried';
+  }): void {
+    this.sprintReviewGenerationTotal.inc({
+      tenant: args.tenant,
+      status: args.status,
+    });
+  }
+
+  observeSprintReviewGenerationDuration(args: {
+    tenant: string;
+    seconds: number;
+  }): void {
+    this.sprintReviewGenerationDurationSeconds.observe(
+      { tenant: args.tenant },
+      args.seconds,
+    );
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

@@ -19,6 +19,7 @@ import { OverviewController } from './controllers/overview.controller';
 import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
+import { SprintHintsController } from './controllers/sprint-hints.controller';
 import { StatesController } from './controllers/states.controller';
 import { TeamTemplatesController } from './controllers/team-templates.controller';
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
@@ -28,6 +29,7 @@ import { AttachmentsService } from './services/attachments.service';
 import { BoardsService } from './services/boards.service';
 import { ChecklistsService } from './services/checklists.service';
 import { CommentsService } from './services/comments.service';
+import { CycleMeetingsService } from './services/cycle-meetings.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
 import { ImportService } from './services/import.service';
@@ -47,6 +49,8 @@ import { ProjectsFromTemplateService } from './services/projects-from-template.s
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
 import { SimilarIssuesService } from './services/similar-issues.service';
+import { SprintAnalystService } from './services/sprint-analyst.service';
+import { SprintHintsService } from './services/sprint-hints.service';
 import { StatesService } from './services/states.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
@@ -126,6 +130,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // Tracker Project Overview (2026-05-27, plans/tz/2026-05-27-tracker-project-overview.md)
     // — вкладки «Обзор» / «Загруженность» / «Приложения».
     OverviewController,
+    // Sprints (2026-05-27, plans/tz/2026-05-27-tracker-sprints.md) — REST
+    // `/api/v1/sprint-hints/:id/{dismiss,resolve}`. Cycles dashboard /
+    // start-meeting / hints — расширения CyclesController.
+    SprintHintsController,
   ],
   providers: [
     ActivityRecorderService,
@@ -212,6 +220,13 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     OverviewService,
     WorkloadService,
     IntegrationsStatusService,
+    // Sprints (2026-05-27) — SQL-аналитика, dismiss/resolve подсказок,
+    // запуск встречи по спринту. SprintCardHandler живёт в chat-v2 (модель
+    // зависит только от Prisma). AI-воркер 3-13-sprint-helper и cron — в
+    // Волне 3 (knowledge-core).
+    SprintAnalystService,
+    SprintHintsService,
+    CycleMeetingsService,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не
@@ -244,6 +259,11 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // «N рабочих дней» (fallback срок) и «следующий рабочий день после
     // commitmentDueDate» (фильтр cron'а).
     HolidayService,
+    // Sprints (2026-05-27) — экспортируем для AI-воркера 3-13-sprint-helper
+    // (knowledge-core) и cron'а: они формируют контекст подсказок через
+    // SprintAnalystService.computeDashboard и записывают SprintHint через
+    // SprintHintsService (или напрямую через Prisma в worker'е).
+    SprintAnalystService,
   ],
 })
 export class TrackerModule {}

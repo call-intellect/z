@@ -79,6 +79,12 @@ export class ProjectsService {
           gantViewEnabled: dto.gantViewEnabled,
           timeTrackingEnabled: dto.timeTrackingEnabled,
           teamTemplateId: dto.teamTemplateId ?? null,
+          // Sprints (2026-05-27) — 4 опц. scope-поля. Инвариант ≤1 уже проверен
+          // CreateProjectSchema.superRefine; здесь просто прокидываем.
+          customerCardId: dto.customerCardId ?? null,
+          vendorId: dto.vendorId ?? null,
+          subjectPersonId: dto.subjectPersonId ?? null,
+          departmentId: dto.departmentId ?? null,
         },
       });
       // Дефолтные статусы.
@@ -168,7 +174,33 @@ export class ProjectsService {
     tenantId: string,
     _userId: string,
   ): Promise<ProjectResponseDto> {
-    await this.requireProject(id, tenantId);
+    const current = await this.requireProject(id, tenantId);
+
+    // Sprints (2026-05-27) — инвариант: ≤1 scope-поля заполнено после
+    // применения дельты. Считаем итоговое состояние с учётом dto + current.
+    const finalScope = {
+      customerCardId:
+        dto.customerCardId !== undefined ? dto.customerCardId : current.customerCardId,
+      vendorId: dto.vendorId !== undefined ? dto.vendorId : current.vendorId,
+      subjectPersonId:
+        dto.subjectPersonId !== undefined ? dto.subjectPersonId : current.subjectPersonId,
+      departmentId:
+        dto.departmentId !== undefined ? dto.departmentId : current.departmentId,
+    };
+    const filled = Object.values(finalScope).filter(
+      (v): v is string => typeof v === 'string' && v.length > 0,
+    );
+    if (filled.length > 1) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'project_scope_conflict',
+          message:
+            'У проекта-спринта может быть только одна привязка (клиент / поставщик / сотрудник / отдел) или ни одной.',
+        },
+      });
+    }
+
     // ActivityRecorder не вызываем — Project не имеет issueId. История проектов — отдельно (Sprint 2).
     const updated = await this.prisma.project.update({
       where: { id },
@@ -193,6 +225,10 @@ export class ProjectsService {
         ...(dto.timeTrackingEnabled !== undefined && {
           timeTrackingEnabled: dto.timeTrackingEnabled,
         }),
+        ...(dto.customerCardId !== undefined && { customerCardId: dto.customerCardId }),
+        ...(dto.vendorId !== undefined && { vendorId: dto.vendorId }),
+        ...(dto.subjectPersonId !== undefined && { subjectPersonId: dto.subjectPersonId }),
+        ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
       },
     });
     return this.toResponse(updated);
@@ -352,6 +388,10 @@ export class ProjectsService {
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
       deletedAt: p.deletedAt?.toISOString() ?? null,
+      customerCardId: p.customerCardId,
+      vendorId: p.vendorId,
+      subjectPersonId: p.subjectPersonId,
+      departmentId: p.departmentId,
     };
   }
 

@@ -16,6 +16,7 @@ import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
 import { IssueCardHandler } from './specialists/issue-card-handler.service';
 import { ProjectCardHandler } from './specialists/project-card-handler.service';
+import { SprintCardHandler } from './specialists/sprint-card-handler.service';
 import { ChatV2CleanupCron } from './workers/chat-v2-cleanup.cron';
 
 /**
@@ -116,6 +117,10 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
     // Specialist31/34CardHandler из knowledge-core).
     IssueCardHandler,
     ProjectCardHandler,
+    // Sprints (2026-05-27) — спринты как источник для retrieval'а chat-v2
+    // («покажи проблемы спринта по проекту X»). Зависит только от Prisma —
+    // регистрируется в CardSpecialistRegistry в onModuleInit.
+    SprintCardHandler,
   ],
   exports: [
     ChatV2OrchestrationService,
@@ -125,6 +130,7 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
     // мог вызывать getCitations / formatForChat напрямую.
     IssueCardHandler,
     ProjectCardHandler,
+    SprintCardHandler,
   ],
 })
 export class ChatV2Module {}

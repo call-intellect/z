@@ -91,6 +91,16 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 | `/feed` | Activity Feed (Wave 2) |
 | `/intake` | Triage очередь (AI suggestions) |
 
+## Sprints (2026-05-27, см. [[sprints]])
+
+| Путь | Что |
+|---|---|
+| `/sprints` | Список спринтов tenant'а + CTA «Создать спринт» (MVP — плейсхолдер). |
+| `/sprints/[id]` | Дашборд спринта: прогресс / 3 секции задач / помощник предлагает / связанные встречи / кнопки «Создать видеовстречу» (запускает `sprint_review`) и «Завершить спринт». SWR refresh 30s. |
+| `/sprints/[id]/review` | Финальный AI-отчёт (3 состояния: pending / ready / failed). На pending — auto-poll 10s, на failed — кнопка regenerate. |
+
+Сайдбар: пункт «Спринты» в группе «Каждый день» рядом с «Проекты», иконка `Rocket`, `data-tour-target="welcome.sprints"` для будущего onboarding-tour.
+
 ## Clones — маркетплейс (2026-05-26, Clones=Roles финальный UI)
 
 **Источник:** [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md). Коммит `578a777` (user) + `eab4d8f` (admin).

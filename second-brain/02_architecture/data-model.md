@@ -667,6 +667,28 @@ erDiagram
 - `tenantId, projectId, name, startDate, endDate, ownedById?, description?`.
 - `progressSnapshot Json?` — агрегированный снимок (обновляется cron'ом).
 - `version Int @default(1)`, `timezone`, `completedAt?`.
+- **Sprints (2026-05-27)** — обратные relations: `linkedMeetings Meeting[]` (через `Meeting.linkedCycleId`, name="MeetingLinkedCycle"), `sprintHints SprintHint[]`. Индекс `(tenantId, completedAt)` — для cron'а активных циклов.
+
+### SprintHint (Sprints, 2026-05-27)
+- `tenantId, cycleId` (Cascade), `kind SprintHintKind` (10 значений: no_due_date / no_description / no_assignee / due_date_at_risk / recurring_carry_over / no_recent_mentions / conflicts_with_goal / can_be_split / similar_to_past_task / generic).
+- `severity SprintHintSeverity` (info/warning/critical), `status SprintHintStatus @default(active)` (active/dismissed/resolved).
+- `title VarChar(300), body @db.Text, affectedIssueIds String[], sourceBlockIds String[]`.
+- `dismissedByUserId?, dismissedAt?`.
+- `confidence Decimal(4,3)`, `contentHash VarChar(64)` (SHA-1 от title+body — для дедупа воркером).
+- Индексы: `(tenantId, cycleId, status)`, `(tenantId, status, createdAt)`, `(cycleId, kind, contentHash)`.
+
+### Project — Sprints scope-расширения (2026-05-27)
+- 4 опциональных FK-поля на привязку спринта-проекта (взаимоисключающие):
+  - `customerCardId String? → Card` (relation "ProjectCustomerCard");
+  - `vendorId String? → Vendor` (relation "ProjectVendor");
+  - `subjectPersonId String? → Person` (relation "ProjectSubjectPerson");
+  - `departmentId String? → Department` (relation "ProjectDepartment").
+- Инвариант: не более одного заполненного. Валидируется в `CreateProjectSchema.superRefine` и `ProjectsService.update`.
+- Если все NULL — «Спринт компании».
+
+### Meeting — Sprints (2026-05-27)
+- `linkedCycleId String?` + relation `linkedCycle Cycle?` ("MeetingLinkedCycle", onDelete: SetNull). Создаётся `POST /api/v1/cycles/:id/start-meeting` (см. [sprints.md](../01_projects/sprints.md)).
+- `MeetingType.sprint_review` — встреча «Итоги спринта». Промпты: `prompts/index.ts` → retrospective fallback + специализированные секции в `meeting-report-fast.prompt.ts` и `summary-v2.prompt.ts`.
 
 ### Issue (расширение функционала задачи)
 - `tenantId, projectId, identifier String` (KORA-123, unique per tenant), `sequenceId Int` (123, unique per project).

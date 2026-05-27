@@ -25,6 +25,18 @@ covers: реестр всех REST endpoints backend по модулям
 | POST | `/api/v1/projects/:id/email-inbox/disable` | Отключить | T5 |
 | POST | `/api/v1/projects/:id/email-inbox/regenerate-alias` | Перевыпустить alias (старый перестаёт принимать) | T5 |
 
+### Sprints (2026-05-27, см. [[sprints]])
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET  | `/api/v1/cycles/:id/dashboard` | Агрегированные данные дашборда спринта. Redis-кэш 5 мин. |
+| POST | `/api/v1/cycles/:id/start-meeting` | Запуск встречи (default `type='sprint_review'`). Создаёт `Meeting.linkedCycleId`. |
+| GET  | `/api/v1/cycles/:id/hints` | Список активных подсказок помощника. |
+| POST | `/api/v1/sprint-hints/:id/dismiss` | Закрыть подсказку (`status='dismissed'`). |
+| POST | `/api/v1/sprint-hints/:id/resolve` | Пометить выполненной (`status='resolved'`). |
+| GET  | `/api/v1/cycles/:id/review` | Финальный отчёт спринта (`ready` / `pending` / `failed`). Живёт в `KnowledgeCoreApiModule`. |
+| POST | `/api/v1/cycles/:id/review/regenerate` | Перезапустить генерацию финального отчёта. |
+
 ## Recognition + Gamification
 
 | Метод | Путь | Назначение | T |

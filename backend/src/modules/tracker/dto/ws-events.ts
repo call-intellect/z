@@ -1,6 +1,10 @@
 import type { CommentResponseDto } from '../services/comments.service';
 
 import type { BoardResponseDto } from './boards/board-response.dto';
+import type {
+  ChecklistItemResponseDto,
+  ChecklistResponseDto,
+} from './checklists/checklist.dto';
 import type { CycleResponseDto } from './cycles/cycle-response.dto';
 import type { IssueResponseDto } from './issues/issue-response.dto';
 
@@ -37,7 +41,15 @@ export type TrackerWsEventType =
   | 'board.created'
   | 'board.updated'
   | 'board.deleted'
-  | 'board.reordered';
+  | 'board.reordered'
+  // Tracker Checklists (2026-05-27)
+  | 'checklist.created'
+  | 'checklist.updated'
+  | 'checklist.deleted'
+  | 'checklist_item.created'
+  | 'checklist_item.updated'
+  | 'checklist_item.deleted'
+  | 'issue.checklist_progress_changed';
 
 interface BaseTrackerWsEvent<T extends TrackerWsEventType> {
   type: T;
@@ -191,6 +203,57 @@ export interface IssueMovedToBoardEvent
   toBoardId: string;
 }
 
+/**
+ * Чек-листы задачи (2026-05-27). См. plans/tz/2026-05-27-tracker-checklists.md.
+ *
+ * Эмитятся в rooms:
+ *   - tenant:<tenantId> (всегда)
+ *   - issue:<issueId>   (для открытой карточки задачи)
+ */
+export interface ChecklistCreatedEvent extends BaseTrackerWsEvent<'checklist.created'> {
+  issueId: string;
+  checklist: ChecklistResponseDto;
+}
+
+export interface ChecklistUpdatedEvent extends BaseTrackerWsEvent<'checklist.updated'> {
+  issueId: string;
+  checklist: ChecklistResponseDto;
+}
+
+export interface ChecklistDeletedEvent extends BaseTrackerWsEvent<'checklist.deleted'> {
+  issueId: string;
+  checklistId: string;
+}
+
+export interface ChecklistItemCreatedEvent
+  extends BaseTrackerWsEvent<'checklist_item.created'> {
+  issueId: string;
+  checklistId: string;
+  item: ChecklistItemResponseDto;
+}
+
+export interface ChecklistItemUpdatedEvent
+  extends BaseTrackerWsEvent<'checklist_item.updated'> {
+  issueId: string;
+  checklistId: string;
+  item: ChecklistItemResponseDto;
+}
+
+export interface ChecklistItemDeletedEvent
+  extends BaseTrackerWsEvent<'checklist_item.deleted'> {
+  issueId: string;
+  checklistId: string;
+  itemId: string;
+}
+
+export interface IssueChecklistProgressChangedEvent
+  extends BaseTrackerWsEvent<'issue.checklist_progress_changed'> {
+  projectId: string;
+  issueId: string;
+  total: number;
+  done: number;
+}
+
 export type TrackerWsEvent =
   | IssueCreatedEvent
   | IssueUpdatedEvent
@@ -211,4 +274,11 @@ export type TrackerWsEvent =
   | BoardCreatedEvent
   | BoardUpdatedEvent
   | BoardDeletedEvent
-  | BoardReorderedEvent;
+  | BoardReorderedEvent
+  | ChecklistCreatedEvent
+  | ChecklistUpdatedEvent
+  | ChecklistDeletedEvent
+  | ChecklistItemCreatedEvent
+  | ChecklistItemUpdatedEvent
+  | ChecklistItemDeletedEvent
+  | IssueChecklistProgressChangedEvent;

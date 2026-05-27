@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import type { BoardResponseDto } from '../dto/boards/board-response.dto';
+import type {
+  ChecklistItemResponseDto,
+  ChecklistResponseDto,
+} from '../dto/checklists/checklist.dto';
 import type { CycleResponseDto } from '../dto/cycles/cycle-response.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 import type {
@@ -9,6 +13,12 @@ import type {
   BoardDeletedEvent,
   BoardReorderedEvent,
   BoardUpdatedEvent,
+  ChecklistCreatedEvent,
+  ChecklistDeletedEvent,
+  ChecklistItemCreatedEvent,
+  ChecklistItemDeletedEvent,
+  ChecklistItemUpdatedEvent,
+  ChecklistUpdatedEvent,
   CommentCreatedEvent,
   CommentDeletedEvent,
   CommentUpdatedEvent,
@@ -20,6 +30,7 @@ import type {
   ImportProgressEvent,
   IntakeNewItemEvent,
   IntakeTriagedEvent,
+  IssueChecklistProgressChangedEvent,
   IssueCreatedEvent,
   IssueDeletedEvent,
   IssueMovedToBoardEvent,
@@ -388,8 +399,7 @@ export class TrackerEventsService {
 
   /**
    * Tracker Boards (2026-05-27) — PATCH /issues/:id поменял `boardId`.
-   * Эмитим узко (`tenant:` + `project:` + `issue:`), чтобы фронт мог
-   * убрать карточку из старой доски и добавить в новую без перезагрузки.
+   * Эмитим узко (`tenant:` + `project:` + `issue:`).
    */
   publishIssueMovedToBoard(args: {
     tenantId: string;
@@ -405,6 +415,143 @@ export class TrackerEventsService {
       issueId: args.issueId,
       fromBoardId: args.fromBoardId,
       toBoardId: args.toBoardId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  // ── checklists (2026-05-27) ───────────────────────────────────────────
+
+  publishChecklistCreated(
+    checklist: ChecklistResponseDto,
+    tenantId: string,
+  ): void {
+    const event: ChecklistCreatedEvent = {
+      type: 'checklist.created',
+      tenantId,
+      issueId: checklist.issueId,
+      checklist,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.issueRoom(checklist.issueId),
+    ]);
+  }
+
+  publishChecklistUpdated(
+    checklist: ChecklistResponseDto,
+    tenantId: string,
+  ): void {
+    const event: ChecklistUpdatedEvent = {
+      type: 'checklist.updated',
+      tenantId,
+      issueId: checklist.issueId,
+      checklist,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.issueRoom(checklist.issueId),
+    ]);
+  }
+
+  publishChecklistDeleted(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+  }): void {
+    const event: ChecklistDeletedEvent = {
+      type: 'checklist.deleted',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishChecklistItemCreated(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+    item: ChecklistItemResponseDto;
+  }): void {
+    const event: ChecklistItemCreatedEvent = {
+      type: 'checklist_item.created',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      item: args.item,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishChecklistItemUpdated(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+    item: ChecklistItemResponseDto;
+  }): void {
+    const event: ChecklistItemUpdatedEvent = {
+      type: 'checklist_item.updated',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      item: args.item,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishChecklistItemDeleted(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+    itemId: string;
+  }): void {
+    const event: ChecklistItemDeletedEvent = {
+      type: 'checklist_item.deleted',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      itemId: args.itemId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishIssueChecklistProgressChanged(args: {
+    tenantId: string;
+    projectId: string;
+    issueId: string;
+    total: number;
+    done: number;
+  }): void {
+    const event: IssueChecklistProgressChangedEvent = {
+      type: 'issue.checklist_progress_changed',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      issueId: args.issueId,
+      total: args.total,
+      done: args.done,
       timestamp: new Date().toISOString(),
     };
     this.safeEmit(event, [

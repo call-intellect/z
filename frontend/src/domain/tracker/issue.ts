@@ -58,6 +58,13 @@ export interface IssueApi {
   assigneeUserIds: string[];
   labelIds: string[];
   /**
+   * Tracker Checklists (2026-05-27) — денормализованные счётчики чек-листов
+   * задачи, для бейджа «☑ N/M» на канбан-карточке без отдельного запроса.
+   * `checklistTotalCount=0` → бейдж не рендерится.
+   */
+  checklistTotalCount: number;
+  checklistDoneCount: number;
+  /**
    * Phase 3 part C — AI-подсказки, приходят только из POST `/issues`
    * с `inferSuggestions=true`. Остальные эндпоинты поле не возвращают
    * (поэтому optional). Контракт:
@@ -233,6 +240,9 @@ export interface Issue {
    * `null` = поле не запрашивалось / неизвестно.
    */
   childrenCount: number | null;
+  /** Tracker Checklists (2026-05-27) — денормализованные счётчики чек-листов. */
+  checklistTotalCount: number;
+  checklistDoneCount: number;
   // ─ computed ─
   /** dueDate < today (00:00) и задача не завершена. */
   isOverdue: boolean;
@@ -393,6 +403,8 @@ export function issueFromApi(api: IssueApi): Issue {
     assigneeUserIds: api.assigneeUserIds ?? [],
     labelIds: api.labelIds ?? [],
     childrenCount: typeof api.childrenCount === 'number' ? api.childrenCount : null,
+    checklistTotalCount: api.checklistTotalCount ?? 0,
+    checklistDoneCount: api.checklistDoneCount ?? 0,
     isOverdue: computeIsOverdue(dueDate, completedAt),
     isCompleted: completedAt !== null,
     isArchived: api.archivedAt !== null,

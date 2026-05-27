@@ -4,6 +4,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 
 import { AttachmentsController } from './controllers/attachments.controller';
 import { BoardsController } from './controllers/boards.controller';
+import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
 import { CyclesController } from './controllers/cycles.controller';
 import { HolidaysController } from './controllers/holidays.controller';
@@ -22,6 +23,7 @@ import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
 import { AttachmentsService } from './services/attachments.service';
 import { BoardsService } from './services/boards.service';
+import { ChecklistsService } from './services/checklists.service';
 import { CommentsService } from './services/comments.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
@@ -104,6 +106,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // T8 (2026-05-24): мои @-упоминания (список + счётчик + read).
     MyMentionsController,
     StatesController,
+    // Tracker Checklists (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md)
+    // — плоские чек-листы внутри задачи (без исполнителя/срока на пункте).
+    ChecklistsController,
   ],
   providers: [
     ActivityRecorderService,
@@ -129,6 +134,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RelationsService,
     AttachmentsService,
     IssueMeetingsService,
+    // Tracker Checklists (2026-05-27) — CRUD чек-листов и пунктов,
+    // recountCounters, IssueActivity на checklist_completed, WS-события,
+    // метрики Prometheus.
+    ChecklistsService,
     // Sprint 3 Frontend Wave 2: read-only справочник статусов.
     StatesService,
     // T8 (2026-05-24): мои @-упоминания (читает IssueMention, write — markRead).

@@ -7,6 +7,7 @@ import {
   IssueAttachments,
   IssueBreadcrumb,
   IssueChat,
+  IssueChecklists,
   IssueComments,
   IssueDescription,
   IssueHeader,
@@ -74,6 +75,13 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             orgId={currentOrgId}
             currentUserId={user?.id ?? null}
           />
+
+          {/* Чек-листы (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md):
+              блок между описанием и связями — плоские пункты «сделано/нет». */}
+          <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-fg-primary">Чек-листы</h2>
+            <IssueChecklists orgId={currentOrgId} issueId={issue.id} />
+          </section>
 
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Связи</h2>

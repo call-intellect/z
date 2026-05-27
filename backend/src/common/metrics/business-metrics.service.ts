@@ -608,6 +608,16 @@ export class BusinessMetricsService implements OnModuleInit {
   // tenant_top — cardinality-safe label (top-100 bucket через `tenantTopOf`).
   private trackerIssueEmbedTotal!: Counter<'tenant_top' | 'status'>;
   private trackerIssueSimilarSearchTotal!: Counter<'tenant_top'>;
+  // Tracker Checklists (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md).
+  //   checklists_created_total{tenant, project} — создание чек-листа на задаче.
+  //   checklist_items_added_total{tenant, project, via_bulk} — пункт добавлен;
+  //     via_bulk='true' если через bulk-create endpoint, иначе 'false'.
+  //   checklist_items_completed_total{tenant, project} — пункт переведён в
+  //     isDone=true (включая случаи перехода обратно — этот счётчик считает
+  //     именно факт «done++», не «done--»).
+  private checklistsCreatedTotal!: Counter<'tenant' | 'project'>;
+  private checklistItemsAddedTotal!: Counter<'tenant' | 'project' | 'via_bulk'>;
+  private checklistItemsCompletedTotal!: Counter<'tenant' | 'project'>;
   // Tracker Phase 3 part C (2026-05-24) — AI-suggest при создании задачи.
   // ai_issue_inferred_total{tenant_top, accepted} — увеличивается на inference
   //   (accepted='false'); если позже PATCH принимает hint — отдельным вызовом
@@ -2328,6 +2338,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'tracker_issue_similar_search_total',
       help: 'Tracker Phase 3 — KNN-поиск похожих задач (GET /tracker/issues/:id/similar). Считает все запросы (с/без результатов).',
       labelNames: ['tenant_top'] as const,
+    });
+    // Tracker Checklists (2026-05-27) — см. plans/tz/2026-05-27-tracker-checklists.md §Метрики.
+    this.checklistsCreatedTotal = this.getOrCreateCounter({
+      name: 'checklists_created_total',
+      help: 'Tracker Checklists — создание чек-листа на задаче (POST /issues/:id/checklists).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.checklistItemsAddedTotal = this.getOrCreateCounter({
+      name: 'checklist_items_added_total',
+      help: 'Tracker Checklists — добавление пункта в чек-лист. via_bulk=true если через bulk-create, иначе false.',
+      labelNames: ['tenant', 'project', 'via_bulk'] as const,
+    });
+    this.checklistItemsCompletedTotal = this.getOrCreateCounter({
+      name: 'checklist_items_completed_total',
+      help: 'Tracker Checklists — пункт переведён в isDone=true (фронт-чекбокс).',
+      labelNames: ['tenant', 'project'] as const,
     });
     // Tracker Phase 3 part C — AI-suggest при создании задачи.
     this.aiIssueInferredTotal = this.getOrCreateCounter({
@@ -5074,6 +5100,44 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incSubtaskCreated(args: { tenant: string; project: string }): void {
     this.subtasksCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Checklists (2026-05-27) — создание чек-листа на задаче.
+   * Caller: `ChecklistsService.createChecklist`.
+   */
+  incChecklistCreated(args: { tenant: string; project: string }): void {
+    this.checklistsCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Checklists — пункт добавлен (в т.ч. через bulk-create).
+   * `viaBulk=true` → пункт пришёл из POST `/checklist-items/bulk-create`.
+   */
+  incChecklistItemAdded(args: {
+    tenant: string;
+    project: string;
+    viaBulk: boolean;
+  }): void {
+    this.checklistItemsAddedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+      via_bulk: args.viaBulk ? 'true' : 'false',
+    });
+  }
+
+  /**
+   * Tracker Checklists — пункт переведён в isDone=true (положительный
+   * переход; обратные переходы (done→undone) этот счётчик НЕ считает).
+   */
+  incChecklistItemCompleted(args: { tenant: string; project: string }): void {
+    this.checklistItemsCompletedTotal.inc({
       tenant: args.tenant,
       project: args.project,
     });

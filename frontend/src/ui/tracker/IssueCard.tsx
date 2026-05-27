@@ -76,11 +76,15 @@ export function IssueCard({
               {issue.linkedMeetingIds.length} встреч
             </span>
           )}
-          {/* Badge-зона в правом нижнем углу карточки.
-              flex-1 spacer + badges. Если рядом будет badge от чек-листов
-              (другое ТЗ tracker-checklists, символ ☑) — он встанет слева
-              от нашего. Не имитируем чек-листы здесь — только подзадачи. */}
-          <span className="ml-auto inline-flex items-center gap-1.5">
+          {/* Badge'ы в правом нижнем углу: чек-листы (☑ N/M) и подзадачи (✓ N).
+              Порядок: чек-листы слева, подзадачи справа. */}
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {issue.checklistTotalCount > 0 && (
+              <ChecklistBadge
+                total={issue.checklistTotalCount}
+                done={issue.checklistDoneCount}
+              />
+            )}
             <SubtaskBadge issue={issue} />
           </span>
         </div>
@@ -90,20 +94,9 @@ export function IssueCard({
 }
 
 /**
- * Tracker subtasks UI (2026-05-27) — badge «✓ N/M» в карточке задачи.
- *
- * Виден только если backend вернул `childrenCount > 0`. Цвет:
- *   - mint (`text-accent`) — есть выполненные подзадачи (`isCompleted`
- *     родителя НЕ учитываем — счётчик считаем только по детям).
- *     На текущем уровне без отдельного запроса `getChildren` мы не знаем
- *     completed-долю, поэтому показываем символ ✓ + общее число.
- *     Полный вид `N/M` появится, когда backend начнёт возвращать
- *     `completedChildrenCount` (отдельное расширение API в будущем).
- *   - серый — иначе.
- *
- * NB: NotaBene. На MVP отдельно `completedCount` не запрашиваем — добавим
- * вторую цифру, когда у DTO появится `completedChildrenCount`. ТЗ требует
- * именно badge с указанием прогресса; здесь ограничиваемся `✓ N`.
+ * Tracker subtasks UI (2026-05-27) — badge «✓ N» в карточке задачи.
+ * `childrenCount > 0` → бейдж виден. Полный «N/M» появится, когда DTO
+ * вернёт completedChildrenCount.
  */
 function SubtaskBadge({ issue }: { issue: Issue }) {
   const count = issue.childrenCount;
@@ -115,6 +108,30 @@ function SubtaskBadge({ issue }: { issue: Issue }) {
     >
       <span aria-hidden="true">✓</span>
       <span>{count}</span>
+    </span>
+  );
+}
+
+/**
+ * Tracker Checklists (2026-05-27) — бейдж прогресса «☑ 3/7».
+ * Полностью завершённый — зелёный, иначе серый.
+ */
+function ChecklistBadge({ total, done }: { total: number; done: number }) {
+  const fully = total > 0 && total === done;
+  return (
+    <span
+      title={`Чек-лист: ${done} из ${total}`}
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-medium',
+        fully
+          ? 'bg-success/15 text-success'
+          : 'bg-bg-overlay text-fg-secondary',
+      )}
+    >
+      <span aria-hidden="true">☑</span>
+      <span>
+        {done}/{total}
+      </span>
     </span>
   );
 }

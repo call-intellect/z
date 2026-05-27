@@ -1515,6 +1515,8 @@ export class IssuesService {
       deletedAt: issue.deletedAt?.toISOString() ?? null,
       assigneeUserIds: issue.assignees.map((a) => a.userId),
       labelIds: issue.labels.map((l) => l.labelId),
+      checklistTotalCount: issue.checklistTotalCount,
+      checklistDoneCount: issue.checklistDoneCount,
     };
   }
 

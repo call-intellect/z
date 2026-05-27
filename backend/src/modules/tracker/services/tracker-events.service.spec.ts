@@ -69,6 +69,8 @@ describe('TrackerEventsService', () => {
       deletedAt: null,
       assigneeUserIds: [],
       labelIds: [],
+      checklistTotalCount: 0,
+      checklistDoneCount: 0,
     };
   }
 

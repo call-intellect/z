@@ -12,6 +12,7 @@ export * from './state';
 export * from './cycle';
 export * from './intake';
 export * from './comment';
+export * from './checklist';
 export * from './label';
 export * from './webhook';
 export * from './team-template';

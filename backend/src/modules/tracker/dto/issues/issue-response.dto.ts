@@ -40,6 +40,13 @@ export interface IssueResponseDto {
   assigneeUserIds: string[];
   labelIds: string[];
   /**
+   * Tracker Checklists (2026-05-27) — денормализованные счётчики чек-листов
+   * для карточки канбана. `total=0` означает «у задачи нет чек-листов», бейдж
+   * не рендерится. См. plans/tz/2026-05-27-tracker-checklists.md.
+   */
+  checklistTotalCount: number;
+  checklistDoneCount: number;
+  /**
    * Tracker Phase 3 part C — AI-подсказки, заполняется только при создании
    * с `inferSuggestions=true`. На остальных эндпоинтах поле отсутствует
    * (для совместимости с типизированными клиентами поле опциональное).

@@ -285,6 +285,16 @@ CLONE_V2_ENABLED=false                   # ТОЛЬКО ПОСЛЕ Шага 6.10
 SPECIALISTS_COMBINED_ENABLED=false
 COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM=false
 DATACLASS_POLICY_ENFORCEMENT=shadow      # off | shadow | enforce — на проде сначала shadow
+
+# === Concierge → dialog-layer integration (ТЗ 2026-05-27) ===
+# При CONCIERGE_DIALOG_LAYER_ENABLED=true главный AI-агент использует
+# 5-шаговый pipeline DialogService (contextualize → confidence → classify →
+# multi-query + AnswerCache) и параллельный pre-retrieval по queries через
+# ToolRouter.execute('search_knowledge'). Default false — на проде сначала
+# включаем на 1 dev-tenant, потом полный raise. Откат — одной ENV.
+CONCIERGE_DIALOG_LAYER_ENABLED=false        # фича-флаг pipeline (default false)
+CONCIERGE_PRE_RETRIEVAL_TOP_K=12            # cap items в pre-retrieval после dedup
+CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS=3000     # per-query timeout (мс), не блокирует основной flow
 ```
 
 **Применение в compose.** ENV читаются из корневого `.env` через `env_file: [.env]` (см. `docker-compose.yml`). После правки `.env`:

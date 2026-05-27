@@ -54,7 +54,12 @@ export type TrackerWsEventType =
   // Tracker Project Documents (2026-05-27)
   | 'project_document.created'
   | 'project_document.updated'
-  | 'project_document.deleted';
+  | 'project_document.deleted'
+  // Sprints (2026-05-28) — подсказки помощника по спринтам.
+  | 'sprint_hint.created'
+  | 'sprint_hint.updated'
+  | 'sprint_hint.dismissed'
+  | 'sprint_hint.resolved';
 
 interface BaseTrackerWsEvent<T extends TrackerWsEventType> {
   type: T;
@@ -286,6 +291,45 @@ export interface ProjectDocumentDeletedEvent
   documentId: string;
 }
 
+/**
+ * Sprints (2026-05-28) — события подсказок помощника по спринтам.
+ *
+ * Эмитятся в `tenant:<tenantId>` + `project:<projectId>` (если знаем projectId
+ * через linked Cycle.projectId). На страницах `/sprints` и `/sprints/:id` фронт
+ * подписан на `tenant:` и инвалидирует SWR-кэш.
+ *
+ * `hintId` передаётся полем, чтобы UI мог точечно обновить элемент или
+ * подтянуть детали через REST. Полный объект подсказки внутрь WS не пихаем —
+ * экономим трафик.
+ */
+export interface SprintHintCreatedEvent extends BaseTrackerWsEvent<'sprint_hint.created'> {
+  cycleId: string;
+  projectId: string;
+  hintId: string;
+  severity: 'critical' | 'warning' | 'info';
+  kind: string;
+}
+
+export interface SprintHintUpdatedEvent extends BaseTrackerWsEvent<'sprint_hint.updated'> {
+  cycleId: string;
+  projectId: string;
+  hintId: string;
+}
+
+export interface SprintHintDismissedEvent
+  extends BaseTrackerWsEvent<'sprint_hint.dismissed'> {
+  cycleId: string;
+  projectId: string;
+  hintId: string;
+}
+
+export interface SprintHintResolvedEvent
+  extends BaseTrackerWsEvent<'sprint_hint.resolved'> {
+  cycleId: string;
+  projectId: string;
+  hintId: string;
+}
+
 export type TrackerWsEvent =
   | IssueCreatedEvent
   | IssueUpdatedEvent
@@ -316,4 +360,8 @@ export type TrackerWsEvent =
   | IssueChecklistProgressChangedEvent
   | ProjectDocumentCreatedEvent
   | ProjectDocumentUpdatedEvent
-  | ProjectDocumentDeletedEvent;
+  | ProjectDocumentDeletedEvent
+  | SprintHintCreatedEvent
+  | SprintHintUpdatedEvent
+  | SprintHintDismissedEvent
+  | SprintHintResolvedEvent;

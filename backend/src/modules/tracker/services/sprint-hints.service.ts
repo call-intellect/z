@@ -18,6 +18,7 @@ import type {
 } from '../dto/sprint-hints/sprint-hint.dto';
 
 import { SprintAnalystService } from './sprint-analyst.service';
+import { TrackerEventsService } from './tracker-events.service';
 
 /**
  * Sprints (2026-05-27) — управление `SprintHint`'ами.
@@ -37,6 +38,9 @@ export class SprintHintsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SprintAnalystService)
     private readonly analyst: SprintAnalystService,
+    @Optional()
+    @Inject(TrackerEventsService)
+    private readonly events?: TrackerEventsService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -87,6 +91,13 @@ export class SprintHintsService {
       kind: updated.kind,
     });
     void this.analyst.invalidateDashboardCache(existing.cycleId);
+    // Sprints (2026-05-28) — live-обновление: фронт /sprints + /sprints/:id
+    // должны переехать счётчики hints. projectId дотягиваем через Cycle.
+    await this.emitSprintHintEvent('dismissed', {
+      tenantId: args.tenantId,
+      cycleId: existing.cycleId,
+      hintId: existing.id,
+    });
     return this.toResponse(updated);
   }
 
@@ -108,10 +119,47 @@ export class SprintHintsService {
       },
     });
     void this.analyst.invalidateDashboardCache(existing.cycleId);
+    await this.emitSprintHintEvent('resolved', {
+      tenantId: args.tenantId,
+      cycleId: existing.cycleId,
+      hintId: existing.id,
+    });
     return this.toResponse(updated);
   }
 
   // ─────────────────────────── helpers ───────────────────────────────
+
+  /**
+   * Sprints (2026-05-28) — публикация sprint_hint.* в WS. Подгружает projectId
+   * через Cycle, так как сам SprintHint его не хранит. best-effort.
+   */
+  private async emitSprintHintEvent(
+    kind: 'dismissed' | 'resolved' | 'updated',
+    args: { tenantId: string; cycleId: string; hintId: string },
+  ): Promise<void> {
+    if (!this.events) return;
+    try {
+      const cycle = await this.prisma.cycle.findUnique({
+        where: { id: args.cycleId },
+        select: { projectId: true },
+      });
+      if (!cycle) return;
+      const payload = {
+        tenantId: args.tenantId,
+        projectId: cycle.projectId,
+        cycleId: args.cycleId,
+        hintId: args.hintId,
+      };
+      if (kind === 'dismissed') this.events.publishSprintHintDismissed(payload);
+      else if (kind === 'resolved') this.events.publishSprintHintResolved(payload);
+      else this.events.publishSprintHintUpdated(payload);
+    } catch (err) {
+      this.logger.debug(
+        { err: err instanceof Error ? err.message : String(err) },
+        'sprint-hints: emit WS event failed (best-effort)',
+      );
+    }
+  }
 
   private async requireHint(id: string, tenantId: string): Promise<SprintHint> {
     const hint = await this.prisma.sprintHint.findFirst({

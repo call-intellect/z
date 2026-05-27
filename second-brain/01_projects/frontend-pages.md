@@ -91,13 +91,15 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 | `/feed` | Activity Feed (Wave 2) |
 | `/intake` | Triage очередь (AI suggestions) |
 
-## Sprints (2026-05-27, см. [[sprints]])
+## Sprints (2026-05-27 / 2026-05-28, см. [[sprints]])
 
 | Путь | Что |
 |---|---|
-| `/sprints` | Список спринтов tenant'а + CTA «Создать спринт» (MVP — плейсхолдер). |
+| `/sprints` | **Master-detail список Org** (2026-05-28): слева — карточки спринтов с tabs (`Активные/Завершённые/Предстоящие/Все`), scope-chips (Компания/Отдел/Клиент/Поставщик/Сотрудник/Проект), поиск debounced 300ms, сортировка (startDate/progress/hints), пагинация. Справа — `SprintPreviewCard` (scope-badge, прогресс, счётчики, топ-3 SprintHint, топ-3 задач без срока, кнопка «Открыть спринт»). Mobile — список + `Sheet` для detail. URL-state синхронизируется. Live через `/ws/tracker` (`cycle.*`, `sprint_hint.*`) — счётчики обновляются без F5. Кнопка «+ Создать» открывает расширенный `SprintCreateWizard`. |
 | `/sprints/[id]` | Дашборд спринта: прогресс / 3 секции задач / помощник предлагает / связанные встречи / кнопки «Создать видеовстречу» (запускает `sprint_review`) и «Завершить спринт». SWR refresh 30s. |
 | `/sprints/[id]/review` | Финальный AI-отчёт (3 состояния: pending / ready / failed). На pending — auto-poll 10s, на failed — кнопка regenerate. |
+
+`SprintCreateWizard` (2026-05-28, расширен): шаг 1 — radio из 6 scope-вариантов + универсальный `Combobox` (cmdk + Popover) с inline-create через `+ Создать «<query>»` для Vendor/Card/Department/Person. Для `person` — двухступенчатый picker Role → Person через Appointment. Шаг 2 — название/длительность/дата. Submit → `POST /api/v1/sprints/quick-create` атомарно создаёт Project + Cycle + Board + IssueStates.
 
 Сайдбар: пункт «Спринты» в группе «Каждый день» рядом с «Проекты», иконка `Rocket`, `data-tour-target="welcome.sprints"` для будущего onboarding-tour.
 

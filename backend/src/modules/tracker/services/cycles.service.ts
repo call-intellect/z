@@ -6,7 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Prisma, type Cycle, type Project } from '@prisma/client';
+import { Prisma, type Cycle } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,27 +18,13 @@ import type {
 } from '../dto/cycles/cycle-response.dto';
 import type { UpdateCycleDto } from '../dto/cycles/update-cycle.dto';
 import type { ListIssuesResponse } from '../dto/issues/issue-response.dto';
+import { detectProjectScopeKind } from '../utils/scope-detection';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
-
-/** Sprints (2026-05-27) — определяем «scope» проекта по его 4 опц. полям. */
-function detectProjectScopeKind(
-  p: Pick<Project, 'customerCardId' | 'vendorId' | 'subjectPersonId' | 'departmentId'>,
-): 'org' | 'customer' | 'vendor' | 'person' | 'department' | 'project' {
-  if (p.customerCardId) return 'customer';
-  if (p.vendorId) return 'vendor';
-  if (p.subjectPersonId) return 'person';
-  if (p.departmentId) return 'department';
-  // Если ни одно scope-поле не заполнено — это «спринт компании» (org).
-  // Если в будущем понадобится отличать «спринт проекта без scope» от
-  // «спринта компании» — добавим явный признак в Project, а пока трактуем
-  // отсутствие scope как org-уровень.
-  return 'org';
-}
 
 /**
  * CyclesService — циклы («неделя работы» / спринт). Поддерживает

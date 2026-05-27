@@ -33,6 +33,7 @@ const KNOWN_EVENT_TYPES: TrackerWsEventType[] = [
   'comment.updated',
   'comment.deleted',
   'cycle.created',
+  'cycle.updated',
   'cycle.progress_updated',
   'cycle.completed',
   'intake.new_item',
@@ -42,6 +43,11 @@ const KNOWN_EVENT_TYPES: TrackerWsEventType[] = [
   'import.progress',
   'import.completed',
   'import.failed',
+  // ТЗ 2026-05-28 sprints master-detail — события подсказок помощника.
+  'sprint_hint.created',
+  'sprint_hint.updated',
+  'sprint_hint.dismissed',
+  'sprint_hint.resolved',
 ];
 
 export interface TrackerWsClient {

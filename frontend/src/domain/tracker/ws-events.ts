@@ -14,6 +14,7 @@ export type TrackerWsEventType =
   | 'comment.updated'
   | 'comment.deleted'
   | 'cycle.created'
+  | 'cycle.updated'
   | 'cycle.progress_updated'
   | 'cycle.completed'
   | 'intake.new_item'
@@ -21,7 +22,12 @@ export type TrackerWsEventType =
   | 'activity_feed.new_item'
   | 'import.progress'
   | 'import.completed'
-  | 'import.failed';
+  | 'import.failed'
+  // ТЗ 2026-05-28 sprints master-detail — события подсказок помощника.
+  | 'sprint_hint.created'
+  | 'sprint_hint.updated'
+  | 'sprint_hint.dismissed'
+  | 'sprint_hint.resolved';
 
 /**
  * Wave 3 / Tracker Phase 5 part 1 (2026-05-24) — payload-типы импорта.

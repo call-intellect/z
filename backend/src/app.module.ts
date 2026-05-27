@@ -587,6 +587,11 @@ export class AppModule implements NestModule {
         { path: 'api/v1/projects/:projectId/issues', method: RequestMethod.POST },
         { path: 'api/v1/issues/:id/comments', method: RequestMethod.POST },
         { path: 'api/v1/intake', method: RequestMethod.POST },
+        // Sprints (2026-05-28, ТЗ §1.3) — quick-create спринта может ретраиться
+        // фронтом при медленной сети; гарантируем, что один и тот же
+        // Idempotency-Key возвращает первый созданный {projectId,cycleId},
+        // а не плодит дубли проектов.
+        { path: 'api/v1/sprints/quick-create', method: RequestMethod.POST },
       );
   }
 }

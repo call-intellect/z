@@ -66,3 +66,41 @@ export interface ListVendorsResponse {
   limit: number;
   totalPages: number;
 }
+
+// ─────────────────────────── Create / Update DTO ─────────────────────────────
+
+/**
+ * Sprints (2026-05-28) §1.1 — inline-create поставщика прямо из SprintCreateWizard.
+ * Минимальный набор полей; при создании автоматически инициализируется связанный
+ * `Entity{type=vendor}`. Подробно — `VendorsService.create`.
+ */
+export const CreateVendorSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Название поставщика не может быть пустым')
+      .max(300),
+    inn: z.string().trim().max(20).nullable().optional(),
+    segment: VendorSegmentSchema.nullable().optional(),
+    status: VendorStatusSchema.optional().default('active'),
+    responsibleUserId: z.string().max(64).nullable().optional(),
+  })
+  .strict();
+export type CreateVendorDto = z.infer<typeof CreateVendorSchema>;
+
+/**
+ * UpdateVendorSchema — partial без `tenantId`/`entityId` (системные поля не меняются
+ * напрямую). Все поля опциональны; пустой объект `{}` отбрасывается на сервисе как
+ * no-op (но валидация проходит). По-полю — те же ограничения, что и в Create.
+ */
+export const UpdateVendorSchema = z
+  .object({
+    name: z.string().trim().min(1).max(300).optional(),
+    inn: z.string().trim().max(20).nullable().optional(),
+    segment: VendorSegmentSchema.nullable().optional(),
+    status: VendorStatusSchema.optional(),
+    responsibleUserId: z.string().max(64).nullable().optional(),
+  })
+  .strict();
+export type UpdateVendorDto = z.infer<typeof UpdateVendorSchema>;

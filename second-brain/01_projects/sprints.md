@@ -40,6 +40,8 @@ related:
 
 | Метод и путь | Назначение |
 |---|---|
+| `GET /api/v1/sprints` | Master-detail список спринтов уровня Org с фильтрами (status / scopeKind / q), сортировками (startDate / progress / hints) и пагинацией. |
+| `POST /api/v1/sprints/quick-create` | Атомарное создание Project + Cycle + Board + IssueStates в одной transaction. Принимает scope ∈ {org, customer, vendor, person, department, project} с auto-генерацией slug/identifier. Idempotency-Key. |
 | `GET /api/v1/cycles/:id/dashboard` | Агрегированные данные дашборда спринта. Redis-кэш 5 мин. |
 | `POST /api/v1/cycles/:id/start-meeting` | Запуск встречи (default `type='sprint_review'`). Создаёт `Meeting` с `linkedCycleId`. |
 | `GET /api/v1/cycles/:id/hints` | Список активных подсказок. |
@@ -47,6 +49,9 @@ related:
 | `POST /api/v1/sprint-hints/:id/resolve` | Пометить выполненной (`status='resolved'`). |
 | `GET /api/v1/cycles/:id/review` | Прочитать финальный отчёт (`ready` / `pending` / `failed`). |
 | `POST /api/v1/cycles/:id/review/regenerate` | Перезапустить генерацию финального отчёта. |
+| `POST /api/v1/vendors` | Создать поставщика (для inline-create из мастера спринта). RBAC `vendor:write`. |
+| `PATCH /api/v1/vendors/:id` | Обновить поставщика. RBAC `vendor:write`. |
+| `DELETE /api/v1/vendors/:id` | Soft-delete поставщика. RBAC `vendor:delete`. |
 
 Существующие cycle-endpoint'ы (`/api/v1/cycles/:id`, list, create, complete) —
 без изменений. Полная карта см. в [api-layer.md](api-layer.md).
@@ -88,11 +93,14 @@ related:
 
 | Путь | Назначение |
 |---|---|
-| `/sprints` | Список спринтов (master-detail; MVP — плейсхолдер с CTA). |
+| `/sprints` | Master-detail список Org: слева — карточки с фильтрами (status tabs / scope chips / поиск / сортировки) и пагинацией, справа — preview-карточка. URL-state. Live через `/ws/tracker`. На mobile detail открывается как `Sheet`. |
 | `/sprints/[id]` | Дашборд спринта: прогресс, задачи (3 секции), подсказки, встречи. |
 | `/sprints/[id]/review` | Финальный отчёт (`ready` / `pending` / `failed`). |
 
-Компоненты: `SprintHintCard`, `SprintCreateWizard` (2-step Dialog).
+Компоненты:
+- `SprintHintCard` — карточка подсказки.
+- `SprintCreateWizard` — 2-шаговый Dialog. **Шаг 1 (scope)**: radio из 6 вариантов (Компания / Отдел / Клиент / Поставщик / Сотрудник / Проект) + универсальный Combobox с inline-create через `+ Создать «<query>»` для Vendor/Card/Department/Person (через cmdk Command + Popover). Для scope='person' двухступенчатый picker Role → Person через Appointment. **Шаг 2 (parameters)**: название / длительность 1-4 нед / дата старта. Submit → `POST /api/v1/sprints/quick-create` (один атомарный вызов).
+- `SprintPreviewCard` — preview справа в master-detail: scope-badge, прогресс, счётчики, топ-3 SprintHint, топ-3 задач без срока, кнопка «Открыть спринт».
 
 Сайдбар: пункт «Спринты» в группе «Каждый день», иконка `Rocket` (lucide).
 `data-tour-target="welcome.sprints"` — для будущего
@@ -137,10 +145,6 @@ related:
 
 ## Что ещё не сделано (MVP-долг)
 
-- Master-detail списка `/sprints` (отдельный backend endpoint + UI). Сейчас
-  плейсхолдер — пользователь создаёт спринт из проекта или через мастер.
-- `SprintCreateWizard` создаёт Cycle внутри уже существующего Project; шаг
-  «создать новый Project с scope» — TODO.
 - «Создать спринт на основе плана следующего» в `/review` — сейчас просто
   ссылка на `/sprints`.
 - Inline-валидации задач (`§3.7` ТЗ) — отложено.
@@ -149,5 +153,6 @@ related:
 
 ## Источники
 
-- [plans/tz/2026-05-27-sprints.md](../../plans/tz/2026-05-27-sprints.md) — ТЗ.
+- [plans/tz/2026-05-27-sprints.md](../../plans/tz/2026-05-27-sprints.md) — базовое ТЗ.
+- [plans/tz/2026-05-28-sprints-master-detail-and-wizard.md](../../plans/tz/2026-05-28-sprints-master-detail-and-wizard.md) — ТЗ master-detail + расширенного мастера.
 - [plans/analysis/2026-05-27-sprints.md](../../plans/analysis/2026-05-27-sprints.md) — анализ.

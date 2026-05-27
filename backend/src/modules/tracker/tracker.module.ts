@@ -20,6 +20,7 @@ import { ProjectDocumentsController } from './controllers/project-documents.cont
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
 import { SprintHintsController } from './controllers/sprint-hints.controller';
+import { SprintsController } from './controllers/sprints.controller';
 import { StatesController } from './controllers/states.controller';
 import { TeamTemplatesController } from './controllers/team-templates.controller';
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
@@ -51,6 +52,7 @@ import { RelationsService } from './services/relations.service';
 import { SimilarIssuesService } from './services/similar-issues.service';
 import { SprintAnalystService } from './services/sprint-analyst.service';
 import { SprintHintsService } from './services/sprint-hints.service';
+import { SprintsService } from './services/sprints.service';
 import { StatesService } from './services/states.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
@@ -134,6 +136,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // `/api/v1/sprint-hints/:id/{dismiss,resolve}`. Cycles dashboard /
     // start-meeting / hints — расширения CyclesController.
     SprintHintsController,
+    // Sprints (2026-05-28, plans/tz/2026-05-28-sprints-master-detail-and-wizard.md)
+    // — org-wide `GET /api/v1/sprints` + `POST /api/v1/sprints/quick-create`.
+    SprintsController,
   ],
   providers: [
     ActivityRecorderService,
@@ -227,6 +232,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     SprintAnalystService,
     SprintHintsService,
     CycleMeetingsService,
+    // Sprints (2026-05-28) — org-wide list + atomic quick-create.
+    SprintsService,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не

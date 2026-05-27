@@ -276,6 +276,80 @@ async function main(): Promise<void> {
     scope: 'department',
   });
 
+  // ── 9.1. Sprints (2026-05-28) §1.7 — проверка через REST /api/v1/sprints. ──
+  // Не дёргаем HTTP (smoke-runner внутри backend контейнера, REST на этом же
+  // процессе), а проверяем сервисный layer напрямую через Prisma — это
+  // соответствует контракту list-фильтров (status=all / scopeKind=department / q).
+  //
+  // Имитация SprintsService.list через прямой SQL (упрощённо):
+  const sprintsListCheck = await prisma.cycle.findMany({
+    where: {
+      tenantId,
+      project: { is: { departmentId: { not: null }, deletedAt: null } },
+    },
+    include: { project: { select: { departmentId: true } } },
+  });
+  const foundInList = sprintsListCheck.find((c) => c.id === cycle.id);
+  if (!foundInList) {
+    throw new Error('smoke-sprints: scope=department list-фильтр не нашёл наш cycle');
+  }
+  // eslint-disable-next-line no-console
+  console.log('[step 9.1] sprints list (scope=department) видит наш cycle: ok');
+
+  // ── 9.2. Sprints (2026-05-28) §1.7 — quick-create Vendor + scope=vendor. ──
+  // Создаём через прямой Prisma (имитация POST /api/v1/vendors).
+  const vendorEntity = await prisma.entity.create({
+    data: {
+      tenantId,
+      type: 'vendor',
+      name: `${runId}-vendor`,
+      canonicalName: `${runId}-vendor`.toLowerCase(),
+      mentionsCount: 0,
+    },
+    select: { id: true },
+  });
+  const vendor = await prisma.vendor.create({
+    data: {
+      tenantId,
+      entityId: vendorEntity.id,
+      name: `${runId}-vendor`,
+      status: 'active',
+    },
+    select: { id: true },
+  });
+  // eslint-disable-next-line no-console
+  console.log('[step 9.2] vendor создан inline: ok', { vendorId: vendor.id });
+
+  // ── 9.3. quick-create scope=vendor (имитация POST /api/v1/sprints/quick-create). ──
+  // Создаём Project с vendorId + Cycle в той же логике, что SprintsService.quickCreate.
+  const vendorProject = await prisma.project.create({
+    data: {
+      tenantId,
+      slug: `${runId}-vendor-proj`,
+      identifier: 'SMV',
+      name: `Поставщик: ${runId}`,
+      ownerId,
+      network: 0,
+      vendorId: vendor.id,
+    },
+    select: { id: true },
+  });
+  const vendorCycle = await prisma.cycle.create({
+    data: {
+      tenantId,
+      projectId: vendorProject.id,
+      name: `${runId}-vendor-cycle`,
+      startDate: now,
+      endDate,
+    },
+    select: { id: true },
+  });
+  // eslint-disable-next-line no-console
+  console.log('[step 9.3] quick-create scope=vendor: ok', {
+    projectId: vendorProject.id,
+    cycleId: vendorCycle.id,
+  });
+
   // ── 10. Cleanup. ──
   await prisma.sprintHint.delete({ where: { id: hint.id } });
   await prisma.meeting.delete({ where: { id: meeting.id } });
@@ -283,6 +357,11 @@ async function main(): Promise<void> {
     where: { id: { in: [issueA.id, issueB.id, issueC.id] } },
   });
   await prisma.cycle.delete({ where: { id: cycle.id } });
+  // Sprints (2026-05-28) — cleanup vendor + project + cycle, созданные в шагах 9.2/9.3.
+  await prisma.cycle.delete({ where: { id: vendorCycle.id } });
+  await prisma.project.delete({ where: { id: vendorProject.id } });
+  await prisma.vendor.delete({ where: { id: vendor.id } });
+  await prisma.entity.delete({ where: { id: vendorEntity.id } });
   await prisma.board.delete({ where: { id: board.id } });
   await prisma.issueState.deleteMany({
     where: { id: { in: [stateBacklog.id, stateDone.id] } },

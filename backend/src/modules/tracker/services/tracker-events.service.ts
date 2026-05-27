@@ -39,6 +39,10 @@ import type {
   ProjectDocumentCreatedEvent,
   ProjectDocumentDeletedEvent,
   ProjectDocumentUpdatedEvent,
+  SprintHintCreatedEvent,
+  SprintHintDismissedEvent,
+  SprintHintResolvedEvent,
+  SprintHintUpdatedEvent,
   TrackerWsEvent,
 } from '../dto/ws-events';
 import { TrackerGateway } from '../gateways/tracker.gateway';
@@ -613,6 +617,92 @@ export class TrackerEventsService {
       tenantId: args.tenantId,
       projectId: args.projectId,
       documentId: args.documentId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  // ── sprint hints (2026-05-28) ─────────────────────────────────────────
+
+  publishSprintHintCreated(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+    severity: 'critical' | 'warning' | 'info';
+    kind: string;
+  }): void {
+    const event: SprintHintCreatedEvent = {
+      type: 'sprint_hint.created',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      severity: args.severity,
+      kind: args.kind,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishSprintHintUpdated(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+  }): void {
+    const event: SprintHintUpdatedEvent = {
+      type: 'sprint_hint.updated',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishSprintHintDismissed(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+  }): void {
+    const event: SprintHintDismissedEvent = {
+      type: 'sprint_hint.dismissed',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishSprintHintResolved(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+  }): void {
+    const event: SprintHintResolvedEvent = {
+      type: 'sprint_hint.resolved',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
       timestamp: new Date().toISOString(),
     };
     this.safeEmit(event, [

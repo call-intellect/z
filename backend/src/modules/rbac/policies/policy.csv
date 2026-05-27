@@ -335,7 +335,9 @@ p, manager, *, self, notification, write
 # ──────────────────────────── SBA α-3 — Layer 2 ontology extension ────────────────────────────
 # ResourceType: vendor — поставщик (модель Vendor). Read доступен всем member'ам Org
 # (как card/block/entity — поставщики разделяются по компании, силоса нет).
-# Write/delete — owner/admin. На α-3 только read-only API; POST/PATCH появятся в α-6.
+# Write — owner/admin/manager (Sprints 2026-05-28: inline-create в SprintCreateWizard
+# доступен всем менеджерам). Delete — только owner/admin (защита от случайного
+# удаления данных о поставщиках).
 p, owner, *, *, vendor, read
 p, owner, *, *, vendor, write
 p, owner, *, *, vendor, delete
@@ -343,6 +345,7 @@ p, admin, *, *, vendor, read
 p, admin, *, *, vendor, write
 p, admin, *, *, vendor, delete
 p, manager, *, *, vendor, read
+p, manager, *, *, vendor, write
 
 # ResourceType: event_card — событие графа знаний (модель Event). Имя event_card
 # (не event), чтобы не конфликтовать с доменными событиями LiveKit/AI/etc.

@@ -291,3 +291,106 @@ export function formatSprintDateRange(
   const b = typeof endDate === 'string' ? new Date(endDate) : endDate;
   return `${fmt(a)} – ${fmt(b)}`;
 }
+
+// ─── Master-detail список спринтов (ТЗ 2026-05-28) ──────────────────────────
+
+import type {
+  SprintListItemApi,
+  SprintSortByApi,
+} from '@/api/sprints.api';
+
+export type SprintStatus = 'active' | 'completed' | 'upcoming';
+
+export interface DomainSprintScope {
+  kind: SprintScopeKindApi;
+  /** Готовый русский лейбл с backend («Клиент: Альфа», «Спринт компании», …). */
+  label: string;
+  refId: string | null;
+  isDeleted: boolean;
+}
+
+export interface DomainSprintListItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectIdentifier: string;
+  name: string;
+  scope: DomainSprintScope;
+  startDate: Date;
+  endDate: Date;
+  status: SprintStatus;
+  progress: { total: number; completed: number; ratio: number };
+  activeHintsCount: number;
+  criticalHintsCount: number;
+  linkedMeetingsCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+}
+
+/** Маппер ApiDto → DomainModel для строки списка спринтов. */
+export function mapApiSprint(api: SprintListItemApi): DomainSprintListItem {
+  return {
+    id: api.id,
+    projectId: api.projectId,
+    projectName: api.project.name,
+    projectIdentifier: api.project.identifier,
+    name: api.name,
+    scope: {
+      kind: api.scope.kind,
+      label: api.scope.label,
+      refId: api.scope.refId,
+      isDeleted: Boolean(api.scope.isDeleted),
+    },
+    startDate: new Date(api.startDate),
+    endDate: new Date(api.endDate),
+    status: api.status,
+    progress: {
+      total: api.progress.total,
+      completed: api.progress.completed,
+      ratio: api.progress.ratio,
+    },
+    activeHintsCount: api.activeHintsCount,
+    criticalHintsCount: api.criticalHintsCount,
+    linkedMeetingsCount: api.linkedMeetingsCount,
+    createdAt: new Date(api.createdAt),
+    updatedAt: new Date(api.updatedAt),
+    completedAt: api.completedAt ? new Date(api.completedAt) : null,
+  };
+}
+
+const SCOPE_KIND_SHORT_LABEL: Record<SprintScopeKindApi, string> = {
+  org: 'Компания',
+  customer: 'Клиент',
+  vendor: 'Поставщик',
+  person: 'Сотрудник',
+  department: 'Отдел',
+  project: 'Проект',
+};
+
+/** Короткая русская подпись scope-вида (для chip-фильтров и radio-группы). */
+export function getScopeKindLabel(kind: SprintScopeKindApi): string {
+  return SCOPE_KIND_SHORT_LABEL[kind] ?? kind;
+}
+
+const STATUS_LABEL: Record<SprintStatus, string> = {
+  active: 'Активный',
+  completed: 'Завершён',
+  upcoming: 'Предстоящий',
+};
+
+/** Подпись статуса спринта на русском. */
+export function getStatusLabel(status: SprintStatus): string {
+  return STATUS_LABEL[status] ?? status;
+}
+
+const SORT_BY_LABEL: Record<SprintSortByApi, string> = {
+  startDate: 'По дате старта',
+  progress: 'По прогрессу',
+  hints: 'По подсказкам',
+};
+
+/** Подпись варианта сортировки на русском. */
+export function getSortByLabel(sortBy: SprintSortByApi): string {
+  return SORT_BY_LABEL[sortBy] ?? sortBy;
+}

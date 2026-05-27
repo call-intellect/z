@@ -131,12 +131,17 @@ export class AccountsService {
 
   /**
    * Lead-style регистрация. honeypot заполнен → silent ok без действий.
+   * Сохраняет phone, флаги согласия и реферральную ссылку.
    */
   async register(input: {
     email: string;
     name: string;
+    phone?: string;
     companyName?: string;
     honeypot?: string;
+    ref?: string;
+    consentDataProcessing: boolean;
+    consentMarketing?: boolean;
   }): Promise<RegisterResult> {
     if (input.honeypot && input.honeypot.length > 0) {
       // Бот заполнил скрытое поле. Возвращаем «успех», но ничего не делаем.
@@ -165,8 +170,13 @@ export class AccountsService {
         {
           email,
           name,
+          phone: input.phone?.trim(),
           passwordHash,
           mustChangePassword: true,
+          consentDataProcessing: input.consentDataProcessing,
+          consentMarketing: input.consentMarketing ?? false,
+          consentAcceptedAt: new Date(),
+          signupRef: input.ref?.trim(),
         },
         tx,
       );

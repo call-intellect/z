@@ -839,14 +839,22 @@ model User {
   externalId         String?          @unique
   email              String
   name               String
+  phone              String?          @db.VarChar(20)
   role               UserRole         @default(user)
   /// Флаг владельца продукта Z (super-admin Z-Admin раздела). См. orgs-and-rbac.md.
   /// На уровне БД — независим от `role` и `Membership`. Включается вручную DBA / seed'ом.
   isSuperAdmin       Boolean          @default(false)
   signupSource       UserSignupSource @default(crossmark)
+  signupRef          String?          @db.VarChar(255)
   // argon2id (standalone) или bcrypt (admin local login). Опционально для Crossmark-провижененных юзеров.
   passwordHash       String?
   mustChangePassword Boolean          @default(false)
+  /// Согласие на обработку персональных данных (обязательное при регистрации).
+  consentDataProcessing Boolean       @default(false)
+  /// Согласие на маркетинговые рассылки (опциональное).
+  consentMarketing   Boolean          @default(false)
+  /// Дата и время принятия согласий.
+  consentAcceptedAt  DateTime?
   createdAt          DateTime         @default(now())
   lastSeenAt         DateTime?
   deletedAt          DateTime?

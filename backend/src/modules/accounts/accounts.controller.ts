@@ -66,8 +66,12 @@ export class AccountsController {
     const result = await this.accounts.register({
       email: body.email,
       name: body.name,
+      ...(body.phone !== undefined ? { phone: body.phone } : {}),
       ...(body.companyName !== undefined ? { companyName: body.companyName } : {}),
       ...(body.honeypot !== undefined ? { honeypot: body.honeypot } : {}),
+      ...(body.ref !== undefined ? { ref: body.ref } : {}),
+      consentDataProcessing: body.consentDataProcessing,
+      ...(body.consentMarketing !== undefined ? { consentMarketing: body.consentMarketing } : {}),
     });
     return {
       status: result.status,

@@ -164,7 +164,7 @@ describe('AccountsService', () => {
   describe('register', () => {
     it('создаёт standalone-юзера, шлёт письмо с temp-паролем', async () => {
       const svc = make();
-      const result = await svc.register({ email: 'Alice@Example.com', name: 'Alice' });
+      const result = await svc.register({ email: 'Alice@Example.com', name: 'Alice', consentDataProcessing: true });
 
       expect(disposable.isDisposable).toHaveBeenCalledWith('alice@example.com');
       expect(passwords.hash).toHaveBeenCalled();
@@ -192,6 +192,7 @@ describe('AccountsService', () => {
         email: 'bot@spam.com',
         name: 'Bot',
         honeypot: 'submit',
+        consentDataProcessing: true,
       });
       expect(result).toEqual({ status: 'ok', emailSent: true });
       expect(repo.upsertStandalone).not.toHaveBeenCalled();
@@ -201,7 +202,7 @@ describe('AccountsService', () => {
     it('disposable email → DisposableEmailError', async () => {
       disposable.isDisposable.mockReturnValueOnce(true);
       const svc = make();
-      await expect(svc.register({ email: 'a@mailinator.com', name: 'A' })).rejects.toBeInstanceOf(
+      await expect(svc.register({ email: 'a@mailinator.com', name: 'A', consentDataProcessing: true })).rejects.toBeInstanceOf(
         DisposableEmailError,
       );
       expect(repo.upsertStandalone).not.toHaveBeenCalled();
@@ -210,7 +211,7 @@ describe('AccountsService', () => {
     it('ошибка SMTP → возвращает emailSent=false с error', async () => {
       mail.sendTempPassword.mockResolvedValueOnce({ ok: false, error: 'SMTP timeout' });
       const svc = make();
-      const result = await svc.register({ email: 'a@b.c', name: 'A' });
+      const result = await svc.register({ email: 'a@b.c', name: 'A', consentDataProcessing: true });
       expect(result.emailSent).toBe(false);
       expect(result.emailError).toBe('SMTP timeout');
     });

@@ -58,15 +58,20 @@ export class AccountsRepository {
 
   /**
    * upsert по `(email, signupSource='standalone')`. Если standalone-юзер
-   * с таким email уже есть — возвращает его (с обновлёнными name/passwordHash).
+   * с таким email уже есть — возвращает его (с обновлёнными полями).
    * Если нет — создаёт нового.
    */
   async upsertStandalone(
     input: {
       email: string;
       name: string;
+      phone?: string;
       passwordHash: string;
       mustChangePassword: boolean;
+      consentDataProcessing?: boolean;
+      consentMarketing?: boolean;
+      consentAcceptedAt?: Date;
+      signupRef?: string;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<User> {
@@ -81,15 +86,25 @@ export class AccountsRepository {
       create: {
         email: input.email,
         name: input.name,
+        phone: input.phone,
         signupSource: 'standalone',
         passwordHash: input.passwordHash,
         mustChangePassword: input.mustChangePassword,
+        consentDataProcessing: input.consentDataProcessing ?? false,
+        consentMarketing: input.consentMarketing ?? false,
+        consentAcceptedAt: input.consentAcceptedAt,
+        signupRef: input.signupRef,
         role: 'user',
       },
       update: {
         name: input.name,
+        phone: input.phone,
         passwordHash: input.passwordHash,
         mustChangePassword: input.mustChangePassword,
+        consentDataProcessing: input.consentDataProcessing ?? undefined,
+        consentMarketing: input.consentMarketing ?? undefined,
+        consentAcceptedAt: input.consentAcceptedAt,
+        signupRef: input.signupRef,
       },
     });
   }

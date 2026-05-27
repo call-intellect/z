@@ -7,6 +7,7 @@ import type {
 } from './checklists/checklist.dto';
 import type { CycleResponseDto } from './cycles/cycle-response.dto';
 import type { IssueResponseDto } from './issues/issue-response.dto';
+import type { ProjectDocumentSummaryDto } from './project-documents/project-document.dto';
 
 /**
  * Контракт WebSocket-событий трекера (`namespace=/ws/tracker`).
@@ -49,7 +50,11 @@ export type TrackerWsEventType =
   | 'checklist_item.created'
   | 'checklist_item.updated'
   | 'checklist_item.deleted'
-  | 'issue.checklist_progress_changed';
+  | 'issue.checklist_progress_changed'
+  // Tracker Project Documents (2026-05-27)
+  | 'project_document.created'
+  | 'project_document.updated'
+  | 'project_document.deleted';
 
 interface BaseTrackerWsEvent<T extends TrackerWsEventType> {
   type: T;
@@ -254,6 +259,33 @@ export interface IssueChecklistProgressChangedEvent
   done: number;
 }
 
+/**
+ * Tracker Project Documents (2026-05-27).
+ *
+ * Эмитятся в rooms `tenant:` + `project:`. На `project_document.updated` НЕ
+ * передаём содержимое — клиент дотягивает контент отдельным запросом, чтобы
+ * не гонять килобайты по WS на каждый auto-save.
+ */
+export interface ProjectDocumentCreatedEvent
+  extends BaseTrackerWsEvent<'project_document.created'> {
+  projectId: string;
+  document: ProjectDocumentSummaryDto;
+}
+
+export interface ProjectDocumentUpdatedEvent
+  extends BaseTrackerWsEvent<'project_document.updated'> {
+  projectId: string;
+  document: ProjectDocumentSummaryDto;
+  /** Список изменённых полей (title|content|pinned|parentId|sortOrder). */
+  changedFields: string[];
+}
+
+export interface ProjectDocumentDeletedEvent
+  extends BaseTrackerWsEvent<'project_document.deleted'> {
+  projectId: string;
+  documentId: string;
+}
+
 export type TrackerWsEvent =
   | IssueCreatedEvent
   | IssueUpdatedEvent
@@ -281,4 +313,7 @@ export type TrackerWsEvent =
   | ChecklistItemCreatedEvent
   | ChecklistItemUpdatedEvent
   | ChecklistItemDeletedEvent
-  | IssueChecklistProgressChangedEvent;
+  | IssueChecklistProgressChangedEvent
+  | ProjectDocumentCreatedEvent
+  | ProjectDocumentUpdatedEvent
+  | ProjectDocumentDeletedEvent;

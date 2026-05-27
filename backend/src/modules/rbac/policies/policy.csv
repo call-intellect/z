@@ -810,6 +810,26 @@ p, manager, *, *, board, read
 p, manager, *, *, board, write
 p, coo, *, *, board, read
 
+# ──────────────────────────── Tracker Project Documents (2026-05-27) ────────────────────────────
+# project_document — простые rich-text документы внутри проекта (бриф/ТЗ/протокол).
+# Read — все members проекта; write — author + admin/owner; delete — author + admin/owner.
+# Manager open — может писать (рядовая работа над брифом/спецификацией). Manager
+# strict — write только своих (через self) для совместимости с остальными strict-правилами.
+# ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
+p, owner, *, *, project_document, read
+p, owner, *, *, project_document, write
+p, owner, *, *, project_document, delete
+p, admin, *, *, project_document, read
+p, admin, *, *, project_document, write
+p, admin, *, *, project_document, delete
+p, manager, open, *, project_document, read
+p, manager, open, *, project_document, write
+p, manager, open, self, project_document, delete
+p, manager, strict, *, project_document, read
+p, manager, strict, self, project_document, write
+p, manager, strict, self, project_document, delete
+p, coo, *, *, project_document, read
+
 # ──────────────────────────── Wave 2 — Activity Feeds (2026-05-24) ────────────────────────────
 # activity_feed_item — единая запись ленты активности (probe_question | insight |
 # decision | task | idea | conflict | knowledge_change). Read — все members

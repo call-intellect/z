@@ -618,6 +618,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private checklistsCreatedTotal!: Counter<'tenant' | 'project'>;
   private checklistItemsAddedTotal!: Counter<'tenant' | 'project' | 'via_bulk'>;
   private checklistItemsCompletedTotal!: Counter<'tenant' | 'project'>;
+  // Tracker Project Documents (2026-05-27, plans/tz/2026-05-27-tracker-project-documents.md).
+  //   project_documents_created_total{tenant, project} — создание документа.
+  //   project_documents_updated_total{tenant, project} — auto-save / explicit PATCH.
+  //   linked_cards_view_total{tenant, project} — открыт блок «Связанные карточки».
+  private projectDocumentsCreatedTotal!: Counter<'tenant' | 'project'>;
+  private projectDocumentsUpdatedTotal!: Counter<'tenant' | 'project'>;
+  private linkedCardsViewTotal!: Counter<'tenant' | 'project'>;
   // Tracker Phase 3 part C (2026-05-24) — AI-suggest при создании задачи.
   // ai_issue_inferred_total{tenant_top, accepted} — увеличивается на inference
   //   (accepted='false'); если позже PATCH принимает hint — отдельным вызовом
@@ -2353,6 +2360,22 @@ export class BusinessMetricsService implements OnModuleInit {
     this.checklistItemsCompletedTotal = this.getOrCreateCounter({
       name: 'checklist_items_completed_total',
       help: 'Tracker Checklists — пункт переведён в isDone=true (фронт-чекбокс).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    // Tracker Project Documents (2026-05-27) — см. plans/tz/2026-05-27-tracker-project-documents.md §Метрики.
+    this.projectDocumentsCreatedTotal = this.getOrCreateCounter({
+      name: 'project_documents_created_total',
+      help: 'Tracker Project Documents — создание документа проекта (POST /projects/:id/documents).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.projectDocumentsUpdatedTotal = this.getOrCreateCounter({
+      name: 'project_documents_updated_total',
+      help: 'Tracker Project Documents — обновление документа (PATCH /project-documents/:id, включая auto-save).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.linkedCardsViewTotal = this.getOrCreateCounter({
+      name: 'linked_cards_view_total',
+      help: 'Tracker Project Documents — запрос блока «Связанные карточки» (GET /projects/:id/linked-cards).',
       labelNames: ['tenant', 'project'] as const,
     });
     // Tracker Phase 3 part C — AI-suggest при создании задачи.
@@ -5134,10 +5157,49 @@ export class BusinessMetricsService implements OnModuleInit {
 
   /**
    * Tracker Checklists — пункт переведён в isDone=true (положительный
-   * переход; обратные переходы (done→undone) этот счётчик НЕ считает).
+   * переход; обратные переходы (done→undone) этот счётчик NE считает).
    */
   incChecklistItemCompleted(args: { tenant: string; project: string }): void {
     this.checklistItemsCompletedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Project Documents (2026-05-27) — создание документа проекта.
+   * Caller: `ProjectDocumentsService.create`.
+   */
+  incProjectDocumentCreated(args: {
+    tenant: string;
+    project: string;
+  }): void {
+    this.projectDocumentsCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Project Documents — обновление документа (включая auto-save).
+   * Caller: `ProjectDocumentsService.update`.
+   */
+  incProjectDocumentUpdated(args: {
+    tenant: string;
+    project: string;
+  }): void {
+    this.projectDocumentsUpdatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Project Documents — запрошен блок «Связанные карточки».
+   * Caller: `ProjectDocumentsService.listLinkedCards`.
+   */
+  incLinkedCardsView(args: { tenant: string; project: string }): void {
+    this.linkedCardsViewTotal.inc({
       tenant: args.tenant,
       project: args.project,
     });

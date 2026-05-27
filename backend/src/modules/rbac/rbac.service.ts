@@ -150,6 +150,9 @@ export const RESOURCE_TYPES = [
   // Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
   // ТЗ: plans/tz/2026-05-27-tracker-boards.md.
   'board',
+  // Tracker Project Documents (2026-05-27) — rich-text документы внутри проекта.
+  // ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
+  'project_document',
 ] as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[number];

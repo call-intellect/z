@@ -39,6 +39,9 @@ function buildTabs(slug: string): Tab[] {
       label: 'Гант',
       show: (p) => p.gantViewEnabled,
     },
+    // Tracker Project Documents (2026-05-27) — вкладка «Документы».
+    // ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
+    { href: `/projects/${slug}/documents`, label: 'Документы' },
     { href: `/projects/${slug}/settings`, label: 'Настройки' },
   ];
 }

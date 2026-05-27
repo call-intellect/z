@@ -6760,10 +6760,58 @@ model Project {
   /// При создании проекта одна доска isDefault=true создаётся автоматически
   /// (см. `BoardsService.ensureDefaultBoard` + `backfill-default-board.ts`).
   boards          Board[]
+  /// Tracker Project Documents (2026-05-27) — простые rich-text документы,
+  /// привязанные к проекту (бриф, ТЗ, протокол, инструкция). См. модель
+  /// `ProjectDocument` ниже и plans/tz/2026-05-27-tracker-project-documents.md.
+  documents       ProjectDocument[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
   @@index([tenantId, identifier])
+}
+
+/// Tracker Project Documents (2026-05-27) — простой rich-text документ,
+/// привязанный к проекту (бриф, ТЗ, протокол, инструкция). Контент — TipTap
+/// JSON. Иерархия `parentId` заложена в схему, в MVP UI плоский список с
+/// возможностью «закрепить». См. plans/tz/2026-05-27-tracker-project-documents.md.
+model ProjectDocument {
+  id              String  @id @default(cuid())
+  tenantId        String
+  projectId       String
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title           String // «Бриф ремонта офиса»
+  /// TipTap JSON (rich-text). Хранится «как есть», без серверной валидации схемы.
+  content         Json
+  /// Отрендеренный HTML (для preview, share, e-mail). Опционален.
+  contentHtml     String? @db.Text
+  /// Plain text без разметки — для поиска / AI / knowledge-core ingest.
+  contentStripped String? @db.Text
+
+  /// Иерархия (MVP UI плоский). При удалении родителя — children становятся
+  /// корневыми (SetNull).
+  parentId  String?
+  parent    ProjectDocument?  @relation("ProjectDocumentChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children  ProjectDocument[] @relation("ProjectDocumentChildren")
+  sortOrder Int               @default(0)
+
+  pinned Boolean @default(false)
+
+  /// Связь с графом знаний (Knowledge-core auto-tag через axis-classifier).
+  entityId String?
+
+  createdById String
+  updatedById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([projectId, title])
+  @@index([projectId, sortOrder])
+  @@index([projectId, deletedAt])
+  @@index([tenantId])
+  @@index([parentId])
 }
 
 /// Tracker Boards (2026-05-27) — доска внутри проекта (Канбан-доска маркетинга,

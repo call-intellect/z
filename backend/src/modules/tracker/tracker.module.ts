@@ -7,6 +7,7 @@ import { BoardsController } from './controllers/boards.controller';
 import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
 import { CyclesController } from './controllers/cycles.controller';
+import { DocumentUploadsController } from './controllers/document-uploads.controller';
 import { HolidaysController } from './controllers/holidays.controller';
 import { ImportsController } from './controllers/imports.controller';
 import { IntakeController } from './controllers/intake.controller';
@@ -14,6 +15,7 @@ import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
+import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
 import { StatesController } from './controllers/states.controller';
@@ -37,6 +39,7 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MyMentionsService } from './services/my-mentions.service';
+import { ProjectDocumentsService } from './services/project-documents.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
@@ -109,6 +112,13 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // Tracker Checklists (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md)
     // — плоские чек-листы внутри задачи (без исполнителя/срока на пункте).
     ChecklistsController,
+    // Tracker Project Documents (2026-05-27, plans/tz/2026-05-27-tracker-project-documents.md)
+    // — простые rich-text документы внутри проекта (бриф/ТЗ/протокол) +
+    // блок «Связанные карточки» снизу страницы.
+    ProjectDocumentsController,
+    // Tracker Project Documents — отдельный controller для загрузки картинок
+    // в редактор документа (POST /api/v1/uploads/document-asset).
+    DocumentUploadsController,
   ],
   providers: [
     ActivityRecorderService,
@@ -138,6 +148,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // recountCounters, IssueActivity на checklist_completed, WS-события,
     // метрики Prometheus.
     ChecklistsService,
+    // Tracker Project Documents (2026-05-27) — CRUD документов проекта +
+    // linked-cards SQL. Эмитит RawEvent через TrackerEmitterService.
+    // S3Service для uploads берётся из @Global RecordingsModule.
+    ProjectDocumentsService,
     // Sprint 3 Frontend Wave 2: read-only справочник статусов.
     StatesService,
     // T8 (2026-05-24): мои @-упоминания (читает IssueMention, write — markRead).

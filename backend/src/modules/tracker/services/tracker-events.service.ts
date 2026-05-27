@@ -7,6 +7,7 @@ import type {
 } from '../dto/checklists/checklist.dto';
 import type { CycleResponseDto } from '../dto/cycles/cycle-response.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
+import type { ProjectDocumentSummaryDto } from '../dto/project-documents/project-document.dto';
 import type {
   ActivityFeedNewItemEvent,
   BoardCreatedEvent,
@@ -35,6 +36,9 @@ import type {
   IssueDeletedEvent,
   IssueMovedToBoardEvent,
   IssueUpdatedEvent,
+  ProjectDocumentCreatedEvent,
+  ProjectDocumentDeletedEvent,
+  ProjectDocumentUpdatedEvent,
   TrackerWsEvent,
 } from '../dto/ws-events';
 import { TrackerGateway } from '../gateways/tracker.gateway';
@@ -558,6 +562,62 @@ export class TrackerEventsService {
       this.gateway.tenantRoom(args.tenantId),
       this.gateway.projectRoom(args.projectId),
       this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  // ── project documents (2026-05-27) ────────────────────────────────────
+
+  publishProjectDocumentCreated(
+    document: ProjectDocumentSummaryDto,
+    tenantId: string,
+  ): void {
+    const event: ProjectDocumentCreatedEvent = {
+      type: 'project_document.created',
+      tenantId,
+      projectId: document.projectId,
+      document,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(document.projectId),
+    ]);
+  }
+
+  publishProjectDocumentUpdated(
+    document: ProjectDocumentSummaryDto,
+    tenantId: string,
+    changedFields: string[],
+  ): void {
+    const event: ProjectDocumentUpdatedEvent = {
+      type: 'project_document.updated',
+      tenantId,
+      projectId: document.projectId,
+      document,
+      changedFields,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(document.projectId),
+    ]);
+  }
+
+  publishProjectDocumentDeleted(args: {
+    tenantId: string;
+    projectId: string;
+    documentId: string;
+  }): void {
+    const event: ProjectDocumentDeletedEvent = {
+      type: 'project_document.deleted',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      documentId: args.documentId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
     ]);
   }
 

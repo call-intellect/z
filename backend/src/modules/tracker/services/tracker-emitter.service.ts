@@ -70,6 +70,14 @@ export class TrackerEmitterService {
   private readonly logger = new Logger(TrackerEmitterService.name);
 
   static readonly EVENT_NAME = 'tracker.event_occurred';
+  /**
+   * Tracker Project Documents (2026-05-27) — отдельная шина для событий
+   * документа проекта. Не использует контракт `tracker.event_occurred`
+   * (там required `issue`), поэтому шина и handler в `TrackerAdapter`
+   * — отдельные.
+   */
+  static readonly PROJECT_DOCUMENT_EVENT_NAME =
+    'tracker.project_document_changed';
 
   constructor(
     @Inject(EventEmitter2) private readonly eventEmitter: EventEmitter2,
@@ -233,6 +241,57 @@ export class TrackerEmitterService {
         contextText: args.contextText,
       },
     });
+  }
+
+  /**
+   * Tracker Project Documents (2026-05-27) — публикация события об изменении
+   * документа проекта (create / update). Эмитится отдельным event-name'ом
+   * `project-document.event_occurred`, чтобы TrackerAdapter мог различать
+   * issue- и document-события. См. plans/tz/2026-05-27-tracker-project-documents.md
+   * §Knowledge-core.
+   *
+   * `fullText` — конкатенация title + contentStripped, передаётся «как есть»
+   * в `RawEvent.payload.fullText`. block-ingest worker извлечёт IdeaBlock'и
+   * (decision/note/idea/rule) по `signalTypeHint=note`.
+   */
+  emitProjectDocumentChanged(args: {
+    tenantId: string;
+    projectId: string;
+    documentId: string;
+    title: string;
+    fullText: string | null;
+    actorUserId: string | null;
+    occurredAt: Date;
+    /** 'created' | 'updated' — для дедупа и аналитики. */
+    changeType: 'created' | 'updated';
+  }): void {
+    try {
+      this.eventEmitter.emit(
+        TrackerEmitterService.PROJECT_DOCUMENT_EVENT_NAME,
+        {
+          type: 'project_document.changed',
+          tenantId: args.tenantId,
+          projectId: args.projectId,
+          documentId: args.documentId,
+          title: args.title,
+          fullText: args.fullText,
+          actor: {
+            userId: args.actorUserId,
+            actorType: args.actorUserId ? 'user' : 'system',
+          },
+          occurredAt: args.occurredAt.toISOString(),
+          changeType: args.changeType,
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          documentId: args.documentId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'tracker-emitter: project-document emit упал — событие потеряно',
+      );
+    }
   }
 
   // ── internal ──

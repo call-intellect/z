@@ -12,6 +12,7 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { projectShortLabel, type Project } from '@/domain/tracker';
+import { useTour } from '@/ui/tour';
 
 interface Tab {
   href: string;
@@ -63,6 +64,10 @@ export function ProjectViewShell({
   const { currentOrgId } = useAuth();
   const { project, isLoading, error } = useProjectBySlug(currentOrgId, slug);
 
+  // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «project» при первом
+  // открытии любой страницы проекта. Если уже завершён/пропущен — no-op.
+  useTour('project');
+
   const tabs = buildTabs(slug).filter(
     (t) => !t.show || (project && t.show(project)),
   );
@@ -86,6 +91,7 @@ export function ProjectViewShell({
           <nav className="-mb-3 flex gap-1 overflow-x-auto">
             {tabs.map((tab) => {
               const active = pathname === tab.href;
+              const isOverview = tab.label === 'Обзор';
               return (
                 <Link
                   key={tab.href}
@@ -96,6 +102,9 @@ export function ProjectViewShell({
                       ? 'border-accent text-accent'
                       : 'border-transparent text-fg-tertiary hover:text-fg-secondary',
                   )}
+                  {...(isOverview
+                    ? { 'data-tour-target': 'project.overview-tab' }
+                    : {})}
                 >
                   {tab.label}
                 </Link>

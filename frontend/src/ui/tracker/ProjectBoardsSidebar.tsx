@@ -144,6 +144,7 @@ export function ProjectBoardsSidebar({
       <aside
         className="flex w-60 shrink-0 flex-col gap-2 border-r border-border-subtle bg-bg-elevated/40 p-3"
         aria-label="Список досок проекта"
+        data-tour-target="project.boards-sidebar"
       >
         <div className="text-xs uppercase tracking-wider text-fg-tertiary">
           Доски
@@ -163,6 +164,7 @@ export function ProjectBoardsSidebar({
       <aside
         className="flex w-60 shrink-0 flex-col gap-2 border-r border-border-subtle bg-bg-elevated/40 p-3"
         aria-label="Список досок проекта"
+        data-tour-target="project.boards-sidebar"
       >
         <div className="rounded-md border border-danger/30 bg-danger/10 p-2 text-xs text-danger">
           Не удалось загрузить доски.

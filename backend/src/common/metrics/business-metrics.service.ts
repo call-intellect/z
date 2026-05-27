@@ -724,6 +724,15 @@ export class BusinessMetricsService implements OnModuleInit {
   private feedbackDigestNewTopicsTotal!: Counter<never>;
   private feedbackDigestFailedRunsTotal!: Counter<never>;
 
+  // ── Onboarding Tour (ТЗ 2026-05-27) ───────────────────────────────────
+  // Cardinality-safe: tenant — id Org (топ-100 без дальнейшей нормализации,
+  // tracker-паттерн); tour_id — фиксированный enum (welcome|project|meeting);
+  // at_step — id шага из tour-definition (например "welcome.sidebar-meetings"),
+  // фиксированный по коду фронта (< 30 значений).
+  private tourStartedTotal!: Counter<'tenant' | 'tour_id'>;
+  private tourCompletedTotal!: Counter<'tenant' | 'tour_id'>;
+  private tourSkippedTotal!: Counter<'tenant' | 'tour_id' | 'at_step'>;
+
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
       name: 'meetings_created_total',
@@ -2548,6 +2557,25 @@ export class BusinessMetricsService implements OnModuleInit {
     this.feedbackDigestFailedRunsTotal = this.getOrCreateCounter({
       name: 'feedback_digest_failed_runs_total',
       help: 'Сколько раз сообщения попали в FeedbackMessage.failedRuns >= 3 (хронически невалидные).',
+    });
+
+    // Onboarding Tour (ТЗ 2026-05-27) — три счётчика.
+    this.tourStartedTotal = this.getOrCreateCounter({
+      name: 'tour_started_total',
+      help: 'Onboarding-тур начат пользователем (первый PATCH /users/me/tour-progress без completedAt/skipped).',
+      labelNames: ['tenant', 'tour_id'] as const,
+    });
+
+    this.tourCompletedTotal = this.getOrCreateCounter({
+      name: 'tour_completed_total',
+      help: 'Onboarding-тур завершён пользователем (PATCH с completedAt).',
+      labelNames: ['tenant', 'tour_id'] as const,
+    });
+
+    this.tourSkippedTotal = this.getOrCreateCounter({
+      name: 'tour_skipped_total',
+      help: 'Onboarding-тур пропущен пользователем (PATCH с skipped=true). at_step — id шага, на котором нажали «Пропустить» (или "unknown", если клиент не передал).',
+      labelNames: ['tenant', 'tour_id', 'at_step'] as const,
     });
   }
 
@@ -5644,6 +5672,34 @@ export class BusinessMetricsService implements OnModuleInit {
   incFeedbackDigestFailedRuns(by: number): void {
     if (by <= 0) return;
     this.feedbackDigestFailedRunsTotal.inc(by);
+  }
+
+  // ── Onboarding Tour (ТЗ 2026-05-27) ───────────────────────────────────
+
+  /** Тур начат (первый PATCH без completedAt/skipped). */
+  incTourStarted(args: { tenant: string; tour_id: string }): void {
+    this.tourStartedTotal.inc({ tenant: args.tenant, tour_id: args.tour_id });
+  }
+
+  /** Тур завершён (PATCH с completedAt). */
+  incTourCompleted(args: { tenant: string; tour_id: string }): void {
+    this.tourCompletedTotal.inc({
+      tenant: args.tenant,
+      tour_id: args.tour_id,
+    });
+  }
+
+  /** Тур пропущен (PATCH с skipped=true). `at_step` — id шага или 'unknown'. */
+  incTourSkipped(args: {
+    tenant: string;
+    tour_id: string;
+    at_step: string;
+  }): void {
+    this.tourSkippedTotal.inc({
+      tenant: args.tenant,
+      tour_id: args.tour_id,
+      at_step: args.at_step,
+    });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

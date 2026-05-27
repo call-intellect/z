@@ -16,11 +16,17 @@ import {
 } from '@/ui/shadcn/card';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
+import { useTourContextOptional } from '@/ui/tour';
 
 export function ProfileSection() {
   const { user, refresh } = useAuth();
   const [name, setName] = useState(user?.name ?? '');
   const [submitting, setSubmitting] = useState(false);
+  // TourProvider оборачивает все защищённые страницы (AuthenticatedShell),
+  // поэтому контекст здесь обычно есть. Optional — на случай рендера
+  // компонента вне провайдера (тесты, design-preview).
+  const tour = useTourContextOptional();
+  const [restartingTour, setRestartingTour] = useState(false);
 
   // Подхватываем имя при apply изменений auth-context (refresh).
   useEffect(() => {
@@ -51,43 +57,84 @@ export function ProfileSection() {
     }
   }
 
+  async function handleRestartTour() {
+    if (!tour || restartingTour) return;
+    setRestartingTour(true);
+    try {
+      await tour.resetAll();
+      tour.forceStart('welcome');
+      toast.success('Знакомство снова покажется при возврате на главную.');
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : 'Не удалось сбросить прогресс знакомства.';
+      toast.error(msg);
+    } finally {
+      setRestartingTour(false);
+    }
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Профиль</CardTitle>
-        <CardDescription>
-          Имя видно вам и участникам встреч. Email менять нельзя — это ваш
-          логин.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4 max-w-md" noValidate>
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-email">Email</Label>
-            <Input
-              id="profile-email"
-              type="email"
-              value={user?.email ?? ''}
-              disabled
-              readOnly
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-name">Имя</Label>
-            <Input
-              id="profile-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              maxLength={120}
-            />
-          </div>
-          <Button type="submit" disabled={submitting || name.trim() === (user?.name ?? '')}>
-            {submitting ? 'Сохраняем…' : 'Сохранить'}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Профиль</CardTitle>
+          <CardDescription>
+            Имя видно вам и участникам встреч. Email менять нельзя — это ваш
+            логин.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4 max-w-md" noValidate>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-email">Email</Label>
+              <Input
+                id="profile-email"
+                type="email"
+                value={user?.email ?? ''}
+                disabled
+                readOnly
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-name">Имя</Label>
+              <Input
+                id="profile-name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                maxLength={120}
+              />
+            </div>
+            <Button type="submit" disabled={submitting || name.trim() === (user?.name ?? '')}>
+              {submitting ? 'Сохраняем…' : 'Сохранить'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {tour && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Знакомство с Корой</CardTitle>
+            <CardDescription>
+              Покажет основные разделы. Можно запустить заново, если уже
+              пропустили или хотите вспомнить.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              onClick={handleRestartTour}
+              disabled={restartingTour}
+            >
+              {restartingTour ? 'Запускаем…' : 'Показать знакомство снова'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

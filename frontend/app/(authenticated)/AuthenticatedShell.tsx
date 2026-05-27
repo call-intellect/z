@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { EntitlementProvider } from '@/contexts/entitlement-context';
 import { AppShell } from '@/ui/components/app-shell/AppShell';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { TourProvider, WelcomeTourAutoStart } from '@/ui/tour';
 
 const ONBOARDING_PATH = '/onboarding/change-password';
 
@@ -74,9 +75,16 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
 
   // EntitlementProvider оборачивает все защищённые страницы — гейтинг
   // работает на /themes, /goals, /chat, /dashboard, /admin/*. См. Фаза 12.
+  //
+  // TourProvider оборачивает AppShell — onboarding-туры активны только для
+  // авторизованных пользователей (не для onboarding/change-password,
+  // не для гостей). Тур внутри сам проверяет прогресс через PATCH/GET.
   return (
     <EntitlementProvider>
-      <AppShell>{children}</AppShell>
+      <TourProvider>
+        <AppShell>{children}</AppShell>
+        <WelcomeTourAutoStart />
+      </TourProvider>
     </EntitlementProvider>
   );
 }

@@ -144,6 +144,11 @@ type NavItem = {
    * используется для пункта «Клоны» (новый CloneAccessGrant).
    */
   showDot?: boolean;
+  /**
+   * ТЗ 2026-05-27 onboarding-tour — id целевого элемента для тура. Если
+   * задан, к <Link> добавляется `data-tour-target="<value>"`.
+   */
+  tourTarget?: string;
 };
 
 type NavSubgroup = {
@@ -215,17 +220,18 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
 const DAILY_GROUP: NavGroup = {
   label: 'Каждый день',
   items: [
-    { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard' },
-    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings' },
+    { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home' },
+    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings' },
     { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump' },
-    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
-    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects' },
+    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards' },
+    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects' },
     {
       href: '/chat',
       label: 'Помощник компании',
       icon: MessageCircle,
       matchPrefix: '/chat',
       gateFeature: 'feature.chat_org',
+      tourTarget: 'welcome.sidebar-chat',
     },
   ],
 };
@@ -336,6 +342,7 @@ const INTAKE_NAV_ITEM: NavItem = {
   label: 'Входящие',
   icon: Inbox,
   matchPrefix: '/intake',
+  tourTarget: 'welcome.sidebar-intake',
 };
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
@@ -505,6 +512,7 @@ export function Sidebar({
           onClick={onNavigate}
           className="flex items-center gap-2"
           aria-label="На главную"
+          data-tour-target="welcome.sidebar-logo"
         >
           <div className="grid h-7 w-7 place-items-center rounded-md bg-accent font-mono text-sm font-bold text-accent-fg">
             К
@@ -809,6 +817,9 @@ function SidebarNavLink({
       onClick={onNavigate}
       className={cn(baseClass, stateClass)}
       aria-disabled={locked || undefined}
+      {...(item.tourTarget
+        ? { 'data-tour-target': item.tourTarget }
+        : {})}
     >
       {linkContent}
     </Link>

@@ -426,7 +426,7 @@ export function Board({
       onDragCancel={handleDragCancel}
     >
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {columns.map((col) => {
+        {columns.map((col, colIndex) => {
           const list = byColumn.get(col.key) ?? [];
           const showQuickAdd =
             col.category === 'backlog' || col.category === 'unstarted';
@@ -446,6 +446,7 @@ export function Board({
                 ) : null
               }
               disabled={creating}
+              tourTarget={colIndex === 0 ? 'project.board-column' : undefined}
             />
           );
         })}
@@ -479,12 +480,15 @@ function BoardColumn({
   pendingIssueId,
   quickAdd,
   disabled,
+  tourTarget,
 }: {
   column: BoardColumnSpec;
   issues: Issue[];
   pendingIssueId: string | null;
   quickAdd?: React.ReactNode;
   disabled?: boolean;
+  /** ТЗ 2026-05-27 onboarding-tour — id целевого элемента для тура (только у первой колонки). */
+  tourTarget?: string;
 }) {
   // useDroppable вызывается всегда (хуки в условиях запрещены), но эффективен
   // только когда column.accept === true.
@@ -506,6 +510,7 @@ function BoardColumn({
       aria-disabled={disabled}
       data-state-id={column.stateId ?? undefined}
       data-state-category={column.category}
+      {...(tourTarget ? { 'data-tour-target': tourTarget } : {})}
     >
       <div className="flex items-center justify-between px-1 py-1">
         <span className="flex items-center gap-2 text-xs uppercase tracking-wider text-fg-secondary">

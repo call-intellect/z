@@ -931,6 +931,14 @@ model User {
   /// (`GET /api/v1/calendar/:userId.ics?token=...`). Генерируется по запросу
   /// из /me/settings/calendar. Хранится как HMAC base64.
   calendarFeedToken   String?            @db.VarChar(80)
+
+  // ── Onboarding Tour (2026-05-27) — состояние онбординг-туров ──
+  /// Состояние прохождения onboarding-туров. Структура:
+  ///   { welcome?: { completedAt, skipped? }, project?: { ... }, meeting?: { ... } }
+  /// Touch при PATCH /api/v1/users/me/tour-progress; reset обнуляет до `{}`.
+  /// См. plans/tz/2026-05-27-tracker-onboarding-tour.md.
+  tourProgress       Json               @default("{}")
+
   ownedEvents         Event[]            @relation("EventOwner")
   eventParticipations EventParticipant[] @relation("EventParticipantUser")
 

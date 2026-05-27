@@ -51,6 +51,7 @@ export function QuickAdd({
         size="sm"
         className="w-full justify-start gap-2 text-fg-tertiary"
         onClick={() => setOpen(true)}
+        data-tour-target="project.quick-add"
       >
         <Plus size={14} />
         {buttonLabel}

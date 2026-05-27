@@ -370,6 +370,7 @@ docker compose logs -f migrate     # пока не увидишь "DONE" / exit 
 - `AiUsageLog`: +inputCostPerMillionTokensSnapshot, +costRub, +dataClassAudit
 - `Task`: +assigneeUserId (FK на User)
 - `User`: +calendarFeedToken (VarChar 80)
+- `User` (2026-05-27, коммит `ade4c25`): +`phone VarChar(20)?`, +`signupRef VarChar(255)?`, +`consentDataProcessing Boolean @default(false)`, +`consentMarketing Boolean @default(false)`, +`consentAcceptedAt DateTime?`. Lead-style регистрация: телефон, два чекбокса согласий, ref-tracking из URL. Все nullable / с дефолтом — обратно совместимо, простой db push без `--accept-data-loss`.
 - `CloneAccessGrant` (2026-05-26, коммит `fc3d6fe`): +`revokedAt DateTime?`, +`revokedBy String?`, +`expiresAt DateTime?` + 2 индекса. Все поля nullable — обратно совместимо, простой db push.
 
 Enum расширения (без удалений — Postgres не умеет DROP VALUE):

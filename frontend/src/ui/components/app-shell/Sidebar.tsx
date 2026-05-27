@@ -35,6 +35,7 @@ import {
   Palette,
   Plug,
   Plus,
+  Rocket,
   Scale,
   Settings,
   Settings2,
@@ -225,6 +226,8 @@ const DAILY_GROUP: NavGroup = {
     { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards' },
     { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects' },
+    // Sprints (2026-05-27) — Wave 4 frontend, отдельный раздел рядом с трекером.
+    { href: '/sprints', label: 'Спринты', icon: Rocket, matchPrefix: '/sprints', tourTarget: 'welcome.sprints' },
     {
       href: '/chat',
       label: 'Помощник компании',

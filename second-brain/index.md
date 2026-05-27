@@ -154,6 +154,7 @@ _пусто_
 
 ## Заметки по реализации (2026-05-10) — Фаза 0 knowledge-core
 - [[01_projects/orgs-and-rbac]] — Org / Membership / OrgInvitation, RBAC через RbacService (Casbin-совместимый), super_admin, visibilityMode (open/strict)
+- [[01_projects/rbac-access-control]] — **RBAC детально: 5 ролей (super_admin/owner/admin/manager/coo), 60+ ResourceType'ов, policy.csv (Casbin-стиль), визуальность open/strict, доступ к knowledge-core, специальные логики (person.erase, clone-access, self-ownership)**
 - [[01_projects/llm-router]] — LlmRouter с обязательным tenantId, LlmModelPrice (версионируемая прайс-карта), AiUsageLog (cachedTokens/sourceRef/experimentGroup)
 - [[01_projects/llm-providers-verified]] — **verified-карта LLM-провайдеров и моделей (источник правды, прогон 2026-05-21).** Какие каналы реально работают, готовые образцы вызова, что НЕ используем (Anthropic, bge-m3). Любой новый AI-агент сверяется с этим файлом.
 - [[13_glossary/index|Глоссарий]] — Org, Membership, super_admin, visibilityMode, tenantId, IdeaBlock/Entity/Theme/Source/RawEvent (placeholder'ы для Фаз 1-4)

@@ -121,6 +121,9 @@ const STEPS: Step[] = [
   // в /admin/system/telegram-bot (на чистом старте — no-op с инструкцией).
   // ТЗ: plans/tz/2026-05-26-telegram-via-crossmark-proxy.md.
   { phase: 'patch', script: 'scripts/patch-telegram-register-in-proxy.ts', hint: 'регистрация бота в telegram.crossmark.ru', skipBootstrap: true },
+  // 2026-05-27 — ребренд Z → Кора: обновляет subject/body email-шаблонов в БД.
+  // Промпты обновляет seed-prompt-templates.ts (уже в seed-llm-core).
+  { phase: 'patch', script: 'scripts/patch-rebrand-z-to-kora.ts', hint: 'ребренд Z → Кора в EmailTemplate', skipBootstrap: true },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },

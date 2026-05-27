@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
+
 import { SignupForm } from './SignupForm';
 
 export const metadata: Metadata = {
@@ -7,5 +9,13 @@ export const metadata: Metadata = {
 };
 
 export default function SignupPage() {
-  return <SignupForm />;
+  // Suspense обязателен: Next 16 на prerender требует boundary вокруг
+  // клиентских форм, использующих хуки `useSearchParams`/`useRouter`
+  // (через `useAuth` и др. транзитивно). Без него build падает
+  // `useSearchParams() should be wrapped in a suspense boundary`.
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
+  );
 }

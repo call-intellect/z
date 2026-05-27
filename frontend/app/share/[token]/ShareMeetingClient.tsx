@@ -73,7 +73,7 @@ export function ShareMeetingClient({ token }: { token: string }) {
       <Page>
         <Center title="Ссылка не найдена" message="Возможно, она была отозвана или скопирована с ошибкой.">
           <Button asChild>
-            <Link href="/">На главную Z</Link>
+            <Link href="/">На главную Кора</Link>
           </Button>
         </Center>
       </Page>
@@ -87,7 +87,7 @@ export function ShareMeetingClient({ token }: { token: string }) {
           message="Попросите автора встречи прислать новую ссылку. Хотите такие же отчёты для своих звонков?"
         >
           <Button asChild>
-            <Link href="/signup">Зарегистрироваться в Z</Link>
+            <Link href="/signup">Зарегистрироваться в Кора</Link>
           </Button>
         </Center>
       </Page>
@@ -247,7 +247,7 @@ function SharedMeetingView({ data }: { data: PublicShareMeetingApi }) {
         <div className="text-xs text-fg-secondary">
           Создано в{' '}
           <Link href="/" className="text-accent hover:text-accent-hover">
-            Z — AI-встречах
+            Кора — платформе памяти компании
           </Link>
         </div>
         <Button asChild size="sm">

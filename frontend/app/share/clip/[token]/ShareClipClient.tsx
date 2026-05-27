@@ -77,7 +77,7 @@ export function ShareClipClient({ token }: { token: string }) {
           message="Попросите автора прислать новую."
         >
           <Button asChild>
-            <Link href="/signup">Зарегистрироваться в Z</Link>
+            <Link href="/signup">Зарегистрироваться в Кора</Link>
           </Button>
         </Center>
       </Page>
@@ -117,7 +117,7 @@ export function ShareClipClient({ token }: { token: string }) {
       <footer className="mt-6 text-center text-xs text-fg-tertiary">
         Создано в{' '}
         <Link href="/" className="text-accent hover:text-accent-hover">
-          Z — AI-встречах
+          Кора — платформе памяти компании
         </Link>
       </footer>
     </Page>

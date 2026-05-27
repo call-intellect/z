@@ -121,7 +121,7 @@ export class MailService implements OnModuleInit {
 
   /**
    * Письмо с временным паролем при lead-style регистрации.
-   * Тема: «Доступ в Z».
+   * Тема: «Доступ в Кору».
    */
   async sendTempPassword(input: {
     to: string;
@@ -137,7 +137,7 @@ export class MailService implements OnModuleInit {
     });
     return this.send({
       to: input.to,
-      subject: 'Доступ в Z',
+      subject: 'Доступ в Кору',
       text,
       template: 'register-temp-password',
     });
@@ -163,7 +163,7 @@ export class MailService implements OnModuleInit {
 
   /**
    * Письмо со ссылкой на сброс пароля.
-   * Тема: «Сброс пароля Z».
+   * Тема: «Сброс пароля Кора».
    */
   async sendPasswordReset(input: {
     to: string;
@@ -178,7 +178,7 @@ export class MailService implements OnModuleInit {
     });
     return this.send({
       to: input.to,
-      subject: 'Сброс пароля Z',
+      subject: 'Сброс пароля Кора',
       text,
       template: 'password-reset',
     });

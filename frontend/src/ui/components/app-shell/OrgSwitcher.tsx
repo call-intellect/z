@@ -102,7 +102,7 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
           )}
         >
           <Building2 size={14} className="shrink-0" />
-          <span className="truncate">Режим Z-Admin</span>
+          <span className="truncate">Суперадмин</span>
         </div>
       );
     }

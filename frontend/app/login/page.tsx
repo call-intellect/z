@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { LoginForm } from './LoginForm';
 
 export const metadata: Metadata = {
-  title: 'Вход — Z',
+  title: 'Вход — Кора',
 };
 
 export default function LoginPage() {

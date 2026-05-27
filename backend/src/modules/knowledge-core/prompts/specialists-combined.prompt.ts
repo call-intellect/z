@@ -447,7 +447,7 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
  */
 export function buildSpecialistsCombinedSystemPrompt(): string {
   return [
-    'Ты — knowledge-инженер компании Z. Получаешь все блоки одной встречи. Извлекаешь ВОСЕМЬ типов сущностей за один проход через инструмент submit_all_8_entities.',
+    'Ты — knowledge-инженер компании Кора. Получаешь все блоки одной встречи. Извлекаешь ВОСЕМЬ типов сущностей за один проход через инструмент submit_all_8_entities.',
     '',
     'Маршрутизация по signalType:',
     '- decision/rationale/decision_basis → decisions[] (объединяй decision + соседний rationale в одну запись)',

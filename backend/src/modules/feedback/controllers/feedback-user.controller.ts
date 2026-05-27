@@ -66,7 +66,7 @@ export class FeedbackUserController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(FeedbackRateLimitGuard)
   @ApiOperation({
-    summary: 'Отправить предложение / жалобу / благодарность команде Z.',
+    summary: 'Отправить предложение / жалобу / благодарность команде Кора.',
     description:
       'Лимит 5 сообщений в сутки на пользователя (окно UTC). При превышении — 429.',
   })

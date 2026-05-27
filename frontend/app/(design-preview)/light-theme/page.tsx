@@ -9,7 +9,7 @@ import type { Metadata } from 'next';
 import { DesignPreviewGallery } from '@/ui/components/design-preview/DesignPreviewGallery';
 
 export const metadata: Metadata = {
-  title: 'Z · Дизайн-эталон: светлая тема',
+  title: 'Кора · Дизайн-эталон: светлая тема',
 };
 
 export default function LightThemePreviewPage() {

@@ -37,240 +37,119 @@ interface PolicyRule {
   act: Action;
 }
 
-export type ResourceType =
-  | 'org'
-  | 'meeting'
-  | 'card'
-  | 'task'
-  | 'chapter'
-  | 'highlight'
-  | 'chat-message'
-  | 'tag'
-  | 'audit-log'
-  | 'ai-usage'
-  | 'block'
-  | 'entity'
-  | 'theme'
-  | 'goal'
-  | 'source'
-  /**
-   * Фаза 11: «персона» как отдельный ресурс RBAC, отделена от 'entity'
-   * исключительно ради действия 'erase' (152-ФЗ — право на удаление личных
-   * данных), которое доступно только owner'у Org.
-   */
-  | 'person'
-  // ── Фаза 0a — структура компании (группа А) ──
-  | 'department'
-  | 'role'
-  | 'job-description'
-  | 'skill'
-  | 'document'
-  | 'role-profile'
-  // ── Фаза 0a — каркас 5 уровней (группа Б) ──
-  | 'mission'
-  | 'vision'
-  | 'strategy'
-  | 'process'
-  | 'process-step'
-  | 'regulation'
-  | 'policy'
-  | 'tool'
-  | 'metric'
-  | 'decision'
-  // ── Фаза A.2 — шаблоны промптов AI-отчёта (prompt registry) ──
-  | 'prompt_template'
-  // ── SBA α-3 — Layer 2 ontology extension ──
-  // 'vendor' — поставщик (модель Vendor + Entity{type=vendor}).
-  // 'event_card' — событие (модель Event + Entity{type=event}). Имя
-  // выбрано как `event_card`, чтобы не конфликтовать с доменными
-  // событиями (бизнес-вокабуляр) — RBAC ResourceType должен быть
-  // конкретным «карточным» именем.
-  | 'vendor'
-  | 'event_card'
-  // ── SBA α-4 — Layer 4 Curation Foundation ──
-  | 'curation_item'
-  | 'curation_decision'
-  | 'conflict_item'
-  | 'card_version'
-  | 'curator_assignment'
-  // ── SBA α-4 wave 2 — CompletenessSlot ──
-  // 'completeness_slot' — слот «незаполненного поля» нормативной карточки
-  // (regulation / process / role / company_profile). Создаётся
-  // CompletenessScannerCron'ом. owner/admin Org — r/w/d; manager — read всех
-  // Org-слотов (карта пробелов компании), write self (закрытие своих слотов).
-  | 'completeness_slot'
-  // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
-  // 'chat_v2_conversation' — диалог пользователя с AI-чатом. Owner — сам
-  // пользователь; admin/owner Org могут читать для отладки.
-  | 'chat_v2_conversation'
-  // ── SBA β-2 — Specialist 3.2 Knowledge Clone ──
-  // 'knowledge_profile' — Person.knowledgeProfile (что человек знает).
-  // Это shared knowledge внутри Org: owner/admin — r/w/d; manager — r на все
-  // профили Org; member-level (manager:strict) — r self. Write идёт только
-  // через worker; ручной API write нет.
-  | 'knowledge_profile'
-  // ── SBA β-4 — Specialist 3.5 Insights Radar ──
-  // 'insight' — повторяющиеся проблемы / риски / блокеры / неэффективности.
-  // Shared knowledge: owner/admin — r/w/d; manager open — r/w (write для
-  // mitigation); manager strict — r self; curator — w (через CurationItem).
-  | 'insight'
-  // ── SBA β-5 — Specialist 3.6 Ideas Collector + Layer 6 Probe-Agent ──
-  // 'idea' — идеи сотрудников и запросы клиентов. Shared knowledge:
-  // owner/admin — r/w/d; manager — r/w (support/withdraw); read для всех
-  // member'ов Org.
-  // 'probe_event' — внутренний ресурс Probe-Agent. Read — admin (queue).
-  // Получатель видит свои probe через `/me/notifications` (фильтр eventType).
-  | 'idea'
-  | 'probe_event'
-  // ── SBA γ-1 — Specialist 3.7 SkillProfile + Clone API ──
-  // 'skill_profile' — навыковый профиль сотрудника (SkillProfile + SkillTrait[]).
-  // Видимость: owner/admin Org / direct manager / сам носитель.
-  // Write — только worker (нет manual API).
-  // 'clone_persona' — ExecutablePersona (snapshot для clone API). Read = тем же,
-  // кто имеет read на skill_profile того же Person'а.
-  | 'skill_profile'
-  | 'clone_persona'
-  // ── SBA γ-1 доделки — SkillTraitCategory ──
-  // 'skill_category' — эмерджентная категория SkillTrait. Видимость:
-  // employee — read (видит словарь категорий компании); admin/owner — write/delete;
-  // merge_categories идёт через CurationDecision (см. α-4 wave 2 enum-value).
-  | 'skill_category'
-  // ── SBA α-7 wave 2 — ProcessTemplate (Specialist 3.1) ──
-  // 'process_template' — библиотечный шаблон процесса (`ProcessTemplate` +
-  // `ProcessTemplateVersion` + `DecisionPoint` + `ProcessHandoff`). Shared
-  // knowledge компании: owner/admin — r/w/d; manager — read всех template'ов
-  // Org (чтобы видеть схемы процессов). Write/delete — только admin/owner;
-  // `manage` (force-activate version, hard-delete без archived) — super_admin
-  // через RbacService bypass.
-  | 'process_template'
-  // ── SBA α-9 wave 3 — Company Foundation ──
-  // 'company_profile' — 1:1 на Org-запись идентичности компании
-  // (mission/vision/strategy/stage). read — все members; write/delete —
-  // owner/admin (это owner-territory).
-  // 'functional_domain' — функциональная область + дерево. read — все members;
-  // write/delete — owner/admin; manage — для seed-template (per-industry).
-  // 'maturity' — сводка зрелости (Role/Department/Company). read — все members
-  // (shared knowledge); manage — admin/owner (rebuild).
-  | 'company_profile'
-  | 'functional_domain'
-  | 'maturity'
-  // ── SBA α-8 wave 3 — Appointment + KPI ──
-  // 'appointment' — назначение Person на Role в конкретном Department с
-  // loadPercent / status / valid-интервалом. Read — все members; write/delete —
-  // owner/admin (HR-функция).
-  // 'kpi' — Metric с заполненным attachedTo*Id. Read — все members (видят
-  // KPI компании); write/delete — owner/admin. measurement (PATCH currentValue)
-  // — owner/admin (kpi_owner role появится отдельно позже).
-  | 'appointment'
-  | 'kpi'
-  // ── SBA β-7 — Brand Voice Curator (Specialist 3.10) ──
-  // 'brand_voice' — 1:1 на Org «голос бренда» (tone/values/taboos). Read — все
-  // members (нужен всем, кто пишет контент). Write — owner/admin (manage —
-  // rebuild через `act=manage`). Marketing-role hint: manager open получает
-  // write, чтобы команда маркетинга могла править tone/taboos без owner-эскалации.
-  | 'brand_voice'
-  // ── SBA β-6 — Experiment Tracker (Specialist 3.9) ──
-  // 'experiment' — эксперименты компании (гипотеза → выполнение → результат →
-  // урок). First-class сущность (не подкатегория Decision/Insight). owner/admin —
-  // r/w/d + manage (force-transition); manager open — r/w (могут заводить и
-  // править эксперименты, как идеи); manager strict — read self.
-  | 'experiment'
-  // ── SBA β-8 — Operations Dashboard + DailyCheckIn + PersonalRelation ──
-  // 'dashboard_operations' — COO pulse-агрегат (`GET /dashboard/operations`).
-  // Read — owner/admin/coo. Manager → 403.
-  // 'daily_checkin' — личный чек-ин (морнинг/ивнинг) Person'а.
-  // 'personal_relation' — EntityLink между Person'ами (manages /
-  // collaborates_with / mentors / ...). Read для admin/coo; write — internal worker.
-  | 'dashboard_operations'
-  // ── SBA β-8.1 — добивка панели операционного директора ──
-  // 'dashboard_operations_temperature' — `GET /dashboard/operations/team-temperature`.
-  // 'dashboard_operations_weekly' — `GET /dashboard/operations/weekly-digest`.
-  // Те же роли, что и dashboard_operations (owner/admin/coo/super_admin).
-  | 'dashboard_operations_temperature'
-  | 'dashboard_operations_weekly'
-  | 'daily_checkin'
-  | 'personal_relation'
-  // ── SBA δ-3 — VoiceChannelAdapter ──
-  // 'voice' — синтез/распознавание речи (TTS + ASR REST endpoints).
-  // Маппинг действий: read = `voice.transcribe` (ASR), write = `voice.synthesize`
-  // (TTS). Employee-доступ: любой member может транскрибировать своё аудио и
-  // синтезировать короткий ответ (≤500 chars). Tenant-scope обязателен.
-  | 'voice'
-  // ── SBA γ-2 — Concierge Agent ──
-  // 'concierge' — sквозной AI-помощник кабинета (tool-use). read — свои
-  // диалоги; write — отправлять сообщения / выполнять tool-use loop. Внутри
-  // ToolRouter дополнительно проверяются permissions на ресурс самого
-  // tool'а (например, create_meeting требует write на 'meeting'). Manage —
-  // admin-функция (просмотр OrgConciergeQuota, чужих диалогов).
-  | 'concierge'
-  // ── SBA δ-1 — Orchestrator (multi-agent research) ──
-  // 'orchestrator' — multi-agent deep research для сложных запросов
-  // («составь отчёт по X», «сравни Y и Z»). read — свои runs + статусы;
-  // write (act='write') = orchestrator.run — запустить новый research-run
-  // (employee с feature-flag). manage (act='manage') = orchestrator.admin —
-  // admin-видение всех runs организации (наблюдение и kill).
-  | 'orchestrator'
-  // ── SBA δ-2 — ProactiveWatcher (2026-05-23) ──
-  // 'proactive_notification' — инициативное уведомление от Watcher'а
-  // («заметил X — может, посмотришь?»). read — свои (employee); write
-  // (PATCH /me/proactive-notifications/:id/dismiss — пометка как
-  // «не показывать») — self. manage — admin (видит все ProactiveNotification
-  // компании для аналитики качества правил).
-  | 'proactive_notification'
-  // ── Tracker Phase 1 (Sprint 1, B1-1.3) — таск-трекер Z/Кора ──
-  // 'project' — проект трекера (Project). read: project_member; write/delete:
-  // owner/admin Org (создание + архивирование + изменение настроек).
-  // 'issue' — задача трекера (Issue). read: project_member + assignee;
-  // write: assignee + owner/admin Org; delete: creator + admin/owner.
-  // 'cycle' — цикл («спринт»). read: project_member; write/delete: owner/admin.
-  // 'intake_issue' — входящая задача (inbox). read/write: owner/admin Org.
-  // 'team_template' — шаблон команды (системный или Org-level). read: все;
-  // write: owner/admin (создание Org-template'ов).
-  // 'issue_webhook' — исходящий webhook трекера. crud: owner/admin Org.
-  | 'project'
-  | 'issue'
-  | 'cycle'
-  | 'intake_issue'
-  | 'team_template'
-  | 'issue_webhook'
-  // Tracker Phase 5 part 1 (2026-05-24) — миграционный wizard.
-  // 'import_tracker' — административная операция импорта задач из внешних
-  // трекеров (Trello / Битрикс24 / Я.Трекер). read: список + детали; write:
-  // запуск + cancel. Только owner / admin Org (HR/админская функция).
-  | 'import_tracker'
-  // ── Wave 2 Поток D — Activity Feeds (2026-05-24) ──
-  // 'activity_feed_item' — запись в ленте активности (ActivityFeedItem).
-  // read: scope по visibility (public_org / team / role / private) —
-  // финальная фильтрация делается в сервисе, RBAC проверяет только наличие
-  // membership в tenant'е (read по 'activity_feed_item' = «доступ к ленте Org
-  // вообще»). write: только система и AI-агенты (через ActivityFeedService.publish,
-  // не через REST) — owner/admin для admin-овых ручных публикаций; manage —
-  // owner/admin (массовый expire/dismiss, debug). delete не используется
-  // (только dismiss и expire через статусы).
-  | 'activity_feed_item'
-  // ── Wave 2 Поток D — Specialist 3.8 Helpfulness Agent (2026-05-24) ──
-  // 'helpfulness_trait' — сигнал помощи / mentoring / поддержки. read:
-  // owner/admin Org (полный обзор); manager — read всех trait'ов Org для
-  // team-map + unanswered; member — read только своих (визуально, через
-  // /me/social-contribution). write — только worker (нет manual API).
-  // ⚠ Для traitType ∈ {question_unanswered, question_acknowledged_no_action}
-  // visibility='restricted' — отображается только в admin/manager-views,
-  // никогда публично.
-  // 'helpfulness_spotlight' — публичный «спасибо» для ленты. read:
-  // status='published' — все member'ы; status ∈ {pending, approved, hidden} —
-  // owner/admin/manager. write (approve/hide/republish) — owner/admin/manager.
-  // 'social_contribution_profile' — агрегат на person. read: сам user +
-  // owner/admin + manager (на своих). write — только Cron (нет manual API).
-  | 'helpfulness_trait'
-  | 'helpfulness_spotlight'
-  | 'social_contribution_profile'
-  // ── SBA β-8.2 — Promise Keeper (Specialist 3.9 Хранитель обещаний) ──
-  // 'commitment' — обещание сотрудника (IdeaBlock signalType='commitment').
-  // read — owner/admin/coo (карта обещаний по команде); self — сам автор
-  // (через `/me/promises`, проверяется в сервисе по personId.userId);
-  // write — только сам автор (POST /me/promises/:blockId/mark) или
-  // internal handler. Manager strict — read self.
-  | 'commitment';
+// Единый источник правды для RBAC-ресурсов.
+// isResourceType() АВТОМАТИЧЕСКИ синхронизирован с этим массивом —
+// добавлять новые ресурсы ТОЛЬКО ЗДЕСЬ.
+export const RESOURCE_TYPES = [
+  'org',
+  'meeting',
+  'card',
+  'task',
+  'chapter',
+  'highlight',
+  'chat-message',
+  'tag',
+  'audit-log',
+  'ai-usage',
+  'block',
+  'entity',
+  'theme',
+  'goal',
+  'source',
+  // Фаза 11: «персона» как отдельный ресурс RBAC
+  'person',
+  // Фаза 0a — структура компании (группа А)
+  'department',
+  'role',
+  'job-description',
+  'skill',
+  'document',
+  'role-profile',
+  // Фаза 0a — каркас 5 уровней (группа Б)
+  'mission',
+  'vision',
+  'strategy',
+  'process',
+  'process-step',
+  'regulation',
+  'policy',
+  'tool',
+  'metric',
+  'decision',
+  // Фаза A.2 — шаблоны промптов AI-отчёта
+  'prompt_template',
+  // SBA α-3 — Layer 2 ontology extension
+  'vendor',
+  'event_card',
+  // SBA α-4 — Layer 4 Curation Foundation
+  'curation_item',
+  'curation_decision',
+  'conflict_item',
+  'card_version',
+  'curator_assignment',
+  // SBA α-4 wave 2 — CompletenessSlot
+  'completeness_slot',
+  // SBA α-5 — Layer 5 Chat-v2 Omnichannel
+  'chat_v2_conversation',
+  // SBA β-2 — Knowledge Clone
+  'knowledge_profile',
+  // SBA β-4 — Insights Radar
+  'insight',
+  // SBA β-5 — Ideas Collector + Probe-Agent
+  'idea',
+  'probe_event',
+  // SBA γ-1 — SkillProfile + Clone API
+  'skill_profile',
+  'clone_persona',
+  // SBA γ-1 — SkillTraitCategory
+  'skill_category',
+  // SBA α-7 wave 2 — ProcessTemplate
+  'process_template',
+  // SBA α-9 wave 3 — Company Foundation
+  'company_profile',
+  'functional_domain',
+  'maturity',
+  // SBA α-8 wave 3 — Appointment + KPI
+  'appointment',
+  'kpi',
+  // SBA β-7 — Brand Voice Curator
+  'brand_voice',
+  // SBA β-6 — Experiment Tracker
+  'experiment',
+  // SBA β-8 — Operations Dashboard + DailyCheckIn + PersonalRelation
+  'dashboard_operations',
+  'dashboard_operations_temperature',
+  'dashboard_operations_weekly',
+  'daily_checkin',
+  'personal_relation',
+  // SBA δ-3 — VoiceChannelAdapter
+  'voice',
+  // SBA γ-2 — Concierge Agent
+  'concierge',
+  // SBA δ-1 — Orchestrator
+  'orchestrator',
+  // SBA δ-2 — ProactiveWatcher
+  'proactive_notification',
+  // Tracker Phase 1
+  'project',
+  'issue',
+  'cycle',
+  'intake_issue',
+  'team_template',
+  'issue_webhook',
+  // Tracker Phase 5 part 1
+  'import_tracker',
+  // Wave 2 Поток D — Activity Feeds
+  'activity_feed_item',
+  // Wave 2 Поток D — Helpfulness Agent
+  'helpfulness_trait',
+  'helpfulness_spotlight',
+  'social_contribution_profile',
+  // SBA β-8.2 — Promise Keeper
+  'commitment',
+] as const;
+
+export type ResourceType = (typeof RESOURCE_TYPES)[number];
 
 /**
  * Action: read / write / delete / manage / erase.
@@ -736,83 +615,7 @@ function isVisibility(s: string): s is OrgVisibilityMode {
   return s === 'open' || s === 'strict';
 }
 function isResourceType(s: string): s is ResourceType {
-  return [
-    'org',
-    'meeting',
-    'card',
-    'task',
-    'chapter',
-    'highlight',
-    'chat-message',
-    'tag',
-    'audit-log',
-    'ai-usage',
-    'block',
-    'entity',
-    'theme',
-    'goal',
-    'source',
-    'person',
-    // Фаза 0a — структура компании (группа А)
-    'department',
-    'role',
-    'job-description',
-    'skill',
-    'document',
-    'role-profile',
-    // Фаза 0a — каркас 5 уровней (группа Б)
-    'mission',
-    'vision',
-    'strategy',
-    'process',
-    'process-step',
-    'regulation',
-    'policy',
-    'tool',
-    'metric',
-    'decision',
-    // Фаза A.2 — шаблоны промптов AI-отчёта
-    'prompt_template',
-    // SBA α-3 — Layer 2 ontology extension
-    'vendor',
-    'event_card',
-    // SBA α-4 — Layer 4 Curation Foundation
-    'curation_item',
-    'curation_decision',
-    'conflict_item',
-    'card_version',
-    'curator_assignment',
-    // SBA β-4 — Insights Radar.
-    'insight',
-    // SBA β-5 — Ideas Collector + Probe-Agent.
-    'idea',
-    'probe_event',
-    // SBA β-2 — Knowledge Clone.
-    'knowledge_profile',
-    // SBA γ-1 — Skill + ExecutablePersona + Clone.
-    'skill_profile',
-    'clone_persona',
-    // SBA γ-1 доделки — SkillTraitCategory.
-    'skill_category',
-    // SBA α-8 wave 3 — Appointment + KPI.
-    'appointment',
-    'kpi',
-    // SBA β-7 — Brand Voice Curator.
-    'brand_voice',
-    // Tracker Phase 1 (Sprint 1, B1-1.3).
-    'project',
-    'issue',
-    'cycle',
-    'intake_issue',
-    'team_template',
-    'issue_webhook',
-    // Tracker Phase 5 part 1 (2026-05-24).
-    'import_tracker',
-    // Wave 2 Поток D — Activity Feeds (2026-05-24).
-    'activity_feed_item',
-    // SBA β-8.2 — Promise Keeper.
-    'commitment',
-  ].includes(s);
+  return (RESOURCE_TYPES as readonly string[]).includes(s);
 }
 function isAction(s: string): s is Action {
   return (

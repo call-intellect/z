@@ -64,7 +64,7 @@ export function LoginForm() {
   return (
     <AuthShell
       title="Вход"
-      subtitle="Войдите в свой кабинет Z."
+      subtitle="Войдите в свой кабинет Кора."
       footer={
         <>
           Нет аккаунта?{' '}

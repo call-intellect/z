@@ -16,7 +16,7 @@ const zBool = (def: boolean) =>
   }, z.boolean());
 
 /**
- * Полная zod-схема ENV проекта Z.
+ * Полная zod-схема ENV проекта Кора.
  * Источник:
  *   - plans/architecture/2026-05-08-z-architecture.md §6.7
  *   - plans/tz/2026-05-09-standalone-product.md (SMTP, argon2)
@@ -68,7 +68,7 @@ const MailSchema = z.object({
   MAIL_USERNAME: z.string().min(1).optional(),
   MAIL_PASSWORD: z.string().min(1).optional(),
   MAIL_FROM: z.string().email().default('noreply@crossmark.ru'),
-  MAIL_FROM_NAME: z.string().default('Z'),
+  MAIL_FROM_NAME: z.string().default('Кора'),
   /** При true — MailService логирует письма вместо реальной отправки (dev/test). */
   MAIL_DRY_RUN: zBool(false),
 });

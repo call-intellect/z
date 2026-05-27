@@ -43,10 +43,10 @@ export function AuthShell({
           aria-label="На главную"
         >
           <div className="grid h-9 w-9 place-items-center rounded-md bg-accent font-mono text-base font-bold text-accent-fg shadow-glow-mint">
-            Z
+            К
           </div>
           <span className="text-xl font-semibold tracking-tight text-fg-primary">
-            Z
+            Кора
           </span>
         </Link>
       </div>

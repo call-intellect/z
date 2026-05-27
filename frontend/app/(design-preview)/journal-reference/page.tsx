@@ -7,7 +7,7 @@
 import { MeetingsJournalDesignReference } from '@/ui/components/meetings-journal/MeetingsJournalDesignReference';
 
 export const metadata = {
-  title: 'Z · Дизайн-эталон журнала',
+  title: 'Кора · Дизайн-эталон журнала',
 };
 
 export default function JournalReferencePage() {

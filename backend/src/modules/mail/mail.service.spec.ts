@@ -48,7 +48,7 @@ function makeCfg(opts: {
       username: opts.username,
       password: opts.password,
       from: 'noreply@z.app',
-      fromName: 'Z',
+      fromName: 'Кора',
       dryRun: opts.dryRun ?? false,
     },
   } as unknown as TypedConfigService;
@@ -144,9 +144,9 @@ describe('MailService', () => {
         subject: string;
         text: string;
       };
-      expect(arg.from).toBe('"Z" <noreply@z.app>');
+      expect(arg.from).toBe('"Кора" <noreply@z.app>');
       expect(arg.to).toBe('alice@example.com');
-      expect(arg.subject).toBe('Доступ в Z');
+      expect(arg.subject).toBe('Доступ в Кору');
       expect(arg.text).toContain('Alice');
       expect(arg.text).toContain('alice@example.com');
       expect(arg.text).toContain('TempPw_123');
@@ -168,7 +168,7 @@ describe('MailService', () => {
         subject: string;
         text: string;
       };
-      expect(arg.subject).toBe('Сброс пароля Z');
+      expect(arg.subject).toBe('Сброс пароля Кора');
       expect(arg.text).toContain('Bob');
       expect(arg.text).toContain('https://z.app/reset?token=abc');
       expect(arg.text).toContain('60');

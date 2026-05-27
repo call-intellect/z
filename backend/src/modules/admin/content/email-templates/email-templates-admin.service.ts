@@ -65,7 +65,7 @@ interface StaticTemplate {
 const STATIC_TEMPLATES: ReadonlyArray<StaticTemplate> = [
   {
     key: 'register-temp-password',
-    subject: 'Доступ в Z',
+    subject: 'Доступ в Кору',
     body: REGISTER_TEMP_PASSWORD_TEMPLATE,
     variables: {
       name: 'имя получателя',
@@ -77,7 +77,7 @@ const STATIC_TEMPLATES: ReadonlyArray<StaticTemplate> = [
   },
   {
     key: 'password-reset',
-    subject: 'Сброс пароля Z',
+    subject: 'Сброс пароля Кора',
     body: PASSWORD_RESET_TEMPLATE,
     variables: {
       name: 'имя получателя',

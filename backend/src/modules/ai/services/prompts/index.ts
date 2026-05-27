@@ -113,6 +113,19 @@ const REGISTRY: Record<MeetingType, PromptDescriptor> = {
     toolName: team.TOOL_NAME,
     schema: team.SCHEMA,
   },
+  // Sprints (2026-05-27): «Итоги спринта», запускается из дашборда спринта
+  // (`POST /cycles/:id/start-meeting`). По смыслу — ретроспектива (что было
+  // запланировано, что выполнено, что не выполнено, причины, переносы) +
+  // план следующего спринта. Используем retrospective-формат: он уже даёт
+  // wentWell/needsImprovement/actions; полный сводный отчёт спринта
+  // (нарратив + план/факт + кандидаты следующего) генерируется отдельным
+  // LLM-таском `sprint-review-summary` после завершения встречи.
+  sprint_review: {
+    buildPrompt: retrospective.buildPrompt,
+    tool: retrospective.TOOL,
+    toolName: retrospective.TOOL_NAME,
+    schema: retrospective.SCHEMA,
+  },
 };
 
 export function getPromptForType(type: MeetingType): PromptDescriptor {

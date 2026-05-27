@@ -57,6 +57,11 @@ enum MeetingType {
   /// Tracker Phase 1 (2026-05-24) — встреча, запущенная по задаче трекера
   /// через `POST /issues/:id/start-meeting`. Linked via `Meeting.linkedIssueId`.
   task_discussion
+  /// Sprints (2026-05-27) — встреча «Итоги спринта», запускается из дашборда
+  /// спринта через `POST /cycles/:id/start-meeting`. Linked via `Meeting.linkedCycleId`.
+  /// AI-отчёт по типу — нарратив + план/факт + причины + переносы + блокеры +
+  /// подсказки помощника + план следующего спринта.
+  sprint_review
 }
 
 enum MeetingStatus {
@@ -1085,12 +1090,19 @@ model Meeting {
   linkedIssueId String?
   linkedIssue   Issue?  @relation("MeetingLinkedIssue", fields: [linkedIssueId], references: [id], onDelete: SetNull)
 
+  /// Sprints (2026-05-27) — встреча могла быть запущена из спринта (обычно
+  /// type=sprint_review). NULL для встреч, не связанных со спринтом.
+  /// См. plans/tz/2026-05-27-sprints.md §1.2.
+  linkedCycleId String?
+  linkedCycle   Cycle?  @relation("MeetingLinkedCycle", fields: [linkedCycleId], references: [id], onDelete: SetNull)
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
   @@index([cardId, createdAt])
   @@index([tenantId])
   @@index([linkedIssueId])
+  @@index([linkedCycleId])
 }
 
 model Participant {
@@ -1971,6 +1983,9 @@ model Card {
 
   meetings     Meeting[]
   chatMessages MeetingChatMessage[]
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этой карточке клиента
+  /// (Project.customerCardId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects Project[]    @relation("ProjectCustomerCard")
 
   @@unique([ownerId, name])
   @@index([ownerId, lastMeetingAt])
@@ -2830,6 +2845,10 @@ model Vendor {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
+
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому поставщику
+  /// (Project.vendorId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects Project[] @relation("ProjectVendor")
 
   @@index([tenantId, status])
   @@index([tenantId, segment])
@@ -3715,6 +3734,9 @@ model Department {
   interactionsAsCounterpart Interaction[]          @relation("InteractionCounterpartDept")
   /// SBA α-9 wave 2 — m:n с FunctionalDomain.
   domainLinks               DepartmentDomainLink[]
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому отделу
+  /// (Project.departmentId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects            Project[]              @relation("ProjectDepartment")
 
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId])
@@ -3855,6 +3877,9 @@ model Person {
   /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический
   /// индекс категорий профиля знаний (для запросов «кто разбирается в X»).
   knowledgeCategoryEmbeddings PersonKnowledgeCategoryEmbedding[]
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому сотруднику
+  /// как subject (Project.subjectPersonId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects              Project[]                          @relation("ProjectSubjectPerson")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6754,6 +6779,19 @@ model Project {
   // Связь с графом
   entityId String?
 
+  /// Sprints (2026-05-27) — гибкая привязка проекта-спринта. Один из 4 опц.
+  /// scope-полей может быть заполнен (или ни одного — «Спринт компании»).
+  /// Инвариант: не более 1 заполненного поля. Валидация — в
+  /// `ProjectsService.create/update` (см. plans/tz/2026-05-27-sprints.md §1.6).
+  customerCardId  String?
+  customerCard    Card?       @relation("ProjectCustomerCard", fields: [customerCardId], references: [id], onDelete: SetNull)
+  vendorId        String?
+  vendor          Vendor?     @relation("ProjectVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  subjectPersonId String?
+  subjectPerson   Person?     @relation("ProjectSubjectPerson", fields: [subjectPersonId], references: [id], onDelete: SetNull)
+  departmentId    String?
+  department      Department? @relation("ProjectDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -6776,6 +6814,10 @@ model Project {
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
   @@index([tenantId, identifier])
+  @@index([tenantId, customerCardId])
+  @@index([tenantId, vendorId])
+  @@index([tenantId, subjectPersonId])
+  @@index([tenantId, departmentId])
 }
 
 /// Tracker Project Documents (2026-05-27) — простой rich-text документ,
@@ -6915,8 +6957,85 @@ model Cycle {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   issues  Issue[]
 
+  /// Sprints (2026-05-27) — встречи, явно привязанные к этому спринту через
+  /// `POST /cycles/:id/start-meeting` (обычно type=sprint_review).
+  linkedMeetings Meeting[]    @relation("MeetingLinkedCycle")
+  /// Sprints (2026-05-27) — подсказки помощника по спринтам (Specialist 3-13).
+  sprintHints    SprintHint[]
+
   @@index([projectId, startDate])
   @@index([tenantId])
+  @@index([tenantId, completedAt])
+}
+
+// ──────────────────────────── Sprints (2026-05-27) ────────────────────────────
+
+/// Sprints (2026-05-27) — категория подсказки помощника по спринтам.
+/// См. plans/tz/2026-05-27-sprints.md §1.1.
+enum SprintHintKind {
+  no_due_date
+  no_description
+  no_assignee
+  due_date_at_risk
+  recurring_carry_over
+  no_recent_mentions
+  conflicts_with_goal
+  can_be_split
+  similar_to_past_task
+  generic
+}
+
+/// Sprints (2026-05-27) — уровень критичности подсказки.
+enum SprintHintSeverity {
+  info
+  warning
+  critical
+}
+
+/// Sprints (2026-05-27) — статус подсказки.
+enum SprintHintStatus {
+  active
+  dismissed
+  resolved
+}
+
+/// Sprints (2026-05-27) — подсказка помощника по спринтам (Specialist 3-13).
+/// Создаётся воркером `3-13-sprint-helper`, отображается на странице спринта
+/// в блоке «Помощник предлагает». Пользователь может закрыть (dismiss) или
+/// пометить выполненной (resolve). См. plans/tz/2026-05-27-sprints.md.
+model SprintHint {
+  id                String             @id @default(cuid())
+  tenantId          String
+  cycleId           String
+  cycle             Cycle              @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  kind              SprintHintKind
+  severity          SprintHintSeverity
+  title             String             @db.VarChar(300)
+  body              String             @db.Text
+
+  /// Id'ы Issue, к которым относится подсказка (могут быть пустыми для общих подсказок).
+  affectedIssueIds  String[]           @default([])
+  /// Id'ы IdeaBlock из графа знаний, на основании которых сделана подсказка.
+  sourceBlockIds    String[]           @default([])
+
+  status            SprintHintStatus   @default(active)
+  /// Пользователь, который закрыл/разрешил подсказку.
+  dismissedByUserId String?
+  dismissedAt       DateTime?
+
+  /// Confidence модели LLM (0..1).
+  confidence        Decimal            @db.Decimal(4, 3)
+  /// SHA-1 hash от title+body — для дедупликации повторных подсказок в worker'е.
+  /// Не индексируем (используется только при findOrCreate).
+  contentHash       String             @db.VarChar(64)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([tenantId, cycleId, status])
+  @@index([tenantId, status, createdAt])
+  @@index([cycleId, kind, contentHash])
 }
 
 /// Задача трекера. Расширение legacy `Task`. Самореферентная иерархия через

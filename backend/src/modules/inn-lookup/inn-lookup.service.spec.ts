@@ -22,6 +22,7 @@ import type { RedisService } from '../../common/redis/redis.service';
 import type { DadataAdapter } from './adapters/dadata.adapter';
 import type { InnLookupResult } from './adapters/inn-lookup.adapter';
 import type { MockAdapter } from './adapters/mock.adapter';
+import type { TochkaOpenBankingAdapter } from './adapters/tochka.adapter';
 import { InnLookupService } from './inn-lookup.service';
 
 interface FakeRedis {
@@ -56,7 +57,10 @@ function makeCfg(
   } as unknown as TypedConfigService;
 }
 
-function makeAdapter(name: 'mock' | 'dadata', result: InnLookupResult | null) {
+function makeAdapter(
+  name: 'mock' | 'dadata' | 'tochka',
+  result: InnLookupResult | null,
+) {
   return {
     name,
     lookup: vi.fn().mockResolvedValue(result),
@@ -80,11 +84,15 @@ describe('InnLookupService', () => {
   let redis: FakeRedis;
   let mockAdapter: ReturnType<typeof makeAdapter>;
   let dadataAdapter: ReturnType<typeof makeAdapter>;
+  let tochkaAdapter: ReturnType<typeof makeAdapter>;
 
   beforeEach(() => {
     redis = makeRedis();
     mockAdapter = makeAdapter('mock', SBER);
     dadataAdapter = makeAdapter('dadata', { ...SBER, source: 'dadata' });
+    // По умолчанию Tochka возвращает null — DaData fallback срабатывает.
+    // В тестах tochka_then_dadata переопределяем mockResolvedValueOnce.
+    tochkaAdapter = makeAdapter('tochka', null);
   });
 
   afterEach(() => {
@@ -99,6 +107,7 @@ describe('InnLookupService', () => {
       redis as unknown as RedisService,
       mockAdapter as unknown as MockAdapter,
       dadataAdapter as unknown as DadataAdapter,
+      tochkaAdapter as unknown as TochkaOpenBankingAdapter,
     );
   }
 
@@ -119,7 +128,26 @@ describe('InnLookupService', () => {
     expect(mockAdapter.lookup).not.toHaveBeenCalled();
   });
 
-  it('provider=tochka_then_dadata в Фазе 2 эквивалентен dadata', async () => {
+  it('provider=tochka_then_dadata: Tochka null → DaData fallback', async () => {
+    // tochkaAdapter по умолчанию возвращает null (см. beforeEach)
+    const svc = makeService('tochka_then_dadata');
+    const result = await svc.lookup('7707083893');
+    expect(result.source).toBe('dadata');
+    expect(tochkaAdapter.lookup).toHaveBeenCalledWith('7707083893');
+    expect(dadataAdapter.lookup).toHaveBeenCalled();
+  });
+
+  it('provider=tochka_then_dadata: Tochka вернул данные → DaData НЕ зовётся', async () => {
+    tochkaAdapter.lookup.mockResolvedValueOnce({ ...SBER, source: 'tochka' });
+    const svc = makeService('tochka_then_dadata');
+    const result = await svc.lookup('7707083893');
+    expect(result.source).toBe('tochka');
+    expect(tochkaAdapter.lookup).toHaveBeenCalled();
+    expect(dadataAdapter.lookup).not.toHaveBeenCalled();
+  });
+
+  it('provider=tochka_then_dadata: Tochka throw → DaData fallback (graceful)', async () => {
+    tochkaAdapter.lookup.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     const svc = makeService('tochka_then_dadata');
     const result = await svc.lookup('7707083893');
     expect(result.source).toBe('dadata');

@@ -111,6 +111,9 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
     ManualBillingService,
     BillingService,
     BILLING_PROVIDER,
+    // ТЗ 2026-05-27 Фаза 8 — TochkaOpenBankingAdapter в InnLookupModule
+    // использует TochkaOAuthService для bearer-токена OpenBanking.
+    TochkaOAuthService,
   ],
 })
 export class BillingModule implements OnApplicationBootstrap {

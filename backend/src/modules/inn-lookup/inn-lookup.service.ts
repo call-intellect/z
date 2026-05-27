@@ -31,6 +31,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import { DadataAdapter } from './adapters/dadata.adapter';
 import type { InnLookupResult } from './adapters/inn-lookup.adapter';
 import { MockAdapter } from './adapters/mock.adapter';
+import { TochkaOpenBankingAdapter } from './adapters/tochka.adapter';
 
 const INN_REGEX = /^(\d{10}|\d{12})$/;
 /** TTL Redis-лока для cache stampede: ~ один HTTP-таймаут DaData. */
@@ -54,6 +55,8 @@ export class InnLookupService {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(MockAdapter) private readonly mock: MockAdapter,
     @Inject(DadataAdapter) private readonly dadata: DadataAdapter,
+    @Inject(TochkaOpenBankingAdapter)
+    private readonly tochka: TochkaOpenBankingAdapter,
   ) {}
 
   /**
@@ -133,10 +136,12 @@ export class InnLookupService {
       return this.dadata.lookup(inn);
     }
 
-    // `tochka_then_dadata`:
-    // Фаза 2: TochkaAdapter ещё не реализован → сразу падаем в DaData.
-    // Фаза 7: будет TochkaAdapter.lookup → если null → fallback на DaData.
-    // На MVP в проде это поведение эквивалентно `dadata`.
+    // `tochka_then_dadata` (Фаза 8): сначала Точка OpenBanking, при null/error
+    // — fallback на DaData. Точка возвращает данные только для customer'ов
+    // которые подписаны на наш clientId (т.е. сама Org Z). DaData покрывает
+    // широкий справочник РФ — любой ИНН доступен через неё.
+    const fromTochka = await this.tochka.lookup(inn).catch(() => null);
+    if (fromTochka) return fromTochka;
     return this.dadata.lookup(inn);
   }
 

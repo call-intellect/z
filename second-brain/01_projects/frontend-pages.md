@@ -10,6 +10,21 @@ covers: реестр всех страниц Next.js App Router
 
 Файл создан 2026-05-25 как часть финального handoff Wave 1-3 (Wave 1 закрытие). Пополняется по факту.
 
+## Группировка в Sidebar (ТЗ 2026-05-27 navigation-restructure)
+
+Меню `frontend/src/ui/components/app-shell/Sidebar.tsx` разделено на 6 смысловых слоёв (раньше было 3 плоских группы Компания/Оперативка/Настройки):
+
+1. **Каждый день** — `/dashboard`, `/meetings`, `/dump`, `/cards`, `/projects`, `/chat`, плюс `/intake` (для owner/admin) с живым бейджом.
+2. **Моё пространство** — `/me`, `/me/contributions`, `/me/social-contribution`, `/me/promises`, `/feedback`.
+3. **Память компании** — `/ideas`, `/regulations`, `/decisions`, `/insights`, `/entities`, `/themes`. Items фильтруются `useMemoryAccess()`.
+4. **Управление** *(только owner/admin/coo)* — `/dashboard/operations`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`, `/goals`.
+5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/structure`, `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`).
+6. **Настройки** — `/settings/templates`, `/settings/integrations`, `/settings` + подгруппа «Админка» (`/settings/admin`, `/admin`) для owner/admin/super_admin.
+
+CTA «Создать встречу» (Plus + ссылка на `/meetings/create`) и `OrgSwitcher` живут в шапке Sidebar над списком групп.
+
+Источник ТЗ: [plans/tz/2026-05-27-navigation-restructure.md](../../plans/tz/2026-05-27-navigation-restructure.md).
+
 ## Финальный handoff Wave 1-3 — новые страницы
 
 ### T1 Recognition (Gamification frontend)

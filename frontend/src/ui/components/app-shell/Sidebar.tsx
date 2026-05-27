@@ -85,15 +85,26 @@ import { useTheme } from '@/ui/components/theme/ThemeProvider';
 import { OrgSwitcher } from './OrgSwitcher';
 
 /**
- * Sidebar — главный навигационный каркас ЛК (Фаза 0c, sub-TZ 0c.1).
+ * Sidebar — главный навигационный каркас ЛК.
  *
- * Структура — 3 смысловые группы + admin-подгруппа (см. §5.1 ТЗ 0c):
- *   - «Компания» — стратегический срез: дашборд, структура, документы,
- *     карты должностей, темы, цели. Внутри — свёрнутая подгруппа
- *     «Будет в следующей фазе» с 4 disabled-γ-пунктами.
- *   - «Оперативка» — ежедневная работа: встречи, дамп, карточки, задачи,
- *     помощник, личная страница.
- *   - «Настройки» — конфиг + админка (последняя видна только owner/admin).
+ * Структура (ТЗ 2026-05-27 navigation-restructure) — 6 смысловых слоёв
+ * вместо плоских 3 групп, отражающих частоту использования и природу
+ * данных:
+ *   1. «Каждый день» — daily drivers: главная, встречи, дамп, карточки,
+ *      проекты, помощник. Для owner/admin сюда же добавляется «Входящие»
+ *      с живым бейджем (useIntakePendingCount).
+ *   2. «Моё пространство» — личный кабинет: /me и его подразделы, фидбек.
+ *   3. «Память компании» — knowledge-граф: идеи, правила, решения,
+ *      сигналы, сущности, темы. Доступ фильтруется через
+ *      `useMemoryAccess()` (роль + entitlement-флаги).
+ *   4. «Управление» — ролевые дашборды (COO-панель, отчёты, цели). Целая
+ *      группа условная: рендерится только для owner / admin / coo.
+ *   5. «Справочник» — структура и метаданные компании (структура, отделы,
+ *      домены, документы, карты должностей, клоны, поставщики, события,
+ *      эксперименты, голос бренда). Целая группа collapsible, по умолчанию
+ *      свёрнута; внутри — вторая подгруппа «Будет в следующей фазе» с
+ *      γ-пунктами (Процессы / Политики / Метрики).
+ *   6. «Настройки» — конфиг + админка (последняя видна только owner/admin).
  *
  * Состояния пункта (порядок проверки: comingSoon → locked → enabled):
  *   - `comingSoon=true` — функционал ещё не реализован (Фаза γ). Иконка
@@ -156,6 +167,12 @@ type NavGroup = {
    * пункт — она автоматически раскрывается (как и раньше).
    */
   collapsibleSubgroups?: NavSubgroup[];
+  /**
+   * ТЗ 2026-05-27 — если true, заголовок группы не рендерится. Используется
+   * для «Справочника»: вся группа — это одна collapsible-подгруппа, и
+   * показывать заголовок дважды (группы + подгруппы) избыточно.
+   */
+  hideGroupLabel?: boolean;
 };
 
 /**
@@ -185,29 +202,70 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
   },
 ];
 
-const COMPANY_GROUP: NavGroup = {
-  label: 'Компания',
+/**
+ * ТЗ 2026-05-27 navigation-restructure — меню разбито на 6 смысловых слоёв
+ * по частоте использования и природе данных вместо плоских 3 групп:
+ *   1. Каждый день — daily drivers (встречи/трекер/помощник)
+ *   2. Моё пространство — личный кабинет
+ *   3. Память компании — knowledge-граф (доступ через useMemoryAccess)
+ *   4. Управление — ролевые дашборды (owner/admin/coo)
+ *   5. Справочник — структура и метаданные (collapsible, default свёрнут)
+ *   6. Настройки — конфиг + админка
+ */
+const DAILY_GROUP: NavGroup = {
+  label: 'Каждый день',
   items: [
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard' },
-    { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure' },
-    // SBA α-9 wave 3 — Company Foundation: 4 новые страницы рядом со «Структурой».
-    { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company' },
-    { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments' },
-    { href: '/domains', label: 'Домены', icon: Shapes, matchPrefix: '/domains' },
-    { href: '/maturity', label: 'Зрелость', icon: Gauge, matchPrefix: '/maturity' },
-    { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
-    { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles' },
-    // Clones=Roles Ф4 — публичная витрина клонов должностей.
-    { href: '/clones', label: 'Клоны', icon: Bot, matchPrefix: '/clones' },
-    // SBA α-3 — read-only список поставщиков и событий (категория A онтологии).
-    { href: '/vendors', label: 'Поставщики', icon: Truck, matchPrefix: '/vendors' },
-    { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
-    // ↓ ТЗ 2026-05-26: пункты /regulations, /decisions, /insights, /ideas, /themes
-    // перенесены в подгруппу «Память компании» (ниже в collapsibleSubgroups).
-    // SBA β-6 — институциональная память: эксперименты и их уроки.
-    { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
-    // SBA β-7 — голос бренда (Specialist 3.10). Tone/values/taboos.
-    { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
+    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings' },
+    { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump' },
+    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
+    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects' },
+    {
+      href: '/chat',
+      label: 'Помощник компании',
+      icon: MessageCircle,
+      matchPrefix: '/chat',
+      gateFeature: 'feature.chat_org',
+    },
+  ],
+};
+
+const ME_GROUP: NavGroup = {
+  label: 'Моё пространство',
+  items: [
+    { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me' },
+    { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
+    { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
+    // SBA β-8.2 — «Мои обещания».
+    { href: '/me/promises', label: 'Мои обещания', icon: CheckCircle2, matchPrefix: '/me/promises' },
+    // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
+    { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
+  ],
+};
+
+/**
+ * Память компании — это то, что Кора извлекла из встреч и разговоров.
+ * Раньше была подгруппой внутри «Компании»; в ТЗ 2026-05-27 поднята на
+ * верхний уровень — это отдельный, самостоятельный пласт продукта.
+ * Доступ к items фильтруется через `useMemoryAccess()` (см. ниже).
+ */
+const MEMORY_GROUP: NavGroup = {
+  label: 'Память компании',
+  items: MEMORY_SUBGROUP_ITEMS,
+};
+
+/**
+ * Управление — ролевые дашборды для owner/admin/coo. Группа целиком
+ * условная: рендерится только при `canSeeOperationsCoo === true`.
+ * `/goals` остаётся гейтнутым по тарифу (feature.goals_strategy).
+ */
+const MANAGEMENT_GROUP: NavGroup = {
+  label: 'Управление',
+  items: [
+    // SBA β-8 / β-8.1 / β-8.3 — COO-панели.
+    { href: '/dashboard/operations', label: 'Панель операций', icon: Activity, matchPrefix: '/dashboard/operations' },
+    { href: '/dashboard/operations/daily', label: 'Ежедневный отчёт', icon: Newspaper, matchPrefix: '/dashboard/operations/daily' },
+    { href: '/dashboard/operations/weekly', label: 'Недельная сводка', icon: BarChart3, matchPrefix: '/dashboard/operations/weekly' },
     {
       href: '/goals',
       label: 'Цели и стратегия',
@@ -216,13 +274,44 @@ const COMPANY_GROUP: NavGroup = {
       gateFeature: 'feature.goals_strategy',
     },
   ],
+};
+
+/**
+ * Справочник — статические/редко-меняемые срезы компании. Целая группа —
+ * collapsible (defaultCollapsed: true). Реализовано как единственная
+ * подгруппа с `hideGroupLabel: true`, чтобы заголовок не дублировался.
+ *
+ * «Будет в следующей фазе» (Процессы/Политики/Метрики) — вторая подгруппа
+ * внутри Справочника, тоже collapsed по умолчанию.
+ */
+const REFERENCE_GROUP: NavGroup = {
+  label: 'Справочник',
+  items: [],
+  hideGroupLabel: true,
   collapsibleSubgroups: [
     {
-      // ТЗ 2026-05-26 §5 — единая подгруппа «Память компании».
-      label: 'Память компании',
-      defaultCollapsed: false,
-      storageKey: 'sidebar.memory.open',
-      items: MEMORY_SUBGROUP_ITEMS,
+      label: 'Справочник',
+      defaultCollapsed: true,
+      storageKey: 'sidebar.reference.open',
+      items: [
+        { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure' },
+        // SBA α-9 wave 3 — Company Foundation.
+        { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company' },
+        { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments' },
+        { href: '/domains', label: 'Домены', icon: Shapes, matchPrefix: '/domains' },
+        { href: '/maturity', label: 'Зрелость', icon: Gauge, matchPrefix: '/maturity' },
+        { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
+        { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles' },
+        // Clones=Roles Ф4 — публичная витрина клонов должностей.
+        { href: '/clones', label: 'Клоны', icon: Bot, matchPrefix: '/clones' },
+        // SBA α-3 — поставщики/события (категория A онтологии).
+        { href: '/vendors', label: 'Поставщики', icon: Truck, matchPrefix: '/vendors' },
+        { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
+        // SBA β-6 — институциональная память: эксперименты и их уроки.
+        { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
+        // SBA β-7 — голос бренда (Specialist 3.10).
+        { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
+      ],
     },
     {
       label: 'Будет в следующей фазе',
@@ -237,30 +326,6 @@ const COMPANY_GROUP: NavGroup = {
   ],
 };
 
-const OPERATIONS_GROUP: NavGroup = {
-  label: 'Оперативка',
-  items: [
-    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings' },
-    { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump' },
-    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards' },
-    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects' },
-    {
-      href: '/chat',
-      label: 'Помощник компании',
-      icon: MessageCircle,
-      matchPrefix: '/chat',
-      gateFeature: 'feature.chat_org',
-    },
-    { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me' },
-    { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
-    { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
-    // SBA β-8.2 — «Мои обещания».
-    { href: '/me/promises', label: 'Мои обещания', icon: CheckCircle2, matchPrefix: '/me/promises' },
-    // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
-    { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
-  ],
-};
-
 /**
  * Доп. пункт «Входящие» (Phase 3 Sprint 6) — только для owner/admin.
  * Вставляется в `OPERATIONS_GROUP` динамически в Sidebar (роль приходит
@@ -271,33 +336,6 @@ const INTAKE_NAV_ITEM: NavItem = {
   label: 'Входящие',
   icon: Inbox,
   matchPrefix: '/intake',
-};
-
-/**
- * SBA β-8 / β-8.1 / β-8.3 — пункты COO-панели. Видны только owner / admin / coo.
- * Вставляются в `OPERATIONS_GROUP` динамически (роль приходит из useAuth).
- *
- * Порядок (Wave 1, 2026-05-25): Панель → Ежедневный отчёт → Недельная сводка.
- */
-const OPERATIONS_DASHBOARD_NAV_ITEM: NavItem = {
-  href: '/dashboard/operations',
-  label: 'Панель операций',
-  icon: Activity,
-  matchPrefix: '/dashboard/operations',
-};
-
-const OPERATIONS_DAILY_NAV_ITEM: NavItem = {
-  href: '/dashboard/operations/daily',
-  label: 'Ежедневный отчёт',
-  icon: Newspaper,
-  matchPrefix: '/dashboard/operations/daily',
-};
-
-const OPERATIONS_WEEKLY_NAV_ITEM: NavItem = {
-  href: '/dashboard/operations/weekly',
-  label: 'Недельная сводка',
-  icon: BarChart3,
-  matchPrefix: '/dashboard/operations/weekly',
 };
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
@@ -363,70 +401,70 @@ export function Sidebar({
       : {}),
   };
 
-  // SBA β-8 / β-8.1 — для owner/admin/coo показываем пункты COO-панели.
+  // SBA β-8 / β-8.1 — «Управление» (ролевые дашборды) видно только
+  // owner/admin/coo. В ТЗ 2026-05-27 эта секция вынесена в отдельную
+  // верхнеуровневую группу `MANAGEMENT_GROUP` (раньше пункты COO-панели
+  // вшивались в «Оперативку»).
   const canSeeOperationsCoo =
     currentOrgRole === 'owner' ||
     currentOrgRole === 'admin' ||
     currentOrgRole === 'coo';
 
-  // Phase 3 Sprint 6: для owner/admin добавляем пункт «Входящие» в
-  // «Оперативку» рядом с «Задачами» (логически — пред-этап триажа).
-  // badgeCount тянется из useIntakePendingCount — показывает число
-  // pending-карточек в живом счётчике (обновляется каждые 60 сек).
-  const operationsGroup: NavGroup = (() => {
-    const items: NavItem[] = [...OPERATIONS_GROUP.items];
-
-    // SBA β-8 / β-8.1 / β-8.3 — пункты COO-панели в начало группы
-    // (для тех, кому видно). Порядок: Панель → Ежедневный отчёт → Недельная сводка.
-    if (canSeeOperationsCoo) {
-      items.unshift(
-        OPERATIONS_DASHBOARD_NAV_ITEM,
-        OPERATIONS_DAILY_NAV_ITEM,
-        OPERATIONS_WEEKLY_NAV_ITEM,
-      );
-    }
-
-    if (canTriage) {
-      const tasksIdx = items.findIndex((i) => i.href === '/tasks');
-      const insertAt = tasksIdx >= 0 ? tasksIdx + 1 : items.length;
-      items.splice(insertAt, 0, {
-        ...INTAKE_NAV_ITEM,
-        badgeCount: intakePendingCount,
-      });
-    }
-
-    return { ...OPERATIONS_GROUP, items };
+  // Phase 3 Sprint 6: для owner/admin добавляем пункт «Входящие» в группу
+  // «Каждый день» (рядом с «Проекты» / трекером). badgeCount тянется из
+  // useIntakePendingCount — живой счётчик pending-карточек, обновляется
+  // каждые 60 сек.
+  const dailyGroup: NavGroup = (() => {
+    if (!canTriage) return DAILY_GROUP;
+    const items: NavItem[] = [...DAILY_GROUP.items];
+    const projectsIdx = items.findIndex((i) => i.href === '/projects');
+    const insertAt = projectsIdx >= 0 ? projectsIdx + 1 : items.length;
+    items.splice(insertAt, 0, {
+      ...INTAKE_NAV_ITEM,
+      badgeCount: intakePendingCount,
+    });
+    return { ...DAILY_GROUP, items };
   })();
 
-  // ТЗ 2026-05-26 §6 — фильтруем пункты подгруппы «Память» в зависимости от
+  // ТЗ 2026-05-26 §6 — фильтруем пункты «Памяти компании» в зависимости от
   // того, что пользователю разрешено видеть (роль + entitlement-флаги).
   const memoryAccess = useMemoryAccess();
 
-  // ТЗ 2026-05-26 §5.5 — пробрасываем showDot к пункту «Клоны»;
-  // одновременно фильтруем подгруппу «Память» по useMemoryAccess.
-  const companyGroup: NavGroup = (() => {
-    const items: NavItem[] = COMPANY_GROUP.items.map((i) =>
-      i.href === '/clones' ? { ...i, showDot: hasUnseenCloneGrants } : i,
-    );
-    const subgroups = COMPANY_GROUP.collapsibleSubgroups?.map((sg) => {
-      if (sg.storageKey !== 'sidebar.memory.open') return sg;
+  const memoryGroup: NavGroup = {
+    ...MEMORY_GROUP,
+    items: MEMORY_GROUP.items.filter((it) => {
+      if (it.href === '/regulations') return memoryAccess.canReadRegulations;
+      if (it.href === '/entities') return memoryAccess.canReadEntities;
+      return true;
+    }),
+  };
+
+  // ТЗ 2026-05-26 §5.5 — точка возле «Клоны» (новый CloneAccessGrant).
+  // После ТЗ 2026-05-27 пункт «Клоны» живёт в «Справочнике».
+  const referenceGroup: NavGroup = (() => {
+    const subgroups = REFERENCE_GROUP.collapsibleSubgroups?.map((sg) => {
+      if (sg.storageKey !== 'sidebar.reference.open') return sg;
       return {
         ...sg,
-        items: sg.items.filter((it) => {
-          if (it.href === '/regulations') return memoryAccess.canReadRegulations;
-          if (it.href === '/entities') return memoryAccess.canReadEntities;
-          return true;
-        }),
+        items: sg.items.map((i) =>
+          i.href === '/clones' ? { ...i, showDot: hasUnseenCloneGrants } : i,
+        ),
       };
     });
     return {
-      ...COMPANY_GROUP,
-      items,
+      ...REFERENCE_GROUP,
       ...(subgroups ? { collapsibleSubgroups: subgroups } : {}),
     };
   })();
 
-  const groups: NavGroup[] = [companyGroup, operationsGroup, settingsGroup];
+  const groups: NavGroup[] = [
+    dailyGroup,
+    ME_GROUP,
+    memoryGroup,
+    ...(canSeeOperationsCoo ? [MANAGEMENT_GROUP] : []),
+    referenceGroup,
+    settingsGroup,
+  ];
 
   // Собираем все пункты в один плоский массив, чтобы вычислить «победителя»
   // по matchPrefix один раз — поведение, как было в плоском Sidebar (см.
@@ -531,19 +569,23 @@ function SidebarGroup({
   return (
     <div>
       {showSeparator && <Separator className="my-2" />}
-      <div className="mt-3 mb-1 px-3 text-xs uppercase tracking-wider text-fg-tertiary">
-        {group.label}
-      </div>
-      <ul className="flex flex-col gap-0.5">
-        {group.items.map((item) => (
-          <SidebarNavLink
-            key={item.href}
-            item={item}
-            isActive={winnerHref === item.href}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </ul>
+      {!group.hideGroupLabel && (
+        <div className="mt-3 mb-1 px-3 text-xs uppercase tracking-wider text-fg-tertiary">
+          {group.label}
+        </div>
+      )}
+      {group.items.length > 0 && (
+        <ul className="flex flex-col gap-0.5">
+          {group.items.map((item) => (
+            <SidebarNavLink
+              key={item.href}
+              item={item}
+              isActive={winnerHref === item.href}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </ul>
+      )}
       {group.collapsibleSubgroups?.map((sg) => (
         <SidebarSubgroup
           key={sg.label}

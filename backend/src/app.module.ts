@@ -25,6 +25,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { BrandVoiceModule } from './modules/brand-voice/brand-voice.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
@@ -443,6 +444,12 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Используется при регистрации Org (автоподстановка реквизитов) и при
     // верификации ИНН реферала. Redis-кэш TTL 30 дней.
     InnLookupModule,
+
+    // ТЗ 2026-05-27 — биллинг (Subscription/Invoice/Provider).
+    // Фаза 4a: pure-сервисы (SeatService, InvoiceNumberService) +
+    // BillingProviderPort с ManualBillingProvider-заглушкой.
+    // Controllers/cron подъезжают в Фазе 4b, TochkaBillingProvider — в Фазе 5.
+    BillingModule,
 
     // Wave 2 (2026-05-24) — Activity Feeds: единая лента активности AI-агентов
     // и пользователей. @Global ActivityFeedService.publish() вызывают

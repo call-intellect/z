@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, type Cycle, type Project } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -61,6 +62,9 @@ export class CyclesService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   /** Создать цикл в проекте. Доступ: project_admin / project_manager. */
@@ -243,6 +247,25 @@ export class CyclesService {
       this.metrics?.incCycleCompleted({ tenant: tenantId });
     } catch {
       // graceful
+    }
+    // Sprints (2026-05-27) — best-effort hook на финальный отчёт.
+    // SprintReviewService подписан через @OnEvent('cycle.review_requested').
+    // Этот event НЕ блокирует complete: если knowledge-core отключён или
+    // LLM-провайдеры упали — Cycle всё равно считается завершённым.
+    try {
+      this.eventEmitter?.emit('cycle.review_requested', {
+        cycleId: id,
+        tenantId,
+        reason: 'cycle_completed',
+      });
+    } catch (err) {
+      this.logger.debug(
+        {
+          cycleId: id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'cycles.complete: emit cycle.review_requested failed (best-effort)',
+      );
     }
 
     return { cycleId: id, movedIssueCount, rolledOverTo };

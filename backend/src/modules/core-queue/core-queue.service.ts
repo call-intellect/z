@@ -34,6 +34,7 @@ import {
   type RecognitionFormulateJobData,
   type RoleProfileJobData,
   type SpecialistRoutingJobData,
+  type SprintHelperJobData,
   type StrategicAlignmentJobData,
 } from './queues';
 
@@ -482,6 +483,32 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       `enqueue core.specialist-routing (custom jobId) specialist=${args.specialistName} blockId=${args.blockId} jobId=${args.jobId} delay=${args.delayMs ?? 0}ms`,
     );
     return { jobId: args.jobId };
+  }
+
+  /**
+   * Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.4) — публикация
+   * job для Specialist 3-13 «Помощник по спринтам». Использует ту же очередь
+   * `core.specialist-routing`, но с jobName='3-13-sprint-helper' и payload по
+   * cycleId (не blockId). jobId='3-13-sprint-helper_<cycleId>' — дедупликация
+   * один на спринт (cron каждые 4ч + событие meeting_completed не плодят дубли).
+   */
+  async enqueueSprintHelper(args: {
+    cycleId: string;
+    tenantId: string;
+    reason?: 'cron' | 'meeting_completed' | 'manual';
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.SPECIALIST_ROUTING);
+    const jobId = `3-13-sprint-helper_${args.cycleId}`;
+    const payload: SprintHelperJobData = {
+      cycleId: args.cycleId,
+      tenantId: args.tenantId,
+      ...(args.reason ? { reason: args.reason } : {}),
+    };
+    await q.add('3-13-sprint-helper', payload, { jobId });
+    this.logger.debug(
+      `enqueue sprint-helper cycleId=${args.cycleId} reason=${args.reason ?? '—'} jobId=${jobId}`,
+    );
+    return { jobId };
   }
 
   /**

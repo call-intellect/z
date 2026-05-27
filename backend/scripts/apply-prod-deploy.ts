@@ -82,6 +82,8 @@ const STEPS: Step[] = [
     'tracker-phase3', 'tracker-phase3-c', 'tracker-phase4-telegram',
     'feedback-cluster', 'clone-v2', 'specialists-combined',
     'dialog-layer', 'temporal', 'kie-grsai-ab',
+    // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
+    'sprints',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

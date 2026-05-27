@@ -318,6 +318,24 @@ export interface SpecialistRoutingJobData {
 }
 
 /**
+ * Sprints (2026-05-27) — payload для `3-13-sprint-helper` job в очереди
+ * `core.specialist-routing`. В отличие от SpecialistRoutingJobData, работает
+ * не с одним блоком, а со ВСЕМ спринтом (по `cycleId`). Воркер сам соберёт
+ * контекст: задачи, последние блоки графа, активные SprintHint для дедупа.
+ *
+ * jobId-дедуп: один job на cycle (`3-13-sprint-helper_<cycleId>`). Повторный
+ * enqueue в окне обработки обновит существующий job вместо создания дубля.
+ *
+ * Воркер уходит в ту же очередь `core.specialist-routing` — это удобно для
+ * единого пула воркеров. Различение payload по jobName в Worker.process.
+ */
+export interface SprintHelperJobData {
+  cycleId: string;
+  tenantId: string;
+  reason?: 'cron' | 'meeting_completed' | 'manual';
+}
+
+/**
  * Payload для `core.knowledge-clone-rebuild` (SBA β-2). Воркер сам
  * подгрузит блоки Person'а за окно `cfg.knowledgeClone.lookbackMonths`.
  *

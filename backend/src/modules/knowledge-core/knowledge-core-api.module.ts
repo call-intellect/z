@@ -4,6 +4,7 @@ import { KnowledgeBlocksController } from './api/blocks.controller';
 import { KnowledgeEntitiesController } from './api/entities.controller';
 import { KnowledgeGraphController } from './api/graph.controller';
 import { KnowledgeSearchController } from './api/search.controller';
+import { SprintReviewController } from './api/sprint-review.controller';
 import { KnowledgeThemesController } from './api/themes.controller';
 import { KnowledgeCoreModule } from './knowledge-core.module';
 import { KnowledgeSnapshotModule } from './snapshot.module';
@@ -30,6 +31,11 @@ import { KnowledgeSnapshotModule } from './snapshot.module';
     KnowledgeEntitiesController,
     KnowledgeGraphController,
     KnowledgeThemesController,
+    // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.7) — REST
+    // финального отчёта спринта: GET /cycles/:id/review +
+    // POST /cycles/:id/review/regenerate. Контроллер живёт здесь, потому что
+    // SprintReviewService инжектит CurationService + LlmRouterService.
+    SprintReviewController,
   ],
 })
 export class KnowledgeCoreApiModule {}

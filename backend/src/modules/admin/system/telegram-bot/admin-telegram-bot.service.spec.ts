@@ -362,6 +362,138 @@ describe('AdminTelegramBotService', () => {
     });
   });
 
+  describe('updateToken — auto-register в прокси (2026-05-26)', () => {
+    it('proxy=enabled, нет существующего webhookSecret → upsertBot c сгенерированным secret, в config token+secret+proxyBotId', async () => {
+      (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
+      // 1-й find: autoRegisterInProxy.findGlobalChannel → канала нет, secret сгенерируется
+      // 2-й find: upsertGlobalChannel.findGlobalChannel → канала нет, create
+      // 3-й find: getSettings() в конце
+      m.prismaSpies.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(
+          makeChannel({
+            config: {
+              botToken: 'gcm:v1:enc(token-123)',
+              proxyBotId: 'proxy-bot-1',
+            } as never,
+          }),
+        );
+      let savedConfig: Record<string, unknown> | null = null;
+      m.prismaSpies.create.mockImplementation((args: {
+        data: { config: Record<string, unknown> };
+      }) => {
+        savedConfig = args.data.config;
+        return Promise.resolve(makeChannel({ config: args.data.config as never }));
+      });
+
+      await svc.updateToken({ token: '111111111:token-123' });
+
+      expect(m.proxySpies.upsertBot).toHaveBeenCalledOnce();
+      const upsertArg = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
+        token: string;
+        secretToken: string;
+        targetUrl: string;
+      };
+      expect(upsertArg.token).toBe('111111111:token-123');
+      expect(upsertArg.secretToken).toMatch(/^[a-f0-9]{32}$/);
+      expect(upsertArg.targetUrl).toBe(
+        'https://app.example.org/api/v1/webhooks/telegram-bot',
+      );
+      // Записанный config содержит token + webhookSecret (encrypted) + proxyBotId.
+      expect(savedConfig).not.toBeNull();
+      const cfg = savedConfig as unknown as Record<string, unknown>;
+      expect(typeof cfg['botToken']).toBe('string');
+      expect(typeof cfg['webhookSecret']).toBe('string');
+      expect(cfg['proxyBotId']).toBe('proxy-bot-1');
+      expect(cfg['proxyLastSyncError']).toBeNull();
+      expect(m.metricsSpy).toHaveBeenCalledWith({ action: 'token_changed' });
+      expect(m.metricsSpy).toHaveBeenCalledWith({ action: 'webhook_reset' });
+    });
+
+    it('proxy=enabled, существующий webhookSecret → upsertBot c существующим secret, БД secret НЕ перезаписан', async () => {
+      (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
+      const existing = makeChannel({
+        config: {
+          botToken: 'gcm:v1:enc(old-token)',
+          webhookSecret: 'gcm:v1:enc(existing-secret-42)',
+        } as never,
+      });
+      m.prismaSpies.findFirst
+        .mockResolvedValueOnce(existing) // autoRegisterInProxy
+        .mockResolvedValueOnce(existing) // upsertGlobalChannel
+        .mockResolvedValueOnce(existing); // getSettings
+      let updatedConfig: Record<string, unknown> | null = null;
+      m.prismaSpies.update.mockImplementation((args: {
+        data: { config: Record<string, unknown> };
+      }) => {
+        updatedConfig = args.data.config;
+        return Promise.resolve(makeChannel({ config: args.data.config as never }));
+      });
+
+      await svc.updateToken({ token: '222222222:new-token' });
+
+      const upsertArg = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
+        secretToken: string;
+      };
+      // existing-secret-42 расшифрован cryptoSpies.decrypt из gcm:v1:enc(existing-secret-42)
+      expect(upsertArg.secretToken).toBe('existing-secret-42');
+      // webhookSecret в config переиспользован (тот же зашифрованный blob), не пере-encrypt'нут.
+      expect(updatedConfig).not.toBeNull();
+      const cfg = updatedConfig as unknown as Record<string, unknown>;
+      expect(cfg['webhookSecret']).toBe('gcm:v1:enc(existing-secret-42)');
+    });
+
+    it('proxy=enabled, upsertBot падает → токен сохранён, proxyLastSyncError записан', async () => {
+      (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
+      m.proxySpies.upsertBot.mockRejectedValue(new Error('прокси не отвечает'));
+      m.prismaSpies.findFirst
+        .mockResolvedValueOnce(null) // autoRegisterInProxy → канала нет
+        .mockResolvedValueOnce(null) // upsertGlobalChannel → создаём
+        .mockResolvedValueOnce(
+          makeChannel({
+            config: {
+              botToken: 'gcm:v1:enc(token-X)',
+              proxyLastSyncError: 'прокси не отвечает',
+            } as never,
+          }),
+        );
+      let savedConfig: Record<string, unknown> | null = null;
+      m.prismaSpies.create.mockImplementation((args: {
+        data: { config: Record<string, unknown> };
+      }) => {
+        savedConfig = args.data.config;
+        return Promise.resolve(makeChannel({ config: args.data.config as never }));
+      });
+
+      // Не должен бросать — токен сохраняем best-effort даже при провале прокси.
+      const r = await svc.updateToken({ token: '333333333:token-X' });
+
+      expect(savedConfig).not.toBeNull();
+      const cfg = savedConfig as unknown as Record<string, unknown>;
+      expect(typeof cfg['botToken']).toBe('string');
+      expect(cfg['proxyLastSyncError']).toBe('прокси не отвечает');
+      expect(cfg['proxyBotId']).toBeUndefined();
+      // tokenIsSet=true в финальном response
+      expect(r.tokenIsSet).toBe(true);
+      // 'webhook_reset' метрика НЕ записывается на failed auto-register.
+      expect(m.metricsSpy).not.toHaveBeenCalledWith({ action: 'webhook_reset' });
+    });
+
+    it('proxy=disabled → upsertBot НЕ вызывается, поведение как до 2026-05-26', async () => {
+      // makeMockServices() default: telegramProxy.enabled=false.
+      m.prismaSpies.findFirst.mockResolvedValue(null);
+      m.prismaSpies.create.mockResolvedValue(makeChannel({ config: {} as never }));
+      m.prismaSpies.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(makeChannel({ config: {} as never }));
+
+      await svc.updateToken({ token: '444444444:legacy' });
+
+      expect(m.proxySpies.upsertBot).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resetWebhook (proxy mode, 2026-05-26)', () => {
     it('proxy enabled → upsertBot, setWebhook напрямую НЕ вызывается, в config сохраняется proxyBotId', async () => {
       (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;

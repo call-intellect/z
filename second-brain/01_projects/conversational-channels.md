@@ -221,12 +221,21 @@ Z живёт в ДЦ Новосибирска. Прямые исходящие �
 возрастающей задержкой на не-2xx нашего ответа. Наш контроллер
 верифицирует секрет через `timingSafeEqual`.
 
-**Регистрация бота в прокси.** Через админку Z
-(`/admin/system/telegram-bot` → «Перенастроить webhook») — вызывает
-`AdminTelegramBotService.resetWebhook → TelegramProxyAdminClient.upsertBot`.
-Прокси сам дёргает `setWebhook` у Telegram (Z не вызывает напрямую).
-Альтернативно — patch-скрипт `patch-telegram-register-in-proxy.ts`
-(идемпотентен, регистрируется в `apply-prod-deploy.ts`).
+**Регистрация бота в прокси.** Автоматическая — при первом
+`PUT /admin/system/telegram-bot/token` (кнопка «Установить токен»
+в админке) backend сам генерирует `webhookSecret` (если ещё не было) и
+вызывает `TelegramProxyAdminClient.upsertBot` через
+`autoRegisterInProxy`. Прокси дёргает `setWebhook` у Telegram —
+дополнительных действий админ-у не требуется. Если прокси упал в
+момент регистрации, токен всё равно сохраняется, ошибка пишется в
+`Channel.config.proxyLastSyncError`, юзер видит её в карточке
+«Прокси» админ-страницы и может ретрайнуть кнопкой «Перенастроить
+webhook» (`PUT /webhook` → тот же `upsertBot` + ротация
+webhookSecret).
+
+Альтернатива (для bootstrap'а старого прода или если веб-админка
+недоступна) — patch-скрипт `patch-telegram-register-in-proxy.ts`
+(идемпотентен, регистрируется в `apply-prod-deploy.ts` Шаг 6.11).
 
 **Аутентификация в админ-API прокси.** Через `POST /auth/login` JWT;
 кэшируется в Redis (`tg:proxy:admin:jwt`) с TTL ≈ `exp - prefetchSec`.

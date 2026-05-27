@@ -217,18 +217,110 @@ export class AdminTelegramBotService {
     const tokenEnc = this.crypto.encrypt(trimmed);
     const botUsername = await this.fetchBotUsernameSafe(trimmed);
 
+    // Auto-register в прокси (2026-05-26): убирает необходимость двойного
+    // клика «Установить токен → Перенастроить webhook» и patch-скрипта на
+    // bootstrap. Best-effort: если прокси не отвечает — токен всё равно
+    // сохраняется, ошибка пишется в `proxyLastSyncError`. Юзер увидит её
+    // в админке и сможет нажать «Перенастроить webhook» вручную позже.
+    let proxyPatch: Record<string, unknown> = {};
+    let webhookSecretToPersist: string | undefined;
+    let autoRegisterOutcome: 'skipped' | 'ok' | 'failed' = 'skipped';
+
+    if (this.cfg.telegramProxy.enabled) {
+      const reg = await this.autoRegisterInProxy({ token: trimmed });
+      autoRegisterOutcome = reg.outcome;
+      proxyPatch = reg.patch;
+      webhookSecretToPersist = reg.webhookSecretToPersist;
+    }
+
     const channel = await this.upsertGlobalChannel((existingConfig) => ({
       ...existingConfig,
       botToken: tokenEnc,
       ...(botUsername ? { botUsername } : {}),
+      ...(webhookSecretToPersist ? { webhookSecret: webhookSecretToPersist } : {}),
+      ...proxyPatch,
     }));
 
     this.logger.log(
-      `admin: глобальный Telegram-токен обновлён channelId=${channel.id} botUsername=${botUsername ?? 'unknown'}`,
+      `admin: глобальный Telegram-токен обновлён channelId=${channel.id} botUsername=${botUsername ?? 'unknown'} autoRegister=${autoRegisterOutcome}`,
     );
     this.metrics.incAdminTelegramBotAction({ action: 'token_changed' });
+    if (autoRegisterOutcome === 'ok') {
+      this.metrics.incAdminTelegramBotAction({ action: 'webhook_reset' });
+    }
     await this.publishChannelUpdated({ channelId: channel.id, reason: 'token_changed' });
     return this.getSettings();
+  }
+
+  /**
+   * Auto-register бота в прокси при `updateToken`. Best-effort:
+   * исключение НЕ бросает, а возвращает patch для записи в `Channel.config`
+   * (включая `proxyLastSyncError` при провале).
+   *
+   * Контракт:
+   *   - Существующий `webhookSecret` переиспользуется (не ротируется), чтобы
+   *     не обнулять активные подписки Telegram без явного действия юзера
+   *     («Перенастроить webhook»).
+   *   - Если webhookSecret в `Channel.config` ещё не задан — генерируем
+   *     новый, кладём в `webhookSecretToPersist` (шифрованный) для записи.
+   *   - На успех `upsertBot` — пишем `proxyBotId`, `proxyRegisteredAt`,
+   *     `proxyLastSyncError=null`, `webhookUrl=<computed>`.
+   *   - На fail — только `proxyLastSyncError=<message>`. Токен всё равно
+   *     сохранится в основном upsert.
+   */
+  private async autoRegisterInProxy(args: {
+    token: string;
+  }): Promise<{
+    outcome: 'ok' | 'failed';
+    patch: Record<string, unknown>;
+    webhookSecretToPersist?: string;
+  }> {
+    // Существующий secret вытаскиваем из current Channel (если есть).
+    const existing = await this.findGlobalChannel();
+    const existingSecretEnc = existing
+      ? this.readConfig(existing).webhookSecretEnc
+      : '';
+    let secret = '';
+    if (existingSecretEnc) {
+      secret = this.tryDecrypt(existingSecretEnc);
+    }
+    let webhookSecretToPersist: string | undefined;
+    if (!secret) {
+      secret = this.generateWebhookSecret();
+      webhookSecretToPersist = this.crypto.encrypt(secret);
+    }
+
+    const targetUrl = this.computeWebhookUrl();
+    try {
+      const info = await this.proxyAdmin.upsertBot({
+        token: args.token,
+        secretToken: secret,
+        targetUrl,
+      });
+      return {
+        outcome: 'ok',
+        webhookSecretToPersist,
+        patch: {
+          proxyBotId: info.id,
+          proxyRegisteredAt: new Date().toISOString(),
+          proxyLastSyncError: null,
+          webhookUrl: targetUrl,
+        },
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { err: message },
+        'admin updateToken: авто-регистрация в прокси не удалась; токен сохранён, юзеру нужно повторить через «Перенастроить webhook»',
+      );
+      return {
+        outcome: 'failed',
+        webhookSecretToPersist,
+        patch: {
+          proxyLastSyncError: message,
+        },
+      };
+    }
   }
 
   // ─────────────────────────────── webhook ────────────────────────────

@@ -647,8 +647,19 @@ docker compose exec backend bun run scripts/patch-migrate-clone-access.ts
 # docker compose exec backend bun run scripts/patch-migrate-clone-access.ts --tenant <orgId>
 
 # 6.11 — Регистрация глобального Telegram-бота в прокси telegram.crossmark.ru
-# (2026-05-26). Идемпотентен. Предусловия:
-#   - выставлены TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD в .env (см. Шаг 1);
+# (2026-05-26). Идемпотентен.
+#
+# ⚠ В обычном выкате этот скрипт НЕ нужен — после первой установки
+# токена в /admin/system/telegram-bot backend сам авто-регистрирует бот
+# в прокси (см. AdminTelegramBotService.updateToken → autoRegisterInProxy).
+# Скрипт остаётся для двух кейсов:
+#   1. Bootstrap старого прода, где токен уже был в БД ДО появления
+#      прокси-флоу — скрипт зарегистрирует существующий токен без захода
+#      в админку.
+#   2. Аварийный режим, когда веб-админка временно недоступна.
+#
+# Предусловия:
+#   - TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD в .env (см. Шаг 1);
 #   - в /admin/system/telegram-bot уже установлен токен бота (иначе скрипт
 #     выходит с инструкцией и кодом 0);
 #   - аккаунт зарегистрирован вручную на https://telegram.crossmark.ru/register.

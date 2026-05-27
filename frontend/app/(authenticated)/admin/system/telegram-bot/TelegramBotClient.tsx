@@ -350,6 +350,7 @@ function TokenSection({
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proxyWarning, setProxyWarning] = useState<string | null>(null);
 
   async function onSave() {
     if (token.trim().length < 10) {
@@ -358,10 +359,23 @@ function TokenSection({
     }
     setSaving(true);
     setError(null);
+    setProxyWarning(null);
     try {
-      await adminSystemTelegramBotApi.updateToken({ token: token.trim() });
-      setOpen(false);
-      setToken('');
+      const updated = await adminSystemTelegramBotApi.updateToken({
+        token: token.trim(),
+      });
+      // 2026-05-26: backend авто-регистрирует бот в прокси сразу после
+      // updateToken. Если регистрация упала — backend всё равно сохраняет
+      // токен и пишет ошибку в proxy.lastSyncError. Показываем юзеру
+      // дружественное предупреждение прямо в диалоге.
+      if (updated.proxy.enabled && updated.proxy.lastSyncError) {
+        setProxyWarning(
+          `Токен сохранён, но автоматическая регистрация в прокси не удалась: ${updated.proxy.lastSyncError}. Попробуйте позже нажать «Перенастроить webhook».`,
+        );
+      } else {
+        setOpen(false);
+        setToken('');
+      }
       onChanged();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось сохранить токен');
@@ -406,7 +420,9 @@ function TokenSection({
               <DialogDescription>
                 Токен будет зашифрован (алгоритм AES-256-GCM) и виден только
                 серверу. После сохранения автоматически проверяется через
-                Telegram (метод getMe).
+                Telegram (метод getMe){data.proxy.enabled
+                  ? ' и сразу регистрируется в прокси telegram.crossmark.ru — webhook начинает работать без дополнительных действий.'
+                  : '.'}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -433,19 +449,29 @@ function TokenSection({
                 </button>
               </div>
               {error && <p className="text-xs text-danger">{error}</p>}
+              {proxyWarning && (
+                <p className="rounded-md bg-warning/15 px-3 py-2 text-xs text-warning">
+                  {proxyWarning}
+                </p>
+              )}
             </div>
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  setProxyWarning(null);
+                }}
                 disabled={saving}
               >
-                Отмена
+                {proxyWarning ? 'Закрыть' : 'Отмена'}
               </Button>
-              <Button onClick={onSave} disabled={saving}>
-                {saving && <Loader2 size={14} className="animate-spin" />}
-                Сохранить токен
-              </Button>
+              {!proxyWarning && (
+                <Button onClick={onSave} disabled={saving}>
+                  {saving && <Loader2 size={14} className="animate-spin" />}
+                  Сохранить токен
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

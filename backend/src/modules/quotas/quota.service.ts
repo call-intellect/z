@@ -123,8 +123,9 @@ export class QuotaService {
 
   /**
    * Phase 12: Org-wide квота (per-tenant вместо per-user). Используется для
-   * месячных лимитов: `meetings_per_month`, `ingest_bytes_per_month`,
-   * `blocks_per_org` и т.п.
+   * месячных лимитов: `ingest_bytes_per_month`, `blocks_per_org` и т.п.
+   * (ТЗ 2026-05-27 Фаза 3: `meetings_per_month` теперь живёт в
+   * накопительном MeetingsBalance, см. modules/meetings-balance/).
    *
    * Алгоритм аналогичен `checkAndIncrement`, только ключ:
    *   `quota:org:<tenantId>:<quotaName>:<windowStart>`.

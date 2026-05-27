@@ -77,6 +77,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
+import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { OrgMembersModule } from './modules/org-members/org-members.module';
@@ -210,6 +211,9 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
     // Бизнес-модули.
     HealthModule,
+    // ТЗ 2026-05-27 (billing) Фаза 3: MeetingsBalance ДО MeetingsModule —
+    // MeetingsService инжектит MeetingsBalanceService при создании встречи.
+    MeetingsBalanceModule,
     MeetingsModule,
     ParticipantsModule,
     // RecordingsModule — должен подняться ДО WebhooksModule, т.к.

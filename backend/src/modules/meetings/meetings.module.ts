@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
+import { MeetingsBalanceModule } from '../meetings-balance/meetings-balance.module';
 
 import { IdleMeetingCron } from './cron/idle-meeting.cron';
 import { HostControlsService } from './host-controls.service';
@@ -22,6 +23,7 @@ import { MeetingsService } from './meetings.service';
  */
 @Global()
 @Module({
+  imports: [MeetingsBalanceModule],
   controllers: [MeetingsController, MeetingsCrossmarkController],
   providers: [
     MeetingsService,

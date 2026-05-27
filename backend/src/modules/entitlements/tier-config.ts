@@ -70,9 +70,11 @@ export type FeatureKey =
  *
  * Фаза A.3 — лимиты на количество Org-шаблонов и одновременных
  * prompt-экспериментов (см. ТЗ §10.3 и §11.1).
+ *
+ * ТЗ 2026-05-27 (billing) Фаза 3: `meetings_per_month` УДАЛЕН — заменён
+ * на накопительный MeetingsBalance (см. modules/meetings-balance/).
  */
 export type QuotaKey =
-  | 'meetings_per_month'
   | 'blocks_per_org'
   | 'chat_requests_per_day_per_user'
   | 'sources_meeting'
@@ -119,7 +121,6 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
 
 /** Полный список квот. */
 export const ALL_QUOTAS: readonly QuotaKey[] = [
-  'meetings_per_month',
   'blocks_per_org',
   'chat_requests_per_day_per_user',
   'sources_meeting',
@@ -145,7 +146,6 @@ export const ALL_TIERS: readonly TierKey[] = [
 // ──────────────────────────── Базовые квоты tier_basic ────────────────────────────
 
 const BASIC_QUOTAS: Record<QuotaKey, number> = {
-  meetings_per_month: 50,
   blocks_per_org: 5_000,
   chat_requests_per_day_per_user: 30,
   sources_meeting: 10,
@@ -161,7 +161,6 @@ const BASIC_QUOTAS: Record<QuotaKey, number> = {
 
 /** Pro = basic ×10. */
 const PRO_QUOTAS: Record<QuotaKey, number> = {
-  meetings_per_month: 500,
   blocks_per_org: 50_000,
   chat_requests_per_day_per_user: 300,
   sources_meeting: 100,
@@ -177,7 +176,6 @@ const PRO_QUOTAS: Record<QuotaKey, number> = {
 
 /** Enterprise = basic ×100 (фактически безлимит). */
 const ENTERPRISE_QUOTAS: Record<QuotaKey, number> = {
-  meetings_per_month: 5_000,
   blocks_per_org: 500_000,
   chat_requests_per_day_per_user: 3_000,
   sources_meeting: 1_000,
@@ -249,8 +247,8 @@ const ENTERPRISE_FEATURES: Record<FeatureKey, boolean> = {
 /**
  * `tier_standard` — целевой тариф после реализации
  * `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md`. Все фичи `true`.
- * Квоты — максимальные (anti-abuse), `meetings_per_month` остаётся
- * совместимым значением до Фазы 3, когда переезжаем на MeetingsBalance.
+ * Квоты — максимальные (anti-abuse). `meetings_per_month` УДАЛЕНА в Фазе 3:
+ * её роль играет накопительный MeetingsBalance (modules/meetings-balance/).
  */
 const STANDARD_FEATURES: Record<FeatureKey, boolean> = {
   ...ENTERPRISE_FEATURES,
@@ -262,10 +260,6 @@ const STANDARD_FEATURES: Record<FeatureKey, boolean> = {
 
 const STANDARD_QUOTAS: Record<QuotaKey, number> = {
   ...ENTERPRISE_QUOTAS,
-  // ТЗ 2026-05-27 §3: `meetings_per_month` остаётся в схеме до Фазы 3
-  // (заменяется на MeetingsBalance). Значение — максимальное, чтобы
-  // не блокировать существующие checks до миграции.
-  meetings_per_month: 1_000_000,
 };
 
 // ──────────────────────────── Реестр ────────────────────────────

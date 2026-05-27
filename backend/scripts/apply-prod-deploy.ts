@@ -138,6 +138,15 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  // 2026-05-27 — billing Фаза 3: стартовый MeetingsBalance(balance=150)
+  // для всех existing Org (заменяет ушедшую квоту meetings_per_month).
+  // Идемпотентен (where: meetingsBalance: null).
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-meetings-balance.ts',
+    hint: 'стартовый MeetingsBalance=150 для всех Org',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

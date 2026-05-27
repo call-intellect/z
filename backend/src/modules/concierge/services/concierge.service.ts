@@ -67,6 +67,59 @@ export interface ProcessInput {
  *   3. `Результаты последних tool вызовов:` (если есть)
  *   4. `Новый запрос пользователя: <userMessage>`
  */
+/**
+ * Pure helper (ТЗ 2026-05-27 Фаза 5): собирает системный промпт.
+ *
+ * Вынесен из метода класса, чтобы покрыть snapshot-тестами без поднятия
+ * NestJS DI. `toolFragment` передаётся параметром (раньше брался через
+ * `this.serviceMap.buildToolUsePromptFragment()`).
+ *
+ * Структура output (в порядке появления):
+ *   1. Преамбула (роль ассистента).
+ *   2. `=== КОНТЕКСТ ===` + contextBlock (или fallback).
+ *   3. (опц.) `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` если `preHits.length > 0`.
+ *   4. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment.
+ *   5. Принципы.
+ */
+export function buildSystemPrompt(args: {
+  contextBlock: string;
+  toolFragment: string;
+  preHits: Array<{ query: string; result: unknown }>;
+}): string {
+  const parts: string[] = [
+    'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
+    'Отвечай по-русски, кратко и по делу.',
+    '',
+    '=== КОНТЕКСТ ===',
+    args.contextBlock || '(контекст недоступен)',
+    '',
+  ];
+  // ТЗ 2026-05-27 Фаза 3: блок предварительных результатов pre-retrieval.
+  if (args.preHits.length > 0) {
+    parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
+    parts.push(
+      'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
+    );
+    parts.push('');
+    parts.push(JSON.stringify(args.preHits, null, 2));
+    parts.push('');
+  }
+  parts.push(
+    '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
+    'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
+    '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
+    'Если действие не требуется — верни просто текст ответа без JSON.',
+    'Имя инструмента ДОЛЖНО быть из списка ниже:',
+    args.toolFragment,
+    '',
+    'Принципы:',
+    '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
+    '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
+    '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
+  );
+  return parts.join('\n');
+}
+
 export function composeUserMessageForIteration(args: {
   userMessage: string;
   toolMessages: Array<{ role: 'tool'; content: string }>;
@@ -562,43 +615,20 @@ export class ConciergeService {
     return messages.reverse();
   }
 
+  /**
+   * ТЗ 2026-05-27 Фаза 5: делегирует pure-функции `buildSystemPrompt`
+   * (module-level export). Имена совпадают — вызов через `this.` снимает
+   * неоднозначность, локальный shadow не возникает.
+   */
   private buildSystemPrompt(
     contextBlock: string,
     preHits: Array<{ query: string; result: unknown }> = [],
   ): string {
-    const toolFragment = this.serviceMap.buildToolUsePromptFragment();
-    const parts: string[] = [
-      'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
-      'Отвечай по-русски, кратко и по делу.',
-      '',
-      '=== КОНТЕКСТ ===',
-      contextBlock || '(контекст недоступен)',
-      '',
-    ];
-    // ТЗ 2026-05-27 Фаза 3: блок предварительных результатов pre-retrieval.
-    if (preHits.length > 0) {
-      parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
-      parts.push(
-        'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
-      );
-      parts.push('');
-      parts.push(JSON.stringify(preHits, null, 2));
-      parts.push('');
-    }
-    parts.push(
-      '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
-      'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
-      '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
-      'Если действие не требуется — верни просто текст ответа без JSON.',
-      'Имя инструмента ДОЛЖНО быть из списка ниже:',
-      toolFragment,
-      '',
-      'Принципы:',
-      '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
-      '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
-      '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
-    );
-    return parts.join('\n');
+    return buildSystemPrompt({
+      contextBlock,
+      toolFragment: this.serviceMap.buildToolUsePromptFragment(),
+      preHits,
+    });
   }
 
   /**

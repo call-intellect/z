@@ -39,6 +39,7 @@ import type { ConciergeContextBuilderService } from './concierge-context-builder
 import type { ConciergeQuotaService } from './concierge-quota.service';
 import type { ConciergeUndoLogService } from './concierge-undo-log.service';
 import {
+  buildSystemPrompt,
   ConciergeService,
   type ConciergeStreamEvent,
   composeUserMessageForIteration,
@@ -644,5 +645,124 @@ describe('ConciergeService.process() — Фаза 4 metrics', () => {
 
     // cache-hit метрика НЕ дёрнута (cachedAnswer=null).
     expect(mocks.metricsIncConciergeCacheHit).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────── buildSystemPrompt (Фаза 5) ─────────────────────────
+//
+// ТЗ 2026-05-27 Фаза 5: snapshot-тесты pure-функции `buildSystemPrompt`.
+// Фиксируем формат системного промпта Concierge для двух кейсов:
+//   (м) без preHits — обычный промпт с контекстом и tool-fragment;
+//   (н) с preHits — добавляется блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА.
+// Обновлять snapshot'ы только при осознанном изменении формата.
+
+describe('buildSystemPrompt (Фаза 5)', () => {
+  it('(м) без preHits — обычный промпт с контекстом и tool-fragment', () => {
+    const out = buildSystemPrompt({
+      contextBlock: 'User: Иван, Org: Acme',
+      toolFragment: '[{"name":"list_meetings"}]',
+      preHits: [],
+    });
+    expect(out).toMatchInlineSnapshot(`
+      "Ты — Concierge, AI-помощник в кабинете компании Z (Кора).
+      Отвечай по-русски, кратко и по делу.
+
+      === КОНТЕКСТ ===
+      User: Иван, Org: Acme
+
+      === ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===
+      Если запрос требует действия — верни ОДНУ строку строго в формате JSON:
+      {"tool_call": {"name": "<имя>", "arguments": { ... }}}
+      Если действие не требуется — верни просто текст ответа без JSON.
+      Имя инструмента ДОЛЖНО быть из списка ниже:
+      [{"name":"list_meetings"}]
+
+      Принципы:
+      - Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.
+      - Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).
+      - Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос."
+    `);
+  });
+
+  it('(н) с preHits — добавляется блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА с m-1', () => {
+    const out = buildSystemPrompt({
+      contextBlock: 'User: Иван',
+      toolFragment: '[{"name":"list_meetings"}]',
+      preHits: [
+        { query: 'когда встреча', result: [{ id: 'm-1', title: 'Sync' }] },
+      ],
+    });
+    expect(out).toContain('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
+    expect(out).toContain('m-1');
+    expect(out).toMatchInlineSnapshot(`
+      "Ты — Concierge, AI-помощник в кабинете компании Z (Кора).
+      Отвечай по-русски, кратко и по делу.
+
+      === КОНТЕКСТ ===
+      User: Иван
+
+      === ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===
+      Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.
+
+      [
+        {
+          "query": "когда встреча",
+          "result": [
+            {
+              "id": "m-1",
+              "title": "Sync"
+            }
+          ]
+        }
+      ]
+
+      === ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===
+      Если запрос требует действия — верни ОДНУ строку строго в формате JSON:
+      {"tool_call": {"name": "<имя>", "arguments": { ... }}}
+      Если действие не требуется — верни просто текст ответа без JSON.
+      Имя инструмента ДОЛЖНО быть из списка ниже:
+      [{"name":"list_meetings"}]
+
+      Принципы:
+      - Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.
+      - Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).
+      - Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос."
+    `);
+  });
+});
+
+// ───────────────────────── Legacy guard (Фаза 5) ─────────────────────────
+//
+// ТЗ 2026-05-27 Фаза 5: явный smoke-тест что при выключенном флаге НИКАКИЕ
+// новые dialog-layer / pre-retrieval компоненты не активируются. Дополняет
+// тест (д) — там проверяется что `dialog.process` не вызван и есть базовые
+// события, а здесь — что метрики dialog-layer / pre-retrieval не дёрнуты
+// и dialog-факад не дёргался строго ни разу.
+
+describe('ConciergeService.process() — legacy guard (Фаза 5)', () => {
+  it('(о) dialogLayerEnabled=false — ни dialog.process, ни новые метрики не дёрнуты', async () => {
+    const dialogProcess = vi.fn();
+    const { svc, mocks } = buildConciergeService({
+      dialogLayerEnabled: false,
+      dialog: { process: dialogProcess },
+    });
+
+    await collect(
+      svc.process({
+        userMessage: 'Простой вопрос',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    // 1. DialogService.process не вызван ни разу.
+    expect(dialogProcess).not.toHaveBeenCalled();
+    // 2. Метрика dialog-layer used не дёрнута.
+    expect(mocks.metricsIncConciergeDialogLayerUsed).not.toHaveBeenCalled();
+    // 3. Метрика cache-hit не дёрнута.
+    expect(mocks.metricsIncConciergeCacheHit).not.toHaveBeenCalled();
+    // 4. Histogram pre-retrieval не дёрнут.
+    expect(mocks.metricsObserveConciergePreRetrievalHits).not.toHaveBeenCalled();
   });
 });

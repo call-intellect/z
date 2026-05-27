@@ -38,6 +38,7 @@ import { ToolRouterService } from './tool-router.service';
  */
 
 const MAX_TOOL_LOOP_ITERATIONS = 5;
+const K_RECENT_MESSAGES = 6;
 
 export interface ProcessInput {
   userMessage: string;
@@ -47,6 +48,54 @@ export interface ProcessInput {
   tenantId: string;
   baseUrl: string;
   authCookie?: string;
+}
+
+/**
+ * Pure helper: собирает «user message» для одной итерации tool-loop.
+ *
+ * Экспортируется отдельно от класса, чтобы покрыть unit-тестами без
+ * необходимости поднимать NestJS DI / PrismaService.
+ *
+ * Структура output (в порядке появления):
+ *   1. `КРАТКОЕ СОДЕРЖАНИЕ ПРЕДЫДУЩИХ СООБЩЕНИЙ:` + summary (если задан)
+ *   2. `История диалога:` + последние N сообщений (если есть)
+ *   3. `Результаты последних tool вызовов:` (если есть)
+ *   4. `Новый запрос пользователя: <userMessage>`
+ */
+export function composeUserMessageForIteration(args: {
+  userMessage: string;
+  toolMessages: Array<{ role: 'tool'; content: string }>;
+  history: Array<Pick<ConciergeMessage, 'role' | 'content'>>;
+  summary: string | null;
+}): string {
+  const parts: string[] = [];
+  if (args.summary != null && args.summary.trim() !== '') {
+    parts.push('КРАТКОЕ СОДЕРЖАНИЕ ПРЕДЫДУЩИХ СООБЩЕНИЙ:');
+    parts.push(args.summary);
+    parts.push('');
+  }
+  if (args.history.length > 0) {
+    parts.push('История диалога:');
+    for (const m of args.history) {
+      const role =
+        m.role === 'user'
+          ? 'Пользователь'
+          : m.role === 'assistant'
+            ? 'Ассистент'
+            : 'Tool';
+      parts.push(`[${role}] ${m.content.slice(0, 500)}`);
+    }
+    parts.push('');
+  }
+  if (args.toolMessages.length > 0) {
+    parts.push('Результаты последних tool вызовов:');
+    for (const tm of args.toolMessages) {
+      parts.push(`- ${tm.content}`);
+    }
+    parts.push('');
+  }
+  parts.push(`Новый запрос пользователя: ${args.userMessage}`);
+  return parts.join('\n');
 }
 
 export type ConciergeStreamEvent =
@@ -135,17 +184,18 @@ export class ConciergeService {
     });
 
     const systemPrompt = this.buildSystemPrompt(contextBlock);
-    const history = await this.loadRecentHistory(conversation.id, 8);
+    const history = await this.loadRecentHistory(conversation.id, K_RECENT_MESSAGES);
 
     // Tool-use loop (эмулируется через JSON в ответе LLM).
     let toolMessages: Array<{ role: 'tool'; content: string }> = [];
     let finalText = '';
 
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
-      const userBlock = this.composeUserMessageForIteration({
+      const userBlock = composeUserMessageForIteration({
         userMessage: input.userMessage,
         toolMessages,
         history,
+        summary: conversation.summary,
       });
 
       let llmText: string;
@@ -357,31 +407,6 @@ export class ConciergeService {
       '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
       '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
     ].join('\n');
-  }
-
-  private composeUserMessageForIteration(args: {
-    userMessage: string;
-    toolMessages: Array<{ role: 'tool'; content: string }>;
-    history: ConciergeMessage[];
-  }): string {
-    const parts: string[] = [];
-    if (args.history.length > 0) {
-      parts.push('История диалога:');
-      for (const m of args.history) {
-        const role = m.role === 'user' ? 'Пользователь' : m.role === 'assistant' ? 'Ассистент' : 'Tool';
-        parts.push(`[${role}] ${m.content.slice(0, 500)}`);
-      }
-      parts.push('');
-    }
-    if (args.toolMessages.length > 0) {
-      parts.push('Результаты последних tool вызовов:');
-      for (const tm of args.toolMessages) {
-        parts.push(`- ${tm.content}`);
-      }
-      parts.push('');
-    }
-    parts.push(`Новый запрос пользователя: ${args.userMessage}`);
-    return parts.join('\n');
   }
 
   /**

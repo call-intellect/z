@@ -82,6 +82,8 @@ const STEPS: Step[] = [
     'tracker-phase3', 'tracker-phase3-c', 'tracker-phase4-telegram',
     'feedback-cluster', 'clone-v2', 'specialists-combined',
     'dialog-layer', 'temporal', 'kie-grsai-ab',
+    // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
+    'sprints',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -138,6 +140,15 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  // Tracker Boards (2026-05-27) — каждому проекту нужна default-доска
+  // (`Board { isDefault: true }`), и все issues с boardId=NULL должны быть
+  // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+  { phase: 'backfill', script: 'scripts/backfill-default-board.ts', hint: 'default Board + issues.boardId backfill', skipBootstrap: true },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-onboarding-setup-completed.ts',
+    hint: 'Онбординг v2: выставляет setupCompletedAt для Org с отделами',
+    skipBootstrap: false,
   // 2026-05-27 — billing Фаза 3: стартовый MeetingsBalance(balance=150)
   // для всех existing Org (заменяет ушедшую квоту meetings_per_month).
   // Идемпотентен (where: meetingsBalance: null).

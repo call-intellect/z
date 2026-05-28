@@ -212,6 +212,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 | [insights](insights.md) | Pattern «5 задач в blocked у Иванова за неделю» через β-4 |
 | [regulations](regulations.md) | Process steps извлекаются из чата задач |
 | [conversational-channels](conversational-channels.md) | Telegram-бот для задач (Phase 4, Sprint 9-10) |
+| **[sprints](sprints.md)** | Cycle расширен: AI-помощник (Specialist 3-13) + финальный AI-отчёт через CardVersion(resourceType='cycle'); Project получил 4 scope-поля; Meeting.linkedCycleId; MeetingType.sprint_review (2026-05-27). |
 
 ## Wave 3 — Phase 3 (AI) + Phase 4 (РФ) + Phase 5 (импорт) backend (2026-05-24)
 

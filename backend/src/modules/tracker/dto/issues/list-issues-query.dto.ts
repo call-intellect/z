@@ -18,6 +18,12 @@ export const ListIssuesQuerySchema = z
     labelId: z.string().max(64).optional(),
     cycleId: z.string().max(64).optional(),
     goalId: z.string().max(64).optional(),
+    /**
+     * Tracker Boards (2026-05-27) — фильтр задач по доске. Без этого параметра
+     * возвращаются все задачи проекта (поведение до Boards-ТЗ — сохраняется
+     * для обратной совместимости фронта).
+     */
+    boardId: z.string().max(64).optional(),
     priority: IssuePrioritySchema.optional(),
     parentId: z.string().max(64).optional(),
     /** Включать ли архивные / удалённые (по умолчанию false). */
@@ -25,6 +31,13 @@ export const ListIssuesQuerySchema = z
     includeDeleted: z.coerce.boolean().default(false),
     /** Текстовый поиск по title / descriptionStripped (ILIKE %q%). */
     q: z.string().max(200).optional(),
+    /**
+     * Tracker subtasks UI (2026-05-27) — если true, у каждого item в ответе
+     * появляется поле `childrenCount: number` (число прямых детей с
+     * `deletedAt=null`). Используется фронтом для отрисовки badge «N/M»
+     * на канбан-карточке. Стоимость — один groupBy(parentId).
+     */
+    includeChildrenCount: z.coerce.boolean().default(false),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(50),
   })

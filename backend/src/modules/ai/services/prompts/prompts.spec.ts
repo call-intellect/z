@@ -36,6 +36,7 @@ const ALL_MEETING_TYPES = {
   review: true,
   retrospective: true,
   task_discussion: true,
+  sprint_review: true,
 } satisfies Record<MeetingType, true>;
 
 describe('Prompts registry — все типы MeetingType покрыты', () => {

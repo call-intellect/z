@@ -5,17 +5,20 @@ import { useIssue } from '@/hooks/tracker/useIssue';
 import {
   IssueActivityFeed,
   IssueAttachments,
+  IssueBreadcrumb,
   IssueChat,
+  IssueChecklists,
   IssueComments,
   IssueDescription,
   IssueHeader,
   IssueRelations,
   IssueSidebar,
   IssueSimilar,
+  IssueSubtasks,
 } from '@/ui/tracker';
 
 export function IssueDetailClient({ issueId }: { issueId: string }) {
-  const { currentOrgId } = useAuth();
+  const { currentOrgId, user } = useAuth();
   const { issue, isLoading, error, mutate } = useIssue(currentOrgId, issueId);
 
   if (isLoading) {
@@ -47,12 +50,37 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 md:p-6">
+      {/* Tracker subtasks UI (2026-05-27) — breadcrumb «← родитель / эта»
+          для подзадач. Виден только если у задачи задан parentId. */}
+      {issue.parentId ? (
+        <IssueBreadcrumb
+          orgId={currentOrgId}
+          parentIssueId={issue.parentId}
+          currentIssue={issue}
+        />
+      ) : null}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_320px]">
         <div className="flex min-w-0 flex-col gap-5">
           <IssueHeader issue={issue} orgId={currentOrgId} onUpdated={mutate} />
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Описание</h2>
             <IssueDescription description={issue.description} />
+          </section>
+
+          {/* Tracker subtasks UI (2026-05-27) — блок «Подзадачи».
+              Компонент сам прячется, если у задачи есть parentId
+              (запрет глубины >2). */}
+          <IssueSubtasks
+            issue={issue}
+            orgId={currentOrgId}
+            currentUserId={user?.id ?? null}
+          />
+
+          {/* Чек-листы (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md):
+              блок между описанием и связями — плоские пункты «сделано/нет». */}
+          <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-fg-primary">Чек-листы</h2>
+            <IssueChecklists orgId={currentOrgId} issueId={issue.id} />
           </section>
 
           <section className="flex flex-col gap-2">

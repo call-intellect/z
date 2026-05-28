@@ -25,6 +25,30 @@ covers: реестр всех REST endpoints backend по модулям
 | POST | `/api/v1/projects/:id/email-inbox/disable` | Отключить | T5 |
 | POST | `/api/v1/projects/:id/email-inbox/regenerate-alias` | Перевыпустить alias (старый перестаёт принимать) | T5 |
 
+### Sprints (2026-05-27 / 2026-05-28, см. [[sprints]])
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET  | `/api/v1/sprints` | Master-detail список Org с фильтрами `status` (active/completed/upcoming/all), `scopeKind` (org/customer/vendor/person/department/project), `q`, сортировками (startDate/progress/hints), пагинацией. 2026-05-28. |
+| POST | `/api/v1/sprints/quick-create` | Атомарное создание Project + Cycle + Board + IssueStates (одна transaction). Поддерживает 6 scope. Auto-генерация slug/identifier с collision retry. Idempotency-Key. 2026-05-28. |
+| GET  | `/api/v1/cycles/:id/dashboard` | Агрегированные данные дашборда спринта. Redis-кэш 5 мин. |
+| POST | `/api/v1/cycles/:id/start-meeting` | Запуск встречи (default `type='sprint_review'`). Создаёт `Meeting.linkedCycleId`. |
+| GET  | `/api/v1/cycles/:id/hints` | Список активных подсказок помощника. |
+| POST | `/api/v1/sprint-hints/:id/dismiss` | Закрыть подсказку (`status='dismissed'`). |
+| POST | `/api/v1/sprint-hints/:id/resolve` | Пометить выполненной (`status='resolved'`). |
+| GET  | `/api/v1/cycles/:id/review` | Финальный отчёт спринта (`ready` / `pending` / `failed`). Живёт в `KnowledgeCoreApiModule`. |
+| POST | `/api/v1/cycles/:id/review/regenerate` | Перезапустить генерацию финального отчёта. |
+
+### Vendors (расширено 2026-05-28)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET  | `/api/v1/vendors` | Список с фильтрами. |
+| GET  | `/api/v1/vendors/:id` | Детальный. |
+| POST | `/api/v1/vendors` | Создать (для inline-create из мастера спринтов). RBAC `vendor:write`. 2026-05-28. |
+| PATCH | `/api/v1/vendors/:id` | Обновить. RBAC `vendor:write`. 2026-05-28. |
+| DELETE | `/api/v1/vendors/:id` | Soft-delete. RBAC `vendor:delete`. 2026-05-28. |
+
 ## Recognition + Gamification
 
 | Метод | Путь | Назначение | T |

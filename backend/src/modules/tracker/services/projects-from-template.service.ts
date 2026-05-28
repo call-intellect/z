@@ -168,6 +168,22 @@ export class ProjectsFromTemplateService {
         data: { projectId: project.id, userId, role: 20 },
       });
 
+      // ── Tracker Boards (2026-05-27): default-доска ──
+      // У каждого проекта всегда есть `isDefault=true` Board. Создаём в этой
+      // же транзакции, чтобы при последующем создании задач из шаблона
+      // (ниже) у них был корректный boardId через `IssuesService` →
+      // `BoardsService.resolveDefaultBoardId`.
+      await tx.board.create({
+        data: {
+          tenantId,
+          projectId: project.id,
+          name: 'Доска',
+          color: '#5EEAD4',
+          sequence: 0,
+          isDefault: true,
+        },
+      });
+
       // ── Regulation stubs ──
       // Префиксуем по slug проекта чтобы не конфликтовать с @@unique([tenantId, name]).
       let regulationStubsCount = 0;

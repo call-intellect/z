@@ -13,6 +13,7 @@ import {
   INVITE_DIRECTOR_TIMEOUT_TEMPLATE,
   INVITE_GITHUB_STYLE_TEMPLATE,
   INVITE_REMINDER_TEMPLATE,
+  INVITE_WITH_CREDENTIALS_TEMPLATE,
   PASSWORD_RESET_TEMPLATE,
   REGISTER_TEMP_PASSWORD_TEMPLATE,
 } from './mail.templates';
@@ -76,6 +77,18 @@ interface CompiledTemplates {
     employeeEmail?: string;
     orgName: string;
     teamPageUrl: string;
+  }>;
+  // β-10 (2026-05-27)
+  inviteWithCredentials: HandlebarsTemplateDelegate<{
+    name: string;
+    inviterName: string;
+    orgName: string;
+    loginEmail: string;
+    tempPassword: string;
+    loginUrl: string;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+    ttlDays: number;
   }>;
 }
 
@@ -243,6 +256,31 @@ export class MailService implements OnModuleInit {
   }
 
   /**
+   * β-10 (2026-05-27) — приглашение с явными реквизитами (логин + одноразовый пароль).
+   * Заменяет `sendInviteGithubStyle` для email-инвайтов.
+   */
+  async sendInviteWithCredentials(input: {
+    to: string;
+    name: string;
+    inviterName: string;
+    orgName: string;
+    loginEmail: string;
+    tempPassword: string;
+    loginUrl: string;
+    magicLinkUrl: string;
+    telegramDeepLink: string;
+    ttlDays: number;
+  }): Promise<SendResult> {
+    const text = this.templates.inviteWithCredentials(input);
+    return this.send({
+      to: input.to,
+      subject: `${input.inviterName} приглашает вас в «${input.orgName}»`,
+      text,
+      template: 'invite-with-credentials',
+    });
+  }
+
+  /**
    * β-9 (2026-05-25) — уведомление директора, что приглашение истекло.
    * Отправляется кроном `org-invitation-reminders` на 14-й день.
    */
@@ -356,6 +394,18 @@ export class MailService implements OnModuleInit {
         orgName: string;
         teamPageUrl: string;
       }>(INVITE_DIRECTOR_TIMEOUT_TEMPLATE, { noEscape: true }),
+      // β-10 (2026-05-27)
+      inviteWithCredentials: Handlebars.compile<{
+        name: string;
+        inviterName: string;
+        orgName: string;
+        loginEmail: string;
+        tempPassword: string;
+        loginUrl: string;
+        magicLinkUrl: string;
+        telegramDeepLink: string;
+        ttlDays: number;
+      }>(INVITE_WITH_CREDENTIALS_TEMPLATE, { noEscape: true }),
     };
   }
 }

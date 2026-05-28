@@ -23,6 +23,12 @@ export interface ProjectResponseDto {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  // Sprints (2026-05-27) — scope-привязка проекта-спринта. Заполнено
+  // максимум одно из 4 полей (или ни одного — «Спринт компании»).
+  customerCardId: string | null;
+  vendorId: string | null;
+  subjectPersonId: string | null;
+  departmentId: string | null;
 }
 
 export interface ProjectMemberDto {

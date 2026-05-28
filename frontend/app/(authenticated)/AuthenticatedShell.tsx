@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { EntitlementProvider } from '@/contexts/entitlement-context';
 import { AppShell } from '@/ui/components/app-shell/AppShell';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { TourProvider, WelcomeTourAutoStart } from '@/ui/tour';
 
 const ONBOARDING_PATH = '/onboarding/change-password';
 
@@ -24,7 +25,7 @@ const ONBOARDING_PATH = '/onboarding/change-password';
  * UI без sidebar (см. `app/(authenticated)/onboarding/layout.tsx`).
  */
 export function AuthenticatedShell({ children }: { children: ReactNode }) {
-  const { user, isLoading, mustChangePassword } = useAuth();
+  const { user, isLoading, mustChangePassword, profileCompletedAt } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -41,8 +42,15 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
 
     if (mustChangePassword && !isOnboardingPath) {
       router.replace(ONBOARDING_PATH);
+      return;
     }
-  }, [user, isLoading, mustChangePassword, isOnboardingPath, pathname, router]);
+
+    // Блок A онбординга — если profileCompletedAt не выставлен → на экраны знакомства
+    if (!profileCompletedAt && !isOnboardingPath) {
+      router.replace('/onboarding/welcome/step-1');
+      return;
+    }
+  }, [user, isLoading, mustChangePassword, profileCompletedAt, isOnboardingPath, pathname, router]);
 
   if (isLoading || !user) {
     return (
@@ -72,11 +80,27 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
     );
   }
 
+  // profileCompletedAt=null и редирект ещё не успел сработать — рендерим skeleton.
+  if (!profileCompletedAt) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-base">
+        <Skeleton className="h-32 w-72" />
+      </div>
+    );
+  }
+
   // EntitlementProvider оборачивает все защищённые страницы — гейтинг
   // работает на /themes, /goals, /chat, /dashboard, /admin/*. См. Фаза 12.
+  //
+  // TourProvider оборачивает AppShell — onboarding-туры активны только для
+  // авторизованных пользователей (не для onboarding/change-password,
+  // не для гостей). Тур внутри сам проверяет прогресс через PATCH/GET.
   return (
     <EntitlementProvider>
-      <AppShell>{children}</AppShell>
+      <TourProvider>
+        <AppShell>{children}</AppShell>
+        <WelcomeTourAutoStart />
+      </TourProvider>
     </EntitlementProvider>
   );
 }

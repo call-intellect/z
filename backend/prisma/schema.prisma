@@ -57,6 +57,11 @@ enum MeetingType {
   /// Tracker Phase 1 (2026-05-24) — встреча, запущенная по задаче трекера
   /// через `POST /issues/:id/start-meeting`. Linked via `Meeting.linkedIssueId`.
   task_discussion
+  /// Sprints (2026-05-27) — встреча «Итоги спринта», запускается из дашборда
+  /// спринта через `POST /cycles/:id/start-meeting`. Linked via `Meeting.linkedCycleId`.
+  /// AI-отчёт по типу — нарратив + план/факт + причины + переносы + блокеры +
+  /// подсказки помощника + план следующего спринта.
+  sprint_review
 }
 
 enum MeetingStatus {
@@ -243,6 +248,16 @@ enum RawEventProcessingStatus {
   received
   ingested
   failed
+}
+
+/// Онбординг v2 (2026-05-29) — роль пользователя в компании (Экран 1 Блока A).
+enum UserCompanyRole {
+  founder
+  general_director
+  operations_director
+  department_head
+  team_lead
+  specialist
 }
 
 enum SignalType {
@@ -931,6 +946,20 @@ model User {
   /// (`GET /api/v1/calendar/:userId.ics?token=...`). Генерируется по запросу
   /// из /me/settings/calendar. Хранится как HMAC base64.
   calendarFeedToken   String?            @db.VarChar(80)
+
+  // ── Onboarding Tour (2026-05-27) — состояние онбординг-туров ──
+  /// Состояние прохождения onboarding-туров. Структура:
+  ///   { welcome?: { completedAt, skipped? }, project?: { ... }, meeting?: { ... } }
+  /// Touch при PATCH /api/v1/users/me/tour-progress; reset обнуляет до `{}`.
+  /// См. plans/tz/2026-05-27-tracker-onboarding-tour.md.
+  tourProgress       Json               @default("{}")
+
+  // ── Онбординг v2 (2026-05-29) ──
+  /// Роль пользователя в компании, указанная при онбординге (Экран 1 Блока A).
+  companyRole            UserCompanyRole?
+  /// Когда user прошёл 6 экранов Блока A (profileCompleted → разблокирует кабинет).
+  profileCompletedAt     DateTime?
+
   ownedEvents         Event[]            @relation("EventOwner")
   eventParticipations EventParticipant[] @relation("EventParticipantUser")
 
@@ -1082,12 +1111,19 @@ model Meeting {
   linkedIssueId String?
   linkedIssue   Issue?  @relation("MeetingLinkedIssue", fields: [linkedIssueId], references: [id], onDelete: SetNull)
 
+  /// Sprints (2026-05-27) — встреча могла быть запущена из спринта (обычно
+  /// type=sprint_review). NULL для встреч, не связанных со спринтом.
+  /// См. plans/tz/2026-05-27-sprints.md §1.2.
+  linkedCycleId String?
+  linkedCycle   Cycle?  @relation("MeetingLinkedCycle", fields: [linkedCycleId], references: [id], onDelete: SetNull)
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
   @@index([cardId, createdAt])
   @@index([tenantId])
   @@index([linkedIssueId])
+  @@index([linkedCycleId])
 }
 
 model Participant {
@@ -1968,6 +2004,9 @@ model Card {
 
   meetings     Meeting[]
   chatMessages MeetingChatMessage[]
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этой карточке клиента
+  /// (Project.customerCardId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects Project[]    @relation("ProjectCustomerCard")
 
   @@unique([ownerId, name])
   @@index([ownerId, lastMeetingAt])
@@ -2023,6 +2062,37 @@ model Org {
   timezone                     String?           @default("Europe/Moscow")
   createdAt                    DateTime          @default(now())
   deletedAt                    DateTime?
+
+  // ── Онбординг v2 (2026-05-29) — Блок A (квалификатор) ──
+  /// «Сколько вас в команде?» (Экран 2). Значения: "1-5"|"6-20"|"21-50"|"51-200"|"201-500"|"500+".
+  teamSize               String?   @db.VarChar(20)
+  /// «Ваша отрасль» (Экран 3). Значения: software|services|manufacturing|retail|construction|finance|education|other.
+  /// Используется для шаблонов отделов и должностей на шагах B2/B3 онбординга.
+  industry               String?   @db.VarChar(60)
+  /// «Что болит?» (Экран 4). Массив constId из painPoints-словаря.
+  painPoints             String[]
+  /// «Чем сейчас пользуетесь?» (Экран 5). Массив constId из currentStack-словаря.
+  currentStack           String[]
+  /// «Чем планируете пользоваться у нас?» (Экран 6). Массив constId из plannedFeatures-словаря.
+  plannedFeatures        String[]
+  /// Когда owner завершил Блок A (ставится при POST /welcome/complete).
+  welcomeCompletedAt     DateTime?
+
+  // ── Онбординг v2 (2026-05-29) — Блок B (прогресс setup-тура) ──
+  /// Шаг B1: «Компания» — подтверждены базовые данные.
+  companyInfoCompletedAt  DateTime?
+  /// Шаг B2: создан хотя бы один отдел.
+  departmentsCompletedAt  DateTime?
+  /// Шаг B3: создана хотя бы одна должность.
+  rolesCompletedAt        DateTime?
+  /// Шаг B4: приглашён хотя бы один сотрудник.
+  teamInvitedAt           DateTime?
+  /// Шаг B5: создан первый спринт.
+  firstSprintCreatedAt    DateTime?
+  /// Шаг B6: создана первая встреча.
+  firstMeetingCreatedAt   DateTime?
+  /// Все 6 шагов Тура №2 пройдены или явно пропущены.
+  setupCompletedAt        DateTime?
 
   memberships            Membership[]
   invitations            OrgInvitation[]
@@ -2324,6 +2394,11 @@ model OrgInvitation {
   /// без пароля. NULL для legacy-приглашений.
   magicTokenHash     String?             @unique
   magicTokenUsedAt   DateTime?
+  /// β-10 (2026-05-27) — sha256(tempPassword), сгенерированного при создании
+  /// приглашения и отправленного в письме как одноразовый пароль для входа.
+  /// При acceptViaMagicLink этот хеш используется как passwordHash нового User
+  /// → mustChangePassword=true. NULL для legacy-приглашений до β-10.
+  tempPasswordHash   String?
   /// β-9 (2026-05-25) — когда крон `org-invitation-reminders` отправил
   /// напоминание сотруднику (на 7-й день после `createdAt`). NULL = не отправляли.
   reminderSentAt     DateTime?
@@ -2856,6 +2931,10 @@ model Vendor {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
+
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому поставщику
+  /// (Project.vendorId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects Project[] @relation("ProjectVendor")
 
   @@index([tenantId, status])
   @@index([tenantId, segment])
@@ -3741,6 +3820,9 @@ model Department {
   interactionsAsCounterpart Interaction[]          @relation("InteractionCounterpartDept")
   /// SBA α-9 wave 2 — m:n с FunctionalDomain.
   domainLinks               DepartmentDomainLink[]
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому отделу
+  /// (Project.departmentId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects            Project[]              @relation("ProjectDepartment")
 
   @@unique([tenantId, name, deletedAt])
   @@index([tenantId])
@@ -3881,6 +3963,9 @@ model Person {
   /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический
   /// индекс категорий профиля знаний (для запросов «кто разбирается в X»).
   knowledgeCategoryEmbeddings PersonKnowledgeCategoryEmbedding[]
+  /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому сотруднику
+  /// как subject (Project.subjectPersonId). См. plans/tz/2026-05-27-sprints.md §1.1.
+  scopedProjects              Project[]                          @relation("ProjectSubjectPerson")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6780,6 +6865,19 @@ model Project {
   // Связь с графом
   entityId String?
 
+  /// Sprints (2026-05-27) — гибкая привязка проекта-спринта. Один из 4 опц.
+  /// scope-полей может быть заполнен (или ни одного — «Спринт компании»).
+  /// Инвариант: не более 1 заполненного поля. Валидация — в
+  /// `ProjectsService.create/update` (см. plans/tz/2026-05-27-sprints.md §1.6).
+  customerCardId  String?
+  customerCard    Card?       @relation("ProjectCustomerCard", fields: [customerCardId], references: [id], onDelete: SetNull)
+  vendorId        String?
+  vendor          Vendor?     @relation("ProjectVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  subjectPersonId String?
+  subjectPerson   Person?     @relation("ProjectSubjectPerson", fields: [subjectPersonId], references: [id], onDelete: SetNull)
+  departmentId    String?
+  department      Department? @relation("ProjectDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -6790,10 +6888,100 @@ model Project {
   states          IssueState[]
   labels          Label[]
   mailInboundLogs MailInboundLog[]
+  /// Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
+  /// При создании проекта одна доска isDefault=true создаётся автоматически
+  /// (см. `BoardsService.ensureDefaultBoard` + `backfill-default-board.ts`).
+  boards          Board[]
+  /// Tracker Project Documents (2026-05-27) — простые rich-text документы,
+  /// привязанные к проекту (бриф, ТЗ, протокол, инструкция). См. модель
+  /// `ProjectDocument` ниже и plans/tz/2026-05-27-tracker-project-documents.md.
+  documents       ProjectDocument[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
   @@index([tenantId, identifier])
+  @@index([tenantId, customerCardId])
+  @@index([tenantId, vendorId])
+  @@index([tenantId, subjectPersonId])
+  @@index([tenantId, departmentId])
+}
+
+/// Tracker Project Documents (2026-05-27) — простой rich-text документ,
+/// привязанный к проекту (бриф, ТЗ, протокол, инструкция). Контент — TipTap
+/// JSON. Иерархия `parentId` заложена в схему, в MVP UI плоский список с
+/// возможностью «закрепить». См. plans/tz/2026-05-27-tracker-project-documents.md.
+model ProjectDocument {
+  id              String  @id @default(cuid())
+  tenantId        String
+  projectId       String
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title           String // «Бриф ремонта офиса»
+  /// TipTap JSON (rich-text). Хранится «как есть», без серверной валидации схемы.
+  content         Json
+  /// Отрендеренный HTML (для preview, share, e-mail). Опционален.
+  contentHtml     String? @db.Text
+  /// Plain text без разметки — для поиска / AI / knowledge-core ingest.
+  contentStripped String? @db.Text
+
+  /// Иерархия (MVP UI плоский). При удалении родителя — children становятся
+  /// корневыми (SetNull).
+  parentId  String?
+  parent    ProjectDocument?  @relation("ProjectDocumentChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children  ProjectDocument[] @relation("ProjectDocumentChildren")
+  sortOrder Int               @default(0)
+
+  pinned Boolean @default(false)
+
+  /// Связь с графом знаний (Knowledge-core auto-tag через axis-classifier).
+  entityId String?
+
+  createdById String
+  updatedById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([projectId, title])
+  @@index([projectId, sortOrder])
+  @@index([projectId, deletedAt])
+  @@index([tenantId])
+  @@index([parentId])
+}
+
+/// Tracker Boards (2026-05-27) — доска внутри проекта (Канбан-доска маркетинга,
+/// бэклога, релиза и т.п.). У каждой задачи есть одна `boardId`; колонки доски —
+/// общий список `IssueState` проекта (не per-board). Одна доска per project
+/// помечается `isDefault=true` и не может быть удалена.
+///
+/// Бизнес-смысл: пользователь, привыкший к Weeek/Kaiten, разделяет работу
+/// внутри одного проекта по направлениям (Маркетинг / Монтаж / Личные задачи).
+/// ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+model Board {
+  id          String    @id @default(cuid())
+  tenantId    String
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name        String // «Доска маркетинга», «Бэклог», «Релиз 2.0»
+  color       String    @default("#5EEAD4")
+  icon        String? // emoji или slug иконки lucide
+  description String?   @db.Text
+
+  sequence    Int       @default(0) // порядок отображения в боковой панели
+  isDefault   Boolean   @default(false) // одна доска per project помечается как default
+  archivedAt  DateTime?
+
+  issues      Issue[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([projectId, name])
+  @@index([projectId, sequence])
+  @@index([tenantId])
 }
 
 /// M:M между User и Project. Роль числовая: 20=Admin, 15=Member, 5=Guest.
@@ -6855,8 +7043,85 @@ model Cycle {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   issues  Issue[]
 
+  /// Sprints (2026-05-27) — встречи, явно привязанные к этому спринту через
+  /// `POST /cycles/:id/start-meeting` (обычно type=sprint_review).
+  linkedMeetings Meeting[]    @relation("MeetingLinkedCycle")
+  /// Sprints (2026-05-27) — подсказки помощника по спринтам (Specialist 3-13).
+  sprintHints    SprintHint[]
+
   @@index([projectId, startDate])
   @@index([tenantId])
+  @@index([tenantId, completedAt])
+}
+
+// ──────────────────────────── Sprints (2026-05-27) ────────────────────────────
+
+/// Sprints (2026-05-27) — категория подсказки помощника по спринтам.
+/// См. plans/tz/2026-05-27-sprints.md §1.1.
+enum SprintHintKind {
+  no_due_date
+  no_description
+  no_assignee
+  due_date_at_risk
+  recurring_carry_over
+  no_recent_mentions
+  conflicts_with_goal
+  can_be_split
+  similar_to_past_task
+  generic
+}
+
+/// Sprints (2026-05-27) — уровень критичности подсказки.
+enum SprintHintSeverity {
+  info
+  warning
+  critical
+}
+
+/// Sprints (2026-05-27) — статус подсказки.
+enum SprintHintStatus {
+  active
+  dismissed
+  resolved
+}
+
+/// Sprints (2026-05-27) — подсказка помощника по спринтам (Specialist 3-13).
+/// Создаётся воркером `3-13-sprint-helper`, отображается на странице спринта
+/// в блоке «Помощник предлагает». Пользователь может закрыть (dismiss) или
+/// пометить выполненной (resolve). См. plans/tz/2026-05-27-sprints.md.
+model SprintHint {
+  id                String             @id @default(cuid())
+  tenantId          String
+  cycleId           String
+  cycle             Cycle              @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  kind              SprintHintKind
+  severity          SprintHintSeverity
+  title             String             @db.VarChar(300)
+  body              String             @db.Text
+
+  /// Id'ы Issue, к которым относится подсказка (могут быть пустыми для общих подсказок).
+  affectedIssueIds  String[]           @default([])
+  /// Id'ы IdeaBlock из графа знаний, на основании которых сделана подсказка.
+  sourceBlockIds    String[]           @default([])
+
+  status            SprintHintStatus   @default(active)
+  /// Пользователь, который закрыл/разрешил подсказку.
+  dismissedByUserId String?
+  dismissedAt       DateTime?
+
+  /// Confidence модели LLM (0..1).
+  confidence        Decimal            @db.Decimal(4, 3)
+  /// SHA-1 hash от title+body — для дедупликации повторных подсказок в worker'е.
+  /// Не индексируем (используется только при findOrCreate).
+  contentHash       String             @db.VarChar(64)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([tenantId, cycleId, status])
+  @@index([tenantId, status, createdAt])
+  @@index([cycleId, kind, contentHash])
 }
 
 /// Задача трекера. Расширение legacy `Task`. Самореферентная иерархия через
@@ -6886,6 +7151,13 @@ model Issue {
   estimatePoints Int?
   sortOrder      Int  @default(0)
 
+  /// Денормализованные счётчики чек-листов (см. IssueChecklist / IssueChecklistItem).
+  /// Пересчитываются в коде через ChecklistsService.recountCounters(issueId)
+  /// при любом CRUD по чек-листам/пунктам — чтобы не делать COUNT() на каждый
+  /// запрос списка задач (карточка канбана показывает «☑ 3/7» прямо из Issue).
+  checklistTotalCount Int @default(0)
+  checklistDoneCount  Int @default(0)
+
   startDate   DateTime?
   dueDate     DateTime?
   completedAt DateTime?
@@ -6898,6 +7170,12 @@ model Issue {
 
   // Циклы и модули
   cycleId String?
+
+  /// Tracker Boards (2026-05-27) — доска, к которой относится задача.
+  /// Nullable на схеме (для случая если доска удалена → onDelete:SetNull),
+  /// но фактически после backfill-default-board.ts всегда заполнено.
+  /// Колонки внутри доски = `IssueState` проекта (общий справочник).
+  boardId String?
 
   // СВЯЗИ С ДРУГИМИ СИСТЕМАМИ — критично для второго мозга
   goalId           String? // связь с Goal! (FK opt.)
@@ -6934,6 +7212,10 @@ model Issue {
   state    IssueState? @relation(fields: [stateId], references: [id], onDelete: SetNull)
   cycle    Cycle?      @relation(fields: [cycleId], references: [id], onDelete: SetNull)
   goal     Goal?       @relation("IssueGoal", fields: [goalId], references: [id], onDelete: SetNull)
+  /// Tracker Boards (2026-05-27) — доска. onDelete: SetNull чтобы при удалении
+  /// доски задача не пропала (сервис boards.service.ts перевешивает её на default
+  /// в транзакции до удаления; SetNull — safety net).
+  board    Board?      @relation(fields: [boardId], references: [id], onDelete: SetNull)
   parent   Issue?      @relation("IssueSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
   children Issue[]     @relation("IssueSubtasks")
 
@@ -6948,6 +7230,7 @@ model Issue {
   relationsIn  IssueRelation[]   @relation("IssueRelationTarget")
   activities   IssueActivity[]
   versions     IssueVersion[]
+  checklists   IssueChecklist[]
 
   /// Встречи, запущенные из этой задачи (см. `Meeting.linkedIssueId`).
   meetingsFromIssue Meeting[] @relation("MeetingLinkedIssue")
@@ -6964,6 +7247,8 @@ model Issue {
   @@index([tenantId, cycleId])
   @@index([tenantId, projectId, deletedAt])
   @@index([parentId])
+  /// Tracker Boards (2026-05-27) — фильтр задач по доске на канбане.
+  @@index([boardId])
 }
 
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
@@ -7204,6 +7489,53 @@ model IssueVersion {
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@unique([issueId, versionNumber])
+}
+
+/// Чек-лист внутри задачи (плоский список пунктов). В одной задаче может быть
+/// несколько чек-листов (например «Подготовка» и «Проверки»). Пункты — отдельная
+/// модель IssueChecklistItem. См. plans/tz/2026-05-27-tracker-checklists.md.
+model IssueChecklist {
+  id       String @id @default(cuid())
+  tenantId String
+  issueId  String
+
+  title    String @default("Чек-лист")
+  sequence Int    @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  issue Issue                @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  items IssueChecklistItem[]
+
+  @@index([issueId, sequence])
+  @@index([tenantId])
+}
+
+/// Пункт чек-листа задачи. Без исполнителя/срока — только текст и состояние
+/// «сделано / не сделано». Денормализованные счётчики на Issue
+/// (checklistTotalCount / checklistDoneCount) пересчитываются в коде через
+/// ChecklistsService.recountCounters(issueId) при любом CRUD по item.
+model IssueChecklistItem {
+  id          String @id @default(cuid())
+  tenantId    String
+  checklistId String
+
+  text     String  @db.Text
+  isDone   Boolean @default(false)
+  sequence Int     @default(0)
+
+  completedAt   DateTime?
+  completedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  checklist IssueChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId, sequence])
+  @@index([tenantId])
 }
 
 /// Входящая задача (inbox) перед триажем. AI-предложения по проекту,

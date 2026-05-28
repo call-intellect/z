@@ -596,6 +596,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //    в БД. Решим вместе с командой DevOps при подключении Grafana.
   private issuesCreatedTotal!: Counter<'tenant' | 'project' | 'source'>;
   private issuesCompletedTotal!: Counter<'tenant' | 'project'>;
+  // Tracker (2026-05-27) — подзадачи (Issue с parentId !== null).
+  // Инкрементится в IssuesService.create() когда передан parentId.
+  // Контракт: plans/tz/2026-05-27-tracker-subtasks-ui.md "Метрики".
+  private subtasksCreatedTotal!: Counter<'tenant' | 'project'>;
   private intakeTriagedTotal!: Counter<'tenant' | 'decision'>;
   private trackerWebhookDeliveryTotal!: Counter<'tenant' | 'event' | 'success'>;
   private trackerWebhookRetryCount!: Counter<'tenant' | 'webhook_id'>;
@@ -604,6 +608,23 @@ export class BusinessMetricsService implements OnModuleInit {
   // tenant_top — cardinality-safe label (top-100 bucket через `tenantTopOf`).
   private trackerIssueEmbedTotal!: Counter<'tenant_top' | 'status'>;
   private trackerIssueSimilarSearchTotal!: Counter<'tenant_top'>;
+  // Tracker Checklists (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md).
+  //   checklists_created_total{tenant, project} — создание чек-листа на задаче.
+  //   checklist_items_added_total{tenant, project, via_bulk} — пункт добавлен;
+  //     via_bulk='true' если через bulk-create endpoint, иначе 'false'.
+  //   checklist_items_completed_total{tenant, project} — пункт переведён в
+  //     isDone=true (включая случаи перехода обратно — этот счётчик считает
+  //     именно факт «done++», не «done--»).
+  private checklistsCreatedTotal!: Counter<'tenant' | 'project'>;
+  private checklistItemsAddedTotal!: Counter<'tenant' | 'project' | 'via_bulk'>;
+  private checklistItemsCompletedTotal!: Counter<'tenant' | 'project'>;
+  // Tracker Project Documents (2026-05-27, plans/tz/2026-05-27-tracker-project-documents.md).
+  //   project_documents_created_total{tenant, project} — создание документа.
+  //   project_documents_updated_total{tenant, project} — auto-save / explicit PATCH.
+  //   linked_cards_view_total{tenant, project} — открыт блок «Связанные карточки».
+  private projectDocumentsCreatedTotal!: Counter<'tenant' | 'project'>;
+  private projectDocumentsUpdatedTotal!: Counter<'tenant' | 'project'>;
+  private linkedCardsViewTotal!: Counter<'tenant' | 'project'>;
   // Tracker Phase 3 part C (2026-05-24) — AI-suggest при создании задачи.
   // ai_issue_inferred_total{tenant_top, accepted} — увеличивается на inference
   //   (accepted='false'); если позже PATCH принимает hint — отдельным вызовом
@@ -646,6 +667,17 @@ export class BusinessMetricsService implements OnModuleInit {
   //   (HolidayService.adjustDueDate; интеграция в IssuesService — Sprint 10).
   private teamTemplateUsedTotal!: Counter<'tenant_top' | 'slug'>;
   private holidayDueDateAdjustedTotal!: Counter<'tenant_top'>;
+  // Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
+  // Cardinality-safe: tenant_top — top-100 bucket; project — UUID (десятки/сотни
+  // на tenant, приемлемо); board — board-UUID (используется только в moved-метрике,
+  // десятки на проект).
+  //   - boards_created_total{tenant_top, project}
+  //   - boards_archived_total{tenant_top, project}  (счёт архивации, без soft-delete)
+  //   - board_issues_moved_total{tenant_top, from_board, to_board}
+  // ТЗ: plans/tz/2026-05-27-tracker-boards.md §"Метрики Prometheus".
+  private boardsCreatedTotal!: Counter<'tenant_top' | 'project'>;
+  private boardsArchivedTotal!: Counter<'tenant_top' | 'project'>;
+  private boardIssuesMovedTotal!: Counter<'tenant_top' | 'from_board' | 'to_board'>;
   // Tracker Phase 4 (Email-to-task, T5, 2026-05-24) — поллинг общего IMAP-ящика
   // (`inbox.kora.app`) → routing по To:-alias → IssuesService.create().
   // Cardinality-safe: project — id (десятки/сотни на tenant; в проде следить).
@@ -691,6 +723,29 @@ export class BusinessMetricsService implements OnModuleInit {
   private feedbackDigestMessagesProcessedTotal!: Counter<never>;
   private feedbackDigestNewTopicsTotal!: Counter<never>;
   private feedbackDigestFailedRunsTotal!: Counter<never>;
+
+  // ── Onboarding Tour (ТЗ 2026-05-27) ───────────────────────────────────
+  // Cardinality-safe: tenant — id Org (топ-100 без дальнейшей нормализации,
+  // tracker-паттерн); tour_id — фиксированный enum (welcome|project|meeting);
+  // at_step — id шага из tour-definition (например "welcome.sidebar-meetings"),
+  // фиксированный по коду фронта (< 30 значений).
+  private tourStartedTotal!: Counter<'tenant' | 'tour_id'>;
+  private tourCompletedTotal!: Counter<'tenant' | 'tour_id'>;
+  private tourSkippedTotal!: Counter<'tenant' | 'tour_id' | 'at_step'>;
+
+  // ── Sprints (ТЗ 2026-05-27) ───────────────────────────────────────────
+  // Cardinality-safe: tenant — id Org; scope_kind / kind / status / result —
+  // фиксированные enum'ы (≤10 значений).
+  private cyclesCreatedTotal!: Counter<'tenant' | 'scope_kind'>;
+  private cyclesCompletedTotal!: Counter<'tenant'>;
+  private sprintHintsTotal!: Counter<'tenant' | 'kind' | 'status'>;
+  private sprintHintDismissedTotal!: Counter<'tenant' | 'kind'>;
+  private sprintDashboardCacheHitTotal!: Counter<'tenant'>;
+  private sprintDashboardCacheMissTotal!: Counter<'tenant'>;
+  private sprintHelperRunsTotal!: Counter<'tenant' | 'status'>;
+  private sprintHelperDurationSeconds!: Histogram<'tenant'>;
+  private sprintReviewGenerationTotal!: Counter<'tenant' | 'status'>;
+  private sprintReviewGenerationDurationSeconds!: Histogram<'tenant'>;
 
   onModuleInit(): void {
     this.meetingsCreatedTotal = this.getOrCreateCounter({
@@ -2266,6 +2321,14 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Tracker — задачи, переведённые в done (закрытые штатно).',
       labelNames: ['tenant', 'project'] as const,
     });
+    // Tracker (2026-05-27) — подзадачи. Инкремент в IssuesService.create()
+    // когда передан parentId. Глубина >2 запрещена на уровне сервиса,
+    // поэтому это всегда «корневая задача → подзадача».
+    this.subtasksCreatedTotal = this.getOrCreateCounter({
+      name: 'subtasks_created_total',
+      help: 'Tracker — созданные подзадачи (Issue с parentId !== null).',
+      labelNames: ['tenant', 'project'] as const,
+    });
     this.intakeTriagedTotal = this.getOrCreateCounter({
       name: 'intake_triaged_total',
       help: 'Tracker Intake — обработанные кандидаты (decision ∈ accepted|rejected|snoozed|duplicate).',
@@ -2305,6 +2368,38 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'tracker_issue_similar_search_total',
       help: 'Tracker Phase 3 — KNN-поиск похожих задач (GET /tracker/issues/:id/similar). Считает все запросы (с/без результатов).',
       labelNames: ['tenant_top'] as const,
+    });
+    // Tracker Checklists (2026-05-27) — см. plans/tz/2026-05-27-tracker-checklists.md §Метрики.
+    this.checklistsCreatedTotal = this.getOrCreateCounter({
+      name: 'checklists_created_total',
+      help: 'Tracker Checklists — создание чек-листа на задаче (POST /issues/:id/checklists).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.checklistItemsAddedTotal = this.getOrCreateCounter({
+      name: 'checklist_items_added_total',
+      help: 'Tracker Checklists — добавление пункта в чек-лист. via_bulk=true если через bulk-create, иначе false.',
+      labelNames: ['tenant', 'project', 'via_bulk'] as const,
+    });
+    this.checklistItemsCompletedTotal = this.getOrCreateCounter({
+      name: 'checklist_items_completed_total',
+      help: 'Tracker Checklists — пункт переведён в isDone=true (фронт-чекбокс).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    // Tracker Project Documents (2026-05-27) — см. plans/tz/2026-05-27-tracker-project-documents.md §Метрики.
+    this.projectDocumentsCreatedTotal = this.getOrCreateCounter({
+      name: 'project_documents_created_total',
+      help: 'Tracker Project Documents — создание документа проекта (POST /projects/:id/documents).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.projectDocumentsUpdatedTotal = this.getOrCreateCounter({
+      name: 'project_documents_updated_total',
+      help: 'Tracker Project Documents — обновление документа (PATCH /project-documents/:id, включая auto-save).',
+      labelNames: ['tenant', 'project'] as const,
+    });
+    this.linkedCardsViewTotal = this.getOrCreateCounter({
+      name: 'linked_cards_view_total',
+      help: 'Tracker Project Documents — запрос блока «Связанные карточки» (GET /projects/:id/linked-cards).',
+      labelNames: ['tenant', 'project'] as const,
     });
     // Tracker Phase 3 part C — AI-suggest при создании задачи.
     this.aiIssueInferredTotal = this.getOrCreateCounter({
@@ -2375,6 +2470,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'holiday_due_date_adjusted_total',
       help: 'Tracker Phase 4 — HolidayService сдвинул dueDate задачи на следующий рабочий день (попадание на праздник / выходной).',
       labelNames: ['tenant_top'] as const,
+    });
+    // Tracker Boards (2026-05-27) — несколько досок per project.
+    this.boardsCreatedTotal = this.getOrCreateCounter({
+      name: 'boards_created_total',
+      help: 'Tracker Boards — создание доски в проекте (BoardsService.create).',
+      labelNames: ['tenant_top', 'project'] as const,
+    });
+    this.boardsArchivedTotal = this.getOrCreateCounter({
+      name: 'boards_archived_total',
+      help: 'Tracker Boards — архивация доски (POST /boards/:id/archive). Не включает soft-delete.',
+      labelNames: ['tenant_top', 'project'] as const,
+    });
+    this.boardIssuesMovedTotal = this.getOrCreateCounter({
+      name: 'board_issues_moved_total',
+      help: 'Tracker Boards — задача перенесена между досками (PATCH /issues/:id { boardId }).',
+      labelNames: ['tenant_top', 'from_board', 'to_board'] as const,
     });
     // Tracker Phase 4 (Email-to-task, T5, 2026-05-24).
     this.mailInboundReceivedTotal = this.getOrCreateCounter({
@@ -2460,6 +2571,79 @@ export class BusinessMetricsService implements OnModuleInit {
     this.feedbackDigestFailedRunsTotal = this.getOrCreateCounter({
       name: 'feedback_digest_failed_runs_total',
       help: 'Сколько раз сообщения попали в FeedbackMessage.failedRuns >= 3 (хронически невалидные).',
+    });
+
+    // Onboarding Tour (ТЗ 2026-05-27) — три счётчика.
+    this.tourStartedTotal = this.getOrCreateCounter({
+      name: 'tour_started_total',
+      help: 'Onboarding-тур начат пользователем (первый PATCH /users/me/tour-progress без completedAt/skipped).',
+      labelNames: ['tenant', 'tour_id'] as const,
+    });
+
+    this.tourCompletedTotal = this.getOrCreateCounter({
+      name: 'tour_completed_total',
+      help: 'Onboarding-тур завершён пользователем (PATCH с completedAt).',
+      labelNames: ['tenant', 'tour_id'] as const,
+    });
+
+    this.tourSkippedTotal = this.getOrCreateCounter({
+      name: 'tour_skipped_total',
+      help: 'Onboarding-тур пропущен пользователем (PATCH с skipped=true). at_step — id шага, на котором нажали «Пропустить» (или "unknown", если клиент не передал).',
+      labelNames: ['tenant', 'tour_id', 'at_step'] as const,
+    });
+
+    // Sprints (ТЗ 2026-05-27) — счётчики и гистограммы.
+    this.cyclesCreatedTotal = this.getOrCreateCounter({
+      name: 'cycles_created_total',
+      help: 'Создано циклов-спринтов (по виду scope: org/customer/vendor/person/department/project).',
+      labelNames: ['tenant', 'scope_kind'] as const,
+    });
+    this.cyclesCompletedTotal = this.getOrCreateCounter({
+      name: 'cycles_completed_total',
+      help: 'Завершено циклов-спринтов (POST /cycles/:id/complete).',
+      labelNames: ['tenant'] as const,
+    });
+    this.sprintHintsTotal = this.getOrCreateCounter({
+      name: 'sprint_hints_total',
+      help: 'Подсказки помощника по спринтам (Specialist 3-13) по виду и статусу.',
+      labelNames: ['tenant', 'kind', 'status'] as const,
+    });
+    this.sprintHintDismissedTotal = this.getOrCreateCounter({
+      name: 'sprint_hint_dismissed_total',
+      help: 'Подсказки помощника по спринтам, закрытые пользователем (dismiss).',
+      labelNames: ['tenant', 'kind'] as const,
+    });
+    this.sprintDashboardCacheHitTotal = this.getOrCreateCounter({
+      name: 'sprint_dashboard_cache_hit_total',
+      help: 'Redis-кэш дашборда спринта: попадание.',
+      labelNames: ['tenant'] as const,
+    });
+    this.sprintDashboardCacheMissTotal = this.getOrCreateCounter({
+      name: 'sprint_dashboard_cache_miss_total',
+      help: 'Redis-кэш дашборда спринта: промах.',
+      labelNames: ['tenant'] as const,
+    });
+    this.sprintHelperRunsTotal = this.getOrCreateCounter({
+      name: 'sprint_helper_runs_total',
+      help: 'Запуски воркера 3-13-sprint-helper (status: success/failed/skipped).',
+      labelNames: ['tenant', 'status'] as const,
+    });
+    this.sprintHelperDurationSeconds = this.getOrCreateHistogram({
+      name: 'sprint_helper_duration_seconds',
+      help: 'Длительность одного прогона помощника по спринту.',
+      labelNames: ['tenant'] as const,
+      buckets: [0.5, 1, 2, 5, 10, 20, 30, 60, 120],
+    });
+    this.sprintReviewGenerationTotal = this.getOrCreateCounter({
+      name: 'sprint_review_generation_total',
+      help: 'Генерация финального отчёта спринта (sprint-review-summary): ready/failed/retried.',
+      labelNames: ['tenant', 'status'] as const,
+    });
+    this.sprintReviewGenerationDurationSeconds = this.getOrCreateHistogram({
+      name: 'sprint_review_generation_duration_seconds',
+      help: 'Длительность генерации финального отчёта спринта.',
+      labelNames: ['tenant'] as const,
+      buckets: [1, 2, 5, 10, 20, 30, 60, 120, 300],
     });
   }
 
@@ -5029,6 +5213,94 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  /**
+   * Tracker (2026-05-27) — создана подзадача (Issue с parentId !== null).
+   * Вызов из IssuesService.create() сразу после успешной транзакции.
+   */
+  incSubtaskCreated(args: { tenant: string; project: string }): void {
+    this.subtasksCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Checklists (2026-05-27) — создание чек-листа на задаче.
+   * Caller: `ChecklistsService.createChecklist`.
+   */
+  incChecklistCreated(args: { tenant: string; project: string }): void {
+    this.checklistsCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Checklists — пункт добавлен (в т.ч. через bulk-create).
+   * `viaBulk=true` → пункт пришёл из POST `/checklist-items/bulk-create`.
+   */
+  incChecklistItemAdded(args: {
+    tenant: string;
+    project: string;
+    viaBulk: boolean;
+  }): void {
+    this.checklistItemsAddedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+      via_bulk: args.viaBulk ? 'true' : 'false',
+    });
+  }
+
+  /**
+   * Tracker Checklists — пункт переведён в isDone=true (положительный
+   * переход; обратные переходы (done→undone) этот счётчик NE считает).
+   */
+  incChecklistItemCompleted(args: { tenant: string; project: string }): void {
+    this.checklistItemsCompletedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Project Documents (2026-05-27) — создание документа проекта.
+   * Caller: `ProjectDocumentsService.create`.
+   */
+  incProjectDocumentCreated(args: {
+    tenant: string;
+    project: string;
+  }): void {
+    this.projectDocumentsCreatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Project Documents — обновление документа (включая auto-save).
+   * Caller: `ProjectDocumentsService.update`.
+   */
+  incProjectDocumentUpdated(args: {
+    tenant: string;
+    project: string;
+  }): void {
+    this.projectDocumentsUpdatedTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Project Documents — запрошен блок «Связанные карточки».
+   * Caller: `ProjectDocumentsService.listLinkedCards`.
+   */
+  incLinkedCardsView(args: { tenant: string; project: string }): void {
+    this.linkedCardsViewTotal.inc({
+      tenant: args.tenant,
+      project: args.project,
+    });
+  }
+
   /** Tracker Intake — обработанная карточка. decision ∈ accepted|rejected|snoozed|duplicate. */
   incIntakeTriaged(args: { tenant: string; decision: string }): void {
     this.intakeTriagedTotal.inc({
@@ -5216,6 +5488,43 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incHolidayDueDateAdjusted(args: { tenantTop: string }): void {
     this.holidayDueDateAdjustedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Tracker Boards (2026-05-27) — создание доски в проекте.
+   * `tenantTop` — top-100 bucket (нормализация через `tenantTopOf`).
+   * `project` — UUID; в проде следить за cardinality (~100 проектов на tenant).
+   */
+  incBoardCreated(args: { tenantTop: string; project: string }): void {
+    this.boardsCreatedTotal.inc({
+      tenant_top: args.tenantTop,
+      project: args.project,
+    });
+  }
+
+  /** Tracker Boards — архивация доски (POST /boards/:id/archive). */
+  incBoardArchived(args: { tenantTop: string; project: string }): void {
+    this.boardsArchivedTotal.inc({
+      tenant_top: args.tenantTop,
+      project: args.project,
+    });
+  }
+
+  /**
+   * Tracker Boards — задача перенесена между досками одного проекта
+   * (PATCH /issues/:id { boardId }). `fromBoard` может быть пустой строкой,
+   * если задача ранее не имела `boardId` (легаси до backfill).
+   */
+  incBoardIssueMoved(args: {
+    tenantTop: string;
+    fromBoard: string;
+    toBoard: string;
+  }): void {
+    this.boardIssuesMovedTotal.inc({
+      tenant_top: args.tenantTop,
+      from_board: args.fromBoard,
+      to_board: args.toBoard,
+    });
   }
 
   /**
@@ -5431,6 +5740,102 @@ export class BusinessMetricsService implements OnModuleInit {
   incFeedbackDigestFailedRuns(by: number): void {
     if (by <= 0) return;
     this.feedbackDigestFailedRunsTotal.inc(by);
+  }
+
+  // ── Onboarding Tour (ТЗ 2026-05-27) ───────────────────────────────────
+
+  /** Тур начат (первый PATCH без completedAt/skipped). */
+  incTourStarted(args: { tenant: string; tour_id: string }): void {
+    this.tourStartedTotal.inc({ tenant: args.tenant, tour_id: args.tour_id });
+  }
+
+  /** Тур завершён (PATCH с completedAt). */
+  incTourCompleted(args: { tenant: string; tour_id: string }): void {
+    this.tourCompletedTotal.inc({
+      tenant: args.tenant,
+      tour_id: args.tour_id,
+    });
+  }
+
+  /** Тур пропущен (PATCH с skipped=true). `at_step` — id шага или 'unknown'. */
+  incTourSkipped(args: {
+    tenant: string;
+    tour_id: string;
+    at_step: string;
+  }): void {
+    this.tourSkippedTotal.inc({
+      tenant: args.tenant,
+      tour_id: args.tour_id,
+      at_step: args.at_step,
+    });
+  }
+
+  // ── Sprints (ТЗ 2026-05-27) ───────────────────────────────────────────
+
+  incCycleCreated(args: {
+    tenant: string;
+    scopeKind: 'org' | 'customer' | 'vendor' | 'person' | 'department' | 'project';
+  }): void {
+    this.cyclesCreatedTotal.inc({ tenant: args.tenant, scope_kind: args.scopeKind });
+  }
+
+  incCycleCompleted(args: { tenant: string }): void {
+    this.cyclesCompletedTotal.inc({ tenant: args.tenant });
+  }
+
+  incSprintHint(args: {
+    tenant: string;
+    kind: string;
+    status: 'active' | 'dismissed' | 'resolved';
+  }): void {
+    this.sprintHintsTotal.inc({
+      tenant: args.tenant,
+      kind: args.kind,
+      status: args.status,
+    });
+  }
+
+  incSprintHintDismissed(args: { tenant: string; kind: string }): void {
+    this.sprintHintDismissedTotal.inc({ tenant: args.tenant, kind: args.kind });
+  }
+
+  incSprintDashboardCacheHit(args: { tenant: string }): void {
+    this.sprintDashboardCacheHitTotal.inc({ tenant: args.tenant });
+  }
+
+  incSprintDashboardCacheMiss(args: { tenant: string }): void {
+    this.sprintDashboardCacheMissTotal.inc({ tenant: args.tenant });
+  }
+
+  incSprintHelperRun(args: {
+    tenant: string;
+    status: 'success' | 'failed' | 'skipped';
+  }): void {
+    this.sprintHelperRunsTotal.inc({ tenant: args.tenant, status: args.status });
+  }
+
+  observeSprintHelperDuration(args: { tenant: string; seconds: number }): void {
+    this.sprintHelperDurationSeconds.observe({ tenant: args.tenant }, args.seconds);
+  }
+
+  incSprintReviewGeneration(args: {
+    tenant: string;
+    status: 'ready' | 'failed' | 'retried';
+  }): void {
+    this.sprintReviewGenerationTotal.inc({
+      tenant: args.tenant,
+      status: args.status,
+    });
+  }
+
+  observeSprintReviewGenerationDuration(args: {
+    tenant: string;
+    seconds: number;
+  }): void {
+    this.sprintReviewGenerationDurationSeconds.observe(
+      { tenant: args.tenant },
+      args.seconds,
+    );
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

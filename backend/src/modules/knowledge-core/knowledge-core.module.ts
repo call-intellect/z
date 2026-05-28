@@ -49,6 +49,8 @@ import { Specialist37Service } from './services/specialist-3-7-skill.service';
 import { Specialist39ExperimentProbeService } from './services/specialist-3-9-experiment-probe.service';
 import { Specialist39ExperimentsService } from './services/specialist-3-9-experiments.service';
 import { SpecialistsCombinedService } from './services/specialists-combined.service';
+import { SprintHelperService } from './services/sprint-helper.service';
+import { SprintReviewService } from './services/sprint-review.service';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
@@ -221,6 +223,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // `WorkersModule` и инжектит этот service. Под flag-rollout
     // `SPECIALISTS_COMBINED_ENABLED` (default false).
     SpecialistsCombinedService,
+    // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.4 §2.7) —
+    // Specialist 3-13 (помощник по спринтам) и финальный отчёт спринта.
+    // Worker и cron живут в WorkersModule — здесь только сервисы.
+    SprintHelperService,
+    SprintReviewService,
   ],
   exports: [
     SegmentBuilderService,
@@ -316,6 +323,10 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // ТЗ 2026-05-25 llm-architecture §3 — экспорт для WorkersModule
     // (SpecialistsCombinedWorker инжектит этот сервис).
     SpecialistsCombinedService,
+    // Sprints (2026-05-27) — экспорт для WorkersModule (SprintHelperWorker,
+    // SprintHelperCron) и для tracker (хук CyclesService.complete → review).
+    SprintHelperService,
+    SprintReviewService,
   ],
 })
 export class KnowledgeCoreModule {}

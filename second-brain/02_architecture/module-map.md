@@ -1951,4 +1951,23 @@ Pino-логи: `stage: 'dialog-layer' | 'pre-retrieval'`.
 25 unit-тестов в `backend/src/modules/concierge/services/*.spec.ts` покрывают: contextualize-fallback, classify-skip-roleplay, parallel pre-retrieval с дедупом, timeout per-query, cache-hit short-circuit, summary injection.
 
 
+## Sprints — Specialist 3-13 «Помощник по спринтам» (2026-05-27)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `SprintAnalystService` | `tracker/services/sprint-analyst.service.ts` | SQL-аналитика дашборда (без LLM). Redis-кэш 5 мин. `invalidateDashboardCache` эмитит `cycle.progress_updated` → OverviewCacheService инвалидирует свой кэш. |
+| `SprintHintsService` | `tracker/services/sprint-hints.service.ts` | dismiss / resolve `SprintHint` + инвалидация дашборда. |
+| `CycleMeetingsService` | `tracker/services/cycle-meetings.service.ts` | `POST /cycles/:id/start-meeting` — Meeting с `linkedCycleId`. |
+| `SprintCardHandler` | `chat-v2/specialists/sprint-card-handler.service.ts` | Регистрация в `CardSpecialistRegistry`. Ранжирует активные спринты в chat-v2 retrieval'е. |
+| `SprintHelperService` | `knowledge-core/services/sprint-helper.service.ts` | Сбор контекста спринта → LLM `sprint-helper-suggest` → findOrCreate `SprintHint`. |
+| `SprintReviewService` | `knowledge-core/services/sprint-review.service.ts` | Финальный отчёт спринта через `CurationService.triage({resourceType:'cycle'})` → CardVersion. Graceful degrade. |
+| `SprintHelperWorker` | `knowledge-core/workers/sprint-helper.worker.ts` | Consumer `core.specialist-routing` jobName `3-13-sprint-helper`, concurrency=1. |
+| `SprintHelperCron` | `knowledge-core/workers/sprint-helper.cron.ts` | `@Cron('0 */4 * * *')`, cap 50 активных циклов. |
+| `SprintReviewController` | `knowledge-core/api/sprint-review.controller.ts` | `GET /cycles/:id/review` + `POST /cycles/:id/review/regenerate`. |
+| `SprintHintsController` | `tracker/controllers/sprint-hints.controller.ts` | `POST /sprint-hints/:id/{dismiss,resolve}`. |
+
+CyclesController расширен: `GET /cycles/:id/dashboard`, `POST /cycles/:id/start-meeting`, `GET /cycles/:id/hints`. CyclesService.complete эмитит `cycle.review_requested` event (best-effort).
+
+См. [[../01_projects/sprints]].
+
 [[../index|← index]]

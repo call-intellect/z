@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -169,6 +169,11 @@ export class OrgInvitationsService {
     const magicTokenHash = sha256Hex(magicToken);
     const expiresAt = new Date(Date.now() + ttlSec * 1000);
 
+    // β-10: одноразовый пароль для credentials-onboarding. Генерируем только
+    // для email-инвайтов — линейный персонал без почты получает только magic-link.
+    const tempPassword = normalizedEmail ? generateInviteTempPassword() : null;
+    const tempPasswordHash = tempPassword ? sha256Hex(tempPassword) : null;
+
     // β-9: linkCode для прямой привязки Telegram — кладём в Redis с тем же TTL
     // через ConversationalLinkCodeService.generateInviteCode (отдельный namespace
     // `conv:invite:telegram_bot:<code>`).
@@ -190,8 +195,15 @@ export class OrgInvitationsService {
         expiresAt,
         linkCode,
         magicTokenHash,
+        tempPasswordHash,
       },
       include: { org: { select: { name: true } }, inviter: { select: { name: true } } },
+    });
+
+    // Side-effect онбординг v2: первое приглашение → teamInvitedAt
+    void this.prisma.org.updateMany({
+      where: { id: input.orgId, teamInvitedAt: null },
+      data: { teamInvitedAt: new Date() },
     });
 
     const magicLinkUrl = this.buildMagicLinkUrl(magicToken);
@@ -200,12 +212,16 @@ export class OrgInvitationsService {
     const qrCodeDataUrl = await this.tryBuildQrCode(magicLinkUrl);
 
     // Письмо — только если есть email.
-    if (normalizedEmail) {
-      const sendResult = await this.mail.sendInviteGithubStyle({
+    if (normalizedEmail && tempPassword) {
+      // β-10: credentials-onboarding — письмо с логином и одноразовым паролем.
+      const sendResult = await this.mail.sendInviteWithCredentials({
         to: normalizedEmail,
         name: displayName,
         inviterName: invitation.inviter?.name ?? 'Руководитель',
         orgName: invitation.org.name,
+        loginEmail: normalizedEmail,
+        tempPassword,
+        loginUrl: this.buildLoginUrl(),
         magicLinkUrl,
         telegramDeepLink,
         ttlDays,
@@ -284,6 +300,11 @@ export class OrgInvitationsService {
       ttlSec,
     });
 
+    // β-10: регенерируем tempPassword вместе с magicToken для email-инвайтов.
+    const resendEmail = invite.email;
+    const tempPassword = resendEmail ? generateInviteTempPassword() : null;
+    const tempPasswordHash = tempPassword ? sha256Hex(tempPassword) : null;
+
     const updated = await this.prisma.orgInvitation.update({
       where: { id: invitationId },
       data: {
@@ -291,6 +312,7 @@ export class OrgInvitationsService {
         linkCodeUsedAt: null,
         magicTokenHash,
         magicTokenUsedAt: null,
+        tempPasswordHash,
         expiresAt,
         status: 'pending',
         reminderSentAt: null,
@@ -306,12 +328,16 @@ export class OrgInvitationsService {
       ? (updated.email.split('@')[0] ?? 'Сотрудник')
       : 'Сотрудник';
 
-    if (updated.email) {
-      const sendResult = await this.mail.sendInviteGithubStyle({
+    if (updated.email && tempPassword) {
+      // β-10: credentials-onboarding — письмо с новым одноразовым паролем.
+      const sendResult = await this.mail.sendInviteWithCredentials({
         to: updated.email,
         name: displayName,
         inviterName: updated.inviter?.name ?? 'Руководитель',
         orgName: updated.org.name,
+        loginEmail: updated.email,
+        tempPassword,
+        loginUrl: this.buildLoginUrl(),
         magicLinkUrl,
         telegramDeepLink,
         ttlDays,
@@ -450,11 +476,17 @@ export class OrgInvitationsService {
       email: string;
       role: 'user' | 'admin';
     }) => Promise<{ token: string }>;
+    /**
+     * β-10: `passwordHash` — sha256(tempPassword) из OrgInvitation (если есть).
+     * Callback должен использовать его вместо генерации нового пароля,
+     * чтобы пользователь смог войти с паролем из письма.
+     */
     upsertUserByEmail: (args: {
       email: string;
       name: string;
+      passwordHash?: string;
     }) => Promise<{ id: string; email: string; role: 'user' | 'admin' }>;
-    createUserWithoutEmail: (args: { name: string }) => Promise<{
+    createUserWithoutEmail: (args: { name: string; passwordHash?: string }) => Promise<{
       id: string;
       email: string;
       role: 'user' | 'admin';
@@ -506,9 +538,12 @@ export class OrgInvitationsService {
     const displayName = invite.email
       ? (invite.email.split('@')[0] ?? 'Сотрудник')
       : 'Сотрудник';
+    // β-10: передаём tempPasswordHash из приглашения, чтобы пользователь
+    // смог войти с паролем из письма (mustChangePassword=true в callback'е).
+    const passwordHash = invite.tempPasswordHash ?? undefined;
     const user = invite.email
-      ? await input.upsertUserByEmail({ email: invite.email, name: displayName })
-      : await input.createUserWithoutEmail({ name: displayName });
+      ? await input.upsertUserByEmail({ email: invite.email, name: displayName, passwordHash })
+      : await input.createUserWithoutEmail({ name: displayName, passwordHash });
 
     // β-9 — валидация «один user = одна Org».
     await this.assertNoOtherActiveMembership({
@@ -742,6 +777,11 @@ export class OrgInvitationsService {
     return `${base}/invite/${magicToken}`;
   }
 
+  private buildLoginUrl(): string {
+    const base = this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '');
+    return `${base}/login`;
+  }
+
   private buildTelegramDeepLink(linkCode: string): string {
     const username = this.cfg.invites.botUsername;
     return `https://t.me/${username}?start=${linkCode}`;
@@ -777,4 +817,13 @@ export class OrgInvitationsService {
 /** Утилита: sha256 hex, как в `AccountsService.hashToken`. */
 function sha256Hex(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
+}
+
+/**
+ * β-10: одноразовый пароль для credentials-onboarding в письме.
+ * 9 байт → 12 base64url-символов. Та же логика, что `AccountsService.generateTempPassword`,
+ * вынесена сюда чтобы избежать циклической зависимости AccountsService↔OrgInvitationsService.
+ */
+function generateInviteTempPassword(): string {
+  return randomBytes(9).toString('base64url');
 }

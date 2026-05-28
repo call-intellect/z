@@ -12,6 +12,7 @@ describe('mapAccountUserDtoToDomain', () => {
     signupSource: 'standalone',
     mustChangePassword: false,
     createdAt: '2026-05-09T10:30:00.000Z',
+    profileCompletedAt: null,
     isSuperAdmin: false,
     currentOrgRole: null,
     currentOrgId: null,

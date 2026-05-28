@@ -24,6 +24,8 @@ export interface AccountUserApi {
   currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo' | null;
   /** Фаза 7: id первой Org или null. */
   currentOrgId: string | null;
+  /** Когда user завершил Блок A онбординга. null = не прошёл. */
+  profileCompletedAt: string | null;
 }
 
 // ─────────────── request payloads ───────────────

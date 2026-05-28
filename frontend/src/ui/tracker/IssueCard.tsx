@@ -76,8 +76,62 @@ export function IssueCard({
               {issue.linkedMeetingIds.length} встреч
             </span>
           )}
+          {/* Badge'ы в правом нижнем углу: чек-листы (☑ N/M) и подзадачи (✓ N).
+              Порядок: чек-листы слева, подзадачи справа. */}
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {issue.checklistTotalCount > 0 && (
+              <ChecklistBadge
+                total={issue.checklistTotalCount}
+                done={issue.checklistDoneCount}
+              />
+            )}
+            <SubtaskBadge issue={issue} />
+          </span>
         </div>
       )}
     </Link>
+  );
+}
+
+/**
+ * Tracker subtasks UI (2026-05-27) — badge «✓ N» в карточке задачи.
+ * `childrenCount > 0` → бейдж виден. Полный «N/M» появится, когда DTO
+ * вернёт completedChildrenCount.
+ */
+function SubtaskBadge({ issue }: { issue: Issue }) {
+  const count = issue.childrenCount;
+  if (count === null || count === 0) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded bg-bg-overlay px-1.5 py-0.5 text-[10px] text-fg-secondary"
+      title="Подзадач"
+    >
+      <span aria-hidden="true">✓</span>
+      <span>{count}</span>
+    </span>
+  );
+}
+
+/**
+ * Tracker Checklists (2026-05-27) — бейдж прогресса «☑ 3/7».
+ * Полностью завершённый — зелёный, иначе серый.
+ */
+function ChecklistBadge({ total, done }: { total: number; done: number }) {
+  const fully = total > 0 && total === done;
+  return (
+    <span
+      title={`Чек-лист: ${done} из ${total}`}
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-medium',
+        fully
+          ? 'bg-success/15 text-success'
+          : 'bg-bg-overlay text-fg-secondary',
+      )}
+    >
+      <span aria-hidden="true">☑</span>
+      <span>
+        {done}/{total}
+      </span>
+    </span>
   );
 }

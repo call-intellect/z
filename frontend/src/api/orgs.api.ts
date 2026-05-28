@@ -13,6 +13,20 @@ export type OrgApi = {
   tier: 'basic' | 'pro' | 'enterprise';
   ownerId: string;
   createdAt: string;
+  industry?: string | null;
+  /** Онбординг v2 — поля прогресса Блока A и Блока B. */
+  teamSize?: string | null;
+  painPoints?: string[];
+  currentStack?: string[];
+  plannedFeatures?: string[];
+  welcomeCompletedAt?: string | null;
+  companyInfoCompletedAt?: string | null;
+  departmentsCompletedAt?: string | null;
+  rolesCompletedAt?: string | null;
+  teamInvitedAt?: string | null;
+  firstSprintCreatedAt?: string | null;
+  firstMeetingCreatedAt?: string | null;
+  setupCompletedAt?: string | null;
 };
 
 export type MembershipApi = {

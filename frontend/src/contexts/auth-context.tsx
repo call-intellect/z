@@ -56,6 +56,8 @@ type AuthContextValue = AuthState & {
   currentOrgRole: CurrentOrgRole;
   /** ID первой Org или null (Фаза 7). */
   currentOrgId: string | null;
+  /** Когда user прошёл Блок A онбординга (null = не прошёл → redirect на /onboarding/welcome/step-1). */
+  profileCompletedAt: Date | null;
   /** Перечитывает `accountsApi.me()` и обновляет state. */
   refresh: () => Promise<void>;
   /** Logout: backend revoke + локальный сброс. */
@@ -173,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isSuperAdmin: state.user?.isSuperAdmin === true,
       currentOrgRole: state.user?.currentOrgRole ?? null,
       currentOrgId: state.user?.currentOrgId ?? null,
+      profileCompletedAt: state.user?.profileCompletedAt ?? null,
       refresh,
       logout,
       loginStandalone,

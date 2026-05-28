@@ -52,10 +52,16 @@ export function useIssues(
           req.labelId ?? null,
           req.cycleId ?? null,
           req.goalId ?? null,
+          // Tracker Boards (2026-05-27) — фильтр по доске.
+          req.boardId ?? null,
           req.priority ?? null,
           req.parentId ?? null,
           req.includeArchived ?? false,
           req.includeDeleted ?? false,
+          // Tracker subtasks UI (2026-05-27) — ключ должен учитывать флаг,
+          // иначе SWR закэширует ответ без childrenCount, и переключение
+          // вьюхи (которая ждёт badge'и) на ту же страницу даст пустые.
+          req.includeChildrenCount ?? false,
           req.q ?? '',
           req.page ?? 1,
           req.limit ?? 50,

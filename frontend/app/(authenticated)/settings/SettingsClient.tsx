@@ -8,8 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 import { ProfileSection } from './sections/ProfileSection';
 import { SecuritySection } from './sections/SecuritySection';
 import { AppearanceSection } from './sections/AppearanceSection';
+import { OnboardingSection } from './sections/OnboardingSection';
 
-const TABS = ['profile', 'security', 'appearance'] as const;
+const TABS = ['profile', 'security', 'appearance', 'tours'] as const;
 type SettingsTab = (typeof TABS)[number];
 
 function isSettingsTab(value: string | null): value is SettingsTab {
@@ -55,6 +56,7 @@ export function SettingsClient() {
           <TabsTrigger value="profile">Профиль</TabsTrigger>
           <TabsTrigger value="security">Безопасность</TabsTrigger>
           <TabsTrigger value="appearance">Внешний вид</TabsTrigger>
+          <TabsTrigger value="tours">Онбординг</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -65,6 +67,9 @@ export function SettingsClient() {
         </TabsContent>
         <TabsContent value="appearance">
           <AppearanceSection />
+        </TabsContent>
+        <TabsContent value="tours">
+          <OnboardingSection />
         </TabsContent>
       </Tabs>
     </div>

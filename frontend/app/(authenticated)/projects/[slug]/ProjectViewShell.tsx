@@ -12,6 +12,7 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { projectShortLabel, type Project } from '@/domain/tracker';
+import { useTour } from '@/ui/tour';
 
 interface Tab {
   href: string;
@@ -20,9 +21,23 @@ interface Tab {
 }
 
 function buildTabs(slug: string): Tab[] {
+  // Wave 2 (2026-05-27): паритет Weeek/Kaiten — порядок табов
+  // Обзор → Доска/Список/Календарь/Гант → Документы → Приложения →
+  // Циклы → Входящие → Загруженность → Настройки.
+  // Группировка «Задачи ▾» не делаем (см. ТЗ overview §"Решение по группировке Задачи").
   return [
+    { href: `/projects/${slug}/overview`, label: 'Обзор' },
     { href: `/projects/${slug}/board`, label: 'Доска' },
     { href: `/projects/${slug}/list`, label: 'Список' },
+    { href: `/projects/${slug}/calendar`, label: 'Календарь' },
+    {
+      href: `/projects/${slug}/gantt`,
+      label: 'Гант',
+      show: (p) => p.gantViewEnabled,
+    },
+    // Tracker Project Documents (2026-05-27).
+    { href: `/projects/${slug}/documents`, label: 'Документы' },
+    { href: `/projects/${slug}/integrations`, label: 'Приложения' },
     {
       href: `/projects/${slug}/cycles`,
       label: 'Циклы',
@@ -33,12 +48,7 @@ function buildTabs(slug: string): Tab[] {
       label: 'Входящие',
       show: (p) => p.intakeViewEnabled,
     },
-    { href: `/projects/${slug}/calendar`, label: 'Календарь' },
-    {
-      href: `/projects/${slug}/gantt`,
-      label: 'Гант',
-      show: (p) => p.gantViewEnabled,
-    },
+    { href: `/projects/${slug}/workload`, label: 'Загруженность' },
     { href: `/projects/${slug}/settings`, label: 'Настройки' },
   ];
 }
@@ -53,6 +63,10 @@ export function ProjectViewShell({
   const pathname = usePathname() ?? '';
   const { currentOrgId } = useAuth();
   const { project, isLoading, error } = useProjectBySlug(currentOrgId, slug);
+
+  // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «project» при первом
+  // открытии любой страницы проекта. Если уже завершён/пропущен — no-op.
+  useTour('project');
 
   const tabs = buildTabs(slug).filter(
     (t) => !t.show || (project && t.show(project)),
@@ -77,6 +91,7 @@ export function ProjectViewShell({
           <nav className="-mb-3 flex gap-1 overflow-x-auto">
             {tabs.map((tab) => {
               const active = pathname === tab.href;
+              const isOverview = tab.label === 'Обзор';
               return (
                 <Link
                   key={tab.href}
@@ -87,6 +102,9 @@ export function ProjectViewShell({
                       ? 'border-accent text-accent'
                       : 'border-transparent text-fg-tertiary hover:text-fg-secondary',
                   )}
+                  {...(isOverview
+                    ? { 'data-tour-target': 'project.overview-tab' }
+                    : {})}
                 >
                   {tab.label}
                 </Link>

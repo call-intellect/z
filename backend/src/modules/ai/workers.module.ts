@@ -37,6 +37,8 @@ import { Specialist35InsightsWorker } from '../knowledge-core/workers/specialist
 import { Specialist36IdeasWorker } from '../knowledge-core/workers/specialist-3-6-ideas.worker';
 import { Specialist37SkillWorker } from '../knowledge-core/workers/specialist-3-7-skill.worker';
 import { SpecialistsCombinedWorker } from '../knowledge-core/workers/specialists-combined.worker';
+import { SprintHelperCron } from '../knowledge-core/workers/sprint-helper.cron';
+import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.worker';
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
@@ -224,6 +226,12 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // Фаза 0b knowledge-core: ingest-адаптеры документов и дампов.
     DocumentIngestAdapter,
     TextIngestAdapter,
+
+    // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.4 §2.6) —
+    // Specialist 3-13: consumer `core.specialist-routing` jobName='3-13-sprint-helper'
+    // и cron каждые 4 часа по активным циклам.
+    SprintHelperWorker,
+    SprintHelperCron,
   ],
 })
 export class WorkersModule {}

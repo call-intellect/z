@@ -21,6 +21,7 @@ export function ConciergeFloatingButton() {
         <button
           type="button"
           aria-label="Открыть Concierge"
+          data-tour-target="welcome.concierge"
           onClick={() => setOpen(true)}
           className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg hover:bg-accent-hover"
         >

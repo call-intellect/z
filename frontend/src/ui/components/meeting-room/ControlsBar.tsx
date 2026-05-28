@@ -10,8 +10,10 @@ import { Track } from 'livekit-client';
 import {
   Copy,
   MessageSquare,
+  Maximize,
   Mic,
   MicOff,
+  Minimize,
   Monitor,
   MonitorOff,
   PhoneOff,
@@ -37,9 +39,11 @@ type Props = {
   isRecording: boolean;
   /** Если true — запись автоматическая, кнопку записи не показываем */
   recordByDefault: boolean;
+  isFullscreen: boolean;
   onLeave: () => void;
   onToggleParticipants: () => void;
   onToggleChat: () => void;
+  onToggleFullscreen: () => void;
 };
 
 export function ControlsBar({
@@ -47,9 +51,11 @@ export function ControlsBar({
   isHost,
   isRecording,
   recordByDefault,
+  isFullscreen,
   onLeave,
   onToggleParticipants,
   onToggleChat,
+  onToggleFullscreen,
 }: Props) {
   const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } =
     useLocalParticipant();
@@ -126,6 +132,11 @@ export function ControlsBar({
 
         <IconBtn icon={<Users size={20} strokeWidth={1.75} />} label="Участники" onClick={onToggleParticipants} />
         <IconBtn icon={<MessageSquare size={20} strokeWidth={1.75} />} label="Чат" onClick={onToggleChat} />
+        <IconBtn
+          icon={isFullscreen ? <Minimize size={20} strokeWidth={1.75} /> : <Maximize size={20} strokeWidth={1.75} />}
+          label={isFullscreen ? 'Окно' : 'На весь экран'}
+          onClick={onToggleFullscreen}
+        />
 
         {isHost && (
           <>

@@ -9,11 +9,15 @@ import {
 } from '@nestjs/common';
 import { Prisma, type Issue } from '@prisma/client';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
   IssueAiSuggestionsDto,
+  IssueChildResponseDto,
+  IssueChildrenResponseDto,
   IssueResponseDto,
   IssueVersionDto,
   ListIssuesResponse,
@@ -26,6 +30,7 @@ import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
+import { BoardsService } from './boards.service';
 import { HolidayService } from './holiday.service';
 import { IssueEmbedQueueService } from './issue-embed-queue.service';
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
@@ -82,6 +87,18 @@ export class IssuesService {
     @Optional()
     @Inject(HolidayService)
     private readonly holidayService?: HolidayService,
+    // Tracker Boards (2026-05-27) — резолв default-доски проекта на create
+    // (если фронт не передал `boardId`) и валидация целевой доски на PATCH.
+    // Optional: unit-тесты `IssuesService` без BoardsService → `boardId`
+    // сохраняется как есть (если передан) или null (если нет).
+    @Optional()
+    @Inject(BoardsService)
+    private readonly boards?: BoardsService,
+    // Tracker (2026-05-27) — Prometheus-метрики: subtasks_created_total,
+    // board_issues_moved_total. Optional: unit-тесты без MetricsModule.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
@@ -99,6 +116,28 @@ export class IssuesService {
     // Если stateId не передан — используем defaultStateId проекта.
     const stateId = dto.stateId ?? project.defaultStateId ?? null;
     if (dto.stateId) await this.requireStateInProject(dto.stateId, projectId);
+
+    // Tracker subtasks UI (2026-05-27) — валидация parentId при создании.
+    // Родитель должен принадлежать тому же tenant + project, не быть уже
+    // подзадачей (depth>2). Цикл невозможен на create (id ещё не существует).
+    if (dto.parentId) {
+      await this.validateParentForIssue({
+        candidateParentId: dto.parentId,
+        projectId,
+        tenantId,
+        currentIssueId: null,
+      });
+    }
+
+    // Tracker Boards (2026-05-27) — резолвим boardId:
+    //   1. Если фронт явно передал boardId — валидируем, что доска в этом проекте.
+    //   2. Иначе — берём default-доску проекта (ленивая инициализация).
+    //   3. Если BoardsService не инжектился (unit-тест без Boards) — boardId=null.
+    const boardId = await this.resolveBoardIdForCreate({
+      tenantId,
+      projectId,
+      explicitBoardId: dto.boardId ?? null,
+    });
 
     // Wave 3 finishing (Sprint 10) — сдвигаем dueDate на ближайший рабочий
     // день, если попал на праздник/выходной. По умолчанию ВКЛ (default-on);
@@ -140,6 +179,8 @@ export class IssuesService {
           dueDate: adjustedDueDate,
           cycleId: dto.cycleId ?? null,
           goalId: dto.goalId ?? null,
+          // Tracker Boards (2026-05-27) — boardId резолвится выше.
+          boardId,
           externalSource: dto.externalSource ?? null,
           externalId: dto.externalId ?? null,
           createdById: userId,
@@ -193,6 +234,25 @@ export class IssuesService {
     });
 
     const response = await this.assemble(issue.id, tenantId);
+    // Tracker subtasks UI (2026-05-27) — отдельный счётчик подзадач, чтобы
+    // в Grafana отделить «корневые» задачи от подзадач. Метрика
+    // `subtasks_created_total{tenant, project}`.
+    if (issue.parentId) {
+      try {
+        this.metrics?.incSubtaskCreated({
+          tenant: tenantId,
+          project: projectId,
+        });
+      } catch (e) {
+        this.logger.warn(
+          {
+            issueId: issue.id,
+            err: e instanceof Error ? e.message : String(e),
+          },
+          'subtasks_created_total inc failed (best-effort)',
+        );
+      }
+    }
     // WS + outgoing webhooks (fire-and-forget; ошибки доставки логируются
     // самим dispatcher/events service'ом, не пропагируются).
     this.events.publishIssueCreated(response, tenantId);
@@ -296,6 +356,8 @@ export class IssuesService {
     if (query.parentId) where.parentId = query.parentId;
     if (query.cycleId) where.cycleId = query.cycleId;
     if (query.goalId) where.goalId = query.goalId;
+    // Tracker Boards (2026-05-27) — фильтр задач по выбранной доске.
+    if (query.boardId) where.boardId = query.boardId;
     if (query.assigneeUserId) {
       where.assignees = { some: { userId: query.assigneeUserId } };
     }
@@ -322,12 +384,99 @@ export class IssuesService {
       }),
       this.prisma.issue.count({ where }),
     ]);
+    // Tracker subtasks UI (2026-05-27) — массовый подсчёт детей через
+    // groupBy, чтобы канбан-карточки могли отрисовать badge `N/M`.
+    // Один JOIN-эквивалент на весь список — стоимость минимальная.
+    let childrenCountByParent: Map<string, number> | null = null;
+    if (query.includeChildrenCount && items.length > 0) {
+      const parentIds = items.map((i) => i.id);
+      const grouped = await this.prisma.issue.groupBy({
+        by: ['parentId'],
+        where: {
+          tenantId,
+          parentId: { in: parentIds },
+          deletedAt: null,
+        },
+        _count: { _all: true },
+      });
+      childrenCountByParent = new Map();
+      for (const row of grouped) {
+        if (row.parentId) {
+          childrenCountByParent.set(row.parentId, row._count._all);
+        }
+      }
+    }
     return {
-      items: items.map((i) => this.toResponseFromInclude(i)),
+      items: items.map((i) => {
+        const base = this.toResponseFromInclude(i);
+        if (childrenCountByParent) {
+          return { ...base, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
+        }
+        return base;
+      }),
       total,
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Tracker subtasks UI (2026-05-27) — список прямых детей задачи.
+   *
+   * Возвращает упрощённый DTO без description/labelIds (фронт получает
+   * только то, что нужно блоку «Подзадачи» в карточке родителя).
+   *
+   * Сортировка: `sortOrder ASC, createdAt ASC` — стабильно и совпадает
+   * с порядком на канбан-доске родителя.
+   *
+   * Контракт: `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"REST API".
+   */
+  async findChildren(
+    issueId: string,
+    tenantId: string,
+  ): Promise<IssueChildrenResponseDto> {
+    await this.requireIssue(issueId, tenantId);
+    const rows = await this.prisma.issue.findMany({
+      where: { tenantId, parentId: issueId, deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        assignees: { select: { userId: true } },
+        state: { select: { category: true } },
+      },
+    });
+    // Подсчёт «внуков»: один groupBy(parentId) на весь список детей.
+    // На канбан-доске родителя такие случаи показаны на 2-м уровне, новые
+    // подзадачи на 3-м уровне запрещены validateParentForIssue.
+    let grandchildrenByParent: Map<string, number> | null = null;
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      const grouped = await this.prisma.issue.groupBy({
+        by: ['parentId'],
+        where: { tenantId, parentId: { in: ids }, deletedAt: null },
+        _count: { _all: true },
+      });
+      grandchildrenByParent = new Map();
+      for (const row of grouped) {
+        if (row.parentId) {
+          grandchildrenByParent.set(row.parentId, row._count._all);
+        }
+      }
+    }
+    const items: IssueChildResponseDto[] = rows.map((r) => ({
+      id: r.id,
+      identifier: r.identifier,
+      title: r.title,
+      stateId: r.stateId,
+      stateCategory:
+        (r.state?.category as IssueChildResponseDto['stateCategory']) ?? null,
+      priority: r.priority,
+      assigneeUserIds: r.assignees.map((a) => a.userId),
+      dueDate: r.dueDate?.toISOString() ?? null,
+      completedAt: r.completedAt?.toISOString() ?? null,
+      childrenCount: grandchildrenByParent?.get(r.id) ?? 0,
+      sortOrder: r.sortOrder,
+    }));
+    return { items, total: items.length };
   }
 
   /**
@@ -458,6 +607,30 @@ export class IssuesService {
     if (dto.stateId && dto.stateId !== existing.stateId) {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
+    // Tracker subtasks UI (2026-05-27) — валидация смены `parentId`.
+    // `parentId=null` (сделать задачу корневой) — всегда допустимо.
+    if (dto.parentId !== undefined && dto.parentId !== null) {
+      await this.validateParentForIssue({
+        candidateParentId: dto.parentId,
+        projectId: existing.projectId,
+        tenantId,
+        currentIssueId: existing.id,
+      });
+    }
+
+    // Tracker Boards (2026-05-27) — если фронт меняет boardId на не-null,
+    // валидируем что доска принадлежит тому же проекту и tenant'у.
+    if (
+      dto.boardId &&
+      dto.boardId !== existing.boardId &&
+      this.boards
+    ) {
+      await this.boards.assertBoardInProject({
+        boardId: dto.boardId,
+        projectId: existing.projectId,
+        tenantId,
+      });
+    }
     // Wave 3 finishing (Sprint 10) — корректируем `dueDate` ДО формирования
     // diff'а activity. Если dueDate в dto не передан — не трогаем (undefined
     // означает «оставить как есть»). Если передан null — это явное снятие,
@@ -487,8 +660,15 @@ export class IssuesService {
         const prev = existing[field];
         if (this.equalsLoose(prev, nextValue)) return;
         (data as Record<string, unknown>)[field as string] = nextValue;
+        // Tracker subtasks UI (2026-05-27) — отдельный verb 'parent_changed'
+        // для смены parentId (наряду с 'status_changed' для stateId).
+        // Это нужно для активити-фида: «перенесли подзадачу в KORA-200».
+        let verb: string;
+        if (field === 'stateId') verb = 'status_changed';
+        else if (field === 'parentId') verb = 'parent_changed';
+        else verb = 'updated';
         activities.push({
-          verb: field === 'stateId' ? 'status_changed' : 'updated',
+          verb,
           field: String(field),
           oldValue: prev,
           newValue: nextValue,
@@ -508,6 +688,11 @@ export class IssuesService {
       trackField('dueDate', adjustedDueDate ?? undefined);
       trackField('cycleId', dto.cycleId ?? undefined);
       trackField('goalId', dto.goalId ?? undefined);
+      // Tracker Boards (2026-05-27) — фиксируем перенос между досками.
+      // verb остаётся 'updated', но IssueActivity.field='boardId' даёт
+      // ленте конкретную метку «перенос». В knowledge-core это событие
+      // не идёт (не семантика, организационное перекладывание).
+      trackField('boardId', dto.boardId ?? undefined);
 
       if (Object.keys(data).length === 0) {
         return;
@@ -551,6 +736,23 @@ export class IssuesService {
     const response = await this.assemble(id, tenantId);
     if (changedFields.length > 0) {
       this.events.publishIssueUpdated(response, tenantId, changedFields);
+      // Tracker Boards (2026-05-27) — если изменился boardId, эмитим узкое
+      // событие `issue.moved_to_board` (фронт может удалить карточку из
+      // старой доски и добавить в новую без перезагрузки + метрика).
+      if (changedFields.includes('boardId') && dto.boardId) {
+        this.events.publishIssueMovedToBoard({
+          tenantId,
+          projectId: existing.projectId,
+          issueId: id,
+          fromBoardId: existing.boardId,
+          toBoardId: dto.boardId,
+        });
+        this.metrics?.incBoardIssueMoved({
+          tenantTop: tenantTopOf(tenantId),
+          fromBoard: existing.boardId ?? '',
+          toBoard: dto.boardId,
+        });
+      }
       // Phase 3 (2026-05-24) — пересчёт embedding'а, если изменились
       // текстовые поля (title / description / descriptionStripped). Hash
       // защитит от лишних пересчётов, если описание тривиально перетёрли
@@ -1119,6 +1321,120 @@ export class IssuesService {
     return issue;
   }
 
+  /**
+   * Tracker subtasks UI (2026-05-27) — валидация родителя при create/update.
+   *
+   * Падает 400 в следующих случаях:
+   *   - `candidateParentId` совпадает с самой задачей (`currentIssueId`)
+   *     — `cyclic_parent_not_allowed`.
+   *   - кандидат-родитель не существует / в другом tenant'е — `parent_not_found`.
+   *   - кандидат в другом проекте — `parent_in_different_project`.
+   *   - кандидат сам является подзадачей (parentId !== null) — глубина >2
+   *     запрещена — `max_subtask_depth_exceeded`.
+   *   - кандидат — один из потомков текущей задачи (только при update,
+   *     когда `currentIssueId !== null`) — `cyclic_parent_not_allowed`.
+   *     На текущей модели подзадачи 3-го уровня запрещены, поэтому глубина
+   *     ≤2, и обход вниз — это ровно один уровень детей. Для устойчивости
+   *     к будущему расширению (если depth-limit поднимут) делаем BFS по
+   *     всему поддереву с защитой от циклов через `visited`.
+   *
+   * TODO (после tracker-boards): проверять boardId родителя.
+   */
+  private async validateParentForIssue(args: {
+    candidateParentId: string;
+    projectId: string;
+    tenantId: string;
+    /** id текущей задачи (null при create). */
+    currentIssueId: string | null;
+  }): Promise<void> {
+    if (
+      args.currentIssueId !== null &&
+      args.candidateParentId === args.currentIssueId
+    ) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'cyclic_parent_not_allowed',
+          message: 'Задача не может быть родителем самой себя',
+        },
+      });
+    }
+    const parent = await this.prisma.issue.findFirst({
+      where: {
+        id: args.candidateParentId,
+        tenantId: args.tenantId,
+        deletedAt: null,
+      },
+      select: { id: true, projectId: true, parentId: true },
+    });
+    if (!parent) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'parent_not_found',
+          message: 'Родительская задача не найдена',
+        },
+      });
+    }
+    if (parent.projectId !== args.projectId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'parent_in_different_project',
+          message: 'Родительская задача в другом проекте',
+        },
+      });
+    }
+    if (parent.parentId !== null) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'max_subtask_depth_exceeded',
+          message:
+            'Подзадача не может быть подзадачей: глубина больше 2 запрещена',
+        },
+      });
+    }
+    // Защита от цикла: при update убедимся, что кандидат не лежит в
+    // поддереве текущей задачи. BFS вниз, threshold 256 узлов
+    // (защита от случайно широких деревьев — на MVP всё равно глубина ≤2).
+    if (args.currentIssueId !== null) {
+      const visited = new Set<string>([args.currentIssueId]);
+      let frontier: string[] = [args.currentIssueId];
+      let guard = 0;
+      while (frontier.length > 0 && guard < 256) {
+        guard++;
+        const children = await this.prisma.issue.findMany({
+          where: {
+            tenantId: args.tenantId,
+            parentId: { in: frontier },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (children.length === 0) break;
+        const next: string[] = [];
+        for (const c of children) {
+          if (c.id === args.candidateParentId) {
+            throw new BadRequestException({
+              ok: false,
+              error: {
+                code: 'cyclic_parent_not_allowed',
+                message:
+                  'Нельзя назначить родителем потомка текущей задачи',
+              },
+            });
+          }
+          if (!visited.has(c.id)) {
+            visited.add(c.id);
+            next.push(c.id);
+          }
+        }
+        frontier = next;
+      }
+    }
+  }
+
   private async requireStateInProject(
     stateId: string,
     projectId: string,
@@ -1182,6 +1498,8 @@ export class IssuesService {
       completedAt: issue.completedAt?.toISOString() ?? null,
       cycleId: issue.cycleId,
       goalId: issue.goalId,
+      // Tracker Boards (2026-05-27).
+      boardId: issue.boardId,
       meetingId: issue.meetingId,
       linkedMeetingIds: issue.linkedMeetingIds,
       sourceBlockIds: issue.sourceBlockIds,
@@ -1197,7 +1515,52 @@ export class IssuesService {
       deletedAt: issue.deletedAt?.toISOString() ?? null,
       assigneeUserIds: issue.assignees.map((a) => a.userId),
       labelIds: issue.labels.map((l) => l.labelId),
+      checklistTotalCount: issue.checklistTotalCount,
+      checklistDoneCount: issue.checklistDoneCount,
     };
+  }
+
+  /**
+   * Tracker Boards (2026-05-27) — резолв `boardId` при создании задачи.
+   *
+   *   1. Если фронт явно передал boardId — проверяем что доска в этом
+   *      проекте + tenant'е через BoardsService.assertBoardInProject.
+   *   2. Иначе — резолвим default-доску проекта
+   *      (`BoardsService.resolveDefaultBoardId` — лениво создаёт если нет).
+   *   3. Если BoardsService недоступен (unit-тесты без модуля) — возвращаем
+   *      то, что передал клиент (или null). Schema допускает null.
+   */
+  private async resolveBoardIdForCreate(args: {
+    tenantId: string;
+    projectId: string;
+    explicitBoardId: string | null;
+  }): Promise<string | null> {
+    if (!this.boards) {
+      return args.explicitBoardId;
+    }
+    if (args.explicitBoardId) {
+      await this.boards.assertBoardInProject({
+        boardId: args.explicitBoardId,
+        projectId: args.projectId,
+        tenantId: args.tenantId,
+      });
+      return args.explicitBoardId;
+    }
+    try {
+      return await this.boards.resolveDefaultBoardId({
+        tenantId: args.tenantId,
+        projectId: args.projectId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          projectId: args.projectId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'IssuesService.resolveBoardIdForCreate: default-доска не разрешилась — создаём задачу без boardId',
+      );
+      return null;
+    }
   }
 
   /**

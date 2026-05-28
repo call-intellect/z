@@ -335,7 +335,9 @@ p, manager, *, self, notification, write
 # ──────────────────────────── SBA α-3 — Layer 2 ontology extension ────────────────────────────
 # ResourceType: vendor — поставщик (модель Vendor). Read доступен всем member'ам Org
 # (как card/block/entity — поставщики разделяются по компании, силоса нет).
-# Write/delete — owner/admin. На α-3 только read-only API; POST/PATCH появятся в α-6.
+# Write — owner/admin/manager (Sprints 2026-05-28: inline-create в SprintCreateWizard
+# доступен всем менеджерам). Delete — только owner/admin (защита от случайного
+# удаления данных о поставщиках).
 p, owner, *, *, vendor, read
 p, owner, *, *, vendor, write
 p, owner, *, *, vendor, delete
@@ -343,6 +345,7 @@ p, admin, *, *, vendor, read
 p, admin, *, *, vendor, write
 p, admin, *, *, vendor, delete
 p, manager, *, *, vendor, read
+p, manager, *, *, vendor, write
 
 # ResourceType: event_card — событие графа знаний (модель Event). Имя event_card
 # (не event), чтобы не конфликтовать с доменными событиями LiveKit/AI/etc.
@@ -793,6 +796,64 @@ p, owner, *, *, issue_webhook, delete
 p, admin, *, *, issue_webhook, read
 p, admin, *, *, issue_webhook, write
 p, admin, *, *, issue_webhook, delete
+
+# ──────────────────────────── Tracker Boards (2026-05-27) ────────────────────────────
+# board — доска внутри проекта (Канбан-доска маркетинга/монтажа/релиза и т.п.).
+# Все members проекта могут читать/писать; защиту от удаления default-доски
+# делает сервис (BoardsService.delete → 409 если isDefault=true). Manager имеет
+# те же права что и member по доскам — это часть оперативной работы.
+# ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+p, owner, *, *, board, read
+p, owner, *, *, board, write
+p, owner, *, *, board, delete
+p, admin, *, *, board, read
+p, admin, *, *, board, write
+p, admin, *, *, board, delete
+p, manager, *, *, board, read
+p, manager, *, *, board, write
+p, coo, *, *, board, read
+
+# ──────────────────────────── Tracker Project Documents (2026-05-27) ────────────────────────────
+# project_document — простые rich-text документы внутри проекта (бриф/ТЗ/протокол).
+# Read — все members проекта; write — author + admin/owner; delete — author + admin/owner.
+# Manager open — может писать (рядовая работа над брифом/спецификацией). Manager
+# strict — write только своих (через self) для совместимости с остальными strict-правилами.
+# ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
+p, owner, *, *, project_document, read
+p, owner, *, *, project_document, write
+p, owner, *, *, project_document, delete
+p, admin, *, *, project_document, read
+p, admin, *, *, project_document, write
+p, admin, *, *, project_document, delete
+p, manager, open, *, project_document, read
+p, manager, open, *, project_document, write
+p, manager, open, self, project_document, delete
+p, manager, strict, *, project_document, read
+p, manager, strict, self, project_document, write
+p, manager, strict, self, project_document, delete
+p, coo, *, *, project_document, read
+
+# ──────────────────────────── Sprints (2026-05-27) ────────────────────────────
+# sprint_hint — подсказки помощника по спринтам (Specialist 3-13).
+# Read — все members проекта (видят подсказки на странице спринта);
+# write — те же роли (могут закрыть / пометить выполненной). Удаление —
+# admin/owner (на случай ошибочной массовой генерации). Manager strict — self
+# (только подсказки своих циклов; service-уровень доуточняет по project membership).
+# ТЗ: plans/tz/2026-05-27-sprints.md §1.5.
+# NB: action `cycle:create` уже покрывается существующим `cycle, write` для owner/admin —
+# отдельная запись не нужна. Per-role override (manager имеет/не имеет write на cycle)
+# управляется существующими manager-правилами выше.
+p, owner, *, *, sprint_hint, read
+p, owner, *, *, sprint_hint, write
+p, owner, *, *, sprint_hint, delete
+p, admin, *, *, sprint_hint, read
+p, admin, *, *, sprint_hint, write
+p, admin, *, *, sprint_hint, delete
+p, manager, open, *, sprint_hint, read
+p, manager, open, *, sprint_hint, write
+p, manager, strict, self, sprint_hint, read
+p, manager, strict, self, sprint_hint, write
+p, coo, *, *, sprint_hint, read
 
 # ──────────────────────────── Wave 2 — Activity Feeds (2026-05-24) ────────────────────────────
 # activity_feed_item — единая запись ленты активности (probe_question | insight |

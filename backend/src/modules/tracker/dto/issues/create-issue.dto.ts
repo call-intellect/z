@@ -22,6 +22,13 @@ export const CreateIssueSchema = z
     dueDate: z.coerce.date().nullable().optional(),
     cycleId: z.string().max(64).nullable().optional(),
     goalId: z.string().max(64).nullable().optional(),
+    /**
+     * Tracker Boards (2026-05-27) — доска, к которой относится задача.
+     * Если не передано — сервис подставит default-доску проекта
+     * (`BoardsService.resolveDefaultBoardId`).
+     * ТЗ: plans/tz/2026-05-27-tracker-boards.md §"REST API".
+     */
+    boardId: z.string().max(64).nullable().optional(),
     assigneeUserIds: z.array(z.string().min(1).max(64)).max(32).default([]),
     labelIds: z.array(z.string().min(1).max(64)).max(32).default([]),
     externalSource: z.string().max(40).nullable().optional(),

@@ -1,9 +1,25 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import type { BoardResponseDto } from '../dto/boards/board-response.dto';
+import type {
+  ChecklistItemResponseDto,
+  ChecklistResponseDto,
+} from '../dto/checklists/checklist.dto';
 import type { CycleResponseDto } from '../dto/cycles/cycle-response.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
+import type { ProjectDocumentSummaryDto } from '../dto/project-documents/project-document.dto';
 import type {
   ActivityFeedNewItemEvent,
+  BoardCreatedEvent,
+  BoardDeletedEvent,
+  BoardReorderedEvent,
+  BoardUpdatedEvent,
+  ChecklistCreatedEvent,
+  ChecklistDeletedEvent,
+  ChecklistItemCreatedEvent,
+  ChecklistItemDeletedEvent,
+  ChecklistItemUpdatedEvent,
+  ChecklistUpdatedEvent,
   CommentCreatedEvent,
   CommentDeletedEvent,
   CommentUpdatedEvent,
@@ -15,9 +31,18 @@ import type {
   ImportProgressEvent,
   IntakeNewItemEvent,
   IntakeTriagedEvent,
+  IssueChecklistProgressChangedEvent,
   IssueCreatedEvent,
   IssueDeletedEvent,
+  IssueMovedToBoardEvent,
   IssueUpdatedEvent,
+  ProjectDocumentCreatedEvent,
+  ProjectDocumentDeletedEvent,
+  ProjectDocumentUpdatedEvent,
+  SprintHintCreatedEvent,
+  SprintHintDismissedEvent,
+  SprintHintResolvedEvent,
+  SprintHintUpdatedEvent,
   TrackerWsEvent,
 } from '../dto/ws-events';
 import { TrackerGateway } from '../gateways/tracker.gateway';
@@ -303,6 +328,387 @@ export class TrackerEventsService {
       timestamp: new Date().toISOString(),
     };
     this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
+  }
+
+  // ── boards (Tracker Boards, 2026-05-27) ───────────────────────────────
+
+  publishBoardCreated(board: BoardResponseDto, tenantId: string): void {
+    const event: BoardCreatedEvent = {
+      type: 'board.created',
+      tenantId,
+      projectId: board.projectId,
+      board,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(board.projectId),
+    ]);
+  }
+
+  publishBoardUpdated(
+    board: BoardResponseDto,
+    tenantId: string,
+    changedFields: string[],
+  ): void {
+    const event: BoardUpdatedEvent = {
+      type: 'board.updated',
+      tenantId,
+      projectId: board.projectId,
+      board,
+      changedFields,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(board.projectId),
+    ]);
+  }
+
+  publishBoardDeleted(args: {
+    tenantId: string;
+    projectId: string;
+    boardId: string;
+    movedIssuesToBoardId: string;
+    movedIssuesCount: number;
+  }): void {
+    const event: BoardDeletedEvent = {
+      type: 'board.deleted',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      boardId: args.boardId,
+      movedIssuesToBoardId: args.movedIssuesToBoardId,
+      movedIssuesCount: args.movedIssuesCount,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishBoardReordered(args: {
+    tenantId: string;
+    projectId: string;
+    boardIds: string[];
+  }): void {
+    const event: BoardReorderedEvent = {
+      type: 'board.reordered',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      boardIds: args.boardIds,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  /**
+   * Tracker Boards (2026-05-27) — PATCH /issues/:id поменял `boardId`.
+   * Эмитим узко (`tenant:` + `project:` + `issue:`).
+   */
+  publishIssueMovedToBoard(args: {
+    tenantId: string;
+    projectId: string;
+    issueId: string;
+    fromBoardId: string | null;
+    toBoardId: string;
+  }): void {
+    const event: IssueMovedToBoardEvent = {
+      type: 'issue.moved_to_board',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      issueId: args.issueId,
+      fromBoardId: args.fromBoardId,
+      toBoardId: args.toBoardId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  // ── checklists (2026-05-27) ───────────────────────────────────────────
+
+  publishChecklistCreated(
+    checklist: ChecklistResponseDto,
+    tenantId: string,
+  ): void {
+    const event: ChecklistCreatedEvent = {
+      type: 'checklist.created',
+      tenantId,
+      issueId: checklist.issueId,
+      checklist,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.issueRoom(checklist.issueId),
+    ]);
+  }
+
+  publishChecklistUpdated(
+    checklist: ChecklistResponseDto,
+    tenantId: string,
+  ): void {
+    const event: ChecklistUpdatedEvent = {
+      type: 'checklist.updated',
+      tenantId,
+      issueId: checklist.issueId,
+      checklist,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.issueRoom(checklist.issueId),
+    ]);
+  }
+
+  publishChecklistDeleted(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+  }): void {
+    const event: ChecklistDeletedEvent = {
+      type: 'checklist.deleted',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishChecklistItemCreated(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+    item: ChecklistItemResponseDto;
+  }): void {
+    const event: ChecklistItemCreatedEvent = {
+      type: 'checklist_item.created',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      item: args.item,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishChecklistItemUpdated(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+    item: ChecklistItemResponseDto;
+  }): void {
+    const event: ChecklistItemUpdatedEvent = {
+      type: 'checklist_item.updated',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      item: args.item,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishChecklistItemDeleted(args: {
+    tenantId: string;
+    issueId: string;
+    checklistId: string;
+    itemId: string;
+  }): void {
+    const event: ChecklistItemDeletedEvent = {
+      type: 'checklist_item.deleted',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      checklistId: args.checklistId,
+      itemId: args.itemId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  publishIssueChecklistProgressChanged(args: {
+    tenantId: string;
+    projectId: string;
+    issueId: string;
+    total: number;
+    done: number;
+  }): void {
+    const event: IssueChecklistProgressChangedEvent = {
+      type: 'issue.checklist_progress_changed',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      issueId: args.issueId,
+      total: args.total,
+      done: args.done,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  // ── project documents (2026-05-27) ────────────────────────────────────
+
+  publishProjectDocumentCreated(
+    document: ProjectDocumentSummaryDto,
+    tenantId: string,
+  ): void {
+    const event: ProjectDocumentCreatedEvent = {
+      type: 'project_document.created',
+      tenantId,
+      projectId: document.projectId,
+      document,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(document.projectId),
+    ]);
+  }
+
+  publishProjectDocumentUpdated(
+    document: ProjectDocumentSummaryDto,
+    tenantId: string,
+    changedFields: string[],
+  ): void {
+    const event: ProjectDocumentUpdatedEvent = {
+      type: 'project_document.updated',
+      tenantId,
+      projectId: document.projectId,
+      document,
+      changedFields,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(tenantId),
+      this.gateway.projectRoom(document.projectId),
+    ]);
+  }
+
+  publishProjectDocumentDeleted(args: {
+    tenantId: string;
+    projectId: string;
+    documentId: string;
+  }): void {
+    const event: ProjectDocumentDeletedEvent = {
+      type: 'project_document.deleted',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      documentId: args.documentId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  // ── sprint hints (2026-05-28) ─────────────────────────────────────────
+
+  publishSprintHintCreated(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+    severity: 'critical' | 'warning' | 'info';
+    kind: string;
+  }): void {
+    const event: SprintHintCreatedEvent = {
+      type: 'sprint_hint.created',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      severity: args.severity,
+      kind: args.kind,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishSprintHintUpdated(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+  }): void {
+    const event: SprintHintUpdatedEvent = {
+      type: 'sprint_hint.updated',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishSprintHintDismissed(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+  }): void {
+    const event: SprintHintDismissedEvent = {
+      type: 'sprint_hint.dismissed',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
+  }
+
+  publishSprintHintResolved(args: {
+    tenantId: string;
+    projectId: string;
+    cycleId: string;
+    hintId: string;
+  }): void {
+    const event: SprintHintResolvedEvent = {
+      type: 'sprint_hint.resolved',
+      tenantId: args.tenantId,
+      projectId: args.projectId,
+      cycleId: args.cycleId,
+      hintId: args.hintId,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.projectId),
+    ]);
   }
 
   // ── internal ──────────────────────────────────────────────────────────

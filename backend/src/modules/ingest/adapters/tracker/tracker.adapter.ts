@@ -43,6 +43,28 @@ interface TrackerEventPayloadShape {
 }
 
 /**
+ * Tracker Project Documents (2026-05-27) — событие об изменении документа
+ * проекта. Эмитится `TrackerEmitterService.emitProjectDocumentChanged` через
+ * шину `tracker.project_document_changed`. См.
+ * plans/tz/2026-05-27-tracker-project-documents.md §Knowledge-core.
+ */
+interface ProjectDocumentEventPayload {
+  type: 'project_document.changed';
+  tenantId: string;
+  projectId: string;
+  documentId: string;
+  title: string;
+  /** Plain text без разметки. Если пусто — RawEvent создаётся без `fullText`. */
+  fullText: string | null;
+  actor: {
+    userId: string | null;
+    actorType: 'user' | 'ai_agent' | 'system';
+  };
+  occurredAt: string;
+  changeType: 'created' | 'updated';
+}
+
+/**
  * Маппинг типа события трекера → SignalType IdeaBlock.
  *
  * NB: `issue.status_changed` (generic) — попадает только если новая категория
@@ -120,6 +142,100 @@ export class TrackerAdapter {
         'tracker-adapter: ingest упал — событие пропущено',
       );
     }
+  }
+
+  /**
+   * Tracker Project Documents (2026-05-27) — отдельный handler для документов
+   * проекта. Не пересекается с `handleTrackerEvent` (issue-based), поскольку
+   * у документа нет `issue.id`. Маппится в RawEvent без `signalTypeHint` —
+   * block-ingest worker сам классифицирует фрагменты текста (decision / idea /
+   * note / rule) на этапе LLM-extraction.
+   */
+  @OnEvent('tracker.project_document_changed', { async: true })
+  async handleProjectDocumentEvent(
+    payload: ProjectDocumentEventPayload,
+  ): Promise<void> {
+    try {
+      await this.processProjectDocumentEvent(payload);
+    } catch (err) {
+      this.logger.warn(
+        {
+          documentId: payload?.documentId,
+          projectId: payload?.projectId,
+          tenantId: payload?.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'tracker-adapter: project-document ingest упал — событие пропущено',
+      );
+    }
+  }
+
+  private async processProjectDocumentEvent(
+    payload: ProjectDocumentEventPayload,
+  ): Promise<void> {
+    if (!payload || typeof payload !== 'object') {
+      this.logger.warn('tracker-adapter: пустой project-document payload — skip');
+      return;
+    }
+    if (!payload.tenantId || !payload.documentId) {
+      this.logger.warn(
+        { type: payload.type },
+        'tracker-adapter: project-document payload без tenantId/documentId — skip',
+      );
+      return;
+    }
+    const occurredAt = this.parseOccurredAt(payload.occurredAt);
+    const source = await this.upsertDefaultTrackerSource(payload.tenantId);
+
+    // Идемпотентность: documentId + changeType + occurredAt.
+    // У документа auto-save может слать `updated` каждые 3 секунды; RawEvent
+    // дедупится только в пределах occurredAt-секунды — это допустимо: для
+    // целей knowledge-core нам важны не каждые 3 секунды, а финальные тексты.
+    const sourceExternalId = [
+      'tracker',
+      'project-document',
+      payload.documentId,
+      payload.changeType,
+      occurredAt.toISOString(),
+    ].join(':');
+
+    const rawEventPayload: Record<string, unknown> = {
+      eventType: 'project_document_change',
+      changeType: payload.changeType,
+      tenantId: payload.tenantId,
+      projectId: payload.projectId,
+      documentId: payload.documentId,
+      title: payload.title,
+      actor: payload.actor,
+      occurredAt: occurredAt.toISOString(),
+    };
+    if (payload.fullText && payload.fullText.trim().length > 0) {
+      rawEventPayload['fullText'] = `${payload.title}\n\n${payload.fullText}`;
+    }
+
+    const result = await this.ingest.ingest({
+      tenantId: payload.tenantId,
+      sourceId: source.id,
+      sourceExternalId,
+      occurredAt,
+      payload: rawEventPayload,
+      dataClass: 'internal',
+    });
+
+    this.metrics.incTrackerEventToKnowledgeCore({
+      tenant: payload.tenantId,
+      type: 'project_document_change',
+    });
+
+    this.logger.log(
+      {
+        rawEventId: result.rawEvent.id,
+        documentId: payload.documentId,
+        tenantId: payload.tenantId,
+        idempotent: result.idempotent,
+      },
+      'tracker-adapter: project-document ingest завершён',
+    );
   }
 
   private async processEvent(payload: TrackerEventPayloadShape): Promise<void> {

@@ -272,6 +272,12 @@ export class MeetingsService {
 
     this.metrics.incMeetingCreated(input.type);
 
+    // Side-effect онбординг v2: первая встреча → firstMeetingCreatedAt
+    void this.prisma.org.updateMany({
+      where: { id: created.tenantId, firstMeetingCreatedAt: null },
+      data: { firstMeetingCreatedAt: new Date() },
+    });
+
     return created;
   }
 

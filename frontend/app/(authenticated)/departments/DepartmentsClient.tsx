@@ -10,8 +10,10 @@ import {
   type DepartmentDomainLinkApi,
   type FunctionalDomainApi,
 } from '@/api/functional-domains.api';
+import { orgsApi, type OrgApi } from '@/api/orgs.api';
 import { departmentsApi, type DepartmentApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
+import { DEPARTMENT_TEMPLATES } from '@/lib/department-templates';
 import { Button } from '@/ui/shadcn/button';
 import { Card } from '@/ui/shadcn/card';
 
@@ -59,20 +61,23 @@ function DepartmentsContent({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [addDomainId, setAddDomainId] = useState('');
+  const [org, setOrg] = useState<OrgApi | null>(null);
 
   const loadList = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [depsRes, domsRes] = await Promise.all([
+      const [depsRes, domsRes, orgRes] = await Promise.all([
         departmentsApi.list(orgId),
         functionalDomainsApi.list(orgId, { includeChildren: false }),
+        orgsApi.byId(orgId),
       ]);
       setDepartments(depsRes.items ?? []);
       // Плоский список доменов (для select'а связи).
       const flatten = (arr: FunctionalDomainApi[]): FunctionalDomainApi[] =>
         arr.flatMap((d) => [d, ...(d.children ? flatten(d.children) : [])]);
       setDomains(flatten(domsRes.items));
+      setOrg(orgRes.org);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось загрузить отделы');
     } finally {
@@ -170,6 +175,15 @@ function DepartmentsContent({
       </header>
 
       {error && <AdminError message={error} />}
+
+      {org?.industry && (
+        <DepartmentTemplatesPanel
+          orgId={orgId}
+          industry={org.industry}
+          canManage={canManage}
+          onDepartmentsAdded={loadList}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px_1fr]">
         <Card className="p-2">
@@ -289,6 +303,73 @@ function DepartmentsContent({
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+// ─── DepartmentTemplatesPanel ────────────────────────────────────────────────
+
+const INDUSTRY_LABELS: Record<string, string> = {
+  software:      'Разработка программного обеспечения',
+  services:      'Услуги и агентства',
+  manufacturing: 'Производство',
+  retail:        'Торговля',
+  construction:  'Строительство',
+  finance:       'Финансы',
+  education:     'Образование',
+  other:         'Другое',
+};
+
+function DepartmentTemplatesPanel({
+  orgId,
+  industry,
+  canManage,
+  onDepartmentsAdded,
+}: {
+  orgId: string;
+  industry: string;
+  canManage: boolean;
+  onDepartmentsAdded: () => void;
+}): JSX.Element | null {
+  const templates = DEPARTMENT_TEMPLATES[industry] ?? DEPARTMENT_TEMPLATES['other'] ?? [];
+  const [adding, setAdding] = useState(false);
+  const [done, setDone] = useState(false);
+
+  if (!canManage || templates.length === 0 || done) return null;
+
+  const handleAddAll = async () => {
+    setAdding(true);
+    try {
+      for (const name of templates) {
+        await departmentsApi.create(orgId, { name });
+      }
+      setDone(true);
+      onDepartmentsAdded();
+    } catch {
+      // silent
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <div className="mb-6 rounded-xl border border-border-default bg-bg-subtle p-4">
+      <p className="text-sm font-medium text-fg-primary mb-2">
+        Шаблоны для вашей отрасли — {INDUSTRY_LABELS[industry] ?? industry}
+      </p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {templates.map((name) => (
+          <span
+            key={name}
+            className="rounded-md bg-bg-base px-2 py-1 text-xs text-fg-secondary border border-border-default"
+          >
+            {name}
+          </span>
+        ))}
+      </div>
+      <Button size="sm" onClick={() => void handleAddAll()} disabled={adding}>
+        {adding ? 'Добавляю...' : 'Добавить все'}
+      </Button>
     </div>
   );
 }

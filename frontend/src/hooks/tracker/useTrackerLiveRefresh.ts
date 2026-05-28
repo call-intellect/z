@@ -109,16 +109,28 @@ export function useTrackerLiveRefresh(
 
     // issue.* — обновляем list/single/activity ПЛЮС me.inbox (это плоский
     // список «мои задачи во всех проектах», его триггерят те же события).
-    subscribe('issue.created', ['tracker.issues', 'me.inbox']);
+    // Tracker subtasks UI (2026-05-27): 'tracker.issue.children' — список
+    // прямых детей задачи. При issue.created (новая подзадача) и
+    // issue.updated (смена parentId / completedAt и т.п.) инвалидируем
+    // ВСЕ ключи этого префикса; SWR подхватит изменения для старого и
+    // нового родителя автоматически. Это дешевле, чем точечно знать
+    // oldParentId/newParentId на фронте.
+    subscribe('issue.created', [
+      'tracker.issues',
+      'tracker.issue.children',
+      'me.inbox',
+    ]);
     subscribe('issue.updated', [
       'tracker.issues',
       'tracker.issue',
       'tracker.issue.activity',
+      'tracker.issue.children',
       'me.inbox',
     ]);
     subscribe('issue.deleted', [
       'tracker.issues',
       'tracker.issue',
+      'tracker.issue.children',
       'me.inbox',
     ]);
 

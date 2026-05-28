@@ -34,6 +34,7 @@ export interface OrgDomain {
   tier: 'basic' | 'pro' | 'enterprise';
   ownerId: string;
   createdAt: string;
+  industry?: string | null;
 }
 
 export interface MembershipDomain {
@@ -272,6 +273,7 @@ export class OrgsService {
       tier: o.tier,
       ownerId: o.ownerId,
       createdAt: o.createdAt.toISOString(),
+      industry: o.industry ?? null,
     };
   }
 

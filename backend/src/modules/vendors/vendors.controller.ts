@@ -1,14 +1,20 @@
 import {
   BadRequestException,
+  Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Param,
+  Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -21,9 +27,13 @@ import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
 import {
+  CreateVendorSchema,
   ListVendorsQuerySchema,
+  UpdateVendorSchema,
+  type CreateVendorDto,
   type ListVendorsQuery,
   type ListVendorsResponse,
+  type UpdateVendorDto,
   type VendorDto,
 } from './dto/vendors.dto';
 import { VendorsService } from './services/vendors.service';
@@ -31,13 +41,16 @@ import { VendorsService } from './services/vendors.service';
 /**
  * REST API поставщиков (SBA α-3, категория A онтологии).
  *
- *   GET /api/v1/vendors?segment=&status=&q=&page=&limit=
- *   GET /api/v1/vendors/:id
+ *   GET    /api/v1/vendors?segment=&status=&q=&page=&limit=
+ *   GET    /api/v1/vendors/:id
+ *   POST   /api/v1/vendors                  (Sprints §1.1, 2026-05-28)
+ *   PATCH  /api/v1/vendors/:id              (Sprints §1.1, 2026-05-28)
+ *   DELETE /api/v1/vendors/:id              (Sprints §1.1, 2026-05-28)
  *
- * RBAC: `vendor` — owner/admin: read/write/delete; manager: read.
- * На α-3 — read-only; POST/PATCH/DELETE появятся в α-6 (Specialist 3-4).
+ * RBAC: `vendor` — owner/admin: read/write/delete; manager: read/write (без delete).
  */
 @ApiTags('vendors')
+@ApiBearerAuth()
 @Controller('api/v1/vendors')
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class VendorsController {
@@ -70,6 +83,51 @@ export class VendorsController {
     return this.vendors.getById({ tenantId: t, id });
   }
 
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Создать поставщика (inline-create из мастера спринта или /vendors)',
+  })
+  async create(
+    @Body(new ZodValidationPipe(CreateVendorSchema)) body: CreateVendorDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<VendorDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.vendors.create({ tenantId: t, dto: body, actorUserId: user.id });
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Обновить поставщика (частичное обновление)' })
+  async update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateVendorSchema)) body: UpdateVendorDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<VendorDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.vendors.update({
+      tenantId: t,
+      id,
+      dto: body,
+      actorUserId: user.id,
+    });
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft-delete поставщика (идемпотентно)' })
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireDelete(user.id, t);
+    return this.vendors.softDelete({ tenantId: t, id, actorUserId: user.id });
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
@@ -90,6 +148,37 @@ export class VendorsController {
         error: {
           code: 'forbidden',
           message: 'Недостаточно прав для чтения поставщиков',
+        },
+      });
+    }
+  }
+
+  private async requireWrite(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.canWrite(userId, tenantId, 'vendor');
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Недостаточно прав для изменения поставщиков',
+        },
+      });
+    }
+  }
+
+  private async requireDelete(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.check({
+      userId,
+      tenantId,
+      obj: 'vendor',
+      act: 'delete',
+    });
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Удалять поставщиков может только владелец/администратор Org',
         },
       });
     }

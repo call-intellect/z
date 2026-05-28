@@ -346,6 +346,20 @@ export type LlmTaskType =
   //   Дешёвый арбитр (≤700 input + ≤300 output): primary deepseek-v4-flash,
   //   secondary openai gpt-5.4-mini, tertiary ollama qwen3:30b.
   | 'fact-supersede-detect'
+  // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md) — Specialist 3-13
+  // (Помощник по спринтам).
+  // 'sprint-helper-suggest' — главный вызов воркера 3-13: на входе контекст
+  //   спринта (название/scope/даты + задачи с боардами/чек-листами +
+  //   последние блоки графа + история уже выданных подсказок), на выходе
+  //   массив SprintHint{kind,severity,title,body,affectedIssueIds[],confidence}.
+  //   Capable модель с JSON Schema strict.
+  //   Primary = deepseek-v4-pro; secondary = openai gpt-5.4-mini; tertiary = ollama qwen3.5:9b.
+  // 'sprint-review-summary' — финальный отчёт спринта при завершении (хук
+  //   CyclesService.complete + endpoint regenerate). Нарратив 3-5 предложений +
+  //   план/факт + причины + переносы + блокеры + подсказки + кандидаты следующего спринта.
+  //   Та же цепочка провайдеров.
+  | 'sprint-helper-suggest'
+  | 'sprint-review-summary'
   // ТЗ 2026-05-25 user-feedback-with-ai-clustering (Фаза 4) —
   // канал «Ваши предложения». 'feedback.cluster' — ночной batch-агент:
   //   на вход messages[] + existingTopics[], на выход newTopics[] + assignments[]
@@ -481,6 +495,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'fact-supersede-detect',
   // ТЗ 2026-05-25 user-feedback-with-ai-clustering (Фаза 4).
   'feedback.cluster',
+  // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
+  'sprint-helper-suggest',
+  'sprint-review-summary',
 ] as const;
 
 /**

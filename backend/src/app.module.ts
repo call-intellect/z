@@ -78,6 +78,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
@@ -237,6 +238,7 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // импортирует OrgsService для хука в register (создание персонального Org).
     OrgsModule,
     AccountsModule,
+    OnboardingModule,
 
     // M3c — cross-cutting cервисы: SecurityModule (SSRF/Encryption/IpHashing),
     // AuditModule, QuotasModule. Должны идти ДО Tasks/Highlights/Shares/Chat,
@@ -610,6 +612,11 @@ export class AppModule implements NestModule {
         { path: 'api/v1/projects/:projectId/issues', method: RequestMethod.POST },
         { path: 'api/v1/issues/:id/comments', method: RequestMethod.POST },
         { path: 'api/v1/intake', method: RequestMethod.POST },
+        // Sprints (2026-05-28, ТЗ §1.3) — quick-create спринта может ретраиться
+        // фронтом при медленной сети; гарантируем, что один и тот же
+        // Idempotency-Key возвращает первый созданный {projectId,cycleId},
+        // а не плодит дубли проектов.
+        { path: 'api/v1/sprints/quick-create', method: RequestMethod.POST },
       );
   }
 }

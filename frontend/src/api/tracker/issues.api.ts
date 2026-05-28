@@ -14,6 +14,7 @@ import type {
   IssueApi,
   IssueAttachmentApi,
   IssueAttachmentDownloadApi,
+  IssueChildrenResponseApi,
   IssueRelationApi,
   IssueVersionApi,
   ListIssuesResponseApi,
@@ -32,10 +33,18 @@ export interface ListIssuesRequest {
   labelId?: string;
   cycleId?: string;
   goalId?: string;
+  /** Tracker Boards (2026-05-27) — фильтр задач по доске. */
+  boardId?: string;
   priority?: IssuePriority;
   parentId?: string;
   includeArchived?: boolean;
   includeDeleted?: boolean;
+  /**
+   * Tracker subtasks UI (2026-05-27) — попросить backend заполнить
+   * `childrenCount` в каждом item. Используется канбан-доской для
+   * отрисовки badge «N/M».
+   */
+  includeChildrenCount?: boolean;
   q?: string;
   page?: number;
   limit?: number;
@@ -55,6 +64,11 @@ export interface CreateIssueRequest {
   dueDate?: string | null;
   cycleId?: string | null;
   goalId?: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — доска новой задачи. Если не передано,
+   * backend подставит default-доску проекта.
+   */
+  boardId?: string | null;
   assigneeUserIds?: string[];
   labelIds?: string[];
   externalSource?: string | null;
@@ -82,6 +96,11 @@ export interface UpdateIssueRequest {
   dueDate?: string | null;
   cycleId?: string | null;
   goalId?: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — перенести задачу на другую доску.
+   * Доска должна принадлежать тому же проекту (валидируется backend'ом).
+   */
+  boardId?: string | null;
 }
 
 export interface TransitionIssueRequest {
@@ -143,6 +162,17 @@ export const issuesApi = {
   get: (orgId: string, issueId: string) =>
     apiClient.get<IssueApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Tracker subtasks UI (2026-05-27) — список прямых детей задачи.
+   * Контракт: `GET /api/v1/issues/:id/children`.
+   * Используется блоком «Подзадачи» в карточке родителя.
+   */
+  getChildren: (orgId: string, issueId: string) =>
+    apiClient.get<IssueChildrenResponseApi>(
+      `/api/v1/issues/${encodeURIComponent(issueId)}/children`,
       { headers: orgHeaders(orgId) },
     ),
 

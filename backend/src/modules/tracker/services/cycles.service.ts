@@ -3,9 +3,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, type Cycle } from '@prisma/client';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreateCycleDto } from '../dto/cycles/create-cycle.dto';
 import type {
@@ -15,6 +18,7 @@ import type {
 } from '../dto/cycles/cycle-response.dto';
 import type { UpdateCycleDto } from '../dto/cycles/update-cycle.dto';
 import type { ListIssuesResponse } from '../dto/issues/issue-response.dto';
+import { detectProjectScopeKind } from '../utils/scope-detection';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
@@ -41,6 +45,12 @@ export class CyclesService {
     private readonly events: TrackerEventsService,
     @Inject(WebhookDispatcher)
     private readonly webhooks: WebhookDispatcher,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter?: EventEmitter2,
   ) {}
 
   /** Создать цикл в проекте. Доступ: project_admin / project_manager. */
@@ -50,7 +60,7 @@ export class CyclesService {
     tenantId: string,
     _userId: string,
   ): Promise<CycleResponseDto> {
-    await this.projects.requireProject(projectId, tenantId);
+    const project = await this.projects.requireProject(projectId, tenantId);
     const cycle = await this.prisma.cycle.create({
       data: {
         tenantId,
@@ -73,6 +83,15 @@ export class CyclesService {
           'cycle.created webhook dispatch failed',
         );
       });
+    // Sprints (2026-05-27) — метрика по виду scope.
+    try {
+      this.metrics?.incCycleCreated({
+        tenant: tenantId,
+        scopeKind: detectProjectScopeKind(project),
+      });
+    } catch {
+      // graceful
+    }
     return response;
   }
 
@@ -210,6 +229,30 @@ export class CyclesService {
           );
         });
     }
+    try {
+      this.metrics?.incCycleCompleted({ tenant: tenantId });
+    } catch {
+      // graceful
+    }
+    // Sprints (2026-05-27) — best-effort hook на финальный отчёт.
+    // SprintReviewService подписан через @OnEvent('cycle.review_requested').
+    // Этот event НЕ блокирует complete: если knowledge-core отключён или
+    // LLM-провайдеры упали — Cycle всё равно считается завершённым.
+    try {
+      this.eventEmitter?.emit('cycle.review_requested', {
+        cycleId: id,
+        tenantId,
+        reason: 'cycle_completed',
+      });
+    } catch (err) {
+      this.logger.debug(
+        {
+          cycleId: id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'cycles.complete: emit cycle.review_requested failed (best-effort)',
+      );
+    }
 
     return { cycleId: id, movedIssueCount, rolledOverTo };
   }
@@ -224,6 +267,7 @@ export class CyclesService {
       cycleId,
       includeArchived: false,
       includeDeleted: false,
+      includeChildrenCount: false,
       page: 1,
       limit: 100,
     });

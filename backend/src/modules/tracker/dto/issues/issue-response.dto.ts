@@ -18,6 +18,12 @@ export interface IssueResponseDto {
   completedAt: string | null;
   cycleId: string | null;
   goalId: string | null;
+  /**
+   * Tracker Boards (2026-05-27) — доска, на которой живёт задача. Nullable
+   * на уровне схемы (legacy/удалённая доска → SetNull), но фактически после
+   * `backfill-default-board.ts` всегда заполнено.
+   */
+  boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
@@ -34,11 +40,63 @@ export interface IssueResponseDto {
   assigneeUserIds: string[];
   labelIds: string[];
   /**
+   * Tracker Checklists (2026-05-27) — денормализованные счётчики чек-листов
+   * для карточки канбана. `total=0` означает «у задачи нет чек-листов», бейдж
+   * не рендерится. См. plans/tz/2026-05-27-tracker-checklists.md.
+   */
+  checklistTotalCount: number;
+  checklistDoneCount: number;
+  /**
    * Tracker Phase 3 part C — AI-подсказки, заполняется только при создании
    * с `inferSuggestions=true`. На остальных эндпоинтах поле отсутствует
    * (для совместимости с типизированными клиентами поле опциональное).
    */
   aiSuggestions?: IssueAiSuggestionsDto | null;
+  /**
+   * Tracker subtasks UI (2026-05-27) — число прямых детей задачи
+   * (`deletedAt=null`). Возвращается только когда запросили
+   * `GET /projects/:projectId/issues?includeChildrenCount=true`.
+   * На прочих эндпоинтах поле отсутствует.
+   */
+  childrenCount?: number;
+}
+
+/**
+ * Tracker subtasks UI (2026-05-27) — упрощённый DTO ребёнка задачи,
+ * возвращаемый `GET /api/v1/issues/:id/children`.
+ *
+ * Контракт: `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"REST API".
+ *
+ * Содержит ровно те поля, что нужны для рендера блока «Подзадачи» в карточке
+ * родителя: чекбокс (stateCategory), title с identifier, исполнители, срок,
+ * прогресс (completedAt), вложенный childrenCount для индикации, что у
+ * ребёнка тоже есть подзадачи (на 2-м уровне глубины запрещено создавать
+ * новые подзадачи, но при импорте из других трекеров такая структура может
+ * существовать — UI просто покажет N/M ребёнка-родителя).
+ */
+export interface IssueChildResponseDto {
+  id: string;
+  identifier: string;
+  title: string;
+  stateId: string | null;
+  stateCategory:
+    | 'backlog'
+    | 'unstarted'
+    | 'started'
+    | 'completed'
+    | 'cancelled'
+    | null;
+  priority: string;
+  assigneeUserIds: string[];
+  dueDate: string | null;
+  completedAt: string | null;
+  childrenCount: number;
+  sortOrder: number;
+}
+
+export interface IssueChildrenResponseDto {
+  items: IssueChildResponseDto[];
+  total: number;
 }
 
 /**

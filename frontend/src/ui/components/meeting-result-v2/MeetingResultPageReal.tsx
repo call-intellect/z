@@ -97,6 +97,7 @@ import {
 import { toast } from '@/ui/shadcn/toast';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { cn } from '@/ui/shadcn/lib/utils';
+import { useTour } from '@/ui/tour';
 
 import { FeedbackButton } from './FeedbackButton';
 import { MeetingPlayer } from './MeetingPlayer';
@@ -133,6 +134,10 @@ export type MeetingResultPageRealProps = {
 };
 
 export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps) {
+  // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «meeting» при первом
+  // открытии страницы результата встречи. Если уже завершён/пропущен — no-op.
+  useTour('meeting');
+
   // Базовая встреча.
   const {
     meeting,
@@ -266,7 +271,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
           <TabsList>
-            <TabsTrigger value="overview">
+            <TabsTrigger value="overview" data-tour-target="meeting.ai-report">
               <FileText size={14} strokeWidth={1.75} />
               Обзор
             </TabsTrigger>
@@ -283,7 +288,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="transcript">
+            <TabsTrigger value="transcript" data-tour-target="meeting.transcript">
               <MessageSquareText size={14} strokeWidth={1.75} />
               Транскрипт
             </TabsTrigger>
@@ -296,7 +301,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="tasks">
+            <TabsTrigger value="tasks" data-tour-target="meeting.tasks">
               <ListChecks size={14} strokeWidth={1.75} />
               Задачи
               {primaryTasks.length > 0 && (

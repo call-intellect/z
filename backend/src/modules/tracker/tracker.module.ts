@@ -3,8 +3,11 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
 import { AttachmentsController } from './controllers/attachments.controller';
+import { BoardsController } from './controllers/boards.controller';
+import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
 import { CyclesController } from './controllers/cycles.controller';
+import { DocumentUploadsController } from './controllers/document-uploads.controller';
 import { HolidaysController } from './controllers/holidays.controller';
 import { ImportsController } from './controllers/imports.controller';
 import { IntakeController } from './controllers/intake.controller';
@@ -12,20 +15,28 @@ import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
+import { OverviewController } from './controllers/overview.controller';
+import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
+import { SprintHintsController } from './controllers/sprint-hints.controller';
+import { SprintsController } from './controllers/sprints.controller';
 import { StatesController } from './controllers/states.controller';
 import { TeamTemplatesController } from './controllers/team-templates.controller';
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
 import { AttachmentsService } from './services/attachments.service';
+import { BoardsService } from './services/boards.service';
+import { ChecklistsService } from './services/checklists.service';
 import { CommentsService } from './services/comments.service';
+import { CycleMeetingsService } from './services/cycle-meetings.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
 import { ImportService } from './services/import.service';
 import { IntakeAutoTriageQueueService } from './services/intake-auto-triage-queue.service';
 import { IntakeService } from './services/intake.service';
+import { IntegrationsStatusService } from './services/integrations-status.service';
 import { IssueGoalSuggestService } from './services/issue-goal-suggest.service';
 import { IssueInferFieldsService } from './services/issue-infer-fields.service';
 import { IssueMeetingsService } from './services/issue-meetings.service';
@@ -33,16 +44,22 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MyMentionsService } from './services/my-mentions.service';
+import { OverviewService } from './services/overview.service';
+import { ProjectDocumentsService } from './services/project-documents.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
 import { SimilarIssuesService } from './services/similar-issues.service';
+import { SprintAnalystService } from './services/sprint-analyst.service';
+import { SprintHintsService } from './services/sprint-hints.service';
+import { SprintsService } from './services/sprints.service';
 import { StatesService } from './services/states.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
 import { WebhookSigner } from './services/webhook-signer.service';
 import { WebhooksService } from './services/webhooks.service';
+import { WorkloadService } from './services/workload.service';
 import { Bitrix24ImportStrategy } from './strategies/bitrix24-import.strategy';
 import { TrelloImportStrategy } from './strategies/trello-import.strategy';
 import { YandexTrackerImportStrategy } from './strategies/yandex-tracker-import.strategy';
@@ -77,6 +94,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
   imports: [PrismaModule],
   controllers: [
     ProjectsController,
+    // Tracker Boards (2026-05-27) — несколько досок per project.
+    // ТЗ: plans/tz/2026-05-27-tracker-boards.md.
+    BoardsController,
     IssuesController,
     CyclesController,
     IntakeController,
@@ -99,6 +119,26 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // T8 (2026-05-24): мои @-упоминания (список + счётчик + read).
     MyMentionsController,
     StatesController,
+    // Tracker Checklists (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md)
+    // — плоские чек-листы внутри задачи (без исполнителя/срока на пункте).
+    ChecklistsController,
+    // Tracker Project Documents (2026-05-27, plans/tz/2026-05-27-tracker-project-documents.md)
+    // — простые rich-text документы внутри проекта (бриф/ТЗ/протокол) +
+    // блок «Связанные карточки» снизу страницы.
+    ProjectDocumentsController,
+    // Tracker Project Documents — отдельный controller для загрузки картинок
+    // в редактор документа (POST /api/v1/uploads/document-asset).
+    DocumentUploadsController,
+    // Tracker Project Overview (2026-05-27, plans/tz/2026-05-27-tracker-project-overview.md)
+    // — вкладки «Обзор» / «Загруженность» / «Приложения».
+    OverviewController,
+    // Sprints (2026-05-27, plans/tz/2026-05-27-tracker-sprints.md) — REST
+    // `/api/v1/sprint-hints/:id/{dismiss,resolve}`. Cycles dashboard /
+    // start-meeting / hints — расширения CyclesController.
+    SprintHintsController,
+    // Sprints (2026-05-28, plans/tz/2026-05-28-sprints-master-detail-and-wizard.md)
+    // — org-wide `GET /api/v1/sprints` + `POST /api/v1/sprints/quick-create`.
+    SprintsController,
   ],
   providers: [
     ActivityRecorderService,
@@ -111,6 +151,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // Используется HolidaysController (read); интеграция с IssuesService —
     // см. отчёт оркестратора (Sprint 10).
     HolidayService,
+    // Tracker Boards (2026-05-27) — сервис управления досками + утилиты
+    // (ensureDefaultBoard, resolveDefaultBoardId, assertBoardInProject).
+    BoardsService,
     IssuesService,
     SimilarIssuesService,
     CyclesService,
@@ -121,6 +164,14 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RelationsService,
     AttachmentsService,
     IssueMeetingsService,
+    // Tracker Checklists (2026-05-27) — CRUD чек-листов и пунктов,
+    // recountCounters, IssueActivity на checklist_completed, WS-события,
+    // метрики Prometheus.
+    ChecklistsService,
+    // Tracker Project Documents (2026-05-27) — CRUD документов проекта +
+    // linked-cards SQL. Эмитит RawEvent через TrackerEmitterService.
+    // S3Service для uploads берётся из @Global RecordingsModule.
+    ProjectDocumentsService,
     // Sprint 3 Frontend Wave 2: read-only справочник статусов.
     StatesService,
     // T8 (2026-05-24): мои @-упоминания (читает IssueMention, write — markRead).
@@ -167,6 +218,22 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     TrelloImportStrategy,
     Bitrix24ImportStrategy,
     YandexTrackerImportStrategy,
+    // Tracker Project Overview (2026-05-27) — три сервиса под вкладки
+    // /overview, /workload, /integrations-status.
+    // OverviewService подписан на `tracker.event_occurred` (@OnEvent) — на любую
+    // мутацию задачи инвалидирует Redis-кэш `project:overview:{projectId}`.
+    OverviewService,
+    WorkloadService,
+    IntegrationsStatusService,
+    // Sprints (2026-05-27) — SQL-аналитика, dismiss/resolve подсказок,
+    // запуск встречи по спринту. SprintCardHandler живёт в chat-v2 (модель
+    // зависит только от Prisma). AI-воркер 3-13-sprint-helper и cron — в
+    // Волне 3 (knowledge-core).
+    SprintAnalystService,
+    SprintHintsService,
+    CycleMeetingsService,
+    // Sprints (2026-05-28) — org-wide list + atomic quick-create.
+    SprintsService,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не
@@ -199,6 +266,11 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // «N рабочих дней» (fallback срок) и «следующий рабочий день после
     // commitmentDueDate» (фильтр cron'а).
     HolidayService,
+    // Sprints (2026-05-27) — экспортируем для AI-воркера 3-13-sprint-helper
+    // (knowledge-core) и cron'а: они формируют контекст подсказок через
+    // SprintAnalystService.computeDashboard и записывают SprintHint через
+    // SprintHintsService (или напрямую через Prisma в worker'е).
+    SprintAnalystService,
   ],
 })
 export class TrackerModule {}

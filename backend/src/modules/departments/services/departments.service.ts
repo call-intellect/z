@@ -161,6 +161,12 @@ export class DepartmentsService {
           parentDepartmentId: created.parentDepartmentId,
         },
       });
+      // Side-effect онбординг v2: первый отдел → выставляем departmentsCompletedAt
+      void this.prisma.org.updateMany({
+        where: { id: args.tenantId, departmentsCompletedAt: null },
+        data: { departmentsCompletedAt: new Date() },
+      });
+
       return this.toListItem(created, 0, 0);
     } catch (err) {
       this.handleUniqueViolation(err, args.body.name);

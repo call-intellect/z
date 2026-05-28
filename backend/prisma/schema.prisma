@@ -2093,6 +2093,8 @@ model Org {
   firstMeetingCreatedAt   DateTime?
   /// Все 6 шагов Тура №2 пройдены или явно пропущены.
   setupCompletedAt        DateTime?
+  /// Когда был загружен демо-воркспейс «ТехноСтрим» (seed-demo-workspace).
+  demoWorkspaceSeededAt   DateTime?
 
   memberships            Membership[]
   invitations            OrgInvitation[]

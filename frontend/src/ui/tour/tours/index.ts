@@ -4,6 +4,7 @@
  */
 
 import type { TourDefinition, TourId } from '../types';
+import { demoTour } from './demo';
 import { meetingTour } from './meeting';
 import { overviewTour } from './overview';
 import { projectTour } from './project';
@@ -14,6 +15,7 @@ export const TOUR_REGISTRY: Record<TourId, TourDefinition> = {
   project: projectTour,
   meeting: meetingTour,
   overview: overviewTour,
+  demo: demoTour,
 };
 
-export { welcomeTour, projectTour, meetingTour, overviewTour };
+export { welcomeTour, projectTour, meetingTour, overviewTour, demoTour };

@@ -34,4 +34,20 @@ export const onboardingApi = {
       {},
       { headers: { 'X-Org-Id': orgId } },
     ),
+
+  /** POST /orgs/:orgId/demo-workspace — загрузить демо-данные «ТехноСтрим» */
+  seedDemoWorkspace: (orgId: string) =>
+    apiClient.post<{ ok: true; stats: Record<string, number> }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/demo-workspace`,
+      {},
+      { headers: { 'X-Org-Id': orgId } },
+    ),
+
+  /** POST /orgs/:orgId/reset-demo — сбросить демо-данные */
+  resetDemoWorkspace: (orgId: string) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/reset-demo`,
+      {},
+      { headers: { 'X-Org-Id': orgId } },
+    ),
 };

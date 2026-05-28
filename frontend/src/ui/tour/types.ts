@@ -7,7 +7,7 @@
  * запустили не на той странице.
  */
 
-export type TourId = 'welcome' | 'project' | 'meeting' | 'overview';
+export type TourId = 'welcome' | 'project' | 'meeting' | 'overview' | 'demo';
 
 export type TourPlacement =
   | 'top'

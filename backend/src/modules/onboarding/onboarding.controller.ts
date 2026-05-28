@@ -93,6 +93,34 @@ export class OnboardingController {
     return this.svc.completeSetup({ orgId: tenantId ?? orgId });
   }
 
+  @Post('orgs/:orgId/demo-workspace')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Загрузить демо-воркспейс «ТехноСтрим»' })
+  @ApiOkResponse({ description: '{ ok: true, stats: { ... } }' })
+  async seedDemoWorkspace(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; stats: Record<string, number> }> {
+    await this.requireOwnerOrAdmin(user.id, orgId);
+    return this.svc.seedDemoWorkspace({ orgId: tenantId ?? orgId, userId: user.id });
+  }
+
+  @Post('orgs/:orgId/reset-demo')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Сбросить демо-данные «ТехноСтрим»' })
+  @ApiOkResponse({ description: '{ ok: true }' })
+  async resetDemoWorkspace(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    await this.requireOwnerOrAdmin(user.id, orgId);
+    return this.svc.resetDemoWorkspace({ orgId: tenantId ?? orgId });
+  }
+
   private async requireOwnerOrAdmin(userId: string, orgId: string): Promise<void> {
     const ctx = await this.rbac.loadContext(userId, orgId);
     if (!ctx || (ctx.role !== 'owner' && ctx.role !== 'admin' && !ctx.isSuperAdmin)) {

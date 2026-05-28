@@ -1,5 +1,20 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
+import { seedChatNotifications } from '../../../scripts/demo-data/chat-notifications';
+import { seedGoalsClones } from '../../../scripts/demo-data/goals-clones';
+import { seedKnowledgeGraph } from '../../../scripts/demo-data/knowledge-graph';
+import { seedMeetings } from '../../../scripts/demo-data/meetings';
+import { seedOperations } from '../../../scripts/demo-data/operations';
+import { seedOrgStructure } from '../../../scripts/demo-data/org-structure';
+import { seedPolish } from '../../../scripts/demo-data/polish';
+import { seedTracker } from '../../../scripts/demo-data/tracker';
+import { createEmptyIdMap, type SeedContext } from '../../../scripts/demo-data/types';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';
@@ -179,5 +194,150 @@ ${stackList}
 Главный интерес в Коре:
 ${featureList}
 `;
+  }
+
+  /** POST /orgs/:orgId/demo-workspace — загрузка демо-данных «ТехноСтрим» */
+  async seedDemoWorkspace(args: {
+    orgId: string;
+    userId: string;
+  }): Promise<{
+    ok: true;
+    stats: Record<string, number>;
+  }> {
+    const { orgId, userId } = args;
+
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: { id: true, welcomeCompletedAt: true, demoWorkspaceSeededAt: true },
+    });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    if (org.demoWorkspaceSeededAt) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'demo_already_seeded', message: 'Демо-данные уже загружены' },
+      });
+    }
+
+    const ids = createEmptyIdMap();
+    const ctx: SeedContext = { prisma: this.prisma, tenantId: orgId, ownerUserId: userId };
+
+    this.logger.log(`Seeding demo workspace for org=${orgId}`);
+
+    await seedOrgStructure(ctx, ids);
+    await seedTracker(ctx, ids);
+    await seedMeetings(ctx, ids);
+    await seedKnowledgeGraph(ctx, ids);
+    await seedGoalsClones(ctx, ids);
+    await seedOperations(ctx, ids);
+    await seedChatNotifications(ctx, ids);
+    await seedPolish(ctx, ids);
+
+    await this.prisma.org.update({
+      where: { id: orgId },
+      data: { demoWorkspaceSeededAt: new Date() },
+    });
+
+    const stats = {
+      departmentsCreated: Object.keys(ids.departments).length,
+      personsCreated: Object.keys(ids.persons).length,
+      projectsCreated: Object.keys(ids.projects).length,
+      issuesCreated: Object.keys(ids.issues).length,
+      meetingsCreated: Object.keys(ids.meetings).length,
+      ideaBlocksCreated: Object.keys(ids.ideaBlocks).length,
+      entitiesCreated: Object.keys(ids.entities).length,
+      themesCreated: Object.keys(ids.themes).length,
+      goalsCreated: Object.keys(ids.goals).length,
+      clonesCreated: Object.keys(ids.skillProfiles).length,
+    };
+
+    this.logger.log(`Demo workspace seeded: ${JSON.stringify(stats)}`);
+    return { ok: true, stats };
+  }
+
+  /** POST /orgs/:orgId/reset-demo — сброс демо-данных */
+  async resetDemoWorkspace(args: { orgId: string }): Promise<{ ok: true }> {
+    const { orgId } = args;
+    this.logger.log(`Resetting demo workspace for org=${orgId}`);
+
+    // Удаляем в порядке обратных зависимостей
+    await this.prisma.issueActivity.deleteMany({ where: { tenantId: orgId, issue: { externalSource: 'demo' } } });
+    await this.prisma.issueComment.deleteMany({ where: { issue: { project: { tenantId: orgId } } } });
+    await this.prisma.issueChecklistItem.deleteMany({ where: { checklist: { tenantId: orgId, issue: { externalSource: 'demo' } } } });
+    await this.prisma.issueChecklist.deleteMany({ where: { tenantId: orgId, issue: { externalSource: 'demo' } } });
+    await this.prisma.issueLabel.deleteMany({ where: { issue: { project: { tenantId: orgId } } } });
+    await this.prisma.issueAssignee.deleteMany({ where: { issue: { project: { tenantId: orgId } } } });
+    await this.prisma.issueRelation.deleteMany({ where: { source: { project: { tenantId: orgId } } } });
+    await this.prisma.sprintHint.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.issue.deleteMany({ where: { tenantId: orgId, externalSource: 'demo' } });
+
+    await this.prisma.meetingParticipantBehavior.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.meetingBehaviorMetrics.deleteMany({ where: { meeting: { tenantId: orgId } } });
+    await this.prisma.meetingQualityScore.deleteMany({ where: { meeting: { tenantId: orgId } } });
+    await this.prisma.meetingChapter.deleteMany({ where: { meeting: { tenantId: orgId } } });
+    await this.prisma.transcriptTrack.deleteMany({ where: { transcript: { meeting: { tenantId: orgId } } } });
+    await this.prisma.transcript.deleteMany({ where: { meeting: { tenantId: orgId } } });
+    await this.prisma.aiResult.deleteMany({ where: { meeting: { tenantId: orgId } } });
+    await this.prisma.participant.deleteMany({ where: { meeting: { tenantId: orgId } } });
+    await this.prisma.meeting.deleteMany({ where: { tenantId: orgId, roomName: { startsWith: 'demo-room-' } } });
+
+    await this.prisma.themeIdeaBlock.deleteMany({ where: { theme: { tenantId: orgId } } });
+    await this.prisma.themeEntity.deleteMany({ where: { theme: { tenantId: orgId } } });
+    await this.prisma.ideaBlockLink.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.entityLink.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.ideaBlock.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.entity.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.theme.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.goalAlignmentSnapshot.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.goalTheme.deleteMany({ where: { goal: { tenantId: orgId } } });
+    await this.prisma.goal.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.executablePersona.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.skillTrait.deleteMany({ where: { profile: { tenantId: orgId } } });
+    await this.prisma.skillProfile.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.cloneAccessGrant.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.dailyCheckIn.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.weeklyOperationsDigest.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.dailyOperationsDigest.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.chatV2Message.deleteMany({ where: { conversation: { tenantId: orgId } } });
+    await this.prisma.chatV2Conversation.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.notification.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.recognition.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.helpfulnessSpotlight.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.card.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.processStep.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.process.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.insight.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.decision.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.appointment.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.person.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.role.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.department.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.companyProfile.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.functionalDomain.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.projectDocument.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.board.deleteMany({ where: { project: { tenantId: orgId } } });
+    await this.prisma.issueState.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.cycle.deleteMany({ where: { tenantId: orgId } });
+    await this.prisma.label.deleteMany({ where: { project: { tenantId: orgId } } });
+    await this.prisma.project.deleteMany({ where: { tenantId: orgId } });
+
+    await this.prisma.org.update({
+      where: { id: orgId },
+      data: { demoWorkspaceSeededAt: null },
+    });
+
+    this.logger.log(`Demo workspace reset for org=${orgId}`);
+    return { ok: true };
   }
 }

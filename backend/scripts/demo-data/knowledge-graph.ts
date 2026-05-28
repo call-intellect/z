@@ -1,0 +1,689 @@
+/**
+ * Демо-данные «ТехноСтрим» — граф знаний (knowledge-core).
+ *
+ * Создаёт: IdeaBlock (20), IdeaBlockLink (15), Entity (15), EntityLink (20),
+ * Theme (7), ThemeIdeaBlock (21), ThemeEntity (10).
+ *
+ * Маппинги enum (ТЗ → Prisma):
+ *   IdeaBlockStatus:        active → canonical
+ *   IdeaBlockLinkType:      supports → develops, related_to → shares_topic
+ *   EntityLinkType:         uses → depends_on, competes_with → opposes,
+ *                           similar_to/mentions → mentions_with
+ *   ThemeBranch:            delivery → production, hr → team
+ *   ThemeDynamic:           fading → declining
+ *   LinkCreatedBy:          llm → linker
+ */
+import type { SeedFn, SeedContext, IdMap } from './types';
+
+// ──────────────────────────── IdeaBlock definitions ────────────────────────────
+
+interface IBDef {
+  key: string;
+  name: string;
+  signalType: string;
+  confidence: number;
+  criticalQuestion: string;
+  trustedAnswer: string;
+  meetingKey: string;
+}
+
+const IDEA_BLOCKS: IBDef[] = [
+  {
+    key: 'ib1',
+    name: 'JWT без expiration — критическая уязвимость',
+    signalType: 'risk',
+    confidence: 0.95,
+    criticalQuestion: 'Что является самой критической уязвимостью в auth?',
+    trustedAnswer:
+      'JWT-токены без expiration — любой перехваченный токен действует бесконечно',
+    meetingKey: 'security_discussion',
+  },
+  {
+    key: 'ib2',
+    name: 'Клиенты просят интеграцию со Slack',
+    signalType: 'feature_request',
+    confidence: 0.85,
+    criticalQuestion: 'Какой самый частый запрос от клиентов?',
+    trustedAnswer: 'Интеграция со Slack для уведомлений о встречах',
+    meetingKey: 'custdev_rostelecom',
+  },
+  {
+    key: 'ib3',
+    name: 'Мобильное приложение отстаёт от графика на 3 дня',
+    signalType: 'risk',
+    confidence: 0.90,
+    criticalQuestion: 'Каков статус мобильного приложения?',
+    trustedAnswer:
+      'Отставание 3 дня из-за сложности SDK видеозвонка',
+    meetingKey: 'mobile_review',
+  },
+  {
+    key: 'ib4',
+    name: 'Козлов — единственный эксперт по auth-модулю',
+    signalType: 'churn_risk',
+    confidence: 0.80,
+    criticalQuestion: 'Кто знает auth-модуль?',
+    trustedAnswer:
+      'Только Козлов имеет глубокие знания auth, bus factor = 1',
+    meetingKey: 'planning14',
+  },
+  {
+    key: 'ib5',
+    name: 'Решение: OAuth2 + PKCE вместо JWT',
+    signalType: 'decision',
+    confidence: 0.92,
+    criticalQuestion: 'Какое решение по auth?',
+    trustedAnswer:
+      'Миграция на OAuth2 + PKCE flow, затрагивает 3 микросервиса',
+    meetingKey: 'security_discussion',
+  },
+  {
+    key: 'ib6',
+    name: 'Ростелеком готов к пилоту на 500 пользователей',
+    signalType: 'commitment',
+    confidence: 0.88,
+    criticalQuestion: 'Статус пилота с Ростелеком?',
+    trustedAnswer:
+      'Подтверждён пилот на 500 пользователей, старт июнь',
+    meetingKey: 'custdev_rostelecom',
+  },
+  {
+    key: 'ib7',
+    name: 'Дизайн экрана звонка утверждён',
+    signalType: 'decision',
+    confidence: 0.95,
+    criticalQuestion: 'Статус дизайна CallScreen?',
+    trustedAnswer:
+      'Дизайн v3 утверждён, передан Сидорову для имплементации',
+    meetingKey: 'mobile_review',
+  },
+  {
+    key: 'ib8',
+    name: 'Нужен QA-инженер в команду мобайл',
+    signalType: 'process_friction',
+    confidence: 0.75,
+    criticalQuestion: 'Чего не хватает мобильной команде?',
+    trustedAnswer:
+      'Нет QA — тестирование на совести разработчиков',
+    meetingKey: 'mobile_review',
+  },
+  {
+    key: 'ib9',
+    name: 'Zoom снизил цены на 30%',
+    signalType: 'objection',
+    confidence: 0.70,
+    criticalQuestion: 'Главная конкурентная угроза?',
+    trustedAnswer:
+      'Zoom снизил цены, но клиенты недовольны поддержкой',
+    meetingKey: 'custdev_rostelecom',
+  },
+  {
+    key: 'ib10',
+    name: 'Идея: записывать встречи для onboarding',
+    signalType: 'idea',
+    confidence: 0.65,
+    criticalQuestion: 'Как улучшить onboarding?',
+    trustedAnswer:
+      'Записывать все встречи и использовать для обучения новичков',
+    meetingKey: 'retro13',
+  },
+  {
+    key: 'ib11',
+    name: 'Code review занимает > 2 дней',
+    signalType: 'process_friction',
+    confidence: 0.82,
+    criticalQuestion: 'Главная проблема процесса?',
+    trustedAnswer:
+      'Code review bottleneck — среднее время > 48 часов',
+    meetingKey: 'retro13',
+  },
+  {
+    key: 'ib12',
+    name: 'Волкова перегружена — 3 проекта одновременно',
+    signalType: 'risk',
+    confidence: 0.78,
+    criticalQuestion: 'Кто в зоне риска выгорания?',
+    trustedAnswer:
+      'Волкова ведёт платформу, мобайл и CustDev одновременно',
+    meetingKey: 'standup1',
+  },
+  {
+    key: 'ib13',
+    name: 'Пилот с Ростелеком — 2M ARR потенциал',
+    signalType: 'commitment',
+    confidence: 0.85,
+    criticalQuestion: 'Какой потенциал у Ростелекома?',
+    trustedAnswer: 'Пилот может привести к контракту 2M ARR',
+    meetingKey: 'custdev_rostelecom',
+  },
+  {
+    key: 'ib14',
+    name: 'K8s миграция заблокирована auth-рефакторингом',
+    signalType: 'risk',
+    confidence: 0.90,
+    criticalQuestion: 'Что блокирует Kubernetes?',
+    trustedAnswer:
+      'PLAT-12 зависит от PLAT-7 — пока auth не готов, K8s стоит',
+    meetingKey: 'planning14',
+  },
+  {
+    key: 'ib15',
+    name: 'Контент-план Q2: 4 вебинара + 12 статей',
+    signalType: 'commitment',
+    confidence: 0.72,
+    criticalQuestion: 'Какой план контента на Q2?',
+    trustedAnswer:
+      '4 вебинара (первый — K8s) и 12 статей по тематике',
+    meetingKey: 'marketing_sync',
+  },
+  {
+    key: 'ib16',
+    name: 'Нужен rate limiting на всех API',
+    signalType: 'risk',
+    confidence: 0.88,
+    criticalQuestion: 'Что нужно для безопасности API?',
+    trustedAnswer:
+      'Rate limiting на login, registration и всех публичных эндпоинтах',
+    meetingKey: 'security_discussion',
+  },
+  {
+    key: 'ib17',
+    name: 'Дизайн-система готова на 80%',
+    signalType: 'decision',
+    confidence: 0.80,
+    criticalQuestion: 'Статус дизайн-системы?',
+    trustedAnswer:
+      '80% компонентов готовы, CallScreen добавлен',
+    meetingKey: 'mobile_review',
+  },
+  {
+    key: 'ib18',
+    name: 'Клиенты не понимают разницу тарифов',
+    signalType: 'risk',
+    confidence: 0.75,
+    criticalQuestion: 'Почему клиенты уходят?',
+    trustedAnswer:
+      'Непрозрачное ценообразование, нет сравнения тарифов',
+    meetingKey: 'marketing_sync',
+  },
+  {
+    key: 'ib19',
+    name: 'Ретро: нужно больше async-коммуникации',
+    signalType: 'idea',
+    confidence: 0.68,
+    criticalQuestion: 'Как улучшить коммуникацию?',
+    trustedAnswer: 'Команда хочет больше async вместо встреч',
+    meetingKey: 'retro13',
+  },
+  {
+    key: 'ib20',
+    name: 'Безопасность — главный приоритет Q2',
+    signalType: 'decision',
+    confidence: 0.93,
+    criticalQuestion: 'Какой главный приоритет Q2?',
+    trustedAnswer:
+      'Безопасность auth и rate limiting — решение CEO',
+    meetingKey: 'security_discussion',
+  },
+];
+
+// ──────────────────────────── IdeaBlockLink definitions ────────────────────────
+
+interface IBLinkDef {
+  from: string;
+  to: string;
+  /** Mapped: supports→develops, related_to→shares_topic */
+  relationType: string;
+  confidence: number;
+  explanation: string;
+}
+
+const IDEA_BLOCK_LINKS: IBLinkDef[] = [
+  {
+    from: 'ib1',
+    to: 'ib5',
+    relationType: 'causes',
+    confidence: 0.95,
+    explanation:
+      'Уязвимость JWT привела к решению о миграции на OAuth2',
+  },
+  {
+    from: 'ib5',
+    to: 'ib1',
+    relationType: 'consequences_of',
+    confidence: 0.95,
+    explanation: 'OAuth2 — следствие обнаруженных уязвимостей',
+  },
+  {
+    from: 'ib7',
+    to: 'ib17',
+    relationType: 'develops',
+    confidence: 0.85,
+    explanation: 'Утверждённый дизайн укрепляет дизайн-систему',
+  },
+  {
+    from: 'ib14',
+    to: 'ib4',
+    relationType: 'develops',
+    confidence: 0.80,
+    explanation:
+      'Блокировка K8s подтверждает зависимость от Козлова',
+  },
+  {
+    from: 'ib9',
+    to: 'ib13',
+    relationType: 'contradicts',
+    confidence: 0.70,
+    explanation:
+      'Zoom демпингует, но Ростелеком всё равно выбирает нас',
+  },
+  {
+    from: 'ib14',
+    to: 'ib1',
+    relationType: 'causes',
+    confidence: 0.90,
+    explanation: 'K8s миграция зависит от исправления auth',
+  },
+  {
+    from: 'ib8',
+    to: 'ib11',
+    relationType: 'shares_topic',
+    confidence: 0.75,
+    explanation: 'Оба связаны с процессами разработки',
+  },
+  {
+    from: 'ib16',
+    to: 'ib1',
+    relationType: 'shares_topic',
+    confidence: 0.88,
+    explanation:
+      'Rate limiting — часть общей проблемы безопасности',
+  },
+  {
+    from: 'ib2',
+    to: 'ib18',
+    relationType: 'shares_topic',
+    confidence: 0.70,
+    explanation: 'Оба — запросы/боли клиентов',
+  },
+  {
+    from: 'ib3',
+    to: 'ib12',
+    relationType: 'shares_topic',
+    confidence: 0.75,
+    explanation:
+      'Отставание мобайл связано с перегрузкой Волковой',
+  },
+  {
+    from: 'ib10',
+    to: 'ib19',
+    relationType: 'develops',
+    confidence: 0.65,
+    explanation:
+      'Запись встреч поддерживает идею async-коммуникации',
+  },
+  {
+    from: 'ib15',
+    to: 'ib6',
+    relationType: 'shares_topic',
+    confidence: 0.72,
+    explanation:
+      'Контент-план связан с пилотом Ростелеком (кейс)',
+  },
+  {
+    from: 'ib6',
+    to: 'ib13',
+    relationType: 'develops',
+    confidence: 0.85,
+    explanation: 'Пилот подтверждает потенциал ARR',
+  },
+  {
+    from: 'ib20',
+    to: 'ib16',
+    relationType: 'develops',
+    confidence: 0.93,
+    explanation:
+      'Приоритет безопасности включает rate limiting',
+  },
+  {
+    from: 'ib11',
+    to: 'ib8',
+    relationType: 'shares_topic',
+    confidence: 0.75,
+    explanation:
+      'Code review и QA — связанные процессные проблемы',
+  },
+];
+
+// ──────────────────────────── Entity definitions ───────────────────────────────
+
+interface EntityDef {
+  key: string;
+  type: string;
+  canonicalName: string;
+  aliases: string[];
+}
+
+const ENTITIES: EntityDef[] = [
+  { key: 'e_rostelecom', type: 'customer', canonicalName: 'Ростелеком', aliases: ['ПАО Ростелеком'] },
+  { key: 'e_sberbank', type: 'customer', canonicalName: 'Сбербанк', aliases: ['ПАО Сбербанк'] },
+  { key: 'e_yandex', type: 'customer', canonicalName: 'Яндекс', aliases: ['Яндекс ООО'] },
+  { key: 'e_platform', type: 'product', canonicalName: 'Платформа v2.0', aliases: ['platform v2', 'v2.0'] },
+  { key: 'e_mobile', type: 'product', canonicalName: 'Мобильное приложение', aliases: ['мобайл', 'mobile app'] },
+  { key: 'e_zoom', type: 'vendor', canonicalName: 'Zoom', aliases: ['Zoom Video Communications'] },
+  { key: 'e_gmeet', type: 'vendor', canonicalName: 'Google Meet', aliases: ['Google Meet', 'Meet'] },
+  { key: 'e_oauth2', type: 'topic', canonicalName: 'OAuth2', aliases: ['OAuth 2.0', 'PKCE'] },
+  { key: 'e_k8s', type: 'topic', canonicalName: 'Kubernetes', aliases: ['K8s', 'kube'] },
+  { key: 'e_security', type: 'topic', canonicalName: 'Безопасность', aliases: ['security', 'инфобез'] },
+  { key: 'e_aws', type: 'vendor', canonicalName: 'AWS', aliases: ['Amazon Web Services'] },
+  { key: 'e_cloudflare', type: 'vendor', canonicalName: 'Cloudflare', aliases: [] },
+  { key: 'e_market', type: 'market', canonicalName: 'B2B видеоконференции', aliases: ['рынок VC', 'video conferencing'] },
+  { key: 'e_arr_goal', type: 'goal', canonicalName: 'ARR 10M к концу года', aliases: ['ARR goal'] },
+  { key: 'e_webinar', type: 'event', canonicalName: 'Вебинар K8s', aliases: ['вебинар Kubernetes'] },
+];
+
+// ──────────────────────────── EntityLink definitions ───────────────────────────
+
+interface ELinkDef {
+  from: string;
+  to: string;
+  /** Mapped: uses→depends_on, competes_with→opposes, similar_to/mentions→mentions_with */
+  relationType: string;
+  confidence: number;
+  explanation: string;
+}
+
+const ENTITY_LINKS: ELinkDef[] = [
+  { from: 'e_rostelecom', to: 'e_platform', relationType: 'depends_on', confidence: 0.90, explanation: 'Ростелеком использует Платформу v2.0' },
+  { from: 'e_sberbank', to: 'e_platform', relationType: 'depends_on', confidence: 0.80, explanation: 'Сбербанк использует Платформу v2.0' },
+  { from: 'e_yandex', to: 'e_gmeet', relationType: 'depends_on', confidence: 0.60, explanation: 'Яндекс использует Google Meet как конкурентный бенчмарк' },
+  { from: 'e_platform', to: 'e_oauth2', relationType: 'depends_on', confidence: 0.95, explanation: 'Платформа v2.0 использует OAuth2 для авторизации' },
+  { from: 'e_platform', to: 'e_k8s', relationType: 'depends_on', confidence: 0.90, explanation: 'Платформа v2.0 зависит от Kubernetes' },
+  { from: 'e_platform', to: 'e_cloudflare', relationType: 'depends_on', confidence: 0.85, explanation: 'Платформа v2.0 использует Cloudflare' },
+  { from: 'e_platform', to: 'e_aws', relationType: 'depends_on', confidence: 0.80, explanation: 'Платформа v2.0 развёрнута на AWS' },
+  { from: 'e_mobile', to: 'e_platform', relationType: 'depends_on', confidence: 0.95, explanation: 'Мобильное приложение зависит от Платформы v2.0' },
+  { from: 'e_zoom', to: 'e_market', relationType: 'part_of', confidence: 0.90, explanation: 'Zoom — часть рынка B2B видеоконференций' },
+  { from: 'e_gmeet', to: 'e_market', relationType: 'part_of', confidence: 0.90, explanation: 'Google Meet — часть рынка B2B видеоконференций' },
+  { from: 'e_zoom', to: 'e_platform', relationType: 'opposes', confidence: 0.85, explanation: 'Zoom конкурирует с Платформой v2.0' },
+  { from: 'e_k8s', to: 'e_security', relationType: 'mentions_with', confidence: 0.70, explanation: 'Kubernetes связан с безопасностью инфраструктуры' },
+  { from: 'e_oauth2', to: 'e_security', relationType: 'part_of', confidence: 0.90, explanation: 'OAuth2 — часть системы безопасности' },
+  { from: 'e_rostelecom', to: 'e_webinar', relationType: 'mentions_with', confidence: 0.60, explanation: 'Ростелеком упоминается в контексте вебинара K8s' },
+  { from: 'e_arr_goal', to: 'e_rostelecom', relationType: 'depends_on', confidence: 0.85, explanation: 'Цель ARR 10M зависит от контракта с Ростелеком' },
+  { from: 'e_arr_goal', to: 'e_platform', relationType: 'depends_on', confidence: 0.90, explanation: 'Цель ARR 10M зависит от успеха Платформы v2.0' },
+  { from: 'e_webinar', to: 'e_k8s', relationType: 'mentions_with', confidence: 0.95, explanation: 'Вебинар посвящён Kubernetes' },
+  { from: 'e_mobile', to: 'e_market', relationType: 'part_of', confidence: 0.80, explanation: 'Мобильное приложение — часть рынка B2B видеоконференций' },
+  { from: 'e_rostelecom', to: 'e_sberbank', relationType: 'mentions_with', confidence: 0.50, explanation: 'Оба — enterprise клиенты ТехноСтрим' },
+  { from: 'e_zoom', to: 'e_gmeet', relationType: 'mentions_with', confidence: 0.85, explanation: 'Zoom и Google Meet — оба конкуренты' },
+];
+
+// ──────────────────────────── Theme definitions ────────────────────────────────
+
+interface ThemeDef {
+  key: string;
+  name: string;
+  /** Mapped: delivery→production, hr→team */
+  branch: string;
+  /** Mapped: fading→declining */
+  dynamic: string;
+  weight: number;
+  confidence: number;
+  description: string;
+}
+
+const THEMES: ThemeDef[] = [
+  {
+    key: 'th_security',
+    name: 'Безопасность и auth',
+    branch: 'production',
+    dynamic: 'growing',
+    weight: 0.90,
+    confidence: 0.92,
+    description:
+      'Все вопросы безопасности, auth-модуль, OAuth2, rate limiting',
+  },
+  {
+    key: 'th_mobile',
+    name: 'Мобильная разработка',
+    branch: 'product',
+    dynamic: 'stable',
+    weight: 0.80,
+    confidence: 0.85,
+    description: 'Мобильное приложение, дизайн, iOS/Android',
+  },
+  {
+    key: 'th_clients',
+    name: 'Рост клиентской базы',
+    branch: 'sales',
+    dynamic: 'growing',
+    weight: 0.85,
+    confidence: 0.88,
+    description: 'Ростелеком, Сбербанк, пилоты, продажи',
+  },
+  {
+    key: 'th_competitors',
+    name: 'Конкурентная среда',
+    branch: 'marketing',
+    dynamic: 'stable',
+    weight: 0.65,
+    confidence: 0.72,
+    description: 'Zoom, Google Meet, ценообразование',
+  },
+  {
+    key: 'th_process',
+    name: 'Процессы разработки',
+    branch: 'production',
+    dynamic: 'declining',
+    weight: 0.60,
+    confidence: 0.75,
+    description: 'Code review, документация, async-коммуникация',
+  },
+  {
+    key: 'th_content',
+    name: 'Контент и маркетинг',
+    branch: 'marketing',
+    dynamic: 'stable',
+    weight: 0.55,
+    confidence: 0.68,
+    description: 'Контент-план, вебинары, SEO',
+  },
+  {
+    key: 'th_team',
+    name: 'Команда и нагрузка',
+    branch: 'team',
+    dynamic: 'growing',
+    weight: 0.75,
+    confidence: 0.82,
+    description: 'Перегрузка, выгорание, bus factor',
+  },
+];
+
+// ──────────────────────────── Theme ↔ IdeaBlock map ────────────────────────────
+
+const THEME_BLOCKS: Record<string, string[]> = {
+  th_security: ['ib1', 'ib5', 'ib14', 'ib16', 'ib20'],
+  th_mobile: ['ib3', 'ib7', 'ib8', 'ib17'],
+  th_clients: ['ib2', 'ib6', 'ib13'],
+  th_competitors: ['ib9', 'ib18'],
+  th_process: ['ib10', 'ib11', 'ib19'],
+  th_content: ['ib15', 'ib12'],
+  th_team: ['ib4', 'ib12', 'ib3'],
+};
+
+// ──────────────────────────── Theme ↔ Entity map ───────────────────────────────
+
+const THEME_ENTITIES: Record<string, string[]> = {
+  th_security: ['e_oauth2', 'e_security'],
+  th_mobile: ['e_mobile'],
+  th_clients: ['e_rostelecom', 'e_sberbank', 'e_yandex'],
+  th_competitors: ['e_zoom', 'e_gmeet', 'e_market'],
+  th_process: ['e_k8s'],
+  th_content: ['e_webinar'],
+  // th_team — no entity links
+};
+
+// ──────────────────────────── Seed function ────────────────────────────────────
+
+export const seedKnowledgeGraph: SeedFn = async (
+  ctx: SeedContext,
+  ids: IdMap,
+) => {
+  const { prisma, tenantId } = ctx;
+
+  // ── 1. IdeaBlocks ──────────────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating 20 IdeaBlocks…');
+
+  for (const def of IDEA_BLOCKS) {
+    const block = await prisma.ideaBlock.create({
+      data: {
+        tenantId,
+        name: def.name,
+        criticalQuestion: def.criticalQuestion,
+        trustedAnswer: def.trustedAnswer,
+        signalType: def.signalType as any,
+        confidence: def.confidence,
+        status: 'canonical',
+        dataClass: 'internal',
+        tags: [`meeting:${def.meetingKey}`],
+      },
+    });
+    ids.ideaBlocks[def.key] = block.id;
+  }
+
+  console.log(
+    `[knowledge-graph] ✓ ${IDEA_BLOCKS.length} IdeaBlocks created`,
+  );
+
+  // ── 2. IdeaBlockLinks ──────────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating 15 IdeaBlockLinks…');
+
+  for (const lnk of IDEA_BLOCK_LINKS) {
+    await prisma.ideaBlockLink.create({
+      data: {
+        tenantId,
+        fromBlockId: ids.ideaBlocks[lnk.from]!,
+        toBlockId: ids.ideaBlocks[lnk.to]!,
+        relationType: lnk.relationType as any,
+        confidence: lnk.confidence,
+        explanation: lnk.explanation,
+        createdBy: 'linker',
+      },
+    });
+  }
+
+  console.log(
+    `[knowledge-graph] ✓ ${IDEA_BLOCK_LINKS.length} IdeaBlockLinks created`,
+  );
+
+  // ── 3. Entities ────────────────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating 15 Entities…');
+
+  for (const def of ENTITIES) {
+    const entity = await prisma.entity.create({
+      data: {
+        tenantId,
+        type: def.type as any,
+        canonicalName: def.canonicalName,
+        aliases: def.aliases,
+      },
+    });
+    ids.entities[def.key] = entity.id;
+  }
+
+  console.log(
+    `[knowledge-graph] ✓ ${ENTITIES.length} Entities created`,
+  );
+
+  // ── 4. EntityLinks ─────────────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating 20 EntityLinks…');
+
+  for (const lnk of ENTITY_LINKS) {
+    await prisma.entityLink.create({
+      data: {
+        tenantId,
+        fromEntityId: ids.entities[lnk.from]!,
+        toEntityId: ids.entities[lnk.to]!,
+        relationType: lnk.relationType as any,
+        confidence: lnk.confidence,
+        explanation: lnk.explanation,
+        createdBy: 'linker',
+      },
+    });
+  }
+
+  console.log(
+    `[knowledge-graph] ✓ ${ENTITY_LINKS.length} EntityLinks created`,
+  );
+
+  // ── 5. Themes ──────────────────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating 7 Themes…');
+
+  for (const def of THEMES) {
+    const theme = await prisma.theme.create({
+      data: {
+        tenantId,
+        name: def.name,
+        description: def.description,
+        branch: def.branch as any,
+        dynamic: def.dynamic as any,
+        weight: def.weight,
+        confidence: def.confidence,
+        status: 'active',
+      },
+    });
+    ids.themes[def.key] = theme.id;
+  }
+
+  console.log(`[knowledge-graph] ✓ ${THEMES.length} Themes created`);
+
+  // ── 6. ThemeIdeaBlock links ────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating ThemeIdeaBlock links…');
+
+  let tibCount = 0;
+  for (const [themeKey, blockKeys] of Object.entries(THEME_BLOCKS)) {
+    for (const blockKey of blockKeys) {
+      await prisma.themeIdeaBlock.create({
+        data: {
+          themeId: ids.themes[themeKey]!,
+          blockId: ids.ideaBlocks[blockKey]!,
+          weight: 1.0,
+        },
+      });
+      tibCount++;
+    }
+  }
+
+  console.log(`[knowledge-graph] ✓ ${tibCount} ThemeIdeaBlock links created`);
+
+  // ── 7. ThemeEntity links ───────────────────────────────────────────
+
+  console.log('[knowledge-graph] Creating ThemeEntity links…');
+
+  let teCount = 0;
+  for (const [themeKey, entityKeys] of Object.entries(THEME_ENTITIES)) {
+    for (const entityKey of entityKeys) {
+      await prisma.themeEntity.create({
+        data: {
+          themeId: ids.themes[themeKey]!,
+          entityId: ids.entities[entityKey]!,
+        },
+      });
+      teCount++;
+    }
+  }
+
+  console.log(`[knowledge-graph] ✓ ${teCount} ThemeEntity links created`);
+
+  // ── Done ───────────────────────────────────────────────────────────
+
+  console.log(
+    '[knowledge-graph] ✓ Knowledge graph seeded: ' +
+      '20 IdeaBlocks, 15 IdeaBlockLinks, 15 Entities, 20 EntityLinks, ' +
+      `7 Themes, ${tibCount} ThemeIdeaBlock, ${teCount} ThemeEntity`,
+  );
+};

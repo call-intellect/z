@@ -1,16 +1,19 @@
 'use client';
 
 /**
- * useProjectBySlug — найти проект по slug.
+ * useProjectBySlug — найти проект по slug через прямой серверный запрос.
  *
- * Backend GET /projects/:id принимает только id (uuid), но URL у нас по
- * slug. Поэтому грузим список (он закэширован SWR'ом) и фильтруем
- * клиентски. При появлении endpoint'а GET /projects/by-slug/:slug — заменить.
+ * Использует `GET /api/v1/projects/by-slug/:slug` (добавлен 2026-05-28).
+ * Ранее фильтровал список клиентски (limit 100) — это ломалось при
+ * > 100 проектах и при SWR-кэше, который не успевал обновиться после
+ * создания нового проекта (router.push → stale cache → проект не найден).
  */
 
 import { useMemo } from 'react';
-import { useProjects } from './useProjects';
-import type { Project } from '@/domain/tracker';
+import useSWR from 'swr';
+
+import { projectsApi } from '@/api/tracker/projects.api';
+import { projectFromApi, type Project } from '@/domain/tracker';
 
 export function useProjectBySlug(
   orgId: string | null | undefined,
@@ -20,15 +23,36 @@ export function useProjectBySlug(
   error: unknown;
   isLoading: boolean;
 } {
-  const { projects, isLoading, error } = useProjects(orgId, {
-    includeArchived: true,
-    limit: 100,
-  });
+  const key =
+    orgId && slug ? ['tracker.project.by-slug', orgId, slug] : null;
 
-  const project = useMemo<Project | null>(() => {
-    if (!slug) return null;
-    return projects.find((p) => p.slug === slug) ?? null;
-  }, [projects, slug]);
+  const swr = useSWR(
+    key,
+    async () => {
+      if (!orgId || !slug) throw new Error('orgId/slug required');
+      return projectsApi.getBySlug(orgId, slug);
+    },
+    {
+      revalidateOnFocus: false,
+      // 404 = проект не существует, не ретраить.
+      shouldRetryOnError: (err: unknown) => {
+        if (
+          err &&
+          typeof err === 'object' &&
+          'code' in err &&
+          (err as { code: string }).code === 'project_not_found'
+        ) {
+          return false;
+        }
+        return true;
+      },
+    },
+  );
 
-  return { project, isLoading, error };
+  const project = useMemo<Project | null>(
+    () => (swr.data ? projectFromApi(swr.data) : null),
+    [swr.data],
+  );
+
+  return { project, isLoading: swr.isLoading, error: swr.error };
 }

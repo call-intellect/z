@@ -116,6 +116,12 @@ export const projectsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
+  getBySlug: (orgId: string, slug: string) =>
+    apiClient.get<ProjectApi>(
+      `/api/v1/projects/by-slug/${encodeURIComponent(slug)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
   create: (orgId: string, body: CreateProjectRequest) =>
     apiClient.post<ProjectApi>('/api/v1/projects', body, {
       headers: orgHeaders(orgId),

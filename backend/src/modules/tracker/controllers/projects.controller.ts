@@ -121,6 +121,18 @@ export class ProjectsController {
     });
   }
 
+  @Get('projects/by-slug/:slug')
+  @ApiOperation({ summary: 'Получить проект по slug' })
+  async bySlug(
+    @Param('slug') slug: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ProjectResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.findBySlug(slug, t);
+  }
+
   @Get('projects/:id')
   @ApiOperation({ summary: 'Получить проект по id' })
   async byId(

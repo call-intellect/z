@@ -167,6 +167,20 @@ export class ProjectsService {
     return this.toResponse(p);
   }
 
+  /** Найти проект по slug + проверка tenant. NotFound если нет/чужой/удалён. */
+  async findBySlug(slug: string, tenantId: string): Promise<ProjectResponseDto> {
+    const p = await this.prisma.project.findFirst({
+      where: { slug, tenantId, deletedAt: null },
+    });
+    if (!p) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'project_not_found', message: 'Проект не найден' },
+      });
+    }
+    return this.toResponse(p);
+  }
+
   /** PATCH проекта. Доступ: admin/owner Org. */
   async update(
     id: string,

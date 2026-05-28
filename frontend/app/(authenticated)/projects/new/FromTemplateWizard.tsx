@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import {
   ArrowLeft,
   ArrowRight,
@@ -61,6 +62,7 @@ const TIMEZONES = [
 export function FromTemplateWizard() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
+  const { mutate: globalMutate } = useSWRConfig();
 
   const { templates, isLoading: listLoading, error: listError } =
     useTeamTemplates(currentOrgId);
@@ -127,6 +129,16 @@ export function FromTemplateWizard() {
         withExampleTasks,
         timezone,
       });
+      // Инвалидируем список проектов, чтобы при навигации SWR подхватил
+      // новый проект (иначе useProjectBySlug видел бы stale-кэш).
+      void globalMutate(
+        (key: unknown) =>
+          Array.isArray(key) &&
+          typeof key[0] === 'string' &&
+          key[0] === 'tracker.projects',
+        undefined,
+        { revalidate: true },
+      );
       toast.success('Проект создан');
       router.push(`/projects/${encodeURIComponent(res.slug)}/board`);
     } catch (err) {

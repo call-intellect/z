@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { FilePlus2, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
@@ -21,6 +22,7 @@ import { FromTemplateWizard } from './FromTemplateWizard';
 export function NewProjectClient() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
+  const { mutate: globalMutate } = useSWRConfig();
 
   const [tab, setTab] = useState<'template' | 'blank'>('template');
 
@@ -44,6 +46,16 @@ export function NewProjectClient() {
         name: name.trim(),
         description: description.trim() || null,
       });
+      // Инвалидируем список проектов, чтобы при навигации SWR подхватил
+      // новый проект (иначе useProjectBySlug видел бы stale-кэш).
+      void globalMutate(
+        (key: unknown) =>
+          Array.isArray(key) &&
+          typeof key[0] === 'string' &&
+          key[0] === 'tracker.projects',
+        undefined,
+        { revalidate: true },
+      );
       router.push(`/projects/${encodeURIComponent(project.slug)}/board`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось создать проект');

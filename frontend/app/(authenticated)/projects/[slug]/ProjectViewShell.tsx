@@ -115,7 +115,24 @@ export function ProjectViewShell({
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">
-        {children}
+        {isLoading ? (
+          <div className="flex flex-col gap-4">
+            <div className="h-6 w-64 animate-pulse rounded bg-bg-overlay" />
+            <div className="h-40 animate-pulse rounded-md bg-bg-overlay/40" />
+          </div>
+        ) : error ? (
+          <div className="rounded-md border border-danger/30 bg-danger/10 p-6 text-center text-sm text-danger">
+            Не удалось загрузить проект. Проверьте подключение и обновите
+            страницу.
+          </div>
+        ) : !project ? (
+          <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-10 text-center text-sm text-fg-tertiary">
+            Проект «{slug}» не найден. Возможно, он был удалён или у вас нет
+            доступа.
+          </div>
+        ) : (
+          children
+        )}
       </main>
     </div>
   );

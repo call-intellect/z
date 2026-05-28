@@ -32,6 +32,8 @@ export interface AccountUser {
   currentOrgRole: CurrentOrgRole;
   /** ID первой Org (Фаза 7). null если не в Org. */
   currentOrgId: string | null;
+  /** Когда user завершил Блок A онбординга. null = не прошёл. */
+  profileCompletedAt: Date | null;
 }
 
 export function mapAccountUserDtoToDomain(dto: AccountUserApi): AccountUser {
@@ -46,5 +48,6 @@ export function mapAccountUserDtoToDomain(dto: AccountUserApi): AccountUser {
     isSuperAdmin: dto.isSuperAdmin === true,
     currentOrgRole: dto.currentOrgRole,
     currentOrgId: dto.currentOrgId,
+    profileCompletedAt: dto.profileCompletedAt ? new Date(dto.profileCompletedAt) : null,
   };
 }

@@ -20,9 +20,10 @@ export interface TourProgressApi {
   welcome?: TourEntryApi;
   project?: TourEntryApi;
   meeting?: TourEntryApi;
+  overview?: TourEntryApi;
 }
 
-export type TourIdApi = 'welcome' | 'project' | 'meeting';
+export type TourIdApi = 'welcome' | 'project' | 'meeting' | 'overview';
 
 export interface UpdateTourProgressBodyApi {
   tourId: TourIdApi;

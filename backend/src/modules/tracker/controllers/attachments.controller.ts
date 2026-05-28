@@ -28,6 +28,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -81,6 +82,7 @@ export class AttachmentsController {
   ) {}
 
   @Post('issues/:id/attachments')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Загрузить файл к задаче (multipart/form-data)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -137,6 +139,7 @@ export class AttachmentsController {
   }
 
   @Delete('attachments/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить приложение (БД + S3)' })
   async remove(

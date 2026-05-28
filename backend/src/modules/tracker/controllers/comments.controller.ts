@@ -19,6 +19,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -63,6 +64,7 @@ export class CommentsController {
   }
 
   @Post('issues/:id/comments')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать комментарий к задаче' })
   async create(
     @Param('id') issueId: string,
@@ -76,6 +78,7 @@ export class CommentsController {
   }
 
   @Patch('comments/:commentId')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить комментарий (только автор)' })
   async update(
     @Param('commentId') commentId: string,
@@ -89,6 +92,7 @@ export class CommentsController {
   }
 
   @Delete('comments/:commentId')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить комментарий (автор или admin)' })
   async remove(

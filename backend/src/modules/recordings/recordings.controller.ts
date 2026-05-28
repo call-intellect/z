@@ -12,6 +12,7 @@ import {
 
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import { RecordingsService } from './recordings.service';
 
@@ -32,6 +33,7 @@ export class RecordingsController {
   constructor(@Inject(RecordingsService) private readonly recordings: RecordingsService) {}
 
   @Post('start')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async start(
     @Param('id') meetingId: string,
@@ -42,6 +44,7 @@ export class RecordingsController {
   }
 
   @Post('stop')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async stop(
     @Param('id') meetingId: string,
@@ -79,6 +82,7 @@ export class RecordingsController {
   }
 
   @Delete()
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async deleteEarly(
     @Param('id') meetingId: string,

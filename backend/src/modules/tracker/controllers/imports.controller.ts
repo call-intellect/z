@@ -17,6 +17,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -59,6 +60,7 @@ export class ImportsController {
   ) {}
 
   @Post('tracker/imports/trello')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Запустить импорт из Trello (JSON-export)' })
   async startTrello(
     @Body(new ZodValidationPipe(StartTrelloImportSchema))
@@ -77,6 +79,7 @@ export class ImportsController {
   }
 
   @Post('tracker/imports/bitrix24')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Запустить импорт из Битрикс24 (TODO Phase 5 part 2 — worker сразу падает)',
@@ -98,6 +101,7 @@ export class ImportsController {
   }
 
   @Post('tracker/imports/yandex-tracker')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Запустить импорт из Я.Трекера (TODO Phase 5 part 2 — worker сразу падает)',
@@ -150,6 +154,7 @@ export class ImportsController {
   }
 
   @Post('tracker/imports/:id/cancel')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Отменить импорт (worker прервётся между батчами)' })
   async cancel(
     @Param('id') id: string,

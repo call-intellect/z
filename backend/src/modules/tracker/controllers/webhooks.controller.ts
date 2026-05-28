@@ -20,6 +20,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -68,6 +69,7 @@ export class TrackerWebhooksController {
   }
 
   @Post('webhooks')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать webhook (secretKey возвращается один раз)' })
   async create(
     @Body(new ZodValidationPipe(CreateWebhookSchema)) body: CreateWebhookDto,
@@ -80,6 +82,7 @@ export class TrackerWebhooksController {
   }
 
   @Patch('webhooks/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить webhook' })
   async update(
     @Param('id') id: string,
@@ -93,6 +96,7 @@ export class TrackerWebhooksController {
   }
 
   @Delete('webhooks/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить webhook' })
   async remove(
@@ -119,6 +123,7 @@ export class TrackerWebhooksController {
   }
 
   @Post('webhooks/:id/test')
+  @RequireSubscription()
   @HttpCode(202)
   @ApiOperation({
     summary:

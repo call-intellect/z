@@ -28,6 +28,7 @@ import {
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { OrgAdminGuard } from '../auth/guards/org-admin.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { RoleClonePersonaVersioningHandler } from '../knowledge-core/services/role-clone-persona-versioning.handler';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -92,6 +93,7 @@ export class ClonesAdminController {
   // ─────────────────────────── force-new-version (legacy) ───────────────────────────
 
   @Post(':roleId/force-new-version')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Clones=Roles Ф2: вручную создать новую версию клона роли (owner/admin)',
@@ -186,6 +188,7 @@ export class ClonesAdminController {
   // ─────────────────────────── §2.2 POST create ───────────────────────────
 
   @Post('access-grants')
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
@@ -211,6 +214,7 @@ export class ClonesAdminController {
   // ─────────────────────────── §2.3 DELETE revoke ───────────────────────────
 
   @Delete('access-grants/:id')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -235,6 +239,7 @@ export class ClonesAdminController {
   // ─────────────────────────── §2.4 PATCH extend ───────────────────────────
 
   @Patch('access-grants/:id')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

@@ -20,6 +20,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -62,6 +63,7 @@ export class LabelsController {
   }
 
   @Post('labels')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать метку (admin / project_manager)' })
   async create(
     @Body(new ZodValidationPipe(CreateLabelSchema)) body: CreateLabelDto,
@@ -74,6 +76,7 @@ export class LabelsController {
   }
 
   @Patch('labels/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить метку' })
   async update(
     @Param('id') id: string,
@@ -87,6 +90,7 @@ export class LabelsController {
   }
 
   @Delete('labels/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить метку' })
   async remove(

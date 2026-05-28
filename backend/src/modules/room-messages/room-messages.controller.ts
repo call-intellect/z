@@ -17,6 +17,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import {
   type ListRoomMessagesQuery,
@@ -60,6 +61,7 @@ export class RoomMessagesController {
   ) {}
 
   @Post()
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async send(

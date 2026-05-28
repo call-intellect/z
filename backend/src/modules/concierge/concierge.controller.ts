@@ -24,6 +24,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -72,6 +73,7 @@ export class ConciergeController {
   // ────────────────────── messages: SSE stream ──────────────────────
 
   @Post('messages')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Отправить сообщение Concierge (SSE stream ответа)' })
   async stream(
     @Body(new ZodValidationPipe(PostConciergeMessageBodySchema))
@@ -132,6 +134,7 @@ export class ConciergeController {
   // ────────────────────── polling fallback ──────────────────────────
 
   @Post('messages/once')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Polling fallback: одно сообщение → JSON c финальным ответом',
@@ -319,6 +322,7 @@ export class ConciergeController {
   // ────────────────────── undo ──────────────────────────────────────
 
   @Post('undo/:logId')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Откатить выполненный tool call' })
   async undo(

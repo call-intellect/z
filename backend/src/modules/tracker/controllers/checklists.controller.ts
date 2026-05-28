@@ -19,6 +19,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -77,6 +78,7 @@ export class ChecklistsController {
   }
 
   @Post('issues/:id/checklists')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать чек-лист на задаче' })
   async create(
     @Param('id') issueId: string,
@@ -90,6 +92,7 @@ export class ChecklistsController {
   }
 
   @Patch('checklists/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Переименовать чек-лист' })
   async update(
     @Param('id') checklistId: string,
@@ -103,6 +106,7 @@ export class ChecklistsController {
   }
 
   @Delete('checklists/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить чек-лист (soft delete)' })
   async remove(
@@ -116,6 +120,7 @@ export class ChecklistsController {
   }
 
   @Post('checklists/reorder')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить порядок чек-листов внутри задачи' })
   async reorder(
     @Body(new ZodValidationPipe(ReorderChecklistsSchema))
@@ -135,6 +140,7 @@ export class ChecklistsController {
   // ── Checklist items ───────────────────────────────────────────────────
 
   @Post('checklists/:id/items')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать пункт чек-листа' })
   async createItem(
     @Param('id') checklistId: string,
@@ -149,6 +155,7 @@ export class ChecklistsController {
   }
 
   @Patch('checklist-items/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить пункт (text / isDone / sequence)' })
   async updateItem(
     @Param('id') itemId: string,
@@ -163,6 +170,7 @@ export class ChecklistsController {
   }
 
   @Delete('checklist-items/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить пункт' })
   async removeItem(
@@ -176,6 +184,7 @@ export class ChecklistsController {
   }
 
   @Post('checklist-items/reorder')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить порядок пунктов внутри чек-листа' })
   async reorderItems(
     @Body(new ZodValidationPipe(ReorderChecklistItemsSchema))
@@ -193,6 +202,7 @@ export class ChecklistsController {
   }
 
   @Post('checklist-items/bulk-create')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Массовое создание пунктов (до 50 строк, для вставки списка)',
   })

@@ -16,6 +16,7 @@ import { TypedConfigService } from '../../common/config/index';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import { ChatService } from './chat.service';
 import { ChatV2AskSchema, type ChatV2AskDto } from './dto/chat-v2.dto';
@@ -51,6 +52,7 @@ export class ChatController {
   ) {}
 
   @Post('meetings/:id/chat')
+  @RequireSubscription()
   @ApiOperation({ summary: 'AI-чат по одной встрече' })
   askSingle(
     @Param('id') meetingId: string,
@@ -81,6 +83,7 @@ export class ChatController {
   }
 
   @Post('chat')
+  @RequireSubscription()
   @ApiOperation({ summary: 'AI-чат по архиву встреч (RAG / org-scope V2)' })
   askCross(
     @CurrentUser() user: CurrentUserPayload,
@@ -105,6 +108,7 @@ export class ChatController {
   }
 
   @Post('cards/:id/chat')
+  @RequireSubscription()
   @ApiOperation({ summary: 'AI-чат по карточке (RAG среди встреч карточки / V2)' })
   askCard(
     @Param('id') cardId: string,
@@ -142,6 +146,7 @@ export class ChatController {
    * 503 `chat_v2_disabled`.
    */
   @Post('chat/v2')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'AI-чат v2 (org/meeting/card/theme/entity)' })
   askUnified(

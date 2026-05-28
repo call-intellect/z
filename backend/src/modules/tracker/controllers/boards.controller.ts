@@ -19,6 +19,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -81,6 +82,7 @@ export class BoardsController {
   }
 
   @Post('projects/:projectId/boards')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать доску в проекте' })
   async create(
     @Param('projectId') projectId: string,
@@ -99,6 +101,7 @@ export class BoardsController {
    * иначе NestJS поймёт `reorder` как id.
    */
   @Post('boards/reorder')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить порядок досок проекта (DnD-сортировка)' })
   async reorder(
     @Body(new ZodValidationPipe(ReorderBoardsSchema)) body: ReorderBoardsDto,
@@ -123,6 +126,7 @@ export class BoardsController {
   }
 
   @Patch('boards/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить доску (название/цвет/иконка/порядок)' })
   async update(
     @Param('id') id: string,
@@ -136,6 +140,7 @@ export class BoardsController {
   }
 
   @Delete('boards/:id')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Удалить доску (soft). Задачи переедут на основную доску.',
   })
@@ -154,6 +159,7 @@ export class BoardsController {
   }
 
   @Post('boards/:id/archive')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Архивировать доску' })
   async archive(
     @Param('id') id: string,
@@ -166,6 +172,7 @@ export class BoardsController {
   }
 
   @Post('boards/:id/unarchive')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Разархивировать доску' })
   async unarchive(
     @Param('id') id: string,

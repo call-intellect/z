@@ -20,6 +20,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -105,6 +106,7 @@ export class IssuesController {
   }
 
   @Post('projects/:projectId/issues')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать задачу в проекте' })
   async create(
     @Param('projectId') projectId: string,
@@ -159,6 +161,7 @@ export class IssuesController {
   }
 
   @Patch('issues/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить задачу' })
   async update(
     @Param('id') id: string,
@@ -172,6 +175,7 @@ export class IssuesController {
   }
 
   @Delete('issues/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить задачу (soft delete)' })
   async remove(
@@ -187,6 +191,7 @@ export class IssuesController {
   // ── state transitions ──
 
   @Post('issues/:id/transitions')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Сменить статус задачи (status_changed)' })
   async transition(
     @Param('id') id: string,
@@ -203,6 +208,7 @@ export class IssuesController {
   // ── assignees ──
 
   @Post('issues/:id/assignees')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Добавить исполнителя' })
   async addAssignee(
     @Param('id') id: string,
@@ -216,6 +222,7 @@ export class IssuesController {
   }
 
   @Delete('issues/:id/assignees/:userId')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить исполнителя' })
   async removeAssignee(
@@ -232,6 +239,7 @@ export class IssuesController {
   // ── labels ──
 
   @Post('issues/:id/labels')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Добавить метку' })
   async addLabel(
     @Param('id') id: string,
@@ -245,6 +253,7 @@ export class IssuesController {
   }
 
   @Delete('issues/:id/labels/:labelId')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить метку' })
   async removeLabel(
@@ -261,6 +270,7 @@ export class IssuesController {
   // ── subscribe ──
 
   @Post('issues/:id/subscribe')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Подписаться на задачу' })
   async subscribe(
     @Param('id') id: string,
@@ -273,6 +283,7 @@ export class IssuesController {
   }
 
   @Delete('issues/:id/subscribe')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Отписаться от задачи' })
   async unsubscribe(
@@ -288,6 +299,7 @@ export class IssuesController {
   // ── goal link ──
 
   @Post('issues/:id/link-goal')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Связать задачу с целью' })
   async linkGoal(
     @Param('id') id: string,
@@ -301,6 +313,7 @@ export class IssuesController {
   }
 
   @Delete('issues/:id/link-goal')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Отвязать задачу от цели' })
   async unlinkGoal(
     @Param('id') id: string,
@@ -315,6 +328,7 @@ export class IssuesController {
   // ── start meeting from issue ──
 
   @Post('issues/:id/start-meeting')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Запустить LiveKit-встречу по задаче (type=task_discussion). ' +

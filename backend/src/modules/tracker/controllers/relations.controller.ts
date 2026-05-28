@@ -18,6 +18,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -64,6 +65,7 @@ export class RelationsController {
   }
 
   @Post('issues/:id/relations')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Создать связь (blocks / blocked_by / duplicates / duplicated_by / relates_to). ' +
@@ -82,6 +84,7 @@ export class RelationsController {
   }
 
   @Delete('relations/:relationId')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({
     summary: 'Удалить связь по id (вместе с парной обратной)',

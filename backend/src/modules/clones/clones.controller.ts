@@ -17,6 +17,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 
@@ -120,6 +121,7 @@ export class ClonesController {
   }
 
   @Post('persons/:personId/conversations')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'ТЗ §9.4.7: создать новый пустой диалог с клоном сотрудника (кнопка «Новый диалог»)',
@@ -139,6 +141,7 @@ export class ClonesController {
   }
 
   @Post('roles/:roleId/conversations')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'ТЗ §9.4.7: создать новый пустой диалог с клоном роли (кнопка «Новый диалог»)',
@@ -158,6 +161,7 @@ export class ClonesController {
   }
 
   @Post('persons/:personId/ask')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Спросить клона конкретного сотрудника',
   })
@@ -178,6 +182,7 @@ export class ClonesController {
   }
 
   @Post('roles/:roleId/ask')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Спросить клона роли (агрегат по сотрудникам этой должности)',
   })
@@ -232,6 +237,7 @@ export class ClonesController {
   }
 
   @Post('persons/:personId/persona/snapshot')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'SBA γ-1 доделки — manual snapshot ExecutablePersona (носитель или admin/owner Org)',
@@ -254,6 +260,7 @@ export class ClonesController {
   }
 
   @Post('skill-traits/:traitId/mark-misleading')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Пометить черту в навыковом профиле как неверную',
   })

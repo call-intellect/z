@@ -39,6 +39,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import {
   CreateReportSchema,
@@ -102,6 +103,7 @@ export class MeetingReportsController {
    * прикладная логика «не более 10 живых отчётов на встречу» — внутри сервиса.
    */
   @Post()
+  @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({
@@ -128,6 +130,7 @@ export class MeetingReportsController {
   }
 
   @Post(':reportId/regenerate')
+  @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Перегенерация отчёта. Rate-limit 3 раза в час per report.',
@@ -144,6 +147,7 @@ export class MeetingReportsController {
   }
 
   @Delete(':reportId')
+  @RequireSubscription()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiNoContentResponse()
   @ApiOperation({ summary: 'Soft-delete отчёта (status=archived).' })

@@ -19,6 +19,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -107,6 +108,7 @@ export class ProjectDocumentsController {
   // ── create / update / delete / restore / duplicate ────────────────────
 
   @Post('projects/:projectId/documents')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать документ проекта' })
   async create(
     @Param('projectId') projectId: string,
@@ -121,6 +123,7 @@ export class ProjectDocumentsController {
   }
 
   @Patch('project-documents/:id')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Обновить документ (title/content/pinned/parentId/sortOrder; auto-save идёт сюда)',
@@ -151,6 +154,7 @@ export class ProjectDocumentsController {
   }
 
   @Delete('project-documents/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Soft-delete документа (30-day grace, retention)' })
   async remove(
@@ -176,6 +180,7 @@ export class ProjectDocumentsController {
   }
 
   @Post('project-documents/:id/restore')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Восстановить soft-deleted документ' })
   async restore(
     @Param('id') id: string,
@@ -188,6 +193,7 @@ export class ProjectDocumentsController {
   }
 
   @Post('project-documents/:id/duplicate')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Дублировать документ (создаёт копию с suffix « (копия)»)',
   })

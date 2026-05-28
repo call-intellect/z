@@ -15,6 +15,7 @@ import {
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import {
   type CreateHighlightDto,
@@ -49,6 +50,7 @@ export class HighlightsController {
   }
 
   @Post('meetings/:id/highlights')
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Param('id') meetingId: string,
@@ -60,6 +62,7 @@ export class HighlightsController {
   }
 
   @Patch('highlights/:id')
+  @RequireSubscription()
   async update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateHighlightSchema)) body: UpdateHighlightDto,
@@ -70,6 +73,7 @@ export class HighlightsController {
   }
 
   @Delete('highlights/:id')
+  @RequireSubscription()
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(
     @Param('id') id: string,
@@ -79,6 +83,7 @@ export class HighlightsController {
   }
 
   @Post('highlights/:id/render-mp4')
+  @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
   async renderMp4(
     @Param('id') id: string,

@@ -19,6 +19,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CacheInvalidationService } from '../dialog-layer/services/cache-invalidation.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -64,6 +65,7 @@ export class ChatV2Controller {
   // ──────────────────────────── messages ──────────────────────────────
 
   @Post('messages')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Задать вопрос AI-чату (создаёт диалог если нет)' })
   async ask(
@@ -102,6 +104,7 @@ export class ChatV2Controller {
    * Доступно владельцу диалога (RBAC: chat_v2_conversation/write на свой).
    */
   @Post('conversations/:id/clear-cache')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Очистить AnswerCache+RetrievalCache по диалогу (owner/admin)',
@@ -169,6 +172,7 @@ export class ChatV2Controller {
   }
 
   @Post('conversations/:id/pin')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Закрепить / открепить диалог' })
   async pin(
@@ -188,6 +192,7 @@ export class ChatV2Controller {
   }
 
   @Post('conversations/:id/archive')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Архивировать диалог' })
   async archive(

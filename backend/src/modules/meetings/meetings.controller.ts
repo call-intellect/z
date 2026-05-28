@@ -24,6 +24,7 @@ import {
 } from '../ai/services/regenerate.service';
 import { RetryService } from '../ai/services/retry.service';
 import { TranscriptCleaningService } from '../ai/services/transcript-cleaning.service';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
@@ -121,6 +122,7 @@ export class MeetingsController {
    * Возвращает `id` — фронт делает редирект на `/m/<id>`.
    */
   @Post()
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body(new ZodValidationPipe(CreateMeetingForUserSchema)) body: CreateMeetingForUserDto,
@@ -201,6 +203,7 @@ export class MeetingsController {
    *   - 'failed' / 'not_started' / null → 202 queued.
    */
   @Post(':id/transcript/clean')
+  @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({ default: { ttl: 3_600_000, limit: 1 } })
   async cleanTranscript(
@@ -244,6 +247,7 @@ export class MeetingsController {
   // ─────────────────────────── host controls ─────────────────────────────
 
   @Post(':id/participants/:pid/mute')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async muteParticipant(
     @Param('id') meetingId: string,
@@ -255,6 +259,7 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/unmute')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async unmuteParticipant(
     @Param('id') meetingId: string,
@@ -266,6 +271,7 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/kick')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async kickParticipant(
     @Param('id') meetingId: string,
@@ -277,6 +283,7 @@ export class MeetingsController {
   }
 
   @Post(':id/participants/:pid/lower-hand')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async lowerHand(
     @Param('id') meetingId: string,
@@ -288,6 +295,7 @@ export class MeetingsController {
   }
 
   @Post(':id/finish')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async finish(
     @Param('id') meetingId: string,
@@ -303,6 +311,7 @@ export class MeetingsController {
    * бросит `NotAuthorizedError` если пользователь не хост.
    */
   @Post(':id/retry-ai')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async retryAi(
     @Param('id') meetingId: string,
@@ -324,6 +333,7 @@ export class MeetingsController {
    *   - 429 `quota_exceeded` — `MAX_REGENERATE_PER_MEETING_PER_DAY`.
    */
   @Post(':id/regenerate')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async regenerateMeeting(
     @Param('id') meetingId: string,
@@ -347,6 +357,7 @@ export class MeetingsController {
    * Семантика статусов та же: 409 / 429.
    */
   @Post(':id/regenerate-section')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async regenerateSection(
     @Param('id') meetingId: string,
@@ -371,6 +382,7 @@ export class MeetingsController {
   // ─────────────────────────── soft-delete ───────────────────────────────
 
   @Delete(':id')
+  @RequireSubscription()
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteMeeting(
     @Param('id') meetingId: string,

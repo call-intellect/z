@@ -13,6 +13,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -37,6 +38,7 @@ export class SprintHintsController {
   ) {}
 
   @Post(':id/dismiss')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Закрыть подсказку (статус → dismissed)' })
   async dismiss(
     @Param('id') id: string,
@@ -49,6 +51,7 @@ export class SprintHintsController {
   }
 
   @Post(':id/resolve')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Пометить подсказку выполненной (статус → resolved)' })
   async resolve(
     @Param('id') id: string,

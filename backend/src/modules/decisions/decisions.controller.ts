@@ -18,6 +18,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -86,6 +87,7 @@ export class DecisionsController {
   }
 
   @Post()
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Создать решение вручную (только owner / admin)',
   })
@@ -143,6 +145,7 @@ export class DecisionsController {
   }
 
   @Post(':id/supersede')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Заменить решение новой версией (только owner / admin)',
   })
@@ -164,6 +167,7 @@ export class DecisionsController {
   }
 
   @Post(':id/status')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Изменить статус решения (только owner / admin)',
   })
@@ -185,6 +189,7 @@ export class DecisionsController {
   }
 
   @Post(':id/outcomes')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Записать фактический результат реализованного решения (owner / admin или автор)',

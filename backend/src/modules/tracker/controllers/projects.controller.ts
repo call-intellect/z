@@ -20,6 +20,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -87,6 +88,7 @@ export class ProjectsController {
   }
 
   @Post('projects')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать проект (admin / owner)' })
   async create(
     @Body(new ZodValidationPipe(CreateProjectSchema))
@@ -100,6 +102,7 @@ export class ProjectsController {
   }
 
   @Post('projects/from-template')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Создать проект из шаблона команды (Phase 4 / Sprint 9)',
     description:
@@ -146,6 +149,7 @@ export class ProjectsController {
   }
 
   @Patch('projects/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить проект (admin / owner)' })
   async update(
     @Param('id') id: string,
@@ -160,6 +164,7 @@ export class ProjectsController {
   }
 
   @Delete('projects/:id')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить проект (soft delete)' })
   async remove(
@@ -173,6 +178,7 @@ export class ProjectsController {
   }
 
   @Post('projects/:id/archive')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Архивировать проект' })
   async archive(
     @Param('id') id: string,
@@ -185,6 +191,7 @@ export class ProjectsController {
   }
 
   @Post('projects/:id/unarchive')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Разархивировать проект' })
   async unarchive(
     @Param('id') id: string,
@@ -209,6 +216,7 @@ export class ProjectsController {
   }
 
   @Post('projects/:id/members')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Добавить участника проекта' })
   async addMember(
     @Param('id') id: string,
@@ -223,6 +231,7 @@ export class ProjectsController {
   }
 
   @Delete('projects/:id/members/:userId')
+  @RequireSubscription()
   @HttpCode(204)
   @ApiOperation({ summary: 'Удалить участника проекта' })
   async removeMember(

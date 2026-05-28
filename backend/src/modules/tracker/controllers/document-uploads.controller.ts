@@ -22,6 +22,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -89,6 +90,7 @@ export class DocumentUploadsController {
   ) {}
 
   @Post('document-asset')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Загрузить картинку для вставки в редактор документа проекта (multipart/form-data, поле "file")',

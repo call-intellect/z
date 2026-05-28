@@ -18,6 +18,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -71,6 +72,7 @@ export class IntakeController {
   }
 
   @Post('intake')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать intake-карточку (внутренний — из webhook/чек-инов)' })
   async create(
     @Body(new ZodValidationPipe(CreateIntakeSchema)) body: CreateIntakeDto,
@@ -83,6 +85,7 @@ export class IntakeController {
   }
 
   @Patch('intake/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить intake-карточку (extraction / suggestions)' })
   async update(
     @Param('id') id: string,
@@ -96,6 +99,7 @@ export class IntakeController {
   }
 
   @Post('intake/:id/triage')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Триаж: accept / reject / snooze / duplicate' })
   async triage(
     @Param('id') id: string,

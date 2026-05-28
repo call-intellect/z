@@ -17,6 +17,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -83,6 +84,7 @@ export class CyclesController {
   }
 
   @Post('projects/:projectId/cycles')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Создать цикл в проекте' })
   async create(
     @Param('projectId') projectId: string,
@@ -108,6 +110,7 @@ export class CyclesController {
   }
 
   @Patch('cycles/:id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Изменить цикл' })
   async update(
     @Param('id') id: string,
@@ -121,6 +124,7 @@ export class CyclesController {
   }
 
   @Post('cycles/:id/complete')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Завершить цикл (auto-rollover незакрытых задач)' })
   async complete(
     @Param('id') id: string,
@@ -161,6 +165,7 @@ export class CyclesController {
   }
 
   @Post('cycles/:id/start-meeting')
+  @RequireSubscription()
   @ApiOperation({
     summary: 'Запустить видеовстречу по спринту (default sprint_review)',
   })

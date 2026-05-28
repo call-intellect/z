@@ -83,6 +83,7 @@ import {
   type FeatureKey,
 } from '@/domain/entitlement';
 import { useTheme } from '@/ui/components/theme/ThemeProvider';
+import { NAV_HELP } from '@/lib/nav-help';
 import { OrgSwitcher } from './OrgSwitcher';
 
 /**
@@ -150,6 +151,11 @@ type NavItem = {
    * задан, к <Link> добавляется `data-tour-target="<value>"`.
    */
   tourTarget?: string;
+  /**
+   * ТЗ 2026-05-29 onboarding-v2 — отдельный target для overview-тура.
+   * Если задан, к <Link> добавляется `data-overview-target="<value>"`.
+   */
+  overviewTarget?: string;
 };
 
 type NavSubgroup = {
@@ -221,11 +227,11 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
 const DAILY_GROUP: NavGroup = {
   label: 'Каждый день',
   items: [
-    { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home' },
-    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings' },
-    { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump' },
-    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards' },
-    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects' },
+    { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
+    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
+    { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump', overviewTarget: 'overview.dump' },
+    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
+    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects', overviewTarget: 'overview.projects' },
     // Sprints (2026-05-27) — Wave 4 frontend, отдельный раздел рядом с трекером.
     { href: '/sprints', label: 'Спринты', icon: Rocket, matchPrefix: '/sprints', tourTarget: 'welcome.sprints' },
     {
@@ -235,6 +241,7 @@ const DAILY_GROUP: NavGroup = {
       matchPrefix: '/chat',
       gateFeature: 'feature.chat_org',
       tourTarget: 'welcome.sidebar-chat',
+      overviewTarget: 'overview.chat',
     },
   ],
 };
@@ -242,7 +249,7 @@ const DAILY_GROUP: NavGroup = {
 const ME_GROUP: NavGroup = {
   label: 'Моё пространство',
   items: [
-    { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me' },
+    { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me', overviewTarget: 'overview.me' },
     { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
     { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
     // SBA β-8.2 — «Мои обещания».
@@ -272,7 +279,7 @@ const MANAGEMENT_GROUP: NavGroup = {
   label: 'Управление',
   items: [
     // SBA β-8 / β-8.1 / β-8.3 — COO-панели.
-    { href: '/dashboard/operations', label: 'Панель операций', icon: Activity, matchPrefix: '/dashboard/operations' },
+    { href: '/dashboard/operations', label: 'Панель операций', icon: Activity, matchPrefix: '/dashboard/operations', overviewTarget: 'overview.operations' },
     { href: '/dashboard/operations/daily', label: 'Ежедневный отчёт', icon: Newspaper, matchPrefix: '/dashboard/operations/daily' },
     { href: '/dashboard/operations/weekly', label: 'Недельная сводка', icon: BarChart3, matchPrefix: '/dashboard/operations/weekly' },
     {
@@ -303,14 +310,14 @@ const REFERENCE_GROUP: NavGroup = {
       defaultCollapsed: true,
       storageKey: 'sidebar.reference.open',
       items: [
-        { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure' },
+        { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
         // SBA α-9 wave 3 — Company Foundation.
-        { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company' },
-        { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments' },
+        { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company', tourTarget: 'welcome.company' },
+        { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments', tourTarget: 'welcome.departments' },
         { href: '/domains', label: 'Домены', icon: Shapes, matchPrefix: '/domains' },
         { href: '/maturity', label: 'Зрелость', icon: Gauge, matchPrefix: '/maturity' },
         { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
-        { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles' },
+        { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles', tourTarget: 'welcome.roles' },
         // Clones=Roles Ф4 — публичная витрина клонов должностей.
         { href: '/clones', label: 'Клоны', icon: Bot, matchPrefix: '/clones' },
         // SBA α-3 — поставщики/события (категория A онтологии).
@@ -346,12 +353,13 @@ const INTAKE_NAV_ITEM: NavItem = {
   icon: Inbox,
   matchPrefix: '/intake',
   tourTarget: 'welcome.sidebar-intake',
+  overviewTarget: 'overview.intake',
 };
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/settings/templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/settings/templates' },
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
-  { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings' },
+  { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
 ];
 
 export function Sidebar({
@@ -384,6 +392,7 @@ export function Sidebar({
       label: 'Админка компании',
       icon: Settings2,
       matchPrefix: '/settings/admin',
+      overviewTarget: 'overview.admin',
     });
   }
   if (isSuperAdmin) {
@@ -516,6 +525,7 @@ export function Sidebar({
           className="flex items-center gap-2"
           aria-label="На главную"
           data-tour-target="welcome.sidebar-logo"
+          data-overview-target="overview.logo"
         >
           <div className="grid h-7 w-7 place-items-center rounded-md bg-accent font-mono text-sm font-bold text-accent-fg">
             К
@@ -525,12 +535,12 @@ export function Sidebar({
       </div>
 
       {/* Org switcher (Фаза 0c §5.3) — между логотипом и CTA */}
-      <div className="px-3 pb-2">
+      <div className="px-3 pb-2" data-overview-target="overview.org-switcher">
         <OrgSwitcher variant="sidebar" />
       </div>
 
       {/* CTA */}
-      <div className="px-3 pb-3">
+      <div className="px-3 pb-3" data-tour-target="welcome.create-meeting" data-overview-target="overview.create-meeting">
         <Button asChild className="w-full justify-start gap-2" size="default">
           <Link href="/meetings/create" onClick={onNavigate}>
             <Plus size={16} strokeWidth={2} />
@@ -823,6 +833,9 @@ function SidebarNavLink({
       {...(item.tourTarget
         ? { 'data-tour-target': item.tourTarget }
         : {})}
+      {...(item.overviewTarget
+        ? { 'data-overview-target': item.overviewTarget }
+        : {})}
     >
       {linkContent}
     </Link>
@@ -846,6 +859,23 @@ function SidebarNavLink({
           <TooltipTrigger asChild>{linkNode}</TooltipTrigger>
           <TooltipContent side="right">
             Доступно на {tierLabel(requiredTier)}
+          </TooltipContent>
+        </Tooltip>
+      </li>
+    );
+  }
+
+  // Hover-тултип из словаря NAV_HELP (ТЗ 2026-05-29 onboarding-v2 Фаза 2).
+  // Показываем только если для этого href есть запись в словаре.
+  const navHelp = NAV_HELP[item.href];
+  if (navHelp) {
+    return (
+      <li>
+        <Tooltip>
+          <TooltipTrigger asChild>{linkNode}</TooltipTrigger>
+          <TooltipContent side="right" className="max-w-56">
+            <p className="font-semibold">{navHelp.title}</p>
+            <p className="mt-0.5 text-xs opacity-85">{navHelp.body}</p>
           </TooltipContent>
         </Tooltip>
       </li>

@@ -9,19 +9,43 @@
  *   - primaryAction.kind === 'next' → next() (на последнем шаге complete).
  *   - primaryAction.kind === 'complete' → complete().
  *   - secondaryAction.kind === 'skip' → skip().
- *   - primaryAction.kind === 'prev' → prev() (не используется в стандартных турах,
- *     но поддерживаем для расширений).
+ *   - primaryAction.kind === 'prev' → prev().
+ *   - primaryAction.kind === 'navigate' → router.push(href) + next().
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { useTourContext } from './TourProvider';
 import { TourBackdrop } from './TourBackdrop';
 import { TourTooltip } from './TourTooltip';
-import type { TourStepAction } from './types';
+import { TourCompletionModal } from './TourCompletionModal';
+import type { TourId, TourStepAction } from './types';
 
 export function TourOverlay() {
   const { active, next, prev, skip, complete } = useTourContext();
+  const router = useRouter();
+  const lastTourIdRef = useRef<TourId | null>(null);
+  const [justCompleted, setJustCompleted] = useState<TourId | null>(null);
+
+  // Запоминаем текущий tourId пока тур активен.
+  useEffect(() => {
+    if (active) {
+      lastTourIdRef.current = active.definition.id;
+    }
+  }, [active]);
+
+  // Когда тур завершается (active → null), показываем completion modal.
+  useEffect(() => {
+    if (!active && lastTourIdRef.current) {
+      const tourId = lastTourIdRef.current;
+      // Не показываем модал для project/meeting туров — только welcome/overview.
+      if (tourId === 'welcome' || tourId === 'overview') {
+        setJustCompleted(tourId);
+      }
+      lastTourIdRef.current = null;
+    }
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;
@@ -34,6 +58,12 @@ export function TourOverlay() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [active, skip]);
+
+  const dismissModal = () => setJustCompleted(null);
+
+  if (justCompleted) {
+    return <TourCompletionModal tourId={justCompleted} onDismiss={dismissModal} />;
+  }
 
   if (!active) return null;
 
@@ -53,6 +83,10 @@ export function TourOverlay() {
         break;
       case 'complete':
         void complete();
+        break;
+      case 'navigate':
+        if (action.href) router.push(action.href);
+        next();
         break;
     }
   };

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/contexts/auth-context';
 import { TierGate } from '@/ui/components/TierGate';
+import { IncompleteSetupBanner } from '@/ui/components/IncompleteSetupBanner';
 
 import { DirectorDashboardClient } from './DirectorDashboardClient';
 
@@ -40,6 +41,7 @@ export function DashboardRouter() {
   if (isDirector) {
     return (
       <TierGate feature="feature.dashboard_director">
+        <IncompleteSetupBanner />
         <DirectorDashboardClient />
       </TierGate>
     );

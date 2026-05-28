@@ -1,7 +1,8 @@
 /**
- * Тур №1 «Знакомство при первом входе». 8 шагов.
+ * Тур №2 (Блок B) — Action-тур «Настройка компании».
+ * 6 шагов с kind: 'navigate' — переводят пользователя на нужную страницу.
  *
- * Source: plans/tz/2026-05-27-tracker-onboarding-tour.md §"Тур №1".
+ * ТЗ: plans/tz/2026-05-29-onboarding-v2.md §5.6
  */
 
 import type { TourDefinition } from '../types';
@@ -9,76 +10,65 @@ import type { TourDefinition } from '../types';
 export const welcomeTour: TourDefinition = {
   id: 'welcome',
   steps: [
+    // B1 — Компания
     {
-      id: 'logo',
-      target: '[data-tour-target="welcome.sidebar-logo"]',
-      title: 'Привет! Это Кора',
-      body: 'Память вашей компании. Покажу основные разделы за 90 секунд.',
+      id: 'company',
+      target: '[data-tour-target="welcome.company"]',
+      title: 'Расскажите Коре о компании',
+      body: 'Логотип, юридические данные, контакты, миссия — основа для отчётов и ИИ-помощника.',
       placement: 'right',
-      primaryAction: { label: 'Поехали', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
+      primaryAction: { label: 'Заполнить сейчас', kind: 'navigate', href: '/company' },
+      secondaryAction: { label: 'Пропустить', kind: 'next' },
     },
+    // B2 — Отделы
     {
-      id: 'home',
-      target: '[data-tour-target="welcome.sidebar-home"]',
-      title: 'Главная',
-      body: 'Ваш дашборд: что важно сегодня.',
+      id: 'departments',
+      target: '[data-tour-target="welcome.departments"]',
+      title: 'Добавьте отделы вашей компании',
+      body: 'Для команды на 20–30 человек обычно 3–5 отделов. Мы подготовили шаблон для вашей отрасли.',
       placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
+      primaryAction: { label: 'Добавить отделы', kind: 'navigate', href: '/departments' },
+      secondaryAction: { label: 'Пропустить', kind: 'next' },
     },
+    // B3 — Должности
     {
-      id: 'meetings',
-      target: '[data-tour-target="welcome.sidebar-meetings"]',
-      title: 'Встречи',
-      body: 'Все встречи с записью и AI-отчётом. Можно стартовать видеовстречу прямо отсюда.',
+      id: 'roles',
+      target: '[data-tour-target="welcome.roles"]',
+      title: 'Заведите должности по отделам',
+      body: 'Кора создаст цифровых двойников — можно спросить «как обычно работает маркетолог», даже если он в отпуске.',
       placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
+      primaryAction: { label: 'Добавить должности', kind: 'navigate', href: '/roles' },
+      secondaryAction: { label: 'Пропустить', kind: 'next' },
     },
+    // B4 — Команда
     {
-      id: 'cards',
-      target: '[data-tour-target="welcome.sidebar-cards"]',
-      title: 'Карточки',
-      body: 'Карточки клиентов и сделок. Встречи привязываются к карточке.',
+      id: 'team',
+      target: '[data-tour-target="welcome.structure"]',
+      title: 'Пригласите команду',
+      body: 'Каждый получит письмо с логином, паролем и инструкцией по входу.',
       placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
+      primaryAction: { label: 'Пригласить сотрудников', kind: 'navigate', href: '/structure' },
+      secondaryAction: { label: 'Пропустить', kind: 'next' },
     },
+    // B5 — Первый спринт
     {
-      id: 'projects',
-      target: '[data-tour-target="welcome.sidebar-projects"]',
-      title: 'Проекты',
-      body: 'Задачи команды: доски, циклы, исполнители.',
+      id: 'sprint',
+      target: '[data-tour-target="welcome.sprints"]',
+      title: 'Поставьте первую цель уже на этой неделе',
+      body: 'Спринт — недельный цикл с одной целью. Кора будет следить из встреч и чатов, реально ли команда идёт к цели.',
       placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
+      primaryAction: { label: 'Создать спринт', kind: 'navigate', href: '/sprints/new' },
+      secondaryAction: { label: 'Пропустить', kind: 'next' },
     },
+    // B6 — Первая встреча
     {
-      id: 'intake',
-      target: '[data-tour-target="welcome.sidebar-intake"]',
-      title: 'Входящие',
-      body: 'Сюда падают задачи, в которых вас отметили или назначили.',
+      id: 'meeting',
+      target: '[data-tour-target="welcome.create-meeting"]',
+      title: 'Проведите первую встречу',
+      body: 'Через две минуты после звонка — расшифровка и ИИ-отчёт. Гостю не нужна регистрация — отправьте ссылку.',
       placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
-    },
-    {
-      id: 'chat',
-      target: '[data-tour-target="welcome.sidebar-chat"]',
-      title: 'Помощник компании',
-      body: 'AI-чат, который знает всё из встреч и решений компании.',
-      placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-      secondaryAction: { label: 'Пропустить', kind: 'skip' },
-    },
-    {
-      id: 'concierge',
-      target: '[data-tour-target="welcome.concierge"]',
-      title: 'Концьерж',
-      body: 'Здесь можно задать любой вопрос: создать задачу, найти встречу, написать в чат.',
-      placement: 'left',
-      primaryAction: { label: 'Готово', kind: 'complete' },
+      primaryAction: { label: 'Создать встречу', kind: 'navigate', href: '/meetings/create' },
+      secondaryAction: { label: 'Закончить', kind: 'complete' },
     },
   ],
 };

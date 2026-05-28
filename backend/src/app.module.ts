@@ -26,6 +26,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { SubscriptionGuard } from './modules/billing/guards/subscription.guard';
 import { BrandVoiceModule } from './modules/brand-voice/brand-voice.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
@@ -581,6 +582,15 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    // Глобальный SubscriptionGuard (paywall без trial). Прозрачен для
+    // эндпоинтов без `@RequireSubscription()`. Проверяет status === 'ACTIVE'.
+    // Внутренне читает `req.tenantId`, выставленный `TenantGuard` — поэтому
+    // требует TenantGuard выше по цепочке на gated-эндпоинтах.
+    // Цепочка: CookieAuthGuard → TenantGuard → SubscriptionGuard → EntitlementGuard → RbacGuard.
+    {
+      provide: APP_GUARD,
+      useClass: SubscriptionGuard,
     },
     // Phase 12: глобальный EntitlementGuard. Прозрачен для эндпоинтов
     // без `@RequireEntitlement(...)`. Внутренне читает `req.tenantId`,

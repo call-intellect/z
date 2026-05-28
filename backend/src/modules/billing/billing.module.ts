@@ -35,6 +35,7 @@ import { BillingTochkaOAuthController } from './billing-tochka-oauth.controller'
 import { BillingWebhookController } from './billing-webhook.controller';
 import { BillingController } from './billing.controller';
 import { BILLING_PROVIDER } from './billing.types';
+import { SubscriptionGuard } from './guards/subscription.guard';
 import { ManualBillingProvider } from './providers/manual-billing.provider';
 import { TochkaBillingProvider } from './providers/tochka/tochka-billing.provider';
 import { TochkaOAuthService } from './providers/tochka/tochka-oauth.service';
@@ -99,6 +100,9 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
     // Главный фасад (использует BILLING_PROVIDER).
     BillingService,
 
+    // Guard (paywall без trial).
+    SubscriptionGuard,
+
     // Cron.
     BillingCycleCron,
     TochkaRecurringChargeCron,
@@ -113,6 +117,7 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
     ManualBillingService,
     BillingService,
     BILLING_PROVIDER,
+    SubscriptionGuard,
     // ТЗ 2026-05-27 Фаза 8 — TochkaOpenBankingAdapter в InnLookupModule
     // использует TochkaOAuthService для bearer-токена OpenBanking.
     TochkaOAuthService,

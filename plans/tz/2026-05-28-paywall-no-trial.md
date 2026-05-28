@@ -1,7 +1,7 @@
 # ТЗ: Paywall — демо-режим без trial
 
 **Дата:** 2026-05-28  
-**Статус:** `[ ]` черновик  
+**Статус:** `[~]` Фаза 1 (SubscriptionGuard) ✅, далее Фаза 2 (frontend)  
 **Связан:** [2026-05-28-demo-workspace.md](2026-05-28-demo-workspace.md), [2026-05-28-billing-paywall-demo-cabinet.md](../analysis/2026-05-28-billing-paywall-demo-cabinet.md)
 
 ---
@@ -313,12 +313,12 @@ return (
 
 ## 8. Этапы реализации
 
-### Фаза 1: SubscriptionGuard (backend)
+### Фаза 1: SubscriptionGuard (backend) ✅
 
-- [ ] **1.1** Создать `SubscriptionGuard` (проверка `status === 'ACTIVE'`)
-- [ ] **1.2** Добавить декоратор `@RequireSubscription()`
-- [ ] **1.3** Применить guard ко всем мутирующим эндпоинтам трекера
-- [ ] **1.4** Тесты: блокировка DEMO, пропуск ACTIVE
+- [x] **1.1** Создать `SubscriptionGuard` (проверка `status === 'ACTIVE'`)
+- [x] **1.2** Добавить декоратор `@RequireSubscription()`
+- [x] **1.3** Применить guard ко всем мутирующим эндпоинтам трекера (~126 декораторов, 31 файл)
+- [x] **1.4** Тесты: блокировка DEMO, пропуск ACTIVE (14 unit-тестов, все ✅)
 
 ### Фаза 2: PaywallBanner + PaywallModal (frontend)
 

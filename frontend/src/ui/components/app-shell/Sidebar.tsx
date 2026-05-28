@@ -21,6 +21,7 @@ import {
   FlaskConical,
   FolderKanban,
   Gauge,
+  Gift,
   HeartHandshake,
   Home,
   IdCard,
@@ -256,6 +257,8 @@ const ME_GROUP: NavGroup = {
     { href: '/me/promises', label: 'Мои обещания', icon: CheckCircle2, matchPrefix: '/me/promises' },
     // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
     { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
+    // 2026-05-28 referrals-sidebar — реферальная программа (20 000 ₽ с платежа).
+    { href: '/referrals', label: 'Реферальная программа', icon: Gift, matchPrefix: '/referrals' },
   ],
 };
 

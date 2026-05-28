@@ -241,6 +241,18 @@ LiveKit чистит атрибуты автоматически при disconne
 - `entitlement.guard.ts` + `require-entitlement.decorator.ts` — `APP_GUARD` global.
 - `entitlements.controller.ts` — `/me/entitlements`, `/settings/billing`, `/admin/orgs/:id/entitlement`.
 
+### `backend/src/modules/billing/` (Paywall без trial, 2026-05-28)
+- **`guards/subscription.guard.ts`** — `SubscriptionGuard`, проверяет `Subscription.status === 'ACTIVE'`. Блокирует (403) если DEMO/SUSPENDED/CANCELED/EXPIRED/PAST_DUE.
+- **`guards/require-subscription.decorator.ts`** — декоратор `@RequireSubscription()` для мутирующих эндпоинтов.
+- **Цепочка guard'ов:** `CookieAuthGuard → TenantGuard → SubscriptionGuard → EntitlementGuard → RbacGuard`.
+- **Применение:** ~126 мутирующих эндпоинтов (POST/PATCH/DELETE) в 31 контроллере: tracker (projects/issues/sprints/cycles/boards/checklists/comments/labels/relations/attachments/documents/holidays/intake/imports/webhooks), meetings (meetings/participants/room-messages/recordings/reports/highlights/decisions), clones (clones/clones-admin), AI chat (chat/chat-v2/concierge), orgs (orgs/retention/goals/sprint-review).
+- **403 ответ:** `{ok: false, error: {code: 'subscription_required', message: 'Оплатите подписку, чтобы начать работу', currentStatus, price: 60000, currency: 'RUB', paymentUrl: '/settings/subscription'}}`.
+- **Исключения:** GET-запросы (read-only), `/auth/*`, `/billing/*`, webhook'и от платёжных провайдеров (HMAC-guarded), server-to-server (Crossmark).
+- **Модель подписки:** `Subscription { tenantId, status: DEMO|ACTIVE|PAST_DUE|SUSPENDED|CANCELED|EXPIRED, seatsBase: 31, seatsExtra, currentPeriodStart, currentPeriodEnd }`.
+- **Тариф:** 60 000 ₽/мес (или 576 000 ₽/год со скидкой 20%), +1 000 ₽/мес за каждого пользователя сверх 31.
+- **Тесты:** 14 unit-тестов (все ✅).
+- **ТЗ:** `plans/tz/2026-05-28-paywall-no-trial.md` (Фаза 1 ✅).
+
 ### Frontend (фазы 7–12)
 - `frontend/app/(authenticated)/admin/*` — Z-Admin (8 страниц + AdminShell).
 - `frontend/app/(authenticated)/settings/admin/*` — Org-Admin (4 страницы).

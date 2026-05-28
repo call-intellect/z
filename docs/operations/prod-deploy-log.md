@@ -457,6 +457,7 @@ docker compose logs -f migrate     # пока не увидишь "DONE" / exit 
 - `User`: +calendarFeedToken (VarChar 80)
 - `User` (2026-05-29, онбординг v2): +`companyRole UserCompanyRole?` (enum: founder, general_director, operations_director, department_head, team_lead, specialist), +`profileCompletedAt DateTime?`. Оба nullable — обратно совместимо, простой db push.
 - `Org` (2026-05-29, онбординг v2): +`teamSize VarChar(20)?`, +`painPoints String[]`, +`currentStack String[]`, +`plannedFeatures String[]`, +`welcomeCompletedAt DateTime?`, +`companyInfoCompletedAt DateTime?`, +`departmentsCompletedAt DateTime?`, +`rolesCompletedAt DateTime?`, +`teamInvitedAt DateTime?`, +`firstSprintCreatedAt DateTime?`, +`firstMeetingCreatedAt DateTime?`, +`setupCompletedAt DateTime?`. Все nullable — обратно совместимо, простой db push.
+- `Org` (2026-05-28, демо-воркспейс): +`demoWorkspaceSeededAt DateTime?`. Nullable — обратно совместимо, простой db push. Отмечает, что для этой Org уже загружен демо-кабинет «ТехноСтрим».
 - `User` (2026-05-27, коммит `ade4c25`): +`phone VarChar(20)?`, +`signupRef VarChar(255)?`, +`consentDataProcessing Boolean @default(false)`, +`consentMarketing Boolean @default(false)`, +`consentAcceptedAt DateTime?`. Lead-style регистрация: телефон, два чекбокса согласий, ref-tracking из URL. Все nullable / с дефолтом — обратно совместимо, простой db push без `--accept-data-loss`.
 - `CloneAccessGrant` (2026-05-26, коммит `fc3d6fe`): +`revokedAt DateTime?`, +`revokedBy String?`, +`expiresAt DateTime?` + 2 индекса. Все поля nullable — обратно совместимо, простой db push.
 - **Sprints (2026-05-27, коммиты `bb4aa6e`/`9df3d6c`/`bc34ea6`):**
@@ -674,6 +675,33 @@ docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pr
 
 ---
 
+### Шаг 7.8 — Демо-воркспейс «ТехноСтрим» (per-Org, по запросу)
+
+**Два способа запуска** (выбери один):
+
+**Способ А — через UI (рекомендуется):**
+1. Залогинься под owner/admin нужной Org.
+2. Перейди на `/onboarding/demo-choice` или вызови `POST /api/v1/orgs/<orgId>/demo-workspace` из Swagger (`/api/docs`).
+3. После успешного seed фронтенд перенаправит на `/dashboard` и запустит демо-тур (5 шагов).
+
+**Способ Б — CLI-скрипт (для тестирования / массового seed):**
+```bash
+# Узнать tenantId (slug Org) и ownerUserId:
+docker compose exec backend bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId>
+```
+Скрипт создаёт ~4600 строк демо-данных: 12 человек, 7 отделов, 3 проекта, 38 задач, 7 встреч с AI-отчётами, 20 IdeaBlock, 15 Entity, 7 Theme, 4 клона, 100 check-ins, дайджесты, чат-диалоги, уведомления, карточки, процессы. Все записи помечены `externalSource: 'demo'`.
+
+**Сброс демо-данных:**
+```bash
+# CLI:
+docker compose exec backend bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId> --reset
+# API: POST /api/v1/orgs/<orgId>/reset-demo (owner only)
+```
+
+⚠️ Скрипт **не зарегистрирован в `apply-prod-deploy.ts`** — это per-org операция, не глобальный seed. Вызывается по требованию из UI или CLI.
+
+---
+
 ### Шаг 8 — Backfill (после schema + seed)
 
 ```bash
@@ -773,6 +801,25 @@ curl https://prod.host/metrics | grep -E 'z_voice_ws|z_mail_inbound|z_llm_cache|
 ```
 
 Должны быть `bullmq_*` метрики под новые очереди: `probe-*, conversational-send, chat-v2-cleanup, card-stale-detector, idea-clusterer, insight-clusterer, knowledge-clone-rebuild, skill-profile-*, executable-persona-build, skill-manager-digest, tracker.webhook-delivery`.
+
+**Демо-воркспейс (2026-05-28).** В Swagger под тегом `onboarding` должны появиться `POST /api/v1/orgs/:orgId/demo-workspace` и `POST /api/v1/orgs/:orgId/reset-demo`. Smoke-проверка:
+
+```bash
+# Seed демо-данных (замени <orgId> и <userId> на реальные):
+docker compose exec backend bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId>
+# Ожидаемый вывод: "=== Демо-воркспейс «ТехноСтрим» успешно создан ===" + JSON stats
+# Проверка: Org.demoWorkspaceSeededAt != null
+docker compose exec backend bun -e '
+import { createPrismaClient } from "./scripts/_lib/prisma";
+const p = createPrismaClient();
+p.org.findUnique({ where: { id: "<orgId>" }, select: { demoWorkspaceSeededAt: true } })
+  .then(r => { console.log("demoWorkspaceSeededAt:", r?.demoWorkspaceSeededAt); process.exit(0) })
+'
+
+# Reset:
+docker compose exec backend bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId> --reset
+# Ожидаемый вывод: "Демо-данные удалены."
+```
 
 **Telegram через прокси (2026-05-26).** После Шага 6.11 проверь, что:
 

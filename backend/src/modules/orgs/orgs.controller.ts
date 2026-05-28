@@ -18,6 +18,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TranscriptCleaningService } from '../ai/services/transcript-cleaning.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import { CreateOrgSchema, type CreateOrgDto } from './dto/create-org.dto';
 import { InviteMemberSchema, type InviteMemberDto } from './dto/invite-member.dto';
@@ -52,6 +53,7 @@ export class OrgsController {
   ) {}
 
   @Post()
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Body(new ZodValidationPipe(CreateOrgSchema)) body: CreateOrgDto,
@@ -80,6 +82,7 @@ export class OrgsController {
   }
 
   @Patch(':id')
+  @RequireSubscription()
   async update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateOrgSchema)) body: UpdateOrgDto,
@@ -95,6 +98,7 @@ export class OrgsController {
    * При auto=false — только по ручному `POST .../transcript/clean`.
    */
   @Patch(':id/settings/transcript-cleaning')
+  @RequireSubscription()
   async setTranscriptCleaningAuto(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(PatchTranscriptCleaningSchema))
@@ -118,6 +122,7 @@ export class OrgsController {
   }
 
   @Patch(':id/members/:userId')
+  @RequireSubscription()
   async updateMember(
     @Param('id') id: string,
     @Param('userId') targetUserId: string,
@@ -129,6 +134,7 @@ export class OrgsController {
   }
 
   @Delete(':id/members/:userId')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async removeMember(
     @Param('id') id: string,
@@ -142,6 +148,7 @@ export class OrgsController {
   // ─────────────────────────── invitations ──────────────────────────
 
   @Post(':id/invitations')
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   async invite(
     @Param('id') id: string,
@@ -168,6 +175,7 @@ export class OrgsController {
   }
 
   @Delete(':id/invitations/:invitationId')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async revoke(
     @Param('id') id: string,
@@ -183,6 +191,7 @@ export class OrgsController {
    * повторная отправка письма (если email указан). Доступ — owner/admin.
    */
   @Post(':id/invitations/:invitationId/resend')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async resendInvitation(
     @Param('id') id: string,
@@ -203,6 +212,7 @@ export class OrgsController {
    * пользователя для kind='telegram_bot'. Доступ — owner/admin.
    */
   @Delete(':id/members/:userId/telegram-binding')
+  @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   async resetMemberTelegramBinding(
     @Param('id') id: string,

@@ -15,6 +15,7 @@ import {
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
@@ -55,6 +56,7 @@ export class SprintReviewController {
   }
 
   @Post(':id/review/regenerate')
+  @RequireSubscription()
   @ApiOperation({
     summary:
       'Сгенерировать финальный отчёт спринта заново (например, если AI был недоступен)',

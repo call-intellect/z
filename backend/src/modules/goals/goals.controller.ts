@@ -22,6 +22,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -94,6 +95,7 @@ export class GoalsController {
   }
 
   @Post()
+  @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Создать цель (owner only)' })
   async create(
@@ -107,6 +109,7 @@ export class GoalsController {
   }
 
   @Patch(':id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Обновить цель (owner only)' })
   async update(
     @Param('id') id: string,
@@ -125,6 +128,7 @@ export class GoalsController {
   }
 
   @Delete(':id')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Архивировать цель (soft-delete) — owner only' })
   async archive(
     @Param('id') id: string,
@@ -137,6 +141,7 @@ export class GoalsController {
   }
 
   @Post(':id/themes')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Привязать темы к цели (owner only)' })
   async addThemes(
     @Param('id') id: string,
@@ -155,6 +160,7 @@ export class GoalsController {
   }
 
   @Delete(':id/themes/:themeId')
+  @RequireSubscription()
   @ApiOperation({ summary: 'Отвязать тему от цели (owner only)' })
   async removeTheme(
     @Param('id') id: string,
@@ -194,6 +200,7 @@ export class GoalsController {
   }
 
   @Post(':id/recompute')
+  @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ summary: 'Ручной пересчёт strategic-alignment (owner/super_admin)' })
   async recompute(

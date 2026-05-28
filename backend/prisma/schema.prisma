@@ -948,6 +948,11 @@ model User {
   /// ТЗ 2026-05-26 — обратная relation для soft-revoke (см. CloneAccessGrant.revokedBy).
   cloneAccessGrantsRevoked  CloneAccessGrant[] @relation("CloneAccessGrant_revokedBy")
 
+  // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
+  /// Реферальный профиль пользователя (один user → один Referral).
+  /// См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9.
+  referral Referral?
+
   @@unique([email, signupSource])
   @@index([email])
   @@index([deletedAt])
@@ -2186,6 +2191,35 @@ model Org {
   /// CLONE_V2_ENABLED — единственный источник правды о доступе к
   /// person/role-клону. Без CLONE_V2_ENABLED не используется (legacy RBAC).
   cloneAccessGrants CloneAccessGrant[]
+
+  // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
+  /// Юр.реквизиты Org. Заполняются InnLookupService (Точка OpenBanking →
+  /// DaData fallback) или вручную через `/api/v1/billing/billing-details`.
+  /// См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §6.
+  inn             String? @db.VarChar(20)
+  ogrn            String? @db.VarChar(20)
+  kpp             String? @db.VarChar(20)
+  directorName    String? @db.VarChar(255)
+  legalAddress    String? @db.Text
+  bankBik         String? @db.VarChar(9)
+  bankAccount     String? @db.VarChar(20)
+  bankCorrAccount String? @db.VarChar(20)
+  bankName        String?
+  contactEmail    String?
+  contactPhone    String?
+  /// Optimistic-lock версия реквизитов (PATCH /billing/billing-details).
+  billingDetailsVersion Int @default(1)
+  /// Pending-атрибуция: реферальный slug, сохранённый при регистрации Org.
+  /// `ClientReferralLink` создаётся ТОЛЬКО при первой реальной оплате
+  /// (paymentMode='paid'), эти два поля очищаются после.
+  pendingAttributionSlug String?
+  pendingAttributionAt   DateTime?
+
+  subscription       Subscription?
+  meetingsBalance    MeetingsBalance?
+  clientReferralLink ClientReferralLink?
+  invoices           Invoice[]
+  billingEventLogs   BillingEventLog[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -7904,4 +7938,361 @@ model FeedbackItem {
   @@index([topicId, createdAt])
   @@index([messageId])
   @@index([discarded])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ТЗ 2026-05-27 — Billing (Точка) + Реферальная программа + DaData
+// См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Платёжный провайдер для подписки. `manual` — заглушка (Subscription
+/// ведётся только админскими действиями), `tochka` — реальная интеграция
+/// с Точка Банком (acquiring + invoice + webhook).
+enum BillingProviderName {
+  tochka
+  manual
+}
+
+/// Тип биллингового периода подписки.
+enum BillingPeriod {
+  monthly
+  yearly
+}
+
+/// Статус подписки. Переходы — через FSM (SubscriptionService).
+/// См. таблицу переходов в plans/analysis/2026-05-25-billing-and-referrals.md §4.3.
+enum SubscriptionStatus {
+  DEMO       // Org зарегистрирована, демо-кабинет, без оплаты
+  ACTIVE     // подписка оплачена (paid) или активирована бонусом (bonus)
+  PAST_DUE   // платёж не прошёл, льготный период 7 дней
+  SUSPENDED  // льготный период истёк, read-only
+  CANCELED   // отменено автопродление, активна до конца оплаченного периода
+  EXPIRED    // период закончился, не продлили
+}
+
+/// Режим текущей подписки. `paid` идёт в выручку + реф-выплата. `bonus`
+/// не идёт в выручку и не порождает реф-выплат.
+enum PaymentMode {
+  paid
+  bonus
+}
+
+/// Статус инвойса. Источник истины «клиент платный» = `Invoice { status='paid' }`.
+enum InvoiceStatus {
+  draft
+  issued
+  paid
+  bonus
+  void
+}
+
+/// Способ оплаты конкретного инвойса.
+enum BillingPaymentMethod {
+  card_recurring  // Точка subscription (картой с автопродлением)
+  bank_invoice    // безнал через Точку (PDF на email)
+  manual_admin    // ручная отметка администратором (paid)
+  bonus           // бонусная активация без оплаты
+}
+
+/// Subscription — одна на Org (`@unique tenantId`). Денежные суммы хранятся
+/// в копейках (Int) во всём биллинге Z.
+model Subscription {
+  id                     String              @id @default(cuid())
+  tenantId               String              @unique
+  org                    Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  status                 SubscriptionStatus  @default(DEMO)
+  paymentMode            PaymentMode?
+  billingPeriod          BillingPeriod?
+
+  startedAt              DateTime?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  /// Конец grace-периода (7 дней после неуспешного платежа). Только в PAST_DUE.
+  pastDueUntil           DateTime?
+
+  /// Базовое число мест (главный + 30 сотрудников = 31 место). Поле — Int
+  /// чтобы можно было изменить базу в будущем без миграции данных.
+  seatsBase              Int                 @default(30)
+  seatsExtra             Int                 @default(0)
+  /// 60 000 ₽ × 100 = 6 000 000 копеек.
+  monthlyPriceKopecks    Int                 @default(6000000)
+  totalPaidKopecks       Int                 @default(0)
+
+  autoRenew              Boolean             @default(false)
+  /// Способ возобновления при autoRenew=true. NULL для manual/bonus подписок
+  /// без автопродления.
+  renewalMethod          BillingPaymentMethod?
+
+  // ── Привязка к провайдеру (Точка / другие в будущем) ──
+  providerName           BillingProviderName?
+  providerSubscriptionId String?
+  providerCustomerCode   String?
+  providerConsumerId     String?
+  lastRenewalAttemptAt   DateTime?
+
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  events                 SubscriptionEvent[]
+  invoices               Invoice[]
+  clientReferralLink     ClientReferralLink?
+
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@index([renewalMethod, autoRenew, currentPeriodEnd])
+}
+
+/// История изменений Subscription (audit-trail FSM-переходов + админских
+/// действий). См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §6.
+model SubscriptionEvent {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  /// 'created' | 'activated_paid' | 'activated_bonus' | 'renewed' |
+  /// 'past_due' | 'suspended' | 'canceled' | 'expired' | 'seats_changed' |
+  /// 'status_forced' | 'provider_recurring_canceled'.
+  eventType      String
+  payload        Json
+  byUserId       String?
+  reason         String?      @db.Text
+  createdAt      DateTime     @default(now())
+
+  @@index([subscriptionId, createdAt])
+}
+
+/// Счёт за подписку. `billingNumber` (autoincrement) → строковый
+/// `invoiceNumber` (Z-YYYY-NNNNNN), формируется в InvoiceService.
+model Invoice {
+  id                String                @id @default(cuid())
+  tenantId          String
+  org               Org                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId    String?
+  subscription      Subscription?         @relation(fields: [subscriptionId], references: [id])
+
+  /// Числовой sequence-номер (Postgres autoincrement). Строковый
+  /// `invoiceNumber` (Z-2026-000123) формируется в коде на основе
+  /// `billingNumber` + года `createdAt`.
+  billingNumber     Int                   @unique @default(autoincrement())
+  invoiceNumber     String                @unique
+  periodStart       DateTime
+  periodEnd         DateTime
+  /// Состав счёта: [{ kind, qty, unitKopecks, totalKopecks, note }].
+  items             Json
+  totalKopecks      Int
+  status            InvoiceStatus         @default(draft)
+  paymentMethod     BillingPaymentMethod?
+
+  // ── PDF: наша генерация (manual/bonus) ИЛИ от Точки (bank_invoice) ──
+  pdfUrl            String?
+  pdfSource         String?               // 'z' | 'tochka'
+  pdfFetchedAt      DateTime?
+
+  // ── Привязка к провайдеру ──
+  providerName      BillingProviderName?
+  providerInvoiceId String?               // operationId/documentId
+  paymentUrl        String?
+  externalStatus    String?
+
+  issuedAt          DateTime?
+  paidAt            DateTime?
+  voidedAt          DateTime?
+  dueAt             DateTime?
+  /// Внешний референс при ручной отметке оплаченным (номер платёжки клиента).
+  externalRef       String?
+  /// Кто отметил paid/bonus вручную. NULL для автоматики (webhook).
+  markedByUserId    String?
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  billingEventLogs  BillingEventLog[]
+  referralPayouts   ReferralPayout[]
+
+  @@index([tenantId, status])
+  @@index([status, paidAt])
+  @@index([providerInvoiceId])
+}
+
+/// Лог провайдерских событий + дедуп webhook'ов по `externalEventId`.
+/// `externalEventId = <eventType>:<operationId>:<status>` — формат от
+/// TochkaBillingProvider.parseWebhook.
+model BillingEventLog {
+  id              String               @id @default(cuid())
+  tenantId        String?
+  org             Org?                 @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  subscriptionId  String?
+  invoiceId       String?
+  invoice         Invoice?             @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  eventType       String
+  providerName    BillingProviderName?
+  externalEventId String?
+  payload         Json
+  /// 'received' | 'processed' | 'failed'.
+  status          String               @default("received")
+  processedAt     DateTime?
+  createdAt       DateTime             @default(now())
+
+  @@index([eventType])
+  @@index([externalEventId])
+  @@index([tenantId])
+}
+
+/// Узкая KV-таблица для биллинга: OAuth-токены, OAuth-state, регистрация
+/// webhook'а. Не используем общий PipelineConfig (его нет в Z).
+/// Ключи: 'tochka.production.oauth_tokens' | 'tochka.production.oauth_state'
+/// | 'tochka.webhook_registration'.
+model BillingProviderConfig {
+  key       String   @id
+  valueJson Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Накопительный баланс встреч (заменяет квоту meetings_per_month).
+// ════════════════════════════════════════════════════════════════════════════
+
+model MeetingsBalance {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  org           Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Текущий доступный остаток встреч (накопительный, без потолка).
+  balance       Int      @default(0)
+  totalGranted  Int      @default(0)
+  totalConsumed Int      @default(0)
+  lastGrantedAt DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Реферальная программа: профиль реферала + атрибуция + first-touch + payouts.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Юр.форма реферала — нужна чтобы знать какой документ для выплаты
+/// требовать (чек НПД для самозанятого, акт для ИП/юрлица).
+enum ReferralLegalForm {
+  self_employed
+  individual_entrepreneur
+  legal_entity
+}
+
+/// Статус начисления реф-комиссии.
+enum ReferralPayoutStatus {
+  pending
+  paid
+  void
+}
+
+/// Реферальный профиль пользователя. Живёт независимо от его Org —
+/// один user может быть реферал, владея другой Org.
+model Referral {
+  id                 String    @id @default(cuid())
+  ownerUserId        String    @unique
+  owner              User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  /// Уникальный slug 6–8 символов, генерируется системой. URL вида
+  /// https://app.z.ru/?ref=<slug>.
+  slug               String    @unique
+  inn                String    @db.VarChar(20)
+  /// Подтверждение по API ИНН через InnLookupService.
+  innVerifiedAt      DateTime?
+  legalForm          ReferralLegalForm
+  /// Реквизиты для выплат (структура зависит от legalForm).
+  payoutDetails      Json
+  /// Дата принятия оферты. Фиксируется при первой выплате.
+  contractAcceptedAt DateTime?
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  attributions       ReferralAttribution[]
+  clientLinks        ClientReferralLink[]
+  payouts            ReferralPayout[]
+
+  @@index([slug])
+}
+
+/// Сырое касание лендинга. Cookie `z_ref` TTL = 90 дней (expiresAt).
+/// Атрибуция используется первой попавшейся не-истёкшей записи на момент
+/// регистрации Org.
+model ReferralAttribution {
+  id          String   @id @default(cuid())
+  referralId  String
+  referral    Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+
+  /// Дублируется (denorm) для read-without-join.
+  slug        String
+  /// Browser fingerprint (рассчитывается на клиенте).
+  fingerprint String?  @db.VarChar(64)
+  ip          String?  @db.VarChar(45)
+  userAgent   String?  @db.Text
+  referer     String?  @db.Text
+
+  createdAt   DateTime @default(now())
+  /// createdAt + 90 дней.
+  expiresAt   DateTime
+
+  @@index([slug, createdAt])
+  @@index([fingerprint])
+  @@index([expiresAt])
+}
+
+/// First-touch привязка Org к реферальному профилю. Создаётся ТОЛЬКО при
+/// первой реальной оплате (paymentMode='paid'). До первой оплаты атрибуция
+/// живёт на Org.pendingAttributionSlug.
+model ClientReferralLink {
+  id                  String        @id @default(cuid())
+  tenantId            String        @unique
+  org                 Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  referralId          String
+  referral            Referral      @relation(fields: [referralId], references: [id])
+
+  attachedAt          DateTime      @default(now())
+  /// Дата первой РЕАЛЬНОЙ оплаты (не bonus).
+  firstPaidAt         DateTime?
+  /// Снапшот ReferralAttribution.id, который победил при first-touch.
+  sourceAttributionId String?
+
+  subscriptionId      String?       @unique
+  subscription        Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  payouts             ReferralPayout[]
+
+  @@index([referralId])
+}
+
+/// Начисление реф-комиссии за каждый реальный paid-инвойс приведённой
+/// компании. Сумма фиксированная — 20 000 ₽ × 100 = 2 000 000 копеек.
+model ReferralPayout {
+  id                   String               @id @default(cuid())
+  referralId           String
+  referral             Referral             @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  clientReferralLinkId String
+  clientReferralLink   ClientReferralLink   @relation(fields: [clientReferralLinkId], references: [id], onDelete: Cascade)
+
+  triggerInvoiceId     String?
+  triggerInvoice       Invoice?             @relation(fields: [triggerInvoiceId], references: [id], onDelete: SetNull)
+
+  /// Месяц начисления — 'YYYY-MM' (для группировки в cron'е 10-го числа).
+  periodMonth          String               @db.VarChar(7)
+  /// 20 000 ₽ × 100 = 2 000 000 копеек (default).
+  amountKopecks        Int                  @default(2000000)
+  status               ReferralPayoutStatus @default(pending)
+
+  /// URL акта самозанятого / чека НПД / счёта ИП в S3.
+  payoutDocumentUrl    String?
+  paidAt               DateTime?
+  /// reason для status='void'.
+  voidReason           String?              @db.Text
+
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([referralId, periodMonth])
+  @@index([status])
 }

@@ -36,7 +36,7 @@ function fakeResolved(overrides: Partial<ResolvedEntitlement> = {}): ResolvedEnt
     rawTier: 'tier_pro',
     failedSafe: false,
     features: { 'feature.meeting': true } as ResolvedEntitlement['features'],
-    quotas: { meetings_per_month: 500 } as ResolvedEntitlement['quotas'],
+    quotas: { blocks_per_org: 500 } as ResolvedEntitlement['quotas'],
     featureOverrides: {},
     quotaOverrides: {},
     notes: 'secret notes',
@@ -140,14 +140,14 @@ describe('EntitlementsController', () => {
     it('применяет quotaOverrides через setOverride', async () => {
       const { ctrl, svc } = build();
       const body = PatchEntitlementSchema.parse({
-        quotaOverrides: { meetings_per_month: 1000 },
+        quotaOverrides: { blocks_per_org: 1000 },
         reason: 'bump quota',
       });
       await ctrl.adminPatch('t-1', body, userOwner);
       expect(svc.setOverride).toHaveBeenCalledWith(
         't-1',
         'quota',
-        'meetings_per_month',
+        'blocks_per_org',
         1000,
         userOwner.id,
         'bump quota',

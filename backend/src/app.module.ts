@@ -25,6 +25,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { BrandVoiceModule } from './modules/brand-voice/brand-voice.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
@@ -57,6 +58,7 @@ import { HighlightsModule } from './modules/highlights/highlights.module';
 import { IdeasModule } from './modules/ideas/ideas.module';
 import { IngestEmailModule } from './modules/ingest/adapters/email/ingest-email.module';
 import { IngestModule } from './modules/ingest/ingest.module';
+import { InnLookupModule } from './modules/inn-lookup/inn-lookup.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { JobDescriptionsModule } from './modules/job-descriptions/job-descriptions.module';
@@ -76,6 +78,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
+import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { OrgMembersModule } from './modules/org-members/org-members.module';
@@ -93,6 +96,7 @@ import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { RecognitionModule } from './modules/recognition/recognition.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
 import { RegulationsModule } from './modules/regulations/regulations.module';
 import { RetentionModule } from './modules/retention/retention.module';
 import { RoleMapModule } from './modules/role-map/role-map.module';
@@ -209,6 +213,9 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 
     // Бизнес-модули.
     HealthModule,
+    // ТЗ 2026-05-27 (billing) Фаза 3: MeetingsBalance ДО MeetingsModule —
+    // MeetingsService инжектит MeetingsBalanceService при создании встречи.
+    MeetingsBalanceModule,
     MeetingsModule,
     ParticipantsModule,
     // RecordingsModule — должен подняться ДО WebhooksModule, т.к.
@@ -433,6 +440,22 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // SBA β-4 — REST API `/api/v1/insights` (master-detail радара сигналов).
     // RBAC через `insight` ResourceType (см. policy.csv).
     InsightsModule,
+
+    // ТЗ 2026-05-27 — InnLookup (Mock + DaData; Tochka добавляется в Фазе 7).
+    // Используется при регистрации Org (автоподстановка реквизитов) и при
+    // верификации ИНН реферала. Redis-кэш TTL 30 дней.
+    InnLookupModule,
+
+    // ТЗ 2026-05-27 — биллинг (Subscription/Invoice/Provider).
+    // Фаза 4a: pure-сервисы (SeatService, InvoiceNumberService) +
+    // BillingProviderPort с ManualBillingProvider-заглушкой.
+    // Controllers/cron подъезжают в Фазе 4b, TochkaBillingProvider — в Фазе 5.
+    BillingModule,
+
+    // ТЗ 2026-05-27 — реферальная программа (Фаза 6).
+    // ReferralPayoutService подписан на billing.invoice.paid через @OnEvent —
+    // регистрируется ПОСЛЕ BillingModule.
+    ReferralsModule,
 
     // Wave 2 (2026-05-24) — Activity Feeds: единая лента активности AI-агентов
     // и пользователей. @Global ActivityFeedService.publish() вызывают

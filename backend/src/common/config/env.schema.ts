@@ -1533,6 +1533,60 @@ const TrackerSchema = z.object({
 });
 
 /**
+ * ENV для биллинга, реферальной программы, ИНН-лукапа.
+ * Один schema — НЕ дробить на 4 (TS2589 на длинной merge-цепочке EnvSchema).
+ * См. ТЗ plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §5.
+ */
+const BillingSchema = z.object({
+  // ── Billing — общее ──
+  BILLING_PROVIDER: z.enum(['tochka', 'manual']).default('manual'),
+  FEATURE_BILLING_TOCHKA: zBool(false),
+  FEATURE_BILLING_CARD_RECURRING: zBool(false),
+  FEATURE_BILLING_BANK_INVOICE: zBool(false),
+  BILLING_PUBLIC_API_URL: z.string().url().optional(),
+  BILLING_SUCCESS_REDIRECT_URL: z.string().url().optional(),
+  BILLING_FAIL_REDIRECT_URL: z.string().url().optional(),
+
+  // ── Юридические реквизиты Z (для шапки PDF-счёта) ──
+  // Опциональны: если не заданы — PDF использует placeholder и логирует warning.
+  BILLING_LEGAL_ENTITY_NAME: z.string().optional(),
+  BILLING_LEGAL_ENTITY_INN: z.string().regex(/^\d{10}(\d{2})?$/).optional(),
+  BILLING_LEGAL_ENTITY_KPP: z.string().regex(/^\d{9}$/).optional(),
+  BILLING_LEGAL_ENTITY_ADDRESS: z.string().optional(),
+  BILLING_LEGAL_ENTITY_BIK: z.string().regex(/^\d{9}$/).optional(),
+  BILLING_LEGAL_ENTITY_ACCOUNT: z.string().regex(/^\d{20}$/).optional(),
+
+  // ── Точка Банк ──
+  TOCHKA_MODE: z.enum(['sandbox', 'production']).default('sandbox'),
+  TOCHKA_API_VERSION: z.string().default('v1.0'),
+  TOCHKA_API_BASE_URL: z.string().url().optional(),
+  TOCHKA_CUSTOMER_CODE: z.string().optional(),
+  TOCHKA_ACCOUNT_ID: z.string().optional(),
+  TOCHKA_MERCHANT_ID: z.string().optional(),
+  TOCHKA_CLIENT_ID: z.string().optional(),
+  TOCHKA_CLIENT_SECRET: z.string().optional(),
+  TOCHKA_REDIRECT_URI: z.string().url().optional(),
+  TOCHKA_JWT_TOKEN: z.string().optional(),
+  TOCHKA_OAUTH_SCOPES: z.string().default('accounts balances customers statements sbp payments acquiring'),
+  TOCHKA_OAUTH_PERMISSIONS: z.string().default(
+    'ReadAccountsBasic,ReadAccountsDetail,ReadCustomerData,MakeAcquiringOperation,ReadAcquiringData,ManageWebhookData,ManageInvoiceData',
+  ),
+  TOCHKA_OAUTH_CONSENT_EXPIRES_AT: z.string().optional(),
+  TOCHKA_WEBHOOK_URL: z.string().url().optional(),
+  TOCHKA_WEBHOOK_EVENT_TYPES: z.string().default('acquiringInternetPayment'),
+  TOCHKA_WEBHOOK_AUTO_REGISTER: zBool(false),
+  TOCHKA_WEBHOOK_PUBLIC_KEY_URL: z
+    .string()
+    .url()
+    .default('https://enter.tochka.com/doc/openapi/static/keys/public'),
+
+  // ── DaData (lookup ИНН) ──
+  DADATA_API_KEY: z.string().optional(),
+  INN_LOOKUP_PROVIDER: z.enum(['mock', 'dadata', 'tochka_then_dadata']).default('mock'),
+  INN_LOOKUP_CACHE_TTL_DAYS: z.coerce.number().int().positive().default(30),
+});
+
+/**
  * Полная схема — слияние всех групп.
  *
  * NB (cardinality / TS2589): TypeScript падает на бесконечной глубине типов
@@ -1541,6 +1595,10 @@ const TrackerSchema = z.object({
  * выше, а не отдельной схемой. Это снижает глубину типа Env. После γ-1
  * `parseEnv` возвращает `Record<string, unknown>` — поэтому короткая цепочка
  * `.merge(BetaOpsSchema)` ниже безопасна.
+ *
+ * 2026-05-27: BillingSchema добавлен одной группой (Billing + Tochka + DaData
+ * + InnLookup) — НЕ дробить на 4 раздельные схемы (см. ТЗ
+ * plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(DatabaseSchema)
@@ -1596,7 +1654,8 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   // (`cfg.betaOps`, `cfg.voice`, `cfg.roleMap`).
   .merge(BetaOpsSchema)
   .merge(BudgetSchema)
-  .merge(TrackerSchema);
+  .merge(TrackerSchema)
+  .merge(BillingSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

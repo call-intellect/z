@@ -44,8 +44,8 @@ export interface ResolvedEntitlement {
  * Алгоритм `getEntitlement`:
  *   1. Cache lookup `entitlement:<tenantId>` в Redis (TTL 300s).
  *   2. Miss → `prisma.orgEntitlement.findUnique`.
- *   3. Если записи нет — fail-safe `tier_basic` + log warn.
- *   4. Если в БД незнакомый tier — fail-safe `tier_basic` + log warn (не падаем).
+ *   3. Если записи нет — fail-safe `tier_standard` + log warn.
+ *   4. Если в БД незнакомый tier — fail-safe `tier_standard` + log warn (не падаем).
  *   5. Merge: `features = {...TIER_CONFIG[tier].features, ...featureOverrides}`,
  *             `quotas  = {...TIER_CONFIG[tier].quotas,  ...quotaOverrides}`.
  *   6. Cache write TTL 300 сек.
@@ -95,7 +95,7 @@ export class EntitlementService {
     let resolved: ResolvedEntitlement;
     if (!record) {
       this.logger.warn(
-        `EntitlementService.getEntitlement: запись OrgEntitlement отсутствует для tenantId=${tenantId}, fail-safe → tier_basic`,
+        `EntitlementService.getEntitlement: запись OrgEntitlement отсутствует для tenantId=${tenantId}, fail-safe → tier_standard`,
       );
       resolved = this.buildFailSafe(null, null, null);
     } else {
@@ -313,7 +313,7 @@ export class EntitlementService {
 
     if (!isTierKey(rawTier)) {
       this.logger.warn(
-        `EntitlementService: unknown tier '${rawTier}' in DB, fail-safe → tier_basic`,
+        `EntitlementService: unknown tier '${rawTier}' in DB, fail-safe → tier_standard`,
       );
       return this.buildFailSafe(rawTier, featureOverrides, quotaOverrides, notes);
     }
@@ -356,14 +356,16 @@ export class EntitlementService {
     quotaOverrides: Partial<Record<QuotaKey, number>> | null,
     notes: string | null = null,
   ): ResolvedEntitlement {
+    // ТЗ 2026-05-27 (billing-tochka-referral-dadata-z): fail-safe деградирует
+    // на целевой `tier_standard` (все фичи `true`), а не на legacy `tier_basic`.
     return {
-      tier: 'tier_basic',
-      features: { ...TIER_CONFIG.tier_basic.features },
-      quotas: { ...TIER_CONFIG.tier_basic.quotas },
+      tier: 'tier_standard',
+      features: { ...TIER_CONFIG.tier_standard.features },
+      quotas: { ...TIER_CONFIG.tier_standard.quotas },
       featureOverrides: featureOverrides ?? {},
       quotaOverrides: quotaOverrides ?? {},
       notes,
-      rawTier: rawTier ?? 'tier_basic',
+      rawTier: rawTier ?? 'tier_standard',
       failedSafe: true,
     };
   }

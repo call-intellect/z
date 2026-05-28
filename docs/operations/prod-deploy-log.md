@@ -13,11 +13,86 @@
 
 ## 🚨 Накоплено к выкату
 
-**Окно:** 2026-05-20 .. 2026-05-26 (с момента последнего prod-cut).
+**Окно:** 2026-05-20 .. 2026-05-27 (с момента последнего prod-cut).
 **Источник:** все рефлексии в `second-brain/05_история/` с этой даты + git log dev.
-**Содержит:** ~80 prod-скриптов (patch/seed/migrate/backfill/setup) + ~165 новых Prisma-моделей + ~100 новых ENV (все опциональные) + 2 опасных schema-изменения.
+**Содержит:** ~80 prod-скриптов (patch/seed/migrate/backfill/setup) + ~175 новых Prisma-моделей + ~135 новых ENV (все опциональные) + 2 опасных schema-изменения + новый модуль биллинга (Tochka).
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
+
+---
+
+### 💳 ТЗ 2026-05-27 — billing/tochka/referrals/dadata (новый блок)
+
+Ветка: `feature/billing-tochka-referral-dadata`. 8 коммитов (52cde75..4416801). Введены 5 новых модулей backend: `billing`, `inn-lookup`, `meetings-balance`, `referrals` + интеграция в `entitlements`/`meetings`/`quotas`. **Frontend ещё не сделан** (Фаза 9 ТЗ §14) — поэтому новые эндпоинты пока доступны только через Swagger `/api/docs`.
+
+**Кратко по шагам прод-инструкции (полные команды — в соответствующих секциях ниже):**
+
+- **Шаг 1 — ENV** — 36 новых переменных. Все опциональные с дефолтами; backend стартует без них. На MVP минимум: `BILLING_PROVIDER=manual` (default), оставить feature-flags `false`. Реальные значения для Tochka — после регистрации app в кабинете Точки.
+- **Шаг 4 — Prisma** — auto через `migrate`-сервис. 10 новых моделей: `Subscription`, `SubscriptionEvent`, `Invoice`, `BillingEventLog`, `BillingProviderConfig`, `MeetingsBalance`, `Referral`, `ReferralAttribution`, `ClientReferralLink`, `ReferralPayout`. 7 новых enum.
+- **Шаг 6 — Patch** — 1 новый: `migrate-entitlements-to-standard.ts` (legacy `tier_basic/pro/enterprise` → `tier_standard`). Идемпотентный.
+- **Шаг 7 — Seed** — ничего не нужно (плановых seed'ов в фазах нет).
+- **Шаг 8 — Backfill** — 1 новый: `backfill-meetings-balance.ts` (стартовый `MeetingsBalance(balance=150)` для всех existing Org).
+- **Шаг 10 — Per-tenant: Tochka OAuth** — отдельная операция владельца (не код). См. ниже «Tochka подключение в production».
+- **Шаг 12 — Smoke** — проверить:
+  - `GET /api/v1/billing/subscription` отдаёт null для свежей Org с DEMO,
+  - `GET /api/v1/billing/meetings-balance` отдаёт balance после backfill,
+  - `GET /api/v1/internal/billing/provider-events` отдаёт `{ok:true}` (webhook probe),
+  - `POST /api/v1/admin/orgs/:tenantId/billing/activate {paymentMode:'bonus',...}` создаёт Subscription+Invoice+SubscriptionEvent+AdminAuditLog + грантует 150 встреч.
+
+#### Tochka подключение в production
+
+Делается **один раз** при первом включении реального провайдера Tochka:
+
+1. Зарегистрировать приложение в кабинете Точки → получить `client_id`/`client_secret`.
+2. Прописать в `.env`:
+   ```bash
+   BILLING_PROVIDER=tochka
+   FEATURE_BILLING_TOCHKA=true
+   FEATURE_BILLING_CARD_RECURRING=true     # вкл. оплату картой через рекуррент
+   FEATURE_BILLING_BANK_INVOICE=true       # вкл. безналичный счёт
+   TOCHKA_MODE=production
+   TOCHKA_CUSTOMER_CODE=<выдан Точкой>
+   TOCHKA_ACCOUNT_ID=<счёт/БИК>
+   TOCHKA_CLIENT_ID=<выдан Точкой>
+   TOCHKA_CLIENT_SECRET=<секрет>
+   TOCHKA_REDIRECT_URI=https://api.kora.app/api/v1/internal/billing/tochka/oauth/callback
+   TOCHKA_WEBHOOK_URL=https://api.kora.app/api/v1/internal/billing/provider-events
+   TOCHKA_WEBHOOK_AUTO_REGISTER=true
+   BILLING_PUBLIC_API_URL=https://api.kora.app
+   BILLING_LEGAL_ENTITY_NAME=<ООО/ИП>
+   BILLING_LEGAL_ENTITY_INN=<наш ИНН>
+   BILLING_LEGAL_ENTITY_KPP=<наш КПП>
+   BILLING_LEGAL_ENTITY_ADDRESS=<юр.адрес>
+   BILLING_LEGAL_ENTITY_BIK=<БИК>
+   BILLING_LEGAL_ENTITY_ACCOUNT=<р/с>
+   # DaData (для inn-lookup fallback)
+   DADATA_API_KEY=<токен dadata>
+   INN_LOOKUP_PROVIDER=tochka_then_dadata
+   ```
+   `docker compose up -d --force-recreate backend`
+3. Открыть backend-логи: `docker compose logs -f backend | grep "TOCHKA OAuth"`
+   → увидеть строку `откройте URL в браузере: https://enter.tochka.com/connect/authorize?...`
+   → открыть URL в браузере, авторизоваться в кабинете Точки → callback придёт на `/internal/billing/tochka/oauth/callback`.
+4. Альтернатива через admin-API (если super_admin уже залогинен):
+   ```bash
+   curl -s https://api.kora.app/api/v1/admin/billing/tochka/oauth/authorize-url \
+     -H "Cookie: <session>" -H "X-Org-Id: <org>"
+   # → {url:"https://enter.tochka.com/connect/authorize?..."}
+   # Открыть url в браузере. После callback'а проверить:
+   docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+     -c "SELECT key, jsonb_pretty(value_json::jsonb) FROM billing_provider_config;"
+   # Должна быть запись 'tochka.production.oauth_tokens' с accessToken и refreshToken.
+   ```
+5. Webhook регистрируется автоматически при старте backend через 1.5с (если `TOCHKA_WEBHOOK_AUTO_REGISTER=true`).
+6. Канарейка: на тестовой Org → `POST /api/v1/billing/pay/card` с `billingPeriod=monthly, seatsExtra=0` → 1 ₽ (потребуется снижение `BASE_MONTHLY_PRICE_KOPECKS` в коде для канарейки, либо использовать stage-окружение).
+
+#### Реферальная программа — что проверить
+
+После выката `referrals` модуль работает автоматически:
+- Лендинг должен бить `POST /api/v1/public/referrals/attribution {slug, fingerprint?, referer?}` (throttle 10/min/IP) когда юзер заходит по `?ref=<slug>`.
+- Фронт после signup зовёт `POST /api/v1/referrals/attribute-current-org` с заголовками `X-Z-Ref` (из cookie) и `X-Z-Fingerprint`.
+- Cron `0 10 10 * *` Europe/Moscow закрывает прошлый месяц — на проде убедиться что `@nestjs/schedule` поднимает его.
+- Партнёру нужно: `POST /referrals/me` (создать профиль), `POST /referrals/me/verify-inn`, `POST /referrals/me/accept-contract` — без этого cron 10-го числа переведёт payout в `void`.
 
 ---
 

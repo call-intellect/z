@@ -34,6 +34,7 @@
     "patch:skill-trait-categories": "bun run scripts/patch-skill-trait-categories-from-strings.ts",
     "patch:backfill-card-versions": "bun run scripts/patch-backfill-card-versions.ts",
     "migrate-task-to-issue": "bun run scripts/migrate-task-to-issue.ts",
+    "migrate:entitlements-to-standard": "bun run scripts/migrate-entitlements-to-standard.ts",
     "seed:llm-task-routes-regulations": "bun run scripts/seed-llm-task-routes-regulations.ts",
     "seed:llm-task-routes-knowledge-clone": "bun run scripts/seed-llm-task-routes-knowledge-clone.ts",
     "seed:llm-task-routes-decisions": "bun run scripts/seed-llm-task-routes-decisions.ts",

@@ -1,12 +1,19 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { Users } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
-import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
+import {
+  departmentsApi,
+  rolesDomainApi,
+  type DepartmentApi,
+  type RoleDomainApi,
+} from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
+import { getRoleTemplates } from '@/lib/role-templates';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
 import { QueryGate } from '@/ui/components/shared/QueryGate';
 import { Badge } from '@/ui/shadcn/badge';
@@ -39,6 +46,13 @@ function Content({ orgId }: { orgId: string }) {
     () => rolesDomainApi.list(orgId),
     { revalidateOnFocus: false },
   );
+
+  const { data: depsData } = useSWR(
+    ['departments', orgId],
+    () => departmentsApi.list(orgId),
+    { revalidateOnFocus: false },
+  );
+  const departments = depsData?.items ?? [];
 
   // Спец-случай: 404 API ещё нет / 403 forbidden — сохраняем семантику
   // AdminEmpty/AdminForbidden, остальные ошибки — общий ErrorState внутри QueryGate.
@@ -92,6 +106,14 @@ function Content({ orgId }: { orgId: string }) {
           ))}
         </div>
       </QueryGate>
+
+      {departments.length > 0 && (
+        <RoleSuggestionsPanel
+          orgId={orgId}
+          departments={departments}
+          onRoleAdded={() => void mutate()}
+        />
+      )}
     </div>
   );
 }
@@ -141,4 +163,65 @@ function ProfileStatusBadge({
     default:
       return <Badge variant="outline">Карты ещё нет</Badge>;
   }
+}
+
+// ─── RoleSuggestionsPanel ────────────────────────────────────────────────────
+
+function RoleSuggestionsPanel({
+  orgId,
+  departments,
+  onRoleAdded,
+}: {
+  orgId: string;
+  departments: DepartmentApi[];
+  onRoleAdded: () => void;
+}) {
+  const [adding, setAdding] = useState<string | null>(null);
+
+  if (departments.length === 0) return null;
+
+  const handleAdd = async (deptId: string, roleName: string) => {
+    setAdding(roleName + deptId);
+    try {
+      await rolesDomainApi.create(orgId, { name: roleName, departmentId: deptId });
+      onRoleAdded();
+    } catch {
+      // silent
+    } finally {
+      setAdding(null);
+    }
+  };
+
+  return (
+    <div className="mt-8">
+      <h2 className="text-sm font-semibold text-fg-secondary mb-4">
+        Предлагаемые должности
+      </h2>
+      <div className="space-y-4">
+        {departments.map((dept) => {
+          const suggestions = getRoleTemplates(dept.name);
+          return (
+            <div
+              key={dept.id}
+              className="rounded-xl border border-border-default bg-bg-subtle p-4"
+            >
+              <p className="text-sm font-medium text-fg-primary mb-2">{dept.name}</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((roleName) => (
+                  <button
+                    key={roleName}
+                    onClick={() => void handleAdd(dept.id, roleName)}
+                    disabled={adding === roleName + dept.id}
+                    className="rounded-md border border-border-default bg-bg-base px-3 py-1 text-xs text-fg-secondary hover:bg-bg-muted transition-colors disabled:opacity-50"
+                  >
+                    {adding === roleName + dept.id ? '...' : `+ ${roleName}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

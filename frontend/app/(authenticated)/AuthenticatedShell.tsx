@@ -25,7 +25,7 @@ const ONBOARDING_PATH = '/onboarding/change-password';
  * UI без sidebar (см. `app/(authenticated)/onboarding/layout.tsx`).
  */
 export function AuthenticatedShell({ children }: { children: ReactNode }) {
-  const { user, isLoading, mustChangePassword } = useAuth();
+  const { user, isLoading, mustChangePassword, profileCompletedAt } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -42,8 +42,15 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
 
     if (mustChangePassword && !isOnboardingPath) {
       router.replace(ONBOARDING_PATH);
+      return;
     }
-  }, [user, isLoading, mustChangePassword, isOnboardingPath, pathname, router]);
+
+    // Блок A онбординга — если profileCompletedAt не выставлен → на экраны знакомства
+    if (!profileCompletedAt && !isOnboardingPath) {
+      router.replace('/onboarding/welcome/step-1');
+      return;
+    }
+  }, [user, isLoading, mustChangePassword, profileCompletedAt, isOnboardingPath, pathname, router]);
 
   if (isLoading || !user) {
     return (
@@ -66,6 +73,15 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   // mustChangePassword=true и редирект ещё не успел сработать — рендерим
   // skeleton, чтобы случайно не показать защищённые страницы.
   if (mustChangePassword) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-base">
+        <Skeleton className="h-32 w-72" />
+      </div>
+    );
+  }
+
+  // profileCompletedAt=null и редирект ещё не успел сработать — рендерим skeleton.
+  if (!profileCompletedAt) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-base">
         <Skeleton className="h-32 w-72" />

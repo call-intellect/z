@@ -126,6 +126,15 @@ const STEPS: Step[] = [
   // 2026-05-27 — ребренд Z → Кора: обновляет subject/body email-шаблонов в БД.
   // Промпты обновляет seed-prompt-templates.ts (уже в seed-llm-core).
   { phase: 'patch', script: 'scripts/patch-rebrand-z-to-kora.ts', hint: 'ребренд Z → Кора в EmailTemplate', skipBootstrap: true },
+  // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
+  // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
+  // Идемпотентен. ТЗ §14 Фаза 1.4.
+  {
+    phase: 'patch',
+    script: 'scripts/migrate-entitlements-to-standard.ts',
+    hint: 'legacy tier → tier_standard',
+    skipBootstrap: true,
+  },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
@@ -140,6 +149,14 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-onboarding-setup-completed.ts',
     hint: 'Онбординг v2: выставляет setupCompletedAt для Org с отделами',
     skipBootstrap: false,
+  // 2026-05-27 — billing Фаза 3: стартовый MeetingsBalance(balance=150)
+  // для всех existing Org (заменяет ушедшую квоту meetings_per_month).
+  // Идемпотентен (where: meetingsBalance: null).
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-meetings-balance.ts',
+    hint: 'стартовый MeetingsBalance=150 для всех Org',
+    skipBootstrap: true,
   },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===

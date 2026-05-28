@@ -1,0 +1,60 @@
+/**
+ * DTO для эндпоинтов inn-lookup.
+ * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §8 + §11.
+ */
+
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
+
+/** ИНН — 10 цифр (юрлицо) или 12 цифр (ИП/самозанятый). */
+export const InnSchema = z
+  .string()
+  .trim()
+  .regex(/^(\d{10}|\d{12})$/, 'ИНН должен содержать 10 или 12 цифр');
+
+export const InnLookupResultSchema = z.object({
+  source: z.enum(['mock', 'dadata', 'tochka']),
+  payerType: z.enum([
+    'legal_entity',
+    'individual_entrepreneur',
+    'self_employed',
+  ]),
+  legalName: z.string(),
+  inn: z.string(),
+  kpp: z.string().nullable().optional(),
+  ogrn: z.string().nullable().optional(),
+  legalAddress: z.string().nullable().optional(),
+  directorName: z.string().nullable().optional(),
+  bankBik: z.string().nullable().optional(),
+  bankAccount: z.string().nullable().optional(),
+  /** true если ответ из Redis-кэша (важно для UI/метрик). */
+  cached: z.boolean(),
+});
+
+export type InnLookupResultBody = z.infer<typeof InnLookupResultSchema>;
+export class InnLookupResultDto extends createZodDto(InnLookupResultSchema) {}
+
+/** Body для `POST /inn-lookup`. Используем body вместо params чтобы не
+ * светить ИНН в access-логах. */
+export const InnLookupBodySchema = z.object({
+  inn: InnSchema,
+});
+
+export type InnLookupBody = z.infer<typeof InnLookupBodySchema>;
+export class InnLookupBodyDto extends createZodDto(InnLookupBodySchema) {}
+
+export const InnInvalidateBodySchema = z.object({
+  inn: InnSchema,
+});
+
+export type InnInvalidateBody = z.infer<typeof InnInvalidateBodySchema>;
+export class InnInvalidateBodyDto extends createZodDto(InnInvalidateBodySchema) {}
+
+export const InnInvalidateResultSchema = z.object({
+  deleted: z.number().int().nonnegative(),
+});
+
+export type InnInvalidateResultBody = z.infer<typeof InnInvalidateResultSchema>;
+export class InnInvalidateResultDto extends createZodDto(
+  InnInvalidateResultSchema,
+) {}

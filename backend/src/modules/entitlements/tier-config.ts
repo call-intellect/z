@@ -11,8 +11,18 @@
  * до `tier_basic` + log warning.
  */
 
-/** Ключ тарифа. Хранится в `OrgEntitlement.tier` строкой (не enum-Prisma). */
-export type TierKey = 'tier_basic' | 'tier_pro' | 'tier_enterprise';
+/**
+ * Ключ тарифа. Хранится в `OrgEntitlement.tier` строкой (не enum-Prisma).
+ *
+ * ТЗ 2026-05-27 (billing-tochka-referral-dadata-z):
+ * Целевой тариф — `tier_standard` (все фичи `true`, единый прайс 60 000 ₽/мес).
+ * Старые тиры (`tier_basic`/`tier_pro`/`tier_enterprise`) сохранены в типе
+ * как **legacy** — чтобы не ломать существующие call-site'ы. Все existing
+ * OrgEntitlement переводятся в `tier_standard` через patch-script
+ * `backend/scripts/migrate-entitlements-to-standard.ts`. Полное удаление
+ * legacy-тиров — отдельной задачей в Фазе 3 (см. ТЗ §14, Фаза 3).
+ */
+export type TierKey = 'tier_standard' | 'tier_basic' | 'tier_pro' | 'tier_enterprise';
 
 /** Все feature-флаги knowledge-core. См. ТЗ Фазы 12 §Шаг 2.
  *
@@ -60,9 +70,11 @@ export type FeatureKey =
  *
  * Фаза A.3 — лимиты на количество Org-шаблонов и одновременных
  * prompt-экспериментов (см. ТЗ §10.3 и §11.1).
+ *
+ * ТЗ 2026-05-27 (billing) Фаза 3: `meetings_per_month` УДАЛЕН — заменён
+ * на накопительный MeetingsBalance (см. modules/meetings-balance/).
  */
 export type QuotaKey =
-  | 'meetings_per_month'
   | 'blocks_per_org'
   | 'chat_requests_per_day_per_user'
   | 'sources_meeting'
@@ -109,7 +121,6 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
 
 /** Полный список квот. */
 export const ALL_QUOTAS: readonly QuotaKey[] = [
-  'meetings_per_month',
   'blocks_per_org',
   'chat_requests_per_day_per_user',
   'sources_meeting',
@@ -121,8 +132,12 @@ export const ALL_QUOTAS: readonly QuotaKey[] = [
   'multi_reports_limit_per_meeting',
 ] as const;
 
-/** Все известные tier-ключи (для валидации в DTO). */
+/** Все известные tier-ключи (для валидации в DTO).
+ *
+ * Порядок: `tier_standard` — целевой (default), legacy в конце.
+ */
 export const ALL_TIERS: readonly TierKey[] = [
+  'tier_standard',
   'tier_basic',
   'tier_pro',
   'tier_enterprise',
@@ -131,7 +146,6 @@ export const ALL_TIERS: readonly TierKey[] = [
 // ──────────────────────────── Базовые квоты tier_basic ────────────────────────────
 
 const BASIC_QUOTAS: Record<QuotaKey, number> = {
-  meetings_per_month: 50,
   blocks_per_org: 5_000,
   chat_requests_per_day_per_user: 30,
   sources_meeting: 10,
@@ -147,7 +161,6 @@ const BASIC_QUOTAS: Record<QuotaKey, number> = {
 
 /** Pro = basic ×10. */
 const PRO_QUOTAS: Record<QuotaKey, number> = {
-  meetings_per_month: 500,
   blocks_per_org: 50_000,
   chat_requests_per_day_per_user: 300,
   sources_meeting: 100,
@@ -163,7 +176,6 @@ const PRO_QUOTAS: Record<QuotaKey, number> = {
 
 /** Enterprise = basic ×100 (фактически безлимит). */
 const ENTERPRISE_QUOTAS: Record<QuotaKey, number> = {
-  meetings_per_month: 5_000,
   blocks_per_org: 500_000,
   chat_requests_per_day_per_user: 3_000,
   sources_meeting: 1_000,
@@ -230,6 +242,26 @@ const ENTERPRISE_FEATURES: Record<FeatureKey, boolean> = {
   'feature.strict_visibility': true,
 };
 
+// ──────────────────────────── Целевой тариф (ТЗ 2026-05-27) ────────────────────────────
+
+/**
+ * `tier_standard` — целевой тариф после реализации
+ * `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md`. Все фичи `true`.
+ * Квоты — максимальные (anti-abuse). `meetings_per_month` УДАЛЕНА в Фазе 3:
+ * её роль играет накопительный MeetingsBalance (modules/meetings-balance/).
+ */
+const STANDARD_FEATURES: Record<FeatureKey, boolean> = {
+  ...ENTERPRISE_FEATURES,
+  // Все memory_* фичи — выключены по умолчанию (per-Org override через
+  // admin-эндпоинт `/api/v1/admin/org/memory-access`).
+  'feature.memory_regulations_for_members': false,
+  'feature.memory_entities_for_members': false,
+};
+
+const STANDARD_QUOTAS: Record<QuotaKey, number> = {
+  ...ENTERPRISE_QUOTAS,
+};
+
 // ──────────────────────────── Реестр ────────────────────────────
 
 /**
@@ -238,6 +270,10 @@ const ENTERPRISE_FEATURES: Record<FeatureKey, boolean> = {
  * features/quotas (опечатки ловятся компилятором).
  */
 export const TIER_CONFIG: Record<TierKey, TierConfig> = {
+  tier_standard: {
+    features: STANDARD_FEATURES,
+    quotas: STANDARD_QUOTAS,
+  },
   tier_basic: {
     features: BASIC_FEATURES,
     quotas: BASIC_QUOTAS,

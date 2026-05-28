@@ -74,6 +74,9 @@ _пусто_
 
 ## Активные ТЗ
 
+### Billing (Точка) + Реферальная программа + DaData — BACKEND РЕАЛИЗОВАН (2026-05-27)
+- [`plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md`](../plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md) — **8/10 фаз закрыто backend'ом за одну сессию**, ветка `feature/billing-tochka-referral-dadata` (commits `52cde75..4416801`). Реализовано: Prisma (10 моделей+7 enum), 36 ENV, упрощение entitlements (`tier_standard` параллельно legacy), `inn-lookup` (Mock+DaData+Tochka OpenBanking), `meetings-balance` (накопительный баланс заменил квоту `meetings_per_month`), биллинг-ядро (FSM подписки, формулы 60k+1k×seat, годовая ×0.8, pro-rata, Invoice через autoincrement billingNumber + `Z-YYYY-NNNNNN`), `ManualBillingService.activate(paid/bonus)`, BillingCycleCron, `TochkaBillingProvider` (acquiring + bank-invoice + recurring), OAuth (client_credentials → consent → authorize → callback, persisted в `BillingProviderConfig`), JWT webhook через native `crypto.createPublicKey({format:'jwk'})` + `jsonwebtoken` (без `jose`), 2 cron Точки, реферальная программа (slug nanoid, beacon, @OnEvent `billing.invoice.paid`, фикс 20 000 ₽, cron 10-го МСК). 139 unit-тестов pass. **НЕ сделано:** Фаза 7 (Tochka production OAuth — операция владельца) + Фаза 9 (frontend ~6 страниц, отдельная сессия). Рефлексия: [[05_история/2026-05-27-billing-tochka-referrals-dadata-implementation]]. Prod-инструкция: [`docs/operations/prod-deploy-log.md`](../docs/operations/prod-deploy-log.md) §«💳 ТЗ 2026-05-27».
+
 ### SBA β-8.3 — Ежедневный отчёт COO + доделки панели — РЕАЛИЗОВАНО (2026-05-25)
 - [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md) — **реализовано полностью, 3 волны** (commits `a9c0a96` backend Wave 1 / `471cfbb` backend Wave 2 / `c087b2f` frontend Wave 3). Фаза 1: модель `DailyOperationsDigest` + глобальный cron `operations-daily-digest` (`0 22 * * *` UTC = 01:00 МСК) + taskType `operations-daily-digest` + 3 REST + страница `/dashboard/operations/daily` + Telegram-доставка `coo+owner` через тумблеры `AdminSetting`. Фаза 2: фронт-фильтры `Insight.causeCategory` + `CauseCategoryMapWidget` (8 категорий с русскими лейблами) + `insightsByCauseCategory` в overview. Фаза 3: `MaturityWidget` (SVG-кольцо score + weakest/top FunctionalDomain) + поле `maturity` в overview. Метрики `coo_daily_digest_*`, `coo_insights_by_cause_total`, `coo_company_maturity_score`. См. [[01_projects/workers-queues|workers-queues]], [[01_projects/ai-jobs|ai-jobs]], [[01_projects/api-layer|api-layer]], [[01_projects/frontend-pages|frontend-pages]], [[02_architecture/data-model|data-model]], [[02_architecture/module-map|module-map]].
 
@@ -207,7 +210,9 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-26 (ТЗ Simulation Harness опубликован: внутренний QA-стенд месяца работы компании на 20 человек, реальные DeepSeek через ~70 cron'ов, unit-economics через AiUsageLog, kill-switch + бюджетный gate, 14 smoke-assert'ов, 8 фаз. Commit `dc7550c`)._
+_Обновлён: 2026-05-27 (Billing/Tochka/Referrals/DaData backend реализован — 8 коммитов на ветке `feature/billing-tochka-referral-dadata`, 5 новых модулей (`billing` + `inn-lookup` + `meetings-balance` + `referrals` + Tochka-провайдер), 10 Prisma-моделей, 36 ENV, 139 unit-тестов. Фаза 7 (Tochka production OAuth) — операция владельца, Фаза 9 (frontend) — отдельная сессия. Рефлексия: [[05_история/2026-05-27-billing-tochka-referrals-dadata-implementation]])._
+
+_Предыдущий: 2026-05-26 (ТЗ Simulation Harness опубликован: внутренний QA-стенд месяца работы компании на 20 человек, реальные DeepSeek через ~70 cron'ов, unit-economics через AiUsageLog, kill-switch + бюджетный gate, 14 smoke-assert'ов, 8 фаз. Commit `dc7550c`)._
 
 _Предыдущий: 2026-05-25 (SBA β-8.3 — доделка панели COO: ежедневный отчёт + causeCategory-карта + виджет зрелости. 3 волны: backend Phase 1 `a9c0a96`, backend Phase 2+3 `471cfbb`, frontend `c087b2f`. Реализовано полностью)._
 

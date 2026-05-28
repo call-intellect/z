@@ -20,6 +20,15 @@ async function bootstrap(): Promise<void> {
     bodyParser: false,
   });
 
+  // Tochka шлёт webhook JWT-строкой (Content-Type: application/jose / text/plain
+  // / application/x-www-form-urlencoded). Подключаем express.text() ТОЛЬКО для
+  // webhook-эндпоинта Точки, до общего express.json() — чтобы JWT-строка
+  // долетела в @Body() как string. См. ТЗ billing-tochka-referral-dadata-z §16.1.
+  app.use(
+    '/api/v1/internal/billing/provider-events',
+    express.text({ type: '*/*', limit: '1mb' }),
+  );
+
   app.use(
     express.json({
       limit: '1mb',

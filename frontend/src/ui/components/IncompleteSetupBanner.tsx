@@ -28,7 +28,7 @@ const STEP_LABELS: { field: keyof OrgApi; label: string }[] = [
 ];
 
 export function IncompleteSetupBanner() {
-  const { currentOrgId } = useAuth();
+  const { currentOrgId, isSuperAdmin } = useAuth();
   const { org, setupCompletedAt } = useOrgSetup(currentOrgId);
   const { forceStart } = useTourContext();
   const [dismissed, setDismissed] = useState(false);
@@ -39,7 +39,7 @@ export function IncompleteSetupBanner() {
     }
   }, []);
 
-  if (setupCompletedAt || dismissed || !org) return null;
+  if (setupCompletedAt || dismissed || !org || isSuperAdmin) return null;
 
   const completed = STEP_LABELS.filter((s) => org[s.field] != null).length;
   const pending = STEP_LABELS.filter((s) => org[s.field] == null);

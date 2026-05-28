@@ -1,30 +1,15 @@
 'use client';
 
 /**
- * WelcomeTourAutoStart — невидимый компонент, который запускает
- * action-тур «welcome» (Блок B) при первом заходе после Блока A.
- * Монтируется в AuthenticatedShell.
+ * WelcomeTourAutoStart — ранее запускал action-тур «welcome» (Блок B)
+ * при первом заходе после Блока A.
  *
- * ТЗ 2026-05-29 onboarding-v2: тур стартует только если
- * Org.setupCompletedAt === null (все 6 шагов не пройдены).
+ * Убрано 2026-05-28: принудительный тур заменён на ненавязчивый
+ * IncompleteSetupBanner на дашборде. Пользователь сам решает, когда
+ * начать настройку компании. Тур остаётся доступен через ручной
+ * перезапуск в /settings и через кнопку «Продолжить» в баннере.
  */
 
-import { useAuth } from '@/contexts/auth-context';
-import { useOrgSetup } from '@/hooks/useOrgSetup';
-import { useTour } from './useTour';
-import { useTourContext } from './TourProvider';
-import { useEffect } from 'react';
-
 export function WelcomeTourAutoStart() {
-  const { currentOrgId } = useAuth();
-  const { setupCompletedAt, isLoading } = useOrgSetup(currentOrgId);
-  const { startIfNotCompleted, progress } = useTourContext();
-
-  useEffect(() => {
-    if (isLoading || progress === null) return;
-    if (setupCompletedAt) return;
-    startIfNotCompleted('welcome');
-  }, [startIfNotCompleted, progress, setupCompletedAt, isLoading]);
-
   return null;
 }

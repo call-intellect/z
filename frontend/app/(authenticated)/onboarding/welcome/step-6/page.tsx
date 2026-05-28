@@ -20,7 +20,7 @@ const FEATURES = [
 
 export default function Step6Page() {
   const router = useRouter();
-  const { currentOrgId } = useAuth();
+  const { currentOrgId, refresh } = useAuth();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
@@ -39,6 +39,7 @@ export default function Step6Page() {
     try {
       await onboardingApi.patchWelcome(currentOrgId, { plannedFeatures: [...selected] });
       await onboardingApi.completeWelcome(currentOrgId);
+      await refresh();
       router.push('/dashboard');
     } catch {
       setSaving(false);

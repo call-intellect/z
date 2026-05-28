@@ -24,16 +24,19 @@ export const CAUSE_CATEGORY_LABELS_RU: Record<InsightCauseCategory, string> = {
   unknown: 'Не определено',
 };
 
-/** Полупрозрачный фон + светлый текст — для бэйджа в «Топ-5». */
+/**
+ * Полупрозрачный фон + dual-theme текст — для бэйджа в «Топ-5».
+ * Dark: *-300 (читается на тёмном), Light: *-700 (читается на светлом).
+ */
 export const CAUSE_CATEGORY_BG_CLASS: Record<InsightCauseCategory, string> = {
-  process_gap: 'bg-rose-500/20 text-rose-300',
-  tooling: 'bg-sky-500/20 text-sky-300',
-  role_skill: 'bg-violet-500/20 text-violet-300',
-  communication: 'bg-amber-500/20 text-amber-300',
-  priority: 'bg-pink-500/20 text-pink-300',
-  resource_constraint: 'bg-stone-500/20 text-stone-300',
-  external: 'bg-zinc-500/20 text-zinc-300',
-  unknown: 'bg-neutral-500/20 text-neutral-300',
+  process_gap: 'bg-rose-500/20 dark:text-rose-300 text-rose-700',
+  tooling: 'bg-sky-500/20 dark:text-sky-300 text-sky-700',
+  role_skill: 'bg-violet-500/20 dark:text-violet-300 text-violet-700',
+  communication: 'bg-amber-500/20 dark:text-amber-300 text-amber-700',
+  priority: 'bg-pink-500/20 dark:text-pink-300 text-pink-700',
+  resource_constraint: 'bg-stone-500/20 dark:text-stone-300 text-stone-700',
+  external: 'bg-zinc-500/20 dark:text-zinc-300 text-zinc-700',
+  unknown: 'bg-neutral-500/20 dark:text-neutral-300 text-neutral-700',
 };
 
 /**

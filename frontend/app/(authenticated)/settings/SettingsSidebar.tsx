@@ -8,7 +8,6 @@ import {
   Building2,
   Download,
   Eye,
-  KeyRound,
   Link2,
   Palette,
   Plug,
@@ -46,8 +45,6 @@ const ADMIN_ITEMS: Item[] = [
   // ТЗ 2026-05-26 §6 — доступ к разделам «Памяти компании» для member.
   { href: '/settings/admin/memory-access', label: 'Доступ к памяти', icon: Eye },
   { href: '/settings/sources', label: 'Источники', icon: Link2 },
-  { href: '/settings/api', label: 'API ключи', icon: KeyRound },
-  { href: '/settings/webhooks', label: 'Webhooks', icon: Bell },
 ];
 
 const OWNER_ITEMS: Item[] = [

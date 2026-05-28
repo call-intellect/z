@@ -149,6 +149,7 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-onboarding-setup-completed.ts',
     hint: 'Онбординг v2: выставляет setupCompletedAt для Org с отделами',
     skipBootstrap: false,
+  },
   // 2026-05-27 — billing Фаза 3: стартовый MeetingsBalance(balance=150)
   // для всех existing Org (заменяет ушедшую квоту meetings_per_month).
   // Идемпотентен (where: meetingsBalance: null).

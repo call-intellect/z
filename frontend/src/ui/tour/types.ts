@@ -7,7 +7,7 @@
  * запустили не на той странице.
  */
 
-export type TourId = 'welcome' | 'project' | 'meeting';
+export type TourId = 'welcome' | 'project' | 'meeting' | 'overview';
 
 export type TourPlacement =
   | 'top'
@@ -19,8 +19,10 @@ export type TourPlacement =
 export interface TourStepAction {
   /** Подпись кнопки. */
   label: string;
-  /** Действие при клике: next/prev/skip/complete. */
-  kind: 'next' | 'prev' | 'skip' | 'complete';
+  /** Действие при клике: next/prev/skip/complete/navigate. */
+  kind: 'next' | 'prev' | 'skip' | 'complete' | 'navigate';
+  /** URL для перехода — обязателен при kind='navigate'. */
+  href?: string;
 }
 
 export interface TourStep {

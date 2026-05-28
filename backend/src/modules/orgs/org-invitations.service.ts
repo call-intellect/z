@@ -200,6 +200,12 @@ export class OrgInvitationsService {
       include: { org: { select: { name: true } }, inviter: { select: { name: true } } },
     });
 
+    // Side-effect онбординг v2: первое приглашение → teamInvitedAt
+    void this.prisma.org.updateMany({
+      where: { id: input.orgId, teamInvitedAt: null },
+      data: { teamInvitedAt: new Date() },
+    });
+
     const magicLinkUrl = this.buildMagicLinkUrl(magicToken);
     const telegramDeepLink = this.buildTelegramDeepLink(linkCode);
     const manualShareUrl = magicLinkUrl; // одна ссылка, директор её и копирует

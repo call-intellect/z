@@ -105,6 +105,8 @@ export interface PublicUserDto {
   currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo' | null;
   /** ID первой Org (для удобства фронта). null если не в Org. (Фаза 7) */
   currentOrgId: string | null;
+  /** Когда user завершил Блок A онбординга. null = не прошёл. */
+  profileCompletedAt: string | null;
 }
 
 @Injectable()
@@ -675,6 +677,7 @@ export class AccountsService {
       isSuperAdmin: false,
       currentOrgRole: null,
       currentOrgId: null,
+      profileCompletedAt: user.profileCompletedAt ? user.profileCompletedAt.toISOString() : null,
     };
   }
 

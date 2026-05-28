@@ -83,6 +83,8 @@ describe('UsersService.upsertFromCrossmark', () => {
     deletedAt: null,
     calendarFeedToken: null,
     tourProgress: {},
+    companyRole: null,
+    profileCompletedAt: null,
     ...over,
   });
 

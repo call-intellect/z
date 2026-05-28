@@ -210,6 +210,12 @@ export class RolesDomainService {
         },
       });
 
+      // Side-effect онбординг v2: первая должность → выставляем rolesCompletedAt
+      void this.prisma.org.updateMany({
+        where: { id: args.tenantId, rolesCompletedAt: null },
+        data: { rolesCompletedAt: new Date() },
+      });
+
       return this.toListItem(created, created.department?.name ?? null, 0, 0, 'forming');
     } catch (err) {
       this.handleUniqueViolation(err, args.body.name);

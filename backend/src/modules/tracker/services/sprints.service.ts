@@ -388,6 +388,11 @@ export class SprintsService {
         tenant: tenantId,
         scopeKind: 'project',
       });
+      // Side-effect онбординг v2: первый спринт → firstSprintCreatedAt
+      void this.prisma.org.updateMany({
+        where: { id: tenantId, firstSprintCreatedAt: null },
+        data: { firstSprintCreatedAt: new Date() },
+      });
       return {
         cycleId: cycleResponse.id,
         projectId: project.id,
@@ -505,6 +510,12 @@ export class SprintsService {
       this.metrics?.incCycleCreated({
         tenant: tenantId,
         scopeKind: dto.scope,
+      });
+
+      // Side-effect онбординг v2: первый спринт → firstSprintCreatedAt
+      void this.prisma.org.updateMany({
+        where: { id: tenantId, firstSprintCreatedAt: null },
+        data: { firstSprintCreatedAt: new Date() },
       });
 
       return result;

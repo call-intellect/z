@@ -250,6 +250,16 @@ enum RawEventProcessingStatus {
   failed
 }
 
+/// Онбординг v2 (2026-05-29) — роль пользователя в компании (Экран 1 Блока A).
+enum UserCompanyRole {
+  founder
+  general_director
+  operations_director
+  department_head
+  team_lead
+  specialist
+}
+
 enum SignalType {
   fact
   pain
@@ -943,6 +953,12 @@ model User {
   /// Touch при PATCH /api/v1/users/me/tour-progress; reset обнуляет до `{}`.
   /// См. plans/tz/2026-05-27-tracker-onboarding-tour.md.
   tourProgress       Json               @default("{}")
+
+  // ── Онбординг v2 (2026-05-29) ──
+  /// Роль пользователя в компании, указанная при онбординге (Экран 1 Блока A).
+  companyRole            UserCompanyRole?
+  /// Когда user прошёл 6 экранов Блока A (profileCompleted → разблокирует кабинет).
+  profileCompletedAt     DateTime?
 
   ownedEvents         Event[]            @relation("EventOwner")
   eventParticipations EventParticipant[] @relation("EventParticipantUser")
@@ -2041,6 +2057,37 @@ model Org {
   timezone                     String?           @default("Europe/Moscow")
   createdAt                    DateTime          @default(now())
   deletedAt                    DateTime?
+
+  // ── Онбординг v2 (2026-05-29) — Блок A (квалификатор) ──
+  /// «Сколько вас в команде?» (Экран 2). Значения: "1-5"|"6-20"|"21-50"|"51-200"|"201-500"|"500+".
+  teamSize               String?   @db.VarChar(20)
+  /// «Ваша отрасль» (Экран 3). Значения: software|services|manufacturing|retail|construction|finance|education|other.
+  /// Используется для шаблонов отделов и должностей на шагах B2/B3 онбординга.
+  industry               String?   @db.VarChar(60)
+  /// «Что болит?» (Экран 4). Массив constId из painPoints-словаря.
+  painPoints             String[]
+  /// «Чем сейчас пользуетесь?» (Экран 5). Массив constId из currentStack-словаря.
+  currentStack           String[]
+  /// «Чем планируете пользоваться у нас?» (Экран 6). Массив constId из plannedFeatures-словаря.
+  plannedFeatures        String[]
+  /// Когда owner завершил Блок A (ставится при POST /welcome/complete).
+  welcomeCompletedAt     DateTime?
+
+  // ── Онбординг v2 (2026-05-29) — Блок B (прогресс setup-тура) ──
+  /// Шаг B1: «Компания» — подтверждены базовые данные.
+  companyInfoCompletedAt  DateTime?
+  /// Шаг B2: создан хотя бы один отдел.
+  departmentsCompletedAt  DateTime?
+  /// Шаг B3: создана хотя бы одна должность.
+  rolesCompletedAt        DateTime?
+  /// Шаг B4: приглашён хотя бы один сотрудник.
+  teamInvitedAt           DateTime?
+  /// Шаг B5: создан первый спринт.
+  firstSprintCreatedAt    DateTime?
+  /// Шаг B6: создана первая встреча.
+  firstMeetingCreatedAt   DateTime?
+  /// Все 6 шагов Тура №2 пройдены или явно пропущены.
+  setupCompletedAt        DateTime?
 
   memberships            Membership[]
   invitations            OrgInvitation[]

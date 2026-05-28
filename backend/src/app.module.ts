@@ -76,6 +76,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { OrgMembersModule } from './modules/org-members/org-members.module';
@@ -230,6 +231,7 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // импортирует OrgsService для хука в register (создание персонального Org).
     OrgsModule,
     AccountsModule,
+    OnboardingModule,
 
     // M3c — cross-cutting cервисы: SecurityModule (SSRF/Encryption/IpHashing),
     // AuditModule, QuotasModule. Должны идти ДО Tasks/Highlights/Shares/Chat,

@@ -25,7 +25,7 @@ const ONBOARDING_PATH = '/onboarding/change-password';
  * UI без sidebar (см. `app/(authenticated)/onboarding/layout.tsx`).
  */
 export function AuthenticatedShell({ children }: { children: ReactNode }) {
-  const { user, isLoading, mustChangePassword, profileCompletedAt } = useAuth();
+  const { user, isLoading, mustChangePassword, profileCompletedAt, isSuperAdmin } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -45,12 +45,13 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Блок A онбординга — если profileCompletedAt не выставлен → на экраны знакомства
-    if (!profileCompletedAt && !isOnboardingPath) {
+    // Блок A онбординга — если profileCompletedAt не выставлен → на экраны знакомства.
+    // Супер-админ (владелец платформы) онбординг компании не проходит.
+    if (!profileCompletedAt && !isOnboardingPath && !isSuperAdmin) {
       router.replace('/onboarding/welcome/step-1');
       return;
     }
-  }, [user, isLoading, mustChangePassword, profileCompletedAt, isOnboardingPath, pathname, router]);
+  }, [user, isLoading, mustChangePassword, profileCompletedAt, isOnboardingPath, pathname, router, isSuperAdmin]);
 
   if (isLoading || !user) {
     return (
@@ -81,7 +82,8 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   }
 
   // profileCompletedAt=null и редирект ещё не успел сработать — рендерим skeleton.
-  if (!profileCompletedAt) {
+  // Супер-админ онбординг не проходит — skeleton не нужен.
+  if (!profileCompletedAt && !isSuperAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-base">
         <Skeleton className="h-32 w-72" />

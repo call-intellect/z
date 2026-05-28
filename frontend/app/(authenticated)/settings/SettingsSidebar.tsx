@@ -6,8 +6,6 @@ import {
   Bell,
   Brain,
   Building2,
-  CircleDollarSign,
-  Database,
   Download,
   Eye,
   KeyRound,
@@ -46,7 +44,6 @@ const ITEMS: Item[] = [
 ];
 
 const ADMIN_ITEMS: Item[] = [
-  { href: '/settings/admin/usage', label: 'Экономика', icon: CircleDollarSign },
   { href: '/settings/admin/knowledge-core', label: 'Ядро знаний', icon: Brain },
   // ТЗ 2026-05-26 §6 — доступ к разделам «Памяти компании» для member.
   { href: '/settings/admin/memory-access', label: 'Доступ к памяти', icon: Eye },
@@ -56,7 +53,6 @@ const ADMIN_ITEMS: Item[] = [
 const OWNER_ITEMS: Item[] = [
   { href: '/settings/subscription', label: 'Подписка и оплата', icon: Wallet },
   { href: '/settings/billing', label: 'Тариф и лимиты', icon: Wallet },
-  { href: '/settings/retention', label: 'Хранение и 152-ФЗ', icon: Database },
 ];
 
 export function SettingsSidebar() {

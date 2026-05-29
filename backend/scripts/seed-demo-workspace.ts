@@ -183,7 +183,12 @@ export async function resetDemoWorkspace(
   // Удаляем в порядке обратных зависимостей
   // IssueActivity, IssueComment, IssueLabel, IssueAssignee, IssueRelation, IssueChecklistItem, IssueChecklist → Issue
   await prisma.issueActivity.deleteMany({ where: { tenantId, issue: { externalSource: 'demo' } } });
-  await prisma.issueComment.deleteMany({ where: { issue: { project: { tenantId } }, content: { not: undefined } } });
+  // audit С10 (2026-05-29): убран бесполезный фильтр `content: { not: undefined }`
+  // (всегда true для NOT NULL колонки). Фильтр по demo-issue делает удаление
+  // безопасным — не сносит комментарии в реальных задачах одного и того же tenantId.
+  await prisma.issueComment.deleteMany({
+    where: { issue: { tenantId, externalSource: 'demo' } },
+  });
   await prisma.issueChecklistItem.deleteMany({ where: { checklist: { tenantId, issue: { externalSource: 'demo' } } } });
   await prisma.issueChecklist.deleteMany({ where: { tenantId, issue: { externalSource: 'demo' } } });
   await prisma.issueLabel.deleteMany({ where: { issue: { project: { tenantId } } } });

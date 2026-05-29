@@ -264,6 +264,8 @@ docker compose exec backend bun run scripts/apply-prod-deploy.ts                
 В конце: `=== SUMMARY === Всего: NN, OK: M, FAIL: K` + список упавших. Если есть FAIL — `exit 1`.
 
 > При добавлении нового `seed-*` / `patch-*` / `backfill-*` / `migrate-*` скрипта **обязательно** допиши его в массив `STEPS` в `backend/scripts/apply-prod-deploy.ts` — иначе на проде он не запустится.
+>
+> ⚠️ **Скрипт, который бутает `NestFactory.createApplicationContext(AppModule)`, ОБЯЗАН завершаться `process.exit(0)` на успехе** (`main().then(() => process.exit(0)).catch(...)`). Иначе после `app.close()` blocking-соединения BullMQ-воркеров уходят в reconnect-шторм (`ioredis: Connection is closed`), процесс не завершается, и аггрегатор виснет на `await proc.exited`. Грабля 2026-05-29 — подвисли `seed-global-channels`, `patch-backfill-dataclass-audit`, `skill-trait-concepts-backfill`, `person-knowledge-embeddings-backfill`.
 
 ---
 
@@ -420,6 +422,8 @@ docker compose build
 ### Шаг 3 — PRE-MIGRATION gate (защитный backfill ДО `migrate`-сервиса)
 
 `prisma db push` (внутри `migrate`-сервиса) сделает `Meeting.tenantId` NOT NULL. Если есть legacy-Meeting с NULL — push упадёт и весь `docker compose up` зависнет.
+
+> ⚠️ **Если прод уже проходил этот выкат раньше** (`Meeting.tenantId` уже NOT NULL) — **GATE пропусти целиком.** Сначала прогони только `backfill-meeting-tenant-id.ts` (он на raw-SQL, безопасен): если он пишет «Найдено … IS NULL: 0» — миграция уже применена, `backfill-orgs-fase0.ts` и `tighten-*` НЕ запускай. С версии после 2026-05-29 эти два скрипта на уже-мигрированной схеме сами печатают «обновление не требуется» и выходят `0` (раньше — падали Prisma 7-валидацией на `where:{tenantId:null}`, что пугало оператора).
 
 Сначала чиним — через `run --rm backend` (одноразовый контейнер с новым кодом, postgres уже запущен с прошлого выката):
 
@@ -959,9 +963,19 @@ docker compose up -d --force-recreate postgres
 
 ### B.6 — Бутстрап первого супер-админа
 
+**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (bcrypt 12) и ставит `role='admin'` + `isSuperAdmin=true`:
+```bash
+docker compose exec backend bun run scripts/set-admin-password.ts <email> '<пароль>' --super
+# нет юзера → создаст; есть с role=admin → обновит пароль (+ isSuperAdmin при --super)
+```
+Логин: `POST /api/v1/auth/admin-login {email,password}` → session-cookie → Z-Admin на `/admin`.
+
+⚠️ `role='admin'` **обязателен** — `admin-login` ищет юзера именно по нему (`admin-login.service.ts`). Флаг `--super` добавляет `isSuperAdmin=true` для доступа к супер-функциям Z-Admin. Ручной bcrypt+SQL больше не нужен.
+
+**Альтернатива** — env-bootstrap (если задан `ADMIN_BOOTSTRAP_EMAIL`):
 ```bash
 docker compose run --rm backend bun prisma/seed.ts
-# Создаст User по ADMIN_BOOTSTRAP_EMAIL + Org "default" + role=admin.
+# Создаст User по ADMIN_BOOTSTRAP_EMAIL + Org "default" + role=admin (БЕЗ isSuperAdmin).
 ```
 
 ### B.7 — Базовый каркас LLM (без него AI-фичи не работают)

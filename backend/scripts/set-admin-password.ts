@@ -2,14 +2,17 @@
  * Установка/обновление пароля администратора.
  *
  * Usage:
- *   bun run scripts/set-admin-password.ts <email> <password>
+ *   bun run scripts/set-admin-password.ts <email> <password> [--super]
+ *
+ * Флаг --super дополнительно выставляет isSuperAdmin=true (доступ к Z-Admin).
  *
  * Эффект:
  *   - Найти `User` с указанным email.
- *   - Если пользователь существует и role='admin' — обновить passwordHash.
+ *   - Если пользователь существует и role='admin' — обновить passwordHash
+ *     (и isSuperAdmin=true при --super).
  *   - Если пользователь существует, но role!='admin' — отказ (ошибка).
  *   - Если пользователя нет — создать с role='admin', name=email,
- *     passwordHash=bcrypt(password, 12).
+ *     passwordHash=bcrypt(password, 12) (и isSuperAdmin=true при --super).
  *
  * Используется один раз при онбординге админа на проде. См. CLAUDE.md
  * раздел «5. Напомни про prod-операции» — этот скрипт показывается
@@ -23,10 +26,12 @@ import { createPrismaClient } from './_lib/prisma';
 const BCRYPT_ROUNDS = 12;
 
 async function main(): Promise<void> {
-  const [, , rawEmail, password] = process.argv;
+  const argv = process.argv.slice(2);
+  const isSuper = argv.includes('--super');
+  const [rawEmail, password] = argv.filter((a) => !a.startsWith('--'));
   if (!rawEmail || !password) {
     // eslint-disable-next-line no-console
-    console.error('usage: bun run scripts/set-admin-password.ts <email> <password>');
+    console.error('usage: bun run scripts/set-admin-password.ts <email> <password> [--super]');
     process.exit(1);
     return;
   }
@@ -55,12 +60,13 @@ async function main(): Promise<void> {
           email,
           name: email,
           role: 'admin',
+          isSuperAdmin: isSuper,
           passwordHash,
         },
       });
       // eslint-disable-next-line no-console
       console.log(
-        `[set-admin-password] Создан admin id=${created.id}, email=${email}.`,
+        `[set-admin-password] Создан ${isSuper ? 'SUPER-' : ''}admin id=${created.id}, email=${email}.`,
       );
       return;
     }
@@ -76,11 +82,11 @@ async function main(): Promise<void> {
 
     await prisma.user.update({
       where: { id: existing.id },
-      data: { passwordHash },
+      data: { passwordHash, ...(isSuper ? { isSuperAdmin: true } : {}) },
     });
     // eslint-disable-next-line no-console
     console.log(
-      `[set-admin-password] Обновлён passwordHash для admin id=${existing.id}, email=${email}.`,
+      `[set-admin-password] Обновлён passwordHash${isSuper ? ' + isSuperAdmin=true' : ''} для admin id=${existing.id}, email=${email}.`,
     );
   } finally {
     await prisma.$disconnect();

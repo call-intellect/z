@@ -109,13 +109,46 @@ export class TochkaOAuthService {
 
     try {
       const url = await this.createAuthorizationUrl();
+      // audit С1 (2026-05-29): в authorize URL нет PII конечного пользователя
+      // (есть только client_id Z и random consent_id/state). Однако для
+      // defense-in-depth НЕ логируем секретные query-params полностью —
+      // печатаем базовый URL + маскированные параметры (длины + последние 4).
+      // Полный URL остаётся доступным через `createAuthorizationUrl()` для UI.
       this.logger.warn(
-        `TOCHKA OAuth: откройте URL в браузере для подключения Точки:\n${url}`,
+        `TOCHKA OAuth: откройте URL в браузере для подключения Точки:\n${TochkaOAuthService.redactAuthorizeUrlForLog(url)}`,
       );
     } catch (err) {
       this.logger.error(
         `Не удалось создать authorize URL: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /**
+   * audit С1 (2026-05-29): маскирует чувствительные query-параметры authorize
+   * URL для лога. Оставляет origin/path + scope (полезно для дебага),
+   * маскирует client_id/consent_id/state как `***<last4>`.
+   * НЕ используется в createAuthorizationUrl() — UI получает полный URL.
+   */
+  static redactAuthorizeUrlForLog(rawUrl: string): string {
+    try {
+      const u = new URL(rawUrl);
+      const mask = (v: string | null): string => {
+        if (!v) return '';
+        if (v.length <= 6) return '***';
+        return `***${v.slice(-4)}`;
+      };
+      const redactedParams: string[] = [];
+      for (const [k, v] of u.searchParams.entries()) {
+        if (k === 'client_id' || k === 'consent_id' || k === 'state') {
+          redactedParams.push(`${k}=${mask(v)}`);
+        } else {
+          redactedParams.push(`${k}=${v}`);
+        }
+      }
+      return `${u.origin}${u.pathname}?${redactedParams.join('&')}`;
+    } catch {
+      return '<invalid-url>';
     }
   }
 

@@ -388,11 +388,23 @@ export class SprintsService {
         tenant: tenantId,
         scopeKind: 'project',
       });
-      // Side-effect онбординг v2: первый спринт → firstSprintCreatedAt
-      void this.prisma.org.updateMany({
-        where: { id: tenantId, firstSprintCreatedAt: null },
-        data: { firstSprintCreatedAt: new Date() },
-      });
+      // Side-effect онбординг v2: первый спринт → firstSprintCreatedAt.
+      // audit В10 (2026-05-29): fire-and-forget с явной обработкой rejection,
+      // чтобы Promise не превратился в unhandled и не уронил процесс под
+      // node:warning unhandledRejection. Сбой апдейта Org не должен ломать
+      // создание спринта — это вторичный side-effect онбординга.
+      void this.prisma.org
+        .updateMany({
+          where: { id: tenantId, firstSprintCreatedAt: null },
+          data: { firstSprintCreatedAt: new Date() },
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Не удалось обновить Org.firstSprintCreatedAt для tenant=${tenantId} (quick-create): ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
+        );
       return {
         cycleId: cycleResponse.id,
         projectId: project.id,
@@ -512,11 +524,21 @@ export class SprintsService {
         scopeKind: dto.scope,
       });
 
-      // Side-effect онбординг v2: первый спринт → firstSprintCreatedAt
-      void this.prisma.org.updateMany({
-        where: { id: tenantId, firstSprintCreatedAt: null },
-        data: { firstSprintCreatedAt: new Date() },
-      });
+      // Side-effect онбординг v2: первый спринт → firstSprintCreatedAt.
+      // audit В10 (2026-05-29): см. комментарий выше — fire-and-forget
+      // с .catch(warn), без unhandledRejection.
+      void this.prisma.org
+        .updateMany({
+          where: { id: tenantId, firstSprintCreatedAt: null },
+          data: { firstSprintCreatedAt: new Date() },
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Не удалось обновить Org.firstSprintCreatedAt для tenant=${tenantId} (full-create): ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
+        );
 
       return result;
     } catch (err) {

@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from 'react';
 
 import { useAuth } from '@/contexts/auth-context';
 import { EntitlementProvider } from '@/contexts/entitlement-context';
+import { SubscriptionProvider } from '@/contexts/subscription-context';
 import { AppShell } from '@/ui/components/app-shell/AppShell';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { TourProvider, WelcomeTourAutoStart } from '@/ui/tour';
@@ -99,10 +100,12 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   // не для гостей). Тур внутри сам проверяет прогресс через PATCH/GET.
   return (
     <EntitlementProvider>
-      <TourProvider>
-        <AppShell>{children}</AppShell>
-        <WelcomeTourAutoStart />
-      </TourProvider>
+      <SubscriptionProvider>
+        <TourProvider>
+          <AppShell>{children}</AppShell>
+          <WelcomeTourAutoStart />
+        </TourProvider>
+      </SubscriptionProvider>
     </EntitlementProvider>
   );
 }

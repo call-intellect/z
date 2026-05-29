@@ -8,6 +8,8 @@ import {
   CommandPaletteProvider,
 } from '@/ui/components/command-palette';
 import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton';
+import { PaywallBanner } from '@/ui/components/PaywallBanner';
+import { PaywallModal } from '@/ui/components/PaywallModal';
 import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
 
 /**
@@ -38,8 +40,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* `pb-16` на мобильных — чтобы контент не закрывался TrackerBottomNav
             (~56px); на md+ bottom-nav скрыт и padding не нужен. */}
         <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
+          <PaywallBanner />
           {children}
         </main>
+
+        {/* PaywallModal — глобальная модалка при 403 subscription_required.
+            Рендерится через Radix Portal, позиция в DOM не важна. */}
+        <PaywallModal />
 
         {/* Mobile bottom navigation (≤md). На desktop bottom-nav скрыт —
             навигация идёт через sidebar. */}

@@ -150,11 +150,13 @@ export class ApiClient {
           });
         }
         if (res.status === 403) {
-          throw new ApiError({
-            code: 'forbidden',
-            message: 'Нет прав на это действие.',
-            requestId,
-          });
+          const parsed = await parseError(res, requestId);
+          if (parsed.code === 'subscription_required') {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('subscription:required'));
+            }
+          }
+          throw parsed;
         }
 
         if (res.status >= 500 && method === 'GET' && attempt < maxAttempts) {

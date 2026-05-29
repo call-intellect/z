@@ -54,7 +54,7 @@ export function AdminSubscriptionClient({ tenantId }: { tenantId: string }) {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="space-y-4">
         <Skeleton className="h-32" />
         <Skeleton className="h-64" />
       </div>
@@ -67,16 +67,7 @@ export function AdminSubscriptionClient({ tenantId }: { tenantId: string }) {
   const invoices = data?.recentInvoices.map(invoiceFromApi) ?? [];
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      <div>
-        <h1 className="text-2xl font-semibold">
-          Подписка Org{' '}
-          <span className="font-mono text-base text-muted-foreground">
-            {tenantId}
-          </span>
-        </h1>
-      </div>
-
+    <div className="space-y-6 max-w-5xl">
       {error && (
         <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -128,9 +119,16 @@ function CurrentSubscriptionCard({
                 : '—'}
           </p>
         </div>
-        <Badge className={colorClass}>
-          {subscriptionStatusLabel(subscription.status)}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {subscription.paymentMode === 'bonus' && (
+            <Badge className="bg-amber-100 text-amber-900 border border-amber-200">
+              Бонус
+            </Badge>
+          )}
+          <Badge className={colorClass}>
+            {subscriptionStatusLabel(subscription.status)}
+          </Badge>
+        </div>
       </div>
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Field label="Период" value={subscription.billingPeriod ?? '—'} />

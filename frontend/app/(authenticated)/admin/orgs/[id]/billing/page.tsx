@@ -1,14 +1,11 @@
-import type { Metadata } from 'next';
-
-import { BillingAdminClient } from './BillingAdminClient';
-
-export const metadata: Metadata = {
-  title: 'Z-Admin — Тариф Org',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * Server-обёртка над `<BillingAdminClient>`. Проверка super_admin происходит
- * внутри клиентского компонента (через apiClient + onForbidden state).
+ * Server-обёртка `/admin/orgs/[id]/billing` (legacy URL).
+ *
+ * После Фазы 1 ТЗ admin-subscription-ui-v2 (2026-05-29) standalone-страница
+ * редиректит в таб `?tab=billing` карточки Org. Старые закладки super-admin
+ * продолжают работать.
  */
 export default async function AdminOrgBillingPage({
   params,
@@ -16,5 +13,5 @@ export default async function AdminOrgBillingPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <BillingAdminClient tenantId={id} />;
+  redirect(`/admin/orgs/${encodeURIComponent(id)}?tab=billing`);
 }

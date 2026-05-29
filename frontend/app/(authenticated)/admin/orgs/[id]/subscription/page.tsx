@@ -1,18 +1,11 @@
-import type { Metadata } from 'next';
-
-import { AdminSubscriptionClient } from './AdminSubscriptionClient';
-
-export const metadata: Metadata = {
-  title: 'Z-Admin — Подписка',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * Server-обёртка `/admin/orgs/[id]/subscription` (super_admin).
+ * Server-обёртка `/admin/orgs/[id]/subscription` (legacy URL).
  *
- * Управление подпиской Org: ручная активация (paid/bonus + reason),
- * adjust-seats, force-status, history событий.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.4 + §13.
+ * После Фазы 1 ТЗ admin-subscription-ui-v2 (2026-05-29) standalone-страница
+ * редиректит в таб `?tab=subscription` карточки Org. Старые закладки
+ * super-admin продолжают работать.
  */
 export default async function AdminOrgSubscriptionPage({
   params,
@@ -20,5 +13,5 @@ export default async function AdminOrgSubscriptionPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <AdminSubscriptionClient tenantId={id} />;
+  redirect(`/admin/orgs/${encodeURIComponent(id)}?tab=subscription`);
 }

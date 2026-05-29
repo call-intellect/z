@@ -57,6 +57,7 @@ import {
   TrendingUp,
   Users,
   Video,
+  Wallet,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -271,6 +272,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         label: 'Entitlements (overrides)',
         icon: ToggleLeft,
         matchPrefix: '/admin/orgs/entitlements',
+      },
+      {
+        href: '/admin/billing-overview',
+        label: 'Биллинг — обзор',
+        icon: Wallet,
+        matchPrefix: '/admin/billing-overview',
       },
       {
         href: '/admin/demo',

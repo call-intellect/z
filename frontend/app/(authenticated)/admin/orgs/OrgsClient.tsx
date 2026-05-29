@@ -273,7 +273,7 @@ function OrgRow({
             size="sm"
             title="Тариф и лимиты (Phase 12)"
           >
-            <Link href={`/admin/orgs/${encodeURIComponent(org.id)}/billing`}>
+            <Link href={`/admin/orgs/${encodeURIComponent(org.id)}?tab=billing`}>
               <Wallet size={14} />
             </Link>
           </Button>

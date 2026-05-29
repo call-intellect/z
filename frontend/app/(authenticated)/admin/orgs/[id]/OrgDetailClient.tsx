@@ -6,6 +6,7 @@ import {
   Building2,
   ClipboardList,
   FolderTree,
+  Receipt,
   ShieldAlert,
   TrendingUp,
   Users,
@@ -33,12 +34,14 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { BillingAdminClient } from './billing/BillingAdminClient';
+import { AdminSubscriptionClient } from './subscription/AdminSubscriptionClient';
 
 type Props = { orgId: string };
 
 const TABS: AdminTabDef[] = [
   { value: 'overview', label: 'Обзор', icon: Building2 },
   { value: 'billing', label: 'Тариф и лимиты', icon: Wallet },
+  { value: 'subscription', label: 'Подписка и счета', icon: Receipt },
   { value: 'members', label: 'Участники', icon: Users },
   { value: 'sources', label: 'Источники', icon: FolderTree },
   { value: 'economics', label: 'Экономика', icon: TrendingUp },
@@ -73,6 +76,9 @@ export function OrgDetailClient({ orgId }: Props) {
           <>
             {active === 'overview' && <OverviewTab orgId={orgId} />}
             {active === 'billing' && <BillingAdminClient tenantId={orgId} />}
+            {active === 'subscription' && (
+              <AdminSubscriptionClient tenantId={orgId} />
+            )}
             {active === 'members' && <MembersTab orgId={orgId} />}
             {active === 'sources' && <SourcesTab orgId={orgId} />}
             {active === 'economics' && <EconomicsTab orgId={orgId} />}

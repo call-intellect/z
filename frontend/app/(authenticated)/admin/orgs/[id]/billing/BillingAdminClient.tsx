@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Save, ShieldAlert } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
@@ -176,24 +175,6 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-            <Link href="/admin/orgs" className="gap-1">
-              <ArrowLeft size={14} /> К списку Org
-            </Link>
-          </Button>
-          <h1 className="text-2xl font-semibold">Тариф организации</h1>
-          <p className="text-sm text-fg-tertiary">
-            tenantId: <code className="rounded bg-bg-overlay px-1">{tenantId}</code>
-          </p>
-        </div>
-        <Badge variant="default" className="text-xs">
-          super_admin
-          <ShieldAlert size={11} className="ml-1" />
-        </Badge>
-      </div>
-
       <section className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
         <h2 className="text-base font-medium">Тариф</h2>
         <div className="flex flex-wrap items-center gap-3">

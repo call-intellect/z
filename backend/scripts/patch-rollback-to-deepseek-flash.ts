@@ -108,10 +108,11 @@ const ROLLBACK_TARGETS: RollbackTarget[] = [
  * Дополнительные таргеты Фазы 4: chat-v2 (отдельный patch-chat-v2-to-pro.ts)
  * и dialog-layer (5 шт. из seed-llm-task-routes-dialog-layer.ts).
  *
- * clone-respond-v2 / knowledge-specialists-combined — закомментированы,
- * раскомментируй вручную если на момент инцидента флаги
- * CLONE_V2_ENABLED / SPECIALISTS_COMBINED_ENABLED были on и пилот
- * затронут массовым 400/500.
+ * audit С29 (2026-05-29): clone-respond-v2 / knowledge-specialists-combined
+ * раньше требовали ручного раскомментирования. Теперь — флаг
+ * `--include-feature-flagged` подмешивает их в targets при rollback'е.
+ * Используй когда CLONE_V2_ENABLED / SPECIALISTS_COMBINED_ENABLED были on
+ * на момент инцидента и пилот затронут массовым 400/500.
  */
 const EXTRA_TARGETS: RollbackTarget[] = [
   { taskType: 'chat-v2', category: 'chat' },
@@ -120,8 +121,15 @@ const EXTRA_TARGETS: RollbackTarget[] = [
   { taskType: 'dialog-classify', category: 'chat' },
   { taskType: 'dialog-multi-query', category: 'chat' },
   { taskType: 'dialog-summarize', category: 'chat' },
-  // { taskType: 'clone-respond-v2', category: 'chat' },
-  // { taskType: 'knowledge-specialists-combined', category: 'merge' },
+];
+
+/**
+ * audit С29 (2026-05-29): feature-flagged таргеты. Добавляются в EXTRA_TARGETS
+ * только если запущено с `--include-feature-flagged`.
+ */
+const FEATURE_FLAGGED_TARGETS: RollbackTarget[] = [
+  { taskType: 'clone-respond-v2', category: 'chat' },
+  { taskType: 'knowledge-specialists-combined', category: 'merge' },
 ];
 
 interface LegacyProviderEntry {
@@ -338,9 +346,15 @@ function parseTaskFlag(): string | null {
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   const dryRun = process.argv.includes('--dry-run');
+  // audit С29: подмешивает feature-flagged taskType'ы в targets.
+  const includeFeatureFlagged = process.argv.includes('--include-feature-flagged');
   const onlyTask = parseTaskFlag();
 
-  const allTargets = [...ROLLBACK_TARGETS, ...EXTRA_TARGETS];
+  const allTargets = [
+    ...ROLLBACK_TARGETS,
+    ...EXTRA_TARGETS,
+    ...(includeFeatureFlagged ? FEATURE_FLAGGED_TARGETS : []),
+  ];
   const targets = onlyTask
     ? allTargets.filter((t) => t.taskType === onlyTask)
     : allTargets;
@@ -355,9 +369,9 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-   
+
   console.log(
-    `=== patch-rollback-to-deepseek-flash START (${OLD_MODEL} → ${NEW_MODEL}, updateExisting=${updateExisting}, dryRun=${dryRun}, targets=${targets.length}${onlyTask ? `, --task ${onlyTask}` : ''}) ===`,
+    `=== patch-rollback-to-deepseek-flash START (${OLD_MODEL} → ${NEW_MODEL}, updateExisting=${updateExisting}, dryRun=${dryRun}, includeFeatureFlagged=${includeFeatureFlagged}, targets=${targets.length}${onlyTask ? `, --task ${onlyTask}` : ''}) ===`,
   );
 
   const stats: RunStats = {

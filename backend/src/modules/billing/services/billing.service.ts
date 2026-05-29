@@ -29,6 +29,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { BillingPeriod, Org } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   BILLING_PROVIDER,
@@ -109,6 +110,8 @@ export class BillingService {
     @Inject(InvoiceService) private readonly invoices: InvoiceService,
     @Inject(BillingEventService) private readonly eventLog: BillingEventService,
     @Inject(SeatService) private readonly seats: SeatService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   // ════════════════════════ User-flow: card / bank-invoice ════════════════════════
@@ -499,6 +502,10 @@ export class BillingService {
     try {
       await this.events.emitAsync(eventName, payload);
     } catch (err) {
+      // audit С3 (2026-05-29): метрика для алертов в Grafana. Без этой
+      // метрики падения listener'ов (реф-комиссия, signup-бонус) видны
+      // только в логах — оператор может пропустить.
+      this.metrics.incBillingEmitFailed({ event: eventName });
       this.logger.warn(
         `BillingEvent ${eventName}: emit упал: ${err instanceof Error ? err.message : String(err)}`,
       );

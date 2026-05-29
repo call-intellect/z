@@ -249,6 +249,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // audit Б6 (2026-05-29) — self-referral / INN-mismatch на верификации.
   private referralSelfReferralDeniedTotal!: Counter<string>;
   private referralInnMismatchTotal!: Counter<'reason'>;
+  // audit С3 (2026-05-29) — safeEmit() в BillingService поймал ошибку
+  // listener'а. Лейбл event = BillingEvent.* (см. billing.types.ts).
+  private billingEmitFailedTotal!: Counter<'event'>;
 
   // ── max bot channel (SBA β-1) ─────────────────────────────────────
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
@@ -1370,6 +1373,14 @@ export class BusinessMetricsService implements OnModuleInit {
         'audit Б6 — попытка self-referral (Referral.ownerUserId совпал с ' +
         'member/owner целевой Org) отклонена.',
       labelNames: [] as const,
+    });
+    this.billingEmitFailedTotal = this.getOrCreateCounter({
+      name: 'billing_emit_failed_total',
+      help:
+        'audit С3 — BillingService.safeEmit() поймал ошибку listener\'а ' +
+        '(side-effect: реф-комиссия, signup-бонус, ...). Лейбл event = ' +
+        'BillingEvent name (invoice.paid, invoice.bonus, ...).',
+      labelNames: ['event'] as const,
     });
     this.referralInnMismatchTotal = this.getOrCreateCounter({
       name: 'referral_inn_mismatch_total',
@@ -3543,6 +3554,11 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incReferralSelfReferralDenied(): void {
     this.referralSelfReferralDeniedTotal.inc();
+  }
+
+  /** audit С3 — listener BillingEvent упал, side-effect не выполнен. */
+  incBillingEmitFailed(args: { event: string }): void {
+    this.billingEmitFailedTotal.inc({ event: args.event });
   }
 
   incReferralInnMismatch(args: {

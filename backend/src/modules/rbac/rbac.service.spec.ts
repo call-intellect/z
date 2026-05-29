@@ -432,4 +432,344 @@ describe('RbacService — матрица ролей × ресурсов × де�
       expect(findUserMock).toHaveBeenCalledTimes(2);
     });
   });
+
+  // ─────────────────────────── audit В7 (2026-05-29) ────────────────────────
+  // Дополнительное покрытие основных ролей × ключевых ресурсов из policy.csv.
+  // Цель — поймать регрессии при правках policy: каждая важная роль/ресурс
+  // имеет хотя бы один кейс «должно работать» и один «не должно».
+  describe('audit В7: покрытие COO и admin-only ресурсов', () => {
+    // COO — операционный директор. Read на большинство shared-ресурсов,
+    // нет write на org/meeting/card/task.
+    const cooReadAllowedCases: ResourceType[] = [
+      'meeting',
+      'card',
+      'task',
+      'block',
+      'entity',
+      'theme',
+      'goal',
+      'person',
+      'department',
+      'process',
+      'regulation',
+      'policy',
+      'decision',
+      'insight',
+      'idea',
+      'experiment',
+      'appointment',
+      'kpi',
+      'maturity',
+      'company_profile',
+      'functional_domain',
+      'skill_profile',
+      'knowledge_profile',
+      'dashboard_operations',
+      'daily_checkin',
+      'personal_relation',
+      'project',
+      'issue',
+      'cycle',
+      'commitment',
+    ];
+    it.each(cooReadAllowedCases)(
+      'coo %s read → true',
+      async (obj) => {
+        const rbac = buildRbac({
+          membership: { role: 'coo', org: { visibilityMode: 'open' } },
+        });
+        const allowed = await rbac.check({
+          userId: 'u-coo',
+          tenantId: 't-1',
+          obj,
+          act: 'read',
+          resourceOwnerId: 'u-other',
+        });
+        expect(allowed).toBe(true);
+      },
+    );
+
+    it('coo НЕ имеет write на org', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-coo',
+          tenantId: 't-1',
+          obj: 'org',
+          act: 'write',
+        }),
+      ).toBe(false);
+    });
+
+    it('coo НЕ имеет delete на meeting', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-coo',
+          tenantId: 't-1',
+          obj: 'meeting',
+          act: 'delete',
+          resourceOwnerId: 'u-coo',
+        }),
+      ).toBe(false);
+    });
+
+    it('coo write self daily_checkin → true', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-coo',
+          tenantId: 't-1',
+          obj: 'daily_checkin',
+          act: 'write',
+          resourceOwnerId: 'u-coo',
+        }),
+      ).toBe(true);
+    });
+
+    it('coo write чужой daily_checkin → false', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-coo',
+          tenantId: 't-1',
+          obj: 'daily_checkin',
+          act: 'write',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('audit В7: clone_persona / source — owner-территории', () => {
+    it('source.manage — owner/admin (manager → false)', async () => {
+      const ownerR = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await ownerR.check({
+          userId: 'u',
+          tenantId: 't',
+          obj: 'source',
+          act: 'manage',
+        }),
+      ).toBe(true);
+
+      const adminR = buildRbac({
+        membership: { role: 'admin', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await adminR.check({
+          userId: 'u',
+          tenantId: 't',
+          obj: 'source',
+          act: 'manage',
+        }),
+      ).toBe(true);
+
+      const mgrOpen = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await mgrOpen.check({
+          userId: 'u',
+          tenantId: 't',
+          obj: 'source',
+          act: 'manage',
+          resourceOwnerId: 'u',
+        }),
+      ).toBe(false);
+    });
+
+    it('clone_persona.delete — только owner (admin тоже НЕ может)', async () => {
+      const ownerR = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await ownerR.check({
+          userId: 'u',
+          tenantId: 't',
+          obj: 'clone_persona',
+          act: 'delete',
+        }),
+      ).toBe(true);
+
+      const adminR = buildRbac({
+        membership: { role: 'admin', org: { visibilityMode: 'open' } },
+      });
+      // В policy admin clone_persona delete не объявлен → false.
+      expect(
+        await adminR.check({
+          userId: 'u',
+          tenantId: 't',
+          obj: 'clone_persona',
+          act: 'delete',
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('audit В7: visibility-mode граничные кейсы для manager', () => {
+    // commitment: open — read all members, strict — read self
+    it('manager open read commitment (чужой) → true', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'commitment',
+          act: 'read',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(true);
+    });
+
+    it('manager strict read commitment (чужой) → false', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'strict' } },
+        orgVisibility: 'strict',
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'commitment',
+          act: 'read',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(false);
+    });
+
+    it('manager strict read commitment (свой) → true', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'strict' } },
+        orgVisibility: 'strict',
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'commitment',
+          act: 'read',
+          resourceOwnerId: 'u-mgr',
+        }),
+      ).toBe(true);
+    });
+
+    // decision: SBA β-3 — manager open читает все, strict — self.
+    it('manager open read decision (чужой) → true', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'decision',
+          act: 'read',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(true);
+    });
+
+    it('manager strict read decision (чужой) → false', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'strict' } },
+        orgVisibility: 'strict',
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'decision',
+          act: 'read',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('audit В7: tracker resources', () => {
+    it('owner полный CRUD на project/issue/cycle', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      });
+      for (const obj of ['project', 'issue', 'cycle'] as ResourceType[]) {
+        for (const act of ['read', 'write', 'delete'] as Action[]) {
+          expect(
+            await rbac.check({
+              userId: 'u-o',
+              tenantId: 't-1',
+              obj,
+              act,
+            }),
+          ).toBe(true);
+        }
+      }
+    });
+
+    it('manager open write issue (любую) → true', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'issue',
+          act: 'write',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(true);
+    });
+
+    it('manager delete issue (свой) → true, чужой → false', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'issue',
+          act: 'delete',
+          resourceOwnerId: 'u-mgr',
+        }),
+      ).toBe(true);
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'issue',
+          act: 'delete',
+          resourceOwnerId: 'u-other',
+        }),
+      ).toBe(false);
+    });
+
+    it('manager НЕ имеет write на intake_issue', async () => {
+      const rbac = buildRbac({
+        membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      });
+      expect(
+        await rbac.check({
+          userId: 'u-mgr',
+          tenantId: 't-1',
+          obj: 'intake_issue',
+          act: 'write',
+          resourceOwnerId: 'u-mgr',
+        }),
+      ).toBe(false);
+    });
+  });
 });

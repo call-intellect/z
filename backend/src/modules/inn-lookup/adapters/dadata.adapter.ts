@@ -133,7 +133,7 @@ export class DadataAdapter implements InnLookupAdapter {
     } catch (err) {
       if (controller.signal.aborted) {
         this.logger.warn(
-          `DaData findById timeout (>${REQUEST_TIMEOUT_MS}ms) для inn=${inn}`,
+          `DaData findById timeout (>${REQUEST_TIMEOUT_MS}ms) для inn=${DadataAdapter.maskInn(inn)}`,
         );
       } else {
         this.logger.warn(
@@ -144,5 +144,17 @@ export class DadataAdapter implements InnLookupAdapter {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * audit С2 (2026-05-29): маскирует ИНН для логов — оставляет только
+   * последние 4 цифры. ИНН считается PII / коммерчески чувствительным,
+   * поэтому в логи попадает в виде `***XXXX`. Полный ИНН остаётся
+   * в БД (`Org.payerInn`) и в исходящих API-вызовах в DaData.
+   */
+  static maskInn(rawInn: string): string {
+    const digits = rawInn.replace(/\D/g, '');
+    if (digits.length <= 4) return '***';
+    return `***${digits.slice(-4)}`;
   }
 }

@@ -23,6 +23,19 @@ import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
+/**
+ * На уже-мигрированном проде `Meeting.tenantId` стал NOT NULL и
+ * типизированный `where: { tenantId: null }` падает в Prisma 7 валидацией.
+ * Проверяем nullability колонки напрямую, чтобы выйти чисто ДО таких запросов.
+ */
+async function isColumnNullable(table: string, column: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ is_nullable: string }>>`
+    SELECT is_nullable FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}
+  `;
+  return rows[0]?.is_nullable === 'YES';
+}
+
 async function backfillStep(): Promise<number> {
   // Берём всех активных юзеров с их personal Org.
   const users = await prisma.user.findMany({
@@ -57,6 +70,15 @@ async function listOrphans(): Promise<
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('=== tighten-meeting-tenant-not-null START ===');
+
+  // Если колонка уже NOT NULL — гейт пройден в прошлый выкат, миграция
+  // не требуется. Выходим с кодом 0 (не запуская where:{tenantId:null},
+  // который упал бы валидацией Prisma 7).
+  if (!(await isColumnNullable('Meeting', 'tenantId'))) {
+    // eslint-disable-next-line no-console
+    console.log('OK: Meeting.tenantId уже NOT NULL — миграция не требуется, пропускаем.');
+    return;
+  }
 
   const backfilled = await backfillStep();
   // eslint-disable-next-line no-console

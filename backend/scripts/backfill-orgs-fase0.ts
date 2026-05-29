@@ -23,6 +23,19 @@ import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
+/**
+ * Проверяет, осталась ли колонка nullable. На уже-мигрированном проде
+ * (`tenantId` стал NOT NULL) типизированные `where: { tenantId: null }`
+ * падают в Prisma 7 валидацией — этот guard позволяет выйти чисто ДО них.
+ */
+async function isColumnNullable(table: string, column: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ is_nullable: string }>>`
+    SELECT is_nullable FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}
+  `;
+  return rows[0]?.is_nullable === 'YES';
+}
+
 function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -81,6 +94,19 @@ async function ensureOrgForUser(user: User): Promise<string> {
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('=== backfill-orgs-fase0 START ===');
+
+  // Guard: если Meeting.tenantId уже NOT NULL — Фаза 0 backfill применена
+  // в прошлый выкат. Дальше идти нельзя (where:{tenantId:null} упадёт в
+  // Prisma 7), да и не нужно — выходим чисто.
+  if (!(await isColumnNullable('Meeting', 'tenantId'))) {
+    // eslint-disable-next-line no-console
+    console.log(
+      'Meeting.tenantId уже NOT NULL — Фаза 0 backfill применена ранее, обновление не требуется. Пропускаем.',
+    );
+    // eslint-disable-next-line no-console
+    console.log('=== backfill-orgs-fase0 DONE (skip) ===');
+    return;
+  }
 
   const users = await prisma.user.findMany({
     where: { deletedAt: null },

@@ -9,8 +9,10 @@
  *     `dadata`. Реальная цепочка появится в Фазе 7 (Точка production).
  *
  * Redis-кэш:
- *   - Ключ: `inn-lookup:<source>:<inn>` (TTL `INN_LOOKUP_CACHE_TTL_DAYS` дней,
- *     по умолчанию 30). source — `mock|dadata|tochka` источника, а не запроса.
+ *   - Ключ: `inn-lookup:<inn>` (TTL `INN_LOOKUP_CACHE_TTL_DAYS` дней,
+ *     по умолчанию 30). source хранится внутри payload, отдельной части
+ *     ключа не образует — это позволяет читать и инвалидировать кэш через
+ *     детерминированный GET/DEL вместо блокирующего `KEYS` (audit В1).
  *   - Кэшим только успешные ответы (`InnLookupResult != null`). Негативные
  *     ответы не кэшим — `null` от DaData может означать «временно не нашли»
  *     при rate-limit или сети.
@@ -67,8 +69,8 @@ export class InnLookupService {
   async lookup(rawInn: string): Promise<InnLookupServiceResult> {
     const inn = this.normalizeInn(rawInn);
 
-    // 1. Кэш hit (ищем по любому источнику — какой первый ответил, тот и
-    //    отдаём). Ключ ниже включает source, так что hit детерминирован.
+    // 1. Кэш hit. Ключ детерминированный (`inn-lookup:<inn>`), source
+    //    хранится в payload — это исключает `KEYS *` blocking-операцию.
     const cached = await this.readFromCache(inn);
     if (cached) {
       return { ...cached, cached: true };
@@ -118,9 +120,8 @@ export class InnLookupService {
    */
   async invalidate(rawInn: string): Promise<number> {
     const inn = this.normalizeInn(rawInn);
-    const keys = await this.redis.client.keys(`inn-lookup:*:${inn}`);
-    if (keys.length === 0) return 0;
-    return this.redis.client.del(...keys);
+    // audit В1: детерминированный DEL вместо `KEYS *`, который блокирует Redis.
+    return this.redis.client.del(this.cacheKey(inn));
   }
 
   // ────────────────────── маршрут провайдеров ──────────────────────
@@ -148,18 +149,17 @@ export class InnLookupService {
   // ──────────────────────────── кэш ────────────────────────────
 
   private async readFromCache(inn: string): Promise<InnLookupResult | null> {
-    // Ищем результат от любого источника по `inn-lookup:*:<inn>`.
-    const keys = await this.redis.client.keys(`inn-lookup:*:${inn}`);
-    if (keys.length === 0) return null;
-    const raw = await this.redis.client.get(keys[0] as string);
+    // audit В1: детерминированный GET вместо `KEYS *`. source — внутри payload.
+    const key = this.cacheKey(inn);
+    const raw = await this.redis.client.get(key);
     if (!raw) return null;
     try {
       return JSON.parse(raw) as InnLookupResult;
     } catch (err) {
       this.logger.warn(
-        `Битый кэш ${keys[0]}: ${err instanceof Error ? err.message : String(err)}`,
+        `Битый кэш ${key}: ${err instanceof Error ? err.message : String(err)}`,
       );
-      await this.redis.client.del(keys[0] as string).catch(() => {});
+      await this.redis.client.del(key).catch(() => {});
       return null;
     }
   }
@@ -169,8 +169,12 @@ export class InnLookupService {
       60,
       Math.floor(this.cfg.billing.innLookup.cacheTtlDays * 24 * 60 * 60),
     );
-    const key = `inn-lookup:${result.source}:${result.inn}`;
+    const key = this.cacheKey(result.inn);
     await this.redis.client.set(key, JSON.stringify(result), 'EX', ttlSeconds);
+  }
+
+  private cacheKey(inn: string): string {
+    return `inn-lookup:${inn}`;
   }
 
   private lockKey(inn: string): string {

@@ -10,7 +10,7 @@
  *   - Lock SET NX EX срабатывает при miss
  *   - Все источники молчат → NotFoundException
  *   - Невалидный ИНН → throw
- *   - invalidate(inn) → keys() + del()
+ *   - invalidate(inn) → детерминированный DEL по `inn-lookup:<inn>` (audit В1)
  */
 
 import { NotFoundException } from '@nestjs/common';
@@ -155,12 +155,13 @@ describe('InnLookupService', () => {
   });
 
   it('кэш hit → cached=true, провайдер НЕ зовётся', async () => {
-    redis.client.keys.mockResolvedValueOnce(['inn-lookup:mock:7707083893']);
+    // audit В1: детерминированный GET по `inn-lookup:<inn>` (без `KEYS *`).
     redis.client.get.mockResolvedValueOnce(JSON.stringify(SBER));
 
     const svc = makeService('mock');
     const result = await svc.lookup('7707083893');
 
+    expect(redis.client.get).toHaveBeenCalledWith('inn-lookup:7707083893');
     expect(result.cached).toBe(true);
     expect(result.source).toBe('mock');
     expect(mockAdapter.lookup).not.toHaveBeenCalled();
@@ -180,7 +181,7 @@ describe('InnLookupService', () => {
       'NX',
     );
     expect(redis.client.set).toHaveBeenCalledWith(
-      'inn-lookup:mock:7707083893',
+      'inn-lookup:7707083893',
       expect.any(String),
       'EX',
       30 * 24 * 60 * 60,
@@ -208,29 +209,23 @@ describe('InnLookupService', () => {
     await expect(svc.lookup('12345')).rejects.toThrow(/Невалидный ИНН/);
   });
 
-  it('invalidate(inn) → keys() + del() возвращает число удалённых', async () => {
-    redis.client.keys.mockResolvedValueOnce([
-      'inn-lookup:mock:7707083893',
-      'inn-lookup:dadata:7707083893',
-    ]);
-    redis.client.del.mockResolvedValueOnce(2);
+  it('invalidate(inn) → детерминированный DEL по `inn-lookup:<inn>`', async () => {
+    // audit В1: ключ детерминированный, никаких `KEYS *` (блок Redis).
+    redis.client.del.mockResolvedValueOnce(1);
 
     const svc = makeService('mock');
     const deleted = await svc.invalidate('7707083893');
 
-    expect(redis.client.keys).toHaveBeenCalledWith('inn-lookup:*:7707083893');
-    expect(redis.client.del).toHaveBeenCalledWith(
-      'inn-lookup:mock:7707083893',
-      'inn-lookup:dadata:7707083893',
-    );
-    expect(deleted).toBe(2);
+    expect(redis.client.del).toHaveBeenCalledWith('inn-lookup:7707083893');
+    expect(redis.client.keys).not.toHaveBeenCalled();
+    expect(deleted).toBe(1);
   });
 
-  it('invalidate(inn) без ключей → 0, del не зовётся', async () => {
-    redis.client.keys.mockResolvedValueOnce([]);
+  it('invalidate(inn) если ключа нет → возвращает 0', async () => {
+    redis.client.del.mockResolvedValueOnce(0);
     const svc = makeService('mock');
     const deleted = await svc.invalidate('7707083893');
     expect(deleted).toBe(0);
-    expect(redis.client.del).not.toHaveBeenCalled();
+    expect(redis.client.del).toHaveBeenCalledWith('inn-lookup:7707083893');
   });
 });

@@ -67,7 +67,10 @@ export class AccountsController {
     const result = await this.accounts.register({
       email: body.email,
       name: body.name,
-      ...(body.phone !== undefined ? { phone: body.phone } : {}),
+      // audit В8: body.phone уже normalized в E.164 ('+7...') либо null
+      // (если ввод не прошёл регекс). null → не передаём — accounts.service
+      // увидит phone=undefined и не запишет ничего.
+      ...(body.phone ? { phone: body.phone } : {}),
       ...(body.companyName !== undefined ? { companyName: body.companyName } : {}),
       ...(body.honeypot !== undefined ? { honeypot: body.honeypot } : {}),
       ...(body.ref !== undefined ? { ref: body.ref } : {}),

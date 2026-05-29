@@ -172,7 +172,7 @@ export class AccountsService {
         {
           email,
           name,
-          phone: input.phone?.trim(),
+          phone: input.phone ?? undefined,
           passwordHash,
           mustChangePassword: true,
           consentDataProcessing: input.consentDataProcessing,

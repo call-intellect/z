@@ -188,6 +188,8 @@ function buildConciergeService(opts: BuildOpts) {
       findFirst: conversationFindFirst,
       create: conversationCreate,
       update: conversationUpdate,
+      // audit С24 (2026-05-29): теперь сервис делает updateMany с tenantId.
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     conciergeMessage: {
       create: messageCreate,

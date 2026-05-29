@@ -309,8 +309,11 @@ export class ConciergeService {
         });
         yield { type: 'message', text: cachedText };
         yield { type: 'done', messageId: cachedMsg.id };
-        await this.prisma.conciergeConversation.update({
-          where: { id: conversation.id },
+        // audit С24 (2026-05-29): defense-in-depth — updateMany с tenantId,
+        // чтобы даже при race (mutated conversation.id) не апдейтить чужую
+        // запись. updateMany возвращает count=0 без throw, что безопасно.
+        await this.prisma.conciergeConversation.updateMany({
+          where: { id: conversation.id, tenantId: input.tenantId },
           data: { lastMessageAt: new Date() },
         });
         return;
@@ -537,9 +540,9 @@ export class ConciergeService {
     yield { type: 'message', text: finalText };
     yield { type: 'done', messageId: assistantMsg.id };
 
-    // Bump lastMessageAt.
-    await this.prisma.conciergeConversation.update({
-      where: { id: conversation.id },
+    // Bump lastMessageAt — defense-in-depth (С24): updateMany с tenantId.
+    await this.prisma.conciergeConversation.updateMany({
+      where: { id: conversation.id, tenantId: input.tenantId },
       data: { lastMessageAt: new Date() },
     });
   }
@@ -557,7 +560,16 @@ export class ConciergeService {
   private isDialogLayerEnabled(): boolean {
     try {
       return this.cfg.concierge.dialogLayerEnabled === true && this.dialog !== null;
-    } catch {
+    } catch (err) {
+      // audit С23 (2026-05-29): раньше первый catch молча возвращал false —
+      // если cfg в проде ломался, dialog-layer тихо отключался без алертов.
+      // Логируем (warn — не error, т.к. не блокирует запрос) и инкрементим
+      // counter `concierge_config_error_total{reason}` для Grafana-алерта.
+      this.metrics.incConciergeConfigError?.({ reason: 'dialog_layer_enabled' });
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'concierge: не удалось прочитать cfg.concierge.dialogLayerEnabled — fallback=false',
+      );
       return false;
     }
   }

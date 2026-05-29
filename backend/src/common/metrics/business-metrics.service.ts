@@ -252,6 +252,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // audit С3 (2026-05-29) — safeEmit() в BillingService поймал ошибку
   // listener'а. Лейбл event = BillingEvent.* (см. billing.types.ts).
   private billingEmitFailedTotal!: Counter<'event'>;
+  // audit С23 (2026-05-29) — concierge не смог прочитать cfg.concierge.*
+  // (кэш TypedConfigService протух / hot-reload race). Не блокирует запрос,
+  // но если значение > 0 в проде — нужно диагностировать конфиг.
+  private conciergeConfigErrorTotal!: Counter<'reason'>;
 
   // ── max bot channel (SBA β-1) ─────────────────────────────────────
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
@@ -1381,6 +1385,13 @@ export class BusinessMetricsService implements OnModuleInit {
         '(side-effect: реф-комиссия, signup-бонус, ...). Лейбл event = ' +
         'BillingEvent name (invoice.paid, invoice.bonus, ...).',
       labelNames: ['event'] as const,
+    });
+    this.conciergeConfigErrorTotal = this.getOrCreateCounter({
+      name: 'concierge_config_error_total',
+      help:
+        'audit С23 — concierge не смог прочитать config (cfg.concierge.* ' +
+        'недоступен). Не блокирует запрос, но > 0 означает баг конфига.',
+      labelNames: ['reason'] as const,
     });
     this.referralInnMismatchTotal = this.getOrCreateCounter({
       name: 'referral_inn_mismatch_total',
@@ -3559,6 +3570,13 @@ export class BusinessMetricsService implements OnModuleInit {
   /** audit С3 — listener BillingEvent упал, side-effect не выполнен. */
   incBillingEmitFailed(args: { event: string }): void {
     this.billingEmitFailedTotal.inc({ event: args.event });
+  }
+
+  /** audit С23 — concierge получил ошибку при чтении конфига. */
+  incConciergeConfigError(args: {
+    reason: 'dialog_layer_enabled' | 'tenant_scope' | 'other';
+  }): void {
+    this.conciergeConfigErrorTotal.inc({ reason: args.reason });
   }
 
   incReferralInnMismatch(args: {

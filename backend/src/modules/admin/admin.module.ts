@@ -8,6 +8,7 @@ import { AiUsageAdminController } from './ai-usage.controller';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
 import { ContentAdminModule } from './content/content-admin.module';
+import { AdminDemoController } from './controllers/admin-demo.controller';
 import { AdminExperimentsController } from './controllers/admin-experiments.controller';
 import { AdminFunctionsController } from './controllers/admin-functions.controller';
 import { AdminHealthController } from './controllers/admin-health.controller';
@@ -18,6 +19,7 @@ import { OrgAdminKnowledgeController } from './controllers/org-admin-knowledge.c
 import { OrgAdminMemoryAccessController } from './controllers/org-admin-memory-access.controller';
 import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { AdminCronsModule } from './crons/admin-crons.module';
+import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
 import { AdminLlmModelsController } from './economics/admin-llm-models.controller';
 import { AdminLlmModelsService } from './economics/admin-llm-models.service';
@@ -109,8 +111,11 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     PlatformAdminModule,
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
     AdminSkillTraitConceptsModule,
+    // 2026-05-29 — демо-кабинет «ТехноСтрим» из админки (AdminDemoController).
+    OnboardingModule,
   ],
   controllers: [
+    AdminDemoController,
     IntegrationKeysAdminController,
     MeetingsAdminController,
     AiUsageAdminController,

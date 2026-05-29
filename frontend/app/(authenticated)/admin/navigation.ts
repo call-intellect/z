@@ -272,6 +272,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         icon: ToggleLeft,
         matchPrefix: '/admin/orgs/entitlements',
       },
+      {
+        href: '/admin/demo',
+        label: 'Демо-кабинеты',
+        icon: Sparkles,
+        matchPrefix: '/admin/demo',
+      },
     ],
   },
 

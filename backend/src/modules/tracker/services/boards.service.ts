@@ -447,14 +447,29 @@ export class BoardsService {
     }
     const projectId = boards[0]!.projectId;
 
-    await this.prisma.$transaction(
-      boardIds.map((id, idx) =>
-        this.prisma.board.update({
+    // audit В11 (2026-05-29): reorder под callback-transaction с
+    // SELECT ... FOR UPDATE. Прежний массив-style $transaction
+    // (Promise.all-эквивалент) выполняется параллельно — два конкурентных
+    // reorder'а на одних и тех же досках могли приводить к "перемешанному"
+    // sequence (T1 пишет idx=0..3, T2 пишет idx=0..2 — результат
+    // непредсказуем). FOR UPDATE сериализует параллельные транзакции
+    // на тех же row'ах.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "Board"
+        WHERE id = ANY(${boardIds}::text[])
+          AND "tenantId" = ${tenantId}
+          AND "deletedAt" IS NULL
+        FOR UPDATE
+      `;
+      for (let idx = 0; idx < boardIds.length; idx += 1) {
+        const id = boardIds[idx]!;
+        await tx.board.update({
           where: { id },
           data: { sequence: idx },
-        }),
-      ),
-    );
+        });
+      }
+    });
     this.events.publishBoardReordered({ tenantId, projectId, boardIds });
     return this.findAll(projectId, tenantId, { includeArchived: false });
   }

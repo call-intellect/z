@@ -169,14 +169,25 @@ export class ChecklistsService {
         },
       });
     }
-    await this.prisma.$transaction(
-      args.checklistIds.map((id, idx) =>
-        this.prisma.issueChecklist.update({
+    // audit В11 (2026-05-29): callback-tx + SELECT FOR UPDATE против гонки
+    // двух reorder'ов на одних чек-листах. См. boards.service.reorder().
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "IssueChecklist"
+        WHERE id = ANY(${args.checklistIds}::text[])
+          AND "tenantId" = ${args.tenantId}
+          AND "issueId" = ${args.issueId}
+          AND "deletedAt" IS NULL
+        FOR UPDATE
+      `;
+      for (let idx = 0; idx < args.checklistIds.length; idx += 1) {
+        const id = args.checklistIds[idx]!;
+        await tx.issueChecklist.update({
           where: { id },
           data: { sequence: idx },
-        }),
-      ),
-    );
+        });
+      }
+    });
     return this.listForIssue(args.issueId, args.tenantId);
   }
 
@@ -363,14 +374,24 @@ export class ChecklistsService {
         },
       });
     }
-    await this.prisma.$transaction(
-      args.itemIds.map((id, idx) =>
-        this.prisma.issueChecklistItem.update({
+    // audit В11 (2026-05-29): callback-tx + SELECT FOR UPDATE против
+    // параллельных reorder'ов пунктов одного checklist'а.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM "IssueChecklistItem"
+        WHERE id = ANY(${args.itemIds}::text[])
+          AND "tenantId" = ${args.tenantId}
+          AND "checklistId" = ${args.checklistId}
+        FOR UPDATE
+      `;
+      for (let idx = 0; idx < args.itemIds.length; idx += 1) {
+        const id = args.itemIds[idx]!;
+        await tx.issueChecklistItem.update({
           where: { id },
           data: { sequence: idx },
-        }),
-      ),
-    );
+        });
+      }
+    });
     const refreshed = await this.prisma.issueChecklistItem.findMany({
       where: { checklistId: args.checklistId, tenantId: args.tenantId },
       orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],

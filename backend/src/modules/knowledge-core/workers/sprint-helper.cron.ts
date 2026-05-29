@@ -13,13 +13,19 @@ import { CoreQueueService } from '../../core-queue/core-queue.service';
  * BullMQ jobId-дедуп гарантирует, что параллельный manual-trigger не плодит
  * дубли.
  *
- * Cap: не более 50 спринтов за тик (на старте достаточно, при росте Org —
- * расширим в отдельном sub-ТЗ).
+ * Cap (audit-fixes §Б10): per-tenant cap = `PER_TENANT_CAP`. Глобальный
+ * cap=50 был кросс-тенантным — крупный tenant с 50+ активными спринтами
+ * полностью вытеснял остальных. Используем row_number() OVER (PARTITION BY
+ * tenantId) чтобы взять top-N на тенант, отсортированных по startDate.
+ *
+ * Global safety cap = `GLOBAL_HARD_CAP` (защита от взрыва очереди при
+ * аномалии — N тенантов × 5 спринтов).
  */
 @Injectable()
 export class SprintHelperCron {
   private readonly logger = new Logger(SprintHelperCron.name);
-  private static readonly BATCH_CAP = 50;
+  private static readonly PER_TENANT_CAP = 5;
+  private static readonly GLOBAL_HARD_CAP = 500;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -29,17 +35,32 @@ export class SprintHelperCron {
   @Cron('0 */4 * * *', { name: 'sprint-helper-cron' })
   async tick(): Promise<void> {
     const now = new Date();
-    let cycles;
+    let cycles: Array<{ id: string; tenantId: string }>;
     try {
-      cycles = await this.prisma.cycle.findMany({
-        where: {
-          completedAt: null,
-          endDate: { gte: now },
-        },
-        orderBy: [{ startDate: 'asc' }],
-        take: SprintHelperCron.BATCH_CAP,
-        select: { id: true, tenantId: true },
-      });
+      // Per-tenant top-N через window function. CTE ранжирует активные
+      // циклы внутри каждого tenantId по startDate ASC, внешний SELECT
+      // берёт rn <= PER_TENANT_CAP. Глобальный LIMIT — защита от
+      // патологического роста (миллион тенантов).
+      cycles = await this.prisma.$queryRaw<
+        Array<{ id: string; tenantId: string }>
+      >`
+        WITH ranked AS (
+          SELECT
+            "id",
+            "tenantId",
+            row_number() OVER (
+              PARTITION BY "tenantId"
+              ORDER BY "startDate" ASC
+            ) AS rn
+          FROM "Cycle"
+          WHERE "completedAt" IS NULL
+            AND "endDate" >= ${now}
+        )
+        SELECT "id", "tenantId"
+        FROM ranked
+        WHERE rn <= ${SprintHelperCron.PER_TENANT_CAP}
+        LIMIT ${SprintHelperCron.GLOBAL_HARD_CAP}
+      `;
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -49,7 +70,10 @@ export class SprintHelperCron {
     }
     if (cycles.length === 0) return;
 
-    this.logger.log(`sprint-helper.cron: enqueue для ${cycles.length} активных циклов`);
+    const tenantsTouched = new Set(cycles.map((c) => c.tenantId)).size;
+    this.logger.log(
+      `sprint-helper.cron: enqueue для ${cycles.length} активных циклов (${tenantsTouched} tenants, per-tenant cap=${SprintHelperCron.PER_TENANT_CAP})`,
+    );
     for (const c of cycles) {
       try {
         await this.coreQueue.enqueueSprintHelper({

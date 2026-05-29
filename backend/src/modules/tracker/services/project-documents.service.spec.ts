@@ -117,20 +117,34 @@ function makeService(store: Store): {
         async ({
           where,
         }: {
-          where: { projectId: string; tenantId: string; deletedAt: null };
+          where: {
+            projectId?: string;
+            tenantId?: string;
+            deletedAt?: null;
+            // audit С20: cascading soft-delete передаёт parentId: { in: [...] }.
+            parentId?: { in: string[] };
+          };
         }) => {
-          return Array.from(store.docs.values())
-            .filter(
-              (d) =>
-                d.projectId === where.projectId &&
-                d.tenantId === where.tenantId &&
-                d.deletedAt === null,
+          let rows = Array.from(store.docs.values()).filter((d) => {
+            if (where.tenantId !== undefined && d.tenantId !== where.tenantId)
+              return false;
+            if (where.projectId !== undefined && d.projectId !== where.projectId)
+              return false;
+            if (where.deletedAt === null && d.deletedAt !== null) return false;
+            if (
+              where.parentId?.in !== undefined &&
+              (d.parentId === null || !where.parentId.in.includes(d.parentId))
             )
-            .sort((a, b) => {
-              if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-              if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-              return a.createdAt.getTime() - b.createdAt.getTime();
-            });
+              return false;
+            return true;
+          });
+          // orderBy для listForProject (pinned/sortOrder/createdAt).
+          rows = rows.sort((a, b) => {
+            if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+            if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+            return a.createdAt.getTime() - b.createdAt.getTime();
+          });
+          return rows;
         },
       ),
       aggregate: vi.fn(
@@ -220,6 +234,31 @@ function makeService(store: Store): {
           };
           store.docs.set(where.id, next);
           return next;
+        },
+      ),
+      // audit С20 (2026-05-29): cascading soft-delete делает BFS+updateMany.
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: {
+            id?: { in: string[] };
+            tenantId?: string;
+            deletedAt?: null;
+          };
+          data: { deletedAt?: Date };
+        }) => {
+          let count = 0;
+          for (const d of store.docs.values()) {
+            if (where.id?.in && !where.id.in.includes(d.id)) continue;
+            if (where.tenantId !== undefined && d.tenantId !== where.tenantId)
+              continue;
+            if (where.deletedAt === null && d.deletedAt !== null) continue;
+            if (data.deletedAt !== undefined) d.deletedAt = data.deletedAt;
+            count += 1;
+          }
+          return { count };
         },
       ),
     },

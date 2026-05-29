@@ -240,6 +240,43 @@ export class ProjectDocumentsService {
       changedFields.push('pinned');
     }
     if (dto.parentId !== undefined && dto.parentId !== existing.parentId) {
+      // audit С19 (2026-05-29): cycle-check. Без него можно сделать
+      // self-parent или закольцевать дерево (A.parent=B; B.parent=A) —
+      // в UI дерево уйдёт в бесконечный рендер, а запросы CTE будут
+      // зависать.
+      if (dto.parentId !== null) {
+        if (dto.parentId === id) {
+          throw new ConflictException({
+            ok: false,
+            error: {
+              code: 'project_document_self_parent',
+              message: 'Документ не может быть родителем самого себя',
+            },
+          });
+        }
+        // Идём по цепочке parentId вверх — если встретим текущий id, это цикл.
+        let cursorId: string | null = dto.parentId;
+        const visited = new Set<string>();
+        while (cursorId !== null) {
+          if (cursorId === id) {
+            throw new ConflictException({
+              ok: false,
+              error: {
+                code: 'project_document_cyclic_parent',
+                message: 'Цикл в дереве документов: новый parent ведёт обратно к текущему документу',
+              },
+            });
+          }
+          if (visited.has(cursorId)) break; // защита от уже существующих циклов в БД
+          visited.add(cursorId);
+          const node: { parentId: string | null } | null =
+            await this.prisma.projectDocument.findUnique({
+              where: { id: cursorId },
+              select: { parentId: true },
+            });
+          cursorId = node?.parentId ?? null;
+        }
+      }
       data.parent =
         dto.parentId === null
           ? { disconnect: true }
@@ -307,15 +344,38 @@ export class ProjectDocumentsService {
   /** Soft-delete (deletedAt). Восстановить — `restore`. */
   async delete(id: string, tenantId: string): Promise<{ ok: true }> {
     const existing = await this.requireDocument(id, tenantId);
-    await this.prisma.projectDocument.update({
-      where: { id: existing.id },
-      data: { deletedAt: new Date() },
+    const now = new Date();
+
+    // audit С20 (2026-05-29): soft-delete каскадирует на children, чтобы
+    // в UI не висели «осиротевшие» документы со ссылкой на удалённый
+    // parent. Собираем всё поддерево через BFS (Prisma не умеет рекурсивные
+    // CTE декларативно), потом обновляем одним updateMany.
+    const subtreeIds: string[] = [existing.id];
+    let frontier: string[] = [existing.id];
+    while (frontier.length > 0) {
+      const children = await this.prisma.projectDocument.findMany({
+        where: {
+          tenantId,
+          parentId: { in: frontier },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      frontier = children.map((c) => c.id);
+      subtreeIds.push(...frontier);
+    }
+    await this.prisma.projectDocument.updateMany({
+      where: { id: { in: subtreeIds }, tenantId, deletedAt: null },
+      data: { deletedAt: now },
     });
-    this.events.publishProjectDocumentDeleted({
-      tenantId,
-      projectId: existing.projectId,
-      documentId: existing.id,
-    });
+
+    for (const docId of subtreeIds) {
+      this.events.publishProjectDocumentDeleted({
+        tenantId,
+        projectId: existing.projectId,
+        documentId: docId,
+      });
+    }
     return { ok: true };
   }
 

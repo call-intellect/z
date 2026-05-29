@@ -532,14 +532,37 @@ export class AccountsService {
         // No-email: placeholder-пароль (пользователь задаст через setInitialPassword).
         const passwordHash = args.passwordHash
           ?? await this.passwords.hash(AccountsService.generateTempPassword());
-        const placeholderEmail = `noemail-${randomBytes(12).toString('hex')}@kora.local`;
-        const user = await this.repo.upsertStandalone({
-          email: placeholderEmail,
-          name: args.name,
-          passwordHash,
-          mustChangePassword: true,
-        });
-        return { id: user.id, email: user.email, role: user.role };
+        // audit С9 (2026-05-29): 16 байт = 32 hex chars (128 бит энтропии),
+        // коллизия практически невозможна. На случай если в Telegram-flow
+        // потенциальная race создала уже существующий placeholder email —
+        // ловим Prisma.P2002 и retry'ем с новым suffix'ом (до 3 раз).
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const placeholderEmail = `noemail-${randomBytes(16).toString('hex')}@kora.local`;
+          try {
+            const user = await this.repo.upsertStandalone({
+              email: placeholderEmail,
+              name: args.name,
+              passwordHash,
+              mustChangePassword: true,
+            });
+            return { id: user.id, email: user.email, role: user.role };
+          } catch (err) {
+            // Prisma уникальное ограничение → пробуем ещё раз с другим suffix.
+            const code =
+              err instanceof Error
+                ? (err as Error & { code?: string }).code
+                : undefined;
+            if (code === 'P2002' && attempt < 2) {
+              this.logger.warn(
+                `createUserWithoutEmail: коллизия placeholder email на попытке ${attempt + 1} — retry`,
+              );
+              continue;
+            }
+            throw err;
+          }
+        }
+        // Unreachable (loop либо вернёт, либо бросит). Защитный throw для TS.
+        throw new Error('createUserWithoutEmail: все 3 попытки коллизии исчерпаны');
       },
       issueSession: async (args) => {
         const { token } = await this.sessions.issue({

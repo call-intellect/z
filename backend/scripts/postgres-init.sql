@@ -515,3 +515,26 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- audit С17 (2026-05-29) — pg_trgm индекс на Cycle.name для поиска спринтов.
+--   sprints.service.ts использует `name: { contains: q, mode: 'insensitive' }`
+--   для фильтра «по названию». На больших объёмах (>10к циклов) seq-scan
+--   замедляется. GIN trigram index делает substring-поиск O(log N).
+--   pg_trgm есть на Yandex Managed PostgreSQL по умолчанию.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Cycle'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Cycle_name_trgm_idx"
+      ON "Cycle" USING gin ("name" gin_trgm_ops)
+    $sql$;
+  END IF;
+END $$;

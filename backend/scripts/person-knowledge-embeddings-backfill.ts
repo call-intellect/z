@@ -224,7 +224,9 @@ async function main(): Promise<void> {
   await app.close();
 }
 
-main().catch((err) => {
-  console.error('[backfill] fatal', err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('[backfill] fatal', err);
+    process.exit(1);
+  });

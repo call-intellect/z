@@ -254,8 +254,10 @@ const args: RunArgs = {
   dryRun: process.argv.includes('--dry-run'),
 };
 
-main(args).catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('patch-backfill-dataclass-audit FAILED:', err);
-  process.exit(1);
-});
+main(args)
+  .then(() => process.exit(0))
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('patch-backfill-dataclass-audit FAILED:', err);
+    process.exit(1);
+  });

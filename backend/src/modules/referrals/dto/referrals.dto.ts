@@ -21,7 +21,14 @@ const LegalFormSchema = z.enum([
 
 export const PublicAttributionBodySchema = z.object({
   slug: z.string().trim().min(4).max(32),
-  fingerprint: z.string().trim().max(64).optional(),
+  /**
+   * audit С5 (2026-05-29): минимум 32 символа для fingerprint. Это
+   * SHA-256 / SHA-1-подобный хэш с FingerprintJS / визитёр-сайта.
+   * Короче 32 символов = либо подделка, либо устаревший клиент —
+   * лучше отбросить, чем хранить «5-символьный fingerprint» который
+   * будет коллизировать на atribution-расчёте.
+   */
+  fingerprint: z.string().trim().min(32).max(64).optional(),
   referer: z.string().trim().max(2000).optional(),
 });
 export type PublicAttributionBody = z.infer<typeof PublicAttributionBodySchema>;

@@ -126,6 +126,10 @@ const STEPS: Step[] = [
   // 2026-05-27 — ребренд Z → Кора: обновляет subject/body email-шаблонов в БД.
   // Промпты обновляет seed-prompt-templates.ts (уже в seed-llm-core).
   { phase: 'patch', script: 'scripts/patch-rebrand-z-to-kora.ts', hint: 'ребренд Z → Кора в EmailTemplate', skipBootstrap: true },
+  // 2026-05-29 — audit Б1: перегенерация одноразовых паролей в pending
+  // OrgInvitation (sha256→argon2id). Идемпотентен (skip уже argon2).
+  // ТЗ: plans/tz/2026-05-29-audit-fixes.md §Б1.
+  { phase: 'patch', script: 'scripts/patch-rehash-pending-invitations.ts', hint: 'sha256→argon2id для tempPasswordHash', skipBootstrap: true },
   // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
   // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
   // Идемпотентен. ТЗ §14 Фаза 1.4.

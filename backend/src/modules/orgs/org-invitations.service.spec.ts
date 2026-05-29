@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import argon2 from 'argon2';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
@@ -29,6 +30,10 @@ const cfg: TypedConfigService = {
     magicLinkRateLimitPerHour: 5,
     inactiveBindingDays: 30,
   },
+  // audit Б1 (2026-05-29): argon2id-параметры используются в
+  // hashPasswordArgon2 при генерации tempPasswordHash. В тестах берём
+  // минимальные значения, чтобы хеш считался быстро.
+  argon: { memoryKb: 8, iterations: 1, parallelism: 1 },
 } as unknown as TypedConfigService;
 
 describe('OrgInvitationsService (β-9)', () => {
@@ -48,10 +53,11 @@ describe('OrgInvitationsService (β-9)', () => {
     };
     person: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
     channelBinding: { deleteMany: ReturnType<typeof vi.fn> };
+    org: { updateMany: ReturnType<typeof vi.fn> };
     $transaction: ReturnType<typeof vi.fn>;
   };
   let mail: {
-    sendInviteGithubStyle: ReturnType<typeof vi.fn>;
+    sendInviteWithCredentials: ReturnType<typeof vi.fn>;
     sendInviteReminder: ReturnType<typeof vi.fn>;
     sendInviteDirectorTimeout: ReturnType<typeof vi.fn>;
   };
@@ -87,10 +93,12 @@ describe('OrgInvitationsService (β-9)', () => {
       },
       person: { findUnique: vi.fn(), update: vi.fn() },
       channelBinding: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      org: { updateMany: vi.fn(async () => ({ count: 1 })) },
       $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma)),
     };
     mail = {
-      sendInviteGithubStyle: vi.fn(async () => ({ ok: true })),
+      // β-10 (после audit Б1): credentials-onboarding шлёт письмо с логином и паролем.
+      sendInviteWithCredentials: vi.fn(async () => ({ ok: true })),
       sendInviteReminder: vi.fn(async () => ({ ok: true })),
       sendInviteDirectorTimeout: vi.fn(async () => ({ ok: true })),
     };
@@ -155,7 +163,7 @@ describe('OrgInvitationsService (β-9)', () => {
       expect(result.telegramDeepLink).toBe('https://t.me/kora_bot?start=abcd1234abcd1234');
       expect(result.manualShareUrl).toBe(result.magicLinkUrl);
       // Письмо не шлём, если email пуст.
-      expect(mail.sendInviteGithubStyle).not.toHaveBeenCalled();
+      expect(mail.sendInviteWithCredentials).not.toHaveBeenCalled();
       expect(metrics.incInviteCreated).toHaveBeenCalledWith({ hasEmail: false });
     });
 
@@ -183,14 +191,29 @@ describe('OrgInvitationsService (β-9)', () => {
       });
 
       expect(result.email).toBe('ivan@example.com');
-      expect(mail.sendInviteGithubStyle).toHaveBeenCalledWith(
+      expect(mail.sendInviteWithCredentials).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'ivan@example.com',
           orgName: 'ООО Ромашка',
           inviterName: 'Иван',
+          loginEmail: 'ivan@example.com',
           ttlDays: 14,
         }),
       );
+      // audit Б1: tempPassword из письма — argon2id, не sha256. Проверяем,
+      // что в БД пишется именно argon2-hash (а не plaintext или sha256).
+      const createCall = prisma.orgInvitation.create.mock.calls[0]?.[0] as
+        | { data: { tempPasswordHash: string | null } }
+        | undefined;
+      const stored = createCall?.data.tempPasswordHash;
+      expect(stored).toMatch(/^\$argon2id\$/);
+      // И argon2.verify должен принимать пароль, который реально ушёл в письмо.
+      const mailCall = mail.sendInviteWithCredentials.mock.calls[0]?.[0] as
+        | { tempPassword: string }
+        | undefined;
+      const sentPassword = mailCall?.tempPassword ?? '';
+      expect(sentPassword.length).toBeGreaterThanOrEqual(20); // 15 байт = 20 base64url
+      expect(await argon2.verify(stored as string, sentPassword)).toBe(true);
       expect(metrics.incInviteCreated).toHaveBeenCalledWith({ hasEmail: true });
     });
 
@@ -372,10 +395,17 @@ describe('OrgInvitationsService (β-9)', () => {
       const result = await svc.resendInvitation('org-1', 'inv-1', 'u-actor');
 
       expect(linkCodes.generateInviteCode).toHaveBeenCalled();
-      expect(mail.sendInviteGithubStyle).toHaveBeenCalledWith(
+      expect(mail.sendInviteWithCredentials).toHaveBeenCalledWith(
         expect.objectContaining({ to: 'ivan@example.com' }),
       );
       expect(result.linkCode).toBe('abcd1234abcd1234');
+      // audit Б1: resend тоже argon2id, не sha256.
+      const updateCall = prisma.orgInvitation.update.mock.calls.find(
+        (c: unknown[]) => (c[0] as { data?: { tempPasswordHash?: unknown } }).data?.tempPasswordHash,
+      );
+      const stored = (updateCall?.[0] as { data: { tempPasswordHash: string } } | undefined)
+        ?.data.tempPasswordHash;
+      expect(stored).toMatch(/^\$argon2id\$/);
     });
 
     it('NotFound если приглашение не существует', async () => {

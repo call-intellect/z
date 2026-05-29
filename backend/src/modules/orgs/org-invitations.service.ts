@@ -10,6 +10,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { MembershipRole, OrgInvitation, Prisma } from '@prisma/client';
+import argon2 from 'argon2';
 import { nanoid } from 'nanoid';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -171,8 +172,11 @@ export class OrgInvitationsService {
 
     // β-10: одноразовый пароль для credentials-onboarding. Генерируем только
     // для email-инвайтов — линейный персонал без почты получает только magic-link.
+    // ВАЖНО (audit Б1): храним argon2id-hash (а не sha256), потому что
+    // accounts.login → PasswordService.verify(argon2). sha256-хекс
+    // argon2.verify не принимает, вход по credentials из письма не работает.
     const tempPassword = normalizedEmail ? generateInviteTempPassword() : null;
-    const tempPasswordHash = tempPassword ? sha256Hex(tempPassword) : null;
+    const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
 
     // β-9: linkCode для прямой привязки Telegram — кладём в Redis с тем же TTL
     // через ConversationalLinkCodeService.generateInviteCode (отдельный namespace
@@ -301,9 +305,10 @@ export class OrgInvitationsService {
     });
 
     // β-10: регенерируем tempPassword вместе с magicToken для email-инвайтов.
+    // ВАЖНО (audit Б1): argon2id, не sha256 — иначе accounts.login не примет пароль.
     const resendEmail = invite.email;
     const tempPassword = resendEmail ? generateInviteTempPassword() : null;
-    const tempPasswordHash = tempPassword ? sha256Hex(tempPassword) : null;
+    const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
 
     const updated = await this.prisma.orgInvitation.update({
       where: { id: invitationId },
@@ -798,6 +803,22 @@ export class OrgInvitationsService {
     return null;
   }
 
+  /**
+   * Argon2id для одноразового пароля. Параметры из `cfg.argon`
+   * (синхронно дублирует поведение PasswordService.hash — мы не можем
+   * импортировать PasswordService из AccountsModule, поскольку
+   * AccountsModule сам импортирует OrgsModule, и получится cycle).
+   * См. audit Б1.
+   */
+  private async hashPasswordArgon2(plain: string): Promise<string> {
+    return argon2.hash(plain, {
+      type: argon2.argon2id,
+      memoryCost: this.cfg.argon.memoryKb,
+      timeCost: this.cfg.argon.iterations,
+      parallelism: this.cfg.argon.parallelism,
+    });
+  }
+
   private toDomain(i: OrgInvitation, orgName: string): OrgInvitationDomain {
     return {
       id: i.id,
@@ -820,10 +841,11 @@ function sha256Hex(raw: string): string {
 }
 
 /**
- * β-10: одноразовый пароль для credentials-onboarding в письме.
- * 9 байт → 12 base64url-символов. Та же логика, что `AccountsService.generateTempPassword`,
- * вынесена сюда чтобы избежать циклической зависимости AccountsService↔OrgInvitationsService.
+ * β-10 / audit Б1 (2026-05-29): одноразовый пароль для credentials-onboarding.
+ * 15 байт → 20 base64url-символов = 120 бит энтропии (NIST SP 800-63B
+ * compliant, ↑ с 72 бит в исходной β-10 реализации). Вынесено сюда чтобы
+ * избежать циклической зависимости AccountsService↔OrgInvitationsService.
  */
 function generateInviteTempPassword(): string {
-  return randomBytes(9).toString('base64url');
+  return randomBytes(15).toString('base64url');
 }

@@ -15,6 +15,8 @@
  * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.1.
  */
 
+import { randomBytes } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -98,9 +100,13 @@ export class InvoiceService {
     const initialStatus: InvoiceStatus = input.bonusOnCreate ? 'bonus' : 'draft';
 
     return this.runInTx(input.tx, async (tx) => {
-      // Шаг 1: создаём с placeholder invoiceNumber. Используем cuid от Prisma
-      // как уникальное временное значение (он гарантированно уникален).
-      const placeholder = `PENDING-${tx === this.prisma ? 'tx' : 'std'}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      // Шаг 1: создаём с placeholder invoiceNumber. audit В5 (2026-05-29) —
+      // 16 байт crypto-random (`randomBytes(16).toString('base64url')` = 22
+      // символа, ≈128 бит) делает коллизию между параллельными `create()`
+      // в одну миллисекунду математически невозможной. Прежний
+      // `Date.now()-Math.random()` давал ~40 бит и теоретически мог биться
+      // на бёрсте инвойсов от одного nodejs-процесса.
+      const placeholder = `PENDING-${randomBytes(16).toString('base64url')}`;
       const draft = await tx.invoice.create({
         data: {
           tenantId: input.tenantId,

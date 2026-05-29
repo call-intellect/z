@@ -159,6 +159,15 @@ export class EntityResolutionService {
           where: { id: found.id },
           data: {
             mentionsCount: { increment: 1 },
+            // W3.4 backfill: если caller передал strong-ID, которого нет у
+            // существующей Entity — записываем его. Это симметрично ветке
+            // strong-ID match выше и закрывает кейс «создали без ИНН, через
+            // exact-name пришёл ИНН».
+            ...(strong.inn && !found.inn ? { inn: strong.inn } : {}),
+            ...(strong.ogrn && !found.ogrn ? { ogrn: strong.ogrn } : {}),
+            ...(strong.email && !found.email ? { email: strong.email } : {}),
+            ...(strong.phone && !found.phone ? { phone: strong.phone } : {}),
+            ...(strong.domain && !found.domain ? { domain: strong.domain } : {}),
             ...(merged !== undefined ? { metadata: merged } : {}),
           },
         });

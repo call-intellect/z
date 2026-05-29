@@ -305,6 +305,21 @@ export class SprintReviewService {
         );
       }
 
+      // audit В13 (2026-05-29): если triage не выдал CardVersion (вернул null
+      // или упал в catch), помечаем review как failed с reason='triage_failed'.
+      // Без этого status оставался 'ready' с cardVersionId=null — фронт не
+      // мог понять, привязан ли review к графу знаний или это сирота. Теперь
+      // оператор видит failed-статус в админке и может рестартануть генерацию
+      // (review-payload восстановится из LLM-кэша / ASR-кэша).
+      if (cardVersionId === null) {
+        await this.markFailed(cycle.id, 'triage_failed');
+        this.metrics?.incSprintReviewGeneration({
+          tenant: tenantLabel,
+          status: 'failed',
+        });
+        return { status: 'failed', error: 'triage_failed' };
+      }
+
       await this.markReady(cycle.id);
       this.metrics?.incSprintReviewGeneration({
         tenant: tenantLabel,

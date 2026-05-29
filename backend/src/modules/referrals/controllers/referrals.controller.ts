@@ -44,6 +44,7 @@ import {
 } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
+import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import {
   CreateReferralBodySchema,
   ReferralStatsDto,
@@ -168,6 +169,10 @@ export class ReferralsController {
     summary:
       'Привязать атрибуцию к текущей Org (фронт зовёт сразу после signup).',
   })
+  // audit-fixes Б14: TenantGuard валидирует X-Org-Id и проверяет, что
+  // юзер действительно member этой Org. Без него можно было передать
+  // X-Org-Id чужого тенанта и навязать ему реферера → 20 000 ₽ × 12 мес.
+  @UseGuards(TenantGuard)
   async attributeCurrentOrg(
     @Headers('x-z-ref') xZRef: string | undefined,
     @Headers('x-z-fingerprint') xFingerprint: string | undefined,
@@ -175,6 +180,8 @@ export class ReferralsController {
     @Ip() ip: string,
   ): Promise<{ attributed: boolean; slug: string | null }> {
     if (!tenantId) {
+      // TenantGuard уже отверг бы запрос без tenantId/без membership,
+      // но defense-in-depth — оставляем явный 404.
       throw new NotFoundException('Не определён tenantId (нужен X-Org-Id)');
     }
     const resolved = await this.attribution.attributeOrg({

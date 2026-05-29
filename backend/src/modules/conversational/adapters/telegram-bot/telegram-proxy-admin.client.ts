@@ -22,6 +22,16 @@ import { RedisService } from '../../../../common/redis/redis.service';
  * Фазы 3 принимаем «либеральные» имена полей `target_url|targetUrl|webhook_url`,
  * `secret_token|secretToken`, `id|_id|bot_id` — извлекаем гибко.
  * Если прокси меняет контракт — точку правки концентрируем здесь.
+ *
+ * audit С27 (2026-05-29): TODO — согласовать с владельцем прокси
+ * (`telegram.crossmark.ru`), чтобы НИКАКИЕ тела запросов/ответов (включая
+ * webhook'и Telegram) НЕ попадали в его access/error log'и. Сейчас мы
+ * логируем `bodyPreview: text.slice(0, 200)` только при non-2xx ответах
+ * прокси — это даёт минимальный текст, но всё равно может содержать
+ * пользовательские сообщения. ask: что хранит прокси? насколько долго?
+ * Если ответ "хранит" — попросить отключить body-логирование на их стороне
+ * либо мигрировать на свой telegram-bot daemon. Связано: feedback
+ * `conversational_channels_principles.md`.
  */
 @Injectable()
 export class TelegramProxyAdminClient {

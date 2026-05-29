@@ -23,10 +23,16 @@
  *     emit invoice.paid (например через retry) не задвоит начисление.
  *   - Cron работает по filter status='pending', повторный запуск ничего не меняет.
  *
+ * audit С4 (2026-05-29): @OnEvent INVOICE_PAID теперь ставит persistent
+ * BullMQ-job (queue `billing.referral-payout`), а не обрабатывает inline.
+ * Гарантия не-потерять начисление при рестарте main-процесса между
+ * emit и create-payout. Worker крутится в том же процессе через onModuleInit;
+ * jobId=`invoice:${invoiceId}` даёт дедуп. Retry=5, backoff exponential 10s.
+ *
  * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9 + §14 Фаза 6.
  */
 
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Cron } from '@nestjs/schedule';
 import {
@@ -34,6 +40,7 @@ import {
   type ReferralPayout,
   type ReferralPayoutStatus,
 } from '@prisma/client';
+import { type Job, Queue, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -50,9 +57,17 @@ export const REFERRAL_COMMISSION_KOPECKS = 2_000_000;
 const PAYOUT_CRON_LOCK_KEY = 'referral:payout-cron:lock';
 const PAYOUT_CRON_LOCK_TTL_SECONDS = 1800; // 30 минут
 
+/** audit С4: имя BullMQ-очереди для отложенных payout-job'ов. */
+export const REFERRAL_PAYOUT_QUEUE_NAME = 'billing.referral-payout';
+
 @Injectable()
-export class ReferralPayoutService {
+export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ReferralPayoutService.name);
+
+  /** audit С4: persistent queue для INVOICE_PAID payload'ов. */
+  private payoutQueue: Queue<InvoicePaidPayload> | null = null;
+  /** audit С4: worker крутится в том же процессе (концерн — payout). */
+  private payoutWorker: Worker<InvoicePaidPayload> | null = null;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -61,11 +76,96 @@ export class ReferralPayoutService {
   ) {}
 
   /**
-   * Hook на оплату инвойса. Создаёт ReferralPayout если есть атрибуция и
-   * paymentMode='paid'. Fire-and-forget (ошибки логируются, не бьют каллера).
+   * audit С4 (2026-05-29): инициализация BullMQ Queue + Worker. Worker крутится
+   * в main-процессе — это намеренно: payout-логика короткая (<200ms), не
+   * требует отдельного процесса. Главное — persistence в Redis: если main
+   * упадёт между emit и create-payout, job останется в очереди и будет
+   * подхвачен после рестарта.
+   */
+  onModuleInit(): void {
+    const connection = this.redis.client;
+    this.payoutQueue = new Queue<InvoicePaidPayload>(REFERRAL_PAYOUT_QUEUE_NAME, {
+      connection,
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 10_000 },
+        removeOnComplete: { age: 86_400, count: 500 },
+        removeOnFail: false,
+      },
+    });
+    this.payoutWorker = new Worker<InvoicePaidPayload>(
+      REFERRAL_PAYOUT_QUEUE_NAME,
+      async (job: Job<InvoicePaidPayload>) => {
+        await this.processInvoicePaid(job.data);
+      },
+      {
+        connection,
+        concurrency: 4,
+      },
+    );
+    this.payoutWorker.on('failed', (job, err) => {
+      this.logger.error(
+        `referral-payout job failed (id=${job?.id ?? 'unknown'} attempt=${job?.attemptsMade ?? '?'}): ${err.message}`,
+      );
+    });
+    this.logger.log(
+      `ReferralPayout BullMQ-queue '${REFERRAL_PAYOUT_QUEUE_NAME}' инициализирован (worker concurrency=4)`,
+    );
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    try {
+      await this.payoutWorker?.close();
+    } catch (err) {
+      this.logger.warn(
+        `Закрытие payoutWorker: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      await this.payoutQueue?.close();
+    } catch (err) {
+      this.logger.warn(
+        `Закрытие payoutQueue: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    this.payoutWorker = null;
+    this.payoutQueue = null;
+  }
+
+  /**
+   * audit С4 (2026-05-29): @OnEvent теперь ТОЛЬКО ставит job в очередь.
+   * Реальная обработка — в `processInvoicePaid`, который запускается worker'ом
+   * (тот же процесс, но через BullMQ → persistent retry при рестарте).
+   *
+   * Идемпотентность: jobId=`invoice:${invoiceId}` — повторный emit (или
+   * retry от Точки на тот же webhook) дедуплицируется на уровне очереди.
    */
   @OnEvent(BillingEvent.INVOICE_PAID, { async: true })
   async onInvoicePaid(payload: InvoicePaidPayload): Promise<void> {
+    if (!this.payoutQueue) {
+      this.logger.warn(
+        'onInvoicePaid: payoutQueue ещё не инициализирован, fallback inline',
+      );
+      await this.processInvoicePaid(payload);
+      return;
+    }
+    try {
+      await this.payoutQueue.add('invoice-paid', payload, {
+        jobId: `invoice:${payload.invoiceId}`,
+      });
+    } catch (err) {
+      this.logger.error(
+        `onInvoicePaid: не удалось enqueue payout job (invoice=${payload.invoiceId}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Не throw — caller (BillingService.safeEmit) не должен ловить.
+    }
+  }
+
+  /**
+   * audit С4: обработчик job'а. Вынесен как `protected` чтобы был доступен
+   * для unit-тестов inline без поднятия BullMQ.
+   */
+  async processInvoicePaid(payload: InvoicePaidPayload): Promise<void> {
     try {
       if (payload.paymentMode !== 'paid') {
         return; // bonus — реф НЕ идёт (Б6)

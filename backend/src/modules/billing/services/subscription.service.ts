@@ -161,7 +161,19 @@ export class SubscriptionService {
     });
 
     // Fire-and-forget эмит соответствующих BillingEvent (не блокируем основной поток).
-    this.emitForTransition(updated, current.status, options.to);
+    // audit С7 (2026-05-29): защитный try/catch — если когда-то emitForTransition
+    // получит sync-логику (resolve subscription / cache / metrics), ошибка не
+    // должна откатывать tx, но обязана попасть в лог. До С7 синхронные
+    // ошибки молча терялись из-за `void`.
+    try {
+      this.emitForTransition(updated, current.status, options.to);
+    } catch (err) {
+      this.logger.warn(
+        `emitForTransition (${current.status}→${options.to}, sub=${updated.id}) синхронно упал: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
 
     return updated;
   }

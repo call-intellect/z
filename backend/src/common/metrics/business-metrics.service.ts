@@ -240,6 +240,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private inviteExpiredTotal!: Counter<string>;
   private magicLinkRequestTotal!: Counter<'outcome'>;
   private magicLinkConsumeTotal!: Counter<'outcome'>;
+  // audit Б2 (2026-05-29) — глобальный MustChangePasswordGuard заблокировал
+  // запрос пользователя с mustChangePassword=true вне whitelist'а.
+  private mustChangePasswordBlockTotal!: Counter<'path'>;
 
   // ── max bot channel (SBA β-1) ─────────────────────────────────────
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
@@ -1339,6 +1342,14 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'magic_link_consume_total',
       help: 'β-9 — Прожиг magic-link. outcome = ok|expired|already_used|invalid.',
       labelNames: ['outcome'] as const,
+    });
+    this.mustChangePasswordBlockTotal = this.getOrCreateCounter({
+      name: 'auth_must_change_password_block_total',
+      help:
+        'audit Б2 — глобальный MustChangePasswordGuard отверг запрос ' +
+        'пользователя с mustChangePassword=true вне whitelist. ' +
+        'Размечается по path (для группировки в Grafana).',
+      labelNames: ['path'] as const,
     });
 
     // ── max bot (SBA β-1) ──────────────────────────────────────────
@@ -3491,6 +3502,10 @@ export class BusinessMetricsService implements OnModuleInit {
     outcome: 'sent' | 'rate_limited' | 'user_not_found';
   }): void {
     this.magicLinkRequestTotal.inc({ outcome: args.outcome });
+  }
+
+  incMustChangePasswordBlock(args: { path: string }): void {
+    this.mustChangePasswordBlockTotal.inc({ path: args.path });
   }
 
   incMagicLinkConsume(args: {

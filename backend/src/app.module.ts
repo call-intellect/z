@@ -24,6 +24,7 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { MustChangePasswordGuard } from './modules/auth/guards/must-change-password.guard';
 import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { SubscriptionGuard } from './modules/billing/guards/subscription.guard';
@@ -599,6 +600,16 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     {
       provide: APP_GUARD,
       useClass: EntitlementGuard,
+    },
+    // audit Б2 (2026-05-29) — глобальный MustChangePasswordGuard. Прозрачен
+    // для публичных роутов (req.user == null) и для пользователей с
+    // mustChangePassword=false. Иначе блокирует всё кроме whitelist'а
+    // (/me, /me/change-password, /me/set-initial-password, /me/onboarding/*,
+    // /auth/logout, /entitlements/me).
+    // НЕ требует TenantGuard выше — работает на req.user.id.
+    {
+      provide: APP_GUARD,
+      useClass: MustChangePasswordGuard,
     },
   ],
 })

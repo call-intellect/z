@@ -4,6 +4,7 @@ import { AuthController } from './auth.controller';
 import { AdminGuard } from './guards/admin.guard';
 import { CookieAuthGuard } from './guards/cookie-auth.guard';
 import { HmacGuard } from './guards/hmac.guard';
+import { MustChangePasswordGuard } from './guards/must-change-password.guard';
 import { OrgAdminGuard } from './guards/org-admin.guard';
 import { SuperAdminGuard } from './guards/super-admin.guard';
 import { AdminLoginService } from './services/admin-login.service';
@@ -36,6 +37,9 @@ import { JwtService } from './services/jwt.service';
     AdminGuard,
     SuperAdminGuard,
     OrgAdminGuard,
+    // audit Б2 — провайдер сам по себе НЕ глобальный (APP_GUARD регистрируется
+    // в AppModule). Экспортируем класс, чтобы AppModule мог сослаться через useClass.
+    MustChangePasswordGuard,
   ],
   exports: [
     JwtService,
@@ -46,6 +50,7 @@ import { JwtService } from './services/jwt.service';
     AdminGuard,
     SuperAdminGuard,
     OrgAdminGuard,
+    MustChangePasswordGuard,
   ],
 })
 export class AuthModule {}

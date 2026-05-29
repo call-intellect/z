@@ -142,6 +142,20 @@ const STEPS: Step[] = [
   // упадёт на существующих дублях. Идемпотентны. ТЗ §Б7.
   { phase: 'patch', script: 'scripts/patch-dedupe-billing-event-log.ts', hint: 'dedupe BillingEventLog по (providerName,externalEventId)', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-dedupe-referral-payout.ts', hint: 'dedupe ReferralPayout по triggerInvoiceId', skipBootstrap: true },
+  // 2026-05-29 — audit Б12: incident-only откат LLM-миграции
+  // deepseek-v4-pro → deepseek-v4-flash. НЕ запускается агрегатором
+  // ни в bootstrap, ни в update — только руками при инциденте:
+  //   docker compose exec backend bun run scripts/patch-rollback-to-deepseek-flash.ts --dry-run
+  //   docker compose exec backend bun run scripts/patch-rollback-to-deepseek-flash.ts --update-existing
+  // Регистрация здесь — для discoverability и единого реестра.
+  // ТЗ: plans/tz/2026-05-29-audit-fixes.md §Б12.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-rollback-to-deepseek-flash.ts',
+    hint: 'INCIDENT-ONLY: rollback deepseek-v4-pro → flash, запускать руками',
+    skipBootstrap: true,
+    skipUpdate: true,
+  },
   // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
   // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
   // Идемпотентен. ТЗ §14 Фаза 1.4.

@@ -52,13 +52,10 @@
  * Зеркало: backend/scripts/patch-mass-migrate-to-deepseek-pro.ts
  */
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './_lib/prisma';
 
-// Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
-const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
-});
+// Prisma 7: driver adapter обязателен (см. _lib/prisma.ts).
+const prisma = createPrismaClient();
 
 const OLD_MODEL = 'deepseek-v4-pro'; // от чего откатываем
 const NEW_MODEL = 'deepseek-v4-flash'; // куда откатываем

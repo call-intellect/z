@@ -21,6 +21,8 @@ import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
+import { InvoiceRowActions } from './InvoiceRowActions';
+
 /**
  * `/admin/orgs/[id]/subscription` — super_admin управление подпиской.
  *
@@ -79,7 +81,7 @@ export function AdminSubscriptionClient({ tenantId }: { tenantId: string }) {
 
       <ActivateForm tenantId={tenantId} onActivated={() => void load()} />
 
-      <RecentInvoicesTable invoices={invoices} />
+      <RecentInvoicesTable invoices={invoices} onReload={() => void load()} />
     </div>
   );
 }
@@ -302,7 +304,13 @@ function ActivateForm({
   );
 }
 
-function RecentInvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
+function RecentInvoicesTable({
+  invoices,
+  onReload,
+}: {
+  invoices: InvoiceDomain[];
+  onReload: () => void;
+}) {
   if (invoices.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-6">
@@ -323,6 +331,7 @@ function RecentInvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
             <th className="text-left px-6 py-3 font-medium">Сумма</th>
             <th className="text-left px-6 py-3 font-medium">Статус</th>
             <th className="text-left px-6 py-3 font-medium">Создан</th>
+            <th className="text-right px-6 py-3 font-medium">Действия</th>
           </tr>
         </thead>
         <tbody>
@@ -335,6 +344,9 @@ function RecentInvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
               <td className="px-6 py-3">{invoiceStatusLabel(inv.status)}</td>
               <td className="px-6 py-3 text-muted-foreground">
                 {inv.createdAt.toLocaleDateString('ru-RU')}
+              </td>
+              <td className="px-6 py-3">
+                <InvoiceRowActions invoice={inv} onChanged={onReload} />
               </td>
             </tr>
           ))}

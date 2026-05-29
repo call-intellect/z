@@ -244,6 +244,13 @@ describe('ManualBillingService.activate', () => {
       'billing.subscription.activated_bonus',
       expect.any(Object),
     );
+    // audit С8 (2026-05-29): bonus-режим НЕ должен эмитить billing.invoice.paid —
+    // иначе сработает реф-комиссия 20 000 ₽, что недопустимо для бесплатного
+    // bonus-периода. Эмит INVOICE_PAID — только из реальной оплаты Точкой.
+    const emittedEvents = mocks.events.emitAsync.mock.calls.map(
+      (c: unknown[]) => c[0],
+    );
+    expect(emittedEvents).not.toContain('billing.invoice.paid');
   });
 
   it('reason короче 3 символов → BadRequestException', async () => {

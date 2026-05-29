@@ -22,8 +22,9 @@
  * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9.
  */
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 const ATTRIBUTION_TTL_DAYS = 90;
@@ -55,7 +56,10 @@ export interface AttributionResolved {
 export class AttributionService {
   private readonly logger = new Logger(AttributionService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+  ) {}
 
   /**
    * Записать сырое касание лендинга. Возвращает идентификатор записи (не
@@ -131,6 +135,39 @@ export class AttributionService {
     if (!attribution) {
       this.logger.log(`attributeOrg ${input.tenantId}: атрибуция не найдена`);
       return null;
+    }
+
+    // audit Б6 (2026-05-29): self-referral блокируется. Если владелец реферала
+    // (Referral.ownerUserId) сам owner/member этой Org — атрибуция отклоняется.
+    // Защита от схемы «создал Referral со своим slug → регаю Org → 20 000 ₽/мес.»
+    const referralOwner = await this.prisma.referral.findUnique({
+      where: { id: attribution.referralId },
+      select: { ownerUserId: true, slug: true },
+    });
+    if (referralOwner) {
+      const selfMembership = await this.prisma.membership.findUnique({
+        where: {
+          orgId_userId: {
+            orgId: input.tenantId,
+            userId: referralOwner.ownerUserId,
+          },
+        },
+        select: { role: true },
+      });
+      if (selfMembership) {
+        this.metrics.incReferralSelfReferralDenied();
+        this.logger.warn(
+          `attributeOrg ${input.tenantId}: self-referral отклонён (slug=${referralOwner.slug}, ownerUserId=${referralOwner.ownerUserId}, role=${selfMembership.role})`,
+        );
+        throw new ConflictException({
+          ok: false,
+          error: {
+            code: 'self_referral_denied',
+            message:
+              'Нельзя привязать собственный реферальный slug к компании, в которой вы являетесь участником.',
+          },
+        });
+      }
     }
 
     await this.prisma.org.update({

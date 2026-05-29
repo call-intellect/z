@@ -246,6 +246,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // audit Б4 (2026-05-29) — webhook от Точки отвергнут на этапе verify.
   // reason ∈ expired | not_before | signature | missing_iat | other.
   private tochkaWebhookReplayTotal!: Counter<'reason'>;
+  // audit Б6 (2026-05-29) — self-referral / INN-mismatch на верификации.
+  private referralSelfReferralDeniedTotal!: Counter<string>;
+  private referralInnMismatchTotal!: Counter<'reason'>;
 
   // ── max bot channel (SBA β-1) ─────────────────────────────────────
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
@@ -1359,6 +1362,20 @@ export class BusinessMetricsService implements OnModuleInit {
       help:
         'audit Б4 — webhook от Точки отвергнут на этапе verify (replay/' +
         'expired/signature). reason = expired|not_before|signature|missing_iat|other.',
+      labelNames: ['reason'] as const,
+    });
+    this.referralSelfReferralDeniedTotal = this.getOrCreateCounter({
+      name: 'referral_self_referral_denied_total',
+      help:
+        'audit Б6 — попытка self-referral (Referral.ownerUserId совпал с ' +
+        'member/owner целевой Org) отклонена.',
+      labelNames: [] as const,
+    });
+    this.referralInnMismatchTotal = this.getOrCreateCounter({
+      name: 'referral_inn_mismatch_total',
+      help:
+        'audit Б6 — verifyInn отвергнут из-за несовпадения. ' +
+        'reason = lookup_inn_mismatch | director_name_mismatch.',
       labelNames: ['reason'] as const,
     });
 
@@ -3522,6 +3539,16 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: 'expired' | 'not_before' | 'signature' | 'missing_iat' | 'other';
   }): void {
     this.tochkaWebhookReplayTotal.inc({ reason: args.reason });
+  }
+
+  incReferralSelfReferralDenied(): void {
+    this.referralSelfReferralDeniedTotal.inc();
+  }
+
+  incReferralInnMismatch(args: {
+    reason: 'lookup_inn_mismatch' | 'director_name_mismatch';
+  }): void {
+    this.referralInnMismatchTotal.inc({ reason: args.reason });
   }
 
   incMagicLinkConsume(args: {

@@ -31,6 +31,7 @@ import {
 } from '@prisma/client';
 import { customAlphabet } from 'nanoid';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { InnLookupService } from '../../inn-lookup/inn-lookup.service';
 
@@ -58,6 +59,7 @@ export class ReferralsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(InnLookupService) private readonly innLookup: InnLookupService,
+    @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
   async getByUserId(ownerUserId: string): Promise<Referral | null> {
@@ -115,9 +117,19 @@ export class ReferralsService {
   }
 
   /**
-   * Верифицировать ИНН реферала через InnLookupService. При успехе ставит
-   * `innVerifiedAt=now`. Если ИНН не найден — ничего не делает (НЕ throw'ит,
-   * чтобы UI мог показать «не найдено в реестре, проверьте ИНН»).
+   * Верифицировать ИНН реферала через InnLookupService.
+   *
+   * audit Б6 (2026-05-29): раньше любой lookup-успех ставил innVerifiedAt.
+   * Можно было подать ИНН любого юрлица и получить отметку. Теперь:
+   *   - **self_employed / individual**: ИНН в lookup-результате должен
+   *     БУКВАЛЬНО совпадать с введённым (защита от опечатки/подмены).
+   *     На практике для физлица lookup возвращает свой же ИНН — значит
+   *     verifyInn автоматически проходит, если ИНН валидный.
+   *   - **company**: требуется `directorName` в lookup-результате и
+   *     совпадение по фамилии с `User.name` заявителя. Если нет — статус
+   *     `pendingDocVerification` (innVerifiedAt НЕ ставится), UI попросит
+   *     загрузить документ.
+   *   - На несовпадении бьём метрику `referral_inn_mismatch_total`.
    */
   async verifyInn(ownerUserId: string): Promise<Referral> {
     const ref = await this.getByUserId(ownerUserId);
@@ -133,6 +145,33 @@ export class ReferralsService {
       this.logger.log(
         `Inn-lookup для ${ref.inn} → ${lookup.source}/${lookup.payerType}`,
       );
+
+      // audit Б6: проверки до выставления innVerifiedAt.
+      if (lookup.inn && lookup.inn.replace(/\D/g, '') !== ref.inn.replace(/\D/g, '')) {
+        this.logger.warn(
+          `verifyInn: ИНН в lookup-результате (${lookup.inn}) не совпадает с введённым (${ref.inn})`,
+        );
+        this.metrics.incReferralInnMismatch({ reason: 'lookup_inn_mismatch' });
+        return ref;
+      }
+
+      // Для company требуем директора с совпадением по User.name.
+      if (lookup.payerType === 'legal_entity') {
+        const owner = await this.prisma.user.findUnique({
+          where: { id: ownerUserId },
+          select: { name: true },
+        });
+        const ownerLastName = extractLastName(owner?.name ?? null);
+        const directorLastName = extractLastName(lookup.directorName ?? null);
+        if (!ownerLastName || !directorLastName || ownerLastName !== directorLastName) {
+          this.logger.warn(
+            `verifyInn: company-реферал ${ref.inn}: directorName='${lookup.directorName ?? '-'}', userName='${owner?.name ?? '-'}' — pending doc verification`,
+          );
+          this.metrics.incReferralInnMismatch({ reason: 'director_name_mismatch' });
+          return ref;
+        }
+      }
+
       return this.prisma.referral.update({
         where: { id: ref.id },
         data: { innVerifiedAt: new Date() },
@@ -237,6 +276,8 @@ export class ReferralsService {
 
   // ────────────────────────── private ──────────────────────────
 
+  // ↓ см. ниже extractLastName в file scope
+
   /** Генерация уникального slug'а. Retry до 5 раз при коллизии. */
   private async generateUniqueSlug(): Promise<string> {
     for (let i = 0; i < 5; i += 1) {
@@ -250,4 +291,27 @@ export class ReferralsService {
     // Крайне маловероятно (32^8 ≈ 1.1×10^12 комбинаций). Fallback на hex.
     return randomBytes(6).toString('hex');
   }
+}
+
+/**
+ * audit Б6: грубое извлечение фамилии для сравнения «director vs user».
+ * Принимаем «Иванов Иван Иванович» / «Иван Иванов» / «И. И. Иванов». Берём
+ * самое длинное русское слово в верхнем регистре первой буквы, либо первое
+ * слово >2 символов. Если ничего не нашли — возвращаем null.
+ */
+function extractLastName(fullName: string | null): string | null {
+  if (!fullName) return null;
+  const tokens = fullName
+    .replace(/[.,]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && /^[\p{L}-]+$/u.test(t));
+  if (tokens.length === 0) return null;
+  // Берём самое длинное слово как эвристику «фамилии». Для «Иванов Иван Иванович»
+  // это часто «Иванов» либо «Иванович» — оба содержат «Иванов».
+  let best = tokens[0]!;
+  for (const t of tokens) {
+    if (t.length > best.length) best = t;
+  }
+  return best.toLowerCase();
 }

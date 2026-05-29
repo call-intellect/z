@@ -54,7 +54,17 @@ import { SubscriptionService } from './subscription.service';
 
 export interface WebhookHandleResult {
   ok: boolean;
-  reason?: 'invalid_signature' | 'duplicate' | 'no_invoice' | 'processed';
+  reason?:
+    | 'invalid_signature'
+    | 'duplicate'
+    | 'no_invoice'
+    | 'processed'
+    /**
+     * audit В3 (2026-05-29): customerCode из webhook не совпал
+     * с `cfg.billing.tochka.customerCode` — чужой merchant. Webhook
+     * принят (200 OK для Точки), но finalize пропущен.
+     */
+    | 'customer_mismatch';
   invoiceId?: string;
 }
 
@@ -358,6 +368,21 @@ export class BillingService {
     });
     if (duplicate) {
       return { ok: true, reason: 'duplicate' };
+    }
+
+    // audit В3 (2026-05-29): сверка customerCode из webhook с нашим конфигом.
+    // Точка валидно подписывает любой webhook своим JWK — подпись валидности
+    // tenant не гарантирует. Если payload-customerCode не совпадает с
+    // `cfg.billing.tochka.customerCode` — это чужой merchant, finalize нельзя.
+    // На manual-провайдере поле отсутствует — сверка пропускается.
+    if (this.provider.providerName === 'tochka' && event.customerCode != null) {
+      const expectedCustomerCode = this.cfg.billing.tochka.customerCode;
+      if (expectedCustomerCode && event.customerCode !== expectedCustomerCode) {
+        this.logger.warn(
+          `Provider webhook: customerCode mismatch payload=${event.customerCode} expected=${expectedCustomerCode} — webhook от чужого customer'а, finalize пропущен`,
+        );
+        return { ok: false, reason: 'customer_mismatch' };
+      }
     }
 
     // 4. Найти invoice по providerInvoiceId либо по paymentLinkId (= Invoice.id).

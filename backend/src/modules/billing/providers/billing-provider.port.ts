@@ -143,6 +143,13 @@ export interface WebhookEvent {
    * null если провайдер не положил jti в payload (legacy fallback).
    */
   jti?: string | null;
+  /**
+   * audit В3 (2026-05-29): customerCode из payload — сверяется
+   * с `cfg.billing.tochka.customerCode` чтобы webhook от чужого
+   * customer'а не финализировал наш Invoice. null если провайдер
+   * не положил поле (manual / legacy).
+   */
+  customerCode?: string | null;
   rawPayload: Record<string, unknown>;
 }
 

@@ -39,6 +39,8 @@ interface TochkaWebhookPayload {
   exp?: number;
   nbf?: number;
   jti?: string;
+  /** audit В3 (2026-05-29): customerCode для сверки тенантности webhook. */
+  customerCode?: string;
   [key: string]: unknown;
 }
 
@@ -137,6 +139,11 @@ export class TochkaWebhookVerifierService {
       // Если Точка по какой-то причине не положила jti — webhook всё равно
       // принимается, но дедуп идёт только по eventId (legacy-путь).
       jti: typeof raw.jti === 'string' && raw.jti.length > 0 ? raw.jti : null,
+      // audit В3: customerCode для сверки с конфигом нашего merchant'а.
+      customerCode:
+        typeof raw.customerCode === 'string' && raw.customerCode.length > 0
+          ? raw.customerCode
+          : null,
       rawPayload: { ...raw, _headers: headers },
     };
   }

@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   type ChatV2Conversation,
@@ -24,6 +25,7 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import { RbacService } from '../../rbac/rbac.service';
 import {
   CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT,
   CHAT_V2_CONVERSATION_TITLE_USER_PROMPT,
@@ -91,6 +93,12 @@ export class ChatV2ConversationsService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // audit-fixes Б13: для проверки актуального clone-access гранта при
+    // открытии истории диалога с клоном. Optional, чтобы существующие
+    // unit-тесты ChatV2 без RbacService не падали.
+    @Optional()
+    @Inject(RbacService)
+    private readonly rbac?: RbacService,
   ) {}
 
   /**
@@ -149,6 +157,15 @@ export class ChatV2ConversationsService {
    * Получить диалог по id вместе с сообщениями. Проверяет ownership.
    * Возвращает 404, если диалог не найден или принадлежит другому
    * пользователю / Org.
+   *
+   * audit-fixes Б13 (2026-05-29): privacy-эскалация — если у диалога
+   * scope='card' и scopeRefId указывает на person/role-клон, дополнительно
+   * проверяем актуальный CloneAccessGrant через RbacService. Если грант
+   * revoked/expired — отдаём 404 (история уже не доступна).
+   *
+   * Это закрывает дыру: до фикса пользователь, у которого админ отозвал
+   * доступ к клону, продолжал видеть всю историю диалогов через
+   * `/chat-v2/conversations/:id`.
    */
   async getById(args: {
     tenantId: string;
@@ -181,7 +198,69 @@ export class ChatV2ConversationsService {
         },
       });
     }
+
+    // audit-fixes Б13: re-check clone-access гранта.
+    // Условие: scope='card' + scopeRefId + ≥1 сообщение mode='clone_style'
+    // (clone-conversation). Без mode='clone_style' это IssueChat/чат-в-карточке,
+    // их доступ регулируется RBAC на сам issue/card, не отдельным грантом.
+    if (
+      conv.scope === 'card' &&
+      conv.scopeRefId &&
+      this.rbac &&
+      conv.messages.some((m) => m.mode === 'clone_style')
+    ) {
+      await this.assertCloneAccessOrThrow({
+        tenantId: args.tenantId,
+        userId: args.userId,
+        cloneRefId: conv.scopeRefId,
+      });
+    }
+
     return conv;
+  }
+
+  /**
+   * audit-fixes Б13: пробует доступ к person-клону, если не получилось —
+   * к role-клону. Если оба отказали → NotFoundException (404). Намеренно
+   * 404, не 403, чтобы не подтверждать существование клон-диалога.
+   *
+   * Сейчас все clone-conversations в chat-v2 — person-клон (см. comment в
+   * synthesis.service.ts: `scopeRefId для clone_style — это personId`).
+   * role-clone здесь оставлен для defense-in-depth — если в будущем
+   * scope='card' + clone_style начнут использоваться для role-клона,
+   * фикс уже сработает.
+   */
+  private async assertCloneAccessOrThrow(args: {
+    tenantId: string;
+    userId: string;
+    cloneRefId: string;
+  }): Promise<void> {
+    if (!this.rbac) return; // unit-тесты без rbac — fall-through.
+    const cloneV2Enabled = this.cfg.cloneV2.enabled === true;
+    const personCheck = await this.rbac.canAccessPersonClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.userId,
+      personId: args.cloneRefId,
+      cloneV2Enabled,
+    });
+    if (personCheck.allowed) return;
+    const roleCheck = await this.rbac.canAccessRoleClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.userId,
+      roleId: args.cloneRefId,
+      cloneV2Enabled,
+    });
+    if (roleCheck.allowed) return;
+    this.logger.warn(
+      `getById: clone-access revoked для user=${args.userId} clone=${args.cloneRefId} — 404`,
+    );
+    throw new NotFoundException({
+      ok: false,
+      error: {
+        code: 'conversation_not_found',
+        message: 'Диалог не найден',
+      },
+    });
   }
 
   async list(input: ListConversationsInput): Promise<ListConversationsResult> {

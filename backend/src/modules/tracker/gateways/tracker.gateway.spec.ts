@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { JwtService } from '../../auth/services/jwt.service';
+import type { RbacService } from '../../rbac/rbac.service';
 
 import { TrackerGateway } from './tracker.gateway';
 
@@ -63,7 +64,12 @@ function makeGateway(opts: {
   } as unknown as PrismaService;
   const jwt = {} as JwtService;
   const cfg = {} as TypedConfigService;
-  const gw = new TrackerGateway(jwt, prisma, cfg);
+  // audit В12: RBAC mock — по умолчанию canRead=true (тесты T8 про
+  // presence/typing, не про RBAC subscribe.*).
+  const rbac = {
+    canRead: vi.fn(async () => true),
+  } as unknown as RbacService;
+  const gw = new TrackerGateway(jwt, prisma, cfg, rbac);
   // Подсунем минимальный server (для emitToRooms он не используется в наших
   // handler'ах, broadcast идёт через client.to(...).emit).
   (gw as unknown as { server: { to: ReturnType<typeof vi.fn> } }).server = {

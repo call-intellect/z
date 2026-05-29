@@ -13,6 +13,7 @@ import type { Server, Socket } from 'socket.io';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { JwtService } from '../../auth/services/jwt.service';
+import { RbacService } from '../../rbac/rbac.service';
 
 interface SocketContext {
   userId: string;
@@ -69,6 +70,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
   // ── lifecycle ────────────────────────────────────────────────────────
@@ -139,9 +141,20 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     }
     const project = await this.prisma.project.findFirst({
       where: { id: body.projectId, tenantId: ctx.tenantId },
-      select: { id: true },
+      select: { id: true, ownerId: true },
     });
     if (!project) return { ok: false, error: 'project_not_found' };
+    // audit В12 (2026-05-29): RBAC-чек на read project. Без него любой
+    // авторизованный member тенанта мог join'нуть room и читать live-events
+    // чужого проекта. canRead резолвит роль из membership + visibility-mode
+    // policy.csv (manager strict — self-only по ownerId).
+    const allowed = await this.rbac.canRead(
+      ctx.userId,
+      ctx.tenantId,
+      'project',
+      project.ownerId ?? null,
+    );
+    if (!allowed) return { ok: false, error: 'forbidden' };
     const room = this.projectRoom(body.projectId);
     await client.join(room);
     return { ok: true, room };
@@ -167,9 +180,18 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     if (!body?.issueId) return { ok: false, error: 'invalid_issue_id' };
     const issue = await this.prisma.issue.findFirst({
       where: { id: body.issueId, tenantId: ctx.tenantId },
-      select: { id: true },
+      select: { id: true, createdById: true },
     });
     if (!issue) return { ok: false, error: 'issue_not_found' };
+    // audit В12 (2026-05-29): RBAC-чек на read issue. См. subscribe.project
+    // — тот же риск утечки live-events чужой задачи member'у тенанта.
+    const allowed = await this.rbac.canRead(
+      ctx.userId,
+      ctx.tenantId,
+      'issue',
+      issue.createdById ?? null,
+    );
+    if (!allowed) return { ok: false, error: 'forbidden' };
     const room = this.issueRoom(body.issueId);
     await client.join(room);
     return { ok: true, room };

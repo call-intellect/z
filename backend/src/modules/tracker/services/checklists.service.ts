@@ -417,34 +417,47 @@ export class ChecklistsService {
    * обновления карточек на канбане.
    */
   async recountCounters(issueId: string, tenantId: string): Promise<void> {
-    const totals = await this.prisma.issueChecklistItem.groupBy({
-      by: ['isDone'],
-      where: {
-        tenantId,
-        checklist: { issueId, deletedAt: null },
-      },
-      _count: { _all: true },
-    });
-    let total = 0;
-    let done = 0;
-    for (const row of totals) {
-      total += row._count._all;
-      if (row.isDone) done += row._count._all;
-    }
-    const updated = await this.prisma.issue.update({
-      where: { id: issueId },
-      data: {
-        checklistTotalCount: total,
-        checklistDoneCount: done,
-      },
-      select: { id: true, projectId: true, tenantId: true },
+    // audit С16 (2026-05-29): без advisory lock возможна race —
+    // параллельные toggle разных item'ов одного issue читают одинаковый
+    // groupBy snapshot и пишут устаревшее значение в issue.*Count.
+    // Все шаги (groupBy + update) в одной tx + pg_advisory_xact_lock(hashtext(issueId))
+    // сериализует пересчёт для конкретного issue.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Lock на уровне tx: автоматически освобождается при commit/rollback.
+      await tx.$executeRawUnsafe(
+        `SELECT pg_advisory_xact_lock(hashtext($1))`,
+        `checklist-recount:${issueId}`,
+      );
+      const totals = await tx.issueChecklistItem.groupBy({
+        by: ['isDone'],
+        where: {
+          tenantId,
+          checklist: { issueId, deletedAt: null },
+        },
+        _count: { _all: true },
+      });
+      let total = 0;
+      let done = 0;
+      for (const row of totals) {
+        total += row._count._all;
+        if (row.isDone) done += row._count._all;
+      }
+      const issue = await tx.issue.update({
+        where: { id: issueId },
+        data: {
+          checklistTotalCount: total,
+          checklistDoneCount: done,
+        },
+        select: { id: true, projectId: true, tenantId: true },
+      });
+      return { issue, total, done };
     });
     this.events.publishIssueChecklistProgressChanged({
-      tenantId: updated.tenantId,
-      projectId: updated.projectId,
-      issueId: updated.id,
-      total,
-      done,
+      tenantId: updated.issue.tenantId,
+      projectId: updated.issue.projectId,
+      issueId: updated.issue.id,
+      total: updated.total,
+      done: updated.done,
     });
   }
 

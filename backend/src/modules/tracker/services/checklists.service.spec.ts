@@ -317,6 +317,8 @@ function makeService(store: Store): {
       }
       return undefined;
     }),
+    // audit С16: recountCounters берёт advisory_xact_lock — mock'аем no-op.
+    $executeRawUnsafe: vi.fn(async () => 0),
   } as unknown as PrismaService;
 
   const issues = {

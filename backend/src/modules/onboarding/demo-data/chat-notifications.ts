@@ -3,10 +3,10 @@
  *
  * Создаёт: ChatV2Conversation (3), ChatV2Message (6), Notification (10).
  */
-import type { SeedFn, SeedContext, IdMap } from './types';
+import type { SeedFn } from './types';
 import { daysAgo } from './types';
 
-export const seedChatNotifications: SeedFn = async (ctx, ids) => {
+export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
   const { prisma, tenantId, ownerUserId } = ctx;
 
   // ── 1. ChatV2Conversation (3) + ChatV2Message (6) ─────────────────────

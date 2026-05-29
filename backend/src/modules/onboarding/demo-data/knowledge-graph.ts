@@ -13,6 +13,15 @@
  *   ThemeDynamic:           fading → declining
  *   LinkCreatedBy:          llm → linker
  */
+import type {
+  SignalType,
+  IdeaBlockLinkType,
+  EntityType,
+  EntityLinkType,
+  ThemeBranch,
+  ThemeDynamic,
+} from '@prisma/client';
+
 import type { SeedFn, SeedContext, IdMap } from './types';
 
 // ──────────────────────────── IdeaBlock definitions ────────────────────────────
@@ -540,7 +549,7 @@ export const seedKnowledgeGraph: SeedFn = async (
         name: def.name,
         criticalQuestion: def.criticalQuestion,
         trustedAnswer: def.trustedAnswer,
-        signalType: def.signalType as any,
+        signalType: def.signalType as SignalType,
         confidence: def.confidence,
         status: 'canonical',
         dataClass: 'internal',
@@ -564,7 +573,7 @@ export const seedKnowledgeGraph: SeedFn = async (
         tenantId,
         fromBlockId: ids.ideaBlocks[lnk.from]!,
         toBlockId: ids.ideaBlocks[lnk.to]!,
-        relationType: lnk.relationType as any,
+        relationType: lnk.relationType as IdeaBlockLinkType,
         confidence: lnk.confidence,
         explanation: lnk.explanation,
         createdBy: 'linker',
@@ -584,7 +593,7 @@ export const seedKnowledgeGraph: SeedFn = async (
     const entity = await prisma.entity.create({
       data: {
         tenantId,
-        type: def.type as any,
+        type: def.type as EntityType,
         canonicalName: def.canonicalName,
         aliases: def.aliases,
       },
@@ -606,7 +615,7 @@ export const seedKnowledgeGraph: SeedFn = async (
         tenantId,
         fromEntityId: ids.entities[lnk.from]!,
         toEntityId: ids.entities[lnk.to]!,
-        relationType: lnk.relationType as any,
+        relationType: lnk.relationType as EntityLinkType,
         confidence: lnk.confidence,
         explanation: lnk.explanation,
         createdBy: 'linker',
@@ -628,8 +637,8 @@ export const seedKnowledgeGraph: SeedFn = async (
         tenantId,
         name: def.name,
         description: def.description,
-        branch: def.branch as any,
-        dynamic: def.dynamic as any,
+        branch: def.branch as ThemeBranch,
+        dynamic: def.dynamic as ThemeDynamic,
         weight: def.weight,
         confidence: def.confidence,
         status: 'active',

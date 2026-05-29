@@ -5,7 +5,7 @@
  *
  * Зависит от OrgIds (persons).
  */
-import type { SeedFn, SeedContext, IdMap } from './types';
+import type { SeedFn } from './types';
 import { req } from './types';
 
 export const seedOperations: SeedFn = async (ctx, ids) => {
@@ -13,7 +13,7 @@ export const seedOperations: SeedFn = async (ctx, ids) => {
 
   // ── Workdays: 10 рабочих дней (15-28 мая, пропуская 17,18,24,25) ──
 
-  const WORKDAYS = [
+  const _WORKDAYS = [
     '2026-05-15', '2026-05-16', '2026-05-19', '2026-05-20', '2026-05-21',
     '2026-05-22', '2026-05-23', '2026-05-26', '2026-05-27', '2026-05-28',
   ];

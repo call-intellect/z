@@ -5,7 +5,7 @@
  * SkillProfile (4), SkillTrait (18), ExecutablePersona (4),
  * CloneAccessGrant (4), Decision (5), Insight (7).
  */
-import type { SeedFn, SeedContext, IdMap } from './types';
+import type { SeedFn } from './types';
 import { daysAgo, req } from './types';
 
 export const seedGoalsClones: SeedFn = async (ctx, ids) => {

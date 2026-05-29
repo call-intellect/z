@@ -8,7 +8,7 @@
  * MeetingQualityScore, MeetingBehaviorMetrics, MeetingParticipantBehavior
  * уже создаются в meetings.ts — здесь не дублируем.
  */
-import type { SeedFn, SeedContext, IdMap } from './types';
+import type { SeedFn } from './types';
 import { daysAgo } from './types';
 
 export const seedPolish: SeedFn = async (ctx, ids) => {

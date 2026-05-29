@@ -21,6 +21,61 @@
 
 ---
 
+### 🛡 2026-05-29 — Audit-fixes (Б1-Б15, В1-В17, С1-С31) + Admin Subscription UI v2
+
+Ветка `fix/audit-2026-05-29`, **66 коммитов**. Включает 30 `fix(audit)` (15 блокеров + 15 high-risk), 24 `fix(audit) С*` (medium), 4 `feat(admin-sub-ui)` (фронт-табы Подписка/Биллинг), 6 `fix(tests)` (моки после смен логики). `typecheck`/`lint`/`test:unit` — зелёные на backend и frontend.
+
+**Краткое содержание (фактически опасное идёт в Шаги ниже):**
+- Auth: единый argon2id-hash в инвайтах (Б1), глобальный `MustChangePasswordGuard` (Б2), 120 бит энтропии в tempPassword.
+- Billing: webhook-replay защита (Б4 — `maxAge:5m` + `jti @unique` + JWK TTL), AES-256-GCM на OAuth-токены Точки (Б5), уникальность по `(providerName, externalEventId)` и `triggerInvoiceId` (Б7), customerCode-сверка вебхука (В3), recurring создаёт Invoice ДО charge (Б15), `Promise.race` 30с timeout LLM-router (С30), BullMQ для referral-payout (С4), `billing_emit_failed_total` метрика (С3).
+- Demo: precondition + `externalSource='demo'` фильтр + tx во всех `deleteMany` resetDemoWorkspace (Б3).
+- Referrals: self-referral блок + INN-mismatch (Б6), composite-unique для public-attribution (Б8), TenantGuard на `attribute-current-org` (Б14), fingerprint min(32) (С5).
+- Tracker: race-fix в подзадачах через `pg_advisory_xact_lock` + lock-ordering (Б9), per-tenant cap=5 в sprint-helper cron (Б10), `deletedAt:null` в `requireItem` (Б11), reorder под FOR UPDATE (В11), WS-RBAC `subscribe.project/issue` (В12), cycle-check + cascading soft-delete документов (С19+С20), recountCounters в tx с advisory-lock (С16), `complete` идемпотентность под advisory-lock (С18), pg_trgm index на `Cycle.name` (С17).
+- Clones/RBAC: privacy для history клон-conversations после revoke (Б13), re-grant через UPDATE (В15), `assertCloneRefExists` после RBAC (В14), defense-in-depth tenantId-проверка в `canAccess*Clone` (С14), POST `/clones/:type/:id/access-grants/request` (В17), Role.created hook → grants owner'ам (С25).
+- Misc: маскировка PII в логах (С1, С2), retry P2002 на placeholder email (С9), Telegram-proxy ping-timeout ENV (С28).
+- **Frontend admin v2:** карточка Org теперь содержит **два таба** «Тариф и лимиты» (entitlements) и «Подписка и счета» (subscription + invoices + events). Старые `/admin/orgs/[id]/billing` и `/subscription` редиректят на `?tab=*`. В таблице инвойсов — кнопки `mark-paid` (для `issued`) и `void` (для `draft|issued`). Новые диалоги: `AdjustSeatsDialog`, `ForceStatusDialog` (с чекбоксом «обхожу FSM»), `SubscriptionEventsTimeline` (последние 100). Бэк не трогали — все методы `billingApi` уже были. В левом меню — пункт «Биллинг — обзор».
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — **2 новых опциональных**, дефолты безопасные, можно не выставлять:
+  - `LLM_ROUTER_DISPATCH_TIMEOUT_MS=30000` (С30) — global timeout на dispatch модели.
+  - `TELEGRAM_PROXY_PING_TIMEOUT_SEC=5` (С28) — timeout для health-cron ping'а.
+- **Шаг 4 — Prisma (опасные изменения)** — **новые `@unique`/composite, требуют dedupe ДО `prisma db push`**:
+  - `BillingEventLog.jti String? @unique` (Б4).
+  - `BillingEventLog @@unique([providerName, externalEventId])` (Б7).
+  - `ReferralPayout.triggerInvoiceId @unique` (Б7).
+  - `ReferralAttribution.dateBucket String? VARCHAR(10)` + `@@unique([referralId, fingerprint, dateBucket])` (Б8).
+  - Порядок: **сначала Шаг 6 (patch-dedupe-*)**, потом `docker compose exec backend bun run prisma:push`.
+- **Шаг 5 — Postgres init (нативный SQL)** — **1 новое**:
+  - `CREATE EXTENSION IF NOT EXISTS pg_trgm` + `CREATE INDEX Cycle_name_trgm_idx ON "Cycle" USING gin (name gin_trgm_ops)` — для substring-поиска спринтов (С17). Команда: `docker compose exec backend bun run apply-postgres-init`.
+- **Шаг 6 — Patches** — **7 новых, все идемпотентные**, все зарегистрированы в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true` — на чистой БД нечего бэкфилить):
+  - `patch-rehash-pending-invitations.ts` — sha256→argon2id для `OrgInvitation.tempPasswordHash` с `acceptedAt=NULL` (Б1). После него existing инвайты заработают.
+  - `patch-mark-demo-data.ts` — backfill `externalSource='demo'` для existing demo-Org (Б3). Обязательно ПЕРЕД prod-выкатом фикса reset.
+  - `patch-encrypt-tochka-oauth.ts` — AES-256-GCM на plain OAuth-токены Точки (Б5). Безопасно поверх уже шифрованных (skip если уже `enc:`).
+  - `patch-dedupe-billing-event-log.ts` (Б7) — **запустить до `prisma:push`**. Поддерживает `--dry-run`.
+  - `patch-dedupe-referral-payout.ts` (Б7) — **запустить до `prisma:push`**. Поддерживает `--dry-run`. Приоритет `paid > pending`, void-ит pending дубли с reason.
+  - `patch-backfill-referral-attribution-date-bucket.ts` (Б8) — **запустить до `prisma:push`** composite unique. Идемпотентен.
+  - `patch-audit-user-email-conflicts.ts` (С31) — **dry-run only**, печатает SQL-инструкции при обнаружении дублей email или несогласованности pwd-хешей; не правит автоматически. `skipBootstrap+skipUpdate` (вне агрегатора, запускать руками).
+  - **Incident-only (не в агрегаторе):** `patch-rollback-to-deepseek-flash.ts --update-existing` — откат LLM-миграции при инциденте, новый флаг `--include-feature-flagged` для clone-respond-v2/specialists-combined (С29).
+- **Шаг 12 — Smoke** (curl/UI):
+  - **Auth:** `POST /api/v1/orgs/:id/invitations` → инвайт-email; вход по `/login` с tempPassword из письма → 200 + `mustChangePassword:true`; `curl /api/v1/meetings` → 403 `must_change_password`; `POST /me/change-password` → новая cookie; `curl /api/v1/meetings` → 200.
+  - **Demo reset:** `POST /api/v1/admin/demo/orgs/:id/reset` на Org без `demoSeededAt` → 400 `no_demo_to_reset`.
+  - **Tochka webhook replay:** повторный JWT с тем же `jti` → 409 `replay_detected`.
+  - **Billing double-pay:** одновременно два webhook с одним `externalEventId` → один Invoice paid, `totalPaidKopecks` не удвоился.
+  - **Referral self-ref:** signup со своим slug → `attribute-current-org` отвергает с 403 `self_referral_denied`.
+  - **WS RBAC:** `socket.emit('subscribe.project', {projectId: 'чужой'})` → reject `access_denied`.
+  - **Sprint search (pg_trgm):** `POST /api/v1/sprints/search?q=Q3` для близкого имени цикла — возвращает hit.
+  - **Admin UI subscription tab:**
+    - `/admin/orgs/[id]` → видны два таба «Тариф и лимиты» и «Подписка и счета».
+    - В `?tab=subscription` для `issued` Invoice — кнопка «Отметить оплаченным» (с обязательным `externalRef`); для `paid`/`bonus` — кнопки не видны.
+    - `AdjustSeatsDialog` показывает pro-rata подсказку (monthly: `daysLeft/30`, yearly: `monthsLeft*0.8`).
+    - `ForceStatusDialog` submit disabled пока не отмечен чекбокс «обхожу FSM» И `reason ≥ 3`.
+    - `SubscriptionEventsTimeline` показывает последние 100 событий с цветными бейджами.
+  - **`/admin/billing-overview`** доступен по ссылке из левого меню «Биллинг — обзор».
+  - **Redirects:** `/admin/orgs/[id]/billing` → 307 на `?tab=billing`. То же для `/subscription`.
+
+---
+
 ### 🆕 2026-05-29 — единый логин `/login` + демо-кабинеты из админки
 
 Чистые code-изменения: **ENV нет, schema нет, seed/patch/backfill нет.** Достаточно `docker compose up -d --build` (backend + frontend).

@@ -64,14 +64,11 @@ export const seedTracker: SeedFn = async (
 ): Promise<void> => {
   const { prisma, tenantId, ownerUserId } = ctx;
 
-  /** Shorthand resolvers with non-null assertion. */
+  /** Shorthand resolvers with non-null assertion. Используются ниже только
+   * projectId/deptId; остальные helpers оставлены закомментированными — их
+   * место в объектах Prisma занимает прямой `ids.<коллекция>[<ключ>]!`. */
   const projectId = (k: string) => r(ids.projects[k], `projects.${k}`);
   const deptId = (k: string) => r(ids.departments[k], `departments.${k}`);
-  const issueId = (k: string) => r(ids.issues[k], `issues.${k}`);
-  const labelId = (k: string) => r(ids.labels[k], `labels.${k}`);
-  const stateId = (projKey: string, stateName: string) => r(ids.states[`${projKey}_${stateName}`], `states.${projKey}_${stateName}`);
-  const boardId = (k: string) => r(ids.boards[k], `boards.${k}`);
-  const cycleId = (k: string | undefined) => k ? r(ids.cycles[k], `cycles.${k}`) : null;
 
   console.log('[demo/tracker] Начинаем создание трекера задач...');
 

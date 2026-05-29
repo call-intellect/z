@@ -160,6 +160,18 @@ const STEPS: Step[] = [
     skipBootstrap: true,
     skipUpdate: true,
   },
+  // 2026-05-29 — audit С31: verify-скрипт. Проверяет, нет ли email-конфликтов
+  // между путями /login (standalone vs admin) и role/hash format mismatches.
+  // ТОЛЬКО dry-run-read (без --fix) — fix руками после консультации.
+  // Полезно после первого деплоя UnifiedLoginController и после массовых
+  // изменений User-таблицы.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-audit-user-email-conflicts.ts',
+    hint: 'verify (dry-run-only): email/role конфликты в User',
+    skipBootstrap: true,
+    skipUpdate: true,
+  },
   // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
   // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
   // Идемпотентен. ТЗ §14 Фаза 1.4.

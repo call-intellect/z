@@ -152,7 +152,12 @@ export class TochkaBillingProvider implements BillingProviderPort {
   async chargeRecurringSubscription(
     req: ChargeRecurringSubscriptionRequest,
   ): Promise<ChargeRecurringSubscriptionResult> {
-    await this.request(
+    // audit-fixes Б15: возвращаем РЕАЛЬНЫЙ operationId Точки, не
+    // синтетический `${subId}:${Date.now()}`. Иначе webhook
+    // BillingEventLog.externalEventId с настоящим operationId не найдёт
+    // соответствующий Invoice и подписка падает в PAST_DUE при успешном
+    // списании.
+    const response = await this.request<TochkaEnvelope<Record<string, unknown>>>(
       `/acquiring/${this.apiVersion}/subscriptions/${encodeURIComponent(
         req.providerSubscriptionId,
       )}/charge`,
@@ -163,9 +168,25 @@ export class TochkaBillingProvider implements BillingProviderPort {
         }),
       },
     );
+    const data = (response.Data ?? {}) as Record<string, string | undefined>;
+    const operationId =
+      data.operationId ?? data.paymentId ?? data.subscriptionPaymentId;
+    if (!operationId) {
+      // Точка не вернула operationId — это аномалия. Логируем и
+      // фолбэчимся к синтетическому ID, чтобы Subscription.lastRenewalAttemptAt
+      // обновилось и cron не зациклился, но Invoice по такому фолбэку
+      // не финализируется (webhook искал бы по operationId).
+      this.logger.warn(
+        `chargeRecurringSubscription: Точка не вернула operationId (subId=${req.providerSubscriptionId})`,
+      );
+      return {
+        providerInvoiceId: `${req.providerSubscriptionId}:${Date.now()}`,
+        status: 'pending',
+      };
+    }
     return {
-      providerInvoiceId: `${req.providerSubscriptionId}:${Date.now()}`,
-      status: 'pending',
+      providerInvoiceId: operationId,
+      status: this.mapAcquiringStatus(data.status),
     };
   }
 

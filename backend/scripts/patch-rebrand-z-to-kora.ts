@@ -70,9 +70,15 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // Уже обновлено — пропускаем (идемпотентность).
-      if (row.subject === target.newSubject) {
-        console.log(`[already-done] ${target.key} — тема уже «${row.subject}»`);
+      // audit С15 (2026-05-29): сверяем И subject И body — раньше
+      // достаточно было совпадения subject, и patch пропускал устаревший body
+      // (например, после обновления mail.templates.ts константы).
+      const subjectMatches = row.subject === target.newSubject;
+      const bodyMatches = row.body === target.newBody;
+      if (subjectMatches && bodyMatches) {
+        console.log(
+          `[already-done] ${target.key} — тема и тело уже совпадают с code-константой`,
+        );
         skippedAlready += 1;
         continue;
       }
@@ -87,9 +93,10 @@ async function main(): Promise<void> {
         continue;
       }
 
-      console.log(
-        `[update] ${target.key}: «${row.subject}» → «${target.newSubject}»`,
-      );
+      const updates: string[] = [];
+      if (!subjectMatches) updates.push(`subject «${row.subject}» → «${target.newSubject}»`);
+      if (!bodyMatches) updates.push('body (mail.templates.ts)');
+      console.log(`[update] ${target.key}: ${updates.join(', ')}`);
 
       if (!DRY_RUN) {
         await prisma.emailTemplate.update({

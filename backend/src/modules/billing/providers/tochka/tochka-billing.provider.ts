@@ -12,7 +12,8 @@
  *   - invoice/{v}/bills/{cc}/{id}/...     — статус/email/файл/удаление
  *
  * Денежные суммы: Точка принимает **рубли** числом → конвертируем
- * `amountKopecks / 100` (округление round). В webhook'е приходит так же.
+ * `amountKopecks / 100` (с сохранением копеек до 2 знаков, audit В4).
+ * В webhook'е приходит так же.
  *
  * Retry: GET/DELETE до 3 попыток с экспоненциальным backoff'ом (250×2^n мс)
  * при HTTP ≥ 500. POST/PUT — без retry (idempotency-key мы не используем).
@@ -511,8 +512,15 @@ export class TochkaBillingProvider implements BillingProviderPort {
 
   // ════════════════════════ Helpers ════════════════════════
 
+  /**
+   * audit В4 (2026-05-29): копейки → рубли с сохранением копеек.
+   * `Math.round` округлял до целых рублей (4950 коп → 50 руб вместо 49.50),
+   * что превращает 100 ₽ 50 копеек в 101 ₽ и ведёт к рассинхрону суммы
+   * между нашим Invoice и Точкой. `toFixed(2)` сохраняет до 2 знаков,
+   * `Number()` снимает trailing zeros.
+   */
   private kopecksToRubles(amountKopecks: number): number {
-    return Math.round(amountKopecks / 100);
+    return Number((amountKopecks / 100).toFixed(2));
   }
 
   private compact<T extends Record<string, unknown>>(input: T): T {

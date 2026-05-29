@@ -510,9 +510,21 @@ describe('FeedbackDigestService', () => {
         },
       ],
     });
+    // Sanity-check (см. feedback-digest.service.ts:186) срабатывает только
+    // когда уже есть >=5 существующих топиков (`SANITY_CHECK_MIN_EXISTING_TOPICS`).
+    // На холодном старте (≤4 топиков) создание множества новых блоков —
+    // нормальное поведение. Чтобы покрыть именно ветку «аномалия» — даём 5
+    // существующих топиков.
+    const existingTopics = [
+      { id: 'topic_1', title: 'T1', description: 'd' },
+      { id: 'topic_2', title: 'T2', description: 'd' },
+      { id: 'topic_3', title: 'T3', description: 'd' },
+      { id: 'topic_4', title: 'T4', description: 'd' },
+      { id: 'topic_5', title: 'T5', description: 'd' },
+    ];
     const p = makePrisma({
       messages: [SAMPLE_MESSAGES[0]!],
-      topics: [],
+      topics: existingTopics,
     });
     const r = makeRedis();
     const l = makeLlm([insaneOutput]);

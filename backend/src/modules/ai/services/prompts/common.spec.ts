@@ -17,8 +17,10 @@ describe('withZPreamble', () => {
     expect(out.indexOf(Z_GLOBAL_PREAMBLE)).toBeLessThan(out.indexOf(SYSTEM));
   });
 
-  it('preamble упоминает Z / Кора / русский / injection-guard', () => {
-    expect(Z_GLOBAL_PREAMBLE).toContain('Z');
+  it('preamble упоминает Кора / русский / injection-guard', () => {
+    // 2026-05-29 ребренд Z → Кора: имя продукта в preamble — «Кора»
+    // (имя бренда Z сохранилось только в имени константы `Z_GLOBAL_PREAMBLE`
+    // и функции `withZPreamble`, что отражает внутренний код-неминг).
     expect(Z_GLOBAL_PREAMBLE).toContain('Кора');
     expect(Z_GLOBAL_PREAMBLE).toContain('русском');
     // Ссылка на маркеры USER_DATA_BEGIN — защита от prompt-injection.

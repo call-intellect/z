@@ -9,7 +9,7 @@
  *   5) isAvailable()=false → пустые ответы при отсутствии моделей.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -145,9 +145,22 @@ function buildPrismaMock(opts: {
 }
 
 describe('ConciergeAnalyticsService', () => {
+  // Сервис вызывает `new Date()` для расчёта периода (`periodRange`). Чтобы
+  // тест не зависел от реального текущего времени (через несколько дней
+  // SIX_DAYS_AGO уходит из окна week → totalQuestions=2 вместо 3), фиксируем
+  // системные часы через `vi.useFakeTimers` на стабильный NOW.
   const NOW = new Date('2026-05-25T12:00:00Z');
   const DAY_AGO = new Date(NOW.getTime() - 1 * 24 * 60 * 60 * 1000);
   const SIX_DAYS_AGO = new Date(NOW.getTime() - 6 * 24 * 60 * 60 * 1000);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('isAvailable()=false когда модели нет в Prisma client', () => {
     const prisma = buildPrismaMock({ noMessageModel: true });

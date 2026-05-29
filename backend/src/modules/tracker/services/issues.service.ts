@@ -117,17 +117,9 @@ export class IssuesService {
     const stateId = dto.stateId ?? project.defaultStateId ?? null;
     if (dto.stateId) await this.requireStateInProject(dto.stateId, projectId);
 
-    // Tracker subtasks UI (2026-05-27) — валидация parentId при создании.
-    // Родитель должен принадлежать тому же tenant + project, не быть уже
-    // подзадачей (depth>2). Цикл невозможен на create (id ещё не существует).
-    if (dto.parentId) {
-      await this.validateParentForIssue({
-        candidateParentId: dto.parentId,
-        projectId,
-        tenantId,
-        currentIssueId: null,
-      });
-    }
+    // Tracker subtasks UI (2026-05-27) — валидация parentId при создании
+    // перенесена ВНУТРЬ $transaction (audit-fixes Б9): TOCTOU race
+    // между check parentId и create issue. См. блок ниже в $transaction.
 
     // Tracker Boards (2026-05-27) — резолвим boardId:
     //   1. Если фронт явно передал boardId — валидируем, что доска в этом проекте.
@@ -150,6 +142,18 @@ export class IssuesService {
     });
 
     const issue = await this.prisma.$transaction(async (tx) => {
+      // audit-fixes Б9: валидация родителя ВНУТРИ tx с advisory_xact_lock.
+      // Защищает от TOCTOU race (parent удалён/перевешен между check и create).
+      if (dto.parentId) {
+        await this.validateParentForIssue({
+          candidateParentId: dto.parentId,
+          projectId,
+          tenantId,
+          currentIssueId: null,
+          tx,
+        });
+      }
+
       // Атомарный sequenceId: max+1 per project (узкая зона гонок снимется
       // unique-constraint'ом @@unique([projectId, sequenceId]) — при retry-ит
       // upstream через идемпотентность Sprint 2).
@@ -607,16 +611,8 @@ export class IssuesService {
     if (dto.stateId && dto.stateId !== existing.stateId) {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
-    // Tracker subtasks UI (2026-05-27) — валидация смены `parentId`.
-    // `parentId=null` (сделать задачу корневой) — всегда допустимо.
-    if (dto.parentId !== undefined && dto.parentId !== null) {
-      await this.validateParentForIssue({
-        candidateParentId: dto.parentId,
-        projectId: existing.projectId,
-        tenantId,
-        currentIssueId: existing.id,
-      });
-    }
+    // Tracker subtasks UI (2026-05-27) — валидация смены `parentId`
+    // перенесена ВНУТРЬ $transaction (audit-fixes Б9), см. блок ниже.
 
     // Tracker Boards (2026-05-27) — если фронт меняет boardId на не-null,
     // валидируем что доска принадлежит тому же проекту и tenant'у.
@@ -645,6 +641,19 @@ export class IssuesService {
           });
     const changedFields: string[] = [];
     await this.prisma.$transaction(async (tx) => {
+      // audit-fixes Б9: валидация parentId ВНУТРИ tx с advisory_xact_lock.
+      // Лочит parentId + currentIssueId — две параллельные операции с
+      // пересекающимися родителями сериализуются, не дают создать цикл.
+      if (dto.parentId !== undefined && dto.parentId !== null) {
+        await this.validateParentForIssue({
+          candidateParentId: dto.parentId,
+          projectId: existing.projectId,
+          tenantId,
+          currentIssueId: existing.id,
+          tx,
+        });
+      }
+
       const data: Prisma.IssueUpdateInput = {};
       const activities: Array<{
         verb: string;
@@ -1338,6 +1347,15 @@ export class IssuesService {
    *     к будущему расширению (если depth-limit поднимут) делаем BFS по
    *     всему поддереву с защитой от циклов через `visited`.
    *
+   * audit-fixes Б9 (2026-05-29):
+   *   - Метод теперь обязателен в транзакционном контексте (параметр `tx`).
+   *     Раньше валидация шла на основном prisma-клиенте ПЕРЕД $transaction
+   *     с записью, что давало TOCTOU race: кандидат-родитель мог быть
+   *     удалён/перевешен между check и write.
+   *   - Перед запросами берётся `pg_advisory_xact_lock(hashtext(parentId))` —
+   *     сериализует параллельные операции с одним и тем же родителем.
+   *     Lock освобождается при коммите/откате транзакции автоматически.
+   *
    * TODO (после tracker-boards): проверять boardId родителя.
    */
   private async validateParentForIssue(args: {
@@ -1346,6 +1364,8 @@ export class IssuesService {
     tenantId: string;
     /** id текущей задачи (null при create). */
     currentIssueId: string | null;
+    /** Обязательный транзакционный клиент (audit-fixes Б9). */
+    tx: Prisma.TransactionClient;
   }): Promise<void> {
     if (
       args.currentIssueId !== null &&
@@ -1359,7 +1379,21 @@ export class IssuesService {
         },
       });
     }
-    const parent = await this.prisma.issue.findFirst({
+    // audit-fixes Б9: advisory_xact_lock на parentId. Если currentIssueId
+    // задан и отличается от parentId — лочим оба в детерминированном порядке
+    // (по убыванию hashtext) чтобы избежать deadlock при двух параллельных
+    // update'ах с пересекающимися parent'ами.
+    const lockKeys = [args.candidateParentId];
+    if (args.currentIssueId && args.currentIssueId !== args.candidateParentId) {
+      lockKeys.push(args.currentIssueId);
+    }
+    // Сортируем строки → стабильный порядок lock'ов.
+    lockKeys.sort();
+    for (const key of lockKeys) {
+      await args.tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    }
+
+    const parent = await args.tx.issue.findFirst({
       where: {
         id: args.candidateParentId,
         tenantId: args.tenantId,
@@ -1404,7 +1438,7 @@ export class IssuesService {
       let guard = 0;
       while (frontier.length > 0 && guard < 256) {
         guard++;
-        const children = await this.prisma.issue.findMany({
+        const children = await args.tx.issue.findMany({
           where: {
             tenantId: args.tenantId,
             parentId: { in: frontier },

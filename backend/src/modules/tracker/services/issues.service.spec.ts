@@ -389,11 +389,13 @@ describe('IssuesService — subtasks parent validation', () => {
         create: typeof issueCreate;
         update: typeof issueUpdate;
         findFirst: typeof issueFindFirst;
+        findMany: typeof issueFindMany;
       };
       issueAssignee: { createMany: ReturnType<typeof vi.fn> };
       issueLabel: { createMany: ReturnType<typeof vi.fn> };
       label: { findMany: ReturnType<typeof vi.fn> };
       issueState: { findUnique: ReturnType<typeof vi.fn> };
+      $queryRaw: ReturnType<typeof vi.fn>;
     };
 
     const prisma = {
@@ -404,11 +406,16 @@ describe('IssuesService — subtasks parent validation', () => {
             create: issueCreate,
             update: issueUpdate,
             findFirst: issueFindFirst,
+            // audit-fixes Б9: validateParentForIssue ходит за children
+            // через tx.issue.findMany (BFS вниз).
+            findMany: issueFindMany,
           },
           issueAssignee: { createMany: vi.fn() },
           issueLabel: { createMany: vi.fn() },
           label: { findMany: vi.fn().mockResolvedValue([]) },
           issueState: { findUnique: vi.fn().mockResolvedValue(null) },
+          // audit-fixes Б9: advisory_xact_lock — мок просто возвращает [].
+          $queryRaw: vi.fn().mockResolvedValue([]),
         }),
       issue: { findFirst: issueFindFirst, findMany: issueFindMany },
       issueState: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -592,5 +599,246 @@ describe('IssuesService — subtasks parent validation', () => {
       parentId: 'i_new_parent',
     } as unknown as UpdateIssueDto;
     await expect(service.update('i1', dto, 'org_1', 'u1')).resolves.toBeDefined();
+  });
+
+  it('update — корректный новый parent (корневая задача того же проекта) → не падает', async () => {
+    const service = buildService({
+      parentLookup: (id) =>
+        id === 'i_new_parent'
+          ? { id: 'i_new_parent', projectId: 'p1', parentId: null }
+          : null,
+      childrenLookup: () => [],
+      existing: baseIssue,
+    });
+    const dto: UpdateIssueDto = {
+      parentId: 'i_new_parent',
+    } as unknown as UpdateIssueDto;
+    await expect(service.update('i1', dto, 'org_1', 'u1')).resolves.toBeDefined();
+  });
+});
+
+/**
+ * audit-fixes Б9 (2026-05-29) — concurrent / advisory-lock тесты для
+ * validateParentForIssue. Используем тот же buildService и инспектируем
+ * tx.$queryRaw мок.
+ */
+describe('IssuesService — Б9 advisory_xact_lock', () => {
+  const baseIssue = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    identifier: 'TASK-1',
+    sequenceId: 1,
+    title: 't',
+    description: null,
+    descriptionHtml: null,
+    descriptionStripped: null,
+    priority: 'normal',
+    stateId: 'state_default',
+    parentId: null,
+    estimatePoints: null,
+    sortOrder: 1,
+    startDate: null,
+    dueDate: null,
+    cycleId: null,
+    goalId: null,
+    boardId: null,
+    externalSource: null,
+    externalId: null,
+    createdById: 'u1',
+    createdManually: true,
+    deletedAt: null,
+    archivedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as unknown as Issue;
+
+  /**
+   * Создаёт сервис с тем же набором зависимостей, что и `buildService` в
+   * первом describe, но с трекером вызовов $queryRaw в tx-моке. Если
+   * `serializeLock=true` — симулируем сериализацию (lock держит первый
+   * caller, второй ждёт).
+   */
+  function buildServiceWithLockTracking(opts: {
+    parentLookup: (id: string) => Partial<Issue> | null;
+    childrenLookup?: (parentIds: string[]) => Array<{ id: string }>;
+    existing?: Issue;
+    serializeLock?: boolean;
+  }): {
+    service: IssuesService;
+    queryRawCalls: Array<unknown[]>;
+  } {
+    const queryRawCalls: Array<unknown[]> = [];
+    let lockHeld = false;
+    const lockQueue: Array<() => void> = [];
+    const queryRawMock = vi
+      .fn()
+      .mockImplementation(async (...args: unknown[]) => {
+        queryRawCalls.push(args);
+        if (opts.serializeLock) {
+          if (lockHeld) {
+            await new Promise<void>((r) => lockQueue.push(r));
+          }
+          lockHeld = true;
+        }
+        return [];
+      });
+
+    const issueCreate = vi.fn().mockImplementation(async ({ data }) => ({
+      ...(opts.existing ?? baseIssue),
+      ...data,
+    }));
+    const issueUpdate = vi
+      .fn()
+      .mockResolvedValue(opts.existing ?? baseIssue);
+    const issueAggregate = vi
+      .fn()
+      .mockResolvedValue({ _max: { sequenceId: 0 } });
+    const issueFindFirst = vi.fn().mockImplementation(
+      async ({ where }: { where: Record<string, unknown> }) => {
+        if (
+          typeof where.id === 'string' &&
+          opts.existing &&
+          where.id === opts.existing.id
+        ) {
+          return { ...opts.existing, assignees: [], labels: [] };
+        }
+        if (typeof where.id === 'string') {
+          const found = opts.parentLookup(where.id);
+          if (!found) return null;
+          return {
+            id: found.id,
+            projectId: found.projectId,
+            parentId: found.parentId,
+          };
+        }
+        return null;
+      },
+    );
+    const issueFindMany = vi.fn().mockImplementation(
+      async ({ where }: { where: { parentId?: { in?: string[] } } }) => {
+        const ins = where.parentId?.in ?? [];
+        return opts.childrenLookup ? opts.childrenLookup(ins) : [];
+      },
+    );
+
+    const releaseLock = (): void => {
+      if (!opts.serializeLock) return;
+      lockHeld = false;
+      const next = lockQueue.shift();
+      if (next) next();
+    };
+
+    const prisma = {
+      $transaction: async (
+        fn: (tx: Record<string, unknown>) => unknown,
+      ) => {
+        try {
+          return await fn({
+            issue: {
+              aggregate: issueAggregate,
+              create: issueCreate,
+              update: issueUpdate,
+              findFirst: issueFindFirst,
+              findMany: issueFindMany,
+            },
+            issueAssignee: { createMany: vi.fn() },
+            issueLabel: { createMany: vi.fn() },
+            label: { findMany: vi.fn().mockResolvedValue([]) },
+            issueState: { findUnique: vi.fn().mockResolvedValue(null) },
+            $queryRaw: queryRawMock,
+          });
+        } finally {
+          releaseLock();
+        }
+      },
+      issue: { findFirst: issueFindFirst, findMany: issueFindMany },
+      issueState: { findUnique: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+
+    const activity = {
+      record: vi.fn().mockResolvedValue('act_1'),
+    } as unknown as ActivityRecorderService;
+    const projects = {
+      requireProject: vi.fn().mockResolvedValue({
+        id: 'p1',
+        identifier: 'TASK',
+        defaultStateId: 'state_default',
+      }),
+    } as unknown as ProjectsService;
+    const events = {
+      publishIssueCreated: vi.fn(),
+      publishIssueUpdated: vi.fn(),
+      publishActivity: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    const emitter = {
+      emitIssueCreated: vi.fn(),
+      emitIssueUpdated: vi.fn(),
+      emitIssueCompleted: vi.fn(),
+    } as unknown as TrackerEmitterService;
+
+    const service = new IssuesService(
+      prisma,
+      activity,
+      projects,
+      events,
+      webhooks,
+      emitter,
+    );
+
+    return { service, queryRawCalls };
+  }
+
+  it('$queryRaw(pg_advisory_xact_lock) вызывается ≥1 раз при update с parentId', async () => {
+    const { service, queryRawCalls } = buildServiceWithLockTracking({
+      parentLookup: (id) =>
+        id === 'i_new_parent'
+          ? { id: 'i_new_parent', projectId: 'p1', parentId: null }
+          : null,
+      existing: baseIssue,
+    });
+
+    await service.update(
+      'i1',
+      { parentId: 'i_new_parent' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+
+    expect(queryRawCalls.length).toBeGreaterThan(0);
+  });
+
+  it('concurrent update: обе tx выполняются, обе дёргают $queryRaw на пересекающихся parent\'ах', async () => {
+    const { service, queryRawCalls } = buildServiceWithLockTracking({
+      parentLookup: (id) =>
+        id === 'p_shared'
+          ? { id: 'p_shared', projectId: 'p1', parentId: null }
+          : null,
+      existing: baseIssue,
+      // serializeLock=false — без блокирующей симуляции, чтобы юнит-тест
+      // не висел. В реальной БД pg_advisory_xact_lock сериализует tx
+      // (это тестируется integration-тестом или e2e).
+    });
+
+    await Promise.all([
+      service.update(
+        'i1',
+        { parentId: 'p_shared' } as unknown as UpdateIssueDto,
+        'org_1',
+        'u1',
+      ),
+      service.update(
+        'i1',
+        { parentId: 'p_shared' } as unknown as UpdateIssueDto,
+        'org_1',
+        'u1',
+      ),
+    ]);
+
+    // Каждая tx делает ≥1 advisory_xact_lock на parentId → суммарно ≥2.
+    expect(queryRawCalls.length).toBeGreaterThanOrEqual(2);
   });
 });

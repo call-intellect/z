@@ -64,6 +64,15 @@ type AuthContextValue = AuthState & {
   logout: () => Promise<void>;
   /** Standalone-логин по email/паролю. После — refresh внутри. */
   loginStandalone: (email: string, password: string) => Promise<{ mustChangePassword: boolean }>;
+  /**
+   * Единый логин (пользователь ИЛИ супер-админ) через `/auth/login`.
+   * Бэк сам пробует standalone → admin. Возвращает роль/isSuperAdmin для
+   * редиректа. После — refresh внутри.
+   */
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ mustChangePassword: boolean; isSuperAdmin: boolean; role: 'user' | 'admin' }>;
   /** Lead-style регистрация. Возвращает `email_sent`. */
   register: (
     email: string,
@@ -127,6 +136,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await authApi.login({ email, password });
+      await refresh();
+      return {
+        mustChangePassword: res.mustChangePassword,
+        isSuperAdmin: res.isSuperAdmin === true,
+        role: res.role,
+      };
+    },
+    [refresh],
+  );
+
   const register = useCallback(
     async (
       email: string,
@@ -179,9 +201,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh,
       logout,
       loginStandalone,
+      login,
       register,
     }),
-    [state.user, state.isLoading, refresh, logout, loginStandalone, register],
+    [state.user, state.isLoading, refresh, logout, loginStandalone, login, register],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

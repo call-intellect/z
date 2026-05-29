@@ -14,21 +14,23 @@ import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 
 /**
- * Публичный логин для обычных пользователей через `accounts/login`.
- * Админы логинятся отдельно через `/admin/login` (см.
- * `app/(admin)/admin/login/`) — сделано чтобы не палить существование
- * админ-учёток в публичной форме.
+ * Единый логин для всех — обычных пользователей И супер-админов — через
+ * `/auth/login` (бэк сам пробует standalone → admin). Отдельной формы
+ * `/admin/login` больше нет (она редиректит сюда).
  *
  * После успеха:
- *   - Если есть `?next=` — push туда.
- *   - Иначе — push на `/meetings`.
+ *   - Безопасный `?next=` имеет приоритет.
+ *   - Иначе супер-админ → `/admin`, обычный пользователь → `/meetings`.
  *   - Если `mustChangePassword=true` — guard в `(authenticated)/layout.tsx`
  *     сам отправит на `/onboarding/change-password`.
+ *
+ * Единая ошибка `login_invalid` не раскрывает существование учётки
+ * (защита от user-enumeration — логика на бэке).
  */
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loginStandalone } = useAuth();
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,10 +45,14 @@ export function LoginForm() {
 
     setSubmitting(true);
     try {
-      await loginStandalone(email.trim(), password);
+      const { isSuperAdmin } = await login(email.trim(), password);
       // mustChangePassword обработает guard в (authenticated)/layout.
-      const safeNext = isSafeNext(nextParam) ? nextParam! : '/meetings';
-      router.replace(safeNext);
+      const target = isSafeNext(nextParam)
+        ? nextParam!
+        : isSuperAdmin
+          ? '/admin'
+          : '/meetings';
+      router.replace(target);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'login_invalid' || err.code === 'unauthorized') {

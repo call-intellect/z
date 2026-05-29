@@ -7,6 +7,7 @@ import { AccountsRepository } from './accounts.repository';
 import { AccountsService } from './accounts.service';
 import { PasswordService } from './password.service';
 import { SessionService } from './session.service';
+import { UnifiedLoginController } from './unified-login.controller';
 
 /**
  * Модуль standalone-аккаунтов (lead-style регистрация, login, профиль).
@@ -20,7 +21,7 @@ import { SessionService } from './session.service';
  */
 @Module({
   imports: [OrgsModule],
-  controllers: [AccountsController],
+  controllers: [AccountsController, UnifiedLoginController],
   providers: [
     AccountsService,
     AccountsRepository,

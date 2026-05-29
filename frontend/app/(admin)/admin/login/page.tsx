@@ -1,22 +1,13 @@
 /**
- * Admin login — отдельная страница для входа администраторов через
- * `/api/v1/auth/admin-login`.
+ * Admin login устарел — теперь единый вход для всех на `/login`
+ * (бэк `/api/v1/auth/login` сам определяет супер-админа и пускает в `/admin`).
  *
- * Зачем отдельно от `/login` (который для обычных пользователей):
- *   - Чтобы публичная форма не палила существование admin-учёток.
- *   - Чтобы admin-login использовал уже существующий backend-endpoint
- *     (`adminApi.adminLogin`) и не зависел от accounts-flow.
- *
- * Эта страница ВЫНЕСЕНА из общей admin layout-обёртки специальным layout-ом
- * рядом, чтобы AdminRouteGuard её не пытался защитить.
+ * Эта страница оставлена как back-compat алиас: редиректит на `/login?next=/admin`,
+ * чтобы старые закладки/ссылки продолжали работать. Форма `AdminLoginForm`
+ * больше не используется (удалить в cleanup-фазе ТЗ unified-login).
  */
-
-import { AdminLoginForm } from './AdminLoginForm';
+import { redirect } from 'next/navigation';
 
 export default function AdminLoginPage() {
-  return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col items-stretch justify-center px-6 py-16">
-      <AdminLoginForm />
-    </main>
-  );
+  redirect('/login?next=%2Fadmin');
 }

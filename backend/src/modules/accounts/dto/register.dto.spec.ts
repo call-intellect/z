@@ -100,3 +100,48 @@ describe('RegisterSchema (phone)', () => {
     expect(result.success).toBe(false);
   });
 });
+
+/**
+ * audit С12 (2026-05-29): регресс-тест на `consentDataProcessing`.
+ *
+ * `consentAcceptedAt` пишется в `accounts.service.ts` строго ПОСЛЕ
+ * успешной валидации DTO. Если refine не сработает (false / undefined /
+ * не-boolean) — service не должен дойти до записи Date. Проверяем,
+ * что Zod-схема отрезает все невалидные варианты.
+ */
+describe('RegisterSchema (consentDataProcessing — С12 регресс)', () => {
+  const basePayload = {
+    email: 'user@example.com',
+    name: 'Иван',
+    consentMarketing: false,
+  };
+
+  it('consentDataProcessing=true → success', () => {
+    const result = RegisterSchema.safeParse({
+      ...basePayload,
+      consentDataProcessing: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('consentDataProcessing=false → ошибка валидации', () => {
+    const result = RegisterSchema.safeParse({
+      ...basePayload,
+      consentDataProcessing: false,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('consentDataProcessing отсутствует → ошибка валидации', () => {
+    const result = RegisterSchema.safeParse(basePayload);
+    expect(result.success).toBe(false);
+  });
+
+  it('consentDataProcessing не boolean → ошибка валидации', () => {
+    const result = RegisterSchema.safeParse({
+      ...basePayload,
+      consentDataProcessing: 'yes',
+    });
+    expect(result.success).toBe(false);
+  });
+});

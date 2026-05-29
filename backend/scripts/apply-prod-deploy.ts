@@ -135,6 +135,9 @@ const STEPS: Step[] = [
   // reset-demo на legacy-Org ничего не удалит (поле было null). Идемпотентен.
   // ТЗ: plans/tz/2026-05-29-audit-fixes.md §Б3.
   { phase: 'patch', script: 'scripts/patch-mark-demo-data.ts', hint: 'backfill externalSource=demo для existing demo-Org', skipBootstrap: true },
+  // 2026-05-29 — audit Б5: шифрование plain OAuth-токенов Точки в БД.
+  // Требует CRYPTO_MASTER_KEY в ENV. Идемпотентен. ТЗ §Б5.
+  { phase: 'patch', script: 'scripts/patch-encrypt-tochka-oauth.ts', hint: 'AES-256-GCM для tochka oauth tokens', skipBootstrap: true },
   // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
   // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
   // Идемпотентен. ТЗ §14 Фаза 1.4.

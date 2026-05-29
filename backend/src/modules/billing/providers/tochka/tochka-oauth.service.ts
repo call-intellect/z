@@ -31,6 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../../common/config/index';
+import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 
 import {
@@ -63,6 +64,7 @@ export class TochkaOAuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(CryptoService) private readonly crypto: CryptoService,
   ) {}
 
   /**
@@ -331,10 +333,14 @@ export class TochkaOAuthService {
       obtainedAt: obtainedAt.toISOString(),
       userId: r.user_id,
     };
+    // audit Б5 (2026-05-29): шифруем секреты перед записью в БД. Дамп БД
+    // больше не выдаёт plain access/refresh-token. CryptoService использует
+    // AES-256-GCM (CRYPTO_MASTER_KEY ENV).
+    const encrypted = this.encryptTokens(stored);
     await this.prisma.billingProviderConfig.upsert({
       where: { key: TOCHKA_OAUTH_TOKENS_KEY },
-      update: { valueJson: stored as object },
-      create: { key: TOCHKA_OAUTH_TOKENS_KEY, valueJson: stored as object },
+      update: { valueJson: encrypted },
+      create: { key: TOCHKA_OAUTH_TOKENS_KEY, valueJson: encrypted },
     });
     return stored;
   }
@@ -343,7 +349,47 @@ export class TochkaOAuthService {
     const row = await this.prisma.billingProviderConfig.findUnique({
       where: { key: TOCHKA_OAUTH_TOKENS_KEY },
     });
-    return (row?.valueJson as unknown as StoredOauthTokens) ?? null;
+    if (!row) return null;
+    return this.decryptTokensFromStorage(row.valueJson);
+  }
+
+  /**
+   * audit Б5: формат хранения — `{ enc: 'gcm:v1:...' }` если зашифровано;
+   * либо raw-объект, если ещё не мигрирован (legacy fallback).
+   */
+  private encryptTokens(stored: StoredOauthTokens): { enc: string } {
+    const json = JSON.stringify(stored);
+    return { enc: this.crypto.encrypt(json) };
+  }
+
+  private decryptTokensFromStorage(raw: unknown): StoredOauthTokens | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj['enc'] === 'string') {
+      // Зашифрованный конверт.
+      try {
+        const json = this.crypto.decrypt(obj['enc'] as string);
+        return JSON.parse(json) as StoredOauthTokens;
+      } catch (err) {
+        this.logger.error(
+          `audit Б5: не удалось расшифровать tochka-oauth tokens: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return null;
+      }
+    }
+    // Legacy plain-формат — pre-Б5. Скрипт patch-encrypt-tochka-oauth.ts
+    // переведёт его на конверт. До этого мы продолжаем работать.
+    if (
+      typeof obj['accessToken'] === 'string' ||
+      typeof obj['refreshToken'] === 'string'
+    ) {
+      this.logger.warn(
+        'audit Б5: tochka-oauth tokens в plain-формате. ' +
+          'Запустите scripts/patch-encrypt-tochka-oauth.ts',
+      );
+      return obj as unknown as StoredOauthTokens;
+    }
+    return null;
   }
 
   private async getStoredState(): Promise<StoredOauthState | null> {

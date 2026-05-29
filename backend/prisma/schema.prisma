@@ -8564,6 +8564,12 @@ model BillingEventLog {
   processedAt     DateTime?
   createdAt       DateTime             @default(now())
 
+  /// audit Б7 (2026-05-29): атомарная защита от двойного обработки одного и
+  /// того же event (двойной инкремент totalPaidKopecks при параллельных
+  /// webhook-ретраях). Старый findFirst+create был TOCTOU — теперь unique
+  /// делает дедуп атомарным на уровне БД.
+  /// ВАЖНО: перед prisma:push на проде запустить patch-dedupe-billing-event-log.ts.
+  @@unique([providerName, externalEventId], name: "uniq_provider_event")
   @@index([eventType])
   @@index([externalEventId])
   @@index([tenantId])
@@ -8706,7 +8712,11 @@ model ReferralPayout {
   clientReferralLinkId String
   clientReferralLink   ClientReferralLink   @relation(fields: [clientReferralLinkId], references: [id], onDelete: Cascade)
 
-  triggerInvoiceId     String?
+  /// audit Б7 (2026-05-29): unique. На один Invoice — максимум один payout.
+  /// Защита от двойной выплаты (40 000 ₽ вместо 20 000 ₽) при параллельных
+  /// onInvoicePaid-обработчиках. ВАЖНО: перед prisma:push на проде запустить
+  /// patch-dedupe-referral-payout.ts.
+  triggerInvoiceId     String?              @unique
   triggerInvoice       Invoice?             @relation(fields: [triggerInvoiceId], references: [id], onDelete: SetNull)
 
   /// Месяц начисления — 'YYYY-MM' (для группировки в cron'е 10-го числа).

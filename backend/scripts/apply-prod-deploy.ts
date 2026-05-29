@@ -138,6 +138,10 @@ const STEPS: Step[] = [
   // 2026-05-29 — audit Б5: шифрование plain OAuth-токенов Точки в БД.
   // Требует CRYPTO_MASTER_KEY в ENV. Идемпотентен. ТЗ §Б5.
   { phase: 'patch', script: 'scripts/patch-encrypt-tochka-oauth.ts', hint: 'AES-256-GCM для tochka oauth tokens', skipBootstrap: true },
+  // 2026-05-29 — audit Б7: dedupe ДО добавления @@unique. Иначе prisma:push
+  // упадёт на существующих дублях. Идемпотентны. ТЗ §Б7.
+  { phase: 'patch', script: 'scripts/patch-dedupe-billing-event-log.ts', hint: 'dedupe BillingEventLog по (providerName,externalEventId)', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/patch-dedupe-referral-payout.ts', hint: 'dedupe ReferralPayout по triggerInvoiceId', skipBootstrap: true },
   // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
   // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
   // Идемпотентен. ТЗ §14 Фаза 1.4.

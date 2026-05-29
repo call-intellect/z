@@ -80,18 +80,11 @@ export class ReferralPayoutService {
       });
       if (!sub) return;
 
-      // Идемпотентность: payout с triggerInvoiceId уже есть → skip.
-      const existing = await this.prisma.referralPayout.findFirst({
-        where: { triggerInvoiceId: payload.invoiceId },
-        select: { id: true },
-      });
-      if (existing) {
-        this.logger.log(
-          `ReferralPayout для invoice=${payload.invoiceId} уже создан (id=${existing.id}) — skip`,
-        );
-        return;
-      }
-
+      // audit Б7 (2026-05-29): атомарную защиту от двойного payout даёт
+      // unique-индекс ReferralPayout.triggerInvoiceId. Здесь мы НЕ делаем
+      // findFirst+create (TOCTOU при параллельных onInvoicePaid-обработчиках).
+      // Если параллельный вызов уже создал payout — наш create поймает P2002,
+      // catch ниже превратит это в idempotent skip.
       let clientLink = sub.clientReferralLink;
 
       // Если линка ещё нет — пытаемся резолвить pending-атрибуцию Org.
@@ -126,19 +119,34 @@ export class ReferralPayoutService {
       }
 
       const periodMonth = this.formatPeriodMonth(payload.paidAt);
-      await this.prisma.referralPayout.create({
-        data: {
-          referralId: clientLink.referralId,
-          clientReferralLinkId: clientLink.id,
-          triggerInvoiceId: payload.invoiceId,
-          periodMonth,
-          amountKopecks: REFERRAL_COMMISSION_KOPECKS,
-          status: 'pending',
-        },
-      });
-      this.logger.log(
-        `ReferralPayout pending создан: ${REFERRAL_COMMISSION_KOPECKS}коп для referral=${clientLink.referralId} period=${periodMonth}`,
-      );
+      try {
+        await this.prisma.referralPayout.create({
+          data: {
+            referralId: clientLink.referralId,
+            clientReferralLinkId: clientLink.id,
+            triggerInvoiceId: payload.invoiceId,
+            periodMonth,
+            amountKopecks: REFERRAL_COMMISSION_KOPECKS,
+            status: 'pending',
+          },
+        });
+        this.logger.log(
+          `ReferralPayout pending создан: ${REFERRAL_COMMISSION_KOPECKS}коп для referral=${clientLink.referralId} period=${periodMonth}`,
+        );
+      } catch (createErr) {
+        // audit Б7: P2002 на triggerInvoiceId — параллельный вызов уже создал
+        // payout. Это нормально, не ошибка.
+        if (
+          createErr instanceof Prisma.PrismaClientKnownRequestError &&
+          createErr.code === 'P2002'
+        ) {
+          this.logger.log(
+            `ReferralPayout для invoice=${payload.invoiceId} уже существует (P2002) — skip (idempotent)`,
+          );
+          return;
+        }
+        throw createErr;
+      }
     } catch (err) {
       this.logger.error(
         `onInvoicePaid failed for invoice=${payload.invoiceId}: ${err instanceof Error ? err.message : String(err)}`,

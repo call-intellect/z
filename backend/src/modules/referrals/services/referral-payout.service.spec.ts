@@ -115,17 +115,27 @@ describe('ReferralPayoutService.onInvoicePaid', () => {
     expect(mocks.prisma.subscription.findUnique).not.toHaveBeenCalled();
   });
 
-  it('payout уже есть по triggerInvoiceId → no-op (идемпотентно)', async () => {
+  it('payout уже есть по triggerInvoiceId → P2002 на create → idempotent skip', async () => {
+    // audit Б7: дедуп идёт через unique-индекс и catch(P2002). findFirst
+    // больше не используется. Параллельный onInvoicePaid: первый создаёт
+    // запись, второй ловит P2002 и тихо завершается.
     mocks.prisma.subscription.findUnique.mockResolvedValueOnce({
       id: 'sub-1',
-      clientReferralLink: null,
+      clientReferralLink: {
+        id: 'link-1',
+        referralId: 'ref-1',
+        firstPaidAt: new Date('2026-04-01T00:00:00Z'),
+      },
     });
-    mocks.prisma.referralPayout.findFirst.mockResolvedValueOnce({ id: 'pay-existing' });
-
+    const { Prisma } = await import('@prisma/client');
+    mocks.prisma.referralPayout.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('unique', {
+        code: 'P2002',
+        clientVersion: 'x',
+      }),
+    );
     await svc.onInvoicePaid(basePayload());
-
-    expect(mocks.prisma.referralPayout.create).not.toHaveBeenCalled();
-    expect(mocks.prisma.clientReferralLink.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.referralPayout.create).toHaveBeenCalledTimes(1);
   });
 
   it('есть ClientReferralLink → создаёт payout 2 000 000', async () => {

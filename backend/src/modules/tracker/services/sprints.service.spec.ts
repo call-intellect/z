@@ -603,6 +603,12 @@ function buildQuickCreatePrismaStub(opts: {
       : (opts.txCycleCreate ?? (async () => ({ id: 'c-new' }))),
   );
 
+  // audit 2026-05-29: после quickCreate сервис выставляет
+  // Org.firstSprintCreatedAt через `prisma.org.updateMany(...).catch(...)`
+  // (fire-and-forget). Тестам это поведение не важно — но Prisma-стаб должен
+  // содержать `org.updateMany`, иначе падает с TypeError.
+  const orgUpdateMany = vi.fn(async () => ({ count: 1 }));
+
   return {
     prisma: {
       card: { findFirst: cardFindFirst },
@@ -610,6 +616,7 @@ function buildQuickCreatePrismaStub(opts: {
       person: { findFirst: personFindFirst },
       department: { findFirst: departmentFindFirst },
       project: { findFirst: projectFindFirstRoot },
+      org: { updateMany: orgUpdateMany },
       $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
         return cb({
           project: {

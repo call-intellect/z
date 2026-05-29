@@ -40,6 +40,41 @@ vi.mock('sonner', () => ({
   },
 }));
 
+// 2026-05-27 onboarding-v2 Block B: TourOverlay использует `useRouter`
+// из next/navigation для action-туров (router.push). В vitest-окружении
+// Next AppRouter не смонтирован → invariant. Мокаем минимальный stub.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+// 2026-05-29 onboarding-v2: TourCompletionModal использует `useAuth` для
+// получения currentOrgId. В тестах AuthProvider не оборачивает дерево —
+// мокаем минимальным stub'ом.
+vi.mock('@/contexts/auth-context', () => ({
+  useAuth: () => ({
+    currentOrgId: 'org-test',
+    user: null,
+    isLoading: false,
+  }),
+}));
+
+// onboardingApi.completeSetup вызывается из TourCompletionModal —
+// мокаем чтобы не было реальных fetch'ей.
+vi.mock('@/api/onboarding.api', () => ({
+  onboardingApi: {
+    completeSetup: vi.fn(async () => ({ ok: true })),
+  },
+}));
+
 import { tourProgressApi } from '@/api/users/tour-progress.api';
 
 function WelcomeTrigger() {
@@ -168,19 +203,21 @@ describe('TourProvider', () => {
       expect(screen.getByTestId('active')).toHaveTextContent('welcome:0'),
     );
 
-    // welcomeTour имеет 8 шагов. Жмём primaryAction внутри tooltip'а.
-    // Лейблы: шаг 0 — «Поехали», шаги 1..6 — «Дальше», шаг 7 — «Готово»
-    // (см. tours/welcome.ts).
-    const PRIMARY_LABELS = ['Поехали', 'Дальше', 'Дальше', 'Дальше', 'Дальше', 'Дальше', 'Дальше', 'Готово'];
-    for (let i = 1; i <= 7; i++) {
-      const label = PRIMARY_LABELS[i - 1];
-      await user.click(screen.getByText(label));
+    // 2026-05-29 onboarding-v2 Block B: welcome — 6 action-шагов; на каждом
+    // шаге secondary='Пропустить' (kind=next) двигает дальше; на последнем
+    // (i=5) secondary='Закончить' (kind=complete) → закрытие + PATCH.
+    // Жмём «Пропустить» в TooltipContext (внутри tooltip'а есть две кнопки
+    // «Пропустить»: tooltip secondary и наша TestControls — берём первую).
+    for (let i = 1; i <= 5; i++) {
+      const buttons = screen.getAllByRole('button', { name: 'Пропустить' });
+      // Первая «Пропустить» — внутри tooltip'а (TooltipContext secondaryAction).
+      await user.click(buttons[0]!);
       await waitFor(() =>
         expect(screen.getByTestId('active')).toHaveTextContent(`welcome:${i}`),
       );
     }
-    // Финальный шаг (i=7): primary = «Готово» (kind: complete) → закрытие + PATCH.
-    await user.click(screen.getByText('Готово'));
+    // Финальный шаг (i=5): secondary='Закончить' (kind: complete) → PATCH.
+    await user.click(screen.getByText('Закончить'));
     await waitFor(() =>
       expect(screen.getByTestId('active')).toHaveTextContent('none'),
     );
@@ -214,8 +251,11 @@ describe('TourProvider', () => {
       expect(screen.getByTestId('active')).toHaveTextContent('welcome:0'),
     );
 
-    // Жмём «Пропустить» внутри tooltip'а — это secondaryAction (skip).
-    await user.click(screen.getByText('Пропустить'));
+    // 2026-05-29 onboarding-v2 Block B: на новом welcome-туре «Пропустить» в
+    // tooltip'е — это secondaryAction kind='next' (двигает шаг), а skip()
+    // вызывается через ESC или явный API. В тесте — через TestControls
+    // (кнопка «skip» дёргает tour.skip() напрямую).
+    await user.click(screen.getByRole('button', { name: 'skip' }));
     await waitFor(() =>
       expect(screen.getByTestId('active')).toHaveTextContent('none'),
     );

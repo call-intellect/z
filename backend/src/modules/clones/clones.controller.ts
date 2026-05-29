@@ -57,7 +57,11 @@ import { ClonesService } from './services/clones.service';
 @Controller('api/v1/clones')
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class ClonesController {
-  constructor(@Inject(ClonesService) private readonly clones: ClonesService) {}
+  constructor(
+    @Inject(ClonesService) private readonly clones: ClonesService,
+    // audit В17 (2026-05-29): для requestAccess (in-app сигнал admin'ам).
+    @Inject(ClonesAdminService) private readonly admin: ClonesAdminService,
+  ) {}
 
   // ─────── Clones=Roles Ф4 — list + history (новые ролевые эндпоинты) ───────
 
@@ -199,6 +203,46 @@ export class ClonesController {
       roleId,
       question: body.question,
       conversationId: body.conversationId,
+    });
+  }
+
+  // ──────── audit В17 (2026-05-29) — request access (in-app сигнал admin'ам) ────────
+
+  @Post('roles/:roleId/access-grants/request')
+  @ApiOperation({
+    summary:
+      'audit В17: член Org запрашивает доступ к клону роли. Уведомляет всех admin/owner через conversational notification (eventType=clone.access_requested). Возвращает {ok:false, reason:"already_granted"} если у юзера уже есть активный grant.',
+  })
+  async requestRoleAccess(
+    @Param('roleId') roleId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const t = this.requireTenant(tenantId);
+    return this.admin.requestAccess({
+      tenantId: t,
+      requesterUserId: user.id,
+      cloneType: 'role',
+      cloneRefId: roleId,
+    });
+  }
+
+  @Post('persons/:personId/access-grants/request')
+  @ApiOperation({
+    summary:
+      'audit В17: член Org запрашивает доступ к клону конкретного сотрудника. См. requestRoleAccess.',
+  })
+  async requestPersonAccess(
+    @Param('personId') personId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const t = this.requireTenant(tenantId);
+    return this.admin.requestAccess({
+      tenantId: t,
+      requesterUserId: user.id,
+      cloneType: 'person',
+      cloneRefId: personId,
     });
   }
 

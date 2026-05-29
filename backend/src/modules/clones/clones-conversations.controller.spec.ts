@@ -67,7 +67,10 @@ function buildController(opts: {
     ),
     ...opts.serviceImpl,
   } as unknown as ClonesService;
-  const ctrl = new ClonesController(svc);
+  // audit В17: ClonesController теперь требует ClonesAdminService для
+  // requestAccess. В тестах этого spec'а он не используется — заглушка.
+  const admin = {} as unknown as import('./services/clones-admin.service').ClonesAdminService;
+  const ctrl = new ClonesController(svc, admin);
   return { ctrl, svc };
 }
 

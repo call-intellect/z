@@ -342,8 +342,11 @@ export const clonesApi = {
 
   /**
    * Запросить доступ к клону у админа (in-app сигнал).
-   * Backend endpoint — опциональный (Задача 4 §2.6). Если ещё не задеплоен —
-   * вернётся 404 / `not_found`, UI трактует как «функция временно недоступна».
+   * audit В17 (2026-05-29) — backend endpoint реализован.
+   * Возможные reason'ы при ok=false:
+   *   - `already_granted` — у юзера уже есть активный grant на этот клон.
+   *   - `no_admins` — в Org нет owner/admin (deg-кейс).
+   *   - `role_not_found` / `person_not_found` — cloneRefId не существует.
    */
   requestAccess: (
     orgId: string,

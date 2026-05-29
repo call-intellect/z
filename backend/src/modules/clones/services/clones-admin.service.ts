@@ -191,6 +191,99 @@ export class ClonesAdminService {
     return this.enrichOne(created);
   }
 
+  /**
+   * audit В17 (2026-05-29) — member запрашивает доступ к клону.
+   *
+   * Сценарий: на маркетплейсе клонов member видит карточку, к которой у него
+   * нет grant'а, и нажимает «Запросить доступ». Мы:
+   *   1. Проверяем cloneRef существует в тенанте + не soft-удалён.
+   *   2. Проверяем что у requester'а нет уже активного гранта (тогда запрос
+   *      не имеет смысла) — возвращаем `ok:false, reason:'already_granted'`.
+   *   3. Идемпотентно отсылаем notification всем admin/owner Org с
+   *      eventType='clone.access_requested'. Дедуп — на уровне канала:
+   *      если member нажал кнопку 5 раз за 10 секунд, повторное in-app
+   *      сообщение каналу заглушится (см. NotificationDedupService).
+   *
+   * Эндпоинт намеренно лёгкий: НЕ создаёт CloneAccessRequest-сущность
+   * (отдельная очередь запросов появится с UI «Запросы на доступ» —
+   * см. plan С25 во второй фазе фикса аудита). Сейчас это сигнал
+   * для admin'ов через ту же conversational notification систему.
+   */
+  async requestAccess(args: {
+    tenantId: string;
+    requesterUserId: string;
+    cloneType: 'person' | 'role';
+    cloneRefId: string;
+  }): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const { tenantId, requesterUserId, cloneType, cloneRefId } = args;
+
+    // 1. Существование cloneRef.
+    await this.assertCloneRefExists(tenantId, cloneType, cloneRefId);
+
+    // 2. У requester'а уже активный grant?
+    const existing = await this.prisma.cloneAccessGrant.findUnique({
+      where: {
+        tenantId_grantedToUserId_cloneType_cloneRefId: {
+          tenantId,
+          grantedToUserId: requesterUserId,
+          cloneType,
+          cloneRefId,
+        },
+      },
+    });
+    if (existing && existing.revokedAt === null) {
+      return { ok: false, reason: 'already_granted' };
+    }
+
+    // 3. Найти admin/owner получателей.
+    const adminMemberships = await this.prisma.membership.findMany({
+      where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
+      select: { userId: true },
+    });
+    if (adminMemberships.length === 0) {
+      this.logger.warn(
+        { tenantId, cloneType, cloneRefId, requesterUserId },
+        'requestAccess: в тенанте нет admin/owner — некому отправить notification',
+      );
+      return { ok: false, reason: 'no_admins' };
+    }
+
+    // 4. Параллельные notification'ы (best-effort: фейл одного канала не
+    // блокирует остальных).
+    const [cloneLabel, requester] = await Promise.all([
+      this.resolveCloneLabel(tenantId, cloneType, cloneRefId),
+      this.prisma.user.findUnique({
+        where: { id: requesterUserId },
+        select: { name: true, email: true },
+      }),
+    ]);
+    const requestedAt = new Date().toISOString();
+    await Promise.allSettled(
+      adminMemberships.map((m) =>
+        this.conversational.sendNotification({
+          tenantId,
+          recipientUserId: m.userId,
+          eventType: 'clone.access_requested',
+          payload: {
+            schemaVersion: 1,
+            body: {
+              cloneType,
+              cloneRefId,
+              cloneLabel: cloneLabel ?? cloneRefId,
+              requesterUserId,
+              requesterName: requester?.name ?? '',
+              requesterEmail: requester?.email ?? '',
+              requestedAt,
+            },
+          },
+          dataClass: 'internal',
+        }),
+      ),
+    );
+
+    return { ok: true };
+  }
+
   // ─────────────────────────── REVOKE ───────────────────────────
 
   async revokeAccessGrant(args: {

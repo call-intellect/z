@@ -98,10 +98,14 @@ function build(opts: BuildOpts = {}): {
     buildGrant(),
   );
 
+  // audit В15 (2026-05-29): re-grant теперь через UPDATE существующей row,
+  // а не DELETE+CREATE. Mock'у нужен .update.
+  const updateMock = vi.fn(async () => opts.updatedGrant ?? buildGrant());
   const txClient = {
     cloneAccessGrant: {
       create: createMock,
       delete: deleteMock,
+      update: updateMock,
     },
   };
 
@@ -269,18 +273,19 @@ describe('ClonesAdminService.createAccessGrant', () => {
     expect(ctx.sendNotification).not.toHaveBeenCalled();
   });
 
-  it('re-grant поверх revoked: удаляет старую revoked-запись + создаёт новую', async () => {
+  it('audit В15: re-grant поверх revoked — UPDATE существующей row (id стабилен), без DELETE+CREATE', async () => {
     const revoked = buildGrant({
       id: 'grant-revoked',
       revokedAt: new Date('2026-05-25T00:00:00.000Z'),
       revokedBy: 'admin-x',
     });
-    const created = buildGrant({ id: 'grant-fresh' });
+    // updatedGrant — то, что возвращает tx.update; id сохраняется.
+    const updated = buildGrant({ id: 'grant-revoked', revokedAt: null });
     const { svc, ctx } = build({
       membership: { id: 'm1' },
       role: { id: 'role-1' },
       existingGrant: revoked,
-      createdGrant: created,
+      updatedGrant: updated,
     });
 
     const dto = await svc.createAccessGrant({
@@ -294,9 +299,9 @@ describe('ClonesAdminService.createAccessGrant', () => {
       },
     });
 
-    expect(dto.id).toBe('grant-fresh');
+    expect(dto.id).toBe('grant-revoked');
     expect(ctx.prisma.$transaction).toHaveBeenCalledOnce();
-    // sendNotification — да, это новый grant.
+    // sendNotification — да, это считается новым выданным доступом.
     expect(ctx.sendNotification).toHaveBeenCalledOnce();
   });
 

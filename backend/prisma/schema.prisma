@@ -2346,8 +2346,9 @@ model CloneAccessGrant {
   grantedAt       DateTime  @default(now())
 
   /// ТЗ 2026-05-26 — soft-revoke. Запись не удаляется, чтобы остался audit-trail.
-  /// При повторной выдаче этому же пользователю на этот же клон старая revoked-запись
-  /// физически удаляется в транзакции create, чтобы не падать на unique-индексе.
+  /// audit В15 (2026-05-29): при re-grant та же row UPDATE'ом «воскрешается»
+  /// (revokedAt=null, revokedBy=null, grantedById/At=новые). id гранта
+  /// остаётся стабильным — это важно для логов CloneAccessAudit и внешних ссылок.
   revokedAt DateTime?
   revokedBy String?
 

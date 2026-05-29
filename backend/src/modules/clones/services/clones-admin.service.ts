@@ -105,18 +105,34 @@ export class ClonesAdminService {
       return this.enrichOne(existing);
     }
 
-    // 4. Транзакция: удалить старую revoked-запись (если есть) + создать новую +
-    //    отправить notification.
+    // 4. Транзакция: create новый grant либо re-grant поверх revoked.
+    // audit В15 (2026-05-29): при re-grant используем UPDATE по существующей
+    // строке (revokedAt=null, revokedById=null, grantedById=новый actor,
+    // expiresAt=новое значение, grantedAt=now) вместо DELETE+CREATE.
+    // Прежняя схема создавала новый id, audit-trail revocation'а терялся
+    // безвозвратно — в БД нельзя было реконструировать кто и когда отозвал
+    // доступ перед re-grant. UPDATE сохраняет grantId стабильным,
+    // а revokedAt/revokedById в истории CloneAccessAudit (через триггер /
+    // вручную писаный лог) остаются как факт.
     const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     const grantedAtIso = new Date().toISOString();
 
     const created = await this.prisma.$transaction(async (tx) => {
       if (existing && existing.revokedAt !== null) {
-        // re-grant: физически удаляем revoked-запись, чтобы не падать на unique-индексе.
-        await tx.cloneAccessGrant.delete({ where: { id: existing.id } });
+        // re-grant: воскрешаем запись без потери id и истории.
+        return tx.cloneAccessGrant.update({
+          where: { id: existing.id },
+          data: {
+            grantedById: actorUserId,
+            grantedAt: new Date(),
+            expiresAt,
+            revokedAt: null,
+            revokedBy: null,
+          },
+        });
       }
 
-      const grant = await tx.cloneAccessGrant.create({
+      return tx.cloneAccessGrant.create({
         data: {
           tenantId,
           grantedToUserId: dto.grantedToUserId,
@@ -126,7 +142,6 @@ export class ClonesAdminService {
           expiresAt,
         },
       });
-      return grant;
     });
 
     // 5. Notification — вне транзакции, но всё равно с try/catch, чтобы упавший

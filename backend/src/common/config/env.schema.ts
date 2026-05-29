@@ -106,6 +106,19 @@ const AnthropicSchema = z.object({
   ANTHROPIC_PROXY_URL: z.string().url().default('https://proxy.agent-lia.ru'),
 });
 
+/**
+ * audit С30 (2026-05-29): глобальные настройки `LlmRouterService`.
+ * Не отдельный провайдер — только cross-cutting параметры роутера.
+ */
+const LlmRouterSchema = z.object({
+  /** Hard-timeout на один dispatch к LLM-провайдеру (Promise.race). */
+  LLM_ROUTER_DISPATCH_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30_000),
+});
+
 const VoxSchema = z.object({
   VOX_API_URL: z.string().url().default('https://vox.agent-lia.ru'),
   VOX_API_TOKEN: z.string().min(1),
@@ -1614,6 +1627,7 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   .merge(TurnSchema)
   .merge(S3Schema)
   .merge(AnthropicSchema)
+  .merge(LlmRouterSchema)
   .merge(VoxSchema)
   .merge(OpenAiSchema)
   .merge(DeepSeekSchema)

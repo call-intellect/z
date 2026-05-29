@@ -781,6 +781,14 @@ export class LlmRouterService implements OnModuleInit {
   private allRoutes: LlmTaskRoute[] = [];
   private priceCache = new Map<string, PriceCacheEntry>();
 
+  /**
+   * audit С30 (2026-05-29): timeout на один dispatch к провайдеру в ms.
+   * Из ENV LLM_ROUTER_DISPATCH_TIMEOUT_MS, default 30000.
+   */
+  private get dispatchTimeoutMs(): number {
+    return this.cfg?.llmRouter?.dispatchTimeoutMs ?? 30_000;
+  }
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AnthropicService) private readonly anthropic: AnthropicService,
@@ -991,7 +999,26 @@ export class LlmRouterService implements OnModuleInit {
         ? null
         : `${lastFailTier ?? 'primary'}_${classifyError(errors[errors.length - 1]?.message ?? 'error')}`;
       try {
-        const out = await this.dispatch(entry, params);
+        // audit С30 (2026-05-29): hard-timeout. Если провайдер «висит»
+        // дольше 30 секунд — мы не должны блокировать весь fallback-цикл.
+        // Без race зависший primary не давал шанса secondary даже отработать.
+        // 30s — компромисс: дольше большинства LLM-ответов, но короче 60s
+        // default'а Node fetch. Конфигурируется через ENV
+        // LLM_ROUTER_DISPATCH_TIMEOUT_MS.
+        const out = await Promise.race([
+          this.dispatch(entry, params),
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `LLM dispatch timeout: ${entry.provider}/${entry.model} > ${this.dispatchTimeoutMs}ms`,
+                  ),
+                ),
+              this.dispatchTimeoutMs,
+            ),
+          ),
+        ]);
         const durationMs = Date.now() - startedAt;
         this.metrics?.incLlmRouterDispatch({
           taskType: params.taskType,

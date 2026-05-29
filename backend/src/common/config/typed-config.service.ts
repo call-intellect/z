@@ -215,6 +215,18 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── llm router ─────────────────────────
+  /**
+   * audit С30 (2026-05-29): глобальные настройки `LlmRouterService`
+   * (cross-cutting, не привязаны к конкретному LLM-провайдеру).
+   */
+  get llmRouter() {
+    return {
+      /** Hard-timeout на один dispatch к провайдеру в ms. */
+      dispatchTimeoutMs: this.get('LLM_ROUTER_DISPATCH_TIMEOUT_MS'),
+    } as const;
+  }
+
   // ─────────────────────────── ai ─────────────────────────────────
   get ai() {
     return {

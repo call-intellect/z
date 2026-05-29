@@ -347,11 +347,13 @@ export class BillingService {
       return { ok: false, reason: 'invalid_signature' };
     }
 
-    // 3. Дедуп + лог.
+    // 3. Дедуп + лог. audit Б4 — передаём jti для атомарной защиты
+    // от replay (BillingEventLog.jti @unique → P2002 → duplicate=true).
     const { duplicate } = await this.eventLog.log({
       eventType: BillingEventType.PROVIDER_WEBHOOK,
       providerName: this.provider.providerName === 'tochka' ? 'tochka' : 'manual',
       externalEventId: event.eventId,
+      jti: event.jti ?? null,
       payload: event.rawPayload as never,
     });
     if (duplicate) {

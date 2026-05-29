@@ -13,6 +13,7 @@ import { generateKeyPairSync, type KeyObject } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { TypedConfigService } from '../../../../common/config/index';
 
 import { TochkaWebhookVerifierService } from './tochka-webhook-verifier.service';
@@ -27,11 +28,21 @@ function makeCfg(): TypedConfigService {
   } as unknown as TypedConfigService;
 }
 
+function makeMetrics(): BusinessMetricsService & {
+  incTochkaWebhookReplay: ReturnType<typeof vi.fn>;
+} {
+  return {
+    incTochkaWebhookReplay: vi.fn(),
+  } as unknown as BusinessMetricsService & {
+    incTochkaWebhookReplay: ReturnType<typeof vi.fn>;
+  };
+}
+
 describe('TochkaWebhookVerifierService.extractToken / parseWebhookEvent', () => {
   let svc: TochkaWebhookVerifierService;
 
   beforeEach(() => {
-    svc = new TochkaWebhookVerifierService(makeCfg());
+    svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
   });
 
   function payloadBase64(payload: Record<string, unknown>): string {
@@ -127,11 +138,16 @@ describe('TochkaWebhookVerifierService.verify', () => {
     publicKey = keypair.publicKey;
   });
 
-  it('valid signature → true', async () => {
-    const svc = new TochkaWebhookVerifierService(makeCfg());
-    // Подменяем загрузку ключа.
+  /** Подсунуть готовый ключ + взвести «свежесть» кэша, чтобы не было fetch. */
+  function injectKey(svc: TochkaWebhookVerifierService): void {
     (svc as unknown as { publicKeyPromise: Promise<KeyObject> }).publicKeyPromise =
       Promise.resolve(publicKey);
+    (svc as unknown as { publicKeyFetchedAt: number }).publicKeyFetchedAt = Date.now();
+  }
+
+  it('valid signature → true', async () => {
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
+    injectKey(svc);
 
     const token = jwt.sign(
       { webhookType: 't', operationId: 'op', status: 'APPROVED' },
@@ -144,9 +160,8 @@ describe('TochkaWebhookVerifierService.verify', () => {
   });
 
   it('invalid signature → false (не throw)', async () => {
-    const svc = new TochkaWebhookVerifierService(makeCfg());
-    (svc as unknown as { publicKeyPromise: Promise<KeyObject> }).publicKeyPromise =
-      Promise.resolve(publicKey);
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
+    injectKey(svc);
 
     // Подписан другим ключом — RS256 не пройдёт verify.
     const anotherKeypair = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -161,16 +176,15 @@ describe('TochkaWebhookVerifierService.verify', () => {
   });
 
   it('not a JWT → false', async () => {
-    const svc = new TochkaWebhookVerifierService(makeCfg());
-    (svc as unknown as { publicKeyPromise: Promise<KeyObject> }).publicKeyPromise =
-      Promise.resolve(publicKey);
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
+    injectKey(svc);
 
     const result = await svc.verify({}, 'not-a-jwt');
     expect(result).toBe(false);
   });
 
   it('fetch JWK failed → false (graceful)', async () => {
-    const svc = new TochkaWebhookVerifierService(makeCfg());
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response('error', { status: 500 })),
@@ -179,5 +193,73 @@ describe('TochkaWebhookVerifierService.verify', () => {
     const result = await svc.verify({}, 'header.body.sig');
     expect(result).toBe(false);
     vi.unstubAllGlobals();
+  });
+
+  // audit Б4 (2026-05-29) — защита от replay через JWT-claims.
+  it('expired (iat старше 5 минут) → false + метрика reason=expired', async () => {
+    const metrics = makeMetrics();
+    const svc = new TochkaWebhookVerifierService(makeCfg(), metrics);
+    injectKey(svc);
+
+    // iat 10 минут назад → maxAge '5m' отсечёт. Передаём iat через
+    // payload + mutatePayload=true (по докам jsonwebtoken 9.x так
+    // payload-iat сохраняется в результирующем JWT).
+    const tenMinAgoSec = Math.floor(Date.now() / 1000) - 10 * 60;
+    // jsonwebtoken: чтобы iat из payload не был перетёрт, передаём
+    // mutatePayload=true. noTimestamp удалит наш iat — НЕ ставим.
+    const manualToken = jwt.sign(
+      {
+        webhookType: 't',
+        operationId: 'op',
+        status: 'APPROVED',
+        iat: tenMinAgoSec,
+      },
+      privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      { algorithm: 'RS256', mutatePayload: true } as jwt.SignOptions,
+    );
+
+    const result = await svc.verify({}, manualToken);
+    expect(result).toBe(false);
+    expect(metrics.incTochkaWebhookReplay).toHaveBeenCalledWith({ reason: 'expired' });
+  });
+
+  it('valid с iat в пределах 5 минут → true', async () => {
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
+    injectKey(svc);
+
+    const token = jwt.sign(
+      { webhookType: 't', operationId: 'op', status: 'APPROVED' },
+      privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      { algorithm: 'RS256' /* iat выставится автоматически */ },
+    );
+
+    expect(await svc.verify({}, token)).toBe(true);
+  });
+
+  it('parseWebhookEvent выставляет jti из JWT', () => {
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
+    const token = jwt.sign(
+      {
+        webhookType: 't',
+        operationId: 'op',
+        status: 'APPROVED',
+        jti: 'jti-12345',
+      },
+      privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      { algorithm: 'RS256' },
+    );
+    const event = svc.parseWebhookEvent({}, token);
+    expect(event.jti).toBe('jti-12345');
+  });
+
+  it('parseWebhookEvent: jti=null если в JWT нет jti', () => {
+    const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
+    const token = jwt.sign(
+      { webhookType: 't', operationId: 'op', status: 'APPROVED' },
+      privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      { algorithm: 'RS256' },
+    );
+    const event = svc.parseWebhookEvent({}, token);
+    expect(event.jti).toBeNull();
   });
 });

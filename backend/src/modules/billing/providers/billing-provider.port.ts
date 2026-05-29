@@ -138,6 +138,11 @@ export interface WebhookEvent {
   amountKopecks?: number;
   currency?: string;
   paidAt?: Date;
+  /**
+   * audit Б4 (2026-05-29): JWT-jti для replay-защиты на уровне БД.
+   * null если провайдер не положил jti в payload (legacy fallback).
+   */
+  jti?: string | null;
   rawPayload: Record<string, unknown>;
 }
 

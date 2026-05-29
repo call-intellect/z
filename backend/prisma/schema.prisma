@@ -8554,6 +8554,10 @@ model BillingEventLog {
   eventType       String
   providerName    BillingProviderName?
   externalEventId String?
+  /// audit Б4 (2026-05-29): JWT-jti для webhook'а Точки. Защита от replay.
+  /// Уникальный — повторный INSERT с тем же jti кидает P2002 → controller
+  /// отвечает 409 без обработки события.
+  jti             String?              @unique
   payload         Json
   /// 'received' | 'processed' | 'failed'.
   status          String               @default("received")

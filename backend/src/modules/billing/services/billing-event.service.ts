@@ -30,6 +30,13 @@ export interface LogEventInput {
   providerName?: BillingProviderName | null;
   /** Сформированный из payload идентификатор для дедупа (см. парс webhook). */
   externalEventId?: string | null;
+  /**
+   * audit Б4 (2026-05-29): JWT-jti webhook'а от Точки. Уникальный в БД —
+   * повторный insert с тем же jti приводит к P2002, который мы ловим и
+   * возвращаем `duplicate=true`. Атомарная защита от race-condition,
+   * которой нет у findFirst+create.
+   */
+  jti?: string | null;
   payload: Prisma.InputJsonValue;
   /** Сразу пометить событие как processed. По умолчанию 'received'. */
   markProcessed?: boolean;
@@ -52,37 +59,55 @@ export class BillingEventService {
   ): Promise<{ event: BillingEventLog; duplicate: boolean }> {
     const runner = input.tx ?? this.prisma;
 
-    if (input.externalEventId) {
-      const existing = await runner.billingEventLog.findFirst({
-        where: {
-          externalEventId: input.externalEventId,
-          providerName: input.providerName ?? undefined,
+    // audit Б4: атомарный путь — пытаемся CREATE сразу. P2002 на jti
+    // (или на externalEventId, когда добавим unique в Б7) → duplicate=true.
+    // Это убирает TOCTOU между findFirst + create при параллельных webhook'ах.
+    try {
+      const event = await runner.billingEventLog.create({
+        data: {
+          eventType: input.eventType,
+          tenantId: input.tenantId ?? null,
+          subscriptionId: input.subscriptionId ?? null,
+          invoiceId: input.invoiceId ?? null,
+          providerName: input.providerName ?? null,
+          externalEventId: input.externalEventId ?? null,
+          jti: input.jti ?? null,
+          payload: input.payload,
+          status: input.markProcessed ? 'processed' : 'received',
+          processedAt: input.markProcessed ? new Date() : null,
         },
-        orderBy: { createdAt: 'desc' },
       });
-      if (existing) {
-        this.logger.log(
-          `Webhook ${input.externalEventId} уже обработан (eventLog=${existing.id}) — skip`,
-        );
-        return { event: existing, duplicate: true };
+      return { event, duplicate: false };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        // unique-конфликт (jti). Достаём существующую запись и возвращаем
+        // duplicate=true, чтобы caller отработал idempotent.
+        const lookup = input.jti
+          ? { jti: input.jti }
+          : input.externalEventId
+            ? {
+                externalEventId: input.externalEventId,
+                providerName: input.providerName ?? undefined,
+              }
+            : null;
+        if (lookup) {
+          const existing = await runner.billingEventLog.findFirst({
+            where: lookup,
+            orderBy: { createdAt: 'desc' },
+          });
+          if (existing) {
+            this.logger.warn(
+              `Webhook duplicate detected (jti=${input.jti ?? '-'}, externalEventId=${input.externalEventId ?? '-'}) — skip`,
+            );
+            return { event: existing, duplicate: true };
+          }
+        }
       }
+      throw err;
     }
-
-    const event = await runner.billingEventLog.create({
-      data: {
-        eventType: input.eventType,
-        tenantId: input.tenantId ?? null,
-        subscriptionId: input.subscriptionId ?? null,
-        invoiceId: input.invoiceId ?? null,
-        providerName: input.providerName ?? null,
-        externalEventId: input.externalEventId ?? null,
-        payload: input.payload,
-        status: input.markProcessed ? 'processed' : 'received',
-        processedAt: input.markProcessed ? new Date() : null,
-      },
-    });
-
-    return { event, duplicate: false };
   }
 
   /** Помечает событие как processed (для двухфазных обработчиков). */

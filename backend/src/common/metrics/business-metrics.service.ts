@@ -243,6 +243,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // audit Б2 (2026-05-29) — глобальный MustChangePasswordGuard заблокировал
   // запрос пользователя с mustChangePassword=true вне whitelist'а.
   private mustChangePasswordBlockTotal!: Counter<'path'>;
+  // audit Б4 (2026-05-29) — webhook от Точки отвергнут на этапе verify.
+  // reason ∈ expired | not_before | signature | missing_iat | other.
+  private tochkaWebhookReplayTotal!: Counter<'reason'>;
 
   // ── max bot channel (SBA β-1) ─────────────────────────────────────
   private maxBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
@@ -1350,6 +1353,13 @@ export class BusinessMetricsService implements OnModuleInit {
         'пользователя с mustChangePassword=true вне whitelist. ' +
         'Размечается по path (для группировки в Grafana).',
       labelNames: ['path'] as const,
+    });
+    this.tochkaWebhookReplayTotal = this.getOrCreateCounter({
+      name: 'tochka_webhook_replay_total',
+      help:
+        'audit Б4 — webhook от Точки отвергнут на этапе verify (replay/' +
+        'expired/signature). reason = expired|not_before|signature|missing_iat|other.',
+      labelNames: ['reason'] as const,
     });
 
     // ── max bot (SBA β-1) ──────────────────────────────────────────
@@ -3506,6 +3516,12 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incMustChangePasswordBlock(args: { path: string }): void {
     this.mustChangePasswordBlockTotal.inc({ path: args.path });
+  }
+
+  incTochkaWebhookReplay(args: {
+    reason: 'expired' | 'not_before' | 'signature' | 'missing_iat' | 'other';
+  }): void {
+    this.tochkaWebhookReplayTotal.inc({ reason: args.reason });
   }
 
   incMagicLinkConsume(args: {

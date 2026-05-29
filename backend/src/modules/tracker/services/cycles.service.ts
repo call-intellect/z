@@ -152,57 +152,82 @@ export class CyclesService {
       // Идемпотентно: уже завершён.
       return { cycleId: id, movedIssueCount: 0, rolledOverTo: null };
     }
-    // Найдём следующий цикл этого проекта (по startDate > current.startDate).
-    const nextCycle = await this.prisma.cycle.findFirst({
-      where: {
-        projectId: cycle.projectId,
-        tenantId,
-        startDate: { gt: cycle.startDate },
-        completedAt: null,
-      },
-      orderBy: [{ startDate: 'asc' }],
-    });
-    const rolledOverTo = nextCycle?.id ?? null;
 
-    const movedIssueCount = await this.prisma.$transaction(async (tx) => {
-      const incompleteIssues = await tx.issue.findMany({
-        where: {
-          cycleId: id,
-          tenantId,
-          deletedAt: null,
-          OR: [
-            { state: null },
-            { state: { category: { notIn: ['completed', 'cancelled'] } } },
-          ],
-        },
-        select: { id: true },
-      });
-      if (incompleteIssues.length > 0 && rolledOverTo) {
-        await tx.issue.updateMany({
-          where: { id: { in: incompleteIssues.map((i) => i.id) } },
-          data: { cycleId: rolledOverTo },
+    // audit С18 (2026-05-29): идемпотентность под advisory lock. Без него
+    // два параллельных complete() могут оба пройти check `if (completedAt)`
+    // и оба перенесут incomplete issues — дубли activity-записей + race на
+    // выборе nextCycle. Lock сериализует complete для конкретного cycleId.
+    const { movedIssueCount, rolledOverTo } = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(
+          `SELECT pg_advisory_xact_lock(hashtext($1))`,
+          `cycle-complete:${id}`,
+        );
+        // Re-check внутри tx (под локом) — могла произойти параллельная гонка.
+        const fresh = await tx.cycle.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            projectId: true,
+            startDate: true,
+            completedAt: true,
+          },
         });
-        for (const i of incompleteIssues) {
-          await this.activity.record({
-            tenantId,
-            issueId: i.id,
-            actorUserId: userId,
-            actorType: 'user',
-            verb: 'moved_from_cycle',
-            field: 'cycleId',
-            oldValue: id,
-            newValue: rolledOverTo,
-            metadata: { reason: 'cycle_completed_autorollover' },
-            tx,
-          });
+        if (!fresh || fresh.completedAt) {
+          return { movedIssueCount: 0, rolledOverTo: null };
         }
-      }
-      await tx.cycle.update({
-        where: { id },
-        data: { completedAt: new Date() },
-      });
-      return rolledOverTo ? incompleteIssues.length : 0;
-    });
+        const nextCycle = await tx.cycle.findFirst({
+          where: {
+            projectId: fresh.projectId,
+            tenantId,
+            startDate: { gt: fresh.startDate },
+            completedAt: null,
+          },
+          orderBy: [{ startDate: 'asc' }],
+        });
+        const rolledOverTo = nextCycle?.id ?? null;
+        const incompleteIssues = await tx.issue.findMany({
+          where: {
+            cycleId: id,
+            tenantId,
+            deletedAt: null,
+            OR: [
+              { state: null },
+              { state: { category: { notIn: ['completed', 'cancelled'] } } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (incompleteIssues.length > 0 && rolledOverTo) {
+          await tx.issue.updateMany({
+            where: { id: { in: incompleteIssues.map((i) => i.id) } },
+            data: { cycleId: rolledOverTo },
+          });
+          for (const i of incompleteIssues) {
+            await this.activity.record({
+              tenantId,
+              issueId: i.id,
+              actorUserId: userId,
+              actorType: 'user',
+              verb: 'moved_from_cycle',
+              field: 'cycleId',
+              oldValue: id,
+              newValue: rolledOverTo,
+              metadata: { reason: 'cycle_completed_autorollover' },
+              tx,
+            });
+          }
+        }
+        await tx.cycle.update({
+          where: { id },
+          data: { completedAt: new Date() },
+        });
+        return {
+          movedIssueCount: rolledOverTo ? incompleteIssues.length : 0,
+          rolledOverTo,
+        };
+      },
+    );
 
     // Перечитать чтобы взять свежий completedAt + progressSnapshot.
     const updated = await this.prisma.cycle.findUnique({ where: { id } });

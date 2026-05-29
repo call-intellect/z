@@ -6,15 +6,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { seedChatNotifications } from '../../../scripts/demo-data/chat-notifications';
-import { seedGoalsClones } from '../../../scripts/demo-data/goals-clones';
-import { seedKnowledgeGraph } from '../../../scripts/demo-data/knowledge-graph';
-import { seedMeetings } from '../../../scripts/demo-data/meetings';
-import { seedOperations } from '../../../scripts/demo-data/operations';
-import { seedOrgStructure } from '../../../scripts/demo-data/org-structure';
-import { seedPolish } from '../../../scripts/demo-data/polish';
-import { seedTracker } from '../../../scripts/demo-data/tracker';
-import { createEmptyIdMap, type SeedContext } from '../../../scripts/demo-data/types';
+import { seedChatNotifications } from './demo-data/chat-notifications';
+import { seedGoalsClones } from './demo-data/goals-clones';
+import { seedKnowledgeGraph } from './demo-data/knowledge-graph';
+import { seedMeetings } from './demo-data/meetings';
+import { seedOperations } from './demo-data/operations';
+import { seedOrgStructure } from './demo-data/org-structure';
+import { seedPolish } from './demo-data/polish';
+import { seedTracker } from './demo-data/tracker';
+import { createEmptyIdMap, type SeedContext } from './demo-data/types';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';

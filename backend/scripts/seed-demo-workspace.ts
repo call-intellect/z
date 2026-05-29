@@ -10,17 +10,17 @@
  */
 import { createPrismaClient } from './_lib/prisma';
 import type { PrismaClient } from '@prisma/client';
-import { createEmptyIdMap, type IdMap, type SeedContext } from './demo-data/types';
+import { createEmptyIdMap, type IdMap, type SeedContext } from '../src/modules/onboarding/demo-data/types';
 
 // Модули данных
-import { seedOrgStructure } from './demo-data/org-structure';
-import { seedTracker } from './demo-data/tracker';
-import { seedMeetings } from './demo-data/meetings';
-import { seedKnowledgeGraph } from './demo-data/knowledge-graph';
-import { seedGoalsClones } from './demo-data/goals-clones';
-import { seedOperations } from './demo-data/operations';
-import { seedChatNotifications } from './demo-data/chat-notifications';
-import { seedPolish } from './demo-data/polish';
+import { seedOrgStructure } from '../src/modules/onboarding/demo-data/org-structure';
+import { seedTracker } from '../src/modules/onboarding/demo-data/tracker';
+import { seedMeetings } from '../src/modules/onboarding/demo-data/meetings';
+import { seedKnowledgeGraph } from '../src/modules/onboarding/demo-data/knowledge-graph';
+import { seedGoalsClones } from '../src/modules/onboarding/demo-data/goals-clones';
+import { seedOperations } from '../src/modules/onboarding/demo-data/operations';
+import { seedChatNotifications } from '../src/modules/onboarding/demo-data/chat-notifications';
+import { seedPolish } from '../src/modules/onboarding/demo-data/polish';
 
 function getArg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);

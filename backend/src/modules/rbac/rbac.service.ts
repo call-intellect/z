@@ -405,6 +405,18 @@ export class RbacService implements OnModuleInit {
     allowed: boolean;
     relation: 'owner_admin' | 'self' | 'manager' | 'grant' | 'none';
   }> {
+    // audit С14 (2026-05-29): defense-in-depth — проверяем что personId
+    // действительно принадлежит args.tenantId. CloneAccessGrant и так
+    // фильтруется по tenantId, но если в БД случайно появился grant с
+    // mismatch'нутыми tenantId/Person.tenantId — без этой проверки мы
+    // отдадим access. С проверкой — отказ.
+    const personTenant = await this.prisma.person.findUnique({
+      where: { id: args.personId },
+      select: { tenantId: true },
+    });
+    if (!personTenant || personTenant.tenantId !== args.tenantId) {
+      return { allowed: false, relation: 'none' };
+    }
     if (args.cloneV2Enabled) {
       // ТЗ 2026-05-26 §3.5 — учитываем soft-revoke и expiresAt: findFirst
       // с активным фильтром (revokedAt IS NULL AND (expiresAt IS NULL OR > now)).
@@ -439,6 +451,15 @@ export class RbacService implements OnModuleInit {
     roleId: string;
     cloneV2Enabled: boolean;
   }): Promise<{ allowed: boolean; relation: 'grant' | 'role_read' | 'none' }> {
+    // audit С14 (2026-05-29): defense-in-depth — проверяем что roleId
+    // принадлежит args.tenantId (см. canAccessPersonClone).
+    const roleTenant = await this.prisma.role.findUnique({
+      where: { id: args.roleId },
+      select: { tenantId: true },
+    });
+    if (!roleTenant || roleTenant.tenantId !== args.tenantId) {
+      return { allowed: false, relation: 'none' };
+    }
     if (args.cloneV2Enabled) {
       // ТЗ 2026-05-26 §3.5 — учитываем soft-revoke и expiresAt: findFirst
       // с активным фильтром. Раньше findUnique игнорировал revokedAt/expiresAt.

@@ -36,11 +36,23 @@ Lead-style: пользователь оставляет `email + name` на `/si
 - `frontend/app/{signup,login,forgot-password,reset-password}/` + `(authenticated)/onboarding/change-password/`
 - `frontend/src/api/accounts.api.ts`, `frontend/src/contexts/auth-context.tsx`, `frontend/src/domain/account.ts`
 
-## Поток 3 — Admin local login
+## Поток 3 — Admin local login (низкоуровневый, теперь за единым логином)
 
-Отдельная страница `/admin/login` → `adminApi.adminLogin(email, password)` → проверяет bcrypt-хеш в `User.passwordHash` для `role='admin'`, выдаёт JWT (тоже без `jti`). Доступ к `/admin/*` через `AdminGuard`.
+`AdminLoginService.login(email, password)` → проверяет bcrypt-хеш в `User.passwordHash` для `role='admin'`, выдаёт JWT (без `jti`). Доступ к `/admin/*` через `SuperAdminGuard` (флаг `User.isSuperAdmin`).
 
-Файлы: `backend/src/modules/admin/local-login/`, `frontend/app/(admin)/admin/login/`.
+Файлы: `backend/src/modules/auth/services/admin-login.service.ts`, endpoint `POST /api/v1/auth/admin-login` (deprecated — оставлен для обратной совместимости).
+
+## Поток 4 — Единый логин `/login` (2026-05-29)
+
+Одна форма для всех — обычных пользователей И супер-админов. `POST /api/v1/auth/login` (`UnifiedLoginController`, `backend/src/modules/accounts/unified-login.controller.ts`) пробует по очереди:
+1. standalone (`AccountsService.login`, argon2id);
+2. admin (`AdminLoginService.login`, bcrypt, `role='admin'`).
+
+Любой неуспех — единый `LoginInvalidError` (защита от user-enumeration: каждый путь сам тратит время на фейковый verify своего хеша). Общий cookie `z_session`, domain `COOKIE_STANDALONE_DOMAIN ?? COOKIE_DOMAIN`, throttle 5/15мин. Ответ: `{ user, role, isSuperAdmin, mustChangePassword }`.
+
+**Фронт:** единая форма `app/login/LoginForm.tsx` → `authApi.login` → `auth-context.login()`. Редирект после входа: безопасный `?next=` → супер-админ `/admin` → обычный `/meetings`. Старая `/admin/login` теперь `redirect('/login?next=/admin')`; `AdminLoginForm.tsx` не используется.
+
+ТЗ: [plans/tz/2026-05-29-unified-login.md](../../plans/tz/2026-05-29-unified-login.md). Старые эндпоинты `/accounts/login` и `/auth/admin-login` живы (deprecated) — откат тривиален. Cleanup и удаление старых форм — в Фазе 4 ТЗ.
 
 ## DB-модели
 

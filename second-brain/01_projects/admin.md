@@ -59,6 +59,21 @@ updated: 2026-05-26
   - При `grant` уведомление получателя — `eventType=clone.access_granted` (in-app + Telegram через `ConversationalService`). Notification-failure не откатывает grant (warn-log).
 - **ТЗ:** [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) + frontend часть в [plans/tz/2026-05-26-clones-marketplace-frontend.md](../../plans/tz/2026-05-26-clones-marketplace-frontend.md) §2-§3.
 
+## Тенанты (Org)
+
+### `/admin/demo` — Демо-кабинеты «ТехноСтрим» (2026-05-29)
+
+Super-admin создаёт/сбрасывает демо-кабинет для **любой** Org из UI — без CLI и без логина под owner'ом. Переиспользует `OnboardingService.seedDemoWorkspace/resetDemoWorkspace` (та же логика, что `/onboarding/demo-choice` и CLI `seed-demo-workspace.ts`).
+
+- **API:** `GET /api/v1/admin/demo/orgs`, `POST .../:orgId/seed`, `POST .../:orgId/reset` — `backend/src/modules/admin/controllers/admin-demo.controller.ts`.
+- **Защита:** `CookieAuthGuard` + `SuperAdminGuard` + `SuperAdminAuditInterceptor`. `OnboardingModule` подключён в `admin.module.ts`.
+- **Фронт:**
+  - `frontend/app/(authenticated)/admin/demo/page.tsx` + `DemoClient.tsx` — список Org с бейджем «демо залито» (по `Org.demoWorkspaceSeededAt`), кнопки «Создать/Перезалить демо» и «Сбросить» (confirm).
+  - `frontend/src/api/admin-demo.api.ts`.
+- **Навигация:** пункт «Демо-кабинеты» (иконка `Sparkles`) в разделе «Тенанты» (`navigation.ts`).
+- **Особенности:** seed берёт `ownerId` Org автоматически. Демо помечается `externalSource='demo'`, reset не трогает боевые данные.
+- **ТЗ:** [plans/tz/2026-05-29-admin-demo-workspace-creation.md](../../plans/tz/2026-05-29-admin-demo-workspace-creation.md). Инструкция — [docs/guides/demo-workspace.md](../../docs/guides/demo-workspace.md).
+
 ## Обратная связь
 
 ### `/admin/feedback` — Канал обратной связи + AI-кластеризация

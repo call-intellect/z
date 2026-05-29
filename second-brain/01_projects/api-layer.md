@@ -10,6 +10,13 @@ covers: реестр всех REST endpoints backend по модулям
 
 Этот файл создан 2026-05-25 как часть финального handoff Wave 1-3. Не претендует на полноту — пополняется по факту добавления новых endpoint'ов.
 
+## Auth — единый логин (2026-05-29)
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/auth/login` | **единый логин** юзеров и супер-админов: try standalone (argon2) → admin (bcrypt). Ответ `{ user, role, isSuperAdmin, mustChangePassword }`, cookie `z_session`. См. [[auth-and-accounts]] Поток 4 |
+| POST | `/accounts/login` | standalone-логин (deprecated, за единым) |
+| POST | `/auth/admin-login` | admin-логин (deprecated, за единым) |
+
 ## Tracker
 
 См. полный список в [`tracker.md`](tracker.md) §«REST API endpoints».
@@ -267,6 +274,14 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | PATCH | `/admin/orgs/plans/:id` | CRUD |
 | GET | `/admin/orgs/entitlements` | глобальный обзор overrides по Org |
 | PATCH | `/admin/orgs/:id/entitlements` | редактирование per-Org overrides |
+
+### Demo-кабинеты (2026-05-29, `super_admin`)
+`AdminDemoController` (`@ApiExcludeController` — не в Swagger). Переиспользует `OnboardingService`.
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/admin/demo/orgs` | список Org (+ `demoSeededAt`, владелец) |
+| POST | `/admin/demo/orgs/:orgId/seed` | залить демо «ТехноСтрим» (от имени owner'а Org) |
+| POST | `/admin/demo/orgs/:orgId/reset` | сбросить демо |
 
 ### Content (Фаза 5)
 | Метод | Путь | Назначение |

@@ -21,6 +21,19 @@
 
 ---
 
+### 🆕 2026-05-29 — единый логин `/login` + демо-кабинеты из админки
+
+Чистые code-изменения: **ENV нет, schema нет, seed/patch/backfill нет.** Достаточно `docker compose up -d --build` (backend + frontend).
+
+- **Единый логин:** новый `POST /api/v1/auth/login` (try standalone→admin). Старые `/accounts/login` и `/auth/admin-login` живы (deprecated). Фронт `/login` — единая форма, `/admin/login` редиректит на `/login`.
+- **Демо из админки:** `GET/POST /api/v1/admin/demo/*` (super_admin), страница `/admin/demo`. Переиспользует `OnboardingService` — ничего нового в БД.
+- **Шаг 12 — smoke** (эндпоинты `@ApiExcludeController`, в Swagger их нет — проверять curl'ом):
+  - `POST /api/v1/auth/login` обычным юзером → 200 + cookie; супер-админом → 200 + `isSuperAdmin:true`; неверный пароль → единый `login_invalid`.
+  - вход супер-админа через `/login` → доступен `/admin`.
+  - `/admin/demo` (super_admin) → список Org; «Создать демо» на тестовой Org → ~4600 записей; «Сбросить» → чисто.
+
+---
+
 ### 🔒 ТЗ 2026-05-28 — paywall без trial (Фазы 1–5)
 
 Ветка: `dev`. Коммиты `fcde0aa..этот-commit`. Backend SubscriptionGuard + декораторы `@RequireSubscription` на ~141 мутирующем эндпоинте, frontend Paywall UI (Banner/Modal/SubscriptionContext) + страница `/settings/subscription` для DEMO/ACTIVE/BLOCKED, скрипт backfill для существующих Org.

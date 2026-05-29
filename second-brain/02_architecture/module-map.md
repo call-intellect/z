@@ -183,6 +183,7 @@ LiveKit чистит атрибуты автоматически при disconne
 - `controllers/{admin-usage, org-admin-usage, admin-functions, admin-experiments, admin-prices, admin-orgs, admin-health, org-admin-knowledge}.controller.ts` + `admin-usage.csv.ts` (CSV-stream).
 - `dto/{admin-usage, admin-experiments, admin-prices, admin-orgs, org-admin-knowledge}.dto.ts` — Zod.
 - `super-admin.audit.interceptor.ts` — пишет `SuperAdminAccessLog`.
+- `controllers/admin-demo.controller.ts` (2026-05-29) — Z-Admin демо-кабинеты `/admin/demo/*` (list/seed/reset), `super_admin`, переиспользует `OnboardingService` (imports `OnboardingModule`). См. [[admin]] §Тенанты.
 
 ### `backend/src/modules/auth/guards/` (Phase 7)
 - `super-admin.guard.ts` — проверяет `User.isSuperAdmin`.

@@ -1051,6 +1051,17 @@ export class ClonesService {
         },
       });
     }
+    // audit В14 (2026-05-29): после RBAC проверяем, что cloneRefId реально
+    // существует в тенанте и не soft-удалён. Без этой проверки owner мог
+    // создать ChatV2Conversation на несуществующий personId/roleId
+    // (`canAccess.*Clone` для owner'а всегда true) — БД получала висячие
+    // scopeRefId, UI потом ломался с «не нашли клона» уже из контекста
+    // сообщения.
+    await this.assertCloneRefExists(
+      args.tenantId,
+      args.cloneType,
+      args.cloneRefId,
+    );
     const created = await this.prisma.chatV2Conversation.create({
       data: {
         tenantId: args.tenantId,
@@ -1062,6 +1073,41 @@ export class ClonesService {
       select: { id: true },
     });
     return { conversationId: created.id };
+  }
+
+  /**
+   * audit В14: дублирует логику `ClonesAdminService.assertCloneRefExists`
+   * чтобы не делать method-injection из admin-сервиса в user-сервис.
+   * Проверяет существование Role/Person в тенанте + не soft-удалён.
+   */
+  private async assertCloneRefExists(
+    tenantId: string,
+    cloneType: 'person' | 'role',
+    cloneRefId: string,
+  ): Promise<void> {
+    if (cloneType === 'role') {
+      const role = await this.prisma.role.findFirst({
+        where: { id: cloneRefId, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!role) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'role_not_found', message: 'Роль не найдена' },
+        });
+      }
+      return;
+    }
+    const person = await this.prisma.person.findFirst({
+      where: { id: cloneRefId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!person) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'person_not_found', message: 'Сотрудник не найден' },
+      });
+    }
   }
 
   /**

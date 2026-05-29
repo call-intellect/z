@@ -818,6 +818,10 @@ const TelegramProxySchema = z.object({
   TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC: z.coerce.number().int().nonnegative().default(60),
   TELEGRAM_PROXY_REQUEST_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(15_000),
   TELEGRAM_PROXY_HEALTH_INTERVAL_SEC: z.coerce.number().int().nonnegative().default(30),
+  // audit С28 (2026-05-29): hard-timeout для proxyAdmin.ping() в крон-tick.
+  // Защита от случая, когда default-timeout прокси-клиента увеличился из-за
+  // конфига, и крон зависает дольше interval'а.
+  TELEGRAM_PROXY_PING_TIMEOUT_SEC: z.coerce.number().int().positive().default(5),
 });
 
 /**

@@ -108,7 +108,29 @@ export class TelegramProxyHealthCron implements OnModuleInit {
       return { ranAsLeader: false };
     }
 
-    const r = await this.proxyAdmin.ping();
+    // audit С28 (2026-05-29): дополнительный timeout-guard на ping(). Сам
+    // ping использует fetchWithTimeout с default'ом, но если конфиг прокси
+    // вышел из строя и default увеличился — мы не должны висеть в крон-tick'е
+    // дольше interval. Race с TELEGRAM_PROXY_PING_TIMEOUT_SEC или 5s.
+    const pingTimeoutMs = this.cfg.telegramProxy.pingTimeoutSec * 1000;
+    const timeoutPromise = new Promise<{
+      ok: false;
+      status: number;
+      durationMs: number;
+      error: string;
+    }>((resolve) =>
+      setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            status: 0,
+            durationMs: pingTimeoutMs,
+            error: `cron timeout >${pingTimeoutMs}ms`,
+          }),
+        pingTimeoutMs,
+      ),
+    );
+    const r = await Promise.race([this.proxyAdmin.ping(), timeoutPromise]);
     const ok = r.ok;
     try {
       await this.redis.client.set(

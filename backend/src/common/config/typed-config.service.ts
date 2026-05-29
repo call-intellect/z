@@ -902,6 +902,8 @@ export class TypedConfigService {
       jwtPrefetchSec: this.get('TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC'),
       requestTimeoutMs: this.get('TELEGRAM_PROXY_REQUEST_TIMEOUT_MS'),
       healthIntervalSec: this.get('TELEGRAM_PROXY_HEALTH_INTERVAL_SEC'),
+      /** audit С28 — hard-timeout для proxyAdmin.ping() в крон-tick'е. */
+      pingTimeoutSec: this.get('TELEGRAM_PROXY_PING_TIMEOUT_SEC'),
     } as const;
   }
 

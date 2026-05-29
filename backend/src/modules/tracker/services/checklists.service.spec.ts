@@ -180,9 +180,27 @@ function makeService(store: Store): {
       ),
     },
     issueChecklistItem: {
-      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => {
-        return store.items.get(where.id) ?? null;
-      }),
+      findFirst: vi.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            id?: string;
+            tenantId?: string;
+            checklist?: { deletedAt?: Date | null };
+          };
+        }) => {
+          const item = where.id ? store.items.get(where.id) : null;
+          if (!item) return null;
+          // Б11 (audit-fixes): requireItem теперь требует
+          // `checklist: { deletedAt: null }`. Симулируем join.
+          if (where.checklist?.deletedAt === null) {
+            const cl = store.checklists.get(item.checklistId);
+            if (!cl || cl.deletedAt) return null;
+          }
+          return item;
+        },
+      ),
       findMany: vi.fn(
         async ({
           where,
@@ -500,6 +518,45 @@ describe('ChecklistsService', () => {
     >) {
       expect(call[0].viaBulk).toBe(true);
     }
+  });
+
+  it('Б11: updateItem на soft-deleted checklist → 404 (checklist_item_not_found)', async () => {
+    const { svc } = makeService(store);
+    const item = await svc.createItem(
+      'checklist-1',
+      { text: 'A' },
+      'tenant-1',
+    );
+    // Soft-delete родительский чек-лист напрямую в store.
+    const cl = store.checklists.get('checklist-1');
+    if (!cl) throw new Error('checklist not seeded');
+    cl.deletedAt = new Date('2026-05-29T00:00:00Z');
+
+    await expect(
+      svc.updateItem(item.id, { isDone: true }, 'tenant-1', 'user-1'),
+    ).rejects.toMatchObject({
+      response: {
+        error: { code: 'checklist_item_not_found' },
+      },
+    });
+  });
+
+  it('Б11: deleteItem на soft-deleted checklist → 404', async () => {
+    const { svc } = makeService(store);
+    const item = await svc.createItem(
+      'checklist-1',
+      { text: 'A' },
+      'tenant-1',
+    );
+    const cl = store.checklists.get('checklist-1');
+    if (!cl) throw new Error('checklist not seeded');
+    cl.deletedAt = new Date('2026-05-29T00:00:00Z');
+
+    await expect(svc.deleteItem(item.id, 'tenant-1')).rejects.toMatchObject({
+      response: {
+        error: { code: 'checklist_item_not_found' },
+      },
+    });
   });
 
   it('deleteItem: total/done пересчитываются, событие deleted', async () => {

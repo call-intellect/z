@@ -500,8 +500,15 @@ export class ChecklistsService {
     id: string,
     tenantId: string,
   ): Promise<IssueChecklistItem> {
+    // ТЗ audit-fixes Б11: soft-deleted checklist должен скрывать свои items.
+    // Без `checklist: { deletedAt: null }` PATCH/DELETE item у удалённого
+    // чек-листа отдаёт 200, мутируя «призрачные» данные.
     const i = await this.prisma.issueChecklistItem.findFirst({
-      where: { id, tenantId },
+      where: {
+        id,
+        tenantId,
+        checklist: { deletedAt: null },
+      },
     });
     if (!i) {
       throw new NotFoundException({

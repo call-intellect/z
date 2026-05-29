@@ -90,6 +90,14 @@ interface FakeIssue {
   dueDate: Date | null;
   assigneeUserIds: string[];
   labelIds: string[];
+  // 2026-05-27 wave: IssueCard читает linkedMeetingIds, estimatePoints,
+  // childrenCount, checklistTotalCount, checklistDoneCount. Все опциональные
+  // на бэке, но в UI идёт чтение `.length` / прямое сравнение → нужны не-undefined.
+  linkedMeetingIds: string[];
+  estimatePoints: number | null;
+  childrenCount: number | null;
+  checklistTotalCount: number;
+  checklistDoneCount: number;
 }
 
 function makeIssue(overrides: Partial<FakeIssue> = {}): FakeIssue {
@@ -107,6 +115,11 @@ function makeIssue(overrides: Partial<FakeIssue> = {}): FakeIssue {
     dueDate: null,
     assigneeUserIds: [],
     labelIds: [],
+    linkedMeetingIds: [],
+    estimatePoints: null,
+    childrenCount: null,
+    checklistTotalCount: 0,
+    checklistDoneCount: 0,
     ...overrides,
   };
 }

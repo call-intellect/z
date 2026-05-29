@@ -216,11 +216,59 @@ export class RolesDomainService {
         data: { rolesCompletedAt: new Date() },
       });
 
+      // audit С25 (2026-05-29): hook Role.created — автоматически выдать grant
+      // на роль-клона всем owner/admin тенанта. Без него после миграции
+      // (patch-migrate-clone-access.ts) каждая новая роль не получает grant'ы
+      // на admin'ов, и они теряют доступ к role-clone'у нового сотрудника.
+      // Делается fire-and-forget — основной flow не блокируется.
+      void this.grantRoleCloneToTenantAdmins(
+        args.tenantId,
+        created.id,
+        args.userId,
+      ).catch((err: unknown) => {
+        this.logger.warn(
+          `Role.created hook: не удалось выдать grant'ы для role=${created.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+
       return this.toListItem(created, created.department?.name ?? null, 0, 0, 'forming');
     } catch (err) {
       this.handleUniqueViolation(err, args.body.name);
       throw err;
     }
+  }
+
+  /**
+   * audit С25 (2026-05-29): hook для автоматической выдачи CloneAccessGrant
+   * всем owner/admin тенанта при создании Role. Идемпотентно через unique
+   * (tenantId, grantedToUserId, cloneType, cloneRefId) + skipDuplicates.
+   *
+   * Параллельная задача — patch-migrate-clone-access.ts — делает то же самое
+   * для существующих ролей при первичной миграции; этот hook покрывает все
+   * новые роли после миграции.
+   */
+  private async grantRoleCloneToTenantAdmins(
+    tenantId: string,
+    roleId: string,
+    grantedByUserId: string,
+  ): Promise<void> {
+    const admins = await this.prisma.membership.findMany({
+      where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
+      select: { userId: true },
+    });
+    if (admins.length === 0) return;
+    await this.prisma.cloneAccessGrant.createMany({
+      data: admins.map((a) => ({
+        tenantId,
+        grantedToUserId: a.userId,
+        cloneType: 'role' as const,
+        cloneRefId: roleId,
+        grantedById: grantedByUserId,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   async createBatch(args: {

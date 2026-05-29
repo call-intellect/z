@@ -211,3 +211,82 @@ export function paymentModeLabel(m: PaymentMode | null): string {
   if (!m) return '—';
   return m === 'paid' ? 'Оплачено' : 'Бонус';
 }
+
+// ────────────────────────── SubscriptionEvent ──────────────────────────
+
+/**
+ * Перечень типов `SubscriptionEvent.eventType` (см. backend
+ * billing.types.ts → `SubscriptionEventType`). На фронте — известная
+ * строковая литералка; неизвестные типы попадают в fallback-label.
+ */
+export type SubscriptionEventType =
+  | 'created'
+  | 'activated_paid'
+  | 'activated_bonus'
+  | 'renewed'
+  | 'past_due'
+  | 'suspended'
+  | 'canceled'
+  | 'expired'
+  | 'seats_changed'
+  | 'status_forced'
+  | 'provider_recurring_canceled';
+
+const SUBSCRIPTION_EVENT_LABELS: Record<SubscriptionEventType, string> = {
+  created: 'Создана',
+  activated_paid: 'Активирована (paid)',
+  activated_bonus: 'Активирована (bonus)',
+  renewed: 'Продлено',
+  past_due: 'Просрочка',
+  suspended: 'Приостановлена',
+  canceled: 'Отменена',
+  expired: 'Истекла',
+  seats_changed: 'Изменены места',
+  status_forced: 'Принудительная смена статуса',
+  provider_recurring_canceled: 'Авто-продление отменено провайдером',
+};
+
+/**
+ * Лейбл события подписки. Для неизвестных типов возвращает сырое значение —
+ * чтобы саппорт не терял информацию из БД даже если бэкенд начал писать
+ * новый тип, для которого фронт ещё не обновили.
+ */
+export function subscriptionEventLabel(eventType: string): string {
+  return (
+    SUBSCRIPTION_EVENT_LABELS[eventType as SubscriptionEventType] ?? eventType
+  );
+}
+
+export type SubscriptionEventColor = 'green' | 'amber' | 'red' | 'slate' | 'blue';
+
+/**
+ * Цвет бейджа события. Группировка:
+ *   - green — позитивные (создано, активировано, продлено).
+ *   - amber — переход в просрочку, изменения мест.
+ *   - red — suspended / canceled / expired / forced (опасные/негативные).
+ *   - blue — провайдерская техническая отмена авто-продления.
+ *   - slate — fallback для неизвестных.
+ */
+export function subscriptionEventColor(
+  eventType: string,
+): SubscriptionEventColor {
+  switch (eventType as SubscriptionEventType) {
+    case 'created':
+    case 'activated_paid':
+    case 'activated_bonus':
+    case 'renewed':
+      return 'green';
+    case 'past_due':
+    case 'seats_changed':
+      return 'amber';
+    case 'suspended':
+    case 'canceled':
+    case 'expired':
+    case 'status_forced':
+      return 'red';
+    case 'provider_recurring_canceled':
+      return 'blue';
+    default:
+      return 'slate';
+  }
+}

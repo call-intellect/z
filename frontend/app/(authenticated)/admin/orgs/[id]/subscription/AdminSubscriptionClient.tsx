@@ -1,7 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Settings2,
+  ShieldAlert,
+  Sparkles,
+  UsersRound,
+} from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { billingApi } from '@/api/billing.api';
@@ -21,7 +29,10 @@ import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
+import { AdjustSeatsDialog } from './AdjustSeatsDialog';
+import { ForceStatusDialog } from './ForceStatusDialog';
 import { InvoiceRowActions } from './InvoiceRowActions';
+import { SubscriptionEventsTimeline } from './SubscriptionEventsTimeline';
 
 /**
  * `/admin/orgs/[id]/subscription` — super_admin управление подпиской.
@@ -77,20 +88,33 @@ export function AdminSubscriptionClient({ tenantId }: { tenantId: string }) {
         </div>
       )}
 
-      <CurrentSubscriptionCard subscription={subscription} />
+      <CurrentSubscriptionCard
+        tenantId={tenantId}
+        subscription={subscription}
+        onReload={() => void load()}
+      />
 
       <ActivateForm tenantId={tenantId} onActivated={() => void load()} />
 
       <RecentInvoicesTable invoices={invoices} onReload={() => void load()} />
+
+      <SubscriptionEventsTimeline tenantId={tenantId} />
     </div>
   );
 }
 
 function CurrentSubscriptionCard({
+  tenantId,
   subscription,
+  onReload,
 }: {
+  tenantId: string;
   subscription: SubscriptionDomain | null;
+  onReload: () => void;
 }) {
+  const [openAdjust, setOpenAdjust] = useState(false);
+  const [openForce, setOpenForce] = useState(false);
+
   if (!subscription) {
     return (
       <div className="rounded-lg border bg-card p-6">
@@ -108,9 +132,33 @@ function CurrentSubscriptionCard({
     slate: 'bg-slate-100 text-slate-900',
   }[subscriptionStatusColor(subscription.status)];
 
+  // Pro-rata hint: вычисляем остаток текущего периода для подсказки в
+  // AdjustSeatsDialog. На MVP бэкенд сам считает доплату, мы только
+  // показываем саппорту контекст.
+  const now = new Date();
+  const periodEnd = subscription.currentPeriodEnd;
+  const periodStart = subscription.currentPeriodStart;
+  let daysLeftInMonthlyPeriod: number | undefined;
+  let monthsLeftInYearlyPeriod: number | undefined;
+  if (periodEnd && periodStart && periodEnd > now) {
+    if (subscription.billingPeriod === 'monthly') {
+      daysLeftInMonthlyPeriod = Math.max(
+        0,
+        Math.ceil((periodEnd.getTime() - now.getTime()) / 86_400_000),
+      );
+    } else if (subscription.billingPeriod === 'yearly') {
+      monthsLeftInYearlyPeriod = Math.max(
+        0,
+        Math.floor(
+          (periodEnd.getTime() - now.getTime()) / (30.44 * 86_400_000),
+        ),
+      );
+    }
+  }
+
   return (
     <div className="rounded-lg border bg-card p-6">
-      <div className="flex items-start justify-between mb-3">
+      <div className="flex items-start justify-between mb-3 gap-3">
         <div>
           <h2 className="text-lg font-medium">Текущая подписка</h2>
           <p className="text-sm text-muted-foreground">
@@ -159,6 +207,55 @@ function CurrentSubscriptionCard({
           value={formatRubles(subscription.totalPaidKopecks)}
         />
       </dl>
+
+      <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpenAdjust(true)}
+        >
+          <UsersRound size={14} />
+          Изменить места
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setOpenForce(true)}
+          className="text-danger hover:bg-danger/10"
+          title="Принудительно сменить статус (обход FSM)"
+        >
+          <ShieldAlert size={14} />
+          Принудительно сменить статус
+        </Button>
+        <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-fg-tertiary">
+          <Settings2 size={11} />
+          super_admin
+        </span>
+      </div>
+
+      <AdjustSeatsDialog
+        open={openAdjust}
+        onOpenChange={setOpenAdjust}
+        tenantId={tenantId}
+        currentSeatsExtra={subscription.seatsExtra}
+        billingPeriod={subscription.billingPeriod}
+        daysLeftInMonthlyPeriod={daysLeftInMonthlyPeriod}
+        monthsLeftInYearlyPeriod={monthsLeftInYearlyPeriod}
+        onSuccess={() => {
+          setOpenAdjust(false);
+          onReload();
+        }}
+      />
+      <ForceStatusDialog
+        open={openForce}
+        onOpenChange={setOpenForce}
+        tenantId={tenantId}
+        currentStatus={subscription.status}
+        onSuccess={() => {
+          setOpenForce(false);
+          onReload();
+        }}
+      />
     </div>
   );
 }

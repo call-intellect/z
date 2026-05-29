@@ -13,6 +13,10 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { OnboardingService } from '../../onboarding/onboarding.service';
@@ -90,10 +94,13 @@ export class AdminDemoController {
 
   @Post('orgs/:orgId/reset')
   @HttpCode(HttpStatus.OK)
-  async reset(@Param('orgId') orgId: string): Promise<{ ok: true }> {
+  async reset(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true; deletedByTable: Record<string, number> }> {
     const org = await this.prisma.org.findFirst({
       where: { id: orgId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, demoWorkspaceSeededAt: true },
     });
     if (!org) {
       throw new NotFoundException({
@@ -101,6 +108,7 @@ export class AdminDemoController {
         error: { code: 'org_not_found', message: 'Org не найдена' },
       });
     }
-    return this.onboarding.resetDemoWorkspace({ orgId: org.id });
+    // audit Б3 — actorUserId логируется в OnboardingService для post-mortem.
+    return this.onboarding.resetDemoWorkspace({ orgId: org.id, actorUserId: user.id });
   }
 }

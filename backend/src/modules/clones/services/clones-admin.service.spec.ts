@@ -36,6 +36,8 @@ function buildGrant(over: Partial<CloneAccessGrant> = {}): CloneAccessGrant {
   return {
     id: 'grant-1',
     tenantId: 'org-1',
+    // audit Б3 (2026-05-29): added field on CloneAccessGrant.
+    externalSource: null,
     grantedToUserId: 'user-recipient',
     cloneType: 'role',
     cloneRefId: 'role-1',

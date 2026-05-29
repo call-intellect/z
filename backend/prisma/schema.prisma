@@ -1937,6 +1937,9 @@ model Card {
   /// tenant: Org, к которой принадлежит карточка. После backfill — NOT NULL.
   tenantId    String?
   tenant      Org?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   ownerId     String
   owner       User    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name        String
@@ -2354,6 +2357,9 @@ model CloneAccessGrant {
   expiresAt DateTime?
 
   tenant     Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   grantedTo  User  @relation("CloneAccessGrant_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
   grantedBy  User  @relation("CloneAccessGrant_grantedBy", fields: [grantedById], references: [id])
   revokedByU User? @relation("CloneAccessGrant_revokedBy", fields: [revokedBy], references: [id])
@@ -2700,6 +2706,9 @@ model RawEvent {
 model IdeaBlock {
   id                          String                       @id @default(cuid())
   tenantId                    String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   name                        String
   criticalQuestion            String                       @db.Text
   trustedAnswer               String                       @db.Text
@@ -2858,6 +2867,9 @@ model IdeaBlockEvidence {
 model Entity {
   id            String                       @id @default(cuid())
   tenantId      String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   type          EntityType
   canonicalName String
   aliases       String[]                     @default([])
@@ -3504,6 +3516,9 @@ model EntityLink {
 model Theme {
   id           String                       @id @default(cuid())
   tenantId     String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   name         String
   description  String                       @db.Text
   weight       Decimal                      @default(0.5) @db.Decimal(4, 3)
@@ -3596,6 +3611,9 @@ model Goal {
   id                      String      @id @default(cuid())
   tenantId                String
   tenant                  Org         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   name                    String
   description             String      @db.Text
   /// Опциональный дедлайн. Используется как контекст для LLM-судьи.
@@ -3696,6 +3714,9 @@ model GoalAlignmentSnapshot {
 
   goal   Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
   tenant Org  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   @@index([goalId, createdAt])
   @@index([tenantId, createdAt])
@@ -3783,6 +3804,9 @@ model OrgEntitlement {
 model Department {
   id                 String    @id @default(cuid())
   tenantId           String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   name               String    @db.VarChar(200)
   parentDepartmentId String?
   /// SBA α-9 wave 2 (2026-05-23) — расширение Department для Company Foundation.
@@ -3839,6 +3863,9 @@ model Department {
 model Role {
   id               String    @id @default(cuid())
   tenantId         String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   name             String    @db.VarChar(200)
   departmentId     String?
   /// Свободные теги для поиска и фильтрации.
@@ -3903,6 +3930,9 @@ model Role {
 model Person {
   id                  String             @id @default(cuid())
   tenantId            String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   /// NULL до accept'а приглашения. После accept'а — атомарно линкуется с User.
   userId              String?
   name                String             @db.VarChar(200)
@@ -4046,6 +4076,9 @@ model PersonRole {
 model Appointment {
   id             String    @id @default(cuid())
   tenantId       String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   personId       String
   roleId         String
   departmentId   String?
@@ -4468,6 +4501,9 @@ model Strategy {
 model CompanyProfile {
   id                 String    @id @default(cuid())
   tenantId           String    @unique
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   /// Краткое имя компании (для UI).
   displayName        String?   @db.VarChar(300)
   /// Миссия: { contentMd, horizon, targetDate? }. JSON для упрощения миграции
@@ -4507,6 +4543,9 @@ model CompanyProfile {
 model FunctionalDomain {
   id             String    @id @default(cuid())
   tenantId       String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   parentDomainId String?
   name           String    @db.VarChar(200)
   /// Краткое описание области.
@@ -4576,6 +4615,9 @@ model DepartmentDomainLink {
 model Process {
   id                 String                       @id @default(cuid())
   tenantId           String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   name               String                       @db.VarChar(300)
   description        String?                      @db.Text
   ownerRoleId        String?
@@ -4834,6 +4876,9 @@ model ProcessHandoff {
 model ProcessStep {
   id          String   @id @default(cuid())
   tenantId    String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   processId   String
   name        String   @db.VarChar(300)
   order       Int
@@ -5025,6 +5070,9 @@ model Metric {
 model Decision {
   id       String @id @default(cuid())
   tenantId String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   // ── legacy Фазы 0a (оставлены для совместимости; в β-3 необязательны) ──
   /// @deprecated SBA β-3: используй `statement`. Заполняется автоматически
@@ -5121,6 +5169,9 @@ model Decision {
 model Insight {
   id       String  @id @default(cuid())
   tenantId String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   /// Опциональная связка с графом (создаётся при canonical). Уникален.
   entityId String? @unique
 
@@ -5752,6 +5803,9 @@ model ChannelBinding {
 model Notification {
   id              String                      @id @default(cuid())
   tenantId        String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   recipientUserId String
   /// Тип события, например `probe.question`, `curation.pending`,
   /// `idea.status_changed`. На α-1 — `probe.question`, `curation.pending`,
@@ -5879,6 +5933,9 @@ model DailyCheckIn {
 
   person Person @relation("DailyCheckInPerson", fields: [personId], references: [id], onDelete: Cascade)
   tenant Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   @@unique([tenantId, personId, kind, dateLocal])
   @@index([tenantId, personId, dateLocal])
@@ -5926,6 +5983,9 @@ model WeeklyOperationsDigest {
   createdAt      DateTime @default(now())
 
   tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   @@unique([tenantId, weekStart])
   @@index([tenantId, weekStart])
@@ -5973,6 +6033,9 @@ model DailyOperationsDigest {
   createdAt      DateTime  @default(now())
 
   tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   @@unique([tenantId, dateLocal])
   @@index([tenantId, dateLocal])
@@ -6196,6 +6259,9 @@ model ChatV2Conversation {
   id                String                   @id @default(uuid())
   tenantId          String
   tenant            Org                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   userId            String
   user              User                     @relation("ChatV2ConversationUser", fields: [userId], references: [id], onDelete: Cascade)
   /// Авто-генерация после первого сообщения через LLM (taskType
@@ -6363,6 +6429,9 @@ model SkillProfile {
   updatedAt    DateTime           @updatedAt
 
   tenant   Org                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   person   Person              @relation("SkillProfilePerson", fields: [personId], references: [id], onDelete: Cascade)
   traits   SkillTrait[]
   personas ExecutablePersona[]
@@ -6554,6 +6623,9 @@ model ExecutablePersona {
   createdAt            DateTime      @default(now())
 
   tenant     Org                  @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   profile    SkillProfile?        @relation(fields: [profileId], references: [id], onDelete: Cascade)
   /// Clones=Roles Ф1 — связь на предыдущую версию персоны.
   succeeds   ExecutablePersona?   @relation("PersonaSuccession", fields: [succeedsPersonaId], references: [id])
@@ -6836,6 +6908,9 @@ model OrchestratorSubagentJob {
 model Project {
   id                String    @id @default(cuid())
   tenantId          String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   slug              String // короткий уникальный slug per tenant
   identifier        String // префикс задач: PROJ, SALES, DEV (до 5 симв.)
   name              String
@@ -6915,6 +6990,9 @@ model Project {
 model ProjectDocument {
   id              String  @id @default(cuid())
   tenantId        String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   projectId       String
   project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -7005,6 +7083,9 @@ model ProjectMember {
 model IssueState {
   id        String  @id @default(cuid())
   tenantId  String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   projectId String
   name      String // «Бэклог», «В работе», «Готово»
   color     String  @default("#94A3B8")
@@ -7023,6 +7104,9 @@ model IssueState {
 model Cycle {
   id          String   @id @default(cuid())
   tenantId    String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   projectId   String
   name        String // «Неделя 23», «Спринт продаж — июнь»
   startDate   DateTime
@@ -7094,6 +7178,9 @@ enum SprintHintStatus {
 model SprintHint {
   id                String             @id @default(cuid())
   tenantId          String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
   cycleId           String
   cycle             Cycle              @relation(fields: [cycleId], references: [id], onDelete: Cascade)
 
@@ -7855,6 +7942,9 @@ model SocialContributionProfile {
 model HelpfulnessSpotlight {
   id       String @id @default(cuid())
   tenantId String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   helperUserId String
   topicHint    String?
@@ -7889,6 +7979,9 @@ model HelpfulnessSpotlight {
 model Recognition {
   id       String @id @default(cuid())
   tenantId String
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource          String?
 
   fromUserId String? // null если от AI / системы
   toUserId   String

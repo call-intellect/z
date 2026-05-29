@@ -116,9 +116,13 @@ export class OnboardingController {
     @Param('orgId') orgId: string,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
-  ): Promise<{ ok: true }> {
+  ): Promise<{ ok: true; deletedByTable: Record<string, number> }> {
     await this.requireOwnerOrAdmin(user.id, orgId);
-    return this.svc.resetDemoWorkspace({ orgId: tenantId ?? orgId });
+    // audit Б3: actorUserId передаём в сервис, чтобы попасть в audit-log/Logger.
+    return this.svc.resetDemoWorkspace({
+      orgId: tenantId ?? orgId,
+      actorUserId: user.id,
+    });
   }
 
   private async requireOwnerOrAdmin(userId: string, orgId: string): Promise<void> {

@@ -9,6 +9,10 @@ import {
 import { seedChatNotifications } from './demo-data/chat-notifications';
 import { seedGoalsClones } from './demo-data/goals-clones';
 import { seedKnowledgeGraph } from './demo-data/knowledge-graph';
+import {
+  DEMO_EXTERNAL_SOURCE,
+  markAllDemoEntitiesForTenant,
+} from './demo-data/mark-demo';
 import { seedMeetings } from './demo-data/meetings';
 import { seedOperations } from './demo-data/operations';
 import { seedOrgStructure } from './demo-data/org-structure';
@@ -237,6 +241,16 @@ ${featureList}
     await seedChatNotifications(ctx, ids);
     await seedPolish(ctx, ids);
 
+    // audit Б3 (2026-05-29) — пробегаемся по всем tenant-scoped моделям и
+    // проставляем `externalSource = 'demo'` свежесозданным записям.
+    // Это безопаснее, чем добавлять флаг в каждую seed-функцию (35+ мест).
+    // `resetDemoWorkspace` потом удаляет только записи с этим флагом —
+    // боевые остаются.
+    const marked = await markAllDemoEntitiesForTenant(this.prisma, orgId);
+    this.logger.log(
+      `Demo workspace marked externalSource='${DEMO_EXTERNAL_SOURCE}': updated=${marked.updated}`,
+    );
+
     await this.prisma.org.update({
       where: { id: orgId },
       data: { demoWorkspaceSeededAt: new Date() },
@@ -259,85 +273,282 @@ ${featureList}
     return { ok: true, stats };
   }
 
-  /** POST /orgs/:orgId/reset-demo — сброс демо-данных */
-  async resetDemoWorkspace(args: { orgId: string }): Promise<{ ok: true }> {
-    const { orgId } = args;
-    this.logger.log(`Resetting demo workspace for org=${orgId}`);
-
-    // Удаляем в порядке обратных зависимостей
-    await this.prisma.issueActivity.deleteMany({ where: { tenantId: orgId, issue: { externalSource: 'demo' } } });
-    await this.prisma.issueComment.deleteMany({ where: { issue: { project: { tenantId: orgId } } } });
-    await this.prisma.issueChecklistItem.deleteMany({ where: { checklist: { tenantId: orgId, issue: { externalSource: 'demo' } } } });
-    await this.prisma.issueChecklist.deleteMany({ where: { tenantId: orgId, issue: { externalSource: 'demo' } } });
-    await this.prisma.issueLabel.deleteMany({ where: { issue: { project: { tenantId: orgId } } } });
-    await this.prisma.issueAssignee.deleteMany({ where: { issue: { project: { tenantId: orgId } } } });
-    await this.prisma.issueRelation.deleteMany({ where: { source: { project: { tenantId: orgId } } } });
-    await this.prisma.sprintHint.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.issue.deleteMany({ where: { tenantId: orgId, externalSource: 'demo' } });
-
-    await this.prisma.meetingParticipantBehavior.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.meetingBehaviorMetrics.deleteMany({ where: { meeting: { tenantId: orgId } } });
-    await this.prisma.meetingQualityScore.deleteMany({ where: { meeting: { tenantId: orgId } } });
-    await this.prisma.meetingChapter.deleteMany({ where: { meeting: { tenantId: orgId } } });
-    await this.prisma.transcriptTrack.deleteMany({ where: { transcript: { meeting: { tenantId: orgId } } } });
-    await this.prisma.transcript.deleteMany({ where: { meeting: { tenantId: orgId } } });
-    await this.prisma.aiResult.deleteMany({ where: { meeting: { tenantId: orgId } } });
-    await this.prisma.participant.deleteMany({ where: { meeting: { tenantId: orgId } } });
-    await this.prisma.meeting.deleteMany({ where: { tenantId: orgId, roomName: { startsWith: 'demo-room-' } } });
-
-    await this.prisma.themeIdeaBlock.deleteMany({ where: { theme: { tenantId: orgId } } });
-    await this.prisma.themeEntity.deleteMany({ where: { theme: { tenantId: orgId } } });
-    await this.prisma.ideaBlockLink.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.entityLink.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.ideaBlock.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.entity.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.theme.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.goalAlignmentSnapshot.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.goalTheme.deleteMany({ where: { goal: { tenantId: orgId } } });
-    await this.prisma.goal.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.executablePersona.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.skillTrait.deleteMany({ where: { profile: { tenantId: orgId } } });
-    await this.prisma.skillProfile.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.cloneAccessGrant.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.dailyCheckIn.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.weeklyOperationsDigest.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.dailyOperationsDigest.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.chatV2Message.deleteMany({ where: { conversation: { tenantId: orgId } } });
-    await this.prisma.chatV2Conversation.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.notification.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.recognition.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.helpfulnessSpotlight.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.card.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.processStep.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.process.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.insight.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.decision.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.appointment.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.person.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.role.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.department.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.companyProfile.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.functionalDomain.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.projectDocument.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.board.deleteMany({ where: { project: { tenantId: orgId } } });
-    await this.prisma.issueState.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.cycle.deleteMany({ where: { tenantId: orgId } });
-    await this.prisma.label.deleteMany({ where: { project: { tenantId: orgId } } });
-    await this.prisma.project.deleteMany({ where: { tenantId: orgId } });
-
-    await this.prisma.org.update({
+  /**
+   * POST /orgs/:orgId/reset-demo — сброс демо-данных.
+   *
+   * audit Б3 (2026-05-29):
+   *   1. Precondition: `Org.demoWorkspaceSeededAt` НЕ null. Без этого вызов
+   *      на боевой Org мгновенно бы стирал реальные данные (catastrophic data
+   *      loss). Теперь — `BadRequest no_demo_to_reset`.
+   *   2. Все `deleteMany` фильтруются по `externalSource = 'demo'` (или
+   *      каскадно через demo-meeting / demo-issue / project с
+   *      externalSource='demo'). `markAllDemoEntitiesForTenant` в seed-flow
+   *      ставит этот флаг свежим данным.
+   *   3. Всё завёрнуто в `$transaction` (timeout 30 секунд) — на половинном
+   *      падении Org не остаётся в полуубитом состоянии.
+   *   4. `actorUserId` логируется для post-mortem.
+   */
+  async resetDemoWorkspace(args: {
+    orgId: string;
+    actorUserId: string;
+  }): Promise<{ ok: true; deletedByTable: Record<string, number> }> {
+    const { orgId, actorUserId } = args;
+    const org = await this.prisma.org.findUnique({
       where: { id: orgId },
-      data: { demoWorkspaceSeededAt: null },
+      select: { id: true, demoWorkspaceSeededAt: true },
     });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    if (!org.demoWorkspaceSeededAt) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'no_demo_to_reset',
+          message:
+            'В этой компании нет загруженных демо-данных. ' +
+            'Удалять боевые записи через этот эндпоинт нельзя.',
+        },
+      });
+    }
 
-    this.logger.log(`Demo workspace reset for org=${orgId}`);
-    return { ok: true };
+    this.logger.warn(
+      { orgId, actorUserId },
+      'org.demo_reset: начинаем удаление demo-данных',
+    );
+
+    const DEMO = DEMO_EXTERNAL_SOURCE;
+    const tenantId = orgId;
+
+    // Семантика фильтров:
+    //   - tenantId + externalSource='demo' — для верхнеуровневых моделей с
+    //     externalSource (см. demo-data/mark-demo.ts).
+    //   - Каскадные модели (комментарии/relations/labels/assignees/track/
+    //     activity/themeIdeaBlock/etc) идут через родителя, у которого
+    //     externalSource='demo' (issue/checklist/theme/skillProfile/meeting).
+    //   - Meeting — через roomName startsWith 'demo-room-' (так seed работает
+    //     с явным ID). Дополнительно externalSource не нужен.
+    //   - GoalTheme и ChatV2Message — junction-таблицы без tenantId, чистятся
+    //     через FK на demo-parent.
+    const deletedByTable: Record<string, number> = {};
+    const remember = (name: string, res: { count: number }): void => {
+      deletedByTable[name] = (deletedByTable[name] ?? 0) + res.count;
+    };
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        remember('issueActivity', await tx.issueActivity.deleteMany({
+          where: { tenantId, issue: { externalSource: DEMO } },
+        }));
+        remember('issueComment', await tx.issueComment.deleteMany({
+          where: { issue: { tenantId, externalSource: DEMO } },
+        }));
+        remember('issueChecklistItem', await tx.issueChecklistItem.deleteMany({
+          where: { checklist: { tenantId, issue: { externalSource: DEMO } } },
+        }));
+        remember('issueChecklist', await tx.issueChecklist.deleteMany({
+          where: { tenantId, issue: { externalSource: DEMO } },
+        }));
+        remember('issueLabel', await tx.issueLabel.deleteMany({
+          where: { issue: { tenantId, externalSource: DEMO } },
+        }));
+        remember('issueAssignee', await tx.issueAssignee.deleteMany({
+          where: { issue: { tenantId, externalSource: DEMO } },
+        }));
+        remember('issueRelation', await tx.issueRelation.deleteMany({
+          where: { source: { tenantId, externalSource: DEMO } },
+        }));
+        remember('sprintHint', await tx.sprintHint.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('issue', await tx.issue.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Meeting — через roomName 'demo-room-…' (seed выставляет явный ID).
+        remember('meetingParticipantBehavior', await tx.meetingParticipantBehavior.deleteMany({
+          where: { tenantId, meeting: { roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('meetingBehaviorMetrics', await tx.meetingBehaviorMetrics.deleteMany({
+          where: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('meetingQualityScore', await tx.meetingQualityScore.deleteMany({
+          where: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('meetingChapter', await tx.meetingChapter.deleteMany({
+          where: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('transcriptTrack', await tx.transcriptTrack.deleteMany({
+          where: {
+            transcript: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+          },
+        }));
+        remember('transcript', await tx.transcript.deleteMany({
+          where: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('aiResult', await tx.aiResult.deleteMany({
+          where: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('participant', await tx.participant.deleteMany({
+          where: { meeting: { tenantId, roomName: { startsWith: 'demo-room-' } } },
+        }));
+        remember('meeting', await tx.meeting.deleteMany({
+          where: { tenantId, roomName: { startsWith: 'demo-room-' } },
+        }));
+
+        // Knowledge graph
+        remember('themeIdeaBlock', await tx.themeIdeaBlock.deleteMany({
+          where: { theme: { tenantId, externalSource: DEMO } },
+        }));
+        remember('themeEntity', await tx.themeEntity.deleteMany({
+          where: { theme: { tenantId, externalSource: DEMO } },
+        }));
+        remember('ideaBlockLink', await tx.ideaBlockLink.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('entityLink', await tx.entityLink.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('ideaBlock', await tx.ideaBlock.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('entity', await tx.entity.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('theme', await tx.theme.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Goals
+        remember('goalAlignmentSnapshot', await tx.goalAlignmentSnapshot.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('goalTheme', await tx.goalTheme.deleteMany({
+          where: { goal: { tenantId, externalSource: DEMO } },
+        }));
+        remember('goal', await tx.goal.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Skill / Persona
+        remember('executablePersona', await tx.executablePersona.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('skillTrait', await tx.skillTrait.deleteMany({
+          where: { profile: { tenantId, externalSource: DEMO } },
+        }));
+        remember('skillProfile', await tx.skillProfile.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('cloneAccessGrant', await tx.cloneAccessGrant.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Check-ins / digests
+        remember('dailyCheckIn', await tx.dailyCheckIn.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('weeklyOperationsDigest', await tx.weeklyOperationsDigest.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('dailyOperationsDigest', await tx.dailyOperationsDigest.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Chat / notifications
+        remember('chatV2Message', await tx.chatV2Message.deleteMany({
+          where: { conversation: { tenantId, externalSource: DEMO } },
+        }));
+        remember('chatV2Conversation', await tx.chatV2Conversation.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('notification', await tx.notification.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Org/process/cards
+        remember('recognition', await tx.recognition.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('helpfulnessSpotlight', await tx.helpfulnessSpotlight.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('card', await tx.card.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('processStep', await tx.processStep.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('process', await tx.process.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('insight', await tx.insight.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('decision', await tx.decision.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Org structure — снять headPersonId перед удалением Person,
+        // иначе FK Restrict не даст удалить.
+        await tx.department.updateMany({
+          where: { tenantId, externalSource: DEMO },
+          data: { headPersonId: null },
+        });
+        remember('appointment', await tx.appointment.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('person', await tx.person.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('role', await tx.role.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('department', await tx.department.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('companyProfile', await tx.companyProfile.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('functionalDomain', await tx.functionalDomain.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Tracker scaffolding
+        remember('projectDocument', await tx.projectDocument.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('board', await tx.board.deleteMany({
+          where: { project: { tenantId, externalSource: DEMO } },
+        }));
+        remember('issueState', await tx.issueState.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('cycle', await tx.cycle.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('label', await tx.label.deleteMany({
+          where: { project: { tenantId, externalSource: DEMO } },
+        }));
+        remember('project', await tx.project.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        await tx.org.update({
+          where: { id: orgId },
+          data: { demoWorkspaceSeededAt: null },
+        });
+      },
+      { timeout: 30_000 },
+    );
+
+    this.logger.warn(
+      { orgId, actorUserId, deletedByTable },
+      'org.demo_reset: завершено успешно',
+    );
+    return { ok: true, deletedByTable };
   }
 }

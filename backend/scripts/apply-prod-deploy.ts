@@ -130,6 +130,11 @@ const STEPS: Step[] = [
   // OrgInvitation (sha256→argon2id). Идемпотентен (skip уже argon2).
   // ТЗ: plans/tz/2026-05-29-audit-fixes.md §Б1.
   { phase: 'patch', script: 'scripts/patch-rehash-pending-invitations.ts', hint: 'sha256→argon2id для tempPasswordHash', skipBootstrap: true },
+  // 2026-05-29 — audit Б3: проставить externalSource='demo' для legacy
+  // demo-кабинетов (Org.demoWorkspaceSeededAt IS NOT NULL). Без этого
+  // reset-demo на legacy-Org ничего не удалит (поле было null). Идемпотентен.
+  // ТЗ: plans/tz/2026-05-29-audit-fixes.md §Б3.
+  { phase: 'patch', script: 'scripts/patch-mark-demo-data.ts', hint: 'backfill externalSource=demo для existing demo-Org', skipBootstrap: true },
   // 2026-05-27 — billing-tochka-referral-dadata-z: миграция legacy
   // tier_basic/tier_pro/tier_enterprise → tier_standard на всех OrgEntitlement.
   // Идемпотентен. ТЗ §14 Фаза 1.4.

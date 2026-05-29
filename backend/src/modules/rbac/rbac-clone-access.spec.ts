@@ -47,6 +47,17 @@ interface BuildOpts {
     primaryDepartmentId: string | null;
   } | null;
   isRequesterManager?: boolean;
+  /**
+   * audit С14 (2026-05-29): defense-in-depth tenantId-check для role-клона.
+   * Если не задан — мок возвращает `{ tenantId: 't-1' }` (соответствует args.tenantId
+   * в большинстве тестов). Для негативных кейсов «role чужого tenant» — передайте null.
+   */
+  roleTenantId?: string | null;
+  /**
+   * audit С14 (2026-05-29): defense-in-depth tenantId-check для person-клона.
+   * Если `target` не задан — мок возвращает `{ tenantId: personTenantId ?? 't-1' }`.
+   */
+  personTenantId?: string | null;
 }
 
 function buildRbac(opts: BuildOpts): RbacService {
@@ -79,8 +90,32 @@ function buildRbac(opts: BuildOpts): RbacService {
       findFirst: grantFindFirst,
     },
     person: {
-      findUnique: vi.fn(async () => opts.target ?? null),
+      // audit С14 (2026-05-29): canAccessPersonClone проверяет Person.tenantId
+      // ДВАЖДЫ: сначала defense-in-depth (select: { tenantId }), потом legacy
+      // (select: { id, userId, primaryDepartmentId, tenantId }). Если `target`
+      // явно задан — возвращаем его. Если нет — отдаём stub с совпадающим
+      // tenantId, чтобы defense-in-depth пропустил и тесты v2-веток работали
+      // как раньше (когда явный target не нужен). Для негативных кейсов
+      // «person чужого tenant» — передайте `personTenantId: 'other'`.
+      findUnique: vi.fn(async () => {
+        if (opts.target !== undefined) return opts.target;
+        const tenantId = opts.personTenantId ?? 't-1';
+        return {
+          id: 'p-1',
+          userId: null,
+          primaryDepartmentId: null,
+          tenantId,
+        };
+      }),
       findFirst: vi.fn(async () => opts.requesterPerson ?? null),
+    },
+    role: {
+      // audit С14 (2026-05-29): canAccessRoleClone проверяет Role.tenantId
+      // (defense-in-depth). По умолчанию — совпадает с args.tenantId='t-1'.
+      findUnique: vi.fn(async () => {
+        if (opts.roleTenantId === null) return null;
+        return { tenantId: opts.roleTenantId ?? 't-1' };
+      }),
     },
   } as unknown as PrismaService;
 

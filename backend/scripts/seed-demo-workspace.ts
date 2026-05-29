@@ -27,25 +27,91 @@ function getArg(name: string): string | undefined {
   return idx !== -1 ? process.argv[idx + 1] : undefined;
 }
 
+/**
+ * audit В9 (2026-05-29): guard'ы перед сидированием демо-воркспейса.
+ *   1. Идемпотентность — если `demoWorkspaceSeededAt != null`, выходим без
+ *      изменений (повторный запуск из CI / Z-Admin не дублирует данные).
+ *   2. «Свежая Org» — если в тенанте уже есть НЕ-demo Person'ы или Project'ы
+ *      (boevye external'ы / реальные пользователи добавили данные), сидирование
+ *      ОТКАЗЫВАЕТСЯ. Иначе seed может пересечься с production данными и сломать
+ *      реальную работу клиента. Передача `--force` снимает guard (для admin
+ *      override; пишет warn в лог).
+ */
+async function ensureOrgEligibleForDemoSeed(
+  prisma: PrismaClient,
+  tenantId: string,
+  options: { force?: boolean },
+): Promise<{ skip: boolean; reason?: string }> {
+  const org = await prisma.org.findUnique({
+    where: { id: tenantId },
+    select: { id: true, name: true, demoWorkspaceSeededAt: true },
+  });
+  if (!org) {
+    return { skip: true, reason: `Org ${tenantId} не найдена` };
+  }
+  if (org.demoWorkspaceSeededAt != null) {
+    return {
+      skip: true,
+      reason: `Org ${tenantId} (${org.name}) уже сидирована демо-данными в ${org.demoWorkspaceSeededAt.toISOString()} — пропуск (идемпотентность)`,
+    };
+  }
+  if (options.force) {
+    console.warn(
+      `⚠ --force: пропускаем проверку «свежей Org». Демо-данные могут пересечься с production-данными в ${tenantId}.`,
+    );
+    return { skip: false };
+  }
+  // Проверяем не-demo сущности. Хотя бы один Person/Project из реальной работы → отказ.
+  const [nonDemoPersons, nonDemoProjects] = await Promise.all([
+    prisma.person.count({
+      where: {
+        tenantId,
+        OR: [{ externalSource: null }, { externalSource: { not: 'demo' } }],
+      },
+    }),
+    prisma.project.count({
+      where: {
+        tenantId,
+        OR: [{ externalSource: null }, { externalSource: { not: 'demo' } }],
+      },
+    }),
+  ]);
+  if (nonDemoPersons > 0 || nonDemoProjects > 0) {
+    return {
+      skip: true,
+      reason: `Org ${tenantId} (${org.name}) НЕ свежая: найдено ${nonDemoPersons} не-demo Person'ов и ${nonDemoProjects} не-demo Project'ов. Передайте --force чтобы переопределить (опасно).`,
+    };
+  }
+  return { skip: false };
+}
+
 async function seedDemoWorkspace(
   prisma: PrismaClient,
   tenantId: string,
   ownerUserId: string,
+  options: { force?: boolean } = {},
 ): Promise<{
-  departmentsCreated: number;
-  personsCreated: number;
-  projectsCreated: number;
-  issuesCreated: number;
-  meetingsCreated: number;
-  ideaBlocksCreated: number;
-  entitiesCreated: number;
-  themesCreated: number;
-  goalsCreated: number;
-  clonesCreated: number;
-  checkInsCreated: number;
-  digestsCreated: number;
-  chatConversationsCreated: number;
+  skipped?: boolean;
+  reason?: string;
+  departmentsCreated?: number;
+  personsCreated?: number;
+  projectsCreated?: number;
+  issuesCreated?: number;
+  meetingsCreated?: number;
+  ideaBlocksCreated?: number;
+  entitiesCreated?: number;
+  themesCreated?: number;
+  goalsCreated?: number;
+  clonesCreated?: number;
+  checkInsCreated?: number;
+  digestsCreated?: number;
+  chatConversationsCreated?: number;
 }> {
+  const eligibility = await ensureOrgEligibleForDemoSeed(prisma, tenantId, options);
+  if (eligibility.skip) {
+    console.log(`⏭ ${eligibility.reason}`);
+    return { skipped: true, reason: eligibility.reason };
+  }
   const ids: IdMap = createEmptyIdMap();
   const ctx: SeedContext = { prisma, tenantId, ownerUserId };
 
@@ -206,9 +272,16 @@ async function main() {
   const tenantId = getArg('tenant');
   const ownerUserId = getArg('owner');
   const reset = process.argv.includes('--reset');
+  // audit В9: --force снимает проверку «свежей Org» (опасно — может затереть
+  // боевые данные). Идемпотентность по demoWorkspaceSeededAt всё равно
+  // сохраняется: повторный запуск без --reset на уже сидированной Org
+  // ничего не делает.
+  const force = process.argv.includes('--force');
 
   if (!tenantId) {
-    console.error('Usage: bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId> [--reset]');
+    console.error(
+      'Usage: bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId> [--reset] [--force]',
+    );
     process.exit(1);
   }
 
@@ -222,7 +295,7 @@ async function main() {
         console.error('Error: --owner <userId> is required for seeding');
         process.exit(1);
       }
-      await seedDemoWorkspace(prisma, tenantId, ownerUserId);
+      await seedDemoWorkspace(prisma, tenantId, ownerUserId, { force });
     }
   } finally {
     await prisma.$disconnect();

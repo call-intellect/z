@@ -17,6 +17,7 @@ import type {
 } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { SubscriptionService } from '../billing/services/subscription.service';
 import { RbacService } from '../rbac/rbac.service';
 
 /**
@@ -55,6 +56,7 @@ export class OrgsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(SubscriptionService) private readonly subscriptions: SubscriptionService,
   ) {}
 
   /**
@@ -101,6 +103,9 @@ export class OrgsService {
         isActive: true,
       },
     });
+    // ТЗ paywall-no-trial §3 — для каждой новой Org создаём запись
+    // Subscription со status=DEMO, чтобы SubscriptionGuard работал детерминированно.
+    await this.subscriptions.ensureDemo(org.id, tx);
     this.rbac.invalidate(input.ownerId, org.id);
     return org;
   }

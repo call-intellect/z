@@ -1,7 +1,7 @@
 # ТЗ: Paywall — демо-режим без trial
 
 **Дата:** 2026-05-28  
-**Статус:** `[~]` Фаза 1 (SubscriptionGuard) ✅, далее Фаза 2 (frontend)  
+**Статус:** `[x]` Фазы 1-5 ✅ (5.2 email + 5.3 метрики конверсии — вне scope MVP)  
 **Связан:** [2026-05-28-demo-workspace.md](2026-05-28-demo-workspace.md), [2026-05-28-billing-paywall-demo-cabinet.md](../analysis/2026-05-28-billing-paywall-demo-cabinet.md)
 
 ---
@@ -317,34 +317,38 @@ return (
 
 - [x] **1.1** Создать `SubscriptionGuard` (проверка `status === 'ACTIVE'`)
 - [x] **1.2** Добавить декоратор `@RequireSubscription()`
-- [x] **1.3** Применить guard ко всем мутирующим эндпоинтам трекера (~126 декораторов, 31 файл)
-- [x] **1.4** Тесты: блокировка DEMO, пропуск ACTIVE (14 unit-тестов, все ✅)
+- [x] **1.3** Применить guard ко всем мутирующим эндпоинтам трекера (141 декоратор, 32 файла — покрытие 100%+)
+- [x] **1.4** Тесты: блокировка DEMO, пропуск ACTIVE (21 unit-тест: 14 базовых + 7 для GET/HEAD/OPTIONS/path bypass, все ✅)
+- [x] **1.5** Рефакторинг: bypass GET/HEAD/OPTIONS + path `/api/v1/{billing,subscription,auth}/*` (ТЗ §3.2)
+- [x] **1.6** `ensureDemo()` подключён в `OrgsService.createForOwner` — у каждой новой Org сразу есть запись Subscription
 
-### Фаза 2: PaywallBanner + PaywallModal (frontend)
+### Фаза 2: PaywallBanner + PaywallModal (frontend) ✅
 
-- [ ] **2.1** Создать `PaywallBanner` (sticky top)
-- [ ] **2.2** Создать `PaywallModal` (при попытке создать)
-- [ ] **2.3** Добавить interceptor для 403 `subscription_required`
-- [ ] **2.4** Тесты: показ в DEMO, скрытие в ACTIVE
+- [x] **2.1** Создать `PaywallBanner` (sticky top, семантические токены `warning/*`)
+- [x] **2.2** Создать `PaywallModal` (Radix Dialog, открывается на `subscription:required`)
+- [x] **2.3** Добавить interceptor в `api-client.ts` для 403 `subscription_required` → `CustomEvent`
+- [x] **2.4** Тесты: 5 + 5 + 3 = 13 ✅ (PaywallBanner, PaywallModal, api-client interceptor)
 
-### Фаза 3: Страница оплаты (улучшения)
+### Фаза 3: Страница оплаты (улучшения) ✅
 
-- [ ] **3.1** Обновить `/settings/subscription` для DEMO (крупный CTA)
-- [ ] **3.2** Добавить выбор периода (месяц/год)
-- [ ] **3.3** Добавить управление местами (slider 31-100)
-- [ ] **3.4** Тесты: расчёт цены с доп. местами
+- [x] **3.1** Обновить `/settings/subscription` для DEMO (DemoHero, крупный CTA)
+- [x] **3.2** Добавить выбор периода (месяц 60K / год 576K, скидка 20%)
+- [x] **3.3** Добавить управление местами (slider 31–100, live Quote API с debounce 300мс)
+- [x] **3.4** Тесты: 7 ✅ (DEMO hero, period toggle, slider, расчёт цены, ACTIVE card, payCard, payBankInvoice)
+- [x] **3.5** `BlockedHero` для SUSPENDED/EXPIRED/CANCELED/PAST_DUE
+- [x] **3.6** Фикс: `SubscriptionCard` показывал `seatsBase + 1` (off-by-one), теперь `seatsBase`
 
-### Фаза 4: Демо-режим (read-only)
+### Фаза 4: Демо-режим (read-only) ✅
 
-- [ ] **4.1** Применить `SubscriptionGuard` ко всем POST/PATCH/DELETE
-- [ ] **4.2** Добавить визуальные индикаторы read-only (disabled buttons, tooltips)
-- [ ] **4.3** Тесты: блокировка создания в DEMO
+- [x] **4.1** `SubscriptionGuard` применён ко всем POST/PATCH/DELETE (см. 1.3, 141 декоратор)
+- [x] **4.2** Визуальные индикаторы read-only: хук `useCanCreate()` + компонент `<PaywallGuardButton>` (приглушённый стиль + tooltip + открывает PaywallModal вместо `onClick` в DEMO). Базовый UI — `PaywallBanner` (sticky на всех страницах через AppShell) + 403-interceptor → PaywallModal на любой попытке POST. 6 тестов ✅
+- [x] **4.3** Тесты блокировки в DEMO покрыты в `subscription.guard.spec.ts` (DEMO/SUSPENDED/EXPIRED/CANCELED/PAST_DUE)
 
-### Фаза 5: Миграция
+### Фаза 5: Миграция ✅ (5.2 email + 5.3 — вне scope MVP)
 
-- [ ] **5.1** Скрипт миграции существующих пользователей
-- [ ] **5.2** Уведомления о введении paywall (email + in-app)
-- [ ] **5.3** Мониторинг конверсии DEMO → ACTIVE
+- [x] **5.1** Скрипт миграции `backend/scripts/backfill-demo-subscriptions.ts` — для каждой Org без подписки создаёт `Subscription{status=DEMO}` + `SubscriptionEvent{CREATED}`. Зарегистрирован в `apply-prod-deploy.ts` (phase: backfill, skipBootstrap: true).
+- [~] **5.2** Уведомления: in-app покрыт (`PaywallBanner` на всех страницах + `PaywallModal` при попытке create). Email-уведомления — вне scope MVP, отдельным ТЗ.
+- [~] **5.3** Мониторинг конверсии DEMO → ACTIVE — вне scope MVP. Источник данных уже есть: `SubscriptionEvent` (CREATED/ACTIVATED/...) + `Subscription.status` — отдельным ТЗ добавить Prometheus-counter в `SubscriptionGuard` и Grafana-дашборд.
 
 ---
 

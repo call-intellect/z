@@ -21,6 +21,22 @@
 
 ---
 
+### 🔒 ТЗ 2026-05-28 — paywall без trial (Фазы 1–5)
+
+Ветка: `dev`. Коммиты `fcde0aa..этот-commit`. Backend SubscriptionGuard + декораторы `@RequireSubscription` на ~141 мутирующем эндпоинте, frontend Paywall UI (Banner/Modal/SubscriptionContext) + страница `/settings/subscription` для DEMO/ACTIVE/BLOCKED, скрипт backfill для существующих Org.
+
+- **Шаг 1 — ENV** — без изменений. Paywall работает на существующих ENV биллинга (`BILLING_PROVIDER`, `BILLING_PUBLIC_API_URL`).
+- **Шаг 4 — Prisma** — без изменений. Используется существующая модель `Subscription` + enum `SubscriptionStatus`.
+- **Шаг 8 — Backfill** — 1 новый: `backfill-demo-subscriptions.ts`. Для каждой Org без записи `Subscription` создаёт `Subscription{status=DEMO}` + `SubscriptionEvent{CREATED}`. Идемпотентен (skip существующих). Через apply-prod-deploy агрегатор автоматически.
+- **Шаг 12 — Smoke** — проверить:
+  - `POST /api/v1/projects` от DEMO-юзера → 403 с телом `{error: {code: 'subscription_required', currentStatus: 'DEMO', price: 60000}}`.
+  - `GET /api/v1/projects` от DEMO-юзера → 200 (read-only пропускается).
+  - `POST /api/v1/billing/pay/card` от DEMO-юзера → пропущен guard'ом (path bypass), доходит до контроллера.
+  - `POST /api/v1/projects` от ACTIVE-юзера → 201.
+  - Frontend `/settings/subscription` для DEMO → DemoHero + slider 31..100 + расчёт через Quote API.
+
+---
+
 ### 💳 ТЗ 2026-05-27 — billing/tochka/referrals/dadata (новый блок)
 
 Ветка: `feature/billing-tochka-referral-dadata`. 8 коммитов (52cde75..4416801). Введены 5 новых модулей backend: `billing`, `inn-lookup`, `meetings-balance`, `referrals` + интеграция в `entitlements`/`meetings`/`quotas`. **Frontend ещё не сделан** (Фаза 9 ТЗ §14) — поэтому новые эндпоинты пока доступны только через Swagger `/api/docs`.
@@ -710,6 +726,7 @@ docker compose exec backend bun run scripts/backfill-entity-link-types-fase0.ts 
 docker compose exec backend bun run scripts/backfill-commitment-due-dates.ts --dry-run
 docker compose exec backend bun run scripts/backfill-commitment-due-dates.ts                  # β-8.2
 docker compose exec backend bun run scripts/backfill-onboarding-setup-completed.ts            # онбординг v2: Org с отделами → setupCompletedAt = createdAt (идемпотентен, батчами по 100)
+docker compose exec backend bun run scripts/backfill-demo-subscriptions.ts                    # ТЗ paywall: Subscription{DEMO} для Org без подписки (идемпотентен)
 
 # Опционально (дорого по LLM-quota):
 docker compose exec backend bun run scripts/skill-trait-concepts-backfill.ts

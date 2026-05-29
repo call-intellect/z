@@ -157,7 +157,8 @@ export function SubscriptionClient() {
   const isActive = subscription?.status === 'ACTIVE';
   const isBlocked = subscription?.status === 'SUSPENDED'
     || subscription?.status === 'EXPIRED'
-    || subscription?.status === 'CANCELED';
+    || subscription?.status === 'CANCELED'
+    || subscription?.status === 'PAST_DUE';
 
   if (loading) {
     return (
@@ -447,12 +448,14 @@ function BlockedHero({
     SUSPENDED: 'Подписка приостановлена',
     EXPIRED: 'Подписка истекла',
     CANCELED: 'Подписка отменена',
+    PAST_DUE: 'Не получилось списать оплату',
   };
 
   const descriptions: Record<string, string> = {
     SUSPENDED: 'Оплатите подписку, чтобы возобновить доступ ко всем функциям.',
     EXPIRED: 'Срок подписки истёк. Оплатите, чтобы восстановить доступ к данным.',
     CANCELED: 'Подписка была отменена. Оплатите, чтобы возобновить работу.',
+    PAST_DUE: 'Платёж не прошёл. Оплатите снова, чтобы избежать приостановки.',
   };
 
   const monthlyRubles = quote ? quote.monthlyKopecks / 100 : null;
@@ -564,7 +567,7 @@ function SubscriptionCard({
         <Field
           icon={<Users size={16} />}
           label="Места"
-          value={`${subscription.seatsBase + 1} основ. + ${subscription.seatsExtra} доп.`}
+          value={`${subscription.seatsBase} основ. + ${subscription.seatsExtra} доп.`}
         />
         <Field
           icon={<Calendar size={16} />}

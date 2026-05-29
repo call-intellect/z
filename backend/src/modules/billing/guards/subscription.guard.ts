@@ -16,26 +16,21 @@ import { REQUIRE_SUBSCRIPTION_KEY } from './require-subscription.decorator';
 /**
  * SubscriptionGuard — глобально зарегистрированный guard (paywall без trial).
  *
- * Алгоритм:
- *   1. Читает метаданные `REQUIRE_SUBSCRIPTION_KEY` через Reflector
- *      (handler перекрывает class — стандартное поведение Nest).
- *   2. Если декоратора нет — `return true` (guard прозрачен для эндпоинтов
- *      без `@RequireSubscription`).
- *   3. Иначе требует `req.tenantId` (его кладёт `TenantGuard`); если нет —
- *      403 `tenant_required`.
- *   4. Получает `Subscription` через `SubscriptionService.getByTenant`.
- *   5. Если `status === 'ACTIVE'` — пропускает.
- *   6. Иначе — 403 `subscription_required` с текущим статусом и ценой.
- *
- * Цепочка guard'ов в проекте: CookieAuthGuard → TenantGuard →
- * SubscriptionGuard (этот guard) → EntitlementGuard → RbacGuard.
- * Регистрируется через APP_GUARD в AppModule.
- *
  * Источник: plans/tz/2026-05-28-paywall-no-trial.md §3.
+ *
+ * Цепочка guard'ов: CookieAuthGuard → TenantGuard → SubscriptionGuard →
+ * EntitlementGuard → RbacGuard. Регистрируется через APP_GUARD в AppModule.
  */
 @Injectable()
 export class SubscriptionGuard implements CanActivate {
   private readonly logger = new Logger(SubscriptionGuard.name);
+
+  /** Пути, которые guard НИКОГДА не блокирует (ТЗ §3.2 — оплата и просмотр подписки). */
+  private static readonly BYPASS_PATH_PREFIXES = [
+    '/api/v1/billing',
+    '/api/v1/subscription',
+    '/api/v1/auth',
+  ];
 
   constructor(
     @Inject(Reflector) private readonly reflector: Reflector,
@@ -55,6 +50,17 @@ export class SubscriptionGuard implements CanActivate {
     const req = ctx
       .switchToHttp()
       .getRequest<Request & { tenantId?: string }>();
+
+    // ТЗ §3.2: GET-запросы (read-only) пропускаются — DEMO видит данные.
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      return true;
+    }
+
+    // ТЗ §3.2: /billing/*, /subscription/*, /auth/* — без paywall (оплата/логин).
+    const path = req.path ?? req.url ?? '';
+    if (SubscriptionGuard.BYPASS_PATH_PREFIXES.some((p) => path.startsWith(p))) {
+      return true;
+    }
 
     const tenantId = req.tenantId;
     if (!tenantId) {

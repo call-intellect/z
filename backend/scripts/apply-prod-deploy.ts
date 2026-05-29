@@ -160,6 +160,15 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
 
+  // ТЗ paywall-no-trial Фаза 5.1: создать Subscription{status=DEMO} для
+  // всех Org, у которых её ещё нет (grandfather перед paywall).
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-demo-subscriptions.ts',
+    hint: 'DEMO-подписка для Org, существовавших до paywall',
+    skipBootstrap: true,
+  },
+
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },
   { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'], skipBootstrap: true },

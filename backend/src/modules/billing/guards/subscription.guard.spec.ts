@@ -9,6 +9,8 @@ import { SubscriptionGuard } from './subscription.guard';
 
 interface ReqStub {
   tenantId?: string;
+  method?: string;
+  path?: string;
 }
 
 function makeContext(
@@ -16,11 +18,14 @@ function makeContext(
   metaOverride: boolean | undefined,
   ctxType = 'http',
 ): { ctx: ExecutionContext; reflector: Reflector } {
+  // По умолчанию мутирующий POST с нейтральным путём — большинство тестов
+  // именно про paywall-блокировку мутации.
+  const req = { method: 'POST', path: '/api/v1/projects', ...reqStub };
   const ctx = {
     getType: () => ctxType,
     getHandler: () => ({}),
     getClass: () => ({}),
-    switchToHttp: () => ({ getRequest: () => reqStub }),
+    switchToHttp: () => ({ getRequest: () => req }),
   } as unknown as ExecutionContext;
 
   const reflector = {
@@ -174,7 +179,7 @@ describe('SubscriptionGuard', () => {
 
   describe('edge cases', () => {
     it('блокирует без tenantId (TenantGuard не отработал)', async () => {
-      const { ctx, reflector } = makeContext({}, true);
+      const { ctx, reflector } = makeContext({ tenantId: undefined }, true);
       const guard = new SubscriptionGuard(reflector, makeSubService('ACTIVE'));
       await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
         ForbiddenException,
@@ -185,6 +190,77 @@ describe('SubscriptionGuard', () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true, 'ws');
       const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+  });
+
+  // ТЗ §3.2 — GET/HEAD/OPTIONS никогда не блокируются (read-only).
+  describe('HTTP метод bypass', () => {
+    it('пропускает GET-запрос даже при DEMO', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'GET' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('пропускает HEAD-запрос даже при DEMO', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'HEAD' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('пропускает OPTIONS-запрос (CORS preflight) даже при DEMO', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'OPTIONS' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+  });
+
+  // ТЗ §3.2 — /billing/*, /subscription/*, /auth/* никогда не блокируются.
+  describe('path bypass', () => {
+    it('пропускает POST /api/v1/billing/pay даже при DEMO', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'POST', path: '/api/v1/billing/pay' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('пропускает POST /api/v1/subscription/cancel даже при DEMO', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'POST', path: '/api/v1/subscription/cancel' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('пропускает POST /api/v1/auth/login даже при DEMO', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'POST', path: '/api/v1/auth/login' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('блокирует POST /api/v1/projects при DEMO (мутирующий, не bypass)', async () => {
+      const { ctx, reflector } = makeContext(
+        { tenantId: 'org-1', method: 'POST', path: '/api/v1/projects' },
+        true,
+      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'));
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
   });
 });

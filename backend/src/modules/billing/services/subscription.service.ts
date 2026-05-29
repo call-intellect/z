@@ -76,20 +76,26 @@ export class SubscriptionService {
 
   /**
    * Создаёт начальную запись Subscription со status=DEMO для свежей Org.
-   * Используется при регистрации Org. Если запись уже есть — возвращает её.
+   * Идемпотентно: если запись уже есть — возвращает её без вторичной записи.
+   * Принимает опциональный `tx`, чтобы вписаться в транзакцию вызывающего
+   * (например, OrgsService.createForOwner внутри AccountsService.register).
    */
-  async ensureDemo(tenantId: string): Promise<Subscription> {
-    const existing = await this.prisma.subscription.findUnique({
+  async ensureDemo(
+    tenantId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Subscription> {
+    const client = tx ?? this.prisma;
+    const existing = await client.subscription.findUnique({
       where: { tenantId },
     });
     if (existing) return existing;
 
-    const created = await this.prisma.subscription.create({
+    const created = await client.subscription.create({
       data: { tenantId },
     });
     // Пишем событие 'created' (без эмита EventEmitter — это создание, не
     // активация). Реф-комиссия не триггерится.
-    await this.prisma.subscriptionEvent.create({
+    await client.subscriptionEvent.create({
       data: {
         subscriptionId: created.id,
         eventType: SubscriptionEventType.CREATED,

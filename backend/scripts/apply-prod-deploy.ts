@@ -142,6 +142,10 @@ const STEPS: Step[] = [
   // упадёт на существующих дублях. Идемпотентны. ТЗ §Б7.
   { phase: 'patch', script: 'scripts/patch-dedupe-billing-event-log.ts', hint: 'dedupe BillingEventLog по (providerName,externalEventId)', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-dedupe-referral-payout.ts', hint: 'dedupe ReferralPayout по triggerInvoiceId', skipBootstrap: true },
+  // 2026-05-29 — audit Б8: backfill ReferralAttribution.dateBucket +
+  // dedupe по (referralId, fingerprint, dateBucket) ДО prisma:push с
+  // composite unique. Идемпотентен. ТЗ §Б8.
+  { phase: 'patch', script: 'scripts/patch-backfill-referral-attribution-date-bucket.ts', hint: 'backfill dateBucket + dedupe для composite unique', skipBootstrap: true },
   // 2026-05-29 — audit Б12: incident-only откат LLM-миграции
   // deepseek-v4-pro → deepseek-v4-flash. НЕ запускается агрегатором
   // ни в bootstrap, ни в update — только руками при инциденте:

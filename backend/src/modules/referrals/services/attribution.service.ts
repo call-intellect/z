@@ -23,11 +23,20 @@
  */
 
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 const ATTRIBUTION_TTL_DAYS = 90;
+
+/**
+ * UTC YYYY-MM-DD для composite unique (audit-fixes §Б8). Сегодня по UTC,
+ * чтобы один beacon = одна запись на партнёра+fingerprint в сутки.
+ */
+function dateBucketUtc(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
 
 export interface RecordAttributionInput {
   slug: string;
@@ -80,21 +89,48 @@ export class AttributionService {
       return { id: 'skipped' };
     }
 
-    const expiresAt = new Date();
+    const now = new Date();
+    const expiresAt = new Date(now);
     expiresAt.setDate(expiresAt.getDate() + ATTRIBUTION_TTL_DAYS);
+    const dateBucket = dateBucketUtc(now);
+    const fingerprint = input.fingerprint?.slice(0, 64) ?? null;
 
-    const record = await this.prisma.referralAttribution.create({
-      data: {
-        referralId: referral.id,
-        slug: referral.slug,
-        fingerprint: input.fingerprint?.slice(0, 64) ?? null,
-        ip: input.ip?.slice(0, 45) ?? null,
-        userAgent: input.userAgent?.slice(0, 2000) ?? null,
-        referer: input.referer?.slice(0, 2000) ?? null,
-        expiresAt,
-      },
-    });
-    return { id: record.id };
+    try {
+      const record = await this.prisma.referralAttribution.create({
+        data: {
+          referralId: referral.id,
+          slug: referral.slug,
+          fingerprint,
+          ip: input.ip?.slice(0, 45) ?? null,
+          userAgent: input.userAgent?.slice(0, 2000) ?? null,
+          referer: input.referer?.slice(0, 2000) ?? null,
+          expiresAt,
+          dateBucket,
+        },
+      });
+      return { id: record.id };
+    } catch (err) {
+      // audit-fixes Б8: composite unique (referralId, fingerprint, dateBucket)
+      // защищает от DoS-flood. P2002 = дубль за сегодня → возвращаем
+      // существующую запись, не падаем (beacon идемпотентен).
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        fingerprint !== null
+      ) {
+        const existing = await this.prisma.referralAttribution.findFirst({
+          where: { referralId: referral.id, fingerprint, dateBucket },
+          select: { id: true },
+        });
+        if (existing) {
+          this.logger.debug(
+            `Beacon dedup для referral=${referral.id} fp=${fingerprint.slice(0, 8)}… date=${dateBucket}`,
+          );
+          return { id: existing.id };
+        }
+      }
+      throw err;
+    }
   }
 
   /**

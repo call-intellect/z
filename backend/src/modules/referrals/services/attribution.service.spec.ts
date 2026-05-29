@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -103,5 +104,111 @@ describe('AttributionService.attributeOrg (audit Б6)', () => {
     ).rejects.toBeInstanceOf(ConflictException);
     expect(metrics.incReferralSelfReferralDenied).toHaveBeenCalled();
     expect(prisma.org.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * audit Б8 (2026-05-29) — record() идемпотентен по
+ * (referralId, fingerprint, dateBucket). DoS-flood защищён composite unique.
+ */
+describe('AttributionService.record (audit Б8)', () => {
+  let prisma: {
+    referral: { findUnique: ReturnType<typeof vi.fn> };
+    referralAttribution: {
+      create: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+    };
+  };
+  let svc: AttributionService;
+
+  beforeEach(() => {
+    prisma = {
+      referral: { findUnique: vi.fn() },
+      referralAttribution: { create: vi.fn(), findFirst: vi.fn() },
+    };
+    const metrics = {
+      incReferralSelfReferralDenied: vi.fn(),
+    } as unknown as BusinessMetricsService;
+    svc = new AttributionService(prisma as unknown as PrismaService, metrics);
+  });
+
+  it('новая запись: dateBucket = YYYY-MM-DD UTC, сохраняется fingerprint', async () => {
+    prisma.referral.findUnique.mockResolvedValueOnce({
+      id: 'ref-1',
+      slug: 'abc',
+    });
+    prisma.referralAttribution.create.mockImplementationOnce(
+      async ({ data }: { data: { dateBucket: string; fingerprint: string | null } }) => ({
+        id: 'attr-new',
+        dateBucket: data.dateBucket,
+        fingerprint: data.fingerprint,
+      }),
+    );
+    const result = await svc.record({
+      slug: 'abc',
+      fingerprint: 'fp-aaaa',
+    });
+    expect(result.id).toBe('attr-new');
+    const createCall = prisma.referralAttribution.create.mock.calls[0]![0] as {
+      data: { dateBucket: string; fingerprint: string };
+    };
+    expect(createCall.data.dateBucket).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(createCall.data.fingerprint).toBe('fp-aaaa');
+  });
+
+  it('P2002 на composite unique: возвращает существующую запись (идемпотентность)', async () => {
+    prisma.referral.findUnique.mockResolvedValueOnce({
+      id: 'ref-1',
+      slug: 'abc',
+    });
+    prisma.referralAttribution.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('unique violation', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    prisma.referralAttribution.findFirst.mockResolvedValueOnce({
+      id: 'attr-existing',
+    });
+
+    const result = await svc.record({
+      slug: 'abc',
+      fingerprint: 'fp-flood',
+    });
+    expect(result.id).toBe('attr-existing');
+    expect(prisma.referralAttribution.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          referralId: 'ref-1',
+          fingerprint: 'fp-flood',
+        }),
+      }),
+    );
+  });
+
+  it('beacon на неизвестный slug: skipped, без create', async () => {
+    prisma.referral.findUnique.mockResolvedValueOnce(null);
+    const result = await svc.record({
+      slug: 'unknown',
+      fingerprint: 'fp-x',
+    });
+    expect(result).toEqual({ id: 'skipped' });
+    expect(prisma.referralAttribution.create).not.toHaveBeenCalled();
+  });
+
+  it('P2002 при fingerprint=NULL: НЕ перехватывается (composite unique не работает с NULL)', async () => {
+    prisma.referral.findUnique.mockResolvedValueOnce({
+      id: 'ref-1',
+      slug: 'abc',
+    });
+    const err = new Prisma.PrismaClientKnownRequestError('other unique', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    prisma.referralAttribution.create.mockRejectedValueOnce(err);
+
+    await expect(
+      svc.record({ slug: 'abc', fingerprint: null }),
+    ).rejects.toBe(err);
   });
 });

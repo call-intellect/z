@@ -8673,6 +8673,18 @@ model ReferralAttribution {
   /// createdAt + 90 дней.
   expiresAt   DateTime
 
+  /// audit-fixes Б8 (2026-05-29): дата (UTC, YYYY-MM-DD) для composite unique
+  /// `(referralId, fingerprint, dateBucket)`. Защита от DoS-flood: даже если
+  /// атакующий с одного fingerprint шлёт beacon тысячами в день, у нас в БД
+  /// останется максимум 1 запись на партнёра-fingerprint в сутки.
+  /// При fingerprint=NULL composite unique не работает (NULL не равно NULL
+  /// в стандартном SQL), это допустимо — beacon без fingerprint достаточно
+  /// редок (только если фронт не смог его посчитать).
+  /// Optional — для совместимости с legacy-данными, новые записи всегда
+  /// заполняют (см. AttributionService.record + patch-backfill-… скрипт).
+  dateBucket  String?  @db.VarChar(10)
+
+  @@unique([referralId, fingerprint, dateBucket], name: "uniq_referral_fp_date")
   @@index([slug, createdAt])
   @@index([fingerprint])
   @@index([expiresAt])

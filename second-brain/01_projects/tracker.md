@@ -107,12 +107,12 @@ POST   /api/v1/intake
 POST   /api/v1/intake/:id/triage                 # accept | reject | snooze | duplicate
 PATCH  /api/v1/intake/:id
 
-GET    /api/v1/webhooks
-POST   /api/v1/webhooks
-PATCH  /api/v1/webhooks/:id
-DELETE /api/v1/webhooks/:id
-GET    /api/v1/webhooks/:id/logs
-POST   /api/v1/webhooks/:id/test                 # 202 enqueued
+GET    /api/v1/tracker/webhooks
+POST   /api/v1/tracker/webhooks
+PATCH  /api/v1/tracker/webhooks/:id
+DELETE /api/v1/tracker/webhooks/:id
+GET    /api/v1/tracker/webhooks/:id/logs
+POST   /api/v1/tracker/webhooks/:id/test         # 202 enqueued
 
 GET    /api/v1/team-templates
 GET    /api/v1/team-templates/:slug

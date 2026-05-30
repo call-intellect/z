@@ -84,7 +84,7 @@ export class SubscriptionGuard implements CanActivate {
         error: {
           code: 'tenant_required',
           message:
-            'SubscriptionGuard требует TenantGuard выше (req.tenantId не выставлен).',
+            'Не передан заголовок X-Org-Id или путь без параметра :orgId. Невозможно определить организацию для проверки подписки.',
         },
       });
     }

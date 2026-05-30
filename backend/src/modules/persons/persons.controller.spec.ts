@@ -4,11 +4,13 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import type { RbacService } from '../rbac/rbac.service';
 
 import { ListPersonsQuerySchema } from './dto/persons.dto';
 import { PersonsController } from './persons.controller';
+import type { PersonPulseService } from './services/person-pulse.service';
 import type { PersonsService } from './services/persons.service';
 
 const userA: CurrentUserPayload = { id: 'u-1', email: 'u@x', role: 'user' };
@@ -23,7 +25,17 @@ function build(opts: { canRead?: boolean } = {}) {
     canWrite: vi.fn(async () => true),
     check: vi.fn(async () => true),
   } as unknown as RbacService;
-  return { ctrl: new PersonsController(persons, rbac), persons, rbac };
+  const personPulse = {
+    getPulse: vi.fn(async () => ({}) as never),
+  } as unknown as PersonPulseService;
+  const prisma = {
+    person: { findFirst: vi.fn(async () => null) },
+  } as unknown as PrismaService;
+  return {
+    ctrl: new PersonsController(persons, rbac, personPulse, prisma),
+    persons,
+    rbac,
+  };
 }
 
 describe('PersonsController (IDOR fence)', () => {

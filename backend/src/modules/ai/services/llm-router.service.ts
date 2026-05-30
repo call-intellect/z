@@ -414,7 +414,24 @@ export type LlmTaskType =
   //   (cheap binary verdict, qwen3.5:9b приемлем).
   //   См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
   | 'practice-skill-extract'
-  | 'practice-skill-adversarial-verify';
+  | 'practice-skill-adversarial-verify'
+  // Pulse Wave 3 (2026-05-30, plans/tz/2026-05-30-pulse-full.md §3.1/3.5/3.7) —
+  // 3 LLM-агента дашбордовой Волны 3 (engagement-scorer без LLM, чисто SQL).
+  // 'team-health-analyzer'        — JSON-strict factors (5 осей low/medium/high) +
+  //                                  summary. Capable не нужна — рутинная классификация.
+  //                                  Primary deepseek-v4-flash; secondary gpt-5.4-mini;
+  //                                  tertiary ollama qwen3.5:9b.
+  // 'reflection-quality-scorer'    — JSON-strict 3-axis оценка (depth/concreteness/
+  //                                  variety). Очень частый дешёвый вызов.
+  //                                  Та же цепочка.
+  // 'hr-recommender'              — 0..3 рекомендаций руководителю по сотруднику
+  //                                  (praise/comp_review/workload/dev/urgent_talk).
+  //                                  Нужна capable модель (нюансы).
+  //                                  Primary deepseek-v4-pro; secondary gpt-5.4-mini;
+  //                                  tertiary ollama qwen3.5:9b.
+  | 'team-health-analyzer'
+  | 'reflection-quality-scorer'
+  | 'hr-recommender';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -559,6 +576,10 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (выполняемые навыки клонов).
   'practice-skill-extract',
   'practice-skill-adversarial-verify',
+  // Pulse Wave 3 (2026-05-30) — 3 LLM-агента дашбордовой Волны 3.
+  'team-health-analyzer',
+  'reflection-quality-scorer',
+  'hr-recommender',
 ] as const;
 
 /**

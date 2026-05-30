@@ -87,6 +87,8 @@ const STEPS: Step[] = [
     // Agents v2 (2026-05-30) — Фаза 0.1 probe-response-classify;
     // в следующих волнах сюда добавятся остальные taskType.
     'agents-v2',
+    // Pulse Wave 3 (2026-05-30) — team-health-analyzer / reflection-quality-scorer / hr-recommender.
+    'pulse-w3',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

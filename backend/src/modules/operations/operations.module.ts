@@ -27,6 +27,7 @@ import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
+import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
 
 /**
  * SBA β-8 — OperationsModule.
@@ -98,6 +99,8 @@ import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.c
     // SBA β-8.3 — ежедневный отчёт COO.
     DailyDigestService,
     OperationsDailyDigestCron,
+    // Pulse Wave 3 §3.5 — hourly LLM-оценка качества рефлексии чек-инов.
+    ReflectionQualityScorerCron,
   ],
   exports: [
     GoalCascadeService,

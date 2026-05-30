@@ -3,6 +3,9 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { OperationsModule } from '../operations/operations.module';
 
+import { EngagementScorerCron } from './agents/engagement-scorer.cron';
+import { HrRecommenderCron } from './agents/hr-recommender.cron';
+import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { CommitmentReliabilityService } from './services/commitment-reliability.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
@@ -44,6 +47,13 @@ import { TeamHealthService } from './services/team-health.service';
     TeamHealthService,
     // Pulse Wave 2 §2.5 — детальная страница /teams/[id].
     TeamDetailService,
+    // Pulse Wave 3 §3.1 / §3.3 / §3.7 — 3 cron-агента дашборда.
+    // - TeamHealthAnalyzerCron: ежедневный LLM-анализ 5-факторов отдела.
+    // - EngagementScorerCron: ежедневный сводный engagement-score per person.
+    // - HrRecommenderCron: weekly HR-рекомендации руководителю.
+    TeamHealthAnalyzerCron,
+    EngagementScorerCron,
+    HrRecommenderCron,
   ],
   exports: [
     CommitmentReliabilityService,

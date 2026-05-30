@@ -2177,6 +2177,9 @@ model Org {
   // ── SBA β-8 — DailyCheckIn ──
   dailyCheckIns DailyCheckIn[]
 
+  // ── Pulse Wave 3 §3.3 — Engagement snapshots для тренда ──
+  personEngagementSnapshots PersonEngagementSnapshot[]
+
   // ── SBA β-8.1 — Weekly operations digest для операционного директора ──
   weeklyOperationsDigests WeeklyOperationsDigest[]
 
@@ -3873,6 +3876,12 @@ model Department {
   /// Person.id главы отдела; probe-уведомления об аномалиях профиля клона
   /// сначала идут ему, и только при NULL — fallback к admin'ам.
   headPersonId       String?
+  /// Pulse Wave 3 §3.1 — снапшот здоровья команды от Team-Health-Analyzer cron.
+  /// Структура: { factors: {manager_support: 'low'|'medium'|'high',
+  /// workload_fairness, communication, time_pressure, role_clarity},
+  /// summary: string, generatedAt: ISO, provenance: { sourceIds: string[] } }.
+  /// NULL до первого прогона cron'а.
+  healthSummaryJson  Json?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   /// Soft-delete: cohabits с уникальностью (orgId, name) благодаря включению deletedAt в @@unique.
@@ -4008,6 +4017,18 @@ model Person {
   /// `patch-person-timezone-default.ts`. Person может править через
   /// `/me/settings` (когда появится UI).
   timezone            String?            @default("Europe/Moscow") @db.VarChar(64)
+  /// Pulse Wave 3 §3.3 — сводный engagement score от Engagement-Scorer cron.
+  /// Decimal(4,3): 0..1, нормированный к личному baseline.
+  /// NULL до первого прогона cron'а.
+  engagementScore     Decimal?           @db.Decimal(4, 3)
+  /// Pulse Wave 3 §3.3 — когда последний раз пересчитывали engagement.
+  engagementScoreAt   DateTime?
+  /// Pulse Wave 3 §3.7 — рекомендации HR-Recommender (5 типов).
+  /// Структура: { recommendations: Array<{type:
+  /// 'praise'|'compensation_review'|'workload_check'|'development'|'urgent_talk',
+  /// text: string, signals: string[], confidence: number}>, generatedAt: ISO }.
+  /// NULL до первого weekly-прогона cron'а.
+  hrSuggestionsJson   Json?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
@@ -4046,6 +4067,8 @@ model Person {
   /// Sprints (2026-05-27) — проекты-спринты, привязанные к этому сотруднику
   /// как subject (Project.subjectPersonId). См. plans/tz/2026-05-27-sprints.md §1.1.
   scopedProjects              Project[]                          @relation("ProjectSubjectPerson")
+  /// Pulse Wave 3 §3.3 — историческая лента engagement-снапшотов для тренда.
+  engagementSnapshots         PersonEngagementSnapshot[]
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -5996,6 +6019,11 @@ model DailyCheckIn {
   /// Когда настроение было проставлено (после анализа).
   sentimentDeterminedAt DateTime?
 
+  /// Pulse Wave 3 §3.5 — качество рефлексии от Reflection-Quality-Scorer.
+  /// Decimal(4,3): 0..1 (среднее по 3 осям: depth + concreteness + variety).
+  /// NULL до прогона анализатора. Заполняется hourly-batch cron'ом.
+  qualityScore Decimal? @db.Decimal(4, 3)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -6012,6 +6040,34 @@ model DailyCheckIn {
   /// SBA β-8.1 — индекс для виджета «Температура команды».
   @@index([tenantId, sentiment, dateLocal])
   @@map("daily_check_ins")
+}
+
+/// Pulse Wave 3 §3.3 — историческая лента engagement-score сотрудника.
+///
+/// Создаётся ежедневно `EngagementScorerCron` (03:00 UTC). Хранит снапшот
+/// сводного score + источники (signalsJson). По этой таблице строится
+/// тренд engagement в UI и определяется аномалия «резкое падение».
+///
+/// Decimal(4,3) — [0..1] нормированный к личному baseline (если данных < 7d,
+/// baseline = 0.5; иначе среднее за прошлые 30d по тому же person).
+model PersonEngagementSnapshot {
+  id          String   @id @default(cuid())
+  tenantId    String
+  personId    String
+  /// Decimal(4,3): 0..1 нормированный.
+  score       Decimal  @db.Decimal(4, 3)
+  /// JSON со списком источников и весов:
+  /// { signals: { checkin_sentiment, checkin_regularity, commitment_kept_ratio,
+  ///   meeting_activity }, baseline: number }.
+  signalsJson Json
+  snapshotAt  DateTime @default(now())
+
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, personId, snapshotAt])
+  @@index([tenantId, snapshotAt])
+  @@map("person_engagement_snapshots")
 }
 
 /// SBA β-8.1 — WeeklyOperationsDigest. Готовый недельный дайджест для

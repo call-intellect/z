@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   CurrentUser,
@@ -41,6 +42,10 @@ import {
   type QuickCreatePersonResponseDto,
   type UpdatePersonDto,
 } from './dto/persons.dto';
+import {
+  PersonPulseService,
+  type PersonPulseDto,
+} from './services/person-pulse.service';
 import { PersonsService } from './services/persons.service';
 
 /**
@@ -65,6 +70,8 @@ export class PersonsController {
   constructor(
     @Inject(PersonsService) private readonly persons: PersonsService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(PersonPulseService) private readonly personPulseSvc: PersonPulseService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -97,6 +104,29 @@ export class PersonsController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.persons.get({ tenantId: t, id });
+  }
+
+  /**
+   * Pulse Wave 3 §3.4 + §3.6 + §3.8 — карточка сотрудника
+   * `GET /api/v1/persons/:id/pulse`.
+   *
+   * RBAC: owner/admin/coo (через `RbacService.loadContext`) ИЛИ сам сотрудник
+   * (Person.userId === currentUser.id). Manager пока не имеет доступа —
+   * вернётся в следующих фазах после уточнения политики.
+   */
+  @Get(':id/pulse')
+  @ApiOperation({ summary: 'Pulse-карточка сотрудника (engagement / mood / promises / HR)' })
+  async pulse(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PersonPulseDto> {
+    const t = this.requireTenant(tenantId);
+    const allowed = await this.canViewPulse(user.id, t, id);
+    if (!allowed) {
+      throw this.forbidden('Нет доступа к карточке сотрудника');
+    }
+    return this.personPulseSvc.getPulse({ tenantId: t, personId: id });
   }
 
   @Post()
@@ -207,6 +237,35 @@ export class PersonsController {
       act: 'delete',
     });
     if (!ok) throw this.forbidden('Удалять сотрудников может только владелец/администратор Org');
+  }
+
+  /**
+   * Pulse §3.4 RBAC: разрешено привилегированным ролям (owner/admin/coo) ИЛИ
+   * самому сотруднику. `super_admin` — bypass (через `RbacService.loadContext`).
+   *
+   * Manager — пока нет (нужна проверка подчинённости). Дополним в следующей
+   * фазе после уточнения политики.
+   */
+  private async canViewPulse(
+    userId: string,
+    tenantId: string,
+    personId: string,
+  ): Promise<boolean> {
+    const ctx = await this.rbac.loadContext(userId, tenantId);
+    if (ctx === null) return false;
+    if (ctx.isSuperAdmin) return true;
+    if (
+      ctx.role === 'owner' ||
+      ctx.role === 'admin' ||
+      ctx.role === 'coo'
+    ) {
+      return true;
+    }
+    const self = await this.prisma.person.findFirst({
+      where: { id: personId, tenantId, userId, deletedAt: null },
+      select: { id: true },
+    });
+    return self !== null;
   }
 
   private forbidden(message: string): ForbiddenException {

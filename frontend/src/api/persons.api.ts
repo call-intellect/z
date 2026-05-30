@@ -14,6 +14,7 @@
 
 import { apiClient } from './api-client';
 import { buildQuery, orgHeaders } from './admin-helpers';
+import type { PersonPulseApi } from '@/domain/person-pulse';
 
 export interface PersonEntityApi {
   id: string;
@@ -124,5 +125,16 @@ export const personsApi = {
     apiClient.post<QuickCreatePersonResponseApi>(
       '/api/v1/persons/quick-create',
       body,
+    ),
+
+  /**
+   * Pulse Wave 3 §3.4 — карточка сотрудника (engagement / mood 30d /
+   * promises / HR-suggestions). RBAC backend: owner/admin/coo ИЛИ сам
+   * сотрудник.
+   */
+  getPulse: (orgId: string, personId: string) =>
+    apiClient.get<PersonPulseApi>(
+      `/api/v1/persons/${encodeURIComponent(personId)}/pulse`,
+      { headers: orgHeaders(orgId) },
     ),
 };

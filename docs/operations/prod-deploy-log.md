@@ -21,6 +21,68 @@
 
 ---
 
+### 🌊 2026-05-30 — Pulse Волна 4 (152-ФЗ + audit + Risk-агенты)
+
+План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §8.
+Коммит: `2039d77`. **Сделано:** Фазы 4.1, 4.2, 4.3, 4.4, 4.5. **Отложено:** 4.6 Forecaster, 4.7 hr_partner.
+
+**Краткое содержание:**
+- 2 новых модели: `ConsentLog` (152-ФЗ согласия), `KnowledgeAccessLog` (audit просмотров карточки).
+- Новые поля: `Person.analyticsOptIn`/`analyticsOptInAt`/`riskFlagsJson`, `Org.region`, `MeetingParticipantBehavior.sentimentTextPerSpeakerJson`.
+- 2 новых cron: `MeetingSpeakerAnalyzerWorker` (hourly), `BurnoutRiskDetectorCron` (daily). Оба под `analyticsOptIn=true` gate.
+- 1 interceptor: `KnowledgeAccessLoggerInterceptor` на view-эндпоинтах PersonsController (best-effort).
+- REST: `GET/POST /api/v1/me/consents`, `GET /api/v1/me/privacy/access-log`.
+- 3 новые frontend-страницы: `/onboarding/consents` (Блок C), `/me/privacy/consents`, `/me/privacy/access-log`.
+- PersonPulse получил секцию «Сигналы для разговора 1:1» (из Burnout-Risk-Detector).
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — без новых ENV.
+- **Шаг 4 — Prisma** — **обязательно**:
+  ```bash
+  docker compose exec backend bun run prisma:push
+  docker compose exec backend bun run prisma:generate
+  ```
+  Добавляет 5 полей в существующие модели + 2 новые модели (ConsentLog, KnowledgeAccessLog). Все nullable/defaulted, без data-loss.
+- **Шаг 7 — Seed LLM task routes**:
+  ```bash
+  docker compose exec backend bun run scripts/seed-llm-task-routes-pulse-w4.ts
+  ```
+  Регистрирует `meeting-speaker-analyzer`. Уже в `apply-prod-deploy.ts STEPS`.
+- **Шаг 11 — Docker image rebuild** — обязателен (новые модули/endpoints/cron'ы/frontend).
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Consents endpoint (cookie self):
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/me/consents
+  # Ожидаемо: 200 { items: [] } (пусто до первого согласия)
+
+  # 2. POST consent:
+  curl -i -X POST -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       -H 'Content-Type: application/json' \
+       -d '{"dataType":"checkin_processing","consented":true}' \
+       https://prod.host/api/v1/me/consents
+
+  # 3. Access log self:
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/me/privacy/access-log
+  # Ожидаемо: 200 { items: [{accessedAt, viewerUserName, sectionAccessed, ...}, ...] }
+
+  # 4. Cron'ы зарегистрированы:
+  docker compose logs backend | grep -E 'MeetingSpeakerAnalyzer|BurnoutRiskDetector'
+
+  # 5. Frontend:
+  # /onboarding/consents — Блок C onboarding с 3 чекбоксами
+  # /me/privacy/consents — текущие согласия + отозвать
+  # /me/privacy/access-log — таблица «кто открывал твою карточку»
+  # /persons/<id>/pulse — новая секция «Сигналы 1:1» (видна при наличии flags)
+  ```
+- **Откат:** `git revert 2039d77` + restart. Schema-добавления нерушительные. Если включить опять — пользовательские согласия сохранятся (ConsentLog не удаляется).
+
+⚠️ **Юридический check рекомендуется** до релиза текстов в `/onboarding/consents` (см. ТЗ §8.4): согласия покрывают 152-ФЗ для РФ; для EU понадобится отдельный flow (region='eu') в будущей волне.
+
+---
+
 ### 🌊 2026-05-30 — Pulse Волна 3 (Карточка сотрудника + 4 AI-агента)
 
 План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §7.

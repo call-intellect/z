@@ -13,11 +13,59 @@
 
 ## 🚨 Накоплено к выкату
 
-**Окно:** 2026-05-20 .. 2026-05-27 (с момента последнего prod-cut).
+**Окно:** 2026-05-20 .. 2026-05-30 (с момента последнего prod-cut).
 **Источник:** все рефлексии в `second-brain/05_история/` с этой даты + git log dev.
 **Содержит:** ~80 prod-скриптов (patch/seed/migrate/backfill/setup) + ~175 новых Prisma-моделей + ~135 новых ENV (все опциональные) + 2 опасных schema-изменения + новый модуль биллинга (Tochka).
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
+
+---
+
+### 📦 2026-05-30 — Commercial-reliability pack (4 фазы)
+
+План: [plans/tz/2026-05-29-commercial-reliability-package.md](../../plans/tz/2026-05-29-commercial-reliability-package.md).
+Коммиты: `7cacf5f` (Фаза 1), `e452aa0` (Фаза 2), `acc5477` (Фаза 3), `cf5adfe` (Фаза 4).
+
+**Краткое содержание:**
+- Фаза 1: `ConversationalFreeNoteBridge` — Telegram free-note теперь попадает в граф знаний (раньше терялся в DEBUG-логе).
+- Фаза 2: first-touch атрибуция — `AttributionService.attributeOrg` через `updateMany WHERE pendingAttributionSlug IS NULL`; раньше last-touch.
+- Фаза 3: Zoom-rename — `PATCH /api/v1/meetings/:id/participants/:pid` + inline-edit в UI результата встречи.
+- Фаза 4: 11 счётчиков + 1 гистограмма + 3 алёрта + Grafana-дашборд для биллинга и рефералов.
+
+**Шаги прод-инструкции:**
+- **Шаг 1 — ENV** — без изменений.
+- **Шаг 4 — Prisma** — без изменений (schema.prisma не трогалась).
+- **Шаг 6/7/8/9/10 — Patches/Seeds/Backfill/Migrations/Setup** — без изменений.
+- **Шаг 11 — Prometheus rules + Grafana dashboards** — **2 новых файла**, подцепятся автоматически при перезагрузке Prometheus и Grafana provisioner:
+  - `infra/prometheus/alerts/billing-referrals.rules.yml` — 3 алёрта (`BillingNoPaymentsLong`, `BillingWebhookSignatureFailures`, `ReferralPayoutCronDidNotRun`). Прометей мониторит `/etc/prometheus/alerts/*.yml`, перезагрузка через `docker compose exec prometheus kill -HUP 1` или `curl -X POST http://prometheus:9090/-/reload`.
+  - `infra/grafana/dashboards/billing-referrals.json` — 4 панели (биллинг сегодня, webhook здоровье, реф-воронка, latency банка). Подцепится автоматически provisioner'ом если он наблюдает за `infra/grafana/dashboards/`.
+- **Шаг 12 — Smoke**:
+  ```bash
+  # Метрики появляются после первого вызова (Counter с labels) или сразу (Counter без labels):
+  curl https://prod.host/metrics | grep -E 'billing_invoice_paid_total|billing_subscription_renewed_total|referral_click_total|referral_signup_total|referral_payout_created_total|referral_payout_amount_rub_total|referral_attribution_first_touch_locked_total|participant_renamed_total|billing_provider_request_duration_seconds'
+  # Должны увидеть help-комментарии + типы. После реальной оплаты появятся серии с лейблами.
+
+  # Endpoint Zoom-rename доступен (host-only):
+  curl -i -X PATCH https://prod.host/api/v1/meetings/<id>/participants/<pid> \
+       -H 'Content-Type: application/json' \
+       -d '{"name":"Иван Петров"}'
+  # Ожидаемо: 401 без cookie / 403 'not_authorized' если не хост / 403 'participant_rename_forbidden' если isRegisteredUser=true / 404 'participant_not_found' / 200 + {id, name}.
+  ```
+  В Swagger под тегом **meetings** должен появиться `PATCH /api/v1/meetings/:id/participants/:pid` (UpdateParticipantSchema).
+- **Шаг 12 — Smoke (free_note)**: отправить Telegram-боту короткое сообщение «тест заметки» → проверить что появился `RawEvent(sourceType='conversational')`:
+  ```bash
+  docker compose exec backend bun -e '
+  import { createPrismaClient } from "./scripts/_lib/prisma";
+  const p = createPrismaClient();
+  p.rawEvent.findMany({
+    where: { sourceType: "conversational" },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  }).then(r => { console.log(JSON.stringify(r.map(e => ({id: e.id, occurredAt: e.occurredAt})), null, 2)); process.exit(0) })
+  '
+  ```
+
+**Откатить нельзя** (точечные баг-фиксы, без миграций). При проблеме — отдельный hotfix.
 
 ---
 

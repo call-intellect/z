@@ -72,7 +72,7 @@ export function TopicItemsList({
             {userGroups.map((g) => (
               <li
                 key={g.userId}
-                className="rounded-md border border-border-subtle bg-white px-2 py-1"
+                className="rounded-md border border-border-subtle bg-bg-card px-2 py-1"
               >
                 <span className="font-medium text-fg-primary">{g.label}</span>
                 <span className="ml-2 text-fg-secondary">×{g.count}</span>
@@ -82,7 +82,7 @@ export function TopicItemsList({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
+      <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
         <table className="w-full text-sm">
           <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
             <tr>

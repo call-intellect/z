@@ -39,7 +39,7 @@ export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProp
   return (
     <section
       data-testid="meeting-behavior-section"
-      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-4"
+      className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-4"
     >
       <header className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
@@ -63,7 +63,7 @@ function PendingSkeleton(): JSX.Element {
   return (
     <section
       data-testid="meeting-behavior-section-loading"
-      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-3"
+      className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-3"
     >
       <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
       <p className="text-sm text-fg-secondary">Метрики считаются. Это занимает обычно 1–2 минуты.</p>

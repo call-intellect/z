@@ -21,7 +21,7 @@
   --text-primary: oklch(0.93 0.005 250);
   --text-secondary: oklch(0.72 0.008 250);
   --text-tertiary: oklch(0.55 0.012 250);
-  --text-disabled: oklch(0.40 0.012 250);
+  --text-disabled: oklch(0.52 0.012 250);
 
   /* Borders (tinted) */
   --border-subtle: oklch(0.93 0.005 250 / 0.05);
@@ -127,7 +127,7 @@
   --text-primary: oklch(0.22 0.01 60);
   --text-secondary: oklch(0.45 0.012 70);
   --text-tertiary: oklch(0.62 0.012 75);
-  --text-disabled: oklch(0.78 0.008 75);
+  --text-disabled: oklch(0.55 0.010 75);
 
   /* Borders (tinted) */
   --border-subtle: oklch(0.22 0.01 60 / 0.05);

@@ -16,6 +16,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // shadcn compatibility aliases — maps to our semantic tokens
+        foreground: 'var(--text-primary)',
+        background: 'var(--bg-base)',
+        muted: {
+          DEFAULT: 'var(--bg-subtle)',
+          foreground: 'var(--text-secondary)',
+        },
+        input: 'var(--border)',
+        ring: 'var(--accent)',
         // Semantic tokens
         bg: {
           base: 'var(--bg-base)',
@@ -24,6 +33,8 @@ const config: Config = {
           surface: 'var(--bg-surface)',
           subtle: 'var(--bg-subtle)',
           overlay: 'var(--bg-overlay)',
+          muted: 'var(--bg-subtle)',
+          hover: 'var(--bg-subtle)',
         },
         border: {
           DEFAULT: 'var(--border)',

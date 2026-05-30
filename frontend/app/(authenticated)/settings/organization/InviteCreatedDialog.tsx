@@ -192,7 +192,7 @@ function QrPreview({ value, qrDataUrl }: QrPreviewProps) {
         alt="QR-код приглашения"
         width={120}
         height={120}
-        className="rounded-md border border-border-subtle bg-white p-1"
+        className="rounded-md border border-border-subtle bg-bg-card p-1"
       />
       <div className="space-y-1 text-xs text-fg-secondary">
         <p className="font-medium text-fg-primary">

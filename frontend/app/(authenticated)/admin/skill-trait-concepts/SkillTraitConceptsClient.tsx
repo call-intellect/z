@@ -123,7 +123,7 @@ export function SkillTraitConceptsClient() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            className="h-9 w-72 rounded-md border border-border-subtle bg-white pl-7 pr-3 text-sm"
+            className="h-9 w-72 rounded-md border border-border-subtle bg-bg-card pl-7 pr-3 text-sm"
           />
         </div>
         <Select
@@ -133,7 +133,7 @@ export function SkillTraitConceptsClient() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="h-9 w-56 bg-white text-sm">
+          <SelectTrigger className="h-9 w-56 bg-bg-card text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -165,7 +165,7 @@ export function SkillTraitConceptsClient() {
         <div className="grid grid-cols-12 gap-4">
           {/* Левая колонка — список */}
           <div className="col-span-12 md:col-span-5">
-            <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
+            <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
               <ul className="divide-y divide-border-subtle">
                 {items.map((it) => (
                   <li key={it.id}>
@@ -265,7 +265,7 @@ function ConceptDetailCard({
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   return (
-    <div className="rounded-lg border border-border-subtle bg-white p-4">
+    <div className="rounded-lg border border-border-subtle bg-bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-fg-primary">
@@ -425,7 +425,7 @@ function MergeDialog({
           <div>
             <label className="text-xs text-fg-secondary">Целевой смысловой блок</label>
             <Select value={targetId} onValueChange={setTargetId}>
-              <SelectTrigger className="mt-1 bg-white text-sm">
+              <SelectTrigger className="mt-1 bg-bg-card text-sm">
                 <SelectValue placeholder="Выберите блок-цель…" />
               </SelectTrigger>
               <SelectContent>
@@ -442,7 +442,7 @@ function MergeDialog({
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border-subtle bg-white p-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card p-2 text-sm"
               rows={3}
               placeholder="Почему сливаете?"
             />
@@ -509,7 +509,7 @@ function ArchiveDialog({
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border-subtle bg-white p-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card p-2 text-sm"
               rows={3}
               placeholder="Почему архивируете?"
             />

@@ -87,7 +87,7 @@ export function WeeklyDigestClient() {
         </p>
       </header>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded border bg-white p-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded border bg-bg-card p-3">
         <button
           type="button"
           onClick={() => goToWeek(prevWeek)}
@@ -116,7 +116,7 @@ export function WeeklyDigestClient() {
       </div>
 
       {loading ? (
-        <p className="rounded border bg-white p-4 text-sm text-fg-secondary">
+        <p className="rounded border bg-bg-card p-4 text-sm text-fg-secondary">
           Загрузка сводки…
         </p>
       ) : error ? (
@@ -135,7 +135,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   return (
     <div className="space-y-6">
-      <section className="rounded border bg-white p-4">
+      <section className="rounded border bg-bg-card p-4">
         <h2 className="text-lg font-semibold">Температура команды</h2>
         <p className="mt-1 text-sm text-fg-secondary">
           Всего чек-инов: {data.metrics.totalCheckIns}. Зелёных{' '}
@@ -145,7 +145,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         </p>
       </section>
 
-      <section className="rounded border bg-white p-4">
+      <section className="rounded border bg-bg-card p-4">
         <h2 className="text-lg font-semibold">Цели за неделю</h2>
         <p className="mt-1 text-sm text-fg-secondary">
           Закрыто: {data.metrics.goals.completed} (
@@ -157,7 +157,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
       </section>
 
       {data.metrics.topBlockers.length > 0 ? (
-        <section className="rounded border bg-white p-4">
+        <section className="rounded border bg-bg-card p-4">
           <h2 className="text-lg font-semibold">Повторяющиеся блокеры</h2>
           <ul className="mt-2 space-y-1 text-sm">
             {data.metrics.topBlockers.map((b, i) => (
@@ -174,7 +174,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
       ) : null}
 
       {data.metrics.topInsights.length > 0 ? (
-        <section className="rounded border bg-white p-4">
+        <section className="rounded border bg-bg-card p-4">
           <h2 className="text-lg font-semibold">Главные сигналы</h2>
           <ul className="mt-2 space-y-1 text-sm">
             {data.metrics.topInsights.map((it) => (
@@ -193,7 +193,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
       ) : null}
 
       {data.metrics.hangingDecisions.length > 0 ? (
-        <section className="rounded border bg-white p-4">
+        <section className="rounded border bg-bg-card p-4">
           <h2 className="text-lg font-semibold">Висящие решения</h2>
           <ul className="mt-2 space-y-1 text-sm">
             {data.metrics.hangingDecisions.map((d) => (
@@ -209,7 +209,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         </section>
       ) : null}
 
-      <section className="rounded border bg-white p-4">
+      <section className="rounded border bg-bg-card p-4">
         <h2 className="text-lg font-semibold">Комментарий</h2>
         <p className="mt-1 text-xs text-fg-secondary">
           Связный текст автоматически собран по показателям выше.

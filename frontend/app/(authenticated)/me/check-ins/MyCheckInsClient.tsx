@@ -104,7 +104,7 @@ export function MyCheckInsClient() {
         </p>
       </header>
 
-      <section className="mb-8 rounded border bg-white p-4">
+      <section className="mb-8 rounded border bg-bg-card p-4">
         <h2 className="mb-3 text-lg font-semibold">Новый чек-ин</h2>
         <div className="mb-3 flex items-center gap-3">
           <label className="text-sm">
@@ -157,7 +157,7 @@ export function MyCheckInsClient() {
         ) : items.length === 0 ? (
           <p className="text-sm text-fg-secondary">Пока чек-инов нет.</p>
         ) : (
-          <ul className="divide-y rounded border bg-white">
+          <ul className="divide-y rounded border bg-bg-card">
             {items.map((c) => (
               <li key={c.id} className="p-3 text-sm">
                 <div className="mb-1 flex items-center gap-3">

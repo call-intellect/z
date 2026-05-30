@@ -163,7 +163,7 @@ export function OperationsDashboardClient() {
         {data.topRecentBlockers.length === 0 ? (
           <p className="text-sm text-fg-secondary">Сейчас активных блокеров нет.</p>
         ) : (
-          <ul className="divide-y rounded border bg-white">
+          <ul className="divide-y rounded border bg-bg-card">
             {data.topRecentBlockers.map((b) => (
               <li key={b.id} className="p-3 text-sm">
                 <div className="flex items-start justify-between gap-3">
@@ -187,7 +187,7 @@ export function OperationsDashboardClient() {
             На текущий момент конфликтов в команде не зафиксировано.
           </p>
         ) : (
-          <ul className="divide-y rounded border bg-white">
+          <ul className="divide-y rounded border bg-bg-card">
             {data.topRecentTeamFrictions.map((f) => (
               <li key={f.id} className="p-3 text-sm">
                 <div className="flex flex-wrap items-baseline gap-2">
@@ -251,7 +251,7 @@ function TeamTemperatureWidget(props: {
   })();
 
   return (
-    <section className="mt-8 rounded border bg-white p-4">
+    <section className="mt-8 rounded border bg-bg-card p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">
           Температура команды (последние {s.days} дн.)
@@ -332,7 +332,7 @@ function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
     (a, b) => b[1].length - a[1].length,
   );
   return (
-    <section className="mt-8 rounded border bg-white p-4">
+    <section className="mt-8 rounded border bg-bg-card p-4">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">
           Открытые обещания за 14 дней

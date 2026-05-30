@@ -201,7 +201,7 @@ function ExperimentsListContent() {
             onChange={(e) =>
               setStatusFilter(e.target.value as 'all' | ExperimentStatusApi)
             }
-            className="rounded-md border border-border bg-white px-3 py-2 text-sm"
+            className="rounded-md border border-border bg-bg-card px-3 py-2 text-sm"
           >
             {STATUS_FILTERS.map((f) => (
               <option key={f.value} value={f.value}>
@@ -261,7 +261,7 @@ function ExperimentsListContent() {
       </section>
 
       {/* Right: detail */}
-      <section className="rounded-md border border-border-subtle bg-white p-5">
+      <section className="rounded-md border border-border-subtle bg-bg-card p-5">
         {!detail && !detailLoading ? (
           <div className="text-sm text-fg-secondary">Выберите эксперимент слева.</div>
         ) : detailLoading ? (
@@ -396,7 +396,7 @@ function ExperimentDetailView({
               type="button"
               disabled={busy || opt.to === detail.status}
               onClick={() => void onTransition(opt.to)}
-              className="rounded-md border border-border bg-white px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-border bg-bg-card px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {opt.label}
             </button>

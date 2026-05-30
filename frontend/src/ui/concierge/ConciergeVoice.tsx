@@ -323,7 +323,7 @@ export function ConciergeFloatingButton({ orgId }: { orgId: string }) {
         </Button>
       )}
       {open && (
-        <div className="w-80 rounded-lg border border-border-subtle bg-white p-3 shadow-lg">
+        <div className="w-80 rounded-lg border border-border-subtle bg-bg-card p-3 shadow-lg">
           <div className="mb-2 flex items-center justify-between">
             <span className="font-medium text-fg-primary">Кора</span>
             <button

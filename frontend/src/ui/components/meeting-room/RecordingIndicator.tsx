@@ -19,7 +19,7 @@ export function RecordingIndicator({ active }: Props) {
     >
       <span className="relative inline-block h-2 w-2">
         <span className="absolute inset-0 animate-ping rounded-full bg-white/70" />
-        <span className="relative inline-block h-2 w-2 rounded-full bg-white" />
+        <span className="relative inline-block h-2 w-2 rounded-full bg-bg-card" />
       </span>
       <span>{t('room.recording_indicator')}</span>
     </div>

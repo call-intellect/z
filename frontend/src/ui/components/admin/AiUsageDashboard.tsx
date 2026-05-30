@@ -66,7 +66,7 @@ export function AiUsageDashboard() {
         <h1 className="text-2xl font-semibold text-fg-primary">{t('admin.ai_usage.title')}</h1>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-white p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-bg-card p-3">
         <DateRangePicker from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.ai_usage.group_by')}</span>
@@ -94,7 +94,7 @@ export function AiUsageDashboard() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-bg-card p-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-6 w-full" />
           ))}
@@ -102,7 +102,7 @@ export function AiUsageDashboard() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('admin.ai_usage.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-bg-card shadow-sm">
           <table className="min-w-full text-sm">
             <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>

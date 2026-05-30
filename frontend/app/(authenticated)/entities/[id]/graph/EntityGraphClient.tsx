@@ -202,7 +202,7 @@ function EntityGraphContent({
           <p className="mt-1 text-sm text-muted-foreground">
             Узлов: {graph.nodes.length}, рёбер: {graph.edges.length}
             {graph.truncated && (
-              <span className="ml-2 inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">
+              <span className="ml-2 inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs text-warning">
                 <AlertTriangle className="h-3 w-3" /> Результат обрезан (лимит
                 100 узлов)
               </span>
@@ -220,7 +220,7 @@ function EntityGraphContent({
             id="depth-select"
             value={depth}
             onChange={(e) => setDepth(Number(e.target.value) as 1 | 2 | 3)}
-            className="rounded-md border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-foreground"
+            className="rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm text-foreground"
           >
             {DEPTH_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -233,7 +233,7 @@ function EntityGraphContent({
 
       <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
         {/* Канва графа */}
-        <div className="relative min-h-[480px] overflow-hidden rounded-xl border border-white/10 bg-black/40 backdrop-blur">
+        <div className="relative min-h-[480px] overflow-hidden rounded-xl border border-border-subtle bg-bg-overlay backdrop-blur">
           <ForceGraphCanvas
             graph={graph}
             onEdgeClick={(edge) => {
@@ -254,7 +254,7 @@ function EntityGraphContent({
         </div>
 
         {/* Side panel */}
-        <aside className="flex max-h-[78vh] flex-col gap-4 overflow-y-auto rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur">
+        <aside className="flex max-h-[78vh] flex-col gap-4 overflow-y-auto rounded-xl border border-border-subtle bg-bg-overlay p-4 backdrop-blur">
           {selectedEdge ? (
             <EdgeDetailsPanel
               edge={selectedEdge}
@@ -391,7 +391,7 @@ function EdgeDetailsPanel({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
+      <div className="grid grid-cols-2 gap-3 rounded-lg border border-border-subtle bg-bg-overlay p-3 text-xs">
         <div>
           <p className="text-muted-foreground">Уверенность</p>
           <p className="mt-0.5 font-medium text-foreground">
@@ -440,7 +440,7 @@ function EdgeDetailsPanel({
             {edge.evidence.map((ev) => (
               <li
                 key={ev.blockId}
-                className="rounded-md border border-white/5 bg-black/20 p-3 text-xs"
+                className="rounded-md border border-border-subtle bg-bg-overlay p-3 text-xs"
               >
                 <p className="font-medium text-foreground">{ev.blockName}</p>
                 <p className="mt-1 flex items-start gap-1 text-foreground/80">
@@ -499,7 +499,7 @@ function NodeDetailsPanel({
           <X className="h-4 w-4" />
         </Button>
       </div>
-      <div className="rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
+      <div className="rounded-lg border border-border-subtle bg-bg-overlay p-3 text-xs">
         <p>
           <span className="text-muted-foreground">Тип: </span>
           <span className="font-medium text-foreground">{node.entityType}</span>

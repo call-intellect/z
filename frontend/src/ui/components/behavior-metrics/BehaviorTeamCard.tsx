@@ -35,7 +35,7 @@ export function BehaviorTeamCard(): JSX.Element {
     return (
       <section
         data-testid="behavior-team-card-loading"
-        className="rounded-2xl border border-border-subtle bg-white p-6"
+        className="rounded-2xl border border-border-subtle bg-bg-card p-6"
       >
         <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
         <p className="mt-2 text-sm text-fg-secondary">Загружаем…</p>
@@ -59,7 +59,7 @@ export function BehaviorTeamCard(): JSX.Element {
 
   if (data.meetingsCount === 0) {
     return (
-      <section className="rounded-2xl border border-border-subtle bg-white p-6">
+      <section className="rounded-2xl border border-border-subtle bg-bg-card p-6">
         <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
         <p className="mt-2 text-sm text-fg-secondary">
           За выбранный период встреч с метриками поведения пока нет.
@@ -73,7 +73,7 @@ export function BehaviorTeamCard(): JSX.Element {
     .slice(0, 3);
 
   return (
-    <section className="rounded-2xl border border-border-subtle bg-white p-6 space-y-4">
+    <section className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
         <span className="text-xs text-fg-secondary">за 30 дней</span>

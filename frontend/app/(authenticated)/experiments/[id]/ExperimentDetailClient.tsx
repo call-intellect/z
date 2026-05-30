@@ -140,21 +140,21 @@ export function ExperimentDetailClient({ id }: { id: string }) {
         </p>
       </header>
 
-      <section className="rounded-md border border-border-subtle bg-white p-4">
+      <section className="rounded-md border border-border-subtle bg-bg-card p-4">
         <h2 className="text-sm font-medium text-fg-secondary">Гипотеза</h2>
         <p className="mt-2 text-sm text-fg-primary whitespace-pre-wrap">
           {detail.hypothesisText}
         </p>
       </section>
 
-      <section className="rounded-md border border-border-subtle bg-white p-4">
+      <section className="rounded-md border border-border-subtle bg-bg-card p-4">
         <h2 className="text-sm font-medium text-fg-secondary">Текущий результат</h2>
         <p className="mt-2 text-sm text-fg-primary whitespace-pre-wrap">
           {detail.currentResult ?? 'Результат пока не зафиксирован.'}
         </p>
       </section>
 
-      <section className="rounded-md border border-border-subtle bg-white p-4">
+      <section className="rounded-md border border-border-subtle bg-bg-card p-4">
         <h2 className="text-sm font-medium text-fg-secondary">Уроки</h2>
         {detail.lessons.length === 0 ? (
           <p className="mt-2 text-sm text-fg-secondary">Уроков ещё нет.</p>
@@ -211,7 +211,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
         </div>
       </section>
 
-      <section className="rounded-md border border-border-subtle bg-white p-4">
+      <section className="rounded-md border border-border-subtle bg-bg-card p-4">
         <h2 className="text-sm font-medium text-fg-secondary">Действия</h2>
         <div className="mt-2 flex flex-wrap gap-2">
           {TRANSITION_OPTIONS.map((opt) => (
@@ -220,7 +220,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
               type="button"
               disabled={busy || opt.to === detail.status}
               onClick={() => void onTransition(opt.to)}
-              className="rounded-md border border-border bg-white px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-border bg-bg-card px-3 py-1.5 text-xs font-medium text-fg-primary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {opt.label}
             </button>

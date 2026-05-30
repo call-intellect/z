@@ -209,7 +209,7 @@ function ChaptersColumn({
           {items.map((c) => (
             <li
               key={c.id}
-              className="rounded-md border border-border-subtle bg-white p-3"
+              className="rounded-md border border-border-subtle bg-bg-card p-3"
             >
               <div className="flex items-baseline justify-between gap-2">
                 <h3 className="text-sm font-semibold text-fg-primary">
@@ -257,7 +257,7 @@ function TasksColumn({
           {items.map((t) => (
             <li
               key={t.id}
-              className="rounded-md border border-border-subtle bg-white p-3"
+              className="rounded-md border border-border-subtle bg-bg-card p-3"
             >
               <div className="flex items-baseline justify-between gap-2">
                 <h3 className="text-sm font-semibold text-fg-primary">
@@ -338,7 +338,7 @@ function QualityScoreBlock({
 }) {
   if (!qualityScore) return null;
   return (
-    <details className="mt-4 rounded-md border border-border-subtle bg-white p-4 shadow-sm">
+    <details className="mt-4 rounded-md border border-border-subtle bg-bg-card p-4 shadow-sm">
       <summary className="cursor-pointer text-sm font-semibold text-fg-secondary">
         Оценка качества встречи (quality_score)
       </summary>
@@ -359,7 +359,7 @@ function Column({
   children: React.ReactNode;
 }) {
   return (
-    <article className="rounded-md border border-border-subtle bg-white p-4 shadow-sm">
+    <article className="rounded-md border border-border-subtle bg-bg-card p-4 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-secondary">
         {title}
       </h2>

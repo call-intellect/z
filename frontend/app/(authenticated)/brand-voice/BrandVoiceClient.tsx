@@ -505,7 +505,7 @@ function EditModal({
   }, [valuesText, taboosText, onSave]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-overlay p-4">
       <Card className="w-full max-w-2xl space-y-4 p-6">
         <h2 className="text-lg font-semibold text-fg-primary">
           Ручная правка голоса бренда

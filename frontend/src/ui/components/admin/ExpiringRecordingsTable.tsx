@@ -26,7 +26,7 @@ export function ExpiringRecordingsTable() {
         <h1 className="text-2xl font-semibold text-fg-primary">{t('admin.expiring.title')}</h1>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-white p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-bg-card p-3">
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.expiring.within_hours')}</span>
           <input
@@ -49,7 +49,7 @@ export function ExpiringRecordingsTable() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-bg-card p-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-8 w-full" />
           ))}
@@ -57,7 +57,7 @@ export function ExpiringRecordingsTable() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('admin.expiring.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-bg-card shadow-sm">
           <table className="min-w-full text-sm">
             <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>

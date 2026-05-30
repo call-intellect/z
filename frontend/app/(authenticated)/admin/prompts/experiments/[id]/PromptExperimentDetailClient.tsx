@@ -187,7 +187,7 @@ function GroupCard({
 }) {
   if (!groupAnalytics) {
     return (
-      <div className="rounded-md border border-border-subtle bg-white p-4">
+      <div className="rounded-md border border-border-subtle bg-bg-card p-4">
         <div className="text-sm font-medium text-fg-secondary">{label}</div>
         <div className="mt-2 text-xs text-fg-secondary">Нет данных</div>
       </div>
@@ -197,7 +197,7 @@ function GroupCard({
   const positiveRatio =
     total > 0 ? (groupAnalytics.positiveFeedback / total) * 100 : null;
   return (
-    <div className="rounded-md border border-border-subtle bg-white p-4">
+    <div className="rounded-md border border-border-subtle bg-bg-card p-4">
       <div className="text-sm font-medium text-fg-secondary">{label}</div>
       <div className="mt-1 text-xs text-fg-secondary">
         Версия: {groupAnalytics.versionId.slice(0, 8)}

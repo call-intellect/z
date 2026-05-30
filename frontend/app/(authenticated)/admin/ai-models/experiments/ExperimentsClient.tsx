@@ -95,7 +95,7 @@ export function ExperimentsClient() {
         {items.map((exp) => (
           <div
             key={exp.id}
-            className="rounded-lg border border-border-subtle bg-white p-4"
+            className="rounded-lg border border-border-subtle bg-bg-card p-4"
           >
             <div className="mb-2 flex items-center gap-3">
               <code className="font-mono text-xs text-fg-secondary">{exp.taskType}</code>

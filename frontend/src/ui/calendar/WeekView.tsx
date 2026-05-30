@@ -123,7 +123,7 @@ export function WeekView({
               {d.issues.slice(0, 3).map((iss) => (
                 <div
                   key={iss.id}
-                  className="truncate rounded bg-red-500/10 px-1 py-0.5 text-[10px] text-red-300"
+                  className="truncate rounded bg-red-500/10 px-1 py-0.5 text-[10px] dark:text-red-300 text-red-700"
                   title={iss.title}
                 >
                   {iss.title}

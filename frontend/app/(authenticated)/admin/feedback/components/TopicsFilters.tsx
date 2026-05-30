@@ -45,7 +45,7 @@ export function TopicsFilters({
         value={window}
         onValueChange={(v) => onWindowChange(v as FeedbackWindow)}
       >
-        <SelectTrigger className="h-9 w-44 bg-white text-sm">
+        <SelectTrigger className="h-9 w-44 bg-bg-card text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -67,7 +67,7 @@ export function TopicsFilters({
           placeholder="Поиск по теме и описанию"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="h-9 w-72 rounded-md border border-border-subtle bg-white pl-7 pr-3 text-sm"
+          className="h-9 w-72 rounded-md border border-border-subtle bg-bg-card pl-7 pr-3 text-sm"
         />
       </div>
 

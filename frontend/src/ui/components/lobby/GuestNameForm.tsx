@@ -61,7 +61,7 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
   return (
     <form
       onSubmit={onSubmit}
-      className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border-subtle bg-white p-6 shadow-sm"
+      className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border-subtle bg-bg-card p-6 shadow-sm"
     >
       <h2 className="text-lg font-semibold text-fg-primary">
         {t('lobby.name_label')}

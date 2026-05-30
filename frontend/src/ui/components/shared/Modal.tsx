@@ -41,7 +41,7 @@ export function Modal({ open, onClose, title, children, className }: Props) {
     >
       <div
         className={clsx(
-          'w-full max-w-lg rounded-lg bg-white p-6 shadow-xl',
+          'w-full max-w-lg rounded-lg bg-bg-card p-6 shadow-xl',
           className,
         )}
         onClick={(e) => e.stopPropagation()}

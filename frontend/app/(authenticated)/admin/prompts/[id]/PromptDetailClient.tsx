@@ -141,7 +141,7 @@ export function PromptDetailClient({ id }: { id: string }) {
           >
             {tpl.statusLabel}
           </Badge>
-          <Badge variant="outline" className="border-border-subtle bg-white text-fg-secondary">
+          <Badge variant="outline" className="border-border-subtle bg-bg-card text-fg-secondary">
             {tpl.scopeLabel}
           </Badge>
           {tpl.scope === 'org' && (
@@ -188,7 +188,7 @@ export function PromptDetailClient({ id }: { id: string }) {
       )}
 
       {tab === 'preview' && (
-        <div className="rounded-lg border border-border-subtle bg-white p-5 text-sm">
+        <div className="rounded-lg border border-border-subtle bg-bg-card p-5 text-sm">
           <p className="mb-3 text-fg-secondary">
             Сгенерируйте предпросмотр отчёта на демо-встрече, чтобы увидеть, как шаблон выглядит в работе.
           </p>
@@ -199,7 +199,7 @@ export function PromptDetailClient({ id }: { id: string }) {
       )}
 
       {tab === 'usage' && (
-        <div className="rounded-lg border border-border-subtle bg-white p-5 text-sm text-fg-secondary">
+        <div className="rounded-lg border border-border-subtle bg-bg-card p-5 text-sm text-fg-secondary">
           Статистика использования (количество встреч, средняя оценка качества) появится после фазы A.3.
         </div>
       )}

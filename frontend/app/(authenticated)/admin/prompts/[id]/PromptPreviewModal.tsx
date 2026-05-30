@@ -84,7 +84,7 @@ export function PromptPreviewModal({
                 value={meetingKey}
                 onValueChange={(v) => setMeetingKey(v as DemoMeetingKey)}
               >
-                <SelectTrigger className="h-9 w-72 bg-white text-sm">
+                <SelectTrigger className="h-9 w-72 bg-bg-card text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -133,7 +133,7 @@ export function PromptPreviewModal({
                   <span className="font-mono">{result.outputTokens}</span>
                 </span>
               </div>
-              <details className="rounded border border-border-subtle bg-white" open>
+              <details className="rounded border border-border-subtle bg-bg-card" open>
                 <summary className="cursor-pointer p-2 text-sm font-medium text-fg-primary">
                   Ответ ИИ
                 </summary>

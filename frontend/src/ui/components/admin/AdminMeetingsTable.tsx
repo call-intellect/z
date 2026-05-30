@@ -42,7 +42,7 @@ export function AdminMeetingsTable() {
         <h1 className="text-2xl font-semibold text-fg-primary">{t('admin.meetings.title')}</h1>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-white p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border-subtle bg-bg-card p-3">
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           <span>{t('admin.meetings.filter_status')}</span>
           <select
@@ -100,7 +100,7 @@ export function AdminMeetingsTable() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-bg-card p-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
@@ -108,7 +108,7 @@ export function AdminMeetingsTable() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('meetings.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-bg-card shadow-sm">
           <table className="min-w-full text-sm">
             <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>

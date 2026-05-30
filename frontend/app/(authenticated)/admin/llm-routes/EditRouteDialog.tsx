@@ -350,7 +350,7 @@ function TierBlock({
                 onChange({ ...value, provider: v as LlmProvider, model: '' })
               }
             >
-              <SelectTrigger className="h-9 bg-white text-sm">
+              <SelectTrigger className="h-9 bg-bg-card text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

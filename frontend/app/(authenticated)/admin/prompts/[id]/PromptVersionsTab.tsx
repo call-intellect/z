@@ -64,7 +64,7 @@ export function PromptVersionsTab({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
+    <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
       <table className="w-full text-sm">
         <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
           <tr>

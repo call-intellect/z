@@ -66,7 +66,7 @@ export function TopicDetail({
           value={window}
           onValueChange={(v) => onWindowChange(v as FeedbackWindow)}
         >
-          <SelectTrigger className="h-9 w-44 bg-white text-sm">
+          <SelectTrigger className="h-9 w-44 bg-bg-card text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -162,7 +162,7 @@ export function TopicDetail({
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border-subtle bg-white p-3">
+    <div className="rounded-lg border border-border-subtle bg-bg-card p-3">
       <div className="text-xs uppercase text-fg-tertiary">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums text-fg-primary">
         {value}

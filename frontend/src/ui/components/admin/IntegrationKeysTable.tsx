@@ -57,7 +57,7 @@ export function IntegrationKeysTable() {
           onRetry={() => mutate()}
         />
       ) : isLoading ? (
-        <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
+        <div className="space-y-2 rounded-md border border-border-subtle bg-bg-card p-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
@@ -65,7 +65,7 @@ export function IntegrationKeysTable() {
       ) : !data || data.items.length === 0 ? (
         <EmptyState title={t('admin.integration_keys.empty')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border-subtle bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-md border border-border-subtle bg-bg-card shadow-sm">
           <table className="min-w-full text-sm">
             <thead className="bg-bg-subtle text-left text-xs uppercase text-fg-secondary">
               <tr>

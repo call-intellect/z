@@ -122,7 +122,7 @@ export function PromptExperimentsListClient() {
           {items.map((e) => (
             <li
               key={e.id}
-              className="rounded-md border border-border-subtle bg-white p-4 shadow-sm"
+              className="rounded-md border border-border-subtle bg-bg-card p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>

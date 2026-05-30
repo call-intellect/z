@@ -116,7 +116,7 @@ export function MyPromisesClient() {
             : 'Здесь пусто.'}
         </p>
       ) : (
-        <table className="w-full divide-y rounded border bg-white text-sm">
+        <table className="w-full divide-y rounded border bg-bg-card text-sm">
           <thead className="bg-bg-subtle text-xs text-fg-secondary">
             <tr>
               <th className="px-3 py-2 text-left">Обещание</th>

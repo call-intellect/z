@@ -100,14 +100,14 @@ export function PromptsListClient() {
             placeholder="Поиск по названию или ключу"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-64 rounded-md border border-border-subtle bg-white pl-7 pr-3 text-sm"
+            className="h-9 w-64 rounded-md border border-border-subtle bg-bg-card pl-7 pr-3 text-sm"
           />
         </div>
         <Select
           value={scopeFilter}
           onValueChange={(v) => setScopeFilter(v as 'all' | PromptTemplateScope)}
         >
-          <SelectTrigger className="h-9 w-44 bg-white text-sm">
+          <SelectTrigger className="h-9 w-44 bg-bg-card text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -123,7 +123,7 @@ export function PromptsListClient() {
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as 'all' | PromptTemplateStatus)}
         >
-          <SelectTrigger className="h-9 w-40 bg-white text-sm">
+          <SelectTrigger className="h-9 w-40 bg-bg-card text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -139,7 +139,7 @@ export function PromptsListClient() {
           value={taskTypeFilter}
           onValueChange={(v) => setTaskTypeFilter(v as 'all' | PromptTaskType)}
         >
-          <SelectTrigger className="h-9 w-48 bg-white text-sm">
+          <SelectTrigger className="h-9 w-48 bg-bg-card text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -174,7 +174,7 @@ export function PromptsListClient() {
       )}
 
       {!loading && !q.isForbidden && !error && items.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
+        <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
           <table className="w-full text-sm">
             <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
               <tr>

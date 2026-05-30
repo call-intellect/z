@@ -89,7 +89,7 @@ export function MeetingQualityScoreSection({
   return (
     <section
       data-testid="meeting-quality-score-section"
-      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-5"
+      className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-5"
     >
       <header className="flex items-start justify-between gap-4">
         <div>
@@ -114,7 +114,7 @@ export function MeetingQualityScoreSection({
           }}
           disabled={regenerating}
           title="Можно вызывать не чаще 3 раз в час"
-          className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg border border-border bg-bg-card px-3 py-1.5 text-sm font-medium text-fg-secondary hover:bg-bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {regenerating ? 'Перезапуск…' : 'Перезапустить оценку'}
         </button>
@@ -275,7 +275,7 @@ function PendingSkeleton() {
   return (
     <section
       data-testid="meeting-quality-score-section-loading"
-      className="rounded-2xl border border-border-subtle bg-white p-6 space-y-3"
+      className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-3"
     >
       <h2 className="text-lg font-semibold text-fg-primary">Оценка качества встречи</h2>
       <p className="text-sm text-fg-secondary">Считаем AI-оценку. Обычно занимает 1–2 минуты.</p>

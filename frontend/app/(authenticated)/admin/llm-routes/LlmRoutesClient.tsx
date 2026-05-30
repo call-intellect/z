@@ -90,14 +90,14 @@ export function LlmRoutesClient() {
             placeholder="Поиск по типу задачи"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-64 rounded-md border border-border-subtle bg-white pl-7 pr-3 text-sm"
+            className="h-9 w-64 rounded-md border border-border-subtle bg-bg-card pl-7 pr-3 text-sm"
           />
         </div>
         <Select
           value={providerFilter}
           onValueChange={(v) => setProviderFilter(v as 'all' | LlmProvider)}
         >
-          <SelectTrigger className="h-9 w-56 bg-white text-sm">
+          <SelectTrigger className="h-9 w-56 bg-bg-card text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -142,7 +142,7 @@ export function LlmRoutesClient() {
       )}
 
       {!isLoading && !isForbidden && !errorMessage && filtered.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border-subtle bg-white">
+        <div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
           <table className="w-full text-sm">
             <thead className="bg-bg-subtle text-xs uppercase text-fg-secondary">
               <tr>

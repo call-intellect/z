@@ -91,10 +91,10 @@ export function PromptCreateClient() {
         После создания вы попадёте в редактор: добавите разделы отчёта и активируете шаблон.
       </p>
 
-      <div className="space-y-4 rounded-lg border border-border-subtle bg-white p-5">
+      <div className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
         <Field label="Область">
           <Select value={scope} onValueChange={(v) => setScope(v as PromptTemplateScope)}>
-            <SelectTrigger className="h-9 bg-white text-sm">
+            <SelectTrigger className="h-9 bg-bg-card text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -114,7 +114,7 @@ export function PromptCreateClient() {
               value={orgId}
               onChange={(e) => setOrgId(e.target.value)}
               placeholder="org-cxxxxxxxxxxxxxx"
-              className="h-9 w-full rounded-md border border-border-subtle bg-white px-3 text-sm"
+              className="h-9 w-full rounded-md border border-border-subtle bg-bg-card px-3 text-sm"
             />
           </Field>
         )}
@@ -125,7 +125,7 @@ export function PromptCreateClient() {
             value={key}
             onChange={(e) => setKey(e.target.value)}
             placeholder="type-custom-sales"
-            className="h-9 w-full rounded-md border border-border-subtle bg-white px-3 text-sm"
+            className="h-9 w-full rounded-md border border-border-subtle bg-bg-card px-3 text-sm"
           />
         </Field>
 
@@ -135,7 +135,7 @@ export function PromptCreateClient() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Например: Углублённый разбор продажи"
-            className="h-9 w-full rounded-md border border-border-subtle bg-white px-3 text-sm"
+            className="h-9 w-full rounded-md border border-border-subtle bg-bg-card px-3 text-sm"
           />
         </Field>
 
@@ -145,13 +145,13 @@ export function PromptCreateClient() {
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             maxLength={1000}
-            className="w-full rounded-md border border-border-subtle bg-white p-2 text-sm"
+            className="w-full rounded-md border border-border-subtle bg-bg-card p-2 text-sm"
           />
         </Field>
 
         <Field label="Вид отчёта">
           <Select value={taskType} onValueChange={(v) => setTaskType(v as PromptTaskType)}>
-            <SelectTrigger className="h-9 bg-white text-sm">
+            <SelectTrigger className="h-9 bg-bg-card text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -169,7 +169,7 @@ export function PromptCreateClient() {
             value={meetingType}
             onValueChange={(v) => setMeetingType(v as 'none' | MeetingTypeApi)}
           >
-            <SelectTrigger className="h-9 bg-white text-sm">
+            <SelectTrigger className="h-9 bg-bg-card text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

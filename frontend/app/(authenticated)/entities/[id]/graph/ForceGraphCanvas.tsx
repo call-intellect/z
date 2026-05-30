@@ -242,7 +242,7 @@ function FallbackList({
 }) {
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-4 text-sm">
-      <p className="text-xs text-amber-300">
+      <p className="text-xs text-warning">
         Визуализация графа недоступна (нужен `bun install` после merge'а).
         Показываем плоский список для просмотра данных.
       </p>
@@ -259,7 +259,7 @@ function FallbackList({
                 className={`rounded border px-2 py-1 text-xs ${
                   n.isCenter
                     ? 'border-[#5EEAD4]/60 bg-[#5EEAD4]/10 text-[#5EEAD4]'
-                    : 'border-white/10 bg-black/30 text-foreground hover:bg-black/50'
+                    : 'border-border-subtle bg-bg-overlay text-foreground hover:bg-bg-subtle'
                 }`}
               >
                 {n.label}
@@ -278,7 +278,7 @@ function FallbackList({
               <button
                 type="button"
                 onClick={() => onEdgeClick(e)}
-                className={`w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-left text-xs hover:bg-black/50 ${
+                className={`w-full rounded border border-border-subtle bg-bg-overlay px-3 py-2 text-left text-xs hover:bg-bg-subtle ${
                   e.isExpired ? 'opacity-60' : ''
                 }`}
               >

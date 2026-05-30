@@ -32,7 +32,7 @@ export function AdminMeetingDetails({ meetingId }: Props) {
   }
   if (isLoading || !data) {
     return (
-      <div className="space-y-2 rounded-md border border-border-subtle bg-white p-3">
+      <div className="space-y-2 rounded-md border border-border-subtle bg-bg-card p-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-6 w-full" />
         ))}
@@ -233,7 +233,7 @@ export function AdminMeetingDetails({ meetingId }: Props) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <article className="rounded-md border border-border-subtle bg-white p-4 shadow-sm">
+    <article className="rounded-md border border-border-subtle bg-bg-card p-4 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-secondary">
         {title}
       </h2>

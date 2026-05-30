@@ -7,8 +7,12 @@
 
 import type {
   DailyDigestApi,
+  DailyDigestEventApi,
   DailyDigestMetricsApi,
+  DailyDigestPersonShinedApi,
+  DailyDigestPersonStruggledApi,
   DailyDigestSourcesApi,
+  DailyDigestUrgentItemApi,
 } from '@/api/operations-daily-digest.api';
 
 export interface DailyDigestMetricsDomain extends DailyDigestMetricsApi {
@@ -18,6 +22,18 @@ export interface DailyDigestMetricsDomain extends DailyDigestMetricsApi {
 }
 
 export interface DailyDigestSourcesDomain extends DailyDigestSourcesApi {}
+
+/**
+ * Pulse Wave 2 §2.1 — domain-зеркала расширенных секций.
+ * `occurredAt` остаётся строкой ISO — UI рендерит как локальное время
+ * прямо из строки, а не Date (избегаем drift между серверным и клиентским TZ).
+ */
+export interface DailyDigestEventDomain extends DailyDigestEventApi {}
+export interface DailyDigestUrgentItemDomain extends DailyDigestUrgentItemApi {}
+export interface DailyDigestPersonShinedDomain
+  extends DailyDigestPersonShinedApi {}
+export interface DailyDigestPersonStruggledDomain
+  extends DailyDigestPersonStruggledApi {}
 
 export interface DailyDigestDomain {
   id: string;
@@ -31,6 +47,11 @@ export interface DailyDigestDomain {
   llmTaskRouteId: string | null;
   deliveredAt: Date | null;
   createdAt: Date;
+  // Pulse Wave 2 §2.1 — расширенные секции.
+  eventsToday: DailyDigestEventDomain[];
+  urgentItems: DailyDigestUrgentItemDomain[];
+  whoShined: DailyDigestPersonShinedDomain[];
+  whoStruggled: DailyDigestPersonStruggledDomain[];
 }
 
 export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
@@ -45,5 +66,10 @@ export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
     llmTaskRouteId: dto.llmTaskRouteId ?? null,
     deliveredAt: dto.deliveredAt ? new Date(dto.deliveredAt) : null,
     createdAt: new Date(dto.createdAt),
+    // Backend гарантирует массивы; default `?? []` страхует от старых ответов.
+    eventsToday: dto.eventsToday ?? [],
+    urgentItems: dto.urgentItems ?? [],
+    whoShined: dto.whoShined ?? [],
+    whoStruggled: dto.whoStruggled ?? [],
   };
 }

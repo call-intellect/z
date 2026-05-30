@@ -16,6 +16,8 @@ import type {
   OperationsDashboardTeamFrictionDto,
   OperationsDashboardTeamFrictionsListDto,
   OperationsInsightCauseCategory,
+  OperationsMissingCheckInsDto,
+  OperationsStaleIssuesDto,
   OperationsTeamTemperatureDto,
   OperationsTeamTemperaturePersonDto,
   OperationsTeamTemperatureSummaryDto,
@@ -201,6 +203,122 @@ export class OperationsDashboardService {
     tenantId: string;
   }): Promise<OperationsDashboardCapacityListDto> {
     return this.fetchCapacity(args.tenantId);
+  }
+
+  /**
+   * Pulse Wave 2.3 — `GET /api/v1/dashboard/operations/missing-checkins`.
+   *
+   * Кто из сотрудников ещё не отчитался за указанный день. Берём всех
+   * `Person.relationship='employee'` (не удалённых) и сверяем с
+   * `DailyCheckIn.dateLocal`. По `Person.timezone` фильтр не делаем — это
+   * быстрая «горячая» сводка для COO; погрешность ±1 день не критична,
+   * `date` контролирует контроллер (МСК по умолчанию).
+   *
+   * Использует `dateLocal` строкой (формат `YYYY-MM-DD`) — индекс
+   * `(tenantId, kind, dateLocal)` покрывает запрос без сканирования.
+   */
+  async getMissingCheckIns(args: {
+    tenantId: string;
+    date: string;
+  }): Promise<OperationsMissingCheckInsDto> {
+    const [persons, checkIns] = await Promise.all([
+      this.prisma.person.findMany({
+        where: {
+          tenantId: args.tenantId,
+          deletedAt: null,
+          relationship: 'employee',
+        },
+        select: { id: true, name: true, primaryDepartmentId: true },
+      }),
+      this.prisma.dailyCheckIn.findMany({
+        where: {
+          tenantId: args.tenantId,
+          dateLocal: args.date,
+        },
+        select: { personId: true },
+      }),
+    ]);
+
+    const respondedIds = new Set(checkIns.map((c) => c.personId));
+    const missing = persons
+      .filter((p) => !respondedIds.has(p.id))
+      .map((p) => ({
+        personId: p.id,
+        personName: p.name,
+        primaryDepartmentId: p.primaryDepartmentId,
+      }));
+
+    return {
+      date: args.date,
+      totalEmployees: persons.length,
+      missing,
+    };
+  }
+
+  /**
+   * Pulse Wave 2.3 — `GET /api/v1/dashboard/operations/stale-issues`.
+   *
+   * «Зависшие» задачи: либо нет активности > N дней (`updatedAt`), либо
+   * `dueDate < now` без `completedAt`. Один SELECT с `OR`-условием —
+   * `(tenantId, dueDate)` + `(tenantId, stateId, deletedAt)` индексы.
+   *
+   * Поле `lastActivity` в Issue не добавляем (см. ТЗ §2.3, минимальное
+   * безопасное изменение); ориентируемся на `updatedAt @updatedAt`,
+   * который Prisma обновляет на любую правку строки.
+   *
+   * `assigneeUserIds` подтягиваем через relation `IssueAssignee`.
+   */
+  async getStaleIssues(args: {
+    tenantId: string;
+    staleDays?: number;
+    limit?: number;
+  }): Promise<OperationsStaleIssuesDto> {
+    const staleDays = Math.max(1, args.staleDays ?? 5);
+    const limit = Math.min(Math.max(1, args.limit ?? 20), 100);
+    const now = new Date();
+    const staleThreshold = new Date(
+      now.getTime() - staleDays * 24 * 60 * 60 * 1000,
+    );
+
+    const issues = await this.prisma.issue.findMany({
+      where: {
+        tenantId: args.tenantId,
+        deletedAt: null,
+        archivedAt: null,
+        completedAt: null,
+        OR: [
+          { updatedAt: { lt: staleThreshold } },
+          { dueDate: { lt: now } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        identifier: true,
+        updatedAt: true,
+        dueDate: true,
+        assignees: { select: { userId: true } },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: limit,
+    });
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    return {
+      items: issues.map((i) => ({
+        issueId: i.id,
+        title: i.title,
+        identifier: i.identifier,
+        daysSinceActivity: Math.floor(
+          (now.getTime() - i.updatedAt.getTime()) / dayMs,
+        ),
+        daysOverdue:
+          i.dueDate && i.dueDate.getTime() < now.getTime()
+            ? Math.floor((now.getTime() - i.dueDate.getTime()) / dayMs)
+            : null,
+        assigneeUserIds: i.assignees.map((a) => a.userId),
+      })),
+    };
   }
 
   /**

@@ -43,6 +43,37 @@ export interface WeeklyDigestSourcesApi {
   decisionIds: string[];
 }
 
+/**
+ * Pulse Wave 2 §2.2 — Дельта одного KPI текущая_неделя vs предыдущая.
+ * Зеркало `WeeklyKpiDeltaDto` в backend.
+ */
+export interface WeeklyKpiDeltaApi {
+  label: string;
+  current: number;
+  previous: number | null;
+  delta: number | null;
+  unit: '%' | 'pts' | 'шт';
+}
+
+/** Pulse Wave 2 §2.2 — Динамика команды по health-метрикам. */
+export interface WeeklyTeamDynamicsRowApi {
+  departmentId: string;
+  departmentName: string;
+  signal:
+    | 'sentiment_improved'
+    | 'sentiment_dropped'
+    | 'promises_improved'
+    | 'promises_dropped';
+  detail: string;
+}
+
+/** Pulse Wave 2 §2.2 — Прогноз по KPI на следующую неделю. */
+export interface WeeklyForecastItemApi {
+  metric: 'sentiment' | 'promises' | 'hanging_decisions';
+  projection: string;
+  confidence: 'low' | 'medium';
+}
+
 export interface WeeklyOperationsDigestApi {
   id: string;
   tenantId: string;
@@ -53,6 +84,10 @@ export interface WeeklyOperationsDigestApi {
   sources: WeeklyDigestSourcesApi;
   llmTaskRouteId: string | null;
   createdAt: string;
+  // Pulse Wave 2 §2.2 — расширенные секции (runtime-вычислены на backend).
+  kpiDeltas: WeeklyKpiDeltaApi[];
+  teamDynamics: WeeklyTeamDynamicsRowApi[];
+  forecast: WeeklyForecastItemApi[];
 }
 
 export const weeklyDigestApi = {

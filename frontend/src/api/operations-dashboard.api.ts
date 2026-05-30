@@ -138,6 +138,39 @@ export interface OperationsCapacityListApi {
   overloadedCount: number;
 }
 
+/**
+ * Pulse Wave 2.3 — кто из сотрудников ещё не сделал чек-ин за день.
+ * Контракт: `OperationsMissingCheckInsDto` (backend).
+ */
+export interface OperationsMissingCheckInApi {
+  personId: string;
+  personName: string | null;
+  primaryDepartmentId: string | null;
+}
+
+export interface OperationsMissingCheckInsApi {
+  date: string;
+  totalEmployees: number;
+  missing: OperationsMissingCheckInApi[];
+}
+
+/**
+ * Pulse Wave 2.3 — «Зависшие» задачи трекера (stale > 5 дней или просрочка).
+ * Контракт: `OperationsStaleIssuesDto` (backend).
+ */
+export interface OperationsStaleIssueApi {
+  issueId: string;
+  title: string;
+  identifier: string;
+  daysSinceActivity: number;
+  daysOverdue: number | null;
+  assigneeUserIds: string[];
+}
+
+export interface OperationsStaleIssuesApi {
+  items: OperationsStaleIssueApi[];
+}
+
 export interface PersonalRelationApi {
   id: string;
   fromPersonId: string;
@@ -186,4 +219,25 @@ export const operationsDashboardApi = {
     apiClient.get<OperationsTeamTemperatureApi>(
       `/api/v1/dashboard/operations/team-temperature?days=${days}`,
     ),
+  /**
+   * Pulse Wave 2.3 — `GET /dashboard/operations/missing-checkins?date=YYYY-MM-DD`.
+   * Если `date` не передан — backend использует сегодня (МСК).
+   */
+  getMissingCheckIns: (date?: string) =>
+    apiClient.get<OperationsMissingCheckInsApi>(
+      `/api/v1/dashboard/operations/missing-checkins${date ? `?date=${date}` : ''}`,
+    ),
+  /**
+   * Pulse Wave 2.3 — `GET /dashboard/operations/stale-issues?staleDays=5&limit=20`.
+   * Зависшие/просроченные задачи трекера.
+   */
+  getStaleIssues: (params?: { staleDays?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.staleDays !== undefined) q.set('staleDays', String(params.staleDays));
+    if (params?.limit !== undefined) q.set('limit', String(params.limit));
+    const suffix = q.toString();
+    return apiClient.get<OperationsStaleIssuesApi>(
+      `/api/v1/dashboard/operations/stale-issues${suffix ? `?${suffix}` : ''}`,
+    );
+  },
 };

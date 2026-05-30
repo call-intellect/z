@@ -193,6 +193,48 @@ export interface OperationsDashboardCapacityListDto {
   overloadedCount: number;
 }
 
+/**
+ * Pulse Wave 2.3 — кто из сотрудников ещё не сделал чек-ин за день.
+ *
+ * `date` — YYYY-MM-DD (МСК по умолчанию из контроллера; можно прислать
+ * через `?date=`). `totalEmployees` — все Person.relationship='employee'
+ * (не удалённые). `missing` — те, у кого нет ни одной DailyCheckIn за `date`.
+ */
+export interface OperationsMissingCheckInDto {
+  personId: string;
+  personName: string | null;
+  primaryDepartmentId: string | null;
+}
+
+export interface OperationsMissingCheckInsDto {
+  date: string;
+  totalEmployees: number;
+  missing: OperationsMissingCheckInDto[];
+}
+
+/**
+ * Pulse Wave 2.3 — «зависшие» задачи трекера для виджета операций.
+ *
+ * Источник «зависает»:
+ *   - `updatedAt < now − staleDays` (по умолчанию 5 дней), ИЛИ
+ *   - `dueDate < now` без `completedAt` (просрочка).
+ *
+ * `daysOverdue=null` если задача не просрочена (срок не наступил или
+ * не задан). `assigneeUserIds` берётся из relation `IssueAssignee`.
+ */
+export interface OperationsStaleIssueDto {
+  issueId: string;
+  title: string;
+  identifier: string;
+  daysSinceActivity: number;
+  daysOverdue: number | null;
+  assigneeUserIds: string[];
+}
+
+export interface OperationsStaleIssuesDto {
+  items: OperationsStaleIssueDto[];
+}
+
 export interface PersonalRelationDto {
   /** EntityLink.id */
   id: string;

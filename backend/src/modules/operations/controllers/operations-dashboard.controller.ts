@@ -26,6 +26,8 @@ import type {
   OperationsDashboardCapacityListDto,
   OperationsDashboardOverviewDto,
   OperationsDashboardTeamFrictionsListDto,
+  OperationsMissingCheckInsDto,
+  OperationsStaleIssuesDto,
   OperationsTeamTemperatureDto,
 } from '../dto/operations-dashboard.dto';
 import {
@@ -131,6 +133,63 @@ export class OperationsDashboardController {
   }
 
   /**
+   * Pulse Wave 2.3 — Кто из сотрудников ещё не отчитался за сегодня (или
+   * за указанный `?date=YYYY-MM-DD`). Используется виджетом «Не отчитались
+   * сегодня» на дашборде операций.
+   */
+  @Get('missing-checkins')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — сотрудники без чек-ина за указанный день (default сегодня МСК)',
+  })
+  async missingCheckIns(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query('date') date?: string,
+  ): Promise<OperationsMissingCheckInsDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const target =
+      date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : this.todayMsk();
+    return this.svc.getMissingCheckIns({ tenantId: tenantId!, date: target });
+  }
+
+  /**
+   * Pulse Wave 2.3 — «Зависшие» задачи трекера (без активности > 5 дней
+   * или с просроченным `dueDate` без `completedAt`). Используется виджетом
+   * «Зависли задачи» на дашборде операций.
+   */
+  @Get('stale-issues')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — зависшие/просроченные задачи трекера (default staleDays=5, limit=20)',
+  })
+  async staleIssues(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query('staleDays') staleDays?: string,
+    @Query('limit') limit?: string,
+  ): Promise<OperationsStaleIssuesDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const parsedStale = staleDays ? Number.parseInt(staleDays, 10) : undefined;
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
+    return this.svc.getStaleIssues({
+      tenantId: tenantId!,
+      staleDays:
+        parsedStale !== undefined && Number.isFinite(parsedStale)
+          ? parsedStale
+          : undefined,
+      limit:
+        parsedLimit !== undefined && Number.isFinite(parsedLimit)
+          ? parsedLimit
+          : undefined,
+    });
+  }
+
+  /**
    * SBA β-8.2 — Открытые обещания за окно (default 14 дней).
    * Доступ — coo/owner/admin (как остальные эндпоинты дашборда).
    */
@@ -152,6 +211,18 @@ export class OperationsDashboardController {
       days: q.days,
       limit: q.limit,
     });
+  }
+
+  /**
+   * Pulse Wave 2.3 — текущая дата в МСК (UTC+3) в формате YYYY-MM-DD.
+   * Используется как default для `?date=` в `missing-checkins`. Не зависит
+   * от системной таймзоны контейнера (в проде backend может стоять и в
+   * UTC, и в Europe/Moscow).
+   */
+  private todayMsk(): string {
+    const now = new Date();
+    const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+    return msk.toISOString().slice(0, 10);
   }
 
   private requireUser(req: Request): string {

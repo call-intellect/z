@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
@@ -15,6 +16,10 @@ import { useAuth } from '@/contexts/auth-context';
 import {
   fromDailyDigestApi,
   type DailyDigestDomain,
+  type DailyDigestEventDomain,
+  type DailyDigestPersonShinedDomain,
+  type DailyDigestPersonStruggledDomain,
+  type DailyDigestUrgentItemDomain,
 } from '@/domain/operations-daily-digest';
 
 /**
@@ -206,6 +211,14 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const undelivered = data.deliveredAt === null;
 
+  // Pulse Wave 2 §2.1 — если ВСЕ расширенные секции пусты, показываем
+  // нейтральный «вчера было спокойно» вместо четырёх пустых блоков.
+  const allRuntimeEmpty =
+    data.eventsToday.length === 0 &&
+    data.urgentItems.length === 0 &&
+    data.whoShined.length === 0 &&
+    data.whoStruggled.length === 0;
+
   return (
     <div className="space-y-6">
       {data.shortSummary ? (
@@ -221,6 +234,21 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
             ) : null}
           </div>
           <p className="text-sm text-fg-primary">{data.shortSummary}</p>
+        </section>
+      ) : null}
+
+      {/* Pulse Wave 2 §2.1 — приоритет вверху: срочное → события → люди. */}
+      <UrgentItemsSection items={data.urgentItems} />
+      <EventsTimelineSection items={data.eventsToday} />
+      <WhoShinedSection items={data.whoShined} />
+      <WhoStruggledSection items={data.whoStruggled} />
+
+      {allRuntimeEmpty ? (
+        <section className="rounded border border-border-subtle bg-bg-surface p-4 text-center">
+          <p className="text-sm text-fg-secondary">
+            Вчера было спокойно: ни срочных пунктов, ни заметных событий,
+            ни просевших сотрудников.
+          </p>
         </section>
       ) : null}
 
@@ -405,4 +433,235 @@ function formatRu(dateLocal: string): string {
   const [y, m, d] = dateLocal.split('-');
   if (!y || !m || !d) return dateLocal;
   return `${d}.${m}.${y}`;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Pulse Wave 2 §2.1 — секции «Срочное / Хронология / Шайнили / Просели».
+ * Каждая секция:
+ *   - empty list → не рендерим карточку (общий fallback «вчера было спокойно»
+ *     показывается в `DigestView`, если ВСЕ 4 пусты);
+ *   - drill-down — через next/link на frontend-маршруты;
+ *   - цвета — парные токены (chip-{role}-bg + chip-{role}-fg).
+ * ────────────────────────────────────────────────────────────────────── */
+
+function UrgentItemsSection({
+  items,
+}: {
+  items: DailyDigestUrgentItemDomain[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+      <h2 className="mb-3 text-lg font-semibold text-fg-primary">
+        Срочные пункты
+      </h2>
+      <ul className="space-y-1">
+        {items.map((item) => (
+          <li key={`${item.kind}-${item.id}`}>
+            <Link
+              href={item.link}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+            >
+              <span className="flex items-center gap-2 text-fg-primary">
+                <span aria-hidden className="text-fg-tertiary">
+                  {urgentIcon(item.kind)}
+                </span>
+                <span>{item.title}</span>
+              </span>
+              <span
+                className={`rounded px-2 py-0.5 text-[11px] ${
+                  item.urgency === 'high'
+                    ? 'bg-chip-danger-bg text-chip-danger-fg'
+                    : 'bg-chip-warning-bg text-chip-warning-fg'
+                }`}
+              >
+                {item.badge}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function EventsTimelineSection({
+  items,
+}: {
+  items: DailyDigestEventDomain[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+      <h2 className="mb-3 text-lg font-semibold text-fg-primary">
+        Что произошло вчера
+      </h2>
+      <ul className="space-y-1">
+        {items.map((item) => (
+          <li key={`${item.kind}-${item.id}`}>
+            <Link
+              href={item.link}
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+            >
+              <span
+                aria-hidden
+                className="w-12 shrink-0 font-mono text-xs text-fg-tertiary tabular-nums"
+              >
+                {formatTimeRu(item.occurredAt)}
+              </span>
+              <span aria-hidden className="text-fg-tertiary">
+                {eventIcon(item.kind)}
+              </span>
+              <span className="flex-1 text-fg-primary">{item.title}</span>
+              {item.detail ? (
+                <span className="rounded bg-bg-overlay px-2 py-0.5 text-[11px] text-fg-tertiary">
+                  {item.detail}
+                </span>
+              ) : null}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function WhoShinedSection({
+  items,
+}: {
+  items: DailyDigestPersonShinedDomain[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+      <h2 className="mb-3 text-lg font-semibold text-fg-primary">
+        Кто выделился позитивом
+      </h2>
+      <ul className="space-y-1">
+        {items.map((p) => (
+          <li key={`${p.reason}-${p.personId}`}>
+            <Link
+              href={p.link}
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+            >
+              <span aria-hidden className="text-chip-success-fg">★</span>
+              <span className="font-medium text-fg-primary">{p.personName}</span>
+              <span className="rounded bg-chip-success-bg px-2 py-0.5 text-[11px] text-chip-success-fg">
+                {shinedReasonLabel(p.reason)}
+              </span>
+              <span className="flex-1 truncate text-xs text-fg-secondary">
+                {p.detail}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function WhoStruggledSection({
+  items,
+}: {
+  items: DailyDigestPersonStruggledDomain[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border border-border-subtle bg-bg-surface p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Кому нужна поддержка
+        </h2>
+        <span className="text-xs text-fg-tertiary">
+          для разговора с глазу на глаз
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {items.map((p) => (
+          <li key={`${p.reason}-${p.personId}`}>
+            <Link
+              href={p.link}
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+            >
+              <span aria-hidden className="text-chip-warning-fg">⚑</span>
+              <span className="font-medium text-fg-primary">{p.personName}</span>
+              <span className="rounded bg-chip-warning-bg px-2 py-0.5 text-[11px] text-chip-warning-fg">
+                {struggledReasonLabel(p.reason)}
+              </span>
+              <span className="flex-1 truncate text-xs text-fg-secondary">
+                {p.detail}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function urgentIcon(kind: DailyDigestUrgentItemDomain['kind']): string {
+  switch (kind) {
+    case 'overdue_commitment':
+      return '⏰';
+    case 'raised_decision':
+      return '↑';
+    case 'high_insight':
+      return '!';
+    default:
+      return '·';
+  }
+}
+
+function eventIcon(kind: DailyDigestEventDomain['kind']): string {
+  switch (kind) {
+    case 'meeting':
+      return '◉';
+    case 'decision':
+      return '✓';
+    case 'signal':
+      return '△';
+    default:
+      return '·';
+  }
+}
+
+function shinedReasonLabel(
+  reason: DailyDigestPersonShinedDomain['reason'],
+): string {
+  switch (reason) {
+    case 'recognition_received':
+      return 'получил признание';
+    case 'helpful_acts':
+      return 'помог коллегам';
+    case 'commitments_kept':
+      return 'сдержал обещания';
+    default:
+      return reason;
+  }
+}
+
+function struggledReasonLabel(
+  reason: DailyDigestPersonStruggledDomain['reason'],
+): string {
+  switch (reason) {
+    case 'red_checkin':
+      return 'красный чек-ин';
+    case 'broken_commitment':
+      return 'не выполнено обещание';
+    case 'silent_3_days':
+      return 'молчит 3 дня';
+    default:
+      return reason;
+  }
+}
+
+function formatTimeRu(iso: string): string {
+  // ISO → HH:MM в МСК. Безопасно: если строка кривая, отдаём пустоту.
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return '';
+  return t.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Moscow',
+  });
 }

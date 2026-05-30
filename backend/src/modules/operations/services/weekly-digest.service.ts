@@ -7,7 +7,10 @@ import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
   WeeklyDigestMetricsDto,
   WeeklyDigestSourcesDto,
+  WeeklyForecastItemDto,
+  WeeklyKpiDeltaDto,
   WeeklyOperationsDigestDto,
+  WeeklyTeamDynamicsRowDto,
 } from '../dto/weekly-digest.dto';
 import {
   WEEKLY_DIGEST_PROMPT_VERSION,
@@ -49,6 +52,9 @@ export class WeeklyDigestService {
   /**
    * Получить сохранённый дайджест за неделю. Возвращает `null`, если ещё
    * не сгенерирован.
+   *
+   * Pulse Wave 2 §2.2 — обогащает DTO runtime-секциями (kpiDeltas /
+   * teamDynamics / forecast).
    */
   async getStored(args: {
     tenantId: string;
@@ -57,7 +63,8 @@ export class WeeklyDigestService {
     const row = await this.prisma.weeklyOperationsDigest.findUnique({
       where: { tenantId_weekStart: { tenantId: args.tenantId, weekStart: args.weekStart } },
     });
-    return row ? this.toDto(row) : null;
+    if (!row) return null;
+    return this.enrichDto(this.toDto(row));
   }
 
   /**
@@ -188,7 +195,7 @@ export class WeeklyDigestService {
     });
 
     this.metrics.incCooWeeklyDigestGenerated({ tenantTop });
-    return this.toDto(row);
+    return this.enrichDto(this.toDto(row));
   }
 
   /**
@@ -390,7 +397,14 @@ export class WeeklyDigestService {
     return { metrics, sources };
   }
 
-  /** Преобразование Prisma-row в DTO. */
+  /** Преобразование Prisma-row в DTO.
+   *
+   *  Pulse Wave 2 §2.2: 3 расширенных секции (kpiDeltas/teamDynamics/forecast)
+   *  — НЕ хранятся в БД; здесь возвращаем пустые массивы. Реально они
+   *  вычисляются `enrichDto()` через `computeRuntimeSections()`. Пустые
+   *  дефолты гарантируют, что DTO type-корректен даже в ветке, где enrich
+   *  не вызывается (например, в unit-тестах).
+   */
   private toDto(row: {
     id: string;
     tenantId: string;
@@ -412,7 +426,411 @@ export class WeeklyDigestService {
       sources: (row.sourcesJson as WeeklyDigestSourcesDto) ?? emptySources(),
       llmTaskRouteId: row.llmTaskRouteId,
       createdAt: row.createdAt.toISOString(),
+      // Pulse Wave 2 §2.2 — runtime-секции, заполняются в enrichDto().
+      kpiDeltas: [],
+      teamDynamics: [],
+      forecast: [],
     };
+  }
+
+  /**
+   * Pulse Wave 2 §2.2 — обогащение DTO runtime-вычисленными секциями
+   * (kpiDeltas / teamDynamics / forecast). НЕ-блокирующее на ошибки: если
+   * запрос упал, возвращаем DTO с пустыми секциями (а не ломаем выдачу
+   * всего отчёта).
+   */
+  private async enrichDto(
+    dto: WeeklyOperationsDigestDto,
+  ): Promise<WeeklyOperationsDigestDto> {
+    try {
+      const sections = await this.computeRuntimeSections({
+        tenantId: dto.tenantId,
+        weekStart: dto.weekStart,
+        weekEnd: dto.weekEnd,
+      });
+      return { ...dto, ...sections };
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: dto.tenantId,
+          weekStart: dto.weekStart,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'weekly-digest: computeRuntimeSections упал — возвращаю DTO без расширенных секций',
+      );
+      return dto;
+    }
+  }
+
+  /**
+   * Pulse Wave 2 §2.2 — собирает 3 секции:
+   *   - kpiDeltas: 4 KPI текущей недели с дельтами к предыдущей неделе.
+   *   - teamDynamics: команды, чьи sentiment / promises метрики выделились
+   *     (изменение ≥10 в любую сторону), max 6.
+   *   - forecast: линейная экстраполяция тренда на следующую неделю.
+   *
+   * НЕ персистится в БД. Считается прямыми Prisma-запросами (без инжекта
+   * DashboardModule-сервисов — это создало бы circular dependency, т.к.
+   * `DashboardModule` уже импортирует `OperationsModule` после Фазы 1.3).
+   */
+  private async computeRuntimeSections(args: {
+    tenantId: string;
+    weekStart: string;
+    weekEnd: string;
+  }): Promise<{
+    kpiDeltas: WeeklyKpiDeltaDto[];
+    teamDynamics: WeeklyTeamDynamicsRowDto[];
+    forecast: WeeklyForecastItemDto[];
+  }> {
+    const curStart = args.weekStart;
+    const curEnd = args.weekEnd;
+    const prevStart = shiftDateStr(args.weekStart, -7);
+    const prevEnd = shiftDateStr(args.weekEnd, -7);
+
+    // Окно текущей недели в UTC (для запросов по DateTime-полям).
+    const curStartUtc = parseDateLocalToUtc(curStart);
+    const curEndUtc = endOfDayUtc(parseDateLocalToUtc(curEnd));
+    const prevStartUtc = parseDateLocalToUtc(prevStart);
+    const prevEndUtc = endOfDayUtc(parseDateLocalToUtc(prevEnd));
+
+    // ── KPI #1-2: чек-ины (для sentiment-индекса и счётчика totalCheckIns).
+    // ── KPI #3: commitments по commitmentDueDate в окне.
+    // ── KPI #4: висящие решения (raisedCount>=2, status активные,
+    //           createdAt старше weekEnd-7d на момент конца текущей недели
+    //           и аналогично для предыдущей).
+    const [
+      curCheckIns,
+      prevCheckIns,
+      curCommitments,
+      prevCommitments,
+      curHanging,
+      prevHanging,
+    ] = await Promise.all([
+      this.prisma.dailyCheckIn.findMany({
+        where: {
+          tenantId: args.tenantId,
+          sentiment: { in: ['green', 'yellow', 'red'] },
+          dateLocal: { gte: curStart, lte: curEnd },
+        },
+        select: {
+          id: true,
+          sentiment: true,
+          personId: true,
+          person: { select: { primaryDepartmentId: true } },
+        },
+      }),
+      this.prisma.dailyCheckIn.findMany({
+        where: {
+          tenantId: args.tenantId,
+          sentiment: { in: ['green', 'yellow', 'red'] },
+          dateLocal: { gte: prevStart, lte: prevEnd },
+        },
+        select: {
+          id: true,
+          sentiment: true,
+          personId: true,
+          person: { select: { primaryDepartmentId: true } },
+        },
+      }),
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'commitment',
+          commitmentDueDate: { gte: curStartUtc, lte: curEndUtc },
+        },
+        select: {
+          id: true,
+          commitmentStatus: true,
+          commitmentDueDate: true,
+          commitmentRecipientPersonId: true,
+          commitmentRecipient: {
+            select: { id: true, primaryDepartmentId: true },
+          },
+        },
+      }),
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'commitment',
+          commitmentDueDate: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+        select: {
+          id: true,
+          commitmentStatus: true,
+          commitmentDueDate: true,
+          commitmentRecipientPersonId: true,
+          commitmentRecipient: {
+            select: { id: true, primaryDepartmentId: true },
+          },
+        },
+      }),
+      // Висящие решения на конец текущей недели: активные, raisedCount>=2,
+      // createdAt < (curEnd - 7d) = старше 7 дней относительно конца недели.
+      this.prisma.decision.count({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['active', 'proposed', 'approved'] },
+          raisedCount: { gte: 2 },
+          createdAt: { lt: addDays(curEndUtc, -7) },
+        },
+      }),
+      this.prisma.decision.count({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['active', 'proposed', 'approved'] },
+          raisedCount: { gte: 2 },
+          createdAt: { lt: addDays(prevEndUtc, -7) },
+        },
+      }),
+    ]);
+
+    // ── KPI #1: индекс настроения = (green-red)/total * 100 (округлено).
+    const curSent = computeSentimentIndex(curCheckIns);
+    const prevSent = computeSentimentIndex(prevCheckIns);
+
+    // ── KPI #2: надёжность обещаний = kept / (kept+broken+overdue) * 100.
+    const curRel = computeReliabilityPercent(curCommitments);
+    const prevRel = computeReliabilityPercent(prevCommitments);
+
+    // ── KPI #3: висящие решения (Int).
+    // ── KPI #4: чек-инов всего за неделю.
+    const curTotal = curCheckIns.length;
+    const prevTotal = prevCheckIns.length;
+
+    const kpiDeltas: WeeklyKpiDeltaDto[] = [
+      buildKpi('Индекс настроения', curSent, prevSent, 'pts'),
+      buildKpi('Надёжность обещаний', curRel, prevRel, '%'),
+      buildKpi('Висящие решения', curHanging, prevHanging, 'шт'),
+      buildKpi('Чек-инов всего', curTotal, prevTotal, 'шт'),
+    ];
+
+    // ── teamDynamics: для каждого Department с persons>=3 считаем
+    // sentiment + promises текущей и предыдущей недели.
+    const teamDynamics = await this.computeTeamDynamics({
+      tenantId: args.tenantId,
+      curCheckIns,
+      prevCheckIns,
+      curCommitments,
+      prevCommitments,
+    });
+
+    // ── forecast: линейная экстраполяция по 3 KPI.
+    const forecast: WeeklyForecastItemDto[] = [
+      buildForecast('sentiment', curSent, prevSent),
+      buildForecast('promises', curRel, prevRel),
+      buildForecast('hanging_decisions', curHanging, prevHanging),
+    ];
+
+    return { kpiDeltas, teamDynamics, forecast };
+  }
+
+  /**
+   * Pulse Wave 2 §2.2 — динамика команд по sentiment / promises.
+   *
+   * Для каждого Department:
+   *   - sentiment-delta = индекс_текущая - индекс_предыдущая (по чек-инам
+   *     сотрудников этого отдела);
+   *   - promises-delta = reliability_текущая - reliability_предыдущая
+   *     (по обещаниям, адресованным сотрудникам отдела).
+   *
+   * Команды, у которых в обеих неделях <3 человек писали чек-ин/получали
+   * commitment, отбрасываем (статистически слабый сигнал).
+   *
+   * Возвращаем top-2 по росту и top-2 по падению для каждой метрики (макс 6,
+   * берём только delta ≥ ±10).
+   */
+  private async computeTeamDynamics(args: {
+    tenantId: string;
+    curCheckIns: Array<{
+      sentiment: string | null;
+      personId: string;
+      person: { primaryDepartmentId: string | null } | null;
+    }>;
+    prevCheckIns: Array<{
+      sentiment: string | null;
+      personId: string;
+      person: { primaryDepartmentId: string | null } | null;
+    }>;
+    curCommitments: Array<{
+      commitmentStatus: string | null;
+      commitmentDueDate: Date | null;
+      commitmentRecipient: { primaryDepartmentId: string | null } | null;
+    }>;
+    prevCommitments: Array<{
+      commitmentStatus: string | null;
+      commitmentDueDate: Date | null;
+      commitmentRecipient: { primaryDepartmentId: string | null } | null;
+    }>;
+  }): Promise<WeeklyTeamDynamicsRowDto[]> {
+    // Соберём множество всех потенциальных departmentId.
+    const depIds = new Set<string>();
+    for (const c of args.curCheckIns) {
+      if (c.person?.primaryDepartmentId) depIds.add(c.person.primaryDepartmentId);
+    }
+    for (const c of args.prevCheckIns) {
+      if (c.person?.primaryDepartmentId) depIds.add(c.person.primaryDepartmentId);
+    }
+    for (const c of args.curCommitments) {
+      if (c.commitmentRecipient?.primaryDepartmentId)
+        depIds.add(c.commitmentRecipient.primaryDepartmentId);
+    }
+    for (const c of args.prevCommitments) {
+      if (c.commitmentRecipient?.primaryDepartmentId)
+        depIds.add(c.commitmentRecipient.primaryDepartmentId);
+    }
+
+    if (depIds.size === 0) return [];
+
+    const departments = await this.prisma.department.findMany({
+      where: { id: { in: Array.from(depIds) }, tenantId: args.tenantId },
+      select: { id: true, name: true },
+    });
+    const depNameById = new Map(departments.map((d) => [d.id, d.name]));
+
+    // group-функции по departmentId.
+    const sentByDep = (checkIns: typeof args.curCheckIns) => {
+      const map = new Map<string, { g: number; y: number; r: number; total: number }>();
+      for (const c of checkIns) {
+        const dep = c.person?.primaryDepartmentId;
+        if (!dep) continue;
+        const v = map.get(dep) ?? { g: 0, y: 0, r: 0, total: 0 };
+        if (c.sentiment === 'green') v.g++;
+        else if (c.sentiment === 'yellow') v.y++;
+        else if (c.sentiment === 'red') v.r++;
+        v.total++;
+        map.set(dep, v);
+      }
+      return map;
+    };
+
+    const relByDep = (commits: typeof args.curCommitments) => {
+      const map = new Map<string, { kept: number; broken: number; overdue: number; total: number }>();
+      const now = new Date();
+      for (const c of commits) {
+        const dep = c.commitmentRecipient?.primaryDepartmentId;
+        if (!dep) continue;
+        const v = map.get(dep) ?? { kept: 0, broken: 0, overdue: 0, total: 0 };
+        const status = c.commitmentStatus;
+        if (status === 'fulfilled') {
+          v.kept++;
+          v.total++;
+        } else if (status === 'missed') {
+          v.broken++;
+          v.total++;
+        } else if (
+          (status === 'open' || status === 'asked') &&
+          c.commitmentDueDate &&
+          c.commitmentDueDate < now
+        ) {
+          v.overdue++;
+          v.total++;
+        }
+        map.set(dep, v);
+      }
+      return map;
+    };
+
+    const sentCur = sentByDep(args.curCheckIns);
+    const sentPrev = sentByDep(args.prevCheckIns);
+    const relCur = relByDep(args.curCommitments);
+    const relPrev = relByDep(args.prevCommitments);
+
+    const SENTIMENT_THRESHOLD = 10; // pts
+    const PROMISES_THRESHOLD = 10; // p.p.
+    const MIN_TEAM_SIZE = 3;
+
+    // Кандидаты (depId, signal, delta, detail).
+    type Candidate = {
+      depId: string;
+      depName: string;
+      signal: WeeklyTeamDynamicsRowDto['signal'];
+      delta: number;
+      detail: string;
+    };
+    const candidates: Candidate[] = [];
+
+    for (const depId of depIds) {
+      const name = depNameById.get(depId) ?? depId;
+
+      // Sentiment.
+      const sc = sentCur.get(depId);
+      const sp = sentPrev.get(depId);
+      if (sc && sp && sc.total >= MIN_TEAM_SIZE && sp.total >= MIN_TEAM_SIZE) {
+        const curIdx = Math.round(((sc.g - sc.r) / sc.total) * 100);
+        const prevIdx = Math.round(((sp.g - sp.r) / sp.total) * 100);
+        const delta = curIdx - prevIdx;
+        if (delta >= SENTIMENT_THRESHOLD) {
+          candidates.push({
+            depId,
+            depName: name,
+            signal: 'sentiment_improved',
+            delta,
+            detail: `Настроение +${delta} pts (${prevIdx} → ${curIdx}); ${sc.total} чек-инов`,
+          });
+        } else if (delta <= -SENTIMENT_THRESHOLD) {
+          candidates.push({
+            depId,
+            depName: name,
+            signal: 'sentiment_dropped',
+            delta,
+            detail: `Настроение ${delta} pts (${prevIdx} → ${curIdx}); ${sc.total} чек-инов`,
+          });
+        }
+      }
+
+      // Promises.
+      const rc = relCur.get(depId);
+      const rp = relPrev.get(depId);
+      if (rc && rp && rc.total >= MIN_TEAM_SIZE && rp.total >= MIN_TEAM_SIZE) {
+        const curPct = Math.round((rc.kept / Math.max(1, rc.total)) * 100);
+        const prevPct = Math.round((rp.kept / Math.max(1, rp.total)) * 100);
+        const delta = curPct - prevPct;
+        if (delta >= PROMISES_THRESHOLD) {
+          candidates.push({
+            depId,
+            depName: name,
+            signal: 'promises_improved',
+            delta,
+            detail: `Обещания +${delta} pp (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
+          });
+        } else if (delta <= -PROMISES_THRESHOLD) {
+          candidates.push({
+            depId,
+            depName: name,
+            signal: 'promises_dropped',
+            delta,
+            detail: `Обещания ${delta} pp (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
+          });
+        }
+      }
+    }
+
+    // Top-2 улучшившихся / top-2 ухудшившихся для каждой метрики, max 6.
+    const sentUp = candidates
+      .filter((c) => c.signal === 'sentiment_improved')
+      .sort((a, b) => b.delta - a.delta)
+      .slice(0, 2);
+    const sentDown = candidates
+      .filter((c) => c.signal === 'sentiment_dropped')
+      .sort((a, b) => a.delta - b.delta)
+      .slice(0, 2);
+    const promUp = candidates
+      .filter((c) => c.signal === 'promises_improved')
+      .sort((a, b) => b.delta - a.delta)
+      .slice(0, 1);
+    const promDown = candidates
+      .filter((c) => c.signal === 'promises_dropped')
+      .sort((a, b) => a.delta - b.delta)
+      .slice(0, 1);
+
+    return [...sentUp, ...sentDown, ...promUp, ...promDown]
+      .slice(0, 6)
+      .map((c) => ({
+        departmentId: c.depId,
+        departmentName: c.depName,
+        signal: c.signal,
+        detail: c.detail,
+      }));
   }
 }
 
@@ -454,4 +872,190 @@ function addDays(d: Date, days: number): Date {
   const c = new Date(d);
   c.setUTCDate(c.getUTCDate() + days);
   return c;
+}
+
+/** Сдвиг даты-строки YYYY-MM-DD на ±N дней; возвращает YYYY-MM-DD. */
+function shiftDateStr(dateLocal: string, days: number): string {
+  const d = parseDateLocalToUtc(dateLocal);
+  d.setUTCDate(d.getUTCDate() + days);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/**
+ * Индекс настроения в pts (-100..+100): (green - red) / total * 100.
+ * `null` если total=0 (нет чек-инов — не из чего считать).
+ */
+function computeSentimentIndex(
+  checkIns: Array<{ sentiment: string | null }>,
+): number | null {
+  let g = 0;
+  let r = 0;
+  let total = 0;
+  for (const c of checkIns) {
+    if (c.sentiment === 'green') {
+      g++;
+      total++;
+    } else if (c.sentiment === 'yellow') {
+      total++;
+    } else if (c.sentiment === 'red') {
+      r++;
+      total++;
+    }
+  }
+  if (total === 0) return null;
+  return Math.round(((g - r) / total) * 100);
+}
+
+/**
+ * Reliability в % (0..100): kept / (kept+broken+overdue) * 100.
+ * `null` если знаменатель=0.
+ */
+function computeReliabilityPercent(
+  commits: Array<{
+    commitmentStatus: string | null;
+    commitmentDueDate: Date | null;
+  }>,
+): number | null {
+  const now = new Date();
+  let kept = 0;
+  let broken = 0;
+  let overdue = 0;
+  for (const c of commits) {
+    const s = c.commitmentStatus;
+    if (s === 'fulfilled') kept++;
+    else if (s === 'missed') broken++;
+    else if (
+      (s === 'open' || s === 'asked') &&
+      c.commitmentDueDate &&
+      c.commitmentDueDate < now
+    )
+      overdue++;
+  }
+  const denom = kept + broken + overdue;
+  if (denom === 0) return null;
+  return Math.round((kept / denom) * 100);
+}
+
+/** Хелпер: собрать запись KPI с дельтой. */
+function buildKpi(
+  label: string,
+  current: number | null,
+  previous: number | null,
+  unit: WeeklyKpiDeltaDto['unit'],
+): WeeklyKpiDeltaDto {
+  const curN = current ?? 0;
+  const delta = current === null || previous === null ? null : current - previous;
+  return {
+    label,
+    current: curN,
+    previous,
+    delta,
+    unit,
+  };
+}
+
+/**
+ * Прогноз по KPI: линейная экстраполяция на следующую неделю.
+ * Confidence='medium' если |delta| >= 10, иначе 'low'.
+ */
+function buildForecast(
+  metric: WeeklyForecastItemDto['metric'],
+  current: number | null,
+  previous: number | null,
+): WeeklyForecastItemDto {
+  const delta =
+    current !== null && previous !== null ? current - previous : null;
+  const confidence: 'low' | 'medium' =
+    delta !== null && Math.abs(delta) >= 10 ? 'medium' : 'low';
+  const projected =
+    delta !== null && current !== null ? current + delta : current;
+
+  if (metric === 'sentiment') {
+    if (current === null) {
+      return {
+        metric,
+        projection: 'Недостаточно данных для прогноза настроения.',
+        confidence: 'low',
+      };
+    }
+    if (delta === null || delta === 0) {
+      return {
+        metric,
+        projection: 'Настроение стабильно — особых сдвигов не ожидается.',
+        confidence,
+      };
+    }
+    if (delta > 0) {
+      return {
+        metric,
+        projection: `Настроение продолжит расти, ожидаемое значение ~${projected} pts к концу недели.`,
+        confidence,
+      };
+    }
+    return {
+      metric,
+      projection: `При сохранении тренда настроение может упасть до ~${projected} pts.`,
+      confidence,
+    };
+  }
+
+  if (metric === 'promises') {
+    if (current === null) {
+      return {
+        metric,
+        projection: 'Недостаточно данных для прогноза по обещаниям.',
+        confidence: 'low',
+      };
+    }
+    if (delta === null || delta === 0) {
+      return {
+        metric,
+        projection: 'Надёжность обещаний стабильна — особых сдвигов не ожидается.',
+        confidence,
+      };
+    }
+    if (delta > 0) {
+      return {
+        metric,
+        projection: `Надёжность обещаний продолжит расти, ожидаемое значение ~${projected}% к концу недели.`,
+        confidence,
+      };
+    }
+    return {
+      metric,
+      projection: `При сохранении тренда надёжность обещаний может упасть до ~${projected}%.`,
+      confidence,
+    };
+  }
+
+  // hanging_decisions
+  if (current === null) {
+    return {
+      metric,
+      projection: 'Недостаточно данных для прогноза по висящим решениям.',
+      confidence: 'low',
+    };
+  }
+  if (delta === null || delta === 0) {
+    return {
+      metric,
+      projection: 'Очередь висящих решений стабильна — особых сдвигов не ожидается.',
+      confidence,
+    };
+  }
+  if (delta > 0) {
+    return {
+      metric,
+      projection: `При сохранении тренда висящих решений станет ~${Math.max(0, projected ?? 0)} к концу недели.`,
+      confidence,
+    };
+  }
+  return {
+    metric,
+    projection: `Очередь висящих решений сокращается, ожидаемое значение ~${Math.max(0, projected ?? 0)} к концу недели.`,
+    confidence,
+  };
 }

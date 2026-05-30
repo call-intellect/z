@@ -74,6 +74,47 @@ export interface DailyDigestSourcesApi {
   decisionIds: string[];
 }
 
+/**
+ * Pulse Wave 2 §2.1 — событие в хронологии «Что произошло вчера».
+ * Зеркалит `DailyDigestEventDto` в backend.
+ */
+export interface DailyDigestEventApi {
+  kind: 'meeting' | 'decision' | 'signal';
+  id: string;
+  title: string;
+  occurredAt: string;
+  link: string;
+  detail?: string;
+}
+
+/** Pulse Wave 2 §2.1 — срочный пункт, требующий действия сегодня. */
+export interface DailyDigestUrgentItemApi {
+  kind: 'overdue_commitment' | 'raised_decision' | 'high_insight';
+  id: string;
+  title: string;
+  link: string;
+  badge: string;
+  urgency: 'high' | 'medium';
+}
+
+/** Pulse Wave 2 §2.1 — человек, выделившийся позитивом вчера. */
+export interface DailyDigestPersonShinedApi {
+  personId: string;
+  personName: string;
+  reason: 'recognition_received' | 'helpful_acts' | 'commitments_kept';
+  detail: string;
+  link: string;
+}
+
+/** Pulse Wave 2 §2.1 — человек, у которого просел сигнал. */
+export interface DailyDigestPersonStruggledApi {
+  personId: string;
+  personName: string;
+  reason: 'red_checkin' | 'broken_commitment' | 'silent_3_days';
+  detail: string;
+  link: string;
+}
+
 export interface DailyDigestApi {
   id: string;
   tenantId: string;
@@ -86,6 +127,11 @@ export interface DailyDigestApi {
   llmTaskRouteId: string | null;
   deliveredAt: string | null;
   createdAt: string;
+  // Pulse Wave 2 §2.1 — расширенные секции (runtime-вычислены на backend).
+  eventsToday: DailyDigestEventApi[];
+  urgentItems: DailyDigestUrgentItemApi[];
+  whoShined: DailyDigestPersonShinedApi[];
+  whoStruggled: DailyDigestPersonStruggledApi[];
 }
 
 /** Обёртка-helper: ловит digest_not_found и превращает в `null`. */

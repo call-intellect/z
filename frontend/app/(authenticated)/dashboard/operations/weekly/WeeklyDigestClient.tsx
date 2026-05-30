@@ -6,7 +6,10 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { ApiError } from '@/api/api-error';
 import {
   weeklyDigestApi,
+  type WeeklyForecastItemApi,
+  type WeeklyKpiDeltaApi,
   type WeeklyOperationsDigestApi,
+  type WeeklyTeamDynamicsRowApi,
 } from '@/api/weekly-digest.api';
 
 /**
@@ -133,8 +136,17 @@ export function WeeklyDigestClient() {
 function DigestView(props: { data: WeeklyOperationsDigestApi }) {
   const { data } = props;
   const pct = (v: number) => `${Math.round(v * 100)}%`;
+  // Pulse Wave 2 §2.2 — default `?? []` страхует от старых ответов API.
+  const kpiDeltas = data.kpiDeltas ?? [];
+  const teamDynamics = data.teamDynamics ?? [];
+  const forecast = data.forecast ?? [];
   return (
     <div className="space-y-6">
+      {/* Pulse Wave 2 §2.2 — 4 KPI с дельтами наверху для быстрого «пульса». */}
+      <KpiDeltasSection items={kpiDeltas} />
+      <TeamDynamicsSection items={teamDynamics} />
+      <ForecastSection items={forecast} />
+
       <section className="rounded border bg-bg-card p-4">
         <h2 className="text-lg font-semibold">Температура команды</h2>
         <p className="mt-1 text-sm text-fg-secondary">
@@ -264,4 +276,201 @@ function formatRu(dateLocal: string): string {
 function signedRu(v: number): string {
   if (v > 0) return `+${v}`;
   return String(v);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Pulse Wave 2 §2.2 — секции «KPI с дельтами / Динамика команд / Прогноз».
+ * Цвета — парные токены `chip-{role}-bg` + `chip-{role}-fg`. Без hex.
+ * ────────────────────────────────────────────────────────────────────── */
+
+function KpiDeltasSection({ items }: { items: WeeklyKpiDeltaApi[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border bg-bg-card p-4">
+      <h2 className="mb-3 text-lg font-semibold">Главные показатели</h2>
+      <p className="mb-3 text-xs text-fg-tertiary">
+        Сравнение с прошлой неделей.
+      </p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {items.map((k) => (
+          <KpiDeltaCard key={k.label} k={k} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function KpiDeltaCard({ k }: { k: WeeklyKpiDeltaApi }) {
+  const direction =
+    k.delta === null ? 'flat' : k.delta > 0 ? 'up' : k.delta < 0 ? 'down' : 'flat';
+  // Для висящих решений рост — это плохо, а падение хорошо. Для остальных —
+  // наоборот. UI-цвет считаем по «направлению хорошо/плохо».
+  const isInverse = k.label === 'Висящие решения';
+  const isGood =
+    direction === 'flat'
+      ? null
+      : isInverse
+      ? direction === 'down'
+      : direction === 'up';
+  const tone =
+    isGood === null
+      ? 'neutral'
+      : isGood
+      ? 'success'
+      : 'danger';
+  const chipClass =
+    tone === 'success'
+      ? 'bg-chip-success-bg text-chip-success-fg'
+      : tone === 'danger'
+      ? 'bg-chip-danger-bg text-chip-danger-fg'
+      : 'bg-bg-subtle text-fg-secondary';
+  const arrow = direction === 'up' ? '↑' : direction === 'down' ? '↓' : '·';
+  const unitSuffix = k.unit === '%' ? '%' : k.unit === 'pts' ? ' pts' : ' шт';
+  return (
+    <div className="rounded border border-border-subtle bg-bg-surface p-3">
+      <div className="text-[10px] uppercase tracking-wide text-fg-tertiary">
+        {k.label}
+      </div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="text-2xl font-bold tabular-nums text-fg-primary">
+          {k.current}
+          <span className="ml-0.5 text-sm font-normal text-fg-secondary">
+            {unitSuffix}
+          </span>
+        </span>
+        {k.delta !== null ? (
+          <span
+            className={`rounded px-2 py-0.5 text-[11px] tabular-nums ${chipClass}`}
+            title={
+              k.previous !== null
+                ? `Прошлая неделя: ${k.previous}${unitSuffix}`
+                : undefined
+            }
+          >
+            {arrow} {signedRu(k.delta)}
+            {k.unit === '%' || k.unit === 'pts' ? '' : ''}
+          </span>
+        ) : (
+          <span className="rounded bg-bg-subtle px-2 py-0.5 text-[11px] text-fg-tertiary">
+            нет данных
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamDynamicsSection({
+  items,
+}: {
+  items: WeeklyTeamDynamicsRowApi[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border bg-bg-card p-4">
+      <h2 className="mb-3 text-lg font-semibold">Динамика команд</h2>
+      <p className="mb-3 text-xs text-fg-tertiary">
+        Команды, которые заметно изменились за неделю.
+      </p>
+      <ul className="space-y-1">
+        {items.map((row) => {
+          const isImproved =
+            row.signal === 'sentiment_improved' ||
+            row.signal === 'promises_improved';
+          const chipClass = isImproved
+            ? 'bg-chip-success-bg text-chip-success-fg'
+            : 'bg-chip-danger-bg text-chip-danger-fg';
+          return (
+            <li
+              key={`${row.departmentId}-${row.signal}`}
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-subtle"
+            >
+              <span aria-hidden className={isImproved ? 'text-chip-success-fg' : 'text-chip-danger-fg'}>
+                {isImproved ? '↑' : '↓'}
+              </span>
+              <span className="font-medium text-fg-primary">
+                {row.departmentName}
+              </span>
+              <span className={`rounded px-2 py-0.5 text-[11px] ${chipClass}`}>
+                {teamDynamicsLabel(row.signal)}
+              </span>
+              <span className="flex-1 truncate text-xs text-fg-secondary">
+                {row.detail}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function teamDynamicsLabel(
+  signal: WeeklyTeamDynamicsRowApi['signal'],
+): string {
+  switch (signal) {
+    case 'sentiment_improved':
+      return 'настроение улучшилось';
+    case 'sentiment_dropped':
+      return 'настроение упало';
+    case 'promises_improved':
+      return 'обещания выправились';
+    case 'promises_dropped':
+      return 'обещания просели';
+    default:
+      return signal;
+  }
+}
+
+function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="rounded border bg-bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">Прогноз на следующую неделю</h2>
+        <span className="text-xs text-fg-tertiary">
+          линейная экстраполяция тренда
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {items.map((f) => {
+          const chipClass =
+            f.confidence === 'medium'
+              ? 'bg-chip-info-bg text-chip-info-fg'
+              : 'bg-bg-subtle text-fg-secondary';
+          return (
+            <li key={f.metric} className="rounded-md p-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded bg-bg-subtle px-2 py-0.5 text-[11px] text-fg-secondary">
+                  {forecastMetricLabel(f.metric)}
+                </span>
+                <span
+                  className={`rounded px-2 py-0.5 text-[11px] ${chipClass}`}
+                  title="Уверенность прогноза: medium — заметный тренд (≥10), low — слабый или нет данных"
+                >
+                  {f.confidence === 'medium' ? 'уверенность средняя' : 'уверенность низкая'}
+                </span>
+              </div>
+              <p className="mt-1 text-fg-primary">{f.projection}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function forecastMetricLabel(
+  metric: WeeklyForecastItemApi['metric'],
+): string {
+  switch (metric) {
+    case 'sentiment':
+      return 'Настроение';
+    case 'promises':
+      return 'Обещания';
+    case 'hanging_decisions':
+      return 'Висящие решения';
+    default:
+      return metric;
+  }
 }

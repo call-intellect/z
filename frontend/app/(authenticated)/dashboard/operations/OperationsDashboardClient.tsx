@@ -9,6 +9,9 @@ import { ApiError } from '@/api/api-error';
 import { commitmentsApi, type OpenCommitmentsListApi } from '@/api/commitments.api';
 import {
   operationsDashboardApi,
+  type OperationsMissingCheckInsApi,
+  type OperationsStaleIssuesApi,
+  type OperationsTeamTemperatureApi,
   type OperationsTeamTemperatureSummaryApi,
 } from '@/api/operations-dashboard.api';
 import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
@@ -20,6 +23,8 @@ import {
   fromOperationsOverviewApi,
   type OperationsOverviewDomain,
 } from '@/domain/operations-dashboard';
+import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
+import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
 
@@ -54,6 +59,24 @@ export function OperationsDashboardClient() {
   const dailyDigestDomain: DailyDigestDomain | null = dailyDigestSwr.data
     ? fromDailyDigestApi(dailyDigestSwr.data)
     : null;
+
+  // Pulse Wave 2.3 — данные для расширенных виджетов. Каждый — независимый
+  // SWR, чтобы провал одного не валил весь дашборд.
+  const temperatureSwr = useSWR(
+    ['operations-team-temperature', 7],
+    async () => operationsDashboardApi.getTeamTemperature(7),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const missingCheckInsSwr = useSWR(
+    ['operations-missing-checkins'],
+    async () => operationsDashboardApi.getMissingCheckIns(),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const staleIssuesSwr = useSWR(
+    ['operations-stale-issues', 5, 20],
+    async () => operationsDashboardApi.getStaleIssues({ staleDays: 5, limit: 20 }),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +172,46 @@ export function OperationsDashboardClient() {
       </div>
 
       <TeamTemperatureWidget summary={data.teamTemperature} />
+
+      <TeamTemperatureHeatmapCard
+        loading={temperatureSwr.isLoading}
+        error={
+          temperatureSwr.error instanceof Error
+            ? temperatureSwr.error.message
+            : null
+        }
+        temperature={temperatureSwr.data ?? null}
+      />
+
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <MissingCheckInsCard
+          loading={missingCheckInsSwr.isLoading}
+          error={
+            missingCheckInsSwr.error instanceof Error
+              ? missingCheckInsSwr.error.message
+              : null
+          }
+          data={missingCheckInsSwr.data ?? null}
+        />
+        <StaleIssuesCard
+          loading={staleIssuesSwr.isLoading}
+          error={
+            staleIssuesSwr.error instanceof Error
+              ? staleIssuesSwr.error.message
+              : null
+          }
+          data={staleIssuesSwr.data ?? null}
+        />
+      </div>
+
+      <div className="mt-6">
+        <ActivityFeedWidget
+          feedTypes={['probe_question']}
+          scope="company"
+          pageSize={10}
+          title="Вопросы AI команде"
+        />
+      </div>
 
       <div className="mt-6">
         <CauseCategoryMapWidget
@@ -475,6 +538,153 @@ function YesterdayDigestCard(props: {
           Связный текст не собран. Откройте полный отчёт, чтобы увидеть
           структурированные показатели.
         </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Pulse Wave 2.3 — карточка «Температура команды по людям» (heatmap).
+ *
+ * Тонкая обёртка над `TeamTemperatureHeatmap`: title + skeleton/error/empty.
+ * `byPerson` уже отсортирован на бэке по `red DESC`.
+ */
+function TeamTemperatureHeatmapCard(props: {
+  loading: boolean;
+  error: string | null;
+  temperature: OperationsTeamTemperatureApi | null;
+}) {
+  return (
+    <section className="mt-6 rounded border bg-bg-card p-4">
+      <h2 className="mb-3 text-lg font-semibold">
+        Температура команды по людям
+      </h2>
+      {props.loading ? (
+        <p className="text-sm text-fg-secondary">Загрузка…</p>
+      ) : props.error ? (
+        <p className="text-sm text-chip-danger-fg">{props.error}</p>
+      ) : !props.temperature || props.temperature.byPerson.length === 0 ? (
+        <p className="text-sm text-fg-tertiary">
+          Чек-инов с проанализированным настроением пока нет.
+        </p>
+      ) : (
+        <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Pulse Wave 2.3 — карточка «Не отчитались сегодня».
+ *
+ * Backend сам резолвит дату по умолчанию (сегодня МСК). Empty state — все
+ * отчитались или сотрудников нет. Показываем до 30 имён в списке.
+ */
+function MissingCheckInsCard(props: {
+  loading: boolean;
+  error: string | null;
+  data: OperationsMissingCheckInsApi | null;
+}) {
+  return (
+    <section className="rounded border bg-bg-card p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">Не отчитались сегодня</h2>
+        {props.data ? (
+          <span className="text-xs text-fg-secondary">
+            {props.data.missing.length} из {props.data.totalEmployees}
+          </span>
+        ) : null}
+      </div>
+      {props.loading ? (
+        <p className="text-sm text-fg-secondary">Загрузка…</p>
+      ) : props.error ? (
+        <p className="text-sm text-chip-danger-fg">{props.error}</p>
+      ) : !props.data || props.data.totalEmployees === 0 ? (
+        <p className="text-sm text-fg-tertiary">
+          В организации пока нет сотрудников.
+        </p>
+      ) : props.data.missing.length === 0 ? (
+        <p className="text-sm text-chip-success-fg">
+          Все сотрудники отчитались за {props.data.date}.
+        </p>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {props.data.missing.slice(0, 30).map((m) => (
+            <li
+              key={m.personId}
+              className="rounded px-2 py-1 text-fg-primary hover:bg-bg-overlay/40"
+            >
+              {m.personName ?? 'Без имени'}
+            </li>
+          ))}
+          {props.data.missing.length > 30 ? (
+            <li className="px-2 py-1 text-xs text-fg-tertiary">
+              …и ещё {props.data.missing.length - 30}
+            </li>
+          ) : null}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Pulse Wave 2.3 — карточка «Зависли задачи» (stale ИЛИ overdue).
+ *
+ * `daysOverdue` приоритетнее `daysSinceActivity` — показываем красную плашку
+ * «просрочено на N дней». Если задача только зависла без просрочки — серая
+ * плашка «без активности N дней».
+ */
+function StaleIssuesCard(props: {
+  loading: boolean;
+  error: string | null;
+  data: OperationsStaleIssuesApi | null;
+}) {
+  return (
+    <section className="rounded border bg-bg-card p-4">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">Зависли задачи</h2>
+        {props.data ? (
+          <span className="text-xs text-fg-secondary">
+            всего: {props.data.items.length}
+          </span>
+        ) : null}
+      </div>
+      {props.loading ? (
+        <p className="text-sm text-fg-secondary">Загрузка…</p>
+      ) : props.error ? (
+        <p className="text-sm text-chip-danger-fg">{props.error}</p>
+      ) : !props.data || props.data.items.length === 0 ? (
+        <p className="text-sm text-chip-success-fg">
+          Зависших задач нет — все либо в работе, либо закрыты.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {props.data.items.slice(0, 20).map((it) => (
+            <li key={it.issueId} className="py-2 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <Link
+                  href={`/issues/${it.issueId}`}
+                  className="flex-1 text-fg-primary hover:text-accent"
+                >
+                  <span className="mr-2 text-xs text-fg-tertiary">
+                    {it.identifier}
+                  </span>
+                  {it.title}
+                </Link>
+                {it.daysOverdue !== null && it.daysOverdue > 0 ? (
+                  <span className="shrink-0 rounded bg-chip-danger-bg px-1.5 py-0.5 text-[10px] text-chip-danger-fg">
+                    просрочено {it.daysOverdue} дн.
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] text-fg-secondary">
+                    без активности {it.daysSinceActivity} дн.
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

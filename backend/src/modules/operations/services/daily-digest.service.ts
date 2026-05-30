@@ -9,6 +9,10 @@ import type {
   DailyDigestSourcesDto,
   DailyDigestAggregates,
   DailyOperationsDigestDto,
+  DailyDigestEventDto,
+  DailyDigestUrgentItemDto,
+  DailyDigestPersonShinedDto,
+  DailyDigestPersonStruggledDto,
 } from '../dto/daily-digest.dto';
 import {
   DAILY_DIGEST_PROMPT_VERSION,
@@ -67,7 +71,8 @@ export class DailyDigestService {
         },
       },
     });
-    return row ? this.toDto(row) : null;
+    if (!row) return null;
+    return this.enrichDto(this.toDto(row));
   }
 
   /**
@@ -80,7 +85,8 @@ export class DailyDigestService {
       where: { tenantId: args.tenantId },
       orderBy: { dateLocal: 'desc' },
     });
-    return row ? this.toDto(row) : null;
+    if (!row) return null;
+    return this.enrichDto(this.toDto(row));
   }
 
   /**
@@ -231,7 +237,7 @@ export class DailyDigestService {
       tenantTop,
       value: Math.max(0, (Date.now() - row.createdAt.getTime()) / 1000),
     });
-    return this.toDto(row);
+    return this.enrichDto(this.toDto(row));
   }
 
   /**
@@ -443,7 +449,15 @@ export class DailyDigestService {
     return { metrics, sources };
   }
 
-  /** Преобразование Prisma-row в DTO. */
+  /** Преобразование Prisma-row в DTO.
+   *
+   *  Pulse Wave 2 §2.1: 4 расширенных секции (eventsToday/urgentItems/
+   *  whoShined/whoStruggled) — НЕ хранятся в БД; здесь возвращаем пустые
+   *  массивы, которые потом заполняются `enrichDto()` через
+   *  `computeRuntimeSections()`. Пустые дефолты гарантируют, что DTO
+   *  type-корректен даже в ветке, где enrich не вызывается (например,
+   *  в unit-тестах).
+   */
   private toDto(row: {
     id: string;
     tenantId: string;
@@ -467,7 +481,328 @@ export class DailyDigestService {
       llmTaskRouteId: row.llmTaskRouteId,
       deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
+      // Pulse Wave 2 §2.1 — расширенные секции; реально заполняются enrichDto().
+      eventsToday: [],
+      urgentItems: [],
+      whoShined: [],
+      whoStruggled: [],
     };
+  }
+
+  /**
+   * Pulse Wave 2 §2.1 — обогащение DTO runtime-вычисленными секциями
+   * (eventsToday / urgentItems / whoShined / whoStruggled). НЕ-блокирующее
+   * на ошибки: если запрос упал, возвращаем DTO с пустыми секциями (а не
+   * ломаем выдачу всего отчёта).
+   */
+  private async enrichDto(
+    dto: DailyOperationsDigestDto,
+  ): Promise<DailyOperationsDigestDto> {
+    try {
+      const sections = await this.computeRuntimeSections({
+        tenantId: dto.tenantId,
+        dateLocal: dto.dateLocal,
+      });
+      return { ...dto, ...sections };
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: dto.tenantId,
+          dateLocal: dto.dateLocal,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: computeRuntimeSections упал — возвращаю DTO без расширенных секций',
+      );
+      return dto;
+    }
+  }
+
+  /**
+   * Pulse Wave 2 §2.1 — собирает 4 секции одной волной параллельных запросов.
+   *
+   * НЕ персистится в БД (`DailyOperationsDigest.metricsJson` хранит только
+   * базовые метрики). Вычисляется при каждой выдаче — данные «свежие на момент
+   * чтения», что важно для urgentItems (просроченные обещания меняются в
+   * течение дня).
+   *
+   * Окно «вчерашних суток» — `parseDayBoundsMsk(dateLocal)`. Для urgentItems
+   * используется `now`, а не `dayEnd`, потому что просрочка считается на момент
+   * запроса дайджеста (читаешь утром — на этот момент просрочка реальная).
+   */
+  private async computeRuntimeSections(args: {
+    tenantId: string;
+    dateLocal: string;
+  }): Promise<{
+    eventsToday: DailyDigestEventDto[];
+    urgentItems: DailyDigestUrgentItemDto[];
+    whoShined: DailyDigestPersonShinedDto[];
+    whoStruggled: DailyDigestPersonStruggledDto[];
+  }> {
+    const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
+    const now = new Date();
+
+    const [
+      meetingsToday,
+      decisionsToday,
+      criticalSignals,
+      overdueCommits,
+      raisedDecisions,
+      highInsights,
+      redCheckIns,
+      brokenCommits,
+      persons,
+    ] = await Promise.all([
+      // События дня: встречи завершились вчера (Meeting.endedAt, не completedAt).
+      this.prisma.meeting.findMany({
+        where: {
+          tenantId: args.tenantId,
+          endedAt: { gte: dayStart, lt: dayEnd },
+          deletedAt: null,
+        },
+        select: { id: true, title: true, endedAt: true, durationMs: true },
+        take: 30,
+        orderBy: { endedAt: 'asc' },
+      }),
+      // События дня: решения принятые вчера (по createdAt).
+      this.prisma.decision.findMany({
+        where: {
+          tenantId: args.tenantId,
+          createdAt: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true, statement: true, status: true, createdAt: true },
+        take: 30,
+        orderBy: { createdAt: 'asc' },
+      }),
+      // События дня: critical-сигналы (IdeaBlock signalType ∈ {churn_risk,risk,pain},
+      // confidence ≥ 0.8). pain в Z трактуется как high-severity сигнал.
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          createdAt: { gte: dayStart, lt: dayEnd },
+          signalType: { in: ['churn_risk', 'risk', 'pain'] },
+          confidence: { gte: new Prisma.Decimal(0.8) },
+        },
+        select: { id: true, name: true, signalType: true, createdAt: true },
+        take: 10,
+        orderBy: { createdAt: 'asc' },
+      }),
+      // Urgent: просроченные обещания (active, due прошло).
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'commitment',
+          commitmentStatus: { in: ['open', 'asked'] },
+          commitmentDueDate: { lt: now },
+        },
+        select: { id: true, name: true, commitmentDueDate: true },
+        take: 10,
+        orderBy: { commitmentDueDate: 'asc' },
+      }),
+      // Urgent: решения с raisedCount ≥ 2 (Фаза 1.2 — кол-во упоминаний).
+      this.prisma.decision.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['proposed', 'approved', 'active'] },
+          raisedCount: { gte: 2 },
+        },
+        select: { id: true, statement: true, raisedCount: true },
+        take: 10,
+        orderBy: { raisedCount: 'desc' },
+      }),
+      // Urgent: high-insights, появившиеся вчера, ещё активные.
+      this.prisma.insight.findMany({
+        where: {
+          tenantId: args.tenantId,
+          severity: 'high',
+          status: { not: 'archived' },
+          firstObservedAt: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true, statement: true },
+        take: 5,
+        orderBy: { firstObservedAt: 'desc' },
+      }),
+      // Struggled: красные чек-ины вчера. Окно — по `dateLocal` (строка YYYY-MM-DD)
+      // как в `aggregate()`, чтобы совпадало с базовыми метриками.
+      this.prisma.dailyCheckIn.findMany({
+        where: {
+          tenantId: args.tenantId,
+          sentiment: 'red',
+          dateLocal: args.dateLocal,
+        },
+        select: {
+          id: true,
+          personId: true,
+          sentimentRationale: true,
+          person: { select: { id: true, name: true } },
+        },
+        take: 10,
+      }),
+      // Struggled: вчера broken commitments (commitmentStatus='missed',
+      // updatedAt в окне вчерашнего дня).
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'commitment',
+          commitmentStatus: 'missed',
+          updatedAt: { gte: dayStart, lt: dayEnd },
+        },
+        select: {
+          id: true,
+          name: true,
+          commitmentRecipient: { select: { id: true, name: true } },
+        },
+        take: 10,
+      }),
+      // Person-map для безопасного отображения имени.
+      this.prisma.person.findMany({
+        where: { tenantId: args.tenantId, deletedAt: null },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const personById = new Map<string, string>(
+      persons.map((p) => [p.id, p.name]),
+    );
+
+    // ============== eventsToday ==============
+    const eventsToday: DailyDigestEventDto[] = [];
+    for (const m of meetingsToday) {
+      if (!m.endedAt) continue;
+      const durationMin = m.durationMs
+        ? Math.max(1, Math.round(m.durationMs / 60_000))
+        : null;
+      eventsToday.push({
+        kind: 'meeting',
+        id: m.id,
+        title: m.title ?? 'Встреча',
+        occurredAt: m.endedAt.toISOString(),
+        link: `/meetings/${encodeURIComponent(m.id)}/result`,
+        ...(durationMin ? { detail: `${durationMin} мин` } : {}),
+      });
+    }
+    for (const d of decisionsToday) {
+      eventsToday.push({
+        kind: 'decision',
+        id: d.id,
+        title: (d.statement ?? 'Решение').slice(0, 100),
+        occurredAt: d.createdAt.toISOString(),
+        link: `/decisions/${encodeURIComponent(d.id)}`,
+        detail: d.status,
+      });
+    }
+    for (const s of criticalSignals) {
+      eventsToday.push({
+        kind: 'signal',
+        id: s.id,
+        title: s.name,
+        occurredAt: s.createdAt.toISOString(),
+        link: `/themes?block=${encodeURIComponent(s.id)}`,
+        detail: s.signalType,
+      });
+    }
+    eventsToday.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+
+    // ============== urgentItems ==============
+    const urgentItems: DailyDigestUrgentItemDto[] = [];
+    for (const c of overdueCommits) {
+      const daysOverdue = c.commitmentDueDate
+        ? Math.max(
+            1,
+            Math.floor(
+              (now.getTime() - c.commitmentDueDate.getTime()) /
+                (24 * 60 * 60 * 1000),
+            ),
+          )
+        : 0;
+      urgentItems.push({
+        kind: 'overdue_commitment',
+        id: c.id,
+        title: (c.name ?? '').slice(0, 100),
+        link: `/me/commitments?id=${encodeURIComponent(c.id)}`,
+        badge: `просрочено на ${daysOverdue} ${daysOverdue === 1 ? 'день' : 'дн.'}`,
+        urgency: daysOverdue >= 3 ? 'high' : 'medium',
+      });
+    }
+    for (const d of raisedDecisions) {
+      urgentItems.push({
+        kind: 'raised_decision',
+        id: d.id,
+        title: (d.statement ?? 'Решение').slice(0, 100),
+        link: `/decisions/${encodeURIComponent(d.id)}`,
+        badge: `поднималось ${d.raisedCount} раз`,
+        urgency: d.raisedCount >= 4 ? 'high' : 'medium',
+      });
+    }
+    for (const i of highInsights) {
+      urgentItems.push({
+        kind: 'high_insight',
+        id: i.id,
+        title: (i.statement ?? '').slice(0, 100),
+        link: `/insights?id=${encodeURIComponent(i.id)}`,
+        badge: 'high',
+        urgency: 'medium',
+      });
+    }
+
+    // ============== whoShined ==============
+    // V1: пусто. Полная реализация — Фаза 2.2/2.3 (recognition events,
+    // helpful acts, kept commitments) — отдельная инфраструктура.
+    const whoShined: DailyDigestPersonShinedDto[] = [];
+
+    // ============== whoStruggled ==============
+    // Дедуп по personId: первая причина выигрывает (red_checkin > broken_commitment).
+    const struggledMap = new Map<string, DailyDigestPersonStruggledDto>();
+    for (const r of redCheckIns) {
+      const name = r.person?.name ?? personById.get(r.personId) ?? 'Без имени';
+      if (!struggledMap.has(r.personId)) {
+        struggledMap.set(r.personId, {
+          personId: r.personId,
+          personName: name,
+          reason: 'red_checkin',
+          detail:
+            (r.sentimentRationale ?? '').slice(0, 120) || 'красный чек-ин',
+          link: `/persons/${encodeURIComponent(r.personId)}`,
+        });
+      }
+    }
+    for (const c of brokenCommits) {
+      if (!c.commitmentRecipient) continue;
+      const pid = c.commitmentRecipient.id;
+      if (struggledMap.has(pid)) continue;
+      struggledMap.set(pid, {
+        personId: pid,
+        personName: c.commitmentRecipient.name ?? 'Без имени',
+        reason: 'broken_commitment',
+        detail: `Не выполнено: ${(c.name ?? '').slice(0, 80)}`,
+        link: `/persons/${encodeURIComponent(pid)}`,
+      });
+    }
+    const whoStruggled = Array.from(struggledMap.values()).slice(0, 8);
+
+    return { eventsToday, urgentItems, whoShined, whoStruggled };
+  }
+
+  /**
+   * `dateLocal` (YYYY-MM-DD) интерпретируется как день в МСК (UTC+3 без DST).
+   * Возвращает `[start, end)` в UTC: start = 00:00 МСК = 21:00 UTC предыдущего
+   * UTC-дня; end = 24:00 МСК = 21:00 UTC текущего UTC-дня.
+   *
+   * Это окно ОТЛИЧАЕТСЯ от `aggregate()` (которое использует UTC-окно того же
+   * UTC-дня — упрощение β-8.3 MVP). Для расширенных секций нам важнее точность
+   * границы суток в МСК — пользователь читает «вчерашний отчёт» утром и
+   * ожидает события именно вчерашнего календарного дня в МСК.
+   */
+  private parseDayBoundsMsk(dateLocal: string): [Date, Date] {
+    const [y, m, d] = dateLocal.split('-').map(Number);
+    if (!y || !m || !d) {
+      // Безопасный fallback — последние 24 часа.
+      const end = new Date();
+      const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+      return [start, end];
+    }
+    const start = new Date(Date.UTC(y, m - 1, d, -3, 0, 0));
+    const end = new Date(Date.UTC(y, m - 1, d + 1, -3, 0, 0));
+    return [start, end];
   }
 }
 

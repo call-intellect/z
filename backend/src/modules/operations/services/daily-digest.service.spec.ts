@@ -55,6 +55,13 @@ describe('DailyDigestService', () => {
       decision: {
         findMany: vi.fn().mockResolvedValue(overrides.decisions ?? []),
       },
+      // Pulse Wave 2 §2.1 — stubs для enrichDto/computeRuntimeSections.
+      meeting: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      person: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       dailyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),
         findFirst: vi.fn().mockResolvedValue(overrides.latest ?? null),

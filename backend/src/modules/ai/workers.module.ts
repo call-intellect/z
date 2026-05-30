@@ -58,6 +58,7 @@ import { CardRollupWorker } from './workers/card-rollup.worker';
 import { ChaptersWorker } from './workers/chapters.worker';
 import { ClipRenderWorker } from './workers/clip-render.worker';
 import { CustomReportWorker } from './workers/custom-report.worker';
+import { MeetingSpeakerAnalyzerWorker } from './workers/meeting-speaker-analyzer.worker';
 import { MergeWorker } from './workers/merge.worker';
 import { NotifyWorker } from './workers/notify.worker';
 import { QualityScoreWorker } from './workers/quality-score.worker';
@@ -113,6 +114,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     CardRollupWorker,
     // Фаза B — поведенческие метрики (отдельный воркер параллельно ai.analyze).
     BehaviorMetricsWorker,
+    // Pulse Wave 4 §4.4 — Meeting-Speaker-Analyzer. Hourly cron, обрабатывает
+    // MeetingParticipantBehavior с sentimentTextPerSpeakerJson IS NULL за
+    // последние 24ч завершённых встреч. ТОЛЬКО текст транскрипта (EU AI Act §1.3).
+    MeetingSpeakerAnalyzerWorker,
     // Фаза C — AI-оценка качества встречи.
     QualityScoreWorker,
     // Фаза D — очистка транскрипта от слов-паразитов.

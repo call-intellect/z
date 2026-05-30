@@ -31,6 +31,33 @@ export interface PersonPulseHrSuggestion {
   confidence: number;
 }
 
+/**
+ * Pulse Wave 4 §4.5 — один активный risk-flag (Burnout-Risk-Detector cron).
+ *
+ * `type` — литерал строкой; см. backend `RiskFlag.type` в
+ * `burnout-risk-detector.cron.ts`. Frontend рендерит `explanation` как
+ * основной текст, baseline/current — как вспомогательный контекст.
+ */
+export type PersonPulseRiskFlagType =
+  | 'sentiment_dip'
+  | 'reply_latency_rise'
+  | 'missed_checkins'
+  | 'broken_promises'
+  | 'workload_overload'
+  | 'meeting_noshows'
+  | 'conflict_mentions';
+
+export type PersonPulseRiskFlagSeverity = 'low' | 'medium' | 'high';
+
+export interface PersonPulseRiskFlag {
+  /** Строка — известные значения см. в `PersonPulseRiskFlagType`. */
+  type: string;
+  severity: PersonPulseRiskFlagSeverity;
+  baseline: number;
+  current: number;
+  explanation: string;
+}
+
 export interface PersonPulse {
   personId: string;
   personName: string;
@@ -50,6 +77,10 @@ export interface PersonPulse {
   promisesKept14d: number;
   promisesBroken14d: number;
   promisesOverdue14d: number;
+  /** Pulse Wave 4 §4.5 — активные risk-флаги. Пустой массив если флагов нет. */
+  riskFlags: PersonPulseRiskFlag[];
+  /** ISO. null до первого прогона Burnout-Risk-Detector cron'а. */
+  riskFlagsGeneratedAt: string | null;
 }
 
 /** ApiDto и Domain здесь совпадают — backend отдаёт plain JSON в этой же форме. */

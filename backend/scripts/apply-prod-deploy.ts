@@ -89,6 +89,8 @@ const STEPS: Step[] = [
     'agents-v2',
     // Pulse Wave 3 (2026-05-30) — team-health-analyzer / reflection-quality-scorer / hr-recommender.
     'pulse-w3',
+    // Pulse Wave 4 (2026-05-30 §4.4) — meeting-speaker-analyzer (per-speaker text sentiment).
+    'pulse-w4',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

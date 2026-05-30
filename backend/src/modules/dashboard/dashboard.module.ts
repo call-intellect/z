@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { OperationsModule } from '../operations/operations.module';
 
+import { BurnoutRiskDetectorCron } from './agents/burnout-risk-detector.cron';
 import { EngagementScorerCron } from './agents/engagement-scorer.cron';
 import { HrRecommenderCron } from './agents/hr-recommender.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
@@ -54,6 +55,11 @@ import { TeamHealthService } from './services/team-health.service';
     TeamHealthAnalyzerCron,
     EngagementScorerCron,
     HrRecommenderCron,
+    // Pulse Wave 4 §4.5 — Burnout-Risk-Detector (daily, NO LLM).
+    // Только employee с analyticsOptIn=true; вычисляет активные risk-flag'и
+    // (sentiment_dip / missed_checkins / broken_promises / conflict_mentions)
+    // относительно личного 90-day baseline. Пишет в Person.riskFlagsJson.
+    BurnoutRiskDetectorCron,
   ],
   exports: [
     CommitmentReliabilityService,

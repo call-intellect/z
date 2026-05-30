@@ -25,6 +25,7 @@ import type {
   PersonPulseHrSuggestion,
   PersonPulseHrSuggestionType,
   PersonPulseMoodPoint,
+  PersonPulseRiskFlag,
   PersonPulseSentiment,
 } from '@/domain/person-pulse';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
@@ -146,6 +147,7 @@ function PersonPulseContent({
         <CheckInsCard data={data} />
       </div>
       <PromisesCard data={data} />
+      <RiskFlagsSection data={data} />
       <ComingSoonSection />
     </div>
   );
@@ -611,6 +613,95 @@ function PromiseStat({
   );
 }
 
+// ────────────────────────── Risk flags ───────────────────────────────────
+
+/**
+ * Pulse Wave 4 §4.5 — секция активных risk-сигналов из Burnout-Risk-Detector.
+ * Если флагов нет — секция не рендерится (нет шума). Если cron ещё не
+ * запускался (`riskFlagsGeneratedAt === null`) — тоже не рендерим.
+ *
+ * Это НЕ диагноз — это повод для дружественного разговора 1:1.
+ */
+function RiskFlagsSection({ data }: { data: PersonPulse }) {
+  if (data.riskFlags.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <AlertTriangle size={16} className="text-chip-warning-fg" />
+          Сигналы для разговора 1:1
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2">
+          {data.riskFlags.map((f, i) => (
+            <RiskFlagItem key={`${f.type}-${i}`} flag={f} />
+          ))}
+        </ul>
+        <p className="mt-3 text-[11px] text-fg-tertiary">
+          Это не диагноз. Это повод для дружественного разговора 1:1.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RiskFlagItem({ flag }: { flag: PersonPulseRiskFlag }) {
+  return (
+    <li
+      className={cn(
+        'rounded-md border-l-2 px-3 py-2',
+        RISK_SEVERITY_CLASS[flag.severity].border,
+        RISK_SEVERITY_CLASS[flag.severity].bg,
+      )}
+    >
+      <div className="text-sm font-medium text-fg-primary">
+        {riskFlagLabel(flag.type)}
+      </div>
+      <div className="text-xs text-fg-secondary">{flag.explanation}</div>
+    </li>
+  );
+}
+
+const RISK_SEVERITY_CLASS: Record<
+  PersonPulseRiskFlag['severity'],
+  { border: string; bg: string }
+> = {
+  high: {
+    border: 'border-l-chip-danger-fg/60',
+    bg: 'bg-chip-danger-bg/30',
+  },
+  medium: {
+    border: 'border-l-chip-warning-fg/60',
+    bg: 'bg-chip-warning-bg/30',
+  },
+  low: {
+    border: 'border-l-fg-tertiary/40',
+    bg: 'bg-bg-overlay/30',
+  },
+};
+
+function riskFlagLabel(type: string): string {
+  switch (type) {
+    case 'sentiment_dip':
+      return 'Падение настроения';
+    case 'reply_latency_rise':
+      return 'Реже отвечает в чатах';
+    case 'missed_checkins':
+      return 'Пропускает чек-ины';
+    case 'broken_promises':
+      return 'Не выполняет обещания';
+    case 'workload_overload':
+      return 'Признаки перегрузки';
+    case 'meeting_noshows':
+      return 'Пропускает встречи';
+    case 'conflict_mentions':
+      return 'Упоминания конфликта';
+    default:
+      return type;
+  }
+}
+
 // ────────────────────────── Coming soon ──────────────────────────────────
 
 function ComingSoonSection() {
@@ -620,7 +711,6 @@ function ComingSoonSection() {
     { title: 'Граф связей', hint: 'С кем чаще всего общается на встречах' },
     { title: 'Темы знаний', hint: 'Чем человек экспертно владеет' },
     { title: 'Probe-вопросы AI', hint: 'История уточнений от помощника' },
-    { title: 'Risk-сигналы', hint: 'Резкое падение engagement или активности' },
   ];
   return (
     <Card>

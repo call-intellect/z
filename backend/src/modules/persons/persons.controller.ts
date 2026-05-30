@@ -13,11 +13,12 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -42,6 +43,7 @@ import {
   type QuickCreatePersonResponseDto,
   type UpdatePersonDto,
 } from './dto/persons.dto';
+import { KnowledgeAccessLoggerInterceptor } from './interceptors/knowledge-access-logger.interceptor';
 import {
   PersonPulseService,
   type PersonPulseDto,
@@ -66,6 +68,7 @@ import { PersonsService } from './services/persons.service';
 @ApiTags('persons')
 @Controller('api/v1/persons')
 @UseGuards(CookieAuthGuard, TenantGuard)
+@UseInterceptors(KnowledgeAccessLoggerInterceptor)
 export class PersonsController {
   constructor(
     @Inject(PersonsService) private readonly persons: PersonsService,

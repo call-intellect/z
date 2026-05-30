@@ -431,7 +431,13 @@ export type LlmTaskType =
   //                                  tertiary ollama qwen3.5:9b.
   | 'team-health-analyzer'
   | 'reflection-quality-scorer'
-  | 'hr-recommender';
+  | 'hr-recommender'
+  // Pulse Wave 4 §4.4 (2026-05-30, plans/tz/2026-05-30-pulse-full.md §4.4) —
+  // Meeting-Speaker-Analyzer: per-speaker TEXT sentiment + topics из реплик
+  // спикера за встречу. JSON-strict, дешёвая классификация.
+  // EU AI Act §1.3: НЕ анализирует голос/видео — только текст транскрипта.
+  // Primary deepseek-v4-flash; secondary gpt-5.4-mini; tertiary ollama qwen3.5:9b.
+  | 'meeting-speaker-analyzer';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -580,6 +586,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'team-health-analyzer',
   'reflection-quality-scorer',
   'hr-recommender',
+  // Pulse Wave 4 (2026-05-30) — Meeting-Speaker-Analyzer (per-speaker text sentiment).
+  'meeting-speaker-analyzer',
 ] as const;
 
 /**

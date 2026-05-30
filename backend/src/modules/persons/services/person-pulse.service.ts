@@ -35,6 +35,21 @@ export interface PersonPulseHrSuggestionDto {
   confidence: number;
 }
 
+/**
+ * Pulse Wave 4 §4.5 — один активный risk-flag из `Person.riskFlagsJson.flags`.
+ *
+ * `type` — литерал строкой (см. список в `burnout-risk-detector.cron.ts`).
+ * `baseline` / `current` — числа в шкале, специфичной для типа (проценты для
+ * sentiment, абсолютные count'ы для остальных).
+ */
+export interface PersonPulseRiskFlagDto {
+  type: string;
+  severity: 'low' | 'medium' | 'high';
+  baseline: number;
+  current: number;
+  explanation: string;
+}
+
 /** Главное DTO endpoint'а `GET /api/v1/persons/:id/pulse`. */
 export interface PersonPulseDto {
   personId: string;
@@ -64,6 +79,14 @@ export interface PersonPulseDto {
   promisesKept14d: number;
   promisesBroken14d: number;
   promisesOverdue14d: number;
+  /**
+   * Pulse Wave 4 §4.5 — активные risk-флаги (Burnout-Risk-Detector cron).
+   * Пустой массив если флагов нет; никогда не null (нет «не считалось» —
+   * cron daily гарантирует свежесть). `riskFlagsGeneratedAt` = null до
+   * первого прогона cron'а.
+   */
+  riskFlags: PersonPulseRiskFlagDto[];
+  riskFlagsGeneratedAt: string | null;
 }
 
 @Injectable()
@@ -100,6 +123,8 @@ export class PersonPulseService {
         engagementScore: true,
         engagementScoreAt: true,
         hrSuggestionsJson: true,
+        // Pulse Wave 4 §4.5 — активные risk-флаги (Burnout-Risk-Detector cron).
+        riskFlagsJson: true,
         primaryDepartment: {
           select: { id: true, name: true, headPersonId: true },
         },
@@ -146,6 +171,9 @@ export class PersonPulseService {
 
     const { hrSuggestions, hrSuggestionsGeneratedAt } =
       this.parseHrSuggestions(person.hrSuggestionsJson);
+    const { riskFlags, riskFlagsGeneratedAt } = this.parseRiskFlags(
+      person.riskFlagsJson,
+    );
 
     const result: PersonPulseDto = {
       personId: person.id,
@@ -169,6 +197,8 @@ export class PersonPulseService {
       promisesKept14d: promisesRes.kept,
       promisesBroken14d: promisesRes.broken,
       promisesOverdue14d: promisesRes.overdue,
+      riskFlags,
+      riskFlagsGeneratedAt,
     };
 
     await this.tryWriteCache(cacheKey, result);
@@ -232,6 +262,49 @@ export class PersonPulseService {
       hrSuggestions: result.length > 0 ? result : null,
       hrSuggestionsGeneratedAt: generatedAt,
     };
+  }
+
+  /**
+   * Парсит `Person.riskFlagsJson`. Терпим к мусору — если структура сломана,
+   * возвращаем пустой массив. Формат — см. `BurnoutRiskDetectorCron`.
+   */
+  private parseRiskFlags(raw: unknown): {
+    riskFlags: PersonPulseRiskFlagDto[];
+    riskFlagsGeneratedAt: string | null;
+  } {
+    if (!raw || typeof raw !== 'object') {
+      return { riskFlags: [], riskFlagsGeneratedAt: null };
+    }
+    const obj = raw as { flags?: unknown; generatedAt?: unknown };
+    const generatedAt =
+      typeof obj.generatedAt === 'string' ? obj.generatedAt : null;
+    if (!Array.isArray(obj.flags)) {
+      return { riskFlags: [], riskFlagsGeneratedAt: generatedAt };
+    }
+    const result: PersonPulseRiskFlagDto[] = [];
+    for (const item of obj.flags) {
+      if (!item || typeof item !== 'object') continue;
+      const r = item as Record<string, unknown>;
+      const type = typeof r.type === 'string' ? r.type : null;
+      const sev = r.severity;
+      const severity =
+        sev === 'low' || sev === 'medium' || sev === 'high' ? sev : null;
+      const baseline =
+        typeof r.baseline === 'number' && Number.isFinite(r.baseline)
+          ? r.baseline
+          : null;
+      const current =
+        typeof r.current === 'number' && Number.isFinite(r.current)
+          ? r.current
+          : null;
+      const explanation =
+        typeof r.explanation === 'string' ? r.explanation : null;
+      if (!type || !severity || baseline === null || current === null || !explanation) {
+        continue;
+      }
+      result.push({ type, severity, baseline, current, explanation });
+    }
+    return { riskFlags: result, riskFlagsGeneratedAt: generatedAt };
   }
 
   private async tryReadCache(key: string): Promise<PersonPulseDto | null> {

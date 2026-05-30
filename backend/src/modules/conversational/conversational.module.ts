@@ -1,4 +1,11 @@
-import { Global, Module } from '@nestjs/common';
+import {
+  Global,
+  Inject,
+  Injectable,
+  Logger,
+  Module,
+  type OnModuleInit,
+} from '@nestjs/common';
 
 import { AccountsModule } from '../accounts/accounts.module';
 import { DocumentsModule } from '../documents/documents.module';
@@ -24,6 +31,59 @@ import { ConversationalService } from './conversational.service';
 import { ConversationalLinkCodeService } from './link-code.service';
 import { ConversationalQueueService } from './queue/conversational-queue.service';
 import { ConversationalSendWorker } from './queue/conversational-send.worker';
+import type { InboundMessage } from './types/channel.types';
+
+/**
+ * Bridge: подписывает `ingestFreeNote` на inbound-сообщения типа `free_note`.
+ *
+ * Без этого моста сообщения от Telegram-бота / в-аппа со «свободной заметкой»
+ * долетают до `ConversationalService.dispatchInbound`, но handler'ов под
+ * `free_note` нет → сообщение теряется (раньше — DEBUG-лог, теперь — WARN).
+ * Паттерн повторяет `ChatV2OmnichannelBridge` для `chat_query`.
+ */
+@Injectable()
+export class ConversationalFreeNoteBridge implements OnModuleInit {
+  private readonly logger = new Logger(ConversationalFreeNoteBridge.name);
+
+  constructor(
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService,
+    @Inject(ConversationalIngestAdapter)
+    private readonly ingest: ConversationalIngestAdapter,
+  ) {}
+
+  onModuleInit(): void {
+    this.conversational.subscribeInbound('free_note', async (msg) => {
+      await this.handleFreeNote(msg);
+    });
+    this.logger.log(
+      'ConversationalFreeNoteBridge: подписан на inbound free_note через ConversationalService',
+    );
+  }
+
+  private async handleFreeNote(msg: InboundMessage): Promise<void> {
+    if (msg.type !== 'free_note') return;
+    try {
+      const rawEvent = await this.ingest.ingestFreeNote({
+        tenantId: msg.tenantId,
+        userId: msg.userId,
+        text: msg.text,
+        metadata: msg.metadata,
+      });
+      this.logger.log(
+        `free_note ingested: tenantId=${msg.tenantId} userId=${msg.userId} rawEventId=${rawEvent.id}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        { userId: msg.userId, tenantId: msg.tenantId, err: message },
+        'free_note handler упал — заметка не попала в граф знаний',
+      );
+      // Не пробрасываем дальше: ConversationalService.dispatchInbound сам ловит
+      // exceptions, чтобы один кривой handler не валил весь pipeline.
+    }
+  }
+}
 
 /**
  * Conversational Channels Foundation (SBA α-1) — двунаправленный омниканальный
@@ -53,6 +113,10 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
  * `DocumentsService.upload(...)` из Telegram/MAX-адаптеров (document inbound).
  * Удалён `CommandHandlerService` и подписка `command-handler` — slash-команды
  * больше не поддерживаются (см. plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md).
+ *
+ * Commercial-reliability pack (2026-05-29): добавлен `ConversationalFreeNoteBridge`,
+ * который подписывает `ingestFreeNote` на inbound type='free_note'. Без него
+ * заметки от Telegram-бота терялись (см. plans/tz/2026-05-29-commercial-reliability-package.md).
  */
 @Global()
 @Module({
@@ -116,6 +180,9 @@ import { ConversationalSendWorker } from './queue/conversational-send.worker';
     // SBA β-1 — MAX bot.
     MaxApiClient,
     MaxBotChannelAdapter,
+    // Commercial-reliability pack (2026-05-29) — мост inbound free_note →
+    // ingestFreeNote. Без него Telegram-заметки теряются.
+    ConversationalFreeNoteBridge,
   ],
   exports: [
     ConversationalService,

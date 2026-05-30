@@ -2,8 +2,8 @@
 name: telegram-inbox-ingestion
 title: Входящие сообщения из Telegram (заметка → память компании)
 trigger_type: webhook
-status_overall: partial
-last_audited: 2026-05-29
+status_overall: implemented
+last_audited: 2026-05-30
 owners_human:
   - продакт conversational-каналов
 related_plans:
@@ -25,7 +25,7 @@ related_projects:
 
 Бот **никогда не пишет первым** — он отвечает только когда сотрудник сам что-то прислал. Это принципиальное правило: бот — не спамер, не уведомлятор-навязчивый. Он канал ввода, через который удобно поделиться мыслью голосом, файлом или текстом.
 
-**Важно (расхождение с задумкой):** сейчас часть цепочки **не дотянута до конца**. Webhook принимается, привязка пользователя работает, голос распознаётся, документы загружаются, **ответы на вопросы-пробы доходят до графа знаний**. Но **свободная текстовая заметка**, написанная в боте просто как сообщение, **в граф знаний не попадает** — обработчик `free_note` не зарегистрирован, сообщение только пишется в лог. Это критичный gap, и он зафиксирован в разделе 8.
+**С 2026-05-30 цепочка дотянута до конца.** Webhook принимается, привязка пользователя работает, голос распознаётся, документы загружаются, ответы на вопросы-пробы доходят до графа знаний. **Свободная текстовая заметка** теперь тоже попадает в граф знаний через `ConversationalFreeNoteBridge` → `ingestFreeNote` → `RawEvent(sourceType='conversational')`. История расхождения — в разделе 8.
 
 ## 2. Что запускает (триггер)
 
@@ -39,16 +39,16 @@ related_projects:
 2. **Платформа узнаёт, какому пользователю и какой компании принадлежит этот чат** (binding `telegram-chatId ↔ userId ↔ orgId`).
 3. **Сообщение классифицируется** — это команда (`/start`, `/login`), голос, документ, фото, ответ-реплай на наш вопрос или свободный текст?
 4. **Голос распознаётся** в текст (Vox ASR), документ загружается в библиотеку, текст и ответы-реплаи маркируются как тип события.
-5. **Свободная заметка должна стать сырым событием** для графа знаний (`RawEvent` с `sourceType='conversational'`) — **сейчас этот шаг прерывается на свободном тексте** (обработчик не зарегистрирован).
+5. **Свободная заметка становится сырым событием** для графа знаний (`RawEvent` с `sourceType='conversational'`) через мост `ConversationalFreeNoteBridge` — дальше `block-ingest` → `IdeaBlock`.
 6. **Если это ответ на вопрос-пробу** от специалиста Слоя 3 — ответ записывается в `Notification`, эмитится событие, специалист его обрабатывает.
 7. **Бот отвечает пользователю** (если уместно): подтверждение привязки, ASR-расшифровка для голоса, magic-link для логина. Свободному тексту — не отвечает по умолчанию.
 
 ## 4. Что получается на выходе
 
-- **Голос** → распознанный текст → дальше как любая заметка (если бы цепочка работала до конца — попал бы в граф знаний).
+- **Голос** → распознанный текст → дальше как любая заметка → попадает в граф знаний.
 - **Документ (PDF/DOCX/MD/TXT ≤20 МБ)** → лежит в библиотеке компании, проходит document-ingest → попадает в граф знаний через свой pipeline (`document.adapter`).
 - **Ответ на пробу** → записан в `Notification`, специалист 3-X обработал, факт попал в граф (Decision/Insight/Idea).
-- **Свободный текст** → **сейчас никуда** (только в DEBUG-лог). Должно быть → `RawEvent` → `IdeaBlock` через тот же конвейер, что и встреча.
+- **Свободный текст** → `RawEvent(sourceType='conversational')` → `IdeaBlock` через тот же конвейер, что и встреча.
 - **Видно пользователю:** в Z — в карточке клиента / реестре решений / на радаре проблем (в зависимости от содержимого). В Telegram — подтверждение или расшифровка.
 
 ## 5. Технический разрез (по шагам)
@@ -60,7 +60,7 @@ related_projects:
 | 3 | Парсинг и роутинг типа сообщения | Switch по типу: `/start <code>` или 6–32 hex → `handleStart/handleLinkCode`; `/login` → magic-link через `AccountsService`; `voice`/`audio` → `handleVoice`; `document` → `handleDocument`; reply на нашу outbound → `tryMatchReplyToProbe`; свободный текст → `classifyIntent` (LLM `dialog-classify` + эвристика) | `telegram-bot.adapter.ts:239..559` | inline | — | ✅ |
 | 4а | Голос → ASR | `handleVoice` тянет файл через Bot API, шлёт в Vox; результат — текст; дальше идёт по флоу свободного текста или команды | `telegram-bot.adapter.ts (handleVoice)` | прямой вызов `VoxService` | — | ✅ (под флагом `BOT_VOICE_ENABLED`) |
 | 4б | Документ → upload | `handleDocument` валидирует MIME/размер (≤20 МБ), кладёт в S3 через `DocumentsService.upload`, дальше — отдельный document-ingest pipeline | `telegram-bot.adapter.ts (handleDocument)` | `DocumentsService.upload` → document-ingest | `Document`, `DocumentSource` | ✅ (под флагом `BOT_DOCUMENT_ENABLED`) |
-| 5 | Свободная заметка → RawEvent | Адаптер возвращает `InboundMessage { type: 'free_note', userId, tenantId, text, metadata }`; `ConversationalService.dispatchInbound(msg)` ищет handler типа `free_note` — **не находит**, пишет DEBUG-лог и роняет сообщение | `backend/src/modules/conversational/conversational.service.ts:741`, ожидается вызов `ConversationalIngestAdapter.ingestFreeNote` в `backend/src/modules/conversational/adapters/conversational-ingest.adapter.ts:38` | ожидается `core.raw-events` (через `RawEvent(sourceType='conversational')`) | (должно быть) `RawEvent`, `Source('Свободные заметки')` | ❌ **Telegram free_note**; ✅ in-app free-note через `POST /api/v1/me/notifications/free-note` |
+| 5 | Свободная заметка → RawEvent | Адаптер возвращает `InboundMessage { type: 'free_note', userId, tenantId, text, metadata }`; `ConversationalService.dispatchInbound(msg)` находит handler, зарегистрированный `ConversationalFreeNoteBridge.onModuleInit`; handler вызывает `ConversationalIngestAdapter.ingestFreeNote` → `IngestService.ingest` → `RawEvent` + `core.raw-events` | `backend/src/modules/conversational/conversational.module.ts` (bridge), `backend/src/modules/conversational/adapters/conversational-ingest.adapter.ts:38` | `core.raw-events` (через `RawEvent(sourceType='conversational')`) | `RawEvent`, `Source('Свободные заметки')` | ✅ |
 | 6 | Ответ на пробу | `tryMatchReplyToProbe` находит открытый `Notification(responseStatus='pending')` по `reply_to_message.message_id`; возвращает `{ type: 'response', notificationId, payload }`; `ConversationalService.respondToProbe` обновляет Notification, эмитит `notification.responded`; ProbeModule слушает → создаёт RawEvent | `telegram-bot.adapter.ts:501,643`, `conversational.service.ts (respondToProbe)`, `probe-response.handler.ts` (`@OnEvent('notification.responded')`) | внутр. `EventEmitter`, далее `core.raw-events` | `Notification.responseStatus`, `RawEvent`, `ProbeEvent.status='dispatched'` | ✅ |
 | 7 | Ответ боту | На `/start <code>` — «привязано», на голос — расшифровка + опц. подтверждение, на `/login` — magic-link; на free_note — молчание (правило «бот не пишет первым» здесь интерпретируется буквально, без подтверждения) | `telegram-bot.adapter.ts (handleStart, handleLogin, handleVoice)`, `telegram-api-client.ts` (с прокси `telegram.crossmark.ru`) | `conversational.send` (для outbound уведомлений) | — | ✅ |
 
@@ -78,7 +78,7 @@ InboundMessage {
   ↓ dispatchInbound — должен делегировать handler'у по типу
   ├── 'chat_query'  → ChatV2Service.handleChatQuery     ✅
   ├── 'response'    → ConversationalService.respondToProbe ✅
-  └── 'free_note'   → ConversationalIngestAdapter.ingestFreeNote ❌ HANDLER НЕ ЗАРЕГИСТРИРОВАН
+  └── 'free_note'   → ConversationalFreeNoteBridge → ConversationalIngestAdapter.ingestFreeNote ✅
                       → RawEvent(sourceType='conversational')
                       → core.raw-events → BlockIngestWorker → IdeaBlock + специалисты
 ```
@@ -124,8 +124,8 @@ InboundMessage {
 
 ## 8. Расхождения «задумано vs реализовано»
 
-**Критический gap (❌):**
-- **Telegram free_note не попадает в `core.raw-events`.** В `ConversationalService.dispatchInbound()` нет handler'а для типа `free_note`. Сообщение пишется в DEBUG-лог и теряется. ТЗ `2026-05-21-sba-alpha-1-channels-foundation.md` явно предполагает полную цепочку до графа. **Минимальный фикс:** зарегистрировать handler в `subscribeInbound('free_note', msg => ingestAdapter.ingestFreeNote(msg))` в инициализации `ConversationalModule`. **Рекомендованный фикс:** Вариант A в отчёте аудита.
+**Закрытые расхождения (история):**
+- **Telegram free_note раньше не попадал в `core.raw-events`.** До 2026-05-30 в `ConversationalService.dispatchInbound()` не было handler'а для типа `free_note` — сообщение писалось в DEBUG-лог и терялось. **Закрыто** в пакете «Коммерческая надёжность» (Фаза 1): добавлен `ConversationalFreeNoteBridge`, который в `onModuleInit` регистрирует handler `subscribeInbound('free_note', …)` → `ConversationalIngestAdapter.ingestFreeNote`. Дополнительно `dispatchInbound` теперь пишет WARN вместо DEBUG при отсутствии handler'а — для ловли будущих регрессий.
 
 **Заложено в ТЗ, но реализовано иначе:**
 - **Команды бота сокращены.** В β-1 rip-out (2026-05-23) удалены все slash-команды, остались только `/start` (с link-code) и `/login` (β-9 magic-link). Команды `/note`, `/myideas`, `/feedback` — в ТЗ были, в коде нет.
@@ -142,6 +142,7 @@ InboundMessage {
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-05-30 | Закрыт gap `free_note`: добавлен `ConversationalFreeNoteBridge`, `dispatchInbound` пишет WARN при отсутствии handler'а. `status_overall: partial → implemented`. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 1 |
 | 2026-05-29 | Карточка создана. Зафиксирован критический gap `free_note`. | этот документ |
 | 2026-05-26 | Telegram-прокси `telegram.crossmark.ru` | TelegramApiClient.resolveApiBase |
 | 2026-05-25 | β-9: глобальный бот `@kora_bot`, `/login` magic-link | [[01_projects/conversational-channels]] |

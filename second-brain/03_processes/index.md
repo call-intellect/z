@@ -28,7 +28,7 @@
 
 | Процесс | Триггер | Источник | Статус | Аудит |
 |---|---|---|---|---|
-| [[telegram-inbox-ingestion]] ⭐ | webhook | `POST /webhooks/telegram-bot` | ⚠️ partial | 2026-05-29 |
+| [[telegram-inbox-ingestion]] ⭐ | webhook | `POST /webhooks/telegram-bot` | ✅ implemented | 2026-05-30 |
 | [[inapp-free-note-ingestion]] | действие | `POST /me/notifications/free-note` | ✅ implemented | 2026-05-29 |
 | [[email-to-task]] | cron/IMAP | `MailInboundCron */2 * * * *` | ✅ implemented | 2026-05-29 |
 
@@ -82,8 +82,8 @@
 
 | Статус | Кол-во |
 |---|---|
-| ✅ implemented | 18 |
-| ⚠️ partial | 9 |
+| ✅ implemented | 19 |
+| ⚠️ partial | 8 |
 | ❌ designed_only | 0 |
 | 🗑 deprecated | 0 |
 | **Всего процессов в реестре** | **27** |

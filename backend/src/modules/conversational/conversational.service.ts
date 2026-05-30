@@ -745,9 +745,11 @@ export class ConversationalService {
     });
     const handlers = this.inboundHandlers.get(msg.type) ?? [];
     if (handlers.length === 0) {
-      // Чаще всего dispatchInbound для 'response' уже обработан выше через
-      // respondToProbe (REST). Для 'free_note' хотим хотя бы лог.
-      this.logger.debug(
+      // 'response' обычно обработан через REST `respondToProbe` до dispatchInbound,
+      // поэтому отсутствие handler'а здесь — норма для него. Для всех остальных
+      // типов (free_note, chat_query) отсутствие handler'а — регрессия:
+      // сообщение теряется. WARN, чтобы поймать такие случаи в проде.
+      this.logger.warn(
         `dispatchInbound: нет handlers для type=${msg.type}; userId=${msg.userId} tenantId=${msg.tenantId}`,
       );
       return;

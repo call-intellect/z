@@ -21,6 +21,66 @@
 
 ---
 
+### 🌊 2026-05-30 — Pulse Волна 3 (Карточка сотрудника + 4 AI-агента)
+
+План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §7.
+Коммит: `1791fd5`.
+
+**Краткое содержание:**
+- 4 новых cron-агента:
+  - `team-health-analyzer.cron.ts` (daily 04:30 UTC) — LLM deepseek-v4-flash, 5 Gallup-факторов per Department.
+  - `engagement-scorer.cron.ts` (daily 03:00 UTC) — детерминированный composite (sentiment+regularity+commitments+meeting), пишет в Person + PersonEngagementSnapshot.
+  - `reflection-quality-scorer.cron.ts` (hourly batch) — LLM 3-axis quality, пишет в DailyCheckIn.qualityScore.
+  - `hr-recommender.cron.ts` (weekly Mon 06:00 UTC) — LLM deepseek-v4-pro, рекомендации руководителю 5 типов.
+- 5 новых Prisma полей: `Department.healthSummaryJson`, `Person.engagementScore/engagementScoreAt/hrSuggestionsJson`, `DailyCheckIn.qualityScore`.
+- 1 новая модель: `PersonEngagementSnapshot` (история тренда).
+- Новый endpoint `GET /api/v1/persons/:id/pulse` + `PersonPulseService`.
+- Новая frontend-страница `/persons/[id]/pulse` — карточка сотрудника с AI Resume, Mood trend, Check-ins regularity, Promises KpiHero.
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — без новых ENV.
+- **Шаг 4 — Prisma** — **обязательно**:
+  ```bash
+  docker compose exec backend bun run prisma:push
+  docker compose exec backend bun run prisma:generate
+  ```
+  Все 5 новых полей nullable/defaulted, новая модель PersonEngagementSnapshot создаётся пустой — без data-loss.
+- **Шаг 7 — Seed LLM task routes** — добавился новый seed:
+  ```bash
+  docker compose exec backend bun run scripts/seed-llm-task-routes-pulse-w3.ts
+  ```
+  Регистрирует `team-health-analyzer`, `reflection-quality-scorer`, `hr-recommender` task types. Идемпотентен, защищает editedByAdmin. Уже в `apply-prod-deploy.ts STEPS`.
+- **Шаг 11 — Docker image rebuild** — обязателен (4 новых cron'а + новый endpoint + новая страница).
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. PersonPulse endpoint (cookie owner/admin или self):
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/persons/<personId>/pulse
+  # Ожидаемо: 200 PersonPulseDto / 403 forbidden если не privileged и не self /
+  #            404 person_not_found
+
+  # 2. Cron'ы должны зарегистрироваться в Nest schedule:
+  docker compose logs backend | grep -E 'TeamHealthAnalyzer|EngagementScorer|HrRecommender|ReflectionQuality'
+  # Ожидаемо: "Cron registered" сообщения при старте процесса.
+
+  # 3. После первого прогона (engagement-scorer 03:00 UTC):
+  docker compose exec backend bun -e "
+    import { PrismaClient } from '@prisma/client';
+    const p = new PrismaClient();
+    const count = await p.personEngagementSnapshot.count();
+    console.log('PersonEngagementSnapshot rows:', count);
+    await p.\$disconnect();
+  "
+  # Ожидаемо: >0 после первого прогона.
+
+  # 4. Frontend:
+  # /persons/<id>/pulse — карточка с AI Resume, mood trend, regularity, promises
+  ```
+- **Откат:** `git revert 1791fd5` + restart. Schema-добавления нерушительные. Cron'ы дальше работать не будут, но persisted данные (Department.healthSummaryJson, Person.engagementScore, etc) останутся (можно занулить вручную если нужно полное забвение).
+
+---
+
 ### 🌊 2026-05-30 — Pulse Волны 1+2 (Фундамент + Усиление операций)
 
 План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §5-6.

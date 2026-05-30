@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { EntitlementProvider } from '@/contexts/entitlement-context';
 import { SubscriptionProvider } from '@/contexts/subscription-context';
 import { AppShell } from '@/ui/components/app-shell/AppShell';
+import { AssistantSidebar } from '@/ui/components/dashboard/AssistantSidebar';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { TourProvider, WelcomeTourAutoStart } from '@/ui/tour';
 
@@ -104,6 +105,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
         <TourProvider>
           <AppShell>{children}</AppShell>
           <WelcomeTourAutoStart />
+          <AssistantSidebar />
         </TourProvider>
       </SubscriptionProvider>
     </EntitlementProvider>

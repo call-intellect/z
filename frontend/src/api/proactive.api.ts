@@ -3,6 +3,8 @@ import { apiClient } from './api-client';
 // ──────────────────────── ApiDto ────────────────────────
 
 export type ProactiveSeverityApi = 'low' | 'medium' | 'high';
+/** Алиас для Pulse §9 — короткое имя в новых местах использования. */
+export type ProactiveSeverity = ProactiveSeverityApi;
 
 export type ProactiveNotificationApi = {
   id: string;
@@ -52,3 +54,21 @@ export async function dismissProactiveNotification(
     { headers: { 'X-Org-Id': orgId } },
   );
 }
+
+// ──────────────────────── proactiveApi (Pulse §9 — AssistantSidebar) ────────────────────────
+
+/**
+ * Pulse §9 — Sidebar Помощник.
+ *
+ * Объектный фасад для использования в `AssistantSidebar` (правый floating-panel,
+ * polling 60 сек). orgId обязателен — фронт берёт из `useAuth().currentOrgId`,
+ * бэк требует X-Org-Id для resolve тенанта.
+ */
+export const proactiveApi = {
+  list: (orgId: string, options?: { limit?: number }) =>
+    listMyProactiveNotifications(orgId, {
+      limit: options?.limit ?? 50,
+    }),
+  dismiss: (orgId: string, id: string) =>
+    dismissProactiveNotification(orgId, id),
+};

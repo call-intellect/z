@@ -50,6 +50,8 @@ describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
     metrics = {
       incReferralSelfReferralDenied: vi.fn(),
       incReferralAttributionFirstTouchLocked: vi.fn(),
+      incReferralClick: vi.fn(),
+      incReferralSignup: vi.fn(),
     };
     svc = new AttributionService(
       prisma as unknown as PrismaService,
@@ -176,6 +178,9 @@ describe('AttributionService.record (audit Б8)', () => {
     };
     const metrics = {
       incReferralSelfReferralDenied: vi.fn(),
+      incReferralAttributionFirstTouchLocked: vi.fn(),
+      incReferralClick: vi.fn(),
+      incReferralSignup: vi.fn(),
     } as unknown as BusinessMetricsService;
     svc = new AttributionService(prisma as unknown as PrismaService, metrics);
   });

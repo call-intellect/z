@@ -73,8 +73,8 @@
 | Процесс | Триггер | Источник | Статус | Аудит |
 |---|---|---|---|---|
 | [[signup-and-onboarding-wizard]] | действие | регистрация нового пользователя | ⚠️ partial | 2026-05-29 |
-| [[billing-cycle-tochka]] | действие/cron | Tochka OpenBanking + `BillingCycleCron` | ⚠️ partial | 2026-05-29 |
-| [[referral-program]] | event | `@OnEvent('billing.invoice.paid')` + cron 10-го числа МСК | ⚠️ partial | 2026-05-29 |
+| [[billing-cycle-tochka]] | действие/cron | Tochka OpenBanking + `BillingCycleCron` | ⚠️ partial | 2026-05-30 |
+| [[referral-program]] | event | `@OnEvent('billing.invoice.paid')` + cron 10-го числа МСК | ✅ implemented | 2026-05-30 |
 
 ---
 
@@ -82,8 +82,8 @@
 
 | Статус | Кол-во |
 |---|---|
-| ✅ implemented | 20 |
-| ⚠️ partial | 7 |
+| ✅ implemented | 21 |
+| ⚠️ partial | 6 |
 | ❌ designed_only | 0 |
 | 🗑 deprecated | 0 |
 | **Всего процессов в реестре** | **27** |

@@ -2,7 +2,7 @@
 name: referral-program
 title: Реферальная программа — slug, beacon, выплата 10-го числа
 trigger_type: event
-status_overall: partial
+status_overall: implemented
 last_audited: 2026-05-30
 owners_human:
   - продакт-партнёрский (отвечает за реф-программу)
@@ -123,8 +123,16 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 
 ## 6. Точки отказа и наблюдаемость
 
-**Prometheus метрики:**
-- **Специфичных метрик реферальной программы НЕТ** в `BusinessMetricsService` (проверено grep'ом по `referral_`). Нужны минимум: `referral_attribution_recorded_total{outcome}`, `referral_payout_created_total{paymentMode}`, `referral_payout_closed_total{outcome}`, `referral_attribution_resolved_total{by:cookie|fingerprint|none}` — это пробел observability.
+**Prometheus метрики (с 2026-05-30, Фаза 4 commercial-reliability pack):**
+- `referral_click_total{partner_top}` — клик по реф-ссылке (`AttributionService.record` success).
+- `referral_signup_total{partner_top}` — Org first-touch атрибутирована (`AttributionService.attributeOrg` count=1).
+- `referral_payout_created_total{cron_run_date}` — ReferralPayout(pending) создан (`onInvoicePaid` после `referralPayout.create`).
+- `referral_payout_amount_rub_total` — суммарный объём payout'ов в рублях.
+- `referral_attribution_first_touch_locked_total` — отброшенный повторный клик (`updateMany.count===0`).
+- `referral_self_referral_denied_total` (с audit Б6) — self-referral блокирован.
+- `referral_inn_mismatch_total` (с audit Б6) — блок по ИНН.
+- Алёрт `ReferralPayoutCronDidNotRun` (10-го числа после 4ч простоя) в `infra/prometheus/alerts/billing-referrals.rules.yml`.
+- Grafana: панель «реферальная воронка» в `infra/grafana/dashboards/billing-referrals.json`.
 
 **BullMQ очереди:** реферальная программа не использует очереди — `@OnEvent` и `@Cron` напрямую.
 
@@ -161,7 +169,7 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 ## 8. Расхождения «задумано vs реализовано»
 
 **Заложено в ТЗ, НЕ реализовано:**
-- **Метрики Prometheus** для воронки: `referral_click_total`, `referral_signup_total`, `referral_payout_created_total`, `referral_payout_amount_rub_total` — не зарегистрированы. **Фиксится в** [`plans/tz/2026-05-29-commercial-reliability-package.md`](../../plans/tz/2026-05-29-commercial-reliability-package.md) **Фазе 4**.
+- ~~**Метрики Prometheus** для воронки~~ — **закрыто 2026-05-30 (Фаза 4 commercial-reliability pack)**: зарегистрировано 4 новые метрики (`referral_click_total`, `referral_signup_total`, `referral_payout_created_total`, `referral_payout_amount_rub_total`), inc-вызовы подключены в `AttributionService.record`/`attributeOrg` и `ReferralPayoutService.onInvoicePaid`. Алёрт `ReferralPayoutCronDidNotRun` для 10-го числа.
 - **Уведомления партнёру** при создании payout / закрытии периода — в ТЗ упомянуты как часть кабинета; в коде не реализованы (нет вызовов из `ReferralPayoutService` в notification-dispatch).
 - **Welcome-коды (signup-bonus)** — явно вынесены за скобки в `plans/tz/2026-05-27...` §3.
 - ~~**First-touch атрибуция**~~ — **закрыто 2026-05-30 (Фаза 2 commercial-reliability pack)**: `AttributionService.attributeOrg` теперь делает `updateMany WHERE pendingAttributionSlug IS NULL`. Безусловный `update` (фактически last-touch) заменён на first-touch гард, метрика `referral_attribution_first_touch_locked_total` фиксирует отброшенные повторные клики.
@@ -186,6 +194,7 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-05-30 | Observability-gap закрыт: 4 метрики `referral_*`, алёрт `ReferralPayoutCronDidNotRun`, Grafana-панель. `status_overall: partial → implemented`. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 4 |
 | 2026-05-30 | First-touch fix: `attributeOrg` → `updateMany WHERE pendingAttributionSlug IS NULL`. Метрика `referral_attribution_first_touch_locked_total` зарегистрирована. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 2 |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-27 | ТЗ объединённого биллинга + InnLookup + рефералов (Фаза 6 реализована) | `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md` |

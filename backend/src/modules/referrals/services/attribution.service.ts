@@ -33,6 +33,7 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 
 const ATTRIBUTION_TTL_DAYS = 90;
 
@@ -114,6 +115,7 @@ export class AttributionService {
           dateBucket,
         },
       });
+      this.metrics.incReferralClick({ partnerTop: tenantTopOf(referral.slug) });
       return { id: record.id };
     } catch (err) {
       // audit-fixes Б8: composite unique (referralId, fingerprint, dateBucket)
@@ -240,6 +242,7 @@ export class AttributionService {
         : null;
     }
 
+    this.metrics.incReferralSignup({ partnerTop: tenantTopOf(attribution.slug) });
     this.logger.log(
       `attributeOrg ${input.tenantId} → ${attribution.slug} (referral=${attribution.referralId})`,
     );

@@ -257,6 +257,22 @@ export class BusinessMetricsService implements OnModuleInit {
   // встречи (Zoom-модель: гость представился именем при входе, хост может
   // поправить после встречи).
   private participantRenamedTotal!: Counter<string>;
+  // commercial-reliability pack (2026-05-30, Фаза 4) — биллинг / Точка.
+  // tenant_top через tenantTopOf, чтобы cardinality оставался ≤ 100×3.
+  private billingInvoiceCreatedTotal!: Counter<'tenant_top' | 'kind'>;
+  private billingInvoicePaidTotal!: Counter<'tenant_top' | 'kind'>;
+  private billingSubscriptionRenewedTotal!: Counter<'tenant_top' | 'tier'>;
+  private billingSubscriptionCancelledTotal!: Counter<'tenant_top' | 'reason'>;
+  private billingWebhookReceivedTotal!: Counter<'provider' | 'status'>;
+  private billingProviderRequestDurationSeconds!: Histogram<
+    'provider' | 'method' | 'status'
+  >;
+  // commercial-reliability pack (2026-05-30, Фаза 4) — реферальная воронка.
+  // partner_top через tenantTopOf(slug).
+  private referralClickTotal!: Counter<'partner_top'>;
+  private referralSignupTotal!: Counter<'partner_top'>;
+  private referralPayoutCreatedTotal!: Counter<'cron_run_date'>;
+  private referralPayoutAmountRubTotal!: Counter<string>;
   // audit С3 (2026-05-29) — safeEmit() в BillingService поймал ошибку
   // listener'а. Лейбл event = BillingEvent.* (см. billing.types.ts).
   private billingEmitFailedTotal!: Counter<'event'>;
@@ -1409,6 +1425,77 @@ export class BusinessMetricsService implements OnModuleInit {
       help:
         'commercial-reliability pack (2026-05-30, Фаза 3) — хост переименовал ' +
         'гостя встречи (Participant.isRegisteredUser=false).',
+      labelNames: [] as const,
+    });
+    this.billingInvoiceCreatedTotal = this.getOrCreateCounter({
+      name: 'billing_invoice_created_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — Invoice создан. ' +
+        'kind: acquiring|bank|manual. tenant_top через tenantTopOf.',
+      labelNames: ['tenant_top', 'kind'] as const,
+    });
+    this.billingInvoicePaidTotal = this.getOrCreateCounter({
+      name: 'billing_invoice_paid_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — Invoice оплачен ' +
+        '(status=paid). kind: acquiring|bank|manual. tenant_top через tenantTopOf.',
+      labelNames: ['tenant_top', 'kind'] as const,
+    });
+    this.billingSubscriptionRenewedTotal = this.getOrCreateCounter({
+      name: 'billing_subscription_renewed_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — Subscription ' +
+        'продлена при оплате очередного invoice. tier: free|pro|business|enterprise.',
+      labelNames: ['tenant_top', 'tier'] as const,
+    });
+    this.billingSubscriptionCancelledTotal = this.getOrCreateCounter({
+      name: 'billing_subscription_cancelled_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — Subscription ' +
+        'отменена. reason: user_cancelled|payment_failed|manual_admin.',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.billingWebhookReceivedTotal = this.getOrCreateCounter({
+      name: 'billing_webhook_received_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — входящий webhook ' +
+        'от платёжного провайдера. provider=tochka. status: ok|sig_fail|replay|invalid_payload.',
+      labelNames: ['provider', 'status'] as const,
+    });
+    this.billingProviderRequestDurationSeconds = this.getOrCreateHistogram({
+      name: 'billing_provider_request_duration_seconds',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — длительность исходящего ' +
+        'HTTP-запроса в платёжного провайдера (Точка). method=create_invoice|verify_webhook|...',
+      labelNames: ['provider', 'method', 'status'] as const,
+      buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+    });
+    this.referralClickTotal = this.getOrCreateCounter({
+      name: 'referral_click_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — реферальный клик ' +
+        '(beacon POST /public/referrals/attribution). partner_top через tenantTopOf(slug).',
+      labelNames: ['partner_top'] as const,
+    });
+    this.referralSignupTotal = this.getOrCreateCounter({
+      name: 'referral_signup_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — Org атрибутирована ' +
+        'к рефералу (первая first-touch запись). partner_top через tenantTopOf(slug).',
+      labelNames: ['partner_top'] as const,
+    });
+    this.referralPayoutCreatedTotal = this.getOrCreateCounter({
+      name: 'referral_payout_created_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — ReferralPayout(pending) ' +
+        'создан cron-ом 10-го числа. cron_run_date=YYYY-MM-DD UTC.',
+      labelNames: ['cron_run_date'] as const,
+    });
+    this.referralPayoutAmountRubTotal = this.getOrCreateCounter({
+      name: 'referral_payout_amount_rub_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 4) — суммарный объём ' +
+        'partner-выплат в рублях (amountKopecks/100). Без лейблов — общий counter.',
       labelNames: [] as const,
     });
     this.billingEmitFailedTotal = this.getOrCreateCounter({
@@ -3630,6 +3717,99 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incParticipantRenamed(): void {
     this.participantRenamedTotal.inc();
+  }
+
+  // ─────── billing/referrals observability (Фаза 4 commercial pack) ────
+
+  /** Billing — Invoice создан. */
+  incBillingInvoiceCreated(args: {
+    tenantTop: string;
+    kind: 'acquiring' | 'bank' | 'manual';
+  }): void {
+    this.billingInvoiceCreatedTotal.inc({
+      tenant_top: args.tenantTop,
+      kind: args.kind,
+    });
+  }
+
+  /** Billing — Invoice перешёл в paid (закрыта оплата). */
+  incBillingInvoicePaid(args: {
+    tenantTop: string;
+    kind: 'acquiring' | 'bank' | 'manual';
+  }): void {
+    this.billingInvoicePaidTotal.inc({
+      tenant_top: args.tenantTop,
+      kind: args.kind,
+    });
+  }
+
+  /** Billing — Subscription успешно продлена. */
+  incBillingSubscriptionRenewed(args: { tenantTop: string; tier: string }): void {
+    this.billingSubscriptionRenewedTotal.inc({
+      tenant_top: args.tenantTop,
+      tier: args.tier,
+    });
+  }
+
+  /** Billing — Subscription отменена. */
+  incBillingSubscriptionCancelled(args: {
+    tenantTop: string;
+    reason: 'user_cancelled' | 'payment_failed' | 'manual_admin';
+  }): void {
+    this.billingSubscriptionCancelledTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Billing — входящий webhook от провайдера (Точка). */
+  incBillingWebhookReceived(args: {
+    provider: 'tochka';
+    status: 'ok' | 'sig_fail' | 'replay' | 'invalid_payload';
+  }): void {
+    this.billingWebhookReceivedTotal.inc({
+      provider: args.provider,
+      status: args.status,
+    });
+  }
+
+  /** Billing — длительность исходящего HTTP-запроса в провайдер. */
+  observeBillingProviderRequest(args: {
+    provider: 'tochka';
+    method: string;
+    status: 'ok' | 'error';
+    durationSeconds: number;
+  }): void {
+    this.billingProviderRequestDurationSeconds.observe(
+      {
+        provider: args.provider,
+        method: args.method,
+        status: args.status,
+      },
+      args.durationSeconds,
+    );
+  }
+
+  /** Referral — клик по реф-ссылке (beacon на лендинге). */
+  incReferralClick(args: { partnerTop: string }): void {
+    this.referralClickTotal.inc({ partner_top: args.partnerTop });
+  }
+
+  /** Referral — Org успешно атрибутирована к рефералу (первая first-touch). */
+  incReferralSignup(args: { partnerTop: string }): void {
+    this.referralSignupTotal.inc({ partner_top: args.partnerTop });
+  }
+
+  /** Referral — ReferralPayout(pending) создан cron-ом 10-го числа. */
+  incReferralPayoutCreated(args: { cronRunDate: string }): void {
+    this.referralPayoutCreatedTotal.inc({ cron_run_date: args.cronRunDate });
+  }
+
+  /** Referral — суммарный объём partner-выплат в рублях. */
+  incReferralPayoutAmountRub(amountRub: number): void {
+    if (amountRub > 0 && Number.isFinite(amountRub)) {
+      this.referralPayoutAmountRubTotal.inc(amountRub);
+    }
   }
 
   /** audit С3 — listener BillingEvent упал, side-effect не выполнен. */

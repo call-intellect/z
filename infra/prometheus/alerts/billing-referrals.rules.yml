@@ -1,0 +1,59 @@
+# Commercial-reliability pack (2026-05-30, Фаза 4)
+# План: plans/tz/2026-05-29-commercial-reliability-package.md §6.2.5
+#
+# 3 алёрта на критические бизнес-сигналы:
+#   1. BillingNoPaymentsLong  — 4 часа подряд нет ни одной оплаты
+#      (rate=0 за час). Warning: чаще всего значит сломанный webhook
+#      или сбой провайдера.
+#   2. BillingWebhookSignatureFailures — за 10 минут >5 webhook'ов с
+#      битой подписью. Critical: ключ ротировался / атака / баг verifier'а.
+#   3. ReferralPayoutCronDidNotRun — 10-го числа после 4ч простоя
+#      ни одного payout не создано. Critical: cron @Cron('0 10 10 * *')
+#      не сработал, партнёрам не начисляется.
+groups:
+  - name: billing-referrals
+    interval: 1m
+    rules:
+      - alert: BillingNoPaymentsLong
+        expr: rate(billing_invoice_paid_total[1h]) == 0
+        for: 4h
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Биллинг: 4 часа никто не платит"
+          description: >-
+            rate(billing_invoice_paid_total[1h]) == 0 в течение 4 часов.
+            Проверь webhook-цепочку Точки, логи BillingService.finalizePaidInvoice
+            и `/admin/orgs/*/billing`.
+
+      - alert: BillingWebhookSignatureFailures
+        expr: increase(billing_webhook_received_total{status="sig_fail"}[10m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Точка прислала битые подписи (>5 за 10 мин)"
+          description: >-
+            increase(billing_webhook_received_total{status="sig_fail"}[10m]) > 5.
+            Проверь BillingProviderConfig (key/jwk), tochka-webhook-verifier.service,
+            а также — возможна атака подделкой webhook'ов.
+
+      - alert: ReferralPayoutCronDidNotRun
+        # Срабатывает только 11-го числа: 10-го отработал cron `0 10 10 * *`,
+        # 11-го мы хотим увидеть хотя бы одну запись referral_payout_created_total
+        # с cron_run_date вчерашнего дня. Если 4ч 11-го числа метрика
+        # за вчера так и не выросла — cron не сработал.
+        expr: sum(referral_payout_created_total) by (cron_run_date) == 0 and on() (day_of_month() == 11)
+        for: 4h
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Cron выплат рефералов не отработал 10-го"
+          description: >-
+            10-го числа должна была отработать @Cron('0 10 10 * *')
+            ReferralPayoutService.runMonthlyClose. Прошло >4ч 11-го числа,
+            а ни одного payout не создано. Запусти `POST /admin/referrals/close-period`
+            вручную, проверь Redis-лок `referral:payout-cron:lock`.

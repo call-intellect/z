@@ -42,6 +42,7 @@ import {
 } from '@prisma/client';
 import { type Job, Queue, Worker } from 'bullmq';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import {
@@ -73,6 +74,7 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(AttributionService) private readonly attribution: AttributionService,
+    @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
   /**
@@ -230,6 +232,12 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
             status: 'pending',
           },
         });
+        // commercial-reliability pack (2026-05-30, Фаза 4) — реф-payout метрики.
+        // cron_run_date = YYYY-MM-DD UTC момента создания (для outlier-детекции).
+        this.metrics.incReferralPayoutCreated({
+          cronRunDate: payload.paidAt.toISOString().slice(0, 10),
+        });
+        this.metrics.incReferralPayoutAmountRub(REFERRAL_COMMISSION_KOPECKS / 100);
         this.logger.log(
           `ReferralPayout pending создан: ${REFERRAL_COMMISSION_KOPECKS}коп для referral=${clientLink.referralId} period=${periodMonth}`,
         );

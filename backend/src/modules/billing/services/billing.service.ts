@@ -31,6 +31,7 @@ import type { BillingPeriod, Org } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import {
   BILLING_PROVIDER,
   BillingEventType,
@@ -485,6 +486,18 @@ export class BillingService {
         tx,
       });
     });
+
+    // 5. Метрики observability (commercial-reliability pack 2026-05-30, Фаза 4).
+    const kindForMetric: 'acquiring' | 'bank' | 'manual' =
+      this.provider.providerName === 'tochka' ? 'bank' : 'manual';
+    const tenantTop = tenantTopOf(invoice.tenantId);
+    this.metrics.incBillingInvoicePaid({ tenantTop, kind: kindForMetric });
+    if (invoice.subscriptionId) {
+      // tier subscription мы не подтягиваем дополнительным запросом — для
+      // observability достаточно знать «продление произошло». При желании
+      // детального reporting'а — отдельный запрос по subscriptionId.
+      this.metrics.incBillingSubscriptionRenewed({ tenantTop, tier: 'unknown' });
+    }
 
     // 4. Fire-and-forget эмит для side-effect handlers (реф-комиссия, signup-бонус).
     const payload: InvoicePaidPayload = {

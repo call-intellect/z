@@ -17,6 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { InvoicePaidPayload } from '../../billing/events/billing.events';
@@ -76,10 +77,15 @@ function makeMocks(): Mocks {
 }
 
 function makeService(mocks: Mocks): ReferralPayoutService {
+  const metrics = {
+    incReferralPayoutCreated: vi.fn(),
+    incReferralPayoutAmountRub: vi.fn(),
+  };
   return new ReferralPayoutService(
     mocks.prisma as unknown as PrismaService,
     mocks.redis as unknown as RedisService,
     mocks.attribution as unknown as AttributionService,
+    metrics as unknown as BusinessMetricsService,
   );
 }
 

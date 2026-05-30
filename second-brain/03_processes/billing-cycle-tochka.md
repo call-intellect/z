@@ -3,7 +3,7 @@ name: billing-cycle-tochka
 title: Подписка через Точку — оплата, активация, продление
 trigger_type: user_action
 status_overall: partial
-last_audited: 2026-05-29
+last_audited: 2026-05-30
 owners_human:
   - продакт биллинга
   - финансовый директор (для legal-реквизитов и канарейки на 1 ₽)
@@ -108,8 +108,15 @@ BillingCycleCron 0 3 * * * Europe/Moscow → FSM transitions PAST_DUE/SUSPENDED/
 
 ## 6. Точки отказа и наблюдаемость
 
-**Prometheus метрики:** 
-- **СПЕЦИФИЧНЫХ метрик биллинга НЕТ** в `BusinessMetricsService` (проверено grep'ом по `billing_|invoice_|subscription_|referral_` — пусто). Это серьёзный пробел observability. Нужны минимум: `billing_invoice_paid_total{provider, method}`, `billing_webhook_received_total{reason}`, `billing_recurring_charge_total{outcome}`, `billing_cycle_transitions_total{from,to}`, `subscription_status{tenant_top}` (gauge).
+**Prometheus метрики (с 2026-05-30, Фаза 4 commercial-reliability pack):**
+- `billing_invoice_created_total{tenant_top,kind}` — Invoice создан.
+- `billing_invoice_paid_total{tenant_top,kind}` — Invoice оплачен (инкрементируется в `BillingService.finalizePaidInvoice`).
+- `billing_subscription_renewed_total{tenant_top,tier}` — Subscription продлена (там же).
+- `billing_subscription_cancelled_total{tenant_top,reason}` — Subscription отменена (метрика зарегистрирована, inc-вызов добавляется по мере появления отмен в коде).
+- `billing_webhook_received_total{provider,status}` — webhook от провайдера (метрика зарегистрирована; status: ok|sig_fail|replay|invalid_payload).
+- `billing_provider_request_duration_seconds{provider,method,status}` — гистограмма исходящих HTTP-запросов в Точку (зарегистрирована).
+- Алёрты: `infra/prometheus/alerts/billing-referrals.rules.yml` — `BillingNoPaymentsLong`, `BillingWebhookSignatureFailures`.
+- Grafana: `infra/grafana/dashboards/billing-referrals.json` — 4 панели (биллинг сегодня, webhook здоровье Точки, реф-воронка, latency банка).
 - Общие cron-метрики `nestjs_schedule_*` (если включены) — частично.
 
 **BullMQ очереди:** биллинг не использует очереди — всё inline в cron + webhook.
@@ -190,7 +197,7 @@ BillingCycleCron 0 3 * * * Europe/Moscow → FSM transitions PAST_DUE/SUSPENDED/
   - ❌ Полноценная owner-страница `/settings/billing` с формами оплаты «картой / счётом», pricing-калькулятором, выбором тарифа — **нет**: текущий `BillingClient.tsx` показывает старые entitlements (`entitlement.tier`, `quotas`, `features` через `entitlementsApi`), не новый billing с `Subscription(tier_standard)` и `SeatService.calculatePricing`. Это legacy от Фазы 12 paywall, не обновлено.
   - ✅ `/admin/orgs/[id]/billing` (карточка биллинга Org в админке) — реализовано как таб `?tab=billing` карточки Org (`OrgDetailClient.tsx`), рендерит `BillingAdminClient` (entitlements). Standalone-URL делает 307-redirect (2026-05-29 admin-subscription-ui-v2).
   - ❌ `/referrals` есть, но это отдельный процесс (см. [[referral-program]]).
-- **Метрики Prometheus для биллинга** — ни одной не зарегистрировано в `BusinessMetricsService`. Это observability-gap: на проде невозможно мониторить успешность вебхуков, продлений, переходов FSM без логов.
+- ~~**Метрики Prometheus для биллинга** — ни одной не зарегистрировано~~ — **закрыто 2026-05-30 (Фаза 4 commercial-reliability pack)**: зарегистрировано 6 метрик (5 counter + 1 histogram) с префиксом `billing_*`, 3 алёрта в `infra/prometheus/alerts/billing-referrals.rules.yml`, Grafana-дашборд `infra/grafana/dashboards/billing-referrals.json`. Inc-вызовы `incBillingInvoicePaid` и `incBillingSubscriptionRenewed` подключены в `BillingService.finalizePaidInvoice`. Остальные `incBilling*` методы зарегистрированы (метрики появятся в `/metrics`), inc-вызовы добавятся вместе с прохождением соответствующих кодовых путей (cancelled, webhook received status, provider request duration).
 - **`/billing/billing-details` PATCH с optimistic-lock `version`** (ТЗ §11.1) — реализация по факту не верифицирована точечно (поле `Org.billingDetailsVersion` есть в схеме, но endpoint не найден поиском в `billing.controller.ts`).
 - **Renewal-reminder cron** (письма за 7/3/1 день до продления) — упомянут в ТЗ §7.1 как `RenewalReminderCron`, в `BillingModule.providers` НЕ зарегистрирован и файл не найден.
 
@@ -211,6 +218,7 @@ BillingCycleCron 0 3 * * * Europe/Moscow → FSM transitions PAST_DUE/SUSPENDED/
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-05-30 | Закрыт observability-gap: 6 метрик `billing_*` + 3 алёрта + Grafana-дашборд. `incBillingInvoicePaid`/`incBillingSubscriptionRenewed` подключены в `finalizePaidInvoice`. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 4 |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-29 | Paywall Фазы 4-5 завершены | `b8b57d6 feat(paywall): рефакторинг Фаз 1-3 + завершение Фаз 4-5` |
 | 2026-05-29 | UI-поверхность саппорта закрыта: табы Org-карточки, mark-paid / void / adjust-seats / force-status / events timeline, Badge «Бонус», пункт «Биллинг — обзор» в sidebar | `plans/tz/2026-05-29-admin-subscription-ui-v2.md` |

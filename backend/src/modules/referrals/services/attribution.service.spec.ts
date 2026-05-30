@@ -8,23 +8,32 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import { AttributionService } from './attribution.service';
 
 /**
- * audit Б6 (2026-05-29) — спецификация на блок self-referral в attributeOrg.
+ * audit Б6 (2026-05-29) + commercial-reliability pack (2026-05-30, Фаза 2) —
+ * спецификация на attributeOrg.
  *
  * Покрытие:
  *   - self-referral (Referral.ownerUserId уже member orgId) → ConflictException
  *     + метрика referral_self_referral_denied_total.
- *   - обычный referral (ownerUserId НЕ member) → запись в pendingAttribution.
+ *   - обычный referral (ownerUserId НЕ member, pendingAttributionSlug IS NULL)
+ *     → updateMany.count === 1 → запись в pendingAttribution.
+ *   - first-touch lock: повторный клик при уже зафиксированной атрибуции →
+ *     updateMany.count === 0 → метрика referral_attribution_first_touch_locked_total
+ *     + возвращается существующая атрибуция.
  *   - нет атрибуции → null.
  */
-describe('AttributionService.attributeOrg (audit Б6)', () => {
+describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
   let prisma: {
     referralAttribution: { findFirst: ReturnType<typeof vi.fn> };
     referral: { findUnique: ReturnType<typeof vi.fn> };
     membership: { findUnique: ReturnType<typeof vi.fn> };
-    org: { update: ReturnType<typeof vi.fn> };
+    org: {
+      updateMany: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
+    };
   };
   let metrics: {
     incReferralSelfReferralDenied: ReturnType<typeof vi.fn>;
+    incReferralAttributionFirstTouchLocked: ReturnType<typeof vi.fn>;
   };
   let svc: AttributionService;
 
@@ -33,10 +42,14 @@ describe('AttributionService.attributeOrg (audit Б6)', () => {
       referralAttribution: { findFirst: vi.fn() },
       referral: { findUnique: vi.fn() },
       membership: { findUnique: vi.fn() },
-      org: { update: vi.fn(async () => ({})) },
+      org: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUnique: vi.fn(),
+      },
     };
     metrics = {
       incReferralSelfReferralDenied: vi.fn(),
+      incReferralAttributionFirstTouchLocked: vi.fn(),
     };
     svc = new AttributionService(
       prisma as unknown as PrismaService,
@@ -51,10 +64,10 @@ describe('AttributionService.attributeOrg (audit Б6)', () => {
       cookieSlug: 'abc12345',
     });
     expect(result).toBeNull();
-    expect(prisma.org.update).not.toHaveBeenCalled();
+    expect(prisma.org.updateMany).not.toHaveBeenCalled();
   });
 
-  it('обычная атрибуция: ownerUserId НЕ member orgId → pendingAttribution', async () => {
+  it('обычная атрибуция: pendingAttributionSlug IS NULL → updateMany count=1, запись', async () => {
     prisma.referralAttribution.findFirst.mockResolvedValueOnce({
       id: 'attr-1',
       slug: 'abc12345',
@@ -65,6 +78,7 @@ describe('AttributionService.attributeOrg (audit Б6)', () => {
       slug: 'abc12345',
     });
     prisma.membership.findUnique.mockResolvedValueOnce(null);
+    prisma.org.updateMany.mockResolvedValueOnce({ count: 1 });
 
     const result = await svc.attributeOrg({
       tenantId: 'org-1',
@@ -75,15 +89,49 @@ describe('AttributionService.attributeOrg (audit Б6)', () => {
       slug: 'abc12345',
       attributionId: 'attr-1',
     });
-    expect(prisma.org.update).toHaveBeenCalledWith(
+    expect(prisma.org.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'org-1' },
+        where: { id: 'org-1', pendingAttributionSlug: null },
         data: expect.objectContaining({
           pendingAttributionSlug: 'abc12345',
         }),
       }),
     );
     expect(metrics.incReferralSelfReferralDenied).not.toHaveBeenCalled();
+    expect(metrics.incReferralAttributionFirstTouchLocked).not.toHaveBeenCalled();
+  });
+
+  it('first-touch lock: повторный клик при существующей атрибуции → count=0, метрика, возвращает существующую', async () => {
+    prisma.referralAttribution.findFirst.mockResolvedValueOnce({
+      id: 'attr-second',
+      slug: 'partner-B',
+      referralId: 'ref-B',
+    });
+    prisma.referral.findUnique
+      // 1) self-referral check на новой атрибуции (partner-B)
+      .mockResolvedValueOnce({ ownerUserId: 'u-B', slug: 'partner-B' })
+      // 2) resolvePendingForOrg — резолв existing slug (partner-A) в referralId
+      .mockResolvedValueOnce({ id: 'ref-A', slug: 'partner-A' });
+    prisma.membership.findUnique.mockResolvedValueOnce(null);
+    // updateMany возвращает count=0 — гард сработал.
+    prisma.org.updateMany.mockResolvedValueOnce({ count: 0 });
+    // resolvePendingForOrg читает уже зафиксированную атрибуцию (partner-A).
+    prisma.org.findUnique.mockResolvedValueOnce({
+      pendingAttributionSlug: 'partner-A',
+      pendingAttributionAt: new Date(),
+    });
+
+    const result = await svc.attributeOrg({
+      tenantId: 'org-1',
+      cookieSlug: 'partner-B',
+    });
+
+    expect(result).toEqual({
+      referralId: 'ref-A',
+      slug: 'partner-A',
+      attributionId: '',
+    });
+    expect(metrics.incReferralAttributionFirstTouchLocked).toHaveBeenCalledTimes(1);
   });
 
   it('self-referral: ownerUserId уже member orgId → 409 + метрика', async () => {
@@ -103,7 +151,7 @@ describe('AttributionService.attributeOrg (audit Б6)', () => {
       svc.attributeOrg({ tenantId: 'org-1', cookieSlug: 'mine' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(metrics.incReferralSelfReferralDenied).toHaveBeenCalled();
-    expect(prisma.org.update).not.toHaveBeenCalled();
+    expect(prisma.org.updateMany).not.toHaveBeenCalled();
   });
 });
 

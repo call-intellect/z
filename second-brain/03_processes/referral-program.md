@@ -3,7 +3,7 @@ name: referral-program
 title: Реферальная программа — slug, beacon, выплата 10-го числа
 trigger_type: event
 status_overall: partial
-last_audited: 2026-05-29
+last_audited: 2026-05-30
 owners_human:
   - продакт-партнёрский (отвечает за реф-программу)
   - финансовый директор (для подписания оферт и фактических выплат)
@@ -139,13 +139,12 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 **Логи:** `AttributionService`, `ReferralPayoutService`, `ReferralsService`, `PublicReferralsController`.
 
 **Известные грабли:**
-- **Атрибуция first-touch + 90 дней**: если посетитель кликнул по 2 разным реф-ссылкам в 90-дневное окно, `AttributionService.attributeOrg` берёт **последнюю** (`orderBy: createdAt desc`) — это first-touch в смысле «первая запись pending», но в смысле «кто первый кликнул» это **last-touch**. Поведение задуманное, но в ТЗ §9 терминология неоднозначна; стоит зафиксировать.
+- **Атрибуция first-touch + 90 дней (2026-05-30, Фаза 2 commercial-reliability pack)**: `attributeOrg` гарантирует first-touch на уровне `Org.pendingAttributionSlug` — `updateMany WHERE pendingAttributionSlug IS NULL`. Повторный клик по другому slug в 90-дневное окно НЕ перезаписывает первую атрибуцию; событие отражается в метрике `referral_attribution_first_touch_locked_total`. После `clearPendingForOrg` (первая оплата → `ClientReferralLink`) поле обнуляется и следующая Org того же пользователя получит свою first-touch.
 - **EventEmitter2 in-memory**: `billing.invoice.paid` доставляется только внутри одного процесса. Если webhook пришёл на backend-инстанс, а worker крутится на другом — событие не доедет. У нас backend monolith + worker (отдельный процесс с тем же кодом), worker НЕ слушает webhook'и Точки, так что баг не материализуется, но это потенциальная грабля при переходе на mult-process backend.
 - **`bonus`-активация НЕ создаёт payout** (Б6). Если админ хочет дать партнёрское вознаграждение за бонус-клиента — придётся руками создавать ReferralPayout через admin-эндпоинт; такого endpoint'а сейчас нет.
 - **Cookie `z_ref` ставится JS-кодом на лендинге**, и это **внешний код вне репо**. Изменения схемы атрибуции требуют синхронной правки и в лендинге, и в `AttributionService`. Контракт держится на slug + fingerprint + ip.
 - **Атрибуция партнёра к самому себе** не проверяется: если партнёр кликнет по своей же ссылке и зарегистрирует Org — он привяжет сам себя к себе, и при оплате получит вознаграждение. На MVP это не закрыто.
 - **`innVerifiedAt` без сравнения с владельцем** (комментарий в `referrals.service.ts:10`) — партнёр может верифицировать чужой ИНН. На MVP доверяем; реальная защита — момент фактической выплаты со стороны финдира.
-- **`Org.pendingAttribution*` затирается при каждом attributeOrg** (`AttributionService.attributeOrg` всегда обновляет, "последняя побеждает"). Если посетитель зарегистрировался через одного партнёра, потом передумал и пришёл с другой ссылки до первой оплаты — последняя реф-ссылка получит деньги.
 
 **Кнопки админки:**
 - `/admin/referrals` — список партнёров и payout'ов с фильтрами по `status` (`pending|paid|void`) и `periodMonth` (`YYYY-MM`).
@@ -165,7 +164,7 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 - **Метрики Prometheus** для воронки: `referral_click_total`, `referral_signup_total`, `referral_payout_created_total`, `referral_payout_amount_rub_total` — не зарегистрированы. **Фиксится в** [`plans/tz/2026-05-29-commercial-reliability-package.md`](../../plans/tz/2026-05-29-commercial-reliability-package.md) **Фазе 4**.
 - **Уведомления партнёру** при создании payout / закрытии периода — в ТЗ упомянуты как часть кабинета; в коде не реализованы (нет вызовов из `ReferralPayoutService` в notification-dispatch).
 - **Welcome-коды (signup-bonus)** — явно вынесены за скобки в `plans/tz/2026-05-27...` §3.
-- **First-touch атрибуция** — в комментарии `attribution.service.ts:11-19` написано «идемпотентно по pendingAttributionSlug», но реальный код [line 136-142](../../backend/src/modules/referrals/services/attribution.service.ts#L136) безусловно перезаписывает (last-touch). **Bug, фиксится** [`plans/tz/2026-05-29-commercial-reliability-package.md`](../../plans/tz/2026-05-29-commercial-reliability-package.md) **Фазой 2**.
+- ~~**First-touch атрибуция**~~ — **закрыто 2026-05-30 (Фаза 2 commercial-reliability pack)**: `AttributionService.attributeOrg` теперь делает `updateMany WHERE pendingAttributionSlug IS NULL`. Безусловный `update` (фактически last-touch) заменён на first-touch гард, метрика `referral_attribution_first_touch_locked_total` фиксирует отброшенные повторные клики.
 
 **Поправка 2026-05-29 к первому аудиту:**
 - **Self-referral блок — УЖЕ РЕАЛИЗОВАН.** Метрика `referral_self_referral_denied_total` ([business-metrics.service.ts:1367](../../backend/src/common/metrics/business-metrics.service.ts#L1367)) с пометкой `audit Б6 — попытка self-referral (Referral.ownerUserId совпал с member/owner целевой Org) отклонена`. Плюс дополнительная защита `referral_inn_mismatch_total` ([line 1374](../../backend/src/common/metrics/business-metrics.service.ts#L1374)) — блок при совпадении ИНН партнёра и клиента. В первом аудите я ошибся, написав что не реализовано.
@@ -187,6 +186,7 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-05-30 | First-touch fix: `attributeOrg` → `updateMany WHERE pendingAttributionSlug IS NULL`. Метрика `referral_attribution_first_touch_locked_total` зарегистрирована. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 2 |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-27 | ТЗ объединённого биллинга + InnLookup + рефералов (Фаза 6 реализована) | `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md` |
 | 2026-05-25 | Анализ + решение владельца: фикс 20 000 ₽, окно 3 мес, cron 10-го | `plans/analysis/2026-05-25-billing-and-referrals.md` |

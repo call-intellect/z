@@ -16,10 +16,16 @@
  *   - `record()` НЕ дедуплицирует — каждый beacon-call создаёт новую запись
  *     (это нужно для аналитики «N касаний»). Резолв всегда берёт самую
  *     свежую запись по slug.
- *   - `attributeOrg()` идемпотентно: если у Org уже есть `pendingAttributionSlug`
- *     — обновляем (последняя атрибуция побеждает).
+ *   - `attributeOrg()` first-touch (commercial-reliability pack, 2026-05-30):
+ *     если у Org уже есть `pendingAttributionSlug` — НЕ перезаписываем.
+ *     Это защита от потери комиссий: повторный клик по чужой ссылке (или
+ *     умышленная попытка перехватить атрибуцию) больше не отменяет первое
+ *     партнёрство. После `clearPendingForOrg` (когда из pending становится
+ *     `ClientReferralLink`) поле обнуляется — новая Org того же пользователя
+ *     может получить свою first-touch атрибуцию.
  *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9.
+ * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9 и
+ * plans/tz/2026-05-29-commercial-reliability-package.md (Фаза 2).
  */
 
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
@@ -206,13 +212,34 @@ export class AttributionService {
       }
     }
 
-    await this.prisma.org.update({
-      where: { id: input.tenantId },
+    // commercial-reliability pack (2026-05-30): first-touch гард. До этого
+    // была безусловная update — то есть фактически last-touch (повторный клик
+    // по чужому slug перетирал первую атрибуцию). Теперь updateMany WHERE
+    // pendingAttributionSlug IS NULL — first wins. Если повторный клик уже
+    // имеет привязку — count === 0 → метрика + лог + возвращаем существующую
+    // привязку для трассировки (чтобы caller увидел, к какому slug Org уже
+    // привязан).
+    const result = await this.prisma.org.updateMany({
+      where: { id: input.tenantId, pendingAttributionSlug: null },
       data: {
         pendingAttributionSlug: attribution.slug,
         pendingAttributionAt: now,
       },
     });
+
+    if (result.count === 0) {
+      this.metrics.incReferralAttributionFirstTouchLocked();
+      const existing = await this.resolvePendingForOrg(input.tenantId);
+      this.logger.log(
+        `attributeOrg ${input.tenantId}: first-touch уже зафиксирован, ` +
+          `повторный клик по slug=${attribution.slug} проигнорирован ` +
+          `(текущий slug=${existing?.slug ?? 'unknown'})`,
+      );
+      return existing
+        ? { referralId: existing.referralId, slug: existing.slug, attributionId: '' }
+        : null;
+    }
+
     this.logger.log(
       `attributeOrg ${input.tenantId} → ${attribution.slug} (referral=${attribution.referralId})`,
     );

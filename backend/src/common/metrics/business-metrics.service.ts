@@ -249,6 +249,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // audit Б6 (2026-05-29) — self-referral / INN-mismatch на верификации.
   private referralSelfReferralDeniedTotal!: Counter<string>;
   private referralInnMismatchTotal!: Counter<'reason'>;
+  // commercial-reliability pack (2026-05-30) — повторный клик по реф-ссылке
+  // отброшен first-touch гардом (AttributionService.attributeOrg). Считаем
+  // только реальные блокировки last-touch попыток.
+  private referralAttributionFirstTouchLockedTotal!: Counter<string>;
   // audit С3 (2026-05-29) — safeEmit() в BillingService поймал ошибку
   // listener'а. Лейбл event = BillingEvent.* (см. billing.types.ts).
   private billingEmitFailedTotal!: Counter<'event'>;
@@ -1376,6 +1380,13 @@ export class BusinessMetricsService implements OnModuleInit {
       help:
         'audit Б6 — попытка self-referral (Referral.ownerUserId совпал с ' +
         'member/owner целевой Org) отклонена.',
+      labelNames: [] as const,
+    });
+    this.referralAttributionFirstTouchLockedTotal = this.getOrCreateCounter({
+      name: 'referral_attribution_first_touch_locked_total',
+      help:
+        'commercial-reliability pack (2026-05-30) — повторный клик по другой ' +
+        'реферальной ссылке отброшен first-touch гардом (Org.pendingAttributionSlug IS NOT NULL).',
       labelNames: [] as const,
     });
     this.billingEmitFailedTotal = this.getOrCreateCounter({
@@ -3565,6 +3576,15 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incReferralSelfReferralDenied(): void {
     this.referralSelfReferralDeniedTotal.inc();
+  }
+
+  /**
+   * commercial-reliability pack (2026-05-30) — повторный клик по другой
+   * реферальной ссылке отброшен first-touch гардом (Org.pendingAttributionSlug
+   * IS NOT NULL → updateMany.count === 0).
+   */
+  incReferralAttributionFirstTouchLocked(): void {
+    this.referralAttributionFirstTouchLockedTotal.inc();
   }
 
   /** audit С3 — listener BillingEvent упал, side-effect не выполнен. */

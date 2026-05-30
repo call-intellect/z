@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import type { JSX } from 'react';
 
 import { CalendarView } from '@/ui/calendar/CalendarView';
 
@@ -9,14 +8,15 @@ export const metadata: Metadata = {
   title: 'Календарь проекта — Z',
 };
 
-export default function ProjectCalendarPage({
+export default async function ProjectCalendarPage({
   params,
 }: {
-  params: { slug: string };
-}): JSX.Element {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <CalendarView mode="project" projectSlug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <CalendarView mode="project" projectSlug={slug} />
     </ProjectViewShell>
   );
 }

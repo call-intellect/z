@@ -7,14 +7,15 @@ export const metadata: Metadata = {
   title: 'Доска — Z',
 };
 
-export default function ProjectBoardPage({
+export default async function ProjectBoardPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <BoardClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <BoardClient slug={slug} />
     </ProjectViewShell>
   );
 }

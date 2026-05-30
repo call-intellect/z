@@ -6,12 +6,13 @@ export const metadata: Metadata = {
   title: 'Документ — Z',
 };
 
-export default function ProjectDocumentEditorPage({
+export default async function ProjectDocumentEditorPage({
   params,
 }: {
-  params: { slug: string; docId: string };
+  params: Promise<{ slug: string; docId: string }>;
 }) {
+  const { slug, docId } = await params;
   return (
-    <ProjectDocumentEditorClient slug={params.slug} docId={params.docId} />
+    <ProjectDocumentEditorClient slug={slug} docId={docId} />
   );
 }

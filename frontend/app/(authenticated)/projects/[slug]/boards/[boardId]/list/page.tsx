@@ -12,14 +12,15 @@ export const metadata: Metadata = {
  * Tracker Boards (2026-05-27) — список задач выбранной доски.
  * Маршрут: `/projects/[slug]/boards/[boardId]/list`.
  */
-export default function ProjectListPage({
+export default async function ProjectListPage({
   params,
 }: {
-  params: { slug: string; boardId: string };
+  params: Promise<{ slug: string; boardId: string }>;
 }) {
+  const { slug, boardId } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <ListClient slug={params.slug} boardId={params.boardId} />
+    <ProjectViewShell slug={slug}>
+      <ListClient slug={slug} boardId={boardId} />
     </ProjectViewShell>
   );
 }

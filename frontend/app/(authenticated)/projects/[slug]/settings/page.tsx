@@ -7,14 +7,15 @@ export const metadata: Metadata = {
   title: 'Настройки проекта — Z',
 };
 
-export default function ProjectSettingsPage({
+export default async function ProjectSettingsPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <ProjectSettingsClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <ProjectSettingsClient slug={slug} />
     </ProjectViewShell>
   );
 }

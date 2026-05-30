@@ -7,14 +7,15 @@ import { IntegrationsClient } from './IntegrationsClient';
  *
  * Tracker Project Overview Часть 3 (2026-05-27).
  */
-export default function ProjectIntegrationsPage({
+export default async function ProjectIntegrationsPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <IntegrationsClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <IntegrationsClient slug={slug} />
     </ProjectViewShell>
   );
 }

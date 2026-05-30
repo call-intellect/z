@@ -6,13 +6,14 @@ export const metadata: Metadata = {
   title: 'Гант — Z',
 };
 
-export default function ProjectGanttPage({
+export default async function ProjectGanttPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
+    <ProjectViewShell slug={slug}>
       <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-12 text-center text-sm text-fg-tertiary">
         Диаграмма Ганта появится в Sprint 6 (опционально, по запросу).
       </div>

@@ -7,14 +7,15 @@ import { WorkloadClient } from './WorkloadClient';
  *
  * Tracker Project Overview Часть 2 (2026-05-27).
  */
-export default function ProjectWorkloadPage({
+export default async function ProjectWorkloadPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <WorkloadClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <WorkloadClient slug={slug} />
     </ProjectViewShell>
   );
 }

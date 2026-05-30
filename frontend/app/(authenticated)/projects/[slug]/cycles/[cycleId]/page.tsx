@@ -7,14 +7,15 @@ export const metadata: Metadata = {
   title: 'Цикл — Z',
 };
 
-export default function CycleDetailPage({
+export default async function CycleDetailPage({
   params,
 }: {
-  params: { slug: string; cycleId: string };
+  params: Promise<{ slug: string; cycleId: string }>;
 }) {
+  const { slug, cycleId } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <CycleDetailClient cycleId={params.cycleId} />
+    <ProjectViewShell slug={slug}>
+      <CycleDetailClient cycleId={cycleId} />
     </ProjectViewShell>
   );
 }

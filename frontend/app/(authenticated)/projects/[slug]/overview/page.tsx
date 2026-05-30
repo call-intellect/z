@@ -7,14 +7,15 @@ import { OverviewClient } from './OverviewClient';
  *
  * Tracker Project Overview (2026-05-27). ТЗ: plans/tz/2026-05-27-tracker-project-overview.md.
  */
-export default function ProjectOverviewPage({
+export default async function ProjectOverviewPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <OverviewClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <OverviewClient slug={slug} />
     </ProjectViewShell>
   );
 }

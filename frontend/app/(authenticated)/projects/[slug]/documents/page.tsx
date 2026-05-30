@@ -7,14 +7,15 @@ export const metadata: Metadata = {
   title: 'Документы проекта — Z',
 };
 
-export default function ProjectDocumentsPage({
+export default async function ProjectDocumentsPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <ProjectDocumentsClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <ProjectDocumentsClient slug={slug} />
     </ProjectViewShell>
   );
 }

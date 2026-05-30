@@ -7,14 +7,15 @@ export const metadata: Metadata = {
   title: 'Список задач — Z',
 };
 
-export default function ProjectListPage({
+export default async function ProjectListPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <ListClient slug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <ListClient slug={slug} />
     </ProjectViewShell>
   );
 }

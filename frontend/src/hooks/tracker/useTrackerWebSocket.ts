@@ -72,23 +72,26 @@ export interface TrackerWsClient {
 
 /**
  * Базовый URL WebSocket-соединения.
- * Если задан `NEXT_PUBLIC_WS_URL` — используем его (например, для прод
- * настроек или dev на другой машине). Иначе — относительный (same-origin),
- * `io('/ws/tracker', ...)` сам определит host из window.location.
+ * Приоритет: NEXT_PUBLIC_WS_URL → NEXT_PUBLIC_API_BASE_URL → window.location.origin.
+ * Backend slушает на :3000, frontend dev — на :3001, поэтому fallback на
+ * window.location.origin без явного API URL приведёт к ошибке коннекта.
  */
 function resolveWsUrl(): string {
-  const fromEnv =
+  const wsEnv =
     typeof process !== 'undefined' &&
     (process.env.NEXT_PUBLIC_WS_URL ?? '').trim();
-  // Backend slушает на 3000, frontend dev — на 3001. В dev по умолчанию
-  // обращаемся напрямую на API, чтобы избежать proxy. В prod проксируется
-  // nginx'ом, поэтому same-origin — норма.
-  if (fromEnv && fromEnv.length > 0) {
-    return fromEnv.replace(/\/+$/, '') + '/ws/tracker';
+  if (wsEnv && wsEnv.length > 0) {
+    return wsEnv.replace(/\/+$/, '') + '/ws/tracker';
   }
+  const apiEnv =
+    typeof process !== 'undefined' &&
+    (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').trim();
+  if (apiEnv && apiEnv.length > 0) {
+    return apiEnv.replace(/\/+$/, '') + '/ws/tracker';
+  }
+  // Прод same-origin или SSR.
   if (typeof window !== 'undefined') {
-    // Same-origin — namespace добавляется io вторым шагом через path.
-    return '/ws/tracker';
+    return window.location.origin + '/ws/tracker';
   }
   return '/ws/tracker';
 }

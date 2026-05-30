@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import type { JSX } from 'react';
 
 import { CalendarView } from '@/ui/calendar/CalendarView';
 
@@ -18,14 +17,15 @@ export const metadata: Metadata = {
  * следующую итерацию. Для UX MVP достаточно — переключатель досок
  * остаётся в сайдбаре.
  */
-export default function ProjectBoardCalendarPage({
+export default async function ProjectBoardCalendarPage({
   params,
 }: {
-  params: { slug: string; boardId: string };
-}): JSX.Element {
+  params: Promise<{ slug: string; boardId: string }>;
+}) {
+  const { slug } = await params;
   return (
-    <ProjectViewShell slug={params.slug}>
-      <CalendarView mode="project" projectSlug={params.slug} />
+    <ProjectViewShell slug={slug}>
+      <CalendarView mode="project" projectSlug={slug} />
     </ProjectViewShell>
   );
 }

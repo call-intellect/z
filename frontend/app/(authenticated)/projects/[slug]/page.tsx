@@ -7,10 +7,11 @@ import { redirect } from 'next/navigation';
  * вкладкой проекта вместо канбан-доски (паритет Weeek/Kaiten/Bitrix24).
  * ТЗ: plans/tz/2026-05-27-tracker-project-overview.md.
  */
-export default function ProjectSlugIndex({
+export default async function ProjectSlugIndex({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  redirect(`/projects/${encodeURIComponent(params.slug)}/overview`);
+  const { slug } = await params;
+  redirect(`/projects/${encodeURIComponent(slug)}/overview`);
 }

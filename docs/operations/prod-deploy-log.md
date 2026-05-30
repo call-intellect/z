@@ -21,6 +21,70 @@
 
 ---
 
+### 🌊 2026-05-30 — Pulse Волны 1+2 (Фундамент + Усиление операций)
+
+План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §5-6.
+Коммиты: `0f0bf03` (Волна 1, 8 фаз), `801ba61` (Волна 2, 5 фаз).
+
+**Краткое содержание:**
+- 8 новых сервисов в `backend/src/modules/dashboard/`: CommitmentReliability, HangingDecisions, SentimentIndex, NarrativeCitationsParser, TeamHealth, TeamDetail, SampleStoryDataset.
+- 2 новых эндпоинта: `GET /api/v1/dashboard/team-health`, `GET /api/v1/dashboard/teams/:id`.
+- 2 новых эндпоинта операций: `GET /api/v1/dashboard/operations/missing-checkins`, `GET /api/v1/dashboard/operations/stale-issues`.
+- TenantMiddleware (`backend/src/modules/rbac/middleware/tenant.middleware.ts`) — резолв `req.tenantId` ДО глобальных guards (SubscriptionGuard, EntitlementGuard, MustChangePasswordGuard). Фикс бага `403 tenant_required` на эндпоинтах с `@RequireEntitlement`.
+- 2 новых поля в Prisma модели `Decision`: `raisedCount Int @default(1)`, `lastRaisedAt DateTime?`. specialist-3-3 теперь инкрементит счётчик при merge-verdict.
+- Новые frontend-страницы: `/teams` (список с сортировкой), `/teams/[id]` (детальная карточка).
+- 4 runtime-секции в Daily-Digest DTO: eventsToday, urgentItems, whoShined (stub), whoStruggled.
+- 3 runtime-секции в Weekly-Digest DTO: kpiDeltas, teamDynamics, forecast.
+- 4 новых компонента UI: KpiHero (с threshold-coloring), TeamHealthGrid, ActivityFeedWidget, AiNarrativeWithSources, TeamTemperatureHeatmap, SampleStoryBanner.
+
+**Тесты:** 186/186 passed (dashboard 76 + operations 110). Frontend typecheck чисто.
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — **нет новых ENV**. Все сервисы используют существующие настройки (Redis, Prisma).
+- **Шаг 4 — Prisma** — **обязательно** перед запуском backend:
+  ```bash
+  docker compose exec backend bun run prisma:push
+  docker compose exec backend bun run prisma:generate
+  ```
+  Добавляет в `Decision` два поля: `raisedCount Int @default(1)` и `lastRaisedAt DateTime?`. Существующие строки получат `raisedCount=1`, `lastRaisedAt=null`. Никакого data-loss, безопасно.
+- **Шаги 6-10 — Patches/Seeds/Backfill/Migrations/Setup** — **без изменений**. Backfill для `Decision.raisedCount` не нужен (default=1 покрывает существующие). Для `lastRaisedAt` — null допустим, заполнится при следующем specialist-3-3 merge.
+- **Шаг 11 — Docker image rebuild** — **обязателен** (новые backend-модули и frontend-страницы).
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. KPI Hero endpoints доступны (требует cookie owner/admin Org):
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/dashboard/director?period=week
+  # Ожидаемо: 200 с полями kpiSentimentIndex, kpiCommitmentReliability, kpiHangingDecisions, isEmpty
+  # На empty tenant: isEmpty=true + синтетический sample-story dataset
+
+  # 2. Новый team-health endpoint:
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/dashboard/team-health
+  # Ожидаемо: 200 { teams: [...], totalDepartments: N }
+
+  # 3. Новый team-detail endpoint (404 для несуществующего отдела):
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/dashboard/teams/<deptId>
+  # Ожидаемо: 200 c TeamDetailDto / 404 department_not_found
+
+  # 4. Operations missing-checkins (today default):
+  curl -i -H 'Cookie: <auth>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/dashboard/operations/missing-checkins
+  # Ожидаемо: 200 { date, totalEmployees, missing: [...] }
+
+  # 5. Frontend страницы:
+  # /dashboard — новые KpiHero (3 шт), AI narrative с цитатами [1][2], TeamHealthGrid, ActivityFeedWidget
+  # /teams — список команд с сортировкой
+  # /teams/<deptId> — детальная карточка команды
+  # /dashboard/operations — heatmap + missing-checkins + stale-issues + probe widget
+  # /dashboard/operations/daily — 4 новых секции (eventsToday/urgentItems/whoShined/whoStruggled)
+  # /dashboard/operations/weekly — 3 новых секции (kpiDeltas/teamDynamics/forecast)
+  ```
+- **Откат:** Никакого ENV-флага нет (все фичи активны по умолчанию). Для отката — `git revert 0f0bf03 801ba61` + redeploy. Schema-добавления Decision не требуют отката — поля nullable/defaulted, не блокируют старый код.
+
+---
+
 ### 🧬 2026-05-30 — Agents v2 Phase C2 (GEPA prompt evolution)
 
 План: [plans/tz/2026-05-29-agents-v2-umbrella.md](../../plans/tz/2026-05-29-agents-v2-umbrella.md) §C2.

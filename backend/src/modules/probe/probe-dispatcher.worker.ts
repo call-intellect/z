@@ -26,7 +26,6 @@ import { ProbeService } from './probe.service';
 
 interface FormulatedProbe {
   question: string;
-  options: string[];
 }
 
 /**
@@ -36,8 +35,9 @@ interface FormulatedProbe {
  *   1. Подгружает ProbeEvent + проверяет, что status='pending'.
  *   2. Re-проверяет rate-limit по recipientCandidates.
  *   3. Выбирает recipient'а (round-robin; engagement_rate weight — γ+).
- *   4. LLM `probe-formulate` → {question, options} (на fallback берёт
- *      payload.suggestedQuestion / message).
+ *   4. LLM `probe-formulate` → {question} (на fallback берёт
+ *      payload.suggestedQuestion / message). Без вариантов ответа —
+ *      ожидаем свободный ввод (текст / голос). См. ТЗ Agents v2 Фаза 0.
  *   5. ConversationalService.sendNotification(eventType='probe.question').
  *   6. INC rate-limit counters; обновить ProbeEvent.status='dispatched'.
  *
@@ -141,7 +141,6 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         eventType: 'probe.question',
         payload: {
           question: formulated.question,
-          options: formulated.options,
           askedBy: probe.emittedByService,
           context: typeof payload.message === 'string' ? payload.message : undefined,
         },
@@ -151,6 +150,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       });
 
       // 5. INC rate-limit + persist dispatch.
+      // Agents v2 Фаза 0.2 (2026-05-30): сохраняем formulatedQuestion в payload
+      // ProbeEvent — нужно ProbeResponseHandler'у для классификатора
+      // probe-response-classify (точный вопрос вместо reason/message fallback'a).
       await this.probeService.noteSent(selectedUserId);
       await this.prisma.probeEvent.update({
         where: { id: probe.id },
@@ -159,6 +161,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           dispatchedAt: new Date(),
           selectedRecipientId: selectedUserId,
           dispatchedNotificationId: notif.id,
+          payload: {
+            ...payload,
+            formulatedQuestion: formulated.question,
+          },
         },
       });
       this.metrics.incProbeEvent({
@@ -182,24 +188,23 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** LLM probe-formulate с fallback на payload.suggestedQuestion/message. */
+  /**
+   * LLM probe-formulate с fallback на payload.suggestedQuestion/message.
+   *
+   * Agents v2 Фаза 0.1 (2026-05-30): убраны options. Ответ ожидаем
+   * свободным текстом или голосом (см. ТЗ). `suggestedActions` остаются
+   * как контекст для LLM (промпт явно говорит «не перечислять их человеку»).
+   */
   private async formulate(probe: ProbeEvent): Promise<FormulatedProbe> {
     const payload = (probe.payload ?? {}) as Record<string, unknown>;
     const message = this.toStringOrUndef(payload.message) ?? '';
     const suggestedQuestion = this.toStringOrUndef(payload.suggestedQuestion);
     const suggestedActions = this.toStringArray(payload.suggestedActions);
-    const suggestedOptions = this.toStringArray(payload.suggestedOptions);
 
     const fallbackQuestion =
       suggestedQuestion ?? (message.length > 0 ? message.slice(0, 200) : 'Можете уточнить?');
     const fallback: FormulatedProbe = {
       question: fallbackQuestion,
-      options:
-        suggestedOptions.length > 0
-          ? suggestedOptions.slice(0, 4)
-          : suggestedActions.length > 0
-            ? suggestedActions.slice(0, 4)
-            : ['Да', 'Нет'],
     };
 
     try {
@@ -232,13 +237,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       if (
         parsed &&
         typeof parsed.question === 'string' &&
-        parsed.question.length > 0 &&
-        Array.isArray(parsed.options) &&
-        parsed.options.length >= 2
+        parsed.question.length > 0
       ) {
         return {
           question: parsed.question.slice(0, 400),
-          options: parsed.options.slice(0, 4).map((o) => String(o).slice(0, 40)),
         };
       }
       return fallback;

@@ -88,9 +88,11 @@ import { OrgMembersModule } from './modules/org-members/org-members.module';
 import { OrgsModule } from './modules/orgs/orgs.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
 import { PersonsModule } from './modules/persons/persons.module';
+import { PracticeSkillsModule } from './modules/practice-skills/practice-skills.module';
 import { ProactiveModule } from './modules/proactive/proactive.module';
 import { ProbeModule } from './modules/probe/probe.module';
 import { ProcessesModule } from './modules/processes/processes.module';
+import { PromptEvolutionModule } from './modules/prompt-evolution/prompt-evolution.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 // Wave 2 (2026-05-24) — Activity Feeds + Specialist 3.8 Helpfulness + Recognition + Web Push.
 import { PushModule } from './modules/push/push.module';
@@ -577,6 +579,24 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Redis и AuthModule (Cookie/SuperAdmin guards). См.
     // plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
     FeedbackModule,
+
+    // Agents v2 Фаза B1 (2026-05-30) — Prompt Evolution (AutoRule, shadow).
+    // Слушает `ai.invocation.completed` LlmRouter'а и накапливает feedback,
+    // ночной cron 03:00 строит черновые правила (PromptRule status='shadow').
+    // В Фазе B инъекции в реальные prompts НЕТ — только сбор данных для C.
+    // Зависит от @Global AiModule, EmbeddingsModule, RedisModule, MetricsModule.
+    // См. plans/tz/2026-05-29-agents-v2-umbrella.md §B1.
+    PromptEvolutionModule,
+
+    // Agents v2 Фаза C1 (2026-05-30) — PracticeSkills (выполняемые навыки клонов).
+    // Extractor — слушает `skill-trait-concept.normalized`, извлекает процедуры
+    // из reasoning-блоков сотрудников. Retrieval — KNN top-K skill'ов для
+    // clone-respond (за флагом PRACTICE_SKILLS_ENABLED). Evaluator — daily 04:00
+    // cron: composite score vs baseline → promote/archive shadow skill'ов.
+    // Зависит от @Global AiModule, KnowledgeCoreModule (KnowledgeEmbeddingService),
+    // RedisModule, MetricsModule, EventEmitterModule.
+    // См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
+    PracticeSkillsModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

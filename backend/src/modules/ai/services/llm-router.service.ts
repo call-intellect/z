@@ -5,6 +5,7 @@ import {
   Optional,
   type OnModuleInit,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { DataClass, LlmRouteTier, LlmTaskRoute } from '@prisma/client';
 
@@ -128,6 +129,24 @@ export type LlmTaskType =
   | 'idea-cluster-merge'
   | 'probe-formulate'
   | 'idea-status-summarize'
+  // Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify.
+  // Лёгкий классификатор свободного ответа на probe-вопрос (текст или
+  // голос после ASR). Извлекает {answer, confidence, requiresFollowup}.
+  // См. prompts/probe-response-classify.prompt.ts.
+  | 'probe-response-classify'
+  // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
+  // Зонтичный taskType для debate-decision-supersede (учёт/seed/budget).
+  // Реальные LLM-вызовы идут через три stance-specific taskType'а ниже,
+  // каждый со своим primary провайдером (для diverse-моделей):
+  //   - 'debate-decision-supersede-critic'    → deepseek-v4-pro (capable, склонен к отказу)
+  //   - 'debate-decision-supersede-supporter' → openai-via-proxy:gpt-5.4 (другой провайдер для diversity)
+  //   - 'debate-decision-supersede-neutral'   → deepseek-v4-flash (дешёвый арбитр)
+  // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A2 и
+  // backend/src/modules/ai/services/multi-agent-debate.service.ts.
+  | 'debate-decision-supersede'
+  | 'debate-decision-supersede-critic'
+  | 'debate-decision-supersede-supporter'
+  | 'debate-decision-supersede-neutral'
   // SBA γ-1 — Specialist 3.7 (SkillProfile) + Clone API.
   // 'skill-trait-detect' — самая ответственная задача γ-1: 5+ reasoning-цитат
   //   сотрудника → один структурированный SkillTrait (эмерджентная категория +
@@ -367,7 +386,35 @@ export type LlmTaskType =
   //   не отдельное измерение). Capable модель + structured JSON:
   //   primary = deepseek-v4-pro, secondary = openai gpt-5.4,
   //   tertiary = kie gemini-3-pro, quaternary = grsai gemini-3-pro.
-  | 'feedback.cluster';
+  | 'feedback.cluster'
+  // Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow).
+  // 'autorule-extract' — извлечение правила из группы пар (original, edited)
+  //   AI-output'ов одного типа. Capable nuanced арбитр: primary = deepseek-v4-pro,
+  //   secondary = openai-via-proxy/gpt-5.4, tertiary = ollama/qwen3:30b
+  //   (НЕ qwen3.5:9b — слишком слабая для extraction паттернов).
+  //   См. plans/tz/2026-05-29-agents-v2-umbrella.md §B1.
+  | 'autorule-extract'
+  // Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
+  // 'concierge-step-prm' — оценивает, насколько конкретный кандидат tool_call
+  //   приблизит к цели пользователя. Дешёвый scorer (≤500 input + ≤300 output):
+  //   primary = deepseek-v4-flash; secondary = openai-via-proxy/gpt-5.4-mini;
+  //   tertiary = ollama/qwen3.5:9b (cheap scoring — qwen3.5:9b приемлем как
+  //   safety-net в отличие от nuanced extraction задач Фазы B1).
+  //   См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
+  | 'concierge-step-prm'
+  // Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (выполняемые навыки клонов).
+  // 'practice-skill-extract' — capable nuanced extractor: на входе SkillTraitConcept +
+  //   связанные SkillTrait + reasoning-блоки employee'я; на выходе draft
+  //   PracticeSkill {trigger, steps[], redFlags[]} либо null. Primary = deepseek-v4-pro,
+  //   secondary = openai-via-proxy/gpt-5.4, tertiary = ollama/qwen3:30b
+  //   (capable safety-net, не qwen3.5:9b — слишком слабая для извлечения steps).
+  // 'practice-skill-adversarial-verify' — дешёвая верификация: проверяет, что
+  //   ответ clone не нарушает redFlags skill'а и не противоречит SkillTrait'ам.
+  //   Primary = deepseek-v4-flash; secondary = gpt-5.4-mini; tertiary = qwen3.5:9b
+  //   (cheap binary verdict, qwen3.5:9b приемлем).
+  //   См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
+  | 'practice-skill-extract'
+  | 'practice-skill-adversarial-verify';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -426,6 +473,13 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'idea-cluster-merge',
   'probe-formulate',
   'idea-status-summarize',
+  // Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify.
+  'probe-response-classify',
+  // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
+  'debate-decision-supersede',
+  'debate-decision-supersede-critic',
+  'debate-decision-supersede-supporter',
+  'debate-decision-supersede-neutral',
   // SBA γ-1
   'skill-trait-detect',
   'skill-trait-merge',
@@ -498,6 +552,13 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
   'sprint-helper-suggest',
   'sprint-review-summary',
+  // Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow).
+  'autorule-extract',
+  // Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
+  'concierge-step-prm',
+  // Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (выполняемые навыки клонов).
+  'practice-skill-extract',
+  'practice-skill-adversarial-verify',
 ] as const;
 
 /**
@@ -638,6 +699,16 @@ interface PriceCacheEntry {
   outputPer1M: number;
   cachedPer1M: number;
   fetchedAt: number;
+}
+
+/**
+ * Agents v2 Фаза C2 — кэш активных PromptCandidate(status='testing').
+ */
+interface GepaCandidateEntry {
+  promptKey: string;
+  tenantId: string | null;
+  promptText: string;
+  abTrafficShare: number;
 }
 
 const PRICE_CACHE_TTL_MS = 60_000;
@@ -782,6 +853,15 @@ export class LlmRouterService implements OnModuleInit {
   private priceCache = new Map<string, PriceCacheEntry>();
 
   /**
+   * Agents v2 Фаза C2 — кэш активных PromptCandidate(status='testing'),
+   * по которым выполняется A/B replacement systemPrompt'а. Обновляется тем
+   * же refreshCache cron'ом (раз в минуту). Ключ: `${promptKey}::${tenantId|null}`.
+   * Несколько кандидатов на один ключ не ожидаются (gepa-promote делает top-1),
+   * но если вдруг — берём первый.
+   */
+  private gepaCandidates = new Map<string, GepaCandidateEntry>();
+
+  /**
    * audit С30 (2026-05-29): timeout на один dispatch к провайдеру в ms.
    * Из ENV LLM_ROUTER_DISPATCH_TIMEOUT_MS, default 30000.
    */
@@ -813,6 +893,12 @@ export class LlmRouterService implements OnModuleInit {
     @Optional()
     @Inject(ProviderInfoResolver)
     private readonly providerInfo?: ProviderInfoResolver,
+    // Agents v2 Фаза B1 (2026-05-30) — эмит `ai.invocation.completed` для
+    // PromptFeedbackCollectorService. @Optional — старые тесты с моком
+    // LlmRouter без EventEmitter2 продолжают работать.
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -891,7 +977,84 @@ export class LlmRouterService implements OnModuleInit {
       map.set(r.taskType as LlmTaskType, providers);
     }
     this.routes = map;
-    this.logger.debug(`refreshCache: загружено ${map.size} routes`);
+
+    // Agents v2 Фаза C2 — подкачка PromptCandidate(status='testing') для A/B.
+    // Не критично если запрос упадёт (например, prod без новой колонки) —
+    // просто A/B не включится. Best-effort.
+    try {
+      const candidates = await (this.prisma as unknown as {
+        promptCandidate?: {
+          findMany: (args: unknown) => Promise<
+            Array<{
+              promptKey: string;
+              tenantId: string | null;
+              promptText: string;
+              abTrafficShare: number | null;
+            }>
+          >;
+        };
+      }).promptCandidate?.findMany({
+        where: { status: 'testing' },
+        select: {
+          promptKey: true,
+          tenantId: true,
+          promptText: true,
+          abTrafficShare: true,
+        },
+      });
+      const gepaMap = new Map<string, GepaCandidateEntry>();
+      for (const c of candidates ?? []) {
+        const key = `${c.promptKey}::${c.tenantId ?? 'null'}`;
+        if (gepaMap.has(key)) continue;
+        gepaMap.set(key, {
+          promptKey: c.promptKey,
+          tenantId: c.tenantId,
+          promptText: c.promptText,
+          abTrafficShare: c.abTrafficShare ?? 0.1,
+        });
+      }
+      this.gepaCandidates = gepaMap;
+    } catch (err) {
+      this.logger.debug(
+        `refreshCache: gepa candidates skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    this.logger.debug(
+      `refreshCache: загружено ${map.size} routes, ${this.gepaCandidates.size} gepa-candidates`,
+    );
+  }
+
+  /**
+   * Agents v2 Фаза C2 — деpolicyrministic-hash A/B routing.
+   * Возвращает candidate если invocation попадает в первые
+   * `abTrafficShare * 100` процентов hash-bucket'а. Иначе undefined.
+   *
+   * Hash-сид — комбинация `taskType + tenantId + currentMs` (последнее
+   * меняется → распределение случайное во времени). Это даёт ~10% при
+   * trafficShare=0.1, проверено в тесте через 1000 invocations.
+   *
+   * Используется в `call()` для замены systemPrompt + проставления
+   * experimentGroup='gepa_candidate'.
+   */
+  private pickGepaCandidate(
+    taskType: LlmTaskType,
+    tenantId: string | null,
+    sampleSeed?: string,
+  ): GepaCandidateEntry | undefined {
+    // Сначала per-tenant, потом global. Если оба — берём per-tenant.
+    const perTenantKey = `${taskType}::${tenantId ?? 'null'}`;
+    const globalKey = `${taskType}::null`;
+    const candidate =
+      this.gepaCandidates.get(perTenantKey) ??
+      (tenantId !== null ? this.gepaCandidates.get(globalKey) : undefined);
+    if (!candidate) return undefined;
+
+    const seed = sampleSeed ?? `${Date.now()}-${Math.random()}`;
+    const hash = simpleHash(`${taskType}::${tenantId ?? 'null'}::${seed}`);
+    const bucket = hash % 100;
+    const threshold = Math.round(candidate.abTrafficShare * 100);
+    return bucket < threshold ? candidate : undefined;
   }
 
   async getRoutes(): Promise<LlmTaskRoute[]> {
@@ -951,7 +1114,30 @@ export class LlmRouterService implements OnModuleInit {
       (r) => r.taskType === params.taskType && r.tenantId === null && r.isActive,
     );
     const effectiveDataClass = this.resolveEffectiveDataClass(route, params.dataClass);
-    const { providers, experimentGroup } = this.chooseProviders(route, params);
+    const { providers, experimentGroup: baseExperimentGroup } = this.chooseProviders(
+      route,
+      params,
+    );
+
+    // Agents v2 Фаза C2 — A/B GEPA candidate routing. Если активный candidate
+    // для (taskType, tenantId) есть И invocation попал в trafficShare-bucket
+    // (deterministic hash), заменяем systemPrompt и помечаем
+    // experimentGroup='gepa_candidate'. Перекрывает baseExperimentGroup
+    // (старый A/B по моделям через LlmTaskRoute.experiment) — GEPA важнее,
+    // т.к. оптимизирует prompt, а не модель.
+    const gepaCandidate = this.pickGepaCandidate(params.taskType, params.tenantId);
+    let effectiveSystemPrompt = params.systemPrompt;
+    let experimentGroup: 'A' | 'B' | 'gepa_candidate' | null = baseExperimentGroup;
+    if (gepaCandidate) {
+      effectiveSystemPrompt = gepaCandidate.promptText;
+      experimentGroup = 'gepa_candidate';
+    }
+    // Используем effectiveParams для dispatch — это единственный путь, через
+    // который провайдер увидит подменённый systemPrompt.
+    const effectiveParams: LlmCallParams =
+      effectiveSystemPrompt === params.systemPrompt
+        ? params
+        : { ...params, systemPrompt: effectiveSystemPrompt };
 
     // Фаза 11: фильтр по dataClass.
     const filtered = providers.filter((entry) => {
@@ -1006,7 +1192,7 @@ export class LlmRouterService implements OnModuleInit {
         // default'а Node fetch. Конфигурируется через ENV
         // LLM_ROUTER_DISPATCH_TIMEOUT_MS.
         const out = await Promise.race([
-          this.dispatch(entry, params),
+          this.dispatch(entry, effectiveParams),
           new Promise<never>((_resolve, reject) =>
             setTimeout(
               () =>
@@ -1034,7 +1220,7 @@ export class LlmRouterService implements OnModuleInit {
           out.outputTokens,
           cachedTokens,
         );
-        await this.usage.record({
+        const invocationId = await this.usage.record({
           tenantId: params.tenantId,
           meetingId: params.meetingId ?? null,
           userId: params.userId ?? null,
@@ -1057,11 +1243,32 @@ export class LlmRouterService implements OnModuleInit {
           // Z-Admin Фаза 7: превью промпта (system+user) и ответа для drill-down.
           // Truncate до 8KB на стороне AiUsageLogService.
           requestPreview: this.buildRequestPreview(
-            params.systemPrompt,
+            effectiveSystemPrompt,
             params.userMessage,
           ),
           responsePreview: out.text,
         });
+
+        // Agents v2 Фаза B1 — эмит для PromptFeedbackCollectorService.
+        // Эмитим ТОЛЬКО при наличии tenantId (per-Org вызовы) и invocationId
+        // (запись AiUsageLog прошла). Системные вызовы без tenant'а не
+        // попадают в feedback (это валидно: правила всё равно per-Org/global).
+        if (invocationId && params.tenantId && this.events) {
+          this.events.emit('ai.invocation.completed', {
+            invocationId,
+            tenantId: params.tenantId,
+            promptKey: params.taskType,
+            // Версия промпта пока неизвестна на уровне LlmRouter (промпты — в
+            // call-site'ах). Используем модель как proxy для версионирования;
+            // когда появится PromptRegistry — заменим на реальную версию.
+            promptVersion: `${out.provider}:${out.model}`,
+            input: {
+              systemPrompt: effectiveSystemPrompt,
+              userMessage: params.userMessage,
+            },
+            output: out.text,
+          });
+        }
         this.logger.log(
           {
             taskType: params.taskType,
@@ -1133,7 +1340,7 @@ export class LlmRouterService implements OnModuleInit {
             tier: effectiveTier,
             fallbackReason,
             requestPreview: this.buildRequestPreview(
-              params.systemPrompt,
+              effectiveSystemPrompt,
               params.userMessage,
             ),
             responsePreview: null,
@@ -1486,4 +1693,20 @@ function classifyError(message: string): string {
   if (/(econn|enotfound|eai_again|socket hang up|fetch failed|network)/.test(m)) return 'network';
   if (/5\d\d/.test(m)) return 'server_5xx';
   return 'error';
+}
+
+/**
+ * Agents v2 Фаза C2 — стабильный 32-бит fnv1a-hash для deterministic A/B
+ * sampling. Тот же алгоритм, что в `dialog-layer/utils/tenant-top.ts`.
+ * Используется в `LlmRouterService.pickGepaCandidate` для распределения
+ * 10% трафика на тестируемый PromptCandidate.
+ */
+function simpleHash(s: string): number {
+  let h = 0x811c_9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x0100_0193);
+    h >>>= 0;
+  }
+  return h >>> 0;
 }

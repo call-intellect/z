@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Cron } from '@nestjs/schedule';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -58,6 +59,15 @@ export class SkillTraitConceptNormalizerCron {
     @Inject(SkillTraitConceptService)
     private readonly concepts: SkillTraitConceptService,
     @Inject(ProbeService) private readonly probe: ProbeService,
+    /**
+     * Agents v2 Фаза C1 (2026-05-30) — эмит `skill-trait-concept.normalized`
+     * после прохода нормализации, чтобы PracticeSkillExtractWorker подхватил
+     * концепты и извлёк выполняемые навыки. @Optional — старые тесты
+     * без EventEmitterModule в DI продолжат работать (no-op).
+     */
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter: EventEmitter2 | null = null,
   ) {}
 
   @Cron('0 3 * * *')
@@ -308,6 +318,39 @@ export class SkillTraitConceptNormalizerCron {
       },
       data: { status: 'archived' },
     });
+
+    // 5) Эмит события для PracticeSkillExtractWorker (Agents v2 Фаза C1).
+    // Берём все active концепты с traitCount ≥ minTraitsForExtract; extractor
+    // дополнительно перепроверит порог (defensive). Если EventEmitter2 не
+    // инжектирован (старые тесты) — no-op.
+    try {
+      if (this.eventEmitter) {
+        const candidates = await this.prisma.skillTraitConcept.findMany({
+          where: {
+            tenantId,
+            status: 'active',
+            // Берём «жирные» концепты — экономим на пустых extract-вызовах.
+            // Сам extractor использует cfg.practiceSkills.minTraitsForExtract,
+            // но здесь нет ссылки на cfg.practiceSkills (cross-module);
+            // безопасный нижний bound 3 — extractor отфильтрует точно.
+            traitCount: { gte: 3 },
+          },
+          select: { id: true },
+          take: 500,
+        });
+        if (candidates.length > 0) {
+          this.eventEmitter.emit('skill-trait-concept.normalized', {
+            tenantId,
+            conceptIds: candidates.map((c) => c.id),
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.debug(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'skill-trait-concept-normalizer: эмит события failed — skip',
+      );
+    }
 
     return {
       clustersMerged,

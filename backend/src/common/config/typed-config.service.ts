@@ -728,6 +728,10 @@ export class TypedConfigService {
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
+      // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges retrieval filter.
+      // При false (default) retrieval НЕ фильтрует edges по validFrom/validUntil.
+      // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+      biTemporalEdgesEnabled: this.get('BI_TEMPORAL_EDGES_ENABLED'),
     } as const;
   }
 
@@ -792,6 +796,129 @@ export class TypedConfigService {
   get projectionRebuild() {
     return {
       debounceMs: this.get('PROJECTION_REBUILD_DEBOUNCE_MS') as number,
+    } as const;
+  }
+
+  // ─────────────────────────── Agents v2 Фаза A2 — Multi-Agent Debate ──
+  /**
+   * Параметры `MultiAgentDebateService` (Agents v2 §A2).
+   *
+   *   - `enabled` — master kill-switch (на старте Specialist33Service.
+   *     supersedeDetect использует одиночный LLM-вызов; при `true`
+   *     дёргает debate-judge).
+   *   - `defaultN` — сколько голосов в round 1 (3 = strict/empathetic/neutral).
+   *   - `defaultRounds` — сколько round'ов всего (1 = только parallel).
+   *   - `round2Enabled` — включать ли round 2 при split'е (1-1-1).
+   *   - `costCapUsdPerRun` — budget cap на ОДИН debate-run.
+   *
+   * См. plans/tz/2026-05-29-agents-v2-umbrella.md §A2.
+   */
+  get debate() {
+    return {
+      enabled: this.get('MULTI_AGENT_DEBATE_ENABLED') as boolean,
+      defaultN: this.get('DEBATE_DEFAULT_N') as number,
+      defaultRounds: this.get('DEBATE_DEFAULT_ROUNDS') as number,
+      round2Enabled: this.get('DEBATE_ROUND2_ENABLED') as boolean,
+      costCapUsdPerRun: this.get('DEBATE_COST_CAP_USD_PER_RUN') as number,
+    } as const;
+  }
+
+  // ─────────────────────────── Agents v2 Фаза B1 — AutoRule extract ──
+  /**
+   * Параметры `AutoRuleExtractorService` и `AutoRuleExtractCron`
+   * (Agents v2 §B1, shadow mode).
+   *
+   *   - `enabled` — мастер-флаг cron'а. Default false; включаем после
+   *     валидации на одной dev-Org.
+   *   - `minFeedbackForExtract` — минимум PromptFeedback'ов на (promptKey ×
+   *     tenant) за 24ч.
+   *   - `minConfidenceForPromote` — порог confidence draft-правила, ниже
+   *     которого PromptRule не создаётся (в Фазе B готовится для C).
+   *   - `knnGroupThreshold` — cosine для KNN-группировки похожих feedback'ов.
+   *   - `ruleSimilarityThreshold` — cosine, при котором новое rule — дубль
+   *     existing.
+   *
+   * См. plans/tz/2026-05-29-agents-v2-umbrella.md §B1.
+   */
+  get autorule() {
+    return {
+      enabled: this.get('AUTORULE_ENABLED') as boolean,
+      minFeedbackForExtract: this.get('AUTORULE_MIN_FEEDBACK_FOR_EXTRACT') as number,
+      minConfidenceForPromote: this.get('AUTORULE_MIN_CONFIDENCE_FOR_PROMOTE') as number,
+      knnGroupThreshold: this.get('AUTORULE_KNN_GROUP_THRESHOLD') as number,
+      ruleSimilarityThreshold: this.get('AUTORULE_RULE_SIMILARITY_THRESHOLD') as number,
+    } as const;
+  }
+
+  // ─────────────────────────── Agents v2 Фаза C1 — PracticeSkill ──
+  /**
+   * Параметры `PracticeSkillExtractor`/`Retrieval`/`Evaluator` сервисов
+   * (Agents v2 §C1).
+   *
+   *   - `enabled` — мастер-флаг retrieval'а в clone-respond. Default false;
+   *     extraction-cron всё равно работает (наполняет shadow), но в промпт
+   *     skill'ы не подмешиваются, пока флаг не включат.
+   *   - `minTraitsForExtract` — минимум активных SkillTrait в концепте,
+   *     ниже которого extractor пропускает concept (рано извлекать procedure).
+   *   - `shadowTrafficShare` — стартовый `trafficShare` для новых skill'ов.
+   *   - `knnRetrievalThreshold` — cosine для поиска skill'ов по embedding'у
+   *     вопроса в retrieval (clone-respond). 0.78 — баланс recall/precision.
+   *   - `knnDedupThreshold` — cosine для dedup в extractor (≥ — не создавать
+   *     новый, а обновить examples existing).
+   *   - `evalMinRuns` — минимум SkillUsage за окно для evaluator gate.
+   *   - `evalPromoteDelta` / `evalArchiveDelta` — пороги composite_score vs
+   *     baseline для promote/archive (см. PracticeSkillEvaluatorCron).
+   *
+   * Безопасное чтение `this.get()` (через try/catch не нужен — get кидает
+   * только при отсутствующем ENV, что для unit-тестов покрыто defaults).
+   *
+   * См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
+   */
+  get practiceSkills() {
+    return {
+      enabled: this.get('PRACTICE_SKILLS_ENABLED') as boolean,
+      minTraitsForExtract: this.get('PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT') as number,
+      shadowTrafficShare: this.get('PRACTICE_SKILLS_SHADOW_TRAFFIC') as number,
+      knnRetrievalThreshold: this.get('PRACTICE_SKILLS_KNN_RETRIEVAL_THRESHOLD') as number,
+      knnDedupThreshold: this.get('PRACTICE_SKILLS_KNN_DEDUP_THRESHOLD') as number,
+      evalMinRuns: this.get('PRACTICE_SKILLS_EVAL_MIN_RUNS') as number,
+      evalPromoteDelta: this.get('PRACTICE_SKILLS_EVAL_PROMOTE_DELTA') as number,
+      evalArchiveDelta: this.get('PRACTICE_SKILLS_EVAL_ARCHIVE_DELTA') as number,
+    } as const;
+  }
+
+  // ─────────────────────────── Agents v2 Фаза C2 — GEPA ─────────────
+  /**
+   * Параметры `GepaRunnerService` + 3 cron'ов (optimize/promote/ab-monitor).
+   *
+   *   - `enabled` — мастер-флаг (PROMPT_EVOLUTION_ENABLED). Default false:
+   *     даже если schema/код задеплоен, никаких cron-вызовов GEPA не будет.
+   *   - `maxMetricCalls` — лимит rollouts в одном optimize'е.
+   *   - `reflectionLm` / `taskLm` — модели для GEPA внутри Python (capable +
+   *     reasoning, default deepseek-v4-pro).
+   *   - `abTrafficShare` — доля трафика для тестируемого candidate (0..1).
+   *   - `abMinInvocationsBeforeDecision` — минимум B-invocations перед
+   *     принятием решения promote/reject в ab-monitor cron'е.
+   *   - `abPromoteThreshold` / `abRejectThreshold` — Δ composite score.
+   *   - `pythonPath` — путь к python3 (alpine: /usr/bin/python3).
+   *   - `timeoutMs` — hard-timeout subprocess'а (default 1ч).
+   *
+   * См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
+   */
+  get gepa() {
+    return {
+      enabled: this.get('PROMPT_EVOLUTION_ENABLED') as boolean,
+      maxMetricCalls: this.get('GEPA_MAX_METRIC_CALLS') as number,
+      reflectionLm: this.get('GEPA_REFLECTION_LM') as string,
+      taskLm: this.get('GEPA_TASK_LM') as string,
+      abTrafficShare: this.get('GEPA_AB_TRAFFIC_SHARE') as number,
+      abMinInvocationsBeforeDecision: this.get(
+        'GEPA_AB_MIN_INVOCATIONS_BEFORE_DECISION',
+      ) as number,
+      abPromoteThreshold: this.get('GEPA_AB_PROMOTE_THRESHOLD') as number,
+      abRejectThreshold: this.get('GEPA_AB_REJECT_THRESHOLD') as number,
+      pythonPath: this.get('GEPA_PYTHON_PATH') as string,
+      timeoutMs: this.get('GEPA_TIMEOUT_MS') as number,
     } as const;
   }
 
@@ -1083,6 +1210,11 @@ export class TypedConfigService {
    *   - `priorityRefreshCron` — расписание `ProbePriorityCron` (engagement_rate).
    *   - `quietHoursDefaultTzOffsetMin` — дефолтный TZ-сдвиг получателя.
    *   - `coldStartModeHours` — окно прогрева после первого probe.
+   *
+   * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify:
+   *   - `responseClassifyEnabled` — master-флаг LLM-классификации ответа.
+   *   - `voiceInputEnabled` — приём голосовых ответов на probe (Фаза 0.3).
+   *   - `responseClassifyMinConfidence` — порог confidence для accept.
    */
   get probe() {
     return {
@@ -1095,6 +1227,11 @@ export class TypedConfigService {
         'PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN',
       ),
       coldStartModeHours: this.get('PROBE_COLD_START_MODE_HOURS'),
+      responseClassifyEnabled: this.get('PROBE_RESPONSE_CLASSIFY_ENABLED'),
+      voiceInputEnabled: this.get('PROBE_VOICE_INPUT_ENABLED'),
+      responseClassifyMinConfidence: this.get(
+        'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
+      ),
     } as const;
   }
 
@@ -1502,6 +1639,21 @@ export class TypedConfigService {
    *   - `preRetrievalTimeoutMs` — ТЗ 2026-05-27 Фаза 3: per-query тайм-аут
    *     на pre-retrieval. По истечении конкретный поиск skip-ается,
    *     остальные продолжают. Default 3000ms. ENV `CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS`.
+   *   - `prmShadowEnabled` — Agents v2 Фаза B2 (2026-05-30): включает
+   *     shadow-режим PRM step-scorer. При `true` ConciergeService после
+   *     каждого LLM tool_call дополнительно генерирует top-K кандидатов,
+   *     оценивает их через `concierge-step-prm` и пишет `ConciergeStepScore`.
+   *     Concierge всё равно выполняет ВЫБОР LLM (не PRM). Default `false`.
+   *     ENV `CONCIERGE_PRM_SHADOW_ENABLED`.
+   *   - `prmTopK` — Agents v2 Фаза B2: сколько кандидатов оценивает PRM
+   *     (включая LLM-выбор). Default 3. ENV `CONCIERGE_PRM_TOP_K`.
+   *   - `prmEnabled` — Agents v2 Фаза C/D (зарезервирован): при `true`
+   *     ConciergeService применяет PRM-выбор вместо LLM-выбора. В Фазе B
+   *     всегда `false`. ENV `CONCIERGE_PRM_ENABLED`.
+   *   - `prmShadowSampleRate` — Agents v2 Фаза B2: доля tool_call'ов,
+   *     для которых запускается PRM shadow (0..1). Default 1.0 (все).
+   *     Cost-защита: при дорогих доп. вызовах можно понизить до 0.1.
+   *     ENV `CONCIERGE_PRM_SHADOW_SAMPLE_RATE`.
    */
   get concierge() {
     // NB: ключи CONCIERGE_* читаем из process.env, а не через ConfigService.
@@ -1521,6 +1673,31 @@ export class TypedConfigService {
     const dialogLayerEnabled =
       dialogLayerRaw !== undefined &&
       ['true', '1', 'yes', 'on'].includes(dialogLayerRaw.trim().toLowerCase());
+    // Agents v2 Фаза B2 (2026-05-30) — PRM step-scorer (shadow).
+    const parseBoolDefaultFalse = (raw: string | undefined): boolean => {
+      if (raw === undefined || raw === '') return false;
+      return ['true', '1', 'yes', 'on'].includes(raw.trim().toLowerCase());
+    };
+    const parseFloatPositive = (
+      raw: string | undefined,
+      fallback: number,
+    ): number => {
+      if (!raw) return fallback;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
+    };
+    const prmShadowEnabled = parseBoolDefaultFalse(
+      process.env.CONCIERGE_PRM_SHADOW_ENABLED,
+    );
+    const prmEnabled = parseBoolDefaultFalse(
+      process.env.CONCIERGE_PRM_ENABLED,
+    );
+    const prmTopK = parseInt(process.env.CONCIERGE_PRM_TOP_K, 3);
+    const prmShadowSampleRateRaw = parseFloatPositive(
+      process.env.CONCIERGE_PRM_SHADOW_SAMPLE_RATE,
+      1.0,
+    );
+    const prmShadowSampleRate = Math.min(Math.max(prmShadowSampleRateRaw, 0), 1);
     return {
       enabled,
       dailyMessagesLimit: parseInt(process.env.CONCIERGE_DAILY_MESSAGES_LIMIT, 100),
@@ -1538,6 +1715,10 @@ export class TypedConfigService {
         process.env.CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS,
         3000,
       ),
+      prmShadowEnabled,
+      prmEnabled,
+      prmTopK,
+      prmShadowSampleRate,
     } as const;
   }
 

@@ -16,6 +16,10 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import {
+  type DebateVerdict,
+  MultiAgentDebateService,
+} from '../../ai/services/multi-agent-debate.service';
+import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
@@ -91,6 +95,12 @@ export class Specialist33Service {
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
+    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate для supersede-detect.
+    // Optional, чтобы старые тесты без модуля DI продолжали работать; на проде
+    // подключается через @Global AiModule.
+    @Optional()
+    @Inject(MultiAgentDebateService)
+    private readonly debate?: MultiAgentDebateService,
   ) {}
 
   /**
@@ -541,6 +551,46 @@ export class Specialist33Service {
       return { verdict: 'new', targetId: null, reasoning: 'нет кандидатов' };
     }
 
+    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate под флагом.
+    // При MULTI_AGENT_DEBATE_ENABLED=true дёргаем 3-голосовый дебат-арбитр
+    // вместо single LLM-вызова. Остальная цепочка (`apply verdict`) не меняется.
+    // На split-verdict падаем на самый консервативный verdict='new', чтобы
+    // не закрыть случайно existing Decision (escalate в curation через triage).
+    if (this.cfg?.debate.enabled && this.debate) {
+      try {
+        const debateVerdict = await this.debate.judge({
+          task: 'Является ли candidate-решение superseding existing decision? Verdict: new | merge | supersedes.',
+          candidates: [
+            {
+              candidate: {
+                statement: args.draft.statement,
+                rationale: args.draft.rationale ?? null,
+                decidedAt: args.draft.decidedAt ?? null,
+              },
+              knnTop5: args.candidates,
+            },
+          ],
+          contextBlocks: [],
+          taskType: 'debate-decision-supersede',
+          tenantId: args.tenantId,
+        });
+        return this.mapDebateToSupersedeVerdict({
+          debateVerdict,
+          candidates: args.candidates,
+          tenantId: args.tenantId,
+        });
+      } catch (err) {
+        // Debate-цикл упал целиком — fallback на single LLM-call ниже.
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-3.supersedeDetect: debate.judge упал — fallback к single LLM-арбитру',
+        );
+      }
+    }
+
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты) в маркеры.
     const guardOnSup = this.isPromptInjectionGuardEnabled();
     const rawUserSup = DECISION_SUPERSEDE_DETECT_USER_TEMPLATE({
@@ -630,6 +680,85 @@ export class Specialist33Service {
       };
     }
     return parsed;
+  }
+
+  /**
+   * Маппинг {@link DebateVerdict} → внутренний {@link SupersedeVerdict}.
+   *
+   * Логика:
+   *  - `consensusType ∈ {unanimous, majority}` AND verdict ∈ {new|merge|supersedes}
+   *    → используем как есть. targetId восстанавливаем из первого голоса,
+   *    у которого был targetId hint (если в reasoning попал id) — иначе
+   *    из knnTop1 (fallback: candidates[0].id для merge/supersedes).
+   *  - `consensusType='split'` (verdict='split_uncertain') → самый
+   *    консервативный verdict='new' с reasoning, что debate не сошёлся.
+   *    Triage в `processBlock` всё равно поднимет deep review (Decision —
+   *    critical type), куратор увидит split-кейс.
+   *  - Verdict из голосов, не входящий в {new|merge|supersedes} → 'new'.
+   */
+  private mapDebateToSupersedeVerdict(args: {
+    debateVerdict: DebateVerdict;
+    candidates: DecisionKnnCandidate[];
+    tenantId: string;
+  }): SupersedeVerdict {
+    const { debateVerdict, candidates } = args;
+    const supportedVerdicts = new Set(['new', 'merge', 'supersedes']);
+
+    // Split / fallback — самый безопасный verdict.
+    if (
+      debateVerdict.consensusType === 'split' ||
+      debateVerdict.fallbackUsed !== null ||
+      !supportedVerdicts.has(debateVerdict.decision)
+    ) {
+      this.logger.log(
+        {
+          tenantId: args.tenantId,
+          consensusType: debateVerdict.consensusType,
+          decision: debateVerdict.decision,
+          fallbackUsed: debateVerdict.fallbackUsed,
+          rounds: debateVerdict.rounds,
+          totalCostUsd: debateVerdict.totalCostUsd,
+        },
+        'specialist-3-3.mapDebateToSupersedeVerdict: split / fallback → verdict="new" (escalate в triage)',
+      );
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning:
+          debateVerdict.consensusType === 'split'
+            ? `debate_split:${debateVerdict.votes
+                .map((v) => `${v.stance}=${v.verdict}`)
+                .join(',')}`
+            : `debate_fallback:${debateVerdict.fallbackUsed ?? 'unknown'}`,
+      };
+    }
+
+    // Consensus verdict — для merge/supersedes нужен targetId. У debate'а
+    // нет structured field'а под id, поэтому fallback к первому KNN-кандидату
+    // (наиболее cosine-близкому). Это безопасно: arbiter уже подтвердил
+    // verdict; targetId предположительно — top-1 (sanity-check сам выловит
+    // если что).
+    const decision = debateVerdict.decision as 'new' | 'merge' | 'supersedes';
+    if (decision === 'new') {
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning: `debate_consensus_${debateVerdict.consensusType}: new`,
+      };
+    }
+    const targetId = candidates[0]?.id ?? null;
+    if (!targetId) {
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning: 'debate_consensus_without_candidate',
+      };
+    }
+    return {
+      verdict: decision,
+      targetId,
+      reasoning: `debate_consensus_${debateVerdict.consensusType}: ${decision}`,
+    };
   }
 
   // ─────────────────────────── persist helpers ───────────────────────────

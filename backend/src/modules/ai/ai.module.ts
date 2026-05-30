@@ -15,6 +15,7 @@ import { GrsaiService } from './services/grsai.service';
 import { KieService } from './services/kie.service';
 import { LlmRouterService } from './services/llm-router.service';
 import { MinimaxService } from './services/minimax.service';
+import { MultiAgentDebateService } from './services/multi-agent-debate.service';
 import { OllamaService } from './services/ollama.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
 import { ParticipantContextService } from './services/participant-context.service';
@@ -74,6 +75,11 @@ import { VoxService } from './services/vox.service';
     GrsaiService,
     // Маршрутизация и регенерация.
     LlmRouterService,
+    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
+    // Используется Specialist33Service.supersedeDetect под флагом
+    // MULTI_AGENT_DEBATE_ENABLED. Optional-injection — на воркер-side и в
+    // тестах сервис может отсутствовать без падения DI.
+    MultiAgentDebateService,
     // SBA α-10 wave 3 — LlmProtocolAdapterRegistry (feature-flag через
     // USE_PROTOCOL_ADAPTER_REGISTRY). Все 5 адаптеров регистрируем сразу —
     // включение/выключение управляется feature-flag в LlmRouterService.dispatch().
@@ -114,6 +120,7 @@ import { VoxService } from './services/vox.service';
     AiUsageLogService,
     RetryService,
     LlmRouterService,
+    MultiAgentDebateService,
     RegenerateService,
     ChapterExtractionService,
     TaskExtractionService,

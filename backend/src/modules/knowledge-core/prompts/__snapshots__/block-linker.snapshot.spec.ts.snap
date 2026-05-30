@@ -26,11 +26,29 @@ exports[`block-linker — snapshot сборки промта > JSON Schema ст�
       ],
       "type": "string",
     },
+    "validFrom": {
+      "description": "Если в блоках явно указано когда факт стал валиден ("с октября", "с 2025-Q3") — ISO date (YYYY-MM-DD / YYYY-MM / YYYY); иначе null.",
+      "maxLength": 40,
+      "type": [
+        "string",
+        "null",
+      ],
+    },
+    "validUntil": {
+      "description": "Если связь явно завершена в блоках ("до конца квартала", "до подписания контракта") — ISO date; иначе null (открытый интервал).",
+      "maxLength": 40,
+      "type": [
+        "string",
+        "null",
+      ],
+    },
   },
   "required": [
     "relationType",
     "confidence",
     "explanation",
+    "validFrom",
+    "validUntil",
   ],
   "type": "object",
 }
@@ -57,6 +75,7 @@ exports[`block-linker — snapshot сборки промта > system prompt с�
 - Не выдумывай связь, если её нет. "none" — нормальный ответ.
 - "confidence" ∈ [0,1] — насколько ты уверен. 0.9+ только если связь явная.
 - "explanation" — 1-2 короткие фразы на русском.
+- "validFrom" / "validUntil" — ISO-дата (YYYY-MM-DD / YYYY-MM / YYYY), если в исходных блоках есть явный временной указатель ("с октября", "до конца квартала", "до подписания контракта"). Если ничего не сказано — null. НЕ ВЫДУМЫВАЙ даты.
 - Ответ — строго JSON по схеме. Никакого markdown."
 `;
 

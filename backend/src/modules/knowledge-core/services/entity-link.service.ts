@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type EntityLink,
   type EntityLinkType,
@@ -7,6 +7,8 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+
+import { TemporalConflictService } from './temporal-conflict.service';
 
 /**
  * KC-Temporal W3.1 (2026-05-25) — Rich edges на `EntityLink`.
@@ -33,6 +35,12 @@ export class EntityLinkService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    // Agents v2 Фаза A1 — Optional, чтобы legacy-тесты без DI продолжали
+    // работать (см. entity-link.service.spec.ts). При наличии — вызывается
+    // best-effort после upsert.
+    @Optional()
+    @Inject(TemporalConflictService)
+    private readonly temporalConflict?: TemporalConflictService,
   ) {}
 
   /**
@@ -75,7 +83,7 @@ export class EntityLinkService {
     const newAttributes = sanitizeAttributes(args.attributes);
     const newSources = uniqueStrings(args.sourceBlockIds ?? []);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Существующее ребро (если есть) — для merge'а sourceBlockIds /
       // confidence / attributes.
       const existing = await tx.entityLink.findUnique({
@@ -155,6 +163,24 @@ export class EntityLinkService {
         },
       });
     });
+
+    // Agents v2 Фаза A1 — best-effort temporal conflict resolution.
+    // Закрываем противоречащие existing open-links того же source+target.
+    if (this.temporalConflict) {
+      try {
+        await this.temporalConflict.onNewEntityLink(result);
+      } catch (err) {
+        this.logger.warn(
+          {
+            linkId: result.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'entity-link: TemporalConflictService.onNewEntityLink упал — продолжаю',
+        );
+      }
+    }
+
+    return result;
   }
 }
 

@@ -1812,6 +1812,16 @@ model LlmTaskRoute {
   /// Прокси DeepSeek не поддерживает версионные slug-и, поэтому заморозка —
   /// через комментарий + snapshot-тест на seed-script.
   pinnedVersionNote String?       @db.Text
+  /// Agents v2 Фаза C2 (2026-05-30) — GEPA evolution gate.
+  /// Если false — `gepa-optimize.cron` пропускает этот route, A/B-кандидаты
+  /// не создаются. Используется чтобы заблокировать эволюцию руками админа
+  /// для критичных prompt'ов (например, billing/compliance). Default true.
+  /// См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
+  evolutionEnabled  Boolean       @default(true)
+  /// Agents v2 Фаза C2 — текст prompt'а, который заменяет system prompt при
+  /// вызове LLM (если задан). Заполняется GEPA после promotion или вручную
+  /// админом. NULL = используется код-fallback prompt из call-site.
+  promptOverride    String?       @db.Text
   updatedAt         DateTime      @updatedAt
 
   /// Legacy unique: (taskType, tenantId) — для записей БЕЗ tier (одна запись на taskType).
@@ -2246,6 +2256,8 @@ model Org {
   conciergeConversations ConciergeConversation[]
   conciergeUndoLogs      ConciergeUndoLog[]
   conciergeQuota         OrgConciergeQuota?
+  // Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
+  conciergeStepScores    ConciergeStepScore[] @relation("ConciergeStepScoreTenant")
 
   // ── SBA δ-1 — Orchestrator (multi-agent deep research) ──
   orchestratorRuns OrchestratorRun[]
@@ -2295,6 +2307,25 @@ model Org {
   clientReferralLink ClientReferralLink?
   invoices           Invoice[]
   billingEventLogs   BillingEventLog[]
+
+  // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
+  // PromptFeedback / PromptRule живут per-Org (tenantId NOT NULL).
+  // Global rules (tenantId IS NULL) — без back-relation, дёргаются по индексу.
+  promptFeedback PromptFeedback[]
+  promptRules    PromptRule[]
+
+  // ── Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (выполняемые навыки клонов) ──
+  /// PracticeSkill — операционные процедуры (рецепты «когда X → делай 1,2,3»),
+  /// retrieval'ятся в clone-respond. SkillUsage — лог использования, питает
+  /// evaluator (promote/archive shadow skills). См. plans/tz/.../umbrella.md §C1.
+  practiceSkills PracticeSkill[] @relation("PracticeSkillTenant")
+  skillUsages    SkillUsage[]    @relation("SkillUsageTenant")
+
+  // ── Agents v2 Фаза C2 (2026-05-30) — GEPA prompt evolution ──
+  /// PromptCandidate — кандидаты на эволюцию prompt'а, найденные GEPA.
+  /// tenantId=null = global candidate. Per-Org candidate'ы — tenantId NOT NULL.
+  /// См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
+  promptCandidates PromptCandidate[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -3402,6 +3433,15 @@ model IdeaBlockLink {
   deletedBy    String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
+  /// Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
+  /// Когда факт связи стал валиден. NULL для legacy / связей без явного
+  /// временного указателя в исходных блоках. Backfill: validFrom = createdAt.
+  /// См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+  validFrom    DateTime?         @db.Timestamptz
+  /// Agents v2 Фаза A1 — когда связь перестала быть валидной. NULL =
+  /// открытый интервал (действует до сих пор). TemporalConflictService
+  /// проставляет NOW() при детектировании противоречащей связи.
+  validUntil   DateTime?         @db.Timestamptz
 
   org       Org       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   fromBlock IdeaBlock @relation("BlockLinkFrom", fields: [fromBlockId], references: [id], onDelete: Cascade)
@@ -3412,6 +3452,9 @@ model IdeaBlockLink {
   @@index([fromBlockId, status])
   @@index([toBlockId, status])
   @@index([tenantId, deletedAt])
+  /// Agents v2 Фаза A1 — retrieval-фильтр под BI_TEMPORAL_EDGES_ENABLED.
+  @@index([fromBlockId, validFrom, validUntil])
+  @@index([toBlockId, validFrom, validUntil])
 }
 
 /// EntityLink — типизированная связь между двумя узлами графа.
@@ -3500,6 +3543,10 @@ model EntityLink {
   @@index([tenantId, deletedAt])
   /// KC-Temporal W1.1 — выборка активных рёбер (validUntil IS NULL).
   @@index([tenantId, validUntil])
+  /// Agents v2 Фаза A1 (2026-05-30) — bi-temporal retrieval-фильтр edges
+  /// под BI_TEMPORAL_EDGES_ENABLED. См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+  @@index([fromEntityId, validFrom, validUntil])
+  @@index([toEntityId, validFrom, validUntil])
 }
 
 // ──────────────────────────── knowledge-core: Theme (Фаза 4) ────────────────────────────
@@ -6551,6 +6598,129 @@ enum SkillTraitConceptStatus {
   archived
 }
 
+/// Agents v2 Фаза C1 (2026-05-30) — PracticeSkill — выполняемая процедура
+/// (рецепт «когда X → делай 1, 2, 3»), извлечённая из reasoning-блоков
+/// сотрудников. В отличие от SkillTrait/SkillTraitConcept (черты характера и
+/// принципы), PracticeSkill — это **операционная** инструкция, которую клон
+/// может явно «процитировать» при ответе.
+///
+/// Lifecycle:
+///   - shadow      — кандидат, добавляется в retrieval с долей `trafficShare`
+///                   (≈10% запросов), накапливает SkillUsage для оценки.
+///   - active      — выдерживает evaluator-gate, добавляется ВСЕГДА.
+///   - archived    — proven хуже baseline за окно ≥30 runs.
+///   - deprecated  — replaced более новой версией / устарел.
+///
+/// Источник доказательств: Voyager NeurIPS 2023, SkillWeaver arxiv 2504.07079.
+/// См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
+model PracticeSkill {
+  id                      String                        @id @default(uuid())
+  tenantId                String
+  scope                   SkillScope
+  /// personId / roleId / orgId — без формального FK (тройная природа),
+  /// валидируется на уровне сервиса. Для scope='org' = tenantId.
+  scopeRefId              String
+  /// Триггер: «когда клиент возражает на цену enterprise». ≤200 chars по schema.
+  trigger                 String                        @db.Text
+  /// Embedding `trigger` (text-embedding-3-small, 1536d). Используется в KNN
+  /// retrieval (cosine ≥ cfg.practiceSkills.knnRetrievalThreshold) и dedup
+  /// при extraction (cosine ≥ cfg.practiceSkills.knnDedupThreshold).
+  triggerEmbedding        Unsupported("vector(1536)")?
+  /// Шаги процедуры: [{order:1, action:"...", emotionalRegister?:"...", redFlags?:[]}].
+  steps                   Json
+  /// Примеры применения: [{episodeBlockId, outcome:'success'|'fail'|'mixed', editDistance?}].
+  examples                Json
+  /// «Чего НЕ делать в этом скилле» — string[]. Дублируется на шагах для
+  /// retrieval-удобства (LLM получает общий redFlags + per-step).
+  redFlags                Json
+  status                  PracticeSkillStatus           @default(shadow)
+  /// 0..1 — доля случаев, в которые retrieval подмешивает skill при status='shadow'.
+  /// Для status='active' игнорируется (всегда 1.0 эффективно).
+  trafficShare            Float                         @default(0.1)
+  /// Аудитный snapshot evaluator'а: {runs, successRate, vsBaseline, composite, lastEvalAt}.
+  /// Заполняется PracticeSkillEvaluatorCron'ом.
+  shadowMetrics           Json?
+  /// Денормализованный success rate (последняя оценка). 0..1.
+  successRate             Float?
+  /// Последняя дата использования в retrieval (для archive idle skills).
+  lastUsed                DateTime?
+  /// SkillTraitConcept.id[], из которых извлечён skill (extractor-trail).
+  derivedFromConceptIds   String[]                      @default([])
+  /// SkillTrait.id[], из которых извлечён skill (extractor-trail).
+  derivedFromTraitIds     String[]                      @default([])
+  /// Сколько IdeaBlock-эпизодов учли при извлечении.
+  derivedFromEpisodeCount Int                           @default(0)
+  /// Manual priority flag (admin: «📌 Закрепить»). Если true — retrieval
+  /// поднимает в начало topK при равных confidence.
+  pinned                  Boolean                       @default(false)
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+  promotedAt              DateTime?
+  archivedAt              DateTime?
+  archivedReason          String?                       @db.Text
+  version                 Int                           @default(1)
+
+  tenant                  Org                           @relation("PracticeSkillTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  usages                  SkillUsage[]
+
+  @@index([tenantId, scope, scopeRefId, status])
+  @@index([tenantId, status, lastUsed])
+  // HNSW индекс на triggerEmbedding не объявляем здесь — Prisma не поддерживает
+  // pgvector index types. Создаётся в backend/scripts/postgres-init.sql.
+  @@map("practice_skills")
+}
+
+/// Agents v2 Фаза C1 (2026-05-30) — SkillUsage — лог использования PracticeSkill
+/// в одном clone-respond'е. Используется evaluator'ом для расчёта composite
+/// score (editDistance + outcome + adversarial-verify).
+model SkillUsage {
+  id                 String        @id @default(uuid())
+  tenantId           String
+  practiceSkillId    String
+  /// ChatV2Conversation.id (clone_style mode), внутри которого использован skill.
+  conversationId     String
+  /// ChatV2Message.id, в ответ на который retrieval вернул этот skill.
+  messageId          String
+  /// true — skill попал в SYSTEM/USER промпта; false — был отобран retrieval'ом,
+  /// но shadow sampling (trafficShare) отсеял (для метрик «сколько отсеяли»).
+  wasUsed            Boolean       @default(true)
+  /// 'accepted_as_is' | 'edited' | 'rejected' | 'pending'. Заполняется
+  /// post-hoc обработчиком user feedback / followup edits.
+  outcome            String?       @db.VarChar(40)
+  /// Levenshtein normalized 0..1 — между clone ответом и финальной user-версией.
+  /// null = ещё не оценили (pending) или нет edited-версии.
+  editDistance       Float?
+  /// Произвольные downstream сигналы для будущей аналитики (clicks, response time…).
+  downstreamSignals  Json?
+  createdAt          DateTime      @default(now())
+
+  tenant             Org           @relation("SkillUsageTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  practiceSkill      PracticeSkill @relation(fields: [practiceSkillId], references: [id], onDelete: Cascade)
+
+  @@index([practiceSkillId, createdAt])
+  @@index([conversationId])
+  @@index([tenantId, createdAt])
+  @@map("skill_usages")
+}
+
+/// Agents v2 Фаза C1 — scope PracticeSkill.
+///   - person — навык конкретного сотрудника (по personId).
+///   - role   — навык роли (по roleId), агрегат паттернов носителей.
+///   - org    — навык всей компании (по orgId/tenantId).
+enum SkillScope {
+  person
+  role
+  org
+}
+
+/// Agents v2 Фаза C1 — lifecycle PracticeSkill (см. модель выше).
+enum PracticeSkillStatus {
+  shadow
+  active
+  archived
+  deprecated
+}
+
 /// SBA γ-1 доделки — SkillTraitCategory — эмерджентная категория группы
 /// `SkillTrait`. Заменяет free-string `SkillTrait.category` first-class моделью
 /// для следующих сценариев:
@@ -8762,4 +8932,242 @@ model ReferralPayout {
 
   @@index([referralId, periodMonth])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow mode).
+// См. plans/tz/2026-05-29-agents-v2-umbrella.md §B1.
+//
+// Записываем feedback по каждому LLM-вызову (original output) и
+// edited-вариант (когда пользователь редактирует AI-генерированный текст).
+// Cron `autorule-extract` ночью группирует похожие feedback'и по KNN
+// и выводит правило (PromptRule) — все в `status='shadow'`, без инъекции в
+// продакшн-промпты. Инъекция включится в Фазе C после ручной валидации.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// AutoRule Фаза B1 — запись об одном LLM-вызове и его пользовательской правке.
+/// Идентифицируется `invocationId` = `AiUsageLog.id`. `editedOutput` заполняется
+/// позже (когда поступает событие `ai.invocation.edited`), null до тех пор.
+model PromptFeedback {
+  id             String  @id @default(cuid())
+  tenantId       String
+  /// `taskType` из `LlmTaskRoute` (например 'meeting-report-fast').
+  /// Хранится строкой — taskType'ы добавляются часто, enum переусложнит.
+  promptKey      String
+  promptVersion  String
+  /// Ссылка на `AiUsageLog.id`. NOT FK (AiUsageLog хранит ВСЕ вызовы, а
+  /// feedback — только семейство user-facing). soft-link, дедуп — по uniq ниже.
+  invocationId   String
+  /// Короткий sha256 (первые 16 hex-символов) текста input'а — для group-by
+  /// при отсутствии embedding'а (fallback ветка autorule-extractor'а).
+  inputDigest    String  @db.Text
+  /// Эмбеддинг input'а (system+user) для KNN-группировки похожих контекстов.
+  /// Лениво заполняется PromptFeedbackCollectorService через
+  /// `EmbeddingFallbackService.embed`. Если null — group by inputDigest.
+  inputEmbedding Unsupported("vector(1536)")?
+  originalOutput String  @db.Text
+  /// Текст после правки пользователя. NULL пока правка не пришла.
+  editedOutput   String? @db.Text
+  /// Нормализованное расстояние Левенштейна 0..1 (0 = идентично, 1 = совсем другое).
+  /// Не пересчитывается на каждом запросе — вычисляется в момент handleInvocationEdited.
+  editDistance   Float?
+  editedAt       DateTime?
+  editedByUserId String?
+  /// Сигналы пользования после правки (фоллоw-up, клик, выполнение задачи).
+  /// Структура: { followUpCreated?: boolean, recoClicked?: boolean,
+  ///              taskCompleted?: boolean, statusChanged?: boolean }.
+  downstreamSignals Json?
+  createdAt      DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Один invocationId не должен порождать две PromptFeedback-записи
+  /// (один LLM-вызов = один feedback). Защита от race в эмиттере.
+  @@unique([invocationId])
+  @@index([promptKey, createdAt])
+  @@index([tenantId])
+  /// HNSW индекс на `inputEmbedding` создаётся в `scripts/postgres-init.sql`
+  /// (Prisma не умеет генерировать HNSW + ops в `@@index`).
+}
+
+/// AutoRule Фаза B1 — извлечённое правило (или manual_admin копия).
+/// В Фазе B всегда `status='shadow'` — не инъектируется в реальные промпты.
+/// В Фазе C добавятся переходы shadow → active с A/B-метриками.
+model PromptRule {
+  id             String     @id @default(cuid())
+  /// NULL = global rule (для всех Org). Per-Org rules — `tenantId NOT NULL`.
+  tenantId       String?
+  promptKey      String
+  /// Человеко-читаемая формулировка ≤200 символов (русский).
+  rule           String     @db.Text
+  ruleType       RuleType
+  source         RuleSource
+  /// JSON: Array<{originalSnippet, editedSnippet, why}>. До 3 примеров.
+  examples       Json
+  confidence     Float
+  status         RuleStatus
+  /// Метрики shadow-A/B: { runs, withRuleScore, withoutRuleScore }.
+  shadowMetrics  Json?
+  /// Эмбеддинг текста rule — для KNN-дедупа похожих правил (≥0.90 = дубль).
+  embedding      Unsupported("vector(1536)")?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  /// Когда правило промоутили в `status='active'` (в Фазе B всегда NULL).
+  promotedAt     DateTime?
+  archivedAt     DateTime?
+  archivedReason String?
+
+  org Org? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([promptKey, status])
+  @@index([tenantId, status])
+}
+
+enum RuleType {
+  must_do
+  must_not_do
+  tone
+  structure
+}
+
+enum RuleSource {
+  autorule
+  manual_admin
+}
+
+enum RuleStatus {
+  shadow
+  active
+  archived
+  overridden_by_admin
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow mode).
+// См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
+//
+// На каждый tool_call ConciergeService.runToolUseLoop (при включённом
+// CONCIERGE_PRM_SHADOW_ENABLED=true) дополнительно генерирует K-1 альтернативных
+// кандидатов, оценивает все K через `concierge-step-prm` LLM-scorer и записывает
+// результат сюда. Concierge выполняет ВЫБОР LLM (не PRM) — это shadow.
+//
+// В фазе C/D shadow → active: PRM-выбор реально подменяет LLM-выбор.
+// Источник доказательств: AgentPRM (arxiv 2511.08325), MASPRM (2510.24803),
+// PRIME-RL 2025.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Запись об одном tool-call в Concierge: какие кандидаты были, как их оценил
+/// PRM, что выбрал LLM, насколько они согласны. Используется для shadow-A/B
+/// анализа (PRM vs LLM) перед промоушеном в active.
+model ConciergeStepScore {
+  id              String   @id @default(uuid())
+  tenantId        String
+  conversationId  String
+  /// Ссылка на `ConciergeMessage.id` (assistant-сообщение с tool_call).
+  /// soft-link (не FK), чтобы удаление сообщения не каскадило в score.
+  messageId       String
+  /// 0..MAX_TOOL_LOOP_ITERATIONS — индекс итерации в runToolUseLoop.
+  stepIndex       Int
+  /// Краткое представление user intent (≤500 символов), для drill-down аналитики.
+  goalSummary     String   @db.Text
+  /// { toolName, args } — то, что выполнил LLM (top-1).
+  selectedTool    Json
+  /// [{ toolName, args, score, reasoning }] top-K по PRM-сортировке (включая selectedTool).
+  alternatives    Json
+  /// PRM-скор инструмента, выбранного LLM (0..1).
+  selectedScore   Float
+  /// 1-based ранг выбора LLM в PRM-сортировке (1 = top по PRM).
+  selectedRank    Int
+  /// Дублирует selectedRank для семантики «какой ранг по PRM получил выбор LLM».
+  /// В фазе B всегда == selectedRank (LLM выбирает top-1 по своей логике; PRM
+  /// ранжирует). В фазе D, когда применяется PRM-выбор — selectedRank станет 1.
+  llmChoseRank    Int
+  /// true если top-1 LLM == top-1 PRM (по toolName).
+  prmAgreed       Boolean
+  /// В фазе B всегда false (shadow only). В фазе D — true, если PRM реально
+  /// заменил LLM-выбор перед исполнением.
+  promotedToActive Boolean @default(false)
+  createdAt       DateTime @default(now())
+
+  tenant Org @relation("ConciergeStepScoreTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, stepIndex])
+  @@index([tenantId, createdAt])
+  @@index([promotedToActive, prmAgreed])
+  @@map("concierge_step_scores")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agents v2 Фаза C2 (2026-05-30) — GEPA prompt evolution.
+// См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
+//
+// PromptCandidate — кандидат на эволюцию prompt'а, найденный GEPA-runner'ом
+// (Python subprocess через gepa + dspy-ai). Жизненный цикл:
+//   pareto_pool → testing (A/B 10% traffic) → promoted ИЛИ rejected.
+//
+// Routing 10% trafficShare:
+//   - LlmRouter.call ищет активный PromptCandidate(status='testing') для
+//     (promptKey, tenantId), берёт deterministic hash по invocationId %100 и
+//     если попало в первые `abTrafficShare*100` — заменяет systemPrompt на
+//     candidate.promptText. Tag invocation experimentGroup='gepa_candidate'.
+//
+// Auto-rollback: gepa-ab-monitor cron каждые 15 минут сравнивает composite
+// score A (без gepa_candidate) vs B (gepa_candidate) за 48ч; если B хуже на
+// abRejectThreshold → status='rejected'. Если B лучше на abPromoteThreshold +
+// ≥ abMinInvocationsBeforeDecision → promote (записать candidate.promptText в
+// LlmTaskRoute.promptOverride + pinnedVersionNote='Auto-promoted by GEPA Y-M-D').
+//
+// Защита editedByAdmin: gepa-promote cron перед промоутом проверяет
+// LlmTaskRoute.editedByAdmin === false; если admin ручно правил route —
+// candidate не промоутится. Через 30 дней — status='rejected' с
+// rejectedReason='admin_edit_blocks_promotion'.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PromptCandidate {
+  id              String           @id @default(uuid())
+  /// NULL = global candidate (для всех Org); иначе per-tenant.
+  tenantId        String?
+  /// Соответствует LlmTaskRoute.taskType (например 'meeting-report-fast').
+  promptKey       String
+  /// LlmTaskRoute.version или snapshot модели на момент запуска GEPA (для audit).
+  /// NULL если route ещё не имеет version'а.
+  parentVersion   String?
+  /// Текст evolved prompt'а (заменяет systemPrompt в LlmRouter.dispatch).
+  promptText      String           @db.Text
+  /// Опц. структурированная разбивка: system / user шаблоны. Для будущих
+  /// архитектур, где GEPA эволюционирует обе части. На MVP — оба поля NULL,
+  /// promptText содержит system-часть.
+  systemPart      String?          @db.Text
+  userPart        String?          @db.Text
+  /// {accuracy, cost, latency, ...} — Pareto frontier метрики от GEPA-runner'а.
+  paretoMetric    Json
+  /// Adaptive Self-Improvement traces (reflection chain) от GEPA. JSON.
+  reflectionTraces Json
+  status          CandidateStatus
+  /// Кол-во invocations с этим кандидатом (LlmRouter инкрементирует через
+  /// отдельный update в ab-monitor cron'е, для simplicity не на каждый вызов).
+  evaluations     Int              @default(0)
+  /// Composite score за окно эксперимента. NULL пока не посчитан.
+  compositeScore  Float?
+  /// Доля трафика для A/B (0..1). NULL вне testing.
+  abTrafficShare  Float?
+  abStartedAt     DateTime?
+  abEndedAt       DateTime?
+  promotedAt      DateTime?
+  /// 'ab_deg_detected' | 'admin_edit_blocks_promotion' | 'manual_reject' | …
+  rejectedReason  String?
+  createdAt       DateTime         @default(now())
+
+  org Org? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([promptKey, status])
+  @@index([tenantId, promptKey, status])
+  @@index([status, abStartedAt])
+}
+
+enum CandidateStatus {
+  pareto_pool
+  testing
+  promoted
+  rejected
 }

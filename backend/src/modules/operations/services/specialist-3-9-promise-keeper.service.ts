@@ -244,8 +244,9 @@ export class Specialist39PromiseKeeperService {
       payload: {
         message,
         suggestedQuestion: args.questionText,
+        // 2026-05-30 (Agents v2 Фаза 0.2): suggestedOptions удалены — probe без кнопок.
+        // suggestedActions оставлены как семантический контекст для LLM probe-formulate.
         suggestedActions: ['Сделано', 'Не сделано', 'Продлеваю срок'],
-        suggestedOptions: ['Сделано', 'Не сделано', 'Продлеваю срок'],
         contextBlockId: args.blockId,
       },
       recipientCandidates: args.authorUserIds,

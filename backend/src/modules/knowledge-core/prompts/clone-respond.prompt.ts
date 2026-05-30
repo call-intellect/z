@@ -163,6 +163,21 @@ export function buildCloneRespondSystemPrompt(args: {
   return `${filled}\n\n${args.personaPrompt}`;
 }
 
+/**
+ * Agents v2 Фаза C1 (2026-05-30) — практический навык, подмешиваемый в
+ * clone-respond. Это «известная роли процедура», на которую клон может
+ * сослаться при ответе.
+ */
+export interface CloneRespondPracticeSkill {
+  trigger: string;
+  steps: ReadonlyArray<{
+    order: number;
+    action: string;
+    emotionalRegister?: string | null;
+  }>;
+  redFlags: ReadonlyArray<string>;
+}
+
 export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   question: string;
   subgraph: {
@@ -170,6 +185,11 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
     knowledgeProfileSummary: string | null;
     decisions: ReadonlyArray<{ id: string; statement: string; rationale: string | null }>;
   };
+  /**
+   * Agents v2 Фаза C1 — найденные через retrieval выполняемые навыки. Если
+   * массив пустой или undefined — секция `<known_procedures>` не добавляется.
+   */
+  practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
 }): string => {
   const reasoningLines = args.subgraph.reasoningBlocks.length
     ? args.subgraph.reasoningBlocks
@@ -184,7 +204,35 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
         )
         .join('\n')
     : '  (нет)';
-  return [
+  const skillsBlock =
+    args.practiceSkills && args.practiceSkills.length > 0
+      ? [
+          '',
+          'Известные процедуры роли (применяй, если триггер совпадает с темой вопроса):',
+          '<known_procedures>',
+          ...args.practiceSkills.flatMap((s) => {
+            const stepLines = s.steps.map((st) => {
+              const reg = st.emotionalRegister
+                ? ` (эмоционально: ${st.emotionalRegister})`
+                : '';
+              return `    ${st.order}. ${st.action}${reg}`;
+            });
+            const flags =
+              s.redFlags.length > 0
+                ? [`  Чего НЕ делать: ${s.redFlags.join('; ')}`]
+                : [];
+            return [
+              `  Когда: ${s.trigger}`,
+              '  Шаги:',
+              ...stepLines,
+              ...flags,
+              '',
+            ];
+          }),
+          '</known_procedures>',
+        ].join('\n')
+      : '';
+  const parts = [
     'Контекст из памяти роли (накопленный опыт текущего носителя):',
     '',
     'Reasoning-блоки (объяснения «почему так решили»):',
@@ -195,12 +243,10 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
     '',
     'Недавние решения на этой должности:',
     decisionLines,
-    '',
-    `── ВОПРОС ──`,
-    args.question,
-    '',
-    'Ответь от лица должности. Цитируй контекст в формате [BLOCK:id]. Если ответа нет — честно скажи.',
-  ].join('\n');
+  ];
+  if (skillsBlock) parts.push(skillsBlock);
+  parts.push('', `── ВОПРОС ──`, args.question, '', 'Ответь от лица должности. Цитируй контекст в формате [BLOCK:id]. Если ответа нет — честно скажи.');
+  return parts.join('\n');
 };
 
 export const CLONE_RESPOND_PROMPT_NAME = 'clone_respond_v2';

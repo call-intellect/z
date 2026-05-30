@@ -290,6 +290,13 @@ export class RouterService {
         break;
       // ── SBA α-2 wave 2: новые signalType (2026-05-23) ──
       // γ-1 SkillProfile — все типы про индивидуальные навыки и кейсы.
+      // Фаза 0.5 (2026-05-29): expertise/experience/competence с employee
+      // subject — это И навык (для 3-7 SkillProfile), И знание (для 3-2
+      // KnowledgeProfile). Без дублирования на половину вопросов клона Z
+      // ответа не будет: «у кого спросить про энергетический сектор?» —
+      // KnowledgeProfile, «кому поручить внедренку Лукойлу?» — SkillProfile.
+      // Cost-impact: один дополнительный enqueue per block, реальный ребилд
+      // KnowledgeProfile debounce 60s, anti-fan-out cap 4 уже подрезает.
       case 'expertise':
       case 'experience':
       case 'competence':
@@ -297,6 +304,7 @@ export class RouterService {
           const hasEmployeeSubject = await this.hasEmployeeSubject(block.id);
           if (hasEmployeeSubject) {
             targets.add(RouterService.SPECIALIST.SKILL);
+            targets.add(RouterService.SPECIALIST.KNOWLEDGE_CLONE);
           }
         }
         break;

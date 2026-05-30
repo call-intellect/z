@@ -538,3 +538,64 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow mode).
+--   HNSW индексы на vector(1536):
+--     a) PromptFeedback.inputEmbedding — KNN-группировка похожих контекстов
+--        в autorule-extractor.service. Cosine distance.
+--     b) PromptRule.embedding — KNN-дедуп правил (≥0.90 cosine = дубль).
+--   См. plans/tz/2026-05-29-agents-v2-umbrella.md §B1.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'PromptFeedback'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "PromptFeedback_inputEmbedding_hnsw_cosine_idx"
+      ON "PromptFeedback" USING hnsw ("inputEmbedding" vector_cosine_ops)
+      WHERE "inputEmbedding" IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'PromptRule'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "PromptRule_embedding_hnsw_cosine_idx"
+      ON "PromptRule" USING hnsw ("embedding" vector_cosine_ops)
+      WHERE "embedding" IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (выполняемые навыки клонов).
+--   HNSW индекс на practice_skills.triggerEmbedding (vector_cosine_ops) для:
+--     a) KNN retrieval в clone-respond (cosine ≥ knnRetrievalThreshold, 0.78).
+--     b) KNN dedup при extraction (cosine ≥ knnDedupThreshold, 0.85).
+--   Без HNSW — seq-scan по всем skills в Org. С индексом — O(log n).
+--   См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'practice_skills'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "practice_skills_triggerEmbedding_hnsw_idx"
+      ON "practice_skills" USING hnsw ("triggerEmbedding" vector_cosine_ops)
+      WHERE "triggerEmbedding" IS NOT NULL
+    $sql$;
+  END IF;
+END $$;

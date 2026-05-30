@@ -54,6 +54,7 @@ import { SprintReviewService } from './services/sprint-review.service';
 import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
 import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
+import { TemporalConflictService } from './services/temporal-conflict.service';
 import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
 import { ConfidenceCalibrationCron } from './workers/confidence-calibration.cron';
@@ -228,6 +229,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Worker и cron живут в WorkersModule — здесь только сервисы.
     SprintHelperService,
     SprintReviewService,
+    // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges. Закрывает
+    // противоречащие existing open-links после upsert новой связи.
+    // Вызывается best-effort из BlockLinkerWorker / entity-graph-builder
+    // (через EntityLinkService). См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+    TemporalConflictService,
   ],
   exports: [
     SegmentBuilderService,
@@ -327,6 +333,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // SprintHelperCron) и для tracker (хук CyclesService.complete → review).
     SprintHelperService,
     SprintReviewService,
+    // Agents v2 Фаза A1 (2026-05-30) — экспорт для BlockLinkerWorker
+    // (WorkersModule) и entity-graph-builder.cron.
+    TemporalConflictService,
   ],
 })
 export class KnowledgeCoreModule {}

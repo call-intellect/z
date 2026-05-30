@@ -102,9 +102,10 @@ export class AiUsageLogService {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
-  async record(input: RecordAiUsageInput): Promise<void> {
+  async record(input: RecordAiUsageInput): Promise<string | null> {
+    let createdId: string | null = null;
     try {
-      await this.prisma.aiUsageLog.create({
+      const created = await this.prisma.aiUsageLog.create({
         data: {
           tenantId: input.tenantId ?? null,
           meetingId: input.meetingId ?? null,
@@ -133,7 +134,9 @@ export class AiUsageLogService {
           requestPreview: truncatePreview(input.requestPreview),
           responsePreview: truncatePreview(input.responsePreview),
         },
+        select: { id: true },
       });
+      createdId = created.id;
 
       if (input.costUsd > 0) {
         this.metrics.addAiCostUsd(input.costUsd);
@@ -192,5 +195,6 @@ export class AiUsageLogService {
         'AiUsageLog.record: не удалось записать использование',
       );
     }
+    return createdId;
   }
 }

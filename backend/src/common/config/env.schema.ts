@@ -694,6 +694,59 @@ const KnowledgeCoreSchema = z.object({
     .positive()
     .default(3600),
 
+  // ── Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges retrieval ──
+  /**
+   * Master-флаг bi-temporal edges фильтра в retrieval (ChatV2RetrievalService,
+   * ClonesService и т.п.). При `false` (default) retrieval НЕ фильтрует
+   * edges по `validFrom`/`validUntil` — поведение не меняется, validFrom
+   * выставляется только на новых connections + backfill.
+   *
+   * При `true` — edges фильтруются по
+   * `(validFrom IS NULL OR validFrom <= validAt) AND (validUntil IS NULL OR validUntil > validAt)`,
+   * что означает: «вернуть только связи, валидные на момент Х».
+   *
+   * Включаем глобально только после: (1) backfill завершён,
+   * (2) TemporalConflictService отработал на проде неделю+ без аномалий,
+   * (3) judges заполняют `validFrom`/`validUntil` с приемлемой точностью.
+   *
+   * Источник: plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+   */
+  BI_TEMPORAL_EDGES_ENABLED: zBool(false),
+
+  // ── Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate ───────────────
+  /**
+   * Master-флаг multi-agent debate'а для decision-supersede-detect.
+   * При `false` (default) `Specialist33Service.supersedeDetect` работает
+   * как раньше — один LLM-вызов. При `true` — вызывается
+   * `MultiAgentDebateService.judge` с 3 параллельными провайдерами
+   * (strict-critic / empathetic-supporter / neutral-judge) и majority verdict.
+   *
+   * Включаем сначала на одной dev-Org, измеряем accuracy на 20 manual
+   * sample'ах supersede-кейсов; только после этого — на проде.
+   *
+   * Источник: plans/tz/2026-05-29-agents-v2-umbrella.md §A2.
+   */
+  MULTI_AGENT_DEBATE_ENABLED: zBool(false),
+  /** Сколько голосов в первом round (3 — strict/empathetic/neutral). */
+  DEBATE_DEFAULT_N: z.coerce.number().int().positive().default(3),
+  /** Сколько round'ов debate'а максимум (1 = только parallel голоса). */
+  DEBATE_DEFAULT_ROUNDS: z.coerce.number().int().positive().default(1),
+  /**
+   * Включить ли round 2 при split-verdict'е (1-1-1). По умолчанию false —
+   * сначала оценим cost/value round 1, потом включим round 2 при split'ах.
+   */
+  DEBATE_ROUND2_ENABLED: zBool(false),
+  /**
+   * Budget cap на ОДИН debate-run (сумма costUsd всех голосов). Если
+   * превышен — `fallbackUsed='cost_cap'`, majority-verdict из тех голосов,
+   * что успели прийти. Default 0.05 USD — на 3 голоса по ~$0.003 (deepseek-
+   * v4-flash) + один gpt-5.4 (~$0.005) запас 10x для безопасности.
+   */
+  DEBATE_COST_CAP_USD_PER_RUN: z.coerce
+    .number()
+    .nonnegative()
+    .default(0.05),
+
   // ── KC-Temporal W3.5 (2026-05-25) — Materialized projections rebuild ──
   /**
    * Дебаунс enqueue'а rebuild'а проекций (Decision/Insight/Idea/Card/...)
@@ -991,6 +1044,31 @@ const ProbeSchema = z.object({
   PROBE_PRIORITY_REFRESH_CRON: z.string().min(1).default('*/15 * * * *'),
   PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN: z.coerce.number().int().default(180),
   PROBE_COLD_START_MODE_HOURS: z.coerce.number().int().min(0).default(24),
+  // ── Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify ──
+  /**
+   * Master-флаг LLM-классификации свободного ответа пользователя на probe.
+   * При `false` — `ProbeResponseHandler` пропускает шаг классификации и
+   * работает как раньше (только closing-loop без parsedAnswer). Это
+   * kill-switch на случай деградации модели или инцидента с прокси.
+   */
+  PROBE_RESPONSE_CLASSIFY_ENABLED: zBool(true),
+  /**
+   * Master-флаг приёма голосовых ответов на probe (Фаза 0.3).
+   * Зарезервирован сейчас, чтобы не плодить отдельные ENV-патчи позже.
+   * Используется в волне 0.3 (telegram-bot + ASR).
+   */
+  PROBE_VOICE_INPUT_ENABLED: zBool(true),
+  /**
+   * Минимальный confidence классификатора, при котором ответ считается
+   * успешно распознанным. Ниже — payload помечается
+   * `notification_response_unclear` и эмитится метрика
+   * `probe_response_unclear_total`. 0.5 — компромисс между recall и шумом.
+   */
+  PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE: z.coerce
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.5),
 });
 
 /**
@@ -1243,6 +1321,14 @@ const PersonaSchema = z.object({
   // через process.env в TypedConfigService.concierge с runtime-fallback на
   // defaults (100/3000/15s) и `CONCIERGE_ENABLED!==false`. См.
   // plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md §13.
+  //
+  // Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
+  // Расширены теми же путём (process.env):
+  //   CONCIERGE_PRM_SHADOW_ENABLED (default false)
+  //   CONCIERGE_PRM_TOP_K (default 3)
+  //   CONCIERGE_PRM_ENABLED (default false — для Фазы C/D)
+  //   CONCIERGE_PRM_SHADOW_SAMPLE_RATE (default 1.0)
+  // См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
 
 });
 
@@ -1547,6 +1633,89 @@ const TrackerSchema = z.object({
   SIGNAL_TYPE_STATS_CRON: z.string().min(1).default('0 2 * * *'),
   // σ-порог для алёрта о дрейфе распределения signalType (3.0 = ~99.7%).
   SIGNAL_TYPE_DRIFT_SIGMA_THRESHOLD: z.coerce.number().positive().default(3.0),
+
+  // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ───
+  // Сложены в TrackerSchema, чтобы не удлинять `.merge` цепочку EnvSchema
+  // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.autorule`.
+  //
+  //   - AUTORULE_ENABLED — мастер-флаг ночного cron'а. Default false —
+  //     включаем после ручной валидации на одной Org.
+  //   - AUTORULE_MIN_FEEDBACK_FOR_EXTRACT — минимум feedback'ов на
+  //     (promptKey × tenant) за 24ч, ниже которого extractor возвращает [].
+  //   - AUTORULE_MIN_CONFIDENCE_FOR_PROMOTE — порог confidence draft-правила,
+  //     ниже которого PromptRule не создаётся. (В Фазе B status всегда
+  //     'shadow' — флаг подготовлен для Фазы C.)
+  //   - AUTORULE_KNN_GROUP_THRESHOLD — cosine для KNN-группировки похожих
+  //     PromptFeedback.inputEmbedding (default 0.78, как у Theme).
+  //   - AUTORULE_RULE_SIMILARITY_THRESHOLD — cosine на PromptRule.embedding,
+  //     при котором новое правило считается дублем (default 0.90).
+  AUTORULE_ENABLED: zBool(false),
+  AUTORULE_MIN_FEEDBACK_FOR_EXTRACT: z.coerce.number().int().positive().default(10),
+  AUTORULE_MIN_CONFIDENCE_FOR_PROMOTE: z.coerce.number().min(0).max(1).default(0.7),
+  AUTORULE_KNN_GROUP_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
+  AUTORULE_RULE_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.90),
+
+  // ── Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (executable skills) ──
+  // Сложены сюда, в TrackerSchema, чтобы не удлинять `.merge` цепочку EnvSchema
+  // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.practiceSkills`.
+  //
+  //   - PRACTICE_SKILLS_ENABLED — мастер-флаг retrieval'а в clone-respond.
+  //     Default false — включаем после ручной валидации extraction на одной Org.
+  //   - PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT — минимум активных SkillTrait
+  //     внутри concept'а, ниже которого extractor пропускает concept.
+  //   - PRACTICE_SKILLS_SHADOW_TRAFFIC — стартовый trafficShare для status='shadow'.
+  //   - PRACTICE_SKILLS_KNN_RETRIEVAL_THRESHOLD — cosine для поиска skill'ов
+  //     по embedding'у вопроса пользователя в retrieval (clone-respond).
+  //   - PRACTICE_SKILLS_KNN_DEDUP_THRESHOLD — cosine, при котором новый skill
+  //     считается дублем существующего (update examples вместо create).
+  //   - PRACTICE_SKILLS_EVAL_MIN_RUNS — минимум SkillUsage за окно для evaluator.
+  //   - PRACTICE_SKILLS_EVAL_PROMOTE_DELTA — на сколько composite score должен
+  //     превышать baseline, чтобы promote из shadow в active.
+  //   - PRACTICE_SKILLS_EVAL_ARCHIVE_DELTA — на сколько composite score должен
+  //     быть ХУЖЕ baseline, чтобы archive скилл.
+  PRACTICE_SKILLS_ENABLED: zBool(false),
+  PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT: z.coerce.number().int().positive().default(5),
+  PRACTICE_SKILLS_SHADOW_TRAFFIC: z.coerce.number().min(0).max(1).default(0.1),
+  PRACTICE_SKILLS_KNN_RETRIEVAL_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),
+  PRACTICE_SKILLS_KNN_DEDUP_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  PRACTICE_SKILLS_EVAL_MIN_RUNS: z.coerce.number().int().positive().default(30),
+  PRACTICE_SKILLS_EVAL_PROMOTE_DELTA: z.coerce.number().min(0).max(1).default(0.05),
+  PRACTICE_SKILLS_EVAL_ARCHIVE_DELTA: z.coerce.number().min(0).max(1).default(0.05),
+
+  // ── Agents v2 Фаза C2 (2026-05-30) — GEPA prompt evolution ─────────
+  // Сложены в TrackerSchema (TS2589 паттерн — не растим .merge цепочку
+  // EnvSchema). Логически независимы — `cfg.gepa`.
+  //
+  //   - PROMPT_EVOLUTION_ENABLED — мастер-флаг GEPA-cron'ов (optimize/promote/
+  //     ab-monitor). Default false; включаем только после ручной валидации
+  //     Python subprocess в dev/staging.
+  //   - GEPA_MAX_METRIC_CALLS — лимит на rollouts в одном run optimize'а
+  //     (≈$15-25 за прогон при 150 calls × ~$0.10/call).
+  //   - GEPA_REFLECTION_LM / GEPA_TASK_LM — модели для GEPA внутри Python
+  //     (capable + reasoning; default deepseek-v4-pro).
+  //   - GEPA_AB_TRAFFIC_SHARE — доля трафика для тестируемого candidate (0..1).
+  //   - GEPA_AB_MIN_INVOCATIONS_BEFORE_DECISION — минимум B-invocations
+  //     прежде чем принимать решение promote/reject.
+  //   - GEPA_AB_PROMOTE_THRESHOLD — Δ composite score, при котором B
+  //     признаётся «лучше» (default 0.05).
+  //   - GEPA_AB_REJECT_THRESHOLD — Δ score, при котором B «хуже»
+  //     и сразу rollback (default 0.10).
+  //   - GEPA_PYTHON_PATH — путь к Python (default /usr/bin/python3, alpine).
+  //   - GEPA_TIMEOUT_MS — hard-timeout subprocess (default 1ч).
+  PROMPT_EVOLUTION_ENABLED: zBool(false),
+  GEPA_MAX_METRIC_CALLS: z.coerce.number().int().positive().default(150),
+  GEPA_REFLECTION_LM: z.string().min(1).default('deepseek-v4-pro'),
+  GEPA_TASK_LM: z.string().min(1).default('deepseek-v4-pro'),
+  GEPA_AB_TRAFFIC_SHARE: z.coerce.number().min(0).max(1).default(0.1),
+  GEPA_AB_MIN_INVOCATIONS_BEFORE_DECISION: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100),
+  GEPA_AB_PROMOTE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.05),
+  GEPA_AB_REJECT_THRESHOLD: z.coerce.number().min(0).max(1).default(0.10),
+  GEPA_PYTHON_PATH: z.string().min(1).default('/usr/bin/python3'),
+  GEPA_TIMEOUT_MS: z.coerce.number().int().positive().default(3_600_000),
 });
 
 /**

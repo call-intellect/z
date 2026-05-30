@@ -22,11 +22,13 @@ import { DialogService } from '../../dialog-layer/services/dialog.service';
 import { narrowToChatIntent } from '../../dialog-layer/services/query-classifier.service';
 import {
   CLONE_RESPOND_USER_TEMPLATE,
+  type CloneRespondPracticeSkill,
   buildCloneRespondSystemPrompt,
 } from '../../knowledge-core/prompts/clone-respond.prompt';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from '../../knowledge-core/services/executable-persona-versioning.service';
+import { PracticeSkillRetrievalService } from '../../practice-skills/services/practice-skill-retrieval.service';
 import { RbacService } from '../../rbac/rbac.service';
 import type {
   CloneConversationListItemDto,
@@ -99,6 +101,15 @@ export class ClonesService {
     @Optional()
     @Inject(DialogService)
     private readonly dialog: DialogService | null = null,
+    /**
+     * Agents v2 Фаза C1 (2026-05-30) — PracticeSkill retrieval. `@Optional` —
+     * до включения `PRACTICE_SKILLS_ENABLED` и для unit-тестов, конструирующих
+     * ClonesService без 12-го аргумента. При отсутствии сервиса retrieval
+     * пропускается (skill'ы не подмешиваются в промпт).
+     */
+    @Optional()
+    @Inject(PracticeSkillRetrievalService)
+    private readonly practiceSkills: PracticeSkillRetrievalService | null = null,
   ) {}
 
   /**
@@ -261,7 +272,17 @@ export class ClonesService {
       };
     }
 
-    // 6. LLM clone-respond.
+    // 6. Agents v2 Фаза C1 — PracticeSkill retrieval (за флагом
+    //    PRACTICE_SKILLS_ENABLED; @Optional сервис безопасно молчит).
+    const retrievedSkills = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'person',
+      scopeRefId: args.personId,
+      question: args.question,
+      conversationId: args.conversationId ?? null,
+    });
+
+    // 7. LLM clone-respond.
     // Clones=Roles Фаза 6 — у person-scope askPerson нет «должности», поэтому
     // roleName = null (промпт подставит дефолт «сотрудника»), bearerName =
     // имя самого носителя профиля.
@@ -272,12 +293,13 @@ export class ClonesService {
       subgraph,
       roleName: null,
       bearerName: profile.person.name,
+      practiceSkills: toPromptSkills(retrievedSkills),
     });
 
-    // 7. Распарсить цитаты.
+    // 8. Распарсить цитаты.
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    // 8. ChatV2Conversation + Message.
+    // 9. ChatV2Conversation + Message.
     const { conversationId, messageId } = await this.persistMessage({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -293,10 +315,19 @@ export class ClonesService {
         outputTokens: llmResult.outputTokens,
         tier: llmResult.tier ?? null,
         personaVersion: persona.version,
+        practiceSkillsCount: retrievedSkills.length,
       },
     });
 
-    // 9. Метрики.
+    // 10. SkillUsage log (Agents v2 Фаза C1).
+    await this.recordPracticeSkillUsages({
+      tenantId: args.tenantId,
+      conversationId,
+      messageId,
+      skills: retrievedSkills,
+    });
+
+    // 11. Метрики.
     this.metrics.incCloneAsk({ scope: 'person' });
     if (
       profile.person.userId &&
@@ -458,6 +489,15 @@ export class ClonesService {
       }
     }
 
+    // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
+    const retrievedSkills = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'role',
+      scopeRefId: args.roleId,
+      question: args.question,
+      conversationId: args.conversationId ?? null,
+    });
+
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
@@ -465,6 +505,7 @@ export class ClonesService {
       subgraph,
       roleName: role.name,
       bearerName,
+      practiceSkills: toPromptSkills(retrievedSkills),
     });
 
     const citations = this.parseCitations(llmResult.text, subgraph);
@@ -486,7 +527,15 @@ export class ClonesService {
         personaVersion: persona.version,
         scopeKind: 'role',
         roleId: args.roleId,
+        practiceSkillsCount: retrievedSkills.length,
       },
+    });
+
+    await this.recordPracticeSkillUsages({
+      tenantId: args.tenantId,
+      conversationId,
+      messageId,
+      skills: retrievedSkills,
     });
 
     this.metrics.incCloneAsk({ scope: 'role' });
@@ -658,6 +707,16 @@ export class ClonesService {
       });
     }
 
+    // 8a. Agents v2 Фаза C1 — PracticeSkill retrieval (используем standalone
+    //     question после dialog-layer'а, чтобы embed был чище).
+    const retrievedSkillsV2 = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'person',
+      scopeRefId: args.personId,
+      question: dialog.standaloneQuestion,
+      conversationId: args.conversationId ?? null,
+    });
+
     // 8. LLM clone-respond — параметризованный mode.
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
@@ -667,6 +726,7 @@ export class ClonesService {
       roleName: null,
       bearerName: profile.person.name,
       mode,
+      practiceSkills: toPromptSkills(retrievedSkillsV2),
     });
 
     // 9. Парсим цитаты из «черновика». В judgmental — скрываем из текста.
@@ -697,7 +757,16 @@ export class ClonesService {
         dialogIntent: dialog.intent,
         dialogConfidence: dialog.confidence,
         dialogQueriesCount: dialog.queries.length,
+        practiceSkillsCount: retrievedSkillsV2.length,
       },
+    });
+
+    // 10a. SkillUsage log.
+    await this.recordPracticeSkillUsages({
+      tenantId: args.tenantId,
+      conversationId,
+      messageId,
+      skills: retrievedSkillsV2,
     });
 
     // 11. Метрики.
@@ -839,6 +908,15 @@ export class ClonesService {
       }
     }
 
+    // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
+    const retrievedSkillsV2Role = await this.retrievePracticeSkills({
+      tenantId: args.tenantId,
+      scope: 'role',
+      scopeRefId: args.roleId,
+      question: dialog.standaloneQuestion,
+      conversationId: args.conversationId ?? null,
+    });
+
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
@@ -847,6 +925,7 @@ export class ClonesService {
       roleName: role.name,
       bearerName,
       mode,
+      practiceSkills: toPromptSkills(retrievedSkillsV2Role),
     });
 
     const citations = this.parseCitations(llmResult.text, subgraph);
@@ -877,7 +956,15 @@ export class ClonesService {
         dialogIntent: dialog.intent,
         dialogConfidence: dialog.confidence,
         dialogQueriesCount: dialog.queries.length,
+        practiceSkillsCount: retrievedSkillsV2Role.length,
       },
+    });
+
+    await this.recordPracticeSkillUsages({
+      tenantId: args.tenantId,
+      conversationId,
+      messageId,
+      skills: retrievedSkillsV2Role,
     });
 
     this.metrics.incCloneAsk({ scope: 'role' });
@@ -890,6 +977,66 @@ export class ClonesService {
       mode: 'clone_style',
       isOwner: false,
     };
+  }
+
+  // ─────────────────────── practice-skills (Agents v2 §C1) ───────────────────────
+
+  /**
+   * Безопасная обёртка над `PracticeSkillRetrievalService.retrieveForCloneRespond`.
+   * Если retrieval-сервис не инжектирован (флаг выключен / unit-тест без него) —
+   * возвращает []. Любая ошибка — поглощается и логируется (Clone API не
+   * должен падать из-за retrieval'а).
+   */
+  private async retrievePracticeSkills(args: {
+    tenantId: string;
+    scope: 'person' | 'role' | 'org';
+    scopeRefId: string;
+    question: string;
+    conversationId: string | null;
+  }): Promise<Array<{ id: string; status: string; trigger: string; steps: unknown; redFlags: unknown }>> {
+    if (!this.practiceSkills) return [];
+    try {
+      const skills = await this.practiceSkills.retrieveForCloneRespond(args);
+      return skills.map((s) => ({
+        id: s.id,
+        status: s.status,
+        trigger: s.trigger,
+        steps: s.steps,
+        redFlags: s.redFlags,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.retrievePracticeSkills: retrieval упал — продолжаю без skill\'ов',
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Записывает SkillUsage и обновляет lastUsed. Best-effort, без пробрасывания
+   * ошибок (если запись упала — diagnostic-лог; ответ клона уже сохранён).
+   */
+  private async recordPracticeSkillUsages(args: {
+    tenantId: string;
+    conversationId: string;
+    messageId: string;
+    skills: ReadonlyArray<{ id: string; status: string }>;
+  }): Promise<void> {
+    if (!this.practiceSkills || args.skills.length === 0) return;
+    try {
+      await this.practiceSkills.recordUsages({
+        tenantId: args.tenantId,
+        conversationId: args.conversationId,
+        messageId: args.messageId,
+        skills: args.skills,
+      });
+    } catch (err) {
+      this.logger.debug(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.recordPracticeSkillUsages: запись skill_usages упала — skip',
+      );
+    }
   }
 
   /**
@@ -2346,6 +2493,11 @@ export class ClonesService {
      * (обратная совместимость с legacy-вызовами).
      */
     mode?: 'factual' | 'judgmental';
+    /**
+     * Agents v2 Фаза C1 — PracticeSkill, найденные retrieval'ом. Если массив
+     * пустой/undefined — секция `<known_procedures>` не добавляется в USER.
+     */
+    practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
   }): Promise<LlmCallResult> {
     const mode = args.mode ?? 'factual';
     const systemPrompt = buildCloneRespondSystemPrompt({
@@ -2367,6 +2519,7 @@ export class ClonesService {
           knowledgeProfileSummary: args.subgraph.knowledgeProfileSummary,
           decisions: args.subgraph.decisions,
         },
+        practiceSkills: args.practiceSkills,
       }),
       tenantId: args.tenantId,
       sourceRef: { type: 'executable_persona', id: args.persona.id },
@@ -2505,6 +2658,56 @@ function emptySubgraph(): CloneSubgraph {
     knowledgeProfileSummary: null,
     decisions: [],
   };
+}
+
+/**
+ * Agents v2 Фаза C1 — нормализует retrieved PracticeSkill из БД-формата
+ * (JSON-поля как unknown) в формат `CloneRespondPracticeSkill` для шаблона
+ * `clone-respond.prompt.ts`. Безопасно к мусорным JSON: невалидные шаги
+ * отбрасываются, нет — секция в промпт не уйдёт.
+ */
+function toPromptSkills(
+  retrieved: ReadonlyArray<{
+    trigger: string;
+    steps: unknown;
+    redFlags: unknown;
+  }>,
+): CloneRespondPracticeSkill[] {
+  if (retrieved.length === 0) return [];
+  const out: CloneRespondPracticeSkill[] = [];
+  for (const s of retrieved) {
+    const stepsArr = Array.isArray(s.steps) ? s.steps : [];
+    const steps = stepsArr
+      .filter(
+        (st): st is Record<string, unknown> =>
+          !!st && typeof st === 'object',
+      )
+      .map((st, i) => {
+        const order =
+          typeof st.order === 'number' && Number.isInteger(st.order)
+            ? st.order
+            : i + 1;
+        const action = typeof st.action === 'string' ? st.action : '';
+        const er =
+          typeof st.emotionalRegister === 'string'
+            ? st.emotionalRegister
+            : null;
+        return { order, action, emotionalRegister: er };
+      })
+      .filter((st) => st.action.length > 0);
+    if (steps.length === 0) continue;
+    const flags = Array.isArray(s.redFlags)
+      ? (s.redFlags as unknown[]).filter(
+          (v): v is string => typeof v === 'string',
+        )
+      : [];
+    out.push({
+      trigger: typeof s.trigger === 'string' ? s.trigger : '',
+      steps,
+      redFlags: flags,
+    });
+  }
+  return out;
 }
 
 /**

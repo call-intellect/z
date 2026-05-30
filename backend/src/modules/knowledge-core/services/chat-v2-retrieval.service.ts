@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
@@ -65,7 +66,55 @@ export class ChatV2RetrievalService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    // Agents v2 Фаза A1 — Optional, чтобы legacy-тесты без metrics-DI
+    // (например, chat-v2-retrieval-temporal.spec.ts) продолжали работать.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
+
+  /**
+   * Agents v2 Фаза A1 (2026-05-30) — bi-temporal фильтр на edges.
+   * Активен только при `cfg.knowledgeCore.biTemporalEdgesEnabled === true`.
+   * Возвращает Prisma `where`-фрагмент `{ AND: [...] }` или пустой объект.
+   */
+  private temporalEdgeWhere(validAt: Date | null | undefined): {
+    AND?: Array<{
+      OR: Array<
+        | { validFrom: null }
+        | { validFrom: { lte: Date } }
+        | { validUntil: null }
+        | { validUntil: { gt: Date } }
+      >;
+    }>;
+  } {
+    if (!this.isBiTemporalEnabled()) return {};
+    const at = validAt ?? new Date();
+    return {
+      AND: [
+        {
+          OR: [
+            { validFrom: null },
+            { validFrom: { lte: at } },
+          ],
+        },
+        {
+          OR: [
+            { validUntil: null },
+            { validUntil: { gt: at } },
+          ],
+        },
+      ],
+    };
+  }
+
+  private isBiTemporalEnabled(): boolean {
+    try {
+      return this.cfg.knowledgeCore.biTemporalEdgesEnabled === true;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * Главный entry-point. Возвращает blockId'ы в порядке убывания релевантности.
@@ -412,11 +461,17 @@ export class ChatV2RetrievalService {
     const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
 
+    // Agents v2 Фаза A1 — bi-temporal-фильтр edges. Активен только при
+    // BI_TEMPORAL_EDGES_ENABLED=true; иначе where остаётся без AND-блока,
+    // поведение совпадает с до-A1.
+    const temporalWhere = this.temporalEdgeWhere(validAt);
+
     const linksFrom = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId,
         status: 'active',
         fromBlockId: { in: seedBlockIds },
+        ...temporalWhere,
       },
       select: { toBlockId: true, confidence: true },
       orderBy: { confidence: 'desc' },
@@ -427,11 +482,23 @@ export class ChatV2RetrievalService {
         tenantId,
         status: 'active',
         toBlockId: { in: seedBlockIds },
+        ...temporalWhere,
       },
       select: { fromBlockId: true, confidence: true },
       orderBy: { confidence: 'desc' },
       take: extraLimit * 3,
     });
+
+    // Метрика: считаем фактический объём passed/filtered_out.
+    // Для passed — это число возвращённых строк; для filtered_out — оценка
+    // через explainCount (тяжело). Здесь best-effort: считаем только passed,
+    // filtered_out оставлен на отдельный snapshot-cron.
+    if (this.isBiTemporalEnabled() && this.metrics) {
+      const passed = linksFrom.length + linksTo.length;
+      for (let i = 0; i < passed; i++) {
+        this.metrics.incTemporalFilterHit({ result: 'passed' });
+      }
+    }
 
     const candidates = new Map<string, number>();
     for (const l of linksFrom) {

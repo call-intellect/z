@@ -29,11 +29,26 @@ export const BLOCK_LINK_TYPES: IdeaBlockLinkType[] = [
   'question_answered_by',
 ];
 
-/** Strict JSON Schema для LLM-арбитра. `'none'` — отдельный sentinel. */
+/**
+ * Strict JSON Schema для LLM-арбитра. `'none'` — отдельный sentinel.
+ *
+ * Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges:
+ *   - `validFrom` / `validUntil` — ISO-даты, извлекаемые LLM из явных временных
+ *     указателей в исходных блоках («с октября», «до конца квартала»). null,
+ *     если такого указателя нет — TemporalConflictService закроет связь
+ *     по факту противоречия.
+ *   - Поля строго required, тип `['string','null']` под Anthropic JSON Schema dialect.
+ */
 export const BLOCK_LINKER_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['relationType', 'confidence', 'explanation'],
+  required: [
+    'relationType',
+    'confidence',
+    'explanation',
+    'validFrom',
+    'validUntil',
+  ],
   properties: {
     relationType: {
       type: 'string',
@@ -41,6 +56,20 @@ export const BLOCK_LINKER_JSON_SCHEMA: Record<string, unknown> = {
     },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
     explanation: { type: 'string', maxLength: 500 },
+    // Agents v2 Фаза A1 — bi-temporal hints. Извлекаются из явных временных
+    // указателей в блоках. Если ничего не сказано — null.
+    validFrom: {
+      type: ['string', 'null'],
+      maxLength: 40,
+      description:
+        'Если в блоках явно указано когда факт стал валиден ("с октября", "с 2025-Q3") — ISO date (YYYY-MM-DD / YYYY-MM / YYYY); иначе null.',
+    },
+    validUntil: {
+      type: ['string', 'null'],
+      maxLength: 40,
+      description:
+        'Если связь явно завершена в блоках ("до конца квартала", "до подписания контракта") — ISO date; иначе null (открытый интервал).',
+    },
   },
 };
 
@@ -57,6 +86,10 @@ export const BlockLinkerResponseSchema = z.object({
   ]),
   confidence: z.number().min(0).max(1),
   explanation: z.string().max(500),
+  // Agents v2 Фаза A1 — backward-compat: nullable+optional (старые ответы LLM
+  // без обновлённого промпта тоже валидны).
+  validFrom: z.string().max(40).nullable().optional(),
+  validUntil: z.string().max(40).nullable().optional(),
 });
 
 export const BLOCK_LINKER_SYSTEM_PROMPT = `Ты — эксперт по связям между знаниями.
@@ -79,4 +112,5 @@ export const BLOCK_LINKER_SYSTEM_PROMPT = `Ты — эксперт по связ
 - Не выдумывай связь, если её нет. "none" — нормальный ответ.
 - "confidence" ∈ [0,1] — насколько ты уверен. 0.9+ только если связь явная.
 - "explanation" — 1-2 короткие фразы на русском.
+- "validFrom" / "validUntil" — ISO-дата (YYYY-MM-DD / YYYY-MM / YYYY), если в исходных блоках есть явный временной указатель ("с октября", "до конца квартала", "до подписания контракта"). Если ничего не сказано — null. НЕ ВЫДУМЫВАЙ даты.
 - Ответ — строго JSON по схеме. Никакого markdown.`;

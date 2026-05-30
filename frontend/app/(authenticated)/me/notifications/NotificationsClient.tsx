@@ -33,6 +33,7 @@ import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Textarea } from '@/ui/shadcn/textarea';
+import { ProbeAnswerInput } from '@/ui/components/probe/ProbeAnswerInput';
 
 type Filter = 'unread' | 'pending_response' | 'all';
 type Tab = 'inbox' | 'proactive';
@@ -247,6 +248,8 @@ function NotificationDetail({
 
   const payload = n.payload as {
     question?: string;
+    /** Agents v2 Фаза 0.2 — сама строка вопроса, сформулированная LLM. */
+    formulatedQuestion?: string;
     context?: string;
     summary?: string;
     resourceType?: string;
@@ -254,12 +257,34 @@ function NotificationDetail({
     body?: string;
   };
 
+  // Для probe.question рендерим компонент свободного ввода без inline-кнопок
+  // (правило [[probe-no-buttons-text-voice-only]]). Старый textarea остаётся
+  // для остальных типов уведомлений, где ответ — это просто текст.
+  const isProbeQuestion = n.eventType === 'probe.question';
+  const probeQuestion =
+    payload.formulatedQuestion?.trim() || payload.question?.trim() || '';
+
   async function handleRespond() {
     if (!responseText.trim()) return;
     setBusy('respond');
     try {
       await respondToNotification(n.id, { text: responseText.trim() });
       setResponseText('');
+      await onChanged();
+    } catch (e) {
+      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleProbeSubmit(answer: string): Promise<void> {
+    setBusy('respond');
+    try {
+      // Backend `ProbeResponseHandler.extractResponseText` принимает любой из
+      // ключей `text|response|body|answer` — посылаем `response` как явный
+      // probe-ответ (ТЗ §«Probe без кнопок» / Frontend §Phase 0.3).
+      await respondToNotification(n.id, { response: answer });
       await onChanged();
     } catch (e) {
       if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
@@ -289,7 +314,9 @@ function NotificationDetail({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
-        {payload.question && (
+        {/* Для probe.question вопрос рендерим внутри ProbeAnswerInput ниже,
+            тут не дублируем. Для остальных типов — обычный блок «Вопрос». */}
+        {!isProbeQuestion && payload.question && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">Вопрос</div>
             <p className="whitespace-pre-wrap">{payload.question}</p>
@@ -317,7 +344,33 @@ function NotificationDetail({
         )}
         {payload.body && <p className="whitespace-pre-wrap">{payload.body}</p>}
 
-        {n.needsResponse && (
+        {n.needsResponse && isProbeQuestion && probeQuestion && (
+          <div className="space-y-2">
+            <ProbeAnswerInput
+              question={probeQuestion}
+              onSubmit={handleProbeSubmit}
+              isSubmitting={busy === 'respond'}
+              voiceEnabled={true}
+            />
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDismiss}
+                disabled={busy === 'dismiss'}
+              >
+                {busy === 'dismiss' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="mr-2 h-4 w-4" />
+                )}
+                Пропустить
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {n.needsResponse && !(isProbeQuestion && probeQuestion) && (
           <div className="space-y-2 rounded-md border border-dashed p-3">
             <label className="text-xs uppercase text-muted-foreground">
               Ваш ответ

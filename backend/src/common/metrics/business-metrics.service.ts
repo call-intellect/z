@@ -357,6 +357,43 @@ export class BusinessMetricsService implements OnModuleInit {
   // «как часто решения переписываются»).
   private decisionSupersedeChainLength!: Histogram<never>;
 
+  // ── Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges ──────────────
+  // `temporal_edges_invalidated_total{relationType}` — каждый раз когда
+  // TemporalConflictService закрывает existing open-link новой противоречащей
+  // связью (ставит validUntil=NOW). relationType — закрытого link'а.
+  private temporalEdgesInvalidatedTotal!: Counter<'relationType'>;
+  // `temporal_filter_hits_total{result}` — каждый раз когда retrieval-фильтр
+  // bi-temporal edges принимает решение по конкретному edge. result:
+  //   - 'passed' — edge прошёл фильтр (validFrom/validUntil совместимы с validAt);
+  //   - 'filtered_out' — edge отсеян (не валиден на момент Х).
+  private temporalFilterHitsTotal!: Counter<'result'>;
+  // `edges_with_temporal_total{type}` — gauge: сколько edges с непустыми
+  // bi-temporal полями. Снапшотится ежечасным cron'ом (TODO в следующей волне).
+  // type ∈ block | entity.
+  private edgesWithTemporalTotal!: Gauge<'type'>;
+
+  // ── Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate ──────────────
+  // `z_debate_judgments_total{task_type, decision, consensus_type}` —
+  // финальный verdict одного debate-run'а. decision = строка verdict'а
+  // (`new`/`merge`/`supersedes`/`split_uncertain`); consensus_type ∈
+  // unanimous | majority | split.
+  private debateJudgmentsTotal!: Counter<'task_type' | 'decision' | 'consensus_type'>;
+  // `z_debate_cost_usd_total{tenant_top, task_type}` — суммарный USD-cost
+  // всех debate-run'ов. tenant_top — стандартный top-100 bucket
+  // (паттерн `tenantTopOf`). Cardinality-safe.
+  private debateCostUsdTotal!: Counter<'tenant_top' | 'task_type'>;
+  // `z_debate_round2_triggered_total{task_type}` — round 2 запущен при split-verdict'е.
+  private debateRound2TriggeredTotal!: Counter<'task_type'>;
+  // `z_debate_provider_disagreement_total{provider_a, provider_b, task_type}` —
+  // пара провайдеров, которые НЕ согласились (разные verdict'ы) в round 1.
+  // Помогает понять, какие модели чаще расходятся (выбор diversity-pair'а).
+  private debateProviderDisagreementTotal!: Counter<
+    'provider_a' | 'provider_b' | 'task_type'
+  >;
+  // `z_debate_fallback_to_single_total{reason}` — debate сорвался и Specialist
+  // вернулся к одиночному арбитру. reason ∈ cost_cap | provider_unavailable.
+  private debateFallbackToSingleTotal!: Counter<'reason'>;
+
   // ── KC-Temporal W1.2 (2026-05-25) — FactSupersedeService ──────────────
   // verdict ∈ unrelated | extends | contradicts | supersedes | skip_*.
   // skip_* — короткие замыкания до LLM-вызова (no_candidates, not_fact_signal,
@@ -419,6 +456,35 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeExpiredTotal!: Counter<never>;
   private probeClosedTotal!: Counter<'tenant_top' | 'source'>;
   private probeRecipientEngagementRate!: Gauge<'user_id'>;
+  // ── Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify ──
+  private probeResponseClassifiedTotal!: Counter<'confidence_bucket'>;
+  private probeResponseUnclearTotal!: Counter<'original_reason'>;
+  // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
+  private promptFeedbackTotal!: Counter<'prompt_key' | 'has_edit'>;
+  private autoruleExtractedTotal!: Counter<'prompt_key' | 'rule_type'>;
+  private autoruleRulesTotal!: Gauge<'prompt_key' | 'status' | 'source'>;
+  private autoruleOverriddenTotal!: Counter<'prompt_key'>;
+  // ── Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow) ──
+  private conciergePrmAgreementTotal!: Counter<'agreed'>;
+  private conciergePrmLlmChoseRankTotal!: Counter<'rank'>;
+  private conciergePrmCostUsdTotal!: Counter<'tenant_top'>;
+  private conciergePrmScoreDistribution!: Histogram<'tool_name'>;
+  // ── Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (executable skills) ──
+  private practiceSkillsTotal!: Gauge<'tenant_top' | 'scope' | 'status'>;
+  private practiceSkillsExtractedTotal!: Counter<'scope'>;
+  private practiceSkillsPromotedTotal!: Counter<never>;
+  private practiceSkillsArchivedTotal!: Counter<never>;
+  private practiceSkillsRunsTotal!: Counter<'status'>;
+  private practiceSkillsCompositeVsBaseline!: Histogram<never>;
+  private practiceSkillsRetrievalHitTotal!: Counter<'scope'>;
+  // ── Agents v2 Фаза C2 (2026-05-30) — GEPA prompt evolution ──
+  private gepaOptimizationsTotal!: Counter<'prompt_key' | 'status'>;
+  private gepaCandidatesTotal!: Gauge<'prompt_key' | 'status'>;
+  private gepaPromotedTotal!: Counter<'prompt_key'>;
+  private gepaRejectedTotal!: Counter<'reason'>;
+  private gepaAbActiveTotal!: Gauge<never>;
+  private gepaCostUsdTotal!: Counter<'tenant_top'>;
+  private gepaRollbackTotal!: Counter<'reason'>;
   private ideaStatusChangeNotificationsTotal!: Counter<'new_status'>;
 
   // ── chat-v2 (SBA α-5) ─────────────────────────────────────────────
@@ -1713,6 +1779,50 @@ export class BusinessMetricsService implements OnModuleInit {
       buckets: [0, 1, 2, 3, 5, 8, 13, 21],
     });
 
+    // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
+    this.temporalEdgesInvalidatedTotal = this.getOrCreateCounter({
+      name: 'temporal_edges_invalidated_total',
+      help: 'Agents v2 Фаза A1 — сколько existing open-links (block↔block + entity↔entity) было закрыто TemporalConflictService при детектировании противоречащей новой связи (validUntil=NOW). relationType — закрытого link\'а.',
+      labelNames: ['relationType'] as const,
+    });
+    this.temporalFilterHitsTotal = this.getOrCreateCounter({
+      name: 'temporal_filter_hits_total',
+      help: 'Agents v2 Фаза A1 — каждый edge, обработанный bi-temporal retrieval-фильтром. passed = валиден на момент validAt; filtered_out = отсеян.',
+      labelNames: ['result'] as const,
+    });
+    this.edgesWithTemporalTotal = this.getOrCreateGauge({
+      name: 'edges_with_temporal_total',
+      help: 'Agents v2 Фаза A1 — gauge: сколько edges (block|entity) имеют непустые bi-temporal поля. Обновляется ежечасным snapshot-cron\'ом.',
+      labelNames: ['type'] as const,
+    });
+
+    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
+    this.debateJudgmentsTotal = this.getOrCreateCounter({
+      name: 'z_debate_judgments_total',
+      help: 'Agents v2 Фаза A2 — финальный verdict одного debate-run\'а (`new`/`merge`/`supersedes`/`split_uncertain`). consensus_type ∈ unanimous|majority|split.',
+      labelNames: ['task_type', 'decision', 'consensus_type'] as const,
+    });
+    this.debateCostUsdTotal = this.getOrCreateCounter({
+      name: 'z_debate_cost_usd_total',
+      help: 'Agents v2 Фаза A2 — суммарный USD-cost всех debate-run\'ов (tenant_top × task_type). tenant_top — top-100 bucket через tenantTopOf, cardinality ≤ 101.',
+      labelNames: ['tenant_top', 'task_type'] as const,
+    });
+    this.debateRound2TriggeredTotal = this.getOrCreateCounter({
+      name: 'z_debate_round2_triggered_total',
+      help: 'Agents v2 Фаза A2 — round 2 запущен при split-verdict\'е round 1.',
+      labelNames: ['task_type'] as const,
+    });
+    this.debateProviderDisagreementTotal = this.getOrCreateCounter({
+      name: 'z_debate_provider_disagreement_total',
+      help: 'Agents v2 Фаза A2 — пара провайдеров, которые НЕ согласились в round 1 (разные verdict\'ы). provider_a/provider_b — лексикографически отсортированы для нормализации.',
+      labelNames: ['provider_a', 'provider_b', 'task_type'] as const,
+    });
+    this.debateFallbackToSingleTotal = this.getOrCreateCounter({
+      name: 'z_debate_fallback_to_single_total',
+      help: 'Agents v2 Фаза A2 — debate сорвался, Specialist вернулся к одиночному LLM-вызову. reason ∈ cost_cap | provider_unavailable.',
+      labelNames: ['reason'] as const,
+    });
+
     // KC-Temporal W1.2 — FactSupersedeService.
     this.kcFactSupersedeVerdictsTotal = this.getOrCreateCounter({
       name: 'kc_fact_supersede_verdicts_total',
@@ -1866,6 +1976,138 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA β-5 — отзывчивость получателя за 30 дней (отвечено / отправлено), per user.',
       labelNames: ['user_id'] as const,
     });
+    // ── Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify ──
+    this.probeResponseClassifiedTotal = this.getOrCreateCounter({
+      name: 'probe_response_classified_total',
+      help: 'Agents v2 Фаза 0.1 — сколько свободных ответов на probe классифицировано (confidence_bucket ∈ high|medium|low).',
+      labelNames: ['confidence_bucket'] as const,
+    });
+    this.probeResponseUnclearTotal = this.getOrCreateCounter({
+      name: 'probe_response_unclear_total',
+      help: 'Agents v2 Фаза 0.1 — сколько ответов на probe признано непонятными (confidence < min). Метка original_reason — reason эмиттера, чтобы видеть, какие probe чаще получают «мусорный» ответ.',
+      labelNames: ['original_reason'] as const,
+    });
+
+    // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
+    this.promptFeedbackTotal = this.getOrCreateCounter({
+      name: 'z_prompt_feedback_total',
+      help: 'Agents v2 Фаза B1 — каждая запись PromptFeedback: has_edit=false при создании (originalOutput только), has_edit=true при update (editedOutput пришёл).',
+      labelNames: ['prompt_key', 'has_edit'] as const,
+    });
+    this.autoruleExtractedTotal = this.getOrCreateCounter({
+      name: 'z_autorule_extracted_total',
+      help: 'Agents v2 Фаза B1 — каждое новое PromptRule, созданное AutoRuleExtractorService (status=shadow).',
+      labelNames: ['prompt_key', 'rule_type'] as const,
+    });
+    this.autoruleRulesTotal = this.getOrCreateGauge({
+      name: 'z_autorule_rules_total',
+      help: 'Agents v2 Фаза B1 — gauge: сколько правил по (prompt_key × status × source). Обновляется hourly snapshot-cron\'ом (Фаза C); в Фазе B заведён, но не обновляется.',
+      labelNames: ['prompt_key', 'status', 'source'] as const,
+    });
+    this.autoruleOverriddenTotal = this.getOrCreateCounter({
+      name: 'z_autorule_overridden_total',
+      help: 'Agents v2 Фаза B1 — каждое нажатие admin\'ом «Заблокировать» (status=overridden_by_admin, sticky).',
+      labelNames: ['prompt_key'] as const,
+    });
+
+    // ── Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer ──
+    this.conciergePrmAgreementTotal = this.getOrCreateCounter({
+      name: 'z_concierge_prm_agreement_total',
+      help: 'Agents v2 Фаза B2 — каждый shadow-scored step: agreed=true если top-1 LLM совпал с top-1 PRM, agreed=false иначе.',
+      labelNames: ['agreed'] as const,
+    });
+    this.conciergePrmLlmChoseRankTotal = this.getOrCreateCounter({
+      name: 'z_concierge_prm_llm_chose_rank_total',
+      help: 'Agents v2 Фаза B2 — распределение «насколько LLM согласен с PRM»: ранг LLM-выбора в PRM-сортировке (1=top, 2/3=ниже, other=>3).',
+      labelNames: ['rank'] as const,
+    });
+    this.conciergePrmCostUsdTotal = this.getOrCreateCounter({
+      name: 'z_concierge_prm_cost_usd_total',
+      help: 'Agents v2 Фаза B2 — кумулятивная стоимость PRM-вызовов в USD (тенант-bucket).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.conciergePrmScoreDistribution = this.getOrCreateHistogram({
+      name: 'z_concierge_prm_score_distribution',
+      help: 'Agents v2 Фаза B2 — распределение PRM-скоров кандидатов (0..1) по toolName.',
+      labelNames: ['tool_name'] as const,
+      buckets: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+    });
+
+    // ── Agents v2 Фаза C1 (2026-05-30) — PracticeSkill ─────────────────
+    this.practiceSkillsTotal = this.getOrCreateGauge({
+      name: 'z_practice_skills_total',
+      help: 'Agents v2 Фаза C1 — gauge: сколько PracticeSkill по (tenant_top × scope × status).',
+      labelNames: ['tenant_top', 'scope', 'status'] as const,
+    });
+    this.practiceSkillsExtractedTotal = this.getOrCreateCounter({
+      name: 'z_practice_skills_extracted_total',
+      help: 'Agents v2 Фаза C1 — каждый новый PracticeSkill, созданный PracticeSkillExtractorService (status=shadow).',
+      labelNames: ['scope'] as const,
+    });
+    this.practiceSkillsPromotedTotal = this.getOrCreateCounter({
+      name: 'z_practice_skills_promoted_total',
+      help: 'Agents v2 Фаза C1 — каждое решение evaluator\'а перевести shadow → active.',
+      labelNames: [] as const,
+    });
+    this.practiceSkillsArchivedTotal = this.getOrCreateCounter({
+      name: 'z_practice_skills_archived_total',
+      help: 'Agents v2 Фаза C1 — каждое решение evaluator\'а перевести skill в archived (composite < baseline).',
+      labelNames: [] as const,
+    });
+    this.practiceSkillsRunsTotal = this.getOrCreateCounter({
+      name: 'z_practice_skills_runs_total',
+      help: 'Agents v2 Фаза C1 — каждое использование PracticeSkill в clone-respond (status=shadow|active).',
+      labelNames: ['status'] as const,
+    });
+    this.practiceSkillsCompositeVsBaseline = this.getOrCreateHistogram({
+      name: 'z_practice_skills_composite_score_vs_baseline',
+      help: 'Agents v2 Фаза C1 — delta(composite_score - baseline_score) после оценки skill\'а evaluator\'ом.',
+      labelNames: [] as const,
+      buckets: [-0.5, -0.3, -0.15, -0.05, 0, 0.05, 0.1, 0.15, 0.3, 0.5],
+    });
+    this.practiceSkillsRetrievalHitTotal = this.getOrCreateCounter({
+      name: 'z_practice_skills_retrieval_hits_total',
+      help: 'Agents v2 Фаза C1 — каждый retrieval-вызов, вернувший ≥1 PracticeSkill для clone-respond.',
+      labelNames: ['scope'] as const,
+    });
+
+    // ── Agents v2 Фаза C2 (2026-05-30) — GEPA prompt evolution ──────
+    this.gepaOptimizationsTotal = this.getOrCreateCounter({
+      name: 'z_gepa_optimizations_total',
+      help: 'Agents v2 Фаза C2 — счётчик запусков GEPA-optimize (status=success|failed|timeout).',
+      labelNames: ['prompt_key', 'status'] as const,
+    });
+    this.gepaCandidatesTotal = this.getOrCreateGauge({
+      name: 'z_gepa_candidates_total',
+      help: 'Agents v2 Фаза C2 — gauge: сколько PromptCandidate по (prompt_key × status).',
+      labelNames: ['prompt_key', 'status'] as const,
+    });
+    this.gepaPromotedTotal = this.getOrCreateCounter({
+      name: 'z_gepa_promoted_total',
+      help: 'Agents v2 Фаза C2 — каждый PromptCandidate, прошедший A/B и промоутенный в LlmTaskRoute.promptOverride.',
+      labelNames: ['prompt_key'] as const,
+    });
+    this.gepaRejectedTotal = this.getOrCreateCounter({
+      name: 'z_gepa_rejected_total',
+      help: 'Agents v2 Фаза C2 — счётчик отклонённых candidate (reason=ab_deg_detected|admin_edit_blocks_promotion|manual_reject|stale).',
+      labelNames: ['reason'] as const,
+    });
+    this.gepaAbActiveTotal = this.getOrCreateGauge({
+      name: 'z_gepa_ab_active_total',
+      help: 'Agents v2 Фаза C2 — сколько PromptCandidate сейчас в status=testing (A/B активен).',
+      labelNames: [] as const,
+    });
+    this.gepaCostUsdTotal = this.getOrCreateCounter({
+      name: 'z_gepa_cost_usd_total',
+      help: 'Agents v2 Фаза C2 — кумулятивная стоимость GEPA-runs в USD (tenant-bucket).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.gepaRollbackTotal = this.getOrCreateCounter({
+      name: 'z_gepa_rollback_total',
+      help: 'Agents v2 Фаза C2 — auto-rollback кандидата ab-monitor cron\'ом (reason=ab_deg|manual|stale).',
+      labelNames: ['reason'] as const,
+    });
+
     this.ideaStatusChangeNotificationsTotal = this.getOrCreateCounter({
       name: 'idea_status_change_notifications_total',
       help: 'SBA β-5 — сколько уведомлений о смене статуса идеи отправлено supporter\'ам (new_status).',
@@ -4499,6 +4741,236 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
+  /**
+   * Agents v2 Фаза 0.1 — ответ на probe классифицирован LLM-арбитром.
+   * `confidence_bucket` ∈ high (≥0.85) | medium (≥0.5) | low (<min).
+   */
+  incProbeResponseClassified(args: {
+    confidence_bucket: 'high' | 'medium' | 'low';
+  }): void {
+    this.probeResponseClassifiedTotal.inc({
+      confidence_bucket: args.confidence_bucket,
+    });
+  }
+
+  /**
+   * Agents v2 Фаза 0.1 — ответ на probe признан непонятным
+   * (confidence < min). `originalReason` — reason эмиттера, чтобы видеть,
+   * какие probe чаще получают «мусорный» ответ.
+   */
+  incProbeResponseUnclear(args: { originalReason: string }): void {
+    this.probeResponseUnclearTotal.inc({
+      original_reason: args.originalReason,
+    });
+  }
+
+  // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────
+
+  /**
+   * Запись PromptFeedback. `hasEdit='false'` при первом сохранении
+   * (originalOutput только); `'true'` при update (editedOutput пришёл).
+   */
+  incPromptFeedback(args: { promptKey: string; hasEdit: 'true' | 'false' }): void {
+    this.promptFeedbackTotal.inc({
+      prompt_key: args.promptKey,
+      has_edit: args.hasEdit,
+    });
+  }
+
+  /** Каждое новое PromptRule, созданное AutoRuleExtractorService. */
+  incAutoruleExtracted(args: { promptKey: string; ruleType: string }): void {
+    this.autoruleExtractedTotal.inc({
+      prompt_key: args.promptKey,
+      rule_type: args.ruleType,
+    });
+  }
+
+  /** Snapshot gauge — кол-во правил по (prompt_key × status × source). */
+  setAutoruleRules(args: {
+    promptKey: string;
+    status: string;
+    source: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.autoruleRulesTotal.set(
+      {
+        prompt_key: args.promptKey,
+        status: args.status,
+        source: args.source,
+      },
+      args.value,
+    );
+  }
+
+  /** Нажатие админом «Заблокировать» (status=overridden_by_admin, sticky). */
+  incAutoruleOverridden(args: { promptKey: string }): void {
+    this.autoruleOverriddenTotal.inc({ prompt_key: args.promptKey });
+  }
+
+  // ── Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer ──
+
+  /**
+   * Counter `z_concierge_prm_agreement_total{agreed}` — каждый shadow-scored
+   * step. `agreed='true'` если top-1 LLM == top-1 PRM, иначе `'false'`.
+   */
+  incConciergePrmAgreement(args: { agreed: 'true' | 'false' }): void {
+    this.conciergePrmAgreementTotal.inc({ agreed: args.agreed });
+  }
+
+  /**
+   * Counter `z_concierge_prm_llm_chose_rank_total{rank}` — ранг LLM-выбора
+   * в PRM-сортировке. `rank ∈ '1'|'2'|'3'|'other'` (other = >3).
+   */
+  incConciergePrmLlmRank(args: { rank: '1' | '2' | '3' | 'other' }): void {
+    this.conciergePrmLlmChoseRankTotal.inc({ rank: args.rank });
+  }
+
+  /**
+   * Counter `z_concierge_prm_cost_usd_total{tenant_top}` — кумулятивная
+   * стоимость PRM-вызовов в USD. costUsd ≥ 0; отрицательные/NaN игнорируются.
+   */
+  incConciergePrmCost(args: { tenantTop: string; costUsd: number }): void {
+    if (!Number.isFinite(args.costUsd) || args.costUsd < 0) return;
+    this.conciergePrmCostUsdTotal.inc(
+      { tenant_top: args.tenantTop },
+      args.costUsd,
+    );
+  }
+
+  /**
+   * Histogram `z_concierge_prm_score_distribution{tool_name}` — распределение
+   * PRM-скоров (0..1) кандидатов по toolName. Скоры вне [0,1] клампятся.
+   */
+  observeConciergePrmScore(args: { toolName: string; score: number }): void {
+    if (!Number.isFinite(args.score)) return;
+    const clamped = Math.min(Math.max(args.score, 0), 1);
+    this.conciergePrmScoreDistribution.observe(
+      { tool_name: args.toolName.slice(0, 64) },
+      clamped,
+    );
+  }
+
+  // ── Agents v2 Фаза C1 (2026-05-30) — PracticeSkill ──────────────────
+
+  /**
+   * Gauge `z_practice_skills_total{tenant_top,scope,status}` — обновляется
+   * snapshot-cron'ом `PracticeSkillEvaluatorCron`.
+   */
+  setPracticeSkillsTotal(args: {
+    tenantTop: string;
+    scope: 'person' | 'role' | 'org';
+    status: 'shadow' | 'active' | 'archived' | 'deprecated';
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.practiceSkillsTotal.set(
+      {
+        tenant_top: args.tenantTop.slice(0, 64),
+        scope: args.scope,
+        status: args.status,
+      },
+      args.value,
+    );
+  }
+
+  /** Counter `z_practice_skills_extracted_total{scope}` — каждый новый skill. */
+  incPracticeSkillsExtracted(args: { scope: 'person' | 'role' | 'org' }): void {
+    this.practiceSkillsExtractedTotal.inc({ scope: args.scope });
+  }
+
+  /** Counter `z_practice_skills_promoted_total` — evaluator promote. */
+  incPracticeSkillsPromoted(): void {
+    this.practiceSkillsPromotedTotal.inc();
+  }
+
+  /** Counter `z_practice_skills_archived_total` — evaluator archive. */
+  incPracticeSkillsArchived(): void {
+    this.practiceSkillsArchivedTotal.inc();
+  }
+
+  /**
+   * Counter `z_practice_skills_runs_total{status}` — каждое использование skill'а
+   * в clone-respond (status: 'shadow'|'active').
+   */
+  incPracticeSkillsRun(args: { status: 'shadow' | 'active' }): void {
+    this.practiceSkillsRunsTotal.inc({ status: args.status });
+  }
+
+  /**
+   * Histogram `z_practice_skills_composite_score_vs_baseline` — delta
+   * (composite - baseline). Значения клампятся в [-1, 1] на всякий случай.
+   */
+  observePracticeSkillsCompositeVsBaseline(args: { delta: number }): void {
+    if (!Number.isFinite(args.delta)) return;
+    const clamped = Math.min(Math.max(args.delta, -1), 1);
+    this.practiceSkillsCompositeVsBaseline.observe(clamped);
+  }
+
+  /**
+   * Counter `z_practice_skills_retrieval_hits_total{scope}` — retrieval вернул
+   * ≥1 skill для конкретного scope (per-vызов, не per-skill).
+   */
+  incPracticeSkillsRetrievalHit(args: { scope: 'person' | 'role' | 'org' }): void {
+    this.practiceSkillsRetrievalHitTotal.inc({ scope: args.scope });
+  }
+
+  // ── Agents v2 Фаза C2 (2026-05-30) — GEPA prompt evolution ──────────
+
+  /**
+   * Counter `z_gepa_optimizations_total{prompt_key, status}` — каждый запуск
+   * GEPA-optimize (status='success' | 'failed' | 'timeout' | 'skipped_no_python').
+   */
+  incGepaOptimization(args: {
+    promptKey: string;
+    status: 'success' | 'failed' | 'timeout' | 'skipped_no_python';
+  }): void {
+    this.gepaOptimizationsTotal.inc({
+      prompt_key: args.promptKey,
+      status: args.status,
+    });
+  }
+
+  /** Snapshot gauge — кол-во PromptCandidate по (prompt_key × status). */
+  setGepaCandidatesTotal(args: {
+    promptKey: string;
+    status: string;
+    value: number;
+  }): void {
+    if (args.value < 0) return;
+    this.gepaCandidatesTotal.set(
+      { prompt_key: args.promptKey, status: args.status },
+      args.value,
+    );
+  }
+
+  /** Counter — кандидат прошёл A/B и промоутен. */
+  incGepaPromoted(args: { promptKey: string }): void {
+    this.gepaPromotedTotal.inc({ prompt_key: args.promptKey });
+  }
+
+  /** Counter — кандидат отклонён (reason из rejectedReason). */
+  incGepaRejected(args: { reason: string }): void {
+    this.gepaRejectedTotal.inc({ reason: args.reason });
+  }
+
+  /** Gauge — сколько кандидатов сейчас в status=testing (живой A/B). */
+  setGepaAbActive(args: { value: number }): void {
+    if (args.value < 0) return;
+    this.gepaAbActiveTotal.set(args.value);
+  }
+
+  /** Counter — кумулятивная стоимость GEPA-runs в USD по tenant-bucket. */
+  incGepaCost(args: { tenantTop: string; costUsd: number }): void {
+    if (!Number.isFinite(args.costUsd) || args.costUsd < 0) return;
+    this.gepaCostUsdTotal.inc({ tenant_top: args.tenantTop }, args.costUsd);
+  }
+
+  /** Counter — auto-rollback кандидата (reason='ab_deg'|'manual'|'stale'). */
+  incGepaRollback(args: { reason: string }): void {
+    this.gepaRollbackTotal.inc({ reason: args.reason });
+  }
+
   /** Отправлено уведомление supporter'у о смене статуса идеи. */
   incIdeaStatusChangeNotification(args: { newStatus: string }): void {
     this.ideaStatusChangeNotificationsTotal.inc({ new_status: args.newStatus });
@@ -6215,6 +6687,102 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant: args.tenant },
       args.seconds,
     );
+  }
+
+  // ────────────────── Agents v2 Фаза A1 — Bi-temporal edges ─────────────
+
+  /**
+   * Закрытие существующего open-link'а через TemporalConflictService
+   * (validUntil=NOW). relationType — закрытого link'а.
+   */
+  incTemporalEdgesInvalidated(args: { relationType: string }): void {
+    this.temporalEdgesInvalidatedTotal.inc({
+      relationType: args.relationType,
+    });
+  }
+
+  /**
+   * Каждое решение bi-temporal retrieval-фильтра по конкретному edge.
+   * 'passed' — edge валиден на момент validAt; 'filtered_out' — отсеян.
+   */
+  incTemporalFilterHit(args: { result: 'passed' | 'filtered_out' }): void {
+    this.temporalFilterHitsTotal.inc({ result: args.result });
+  }
+
+  /**
+   * Snapshot-метрика: сколько edges (block|entity) имеют непустые
+   * bi-temporal поля. Обновляется ежечасным cron'ом.
+   */
+  setEdgesWithTemporal(args: { type: 'block' | 'entity'; value: number }): void {
+    this.edgesWithTemporalTotal.set({ type: args.type }, args.value);
+  }
+
+  // ────────────────── Agents v2 Фаза A2 — Multi-Agent Debate ────────────
+
+  /**
+   * Финальный verdict одного debate-run'а.
+   *   - `taskType` — `debate-decision-supersede` (зонтичный).
+   *   - `decision` — `new` | `merge` | `supersedes` | `split_uncertain` | …
+   *   - `consensusType` — `unanimous` | `majority` | `split`.
+   */
+  incDebateJudgment(args: {
+    taskType: string;
+    decision: string;
+    consensusType: 'unanimous' | 'majority' | 'split';
+  }): void {
+    this.debateJudgmentsTotal.inc({
+      task_type: args.taskType,
+      decision: args.decision,
+      consensus_type: args.consensusType,
+    });
+  }
+
+  /**
+   * Прибавить USD-cost debate-run'а к суммарному счётчику.
+   * `tenantTop` уже нормализован caller'ом через `tenantTopOf`.
+   */
+  incDebateCost(args: {
+    tenantTop: string;
+    taskType: string;
+    costUsd: number;
+  }): void {
+    if (args.costUsd <= 0) return;
+    this.debateCostUsdTotal.inc(
+      { tenant_top: args.tenantTop, task_type: args.taskType },
+      args.costUsd,
+    );
+  }
+
+  /** Round 2 был запущен при split-verdict'е round 1. */
+  incDebateRound2Triggered(args: { taskType: string }): void {
+    this.debateRound2TriggeredTotal.inc({ task_type: args.taskType });
+  }
+
+  /**
+   * Пара провайдеров, которые НЕ согласились в round 1. Для cardinality-
+   * стабильности — сортируем `providerA < providerB` лексикографически
+   * на стороне caller'а (см. `MultiAgentDebateService`).
+   */
+  incDebateProviderDisagreement(args: {
+    providerA: string;
+    providerB: string;
+    taskType: string;
+  }): void {
+    this.debateProviderDisagreementTotal.inc({
+      provider_a: args.providerA,
+      provider_b: args.providerB,
+      task_type: args.taskType,
+    });
+  }
+
+  /**
+   * Debate сорвался, специалист вернулся к одиночному LLM-вызову.
+   * reason ∈ `cost_cap` | `provider_unavailable`.
+   */
+  incDebateFallbackToSingle(args: {
+    reason: 'cost_cap' | 'provider_unavailable';
+  }): void {
+    this.debateFallbackToSingleTotal.inc({ reason: args.reason });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

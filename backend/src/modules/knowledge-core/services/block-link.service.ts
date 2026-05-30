@@ -28,11 +28,19 @@ import {
  *
  *   - Если LLM ответил `'none'` — связи нет, поле `relationType = null`.
  *   - Иначе — конкретный тип из enum'а IdeaBlockLinkType.
+ *
+ * Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges:
+ *   - `validFromHint` / `validUntilHint` — ISO-строка (YYYY-MM-DD / YYYY-MM /
+ *     YYYY), если LLM извлёк явный временной указатель из исходных блоков;
+ *     иначе `null` (открытый интервал, закрывается через
+ *     `TemporalConflictService` при детектировании противоречия).
  */
 export interface LinkVerdict {
   relationType: IdeaBlockLinkType | null;
   confidence: number;
   explanation: string;
+  validFromHint?: string | null;
+  validUntilHint?: string | null;
 }
 
 interface RawLinkCandidateRow {
@@ -209,6 +217,9 @@ export class BlockLinkService {
       relationType: parsed.data.relationType,
       confidence: parsed.data.confidence,
       explanation: parsed.data.explanation,
+      // Agents v2 Фаза A1 — bi-temporal hints (если LLM их вернул).
+      validFromHint: parsed.data.validFrom ?? null,
+      validUntilHint: parsed.data.validUntil ?? null,
     };
   }
 

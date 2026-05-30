@@ -20,8 +20,10 @@
 import type { Notification, ProbeEvent, RawEvent } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { LlmRouterService } from '../ai/services/llm-router.service';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import type { IngestService } from '../ingest/ingest.service';
 
@@ -168,13 +170,40 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       incProbeClosed: vi.fn(),
       incProbeExpired: vi.fn(),
       setProbeRecipientEngagementRate: vi.fn(),
+      incProbeResponseClassified: vi.fn(),
+      incProbeResponseUnclear: vi.fn(),
     } as unknown as BusinessMetricsService;
 
     ingestAdapter = new ConversationalIngestAdapter(prisma, ingestSvc);
   });
 
+  // Agents v2 Фаза 0.1: handler теперь требует LlmRouter + TypedConfig.
+  // Здесь classify по умолчанию выключаем (responseClassifyEnabled=false),
+  // чтобы старые сценарии работали как раньше.
+  function buildHandler(args?: {
+    classifyEnabled?: boolean;
+    minConfidence?: number;
+    llmResult?: { text: string };
+    llmThrow?: boolean;
+  }): ProbeResponseHandler {
+    const llm = {
+      call: vi.fn().mockImplementation(async () => {
+        if (args?.llmThrow) throw new Error('llm down');
+        return args?.llmResult ?? { text: '{"answer":"","confidence":0,"requiresFollowup":true}' };
+      }),
+    } as unknown as LlmRouterService;
+    const cfg = {
+      probe: {
+        responseClassifyEnabled: args?.classifyEnabled ?? false,
+        voiceInputEnabled: true,
+        responseClassifyMinConfidence: args?.minConfidence ?? 0.5,
+      },
+    } as unknown as TypedConfigService;
+    return new ProbeResponseHandler(prisma, metrics, ingestAdapter, llm, cfg);
+  }
+
   it('handler: notification.responded для probe.* → создаёт RawEvent и инкрементит probe_closed_total', async () => {
-    const handler = new ProbeResponseHandler(prisma, metrics, ingestAdapter);
+    const handler = buildHandler();
     const event: NotificationRespondedPayload = {
       tenantId: 'org-1',
       notificationId: 'notif-1',
@@ -209,7 +238,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
   });
 
   it('handler: notification.responded для НЕ probe.* — no-op (нет RawEvent / нет probe_closed_total)', async () => {
-    const handler = new ProbeResponseHandler(prisma, metrics, ingestAdapter);
+    const handler = buildHandler();
     const event: NotificationRespondedPayload = {
       tenantId: 'org-1',
       notificationId: 'notif-other',

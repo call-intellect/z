@@ -6,6 +6,7 @@ import { ConciergeQuotaService } from './services/concierge-quota.service';
 import { ConciergeUndoLogService } from './services/concierge-undo-log.service';
 import { ConciergeService } from './services/concierge.service';
 import { ServiceMapGeneratorService } from './services/service-map-generator.service';
+import { ConciergeStepScorerService } from './services/step-scorer.service';
 import { ToolRouterService } from './services/tool-router.service';
 import { ConciergeConversationSummarizerCron } from './workers/concierge-conversation-summarizer.cron';
 import { ConciergeQuotaResetCron } from './workers/concierge-quota-reset.cron';
@@ -32,9 +33,14 @@ import { ConciergeQuotaResetCron } from './workers/concierge-quota-reset.cron';
     ConciergeContextBuilderService,
     ConciergeUndoLogService,
     ConciergeQuotaService,
+    ConciergeStepScorerService,
     ConciergeQuotaResetCron,
     ConciergeConversationSummarizerCron,
   ],
-  exports: [ConciergeService, ConciergeQuotaService],
+  exports: [
+    ConciergeService,
+    ConciergeQuotaService,
+    ConciergeStepScorerService,
+  ],
 })
 export class ConciergeModule {}

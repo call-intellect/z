@@ -34,6 +34,8 @@ describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
   let metrics: {
     incReferralSelfReferralDenied: ReturnType<typeof vi.fn>;
     incReferralAttributionFirstTouchLocked: ReturnType<typeof vi.fn>;
+    incReferralClick: ReturnType<typeof vi.fn>;
+    incReferralSignup: ReturnType<typeof vi.fn>;
   };
   let svc: AttributionService;
 

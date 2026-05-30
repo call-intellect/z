@@ -18,6 +18,7 @@ import {
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { BlockLinkService } from '../services/block-link.service';
+import { TemporalConflictService } from '../services/temporal-conflict.service';
 
 /**
  * SBA α-4 — порог confidence, выше которого `relationType='contradicts'`
@@ -56,6 +57,8 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BlockLinkService) private readonly linker: BlockLinkService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
     @Inject(ConflictService) private readonly conflicts: ConflictService,
+    @Inject(TemporalConflictService)
+    private readonly temporalConflict: TemporalConflictService,
   ) {}
 
   onModuleInit(): void {
@@ -143,7 +146,14 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
         const confidenceDecimal = new Prisma.Decimal(
           verdict.confidence.toFixed(3),
         );
-        await this.prisma.ideaBlockLink.upsert({
+        // Agents v2 Фаза A1 — bi-temporal. validFrom/validUntil из LLM-hint
+        // (если LLM смог распарсить временной указатель из блоков). Если
+        // hint'ов нет — null; TemporalConflictService потом проставит
+        // validFrom = NOW() если возникнет конфликт.
+        const validFrom = parseIsoHint(verdict.validFromHint);
+        const validUntil = parseIsoHint(verdict.validUntilHint);
+
+        const upserted = await this.prisma.ideaBlockLink.upsert({
           where: {
             fromBlockId_toBlockId_relationType: {
               fromBlockId: block.id,
@@ -155,6 +165,10 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
             confidence: confidenceDecimal,
             explanation: verdict.explanation,
             status: 'active',
+            // Обновляем temporal-поля только если LLM явно их вернул
+            // (не затираем существующие значения null'ом).
+            ...(validFrom !== null ? { validFrom } : {}),
+            ...(validUntil !== null ? { validUntil } : {}),
           },
           create: {
             tenantId: block.tenantId,
@@ -165,9 +179,25 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
             explanation: verdict.explanation,
             createdBy: 'linker',
             status: 'active',
+            validFrom,
+            validUntil,
           },
         });
         createdCount += 1;
+
+        // Agents v2 Фаза A1 — best-effort: закрыть противоречащие existing
+        // open-links того же (from,to). Не валит job на ошибке.
+        try {
+          await this.temporalConflict.onNewBlockLink(upserted);
+        } catch (err) {
+          this.logger.warn(
+            {
+              linkId: upserted.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-linker: TemporalConflictService.onNewBlockLink упал — продолжаю',
+          );
+        }
 
         // SBA α-4 — эскалация в Слой 4: высокоуверенный `contradicts` →
         // `ConflictItem`. Best-effort: ошибка не валит link-job.
@@ -235,4 +265,29 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       'block-linker: финальный fail после всех ретраев',
     );
   }
+}
+
+/**
+ * Agents v2 Фаза A1 — узкий парсер ISO-hint'ов от LLM. Принимает строку
+ * вида `YYYY-MM-DD` / `YYYY-MM` / `YYYY` и возвращает Date (полночь UTC).
+ * При любой проблеме (null, undefined, мусор) — возвращает null, чтобы
+ * не валить upsert.
+ */
+function parseIsoHint(hint: string | null | undefined): Date | null {
+  if (!hint) return null;
+  const trimmed = hint.trim();
+  if (trimmed.length === 0) return null;
+  // Полная ISO-дата.
+  let iso: string;
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    iso = trimmed.length === 10 ? `${trimmed}T00:00:00.000Z` : trimmed;
+  } else if (/^\d{4}-\d{2}$/.test(trimmed)) {
+    iso = `${trimmed}-01T00:00:00.000Z`;
+  } else if (/^\d{4}$/.test(trimmed)) {
+    iso = `${trimmed}-01-01T00:00:00.000Z`;
+  } else {
+    return null;
+  }
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d : null;
 }

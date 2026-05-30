@@ -1,0 +1,14 @@
+# Agents v2 Фаза C2 — GEPA prompt evolution runner.
+# Python 3.11+ required. Installed in backend prod-runner Docker image.
+#
+# Версии:
+#   gepa: Reflective Prompt Evolution (arxiv 2507.19457, ICLR 2026 Oral).
+#   dspy-ai: DSPy framework для structured LLM-pipeline (>=2.6 для GEPA adapter).
+#   requests / tiktoken — стандартный HTTP/токенизатор для интеграций.
+#
+# Lower bounds, не pinned: даём GEPA-команде обновляться без блокеров;
+# breaking changes ловим через snapshot тесты `gepa-runner-real.spec.ts`.
+gepa>=0.1
+dspy-ai>=2.6.0
+requests>=2.31.0
+tiktoken>=0.5.0

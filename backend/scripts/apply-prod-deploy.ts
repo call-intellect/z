@@ -84,6 +84,9 @@ const STEPS: Step[] = [
     'dialog-layer', 'temporal', 'kie-grsai-ab',
     // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
     'sprints',
+    // Agents v2 (2026-05-30) — Фаза 0.1 probe-response-classify;
+    // в следующих волнах сюда добавятся остальные taskType.
+    'agents-v2',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -223,6 +226,32 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-demo-subscriptions.ts',
     hint: 'DEMO-подписка для Org, существовавших до paywall',
     skipBootstrap: true,
+  },
+
+  // 2026-05-29 — Фаза 0.5 (agents-v2-umbrella): после router fix
+  // `expertise|experience|competence` теперь идут также в 3-2-knowledge-clone.
+  // Old блоки уже в графе, но KnowledgeProfile сотрудников по ним не пересобирался —
+  // enqueue ребилд для employee'ев с такими canonical-блоками. Idempotent
+  // (jobId + debounce). На свежем prod нечего бэкфилить → skipBootstrap.
+  // ТЗ: plans/tz/2026-05-29-agents-v2-umbrella.md §Фаза 0.5.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-knowledge-clone-after-router-fix.ts',
+    hint: 'enqueue KnowledgeProfile rebuild для employee с expertise/experience/competence блоками (after router fix Фаза 0.5)',
+    skipBootstrap: true,
+  },
+
+  // 2026-05-30 — Agents v2 Фаза A1: bi-temporal edges. После prisma:push
+  // в IdeaBlockLink добавлены поля validFrom / validUntil. Backfill:
+  // legacy-записи получают validFrom = createdAt, validUntil = NULL
+  // (открытый интервал). Идемпотентен (WHERE validFrom IS NULL). Нужен
+  // и для fresh (на случай записей из seed'ов), и для upgrade.
+  // ТЗ: plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-edge-temporal.ts',
+    hint: 'validFrom = createdAt, validUntil = NULL для IdeaBlockLink/EntityLink (Agents v2 Фаза A1)',
+    skipBootstrap: false,
   },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===

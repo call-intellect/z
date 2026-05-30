@@ -20,6 +20,11 @@ import { ConciergeContextBuilderService } from './concierge-context-builder.serv
 import { ConciergeQuotaService } from './concierge-quota.service';
 import { ConciergeUndoLogService } from './concierge-undo-log.service';
 import { ServiceMapGeneratorService } from './service-map-generator.service';
+import {
+  ConciergeStepScorerService,
+  type StepCandidate,
+  type StepScore,
+} from './step-scorer.service';
 import { ToolRouterService } from './tool-router.service';
 
 /**
@@ -206,6 +211,15 @@ export class ConciergeService {
     @Optional()
     @Inject(DialogService)
     private readonly dialog: DialogService | null = null,
+    /**
+     * Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
+     * `@Optional()` — фича включается флагом `CONCIERGE_PRM_SHADOW_ENABLED`
+     * (default false). Существующие unit-тесты, мокающие конструктор без
+     * 12-го аргумента, остаются совместимыми.
+     */
+    @Optional()
+    @Inject(ConciergeStepScorerService)
+    private readonly stepScorer: ConciergeStepScorerService | null = null,
   ) {}
 
   /**
@@ -443,6 +457,21 @@ export class ConciergeService {
         requiresConfirm,
       };
 
+      // Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
+      // Запускаем PARALLEL c execution, чтобы не блокировать ответ пользователю.
+      // Никогда не подменяем LLM-выбор — это shadow mode. См.
+      // plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
+      const shadowScoringPromise = this.maybeStartShadowScoring({
+        llmCandidate: { toolName, args: params },
+        systemPrompt,
+        userMessage: userBlock,
+        tenantId: input.tenantId,
+        userId: input.userId,
+        effectiveQuestion,
+        history,
+        preHits,
+      });
+
       // Execute через ToolRouter.
       const execResult = await this.toolRouter.execute({
         toolName,
@@ -483,7 +512,7 @@ export class ConciergeService {
       };
 
       // Сохраняем tool-message в conversation.
-      await this.appendMessage({
+      const toolMessage = await this.appendMessage({
         conversationId: conversation.id,
         role: 'tool',
         content: JSON.stringify({
@@ -494,6 +523,18 @@ export class ConciergeService {
           errorMessage: execResult.errorMessage,
         }),
         toolCalls: [{ id: `call_${i}`, name: toolName, arguments: params }],
+      });
+
+      // Agents v2 Фаза B2 — PARALLEL shadow scoring уже стартовал выше.
+      // Дождёмся его и запишем ConciergeStepScore (без throw — shadow).
+      await this.finalizeShadowScoring({
+        shadowScoring: shadowScoringPromise,
+        conversationId: conversation.id,
+        messageId: toolMessage.id,
+        stepIndex: i,
+        tenantId: input.tenantId,
+        llmCandidate: { toolName, args: params },
+        effectiveQuestion,
       });
 
       toolMessages = [
@@ -799,5 +840,253 @@ export class ConciergeService {
       h = (h * 31 + tenantId.charCodeAt(i)) >>> 0;
     }
     return `bucket_${(h % 100).toString().padStart(2, '0')}`;
+  }
+
+  // ─────────────── Agents v2 Фаза B2 — PRM step-scorer (shadow) ────────
+
+  /**
+   * Запускает shadow scoring параллельно с execution. Возвращает promise,
+   * который никогда не throws — внутри try/catch + logger.warn. Если фича
+   * выключена (флаг / отсутствует stepScorer / не повезло с sampleRate) —
+   * сразу возвращает `null`.
+   *
+   * Top-K diversity: дополнительные K-1 LLM-вызовов с тем же промптом.
+   * Provider должен дать разные результаты при `temperature > 0`. Если
+   * provider детерминистский — дубликаты будут отфильтрованы по
+   * `(toolName, hash(args))`; в худшем случае scoring произойдёт только
+   * по LLM-выбору (K=1) — это допустимо для shadow.
+   */
+  private maybeStartShadowScoring(args: {
+    llmCandidate: StepCandidate;
+    systemPrompt: string;
+    userMessage: string;
+    tenantId: string;
+    userId: string;
+    effectiveQuestion: string;
+    history: ConciergeMessage[];
+    preHits: Array<{ query: string; result: unknown }>;
+  }): Promise<StepScore[] | null> {
+    if (!this.isPrmShadowEnabled()) return Promise.resolve(null);
+    if (!this.stepScorer) return Promise.resolve(null);
+
+    // Cost-защита: запускаем shadow только для каждого Nth вызова.
+    let sampleRate: number;
+    try {
+      sampleRate = this.cfg.concierge.prmShadowSampleRate;
+    } catch {
+      sampleRate = 1.0;
+    }
+    if (sampleRate < 1 && Math.random() > sampleRate) {
+      return Promise.resolve(null);
+    }
+
+    let topK: number;
+    try {
+      topK = Math.max(1, this.cfg.concierge.prmTopK);
+    } catch {
+      topK = 3;
+    }
+
+    const scorer = this.stepScorer;
+    return (async () => {
+      try {
+        // Соберём top-K кандидатов: первый — LLM choice; остальные K-1 — доп.
+        // вызовы того же промпта (provider должен дать diverse результаты при
+        // temperature > 0). LlmRouterService.call() не принимает temperature
+        // напрямую — diversity обеспечивает provider default (>0 для
+        // deepseek-chat/openai). Если provider детерминистский — duplicates
+        // отфильтруем ниже.
+        const candidates: StepCandidate[] = [args.llmCandidate];
+        const extraNeeded = Math.max(0, topK - 1);
+        if (extraNeeded > 0) {
+          const extras = await Promise.all(
+            Array.from({ length: extraNeeded }, () =>
+              this.generateAlternativeCandidate({
+                systemPrompt: args.systemPrompt,
+                userMessage: args.userMessage,
+                tenantId: args.tenantId,
+                userId: args.userId,
+              }).catch(() => null),
+            ),
+          );
+          for (const cand of extras) {
+            if (!cand) continue;
+            const dup = candidates.some(
+              (c) =>
+                c.toolName === cand.toolName &&
+                this.stableArgsHash(c.args) === this.stableArgsHash(cand.args),
+            );
+            if (!dup) candidates.push(cand);
+          }
+        }
+
+        const scores = await scorer.scoreAllCandidates({
+          goal: args.effectiveQuestion,
+          history: args.history,
+          retrievedContext: args.preHits,
+          candidates,
+          tenantId: args.tenantId,
+        });
+        return scores;
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'concierge PRM shadow scoring failed (non-fatal)',
+        );
+        return null;
+      }
+    })();
+  }
+
+  /**
+   * Финализирует shadow scoring: дожидается результата, считает ранги
+   * относительно PRM-сортировки и записывает `ConciergeStepScore`.
+   * Метод никогда не throws — все ошибки логируются как warn.
+   */
+  private async finalizeShadowScoring(args: {
+    shadowScoring: Promise<StepScore[] | null>;
+    conversationId: string;
+    messageId: string;
+    stepIndex: number;
+    tenantId: string;
+    llmCandidate: StepCandidate;
+    effectiveQuestion: string;
+  }): Promise<void> {
+    let scores: StepScore[] | null;
+    try {
+      scores = await args.shadowScoring;
+    } catch {
+      scores = null;
+    }
+    if (!scores || scores.length === 0) return;
+
+    try {
+      // Сортируем по убыванию score → определяем top-1 PRM.
+      const sorted = [...scores].sort((a, b) => b.score - a.score);
+      const llmHash = this.stableArgsHash(args.llmCandidate.args);
+      const selectedRank =
+        sorted.findIndex(
+          (s) =>
+            s.candidate.toolName === args.llmCandidate.toolName &&
+            this.stableArgsHash(s.candidate.args) === llmHash,
+        ) + 1; // 1-based; 0 → not found → +1 = 1 (fallback)
+      const effectiveRank = selectedRank === 0 ? 1 : selectedRank;
+      const selectedEntry =
+        sorted.find(
+          (s) =>
+            s.candidate.toolName === args.llmCandidate.toolName &&
+            this.stableArgsHash(s.candidate.args) === llmHash,
+        ) ?? sorted[0]!;
+      const topPrm = sorted[0]!;
+      const prmAgreed =
+        topPrm.candidate.toolName === args.llmCandidate.toolName &&
+        this.stableArgsHash(topPrm.candidate.args) === llmHash;
+
+      // Метрики (никогда не throws — Optional metrics).
+      this.metrics.incConciergePrmAgreement?.({
+        agreed: prmAgreed ? 'true' : 'false',
+      });
+      const rankLabel: '1' | '2' | '3' | 'other' =
+        effectiveRank === 1
+          ? '1'
+          : effectiveRank === 2
+            ? '2'
+            : effectiveRank === 3
+              ? '3'
+              : 'other';
+      this.metrics.incConciergePrmLlmRank?.({ rank: rankLabel });
+      for (const s of sorted) {
+        this.metrics.observeConciergePrmScore?.({
+          toolName: s.candidate.toolName,
+          score: s.score,
+        });
+      }
+
+      await this.prisma.conciergeStepScore.create({
+        data: {
+          tenantId: args.tenantId,
+          conversationId: args.conversationId,
+          messageId: args.messageId,
+          stepIndex: args.stepIndex,
+          goalSummary: args.effectiveQuestion.slice(0, 500),
+          selectedTool: {
+            toolName: args.llmCandidate.toolName,
+            args: args.llmCandidate.args,
+          } as unknown as Prisma.InputJsonValue,
+          alternatives: sorted.map((s) => ({
+            toolName: s.candidate.toolName,
+            args: s.candidate.args,
+            score: s.score,
+            reasoning: s.reasoning,
+          })) as unknown as Prisma.InputJsonValue,
+          selectedScore: selectedEntry.score,
+          selectedRank: effectiveRank,
+          // В фазе B всегда совпадает с selectedRank (см. поле в schema.prisma).
+          llmChoseRank: effectiveRank,
+          prmAgreed,
+          promotedToActive: false,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          conversationId: args.conversationId,
+        },
+        'concierge PRM: запись ConciergeStepScore упала (shadow no-op)',
+      );
+    }
+  }
+
+  /**
+   * Дополнительный LLM-вызов с тем же промптом, что и основной concierge-respond.
+   * Используется только при `prmShadowEnabled=true`. Парсит ответ как tool_call;
+   * если LLM вернул final-текст — возвращает null (нет альтернативного tool).
+   */
+  private async generateAlternativeCandidate(args: {
+    systemPrompt: string;
+    userMessage: string;
+    tenantId: string;
+    userId: string;
+  }): Promise<StepCandidate | null> {
+    const out = await this.llm.call({
+      taskType: 'concierge-respond',
+      systemPrompt: args.systemPrompt,
+      userMessage: args.userMessage,
+      tenantId: args.tenantId,
+      userId: args.userId,
+      maxTokens: 1500,
+    });
+    const parsed = this.tryParseToolCall(out.text);
+    if (parsed.kind !== 'tool_call') return null;
+    return { toolName: parsed.toolName, args: parsed.params };
+  }
+
+  private isPrmShadowEnabled(): boolean {
+    try {
+      return this.cfg.concierge.prmShadowEnabled === true;
+    } catch {
+      this.metrics.incConciergeConfigError?.({ reason: 'other' });
+      return false;
+    }
+  }
+
+  /**
+   * Стабильный хеш args для сравнения «тот же tool_call?». Использует
+   * отсортированный по ключам JSON.stringify — порядок ключей не должен
+   * влиять на сравнение.
+   */
+  private stableArgsHash(args: Record<string, unknown>): string {
+    try {
+      const sorted = Object.keys(args)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, k) => {
+          acc[k] = args[k];
+          return acc;
+        }, {});
+      return JSON.stringify(sorted);
+    } catch {
+      return '{}';
+    }
   }
 }

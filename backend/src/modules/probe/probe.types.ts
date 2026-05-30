@@ -24,8 +24,9 @@ export interface ProbeSuggestPayload {
   contextCardTitle?: string;
   /** Готовый вопрос (fallback, если LLM probe-formulate упал). */
   suggestedQuestion?: string;
-  /** Готовый список options (fallback). */
-  suggestedOptions?: readonly string[];
+  // 2026-05-30 (Agents v2 Фаза 0.2): suggestedOptions удалены — probe без кнопок.
+  // Ответ всегда свободным текстом или голосом. suggestedActions выше остаются
+  // как семантический контекст для LLM probe-formulate (не показываются пользователю).
   /** dataClass — для маршрутизации каналов. */
   dataClass?: DataClass;
   /** actionUrl для UI. */

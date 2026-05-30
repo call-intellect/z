@@ -21,6 +21,51 @@
 
 ---
 
+### 🧬 2026-05-30 — Agents v2 Phase C2 (GEPA prompt evolution)
+
+План: [plans/tz/2026-05-29-agents-v2-umbrella.md](../../plans/tz/2026-05-29-agents-v2-umbrella.md) §C2.
+
+**Краткое содержание:**
+- Новая Prisma модель `PromptCandidate` + enum `CandidateStatus` + back-relation в `Org`.
+- В `LlmTaskRoute` добавлены 2 поля: `evolutionEnabled Boolean @default(true)`, `promptOverride String?`.
+- Python subprocess `backend/python/gepa/runner.py` + `requirements.txt` (gepa, dspy-ai, requests, tiktoken).
+- Dockerfile runner stage: установка `python3 py3-pip` + `pip install -r python/gepa/requirements.txt` (с `--break-system-packages` для alpine PEP 668).
+- 3 cron'a в `prompt-evolution` модуле: `GepaOptimizeCron` (Sun 04:00), `GepaPromoteCron` (Sun 05:00), `GepaAbMonitorCron` (каждые 15 мин).
+- `LlmRouterService` теперь подхватывает `PromptCandidate(status='testing')` через минутный refresh кэша; на каждый `call()` deterministic-hash A/B sampling → подменяет systemPrompt + помечает `AiUsageLog.experimentGroup='gepa_candidate'`.
+- 4 admin REST-эндпоинта в `/api/v1/admin/prompt-evolution/`: `GET candidates`, `PATCH candidates/:id/reject`, `POST rollback/:promptKey`, `PATCH lock/:promptKey`.
+- 7 новых метрик: `z_gepa_optimizations_total`, `z_gepa_candidates_total`, `z_gepa_promoted_total`, `z_gepa_rejected_total`, `z_gepa_ab_active_total`, `z_gepa_cost_usd_total`, `z_gepa_rollback_total`.
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — **10 новых опциональных**, все безопасные дефолты, мастер-флаг `PROMPT_EVOLUTION_ENABLED=false`. Включать ПОСЛЕ ручной валидации Python subprocess в staging:
+  - `PROMPT_EVOLUTION_ENABLED=false` — мастер-флаг 3 cron'ов GEPA.
+  - `GEPA_MAX_METRIC_CALLS=150` — лимит rollouts (~$15 за прогон).
+  - `GEPA_REFLECTION_LM=deepseek-v4-pro` / `GEPA_TASK_LM=deepseek-v4-pro` — модели Python-runner'а.
+  - `GEPA_AB_TRAFFIC_SHARE=0.1` — 10% трафика на candidate.
+  - `GEPA_AB_MIN_INVOCATIONS_BEFORE_DECISION=100` — минимум B-вызовов для promote.
+  - `GEPA_AB_PROMOTE_THRESHOLD=0.05` / `GEPA_AB_REJECT_THRESHOLD=0.10` — пороги composite score.
+  - `GEPA_PYTHON_PATH=/usr/bin/python3` — путь к Python (alpine).
+  - `GEPA_TIMEOUT_MS=3600000` — hard-timeout subprocess (1ч).
+- **Шаг 4 — Prisma** — безопасное добавление: новая модель `PromptCandidate` + 2 nullable/defaulted поля в `LlmTaskRoute`. Применить через `docker compose exec backend bun run prisma:push`.
+- **Шаг 11 — Docker image rebuild** — **обязателен**: runner stage теперь устанавливает Python + pip. Без rebuild — старый образ запустится, но GEPA-cron'ы будут пропускать optimization (status=`skipped_no_python`) — безопасный no-op.
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Python и runner внутри контейнера:
+  docker compose exec backend python3 python/gepa/runner.py --version
+  # Ожидаемо: JSON {"runner":"gepa-runner","version":"0.1.0","python":"3.x..."}
+
+  # 2. Метрики GEPA появляются после первого optimize-cron (Sun 04:00 + при PROMPT_EVOLUTION_ENABLED=true):
+  curl -s https://prod.host/metrics | grep -E 'z_gepa_(optimizations|candidates|promoted|rejected|ab_active|cost_usd|rollback)_total'
+  # Help-комментарии видны сразу; серии — после первого прогона.
+
+  # 3. Admin REST: список кандидатов (требует cookie Org-admin'а):
+  curl -i -H 'Cookie: <auth>' https://prod.host/api/v1/admin/prompt-evolution/candidates
+  # Ожидаемо: 200 { items: [], total: 0, page: 1, limit: 50 } до первого optimize-cron.
+  ```
+- **Откат:** установить `PROMPT_EVOLUTION_ENABLED=false` → restart backend. Cron'ы no-op, существующие `PromptCandidate(status='testing')` ничего не сломают (LlmRouter перестанет их подхватывать). Для полного rollback `promoted` промпта: `POST /api/v1/admin/prompt-evolution/rollback/:promptKey`.
+
+---
+
 ### 📦 2026-05-30 — Commercial-reliability pack (4 фазы)
 
 План: [plans/tz/2026-05-29-commercial-reliability-package.md](../../plans/tz/2026-05-29-commercial-reliability-package.md).

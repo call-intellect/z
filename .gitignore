@@ -35,3 +35,13 @@ infra/livekit/egress.yaml
 
 # Локальные артефакты smoke-тестов и lint
 backend/tmp/
+
+# Claude Code harness кеш/state агентов
+.agents/
+.impeccable/
+.qwen/
+.claude/worktrees/
+
+# Debug-скриншоты в корне (не для коммита — лежат в plans/analysis/<topic>/ если важны)
+/audit-board-*.png
+/v*-hero.png

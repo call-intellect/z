@@ -15,6 +15,8 @@ import { TypedConfigService } from '../../common/config/index';
 import {
   MeetingNotFoundError,
   NotAuthorizedError,
+  ParticipantNotFoundError,
+  ParticipantRenameForbiddenError,
 } from '../../common/errors/domain-errors';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -511,6 +513,51 @@ export class MeetingsService {
    * После — встреча идёт через FSM (active/completed) — отмена тут невалидна.
    */
   /**
+   * Zoom-модель: хост переименовывает гостя после встречи (commercial-reliability
+   * pack, 2026-05-30, Фаза 3). Только незарегистрированных участников — у
+   * пользователей с аккаунтом имя берётся из `User.name`.
+   *
+   * Защита:
+   *   - `getForUser` бросит `NotAuthorizedError`, если actor не хост встречи;
+   *   - `participantId` проверяется в рамках `meetingId` (защита от
+   *     path-traversal: «попытка переименовать чужого participant'а через
+   *     URL чужой встречи»);
+   *   - `isRegisteredUser=true` → `ParticipantRenameForbiddenError`.
+   */
+  async renameParticipant(args: {
+    meetingId: string;
+    participantId: string;
+    newName: string;
+    actorUserId: string;
+  }): Promise<Participant> {
+    await this.getForUser(args.meetingId, args.actorUserId);
+
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: args.participantId, meetingId: args.meetingId },
+    });
+    if (!participant) {
+      throw new ParticipantNotFoundError(args.participantId);
+    }
+
+    if (participant.isRegisteredUser) {
+      throw new ParticipantRenameForbiddenError(args.participantId);
+    }
+
+    const trimmed = args.newName.trim();
+    const updated = await this.prisma.participant.update({
+      where: { id: args.participantId },
+      data: { name: trimmed },
+    });
+
+    this.metrics.incParticipantRenamed();
+    this.logger.log(
+      `participant renamed: meeting=${args.meetingId} pid=${args.participantId} ` +
+        `oldName="${participant.name}" newName="${trimmed}" by=${args.actorUserId}`,
+    );
+    return updated;
+  }
+
+  /**
    * Soft-delete встречи (workspace M3a). Хост-only. Помечает `deletedAt`,
    * списки автоматически фильтруют по `deletedAt: null` (см. репозиторий).
    * Идемпотентно: повторный вызов на уже удалённой возвращает без ошибки.
@@ -642,6 +689,12 @@ export class MeetingsService {
       role: 'host' | 'guest';
       joinedAt: string | null;
       leftAt: string | null;
+      /**
+       * Commercial-reliability pack (Фаза 3 — Zoom-модель): нужно UI чтобы
+       * показать «карандашик» переименования только для гостей. У
+       * зарегистрированных имя из User.name и редактируется в профиле.
+       */
+      isRegisteredUser: boolean;
     }>;
     aiResult: {
       summary: string;
@@ -713,6 +766,7 @@ export class MeetingsService {
         role: p.role,
         joinedAt: p.joinedAt?.toISOString() ?? null,
         leftAt: p.leftAt?.toISOString() ?? null,
+        isRegisteredUser: p.isRegisteredUser,
       })),
       aiResult: meeting.aiResult
         ? this.toAiResultDto(meeting.aiResult)

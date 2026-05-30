@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -54,6 +55,11 @@ const RegenerateSectionSchema = z.object({
   userInstruction: z.string().max(2000).optional(),
 });
 type RegenerateSectionBody = z.infer<typeof RegenerateSectionSchema>;
+
+const UpdateParticipantSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+type UpdateParticipantBody = z.infer<typeof UpdateParticipantSchema>;
 
 /**
  * Cookie endpoints для встреч (для фронта).
@@ -303,6 +309,36 @@ export class MeetingsController {
   ): Promise<{ ok: true }> {
     await this.hostControls.finish(meetingId, user.id);
     return { ok: true };
+  }
+
+  /**
+   * Zoom-модель (commercial-reliability pack, 2026-05-30, Фаза 3): хост
+   * переименовывает гостя встречи (`Participant.isRegisteredUser=false`)
+   * после её окончания. Зарегистрированных трогать нельзя — их имя из аккаунта.
+   *
+   * Защита: хост-only (через `meetings.renameParticipant` → `getForUser`).
+   *   - 403 `not_authorized` — actor не хост встречи;
+   *   - 403 `participant_rename_forbidden` — попытка переименовать
+   *     зарегистрированного участника;
+   *   - 404 `participant_not_found` — participant не найден или принадлежит
+   *     другой встрече (защита от path-traversal).
+   */
+  @Patch(':id/participants/:pid')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.OK)
+  async updateParticipant(
+    @Param('id') meetingId: string,
+    @Param('pid') participantId: string,
+    @Body(new ZodValidationPipe(UpdateParticipantSchema)) body: UpdateParticipantBody,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ id: string; name: string }> {
+    const updated = await this.meetings.renameParticipant({
+      meetingId,
+      participantId,
+      newName: body.name,
+      actorUserId: user.id,
+    });
+    return { id: updated.id, name: updated.name };
   }
 
   /**

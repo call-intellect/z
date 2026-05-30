@@ -18,7 +18,7 @@
 
 | Процесс | Триггер | Источник | Статус | Аудит |
 |---|---|---|---|---|
-| [[meeting-create-and-invite]] | действие | хост жмёт «Новая встреча» | ⚠️ partial | 2026-05-29 |
+| [[meeting-create-and-invite]] | действие | хост жмёт «Новая встреча» | ✅ implemented | 2026-05-30 |
 | [[meeting-in-progress]] | webhook | LiveKit-сессия активна, события room/track | ⚠️ partial | 2026-05-29 |
 | [[meeting-end-and-recording]] | webhook | LiveKit `room_finished` / `egress_ended` | ✅ implemented | 2026-05-29 |
 | [[meeting-post-processing]] ⭐ | webhook | LiveKit `egress_ended` → ai-pipeline | ⚠️ partial | 2026-05-29 |
@@ -82,8 +82,8 @@
 
 | Статус | Кол-во |
 |---|---|
-| ✅ implemented | 19 |
-| ⚠️ partial | 8 |
+| ✅ implemented | 20 |
+| ⚠️ partial | 7 |
 | ❌ designed_only | 0 |
 | 🗑 deprecated | 0 |
 | **Всего процессов в реестре** | **27** |

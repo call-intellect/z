@@ -253,6 +253,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // отброшен first-touch гардом (AttributionService.attributeOrg). Считаем
   // только реальные блокировки last-touch попыток.
   private referralAttributionFirstTouchLockedTotal!: Counter<string>;
+  // commercial-reliability pack (2026-05-30, Фаза 3) — хост переименовал гостя
+  // встречи (Zoom-модель: гость представился именем при входе, хост может
+  // поправить после встречи).
+  private participantRenamedTotal!: Counter<string>;
   // audit С3 (2026-05-29) — safeEmit() в BillingService поймал ошибку
   // listener'а. Лейбл event = BillingEvent.* (см. billing.types.ts).
   private billingEmitFailedTotal!: Counter<'event'>;
@@ -272,6 +276,17 @@ export class BusinessMetricsService implements OnModuleInit {
   private botVoiceAsrDurationSeconds!: Histogram<'channel'>;
   // source ∈ llm | heuristic. intent ∈ chat_query | free_note.
   private botIntentClassifiedTotal!: Counter<'channel' | 'intent' | 'source'>;
+  // ТЗ 2026-05-29 telegram-self-initiated-checkins — распознавание
+  // plan/report в bot-адаптере. source ∈ llm | fallback_heuristic |
+  // fallback_factual_at_llm_fail. kind ∈ morning | evening.
+  private botCheckinIntentClassifierTotal!: Counter<
+    'channel' | 'kind' | 'source'
+  >;
+  // ТЗ 2026-05-29 telegram-self-initiated-checkins — outcome обработки
+  // self-initiated daily_checkin_self в CheckinResponseHandler.processSelfInitiated.
+  // outcome ∈ saved | low_parser_confidence_curator_review | no_person |
+  // no_membership | error.
+  private botDailyCheckinSelfTotal!: Counter<'channel' | 'kind' | 'outcome'>;
 
   // ── tracker Phase 4 РФ — Telegram-бот для задач (Wave 3, 2026-05-24) ──
   // tenant_top — top-100 буцет (хэш % 64) во избежание раздутия cardinality.
@@ -1389,6 +1404,13 @@ export class BusinessMetricsService implements OnModuleInit {
         'реферальной ссылке отброшен first-touch гардом (Org.pendingAttributionSlug IS NOT NULL).',
       labelNames: [] as const,
     });
+    this.participantRenamedTotal = this.getOrCreateCounter({
+      name: 'participant_renamed_total',
+      help:
+        'commercial-reliability pack (2026-05-30, Фаза 3) — хост переименовал ' +
+        'гостя встречи (Participant.isRegisteredUser=false).',
+      labelNames: [] as const,
+    });
     this.billingEmitFailedTotal = this.getOrCreateCounter({
       name: 'billing_emit_failed_total',
       help:
@@ -1440,6 +1462,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'bot_intent_classified_total',
       help: 'SBA β-1 zero-button — результат intent-классификации входящего текста/voice (intent: chat_query/free_note; source: llm/heuristic).',
       labelNames: ['channel', 'intent', 'source'] as const,
+    });
+    // ТЗ 2026-05-29 telegram-self-initiated-checkins — distinct-метрика
+    // для plan/report (kind=morning/evening) с разделением источника
+    // (llm / fallback_heuristic / fallback_factual_at_llm_fail).
+    this.botCheckinIntentClassifierTotal = this.getOrCreateCounter({
+      name: 'z_bot_checkin_intent_classifier_total',
+      help: 'ТЗ 2026-05-29 telegram-self-initiated-checkins — распознавание plan/report в bot-адаптере (kind: morning/evening; source: llm/fallback_heuristic/fallback_factual_at_llm_fail).',
+      labelNames: ['channel', 'kind', 'source'] as const,
+    });
+    // ТЗ 2026-05-29 telegram-self-initiated-checkins — outcome обработки
+    // self-initiated daily_checkin_self в CheckinResponseHandler.
+    this.botDailyCheckinSelfTotal = this.getOrCreateCounter({
+      name: 'z_bot_daily_checkin_self_total',
+      help: 'ТЗ 2026-05-29 telegram-self-initiated-checkins — outcome обработки self-initiated daily_checkin_self (saved/low_parser_confidence_curator_review/no_person/no_membership/error).',
+      labelNames: ['channel', 'kind', 'outcome'] as const,
     });
 
     // ── tracker Phase 4 РФ — Telegram-бот для задач (Wave 3, 2026-05-24) ──
@@ -3587,6 +3624,14 @@ export class BusinessMetricsService implements OnModuleInit {
     this.referralAttributionFirstTouchLockedTotal.inc();
   }
 
+  /**
+   * commercial-reliability pack (2026-05-30, Фаза 3) — хост переименовал гостя
+   * встречи (PATCH /meetings/:id/participants/:pid).
+   */
+  incParticipantRenamed(): void {
+    this.participantRenamedTotal.inc();
+  }
+
   /** audit С3 — listener BillingEvent упал, side-effect не выполнен. */
   incBillingEmitFailed(args: { event: string }): void {
     this.billingEmitFailedTotal.inc({ event: args.event });
@@ -3637,7 +3682,12 @@ export class BusinessMetricsService implements OnModuleInit {
       | 'document'
       | 'start_command'
       | 'link_code'
-      | 'other';
+      | 'other'
+      // ТЗ 2026-05-29 telegram-self-initiated-checkins — резервируем kind
+      // для будущего использования, чтобы можно было считать inbound
+      // отдельно от обычного text. Сейчас не инкрементируется (Phase 2);
+      // включение — в Phase 4/5 при подсчёте saved-успехов.
+      | 'daily_checkin_self';
   }): void {
     this.botInboundTotal.inc({ channel: args.channel, kind: args.kind });
   }
@@ -3664,6 +3714,43 @@ export class BusinessMetricsService implements OnModuleInit {
       channel: args.channel,
       intent: args.intent,
       source: args.source,
+    });
+  }
+
+  /**
+   * ТЗ 2026-05-29 — счётчик распознавания plan/report в bot-адаптере.
+   * source ∈ {llm, fallback_heuristic, fallback_factual_at_llm_fail}.
+   */
+  incBotCheckinIntentClassifier(args: {
+    channel: 'telegram_bot' | 'max_bot';
+    kind: 'morning' | 'evening';
+    source: 'llm' | 'fallback_heuristic' | 'fallback_factual_at_llm_fail';
+  }): void {
+    this.botCheckinIntentClassifierTotal.inc({
+      channel: args.channel,
+      kind: args.kind,
+      source: args.source,
+    });
+  }
+
+  /**
+   * ТЗ 2026-05-29 — outcome обработки self-initiated daily_checkin_self в
+   * CheckinResponseHandler.processSelfInitiated (Phase 4).
+   */
+  incBotDailyCheckinSelf(args: {
+    channel: 'telegram_bot' | 'max_bot';
+    kind: 'morning' | 'evening';
+    outcome:
+      | 'saved'
+      | 'low_parser_confidence_curator_review'
+      | 'no_person'
+      | 'no_membership'
+      | 'error';
+  }): void {
+    this.botDailyCheckinSelfTotal.inc({
+      channel: args.channel,
+      kind: args.kind,
+      outcome: args.outcome,
     });
   }
 

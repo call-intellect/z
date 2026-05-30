@@ -35,6 +35,7 @@ import {
   MessageCircle,
   MessageSquareText,
   MoreHorizontal,
+  Pencil,
   Search,
   Play,
   Plus,
@@ -335,6 +336,21 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   tasksCount={primaryTasks.length}
                   highlightsCount={highlights.length}
                 />
+                {/*
+                 * Zoom-модель (commercial-reliability pack, 2026-05-30, Фаза 3):
+                 * хост видит участников встречи и может переименовать гостей
+                 * (тех, у кого `isRegisteredUser=false`). Зарегистрированных
+                 * нельзя — их имя из User.name.
+                 */}
+                {result?.participants && (
+                  <div className="mt-4">
+                    <ParticipantsSection
+                      meetingId={meetingId}
+                      participants={result.participants}
+                      onMutate={() => void mutateResult()}
+                    />
+                  </div>
+                )}
                 {/* Фаза A.3 — Кнопка обратной связи 👍/👎 на AI-отчёт. */}
                 <div className="mt-4">
                   <FeedbackButton meetingId={meetingId} />
@@ -1575,6 +1591,151 @@ function NotesTab({
         </p>
       )}
     </Card>
+  );
+}
+
+// ─────────────── Participants (Zoom-rename) ───────────────
+
+type ParticipantRowDto = {
+  id: string;
+  name: string;
+  role: 'host' | 'guest';
+  isRegisteredUser: boolean;
+};
+
+/**
+ * Список участников встречи. Для хоста — inline-edit имени гостя
+ * (`isRegisteredUser=false`). Зарегистрированных не редактируем.
+ */
+function ParticipantsSection({
+  meetingId,
+  participants,
+  onMutate,
+}: {
+  meetingId: string;
+  participants: ParticipantRowDto[];
+  onMutate: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader title="Участники" />
+      <ul className="m-0 flex flex-col gap-2 p-0 list-none">
+        {participants.map((p) => (
+          <ParticipantRow
+            key={p.id}
+            meetingId={meetingId}
+            participant={p}
+            onSaved={onMutate}
+          />
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function ParticipantRow({
+  meetingId,
+  participant,
+  onSaved,
+}: {
+  meetingId: string;
+  participant: ParticipantRowDto;
+  onSaved: () => void;
+}) {
+  const canEdit = !participant.isRegisteredUser;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(participant.name);
+  const [saving, setSaving] = useState(false);
+
+  const onStart = () => {
+    setDraft(participant.name);
+    setEditing(true);
+  };
+
+  const onCancel = () => {
+    setEditing(false);
+    setDraft(participant.name);
+  };
+
+  const onSave = async () => {
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      toast.error('Имя не может быть пустым');
+      return;
+    }
+    if (trimmed === participant.name) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await meetingsApi.renameParticipant(meetingId, participant.id, {
+        name: trimmed,
+      });
+      toast.success('Имя обновлено');
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Не удалось переименовать';
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-3 rounded-md border border-border-subtle bg-bg-base px-3 py-2">
+      <div className="min-w-0 flex-1">
+        {editing ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void onSave();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  onCancel();
+                }
+              }}
+              placeholder="Введите имя участника"
+              maxLength={120}
+              disabled={saving}
+              className="flex-1 rounded-md border border-accent-border bg-bg-overlay px-2 py-1 text-sm outline-none disabled:opacity-50"
+              aria-label="Имя участника"
+            />
+            <Button size="sm" onClick={() => void onSave()} disabled={saving}>
+              {saving ? <Loader2 size={12} className="animate-spin" /> : null}
+              Сохранить
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>
+              Отмена
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm text-fg-primary">{participant.name}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-fg-tertiary">
+              {participant.role === 'host' ? 'хост' : 'гость'}
+            </span>
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={onStart}
+                className="ml-1 grid h-6 w-6 place-items-center rounded text-fg-tertiary hover:bg-bg-overlay hover:text-accent"
+                aria-label="Переименовать гостя"
+                title="Переименовать гостя"
+              >
+                <Pencil size={12} strokeWidth={1.75} />
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </li>
   );
 }
 

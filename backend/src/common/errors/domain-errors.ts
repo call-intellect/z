@@ -62,6 +62,23 @@ export class NotAuthorizedError extends DomainError {
   }
 }
 
+/**
+ * Хост пытается переименовать `Participant`, у которого `isRegisteredUser=true`.
+ * Имя такого участника берётся из `User.name` и редактируется владельцем
+ * аккаунта, а не хостом встречи.
+ */
+export class ParticipantRenameForbiddenError extends DomainError {
+  readonly code = 'participant_rename_forbidden';
+  readonly httpStatus = 403;
+
+  constructor(participantId: string) {
+    super(
+      'Нельзя переименовать зарегистрированного участника — его имя берётся из аккаунта.',
+      { participantId },
+    );
+  }
+}
+
 // ─────────────────────────── 404 ──────────────────────────────────────
 
 export class MeetingNotFoundError extends DomainError {
@@ -70,6 +87,15 @@ export class MeetingNotFoundError extends DomainError {
 
   constructor(meetingId: string) {
     super('Встреча не найдена', { meetingId });
+  }
+}
+
+export class ParticipantNotFoundError extends DomainError {
+  readonly code = 'participant_not_found';
+  readonly httpStatus = 404;
+
+  constructor(participantId: string) {
+    super('Участник не найден', { participantId });
   }
 }
 

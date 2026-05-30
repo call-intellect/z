@@ -2,8 +2,8 @@
 name: meeting-create-and-invite
 title: Создание встречи и приглашение гостя
 trigger_type: user_action
-status_overall: partial
-last_audited: 2026-05-29
+status_overall: implemented
+last_audited: 2026-05-30
 owners_human:
   - продакт встреч
   - инженер frontend-команды встреч
@@ -123,8 +123,11 @@ Participant{role='guest', livekitIdentity='guest:<nanoid>'} + guest cookie + gue
 
 ## 8. Расхождения «задумано vs реализовано»
 
+**Закрытые расхождения (история):**
+- ~~**Авто-приглашение гостя в Telegram/email**~~ — **закрыто продуктовым решением 2026-05-29**: делаем модель Zoom. `POST /meetings` возвращает одну ссылку `/m/{id}`, хост сам шлёт куда угодно. Гость представляется именем при входе ([Lobby.tsx](../../frontend/src/ui/components/lobby/Lobby.tsx) + [GuestNameForm.tsx:46](../../frontend/src/ui/components/lobby/GuestNameForm.tsx#L46)).
+- ~~**Переименование гостя после встречи**~~ — **закрыто 2026-05-30 (Фаза 3 commercial-reliability pack)**: `PATCH /api/v1/meetings/:id/participants/:pid` (хост-only, только `isRegisteredUser=false`) + inline-edit в UI результата (`ParticipantsSection` в [MeetingResultPageReal.tsx](../../frontend/src/ui/components/meeting-result-v2/MeetingResultPageReal.tsx)). Метрика `participant_renamed_total`. AI-отчёт показывает обновлённое имя автоматически (имена резолвятся на чтении из `Participant.name`).
+
 **Заложено в ТЗ / messaging, но не реализовано:**
-- ~~**Авто-приглашение гостя в Telegram/email**~~ — **закрыто продуктовым решением 2026-05-29**: делаем модель Zoom. `POST /meetings` возвращает одну ссылку `/m/{id}`, хост сам шлёт куда угодно. Гость представляется именем при входе (это уже работает — [Lobby.tsx](../../frontend/src/ui/components/lobby/Lobby.tsx) + [GuestNameForm.tsx:46](../../frontend/src/ui/components/lobby/GuestNameForm.tsx#L46)). Дополнительно — endpoint `PATCH /meetings/:id/participants/:pid` для переименования гостя после встречи добавляется в [`plans/tz/2026-05-29-commercial-reliability-package.md`](../../plans/tz/2026-05-29-commercial-reliability-package.md) **Фаза 3**.
 - **Subtitles (live ASR во время встречи)** — компоненты в `frontend/src/ui/components/meeting-room/` (ChatPanel, ControlsBar, RecordingIndicator, RaiseHandButton, ParticipantsPanel) есть, но subtitle-компонента нет, hook'а live-распознавания нет. Live-режим распознавания не реализован — расшифровка только пост-фактум (см. [[meeting-post-processing]]).
 
 **Реализовано иначе:**
@@ -140,6 +143,7 @@ Participant{role='guest', livekitIdentity='guest:<nanoid>'} + guest cookie + gue
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-05-30 | Zoom-rename: `PATCH /meetings/:id/participants/:pid` + inline-edit UI хоста для гостей. Закрыт §1.6 (auto-invite) Zoom-моделью. `status_overall: partial → implemented`. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 3 |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-25 | Параметр `record_by_default` в форме создания | [[01_projects/recording]] |
 | 2026-05-08 | Базовый сценарий MVP (Crossmark + in-app) | [[plans/tz/2026-05-08-mvp-fullstack-tz]] |

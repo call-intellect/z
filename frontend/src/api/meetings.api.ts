@@ -76,7 +76,11 @@ export type MeetingDetailApi = MeetingApi & {
 
 export type ResultApiResponse = {
   meeting: MeetingApi;
-  participants: ParticipantApi[];
+  /**
+   * Commercial-reliability pack (Фаза 3) — `isRegisteredUser` нужен UI для
+   * показа inline-edit «карандашика» только у гостей.
+   */
+  participants: Array<ParticipantApi & { isRegisteredUser: boolean }>;
   aiResult: AiResultApi | null;
   recording: {
     hasRecording: boolean;
@@ -243,6 +247,16 @@ export const meetingsApi = {
   lowerHand: (id: string, pid: string) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/participants/${encodeURIComponent(pid)}/lower-hand`,
+    ),
+
+  /**
+   * Commercial-reliability pack (Фаза 3) — Zoom-модель: хост переименовывает
+   * гостя (`isRegisteredUser=false`) после встречи.
+   */
+  renameParticipant: (id: string, pid: string, body: { name: string }) =>
+    apiClient.patch<{ id: string; name: string }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/participants/${encodeURIComponent(pid)}`,
+      body,
     ),
 
   retryAi: (id: string) =>

@@ -169,6 +169,38 @@ export type DirectorDashboardStrategicAlignmentApi = {
   alertGoals: DirectorDashboardAlertGoalApi[];
 };
 
+// ─── Citations (Pulse Wave 1 §1.4 — Transparent Sourcing) ───────────────────
+
+export type CitationType = 'ib' | 'theme' | 'ent' | 'mtg' | 'goal' | 'dec';
+
+export type CitationApi = {
+  number: number;
+  type: CitationType;
+  id: string;
+  label: string;
+  url: string | null;
+};
+
+export type NarrativeSummaryApi = {
+  text: string;
+  citations: CitationApi[];
+};
+
+// Domain-зеркало (просто алиасы — типы plain).
+export type CitationDomain = CitationApi;
+export type NarrativeSummaryDomain = NarrativeSummaryApi;
+
+// ─── KPI hero (Pulse Wave 1 §1.5) ───────────────────────────────────────────
+
+export type DirectorDashboardKpiApi = {
+  value: number;
+  sparkline: Array<number | null>;
+  delta: number | null;
+  trend?: 'up' | 'flat' | 'down';
+};
+
+export type DirectorDashboardKpiDomain = DirectorDashboardKpiApi;
+
 export type DirectorDashboardApi = {
   period: DirectorDashboardPeriod;
   generatedAt: string;
@@ -178,8 +210,25 @@ export type DirectorDashboardApi = {
   activeThemes: DirectorDashboardThemeApi[];
   hotEntities: DirectorDashboardEntityApi[];
   openQuestions: DirectorDashboardOpenQuestionApi[];
-  narrativeSummary: string | null;
+  narrativeSummary: NarrativeSummaryApi | null;
+  /** Pulse Wave 1 §1.5 — KPI-hero «Индекс настроения недели». Опц. для backward
+   *  compatibility со старыми клиентами, читающими DTO без KPI-полей. */
+  kpiSentimentIndex?: DirectorDashboardKpiApi;
+  /** Pulse Wave 1 §1.5 — KPI-hero «Обещания (надёжность)». */
+  kpiCommitmentReliability?: DirectorDashboardKpiApi;
+  /** Pulse Wave 1 §1.5 — KPI-hero «Висящие решения». */
+  kpiHangingDecisions?: DirectorDashboardKpiApi;
   strategicAlignment?: DirectorDashboardStrategicAlignmentApi;
+  /**
+   * true — у tenant ещё нет реальных данных (0 сигналов и 0 тем за период).
+   * В этом случае все массивы заполнены **синтетическим** примером (sample
+   * story), а frontend рисует watermark «образец». См. §1.2 ТЗ «Пульс
+   * компании» (plans/tz/2026-05-30-pulse-full.md).
+   *
+   * Опциональный для backward compatibility со старыми клиентами; падать
+   * до false можно безопасно.
+   */
+  isEmpty?: boolean;
 };
 
 // ─── Domain-модели ──────────────────────────────────────────────────────────
@@ -242,8 +291,17 @@ export type DirectorDashboardDomain = {
   activeThemes: DirectorDashboardThemeDomain[];
   hotEntities: DirectorDashboardEntityDomain[];
   openQuestions: DirectorDashboardOpenQuestionDomain[];
-  narrativeSummary: string | null;
+  narrativeSummary: NarrativeSummaryDomain | null;
+  /** Pulse Wave 1 §1.5 — KPI-hero на главной. null до подтягивания. */
+  kpiSentimentIndex: DirectorDashboardKpiDomain | null;
+  kpiCommitmentReliability: DirectorDashboardKpiDomain | null;
+  kpiHangingDecisions: DirectorDashboardKpiDomain | null;
   strategicAlignment: DirectorDashboardStrategicAlignmentDomain | null;
+  /**
+   * true — у tenant ещё нет реальных данных, сервер вернул sample story.
+   * Frontend рисует баннер «образец» (см. `SampleStoryBanner`).
+   */
+  isEmpty: boolean;
 };
 
 // ─── Mappers ────────────────────────────────────────────────────────────────
@@ -326,9 +384,13 @@ export function directorDashboardFromApi(
     hotEntities: api.hotEntities.map(entityFromApi),
     openQuestions: api.openQuestions.map(openQuestionFromApi),
     narrativeSummary: api.narrativeSummary,
+    kpiSentimentIndex: api.kpiSentimentIndex ?? null,
+    kpiCommitmentReliability: api.kpiCommitmentReliability ?? null,
+    kpiHangingDecisions: api.kpiHangingDecisions ?? null,
     strategicAlignment: api.strategicAlignment
       ? strategicAlignmentFromApi(api.strategicAlignment)
       : null,
+    isEmpty: api.isEmpty ?? false,
   };
 }
 

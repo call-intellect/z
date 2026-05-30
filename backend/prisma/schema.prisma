@@ -5183,6 +5183,13 @@ model Decision {
   updatedAt       DateTime       @updatedAt
   /// Когда решение последний раз подтверждали (актуально, не устарело).
   lastConfirmedAt DateTime?
+  /// Pulse Wave 1 §1.2 (2026-05-30) — счётчик «сколько раз решение
+  /// поднималось» (создание + каждое последующее упоминание detect'нутое
+  /// specialist-3-3 как verdict='merge'). Default 1 (само создание).
+  raisedCount     Int            @default(1)
+  /// Pulse Wave 1 §1.2 — последний раз когда решение было упомянуто.
+  /// При создании = createdAt; при verdict='merge' = momentum merge'а.
+  lastRaisedAt    DateTime?
 
   org             Org             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   decidedBy       Person?         @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)

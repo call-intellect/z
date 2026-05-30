@@ -838,6 +838,9 @@ export class Specialist33Service {
         // Если в блоке есть один decidedByPerson — заполняем legacy-поле.
         decidedByPersonId: args.decidedByPersonIds[0] ?? null,
         validFrom: args.validFrom ?? args.decidedAt ?? null,
+        // Pulse Wave 1 §1.2 — счётчик «сколько раз решение поднималось».
+        raisedCount: 1,
+        lastRaisedAt: new Date(),
       },
     });
   }
@@ -884,6 +887,9 @@ export class Specialist33Service {
           set: this.union(args.personSubjectIds, args.existing.personSubjectIds),
         },
         lastConfirmedAt: new Date(),
+        // Pulse Wave 1 §1.2 — решение поднялось ещё раз (merge-событие).
+        raisedCount: { increment: 1 },
+        lastRaisedAt: new Date(),
       },
     });
   }

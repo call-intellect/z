@@ -14,6 +14,8 @@ import type { RbacService } from '../rbac/rbac.service';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { DirectorDashboardQuerySchema } from './dto/director-dashboard.dto';
 import type { DirectorDashboardService } from './services/director-dashboard.service';
+import type { TeamDetailService } from './services/team-detail.service';
+import type { TeamHealthService } from './services/team-health.service';
 
 function build(opts: { canView?: boolean } = {}) {
   const svc = {
@@ -22,7 +24,24 @@ function build(opts: { canView?: boolean } = {}) {
   const rbac = {
     canViewDirectorDashboard: vi.fn(async () => opts.canView ?? true),
   } as unknown as RbacService;
-  return { ctrl: new DirectorDashboardController(svc, rbac), svc, rbac };
+  const teamHealthSvc = {
+    getHealth: vi.fn(async () => ({ teams: [], totalDepartments: 0 }) as never),
+  } as unknown as TeamHealthService;
+  const teamDetailSvc = {
+    getDetail: vi.fn(async () => ({ departmentId: 'd-1' }) as never),
+  } as unknown as TeamDetailService;
+  return {
+    ctrl: new DirectorDashboardController(
+      svc,
+      rbac,
+      teamHealthSvc,
+      teamDetailSvc,
+    ),
+    svc,
+    rbac,
+    teamHealthSvc,
+    teamDetailSvc,
+  };
 }
 
 function buildReq(userId?: string): { user?: { id: string } } {

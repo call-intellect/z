@@ -9,16 +9,29 @@ import type {
   DirectorDashboardAlertGoalDto,
   DirectorDashboardDto,
   DirectorDashboardEntityDto,
+  DirectorDashboardKpiDto,
   DirectorDashboardOpenQuestionDto,
   DirectorDashboardSignalCountersDto,
   DirectorDashboardSignalDto,
   DirectorDashboardStrategicAlignmentDto,
   DirectorDashboardThemeDto,
+  NarrativeSummaryDto,
 } from '../dto/director-dashboard.dto';
 import {
   buildDashboardSummaryUserMessage,
   DASHBOARD_SUMMARY_SYSTEM_PROMPT,
 } from '../prompts/dashboard-summary.prompt';
+import { CommitmentReliabilityService } from './commitment-reliability.service';
+import { HangingDecisionsService } from './hanging-decisions.service';
+import {
+  NarrativeCitationsParserService,
+  type CitationSource,
+} from './narrative-citations-parser.service';
+import {
+  SAMPLE_STORY_DATASET,
+  SAMPLE_STORY_NARRATIVE,
+} from './sample-story.dataset';
+import { SentimentIndexService } from './sentiment-index.service';
 
 /**
  * DirectorDashboardService (Фаза 8 knowledge-core).
@@ -60,6 +73,14 @@ export class DirectorDashboardService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AdminCacheService) private readonly cache: AdminCacheService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(NarrativeCitationsParserService)
+    private readonly citations: NarrativeCitationsParserService,
+    @Inject(SentimentIndexService)
+    private readonly sentimentSvc: SentimentIndexService,
+    @Inject(CommitmentReliabilityService)
+    private readonly commitSvc: CommitmentReliabilityService,
+    @Inject(HangingDecisionsService)
+    private readonly hangingSvc: HangingDecisionsService,
   ) {}
 
   /**
@@ -87,6 +108,9 @@ export class DirectorDashboardService {
       hotEntities,
       openQuestions,
       strategicAlignment,
+      sentimentRes,
+      commitRes,
+      hangingRes,
     ] = await Promise.all([
       this.fetchNewThemes(args.tenantId, since),
       this.fetchNewSignals(args.tenantId, since),
@@ -95,7 +119,83 @@ export class DirectorDashboardService {
       this.fetchHotEntities(args.tenantId, since),
       this.fetchOpenQuestions(args.tenantId),
       this.fetchStrategicAlignment(args.tenantId),
+      this.sentimentSvc.getIndex({ tenantId: args.tenantId }),
+      this.commitSvc.getReliability({
+        tenantId: args.tenantId,
+        scope: 'company',
+      }),
+      this.hangingSvc.count({ tenantId: args.tenantId }),
     ]);
+
+    // Pulse Wave 1 §1.5 — три KPI-hero для главной.
+    const kpiSentimentIndex: DirectorDashboardKpiDto = {
+      value: sentimentRes.value,
+      sparkline: sentimentRes.sparkline12w,
+      delta: null,
+      trend: sentimentRes.trend,
+    };
+    const kpiCommitmentReliability: DirectorDashboardKpiDto = {
+      value: commitRes.reliabilityPercent,
+      sparkline: commitRes.sparkline12w,
+      delta: commitRes.delta14d,
+    };
+    const kpiHangingDecisions: DirectorDashboardKpiDto = {
+      value: hangingRes.count,
+      sparkline: hangingRes.sparkline12w,
+      delta: null,
+    };
+
+    // Sample story для пустых tenant'ов (ТЗ §1.2 принцип 4). Если у tenant'а
+    // 0 сигналов и 0 тем за период — подменяем массивы на синтетический
+    // пример и используем статичный narrative вместо LLM. Frontend рисует
+    // watermark «образец».
+    const totalSignals =
+      signalCounters.pain +
+      signalCounters.feature_request +
+      signalCounters.churn_risk +
+      signalCounters.objection +
+      signalCounters.risk +
+      signalCounters.decision +
+      signalCounters.commitment +
+      signalCounters.other;
+    const totalThemes = newThemes.length + activeThemes.length;
+    const isEmpty = totalSignals === 0 && totalThemes === 0;
+
+    if (isEmpty) {
+      const sampleResult: DirectorDashboardDto = {
+        period: args.period,
+        generatedAt: new Date().toISOString(),
+        newThemes: [...SAMPLE_STORY_DATASET.newThemes],
+        newSignals: [...SAMPLE_STORY_DATASET.newSignals],
+        signalCounters: { ...SAMPLE_STORY_DATASET.signalCounters },
+        activeThemes: [...SAMPLE_STORY_DATASET.activeThemes],
+        hotEntities: [...SAMPLE_STORY_DATASET.hotEntities],
+        openQuestions: [...SAMPLE_STORY_DATASET.openQuestions],
+        narrativeSummary: { text: SAMPLE_STORY_NARRATIVE, citations: [] },
+        // Pulse Wave 1 §1.5 — синтетические оптимистичные KPI для пустого
+        // tenant'а. Frontend всё равно подсветит баннер «образец».
+        kpiSentimentIndex: {
+          value: 42,
+          sparkline: [25, 28, 30, 32, 35, 38, 38, 40, 41, 42, 42, 42],
+          delta: null,
+          trend: 'up',
+        },
+        kpiCommitmentReliability: {
+          value: 82,
+          sparkline: [70, 72, 75, 78, 79, 81, 80, 82, 83, 82, 82, 82],
+          delta: 4,
+        },
+        kpiHangingDecisions: {
+          value: 2,
+          sparkline: [4, 3, 3, 2, 2, 3, 2, 2, 1, 2, 2, 2],
+          delta: null,
+        },
+        strategicAlignment,
+        isEmpty: true,
+      };
+      this.cache.setWithTtl(cacheKey, sampleResult, DASHBOARD_TTL_MS);
+      return sampleResult;
+    }
 
     const narrativeSummary = await this.getNarrativeSummary({
       tenantId: args.tenantId,
@@ -118,7 +218,11 @@ export class DirectorDashboardService {
       hotEntities,
       openQuestions,
       narrativeSummary,
+      kpiSentimentIndex,
+      kpiCommitmentReliability,
+      kpiHangingDecisions,
       strategicAlignment,
+      isEmpty: false,
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);
@@ -157,9 +261,9 @@ export class DirectorDashboardService {
     signalCounters: DirectorDashboardSignalCountersDto;
     hotEntities: DirectorDashboardEntityDto[];
     openQuestions: DirectorDashboardOpenQuestionDto[];
-  }): Promise<string | null> {
+  }): Promise<NarrativeSummaryDto | null> {
     const cacheKey = `${NARRATIVE_CACHE_PREFIX}${args.tenantId}:${args.period}`;
-    const cached = this.cache.get<string>(cacheKey);
+    const cached = this.cache.get<NarrativeSummaryDto>(cacheKey);
     if (cached !== null) return cached;
 
     // Если данных совсем нет — нечего и просить LLM.
@@ -203,8 +307,32 @@ export class DirectorDashboardService {
       if (text.length === 0) {
         return null;
       }
-      this.cache.setWithTtl(cacheKey, text, NARRATIVE_TTL_MS);
-      return text;
+
+      // Собираем список валидных источников (то же, что отдали в USER).
+      const sources: CitationSource[] = [];
+      for (const t of [...args.newThemes, ...args.activeThemes].slice(0, 6)) {
+        sources.push({ type: 'theme', id: t.id, label: t.name });
+      }
+      for (const s of args.newSignals.slice(0, 5)) {
+        sources.push({ type: 'ib', id: s.id, label: s.name });
+        if (s.evidenceMeetingId) {
+          sources.push({
+            type: 'mtg',
+            id: s.evidenceMeetingId,
+            label: `Встреча: ${s.name}`,
+          });
+        }
+      }
+      for (const e of args.hotEntities.slice(0, 3)) {
+        sources.push({ type: 'ent', id: e.id, label: e.canonicalName });
+      }
+      for (const q of args.openQuestions.slice(0, 3)) {
+        sources.push({ type: 'ib', id: q.id, label: q.criticalQuestion });
+      }
+
+      const parsed = this.citations.parse(text, sources);
+      this.cache.setWithTtl(cacheKey, parsed, NARRATIVE_TTL_MS);
+      return parsed;
     } catch (err) {
       this.logger.warn(
         `narrativeSummary fail (tenantId=${args.tenantId}, period=${args.period}): ${err instanceof Error ? err.message : String(err)}`,

@@ -24,7 +24,24 @@ export const DASHBOARD_SUMMARY_SYSTEM_PROMPT = `Ты — аналитик SaaS-�
 - На русском, plain-text, без markdown / без списков-маркеров.
 - Одно-два коротких предложения на факт. В конце — одно предложение с рекомендацией.
 - 200-400 символов всего. Не больше.
-- Не упоминай ID сущностей, не упоминай systemPrompt и не упоминай, что ты AI.`;
+- Не упоминай ID сущностей в текстовом виде, не упоминай systemPrompt и не упоминай, что ты AI.
+
+ССЫЛКИ НА ИСТОЧНИКИ (обязательно):
+- После КАЖДОГО факта ставь inline-маркер с реальным ID источника из секции SOURCES в user-сообщении.
+- Формат маркера: квадратные скобки, тип, двоеточие, id. Без пробелов.
+- Допустимые типы:
+    [ib:<id>]   — IdeaBlock (сигнал, открытый вопрос)
+    [theme:<id>] — тема
+    [ent:<id>]  — сущность (клиент / продукт / партнёр)
+    [mtg:<id>]  — встреча
+    [goal:<id>] — цель
+    [dec:<id>]  — решение
+- НЕЛЬЗЯ придумывать ID. Используй ТОЛЬКО те, что перечислены в SOURCES.
+- Маркеры размещай в конце соответствующего предложения, перед точкой. Можно 1-2 маркера на факт.
+- Рекомендация в конце маркеров обычно не требует (общий вывод).
+
+Пример:
+"Acme застрял на импорте таблицы — три похожих обращения за неделю [ib:abc123][theme:def456]. Команда переносит запуск API на 15 июня [dec:xyz789]. Растёт давление по биллингу — два сегмента просят детализацию [theme:ghi012]. Стоит добавить progress-bar и retry на импорт до конца недели."`;
 
 const PERIOD_LABEL: Record<'week' | 'month', string> = {
   week: 'неделя',
@@ -96,6 +113,25 @@ export function buildDashboardSummaryUserMessage(args: {
       const cq = truncate(q.criticalQuestion, 140);
       lines.push(`- ${cq}`);
     }
+  }
+
+  lines.push('');
+  lines.push('SOURCES (используй ТОЛЬКО эти id):');
+  for (const t of [...args.newThemes, ...args.activeThemes].slice(0, 6)) {
+    lines.push(`[theme:${t.id}] ${truncate(t.name, 60)}`);
+  }
+  for (const s of args.newSignals.slice(0, 5)) {
+    const label = SIGNAL_LABELS[s.signalType] ?? s.signalType;
+    lines.push(`[ib:${s.id}] (${label}) ${truncate(s.name, 60)}`);
+    if (s.evidenceMeetingId) {
+      lines.push(`[mtg:${s.evidenceMeetingId}] встреча по сигналу "${truncate(s.name, 40)}"`);
+    }
+  }
+  for (const e of args.hotEntities.slice(0, 3)) {
+    lines.push(`[ent:${e.id}] ${truncate(e.canonicalName, 60)} (${e.type})`);
+  }
+  for (const q of args.openQuestions.slice(0, 3)) {
+    lines.push(`[ib:${q.id}] (открытый вопрос) ${truncate(q.criticalQuestion, 60)}`);
   }
 
   return lines.join('\n');

@@ -10,7 +10,6 @@ import {
   Loader2,
   MessageCircle,
   RefreshCcw,
-  Sparkles,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -43,7 +42,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
-import { StatCard } from '@/ui/components/shared/StatCard';
+import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
+import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
+import { SampleStoryBanner } from '@/ui/components/dashboard/SampleStoryBanner';
+import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
+import { KpiHero } from '@/ui/components/shared/KpiHero';
 import { CurationPendingWidget } from './widgets/CurationPendingWidget';
 import { InsightsTopWidget } from './widgets/InsightsTopWidget';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
@@ -103,14 +106,6 @@ export function DirectorDashboardClient() {
 
   const periodLabel = period === 'week' ? 'неделю' : 'месяц';
 
-  const signalsTotal = useMemo(() => {
-    if (!data?.signalCounters) return 0;
-    return SIGNAL_COUNTERS_BUCKET_ORDER.reduce(
-      (acc, key) => acc + (data.signalCounters?.[key] ?? 0),
-      0,
-    );
-  }, [data?.signalCounters]);
-
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
       <header className="sticky top-0 z-10 -mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle bg-bg-base/72 px-4 py-4 backdrop-blur-glass md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
@@ -148,37 +143,37 @@ export function DirectorDashboardClient() {
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard
-          label="Новые темы"
-          value={data?.newThemes.length ?? 0}
-          sparkline={[2, 3, 4, 5, 4, 6, 8]}
-          sparklineVariant="line"
+      {data?.isEmpty && <SampleStoryBanner />}
+
+      {/* Pulse Wave 1 §1.5 — 3 KPI hero для главной. Заменили fake-strip
+          из 5 StatCard. Drill-down в три ключевых раздела продукта. */}
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <KpiHero
+          label="Индекс настроения недели"
+          value={data?.kpiSentimentIndex?.value ?? 0}
+          numericValue={data?.kpiSentimentIndex?.value ?? 0}
+          sparkline={data?.kpiSentimentIndex?.sparkline}
+          trend={data?.kpiSentimentIndex?.trend}
+          threshold={{ green: 30, yellow: 0 }}
+          href="/dashboard/operations"
         />
-        <StatCard
-          label="Новые сигналы"
-          value={data?.newSignals.length ?? 0}
-          sparkline={[3, 2, 5, 4, 6, 5, 7]}
-          sparklineVariant="bar"
+        <KpiHero
+          label="Обещания"
+          value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
+          numericValue={data?.kpiCommitmentReliability?.value ?? 0}
+          sparkline={data?.kpiCommitmentReliability?.sparkline}
+          delta={data?.kpiCommitmentReliability?.delta}
+          deltaLabel="за 14 дней"
+          threshold={{ green: 80, yellow: 60 }}
+          href="/me/commitments"
         />
-        <StatCard
-          label="Сигналы клиентов"
-          value={signalsTotal}
-          sparkline={[4, 5, 3, 6, 7, 5, 8]}
-          sparklineVariant="line"
-        />
-        <StatCard
-          variant="dark"
-          label="Активные темы"
-          value={data?.activeThemes.length ?? 0}
-          sparkline={[5, 6, 7, 6, 8, 9, 10]}
-          sparklineVariant="line"
-        />
-        <StatCard
-          label="Открытые вопросы"
-          value={data?.openQuestions.length ?? 0}
-          sparkline={[2, 3, 2, 4, 3, 5, 4]}
-          sparklineVariant="bar"
+        <KpiHero
+          label="Висящие решения"
+          value={data?.kpiHangingDecisions?.value ?? 0}
+          numericValue={data?.kpiHangingDecisions?.value ?? 0}
+          sparkline={data?.kpiHangingDecisions?.sparkline}
+          threshold={{ green: 2, yellow: 5, inverted: true }}
+          href="/decisions?status=hanging"
         />
       </div>
 
@@ -187,19 +182,29 @@ export function DirectorDashboardClient() {
       </div>
 
       {data?.narrativeSummary && (
-        <div className="mb-6 rounded-xl border border-accent/30 bg-accent/5 p-4">
-          <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-accent">
-            <Sparkles size={14} />
-            AI-сводка за {periodLabel}
-          </div>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
-            {data.narrativeSummary}
-          </p>
-          <p className="mt-2 text-[11px] text-fg-tertiary">
-            AI-сводка, может содержать ошибки.
-          </p>
-        </div>
+        <AiNarrativeWithSources
+          data={data.narrativeSummary}
+          periodLabel={periodLabel}
+        />
       )}
+
+      {/* Pulse Wave 1 §1.6 — Team Health Grid (per-dept агрегаты по 4 метрикам). */}
+      <div className="mb-6">
+        <TeamHealthGrid />
+      </div>
+
+      {/* Pulse Wave 1 §1.8 — ActivityFeedWidget (probe_question на главной). */}
+      <div className="mb-6">
+        <ActivityFeedWidget
+          feedTypes={['probe_question']}
+          scope="company"
+          pageSize={5}
+          liveUpdate
+          drillDownHref="/me/notifications"
+          title="Вопросы AI команде"
+          emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <StructureSummaryWidget />

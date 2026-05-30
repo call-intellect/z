@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
 import { TenantGuard } from './guards/tenant.guard';
+import { TenantMiddleware } from './middleware/tenant.middleware';
 import { RbacService } from './rbac.service';
 
 /**
@@ -16,11 +17,15 @@ import { RbacService } from './rbac.service';
  * Не экспортирует guard'ы напрямую — controller'ы используют их через
  * `@UseGuards(CookieAuthGuard, TenantGuard)`. PrismaModule — глобальный,
  * поэтому только импортируется здесь явно для ясности.
+ *
+ * TenantMiddleware экспортируется отдельно — регистрируется в
+ * `AppModule.configure` для `api/v1/*` (выставляет `req.tenantId` ДО
+ * глобальных guards SubscriptionGuard/EntitlementGuard).
  */
 @Global()
 @Module({
   imports: [PrismaModule],
-  providers: [RbacService, TenantGuard],
-  exports: [RbacService, TenantGuard],
+  providers: [RbacService, TenantGuard, TenantMiddleware],
+  exports: [RbacService, TenantGuard, TenantMiddleware],
 })
 export class RbacModule {}

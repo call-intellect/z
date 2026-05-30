@@ -16,15 +16,17 @@ import { RbacService } from '../rbac.service';
  * выбранной для запроса. Подключается ПОСЛЕ CookieAuthGuard.
  *
  * Алгоритм извлечения tenantId:
- *   1. Заголовок `X-Org-Id` (приоритет — нужен для multi-org аккаунтов).
- *   2. Параметр URL `:orgId` (например, `/api/v1/orgs/:orgId/...`).
- *   3. Тело запроса `body.tenantId` или `body.orgId`.
- *   4. Если у пользователя ровно одна активная Org — она дефолт.
+ *   1. `req.tenantId`, уже выставленный TenantMiddleware (X-Org-Id /
+ *      :orgId / body.tenantId).
+ *   2. Single-org fallback: если у пользователя ровно одна активная Org —
+ *      она дефолт. Делается только здесь, т.к. требует `req.user.id`
+ *      после CookieAuthGuard.
  *
- * Если tenantId извлечён, но membership нет → 403.
- * Если super_admin — пропускает любой tenantId без membership.
+ * Если tenantId не разрезолвлен → 403 tenant_required.
+ * Если tenantId есть, но membership нет → 403 no_membership.
  *
- * После успеха кладёт `req.tenantId = <orgId>` для удобства downstream-кода.
+ * После успеха кладёт `req.tenantId = <orgId>` для удобства downstream-кода
+ * (идемпотентно — middleware могло уже выставить то же значение).
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -45,7 +47,13 @@ export class TenantGuard implements CanActivate {
       });
     }
 
-    const tenantId = await this.resolveTenantId(req, user.id);
+    // Middleware уже могло выставить req.tenantId (из header/param/body).
+    let tenantId = req.tenantId;
+    if (!tenantId) {
+      // Single-org fallback — единственная стратегия, требующая БД и user.id.
+      tenantId = (await this.singleOrgFallback(user.id)) ?? undefined;
+    }
+
     if (!tenantId) {
       throw new ForbiddenException({
         ok: false,
@@ -67,37 +75,12 @@ export class TenantGuard implements CanActivate {
       });
     }
 
-    // Кладём в req для downstream-кода (controllers, services).
-    (req as Request & { tenantId?: string }).tenantId = tenantId;
+    // Кладём в req для downstream-кода (даже если уже стояло — идемпотентно).
+    req.tenantId = tenantId;
     return true;
   }
 
-  private async resolveTenantId(
-    req: Request,
-    userId: string,
-  ): Promise<string | null> {
-    // 1. Заголовок X-Org-Id.
-    const headerVal = req.headers['x-org-id'];
-    if (typeof headerVal === 'string' && headerVal.trim().length > 0) {
-      return headerVal.trim();
-    }
-
-    // 2. URL-параметр :orgId.
-    const params = (req as Request & { params?: Record<string, string> }).params;
-    if (params?.orgId && typeof params.orgId === 'string') {
-      return params.orgId;
-    }
-
-    // 3. body.tenantId или body.orgId.
-    const body = (req as Request & { body?: Record<string, unknown> }).body;
-    if (body) {
-      const t = body['tenantId'];
-      const o = body['orgId'];
-      if (typeof t === 'string' && t.length > 0) return t;
-      if (typeof o === 'string' && o.length > 0) return o;
-    }
-
-    // 4. Дефолт — единственная активная Org юзера.
+  private async singleOrgFallback(userId: string): Promise<string | null> {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, org: { deletedAt: null } },
       select: { orgId: true },
@@ -108,9 +91,7 @@ export class TenantGuard implements CanActivate {
     }
     if (memberships.length === 0) {
       this.logger.debug({ userId }, 'TenantGuard: у пользователя нет активных Org');
-      return null;
     }
-    // Несколько Org — нужен явный X-Org-Id.
     return null;
   }
 }

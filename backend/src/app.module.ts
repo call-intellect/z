@@ -99,6 +99,7 @@ import { PushModule } from './modules/push/push.module';
 import { QualityScoreModule } from './modules/quality-score/quality-score.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { TenantMiddleware } from './modules/rbac/middleware/tenant.middleware';
 import { RecognitionModule } from './modules/recognition/recognition.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
@@ -636,6 +637,15 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(RequestIdMiddleware).forRoutes('*');
+
+    // TenantMiddleware — выставляет `req.tenantId` ДО глобальных guards
+    // (SubscriptionGuard / EntitlementGuard), чтобы они могли работать на
+    // эндпоинтах с @RequireEntitlement / @RequireSubscription декораторами.
+    // Без него `req.tenantId` появлялся только после controller-level
+    // TenantGuard, который бежит ПОСЛЕ глобальных guards → 403 tenant_required
+    // на /api/v1/dashboard/director и других gated-эндпоинтах.
+    // Single-org fallback остаётся в TenantGuard (нужен req.user.id).
+    consumer.apply(TenantMiddleware).forRoutes('api/v1/*');
 
     // NB: сохранение `req.rawBody` для всех запросов — глобально через
     // `express.json({ verify })` в `main.ts`. Это нужно для проверки HMAC-

@@ -14,6 +14,12 @@ declare global {
        * Используется в логах (pino customProps) и в payload-ответе ошибок.
        */
       id: string;
+      /**
+       * Org/tenant ID, выставленный TenantMiddleware из заголовка X-Org-Id /
+       * URL-параметра :orgId / body.tenantId. Может остаться undefined — тогда
+       * TenantGuard добьёт через single-org fallback по req.user.id.
+       */
+      tenantId?: string;
     }
   }
 }

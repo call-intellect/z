@@ -16,6 +16,47 @@ export const DirectorDashboardQuerySchema = z.object({
 });
 export type DirectorDashboardQuery = z.infer<typeof DirectorDashboardQuerySchema>;
 
+/**
+ * Pulse Wave 1 §1.4 — Transparent Sourcing.
+ *
+ * `narrativeSummary` теперь возвращается как объект `{ text, citations }`:
+ * текст с inline-маркерами `[1]`, `[2]`, ... плюс список цитат с deep-link'ами
+ * на источники (темы / встречи / цели / решения).
+ */
+export type CitationType = 'ib' | 'theme' | 'ent' | 'mtg' | 'goal' | 'dec';
+
+export interface CitationDto {
+  number: number;
+  type: CitationType;
+  id: string;
+  label: string;
+  url: string | null;
+}
+
+export interface NarrativeSummaryDto {
+  /** Текст с inline [1], [2], ... вместо [type:id] маркеров. */
+  text: string;
+  citations: CitationDto[];
+}
+
+/**
+ * KPI-блок с текущим значением, sparkline за 12 недель и опциональной
+ * дельтой к предыдущему окну. Используется тремя KPI на главной (Pulse §1.5).
+ */
+export interface DirectorDashboardKpiDto {
+  /** Текущее значение KPI (число; для процентов 0-100, для индекса -100..+100). */
+  value: number;
+  /**
+   * Sparkline 12 недель old→new. null — в неделе данных нет.
+   * Frontend Sparkline-компонент может перевести null в gap или в 0.
+   */
+  sparkline: Array<number | null>;
+  /** Дельта к предыдущему окну в тех же единицах (для commitment — delta14d). null если нет данных. */
+  delta: number | null;
+  /** Для sentiment — направление тренда; для остальных undefined. */
+  trend?: 'up' | 'flat' | 'down';
+}
+
 export interface DirectorDashboardThemeDto {
   id: string;
   name: string;
@@ -98,8 +139,21 @@ export interface DirectorDashboardDto {
   hotEntities: DirectorDashboardEntityDto[];
   openQuestions: DirectorDashboardOpenQuestionDto[];
   /** null = LLM недоступен или вернул ошибку. UI скрывает блок. */
-  narrativeSummary: string | null;
+  narrativeSummary: NarrativeSummaryDto | null;
+  /** KPI-hero «Индекс настроения недели». ТЗ §1.5. */
+  kpiSentimentIndex: DirectorDashboardKpiDto;
+  /** KPI-hero «Обещания (надёжность)». ТЗ §1.5. */
+  kpiCommitmentReliability: DirectorDashboardKpiDto;
+  /** KPI-hero «Висящие решения». ТЗ §1.5. */
+  kpiHangingDecisions: DirectorDashboardKpiDto;
   /** Phase 9: блок «Согласованность стратегии». Опциональный для backward
    *  compatibility — на проде Фаза 8 уже задеплоена без него. */
   strategicAlignment?: DirectorDashboardStrategicAlignmentDto;
+  /**
+   * true — у tenant ещё нет реальных данных (0 сигналов и 0 тем за период).
+   * В этом случае все массивы заполнены **синтетическим** примером (sample
+   * story), а frontend рисует watermark «образец». См. §1.2 ТЗ «Пульс
+   * компании» (plans/tz/2026-05-30-pulse-full.md).
+   */
+  isEmpty: boolean;
 }

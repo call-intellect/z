@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Кора — память вашей компании</title>
+  <meta name="description" content="Кора — память компании 50-300 человек: автоматически собирает встречи, чаты и решения в единый граф знаний. Когда сотрудник увольняется — его знания остаются." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ===== Tokens ===== */
+    :root {
+      --bg: #0F0E0C;
+      --bg-soft: #161412;
+      --bg-cream: #F4EFE6;
+      --bg-cream-soft: #EDE5D6;
+      --ink: #F4EFE6;
+      --ink-dark: #1A1815;
+      --ink-muted: #8A8378;
+      --ink-muted-dark: #6B6357;
+      --accent: #C9A876;
+      --accent-deep: #8B6F47;
+      --accent-warm: #D4B589;
+      --line: rgba(244, 239, 230, 0.10);
+      --line-dark: rgba(26, 24, 21, 0.12);
+      --grain: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='5'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+
+      --serif: 'PT Serif', Georgia, 'Times New Roman', serif;
+      --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'IBM Plex Mono', 'Courier New', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      font-weight: 400;
+      line-height: 1.55;
+      font-size: 17px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Subtle grain overlay on everything dark */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: var(--grain);
+      pointer-events: none;
+      opacity: 0.5;
+      z-index: 1000;
+      mix-blend-mode: overlay;
+    }
+
+    /* ===== Layout helpers ===== */
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+    .narrow { max-width: 780px; }
+    .col-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: start; }
+    @media (max-width: 860px) { .col-2 { grid-template-columns: 1fr; gap: 40px; } .wrap { padding: 0 20px; } }
+
+    /* ===== Type ===== */
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 24px;
+      height: 1px;
+      background: var(--accent);
+    }
+    h1, h2, h3, h4 { font-family: var(--serif); font-weight: 700; letter-spacing: -0.01em; line-height: 1.08; }
+    h1 { font-size: clamp(48px, 7vw, 92px); letter-spacing: -0.025em; }
+    h2 { font-size: clamp(36px, 5vw, 60px); letter-spacing: -0.02em; line-height: 1.05; }
+    h3 { font-size: clamp(22px, 2.4vw, 28px); line-height: 1.2; }
+    h4 { font-size: 19px; line-height: 1.3; }
+    p { color: var(--ink); opacity: 0.78; }
+    .lead { font-size: 21px; line-height: 1.5; opacity: 0.82; font-weight: 300; }
+
+    /* ===== Top nav ===== */
+    nav.top {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      padding: 22px 32px;
+      display: flex; justify-content: space-between; align-items: center;
+      z-index: 100;
+      background: linear-gradient(to bottom, rgba(15,14,12,0.85), rgba(15,14,12,0));
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    nav.top .logo {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    nav.top .logo .dot { color: var(--accent); }
+    nav.top .links { display: flex; gap: 32px; }
+    nav.top .links a {
+      color: var(--ink); opacity: 0.7;
+      text-decoration: none;
+      font-size: 14px; font-weight: 400;
+      transition: opacity 0.2s;
+    }
+    nav.top .links a:hover { opacity: 1; }
+    @media (max-width: 720px) { nav.top .links { display: none; } }
+
+    /* ===== Hero ===== */
+    section.hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 140px 32px 80px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero .wrap { position: relative; z-index: 2; }
+    .hero h1 {
+      margin-top: 28px;
+      max-width: 14ch;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 400;
+    }
+    .hero .lead {
+      margin-top: 32px;
+      max-width: 58ch;
+    }
+    .hero .cta-row {
+      margin-top: 48px;
+      display: flex; gap: 16px; flex-wrap: wrap;
+      align-items: center;
+    }
+    .hero .meta {
+      margin-top: 80px;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
+      padding-top: 32px;
+      border-top: 1px solid var(--line);
+      max-width: 720px;
+    }
+    @media (max-width: 720px) { .hero .meta { grid-template-columns: 1fr; gap: 24px; } }
+    .hero .meta .item .num {
+      font-family: var(--serif);
+      font-size: 36px;
+      color: var(--accent);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .hero .meta .item .label {
+      margin-top: 8px;
+      font-size: 13px;
+      opacity: 0.7;
+      line-height: 1.4;
+    }
+
+    /* Decorative graph in hero */
+    .hero .graph-deco {
+      position: absolute;
+      right: -120px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 700px;
+      height: 700px;
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 1;
+    }
+    @media (max-width: 1100px) { .hero .graph-deco { opacity: 0.12; right: -300px; } }
+
+    /* ===== Buttons ===== */
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 16px 28px;
+      font-family: var(--sans);
+      font-size: 15px; font-weight: 500;
+      text-decoration: none;
+      border-radius: 2px;
+      transition: all 0.25s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--ink-dark);
+    }
+    .btn-primary:hover {
+      background: var(--accent-warm);
+      transform: translateY(-1px);
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .btn-ghost:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .btn .arrow { transition: transform 0.2s; }
+    .btn:hover .arrow { transform: translateX(4px); }
+
+    /* On cream background */
+    .cream .btn-ghost { color: var(--ink-dark); border-color: var(--line-dark); }
+    .cream .btn-ghost:hover { border-color: var(--accent-deep); color: var(--accent-deep); }
+
+    /* ===== Section base ===== */
+    section { padding: 120px 32px; position: relative; }
+    section.cream {
+      background: var(--bg-cream);
+      color: var(--ink-dark);
+    }
+    section.cream p { color: var(--ink-dark); opacity: 0.72; }
+    section.cream .eyebrow { color: var(--accent-deep); }
+    section.cream .eyebrow::before { background: var(--accent-deep); }
+    @media (max-width: 720px) { section { padding: 80px 20px; } }
+
+    /* ===== Section: problem ===== */
+    .problem h2 { margin-top: 24px; max-width: 22ch; }
+    .problem .quote {
+      margin-top: 80px;
+      padding: 56px 0 0;
+      border-top: 1px solid var(--line-dark);
+      max-width: 900px;
+    }
+    .problem .quote blockquote {
+      font-family: var(--serif);
+      font-style: italic;
+      font-size: clamp(26px, 3.4vw, 38px);
+      line-height: 1.35;
+      color: var(--ink-dark);
+      font-weight: 400;
+    }
+    .problem .quote blockquote::before { content: '«'; color: var(--accent-deep); }
+    .problem .quote blockquote::after { content: '»'; color: var(--accent-deep); }
+    .problem .quote cite {
+      display: block;
+      margin-top: 24px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-style: normal;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-muted-dark);
+    }
+    .symptoms {
+      margin-top: 80px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0;
+      border-top: 1px solid var(--line-dark);
+    }
+    @media (max-width: 720px) { .symptoms { grid-template-columns: 1fr; } }
+    .symptom {
+      padding: 32px 24px 32px 0;
+      border-bottom: 1px solid var(--line-dark);
+      display: flex; gap: 20px;
+      align-items: flex-start;
+    }
+    .symptom .num {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent-deep);
+      letter-spacing: 0.1em;
+      flex-shrink: 0;
+      padding-top: 4px;
+    }
+    .symptom h4 {
+      font-family: var(--sans);
+      font-weight: 500;
+      font-size: 17px;
+      line-height: 1.4;
+      color: var(--ink-dark);
+    }
+
+    /* ===== Section: how it works ===== */
+    .how .col-2 { margin-top: 64px; }
+    .how-step {
+      padding: 28px 0;
+      border-top: 1px solid var(--line);
+    }
+    .how-step .step-num {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent);
+      letter-spacing: 0.15em;
+    }
+    .how-step h3 { margin-top: 10px; }
+    .how-step p { margin-top: 14px; max-width: 50ch; }
+
+    .pipeline {
+      margin-top: 80px;
+      padding: 48px 40px;
+      border: 1px solid var(--line);
+      background: var(--bg-soft);
+      display: grid;
+      grid-template-columns: 1.2fr auto 1fr auto 1fr;
+      align-items: center;
+      gap: 24px;
+    }
+    @media (max-width: 860px) {
+      .pipeline { grid-template-columns: 1fr; gap: 16px; padding: 32px 24px; }
+      .pipeline .arrow-h { display: none; }
+    }
+    .pipeline .node {
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+    }
+    .pipeline .node .node-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.12em;
+    }
+    .pipeline .node ul {
+      margin-top: 14px;
+      list-style: none;
+      font-size: 14px;
+    }
+    .pipeline .node ul li {
+      padding: 5px 0;
+      opacity: 0.85;
+    }
+    .pipeline .arrow-h {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 18px;
+      text-align: center;
+    }
+
+    /* ===== Section: modules ===== */
+    .modules .modules-grid {
+      margin-top: 64px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      border-top: 1px solid var(--line-dark);
+      border-left: 1px solid var(--line-dark);
+    }
+    @media (max-width: 860px) { .modules .modules-grid { grid-template-columns: 1fr; } }
+    .module {
+      padding: 40px 32px;
+      border-right: 1px solid var(--line-dark);
+      border-bottom: 1px solid var(--line-dark);
+      background: var(--bg-cream);
+      transition: background 0.25s;
+      position: relative;
+    }
+    .module:hover { background: var(--bg-cream-soft); }
+    .module .mod-tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--accent-deep);
+      text-transform: uppercase;
+    }
+    .module h3 {
+      margin-top: 14px;
+      font-size: 24px;
+      line-height: 1.25;
+    }
+    .module p {
+      margin-top: 14px;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    .module .video-slot {
+      margin-top: 24px;
+      aspect-ratio: 16 / 10;
+      border: 1px dashed var(--line-dark);
+      background: var(--bg-cream-soft);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px;
+      color: var(--ink-muted-dark);
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+    }
+    .module .video-slot .play-icon {
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 1px solid var(--accent-deep);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent-deep);
+    }
+
+    /* ===== Section: ICP ===== */
+    .icp h2 { max-width: 16ch; margin-top: 24px; }
+    .icp-list {
+      margin-top: 80px;
+    }
+    .icp-row {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 60px;
+      padding: 36px 0;
+      border-top: 1px solid var(--line);
+      align-items: baseline;
+    }
+    .icp-row:last-child { border-bottom: 1px solid var(--line); }
+    @media (max-width: 720px) {
+      .icp-row { grid-template-columns: 1fr; gap: 12px; }
+    }
+    .icp-row .role {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .icp-row .promise {
+      font-family: var(--serif);
+      font-size: clamp(20px, 2.2vw, 26px);
+      line-height: 1.4;
+      font-style: italic;
+      color: var(--ink);
+      opacity: 0.9;
+    }
+
+    /* ===== Section: security ===== */
+    .security .col-2 { margin-top: 64px; }
+    .security ul { list-style: none; }
+    .security ul li {
+      padding: 18px 0;
+      border-top: 1px solid var(--line-dark);
+      display: flex; gap: 16px;
+      align-items: flex-start;
+    }
+    .security ul li:last-child { border-bottom: 1px solid var(--line-dark); }
+    .security ul li .check {
+      color: var(--accent-deep);
+      font-family: var(--mono);
+      font-size: 14px;
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+    .security ul li strong {
+      display: block;
+      font-weight: 500;
+      color: var(--ink-dark);
+      margin-bottom: 4px;
+    }
+    .security ul li span {
+      font-size: 14px;
+      color: var(--ink-muted-dark);
+      line-height: 1.5;
+    }
+
+    /* ===== Section: not-this ===== */
+    .anti h2 { max-width: 20ch; margin-top: 24px; }
+    .anti-grid {
+      margin-top: 64px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0;
+      border-top: 1px solid var(--line);
+    }
+    @media (max-width: 720px) { .anti-grid { grid-template-columns: 1fr; } }
+    .anti-cell {
+      padding: 36px 32px 36px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .anti-cell:nth-child(odd) { padding-right: 60px; border-right: 1px solid var(--line); }
+    .anti-cell:nth-child(even) { padding-left: 40px; }
+    @media (max-width: 720px) {
+      .anti-cell, .anti-cell:nth-child(odd), .anti-cell:nth-child(even) {
+        padding: 28px 0; border-right: none;
+      }
+    }
+    .anti-cell .neg {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      color: var(--ink-muted);
+      text-decoration: line-through;
+    }
+    .anti-cell .pos {
+      margin-top: 12px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.35;
+      color: var(--ink);
+    }
+    .anti-cell .pos strong { color: var(--accent); font-weight: 700; }
+
+    /* ===== Section: FAQ ===== */
+    .faq h2 { max-width: 14ch; margin-top: 24px; }
+    .faq-list { margin-top: 64px; }
+    .faq-item {
+      border-top: 1px solid var(--line-dark);
+      padding: 0;
+    }
+    .faq-item:last-child { border-bottom: 1px solid var(--line-dark); }
+    .faq-item summary {
+      padding: 28px 0;
+      cursor: pointer;
+      list-style: none;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 24px;
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.35;
+      color: var(--ink-dark);
+      font-weight: 400;
+    }
+    .faq-item summary::-webkit-details-marker { display: none; }
+    .faq-item summary::after {
+      content: '+';
+      font-family: var(--mono);
+      font-size: 24px;
+      color: var(--accent-deep);
+      transition: transform 0.25s;
+      flex-shrink: 0;
+    }
+    .faq-item[open] summary::after { content: '−'; }
+    .faq-item .answer {
+      padding: 0 60px 36px 0;
+      max-width: 70ch;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--ink-dark);
+      opacity: 0.78;
+    }
+
+    /* ===== CTA ===== */
+    .cta { padding: 160px 32px; text-align: center; }
+    .cta h2 {
+      max-width: 18ch;
+      margin: 24px auto 0;
+    }
+    .cta h2 em { font-style: italic; color: var(--accent); font-weight: 400; }
+    .cta .lead { margin: 32px auto 0; max-width: 50ch; }
+    .cta .cta-row {
+      margin-top: 48px;
+      display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+    }
+    .cta .footnote {
+      margin-top: 32px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      padding: 48px 32px 36px;
+      border-top: 1px solid var(--line);
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 20px;
+      font-size: 13px;
+      color: var(--ink-muted);
+    }
+    footer .logo {
+      font-family: var(--serif);
+      font-size: 18px;
+      color: var(--ink);
+    }
+    footer .logo .dot { color: var(--accent); }
+    footer .links { display: flex; gap: 28px; }
+    footer .links a { color: var(--ink-muted); text-decoration: none; transition: color 0.2s; }
+    footer .links a:hover { color: var(--accent); }
+
+    /* ===== Animations ===== */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+    .reveal.in {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal[data-delay="1"] { transition-delay: 0.08s; }
+    .reveal[data-delay="2"] { transition-delay: 0.16s; }
+    .reveal[data-delay="3"] { transition-delay: 0.24s; }
+    .reveal[data-delay="4"] { transition-delay: 0.32s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { opacity: 1; transform: none; transition: none; }
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== NAV ===================== -->
+  <nav class="top">
+    <div class="logo">Кора<span class="dot">.</span></div>
+    <div class="links">
+      <a href="#how">Как работает</a>
+      <a href="#modules">Что внутри</a>
+      <a href="#security">Безопасность</a>
+      <a href="#faq">Вопросы</a>
+      <a href="#cta">Ранний доступ</a>
+    </div>
+  </nav>
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <!-- decorative SVG graph -->
+    <svg class="graph-deco" viewBox="0 0 700 700" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="nodeGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#C9A876" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#C9A876" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <!-- edges -->
+      <g stroke="#C9A876" stroke-width="0.8" fill="none" opacity="0.4">
+        <line x1="350" y1="350" x2="140" y2="180"/>
+        <line x1="350" y1="350" x2="560" y2="210"/>
+        <line x1="350" y1="350" x2="180" y2="520"/>
+        <line x1="350" y1="350" x2="540" y2="500"/>
+        <line x1="350" y1="350" x2="350" y2="80"/>
+        <line x1="350" y1="350" x2="120" y2="380"/>
+        <line x1="350" y1="350" x2="600" y2="370"/>
+        <line x1="140" y1="180" x2="350" y2="80"/>
+        <line x1="560" y1="210" x2="350" y2="80"/>
+        <line x1="180" y1="520" x2="120" y2="380"/>
+        <line x1="540" y1="500" x2="600" y2="370"/>
+        <line x1="560" y1="210" x2="600" y2="370"/>
+        <line x1="140" y1="180" x2="120" y2="380"/>
+        <line x1="180" y1="520" x2="540" y2="500"/>
+      </g>
+      <!-- nodes -->
+      <g fill="#C9A876">
+        <circle cx="350" cy="350" r="10"/>
+        <circle cx="140" cy="180" r="5"/>
+        <circle cx="560" cy="210" r="6"/>
+        <circle cx="180" cy="520" r="5"/>
+        <circle cx="540" cy="500" r="7"/>
+        <circle cx="350" cy="80" r="5"/>
+        <circle cx="120" cy="380" r="4"/>
+        <circle cx="600" cy="370" r="6"/>
+      </g>
+      <!-- glow on central -->
+      <circle cx="350" cy="350" r="80" fill="url(#nodeGrad)"/>
+    </svg>
+
+    <div class="wrap">
+      <div class="reveal">
+        <span class="eyebrow">Кора · Память компании</span>
+      </div>
+      <h1 class="reveal" data-delay="1">
+        Ваш AI&#8209;операционный<br>директор, <em>который ничего<br>не забывает.</em>
+      </h1>
+      <p class="lead reveal" data-delay="2">
+        Кора слушает встречи, читает чаты, собирает решения — и хранит их как граф знаний всей компании.
+        Когда сотрудник увольняется, его опыт остаётся. Когда вы открываете дашборд — видите пульс компании за 30 секунд.
+      </p>
+      <div class="cta-row reveal" data-delay="3">
+        <a href="#cta" class="btn btn-primary">
+          Получить ранний доступ <span class="arrow">→</span>
+        </a>
+        <a href="#how" class="btn btn-ghost">
+          Как это работает
+        </a>
+      </div>
+
+      <div class="meta reveal" data-delay="4">
+        <div class="item">
+          <div class="num">9</div>
+          <div class="label">типов встреч с AI-отчётом под каждый: 1&#8209;на&#8209;1, ревью, ретро, продажи, найм…</div>
+        </div>
+        <div class="item">
+          <div class="num">≥90%</div>
+          <div class="label">точность разделения по спикерам (отдельные аудиодорожки на каждого)</div>
+        </div>
+        <div class="item">
+          <div class="num">152&#8209;ФЗ</div>
+          <div class="label">данные в РФ&#8209;юрисдикции, on&#8209;prem на российском open&#8209;source стэке</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PROBLEM ===================== -->
+  <section class="problem cream" id="problem">
+    <div class="wrap narrow">
+      <span class="eyebrow reveal">Проблема</span>
+      <h2 class="reveal" data-delay="1">Корпоративная амнезия — самая дорогая болезнь компании 50–300 человек.</h2>
+      <p class="lead reveal" data-delay="2" style="margin-top: 32px;">
+        Вы выросли быстрее своей памяти. Решения тонут в чатах, контекст уходит с увольнениями,
+        база знаний устарела ещё до того, как её дочитали. Поиск работает в каждом инструменте отдельно — связей между ними нет.
+      </p>
+
+      <div class="quote reveal" data-delay="2">
+        <blockquote>
+          Преемник не виноват. HR не виноват. Игорь честно всё передал. Просто компания не помнит.
+        </blockquote>
+        <cite>— из манифеста «Корпоративная амнезия»</cite>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="symptoms">
+        <div class="symptom reveal">
+          <div class="num">01</div>
+          <h4>«Кто это знает?» — постоянный вопрос на летучках и в чатах.</h4>
+        </div>
+        <div class="symptom reveal" data-delay="1">
+          <div class="num">02</div>
+          <h4>Одну и ту же гипотезу команда обсуждает раз в полгода. Никто не помнит, почему отказались.</h4>
+        </div>
+        <div class="symptom reveal" data-delay="1">
+          <div class="num">03</div>
+          <h4>Адаптация нового сотрудника — 6+ месяцев даже после полной передачи дел.</h4>
+        </div>
+        <div class="symptom reveal" data-delay="2">
+          <div class="num">04</div>
+          <h4>При уходе ключевого человека проект «зависает» на 3 месяца.</h4>
+        </div>
+        <div class="symptom reveal" data-delay="2">
+          <div class="num">05</div>
+          <h4>У каждого эксперта — «свои заметки в ноутбуке», которые никуда не выгружаются.</h4>
+        </div>
+        <div class="symptom reveal" data-delay="3">
+          <div class="num">06</div>
+          <h4>Клиенты спрашивают: «Кто теперь у вас за нас отвечает?»</h4>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section class="how" id="how">
+    <div class="wrap">
+      <span class="eyebrow reveal">Как устроена память</span>
+      <div class="col-2" style="margin-top: 32px;">
+        <h2 class="reveal" data-delay="1">Не очередная база знаний. Граф, который собирается сам.</h2>
+        <p class="lead reveal" data-delay="2">
+          Память компании — это не папки и не страницы. Это связи: кто, с кем, о чём, какое решение, почему, когда.
+          Кора строит этот граф автоматически — из источников, в которых компания уже работает.
+        </p>
+      </div>
+
+      <!-- Pipeline -->
+      <div class="pipeline reveal" data-delay="2">
+        <div class="node">
+          <div class="node-label">01 · Источники</div>
+          <ul>
+            <li>— Видеовстречи</li>
+            <li>— Корпоративные чаты</li>
+            <li>— Решения и задачи</li>
+            <li>— Карточки клиентов</li>
+          </ul>
+        </div>
+        <div class="arrow-h">→</div>
+        <div class="node">
+          <div class="node-label">02 · Обработка</div>
+          <ul>
+            <li>— Транскрибация</li>
+            <li>— Разделение по спикерам</li>
+            <li>— AI&#8209;отчёт под тип</li>
+            <li>— Извлечение сущностей</li>
+          </ul>
+        </div>
+        <div class="arrow-h">→</div>
+        <div class="node">
+          <div class="node-label">03 · Граф памяти</div>
+          <ul>
+            <li>— Клиент → проект → решение</li>
+            <li>— Автор · дата · контекст</li>
+            <li>— AI&#8209;чат на любой вопрос</li>
+            <li>— Дашборд директора</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="col-2" style="margin-top: 80px;">
+        <div class="how-step reveal">
+          <div class="step-num">ИСТОЧНИК · 01</div>
+          <h3>Встречи как первый поток памяти</h3>
+          <p>Видеовстречи проходят на нашей платформе (без сторонних zoom-ботов). Каждый участник пишется отдельной аудиодорожкой — это даёт ≥90% точности разделения по спикерам, против 70–75% у конкурентов.</p>
+        </div>
+        <div class="how-step reveal" data-delay="1">
+          <div class="step-num">ИСТОЧНИК · 02</div>
+          <h3>Чаты, решения, CRM-сигналы</h3>
+          <p>Дальше — корпоративные чаты, документы решений, события из систем учёта клиентов. Всё стекается в единый граф, помеченный тегами клиент/проект/тема/автор/дата.</p>
+        </div>
+        <div class="how-step reveal" data-delay="2">
+          <div class="step-num">ОБРАБОТКА · 03</div>
+          <h3>AI-отчёт под тип встречи</h3>
+          <p>1-на-1, ревью, ретро, продажи, найм, стратегия — у каждого типа свой шаблон отчёта. Не одно безликое саммари, а структурированный артефакт, который через год можно поднять и понять контекст решения.</p>
+        </div>
+        <div class="how-step reveal" data-delay="3">
+          <div class="step-num">ГРАФ · 04</div>
+          <h3>Per-Org граф, который растёт с компанией</h3>
+          <p>Граф знаний приватный для каждой компании. Чем дольше Кора работает у вас — тем плотнее граф и тем точнее ответы AI-чата. Это и есть актив, который остаётся, когда уходят люди.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MODULES ===================== -->
+  <section class="modules cream" id="modules">
+    <div class="wrap">
+      <span class="eyebrow reveal">Что внутри Коры</span>
+      <div class="col-2" style="margin-top: 32px;">
+        <h2 class="reveal" data-delay="1">Семь инструментов, один граф памяти.</h2>
+        <p class="lead reveal" data-delay="2">
+          Каждый модуль — самостоятельная ценность. Вместе — операционная система компании, которая запоминает за всю команду.
+        </p>
+      </div>
+
+      <div class="modules-grid">
+        <!-- 1 -->
+        <div class="module reveal">
+          <div class="mod-tag">Модуль 01</div>
+          <h3>Видеовстречи без посторонних</h3>
+          <p>Своя медиа-платформа на LiveKit. До 10 участников, экран, чат, гость без регистрации. Никаких сторонних ботов, которые подключаются к Zoom — медиа никуда не утекает.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 40 сек</div>
+          </div>
+        </div>
+        <!-- 2 -->
+        <div class="module reveal" data-delay="1">
+          <div class="mod-tag">Модуль 02</div>
+          <h3>Транскрибация по дорожкам</h3>
+          <p>Каждый участник пишется отдельно — диаризация ≥90%. Знаете, кто что сказал, с точностью до фразы. Поиск по транскриптам, цитаты с привязкой к моменту видео.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 30 сек</div>
+          </div>
+        </div>
+        <!-- 3 -->
+        <div class="module reveal" data-delay="2">
+          <div class="mod-tag">Модуль 03</div>
+          <h3>AI-отчёт под тип встречи</h3>
+          <p>9 шаблонов: 1-на-1, ревью, ретро, продажи, найм, стратегия, проектная, командная, заказчик. У каждого — своя структура. Промпты редактируются из админки под ваш язык компании.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 50 сек</div>
+          </div>
+        </div>
+        <!-- 4 -->
+        <div class="module reveal">
+          <div class="mod-tag">Модуль 04</div>
+          <h3>Постановка задач из встречи</h3>
+          <p>AI извлекает решения и обещания, оформляет в задачи с ответственным и сроком. Из встречи — сразу в трекер, без ручной расшифровки. Двусторонняя интеграция с Bitrix24 / amoCRM.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 35 сек</div>
+          </div>
+        </div>
+        <!-- 5 -->
+        <div class="module reveal" data-delay="1">
+          <div class="mod-tag">Модуль 05</div>
+          <h3>AI-чат компании</h3>
+          <p>Ваш личный консультант с памятью за всех. «Что мы обещали клиенту N в марте?», «Почему отказались от подрядчика X?», «Кто отвечал за этот проект до Игоря?» — ответы из графа со ссылками на источник.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 45 сек</div>
+          </div>
+        </div>
+        <!-- 6 -->
+        <div class="module reveal" data-delay="2">
+          <div class="mod-tag">Модуль 06</div>
+          <h3>Дашборд директора</h3>
+          <p>Пульс компании за 30 секунд: горячие сигналы от клиентов, активные темы, согласованность с целями, нагрузка на ключевых людей. Не отчёты — состояние.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 40 сек</div>
+          </div>
+        </div>
+        <!-- 7 -->
+        <div class="module reveal">
+          <div class="mod-tag">Модуль 07 · ⚡ Уникальное</div>
+          <h3>Клоны сотрудников</h3>
+          <p>Когда эксперт увольняется — его стиль работы и личный подграф знаний сохраняются. Преемник видит, как предшественник принимал решения. Onboarding на роль через память предыдущего человека.</p>
+          <div class="video-slot">
+            <div class="play-icon">▶</div>
+            <div>Демо · 60 сек</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ICP ===================== -->
+  <section class="icp" id="icp">
+    <div class="wrap">
+      <span class="eyebrow reveal">Для кого</span>
+      <h2 class="reveal" data-delay="1">Кора по-разному отвечает на вопрос «зачем» — в зависимости от роли.</h2>
+
+      <div class="icp-list">
+        <div class="icp-row reveal">
+          <div class="role">CEO · Собственник</div>
+          <div class="promise">«Я вижу пульс компании за 30 секунд. Кто что обещает клиенту. Куда уходит время команды. Какие решения были приняты — и почему.»</div>
+        </div>
+        <div class="icp-row reveal" data-delay="1">
+          <div class="role">Директор продаж</div>
+          <div class="promise">«Все звонки с клиентами автоматически в карточке. История общения восстанавливается на любой момент. Новый менеджер входит в роль за 2 недели, а не за 3 месяца.»</div>
+        </div>
+        <div class="icp-row reveal" data-delay="1">
+          <div class="role">IT-директор · CIO</div>
+          <div class="promise">«152-ФЗ compliance by design. Per-Org граф знаний с правами доступа и журналом аудита. On-prem на российском open-source стэке.»</div>
+        </div>
+        <div class="icp-row reveal" data-delay="2">
+          <div class="role">HR-директор</div>
+          <div class="promise">«Когда уходит ключевой эксперт, его стиль работы и личный подграф остаются. Новый сотрудник видит, как предшественник принимал решения.»</div>
+        </div>
+        <div class="icp-row reveal" data-delay="2">
+          <div class="role">Менеджер · Консультант</div>
+          <div class="promise">«Не пишите отчёты после встреч. Не ищите, что обсуждали с этим клиентом месяц назад. Спросите AI-чат компании — он помнит контекст за всех.»</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SECURITY ===================== -->
+  <section class="security cream" id="security">
+    <div class="wrap">
+      <span class="eyebrow reveal">Безопасность и суверенитет</span>
+      <div class="col-2" style="margin-top: 32px;">
+        <h2 class="reveal" data-delay="1">Память компании — это её актив. Мы относимся к нему как к активу.</h2>
+        <ul class="reveal" data-delay="2">
+          <li>
+            <span class="check">[✓]</span>
+            <div>
+              <strong>152-ФЗ compliance by design</strong>
+              <span>Все данные в юрисдикции РФ. Реестр Минцифры — на дорожной карте M9–M12.</span>
+            </div>
+          </li>
+          <li>
+            <span class="check">[✓]</span>
+            <div>
+              <strong>On-prem на российском open-source стэке</strong>
+              <span>Self-hosted для enterprise и B2G без vendor lock-in. GigaAM (распознавание речи) + T-Pro 32B (языковая модель).</span>
+            </div>
+          </li>
+          <li>
+            <span class="check">[✓]</span>
+            <div>
+              <strong>Per-Org граф знаний</strong>
+              <span>Граф каждой компании изолирован. Никакого «общего обучения» на ваших данных. Права доступа на уровне ролей (RBAC) с журналом аудита.</span>
+            </div>
+          </li>
+          <li>
+            <span class="check">[✓]</span>
+            <div>
+              <strong>Шифрование AES-256-GCM</strong>
+              <span>На уровне хранения и передачи. SSRF-защита, soft-delete с 30-дневным окном восстановления.</span>
+            </div>
+          </li>
+          <li>
+            <span class="check">[✓]</span>
+            <div>
+              <strong>Гость без регистрации — но без секретов</strong>
+              <span>Внешний участник встречи входит по ссылке, не получая токенов медиа-сервера. Никаких ключей наружу.</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ANTI-NARRATIVE ===================== -->
+  <section class="anti" id="anti">
+    <div class="wrap">
+      <span class="eyebrow reveal">Не путать</span>
+      <h2 class="reveal" data-delay="1">Кора — это не то, что вы уже пробовали.</h2>
+
+      <div class="anti-grid">
+        <div class="anti-cell reveal">
+          <div class="neg">Очередной AI-нотакер для встреч</div>
+          <div class="pos">Нотакер даёт 100 саммари в месяц. <strong>Кора даёт одну живую память</strong> — связную, с поиском, с дашбордом, с AI-чатом.</div>
+        </div>
+        <div class="anti-cell reveal" data-delay="1">
+          <div class="neg">База знаний / корпоративная wiki</div>
+          <div class="pos">Wiki — это страницы, которые надо писать и поддерживать. <strong>Граф Коры собирается сам</strong>, из того, как компания уже работает.</div>
+        </div>
+        <div class="anti-cell reveal" data-delay="1">
+          <div class="neg">Замена системе учёта клиентов (CRM)</div>
+          <div class="pos">У вас уже есть Bitrix24 или amoCRM — мы их <strong>дополняем</strong>: встречи → задачи в CRM, контакты → карточки Коры.</div>
+        </div>
+        <div class="anti-cell reveal" data-delay="2">
+          <div class="neg">Конкурент Сберу или Яндексу с AI</div>
+          <div class="pos">Их AI даёт саммари одной встречи. Мы строим <strong>память всей компании</strong> — другая категория, другая ставка.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section class="faq cream" id="faq">
+    <div class="wrap narrow">
+      <span class="eyebrow reveal">Что обычно спрашивают</span>
+      <h2 class="reveal" data-delay="1">Пять вопросов, которые задают первыми.</h2>
+
+      <div class="faq-list">
+        <details class="faq-item reveal">
+          <summary>У нас уже есть Я.Телемост / Сбер с AI. Зачем ещё что-то?</summary>
+          <div class="answer">
+            Они дают саммари одной встречи — артефакт без памяти, без связей, без поиска через год. Кора строит память всей компании: граф клиентов, проектов, решений, который вы запрашиваете на любой вопрос. Это разные категории продуктов.
+          </div>
+        </details>
+        <details class="faq-item reveal">
+          <summary>Боимся утечки данных в облако.</summary>
+          <div class="answer">
+            Понимаем. Реестр Минцифры — на дорожной карте M9–M12. С M6 — single-tenant private cloud в РФ-юрисдикции. К M18 — on-prem GA на 100% российском open-source стэке (GigaAM, T-Pro 32B). Вы выбираете режим хранения, который вам подходит.
+          </div>
+        </details>
+        <details class="faq-item reveal">
+          <summary>Дорого по сравнению с Контур.Толк (1 100 ₽/мес).</summary>
+          <div class="answer">
+            Контур даёт одно саммари на одну встречу. Мы строим память на 700+ встреч с роллапом в карточку клиента, дашбордом директора и AI-чатом за всю компанию. По нашим расчётам — окупаемость 1,5 месяца на компании 250 человек. Финальная цена для вашего сегмента — обсуждаем после диагностики.
+          </div>
+        </details>
+        <details class="faq-item reveal">
+          <summary>А что если Сбер или Яндекс сделают такое же?</summary>
+          <div class="answer">
+            Они строят общую память LLM-аккаунта — общую для всех клиентов модели. Мы строим per-Org граф — приватный для каждой компании, растущий с её историей. Это архитектурно другая ставка. Окно — 12–18 месяцев, но фундаментальное отличие сохраняется.
+          </div>
+        </details>
+        <details class="faq-item reveal">
+          <summary>У нас уже CRM (Bitrix24 / amoCRM). Куда вы влезаете?</summary>
+          <div class="answer">
+            Двусторонняя интеграция. Встречи Коры автоматически создают задачи в Bitrix24. Контакты из Bitrix24 подтягиваются в карточку Коры. Мы не заменяем — мы дополняем CRM памятью того, что обсуждалось, решалось и обещалось.
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA ===================== -->
+  <section class="cta" id="cta">
+    <div class="wrap narrow">
+      <span class="eyebrow reveal">Дальше</span>
+      <h2 class="reveal" data-delay="1">Хотите узнать, в какой фазе корпоративной амнезии<br><em>сейчас ваша компания?</em></h2>
+      <p class="lead reveal" data-delay="2">
+        Бесплатная диагностика на 30 минут. По 7 маркерам определим, какая часть памяти у вас уже потеряна, какая под риском — и что вернуть в первую очередь.
+      </p>
+      <div class="cta-row reveal" data-delay="3">
+        <a href="#" class="btn btn-primary">
+          Записаться на диагностику <span class="arrow">→</span>
+        </a>
+        <a href="#" class="btn btn-ghost">
+          Получить ранний доступ
+        </a>
+      </div>
+      <div class="footnote reveal" data-delay="4">
+        Без оплаты · Без презентаций · Только разговор о вашем кейсе
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer>
+    <div class="logo">Кора<span class="dot">.</span></div>
+    <div class="links">
+      <a href="#">Манифест</a>
+      <a href="#">Блог</a>
+      <a href="#">Документация</a>
+      <a href="#">Контакты</a>
+    </div>
+    <div>© 2026 · Память компании</div>
+  </footer>
+
+  <script>
+    // Reveal on scroll
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  </script>
+
+</body>
+</html>

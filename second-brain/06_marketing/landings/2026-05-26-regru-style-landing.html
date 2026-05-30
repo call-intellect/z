@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>КОРА — память вашей компании</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geologica:wght@100..900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ─── DESIGN TOKENS (reg.ru system) ─────────────────────────────── */
+    :root {
+      /* Typography */
+      --font-family: Geologica, Inter, Arial, "Helvetica Neue", Helvetica, FreeSans, sans-serif;
+
+      /* Breakpoints */
+      --bp-desktop-m: 1280px;
+      --container-m: 1200px;
+
+      /* Colors — core */
+      --color-primary:        #1ede7b;
+      --color-primary-hover:  #1ac16b;
+      --color-primary-dark:   #149955;
+      --color-primary-light:  #d2f8e5;
+      --color-primary-lighter:#e8fcf2;
+
+      --color-black:          #2b2f33;
+      --color-black-dark:     #191b1e;
+      --color-white:          #ffffff;
+
+      --color-gray-25:        #f9fafc;
+      --color-gray-50:        #f2f4f7;
+      --color-gray-100:       #dfe3e8;
+      --color-gray-200:       #cbcdd6;
+      --color-gray-400:       #9ea4b0;
+      --color-gray-600:       #707a8a;
+      --color-gray-700:       #41454d;
+
+      --color-danger:         #ff2d50;
+      --color-attention:      #ffd11a;
+      --color-fluorescent:    #dcffa0;
+
+      /* Typography scale */
+      --text-weight-normal:   300;
+      --text-weight-bold:     500;
+      --text-letter-spacing:  -0.02em;
+
+      /* Border radius */
+      --radius-xxs: 4px;
+      --radius-xs:  8px;
+      --radius-s:   12px;
+      --radius-m:   24px;
+      --radius-l:   40px;
+      --radius-xl:  60px;
+
+      /* Shadows */
+      --shadow-1: 0px 4px 16px rgba(0,51,153,.04), 0px 2px 2px rgba(0,51,153,.08);
+      --shadow-2: 0px 8px 20px rgba(0,51,153,.08), 0px 4px 8px rgba(0,51,153,.08);
+      --shadow-4: 0px 12px 32px rgba(0,51,153,.12), 0px 8px 20px rgba(0,51,153,.08);
+
+      /* Animations */
+      --anim-change:  .1s cubic-bezier(.45,0,.55,1);
+      --anim-in:      .3s cubic-bezier(.81,0,.04,1);
+      --anim-out:     .2s cubic-bezier(.25,.01,.47,.99);
+    }
+
+    /* ─── RESET ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body {
+      font-family: var(--font-family);
+      font-weight: var(--text-weight-normal);
+      font-size: 16px;
+      line-height: 20px;
+      letter-spacing: var(--text-letter-spacing);
+      color: var(--color-black);
+      background: var(--color-white);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; }
+
+    /* ─── LAYOUT ─────────────────────────────────────────────────────── */
+    .container {
+      max-width: var(--container-m);
+      margin: 0 auto;
+      padding: 0 40px;
+    }
+    @media (max-width: 1023px) {
+      .container { padding: 0 20px; }
+    }
+
+    /* ─── ANNOUNCEMENT BAR ───────────────────────────────────────────── */
+    .announce-bar {
+      background: var(--color-primary);
+      padding: 10px 20px;
+      text-align: center;
+      font-size: 14px;
+      line-height: 17px;
+      letter-spacing: var(--text-letter-spacing);
+      color: var(--color-black);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .announce-bar svg { flex-shrink: 0; }
+    .announce-bar a {
+      color: var(--color-black-dark);
+      font-weight: var(--text-weight-bold);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .announce-bar a:hover { color: var(--color-primary-dark); }
+
+    /* ─── HEADER ─────────────────────────────────────────────────────── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--color-white);
+      border-bottom: 1px solid var(--color-gray-100);
+      height: 56px;
+    }
+    .header-inner {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-logo {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--color-black);
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+    .header-logo span {
+      color: var(--color-primary);
+    }
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex: 1;
+    }
+    .header-nav a {
+      padding: 0 16px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      font-size: 16px;
+      font-weight: var(--text-weight-normal);
+      color: var(--color-black);
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: border-color var(--anim-change), color var(--anim-change);
+    }
+    .header-nav a:hover {
+      border-bottom-color: var(--color-primary);
+      color: var(--color-black-dark);
+    }
+    .header-nav a.active {
+      border-bottom-color: var(--color-primary);
+      font-weight: var(--text-weight-bold);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .header-help {
+      font-size: 14px;
+      color: var(--color-gray-600);
+      padding: 8px 12px;
+      border-radius: var(--radius-xs);
+      transition: background var(--anim-change);
+    }
+    .header-help:hover { background: var(--color-gray-50); }
+
+    /* ─── BUTTONS ────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: var(--radius-xs);
+      font-family: var(--font-family);
+      font-size: 16px;
+      font-weight: var(--text-weight-normal);
+      letter-spacing: var(--text-letter-spacing);
+      cursor: pointer;
+      border: none;
+      transition: background var(--anim-change), color var(--anim-change), box-shadow var(--anim-change);
+      white-space: nowrap;
+    }
+    .btn-dark {
+      background: var(--color-black);
+      color: var(--color-white);
+    }
+    .btn-dark:hover {
+      background: var(--color-black-dark);
+    }
+    .btn-primary {
+      background: var(--color-primary);
+      color: var(--color-black);
+    }
+    .btn-primary:hover {
+      background: var(--color-primary-hover);
+    }
+    .btn-outline {
+      background: transparent;
+      color: var(--color-black);
+      border: 1px solid var(--color-gray-200);
+    }
+    .btn-outline:hover {
+      background: var(--color-gray-50);
+      border-color: var(--color-gray-100);
+    }
+    .btn-sm {
+      padding: 8px 16px;
+      font-size: 14px;
+    }
+    .btn-lg {
+      padding: 16px 32px;
+      font-size: 18px;
+      border-radius: var(--radius-xs);
+    }
+
+    /* ─── HERO ───────────────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      min-height: 520px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      background: linear-gradient(135deg, #1a1f24 0%, #2b3540 60%, #1a2e1f 100%);
+    }
+    .hero-bg-shape {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 70% 50%, rgba(30,222,123,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse at 90% 20%, rgba(30,222,123,0.08) 0%, transparent 40%);
+      pointer-events: none;
+    }
+    .hero-photo {
+      position: absolute;
+      right: 0;
+      top: 0;
+      height: 100%;
+      width: 45%;
+      background: linear-gradient(135deg, #2b3540 0%, #3a4a35 100%);
+      clip-path: polygon(10% 0, 100% 0, 100% 100%, 0% 100%);
+      overflow: hidden;
+    }
+    .hero-photo-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to right, rgba(26,31,36,0.9) 0%, rgba(26,31,36,0.3) 40%, transparent 60%);
+    }
+    .hero-photo-illustration {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 80px;
+      opacity: 0.3;
+    }
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      padding: 80px 0;
+      max-width: 600px;
+    }
+    .hero h1 {
+      font-size: 50px;
+      line-height: 55px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.03em;
+      color: var(--color-white);
+      margin-bottom: 24px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--color-primary);
+    }
+    .hero-subtitle {
+      font-size: 18px;
+      line-height: 22px;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 32px;
+      font-weight: var(--text-weight-normal);
+    }
+    .hero-search {
+      display: flex;
+      background: var(--color-white);
+      border-radius: var(--radius-xs);
+      overflow: hidden;
+      box-shadow: var(--shadow-4);
+      max-width: 520px;
+      margin-bottom: 20px;
+    }
+    .hero-search input {
+      flex: 1;
+      padding: 14px 20px;
+      font-family: var(--font-family);
+      font-size: 16px;
+      font-weight: var(--text-weight-normal);
+      color: var(--color-black);
+      border: none;
+      outline: none;
+      background: transparent;
+      letter-spacing: var(--text-letter-spacing);
+    }
+    .hero-search input::placeholder { color: var(--color-gray-200); }
+    .hero-search-whois {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 12px;
+      font-size: 12px;
+      color: var(--color-gray-600);
+      border-left: 1px solid var(--color-gray-100);
+      cursor: pointer;
+      transition: background var(--anim-change);
+    }
+    .hero-search-whois:hover { background: var(--color-gray-25); }
+    .hero-search-whois svg { opacity: 0.6; }
+    .hero-search .btn-primary {
+      border-radius: 0;
+      padding: 14px 24px;
+    }
+    .hero-tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .hero-tag {
+      background: rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.8);
+      padding: 4px 12px;
+      border-radius: var(--radius-xl);
+      font-size: 13px;
+      font-weight: var(--text-weight-normal);
+      border: 1px solid rgba(255,255,255,0.15);
+      cursor: pointer;
+      transition: background var(--anim-change), border-color var(--anim-change);
+    }
+    .hero-tag:hover {
+      background: rgba(30,222,123,0.2);
+      border-color: rgba(30,222,123,0.4);
+      color: var(--color-white);
+    }
+
+    /* ─── QUICK SERVICES (two-column split) ─────────────────────────── */
+    .quick-services {
+      padding: 40px 0;
+      border-bottom: 1px solid var(--color-gray-100);
+    }
+    .quick-services-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+    }
+    .quick-col {
+      padding: 32px;
+    }
+    .quick-col:first-child {
+      border-right: 1px solid var(--color-gray-100);
+    }
+    .quick-col-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .quick-col-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--color-primary);
+      border-radius: var(--radius-xs);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .quick-col h3 {
+      font-size: 20px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.02em;
+    }
+    .quick-items {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .quick-item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 16px;
+      background: var(--color-gray-25);
+      border-radius: var(--radius-s);
+      cursor: pointer;
+      transition: background var(--anim-change), box-shadow var(--anim-change);
+      border: 1px solid transparent;
+    }
+    .quick-item:hover {
+      background: var(--color-primary-lighter);
+      border-color: var(--color-primary-light);
+      box-shadow: var(--shadow-1);
+    }
+    .quick-item-icon {
+      font-size: 24px;
+    }
+    .quick-item-title {
+      font-size: 14px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.01em;
+    }
+    .quick-item-desc {
+      font-size: 12px;
+      color: var(--color-gray-600);
+      line-height: 15px;
+    }
+
+    /* ─── PROMO BANNER (зелёная секция Рег.Решения) ──────────────────── */
+    .promo-banner {
+      background: var(--color-primary);
+      border-radius: var(--radius-s);
+      padding: 48px 48px;
+      margin: 60px 0;
+      display: flex;
+      align-items: center;
+      gap: 48px;
+      overflow: hidden;
+      position: relative;
+    }
+    .promo-banner::before {
+      content: '';
+      position: absolute;
+      top: -60px;
+      right: -60px;
+      width: 300px;
+      height: 300px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 50%;
+    }
+    .promo-banner::after {
+      content: '';
+      position: absolute;
+      bottom: -80px;
+      right: 100px;
+      width: 200px;
+      height: 200px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 50%;
+    }
+    .promo-banner-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255,255,255,0.9);
+      padding: 12px 20px;
+      border-radius: var(--radius-s);
+      flex-shrink: 0;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+    .promo-banner-logo .dot {
+      width: 24px;
+      height: 24px;
+      background: var(--color-primary);
+      border-radius: 50%;
+    }
+    .promo-banner-content { flex: 1; position: relative; z-index: 1; }
+    .promo-banner h2 {
+      font-size: 36px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.03em;
+      color: var(--color-black);
+      margin-bottom: 8px;
+    }
+    .promo-banner p {
+      font-size: 16px;
+      color: rgba(43,47,51,0.8);
+      line-height: 22px;
+      margin-bottom: 20px;
+    }
+    .promo-banner .btn-dark {
+      position: relative; z-index: 1;
+    }
+
+    /* ─── SECTION HEADING ────────────────────────────────────────────── */
+    .section-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 28px;
+    }
+    .section-heading h2 {
+      font-size: 28px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.03em;
+      color: var(--color-black);
+    }
+    .section-heading p {
+      font-size: 16px;
+      color: var(--color-gray-600);
+      margin-top: 4px;
+      max-width: 480px;
+    }
+    .section-heading-left { display: flex; flex-direction: column; }
+    .link-arrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: var(--text-weight-bold);
+      color: var(--color-black);
+      padding: 10px 20px;
+      border-radius: var(--radius-xs);
+      border: 1px solid var(--color-gray-100);
+      white-space: nowrap;
+      transition: border-color var(--anim-change), background var(--anim-change);
+      flex-shrink: 0;
+    }
+    .link-arrow:hover {
+      border-color: var(--color-primary);
+      background: var(--color-primary-lighter);
+    }
+
+    /* ─── CARDS GRID ─────────────────────────────────────────────────── */
+    .section { padding: 60px 0; }
+    .section + .section { border-top: 1px solid var(--color-gray-100); }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .cards-grid-4 {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .card {
+      background: var(--color-white);
+      border-radius: var(--radius-s);
+      overflow: hidden;
+      border: 1px solid var(--color-gray-100);
+      cursor: pointer;
+      transition: box-shadow var(--anim-change), border-color var(--anim-change);
+    }
+    .card:hover {
+      box-shadow: var(--shadow-2);
+      border-color: var(--color-gray-200);
+    }
+    .card-image {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: var(--color-gray-50);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      overflow: hidden;
+      position: relative;
+    }
+    .card-image-green {
+      background: linear-gradient(135deg, var(--color-primary-lighter) 0%, #a5f2ca 100%);
+    }
+    .card-image-dark {
+      background: linear-gradient(135deg, #1a2235 0%, #2b3540 100%);
+    }
+    .card-image-mock {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 56px;
+    }
+    .badge-new {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: var(--color-black);
+      color: var(--color-white);
+      font-size: 11px;
+      font-weight: var(--text-weight-bold);
+      padding: 2px 8px;
+      border-radius: var(--radius-xl);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .card-body {
+      padding: 20px;
+    }
+    .card-chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .chip {
+      background: var(--color-gray-50);
+      color: var(--color-gray-600);
+      font-size: 12px;
+      font-weight: var(--text-weight-normal);
+      padding: 3px 10px;
+      border-radius: var(--radius-xl);
+      letter-spacing: 0;
+    }
+    .chip-primary {
+      background: var(--color-primary-lighter);
+      color: var(--color-primary-dark);
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.02em;
+      line-height: 22px;
+      color: var(--color-black);
+      margin-bottom: 8px;
+    }
+    .card-desc {
+      font-size: 14px;
+      line-height: 18px;
+      color: var(--color-gray-600);
+    }
+    .card-price {
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--color-gray-600);
+    }
+    .card-price strong {
+      font-size: 16px;
+      font-weight: var(--text-weight-bold);
+      color: var(--color-black);
+    }
+    .card-rating {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 14px;
+      font-weight: var(--text-weight-bold);
+      color: var(--color-black);
+    }
+    .card-rating-stars { color: var(--color-attention); }
+
+    /* ─── SELF-SERVE PRODUCTS (domain-like grid) ────────────────────── */
+    .products-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .product-tile {
+      background: var(--color-gray-25);
+      border: 1px solid var(--color-gray-100);
+      border-radius: var(--radius-s);
+      padding: 24px 20px;
+      cursor: pointer;
+      transition: background var(--anim-change), border-color var(--anim-change), box-shadow var(--anim-change);
+    }
+    .product-tile:hover {
+      background: var(--color-primary-lighter);
+      border-color: var(--color-primary-light);
+      box-shadow: var(--shadow-1);
+    }
+    .product-tile-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--color-primary);
+      border-radius: var(--radius-xs);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+    .product-tile-name {
+      font-size: 16px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+    .product-tile-desc {
+      font-size: 13px;
+      line-height: 17px;
+      color: var(--color-gray-600);
+    }
+    .product-tile-price {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--color-gray-100);
+      font-size: 14px;
+      color: var(--color-gray-600);
+    }
+    .product-tile-price strong {
+      font-weight: var(--text-weight-bold);
+      color: var(--color-black);
+    }
+
+    /* ─── BLOG ───────────────────────────────────────────────────────── */
+    .blog-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 24px;
+    }
+    .blog-card {
+      cursor: pointer;
+      transition: opacity var(--anim-change);
+    }
+    .blog-card:hover { opacity: 0.8; }
+    .blog-card-image {
+      width: 100%;
+      aspect-ratio: 16/10;
+      background: var(--color-gray-50);
+      border-radius: var(--radius-s);
+      margin-bottom: 16px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+    }
+    .blog-card-category {
+      font-size: 12px;
+      font-weight: var(--text-weight-bold);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-primary-dark);
+      margin-bottom: 8px;
+    }
+    .blog-card-title {
+      font-size: 16px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.02em;
+      line-height: 20px;
+      color: var(--color-black);
+    }
+
+    /* ─── CLOUD SECTION ──────────────────────────────────────────────── */
+    .cloud-section {
+      background: var(--color-black-dark);
+      color: var(--color-white);
+      padding: 80px 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .cloud-section::before {
+      content: '';
+      position: absolute;
+      top: -100px;
+      left: -100px;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(30,222,123,0.1) 0%, transparent 70%);
+    }
+    .cloud-inner {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+    .cloud-content h2 {
+      font-size: 36px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+      color: var(--color-white);
+    }
+    .cloud-content p {
+      font-size: 16px;
+      line-height: 22px;
+      color: rgba(255,255,255,0.65);
+      margin-bottom: 28px;
+    }
+    .cloud-features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .cloud-feature {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .cloud-feature-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(30,222,123,0.15);
+      border-radius: var(--radius-xxs);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .cloud-feature-text {
+      font-size: 14px;
+      line-height: 18px;
+      color: rgba(255,255,255,0.75);
+    }
+    .cloud-feature-text strong {
+      display: block;
+      font-size: 15px;
+      font-weight: var(--text-weight-bold);
+      color: var(--color-white);
+      margin-bottom: 2px;
+    }
+    .cloud-visual {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 120px;
+      opacity: 0.5;
+    }
+
+    /* ─── FOOTER ─────────────────────────────────────────────────────── */
+    .footer {
+      background: #181818;
+      color: var(--color-white);
+      padding: 60px 0 40px;
+    }
+    .footer-top {
+      display: grid;
+      grid-template-columns: 260px 1fr 1fr 1fr;
+      gap: 40px;
+      padding-bottom: 48px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .footer-brand {}
+    .footer-logo {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--color-white);
+      margin-bottom: 16px;
+    }
+    .footer-logo span { color: var(--color-primary); }
+    .footer-phone-primary {
+      font-size: 20px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: -0.01em;
+      margin-bottom: 4px;
+    }
+    .footer-phone-label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 12px;
+    }
+    .footer-phone-secondary {
+      font-size: 18px;
+      font-weight: var(--text-weight-bold);
+      margin-bottom: 4px;
+    }
+    .footer-socials {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    .footer-social {
+      width: 40px;
+      height: 40px;
+      background: rgba(255,255,255,0.08);
+      border-radius: var(--radius-xs);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background var(--anim-change);
+    }
+    .footer-social:hover { background: rgba(30,222,123,0.2); }
+    .footer-col h4 {
+      font-size: 13px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 16px;
+    }
+    .footer-links {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .footer-links a {
+      font-size: 15px;
+      font-weight: var(--text-weight-normal);
+      color: rgba(255,255,255,0.75);
+      transition: color var(--anim-change);
+    }
+    .footer-links a:hover { color: var(--color-primary); }
+    .footer-bottom {
+      padding-top: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .footer-legal {
+      font-size: 12px;
+      line-height: 16px;
+      color: rgba(255,255,255,0.3);
+      max-width: 320px;
+    }
+    .footer-badges {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      opacity: 0.4;
+    }
+    .footer-badge {
+      font-size: 11px;
+      font-weight: var(--text-weight-bold);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.6);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 4px 10px;
+      border-radius: var(--radius-xxs);
+    }
+    .footer-policy {
+      display: flex;
+      gap: 24px;
+    }
+    .footer-policy a {
+      font-size: 12px;
+      color: rgba(255,255,255,0.35);
+      transition: color var(--anim-change);
+    }
+    .footer-policy a:hover { color: rgba(255,255,255,0.7); }
+
+    /* ─── HELP BUTTON (fixed) ────────────────────────────────────────── */
+    .help-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--color-black);
+      color: var(--color-white);
+      padding: 10px 18px;
+      border-radius: var(--radius-xl);
+      font-size: 14px;
+      font-weight: var(--text-weight-bold);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow-4);
+      cursor: pointer;
+      z-index: 200;
+      transition: background var(--anim-change);
+    }
+    .help-btn:hover { background: var(--color-black-dark); }
+
+    /* ─── COOKIE BAR ─────────────────────────────────────────────────── */
+    .cookie-bar {
+      position: fixed;
+      bottom: 80px;
+      left: 24px;
+      background: var(--color-white);
+      border: 1px solid var(--color-gray-100);
+      border-radius: var(--radius-s);
+      padding: 12px 20px;
+      font-size: 13px;
+      color: var(--color-gray-600);
+      box-shadow: var(--shadow-2);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 400px;
+      z-index: 200;
+    }
+    .cookie-bar a { color: var(--color-primary-dark); text-decoration: underline; }
+
+    /* ─── RESPONSIVE ─────────────────────────────────────────────────── */
+    @media (max-width: 1279px) {
+      .hero h1 { font-size: 42px; line-height: 47px; }
+      .cards-grid { grid-template-columns: repeat(2, 1fr); }
+      .blog-grid { grid-template-columns: 1fr 1fr; }
+      .products-grid { grid-template-columns: repeat(2, 1fr); }
+      .footer-top { grid-template-columns: 200px 1fr 1fr; }
+      .footer-top > :last-child { grid-column: span 2; }
+    }
+    @media (max-width: 1023px) {
+      .header-nav { display: none; }
+      .quick-services-grid { grid-template-columns: 1fr; }
+      .quick-col:first-child { border-right: none; border-bottom: 1px solid var(--color-gray-100); }
+      .cloud-inner { grid-template-columns: 1fr; }
+      .cloud-visual { display: none; }
+      .footer-top { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 719px) {
+      .hero h1 { font-size: 32px; line-height: 36px; }
+      .hero-photo { display: none; }
+      .promo-banner { flex-direction: column; align-items: flex-start; }
+      .cards-grid { grid-template-columns: 1fr; }
+      .blog-grid { grid-template-columns: 1fr; }
+      .products-grid { grid-template-columns: 1fr; }
+      .footer-top { grid-template-columns: 1fr; }
+      .container { padding: 0 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══ ANNOUNCEMENT BAR ════════════════════════════════════════════ -->
+  <div class="announce-bar">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>
+    </svg>
+    Идентификация компании в КОРА обязательна с 1 июля.&nbsp;
+    <a href="#">Кому нужно пройти?</a>
+  </div>
+
+  <!-- ══ HEADER ══════════════════════════════════════════════════════ -->
+  <header class="header">
+    <div class="container">
+      <div class="header-inner">
+        <a class="header-logo" href="#">КО<span>Р</span>А</a>
+        <nav class="header-nav">
+          <a href="#" class="active">Память команды</a>
+          <a href="#">Встречи</a>
+          <a href="#">Трекер</a>
+          <a href="#">AI-директор</a>
+          <a href="#">Облако знаний</a>
+        </nav>
+        <div class="header-actions">
+          <span class="header-help">Помощь</span>
+          <button class="btn btn-dark btn-sm">Войти</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══ HERO ════════════════════════════════════════════════════════ -->
+  <section class="hero">
+    <div class="hero-bg-shape"></div>
+    <div class="hero-photo">
+      <div class="hero-photo-overlay"></div>
+      <div class="hero-photo-illustration">🧠</div>
+    </div>
+    <div class="container">
+      <div class="hero-content">
+        <h1>Память компании<br/>начинается с <em>КОРА</em></h1>
+        <p class="hero-subtitle">Автоматически собирает знания из встреч, решений и переписок. Помнит за всю команду.</p>
+        <div class="hero-search">
+          <input type="text" placeholder="Найдите знания, решение или сотрудника…" />
+          <div class="hero-search-whois">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            Поиск
+          </div>
+          <button class="btn btn-primary">Найти</button>
+        </div>
+        <div class="hero-tags">
+          <span class="hero-tag">Встречи</span>
+          <span class="hero-tag">Решения</span>
+          <span class="hero-tag">Онбординг</span>
+          <span class="hero-tag">Задачи</span>
+          <span class="hero-tag">AI-чат</span>
+          <span class="hero-tag">Клоны</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ QUICK SERVICES ══════════════════════════════════════════════ -->
+  <section class="quick-services">
+    <div class="container">
+      <div class="quick-services-grid">
+        <!-- Сделаем за вас -->
+        <div class="quick-col">
+          <div class="quick-col-header">
+            <div class="quick-col-icon">🤖</div>
+            <h3>Автоматически за вас</h3>
+          </div>
+          <div class="quick-items">
+            <div class="quick-item">
+              <div class="quick-item-icon">🎙</div>
+              <div class="quick-item-title">Записать встречу</div>
+              <div class="quick-item-desc">AI транскрибирует и составит отчёт</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-item-icon">📋</div>
+              <div class="quick-item-title">Создать задачи</div>
+              <div class="quick-item-desc">Из обещаний и договорённостей</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-item-icon">🧑‍💼</div>
+              <div class="quick-item-title">Цифровой двойник</div>
+              <div class="quick-item-desc">Знания сотрудника остаются навсегда</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-item-icon">📊</div>
+              <div class="quick-item-title">Дашборд директора</div>
+              <div class="quick-item-desc">Пульс компании за 30 секунд</div>
+            </div>
+          </div>
+        </div>
+        <!-- Сделайте сами -->
+        <div class="quick-col">
+          <div class="quick-col-header">
+            <div class="quick-col-icon">✏️</div>
+            <h3>Управляйте сами</h3>
+          </div>
+          <div class="quick-items">
+            <div class="quick-item">
+              <div class="quick-item-icon">💬</div>
+              <div class="quick-item-title">AI-чат компании</div>
+              <div class="quick-item-desc">Ответ на любой вопрос о вашей компании</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-item-icon">🗂</div>
+              <div class="quick-item-title">База знаний</div>
+              <div class="quick-item-desc">Документы, решения, процессы</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-item-icon">✅</div>
+              <div class="quick-item-title">Трекер задач</div>
+              <div class="quick-item-desc">Связан с памятью команды</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-item-icon">🔗</div>
+              <div class="quick-item-title">Граф связей</div>
+              <div class="quick-item-desc">Кто с кем, что с чем связано</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ PROMO BANNER ════════════════════════════════════════════════ -->
+  <div class="container">
+    <div class="promo-banner">
+      <div class="promo-banner-logo">
+        <div class="dot"></div>
+        КОРА Решения
+      </div>
+      <div class="promo-banner-content">
+        <h2>Сделаем за вас</h2>
+        <p>КОРА автоматически собирает знания из всех источников компании. Вы просто работаете — КОРА помнит.</p>
+        <button class="btn btn-dark">Начать бесплатно</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ПОПУЛЯРНОЕ (карточки продуктов) ════════════════════════════ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-heading">
+        <div class="section-heading-left">
+          <h2>Популярное</h2>
+          <p>Самые востребованные инструменты памяти команды</p>
+        </div>
+        <a class="link-arrow" href="#">Все инструменты →</a>
+      </div>
+      <div class="cards-grid">
+        <div class="card">
+          <div class="card-image card-image-green">
+            <div class="card-image-mock">🎙️</div>
+          </div>
+          <div class="card-body">
+            <div class="card-chips">
+              <span class="chip">Встречи</span>
+              <span class="chip">AI</span>
+              <span class="chip chip-primary">Старт</span>
+            </div>
+            <div class="card-title">Умный протокол встречи</div>
+            <div class="card-desc">КОРА слушает, транскрибирует и создаёт отчёт под тип встречи — продажи, стратегия, ретроспектива.</div>
+            <div class="card-price">от <strong>990 ₽/мес</strong></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-image card-image-green">
+            <div class="card-image-mock">🧑‍💼</div>
+            <span class="badge-new">Новое</span>
+          </div>
+          <div class="card-body">
+            <div class="card-chips">
+              <span class="chip">Клоны</span>
+              <span class="chip chip-primary">Для всех</span>
+            </div>
+            <div class="card-title">Цифровой двойник сотрудника</div>
+            <div class="card-desc">Знания уходящего сотрудника остаются в компании. Клон Маркетолога отвечает на вопросы даже после увольнения.</div>
+            <div class="card-rating">
+              <span class="card-rating-stars">★</span> 5.0
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-image card-image-dark">
+            <div class="card-image-mock">📊</div>
+          </div>
+          <div class="card-body">
+            <div class="card-chips">
+              <span class="chip">Директор</span>
+              <span class="chip">Аналитика</span>
+            </div>
+            <div class="card-title">Дашборд CEO</div>
+            <div class="card-desc">Пульс компании за 30 секунд. Риски, задержки, успехи команды — без оперативки и статус-митингов.</div>
+            <div class="card-price">от <strong>2 490 ₽/мес</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ ОТРАСЛЕВЫЕ РЕШЕНИЯ ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-heading">
+        <div class="section-heading-left">
+          <h2>Отраслевые решения</h2>
+          <p>Пакеты инструментов под конкретные задачи бизнеса</p>
+        </div>
+        <a class="link-arrow" href="#">Все решения →</a>
+      </div>
+      <div class="cards-grid">
+        <div class="card">
+          <div class="card-image card-image-green">
+            <div class="card-image-mock">🏗️</div>
+          </div>
+          <div class="card-body">
+            <div class="card-chips">
+              <span class="chip">Строительство</span>
+              <span class="chip">Старт</span>
+            </div>
+            <div class="card-title">Память строительного проекта</div>
+            <div class="card-desc">Фиксируем решения по объектам, нормативы, подрядчиков. Новый прораб войдёт в курс за час.</div>
+            <div class="card-price">от <strong>3 900 ₽/мес</strong></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-image" style="background: linear-gradient(135deg, #e6f6f7 0%, #ceebeb 100%);">
+            <div class="card-image-mock">⚖️</div>
+          </div>
+          <div class="card-body">
+            <div class="card-chips">
+              <span class="chip">Юриспруденция</span>
+              <span class="chip">Маркетплейсы</span>
+            </div>
+            <div class="card-title">База прецедентов</div>
+            <div class="card-desc">Все дела, аргументы и исходы. Поиск по тематике за секунды — не по папкам на диске.</div>
+            <div class="card-rating">
+              <span class="card-rating-stars">★</span> 4.9
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-image card-image-green">
+            <div class="card-image-mock">🛒</div>
+          </div>
+          <div class="card-body">
+            <div class="card-chips">
+              <span class="chip">Ритейл</span>
+              <span class="chip chip-primary">Для всех</span>
+            </div>
+            <div class="card-title">Память торговой сети</div>
+            <div class="card-desc">Стандарты, обучение, кейсы — автоматически доступны каждому сотруднику на любой точке.</div>
+            <div class="card-price">от <strong>5 900 ₽/мес</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ САМОСТОЯТЕЛЬНЫЕ ПРОДУКТЫ ════════════════════════════════════ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-heading">
+        <div class="section-heading-left">
+          <h2>Все инструменты</h2>
+          <p>Используйте отдельно или как единую систему</p>
+        </div>
+      </div>
+      <div class="products-grid">
+        <div class="product-tile">
+          <div class="product-tile-icon">🎙️</div>
+          <div class="product-tile-name">Встречи</div>
+          <div class="product-tile-desc">Запись, транскрипция, AI-отчёт под 9 типов встреч</div>
+          <div class="product-tile-price">от <strong>490 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">✅</div>
+          <div class="product-tile-name">Трекер задач</div>
+          <div class="product-tile-desc">Задачи из встреч и переписок — автоматически</div>
+          <div class="product-tile-price">от <strong>390 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">💬</div>
+          <div class="product-tile-name">AI-чат компании</div>
+          <div class="product-tile-desc">Ответ на любой вопрос из памяти компании</div>
+          <div class="product-tile-price">от <strong>690 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">🧑‍💼</div>
+          <div class="product-tile-name">Клоны сотрудников</div>
+          <div class="product-tile-desc">Цифровые двойники по ролям и должностям</div>
+          <div class="product-tile-price">от <strong>990 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">🧠</div>
+          <div class="product-tile-name">База знаний</div>
+          <div class="product-tile-desc">Автоматически структурированные знания компании</div>
+          <div class="product-tile-price">от <strong>290 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">📊</div>
+          <div class="product-tile-name">Дашборд директора</div>
+          <div class="product-tile-desc">Пульс компании: риски, прогресс, решения</div>
+          <div class="product-tile-price">от <strong>1 490 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">🔗</div>
+          <div class="product-tile-name">Граф знаний</div>
+          <div class="product-tile-desc">Связи между людьми, проектами и решениями</div>
+          <div class="product-tile-price">от <strong>890 ₽/мес</strong></div>
+        </div>
+        <div class="product-tile">
+          <div class="product-tile-icon">🛡️</div>
+          <div class="product-tile-name">RBAC и безопасность</div>
+          <div class="product-tile-desc">Разграничение доступа, шифрование, аудит</div>
+          <div class="product-tile-price">в составе тарифа</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ БЛОГ ════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-heading">
+        <div class="section-heading-left">
+          <h2>Блог</h2>
+          <p>Как компании теряют знания и как этого избежать</p>
+        </div>
+        <a class="link-arrow" href="#">Все статьи →</a>
+      </div>
+      <div class="blog-grid">
+        <div class="blog-card">
+          <div class="blog-card-image" style="background: linear-gradient(135deg, var(--color-primary-lighter) 0%, #a5f2ca 100%);">📉</div>
+          <div class="blog-card-category">Операционка</div>
+          <div class="blog-card-title">5 дыр, через которые утекает выручка. И как КОРА их затыкает</div>
+        </div>
+        <div class="blog-card">
+          <div class="blog-card-image" style="background: linear-gradient(135deg, #f9fafc 0%, #dfe3e8 100%);">🧑‍💼</div>
+          <div class="blog-card-category">HR</div>
+          <div class="blog-card-title">Эксперт уходит — знания остаются. Как работает цифровой клон</div>
+        </div>
+        <div class="blog-card">
+          <div class="blog-card-image" style="background: linear-gradient(135deg, #191b1e 0%, #2b3540 100%);">🎙️</div>
+          <div class="blog-card-category">Продукт</div>
+          <div class="blog-card-title">Почему протокол встречи важнее самой встречи</div>
+        </div>
+        <div class="blog-card">
+          <div class="blog-card-image" style="background: linear-gradient(135deg, #fffadb 0%, #ffef94 100%);">⚡</div>
+          <div class="blog-card-category">Рост</div>
+          <div class="blog-card-title">Онбординг за 1 день вместо 6 месяцев. Кейс производственной компании</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ CLOUD / INFRASTRUCTURE ══════════════════════════════════════ -->
+  <section class="cloud-section">
+    <div class="container">
+      <div class="cloud-inner">
+        <div class="cloud-content">
+          <h2>Облачная платформа<br/>и безопасность данных</h2>
+          <p>КОРА работает в защищённом российском облаке. Ваши знания не уходят к иностранным серверам. Соответствие 152-ФЗ из коробки.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <button class="btn btn-primary">Начать бесплатно</button>
+            <button class="btn btn-outline" style="color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.2);">Узнать подробнее</button>
+          </div>
+          <div class="cloud-features" style="margin-top:32px">
+            <div class="cloud-feature">
+              <div class="cloud-feature-icon">🔒</div>
+              <div class="cloud-feature-text">
+                <strong>Шифрование AES-256</strong>
+                Все данные зашифрованы в покое и в передаче
+              </div>
+            </div>
+            <div class="cloud-feature">
+              <div class="cloud-feature-icon">🇷🇺</div>
+              <div class="cloud-feature-text">
+                <strong>Российские ЦОДы</strong>
+                Yandex Cloud, Selectel, SberCloud на выбор
+              </div>
+            </div>
+            <div class="cloud-feature">
+              <div class="cloud-feature-icon">📋</div>
+              <div class="cloud-feature-text">
+                <strong>152-ФЗ и GDPR</strong>
+                Готовые документы и аудит-логи
+              </div>
+            </div>
+            <div class="cloud-feature">
+              <div class="cloud-feature-icon">⚡</div>
+              <div class="cloud-feature-text">
+                <strong>SLA 99.9%</strong>
+                Гарантированная доступность платформы
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cloud-visual">🌐</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ FOOTER ══════════════════════════════════════════════════════ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="footer-logo">КО<span>Р</span>А</div>
+          <div class="footer-phone-primary">8 800 555-XX-XX</div>
+          <div class="footer-phone-label">Бесплатный звонок по России</div>
+          <div class="footer-phone-secondary">+7 (495) 000-00-00</div>
+          <div class="footer-phone-label">Москва</div>
+          <div class="footer-socials">
+            <div class="footer-social">VK</div>
+            <div class="footer-social">TG</div>
+            <div class="footer-social">YT</div>
+            <div class="footer-social">ОК</div>
+            <div class="footer-social">VC</div>
+            <div class="footer-social">HH</div>
+          </div>
+        </div>
+        <div class="footer-col">
+          <h4>Компания</h4>
+          <nav class="footer-links">
+            <a href="#">О компании</a>
+            <a href="#">Контакты</a>
+            <a href="#">Офисы</a>
+            <a href="#">Новости</a>
+            <a href="#">Акции и скидки</a>
+            <a href="#">Блог</a>
+            <a href="#">Отзывы клиентов</a>
+          </nav>
+        </div>
+        <div class="footer-col">
+          <h4>Полезное</h4>
+          <nav class="footer-links">
+            <a href="#">Стоимость тарифов</a>
+            <a href="#">Способы оплаты</a>
+            <a href="#">Бонусная программа</a>
+            <a href="#">Документы</a>
+            <a href="#">База знаний</a>
+            <a href="#">Партнёрам</a>
+          </nav>
+        </div>
+        <div class="footer-col">
+          <h4>Инструменты</h4>
+          <nav class="footer-links">
+            <a href="#">Встречи</a>
+            <a href="#">Трекер задач</a>
+            <a href="#">AI-чат компании</a>
+            <a href="#">Клоны сотрудников</a>
+            <a href="#">Дашборд директора</a>
+            <a href="#">Граф знаний</a>
+            <a href="#">Все инструменты</a>
+          </nav>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-legal">Облачная платформа КОРА включена в реестр российского ПО</div>
+        <div class="footer-badges">
+          <span class="footer-badge">152-ФЗ</span>
+          <span class="footer-badge">ICANN</span>
+          <span class="footer-badge">Минцифры</span>
+        </div>
+        <div class="footer-policy">
+          <a href="#">Политика конфиденциальности</a>
+          <a href="#">Политика обработки данных</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ══ FIXED UI ════════════════════════════════════════════════════ -->
+  <div class="cookie-bar">
+    Используем <a href="#">куки</a>, это делает удобнее вашу работу с КОРА
+    <button class="btn btn-dark btn-sm" onclick="this.closest('.cookie-bar').remove()">Хорошо</button>
+  </div>
+  <div class="help-btn">
+    <span>?</span> Помощь
+  </div>
+
+</body>
+</html>

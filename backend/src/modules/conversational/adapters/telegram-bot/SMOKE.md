@@ -202,3 +202,75 @@ bun run scripts/migrate-telegram-channels-back.ts
 ```bash
 curl -X POST "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
 ```
+
+---
+
+## Self-initiated «план / отчёт» (ТЗ 2026-05-29 telegram-self-initiated-checkins)
+
+> Сотрудник сам пишет боту план дня / итоги дня — без cron-приглашения.
+> LLM (`dialog-classify`) распознаёт намерение; handler сохраняет в
+> `DailyCheckIn` с `source='self_initiated'`; бот отвечает подтверждением.
+
+8 сценариев для подтверждения работоспособности feature'а на dev/prod:
+
+1. **Утренний план — happy path.**
+   Привязанный сотрудник пишет в бот: «План на день: А, Б, В».
+   - Ожидание: бот отвечает «✅ Принял утренний план. Сохранил: 3 пункта в плане. Откроется в дашборде руководителя.»
+   - В `/me/check-ins` появилась запись `kind='morning'`, `dateLocal=сегодня`, рядом значок ✋ (self_initiated).
+   - В `AiUsageLog` taskType=`dialog-classify` — последний вызов с intent=daily_plan_morning и непустым cachedTokens (после 5+ вызовов).
+
+2. **Утренний план через нестандартное начало.**
+   «Доброе утро, мой план: А, Б, В».
+   - Ожидание: тот же результат, что и в (1). LLM ловит даже без первого слова «план».
+
+3. **Вечерний отчёт.**
+   «По итогам дня сделал А, не успел Б».
+   - Ожидание: бот отвечает «✅ Принял вечерний отчёт. Сохранил: 1 сделанный, 1 не закрыто. Дашборд обновлён.»
+   - В `/me/check-ins` запись `kind='evening'`.
+
+4. **Ловушка «план на отпуск» → free_note, не чек-ин.**
+   «Обсудим план на отпуск».
+   - Ожидание: бот ничего не отвечает по чек-ину (сообщение уходит в `free_note` → `ConversationalIngestAdapter`).
+   - В `/me/check-ins` ничего нового. Метрика `bot_intent_classified_total{intent='free_note', source='llm'}` инкрементируется.
+
+5. **Replace-сценарий.**
+   В 9:00 сотрудник ответил cron-prompt'у Reply'ем. В 11:00 пишет: «Обновляю план: …».
+   - Ожидание: бот отвечает «✅ Заменил утренний план… Если хотел дополнить — пришли полный план».
+   - В `/me/check-ins` запись обновилась (один `(kind, dateLocal)`), `source` стал `'self_initiated'`, `plans` — новые пункты.
+
+6. **Голос → ASR → план.**
+   Сотрудник записывает голосовое «итоги дня: всё закрыл, кроме отчёта».
+   - Ожидание: бот распознаёт через Vox, классификатор возвращает `daily_report_evening`, handler сохраняет запись.
+
+7. **Закрытие pending cron-prompt.**
+   В 9:00 cron отправил `checkin.prompt` (есть pending notification в `/me/notifications`).
+   В 9:30 сотрудник пишет «План на сегодня: А, Б, В» — НЕ через Reply.
+   - Ожидание: pending notification помечается `responseStatus='answered'` через `markAsAnsweredByCheckin` (без эмита `notification.responded` — проверка: handler НЕ зацикливает upsert).
+   - Запись в `/me/check-ins` создаётся.
+
+8. **Аварийный сценарий: LLM упал → fallback-эвристика.**
+   Временно выключить DeepSeek (через `AdminSetting` или мок ENV).
+   Сотрудник пишет «План на день: А, Б, В».
+   - Ожидание: классификатор переходит в catch, fallback-эвристика ловит «план на день», возвращает `daily_plan_morning` с `source='fallback_heuristic'`.
+   - Метрика `bot_checkin_intent_classifier_total{source='fallback_heuristic'}` инкрементируется.
+   - Запись создаётся.
+
+**Verify prompt cache на проде (ОТДЕЛЬНЫЙ ЭТАП, после ≥10 вызовов dialog-classify):**
+
+```sql
+SELECT task_type, model_used,
+       SUM(input_tokens) AS input,
+       SUM(cached_tokens) AS cached,
+       ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(input_tokens), 0), 1) AS cache_hit_pct
+FROM ai_usage_log
+WHERE task_type = 'dialog-classify'
+  AND created_at > NOW() - INTERVAL '1 day'
+GROUP BY task_type, model_used;
+```
+
+Ожидание: cache_hit_pct ≥ 50% после 10 вызовов и ≥ 95% после 100. Если 0% — что-то сломали в стабильности payload (правка SYSTEM-промпта, перестановка enum-значений, добавили переменное в начале user) → стоп релиза, чинить `classify.prompt.ts` и проверять `LlmRouter` payload.
+
+Метрики:
+- `z_bot_intent_classified_total{intent, source}` — расширилось новыми intent-значениями (daily_plan_morning через free_note для совместимости узкого union).
+- `z_bot_checkin_intent_classifier_total{channel='telegram_bot', kind, source}` — НОВАЯ, детальная разбивка распознавания plan/report.
+- `z_bot_daily_checkin_self_total{channel='telegram_bot', kind, outcome}` — НОВАЯ, outcome обработки handler'ом.

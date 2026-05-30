@@ -131,4 +131,95 @@ describe('QueryClassifierService', () => {
       reason: 'json_parse',
     });
   });
+
+  // ─── ТЗ 2026-05-29 telegram-self-initiated-checkins ──────────────────
+  it('skipHeuristicFirstPass=true → эвристика не срабатывает, идёт в LLM', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"intent": "daily_plan_morning", "confidence": 0.92}',
+      modelUsed: 'deepseek:flash',
+    });
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      // «сколько» — обычно срабатывает heuristic→factual, но мы пропускаем.
+      question: 'Сегодня хочу закрыть КП и созвониться. Сколько времени уйдёт?',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).toBe('daily_plan_morning');
+    expect(result.confidence).toBe(0.92);
+    expect(result.source).toBe('llm');
+    expect(llmCallMock).toHaveBeenCalledOnce();
+  });
+
+  it('LLM возвращает note с confidence 0.5 → intent=note, confidence=0.5', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"intent": "note", "confidence": 0.5}',
+      modelUsed: 'deepseek:flash',
+    });
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'Сегодня какое-то размытое сообщение',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).toBe('note');
+    expect(result.confidence).toBe(0.5);
+  });
+
+  it('alias: LLM возвращает "plan" → нормализуется в daily_plan_morning', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"intent": "plan", "confidence": 0.9}',
+      modelUsed: 'deepseek:flash',
+    });
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'на сегодня А Б В',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).toBe('daily_plan_morning');
+  });
+
+  it('LLM упал + текст «План на день: ...» → fallback_heuristic morning', async () => {
+    llmCallMock.mockRejectedValue(new Error('all providers exhausted'));
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'План на день: КП, созвон, отчёт',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).toBe('daily_plan_morning');
+    expect(result.source).toBe('fallback_heuristic');
+    expect(result.confidence).toBeNull();
+  });
+
+  it('LLM упал + текст «Итоги дня: ...» → fallback_heuristic evening', async () => {
+    llmCallMock.mockRejectedValue(new Error('timeout'));
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'Итоги дня: КП отправил, остальное не успел',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).toBe('daily_report_evening');
+    expect(result.source).toBe('fallback_heuristic');
+  });
+
+  it('LLM упал + текст без триггеров → factual+fallback (legacy поведение)', async () => {
+    llmCallMock.mockRejectedValue(new Error('LLM error'));
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'Какое-то случайное сообщение без триггеров',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).toBe('factual');
+    expect(result.source).toBe('fallback');
+  });
 });

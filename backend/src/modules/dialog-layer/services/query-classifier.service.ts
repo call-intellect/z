@@ -8,6 +8,7 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import { checkinFallbackHeuristic } from './checkin-fallback-triggers';
 import {
   DIALOG_CLASSIFY_JSON_SCHEMA,
   DIALOG_CLASSIFY_SYSTEM_PROMPT,
@@ -19,28 +20,89 @@ import {
  *
  * Гибрид:
  *  1. Эвристика по ключевым словам (русский + английский) — покрывает 60-70%
- *     дёшево и без LLM.
+ *     дёшево и без LLM. Можно отключить через `skipHeuristicFirstPass=true`
+ *     (см. ТЗ 2026-05-29 telegram-self-initiated-checkins) — для bot-flow,
+ *     где «план на день» путаются с факт-вопросами по словарю эвристик.
  *  2. LLM-fallback на оставшиеся (taskType `dialog-classify`).
+ *  3. При недоступности LLM — checkin-fallback-эвристика (5+5 триггеров,
+ *     ловит самые очевидные «план/отчёт»), затем `factual` как последний
+ *     резерв.
  *
- * Intent ∈ { factual | exploratory | analytical | clone_roleplay }.
+ * Intent ∈ { factual | exploratory | analytical | clone_roleplay |
+ *            daily_plan_morning | daily_report_evening | note }.
  */
 
 export type DialogIntent =
   | 'factual'
   | 'exploratory'
   | 'analytical'
+  | 'clone_roleplay'
+  | 'daily_plan_morning'
+  | 'daily_report_evening'
+  | 'note';
+
+/**
+ * Узкий подтип «классические chat-интенты» — 4 категории, на которые
+ * рассчитаны существующие downstream-сервисы (chat-v2 synthesis,
+ * clones-clone dialog wrapper). Новые intent'ы daily_plan_morning /
+ * daily_report_evening / note туда не пробрасываются.
+ *
+ * ТЗ 2026-05-29 telegram-self-initiated-checkins: вводим helper, чтобы
+ * существующие call-site (которые не должны знать про чек-ины) могли
+ * безопасно сузить тип. Никаких daily-checkin/note значений в их потоке
+ * не появится — bot-adapter маппит plan/report → InboundMessage
+ * daily_checkin_self ещё до dialog-layer.
+ */
+export type ChatDialogIntent =
+  | 'factual'
+  | 'exploratory'
+  | 'analytical'
   | 'clone_roleplay';
+
+/**
+ * Сужает 7-категорийный DialogIntent до 4-категорийного ChatDialogIntent
+ * для legacy-потребителей. Новые intent'ы (daily_plan_morning /
+ * daily_report_evening / note) маппятся в 'factual' — это безопасный
+ * дефолт для chat-pipeline'а (не выбирает агрессивный режим типа
+ * analytical/judgmental). На практике bot-adapter перехватывает 3 новых
+ * intent'а раньше, и они никогда не доходят до chat-v2/clones.
+ */
+export function narrowToChatIntent(intent: DialogIntent): ChatDialogIntent {
+  switch (intent) {
+    case 'factual':
+    case 'exploratory':
+    case 'analytical':
+    case 'clone_roleplay':
+      return intent;
+    default:
+      return 'factual';
+  }
+}
 
 export interface ClassifyInput {
   tenantId: string;
   userId: string;
   question: string;
   conversationId: string | null;
+  /**
+   * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.1 — отключение
+   * heuristic first-pass. Bot-flow ставит `true`, чтобы каждое сообщение
+   * шло в LLM (расширенный промпт с 7 категориями). Web-chat — оставляет
+   * `false`/undefined, чтобы 60-70% вопросов закрывались эвристикой без
+   * LLM-вызова.
+   */
+  skipHeuristicFirstPass?: boolean;
 }
 
 export interface ClassifyResult {
   intent: DialogIntent;
-  source: 'heuristic' | 'llm' | 'fallback';
+  source: 'heuristic' | 'llm' | 'fallback' | 'fallback_heuristic';
+  /**
+   * ТЗ 2026-05-29 §Backend.2 — confidence от LLM (0..1). NULL если intent
+   * получен из эвристики/fallback (мы сами не знаем уверенность). Bot-adapter
+   * использует gate <0.7 для plan/report → fall through в `note`.
+   */
+  confidence: number | null;
   durationSeconds: number;
 }
 
@@ -113,14 +175,21 @@ export class QueryClassifierService {
 
   async classify(input: ClassifyInput): Promise<ClassifyResult> {
     const startedAt = Date.now();
-    const heuristic = heuristicClassify(input.question);
-    if (heuristic) {
-      const durationSeconds = (Date.now() - startedAt) / 1000;
-      this.metrics.observeDialogProcessingDuration({
-        step: 'classify',
-        seconds: durationSeconds,
-      });
-      return { intent: heuristic, source: 'heuristic', durationSeconds };
+    if (!input.skipHeuristicFirstPass) {
+      const heuristic = heuristicClassify(input.question);
+      if (heuristic) {
+        const durationSeconds = (Date.now() - startedAt) / 1000;
+        this.metrics.observeDialogProcessingDuration({
+          step: 'classify',
+          seconds: durationSeconds,
+        });
+        return {
+          intent: heuristic,
+          source: 'heuristic',
+          confidence: null,
+          durationSeconds,
+        };
+      }
     }
 
     try {
@@ -166,27 +235,45 @@ export class QueryClassifierService {
           reason: 'json_parse',
         });
       }
-      const finalIntent = parsed ?? 'factual';
+      const finalIntent: DialogIntent = parsed?.intent ?? 'factual';
+      const confidence = parsed?.confidence ?? null;
       const durationSeconds = (Date.now() - startedAt) / 1000;
       this.metrics.observeDialogProcessingDuration({
         step: 'classify',
         seconds: durationSeconds,
       });
-      return { intent: finalIntent, source: 'llm', durationSeconds };
+      return { intent: finalIntent, source: 'llm', confidence, durationSeconds };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
         { conversationId: input.conversationId, err: message },
-        'QueryClassifier LLM упал — fallback на factual',
+        'QueryClassifier LLM упал — пробую checkin-fallback-эвристику, затем factual',
       );
       const durationSeconds = (Date.now() - startedAt) / 1000;
       this.metrics.observeDialogProcessingDuration({
         step: 'classify',
         seconds: durationSeconds,
       });
+      // ТЗ 2026-05-29 §Backend.1 — fallback-эвристика для plan/report ДО
+      // factual'а. Если поймало — возвращаем daily_plan_morning/evening с
+      // source='fallback_heuristic'. Иначе текущее поведение (factual+fallback).
+      const checkinHit = checkinFallbackHeuristic(input.question);
+      if (checkinHit) {
+        const intent: DialogIntent =
+          checkinHit.kind === 'morning'
+            ? 'daily_plan_morning'
+            : 'daily_report_evening';
+        return {
+          intent,
+          source: 'fallback_heuristic',
+          confidence: null,
+          durationSeconds,
+        };
+      }
       return {
         intent: 'factual',
         source: 'fallback',
+        confidence: null,
         durationSeconds,
       };
     }
@@ -208,29 +295,69 @@ function heuristicClassify(q: string): DialogIntent | null {
 /**
  * T7-F6: возвращает `null`, если JSON не парсится — caller инкрементирует
  * метрику `z_prompt_invalid_response_total` и фолбэкается на 'factual'.
- * Раньше возвращали 'factual' и в success-, и в error-кейсе — метрика
- * была бы неинформативной.
+ *
+ * ТЗ 2026-05-29 §Backend.1 — теперь возвращает intent + confidence (новое
+ * поле). Alias'ы для дружелюбности к LLM, которые могут вернуть короткую
+ * форму (`plan`, `report`, `statement` и т.п.).
  */
-function parseClassifyJson(text: string): DialogIntent | null {
+function parseClassifyJson(
+  text: string,
+): { intent: DialogIntent; confidence: number | null } | null {
   try {
     const cleaned = stripCodeFence(text).trim();
-    const parsed = JSON.parse(cleaned) as { intent?: unknown };
+    const parsed = JSON.parse(cleaned) as {
+      intent?: unknown;
+      confidence?: unknown;
+    };
     const raw =
       typeof parsed.intent === 'string' ? parsed.intent.toLowerCase() : '';
-    if (
-      raw === 'factual' ||
-      raw === 'exploratory' ||
-      raw === 'analytical' ||
-      raw === 'clone_roleplay'
-    ) {
-      return raw;
-    }
-    if (raw === 'clone-roleplay' || raw === 'clone style' || raw === 'clone') {
-      return 'clone_roleplay';
-    }
-    return null;
+    const intent = mapRawIntent(raw);
+    if (!intent) return null;
+    const confRaw = parsed.confidence;
+    const confidence =
+      typeof confRaw === 'number' && Number.isFinite(confRaw)
+        ? Math.max(0, Math.min(1, confRaw))
+        : null;
+    return { intent, confidence };
   } catch {
     return null;
+  }
+}
+
+function mapRawIntent(raw: string): DialogIntent | null {
+  switch (raw) {
+    case 'factual':
+    case 'exploratory':
+    case 'analytical':
+    case 'clone_roleplay':
+    case 'daily_plan_morning':
+    case 'daily_report_evening':
+    case 'note':
+      return raw;
+    // clone alias'ы (legacy)
+    case 'clone-roleplay':
+    case 'clone style':
+    case 'clone':
+      return 'clone_roleplay';
+    // plan-alias'ы
+    case 'plan':
+    case 'plan_morning':
+    case 'morning_plan':
+    case 'daily_plan':
+      return 'daily_plan_morning';
+    // report-alias'ы
+    case 'report':
+    case 'report_evening':
+    case 'evening_report':
+    case 'daily_report':
+      return 'daily_report_evening';
+    // note-alias'ы
+    case 'statement':
+    case 'free_note':
+    case 'freenote':
+      return 'note';
+    default:
+      return null;
   }
 }
 

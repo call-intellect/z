@@ -1,20 +1,37 @@
-/**
- * SBA α-5 dialog-layer — system prompt для QueryClassifierService.
- *
- * ТЗ 2026-05-29 telegram-self-initiated-checkins (rev3, согласован 2026-05-29):
- * расширили enum на 3 категории — `daily_plan_morning`, `daily_report_evening`,
- * `note`. Текст промпта/JSON-схемы/префикса user-сообщения зафиксирован в
- * Приложении А ТЗ. Любые правки = инвалидация prompt cache (deepseek-v4-flash
- * кэширует SYSTEM с hit ≈99.9%, см. second-brain/02_architecture/llm-cache-status.md).
- *
- * Intent ∈ { factual | exploratory | analytical | clone_roleplay |
- *            daily_plan_morning | daily_report_evening | note }.
- *
- * T7-F6: JSON Schema strict для DeepSeek/OpenAI/Anthropic. Текст в system
- * остаётся как fallback (Ollama и другие провайдеры без strict-support).
- */
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-export const DIALOG_CLASSIFY_SYSTEM_PROMPT = `Ты — классификатор намерения пользователя в боте компании.
+exports[`dialog-classify — snapshot сборки промта (ТЗ 2026-05-29) > JSON Schema стабильна (порядок enum + required, для prompt cache) > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+    },
+    "intent": {
+      "enum": [
+        "factual",
+        "exploratory",
+        "analytical",
+        "clone_roleplay",
+        "daily_plan_morning",
+        "daily_report_evening",
+        "note",
+      ],
+      "type": "string",
+    },
+  },
+  "required": [
+    "intent",
+    "confidence",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`dialog-classify — snapshot сборки промта (ТЗ 2026-05-29) > SYSTEM-промпт стабилен (7 категорий + ловушки) > system 1`] = `
+"Ты — классификатор намерения пользователя в боте компании.
 Пользователь пишет в Telegram-бота, и тебе нужно понять, что это
 за сообщение, чтобы система отправила его в правильный обработчик.
 
@@ -134,48 +151,11 @@ confidence — твоя уверенность в классификации:
 • <0.5 — почти угадываешь (лучше выбрать note)
 
 Если сомневаешься между категорией и note — выбирай note и
-ставь confidence 0.5-0.6. Система обработает корректно.`;
+ставь confidence 0.5-0.6. Система обработает корректно."
+`;
 
-/**
- * T7-F6: JSON Schema для `responseFormat: json_schema strict`. Хардкод (не
- * через z.toJSONSchema) — схема стабильная, intent — фиксированный enum,
- * читать прямо тут проще, чем через zod export.
- *
- * Порядок enum-значений ВАЖЕН для prompt cache (см. Приложение А ТЗ
- * 2026-05-29-telegram-self-initiated-checkins.md).
- */
-export const DIALOG_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  properties: {
-    intent: {
-      type: 'string',
-      enum: [
-        'factual',
-        'exploratory',
-        'analytical',
-        'clone_roleplay',
-        'daily_plan_morning',
-        'daily_report_evening',
-        'note',
-      ],
-    },
-    confidence: {
-      type: 'number',
-      minimum: 0,
-      maximum: 1,
-    },
-  },
-  required: ['intent', 'confidence'],
-  additionalProperties: false,
-};
+exports[`dialog-classify — snapshot сборки промта (ТЗ 2026-05-29) > buildClassifyUserPrompt — стабильный префикс «Сообщение пользователя: » > user 1`] = `
+"Сообщение пользователя: План на день: КП Заречному, созвон с дизайнером
 
-/**
- * Префикс «Сообщение пользователя: » — стабильный, не править. Переменная
- * часть (`args.question`) — единственное, что меняется между вызовами
- * (см. правило cache-friendliness в Приложении А ТЗ).
- */
-export function buildClassifyUserPrompt(args: {
-  question: string;
-}): string {
-  return `Сообщение пользователя: ${args.question}\n\nКатегория:`;
-}
+Категория:"
+`;

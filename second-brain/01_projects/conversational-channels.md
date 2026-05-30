@@ -306,14 +306,39 @@ patch-скриптом или через админку.
 
 ## InboundMessage в β-1 zero-button
 
-`InboundMessage` сужено до 3 типов (см. `backend/src/modules/conversational/types/channel.types.ts`):
+`InboundMessage` (см. `backend/src/modules/conversational/types/channel.types.ts`):
 ```ts
 type InboundMessage =
   | { type: 'free_note';  userId; tenantId; text; metadata?; originChannelBindingId? }
   | { type: 'response';   userId; tenantId; notificationId; payload; originChannelBindingId? }
-  | { type: 'chat_query'; userId; tenantId; question; conversationId?; originChannelBindingId? };
+  | { type: 'chat_query'; userId; tenantId; question; conversationId?; originChannelBindingId? }
+  // ТЗ 2026-05-29 telegram-self-initiated-checkins:
+  | { type: 'daily_checkin_self'; userId; tenantId; kind: 'morning' | 'evening'; rawText; originChannelBindingId? };
 ```
 Удалён тип `'command'` (β-1 rip-out 2026-05-23). Любые prom-конфиги, ENV или другие места, ссылающиеся на `commandName` / `commandHandler` / `subscribeInbound('command', ...)`, тоже удалены.
+
+### `daily_checkin_self` (2026-05-30, реализовано)
+
+Маршрутизация:
+1. `TelegramBotChannelAdapter.classifyIntent` зовёт `QueryClassifierService.classify({skipHeuristicFirstPass:true})`.
+2. Если `result.intent ∈ {daily_plan_morning, daily_report_evening}` и `result.confidence ≥ 0.7` — `ingestUpdate` (или `handleVoice`) возвращает `InboundMessage{type:'daily_checkin_self', kind, rawText, originChannelBindingId}`.
+3. `ConversationalService.dispatchInbound` ищет handler в `inboundHandlers.get('daily_checkin_self')`.
+4. `CheckinResponseHandler.onModuleInit` зарегистрировал handler через `subscribeInbound('daily_checkin_self', ...)` (Phase 5).
+5. Handler зовёт `processSelfInitiated()` → парсит rawText `CheckinParserService` → `DailyCheckInService.upsertFromParser({source:'self_initiated'})` → закрывает pending `checkin.prompt` notification через `markAsAnsweredByCheckin` → эмитит `checkin.created` → шлёт `checkin.ack` через `sendNotification` с `preferredChannelKinds=[originChannelKind]`.
+
+### Новый event-type `checkin.ack`
+
+Payload schema в `event-payload.registry.ts`:
+```ts
+{ kind: 'morning' | 'evening', wasReplace: boolean,
+  plansCount: number, donesCount: number, blockersCount: number,
+  lowParserConfidence: boolean }
+```
+Default policy в `EVENT_TYPE_CHANNEL_POLICY` — `['telegram_bot', 'max_bot', 'in_app']`. Caller обычно перебивает через `preferredChannelKinds=[originChannelKind]`. Рендер в `telegram-bot.adapter.ts:renderText` через `formatCheckinAck(payload)` — 4 шаблона (см. `backend/src/modules/conversational/adapters/telegram-bot/format-checkin-ack.ts`).
+
+### Новый метод `ConversationalService.markAsAnsweredByCheckin`
+
+Симметричен `respondToProbe`, но **БЕЗ эмиссии `notification.responded`**. Иначе `CheckinResponseHandler.handle` (cron-path) сработает повторно с пустым rawText, что обнулит реальные plans/dones/blockers через lowConfidence-логику.
 
 ## ENV (β-1, актуальное)
 

@@ -602,6 +602,9 @@ docker compose logs -f migrate     # пока не увидишь "DONE" / exit 
   - `Meeting` +`linkedCycleId String?` + relation MeetingLinkedCycle + индекс. Простой db push, обратно совместимо.
   - Новая модель `SprintHint` (cycleId, kind, severity, status, title, body, affectedIssueIds[], sourceBlockIds[], contentHash для дедупа, confidence). 3 новых enum: `SprintHintKind` (10 значений), `SprintHintSeverity`, `SprintHintStatus`.
   - `MeetingType` +`sprint_review` (для встречи «Итоги спринта»).
+- **Telegram self-initiated checkins (2026-05-30):**
+  - `DailyCheckIn` +`source DailyCheckInSource @default(cron_prompted)` — откуда пришла запись. Обратно совместимо (default backfill всех записей в `cron_prompted`, см. patch-скрипт Шаг 6).
+  - Новый enum `DailyCheckInSource { cron_prompted, self_initiated, manual }`. Простой db push, без `--accept-data-loss`.
 
 Enum расширения (без удалений — Postgres не умеет DROP VALUE):
 - `MeetingType`: +review, +retrospective, +task_discussion
@@ -714,6 +717,15 @@ docker compose exec backend bun run scripts/patch-migrate-clone-access.ts
 docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts
 # опц. — ротация webhookSecret (старый перестаёт работать сразу):
 # docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts --rotate-secret
+
+# 6.12 — Backfill source=manual для DailyCheckIn без notificationId
+# (2026-05-30, ТЗ telegram-self-initiated-checkins). Идемпотентен.
+# После добавления поля source все существующие записи получили default
+# 'cron_prompted', но manual-создания через POST /me/check-ins должны быть
+# перевешены в 'manual' (notificationId IS NULL — точный признак). Безопасен
+# на чистой БД (0 кандидатов).
+docker compose exec backend bun run scripts/patch-daily-checkin-backfill-source.ts --dry-run
+docker compose exec backend bun run scripts/patch-daily-checkin-backfill-source.ts
 ```
 
 ⚠️ **НЕ запускать на проде** (помечен внутри файла «без согласования»):

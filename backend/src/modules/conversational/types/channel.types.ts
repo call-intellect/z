@@ -67,6 +67,15 @@ export type InboundMessage =
        * (web-UI), где привязка не важна.
        */
       originChannelBindingId?: string;
+    }
+  // ТЗ 2026-05-29 telegram-self-initiated-checkins — само-инициированный план/отчёт.
+  | {
+      type: 'daily_checkin_self';
+      userId: string;
+      tenantId: string;
+      kind: 'morning' | 'evening';
+      rawText: string;
+      originChannelBindingId?: string;
     };
 
 /**

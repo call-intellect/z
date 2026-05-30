@@ -146,6 +146,16 @@ const STEPS: Step[] = [
   // dedupe по (referralId, fingerprint, dateBucket) ДО prisma:push с
   // composite unique. Идемпотентен. ТЗ §Б8.
   { phase: 'patch', script: 'scripts/patch-backfill-referral-attribution-date-bucket.ts', hint: 'backfill dateBucket + dedupe для composite unique', skipBootstrap: true },
+  // 2026-05-29 — telegram-self-initiated-checkins Фаза 3: backfill DailyCheckIn.source.
+  // После prisma:push все записи получили default 'cron_prompted'. Manual create через
+  // POST /me/check-ins (notificationId IS NULL) перевешиваем в 'manual'. Идемпотентен.
+  // ТЗ: plans/tz/2026-05-29-telegram-self-initiated-checkins.md.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-daily-checkin-backfill-source.ts',
+    hint: 'backfill source=manual для DailyCheckIn без notificationId',
+    skipBootstrap: true,
+  },
   // 2026-05-29 — audit Б12: incident-only откат LLM-миграции
   // deepseek-v4-pro → deepseek-v4-flash. НЕ запускается агрегатором
   // ни в bootstrap, ни в update — только руками при инциденте:

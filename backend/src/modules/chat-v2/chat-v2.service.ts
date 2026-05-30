@@ -11,6 +11,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AnswerCacheService } from '../dialog-layer/services/answer-cache.service';
 import { DialogService } from '../dialog-layer/services/dialog.service';
+import { narrowToChatIntent } from '../dialog-layer/services/query-classifier.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
@@ -215,7 +216,12 @@ export class ChatV2OrchestrationService {
       queries: dialogResult.queries,
       validAt,
       conversationSummary: convSummary,
-      intent: dialogResult.intent,
+      // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
+      // ChatDialogIntent (4 категории) для chat-v2 synthesis. Новые
+      // intent'ы (daily_plan_morning/evening/note) перехватываются в
+      // bot-adapter раньше и сюда не доходят; для безопасности маппим
+      // их в 'factual'.
+      intent: narrowToChatIntent(dialogResult.intent),
     });
 
     const durationSeconds = (Date.now() - startedAt) / 1000;

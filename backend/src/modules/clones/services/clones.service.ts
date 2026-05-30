@@ -19,6 +19,7 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import { DialogService } from '../../dialog-layer/services/dialog.service';
+import { narrowToChatIntent } from '../../dialog-layer/services/query-classifier.service';
 import {
   CLONE_RESPOND_USER_TEMPLATE,
   buildCloneRespondSystemPrompt,
@@ -934,7 +935,12 @@ export class ClonesService {
     });
     return {
       standaloneQuestion: r.standaloneQuestion,
-      intent: r.intent,
+      // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
+      // ChatDialogIntent (4 категории) для clones dialog wrapper. Новые
+      // intent'ы (daily_plan_morning/evening/note) не должны доходить до
+      // clones-flow (bot-adapter перехватывает раньше); helper маппит их в
+      // 'factual' как безопасный дефолт.
+      intent: narrowToChatIntent(r.intent),
       queries: r.queries,
       confidence: r.confidence,
     };

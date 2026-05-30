@@ -31,6 +31,7 @@ import type {
   InboundMessage,
 } from '../../types/channel.types';
 
+import { formatCheckinAck } from './format-checkin-ack';
 import { TelegramApiClient, TelegramApiError } from './telegram-api-client';
 import { TelegramBotMessageHandler } from './telegram-bot-message.handler';
 import type {
@@ -548,6 +549,17 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         originChannelBindingId: binding.id,
       };
     }
+    // ТЗ 2026-05-29 telegram-self-initiated-checkins — само-инициированный план/отчёт.
+    if (intent === 'daily_plan_morning' || intent === 'daily_report_evening') {
+      return {
+        type: 'daily_checkin_self',
+        userId: binding.userId,
+        tenantId,
+        kind: intent === 'daily_plan_morning' ? 'morning' : 'evening',
+        rawText,
+        originChannelBindingId: binding.id,
+      };
+    }
     return {
       type: 'free_note',
       userId: binding.userId,
@@ -839,6 +851,18 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         originChannelBindingId: args.binding.id,
       };
     }
+    // ТЗ 2026-05-29 telegram-self-initiated-checkins — голос «план/отчёт»
+    // после ASR попадает в тот же classifier и маппится в daily_checkin_self.
+    if (intent === 'daily_plan_morning' || intent === 'daily_report_evening') {
+      return {
+        type: 'daily_checkin_self',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        kind: intent === 'daily_plan_morning' ? 'morning' : 'evening',
+        rawText: transcript,
+        originChannelBindingId: args.binding.id,
+      };
+    }
     return {
       type: 'free_note',
       userId: args.binding.userId,
@@ -1019,14 +1043,30 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
 
   /**
    * Intent classify через QueryClassifierService (если включён) с fallback
-   * на эвристику. Эвристика: вопросительный знак или start-with «как/что/
-   * почему/кто/где/когда/сколько» → chat_query; иначе free_note.
+   * на эвристику.
+   *
+   * ТЗ 2026-05-29 telegram-self-initiated-checkins (Phase 2):
+   * - возвращаемый тип расширен на `daily_plan_morning | daily_report_evening`;
+   * - `skipHeuristicFirstPass: true` — для bot-flow каждый текст идёт в LLM
+   *   с расширенным 7-категорийным промптом;
+   * - confidence-gate ≥0.7 для plan/report — иначе fall through в `free_note`
+   *   (LLM не уверен → лучше уйдёт в общий поток памяти, чем создать ложный
+   *   чек-ин в дашборде руководителя);
+   * - дополнительная метрика `z_bot_checkin_intent_classifier_total{kind, source}`
+   *   когда LLM/fallback вернул plan/report.
+   *
+   * Маппинг старой метрики `bot_intent_classified_total{intent}` сохраняется
+   * бинарным (chat_query | free_note) — plan/report маппятся в `free_note`,
+   * чтобы не ломать существующий тип метрики. Детальный учёт plan/report —
+   * через новую метрику `z_bot_checkin_intent_classifier_total`.
    */
   private async classifyIntent(args: {
     text: string;
     tenantId: string;
     userId: string;
-  }): Promise<'chat_query' | 'free_note'> {
+  }): Promise<
+    'chat_query' | 'free_note' | 'daily_plan_morning' | 'daily_report_evening'
+  > {
     if (this.cfg.bot.intentClassifierEnabled) {
       try {
         const result = await this.classifier.classify({
@@ -1034,27 +1074,63 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           userId: args.userId,
           question: args.text,
           conversationId: null,
+          skipHeuristicFirstPass: true,
         });
-        // Маппим DialogIntent на наш бинарный inbound-intent.
-        // factual / exploratory / analytical / clone_roleplay → chat_query.
-        // QueryClassifierService возвращает 'fallback' только при LLM-fail,
-        // когда intent=factual — это нормально.
-        const intent: 'chat_query' | 'free_note' =
+
+        // ТЗ 2026-05-29: confidence-gate для plan/report.
+        // Если LLM вернул plan/report с уверенностью <0.7 — fall through
+        // в `note` (= free_note). Лучше потерять план в общем потоке памяти,
+        // чем создать ложный чек-ин в дашборде руководителя.
+        const conf = result.confidence ?? 0;
+        const isPlan = result.intent === 'daily_plan_morning';
+        const isReport = result.intent === 'daily_report_evening';
+
+        if ((isPlan || isReport) && conf >= 0.7) {
+          // Новая метрика — distinct учёт plan/report с разбивкой по source.
+          const checkinSource:
+            | 'llm'
+            | 'fallback_heuristic'
+            | 'fallback_factual_at_llm_fail' =
+            result.source === 'llm'
+              ? 'llm'
+              : result.source === 'fallback_heuristic'
+                ? 'fallback_heuristic'
+                : 'fallback_factual_at_llm_fail';
+          const kind: 'morning' | 'evening' = isPlan ? 'morning' : 'evening';
+          this.metrics.incBotCheckinIntentClassifier({
+            channel: 'telegram_bot',
+            kind,
+            source: checkinSource,
+          });
+          // Для совместимости со старой метрикой bot_intent_classified_total
+          // (тип intent: 'chat_query' | 'free_note') маппим plan/report в
+          // 'free_note' — детальная разбивка делается в новой метрике выше.
+          const intentSource: 'llm' | 'heuristic' =
+            result.source === 'heuristic' ? 'heuristic' : 'llm';
+          this.metrics.incBotIntentClassified({
+            channel: 'telegram_bot',
+            intent: 'free_note',
+            source: intentSource,
+          });
+          return isPlan ? 'daily_plan_morning' : 'daily_report_evening';
+        }
+
+        // chat-категории → chat_query. Всё остальное (включая `note` и
+        // plan/report с conf<0.7) → free_note.
+        const isChat =
           result.intent === 'factual' ||
           result.intent === 'exploratory' ||
           result.intent === 'analytical' ||
-          result.intent === 'clone_roleplay'
-            ? 'chat_query'
-            : 'free_note';
-        // Дополнительная sanity-проверка: если LLM сказал chat_query на
-        // явно нечитаемое утверждение без знака вопроса и не похожее на
-        // вопрос — оставим chat_query (LLM лучше эвристики).
-        const source: 'llm' | 'heuristic' =
+          result.intent === 'clone_roleplay';
+        const intent: 'chat_query' | 'free_note' = isChat
+          ? 'chat_query'
+          : 'free_note';
+        const intentSource: 'llm' | 'heuristic' =
           result.source === 'heuristic' ? 'heuristic' : 'llm';
         this.metrics.incBotIntentClassified({
           channel: 'telegram_bot',
           intent,
-          source,
+          source: intentSource,
         });
         return intent;
       } catch (err) {
@@ -1132,6 +1208,25 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const title = (payload['title'] as string | undefined) ?? '';
         const body = (payload['body'] as string | undefined) ?? '';
         return `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(body)}`.slice(0, 4000);
+      }
+      case 'checkin.ack': {
+        // ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.12 — 4 шаблона.
+        const kind = payload['kind'] === 'evening' ? 'evening' : 'morning';
+        const wasReplace = payload['wasReplace'] === true;
+        const plansCount = Number(payload['plansCount'] ?? 0);
+        const donesCount = Number(payload['donesCount'] ?? 0);
+        const blockersCount = Number(payload['blockersCount'] ?? 0);
+        const lowParserConfidence = payload['lowParserConfidence'] === true;
+        return escapeHtml(
+          formatCheckinAck({
+            kind,
+            wasReplace,
+            plansCount,
+            donesCount,
+            blockersCount,
+            lowParserConfidence,
+          }),
+        ).slice(0, 4000);
       }
       default: {
         return `Уведомление: ${escapeHtml(notification.eventType)}`;

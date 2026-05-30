@@ -230,6 +230,28 @@ const CloneAccessGrantedPayloadSchema = z
   .strict();
 
 /**
+ * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.11 — payload
+ * подтверждения от бота для самоинициированного плана/отчёта. После
+ * успешного `processSelfInitiated` бот отвечает «✅ Принял утренний план...».
+ *
+ * Поля для шаблона `formatCheckinAck`:
+ *   - `kind` — какой чек-ин (для выбора шаблона);
+ *   - `wasReplace` — true если запись на (person, date, kind) уже была;
+ *   - `plansCount` / `donesCount` / `blockersCount` — сводка для текста;
+ *   - `lowParserConfidence` — fallback-шаблон «не уверен в разборке».
+ */
+const CheckinAckPayloadSchema = z
+  .object({
+    kind: z.enum(['morning', 'evening']),
+    wasReplace: z.boolean(),
+    plansCount: z.number().int().min(0),
+    donesCount: z.number().int().min(0),
+    blockersCount: z.number().int().min(0),
+    lowParserConfidence: z.boolean(),
+  })
+  .strict();
+
+/**
  * Calendar MVP (2026-05-25) — payload `event.reminder` для напоминания
  * о событии календаря. Доставляется через ConversationalService.sendNotification
  * по каналу telegram_bot / push / email.
@@ -271,6 +293,9 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['event.reminder', EventReminderPayloadSchema],
   // ТЗ 2026-05-26 — уведомление о выдаче гранта на клона.
   ['clone.access_granted', CloneAccessGrantedPayloadSchema],
+  // ТЗ 2026-05-29 telegram-self-initiated-checkins — подтверждение сохранения
+  // самоинициированного плана/отчёта в чек-ин.
+  ['checkin.ack', CheckinAckPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

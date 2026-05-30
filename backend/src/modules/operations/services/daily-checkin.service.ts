@@ -106,6 +106,7 @@ export class DailyCheckInService {
       parseConfidence: 1,
       curatorReview: false,
       completed: true,
+      source: 'manual',
     });
 
     // SBA β-8.1 — эмитим событие, на которое подписан
@@ -145,6 +146,7 @@ export class DailyCheckInService {
     notificationId: string | null;
     rawResponseText: string;
     parseConfidence: number;
+    source: 'cron_prompted' | 'self_initiated' | 'manual';
   }): Promise<DailyCheckInDto> {
     const lowConfidence =
       args.parseConfidence < DailyCheckInService.MIN_CONFIDENCE;
@@ -162,6 +164,7 @@ export class DailyCheckInService {
       parseConfidence: args.parseConfidence,
       curatorReview: lowConfidence,
       completed: true,
+      source: args.source,
     });
   }
 
@@ -191,6 +194,7 @@ export class DailyCheckInService {
       curatorReview: false,
       completed: false,
       onlyIfMissing: true,
+      source: 'cron_prompted',
     });
   }
 
@@ -300,6 +304,7 @@ export class DailyCheckInService {
     curatorReview: boolean;
     completed: boolean;
     onlyIfMissing?: boolean;
+    source: 'cron_prompted' | 'self_initiated' | 'manual';
   }): Promise<DailyCheckInDto> {
     if (args.kind !== 'morning' && args.kind !== 'evening') {
       throw new BadRequestException({
@@ -318,6 +323,7 @@ export class DailyCheckInService {
       parseConfidence: args.parseConfidence,
       curatorReview: args.curatorReview,
       completedAt,
+      source: args.source,
     };
 
     if (args.onlyIfMissing) {
@@ -383,6 +389,7 @@ export class DailyCheckInService {
     completedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
+    source?: string | null;
     sentiment?: string | null;
     sentimentRationale?: string | null;
     sentimentVersion?: string | null;
@@ -398,12 +405,17 @@ export class DailyCheckInService {
       row.sentiment === 'red'
         ? row.sentiment
         : null;
+    const source: DailyCheckInDto['source'] =
+      row.source === 'self_initiated' || row.source === 'manual'
+        ? row.source
+        : 'cron_prompted';
     return {
       id: row.id,
       tenantId: row.tenantId,
       personId: row.personId,
       kind: (row.kind === 'evening' ? 'evening' : 'morning'),
       dateLocal: row.dateLocal,
+      source,
       plans: Array.isArray(row.plansJson) ? (row.plansJson as DailyCheckInDto['plans']) : [],
       dones: Array.isArray(row.donesJson) ? (row.donesJson as DailyCheckInDto['dones']) : [],
       blockers: Array.isArray(row.blockersJson)

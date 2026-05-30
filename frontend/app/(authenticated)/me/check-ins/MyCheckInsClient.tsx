@@ -165,6 +165,7 @@ export function MyCheckInsClient() {
                     {c.kind === 'morning' ? 'Утро' : 'Вечер'}
                   </span>
                   <span className="text-xs text-fg-secondary">{c.dateLocal}</span>
+                  <CheckInSourceBadge source={c.source} />
                   {c.curatorReview ? (
                     <span className="rounded bg-chip-warning-bg px-2 py-0.5 text-xs text-chip-warning-fg">
                       требует проверки
@@ -193,6 +194,31 @@ function CheckInBody({ dto }: { dto: DailyCheckInApi }) {
         )}
       />
     </div>
+  );
+}
+
+/**
+ * ТЗ 2026-05-29 telegram-self-initiated-checkins Phase 6 — значок «источник».
+ * 🌅 — ответ на cron-prompt, ✋ — сотрудник сам написал боту, 🖊 — manual через UI.
+ */
+function CheckInSourceBadge({
+  source,
+}: {
+  source: 'cron_prompted' | 'self_initiated' | 'manual';
+}) {
+  const map: Record<typeof source, { icon: string; title: string }> = {
+    cron_prompted: { icon: '🌅', title: 'Ответ на утренний/вечерний прампт от Коры' },
+    self_initiated: { icon: '✋', title: 'Написал в Telegram-бот сам, без прампта' },
+    manual: { icon: '🖊', title: 'Создан вручную через веб-кабинет' },
+  };
+  const m = map[source];
+  return (
+    <span
+      title={m.title}
+      className="rounded bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary"
+    >
+      {m.icon}
+    </span>
   );
 }
 

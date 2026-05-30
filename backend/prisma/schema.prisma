@@ -5864,6 +5864,16 @@ model NotificationDelivery {
 
 // ──────────────────────────── SBA β-8 — Daily check-in (2026-05-23) ────────────────────────────
 
+/// ТЗ 2026-05-29 telegram-self-initiated-checkins — откуда пришла запись чек-ина.
+/// `cron_prompted` — ответ на DailyCheckInPromptCron (исторический default).
+/// `self_initiated` — сотрудник сам написал боту план/отчёт без cron-приглашения.
+/// `manual` — создан вручную через `/me/check-ins POST` или admin-UI.
+enum DailyCheckInSource {
+  cron_prompted
+  self_initiated
+  manual
+}
+
 /// DailyCheckIn — утренний / вечерний чек-ин сотрудника.
 /// Источник: plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md §5.
 ///
@@ -5914,6 +5924,9 @@ model DailyCheckIn {
   /// прошёл успешно. NULL = чек-ин «пустой» (cron поставил, но человек не
   /// ответил до конца суток).
   completedAt     DateTime?
+
+  /// ТЗ 2026-05-29 — источник чек-ина: cron / самоинициировано / manual.
+  source DailyCheckInSource @default(cron_prompted)
 
   /// SBA β-8.1 — настроение чек-ина (определяет LLM по тексту вечернего
   /// ответа). 'green' | 'yellow' | 'red'. NULL = анализ ещё не запускался

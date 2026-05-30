@@ -30,6 +30,7 @@ describe('stripSentimentForRole', () => {
       completedAt: '2026-05-23T18:30:00Z',
       createdAt: '2026-05-23T18:30:00Z',
       updatedAt: '2026-05-23T18:30:00Z',
+      source: 'cron_prompted',
       sentiment: 'red',
       sentimentRationale: 'выгорание',
       sentimentVersion: 'prompt-v1+deepseek',

@@ -106,6 +106,10 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // Calendar MVP (2026-05-25): напоминание о событии календаря. Push не везде
   // подключён — приоритет на бот-каналы + in-app.
   'event.reminder': ['in_app', 'telegram_bot', 'max_bot'],
+  // ТЗ 2026-05-29 telegram-self-initiated-checkins: подтверждение
+  // самоинициированного чек-ина. Caller обычно передаёт preferredChannelKinds=
+  // [originChannelKind], но если не передал — fallback на бот-каналы + in_app.
+  'checkin.ack': ['telegram_bot', 'max_bot', 'in_app'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];
@@ -425,6 +429,79 @@ export class ConversationalService {
 
     this.logger.log(
       `respondToProbe: notificationId=${notif.id} userId=${args.userId} eventType=${notif.eventType}`,
+    );
+    return updated;
+  }
+
+  /**
+   * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.10 —
+   * пометить открытый `checkin.prompt` как answered БЕЗ эмиссии
+   * `notification.responded`. Используется `CheckinResponseHandler.processSelfInitiated`
+   * чтобы закрыть висящий cron-вопрос, когда сотрудник сам прислал план/отчёт
+   * боту (не reply).
+   *
+   * Симметрия с `respondToProbe`:
+   *   - идемпотентный (повтор — no-op);
+   *   - обновляет Notification и связанные NotificationDelivery записи;
+   *   - НЕ эмитит `notification.responded` — иначе `CheckinResponseHandler.handle`
+   *     сработает ещё раз и зациклит upsert (в payload нет text → пустой rawText,
+   *     parser confidence=0, и lowConfidence перезапишет реальные данные с
+   *     curatorReview=true).
+   *
+   * Возвращает обновлённый Notification (или текущий если уже answered).
+   * Бросает NotFound/Forbidden как `respondToProbe` для безопасности.
+   */
+  async markAsAnsweredByCheckin(args: {
+    notificationId: string;
+    userId: string;
+    fromSelfInitiated: true;
+  }): Promise<Notification> {
+    const notif = await this.prisma.notification.findUnique({
+      where: { id: args.notificationId },
+    });
+    if (!notif) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'notification_not_found',
+          message: 'Уведомление не найдено',
+        },
+      });
+    }
+    if (notif.recipientUserId !== args.userId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'not_recipient',
+          message: 'Это уведомление адресовано другому пользователю',
+        },
+      });
+    }
+    if (notif.responseStatus === 'answered') {
+      return notif;
+    }
+    const updated = await this.prisma.notification.update({
+      where: { id: notif.id },
+      data: {
+        responseStatus: 'answered',
+        responsePayload: {
+          fromSelfInitiated: args.fromSelfInitiated,
+        } as Prisma.InputJsonValue,
+        respondedAt: new Date(),
+        status: 'responded',
+      },
+    });
+    await this.prisma.notificationDelivery.updateMany({
+      where: { notificationId: notif.id },
+      data: { respondedAt: new Date(), status: 'responded' },
+    });
+    this.metrics.incConversationalNotification({
+      eventType: notif.eventType,
+      status: 'responded',
+    });
+    // ВАЖНО: не эмитим `notification.responded` — см. JSDoc выше.
+    this.logger.log(
+      `markAsAnsweredByCheckin: notificationId=${notif.id} userId=${args.userId}`,
     );
     return updated;
   }

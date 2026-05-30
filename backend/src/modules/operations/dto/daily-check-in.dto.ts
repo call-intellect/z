@@ -80,6 +80,13 @@ export interface DailyCheckInDto {
   createdAt: string;
   updatedAt: string;
   /**
+   * ТЗ 2026-05-29 telegram-self-initiated-checkins — источник записи чек-ина.
+   * `cron_prompted` — ответ на DailyCheckInPromptCron (исторический default).
+   * `self_initiated` — сотрудник сам написал боту план/отчёт без cron-приглашения.
+   * `manual` — создан вручную через `POST /me/check-ins` или admin-UI.
+   */
+  source: 'cron_prompted' | 'self_initiated' | 'manual';
+  /**
    * SBA β-8.1 — настроение чек-ина (определяет LLM). Видимость: только
    * coo/owner/admin/super_admin (фильтр в маппере, см. `stripSentimentForRole`).
    * Для сотрудника в /me/check-ins поле всегда `undefined` (его «убирает» маппер).

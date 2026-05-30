@@ -32,6 +32,13 @@ export interface DailyCheckInApi {
   personId: string;
   kind: 'morning' | 'evening';
   dateLocal: string;
+  /**
+   * ТЗ 2026-05-29 telegram-self-initiated-checkins — источник записи:
+   *   - cron_prompted — ответ на DailyCheckInPromptCron;
+   *   - self_initiated — сотрудник сам написал боту план/отчёт;
+   *   - manual — создан вручную через `POST /me/check-ins`.
+   */
+  source: 'cron_prompted' | 'self_initiated' | 'manual';
   plans: CheckInPlanItemApi[];
   dones: CheckInDoneItemApi[];
   blockers: CheckInBlockerItemApi[];

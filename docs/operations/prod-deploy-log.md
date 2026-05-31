@@ -43,6 +43,26 @@
 - Frontend: `ReferralPromoStrip` в `AppShell` под `PaywallBanner` — мягкий promo-баннер с whitelisted страницами, разной копи для owner/member, dismiss на 30 дней, профиль-кэш на 24 часа.
 - Новая зависимость: `qrcode.react@4.2.0` (~3 KB).
 
+**Добивка 2026-05-31 (Блок A Волны 3):**
+- Backend: `Referral`-response получил computed `hasPayoutDetails: boolean` (вычисляется как `payoutDetails != null && Object.keys > 0` через экспортируемую `hasPayoutDetails(ref)` в `services/referrals.service.ts`). Без него фронт использовал прокси `inn && legalForm` — кнопка «Вывести» ложно включалась, backend отвечал 400 при попытке вывода.
+- Frontend: `referralFromApi` пробрасывает поле в `ReferralDomain`; `payoutDetailsAreFilled(ref)` теперь возвращает `ref.hasPayoutDetails` (старая эвристика по inn/legalForm удалена).
+- Frontend: создана страница-заглушка `frontend/app/(public)/legal/partner-offer/page.tsx` (раньше чекбокс оферты в `CreateLinkCard` вёл в 404).
+- Frontend: парный токен `text-emerald-50` вместо запрещённого `text-white` на CTA `ReferralPromoStrip`.
+- Second-brain: создан `01_projects/referrals.md`; в `03_processes/referral-program.md` переписан раздел 3 (шаги 1-3 — one-click без обязательного ИНН) и §5-таблица (строки 1, 3).
+
+**Pre-flight checks (Волна 2 + добивка Волны 3):**
+
+```bash
+# Сколько Referral без принятой оферты (профили до Волны 2).
+# Если > 0 — обсудить с владельцем: backfill contractAcceptedAt = createdAt или
+# попросить партнёров перепринять оферту вручную через legacy endpoint
+# POST /referrals/me/accept-contract.
+docker compose exec backend bun -e "import {PrismaClient} from '@prisma/client';
+const p = new PrismaClient();
+p.referral.count({where:{contractAcceptedAt: null}})
+  .then(n=>{console.log('Referral без оферты:', n); return p.\$disconnect();});"
+```
+
 **Шаги прод-инструкции:**
 
 - **Шаг 1 — ENV** — без новых.
@@ -112,6 +132,15 @@
   # - /admin/orgs/plans — одна карточка, 6 редактируемых полей, калькулятор, история
   # - /referrals — три состояния (A/B/C), маркетинговый герой, чекбокс оферты, без обязательных полей
   # - / (любая whitelisted страница) под пользователем без Referral — видна полоска ReferralPromoStrip; нажатие на × скрывает на 30 дней
+
+  # 9. (Блок A Волны 3 — добивка) Партнёрская оферта — placeholder-страница не 404:
+  curl -s -o /dev/null -w '%{http_code}\n' https://prod.host/legal/partner-offer
+  # Ожидаемо: 200
+
+  # 10. (Блок A Волны 3 — добивка) hasPayoutDetails в /referrals/me ответе:
+  curl -i -H 'Cookie: <session>' https://prod.host/api/v1/referrals/me
+  # Ожидаемо: 200 { ..., "hasPayoutDetails": false, "inn": null, ... } для свежесозданного профиля
+  # После PATCH /me с непустым payoutDetails — hasPayoutDetails: true.
   ```
 
 - **Откат:**

@@ -35,6 +35,11 @@ export type FunnelPeriod = FunnelPeriodApi;
 export interface ReferralDomain {
   id: string;
   slug: string;
+  /**
+   * Computed-поле (ТЗ §6.3 + §6.5): backend сообщает, заполнен ли
+   * `payoutDetails` непустым JSON-объектом. См. `payoutDetailsAreFilled`.
+   */
+  hasPayoutDetails: boolean;
   /** ТЗ §5.1: nullable. */
   inn: string | null;
   innVerifiedAt: Date | null;
@@ -103,6 +108,7 @@ export function referralFromApi(api: ReferralViewApi): ReferralDomain {
   return {
     id: api.id,
     slug: api.slug,
+    hasPayoutDetails: api.hasPayoutDetails,
     inn: api.inn,
     innVerifiedAt: api.innVerifiedAt ? new Date(api.innVerifiedAt) : null,
     legalForm: api.legalForm,
@@ -231,18 +237,19 @@ export function isFullyVerified(ref: ReferralDomain): boolean {
 }
 
 /**
- * Проверка, что у партнёра заданы реквизиты для вывода (ТЗ §6.3 + §6.5).
+ * Заполнены ли реквизиты для вывода (ТЗ §6.3 + §6.5).
  *
- * Доменный слой не знает структуры `payoutDetails` (backend хранит как
- * Json), поэтому фронт смотрит только на нашу «производную» — `inn` и
- * `legalForm`. Это адекватный прокси: настоящие банковские реквизиты
- * заполняются на том же шаге формы.
+ * Backend возвращает `hasPayoutDetails` как computed boolean
+ * (`payoutDetails != null && Object.keys > 0`). Это точный признак того,
+ * что в `Referral.payoutDetails` лежит непустой объект (т.е. ввели
+ * банковские реквизиты, а не только ИНН).
  *
- * Если потребуется более точная проверка — добавим отдельное поле
- * `payoutDetailsFilledAt` в `ReferralViewApi`.
+ * До 2026-05-31 здесь была эвристика по `inn && legalForm` — она ложно
+ * включала кнопку «Вывести», когда пользователь ввёл ИНН без реквизитов,
+ * после чего backend возвращал 400. Перешли на честный признак.
  */
 export function payoutDetailsAreFilled(ref: ReferralDomain): boolean {
-  return ref.inn !== null && ref.legalForm !== null;
+  return ref.hasPayoutDetails;
 }
 
 /**

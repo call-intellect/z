@@ -16,9 +16,9 @@
  *     CTA сжимается до стрелки.
  *
  * Стиль: парные цветовые токены `bg-emerald-50` / `text-emerald-900`, кнопка
- * на `bg-emerald-600` / `text-white` (контраст ≥ 4.5:1) — приглушённое
- * «доходное зелёное», чтобы не конкурировать с `PaywallBanner` (тревожный
- * `warning`), но было заметно сразу под ним.
+ * на `bg-emerald-600` / `text-emerald-50` (парный токен, контраст ≥ 4.5:1) —
+ * приглушённое «доходное зелёное», чтобы не конкурировать с `PaywallBanner`
+ * (тревожный `warning`), но было заметно сразу под ним.
  */
 
 import Link from 'next/link';
@@ -119,7 +119,7 @@ export function ReferralPromoStrip() {
           <Link
             href="/referrals"
             onClick={handleClick}
-            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-emerald-50"
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-emerald-50 transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-emerald-50"
             data-testid="referral-promo-cta"
           >
             <span className="hidden sm:inline">Получить ссылку</span>

@@ -4,7 +4,11 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { InnLookupService } from '../../inn-lookup/inn-lookup.service';
 
-import { ReferralsService, clientCodeFromLinkId } from './referrals.service';
+import {
+  ReferralsService,
+  clientCodeFromLinkId,
+  hasPayoutDetails,
+} from './referrals.service';
 
 /**
  * audit Б6 (2026-05-29) — спецификация на verifyInn:
@@ -428,5 +432,35 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
     // Месяцы упорядочены по возрастанию.
     const sorted = [...points].sort((a, b) => a.month.localeCompare(b.month));
     expect(points.map((p) => p.month)).toEqual(sorted.map((p) => p.month));
+  });
+});
+
+/**
+ * ТЗ referrals-cabinet-revamp §6.3 + §6.5 — hasPayoutDetails:
+ *   - используется в `computeWithdrawalEligibility` (no_payout_details);
+ *   - выставляется как computed-поле `hasPayoutDetails` в `ReferralViewBody`
+ *     (фронт строит по нему `payoutDetailsAreFilled` → `canWithdraw`).
+ */
+describe('hasPayoutDetails (file-scope helper)', () => {
+  it('null → false', () => {
+    expect(hasPayoutDetails({ payoutDetails: null })).toBe(false);
+  });
+
+  it('пустой объект → false', () => {
+    expect(hasPayoutDetails({ payoutDetails: {} })).toBe(false);
+  });
+
+  it('непустой объект → true', () => {
+    expect(
+      hasPayoutDetails({
+        payoutDetails: { bankAccount: '40817810099910004312' },
+      }),
+    ).toBe(true);
+  });
+
+  it('массив → false (не объект-с-ключами)', () => {
+    // На уровне Prisma JsonValue массив теоретически возможен,
+    // но это не корректные реквизиты — считаем «не заполнено».
+    expect(hasPayoutDetails({ payoutDetails: ['x'] })).toBe(false);
   });
 });

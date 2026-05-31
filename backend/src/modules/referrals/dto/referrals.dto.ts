@@ -76,6 +76,15 @@ export class UpdateReferralBodyDto extends createZodDto(
 export const ReferralViewSchema = z.object({
   id: z.string(),
   slug: z.string(),
+  /**
+   * Computed-поле: `payoutDetails != null && Object.keys > 0`.
+   *
+   * Фронт строит по нему `canWithdraw` (ТЗ §6.5). До 2026-05-31 фронт
+   * использовал прокси `inn && legalForm`, что ложно включало кнопку
+   * «Вывести» при заполненном ИНН, но пустых банковских реквизитах —
+   * backend в ответ давал 400. Computed-поле снимает эту неточность.
+   */
+  hasPayoutDetails: z.boolean(),
   /** Optional после ТЗ referrals-cabinet-revamp §5.1. */
   inn: z.string().nullable(),
   innVerifiedAt: z.string().datetime().nullable(),

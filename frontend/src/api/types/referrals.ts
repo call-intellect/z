@@ -27,6 +27,15 @@ export type ReferralPromoEventTypeApi = 'impression' | 'click' | 'dismissed';
 export interface ReferralViewApi {
   id: string;
   slug: string;
+  /**
+   * Computed-поле (ТЗ §6.3 + §6.5): `payoutDetails != null && Object.keys > 0`.
+   *
+   * Фронт строит по нему `payoutDetailsAreFilled` → `canWithdraw`. До
+   * 2026-05-31 фронт смотрел на прокси `inn && legalForm` — это включало
+   * кнопку «Вывести» при заполненном ИНН без банковских реквизитов,
+   * после чего backend возвращал 400.
+   */
+  hasPayoutDetails: boolean;
   /** ТЗ §5.1: nullable — можно создать профиль без ИНН. */
   inn: string | null;
   innVerifiedAt: string | null;

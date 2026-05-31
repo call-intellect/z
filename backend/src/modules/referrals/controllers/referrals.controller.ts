@@ -82,6 +82,7 @@ import { AttributionService } from '../services/attribution.service';
 import { ReferralPayoutService } from '../services/referral-payout.service';
 import {
   ReferralsService,
+  hasPayoutDetails as computeHasPayoutDetails,
   type Funnel as FunnelView,
   type MonthlyPoint as MonthlyPointView,
   type ReferralClientMaskedView,
@@ -325,6 +326,10 @@ export class ReferralsController {
     return {
       id: ref.id,
       slug: ref.slug,
+      // ТЗ referrals-cabinet-revamp §6.3 + §6.5: computed-поле,
+      // фронт строит по нему `canWithdraw`. См. hasPayoutDetails()
+      // в services/referrals.service.ts.
+      hasPayoutDetails: computeHasPayoutDetails(ref),
       // ТЗ referrals-cabinet-revamp §5.1: inn / legalForm теперь nullable.
       inn: ref.inn ?? null,
       innVerifiedAt: ref.innVerifiedAt?.toISOString() ?? null,

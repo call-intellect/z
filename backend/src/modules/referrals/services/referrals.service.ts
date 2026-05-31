@@ -626,8 +626,7 @@ export class ReferralsService {
     eligible: boolean;
     reason: 'ok' | 'no_payout_details' | 'no_inn_verified' | 'no_balance';
   } {
-    const hasPayoutDetails = isNonEmptyObject(ref.payoutDetails);
-    if (!hasPayoutDetails) return { eligible: false, reason: 'no_payout_details' };
+    if (!hasPayoutDetails(ref)) return { eligible: false, reason: 'no_payout_details' };
     if (!ref.innVerifiedAt) return { eligible: false, reason: 'no_inn_verified' };
     if (totalPendingKopecks <= 0) return { eligible: false, reason: 'no_balance' };
     return { eligible: true, reason: 'ok' };
@@ -724,6 +723,22 @@ function isNonEmptyObject(value: Prisma.JsonValue | null): boolean {
   if (value == null) return false;
   if (typeof value !== 'object' || Array.isArray(value)) return false;
   return Object.keys(value as Record<string, unknown>).length > 0;
+}
+
+/**
+ * Признак «банковские реквизиты для выплаты заполнены» — `payoutDetails`
+ * содержит непустой JSON-объект.
+ *
+ * Используется как:
+ *   - часть `computeWithdrawalEligibility` (правило «no_payout_details»);
+ *   - computed-поле `hasPayoutDetails` в `ReferralViewBody` (фронт строит
+ *     по нему `canWithdraw`, заменив прежнюю эвристику по `inn && legalForm`).
+ *
+ * См. ТЗ referrals-cabinet-revamp §6.3 + §6.5 и
+ * `plans/tz/2026-05-31-referrals-cabinet-revamp.md` блок «hasPayoutDetails».
+ */
+export function hasPayoutDetails(ref: Pick<Referral, 'payoutDetails'>): boolean {
+  return isNonEmptyObject(ref.payoutDetails);
 }
 
 function daysAgo(n: number): Date {

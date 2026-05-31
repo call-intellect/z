@@ -10,11 +10,20 @@
 - `POST /api/v1/concierge/undo/:logId` — откат мутирующего tool-call'а.
 - `GET /api/v1/concierge/quota` — текущая квота.
 
+## Квоты — две ступени (ТЗ 2026-05-31)
+
+Concierge участвует в **единой per-user дневной квоте AI-общения** вместе с клонами. Квота двухступенчатая:
+
+1. **Per-user (главная, ТЗ 2026-05-31)** — `AiChatQuotaService` (модуль `ai-chat-quota`, глобальный): один счётчик `ai_chat_messages_per_day` на пользователя, считает Concierge + клоны вместе. Лимит зависит от роли в Org: admin (owner/admin/coo) → `AI_CHAT_DAILY_LIMIT_ADMIN=50`, остальные → `AI_CHAT_DAILY_LIMIT_MEMBER=20`. UI читает через `GET /api/v1/me/ai-chat/quota`. На превышении — 429 + `QuotaExceededError`.
+2. **Per-Org safety-net (остаётся)** — `ConciergeQuotaService` (`OrgConciergeQuota`, Redis token-bucket) с дневным `CONCIERGE_DAILY_MESSAGES_LIMIT` и месячным `CONCIERGE_MONTHLY_MESSAGES_LIMIT`. Защищает Org от abuse в сумме по всем пользователям; ловит SSE-эвент `quota_exceeded`.
+
+Порядок проверки в pipeline: per-user сначала (через `AiChatQuotaService.tryConsume`), затем per-Org safety-net.
+
 ## Pipeline (после ТЗ 2026-05-27 dialog-layer integration)
 
 При `CONCIERGE_DIALOG_LAYER_ENABLED=true` (production, default false):
 
-1. **Quota check** (`OrgConciergeQuota`, Redis token-bucket).
+1. **Quota check** — per-user (`AiChatQuotaService.tryConsume`, новая, ТЗ 2026-05-31) + per-Org safety-net (`OrgConciergeQuota`, Redis token-bucket).
 2. **Conversation** — создать/найти `ConciergeConversation`, записать user-message.
 3. **Summary в контекст** — `ConciergeConversation.summary` (если есть, пишется cron'ом `concierge-conversation-summarizer.cron` каждые 30 мин для диалогов >20 сообщений и старше часа) подмешивается в user-блок ПЕРЕД историей.
 4. **Dialog-layer препроцессинг** — `DialogService.process({ scope: 'concierge', scopeRefId: conv.id })`:

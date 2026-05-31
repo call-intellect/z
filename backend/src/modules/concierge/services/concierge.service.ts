@@ -8,12 +8,14 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   DialogService,
   type DialogProcessResult,
 } from '../../dialog-layer/services/dialog.service';
 import type { DialogIntent } from '../../dialog-layer/services/query-classifier.service';
+import { QuotaExceededError } from '../../quotas/quota.errors';
 import type { PageContextDto } from '../dto/concierge.dto';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
@@ -181,7 +183,12 @@ export type ConciergeStreamEvent =
   | { type: 'message'; text: string }
   | { type: 'done'; messageId: string }
   | { type: 'error'; code: string; message: string }
-  | { type: 'quota_exceeded'; scope: 'daily' | 'monthly' };
+  | {
+      type: 'quota_exceeded';
+      scope: 'user_daily' | 'daily' | 'monthly';
+      /** ТЗ 2026-05-31 — для `user_daily` приходит из QuotaService (Retry-After в секундах). */
+      retryAfterSeconds?: number;
+    };
 
 @Injectable()
 export class ConciergeService {
@@ -199,6 +206,14 @@ export class ConciergeService {
     @Inject(ConciergeUndoLogService)
     private readonly undoLog: ConciergeUndoLogService,
     @Inject(ConciergeQuotaService) private readonly quota: ConciergeQuotaService,
+    /**
+     * ТЗ 2026-05-31 — единая per-user квота AI-чата (Concierge + Clones).
+     * Проверяется ДО per-Org safety-net `quota.tryConsume(tenantId)`.
+     * `AiChatQuotaModule` подключён `@Global`, явный import в `ConciergeModule`
+     * не требуется.
+     */
+    @Inject(AiChatQuotaService)
+    private readonly aiChatQuota: AiChatQuotaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     /**
@@ -236,7 +251,27 @@ export class ConciergeService {
       return;
     }
 
-    // Quota check.
+    // ТЗ 2026-05-31 — единая per-user квота AI-чата (Concierge + Clones).
+    // Проверяется ДО per-Org safety-net `quota.tryConsume(tenantId)`.
+    try {
+      await this.aiChatQuota.tryConsume({
+        tenantId: input.tenantId,
+        userId: input.userId,
+      });
+    } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        yield {
+          type: 'quota_exceeded',
+          scope: 'user_daily',
+          retryAfterSeconds: err.retryAfterSeconds,
+        };
+        return;
+      }
+      throw err;
+    }
+
+    // Per-Org safety-net quota check (остаётся как было — защита Org от
+    // суммарного перебора, например ботами/массовой авторассылкой).
     const denial = await this.quota.tryConsume(input.tenantId);
     if (denial) {
       yield { type: 'quota_exceeded', scope: denial.scope };

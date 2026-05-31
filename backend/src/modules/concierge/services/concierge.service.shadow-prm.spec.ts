@@ -166,6 +166,17 @@ function buildShadowConciergeService(opts: ShadowOpts) {
     tryConsume: vi.fn(async () => null),
   } as unknown as ConciergeQuotaService;
 
+  // ТЗ 2026-05-31 — единая per-user квота AI-чата. Mock пускает все запросы.
+  const aiChatQuota = {
+    tryConsume: vi.fn(async () => ({
+      current: 1,
+      remaining: 19,
+      limit: 20,
+      role: 'member',
+    })),
+    getUsage: vi.fn(async () => ({ dailyUsed: 0, dailyLimit: 20, role: 'member' })),
+  } as unknown as import('../../ai-chat-quota/ai-chat-quota.service').AiChatQuotaService;
+
   const metricsIncConciergeMessage = vi.fn();
   const metricsIncConciergePrmAgreement = vi.fn();
   const metricsIncConciergePrmLlmRank = vi.fn();
@@ -189,6 +200,7 @@ function buildShadowConciergeService(opts: ShadowOpts) {
     toolRouter,
     undoLog,
     quota,
+    aiChatQuota,
     metrics,
     dialog,
     stepScorer,

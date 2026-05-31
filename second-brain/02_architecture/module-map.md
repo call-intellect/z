@@ -255,7 +255,7 @@ LiveKit чистит атрибуты автоматически при disconne
 - **ТЗ:** `plans/tz/2026-05-28-paywall-no-trial.md` (Фаза 1 ✅).
 
 ### Frontend (фазы 7–12)
-- `frontend/app/(authenticated)/admin/*` — Z-Admin (8 страниц + AdminShell).
+- `frontend/app/(admin)/admin/*` — Z-Admin (8 страниц + AdminShell). С 2026-05-31 перенесён из `(authenticated)/admin/` в standalone route-группу с собственным root-layout и `AdminAuthGuard` (без AppShell/EntitlementProvider).
 - `frontend/app/(authenticated)/settings/admin/*` — Org-Admin (4 страницы).
 - `frontend/app/(authenticated)/dashboard/{DashboardRouter, DirectorDashboardClient}.tsx` + `widgets/StrategicAlignmentWidget.tsx`.
 - `frontend/app/(authenticated)/goals/{page, GoalsClient, [id]/{page, GoalDetailClient}}.tsx`.
@@ -1849,10 +1849,10 @@ mail-inbound/
 
 ### Frontend
 
-- [frontend/app/(authenticated)/admin/AdminShell.tsx](../../frontend/app/(authenticated)/admin/AdminShell.tsx) — двухуровневая навигация.
-- [frontend/app/(authenticated)/admin/navigation.ts](../../frontend/app/(authenticated)/admin/navigation.ts) — единый источник правды по структуре (8 категорий × 36 разделов).
+- [frontend/app/(admin)/admin/AdminShell.tsx](../../frontend/app/(admin)/admin/AdminShell.tsx) — двухуровневая навигация.
+- [frontend/app/(admin)/admin/navigation.ts](../../frontend/app/(admin)/admin/navigation.ts) — единый источник правды по структуре (8 категорий × 36 разделов).
 - [frontend/ui/components/admin/](../../frontend/ui/components/admin/) — `AdminSection` / `AdminTabs` / `AdminBreadcrumbs` / `AdminDangerZone` / `AdminSparkline` / `AdminSettingField` / `AdminSettingHistoryDrawer` / `AdminCsvDownloadButton` / `AdminCommandPalette`.
-- [frontend/app/(authenticated)/admin/useAdminQuery.ts](../../frontend/app/(authenticated)/admin/useAdminQuery.ts) — единый fetcher с 403-обработкой + refetch. В Фазе 9 финально мигрированы оставшиеся `useEffect+useState+fetchData` (PromptsListClient, AiModelsClient).
+- [frontend/app/(admin)/admin/useAdminQuery.ts](../../frontend/app/(admin)/admin/useAdminQuery.ts) — единый fetcher с 403-обработкой + refetch. В Фазе 9 финально мигрированы оставшиеся `useEffect+useState+fetchData` (PromptsListClient, AiModelsClient).
 - Period-селекторы унифицированы на `day/week/month` (Фаза 9); legacy `24h/7d/30d` остался только в API-вызовах через UI-mapper.
 - `/admin/ai-usage` — 308-redirect на `/admin/analytics/functions` (Фаза 9).
 
@@ -1922,6 +1922,15 @@ mail-inbound/
 ## Concierge γ-2 — dialog-layer integration (2026-05-27)
 
 ТЗ [`plans/tz/2026-05-27-concierge-dialog-layer-integration.md`](../../plans/tz/2026-05-27-concierge-dialog-layer-integration.md). Полная заметка фичи — [[../01_projects/concierge-agent|concierge-agent]].
+
+### `backend/src/modules/ai-chat-quota/` — единая per-user квота AI-общения (ТЗ 2026-05-31)
+
+Глобальный модуль. Один счётчик `ai_chat_messages_per_day` на пользователя, считает Concierge + клоны вместе.
+
+- `services` / `AiChatQuotaService` — `tryConsume({ tenantId, userId })` (атомарный INCR в Redis через `QuotaService`, на превышении кидает `QuotaExceededError`/429) и `getUsage(...)` (peek без инкремента — для UI).
+- Лимит по роли в Org: admin (owner/admin/coo) → `AI_CHAT_DAILY_LIMIT_ADMIN=50`, остальные → `AI_CHAT_DAILY_LIMIT_MEMBER=20`. Роль читается через `RbacService.getMembershipRole`.
+- Контроллер `AiChatQuotaController` → `GET /api/v1/me/ai-chat/quota` (для индикатора «осталось N сообщений сегодня»). Auth: cookie + tenant.
+- Интегрирован в `ConciergeService` (вызов перед per-Org safety-net `ConciergeQuotaService`) и в `ClonesService` (заменил Redis-ключ `clone:ask:*` и ENV `CLONE_ASK_PER_USER_PER_DAY`, последний оставлен как deprecated code-fallback).
 
 ### `backend/src/modules/concierge/`
 

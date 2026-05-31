@@ -29,7 +29,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../src/common/config/index';
 import type { BusinessMetricsService } from '../../src/common/metrics/business-metrics.service';
 import type { PrismaService } from '../../src/common/prisma/prisma.service';
-import type { RedisService } from '../../src/common/redis/redis.service';
 import type { LlmRouterService } from '../../src/modules/ai/services/llm-router.service';
 import { ClonesService } from '../../src/modules/clones/services/clones.service';
 import type { DialogService } from '../../src/modules/dialog-layer/services/dialog.service';
@@ -185,12 +184,18 @@ function setupV2(args: V2SetupArgs) {
     $queryRaw: queryRaw,
   } as unknown as PrismaService;
 
-  const redis = {
-    client: {
-      incr: vi.fn(async () => 1),
-      expire: vi.fn(async () => 1),
-    },
-  } as unknown as RedisService;
+  // ТЗ 2026-05-31 — единая per-user квота AI-чата (Concierge + Clones)
+  // заменила приватный `assertRateLimit` (Redis-only). Mock пускает все
+  // запросы; rate-limit тест — в quota.service.spec.ts.
+  const aiChatQuota = {
+    tryConsume: vi.fn(async () => ({
+      current: 1,
+      remaining: 19,
+      limit: 20,
+      role: 'member',
+    })),
+    getUsage: vi.fn(async () => ({ dailyUsed: 0, dailyLimit: 20, role: 'member' })),
+  } as unknown as import('../../src/modules/ai-chat-quota/ai-chat-quota.service').AiChatQuotaService;
 
   const cfg = {
     cloneV2: { enabled: true },
@@ -263,7 +268,7 @@ function setupV2(args: V2SetupArgs) {
 
   const service = new ClonesService(
     prisma,
-    redis,
+    aiChatQuota,
     cfg,
     llm,
     metrics,

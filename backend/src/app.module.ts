@@ -19,6 +19,7 @@ import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module
 import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorkersModule } from './modules/ai/workers.module';
+import { AiChatQuotaModule } from './modules/ai-chat-quota/ai-chat-quota.module';
 // M3c — cross-cutting ai-workspace модули.
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
@@ -256,6 +257,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // EntitlementService.getQuota.
     EntitlementsModule,
     QuotasModule,
+    // ТЗ 2026-05-31 ai-chat-quota — единая per-user квота Concierge+Clones.
+    // @Global, использует QuotaService (Redis INCR) + RbacService (resolve роли).
+    // Должен идти ПОСЛЕ QuotasModule и RbacModule (оба @Global, но порядок
+    // важен для предсказуемости bootstrap).
+    AiChatQuotaModule,
     ApiKeysModule,
     WebhooksOutModule,
     DestinationsModule,

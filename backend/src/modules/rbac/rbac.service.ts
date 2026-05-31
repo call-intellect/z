@@ -371,6 +371,26 @@ export class RbacService implements OnModuleInit {
   }
 
   /**
+   * Возвращает `Membership.role` пользователя в указанной Org или null,
+   * если членства нет. Используется в AiChatQuotaService (ТЗ 2026-05-31
+   * ai-chat-quota) для resolve'а лимита по роли (admin-tier vs member).
+   *
+   * NB: модель в Prisma — `Membership` (composite key `orgId_userId`).
+   * В ТЗ название `OrgMember` — это имя модуля (`src/modules/org-members`),
+   * а не Prisma-модели; здесь обращаемся к фактической таблице.
+   */
+  async getMembershipRole(
+    tenantId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const m = await this.prisma.membership.findUnique({
+      where: { orgId_userId: { orgId: tenantId, userId } },
+      select: { role: true },
+    });
+    return m?.role ?? null;
+  }
+
+  /**
    * Получить контекст (роль + visibility + isSuperAdmin) для пары (user, org).
    * Использует in-memory кэш на 60s, чтобы не бить БД на каждый запрос.
    */

@@ -1290,6 +1290,22 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── ai-chat-quota (ТЗ 2026-05-31) ───────
+  /**
+   * ТЗ 2026-05-31 ai-chat-quota — единая per-user квота Concierge+Clones.
+   */
+  get aiChatQuota() {
+    const csv = this.get('AI_CHAT_ADMIN_ROLES') as string;
+    return {
+      dailyLimitAdmin: this.get('AI_CHAT_DAILY_LIMIT_ADMIN') as number,
+      dailyLimitMember: this.get('AI_CHAT_DAILY_LIMIT_MEMBER') as number,
+      adminRoles: csv
+        .split(',')
+        .map((r) => r.trim())
+        .filter(Boolean),
+    } as const;
+  }
+
   // ─────────────────────────── dialog-layer (SBA α-5 dialog-layer) ─
   /**
    * Параметры dialog-layer (Contextualizer / Cache / Summarizer). Минимально

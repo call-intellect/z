@@ -1,7 +1,5 @@
 import {
   ForbiddenException,
-  HttpException,
-  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -13,7 +11,7 @@ import { Prisma, type ExecutablePersona } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
+import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
 import {
   type LlmCallResult,
   LlmRouterService,
@@ -56,7 +54,10 @@ import type {
  *
  * Контракт:
  *   - RBAC: owner/admin Org / сам носитель / direct manager.
- *   - Rate limit: cfg.skill.cloneAskPerUserPerDay (default 20) — через Redis.
+ *   - Rate limit: единая per-user квота `AiChatQuotaService` (50/20 в день,
+ *     общая для Concierge + Clones) — ТЗ 2026-05-31. Старый ключ
+ *     `cfg.skill.cloneAskPerUserPerDay` оставлен как code-fallback в env.schema,
+ *     но в сервисе больше не читается.
  *   - Retrieval: subject-блоки + knowledgeProfile + relevant decisions.
  *   - LLM call: clone-respond с persona prompt в system.
  *   - Запись в ChatV2Conversation (mode='clone_style').
@@ -80,7 +81,14 @@ export class ClonesService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(RedisService) private readonly redis: RedisService,
+    /**
+     * ТЗ 2026-05-31 — единая per-user квота AI-чата (Concierge + Clones).
+     * Используется в `askPerson` / `askRole` / `askPersonV2` / `askRoleV2`
+     * вместо приватного `assertRateLimit` (удалён). `AiChatQuotaModule`
+     * подключён `@Global`, явный import в `ClonesModule` не требуется.
+     */
+    @Inject(AiChatQuotaService)
+    private readonly aiChatQuota: AiChatQuotaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
@@ -119,6 +127,10 @@ export class ClonesService {
    * `CLONE_V2_ENABLED` маршрутизация переключается на `askPersonV2`
    * (dialog-layer + два режима + RBAC через `CloneAccessGrant`).
    * Legacy-путь сохранён ниже как есть.
+   *
+   * ТЗ 2026-05-31 — rate limit перенесён с приватного `assertRateLimit`
+   * (Redis-only) на `AiChatQuotaService.tryConsume({ tenantId, userId })` —
+   * единую per-user квоту AI-чата (Concierge + Clones).
    */
   async askPerson(args: {
     tenantId: string;
@@ -147,7 +159,12 @@ export class ClonesService {
     }
 
     // 2. Rate limit.
-    await this.assertRateLimit(args.requesterUserId);
+    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
+    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
+    await this.aiChatQuota.tryConsume({
+      tenantId: args.tenantId,
+      userId: args.requesterUserId,
+    });
 
     // 3. Найти SkillProfile + active traits.
     const profile = await this.prisma.skillProfile.findUnique({
@@ -353,6 +370,10 @@ export class ClonesService {
    *
    * ТЗ 2026-05-25 §9 (Фаза 7) — при `CLONE_V2_ENABLED` маршрутизация на
    * `askRoleV2` (dialog-layer + два режима + CloneAccessGrant).
+   *
+   * ТЗ 2026-05-31 — rate limit перенесён с приватного `assertRateLimit`
+   * (Redis-only) на `AiChatQuotaService.tryConsume({ tenantId, userId })` —
+   * единую per-user квоту AI-чата (Concierge + Clones).
    */
   async askRole(args: {
     tenantId: string;
@@ -383,7 +404,12 @@ export class ClonesService {
     }
 
     // 2. Rate limit.
-    await this.assertRateLimit(args.requesterUserId);
+    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
+    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
+    await this.aiChatQuota.tryConsume({
+      tenantId: args.tenantId,
+      userId: args.requesterUserId,
+    });
 
     const role = await this.prisma.role.findUnique({
       where: { id: args.roleId },
@@ -607,7 +633,12 @@ export class ClonesService {
     }
 
     // 2. Rate limit (общий с legacy).
-    await this.assertRateLimit(args.requesterUserId);
+    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
+    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
+    await this.aiChatQuota.tryConsume({
+      tenantId: args.tenantId,
+      userId: args.requesterUserId,
+    });
 
     // 3. SkillProfile + persona (логика идентична legacy — переиспользуем).
     const profile = await this.prisma.skillProfile.findUnique({
@@ -819,7 +850,12 @@ export class ClonesService {
         },
       });
     }
-    await this.assertRateLimit(args.requesterUserId);
+    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
+    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
+    await this.aiChatQuota.tryConsume({
+      tenantId: args.tenantId,
+      userId: args.requesterUserId,
+    });
 
     const role = await this.prisma.role.findUnique({
       where: { id: args.roleId },
@@ -2105,37 +2141,15 @@ export class ClonesService {
   }
 
   // ─────────────────────── rate limit ───────────────────────
-
-  private async assertRateLimit(userId: string): Promise<void> {
-    const limit = this.cfg.skill.cloneAskPerUserPerDay;
-    const dayKey = new Date().toISOString().slice(0, 10);
-    const redisKey = `clone:ask:${userId}:${dayKey}`;
-    try {
-      const count = await this.redis.client.incr(redisKey);
-      if (count === 1) {
-        // First hit — set TTL 26h (запас на TZ).
-        await this.redis.client.expire(redisKey, 26 * 60 * 60);
-      }
-      if (count > limit) {
-        throw new HttpException(
-          {
-            ok: false,
-            error: {
-              code: 'clone_ask_rate_limit',
-              message: `Превышен суточный лимит запросов к клону (${limit}). Попробуйте завтра.`,
-            },
-          },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      this.logger.warn(
-        { userId, err: err instanceof Error ? err.message : String(err) },
-        'clones.assertRateLimit: Redis упал — пропускаю проверку',
-      );
-    }
-  }
+  //
+  // ТЗ 2026-05-31 — приватный `assertRateLimit` (Redis-based, ключи
+  // `clone:ask:<userId>:<YYYY-MM-DD>`) удалён. Все 4 точки вызова
+  // (askPerson / askRole / askPersonV2 / askRoleV2) теперь используют
+  // `AiChatQuotaService.tryConsume({ tenantId, userId })` — единую per-user
+  // квоту AI-чата (Concierge + Clones), 50/день для админов, 20/день для
+  // member'ов. Лимит `cfg.skill.cloneAskPerUserPerDay` и ENV
+  // `CLONE_ASK_PER_USER_PER_DAY` оставлены как code-fallback в env.schema
+  // (удаление в отдельной мини-фазе, чтобы не задеть другие места).
 
   // ─────────────────────── retrieval ───────────────────────
 

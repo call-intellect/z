@@ -217,6 +217,20 @@ const QuotasSchema = z.object({
   MAX_MEETING_DURATION_HOURS: z.coerce.number().int().positive().default(8),
 });
 
+/**
+ * Единая per-user квота AI-общения (Concierge + Clones).
+ * ТЗ: plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md.
+ *
+ *   - AI_CHAT_DAILY_LIMIT_ADMIN — лимит для owner/admin/coo (50/день).
+ *   - AI_CHAT_DAILY_LIMIT_MEMBER — для остальных ролей (20/день).
+ *   - AI_CHAT_ADMIN_ROLES — CSV ролей admin-tier'а; не хардкодим.
+ */
+const AiChatQuotaSchema = z.object({
+  AI_CHAT_DAILY_LIMIT_ADMIN: z.coerce.number().int().positive().default(50),
+  AI_CHAT_DAILY_LIMIT_MEMBER: z.coerce.number().int().positive().default(20),
+  AI_CHAT_ADMIN_ROLES: z.string().default('owner,admin,coo'),
+});
+
 const AdminSchema = z.object({
   ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
   ADMIN_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(43_200),
@@ -1842,7 +1856,10 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   .merge(BetaOpsSchema)
   .merge(BudgetSchema)
   .merge(TrackerSchema)
-  .merge(BillingSchema);
+  .merge(BillingSchema)
+  // ТЗ 2026-05-31 ai-chat-quota — единая per-user квота Concierge+Clones.
+  // CLONE_ASK_PER_USER_PER_DAY (SkillSchema) пока остаётся; удаление — Фаза 4.
+  .merge(AiChatQuotaSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

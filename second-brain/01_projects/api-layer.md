@@ -100,6 +100,7 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 | Метод | Путь | Назначение | T |
 |---|---|---|---|
 | POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use) | γ-2 |
+| GET  | `/api/v1/me/ai-chat/quota` | Единая per-user дневная квота AI-общения (Concierge + клоны вместе) — `{ dailyUsed, dailyLimit, role }`. См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md). | — |
 | POST | `/api/v1/voice/transcribe` | REST ASR (Vox/GigaAM, fallback) | — |
 | WS | `/ws/voice` | Streaming-стенд для голоса (events: voice.start/chunk/end/cancel → voice.transcribed/error) | **T4** |
 

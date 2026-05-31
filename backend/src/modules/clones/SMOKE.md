@@ -7,7 +7,10 @@
 
 ## Предусловия
 
-- ENV из `.env.example` (`SKILL_*`, `PERSONA_*`, `CLONE_ASK_PER_USER_PER_DAY`).
+- ENV из `.env.example` (`SKILL_*`, `PERSONA_*`, `AI_CHAT_QUOTA_*` — единая
+  per-user квота 50/20 для AI-чата, общая с Concierge; ТЗ 2026-05-31).
+  Старый `CLONE_ASK_PER_USER_PER_DAY` оставлен как code-fallback, но
+  `ClonesService` его больше не читает.
 - Бэкенд запущен (`bun run dev` + `bun run worker:dev` — оба процесса).
 - `bun run apply-postgres-init` (HNSW индекс на `skill_traits.embedding`).
 - `bun run seed:llm-task-routes-skill-and-clone` (4 taskType маршрута).
@@ -98,7 +101,9 @@ ORDER BY confidence DESC, "lastConfirmedAt" DESC;
 3. Если traits >= 3 → input enabled.
 4. Submit → POST /clones/persons/:personId/ask с question.
 5. ClonesService.canAccessPersonClone → relation='self' → allowed.
-6. Rate limit OK (< 20 в сутки).
+6. Rate limit OK (единая per-user квота `ai_chat_messages_per_day`:
+   50/день для админов, 20/день для member'ов — общая для Concierge + Clones,
+   ТЗ 2026-05-31).
 7. Active ExecutablePersona найдена (или собрана on-demand).
 8. Retrieval subgraph: reasoning-блоки + knowledgeProfile + decisions.
 9. LLM `clone-respond` с persona prompt в system.
@@ -123,11 +128,17 @@ ORDER BY confidence DESC, "lastConfirmedAt" DESC;
 ## Сценарий 6 — Rate limit clone-ask
 
 **Setup:**
-- Сделать 21 запрос /clones/persons/:id/ask за один день.
+- ТЗ 2026-05-31: единая per-user квота AI-чата (Concierge + Clones).
+- Member: сделать 21 запрос (любая комбинация /concierge + /clones) за день.
+- Admin (owner/admin/super_admin): сделать 51 запрос за день.
 
 **Ожидаемое поведение:**
-- 21-й запрос → HTTP 429 `clone_ask_rate_limit`.
-- Redis ключ `clone:ask:<userId>:<date>` имеет TTL ~26 часов.
+- 21-й запрос для member / 51-й запрос для admin → HTTP 429
+  `quota_exceeded` (`quotaName='ai_chat_messages_per_day'`,
+  `retryAfterSeconds` в теле; SSE-event Concierge — `scope='user_daily'`).
+- Счётчик хранится в Redis (TTL = window + 60s) + снапшот в
+  `UserQuotaCounter`. Старый Redis-ключ `clone:ask:<userId>:<date>` больше
+  не используется.
 
 ## Сценарий 7 — Role-clone
 

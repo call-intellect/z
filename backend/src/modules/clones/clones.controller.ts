@@ -51,7 +51,8 @@ import { ClonesService } from './services/clones.service';
  *   POST /api/v1/clones/roles/:roleId/ask     — ответ от клона роли.
  *
  * RBAC: внутри ClonesService.canAccessPersonClone (owner/admin/self/direct manager).
- * Rate limit: cfg.skill.cloneAskPerUserPerDay (default 20) на пользователя в день.
+ * Rate limit: единая per-user квота AI-чата `AiChatQuotaService`
+ * (50/20 сообщений в день, общая для Concierge + Clones — ТЗ 2026-05-31).
  */
 @ApiTags('clones')
 @Controller('api/v1/clones')

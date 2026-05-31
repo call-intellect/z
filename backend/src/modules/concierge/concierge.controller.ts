@@ -155,7 +155,7 @@ export class ConciergeController {
       status: number;
       undoLogId?: string;
     }>;
-    quotaExceeded?: 'daily' | 'monthly';
+    quotaExceeded?: 'user_daily' | 'daily' | 'monthly';
     error?: { code: string; message: string };
   }> {
     const t = this.requireTenant(tenantId);
@@ -173,7 +173,7 @@ export class ConciergeController {
       status: number;
       undoLogId?: string;
     }> = [];
-    let quotaExceeded: 'daily' | 'monthly' | undefined;
+    let quotaExceeded: 'user_daily' | 'daily' | 'monthly' | undefined;
     let error: { code: string; message: string } | undefined;
 
     for await (const event of this.concierge.process({

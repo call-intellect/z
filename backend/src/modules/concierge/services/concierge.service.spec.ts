@@ -232,6 +232,19 @@ function buildConciergeService(opts: BuildOpts) {
     tryConsume: vi.fn(async () => null),
   } as unknown as ConciergeQuotaService;
 
+  // ТЗ 2026-05-31 — единая per-user квота AI-чата. Дефолтный mock пускает все
+  // запросы (resolves успешно). Spec'ы могут переопределить, чтобы заставить
+  // tryConsume бросить QuotaExceededError.
+  const aiChatQuota = {
+    tryConsume: vi.fn(async () => ({
+      current: 1,
+      remaining: 19,
+      limit: 20,
+      role: 'member',
+    })),
+    getUsage: vi.fn(async () => ({ dailyUsed: 0, dailyLimit: 20, role: 'member' })),
+  } as unknown as import('../../ai-chat-quota/ai-chat-quota.service').AiChatQuotaService;
+
   const metricsIncConciergeMessage = vi.fn();
   const metricsIncConciergeDialogLayerUsed = vi.fn();
   const metricsIncConciergeCacheHit = vi.fn();
@@ -254,6 +267,7 @@ function buildConciergeService(opts: BuildOpts) {
     toolRouter,
     undoLog,
     quota,
+    aiChatQuota,
     metrics,
     dialog,
   );

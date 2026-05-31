@@ -109,7 +109,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 2. **ExecutablePersona — раз в неделю (cron) + on-demand rebuild** через ClonesService при отсутствии active snapshot.
 3. **Manager visibility — direct manager** (1 уровень).
 4. **«Попробовать своего клона» для пустых профилей <3 traits** — disabled с tooltip.
-5. **Rate limit Clone API** — `CLONE_ASK_PER_USER_PER_DAY=20`.
+5. **Rate limit Clone API (актуальное, ТЗ 2026-05-31)** — единая per-user дневная квота `ai_chat_messages_per_day` через `AiChatQuotaService` (модуль `ai-chat-quota`, глобальный): Concierge + клоны считаются ОДНИМ счётчиком на пользователя. Лимит по роли в Org: admin (owner/admin/coo) → `AI_CHAT_DAILY_LIMIT_ADMIN=50`, остальные → `AI_CHAT_DAILY_LIMIT_MEMBER=20`. UI читает через `GET /api/v1/me/ai-chat/quota`. Старый ENV `CLONE_ASK_PER_USER_PER_DAY=20` и Redis-ключ `clone:ask:*` — **deprecated** (оставлены как code-fallback для безопасного rollback, в следующем выкате удалим). См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md).
 
 ## Чувствительность
 

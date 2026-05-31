@@ -92,6 +92,76 @@
 
 ---
 
+### 🌊 2026-05-31 — Единая per-user квота AI-чата (Concierge + клоны)
+
+План: [plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md).
+
+**Сделано:** новый глобальный модуль `ai-chat-quota` (`AiChatQuotaService` + `AiChatQuotaController`) — один счётчик `ai_chat_messages_per_day` на пользователя, считает Concierge + клоны вместе; лимит зависит от роли в Org (admin/member). Concierge и Clones переключены на него. UI-эндпоинт `GET /api/v1/me/ai-chat/quota` для индикатора «осталось N сообщений сегодня». Старый Redis-ключ `clone:ask:*` и ENV `CLONE_ASK_PER_USER_PER_DAY` оставлены как deprecated code-fallback (удалим в следующем выкате после rollback-окна).
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — **3 новых опциональных** (есть код-дефолты, можно не выставлять). Рекомендуется задать явно в `.env`:
+  ```env
+  AI_CHAT_DAILY_LIMIT_ADMIN=50
+  AI_CHAT_DAILY_LIMIT_MEMBER=20
+  AI_CHAT_ADMIN_ROLES=owner,admin,coo
+  ```
+  `CLONE_ASK_PER_USER_PER_DAY` (старый) оставляем как есть — deprecated, не удаляем в этот выкат для безопасного rollback.
+- **Шаги 4–10 (Prisma / postgres-init / patch / seed / backfill / migrate / setup)** — НЕТ. Счётчик живёт в Redis (existing `QuotaService`), снапшоты в `UserQuotaCounter` уже создаются автоматически.
+- **Шаг 11 — Docker rebuild** — обязателен (новый модуль и контроллер):
+  ```bash
+  docker compose up -d --build backend
+  ```
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Endpoint в Swagger:
+  docker compose exec backend curl -fsS http://localhost:3000/api/docs-json \
+    | jq '.paths["/api/v1/me/ai-chat/quota"]'
+  # Ожидаемо: объект с methods.get (Swagger включается только в dev — в prod
+  # /api/docs за basic-auth, проверять curl'ом напрямую).
+
+  # 2. Метрика счётчика в Prometheus:
+  docker compose exec backend curl -fsS http://localhost:3000/metrics \
+    | grep ai_chat_messages_per_day
+  # Ожидаемо: одна и та же метрика растёт от Concierge-сообщений
+  # И от ask_role_clone — это и есть единый счётчик.
+
+  # 3. UI-проверка: открыть /concierge, отправить сообщение → счётчик
+  # `dailyUsed` в `GET /api/v1/me/ai-chat/quota` увеличивается на 1.
+  # Открыть карточку клона, спросить клона → тот же `dailyUsed` растёт.
+  ```
+
+- **Откат:** `git revert <commit>` + `docker compose up -d --build`. `CLONE_ASK_PER_USER_PER_DAY` остался — старая ветка кода после revert'а снова заработает без потерь.
+
+---
+
+### 🌊 2026-05-31 — Z-Admin standalone route group (frontend only)
+
+План: [plans/tz/2026-05-31-z-admin-standalone-route-group.md](../../plans/tz/2026-05-31-z-admin-standalone-route-group.md).
+
+**Изменения:** только frontend — перенос /admin/* в свою route-группу
+`app/(admin)/admin/*` + новый `AdminAuthGuard`. Backend/БД/ENV — без изменений.
+
+- **Шаг 1 (ENV)** — без новых.
+- **Шаг 4 (Prisma)** — не требуется.
+- **Шаг 11 (Docker image rebuild)** — обязательно (frontend image меняется):
+  ```bash
+  docker compose up -d --build frontend
+  ```
+- **Шаг 12 (Smoke)**:
+  ```bash
+  # Под super_admin: должен открыться /admin БЕЗ пользовательского сайдбара
+  docker compose exec frontend curl -i -H 'Cookie: <super_admin_session>' http://localhost:3000/admin
+  # Без cookie → 200 + клиентский redirect на /admin/login (SSR не редиректит,
+  # AdminAuthGuard делает это в браузере)
+  docker compose exec frontend curl -i http://localhost:3000/admin
+  # Под обычным юзером → 200, в браузере redirect на /dashboard
+  ```
+- **Откат:** `git revert <hash>` + `docker compose up -d --build frontend`.
+  Бэкенд не трогали — откат бесплатный.
+
+---
+
 ### 🌊 2026-05-30 — Pulse Волна 4 (152-ФЗ + audit + Risk-агенты)
 
 План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §8.

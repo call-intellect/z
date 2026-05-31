@@ -27,6 +27,7 @@ import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
+import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
 
 /**
@@ -101,6 +102,12 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     OperationsDailyDigestCron,
     // Pulse Wave 3 §3.5 — hourly LLM-оценка качества рефлексии чек-инов.
     ReflectionQualityScorerCron,
+    // Pulse Wave 4 §3.2 — расширение Conflict-Detector: daily-скан чек-инов
+    // на парные конфликт-маркеры → EntityLink('conflicted_with').
+    // Не путать с воркером PersonalRelationBuilderWorker, который слушает
+    // BullMQ-очередь и обрабатывает IdeaBlock'и; этот cron — отдельный agent
+    // в том же файле, daily в 04:00 UTC.
+    CheckInConflictDetectorCron,
   ],
   exports: [
     GoalCascadeService,

@@ -102,7 +102,7 @@ export interface PublicUserDto {
    * `null` если пользователь не в Org. Используется фронтом для гейта
    * раздела «Админка Org» (`/settings/admin/*`). (Фаза 7)
    */
-  currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo' | null;
+  currentOrgRole: 'owner' | 'admin' | 'manager' | 'coo' | 'hr_partner' | null;
   /** ID первой Org (для удобства фронта). null если не в Org. (Фаза 7) */
   currentOrgId: string | null;
   /** Когда user завершил Блок A онбординга. null = не прошёл. */

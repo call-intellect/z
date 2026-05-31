@@ -5,6 +5,7 @@ import { OperationsModule } from '../operations/operations.module';
 
 import { BurnoutRiskDetectorCron } from './agents/burnout-risk-detector.cron';
 import { EngagementScorerCron } from './agents/engagement-scorer.cron';
+import { ForecasterCron } from './agents/forecaster.cron';
 import { HrRecommenderCron } from './agents/hr-recommender.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
@@ -60,6 +61,11 @@ import { TeamHealthService } from './services/team-health.service';
     // (sentiment_dip / missed_checkins / broken_promises / conflict_mentions)
     // относительно личного 90-day baseline. Пишет в Person.riskFlagsJson.
     BurnoutRiskDetectorCron,
+    // Pulse Wave 4 §4.6 — Forecaster (weekly, LLM).
+    // Mon 04:00 UTC: считает 4-недельные тренды 4 метрик, вызывает
+    // `forecast-weekly` LLM-агента и сохраняет ForecastSnapshot
+    // (scope='company'). Используется в Weekly digest вместо placeholder'а §2.2.
+    ForecasterCron,
   ],
   exports: [
     CommitmentReliabilityService,

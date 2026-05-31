@@ -614,14 +614,193 @@ export class WeeklyDigestService {
       prevCommitments,
     });
 
-    // ── forecast: линейная экстраполяция по 3 KPI.
-    const forecast: WeeklyForecastItemDto[] = [
-      buildForecast('sentiment', curSent, prevSent),
-      buildForecast('promises', curRel, prevRel),
-      buildForecast('hanging_decisions', curHanging, prevHanging),
-    ];
+    // ── forecast: Pulse Wave 4 §4.6 — приоритет ForecastSnapshot
+    // (LLM-агент Forecaster, понедельник 04:00 UTC). Если за последние 14 дней
+    // есть свежий snapshot — берём его. Иначе — линейная экстраполяция
+    // (placeholder из Wave 2 §2.2).
+    const forecast = await this.buildForecast({
+      tenantId: args.tenantId,
+      curSent,
+      prevSent,
+      curRel,
+      prevRel,
+      curHanging,
+      prevHanging,
+    });
 
     return { kpiDeltas, teamDynamics, forecast };
+  }
+
+  /**
+   * Pulse Wave 4 §4.6 — построить forecast-секцию.
+   *
+   *   1. Если есть `ForecastSnapshot(scope='company')` за последние 14 дней —
+   *      маппим `expectedShifts` обратно в 3-эл DTO (`sentiment` / `promises` /
+   *      `hanging_decisions`). Confidence в DTO ограничен 'low'|'medium' —
+   *      округляем: confidence>=0.5 → 'medium', иначе 'low'.
+   *   2. Иначе — линейная экстраполяция (fallback из Wave 2 §2.2) или
+   *      placeholder «Прогноз появится после первого прогона Forecaster».
+   *
+   * Не падает: если запрос упал — возвращаем линейный fallback (см. caller
+   * `enrichDto`, который сам catch'ит).
+   */
+  private async buildForecast(args: {
+    tenantId: string;
+    curSent: number | null;
+    prevSent: number | null;
+    curRel: number | null;
+    prevRel: number | null;
+    curHanging: number;
+    prevHanging: number;
+  }): Promise<WeeklyForecastItemDto[]> {
+    const since14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const snapshot = await this.prisma.forecastSnapshot.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'company',
+        snapshotAt: { gte: since14d },
+      },
+      orderBy: { snapshotAt: 'desc' },
+    });
+
+    if (snapshot) {
+      const mapped = this.mapForecastSnapshotToDto(snapshot.payloadJson);
+      if (mapped !== null) return mapped;
+      // Если payload битый — fallback на линейную экстраполяцию.
+    }
+
+    return [
+      buildLinearForecast('sentiment', args.curSent, args.prevSent),
+      buildLinearForecast('promises', args.curRel, args.prevRel),
+      buildLinearForecast(
+        'hanging_decisions',
+        args.curHanging,
+        args.prevHanging,
+      ),
+    ];
+  }
+
+  /**
+   * Маппит `ForecastSnapshot.payloadJson` в массив `WeeklyForecastItemDto`.
+   *
+   * Источник — `expectedShifts: [{metric, direction, confidence}]` от
+   * `forecast-weekly` LLM-агента. Для каждого из 3 целевых metric'ов
+   * (`sentiment`/`promises`/`hanging_decisions`) пытаемся найти подходящий
+   * shift; если не нашли — генерим нейтральный placeholder с confidence='low'.
+   * Возвращает null, если payload не похож на нужный формат — caller сделает
+   * fallback на линейную экстраполяцию.
+   */
+  private mapForecastSnapshotToDto(
+    payload: unknown,
+  ): WeeklyForecastItemDto[] | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const obj = payload as Record<string, unknown>;
+    const shifts = obj.expectedShifts;
+    if (!Array.isArray(shifts)) return null;
+
+    type Shift = {
+      metric: string;
+      direction: 'up' | 'flat' | 'down';
+      confidence: number;
+    };
+    const byMetric = new Map<string, Shift>();
+    for (const item of shifts) {
+      if (!item || typeof item !== 'object') continue;
+      const r = item as Record<string, unknown>;
+      const metric = r.metric;
+      const direction = r.direction;
+      const confidence = r.confidence;
+      if (
+        typeof metric === 'string' &&
+        (direction === 'up' || direction === 'flat' || direction === 'down') &&
+        typeof confidence === 'number'
+      ) {
+        byMetric.set(metric, { metric, direction, confidence });
+      }
+    }
+
+    const result: WeeklyForecastItemDto[] = [];
+    result.push(this.shiftToDto('sentiment', byMetric.get('sentiment_index')));
+    result.push(
+      this.shiftToDto('promises', byMetric.get('commitment_kept_ratio')),
+    );
+    result.push(
+      this.shiftToDto('hanging_decisions', byMetric.get('hanging_decisions')),
+    );
+    return result;
+  }
+
+  private shiftToDto(
+    metric: WeeklyForecastItemDto['metric'],
+    shift:
+      | { direction: 'up' | 'flat' | 'down'; confidence: number }
+      | undefined,
+  ): WeeklyForecastItemDto {
+    if (!shift) {
+      return {
+        metric,
+        projection: 'Forecaster не дал прогноза по этой метрике на следующую неделю.',
+        confidence: 'low',
+      };
+    }
+    const confidence: 'low' | 'medium' = shift.confidence >= 0.5 ? 'medium' : 'low';
+    const direction = shift.direction;
+    if (metric === 'sentiment') {
+      if (direction === 'up')
+        return {
+          metric,
+          projection: 'Forecaster: настроение продолжит расти на следующей неделе.',
+          confidence,
+        };
+      if (direction === 'down')
+        return {
+          metric,
+          projection: 'Forecaster: ожидается просадка настроения.',
+          confidence,
+        };
+      return {
+        metric,
+        projection: 'Forecaster: настроение стабильно — особых сдвигов не ожидается.',
+        confidence,
+      };
+    }
+    if (metric === 'promises') {
+      if (direction === 'up')
+        return {
+          metric,
+          projection: 'Forecaster: надёжность обещаний продолжит расти.',
+          confidence,
+        };
+      if (direction === 'down')
+        return {
+          metric,
+          projection: 'Forecaster: ожидается просадка надёжности обещаний.',
+          confidence,
+        };
+      return {
+        metric,
+        projection: 'Forecaster: надёжность обещаний стабильна.',
+        confidence,
+      };
+    }
+    // hanging_decisions
+    if (direction === 'up')
+      return {
+        metric,
+        projection: 'Forecaster: очередь висящих решений вырастет.',
+        confidence,
+      };
+    if (direction === 'down')
+      return {
+        metric,
+        projection: 'Forecaster: очередь висящих решений сократится.',
+        confidence,
+      };
+    return {
+      metric,
+      projection: 'Forecaster: очередь висящих решений стабильна.',
+      confidence,
+    };
   }
 
   /**
@@ -960,8 +1139,12 @@ function buildKpi(
 /**
  * Прогноз по KPI: линейная экстраполяция на следующую неделю.
  * Confidence='medium' если |delta| >= 10, иначе 'low'.
+ *
+ * Используется как fallback, если `ForecastSnapshot` (Pulse Wave 4 §4.6)
+ * ещё не сгенерирован для этой Org. После первого прогона
+ * `ForecasterCron` приоритет переключается на LLM-агента.
  */
-function buildForecast(
+function buildLinearForecast(
   metric: WeeklyForecastItemDto['metric'],
   current: number | null,
   previous: number | null,

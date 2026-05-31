@@ -327,6 +327,50 @@ export class RbacService implements OnModuleInit {
   }
 
   /**
+   * Pulse Wave 4 §4.7 — может ли пользователь видеть полную карточку сотрудника
+   * (`GET /api/v1/persons/:id/pulse`).
+   *
+   * Правила:
+   *   - super_admin (isSuperAdmin=true) — всегда true.
+   *   - owner / admin / coo — всегда true.
+   *   - Сам сотрудник (Person.userId === viewerUserId) — true.
+   *   - hr_partner — true ТОЛЬКО если `Person.analyticsOptIn === true`
+   *     (152-ФЗ gate, см. §4.1).
+   *   - Прочие — false.
+   *
+   * Не использует policy.csv: правило сложнее, чем «obj+act» — требует
+   * проверки opt-in флага на ресурсе. RBAC-ресурс `person`/`knowledge_profile`
+   * (read) у hr_partner есть в политиках, но финальная отдача карточки
+   * фильтруется этим методом.
+   */
+  async canViewEmployeeFullCard(args: {
+    viewerUserId: string;
+    employeePersonId: string;
+    tenantId: string;
+  }): Promise<boolean> {
+    const person = await this.prisma.person.findFirst({
+      where: {
+        id: args.employeePersonId,
+        tenantId: args.tenantId,
+        deletedAt: null,
+      },
+      select: { userId: true, analyticsOptIn: true },
+    });
+    if (!person) return false;
+    // Self-view — всегда.
+    if (person.userId !== null && person.userId === args.viewerUserId) {
+      return true;
+    }
+    const ctx = await this.loadContext(args.viewerUserId, args.tenantId);
+    if (ctx === null) return false;
+    if (ctx.isSuperAdmin) return true;
+    const role = ctx.role;
+    if (role === 'owner' || role === 'admin' || role === 'coo') return true;
+    if (role === 'hr_partner') return person.analyticsOptIn === true;
+    return false;
+  }
+
+  /**
    * Получить контекст (роль + visibility + isSuperAdmin) для пары (user, org).
    * Использует in-memory кэш на 60s, чтобы не бить БД на каждый запрос.
    */
@@ -639,7 +683,14 @@ export class RbacService implements OnModuleInit {
 }
 
 function isMembershipRole(s: string): s is MembershipRole {
-  return s === 'owner' || s === 'admin' || s === 'manager' || s === 'coo';
+  return (
+    s === 'owner' ||
+    s === 'admin' ||
+    s === 'manager' ||
+    s === 'coo' ||
+    // Pulse Wave 4 §4.7 — HR-партнёр.
+    s === 'hr_partner'
+  );
 }
 function isVisibility(s: string): s is OrgVisibilityMode {
   return s === 'open' || s === 'strict';

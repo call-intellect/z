@@ -998,3 +998,34 @@ p, manager, strict, self, chat-message, read
 p, manager, strict, self, chat-message, write
 p, manager, strict, self, tag, read
 p, manager, strict, self, tag, write
+
+# ──────────────────────────── Pulse Wave 4 §4.7 — hr_partner ────────────────────────────
+# hr_partner — HR-партнёр. Видит карточку Person при analyticsOptIn=true
+# (проверяется в сервисе через `RbacService.canViewEmployeeFullCard`),
+# видит агрегаты команд и pulse-сигналы. НЕ имеет write на org/meeting/card/
+# task — это не админская роль. super_admin — bypass через `RbacService`.
+p, hr_partner, *, *, org, read
+p, hr_partner, *, *, person, read
+p, hr_partner, *, *, daily_checkin, read
+p, hr_partner, *, *, dashboard_operations, read
+p, hr_partner, *, *, dashboard_operations_temperature, read
+p, hr_partner, *, *, dashboard_operations_weekly, read
+p, hr_partner, *, *, knowledge_profile, read
+p, hr_partner, *, *, skill_profile, read
+p, hr_partner, *, *, helpfulness_trait, read
+p, hr_partner, *, *, helpfulness_spotlight, read
+p, hr_partner, *, *, social_contribution_profile, read
+p, hr_partner, *, *, appointment, read
+p, hr_partner, *, *, department, read
+p, hr_partner, *, *, role, read
+p, hr_partner, *, *, role-profile, read
+p, hr_partner, *, *, job-description, read
+p, hr_partner, *, *, personal_relation, read
+p, hr_partner, *, *, activity_feed_item, read
+p, hr_partner, *, self, daily_checkin, write
+p, hr_partner, *, self, proactive_notification, read
+p, hr_partner, *, self, proactive_notification, write
+p, hr_partner, *, self, concierge, read
+p, hr_partner, *, self, concierge, write
+p, hr_partner, *, *, voice, read
+p, hr_partner, *, *, voice, write

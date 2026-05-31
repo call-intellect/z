@@ -184,6 +184,12 @@ enum MembershipRole {
   /// `/api/v1/dashboard/operations`, к agg-эндпоинтам appointments / maturity.
   /// НЕ полноценный admin: не редактирует Org-настройки, не управляет ролями.
   coo
+  /// Pulse Wave 4 §4.7 — HR-партнёр. Видит карточку Person при
+  /// `Person.analyticsOptIn=true`; видит агрегаты по командам и pulse-сигналы.
+  /// НЕ админ: не редактирует Org-настройки, не управляет ролями, не делает
+  /// write на meeting/card/task. Проверка карточки — через
+  /// `RbacService.canViewEmployeeFullCard`.
+  hr_partner
 }
 
 enum OrgInvitationStatus {
@@ -2384,6 +2390,8 @@ model Org {
   // ── Pulse Wave 4 §4.1-4.2 — Compliance (152-ФЗ) + audit log карточки ──
   consentLogs         ConsentLog[]
   knowledgeAccessLogs KnowledgeAccessLog[]
+  // Pulse Wave 4 §4.6 — снапшоты прогнозов Forecaster агента.
+  forecastSnapshots   ForecastSnapshot[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -6138,6 +6146,46 @@ model PersonEngagementSnapshot {
   @@index([tenantId, personId, snapshotAt])
   @@index([tenantId, snapshotAt])
   @@map("person_engagement_snapshots")
+}
+
+/// Pulse Wave 4 §4.6 — еженедельный прогноз от Forecaster агента.
+///
+/// Создаётся `ForecasterCron` (понедельник 04:00 UTC). LLM анализирует тренды
+/// 4 метрик за 4 недели (sentiment_index / commitment_kept_ratio /
+/// hanging_decisions / engagement_score) и возвращает прогноз: тренд +
+/// риски + возможности + ожидаемые сдвиги по метрикам.
+///
+/// На MVP — только scope='company' (scopeId=null). scope='team' заложен
+/// на будущее (per Department); чтение в Weekly digest идёт строго по
+/// scope='company'.
+///
+/// История не перезаписывается: каждую неделю — новая запись через
+/// `prisma.forecastSnapshot.create`. UI берёт последний снапшот за 14 дней.
+///
+/// `payloadJson` структура:
+/// {
+///   trend: 'improving' | 'stable' | 'declining',
+///   risks: string[],
+///   opportunities: string[],
+///   expectedShifts: Array<{metric: string, direction: 'up'|'flat'|'down', confidence: number}>,
+///   modelName: string,
+///   provenance: { weeks: 4 }
+/// }
+model ForecastSnapshot {
+  id          String   @id @default(cuid())
+  tenantId    String
+  /// 'company' | 'team' (на MVP — только company, team на будущее).
+  scope       String   @db.VarChar(16)
+  /// NULL для scope='company', иначе Department.id.
+  scopeId     String?
+  payloadJson Json
+  snapshotAt  DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, scope, snapshotAt(sort: Desc)])
+  @@index([scopeId])
+  @@map("forecast_snapshots")
 }
 
 /// SBA β-8.1 — WeeklyOperationsDigest. Готовый недельный дайджест для

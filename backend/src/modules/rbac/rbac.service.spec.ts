@@ -19,7 +19,7 @@ import { RbacService, type Action, type ResourceType } from './rbac.service';
 
 
 interface MockedMembership {
-  role: 'owner' | 'admin' | 'manager' | 'coo';
+  role: 'owner' | 'admin' | 'manager' | 'coo' | 'hr_partner';
   org: { visibilityMode: 'open' | 'strict' };
 }
 
@@ -27,6 +27,11 @@ function buildRbac(opts: {
   isSuperAdmin?: boolean;
   membership?: MockedMembership | null;
   orgVisibility?: 'open' | 'strict';
+  /**
+   * Pulse Wave 4 §4.7 — для тестов `canViewEmployeeFullCard` нужно вернуть
+   * Person.userId и Person.analyticsOptIn. Если не задано — Person не найден.
+   */
+  person?: { userId: string | null; analyticsOptIn: boolean } | null;
 }): RbacService {
   const prisma = {
     user: {
@@ -41,6 +46,9 @@ function buildRbac(opts: {
       findUnique: vi.fn(async () => ({
         visibilityMode: opts.orgVisibility ?? 'open',
       })),
+    },
+    person: {
+      findFirst: vi.fn(async () => opts.person ?? null),
     },
   } as unknown as PrismaService;
 
@@ -771,5 +779,140 @@ describe('RbacService — матрица ролей × ресурсов × де�
         }),
       ).toBe(false);
     });
+  });
+});
+
+/**
+ * Pulse Wave 4 §4.7 — RbacService.canViewEmployeeFullCard.
+ *
+ * Покрывает гибридные правила (роль + Person.analyticsOptIn + self-view),
+ * которые НЕ ложатся в policy.csv (там obj+act, без условий на ресурс).
+ */
+describe('RbacService.canViewEmployeeFullCard', () => {
+  it('owner — видит карточку любого сотрудника', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      person: { userId: 'u-other', analyticsOptIn: false },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-owner',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(true);
+  });
+
+  it('coo — видит карточку любого сотрудника', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      person: { userId: 'u-other', analyticsOptIn: false },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-coo',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(true);
+  });
+
+  it('hr_partner — видит карточку при analyticsOptIn=true', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'hr_partner', org: { visibilityMode: 'open' } },
+      person: { userId: 'u-other', analyticsOptIn: true },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-hr',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(true);
+  });
+
+  it('hr_partner — НЕ видит карточку при analyticsOptIn=false', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'hr_partner', org: { visibilityMode: 'open' } },
+      person: { userId: 'u-other', analyticsOptIn: false },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-hr',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(false);
+  });
+
+  it('manager — НЕ видит чужую карточку', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      person: { userId: 'u-other', analyticsOptIn: true },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-mgr',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(false);
+  });
+
+  it('manager — видит свою карточку (Person.userId === viewerUserId)', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'manager', org: { visibilityMode: 'open' } },
+      person: { userId: 'u-mgr', analyticsOptIn: false },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-mgr',
+        employeePersonId: 'p-self',
+        tenantId: 't-1',
+      }),
+    ).toBe(true);
+  });
+
+  it('super_admin — bypass для любой карточки (даже без analyticsOptIn)', async () => {
+    const rbac = buildRbac({
+      isSuperAdmin: true,
+      membership: null,
+      person: { userId: 'u-other', analyticsOptIn: false },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-su',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(true);
+  });
+
+  it('Person не найден → false', async () => {
+    const rbac = buildRbac({
+      membership: { role: 'owner', org: { visibilityMode: 'open' } },
+      person: null,
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-owner',
+        employeePersonId: 'p-missing',
+        tenantId: 't-1',
+      }),
+    ).toBe(false);
+  });
+
+  it('viewer без membership и не super_admin → false', async () => {
+    const rbac = buildRbac({
+      membership: null,
+      person: { userId: 'u-other', analyticsOptIn: true },
+    });
+    expect(
+      await rbac.canViewEmployeeFullCard({
+        viewerUserId: 'u-stranger',
+        employeePersonId: 'p-1',
+        tenantId: 't-1',
+      }),
+    ).toBe(false);
   });
 });

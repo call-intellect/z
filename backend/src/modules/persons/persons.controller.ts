@@ -243,32 +243,24 @@ export class PersonsController {
   }
 
   /**
-   * Pulse §3.4 RBAC: разрешено привилегированным ролям (owner/admin/coo) ИЛИ
-   * самому сотруднику. `super_admin` — bypass (через `RbacService.loadContext`).
+   * Pulse §3.4 + Wave 4 §4.7 RBAC: разрешено привилегированным ролям
+   * (owner/admin/coo) ВСЕГДА; hr_partner — только при
+   * `Person.analyticsOptIn=true`; самому сотруднику — всегда. `super_admin`
+   * — bypass (через `RbacService.loadContext`).
    *
-   * Manager — пока нет (нужна проверка подчинённости). Дополним в следующей
-   * фазе после уточнения политики.
+   * Делегируем в `RbacService.canViewEmployeeFullCard` — единое место правил
+   * (см. ТЗ Pulse Wave 4 §4.7).
    */
   private async canViewPulse(
     userId: string,
     tenantId: string,
     personId: string,
   ): Promise<boolean> {
-    const ctx = await this.rbac.loadContext(userId, tenantId);
-    if (ctx === null) return false;
-    if (ctx.isSuperAdmin) return true;
-    if (
-      ctx.role === 'owner' ||
-      ctx.role === 'admin' ||
-      ctx.role === 'coo'
-    ) {
-      return true;
-    }
-    const self = await this.prisma.person.findFirst({
-      where: { id: personId, tenantId, userId, deletedAt: null },
-      select: { id: true },
+    return this.rbac.canViewEmployeeFullCard({
+      viewerUserId: userId,
+      employeePersonId: personId,
+      tenantId,
     });
-    return self !== null;
   }
 
   private forbidden(message: string): ForbiddenException {

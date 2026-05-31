@@ -273,6 +273,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private referralSignupTotal!: Counter<'partner_top'>;
   private referralPayoutCreatedTotal!: Counter<'cron_run_date'>;
   private referralPayoutAmountRubTotal!: Counter<string>;
+  // referrals-cabinet-revamp §8.3a (2026-05-31) — промо-полоса
+  // `<ReferralPromoStrip />` в `AppShell`. Все три инкрементируются
+  // через POST /api/v1/referrals/me/promo-event (throttle 30/min/IP).
+  // Label role ∈ owner | member (две стабильные строки — cardinality 2).
+  private referralPromoImpressionTotal!: Counter<'role'>;
+  private referralPromoClickTotal!: Counter<'role'>;
+  private referralPromoDismissedTotal!: Counter<'role'>;
   // audit С3 (2026-05-29) — safeEmit() в BillingService поймал ошибку
   // listener'а. Лейбл event = BillingEvent.* (см. billing.types.ts).
   private billingEmitFailedTotal!: Counter<'event'>;
@@ -1563,6 +1570,28 @@ export class BusinessMetricsService implements OnModuleInit {
         'commercial-reliability pack (2026-05-30, Фаза 4) — суммарный объём ' +
         'partner-выплат в рублях (amountKopecks/100). Без лейблов — общий counter.',
       labelNames: [] as const,
+    });
+    this.referralPromoImpressionTotal = this.getOrCreateCounter({
+      name: 'referral_promo_impression_total',
+      help:
+        'referrals-cabinet-revamp §8.3a (2026-05-31) — первый показ промо-полосы ' +
+        'ReferralPromoStrip в AppShell за сессию пользователя. Не на каждый ререндер. ' +
+        'role ∈ owner | member.',
+      labelNames: ['role'] as const,
+    });
+    this.referralPromoClickTotal = this.getOrCreateCounter({
+      name: 'referral_promo_click_total',
+      help:
+        'referrals-cabinet-revamp §8.3a (2026-05-31) — клик «Получить ссылку» в ' +
+        'промо-полосе ReferralPromoStrip. role ∈ owner | member.',
+      labelNames: ['role'] as const,
+    });
+    this.referralPromoDismissedTotal = this.getOrCreateCounter({
+      name: 'referral_promo_dismissed_total',
+      help:
+        'referrals-cabinet-revamp §8.3a (2026-05-31) — клик «×» (закрыть) в ' +
+        'промо-полосе ReferralPromoStrip. role ∈ owner | member.',
+      labelNames: ['role'] as const,
     });
     this.billingEmitFailedTotal = this.getOrCreateCounter({
       name: 'billing_emit_failed_total',
@@ -4052,6 +4081,25 @@ export class BusinessMetricsService implements OnModuleInit {
     if (amountRub > 0 && Number.isFinite(amountRub)) {
       this.referralPayoutAmountRubTotal.inc(amountRub);
     }
+  }
+
+  /**
+   * referrals-cabinet-revamp §8.3a — первый показ промо-полосы
+   * `<ReferralPromoStrip />` за сессию пользователя (фронт сам делает
+   * dedup по `sessionStorage`, бэк только инкрементит).
+   */
+  incReferralPromoImpression(args: { role: 'owner' | 'member' }): void {
+    this.referralPromoImpressionTotal.inc({ role: args.role });
+  }
+
+  /** referrals-cabinet-revamp §8.3a — клик «Получить ссылку» в промо-полосе. */
+  incReferralPromoClick(args: { role: 'owner' | 'member' }): void {
+    this.referralPromoClickTotal.inc({ role: args.role });
+  }
+
+  /** referrals-cabinet-revamp §8.3a — клик «×» (закрыть) в промо-полосе. */
+  incReferralPromoDismissed(args: { role: 'owner' | 'member' }): void {
+    this.referralPromoDismissedTotal.inc({ role: args.role });
   }
 
   /** audit С3 — listener BillingEvent упал, side-effect не выполнен. */

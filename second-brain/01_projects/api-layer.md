@@ -10,6 +10,27 @@ covers: реестр всех REST endpoints backend по модулям
 
 Этот файл создан 2026-05-25 как часть финального handoff Wave 1-3. Не претендует на полноту — пополняется по факту добавления новых endpoint'ов.
 
+## Партнёрский кабинет — обновление (2026-05-31)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/api/v1/referrals/me` | Создать профиль. Body `{ contractAccepted: true, inn?, legalForm?, payoutDetails? }`. ИНН/реквизиты опц. |
+| GET | `/api/v1/referrals/me/clients` | **Маскированный** список клиентов (`clientCode`, `status`, `monthlyEarningsKopecks`, без `org.name/id`) |
+| GET | `/api/v1/referrals/me/stats` | Расширенный (`clicks30d`, `signups30d`, `firstPayments30d`, 2 конверсии) |
+| GET | `/api/v1/referrals/me/income-chart` | 12 месяцев `{month, incomeRub, activeClients}` |
+| GET | `/api/v1/referrals/me/funnel?period=30d\|90d\|all` | Воронка `{clicks, signups, firstPayments, activeNow, conversions}` |
+| POST | `/api/v1/referrals/me/promo-event` | Трекинг impression/click/dismissed промо-баннера. Throttle 30/min/IP |
+
+`GET /api/v1/admin/referrals/:id` (super_admin) теперь использует `listClientsForAdmin` — НЕ маскированный, со всеми `org.name/id` для аудита.
+
+## Z-Admin / Тариф — упразднение CRUD (2026-05-31)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/admin/orgs/plans/current` | Снимок единого `tier_standard` из AdminSetting + TIER_CONFIG + counts. `editableSettings` метаданные для UI |
+
+CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan` в schema.prisma — `// LEGACY` (физическое удаление через 2 недели prod-наблюдений). Цена редактируется через `POST /api/v1/admin/settings/billing.*` (severity=`high`, `reason` обязателен).
+
 ## Auth — единый логин (2026-05-29)
 | Метод | Путь | Назначение |
 |---|---|---|

@@ -260,7 +260,7 @@ describe('ReferralPayoutService.closePeriod', () => {
     svc = makeService(mocks);
   });
 
-  it('verified реферал → paid + paidAt', async () => {
+  it('verified реферал (+ payoutDetails заполнены) → paid + paidAt', async () => {
     mocks.prisma.referralPayout.findMany.mockResolvedValueOnce([
       {
         id: 'pay-1',
@@ -268,6 +268,7 @@ describe('ReferralPayoutService.closePeriod', () => {
           id: 'ref-1',
           innVerifiedAt: new Date('2026-01-01'),
           contractAcceptedAt: new Date('2026-01-02'),
+          payoutDetails: { bank: 'Точка', accountNumber: '40817810500000000001' },
           slug: 'abcd',
         },
       },
@@ -294,6 +295,7 @@ describe('ReferralPayoutService.closePeriod', () => {
           id: 'ref-2',
           innVerifiedAt: null,
           contractAcceptedAt: new Date(),
+          payoutDetails: { bank: 'Точка' },
           slug: 'noinn',
         },
       },
@@ -303,6 +305,7 @@ describe('ReferralPayoutService.closePeriod', () => {
           id: 'ref-3',
           innVerifiedAt: new Date(),
           contractAcceptedAt: null,
+          payoutDetails: { bank: 'Точка' },
           slug: 'nocontract',
         },
       },
@@ -322,6 +325,57 @@ describe('ReferralPayoutService.closePeriod', () => {
       where: { id: 'pay-3' },
       data: expect.objectContaining({ status: 'void' }),
     });
+  });
+
+  /**
+   * ТЗ referrals-cabinet-revamp §6.3 + §7.7 — расширение условия verified:
+   * payoutDetails == null или пустой объект → void (несмотря на innVerifiedAt
+   * и contractAcceptedAt). voidReason остаётся 'referral_not_verified' для
+   * обратной совместимости с аналитикой.
+   */
+  it('cabinet-revamp: payoutDetails == null → void', async () => {
+    mocks.prisma.referralPayout.findMany.mockResolvedValueOnce([
+      {
+        id: 'pay-4',
+        referral: {
+          id: 'ref-4',
+          innVerifiedAt: new Date('2026-01-01'),
+          contractAcceptedAt: new Date('2026-01-02'),
+          payoutDetails: null,
+          slug: 'nodetails',
+        },
+      },
+    ]);
+
+    const result = await svc.closePeriod('2026-05');
+
+    expect(result).toEqual({ paid: 0, voided: 1, skipped: 0 });
+    expect(mocks.prisma.referralPayout.update).toHaveBeenCalledWith({
+      where: { id: 'pay-4' },
+      data: expect.objectContaining({
+        status: 'void',
+        voidReason: 'referral_not_verified',
+      }),
+    });
+  });
+
+  it('cabinet-revamp: payoutDetails == {} → void', async () => {
+    mocks.prisma.referralPayout.findMany.mockResolvedValueOnce([
+      {
+        id: 'pay-5',
+        referral: {
+          id: 'ref-5',
+          innVerifiedAt: new Date('2026-01-01'),
+          contractAcceptedAt: new Date('2026-01-02'),
+          payoutDetails: {},
+          slug: 'emptydetails',
+        },
+      },
+    ]);
+
+    const result = await svc.closePeriod('2026-05');
+
+    expect(result).toEqual({ paid: 0, voided: 1, skipped: 0 });
   });
 });
 

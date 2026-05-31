@@ -312,6 +312,9 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
             id: true,
             innVerifiedAt: true,
             contractAcceptedAt: true,
+            // ТЗ referrals-cabinet-revamp §6.3 + §7.7: учитываем payoutDetails
+            // в условии verified (без реквизитов выплачивать некуда).
+            payoutDetails: true,
             slug: true,
           },
         },
@@ -324,8 +327,20 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
 
     for (const payout of pending) {
+      // ТЗ referrals-cabinet-revamp §6.3: payoutDetails должен быть не-null
+      // и не-пустым объектом. Без реквизитов фактический перевод невозможен,
+      // поэтому payout аннулируется (имя voidReason оставляем то же —
+      // 'referral_not_verified' — для обратной совместимости с аналитикой).
+      const payoutDetails = payout.referral.payoutDetails;
+      const hasPayoutDetails =
+        payoutDetails != null &&
+        typeof payoutDetails === 'object' &&
+        !Array.isArray(payoutDetails) &&
+        Object.keys(payoutDetails as Record<string, unknown>).length > 0;
       const verified =
-        payout.referral.innVerifiedAt && payout.referral.contractAcceptedAt;
+        payout.referral.innVerifiedAt != null &&
+        payout.referral.contractAcceptedAt != null &&
+        hasPayoutDetails;
       if (!verified) {
         await this.prisma.referralPayout.update({
           where: { id: payout.id },

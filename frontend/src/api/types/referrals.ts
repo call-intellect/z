@@ -1,6 +1,12 @@
 /**
  * API DTO для модуля referrals.
- * Источник правды — backend/src/modules/referrals/.
+ * Источник правды — backend/src/modules/referrals/dto/referrals.dto.ts.
+ *
+ * Обновлено по ТЗ 2026-05-31-referrals-cabinet-revamp:
+ *   - `Referral.inn / legalForm` → nullable (§5.1).
+ *   - `CreateReferralBody` — обязательный `contractAccepted`, остальное опционально (§7.6).
+ *   - Расширенная статистика 30d, маскированные клиенты, income-chart, funnel (§7.3–7.4).
+ *   - Промо-событие для трекинга `ReferralPromoStrip` (§8.3a).
  */
 
 export type ReferralLegalFormApi =
@@ -10,28 +16,60 @@ export type ReferralLegalFormApi =
 
 export type ReferralPayoutStatusApi = 'pending' | 'paid' | 'void';
 
+export type ReferralClientStatusApi = 'active' | 'churned' | 'pending';
+
+export type FunnelPeriodApi = '30d' | '90d' | 'all';
+
+export type ReferralPromoRoleApi = 'owner' | 'member';
+
+export type ReferralPromoEventTypeApi = 'impression' | 'click' | 'dismissed';
+
 export interface ReferralViewApi {
   id: string;
   slug: string;
-  inn: string;
+  /** ТЗ §5.1: nullable — можно создать профиль без ИНН. */
+  inn: string | null;
   innVerifiedAt: string | null;
-  legalForm: ReferralLegalFormApi;
+  /** ТЗ §5.1: nullable — можно создать профиль без формы. */
+  legalForm: ReferralLegalFormApi | null;
   contractAcceptedAt: string | null;
   createdAt: string;
 }
 
-export interface ReferralStatsApi {
+/**
+ * Расширенная статистика партнёра (ТЗ §7.2 + §7.4).
+ *
+ * Старые 5 полей сохранены для обратной совместимости + 5 новых
+ * (клики/регистрации/первые оплаты/конверсии за 30 дней).
+ */
+export interface ReferralStatsExtendedApi {
   totalClients: number;
   activePaying: number;
   totalEarnedKopecks: number;
   totalPaidKopecks: number;
   totalPendingKopecks: number;
+  clicks30d: number;
+  signups30d: number;
+  firstPayments30d: number;
+  conversionClickToPaidPercent: number;
+  conversionSignupToPaidPercent: number;
 }
 
+/** Legacy alias — старое имя для уже существующего кода. */
+export type ReferralStatsApi = ReferralStatsExtendedApi;
+
+/**
+ * Тело `POST /api/v1/referrals/me` (ТЗ §7.6).
+ *
+ * - `contractAccepted` — обязателен (Zod literal(true) на backend).
+ * - `inn / legalForm / payoutDetails` — опциональны, заполняются позже.
+ * - Если задан `inn` — обязателен `legalForm` (валидация в сервисе).
+ */
 export interface CreateReferralBody {
-  inn: string;
-  legalForm: ReferralLegalFormApi;
-  payoutDetails: Record<string, unknown>;
+  contractAccepted: true;
+  inn?: string;
+  legalForm?: ReferralLegalFormApi;
+  payoutDetails?: Record<string, unknown>;
 }
 
 export interface UpdateReferralBody {
@@ -54,6 +92,23 @@ export interface ReferralPayoutApi {
   createdAt: string;
 }
 
+/**
+ * Маскированный приведённый клиент (ТЗ §6.4 + §7.4).
+ *
+ * Никаких полей, идентифицирующих Org: ни `org.name`, ни `org.id`,
+ * ни `tenantId`. `clientCode` — детерминированный анонимный идентификатор
+ * `'C' + base36(crc32(ClientReferralLink.id))`, длина ~7 символов.
+ */
+export interface ReferralClientMaskedApi {
+  clientCode: string;
+  attachedAt: string;
+  firstPaidAt: string | null;
+  status: ReferralClientStatusApi;
+  monthlyEarningsKopecks: number;
+  totalEarnedKopecks: number;
+}
+
+/** Legacy alias — используется в админских эндпоинтах, где маскировка не нужна. */
 export interface ReferralClientApi {
   id: string;
   tenantId: string;
@@ -67,4 +122,32 @@ export interface ReferralClientApi {
     currentPeriodEnd: string | null;
     totalPaidKopecks: number;
   } | null;
+}
+
+/** Точка графика дохода (ТЗ §7.3). 12 точек за последние 12 месяцев (UTC). */
+export interface MonthlyPointApi {
+  /** YYYY-MM. */
+  month: string;
+  incomeRub: number;
+  activeClients: number;
+}
+
+/** Воронка партнёра за период (ТЗ §7.3). */
+export interface FunnelApi {
+  period: FunnelPeriodApi;
+  clicks: number;
+  signups: number;
+  firstPayments: number;
+  activeNow: number;
+  conversions: {
+    clickToSignupPercent: number;
+    signupToPaidPercent: number;
+    clickToPaidPercent: number;
+  };
+}
+
+/** Тело трекинга промо-полосы (ТЗ §8.3a). 204 No Content. */
+export interface PromoEventBody {
+  type: ReferralPromoEventTypeApi;
+  role: ReferralPromoRoleApi;
 }

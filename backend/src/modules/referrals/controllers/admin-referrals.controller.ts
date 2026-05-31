@@ -90,7 +90,7 @@ export class AdminReferralsController {
     });
     if (!ref) throw new NotFoundException(`Referral ${id} не найден`);
     const [clients, payouts, stats] = await Promise.all([
-      this.referrals.listClients(id),
+      this.referrals.listClientsForAdmin(id),
       this.referrals.listPayouts(id),
       this.referrals.getStats(id),
     ]);

@@ -1,19 +1,25 @@
 /**
- * ReferralsController — кабинет реферала.
+ * ReferralsController — кабинет партнёра.
  *
  * Маршруты (под /api/v1/referrals/*, auth required):
- *   GET    /referrals/me              — мой профиль (или null)
- *   POST   /referrals/me              — создать профиль
- *   PATCH  /referrals/me              — обновить (inn/legalForm/payoutDetails)
- *   POST   /referrals/me/verify-inn   — запустить InnLookup verification
- *   POST   /referrals/me/accept-contract — принять оферту
- *   GET    /referrals/me/clients      — список приведённых клиентов
- *   GET    /referrals/me/payouts      — все мои начисления
- *   GET    /referrals/me/stats        — агрегированная статистика
+ *   GET    /referrals/me                — мой профиль (или null)
+ *   POST   /referrals/me                — создать профиль (contractAccepted + опц. реквизиты)
+ *   PATCH  /referrals/me                — обновить (inn/legalForm/payoutDetails)
+ *   POST   /referrals/me/verify-inn     — запустить InnLookup verification
+ *   POST   /referrals/me/accept-contract — принять оферту (legacy; в новом флоу
+ *                                          оферта принимается при create)
+ *   GET    /referrals/me/clients        — список приведённых клиентов (маскированный)
+ *   GET    /referrals/me/payouts        — все мои начисления
+ *   GET    /referrals/me/stats          — расширенная статистика (legacy 5 + 5 новых)
+ *   GET    /referrals/me/income-chart   — 12 месяцев доход + активные клиенты
+ *   GET    /referrals/me/funnel         — воронка за период (30d/90d/all)
+ *   POST   /referrals/me/promo-event    — трекинг ReferralPromoStrip
+ *                                          (impression/click/dismissed, 30/min/IP)
  *   POST   /referrals/attribute-current-org — резолв атрибуции для текущей Org
  *                                            (фронт зовёт после signup)
  *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.2.
+ * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.2 +
+ * plans/tz/2026-05-31-referrals-cabinet-revamp.md §7.5, §7.6, §8.3a.
  */
 
 import {
@@ -21,22 +27,29 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Inject,
   Ip,
   NotFoundException,
   Patch,
   Post,
+  Query,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Prisma, type Referral } from '@prisma/client';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import {
   CurrentUser,
@@ -47,17 +60,33 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import {
   CreateReferralBodySchema,
-  ReferralStatsDto,
+  FunnelDto,
+  FunnelQuerySchema,
+  MonthlyPointDto,
+  PromoEventBodySchema,
+  ReferralClientMaskedDto,
+  ReferralStatsExtendedDto,
   ReferralViewDto,
   UpdateReferralBodySchema,
   type CreateReferralBody,
-  type ReferralStatsBody,
+  type FunnelBody,
+  type FunnelQuery,
+  type MonthlyPointBody,
+  type PromoEventBody,
+  type ReferralClientMaskedBody,
+  type ReferralStatsExtendedBody,
   type ReferralViewBody,
   type UpdateReferralBody,
 } from '../dto/referrals.dto';
 import { AttributionService } from '../services/attribution.service';
 import { ReferralPayoutService } from '../services/referral-payout.service';
-import { ReferralsService } from '../services/referrals.service';
+import {
+  ReferralsService,
+  type Funnel as FunnelView,
+  type MonthlyPoint as MonthlyPointView,
+  type ReferralClientMaskedView,
+  type ReferralStatsExtended,
+} from '../services/referrals.service';
 
 @ApiTags('referrals')
 @ApiBearerAuth()
@@ -68,6 +97,7 @@ export class ReferralsController {
     @Inject(ReferralsService) private readonly referrals: ReferralsService,
     @Inject(AttributionService) private readonly attribution: AttributionService,
     @Inject(ReferralPayoutService) private readonly payouts: ReferralPayoutService,
+    @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
   @Get('me')
@@ -79,7 +109,10 @@ export class ReferralsController {
   }
 
   @Post('me')
-  @ApiOperation({ summary: 'Создать реферальный профиль.' })
+  @ApiOperation({
+    summary:
+      'Создать партнёрский профиль. Достаточно contractAccepted=true (реквизиты — позже).',
+  })
   @ApiOkResponse({ type: ReferralViewDto })
   @UsePipes(new ZodValidationPipe(CreateReferralBodySchema))
   async create(
@@ -88,9 +121,13 @@ export class ReferralsController {
   ): Promise<ReferralViewBody> {
     const ref = await this.referrals.create({
       ownerUserId: user.id,
+      contractAccepted: body.contractAccepted,
       inn: body.inn,
       legalForm: body.legalForm,
-      payoutDetails: body.payoutDetails as Prisma.InputJsonValue,
+      payoutDetails:
+        body.payoutDetails !== undefined
+          ? (body.payoutDetails as Prisma.InputJsonValue)
+          : undefined,
     });
     return this.toView(ref);
   }
@@ -132,11 +169,18 @@ export class ReferralsController {
   }
 
   @Get('me/clients')
-  @ApiOperation({ summary: 'Список приведённых клиентов.' })
-  async listClients(@CurrentUser() user: CurrentUserPayload) {
+  @ApiOperation({
+    summary:
+      'Список приведённых клиентов (маскированный — без названия Org и id).',
+  })
+  @ApiOkResponse({ type: ReferralClientMaskedDto, isArray: true })
+  async listClients(
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<ReferralClientMaskedBody[]> {
     const ref = await this.referrals.getByUserId(user.id);
     if (!ref) return [];
-    return this.referrals.listClients(ref.id);
+    const views = await this.referrals.listClients(ref.id);
+    return views.map(toMaskedClientBody);
   }
 
   @Get('me/payouts')
@@ -148,14 +192,93 @@ export class ReferralsController {
   }
 
   @Get('me/stats')
-  @ApiOperation({ summary: 'Агрегированная статистика по моим клиентам.' })
-  @ApiOkResponse({ type: ReferralStatsDto })
+  @ApiOperation({
+    summary:
+      'Расширенная статистика партнёра (legacy 5 полей + клики/регистрации/конверсии за 30 дней).',
+  })
+  @ApiOkResponse({ type: ReferralStatsExtendedDto })
   async stats(
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<ReferralStatsBody | null> {
+  ): Promise<ReferralStatsExtendedBody | null> {
     const ref = await this.referrals.getByUserId(user.id);
     if (!ref) return null;
-    return this.referrals.getStats(ref.id);
+    const stats = await this.referrals.getStats(ref.id);
+    return toStatsExtendedBody(stats);
+  }
+
+  @Get('me/income-chart')
+  @ApiOperation({
+    summary:
+      'График дохода и активных клиентов: 12 точек за последние 12 месяцев (UTC).',
+  })
+  @ApiOkResponse({ type: MonthlyPointDto, isArray: true })
+  async incomeChart(
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<MonthlyPointBody[]> {
+    const ref = await this.referrals.getByUserId(user.id);
+    if (!ref) return [];
+    const points = await this.referrals.getIncomeChart(ref.id);
+    return points.map(toMonthlyPointBody);
+  }
+
+  @Get('me/funnel')
+  @ApiOperation({
+    summary:
+      'Воронка партнёра за период: клики → регистрации → первые оплаты → активные сейчас.',
+  })
+  @ApiQuery({
+    name: 'period',
+    enum: ['30d', '90d', 'all'],
+    required: false,
+    description: 'Период фильтрации. По умолчанию 30d.',
+  })
+  @ApiOkResponse({ type: FunnelDto })
+  async funnel(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query(new ZodValidationPipe(FunnelQuerySchema)) query: FunnelQuery,
+  ): Promise<FunnelBody | null> {
+    const ref = await this.referrals.getByUserId(user.id);
+    if (!ref) return null;
+    const funnel = await this.referrals.getFunnel(ref.id, query.period);
+    return toFunnelBody(funnel);
+  }
+
+  /**
+   * Трекинг событий промо-полосы `<ReferralPromoStrip />` в `AppShell`
+   * (ТЗ referrals-cabinet-revamp §8.3a). Никакой бизнес-логики и записи
+   * в БД — только инкремент Prometheus-counter'а. Throttle 30/min/IP —
+   * защита от шумных клиентов / случайных циклов ререндера.
+   *
+   * Body:
+   *   - `type` = `impression` (первый показ за сессию) | `click` |
+   *     `dismissed`.
+   *   - `role` = `owner` | `member` — фронт сам определяет роль
+   *     текущего пользователя в Org и присылает её для аналитики
+   *     (конверсия по сегментам различается).
+   *
+   * Ответ — 204 No Content.
+   */
+  @Post('me/promo-event')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @UsePipes(new ZodValidationPipe(PromoEventBodySchema))
+  @ApiOperation({
+    summary:
+      'Трекинг промо-полосы рефералки (impression / click / dismissed). 204 без тела.',
+  })
+  @ApiNoContentResponse({ description: 'Метрика инкрементирована.' })
+  trackPromoEvent(@Body() body: PromoEventBody): void {
+    switch (body.type) {
+      case 'impression':
+        this.metrics.incReferralPromoImpression({ role: body.role });
+        break;
+      case 'click':
+        this.metrics.incReferralPromoClick({ role: body.role });
+        break;
+      case 'dismissed':
+        this.metrics.incReferralPromoDismissed({ role: body.role });
+        break;
+    }
   }
 
   /**
@@ -202,11 +325,63 @@ export class ReferralsController {
     return {
       id: ref.id,
       slug: ref.slug,
-      inn: ref.inn,
+      // ТЗ referrals-cabinet-revamp §5.1: inn / legalForm теперь nullable.
+      inn: ref.inn ?? null,
       innVerifiedAt: ref.innVerifiedAt?.toISOString() ?? null,
-      legalForm: ref.legalForm,
+      legalForm: ref.legalForm ?? null,
       contractAcceptedAt: ref.contractAcceptedAt?.toISOString() ?? null,
       createdAt: ref.createdAt.toISOString(),
     };
   }
+}
+
+// ──────────────────────── module-level mappers ────────────────────────
+
+function toMaskedClientBody(view: ReferralClientMaskedView): ReferralClientMaskedBody {
+  return {
+    clientCode: view.clientCode,
+    attachedAt: view.attachedAt.toISOString(),
+    firstPaidAt: view.firstPaidAt?.toISOString() ?? null,
+    status: view.status,
+    monthlyEarningsKopecks: view.monthlyEarningsKopecks,
+    totalEarnedKopecks: view.totalEarnedKopecks,
+  };
+}
+
+function toStatsExtendedBody(stats: ReferralStatsExtended): ReferralStatsExtendedBody {
+  return {
+    totalClients: stats.totalClients,
+    activePaying: stats.activePaying,
+    totalEarnedKopecks: stats.totalEarnedKopecks,
+    totalPaidKopecks: stats.totalPaidKopecks,
+    totalPendingKopecks: stats.totalPendingKopecks,
+    clicks30d: stats.clicks30d,
+    signups30d: stats.signups30d,
+    firstPayments30d: stats.firstPayments30d,
+    conversionClickToPaidPercent: stats.conversionClickToPaidPercent,
+    conversionSignupToPaidPercent: stats.conversionSignupToPaidPercent,
+  };
+}
+
+function toMonthlyPointBody(point: MonthlyPointView): MonthlyPointBody {
+  return {
+    month: point.month,
+    incomeRub: point.incomeRub,
+    activeClients: point.activeClients,
+  };
+}
+
+function toFunnelBody(funnel: FunnelView): FunnelBody {
+  return {
+    period: funnel.period,
+    clicks: funnel.clicks,
+    signups: funnel.signups,
+    firstPayments: funnel.firstPayments,
+    activeNow: funnel.activeNow,
+    conversions: {
+      clickToSignupPercent: funnel.conversions.clickToSignupPercent,
+      signupToPaidPercent: funnel.conversions.signupToPaidPercent,
+      clickToPaidPercent: funnel.conversions.clickToPaidPercent,
+    },
+  };
 }

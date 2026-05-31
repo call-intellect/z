@@ -10,6 +10,7 @@ import {
 import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton';
 import { PaywallBanner } from '@/ui/components/PaywallBanner';
 import { PaywallModal } from '@/ui/components/PaywallModal';
+import { ReferralPromoStrip } from '@/ui/components/app-shell/ReferralPromoStrip';
 import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
 
 /**
@@ -41,6 +42,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             (~56px); на md+ bottom-nav скрыт и padding не нужен. */}
         <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
           <PaywallBanner />
+          {/* Promo-полоса реферальной программы — видна только тем, у кого
+              ещё нет Referral-профиля, не на paywall и не на blacklist-страницах.
+              Логика — `useReferralPromoVisibility` (ТЗ §8.3a). */}
+          <ReferralPromoStrip />
           {children}
         </main>
 

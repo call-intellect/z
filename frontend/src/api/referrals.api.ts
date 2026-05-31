@@ -1,14 +1,27 @@
 /**
  * API-слой реферальной программы.
  * Эндпоинты — backend ReferralsController + AdminReferralsController.
+ *
+ * Обновлено по ТЗ 2026-05-31-referrals-cabinet-revamp:
+ *   - `create` — новый body `{ contractAccepted, inn?, legalForm?, payoutDetails? }`.
+ *   - `getMyClients` — отдаёт `ReferralClientMaskedApi[]` (§7.4).
+ *   - `getStats` — отдаёт `ReferralStatsExtendedApi` (5 legacy + 5 новых 30d полей).
+ *   - `getIncomeChart` — 12 точек дохода + активных клиентов за 12 месяцев (§7.3).
+ *   - `getFunnel` — воронка за период `30d | 90d | all` (§7.3).
+ *   - `trackPromoEvent` — 204 No Content для `ReferralPromoStrip` (§8.3a).
  */
 
 import { apiClient } from './api-client';
 import type {
   CreateReferralBody,
+  FunnelApi,
+  FunnelPeriodApi,
+  MonthlyPointApi,
+  PromoEventBody,
   ReferralClientApi,
+  ReferralClientMaskedApi,
   ReferralPayoutApi,
-  ReferralStatsApi,
+  ReferralStatsExtendedApi,
   ReferralViewApi,
   UpdateReferralBody,
 } from './types/referrals';
@@ -26,14 +39,27 @@ export const referralsApi = {
   verifyInn: () => apiClient.post<ReferralViewApi>(`${BASE}/me/verify-inn`, {}),
   acceptContract: () =>
     apiClient.post<ReferralViewApi>(`${BASE}/me/accept-contract`, {}),
-  getStats: () => apiClient.get<ReferralStatsApi | null>(`${BASE}/me/stats`),
-  getMyClients: () => apiClient.get<ReferralClientApi[]>(`${BASE}/me/clients`),
+  getStats: () =>
+    apiClient.get<ReferralStatsExtendedApi | null>(`${BASE}/me/stats`),
+  getMyClients: () =>
+    apiClient.get<ReferralClientMaskedApi[]>(`${BASE}/me/clients`),
   getMyPayouts: () => apiClient.get<ReferralPayoutApi[]>(`${BASE}/me/payouts`),
+  /** ТЗ §7.3 — 12 точек графика дохода и активных клиентов за 12 месяцев. */
+  getIncomeChart: () =>
+    apiClient.get<MonthlyPointApi[]>(`${BASE}/me/income-chart`),
+  /** ТЗ §7.3 — воронка партнёра за период (`30d` по умолчанию). */
+  getFunnel: (period: FunnelPeriodApi = '30d') => {
+    const qs = new URLSearchParams({ period }).toString();
+    return apiClient.get<FunnelApi | null>(`${BASE}/me/funnel?${qs}`);
+  },
   attributeCurrentOrg: () =>
     apiClient.post<{ attributed: boolean; slug: string | null }>(
       `${BASE}/attribute-current-org`,
       {},
     ),
+  /** ТЗ §8.3a — трекинг событий промо-полосы. 204 No Content. */
+  trackPromoEvent: (body: PromoEventBody) =>
+    apiClient.post<void>(`${BASE}/me/promo-event`, body),
 
   // ── Admin ──
   adminListReferrals: (params?: { limit?: number; offset?: number }) => {
@@ -54,7 +80,7 @@ export const referralsApi = {
       referral: ReferralViewApi;
       clients: ReferralClientApi[];
       payouts: ReferralPayoutApi[];
-      stats: ReferralStatsApi;
+      stats: ReferralStatsExtendedApi;
     }>(`${ADMIN}/${id}`),
   adminListPayouts: (params?: {
     status?: 'pending' | 'paid' | 'void';

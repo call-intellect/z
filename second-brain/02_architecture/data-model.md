@@ -204,10 +204,19 @@ Org {
   id, name, slug @unique, ownerId (FK User),
   visibilityMode: open|strict (default open),
   tier: basic|pro|enterprise (placeholder для Фазы 12),
+  // ── Демо-кабинет «ТехноСтрим» ──
+  demoWorkspaceSeededAt: DateTime?           // когда был залит демо-seed
+  demoUserIds: String[] @default([])         // 5 демо-User'ов (для cleanup)
   createdAt, deletedAt?
   @@index([ownerId]), @@index([deletedAt])
 }
 ```
+
+> `demoUserIds` — точечный список id-шников демо-User'ов («Морозов»,
+> «Волкова», «Козлов», «Соколова», «Петрова»). Их Helpfulness/Contribution-
+> записи ссылаются на `User.id`, а сам `User` не tenant-scoped. Поле
+> позволяет `resetDemoWorkspace` снести именно их при сбросе демо-кабинета,
+> не задевая реальных пользователей.
 
 ### Membership
 

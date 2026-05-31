@@ -542,6 +542,13 @@ function buildFakeDb() {
       };
       return cb(tx);
     }),
+    // audit 2026-05-31: sprints.service.quickCreate side-effect
+    // выставляет Org.firstSprintCreatedAt через `prisma.org.updateMany(...).catch(...)`
+    // (fire-and-forget). Тестам это поведение не важно — но Prisma-стаб должен
+    // содержать `org.updateMany`, иначе падает с синхронным TypeError.
+    org: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
   };
 
   return {

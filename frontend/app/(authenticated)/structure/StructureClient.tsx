@@ -7,7 +7,7 @@ import { Building2, IdCard, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 
-import { AdminForbidden } from '../admin/AdminStateViews';
+import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 import { DepartmentsTab } from './DepartmentsTab';
 import { RolesTab } from './RolesTab';
 import { PersonsTab } from './PersonsTab';

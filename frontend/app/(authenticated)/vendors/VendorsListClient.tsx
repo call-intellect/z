@@ -16,7 +16,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const SEGMENT_LABEL: Record<VendorSegmentApi, string> = {
   software: 'ПО',

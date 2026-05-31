@@ -36,7 +36,7 @@ import { apiClient } from '@/api/api-client';
 import {
   ADMIN_NAV_FLAT,
   ADMIN_NAV_SECTIONS,
-} from '@app/(authenticated)/admin/navigation';
+} from '@app/(admin)/admin/navigation';
 import { LLM_TASK_TYPES } from '@/api/admin-llm-routes.api';
 
 // ─────────────────────────────────────── типы action ─────────────────

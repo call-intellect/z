@@ -23,7 +23,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/company` UI — простой single-page редактор профиля.

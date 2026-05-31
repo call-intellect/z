@@ -25,7 +25,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/settings/retention` — конфигурация retention-политики Org (152-ФЗ).

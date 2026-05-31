@@ -43,7 +43,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const ALL_DEPT_VALUE = '__all__';
 const NO_DEPT_VALUE = '__none__';

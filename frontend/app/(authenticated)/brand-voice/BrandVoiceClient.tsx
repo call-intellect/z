@@ -22,7 +22,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/brand-voice` UI — read-only display + edit modal для admin.

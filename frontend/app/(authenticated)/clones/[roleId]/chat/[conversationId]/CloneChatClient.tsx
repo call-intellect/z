@@ -61,7 +61,7 @@ import { Textarea } from '@/ui/shadcn/textarea';
 import { toast } from '@/ui/shadcn/toast';
 import { cn } from '@/ui/shadcn/lib/utils';
 
-import { AdminForbidden } from '../../../../admin/AdminStateViews';
+import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 
 interface ChatMessageUi {
   id: string;

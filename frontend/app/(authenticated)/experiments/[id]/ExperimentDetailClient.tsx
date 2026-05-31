@@ -20,7 +20,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const TONE_TO_CLASS: Record<string, string> = {
   info: 'bg-chip-info-bg text-chip-info-fg',

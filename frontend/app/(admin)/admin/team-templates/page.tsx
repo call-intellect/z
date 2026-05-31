@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { TeamTemplatesClient } from '../../team-templates/TeamTemplatesClient';
+import { TeamTemplatesClient } from '@app/(authenticated)/team-templates/TeamTemplatesClient';
 
 export const metadata: Metadata = {
   title: 'Шаблоны команд (админка) — Z',

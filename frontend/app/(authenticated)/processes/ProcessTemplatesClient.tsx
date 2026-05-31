@@ -27,7 +27,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const STATUS_FILTERS: ReadonlyArray<{
   value: 'all' | ProcessTemplateStatusApi;

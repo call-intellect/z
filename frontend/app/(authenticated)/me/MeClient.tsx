@@ -17,7 +17,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const BLOCK_TITLES: Record<string, string> = {
   responsibilities: 'Обязанности',

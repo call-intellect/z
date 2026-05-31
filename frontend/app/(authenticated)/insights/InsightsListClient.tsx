@@ -31,7 +31,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * Master-detail для `/insights` (SBA β-4).

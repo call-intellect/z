@@ -16,7 +16,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * Настройки доступа к разделам «Памяти компании» (ТЗ 2026-05-26 §6).

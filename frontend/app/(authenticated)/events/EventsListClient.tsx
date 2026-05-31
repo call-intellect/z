@@ -15,7 +15,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const KIND_LABEL: Record<EventKindApi, string> = {
   meeting: 'Встреча',

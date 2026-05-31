@@ -33,7 +33,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * Master-detail для `/regulations` (SBA α-7, ТЗ 2026-05-26 §1).

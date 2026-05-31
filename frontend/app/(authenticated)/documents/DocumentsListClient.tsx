@@ -36,7 +36,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const NO_ROLE_VALUE = '__none__';
 

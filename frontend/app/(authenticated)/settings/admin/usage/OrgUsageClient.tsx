@@ -31,7 +31,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 import { useCurrentOrgId } from '../useCurrentOrgId';
 
 const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];

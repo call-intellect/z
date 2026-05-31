@@ -20,7 +20,7 @@ import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
-import { AdminEmpty, AdminForbidden } from '../admin/AdminStateViews';
+import { AdminEmpty, AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/roles` — список карточек должностей. Каждая ведёт в `/roles/:id`.

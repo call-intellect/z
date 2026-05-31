@@ -22,7 +22,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const STATUS_LABELS: Record<DocumentStatusApi, string> = {
   uploaded: 'загружен',

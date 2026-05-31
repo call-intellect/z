@@ -5,8 +5,13 @@ updated: 2026-05-26
 
 # Z-Admin (super_admin)
 
+С 2026-05-31 — Z-Admin живёт в отдельной route-группе `app/(admin)/admin/*`
+(root-layout с `AdminAuthGuard`, без AppShell/EntitlementProvider). См.
+`plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin
+(`settings/admin/*`) остаётся в `(authenticated)` — это другая роль.
+
 Список фактически работающих страниц админки. Полная карта сайдбара — в
-[frontend/app/(authenticated)/admin/navigation.ts](../../frontend/app/(authenticated)/admin/navigation.ts).
+[frontend/app/(admin)/admin/navigation.ts](../../frontend/app/(admin)/admin/navigation.ts).
 
 ## AI и модели
 
@@ -21,9 +26,9 @@ updated: 2026-05-26
 - **Защита:** `CookieAuthGuard` + `SuperAdminGuard`. Не-super_admin получает
   403 → UI показывает `AdminForbidden`.
 - **Фронт:**
-  - `frontend/app/(authenticated)/admin/llm-routes/page.tsx`
-  - `frontend/app/(authenticated)/admin/llm-routes/LlmRoutesClient.tsx`
-  - `frontend/app/(authenticated)/admin/llm-routes/EditRouteDialog.tsx`
+  - `frontend/app/(admin)/admin/llm-routes/page.tsx`
+  - `frontend/app/(admin)/admin/llm-routes/LlmRoutesClient.tsx`
+  - `frontend/app/(admin)/admin/llm-routes/EditRouteDialog.tsx`
   - `frontend/src/api/admin-llm-routes.api.ts`
   - `frontend/src/domain/admin-llm-route.ts`
   - `frontend/src/hooks/useLlmRoutes.ts`
@@ -43,14 +48,14 @@ updated: 2026-05-26
 - **API:** 5 endpoints под `/api/v1/admin/clones/access-grants` (см. [api-layer.md](api-layer.md) §Clones admin), guard `OrgAdminGuard` + `AdminAuditInterceptor` (severity `high` — `reason` обязателен для grant/revoke/extend).
 - **Защита:** `CookieAuthGuard` + `OrgAdminGuard`. Permission-gate во фронте через `useAuth` (поверх backend).
 - **Фронт:**
-  - `frontend/app/(authenticated)/admin/clones/page.tsx`
-  - `frontend/app/(authenticated)/admin/clones/ClonesAccessClient.tsx`
-  - `frontend/app/(authenticated)/admin/clones/CreateGrantDialog.tsx` — поиск member'а через `orgMembersApi.search` (debounce 250 мс), выбор role-клона из `useClones`, опц. `expiresAt` под кнопкой «Дополнительно».
-  - `frontend/app/(authenticated)/admin/clones/RevokeGrantDialog.tsx` — подтверждение soft-revoke с danger-кнопкой.
-  - `frontend/app/(authenticated)/admin/clones/ExtendGrantDialog.tsx` — `datetime-local` + чекбокс «бессрочно».
+  - `frontend/app/(admin)/admin/clones/page.tsx`
+  - `frontend/app/(admin)/admin/clones/ClonesAccessClient.tsx`
+  - `frontend/app/(admin)/admin/clones/CreateGrantDialog.tsx` — поиск member'а через `orgMembersApi.search` (debounce 250 мс), выбор role-клона из `useClones`, опц. `expiresAt` под кнопкой «Дополнительно».
+  - `frontend/app/(admin)/admin/clones/RevokeGrantDialog.tsx` — подтверждение soft-revoke с danger-кнопкой.
+  - `frontend/app/(admin)/admin/clones/ExtendGrantDialog.tsx` — `datetime-local` + чекбокс «бессрочно».
   - `frontend/src/api/admin-clones.api.ts` — 5 методов (list / create / revoke / extend / listByClone).
   - `frontend/src/domain/admin-clone-access-grant.ts` — типы + мапперы + русские лейблы для статус-chip («Активен» / «Отозван» / «Истёк»).
-- **Навигация:** новый пункт «Доступы к клонам» (иконка `ShieldCheck`) в разделе «AI и модели» admin-навигации (`frontend/app/(authenticated)/admin/navigation.ts`).
+- **Навигация:** новый пункт «Доступы к клонам» (иконка `ShieldCheck`) в разделе «AI и модели» admin-навигации (`frontend/app/(admin)/admin/navigation.ts`).
 - **Особенности:**
   - Фильтры — `cloneType` select, поиск по имени получателя, toggle «только активные».
   - Таблица с enriched-полями: `cloneLabel`, `userName` / `userEmail`, `grantedBy`, статус, `expiresAt` или «бессрочно».
@@ -111,13 +116,13 @@ updated: 2026-05-26
   при изменённом статусе. Действие пишется в `AdminAuditLog`.
 
 **Файлы фронта:**
-- `frontend/app/(authenticated)/admin/orgs/[id]/OrgDetailClient.tsx`
-- `frontend/app/(authenticated)/admin/orgs/[id]/billing/BillingAdminClient.tsx`
-- `frontend/app/(authenticated)/admin/orgs/[id]/subscription/AdminSubscriptionClient.tsx`
-- `frontend/app/(authenticated)/admin/orgs/[id]/subscription/InvoiceRowActions.tsx`
-- `frontend/app/(authenticated)/admin/orgs/[id]/subscription/AdjustSeatsDialog.tsx`
-- `frontend/app/(authenticated)/admin/orgs/[id]/subscription/ForceStatusDialog.tsx`
-- `frontend/app/(authenticated)/admin/orgs/[id]/subscription/SubscriptionEventsTimeline.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/OrgDetailClient.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/billing/BillingAdminClient.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/subscription/AdminSubscriptionClient.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/subscription/InvoiceRowActions.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/subscription/AdjustSeatsDialog.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/subscription/ForceStatusDialog.tsx`
+- `frontend/app/(admin)/admin/orgs/[id]/subscription/SubscriptionEventsTimeline.tsx`
 
 **API:** все методы готовы в `frontend/src/api/billing.api.ts` —
 `adminGetOrgBilling`, `adminActivate`, `adminAdjustSeats`,
@@ -139,7 +144,7 @@ Super-admin создаёт/сбрасывает демо-кабинет для *
 - **API:** `GET /api/v1/admin/demo/orgs`, `POST .../:orgId/seed`, `POST .../:orgId/reset` — `backend/src/modules/admin/controllers/admin-demo.controller.ts`.
 - **Защита:** `CookieAuthGuard` + `SuperAdminGuard` + `SuperAdminAuditInterceptor`. `OnboardingModule` подключён в `admin.module.ts`.
 - **Фронт:**
-  - `frontend/app/(authenticated)/admin/demo/page.tsx` + `DemoClient.tsx` — список Org с бейджем «демо залито» (по `Org.demoWorkspaceSeededAt`), кнопки «Создать/Перезалить демо» и «Сбросить» (confirm).
+  - `frontend/app/(admin)/admin/demo/page.tsx` + `DemoClient.tsx` — список Org с бейджем «демо залито» (по `Org.demoWorkspaceSeededAt`), кнопки «Создать/Перезалить демо» и «Сбросить» (confirm).
   - `frontend/src/api/admin-demo.api.ts`.
 - **Навигация:** пункт «Демо-кабинеты» (иконка `Sparkles`) в разделе «Тенанты» (`navigation.ts`).
 - **Особенности:** seed берёт `ownerId` Org автоматически. Демо помечается `externalSource='demo'`, reset не трогает боевые данные.
@@ -154,10 +159,10 @@ Super-admin создаёт/сбрасывает демо-кабинет для *
 - **API:** `GET /api/v1/admin/feedback/topics` + items + actions + `POST /admin/feedback/digest/run` (см. [api-layer.md](api-layer.md)).
 - **Защита:** `CookieAuthGuard` + `SuperAdminGuard`.
 - **Фронт:**
-  - `frontend/app/(authenticated)/admin/feedback/page.tsx`
-  - `frontend/app/(authenticated)/admin/feedback/FeedbackDashboardClient.tsx`
-  - `frontend/app/(authenticated)/admin/feedback/[topicId]/` — детальная карточка блока + items + действия
-  - `frontend/app/(authenticated)/admin/feedback/components/` — диалоги rename / merge / archive (Phase 8)
+  - `frontend/app/(admin)/admin/feedback/page.tsx`
+  - `frontend/app/(admin)/admin/feedback/FeedbackDashboardClient.tsx`
+  - `frontend/app/(admin)/admin/feedback/[topicId]/` — детальная карточка блока + items + действия
+  - `frontend/app/(admin)/admin/feedback/components/` — диалоги rename / merge / archive (Phase 8)
   - `frontend/src/api/admin-feedback.api.ts`
   - `frontend/src/domain/admin-feedback.ts`
 - **Особенности:**

@@ -16,7 +16,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/settings/curation` — настройки Слоя 4 (SBA α-4).

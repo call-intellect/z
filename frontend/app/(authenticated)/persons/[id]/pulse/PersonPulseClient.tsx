@@ -43,7 +43,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/persons/:id/pulse` — Pulse-карточка сотрудника (Wave 3 §3.4 + §3.6 + §3.8).

@@ -28,7 +28,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 type DialogState =
   | { kind: 'none' }

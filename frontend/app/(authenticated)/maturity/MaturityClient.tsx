@@ -17,7 +17,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/maturity` UI — overview виджеты + кнопка ручного пересчёта.

@@ -45,7 +45,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { toast } from '@/ui/shadcn/toast';
 
-import { AdminForbidden } from '../../admin/AdminStateViews';
+import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 
 export function CloneDetailClient({ roleId }: { roleId: string }) {
   const { currentOrgId, isLoading } = useAuth();

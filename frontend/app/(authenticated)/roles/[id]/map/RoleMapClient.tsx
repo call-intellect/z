@@ -36,7 +36,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '../../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const RESP_KIND_LABEL: Record<string, string> = {
   outcome: 'Результат',

@@ -6,7 +6,7 @@ covers: реестр всех страниц Next.js App Router
 
 # Frontend Pages — реестр страниц
 
-Сжатый реестр страниц Next.js App Router (`frontend/app/`). Route-группы: `(public)` / `(authenticated)` / `(admin)` / `(design-preview)`. Все страницы под `(authenticated)` требуют сессии (cookie `z_session`).
+Сжатый реестр страниц Next.js App Router (`frontend/app/`). Route-группы: `(public)` / `(authenticated)` / `(admin)` / `(design-preview)`. Все страницы под `(authenticated)` требуют сессии (cookie `z_session`). С 2026-05-31 Z-Admin (`/admin/*`) физически перенесён из `(authenticated)/admin/` в свою standalone route-группу `app/(admin)/admin/*` с собственным root-layout и `AdminAuthGuard` (без AppShell/EntitlementProvider) — см. `plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin (`/settings/admin/*`) остаётся в `(authenticated)`.
 
 Файл создан 2026-05-25 как часть финального handoff Wave 1-3 (Wave 1 закрытие). Пополняется по факту.
 

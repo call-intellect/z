@@ -28,7 +28,7 @@ import { toast } from '@/ui/shadcn/toast';
 import { useEffect, useMemo, useState } from 'react';
 import type { CloneListUiItem } from '@/domain/clone';
 
-import { AdminForbidden } from '../admin/AdminStateViews';
+import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 
 const LAST_SEEN_GRANTS_LS_KEY = 'clones:last-seen-grants-iso';
 

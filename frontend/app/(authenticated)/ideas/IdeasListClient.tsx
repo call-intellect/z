@@ -36,7 +36,7 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 type TabKey = 'all' | 'clusters' | 'mine';
 type MineRole = 'author' | 'supporter';

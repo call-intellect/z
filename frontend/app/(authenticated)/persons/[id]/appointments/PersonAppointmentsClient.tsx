@@ -17,7 +17,7 @@ import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '../../../admin/AdminStateViews';
+} from '@app/(admin)/admin/AdminStateViews';
 
 const STATUS_LABEL: Record<AppointmentTimelineItemApi['status'], string> = {
   active: 'действующее',

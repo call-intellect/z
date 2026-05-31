@@ -16,7 +16,7 @@ import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
-import { AdminForbidden } from '../../../../admin/AdminStateViews';
+import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 
 /**
  * `/roles/:id/clone/history` (Clones=Roles Ф4) — история версий клона роли.

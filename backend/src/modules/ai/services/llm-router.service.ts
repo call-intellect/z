@@ -453,7 +453,13 @@ export type LlmTaskType =
   // Pulse Wave 5 §5.2 (2026-05-30) — SprintAnalyst.getWeeklyDigest: связный
   // weekly summary спринта (recap гипотезы, velocity, обучения). Cache-friendly,
   // markdown без strict JSON. Primary deepseek-v4-flash.
-  | 'sprint-weekly-digest';
+  | 'sprint-weekly-digest'
+  // Pulse Wave 6 §6.6 (2026-05-30) — Goal-Vector-Tracker: per-Goal LLM
+  // анализ артефактов (idea / commitment kept|broken / issue closed) и
+  // вычисление pro/contra/net score per Person. JSON-strict, дёшево
+  // (deepseek-v4-flash primary). Cache-friendly: SYSTEM статичен, переменные
+  // данные (goal + artefacts) — в конце user.
+  | 'goal-vector-tracker';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -609,6 +615,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Pulse Wave 5 §5.1-5.2 (2026-05-30) — связные нарративы daily/weekly спринта.
   'sprint-daily-digest',
   'sprint-weekly-digest',
+  // Pulse Wave 6 §6.6 (2026-05-30) — Goal-Vector-Tracker: pro/contra/net per (person, goal).
+  'goal-vector-tracker',
 ] as const;
 
 /**

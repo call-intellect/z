@@ -2392,6 +2392,12 @@ model Org {
   knowledgeAccessLogs KnowledgeAccessLog[]
   // Pulse Wave 4 §4.6 — снапшоты прогнозов Forecaster агента.
   forecastSnapshots   ForecastSnapshot[]
+  // Pulse Wave 6 — 5 новых snapshot-моделей (C1 batch).
+  knowledgeRiskSnapshots     KnowledgeRiskSnapshot[]
+  recurringTopics            RecurringTopic[]
+  promiseNetworkSnapshots    PromiseNetworkSnapshot[]
+  personGoalContributions    PersonGoalContribution[]
+  knowledgeVelocitySnapshots KnowledgeVelocitySnapshot[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -6186,6 +6192,176 @@ model ForecastSnapshot {
   @@index([tenantId, scope, snapshotAt(sort: Desc)])
   @@index([scopeId])
   @@map("forecast_snapshots")
+}
+
+/// Pulse Wave 6 §6.1 — Bus Factor snapshot.
+///
+/// Создаётся `BusFactorAnalyzerCron` (weekly Mon 05:00 UTC) per knowledge-area
+/// в tenant'е. Для каждой категории из `PersonKnowledgeCategoryEmbedding`
+/// считаем число экспертов по уровню `confidence` и риск-уровень:
+///   - 'critical' (0-1 эксперт)
+///   - 'warning'  (2-3 эксперта)
+///   - 'ok'       (≥4 эксперта)
+///
+/// `topExpertsJson` структура: `Array<{personId, name, confidence}>` (макс 5).
+///
+/// История не перезаписывается: каждую неделю — новые записи. UI читает
+/// последний snapshot per categoryName (через DISTINCT ON / GROUP BY).
+model KnowledgeRiskSnapshot {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  /// Категория из PersonKnowledgeCategoryEmbedding.categoryName.
+  categoryName        String   @db.VarChar(200)
+  /// Число Person с confidence='high' в этой категории.
+  highConfidenceCount Int
+  /// Число Person с confidence ∈ ('high','medium').
+  totalExpertsCount   Int
+  /// 'critical' (0-1 эксперт), 'warning' (2-3), 'ok' (≥4).
+  riskLevel           String   @db.VarChar(16)
+  /// Имена и IDs топ-экспертов (для UI).
+  topExpertsJson      Json
+  snapshotAt          DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, riskLevel, snapshotAt(sort: Desc)])
+  @@index([tenantId, categoryName, snapshotAt(sort: Desc)])
+  @@map("knowledge_risk_snapshots")
+}
+
+/// Pulse Wave 6 §6.2 — Темы, повторяющиеся без принятого Decision.
+///
+/// Создаётся `TopicRecurrenceDetectorCron` (weekly Mon 05:00 UTC).
+/// Для каждой `Theme` за окно (90 дней) считаем количество упоминаний,
+/// разнообразие встреч и наличие implemented `Decision`. В snapshot пишем
+/// только Theme с `mentionCount >= 5` и `hasImplementedDecision = false`.
+///
+/// `blockIdsJson` — `string[]` (макс 50) для drill-down из UI.
+model RecurringTopic {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  /// FK на Theme (опц.: NULL если Theme удалён ретеншеном после snapshot).
+  themeId                String?
+  themeName              String   @db.VarChar(500)
+  /// Сколько раз тема упоминалась за окно (default 90д).
+  mentionCount           Int
+  /// В скольких разных встречах.
+  meetingCount           Int
+  /// Есть ли implemented Decision (status='approved') linked к Theme через IdeaBlock.
+  hasImplementedDecision Boolean
+  /// Список IdeaBlock.id (truncated до 50).
+  blockIdsJson           Json
+  windowStart            DateTime
+  windowEnd              DateTime
+  snapshotAt             DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, snapshotAt(sort: Desc)])
+  @@index([tenantId, mentionCount(sort: Desc)])
+  @@map("recurring_topics")
+}
+
+/// Pulse Wave 6 §6.5 — Граф обещаний tenant'а.
+///
+/// Создаётся `PromiseNetworkAnalyzerCron` (weekly Mon 05:00 UTC).
+/// Грузим `IdeaBlock` с `signalType='commitment'` за последние 30 дней.
+/// Автор обещания — Person через `IdeaBlockEntity.role='subject'`,
+/// получатель — `IdeaBlock.commitmentRecipientPersonId`.
+///
+/// Для каждого узла графа считаем `inDegree`, `outDegree`, `balance` и
+/// помечаем `role`:
+///   - 'accumulator': inDegree ≥ 3*outDegree (получает много обещаний).
+///   - 'donor':       outDegree ≥ 3*inDegree (раздаёт обещания).
+///   - 'isolated':    inDegree + outDegree ≤ 1.
+///   - 'balanced':    иначе.
+///
+/// `graphJson` структура:
+/// {
+///   nodes: Array<{personId, name, role, inDegree, outDegree, balance}>,
+///   edges: Array<{fromPersonId, toPersonId, count}>,
+///   periodStart: ISO, periodEnd: ISO
+/// }
+model PromiseNetworkSnapshot {
+  id               String   @id @default(cuid())
+  tenantId         String
+  graphJson        Json
+  totalCommitments Int
+  snapshotAt       DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, snapshotAt(sort: Desc)])
+  @@map("promise_network_snapshots")
+}
+
+/// Pulse Wave 6 §6.6 — Pro/contra contribution per (person, goal, week).
+///
+/// Создаётся `GoalVectorTrackerCron` (weekly Mon 05:00 UTC). Для каждой
+/// active `Goal` собирает per-person артефакты за неделю (IdeaBlock,
+/// commitment, closed Issue) и одним LLM-вызовом (taskType
+/// `goal-vector-tracker`) получает pro/contra/net score.
+///
+/// `signalsJson` — провенанс: какие сигналы вошли (для transparent sourcing).
+/// Структура: `Array<{kind: 'idea'|'commitment_kept'|'commitment_broken'|
+/// 'issue_closed', refId: string, direction: 'pro'|'contra'}>`.
+///
+/// `@@unique([tenantId, personId, goalId, weekStart])` — идемпотентность
+/// upsert'а внутри недели (повторный запуск cron'а в ту же неделю обновляет).
+model PersonGoalContribution {
+  id          String   @id @default(cuid())
+  tenantId    String
+  personId    String
+  goalId      String
+  /// Pro-points (артефакты «в цель»): IdeaBlock idea + Commitment в направлении.
+  proScore    Decimal  @db.Decimal(8, 3)
+  /// Contra-points (артефакты «против»): commitment broken на goal, friction.
+  contraScore Decimal  @db.Decimal(8, 3)
+  /// proScore - contraScore.
+  netScore    Decimal  @db.Decimal(8, 3)
+  /// Provenance: какие сигналы вошли (для transparent sourcing).
+  signalsJson Json
+  weekStart   DateTime
+  snapshotAt  DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, personId, goalId, weekStart])
+  @@index([tenantId, personId, weekStart(sort: Desc)])
+  @@index([tenantId, goalId, weekStart(sort: Desc)])
+  @@map("person_goal_contributions")
+}
+
+/// Pulse Wave 6 §6.7 — Скорость накопления знаний.
+///
+/// Создаётся `KnowledgeVelocityTrackerCron` (weekly Mon 05:00 UTC).
+/// `IdeaBlock` с `signalType='knowledge_gap'` за окно (90 дней). Блок
+/// считается «отвеченным», если `trustedAnswer` непустой и `updatedAt`
+/// продвинулся минимум на 1 минуту относительно `createdAt`. Время до
+/// ответа = `updatedAt - createdAt`.
+///
+/// `topRespondersJson` — топ-N person, упомянутых в `IdeaBlockEntity`
+/// блоков-ответов (role IN ('subject','object')). Структура:
+/// `Array<{personId, name, resolvedCount}>`.
+model KnowledgeVelocitySnapshot {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  /// Median часов от создания IdeaBlock signalType='knowledge_gap' до ответа.
+  medianHoursToAnswer Decimal? @db.Decimal(10, 2)
+  /// Количество gaps с answer'ом в окне.
+  resolvedGapsCount   Int
+  /// Количество gaps без answer'а в окне (зависших).
+  openGapsCount       Int
+  /// Top-N person с most-gap-resolved.
+  topRespondersJson   Json
+  windowStart         DateTime
+  windowEnd           DateTime
+  snapshotAt          DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, snapshotAt(sort: Desc)])
+  @@map("knowledge_velocity_snapshots")
 }
 
 /// SBA β-8.1 — WeeklyOperationsDigest. Готовый недельный дайджест для

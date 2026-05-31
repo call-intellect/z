@@ -4,10 +4,15 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { OperationsModule } from '../operations/operations.module';
 
 import { BurnoutRiskDetectorCron } from './agents/burnout-risk-detector.cron';
+import { BusFactorAnalyzerCron } from './agents/bus-factor-analyzer.cron';
 import { EngagementScorerCron } from './agents/engagement-scorer.cron';
 import { ForecasterCron } from './agents/forecaster.cron';
+import { GoalVectorTrackerCron } from './agents/goal-vector-tracker.cron';
 import { HrRecommenderCron } from './agents/hr-recommender.cron';
+import { KnowledgeVelocityTrackerCron } from './agents/knowledge-velocity-tracker.cron';
+import { PromiseNetworkAnalyzerCron } from './agents/promise-network-analyzer.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
+import { TopicRecurrenceDetectorCron } from './agents/topic-recurrence-detector.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { CommitmentReliabilityService } from './services/commitment-reliability.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
@@ -66,6 +71,17 @@ import { TeamHealthService } from './services/team-health.service';
     // `forecast-weekly` LLM-агента и сохраняет ForecastSnapshot
     // (scope='company'). Используется в Weekly digest вместо placeholder'а §2.2.
     ForecasterCron,
+    // Pulse Wave 6 — 5 weekly cron-агентов (Mon 05:00 UTC, после Forecaster).
+    // §6.1 BusFactorAnalyzerCron       — bus factor per knowledge category (NO LLM).
+    // §6.2 TopicRecurrenceDetectorCron — Theme'ы обсуждаемые без Decision (NO LLM).
+    // §6.5 PromiseNetworkAnalyzerCron  — граф обещаний accumulator/donor (NO LLM).
+    // §6.6 GoalVectorTrackerCron       — LLM-агент pro/contra per (person, goal).
+    // §6.7 KnowledgeVelocityTrackerCron — median time gap → answer (NO LLM).
+    BusFactorAnalyzerCron,
+    TopicRecurrenceDetectorCron,
+    PromiseNetworkAnalyzerCron,
+    GoalVectorTrackerCron,
+    KnowledgeVelocityTrackerCron,
   ],
   exports: [
     CommitmentReliabilityService,

@@ -18,6 +18,10 @@ import { ApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  pulsePatternsFromApi,
+  type PulsePatternsDomain,
+} from '@/domain/pulse-patterns';
+import {
   THEME_BRANCH_LABELS,
   type ThemeBranch,
 } from '@/domain/theme';
@@ -44,6 +48,14 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
 import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
+// Pulse Wave 6 — 7 виджетов паттернов на главной директора.
+import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
+import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
+import { GoalVectorWidget } from '@/ui/components/dashboard/GoalVectorWidget';
+import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
+import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
+import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
+import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
 import { SampleStoryBanner } from '@/ui/components/dashboard/SampleStoryBanner';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
@@ -78,6 +90,12 @@ export function DirectorDashboardClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Pulse Wave 6 — паттерны (7 виджетов) грузим параллельно с основным DTO.
+  // Ошибка в любом из запросов не валит другой.
+  const [pulse, setPulse] = useState<PulsePatternsDomain | null>(null);
+  const [pulseLoading, setPulseLoading] = useState(true);
+  const [pulseError, setPulseError] = useState<string | null>(null);
+
   const load = useCallback(
     async (nextPeriod: DirectorDashboardPeriod) => {
       setLoading(true);
@@ -96,9 +114,30 @@ export function DirectorDashboardClient() {
     [],
   );
 
+  const loadPulse = useCallback(
+    async (nextPeriod: DirectorDashboardPeriod) => {
+      setPulseLoading(true);
+      setPulseError(null);
+      try {
+        const res = await dashboardApi.getPulsePatterns(nextPeriod);
+        setPulse(pulsePatternsFromApi(res));
+      } catch (e) {
+        const message =
+          e instanceof ApiError
+            ? e.message
+            : 'Не удалось загрузить паттерны';
+        setPulseError(message);
+      } finally {
+        setPulseLoading(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     void load(period);
-  }, [period, load]);
+    void loadPulse(period);
+  }, [period, load, loadPulse]);
 
   const greetingName = useMemo(() => {
     return user?.name?.trim() || user?.email?.split('@')[0] || 'друг';
@@ -145,9 +184,17 @@ export function DirectorDashboardClient() {
 
       {data?.isEmpty && <SampleStoryBanner />}
 
-      {/* Pulse Wave 1 §1.5 — 3 KPI hero для главной. Заменили fake-strip
-          из 5 StatCard. Drill-down в три ключевых раздела продукта. */}
-      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+      {/* Pulse Wave 6 §6.8 — Алерт о необратимых решениях без альтернатив.
+          Возвращает null если alertCount=0. */}
+      {pulse && !pulseLoading && (
+        <IrreversibleDecisionsAlert
+          decisions={pulse.irreversibleDecisions.decisions}
+          alertCount={pulse.irreversibleDecisions.alertCount}
+        />
+      )}
+
+      {/* Pulse Wave 1 §1.5 + Wave 6 §6.7 — KPI hero strip. */}
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiHero
           label="Индекс настроения недели"
           value={data?.kpiSentimentIndex?.value ?? 0}
@@ -175,6 +222,8 @@ export function DirectorDashboardClient() {
           threshold={{ green: 2, yellow: 5, inverted: true }}
           href="/decisions?status=hanging"
         />
+        {/* Pulse Wave 6 §6.7 — Knowledge Velocity (median hours to answer). */}
+        <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
       </div>
 
       <div className="mb-6">
@@ -203,6 +252,40 @@ export function DirectorDashboardClient() {
           drillDownHref="/me/notifications"
           title="Вопросы AI команде"
           emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
+        />
+      </div>
+
+      {/* Pulse Wave 6 — паттерны компании. 2x2 grid для 4 виджетов
+          (Bus Factor, Recurring Topics, Low ROI, Goal Vector). */}
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <BusFactorWidget
+          data={pulse?.busFactor ?? null}
+          loading={pulseLoading}
+          error={pulseError}
+        />
+        <RecurringTopicsWidget
+          data={pulse?.recurringTopics ?? null}
+          loading={pulseLoading}
+          error={pulseError}
+        />
+        <LowRoiMeetingsWidget
+          meetings={pulse?.lowRoiMeetings.meetings ?? []}
+          loading={pulseLoading}
+          error={pulseError}
+        />
+        <GoalVectorWidget
+          data={pulse?.goalVector ?? null}
+          loading={pulseLoading}
+          error={pulseError}
+        />
+      </div>
+
+      {/* Pulse Wave 6 §6.4 — Bottleneck Heatmap (полная ширина внизу). */}
+      <div className="mb-6">
+        <BottleneckHeatmapWidget
+          data={pulse?.bottlenecks ?? null}
+          loading={pulseLoading}
+          error={pulseError}
         />
       </div>
 

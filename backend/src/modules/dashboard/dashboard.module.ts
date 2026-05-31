@@ -26,6 +26,9 @@ import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { HangingDecisionsService } from './services/hanging-decisions.service';
 import { NarrativeCitationsParserService } from './services/narrative-citations-parser.service';
+// Pulse Wave 6 — единый агрегатор паттернов для главной директора
+// (`GET /api/v1/dashboard/pulse-patterns`).
+import { PulsePatternsService } from './services/pulse-patterns.service';
 import { SentimentIndexService } from './services/sentiment-index.service';
 import { TeamDetailService } from './services/team-detail.service';
 import { TeamHealthService } from './services/team-health.service';
@@ -62,6 +65,8 @@ import { TeamHealthService } from './services/team-health.service';
     TeamHealthService,
     // Pulse Wave 2 §2.5 — детальная страница /teams/[id].
     TeamDetailService,
+    // Pulse Wave 6 — единый агрегатор 7 паттернов для главной директора.
+    PulsePatternsService,
     // Pulse Wave 3 §3.1 / §3.3 / §3.7 — 3 cron-агента дашборда.
     // - TeamHealthAnalyzerCron: ежедневный LLM-анализ 5-факторов отдела.
     // - EngagementScorerCron: ежедневный сводный engagement-score per person.
@@ -105,6 +110,9 @@ import { TeamHealthService } from './services/team-health.service';
     SentimentIndexService,
     TeamHealthService,
     TeamDetailService,
+    // Pulse Wave 6 — публичный API сервиса (вдруг понадобится для интеграции
+    // в др. модули; контроллер ходит напрямую).
+    PulsePatternsService,
     // Pulse Wave 6 §6.3/§6.8 — producer для cross-module enqueue из
     // AnalyzeWorker / Specialist33DecisionsWorker.
     DashboardQueueService,

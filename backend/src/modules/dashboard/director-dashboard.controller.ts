@@ -24,7 +24,13 @@ import {
   type DirectorDashboardDto,
   type DirectorDashboardQuery,
 } from './dto/director-dashboard.dto';
+import {
+  PulsePatternsQuerySchema,
+  type PulsePatternsDto,
+  type PulsePatternsQuery,
+} from './dto/pulse-patterns.dto';
 import { DirectorDashboardService } from './services/director-dashboard.service';
+import { PulsePatternsService } from './services/pulse-patterns.service';
 import {
   TeamDetailService,
   type TeamDetailDto,
@@ -52,6 +58,8 @@ export class DirectorDashboardController {
     private readonly teamHealthSvc: TeamHealthService,
     @Inject(TeamDetailService)
     private readonly teamDetailSvc: TeamDetailService,
+    @Inject(PulsePatternsService)
+    private readonly pulsePatternsSvc: PulsePatternsService,
   ) {}
 
   @Get('director')
@@ -165,5 +173,55 @@ export class DirectorDashboardController {
       });
     }
     return this.teamDetailSvc.getDetail({ tenantId, departmentId: id });
+  }
+
+  /**
+   * Pulse Wave 6 — единый агрегатор паттернов для главной директора.
+   *
+   * Возвращает 7 виджетов одним ответом:
+   *   - Bus Factor (§6.1)        — критические knowledge-зоны.
+   *   - Topic Recurrence (§6.2)  — что обсуждаем по кругу.
+   *   - Low-ROI meetings (§6.3)  — топ-3 встречи-болтологии.
+   *   - Bottleneck heatmap (§6.4) — матрица отделов × отделов.
+   *   - Goal Vector (§6.6)       — вклад персон в активные цели.
+   *   - Knowledge Velocity (§6.7) — медиана часов от вопроса до ответа.
+   *   - Irreversible decisions (§6.8) — type-1 решения без альтернатив.
+   *
+   * Доступ — те же owner/admin/super_admin (`canViewDirectorDashboard`).
+   */
+  @Get('pulse-patterns')
+  async pulsePatterns(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(PulsePatternsQuerySchema))
+    q: PulsePatternsQuery,
+  ): Promise<PulsePatternsDto> {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Не передан tenantId' },
+      });
+    }
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'no_user', message: 'Требуется авторизация' },
+      });
+    }
+    const allowed = await this.rbac.canViewDirectorDashboard(userId, tenantId);
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden_role',
+          message: 'Нет доступа к директорскому дашборду',
+        },
+      });
+    }
+    return this.pulsePatternsSvc.getPulsePatterns({
+      tenantId,
+      period: q.period,
+    });
   }
 }

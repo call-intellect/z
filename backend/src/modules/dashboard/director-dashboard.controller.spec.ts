@@ -30,12 +30,16 @@ function build(opts: { canView?: boolean } = {}) {
   const teamDetailSvc = {
     getDetail: vi.fn(async () => ({ departmentId: 'd-1' }) as never),
   } as unknown as TeamDetailService;
+  const pulsePatternsSvc = {
+    getPulsePatterns: vi.fn(async () => ({}) as never),
+  } as unknown as import('./services/pulse-patterns.service').PulsePatternsService;
   return {
     ctrl: new DirectorDashboardController(
       svc,
       rbac,
       teamHealthSvc,
       teamDetailSvc,
+      pulsePatternsSvc,
     ),
     svc,
     rbac,

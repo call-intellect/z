@@ -3,6 +3,7 @@ import type {
   DirectorDashboardApi,
   DirectorDashboardPeriod,
 } from '@/domain/director-dashboard';
+import type { PulsePatternsApi } from '@/domain/pulse-patterns';
 import type { TeamDetailApi } from '@/domain/team-detail';
 import type { TeamHealthApi } from '@/domain/team-health';
 
@@ -34,5 +35,13 @@ export const dashboardApi = {
   getTeamDetail: (id: string) =>
     apiClient.get<TeamDetailApi>(
       `/api/v1/dashboard/teams/${encodeURIComponent(id)}`,
+    ),
+  /**
+   * Pulse Wave 6 — единый агрегатор паттернов для главной директора
+   * (7 виджетов в одном ответе). Источник: `PulsePatternsService`.
+   */
+  getPulsePatterns: (period: 'week' | 'month') =>
+    apiClient.get<PulsePatternsApi>(
+      `/api/v1/dashboard/pulse-patterns?period=${encodeURIComponent(period)}`,
     ),
 };

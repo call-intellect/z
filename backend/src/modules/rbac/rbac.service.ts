@@ -156,6 +156,10 @@ export const RESOURCE_TYPES = [
   // Sprints (2026-05-27) — подсказки помощника по спринтам (Specialist 3-13).
   // ТЗ: plans/tz/2026-05-27-sprints.md §1.5.
   'sprint_hint',
+  // Smart Tables (2026-05-31) — Notion/Teamly-style database. Фаза 0 — CRUD
+  // Table / TableProperty / TableRow. Views / Automations / AI — отдельные фазы.
+  // ТЗ: plans/tz/2026-05-31-smart-tables.md.
+  'table',
 ] as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[number];

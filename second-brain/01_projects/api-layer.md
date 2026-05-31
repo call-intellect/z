@@ -10,6 +10,32 @@ covers: реестр всех REST endpoints backend по модулям
 
 Этот файл создан 2026-05-25 как часть финального handoff Wave 1-3. Не претендует на полноту — пополняется по факту добавления новых endpoint'ов.
 
+## Smart Tables — MVP-старт (2026-05-31, Фазы 0+1)
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/api/v1/tables` | Создать таблицу (multi-tenant). Body `{ name, description?, icon?, parentDocumentId?, entitySync? }`. Лимит `TABLE_MAX_TABLES_PER_ORG=1000`. |
+| GET | `/api/v1/tables` | Список таблиц (`?archived=active\|archived\|all&limit=50&offset=0`). |
+| GET | `/api/v1/tables/:id` | Одна таблица. |
+| PATCH | `/api/v1/tables/:id` | Обновить (name/description/icon/...). |
+| POST | `/api/v1/tables/:id/archive` | Soft-archive (`archivedAt=now()`). Идемпотентно. |
+| POST | `/api/v1/tables/:id/unarchive` | Снять архив. |
+| DELETE | `/api/v1/tables/:id` | Hard-delete (только если архив). Каскад на properties/rows/views/automations. |
+| GET | `/api/v1/tables/:tableId/properties` | Список колонок (по `order`). |
+| POST | `/api/v1/tables/:tableId/properties` | Создать колонку. Body `{ name, type, config?, isPrimary?, order? }`. Лимит `TABLE_MAX_PROPS_PER_TABLE=200`. |
+| PATCH | `/api/v1/tables/:tableId/properties/:propertyId` | Обновить колонку. |
+| POST | `/api/v1/tables/:tableId/properties/:propertyId/reorder` | Изменить `order` (фракционный). |
+| DELETE | `/api/v1/tables/:tableId/properties/:propertyId` | Удалить колонку (hard). |
+| GET | `/api/v1/tables/:tableId/rows` | Список строк (`?archived=...&limit=100&offset=0`). |
+| POST | `/api/v1/tables/:tableId/rows` | Создать строку. Лимит `TABLE_MAX_ROWS_PER_TABLE=100_000`. Каждое значение в `cells` ≤ `TABLE_MAX_CELL_SIZE_BYTES=1_048_576`. |
+| GET | `/api/v1/tables/:tableId/rows/:rowId` | Одна строка. |
+| PATCH | `/api/v1/tables/:tableId/rows/:rowId` | Обновить ячейки / entityId / pageContent. |
+| POST | `/api/v1/tables/:tableId/rows/:rowId/archive` | Soft-archive строки. |
+| POST | `/api/v1/tables/:tableId/rows/:rowId/unarchive` | Снять архив строки. |
+| DELETE | `/api/v1/tables/:tableId/rows/:rowId` | Hard-delete (только если архив). |
+
+19 эндпоинтов. Все под `CookieAuthGuard + TenantGuard`. RBAC ресурс `table` в `policy.csv` (owner/admin/manager r/w/d, manager — self-scope на write/delete). См. [[smart-tables]].
+
 ## Партнёрский кабинет — обновление (2026-05-31)
 
 | Метод | Путь | Назначение |

@@ -956,6 +956,21 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── smart tables (Фаза 0) ────────────
+  /**
+   * Технические guard'ы Smart Tables (см. plans/tz/2026-05-31-smart-tables.md
+   * Фаза 0, env.schema.ts → `SmartTablesSchema`). При превышении любого —
+   * HTTP 400 в сервисах `tables/`.
+   */
+  get smartTables() {
+    return {
+      maxRowsPerTable: this.get('TABLE_MAX_ROWS_PER_TABLE') as number,
+      maxPropsPerTable: this.get('TABLE_MAX_PROPS_PER_TABLE') as number,
+      maxTablesPerOrg: this.get('TABLE_MAX_TABLES_PER_ORG') as number,
+      maxCellSizeBytes: this.get('TABLE_MAX_CELL_SIZE_BYTES') as number,
+    } as const;
+  }
+
   // ─────────────────────────── extraction (Фаза 0b) ─────────────
   /**
    * Параметры extraction'а группы Б (Process/Decision/Regulation/Policy/

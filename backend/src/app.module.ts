@@ -118,6 +118,7 @@ import { SkillsModule } from './modules/skills/skills.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { Specialist38HelpfulnessModule } from './modules/specialist-3-8-helpfulness/specialist-3-8-helpfulness.module';
 import { StructureModule } from './modules/structure/structure.module';
+import { TablesModule } from './modules/tables/tables.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { TemplatesModule } from './modules/templates/templates.module';
@@ -604,6 +605,15 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // RedisModule, MetricsModule, EventEmitterModule.
     // См. plans/tz/2026-05-29-agents-v2-umbrella.md §C1.
     PracticeSkillsModule,
+
+    // Smart Tables Фаза 0 (2026-05-31) — каркас CRUD Notion/Teamly-style
+    // базы данных. REST: /api/v1/tables, /api/v1/tables/:id/properties,
+    // /api/v1/tables/:id/rows. RBAC: ресурс `table`. Views / Automations /
+    // AI / Public forms — отдельные фазы 1+. Зависит от @Global Prisma,
+    // RbacModule (TenantGuard + canRead/canWrite), AuthModule (CookieAuthGuard),
+    // ConfigModule (TypedConfigService для TABLE_MAX_* лимитов).
+    // См. plans/tz/2026-05-31-smart-tables.md.
+    TablesModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.

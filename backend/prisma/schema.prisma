@@ -2410,6 +2410,9 @@ model Org {
   personGoalContributions    PersonGoalContribution[]
   knowledgeVelocitySnapshots KnowledgeVelocitySnapshot[]
 
+  // ── Smart Tables (см. plans/tz/2026-05-31-smart-tables.md Фаза 0) ──
+  tables Table[]
+
   @@index([ownerId])
   @@index([deletedAt])
 }
@@ -9562,4 +9565,197 @@ enum CandidateStatus {
   testing
   promoted
   rejected
+}
+
+// ──────── Smart Tables (см. plans/tz/2026-05-31-smart-tables.md) ────────
+//
+// Подсистема «умных таблиц» (паритет с Notion-database / Teamly Smart Tables).
+// Фаза 0 — каркас данных: модели Table / TableProperty / TableRow / TableView /
+// TableAutomation + enum'ы типов колонок, типов представлений, видимости views.
+// Строки хранятся как JSONB (cells) с GIN-индексом jsonb_path_ops, создаваемым
+// через backend/scripts/postgres-init.sql (`table_row_cells_gin`).
+// CRUD/RBAC/UI — отдельные ТЗ-фазы 1+.
+
+model Table {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String    @db.VarChar(255)
+  description      String?   @db.Text
+  /// Эмодзи (одним символом) или ID лукапа icon-set'а — не валидируется в Prisma.
+  icon             String?   @db.VarChar(50)
+  /// S3-key обложки таблицы (фон шапки в UI).
+  coverImageS3     String?   @db.VarChar(500)
+  /// Если таблица «живёт внутри документа» — ссылка на parent Document.
+  /// FK не вешаем (Document — отдельный домен, кросс-доменные FK создают каскад-боли);
+  /// валидация на уровне сервиса.
+  parentDocumentId String?
+  /// Если строки таблицы автоматически создают/линкуются с Entity графа,
+  /// формат: `{ type: 'org'|'person'|..., autoCreate: bool, primaryProperty: string }`.
+  entitySync       Json?
+  /// id дефолтного TableView (открывается, если в URL не передан viewId).
+  defaultViewId    String?
+  /// Soft-delete: archivedAt = когда пользователь нажал «архивировать»;
+  /// deletedAt = когда поставлен в очередь на hard-delete воркером retention.
+  archivedAt       DateTime?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  org         Org               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  properties  TableProperty[]
+  rows        TableRow[]
+  views       TableView[]
+  automations TableAutomation[]
+
+  @@index([tenantId, archivedAt])
+  @@index([parentDocumentId])
+}
+
+model TableProperty {
+  id        String        @id @default(cuid())
+  tableId   String
+  name      String        @db.VarChar(100)
+  type      TablePropType
+  /// Тип-специфичный конфиг колонки. Примеры:
+  ///  - currency: `{ currency: 'RUB' }`
+  ///  - status:   `{ options: [{id,name,color}] }`
+  ///  - relation: `{ relatedTableId, displayPropertyId }`
+  ///  - formula:  `{ expression: '...' }`
+  config    Json
+  /// Primary колонка (как Title в Notion) — отображается в карточке строки сверху.
+  isPrimary Boolean       @default(false)
+  /// Фракционная сортировка (без перенумерации всех строк при drag&drop).
+  order     Decimal       @db.Decimal(20, 10)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, order])
+}
+
+enum TablePropType {
+  text
+  /// Multi-line, mini-document с ProseMirror.
+  longtext
+  number
+  /// config: `{ currency: 'RUB'|'USD'|... }`.
+  currency
+  percent
+  /// config: `{ withTime: bool }`.
+  date
+  /// config: `{ options: [{id, name, color}] }`.
+  status
+  selectSingle
+  selectMulti
+  checkbox
+  /// Ссылка на User в Org.
+  person
+  url
+  email
+  phone
+  /// S3-attachment.
+  file
+  /// config: `{ expression: '...' }`.
+  formula
+  /// config: `{ relatedTableId, displayPropertyId }`.
+  relation
+  /// config: `{ relationPropertyId, targetPropertyId, aggregator }`.
+  rollup
+  createdAt
+  updatedAt
+  createdBy
+  // ── Z-специфичные ──
+  /// Линк на Entity графа знаний (type — любой).
+  entityLink
+  /// Линк на Meeting.
+  meetingLink
+  /// Линк на Document.
+  documentLink
+}
+
+model TableRow {
+  id          String    @id @default(cuid())
+  tableId     String
+  tenantId    String
+  /// `{ [propertyId]: value }`. Value — JSON-serializable: string/number/array/etc.
+  /// GIN-индекс по cells создаётся в backend/scripts/postgres-init.sql
+  /// (`table_row_cells_gin`, jsonb_path_ops).
+  cells       Json
+  /// Если у таблицы включён entitySync — авто-линка с Entity графа.
+  /// FK на Entity не вешаем (см. комментарий к Table.parentDocumentId).
+  entityId    String?
+  /// Фракционная сортировка строк (drag&drop без перенумерации).
+  order       Decimal   @db.Decimal(20, 10)
+  archivedAt  DateTime?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  /// Embedded mini-document внутри карточки строки (ProseMirror doc JSON).
+  /// Опционально — заполняется в Фазе 2 (карточка строки как документ).
+  pageContent Json?
+
+  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, order])
+  @@index([tableId, archivedAt])
+  @@index([entityId])
+}
+
+model TableView {
+  id         String              @id @default(cuid())
+  tableId    String
+  name       String              @db.VarChar(100)
+  type       TableViewType
+  /// `{ filters, sorts, groupBy, hiddenProps, propOrder, cardCover, ... }`.
+  /// Структура — UI-специфична, валидируется в Zod-DTO API-слоя.
+  config     Json
+  /// personal — видит только владелец; shared — вся Org; public — по токен-ссылке.
+  visibility TableViewVisibility @default(personal)
+  ownerId    String
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId])
+}
+
+enum TableViewType {
+  grid
+  kanban
+  calendar
+  gantt
+  /// Карточки с обложкой — у Teamly нет, у нас плюс.
+  gallery
+  /// Хронологическая лента — у Teamly нет.
+  timeline
+  /// Карта по адресу/координатам — у Teamly нет.
+  map
+  /// Публичная форма-собиратель (Фаза 14).
+  form
+  chart
+}
+
+enum TableViewVisibility {
+  personal
+  shared
+  public
+}
+
+model TableAutomation {
+  id        String   @id @default(cuid())
+  tableId   String
+  name      String   @db.VarChar(100)
+  /// `{ kind:'property_change'|'row_created'|'row_deleted'|'cron', config: {...} }`.
+  trigger   Json
+  /// `[{ kind:'send_notification'|'update_property'|'create_row'|'webhook', config: {...} }]`.
+  actions   Json
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
 }

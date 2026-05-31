@@ -1,0 +1,30 @@
+import { Module } from '@nestjs/common';
+
+import { TablePropertiesController } from './controllers/table-properties.controller';
+import { TableRowsController } from './controllers/table-rows.controller';
+import { TablesController } from './controllers/tables.controller';
+import { TablePropertiesService } from './services/table-properties.service';
+import { TableRowsService } from './services/table-rows.service';
+import { TablesService } from './services/tables.service';
+
+/**
+ * Smart Tables (см. plans/tz/2026-05-31-smart-tables.md Фаза 0).
+ *
+ * Подключает три HTTP-контроллера:
+ *   - `POST/GET/PATCH/DELETE /api/v1/tables[/:id[/archive|unarchive]]`
+ *   - `GET/POST/PATCH/DELETE /api/v1/tables/:tableId/properties/...`
+ *   - `GET/POST/PATCH/DELETE /api/v1/tables/:tableId/rows/...`
+ *
+ * Все зависимости (`PrismaService`, `RbacService`, `TypedConfigService`,
+ * `CookieAuthGuard`) берутся неявно из @Global-модулей (PrismaModule /
+ * RbacModule / ConfigModule / AuthModule).
+ *
+ * Views / Automations / AI / Public forms — отдельные фазы, в этот модуль
+ * добавятся постепенно (Фаза 1+).
+ */
+@Module({
+  controllers: [TablesController, TablePropertiesController, TableRowsController],
+  providers: [TablesService, TablePropertiesService, TableRowsService],
+  exports: [TablesService],
+})
+export class TablesModule {}

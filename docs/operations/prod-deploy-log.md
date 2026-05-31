@@ -154,6 +154,111 @@ p.referral.count({where:{contractAcceptedAt: null}})
 
 ---
 
+### 🌊 2026-05-31 — Волна 3 Блок C: Smart Tables MVP-старт (Фазы 0+1)
+
+План: [plans/tz/2026-05-31-smart-tables.md](../../plans/tz/2026-05-31-smart-tables.md) — реализованы Фазы 0+1 из 14.
+
+**Сделано:**
+- Backend: 5 новых Prisma-моделей (`Table`, `TableProperty`, `TableRow`, `TableView`, `TableAutomation`) + 3 enum'а (`TablePropType` 24 значения, `TableViewType` 9, `TableViewVisibility` 3) + обратная relation `Org.tables`.
+- Backend: модуль `backend/src/modules/tables/` с 3 контроллерами и 3 сервисами, 19 эндпоинтов CRUD (`/api/v1/tables`, `/api/v1/tables/:tableId/properties`, `/api/v1/tables/:tableId/rows`).
+- Backend: RBAC ресурс `table` в `policy.csv` (9 строк: owner/admin/manager r/w/d, manager — self-scope на write/delete).
+- Backend: 4 ENV `TABLE_MAX_*` (опциональные, дефолты в коде).
+- Backend: 19 unit-тестов пройдены; integration-spec `tables.e2e.spec.ts` помечен `it.skip` до dev-Postgres+testcontainers.
+- Postgres-init: GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_ops)` для фильтра по JSONB.
+- Frontend: страница `/tables/[id]` с Glide Data Grid (Canvas, `next/dynamic ssr:false`), Zustand store с optimistic updates + debounce 500мс. 14 интерактивных типов колонок + 3 computed + drag&drop колонок/строк через фракционный `order` + copy/paste из Excel + добавление колонок через UI popover.
+- Новые зависимости фронта: `@glideapps/glide-data-grid@^6.0.3`, `@tanstack/react-virtual@^3.13.26` (зарезервирован), `zustand@^5.0.14`.
+
+**Не реализовано (отдельные сессии)**: Views (Фаза 3), Канбан (4), Excel-импорт (5, зависит от document-ingest Фазы 1), AI внутри таблиц (8), Embed в документ (9), Yjs real-time (10), Permissions ячейки (11), Conditional + Automations (12), API+webhooks (13), Forms (14).
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — 4 новых, опциональных (дефолты в коде):
+  ```bash
+  # TABLE_MAX_ROWS_PER_TABLE=100000
+  # TABLE_MAX_PROPS_PER_TABLE=200
+  # TABLE_MAX_TABLES_PER_ORG=1000
+  # TABLE_MAX_CELL_SIZE_BYTES=1048576
+  ```
+  Не задавать = принять дефолты. В отдельной строке `.env` если нужно повысить порог.
+- **Шаг 4 — Prisma** — **обязательно** (новые модели):
+  ```bash
+  docker compose exec backend bun run prisma:push
+  docker compose exec backend bun run prisma:generate
+  ```
+  Делает: создаёт 5 таблиц `Table/TableProperty/TableRow/TableView/TableAutomation` + 3 enum типа в Postgres. Безопасно — все новые таблицы, ничего не теряем.
+- **Шаг 5 — postgres-init.sql — GIN-индекс**:
+  ```bash
+  docker compose exec backend bun run apply-postgres-init
+  ```
+  Создаёт `CREATE INDEX IF NOT EXISTS table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_ops)`. Идемпотентно.
+- **Шаги 6–10 (patch/seed/backfill/migrate/setup)** — НЕТ. Фаза 0 без seed.
+- **Шаг 11 — Docker rebuild** — обязателен (новый backend модуль + новые frontend зависимости):
+  ```bash
+  docker compose up -d --build backend frontend
+  ```
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Список таблиц для нового тенанта — пустой массив
+  curl -i -H 'Cookie: <session>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/tables
+  # Ожидаемо: 200 { items: [], total: 0 }
+
+  # 2. Создание таблицы
+  curl -i -X POST -H 'Cookie: <session>' -H 'X-Org-Id: <orgId>' \
+       -H 'Content-Type: application/json' \
+       -d '{"name":"Тестовая таблица"}' \
+       https://prod.host/api/v1/tables
+  # Ожидаемо: 200 { id, tenantId, name: 'Тестовая таблица', ... }
+  TABLE_ID=<id из ответа>
+
+  # 3. Добавление колонки
+  curl -i -X POST -H 'Cookie: <session>' -H 'X-Org-Id: <orgId>' \
+       -H 'Content-Type: application/json' \
+       -d '{"name":"Имя","type":"text"}' \
+       https://prod.host/api/v1/tables/$TABLE_ID/properties
+  # Ожидаемо: 200 { id, tableId: <TABLE_ID>, name: 'Имя', type: 'text', order: 1 }
+  PROP_ID=<id из ответа>
+
+  # 4. Добавление строки
+  curl -i -X POST -H 'Cookie: <session>' -H 'X-Org-Id: <orgId>' \
+       -H 'Content-Type: application/json' \
+       -d "{\"cells\":{\"$PROP_ID\":\"Иван Иванов\"}}" \
+       https://prod.host/api/v1/tables/$TABLE_ID/rows
+  # Ожидаемо: 200 { id, tableId, cells: { <PROP_ID>: 'Иван Иванов' }, ... }
+
+  # 5. Список строк
+  curl -i -H 'Cookie: <session>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/tables/$TABLE_ID/rows
+  # Ожидаемо: 200 { items: [{...}], total: 1 }
+
+  # 6. Превышение лимита cell size
+  curl -i -X POST -H 'Cookie: <session>' -H 'X-Org-Id: <orgId>' \
+       -H 'Content-Type: application/json' \
+       -d "{\"cells\":{\"$PROP_ID\":\"$(python3 -c 'print(\"x\"*1100000)')\"}}" \
+       https://prod.host/api/v1/tables/$TABLE_ID/rows
+  # Ожидаемо: 400 с code='cell_too_large', message содержит propertyId
+
+  # 7. Swagger smoke
+  curl -s https://prod.host/api/docs-json | jq '.paths | keys[] | select(startswith("/api/v1/tables"))' | wc -l
+  # Ожидаемо: 19
+
+  # 8. UI:
+  # - /tables/<id> — открывается Grid view (Glide Data Grid), редактирование text-ячейки работает,
+  #   копирование из Excel через Ctrl+V вставляет диапазон, перетаскивание заголовков колонок и
+  #   ручек строк меняет порядок. Кнопка «+ Колонка» в шапке открывает popover с 14 типами.
+  ```
+
+- **Откат:**
+  ```bash
+  git revert <commit_range>
+  docker compose up -d --build backend frontend
+  ```
+  Schema-добавления безопасны (новые таблицы, не теряем данные). Если откатываем — таблицы остаются в БД пустыми (на старом коде их никто не дёрнет). Можно вычистить руками: `DROP TABLE "TableAutomation", "TableView", "TableRow", "TableProperty", "Table" CASCADE; DROP TYPE "TableViewVisibility", "TableViewType", "TablePropType";`.
+
+⚠️ **Известное ограничение Фазы 1.** Bubble cells (status / selectSingle / selectMulti) в Glide Data Grid отображаются, но не редактируются inline (overlay-edit не поддержан Glide для Bubble). В коде помечено комментарием. Доработка — Фаза 2 (custom popover-редактор поверх Bubble).
+
+---
+
 ### 🌊 2026-05-31 — Pulse Этапы A+A2+B+C (gaps + 3.2/4.6/4.7 + Волна 5 + Волна 6)
 
 План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §5-10.

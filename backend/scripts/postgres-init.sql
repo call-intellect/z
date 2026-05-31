@@ -599,3 +599,24 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ──────────────────────────────────────────────────────────────
+-- Smart Tables: GIN-индекс на TableRow.cells для быстрого фильтра
+-- по JSONB полям (см. plans/tz/2026-05-31-smart-tables.md Фаза 0).
+-- jsonb_path_ops быстрее jsonb_ops при @> / @? операторах, но не
+-- поддерживает ?, ?| — для наших фильтров достаточно path_ops.
+-- ──────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'TableRow'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS table_row_cells_gin
+        ON "TableRow"
+        USING GIN (cells jsonb_path_ops)
+    $sql$;
+  END IF;
+END $$;

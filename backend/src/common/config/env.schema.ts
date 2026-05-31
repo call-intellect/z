@@ -1733,6 +1733,27 @@ const TrackerSchema = z.object({
 });
 
 /**
+ * Smart Tables (см. plans/tz/2026-05-31-smart-tables.md Фаза 0).
+ * Технические guard'ы от злоупотребления (в Z один тариф — лимиты единые для
+ * всех Org). Лимиты — в ENV, чтобы поднять без передеплоя кода.
+ *
+ *   - TABLE_MAX_ROWS_PER_TABLE — максимум строк в одной таблице.
+ *   - TABLE_MAX_PROPS_PER_TABLE — максимум колонок в одной таблице.
+ *   - TABLE_MAX_TABLES_PER_ORG — максимум таблиц на Org.
+ *   - TABLE_MAX_CELL_SIZE_BYTES — максимальный размер value одной ячейки
+ *     в `TableRow.cells` (защита от вставки гигантских JSON).
+ *
+ * При превышении любого — HTTP 400 с человекочитаемым сообщением.
+ * Читается через `cfg.smartTables` в TypedConfigService (см. typed-config.ts).
+ */
+const SmartTablesSchema = z.object({
+  TABLE_MAX_ROWS_PER_TABLE: z.coerce.number().int().positive().default(100_000),
+  TABLE_MAX_PROPS_PER_TABLE: z.coerce.number().int().positive().default(200),
+  TABLE_MAX_TABLES_PER_ORG: z.coerce.number().int().positive().default(1_000),
+  TABLE_MAX_CELL_SIZE_BYTES: z.coerce.number().int().positive().default(1_048_576),
+});
+
+/**
  * ENV для биллинга, реферальной программы, ИНН-лукапа.
  * Один schema — НЕ дробить на 4 (TS2589 на длинной merge-цепочке EnvSchema).
  * См. ТЗ plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §5.
@@ -1859,7 +1880,9 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   .merge(BillingSchema)
   // ТЗ 2026-05-31 ai-chat-quota — единая per-user квота Concierge+Clones.
   // CLONE_ASK_PER_USER_PER_DAY (SkillSchema) пока остаётся; удаление — Фаза 4.
-  .merge(AiChatQuotaSchema);
+  .merge(AiChatQuotaSchema)
+  // ТЗ 2026-05-31 smart-tables — лимиты-guard от злоупотребления.
+  .merge(SmartTablesSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

@@ -31,6 +31,7 @@ PostgreSQL + Redis  ←─────────────────  ре
 | **Redis** | сессии, временные ключи, очереди задач |
 | **S3** | видеофайлы, аудиодорожки |
 | **AI Processing** | транскрибация, разделение по спикерам, шаблоны по типу |
+| **Tables (smart-tables)** | модуль `backend/src/modules/tables/` — Notion-database-style таблицы (5 моделей в БД, 19 CRUD-эндпоинтов, RBAC ресурс `table`). MVP-старт 2026-05-31. См. [[../01_projects/smart-tables]]. |
 
 ## Потоки данных
 

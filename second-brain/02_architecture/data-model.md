@@ -1049,4 +1049,61 @@ model CloneAccessGrant {
 
 Старые one-shot `POST /clones/.../ask` остаются на прежнем RBAC. Флаг включения цепочки v2 — `CLONE_V2_ENABLED` (default off, A/B параллельно со старым clone-respond).
 
+## Smart Tables (Волна 3 MVP-старт, 2026-05-31)
+
+5 новых моделей в `backend/prisma/schema.prisma` (раздел `// ──────── Smart Tables ────────`, ~строка 9579):
+
+```
+Table {
+  id, tenantId, name (VarChar 255), description?, icon? (50), coverImageS3?,
+  parentDocumentId? (для embed в документ — Фаза 9),
+  entitySync? (Json — { type, autoCreate, primaryProperty } — линка с Entity графа),
+  defaultViewId?,
+  archivedAt? (soft-delete), createdBy, createdAt, updatedAt, deletedAt? (зарезервировано)
+  → properties[], rows[], views[], automations[]
+  ← Org.tables
+  @@index(tenantId, archivedAt) + @@index(parentDocumentId)
+}
+
+TableProperty {
+  id, tableId, name (100), type (TablePropType), config (Json — type-specific),
+  isPrimary (default false), order (Decimal 20,10 — фракционный),
+  createdAt, updatedAt
+  @@index(tableId, order)
+}
+
+TableRow {
+  id, tableId, tenantId, cells (Json — { [propertyId]: value }),
+  entityId? (опц. линка Entity графа — auto-sync через entitySync),
+  order (Decimal 20,10), archivedAt? (soft-delete), createdBy,
+  createdAt, updatedAt, deletedAt?,
+  pageContent? (Json — ProseMirror для мини-документа Фазы 2)
+  @@index(tableId, order) + @@index(tableId, archivedAt) + @@index(entityId)
+}
+
+TableView {
+  id, tableId, name (100), type (TableViewType — grid|kanban|calendar|gantt|gallery|timeline|map|form|chart),
+  config (Json — { filters, sorts, groupBy, hiddenProps, propOrder, ... }),
+  visibility (TableViewVisibility — personal|shared|public, default personal),
+  ownerId, createdAt, updatedAt
+  @@index(tableId)
+}
+
+TableAutomation {
+  id, tableId, name (100),
+  trigger (Json — { kind, config }),
+  actions (Json — [{ kind, config }]),
+  enabled (default true), createdAt, updatedAt
+}
+```
+
+Enum'ы:
+- **`TablePropType`** (24): `text`, `longtext`, `number`, `currency`, `percent`, `date`, `status`, `selectSingle`, `selectMulti`, `checkbox`, `person`, `url`, `email`, `phone`, `file`, `formula`, `relation`, `rollup`, `createdAt`, `updatedAt`, `createdBy`, `entityLink`, `meetingLink`, `documentLink`.
+- **`TableViewType`** (9): `grid`, `kanban`, `calendar`, `gantt`, `gallery`, `timeline`, `map`, `form`, `chart`.
+- **`TableViewVisibility`** (3): `personal`, `shared`, `public`.
+
+GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_ops)` — через `backend/scripts/postgres-init.sql`, не Prisma (Prisma не умеет GIN на JSONB). Используется для быстрого фильтра по содержимому ячеек (`@>`, `@?`).
+
+Реализовано в Фазе 0 (backend) и Фазе 1 (frontend Grid). Подробнее: [[../01_projects/smart-tables]].
+
 [[../index|← index]]

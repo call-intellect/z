@@ -979,6 +979,25 @@ p, manager, open, *, commitment, read
 p, manager, strict, self, commitment, read
 p, manager, *, self, commitment, write
 
+# ──────────────────────────── Smart Tables (2026-05-31) ────────────────────────────
+# table — Notion/Teamly-style база данных. ResourceType охватывает CRUD на
+# уровне Table / TableProperty / TableRow (Фаза 0). Views / Automations —
+# отдельные ResourceType добавятся в Фазе 5+.
+# Owner / admin Org — полный r/w/d.
+# Manager — read всех таблиц Org; write/delete — только тех, что создал сам
+# (self по `Table.createdBy`). Это даёт «совместное чтение» как у документов
+# и сохраняет владельца на запись/удаление.
+# ТЗ: plans/tz/2026-05-31-smart-tables.md.
+p, owner, *, *, table, read
+p, owner, *, *, table, write
+p, owner, *, *, table, delete
+p, admin, *, *, table, read
+p, admin, *, *, table, write
+p, admin, *, *, table, delete
+p, manager, *, *, table, read
+p, manager, *, self, table, write
+p, manager, *, self, table, delete
+
 # manager в strict-режиме — read/write только своих.
 p, manager, strict, *, org, read
 p, manager, strict, self, meeting, read

@@ -41,7 +41,11 @@ import {
 } from '@/domain/tracker';
 import { AssigneeAvatarGroup } from '@/ui/tracker/AssigneeAvatar';
 import { SprintHintCard } from '@/ui/tracker/SprintHintCard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 import { cn } from '@/ui/shadcn/lib/utils';
+
+import { SprintDailyPanel } from './SprintDailyPanel';
+import { SprintWeeklyPanel } from './SprintWeeklyPanel';
 
 export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
   const { currentOrgId } = useAuth();
@@ -83,6 +87,9 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
   const [meetingError, setMeetingError] = useState<string | null>(null);
   const [completePending, setCompletePending] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'main' | 'daily' | 'weekly'>(
+    'main',
+  );
 
   const handleStartMeeting = async () => {
     if (!currentOrgId) return;
@@ -222,93 +229,127 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
         </div>
       </header>
 
-      {/* Прогресс */}
-      <ProgressBlock dashboard={dashboard} />
+      {/* Tabs — main / daily / weekly */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as 'main' | 'daily' | 'weekly')}
+      >
+        <TabsList className="w-full justify-start overflow-x-auto scrollbar-none">
+          <TabsTrigger value="main">Обзор</TabsTrigger>
+          <TabsTrigger value="daily">Daily</TabsTrigger>
+          <TabsTrigger value="weekly">Weekly</TabsTrigger>
+        </TabsList>
 
-      {/* Задачи спринта */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
-          Задачи спринта
-        </h2>
-        <TaskSection
-          title="Без срока"
-          tasks={dashboard.tasksWithoutDueDate}
-          emptyHint="Все задачи спринта имеют срок выполнения."
-        />
-        <TaskSection
-          title="Срок горит"
-          tasks={dashboard.tasksAtRisk}
-          emptyHint="Просроченных задач нет."
-        />
-        <TaskSection
-          title="Без движения более 3 дней"
-          tasks={dashboard.tasksWithoutMovement}
-          emptyHint="Все задачи в работе или закрыты."
-        />
-      </section>
+        <TabsContent value="main" className="mt-4 flex flex-col gap-4">
+          {/* Прогресс */}
+          <ProgressBlock dashboard={dashboard} />
 
-      {/* Помощник предлагает */}
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
-            <Sparkles size={14} className="text-accent" />
-            Помощник предлагает
-          </h2>
-          {hints.length > 0 && (
-            <span className="text-[11px] text-fg-tertiary">
-              Активных: {hints.length}
-            </span>
+          {/* Задачи спринта */}
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
+              Задачи спринта
+            </h2>
+            <TaskSection
+              title="Без срока"
+              tasks={dashboard.tasksWithoutDueDate}
+              emptyHint="Все задачи спринта имеют срок выполнения."
+            />
+            <TaskSection
+              title="Срок горит"
+              tasks={dashboard.tasksAtRisk}
+              emptyHint="Просроченных задач нет."
+            />
+            <TaskSection
+              title="Без движения более 3 дней"
+              tasks={dashboard.tasksWithoutMovement}
+              emptyHint="Все задачи в работе или закрыты."
+            />
+          </section>
+
+          {/* Помощник предлагает */}
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
+                <Sparkles size={14} className="text-accent" />
+                Помощник предлагает
+              </h2>
+              {hints.length > 0 && (
+                <span className="text-[11px] text-fg-tertiary">
+                  Активных: {hints.length}
+                </span>
+              )}
+            </div>
+            {hintsSwr.isLoading ? (
+              <div className="h-20 animate-pulse rounded-md border border-border-subtle bg-bg-elevated" />
+            ) : hints.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-6 text-center text-xs text-fg-tertiary">
+                Подсказок пока нет — помощник ещё анализирует спринт.
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {hints.map((h: SprintHintApi) => (
+                  <li key={h.id}>
+                    <SprintHintCard
+                      hint={h}
+                      onDismiss={handleDismissHint}
+                      onResolve={handleResolveHint}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Связанные встречи */}
+          {dashboard.linkedMeetings.length > 0 && (
+            <section className="flex flex-col gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
+                Связанные встречи
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {dashboard.linkedMeetings.map((m) => (
+                  <li key={m.id}>
+                    <Link
+                      href={`/meetings/${encodeURIComponent(m.id)}`}
+                      className="flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-elevated px-3 py-2 transition-colors hover:border-border hover:bg-bg-card"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-fg-primary">
+                          {m.title || 'Встреча'}
+                        </div>
+                        <div className="text-[11px] text-fg-tertiary">
+                          {m.type} · {m.status}
+                        </div>
+                      </div>
+                      <ChevronRight size={14} className="shrink-0 text-fg-tertiary" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
-        </div>
-        {hintsSwr.isLoading ? (
-          <div className="h-20 animate-pulse rounded-md border border-border-subtle bg-bg-elevated" />
-        ) : hints.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-6 text-center text-xs text-fg-tertiary">
-            Подсказок пока нет — помощник ещё анализирует спринт.
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {hints.map((h: SprintHintApi) => (
-              <li key={h.id}>
-                <SprintHintCard
-                  hint={h}
-                  onDismiss={handleDismissHint}
-                  onResolve={handleResolveHint}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        </TabsContent>
 
-      {/* Связанные встречи */}
-      {dashboard.linkedMeetings.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
-            Связанные встречи
-          </h2>
-          <ul className="flex flex-col gap-2">
-            {dashboard.linkedMeetings.map((m) => (
-              <li key={m.id}>
-                <Link
-                  href={`/meetings/${encodeURIComponent(m.id)}`}
-                  className="flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-elevated px-3 py-2 transition-colors hover:border-border hover:bg-bg-card"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-fg-primary">
-                      {m.title || 'Встреча'}
-                    </div>
-                    <div className="text-[11px] text-fg-tertiary">
-                      {m.type} · {m.status}
-                    </div>
-                  </div>
-                  <ChevronRight size={14} className="shrink-0 text-fg-tertiary" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        <TabsContent value="daily" className="mt-4">
+          {currentOrgId ? (
+            <SprintDailyPanel orgId={currentOrgId} cycleId={cycleId} />
+          ) : (
+            <div className="rounded-md border border-border-subtle bg-bg-elevated px-4 py-6 text-center text-xs text-fg-tertiary">
+              Сначала выберите организацию.
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="weekly" className="mt-4">
+          {currentOrgId ? (
+            <SprintWeeklyPanel orgId={currentOrgId} cycleId={cycleId} />
+          ) : (
+            <div className="rounded-md border border-border-subtle bg-bg-elevated px-4 py-6 text-center text-xs text-fg-tertiary">
+              Сначала выберите организацию.
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { ConversationalService } from '../../conversational.service';
 
 import {
   type TelegramDigestPayload,
+  type TelegramDigestSprintBlock,
   TelegramTaskParserService,
 } from './telegram-task-parser.service';
 
@@ -301,7 +302,8 @@ export class TelegramDigestCron {
   }
 
   /**
-   * Собирает 3 секции issue'ов для пользователя.
+   * Собирает 3 секции issue'ов для пользователя + опц. sprint-блок
+   * (Pulse Wave 5 §5.4).
    */
   private async collectIssuesPayload(args: {
     tenantId: string;
@@ -352,10 +354,175 @@ export class TelegramDigestCron {
       }),
     ]);
 
+    // Pulse Wave 5 §5.4 — собрать sprint-блок (best-effort, не ломает
+    // основной поток если что-то упадёт).
+    let sprint: TelegramDigestSprintBlock | undefined;
+    try {
+      sprint = (await this.collectSprintBlock({
+        tenantId: args.tenantId,
+        userId: args.userId,
+        now,
+      })) ?? undefined;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          userId: args.userId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram-digest-cron: sprint-блок упал — пропускаем',
+      );
+      sprint = undefined;
+    }
+
     return {
       urgentToday: urgentRows.map((i) => issueSummary(i, now)),
       inProgress: inProgressRows.map((i) => issueSummary(i, now)),
       overdue: overdueRows.map((i) => issueSummary(i, now)),
+      ...(sprint ? { sprint } : {}),
+    };
+  }
+
+  /**
+   * Pulse Wave 5 §5.4 — sprint-блок «3 сигнала + 1 победа + 1 действие».
+   *
+   * Алгоритм:
+   *   1. Найти все активные `Cycle` (completedAt IS NULL), на которых у
+   *      user'а есть issue'ы (assignees.userId = userId). Из них взять
+   *      top-1 по количеству issue'ов user'а — это «его» спринт.
+   *   2. Если активных циклов нет → вернуть null (sprint-секции не будет).
+   *   3. Собрать данные cycle:
+   *      - 3 сигнала: SprintHint(status=active, kind ∈ at-risk/no-mentions/
+   *        carry-over/conflicts-goal), top-3 по updatedAt desc. Если меньше 3
+   *        и есть Issue без активности >3 дней — добавляем counter.
+   *      - 1 победа: Issue.completedAt за последние 24ч (assignees=userId).
+   *      - 1 действие: SprintHint(status=active, kind ∈ no_due_date /
+   *        no_assignee / no_description), top-1 по updatedAt desc.
+   */
+  private async collectSprintBlock(args: {
+    tenantId: string;
+    userId: string;
+    now: Date;
+  }): Promise<TelegramDigestSprintBlock | null> {
+    // 1. Top-1 активный Cycle с максимумом issue'ов user'а.
+    //    Делаем groupBy по cycleId через issue.findMany + reduce — это
+    //    дешевле, чем raw SQL, и устойчиво к нюансам Prisma+postgres.
+    const cycleAssignments = await this.prisma.issue.findMany({
+      where: {
+        tenantId: args.tenantId,
+        deletedAt: null,
+        archivedAt: null,
+        assignees: { some: { userId: args.userId } },
+        cycleId: { not: null },
+        cycle: { completedAt: null },
+      },
+      select: { cycleId: true },
+      take: 500, // hard cap — обычно у одного user'а ≤десятка issue'ов
+    });
+    if (cycleAssignments.length === 0) return null;
+
+    const countByCycle = new Map<string, number>();
+    for (const row of cycleAssignments) {
+      if (!row.cycleId) continue;
+      countByCycle.set(row.cycleId, (countByCycle.get(row.cycleId) ?? 0) + 1);
+    }
+    if (countByCycle.size === 0) return null;
+    const topCycleId = [...countByCycle.entries()].sort(
+      (a, b) => b[1] - a[1],
+    )[0]?.[0];
+    if (!topCycleId) return null;
+
+    // 2. Достаём сам Cycle + связанные данные параллельно.
+    const threeDaysAgo = new Date(args.now.getTime() - 3 * 24 * 3600 * 1000);
+    const twentyFourHoursAgo = new Date(
+      args.now.getTime() - 24 * 3600 * 1000,
+    );
+
+    const [cycle, signalHints, actionHint, recentWin, staleCount] =
+      await Promise.all([
+        this.prisma.cycle.findUnique({
+          where: { id: topCycleId },
+          select: { id: true, name: true, description: true, completedAt: true },
+        }),
+        this.prisma.sprintHint.findMany({
+          where: {
+            tenantId: args.tenantId,
+            cycleId: topCycleId,
+            status: 'active',
+            kind: {
+              in: [
+                'due_date_at_risk',
+                'no_recent_mentions',
+                'recurring_carry_over',
+                'conflicts_with_goal',
+              ],
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 3,
+          select: { id: true, title: true, kind: true },
+        }),
+        this.prisma.sprintHint.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            cycleId: topCycleId,
+            status: 'active',
+            kind: {
+              in: ['no_due_date', 'no_assignee', 'no_description'],
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+          select: { id: true, title: true },
+        }),
+        this.prisma.issue.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            deletedAt: null,
+            archivedAt: null,
+            cycleId: topCycleId,
+            assignees: { some: { userId: args.userId } },
+            completedAt: { gte: twentyFourHoursAgo },
+          },
+          orderBy: { completedAt: 'desc' },
+          select: { identifier: true, title: true },
+        }),
+        this.prisma.issue.count({
+          where: {
+            tenantId: args.tenantId,
+            deletedAt: null,
+            archivedAt: null,
+            cycleId: topCycleId,
+            assignees: { some: { userId: args.userId } },
+            updatedAt: { lt: threeDaysAgo },
+            state: { category: { notIn: ['completed', 'cancelled'] } },
+          },
+        }),
+      ]);
+
+    if (!cycle) return null;
+    // Защита от race: cycle.completedAt мог проставиться между запросами.
+    if (cycle.completedAt !== null) return null;
+
+    // 3. Собираем signals: до 3 хинтов + опц. counter «N задач без
+    //    активности >3 дней» если хинтов меньше 3 и stale > 0.
+    const signals: string[] = signalHints.map((h) => h.title);
+    if (signals.length < 3 && staleCount > 0) {
+      signals.push(
+        `${staleCount} ${pluralizeIssues(staleCount)} без активности >3 дней`,
+      );
+    }
+
+    const winLabel = recentWin
+      ? `${recentWin.identifier} «${recentWin.title}»`
+      : null;
+    const actionLabel = actionHint ? actionHint.title : null;
+
+    return {
+      cycleName: cycle.name,
+      hypothesisText: cycle.description?.trim() ? cycle.description.trim() : null,
+      signals,
+      win: winLabel,
+      nextAction: actionLabel,
     };
   }
 }
@@ -384,6 +551,19 @@ function issueSummary(
     ...(dueLabel ? { dueLabel } : {}),
     ...(daysOverdue !== null ? { daysOverdue } : {}),
   };
+}
+
+/**
+ * Pulse Wave 5 §5.4 — pluralize «задача / задачи / задач» по русским правилам.
+ * Используется в counter'е stale-задач sprint-блока.
+ */
+function pluralizeIssues(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'задач';
+  if (mod10 === 1) return 'задача';
+  if (mod10 >= 2 && mod10 <= 4) return 'задачи';
+  return 'задач';
 }
 
 // Помечаем typed-config как использованный — оставляем DI для будущих ENV.

@@ -13,8 +13,13 @@
 import { apiClient } from '../api-client';
 import { orgHeaders } from '../admin-helpers';
 import type {
+  SprintArchiveListApi,
+  SprintArchivePeriodApi,
+  SprintArchiveStatusApi,
+  SprintDailyDigestApi,
   SprintDashboardApi,
   SprintReviewStateApi,
+  SprintWeeklyDigestApi,
 } from '@/domain/sprint';
 
 export interface StartSprintMeetingRequest {
@@ -78,4 +83,44 @@ export const sprintsApi = {
       undefined,
       { headers: orgHeaders(orgId) },
     ),
+
+  /**
+   * Pulse §5.1 — Daily digest спринта (AI Daily Standup + светофор задач).
+   */
+  daily: (orgId: string, cycleId: string) =>
+    apiClient.get<SprintDailyDigestApi>(
+      `/api/v1/cycles/${encodeURIComponent(cycleId)}/dashboard/daily`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Pulse §5.2 — Weekly digest спринта (recap + velocity + learnings + forecast).
+   */
+  weekly: (orgId: string, cycleId: string) =>
+    apiClient.get<SprintWeeklyDigestApi>(
+      `/api/v1/cycles/${encodeURIComponent(cycleId)}/dashboard/weekly`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Pulse §5.3 — Архив гипотез: список всех Cycle tenant'а за период.
+   */
+  archive: (
+    orgId: string,
+    args: {
+      period?: SprintArchivePeriodApi;
+      status?: SprintArchiveStatusApi | 'all';
+      q?: string;
+    },
+  ) => {
+    const params = new URLSearchParams();
+    if (args.period) params.set('period', args.period);
+    if (args.status) params.set('status', args.status);
+    if (args.q && args.q.trim()) params.set('q', args.q.trim());
+    const qs = params.toString();
+    return apiClient.get<SprintArchiveListApi>(
+      `/api/v1/sprints/archive${qs ? `?${qs}` : ''}`,
+      { headers: orgHeaders(orgId) },
+    );
+  },
 };

@@ -667,6 +667,12 @@ ${text}
 2. Если urgentToday — секция «🔥 Срочно сегодня (N):» со списком.
 3. Если inProgress — «📋 В работе (N):» со списком.
 4. Если overdue — «⏰ Просрочены (N):» со списком + days_overdue.
+5. Если в payload присутствует поле "sprint" — добавь отдельный блок строго в формате:
+   «🎯 <b>Спринт «{cycleName}»</b> — гипотеза: {hypothesisText или «—», truncate 80 символов}.
+   Сигналы ({N}): {signal1}; {signal2}; {signal3}.
+   ✅ Победа: {win или «—»}.
+   ▶️ Следующий шаг: {nextAction или «—»}.»
+   Сигналы перечисляй через «; ». Если signals пуст — пиши «Сигналы (0): нет». Если win/nextAction null — пиши «—». Не выдумывай данные, которых нет в payload.
 
 Каждая задача — одна строка: «• <code>IDENT</code> «title» — короткий комментарий о сроке/статусе». Не более 8 элементов на секцию (если больше — допиши «… и ещё X»).
 
@@ -709,6 +715,26 @@ ${text}
             (i.daysOverdue ? ` — на ${i.daysOverdue} дн.` : ''),
         );
       }
+      parts.push('');
+    }
+    // Pulse Wave 5 §5.4 — sprint-блок (3 сигнала + 1 победа + 1 действие).
+    if (payload.sprint) {
+      const s = payload.sprint;
+      const hyp = s.hypothesisText
+        ? truncate(s.hypothesisText, 80)
+        : '—';
+      parts.push(
+        `🎯 <b>Спринт «${escapeHtml(s.cycleName)}»</b> — гипотеза: ${escapeHtml(hyp)}.`,
+      );
+      const signalsLine =
+        s.signals.length > 0
+          ? `Сигналы (${s.signals.length}): ${s.signals.map(escapeHtml).join('; ')}.`
+          : 'Сигналы (0): нет.';
+      parts.push(signalsLine);
+      parts.push(`✅ Победа: ${s.win ? escapeHtml(s.win) : '—'}.`);
+      parts.push(
+        `▶️ Следующий шаг: ${s.nextAction ? escapeHtml(s.nextAction) : '—'}.`,
+      );
     }
     return parts.join('\n').slice(0, 3000);
   }
@@ -789,6 +815,36 @@ export interface TelegramDigestPayload {
   urgentToday: TelegramDigestIssueSummary[];
   inProgress: TelegramDigestIssueSummary[];
   overdue: TelegramDigestIssueSummary[];
+  /**
+   * Pulse Wave 5 §5.4 — sprint-секция «3 сигнала + 1 победа + 1 действие».
+   * Опционально: заполняется только если у пользователя есть активный
+   * Cycle (Cycle.completedAt IS NULL) с issue'ами на нём. Если у user'а
+   * несколько активных Cycle — берём один с максимумом его issue'ов.
+   *
+   * LLM-промпт `telegram-digest-formulate` рендерит этот блок отдельной
+   * строкой; fallback рендерит вручную с тем же набором эмодзи.
+   */
+  sprint?: TelegramDigestSprintBlock;
+}
+
+/**
+ * Pulse Wave 5 §5.4 — sprint-блок Telegram-дайджеста.
+ */
+export interface TelegramDigestSprintBlock {
+  /** Cycle.name — «Неделя 23», «Спринт продаж — июнь». */
+  cycleName: string;
+  /** Cycle.description (truncated to 80 chars) — гипотеза/цель спринта. null если пусто. */
+  hypothesisText: string | null;
+  /**
+   * До 3 сигналов: top-3 active SprintHint (kind ∈ due_date_at_risk /
+   * no_recent_mentions / recurring_carry_over / conflicts_with_goal),
+   * плюс counter «N задач без активности >3 дней» если хинтов меньше 3.
+   */
+  signals: string[];
+  /** Победа: identifier + title недавно закрытой задачи цикла (за 24ч). null если нет. */
+  win: string | null;
+  /** Действие: title actionable SprintHint (no_due_date/no_assignee/no_description). null если нет. */
+  nextAction: string | null;
 }
 
 interface OrgContext {
@@ -812,6 +868,16 @@ function formatOrgContext(ctx: OrgContext): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Pulse Wave 5 §5.4 — truncate с сохранением границ слов и многоточием.
+ * Используется для hypothesisText в sprint-блоке (≤80 символов).
+ */
+function truncate(s: string, max: number): string {
+  const trimmed = s.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max - 1).trimEnd()}…`;
 }
 
 function parseIsoDate(s: string | null | undefined): Date | null {

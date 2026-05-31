@@ -292,6 +292,128 @@ export function formatSprintDateRange(
   return `${fmt(a)} – ${fmt(b)}`;
 }
 
+// ─── Pulse §5.1-5.3 (2026-05-30) — Daily / Weekly / Archive DTO ─────────────
+
+export type SprintActivityColorApi = 'success' | 'warning' | 'danger';
+
+export interface SprintDailyIssueWithActivityApi {
+  issueId: string;
+  identifier: string;
+  title: string;
+  assigneeName: string | null;
+  lastActivity: string | null;
+  activityColor: SprintActivityColorApi;
+  stateCategory:
+    | 'backlog'
+    | 'unstarted'
+    | 'started'
+    | 'completed'
+    | 'cancelled'
+    | null;
+}
+
+export interface SprintDailyTopCloserApi {
+  userId: string;
+  name: string;
+  closedCount: number;
+}
+
+export interface SprintDailyTopHelperApi {
+  userId: string;
+  name: string;
+  helpfulnessScore: number;
+}
+
+export interface SprintDailyDigestApi {
+  cycleId: string;
+  hypothesisText: string | null;
+  aiNarrative: string | null;
+  issuesWithActivity: SprintDailyIssueWithActivityApi[];
+  topClosers: SprintDailyTopCloserApi[];
+  topHelpers: SprintDailyTopHelperApi[];
+  alarmCount: number;
+  generatedAt: string;
+}
+
+export interface SprintWeeklyVelocityApi {
+  closedThisWeek: number;
+  closedPrevWeek: number;
+  trend: 'up' | 'flat' | 'down';
+}
+
+export interface SprintWeeklyTeamHealthRowApi {
+  departmentId: string;
+  departmentName: string;
+  size: number;
+  belowCohort: boolean;
+  sentiment: number | null;
+  promises: number | null;
+}
+
+export interface SprintWeeklyLearningApi {
+  ideaBlockId: string;
+  title: string;
+  signalType: string;
+}
+
+export interface SprintWeeklyForecastApi {
+  trend: 'improving' | 'stable' | 'declining' | null;
+  summary: string | null;
+  snapshotAt: string | null;
+}
+
+export interface SprintWeeklyDigestApi {
+  cycleId: string;
+  hypothesisText: string | null;
+  hypothesisConfirmed: boolean | null;
+  aiNarrative: string | null;
+  velocity: SprintWeeklyVelocityApi;
+  teamHealth: SprintWeeklyTeamHealthRowApi[];
+  outcomeMetric: {
+    completedPercent: number;
+    completed: number;
+    total: number;
+  };
+  learnings: SprintWeeklyLearningApi[];
+  actionItems: string[];
+  forecast: SprintWeeklyForecastApi;
+  generatedAt: string;
+}
+
+export type SprintArchivePeriodApi = 'month' | 'quarter' | 'year';
+export type SprintArchiveStatusApi =
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+export interface SprintArchiveItemApi {
+  cycleId: string;
+  name: string;
+  projectId: string;
+  projectName: string | null;
+  hypothesisText: string | null;
+  startDate: string;
+  endDate: string;
+  status: SprintArchiveStatusApi;
+  confirmedHypothesis: boolean | null;
+  learningSummary: string | null;
+  issuesTotal: number;
+  issuesClosed: number;
+}
+
+export interface SprintArchiveSummaryApi {
+  total: number;
+  confirmed: number;
+  rejected: number;
+  inProgress: number;
+}
+
+export interface SprintArchiveListApi {
+  items: SprintArchiveItemApi[];
+  summary: SprintArchiveSummaryApi;
+  period: SprintArchivePeriodApi;
+}
+
 // ─── Master-detail список спринтов (ТЗ 2026-05-28) ──────────────────────────
 
 import type {

@@ -20,15 +20,33 @@ import type { TelegramTaskParserService } from './telegram-task-parser.service';
 
 interface PrismaMock {
   channelBinding: { findMany: ReturnType<typeof vi.fn> };
-  issue: { findMany: ReturnType<typeof vi.fn> };
+  issue: {
+    findMany: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
+  };
   person: { findMany: ReturnType<typeof vi.fn> };
+  cycle: { findUnique: ReturnType<typeof vi.fn> };
+  sprintHint: {
+    findMany: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
+  };
 }
 
 function makePrisma(): PrismaMock {
   return {
     channelBinding: { findMany: vi.fn().mockResolvedValue([]) },
-    issue: { findMany: vi.fn().mockResolvedValue([]) },
+    issue: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+      count: vi.fn().mockResolvedValue(0),
+    },
     person: { findMany: vi.fn().mockResolvedValue([]) },
+    cycle: { findUnique: vi.fn().mockResolvedValue(null) },
+    sprintHint: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
   };
 }
 
@@ -451,6 +469,120 @@ describe('TelegramDigestCron', () => {
       if (prev === undefined) delete process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
       else process.env.TELEGRAM_DIGEST_HOUR_LOCAL = prev;
     }
+  });
+
+  // ─────────────────────── Pulse Wave 5 §5.4 — sprint block ───────────────────────
+
+  it('sprint: user с active cycle + SprintHints + closed Issue → payload.sprint собран', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    // 3 секции (issue.findMany #1..3) — урезано до urgent=1, остальное пусто.
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Срочная',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      // sprint-блок (issue.findMany #4) — cycleAssignments: 2 issue в cycle-1.
+      .mockResolvedValueOnce([
+        { cycleId: 'cycle-1' },
+        { cycleId: 'cycle-1' },
+      ]);
+    prisma.cycle.findUnique.mockResolvedValueOnce({
+      id: 'cycle-1',
+      name: 'Неделя 23',
+      description: 'Гипотеза: ускоряем onboarding на 30%',
+      completedAt: null,
+    });
+    prisma.sprintHint.findMany.mockResolvedValueOnce([
+      { id: 'h-1', title: 'KORA-10 «AB-тест» — срок в пятницу, риск', kind: 'due_date_at_risk' },
+      { id: 'h-2', title: 'KORA-7 «Дизайн» — переходит из 2 спринтов подряд', kind: 'recurring_carry_over' },
+    ]);
+    prisma.sprintHint.findFirst.mockResolvedValueOnce({
+      id: 'h-3',
+      title: 'KORA-11 «Прод-релиз» — без исполнителя',
+    });
+    prisma.issue.findFirst.mockResolvedValueOnce({
+      identifier: 'KORA-5',
+      title: 'Закрыта',
+    });
+    prisma.issue.count.mockResolvedValueOnce(2); // stale 2 задачи >3 дней
+
+    const parser = makeParser();
+    // Перехватываем payload что пришёл в LLM-помощник — оттуда проверим sprint.
+    let capturedPayload: unknown = null;
+    vi.mocked(parser.formulateDigest).mockImplementationOnce((args) => {
+      capturedPayload = args.issuesPayload;
+      return Promise.resolve('<b>ok</b>');
+    });
+    const { cron } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.sent).toBe(1);
+    expect(capturedPayload).toBeTruthy();
+    const sprint = (capturedPayload as { sprint?: unknown }).sprint as {
+      cycleName: string;
+      hypothesisText: string | null;
+      signals: string[];
+      win: string | null;
+      nextAction: string | null;
+    };
+    expect(sprint).toBeDefined();
+    expect(sprint.cycleName).toBe('Неделя 23');
+    expect(sprint.hypothesisText).toContain('Гипотеза');
+    // 2 hint'а + 1 counter «2 задачи без активности >3 дней» = 3 сигнала.
+    expect(sprint.signals.length).toBe(3);
+    expect(sprint.signals[2]).toContain('без активности');
+    expect(sprint.win).toBe('KORA-5 «Закрыта»');
+    expect(sprint.nextAction).toBe('KORA-11 «Прод-релиз» — без исполнителя');
+  });
+
+  it('sprint: user без active cycle → payload.sprint undefined', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Срочная',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      // cycleAssignments пуст → sprint undefined.
+      .mockResolvedValueOnce([]);
+
+    const parser = makeParser();
+    let capturedPayload: unknown = null;
+    vi.mocked(parser.formulateDigest).mockImplementationOnce((args) => {
+      capturedPayload = args.issuesPayload;
+      return Promise.resolve('<b>ok</b>');
+    });
+    const { cron } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.sent).toBe(1);
+    expect(capturedPayload).toBeTruthy();
+    expect((capturedPayload as { sprint?: unknown }).sprint).toBeUndefined();
+    // cycle.findUnique НЕ должен дёргаться, если нет cycleAssignments.
+    expect(prisma.cycle.findUnique).not.toHaveBeenCalled();
   });
 
   it('sendNotification упал → result=error в метрике, но не throw', async () => {

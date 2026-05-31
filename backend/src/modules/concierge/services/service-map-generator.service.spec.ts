@@ -94,4 +94,77 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.rbacAction).toBe('delete');
     expect(t?.parameters.required).toEqual(['id']);
   });
+
+  // ───────────────────── Pulse Wave 5 §5.5 — Concierge tools ─────────────────────
+
+  it('exposes Pulse Wave 5 director tools', () => {
+    const tools = svc.getTools();
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('get_person_pulse');
+    expect(names).toContain('list_overdue_promises');
+    expect(names).toContain('get_sprint_status');
+    expect(names).toContain('get_team_health');
+    expect(names).toContain('list_ignored_probe_questions');
+  });
+
+  it('Pulse Wave 5 tools все имеют rbacResource + rbacAction', () => {
+    const names = [
+      'get_person_pulse',
+      'list_overdue_promises',
+      'get_sprint_status',
+      'get_team_health',
+      'list_ignored_probe_questions',
+    ];
+    for (const name of names) {
+      const t = svc.findTool(name);
+      expect(t, `tool ${name} должен быть зарегистрирован`).not.toBeNull();
+      expect(t?.rbacResource, `${name} → rbacResource`).toBeTruthy();
+      expect(t?.rbacAction, `${name} → rbacAction`).toBeTruthy();
+    }
+  });
+
+  it('get_person_pulse — GET /persons/:personId/pulse, person.read, personId required', () => {
+    const t = svc.findTool('get_person_pulse');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/persons/:personId/pulse');
+    expect(t?.rbacResource).toBe('person');
+    expect(t?.rbacAction).toBe('read');
+    expect(t?.parameters.required).toEqual(['personId']);
+  });
+
+  it('list_overdue_promises — GET /dashboard/commitment-reliability, dashboard_operations.read', () => {
+    const t = svc.findTool('list_overdue_promises');
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/dashboard/commitment-reliability');
+    expect(t?.rbacResource).toBe('dashboard_operations');
+    expect(t?.rbacAction).toBe('read');
+    // scope/scopeId опц. — required не должен быть выставлен.
+    expect(t?.parameters.required ?? []).toEqual([]);
+  });
+
+  it('get_sprint_status — GET /cycles/:cycleId/dashboard, cycle.read, cycleId required', () => {
+    const t = svc.findTool('get_sprint_status');
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/cycles/:cycleId/dashboard');
+    expect(t?.rbacResource).toBe('cycle');
+    expect(t?.rbacAction).toBe('read');
+    expect(t?.parameters.required).toEqual(['cycleId']);
+  });
+
+  it('get_team_health — GET /dashboard/team-health, dashboard_operations.read', () => {
+    const t = svc.findTool('get_team_health');
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/dashboard/team-health');
+    expect(t?.rbacResource).toBe('dashboard_operations');
+    expect(t?.rbacAction).toBe('read');
+  });
+
+  it('list_ignored_probe_questions — GET /feed/probe_question, activity_feed_item.read', () => {
+    const t = svc.findTool('list_ignored_probe_questions');
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/feed/probe_question');
+    expect(t?.rbacResource).toBe('activity_feed_item');
+    expect(t?.rbacAction).toBe('read');
+  });
 });

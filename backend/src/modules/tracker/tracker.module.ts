@@ -51,6 +51,7 @@ import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
 import { SimilarIssuesService } from './services/similar-issues.service';
 import { SprintAnalystService } from './services/sprint-analyst.service';
+import { SprintArchiveService } from './services/sprint-archive.service';
 import { SprintHintsService } from './services/sprint-hints.service';
 import { SprintsService } from './services/sprints.service';
 import { StatesService } from './services/states.service';
@@ -234,6 +235,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     CycleMeetingsService,
     // Sprints (2026-05-28) — org-wide list + atomic quick-create.
     SprintsService,
+    // Pulse Wave 5 §5.3 (2026-05-30) — Архив гипотез (хроника всех Cycle).
+    SprintArchiveService,
   ],
   exports: [
     // Экспортируется только то, что нужно другим модулям. Все services не

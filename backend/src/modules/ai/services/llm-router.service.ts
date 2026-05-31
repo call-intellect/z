@@ -443,7 +443,17 @@ export type LlmTaskType =
   // (deepseek-v4-pro primary, openai-via-proxy gpt-5.4 fallback, ollama
   // qwen3.5:9b tertiary). EU AI Act: только структурированные метрики, без
   // текстов сотрудников.
-  | 'forecast-weekly';
+  | 'forecast-weekly'
+  // Pulse Wave 5 §5.1 (2026-05-30, plans/tz/2026-05-30-pulse-full.md §5.1) —
+  // SprintAnalyst.getDailyDigest: связный нарратив AI Daily Standup из
+  // структурированных метрик дня спринта (прогресс, риски, активность).
+  // Cache-friendly, без strict JSON — модель отдаёт markdown 4-6 абзацев.
+  // Primary deepseek-v4-flash (дёшево, быстро); fallback gpt-5.4-mini.
+  | 'sprint-daily-digest'
+  // Pulse Wave 5 §5.2 (2026-05-30) — SprintAnalyst.getWeeklyDigest: связный
+  // weekly summary спринта (recap гипотезы, velocity, обучения). Cache-friendly,
+  // markdown без strict JSON. Primary deepseek-v4-flash.
+  | 'sprint-weekly-digest';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -596,6 +606,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'meeting-speaker-analyzer',
   // Pulse Wave 4 §4.6 (2026-05-30) — Forecaster: weekly прогноз компании.
   'forecast-weekly',
+  // Pulse Wave 5 §5.1-5.2 (2026-05-30) — связные нарративы daily/weekly спринта.
+  'sprint-daily-digest',
+  'sprint-weekly-digest',
 ] as const;
 
 /**

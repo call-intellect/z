@@ -28,11 +28,17 @@ import {
   type QuickCreateSprintDto,
   type QuickCreateSprintResponse,
 } from '../dto/sprints/quick-create-sprint.dto';
+import type {
+  SprintArchiveListDto,
+  SprintArchivePeriod,
+  SprintArchiveStatus,
+} from '../dto/sprints/sprint-archive.dto';
 import {
   ListSprintsQuerySchema,
   type ListSprintsQuery,
   type ListSprintsResponse,
 } from '../dto/sprints/sprint-list-item.dto';
+import { SprintArchiveService } from '../services/sprint-archive.service';
 import { SprintsService } from '../services/sprints.service';
 
 /**
@@ -53,6 +59,8 @@ import { SprintsService } from '../services/sprints.service';
 export class SprintsController {
   constructor(
     @Inject(SprintsService) private readonly sprints: SprintsService,
+    @Inject(SprintArchiveService)
+    private readonly archive: SprintArchiveService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -68,6 +76,39 @@ export class SprintsController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.sprints.list({ tenantId: t, query });
+  }
+
+  @Get('archive')
+  @ApiOperation({
+    summary:
+      'Pulse §5.3 — Архив гипотез: хроника всех Cycle tenant\'а за период',
+  })
+  async getArchive(
+    @Query('period') period: string | undefined,
+    @Query('status') statusRaw: string | undefined,
+    @Query('q') q: string | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SprintArchiveListDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    const validPeriod: SprintArchivePeriod =
+      period === 'month' || period === 'quarter' || period === 'year'
+        ? period
+        : 'quarter';
+    const statusFilter: SprintArchiveStatus | 'all' | undefined =
+      statusRaw === 'completed' ||
+      statusRaw === 'in_progress' ||
+      statusRaw === 'cancelled' ||
+      statusRaw === 'all'
+        ? statusRaw
+        : undefined;
+    return this.archive.getArchive({
+      tenantId: t,
+      period: validPeriod,
+      statusFilter,
+      query: q,
+    });
   }
 
   @Post('quick-create')

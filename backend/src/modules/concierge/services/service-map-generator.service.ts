@@ -385,6 +385,120 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'role',
         rbacAction: 'read',
       },
+      // ──────────────────────────── Pulse Wave 5 §5.5 ────────────────────────────
+      // Новые read-tools «директора компании»: карточка человека, обещания,
+      // спринт, здоровье команд, игнорируемые probe-вопросы. Все — GET,
+      // RBAC проверяется ToolRouterService от userId (concierge НЕ bypass).
+      // Concierge никогда не пишет первым — только отвечает на запрос
+      // пользователя (feedback_concierge_text_only_output.md).
+      {
+        name: 'get_person_pulse',
+        description:
+          'Получить карточку сотрудника (Pulse): mood, обещания, риск-сигналы, AI Resume. Используй для запросов «что с Иваном», «как дела у Ани».',
+        method: 'GET',
+        path: '/api/v1/persons/:personId/pulse',
+        parameters: {
+          type: 'object',
+          properties: {
+            personId: {
+              type: 'string',
+              description: 'ID сотрудника (Person.id, не User.id).',
+            },
+          },
+          required: ['personId'],
+        },
+        rbacResource: 'person',
+        rbacAction: 'read',
+      },
+      {
+        name: 'list_overdue_promises',
+        description:
+          'Получить список просроченных обещаний компании, команды или человека. Используй для «какие обещания просрочены», «кто что не сделал».',
+        method: 'GET',
+        path: '/api/v1/dashboard/commitment-reliability',
+        parameters: {
+          type: 'object',
+          properties: {
+            scope: {
+              type: 'string',
+              description: 'company | team | person.',
+            },
+            scopeId: {
+              type: 'string',
+              description: 'ID team или person если scope не company.',
+            },
+          },
+        },
+        rbacResource: 'dashboard_operations',
+        rbacAction: 'read',
+      },
+      {
+        name: 'get_sprint_status',
+        description:
+          'Получить текущий статус спринта (Cycle): метрики, помощник, подсказки. Используй для «как идёт спринт X», «что в спринте».',
+        method: 'GET',
+        path: '/api/v1/cycles/:cycleId/dashboard',
+        parameters: {
+          type: 'object',
+          properties: {
+            cycleId: {
+              type: 'string',
+              description: 'ID цикла (Cycle.id).',
+            },
+          },
+          required: ['cycleId'],
+        },
+        rbacResource: 'cycle',
+        rbacAction: 'read',
+      },
+      {
+        name: 'get_team_health',
+        description:
+          'Получить агрегат здоровья команды: sentiment, обещания, конфликты по отделам. Используй для «какая команда просела», «здоровье команд».',
+        method: 'GET',
+        path: '/api/v1/dashboard/team-health',
+        parameters: {
+          type: 'object',
+          properties: {
+            departmentId: {
+              type: 'string',
+              description: 'Опц. ID отдела, иначе все.',
+            },
+          },
+        },
+        rbacResource: 'dashboard_operations',
+        rbacAction: 'read',
+      },
+      {
+        name: 'list_ignored_probe_questions',
+        description:
+          'Список probe-вопросов AI с status=expired — кто игнорирует уточнения. Используй для «кто не отвечает на вопросы AI», «игнорируемые вопросы».',
+        method: 'GET',
+        path: '/api/v1/feed/probe_question',
+        parameters: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              description: 'Должно быть expired.',
+            },
+            teamId: {
+              type: 'string',
+              description: 'Опц. ID команды.',
+            },
+            viewedUserId: {
+              type: 'string',
+              description: 'Опц. User.id — чьи вопросы.',
+            },
+            limit: {
+              type: 'number',
+              description: 'Default 20.',
+            },
+          },
+        },
+        rbacResource: 'activity_feed_item',
+        rbacAction: 'read',
+      },
     ];
   }
 }

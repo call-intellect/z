@@ -26,7 +26,9 @@ import {
   CreateCycleSchema,
   type CreateCycleDto,
 } from '../dto/cycles/create-cycle.dto';
+import type { SprintDailyDigestDto } from '../dto/cycles/cycle-daily.dto';
 import type { SprintDashboardDto } from '../dto/cycles/cycle-dashboard.dto';
+import type { SprintWeeklyDigestDto } from '../dto/cycles/cycle-weekly.dto';
 import type {
   CompleteCycleResult,
   CycleResponseDto,
@@ -162,6 +164,37 @@ export class CyclesController {
     // Сначала проверим существование/tenant — выбросит 404 если нет.
     await this.svc.requireCycle(id, t);
     return this.analyst.getSprintDashboard({ cycleId: id, tenantId: t });
+  }
+
+  @Get('cycles/:id/dashboard/daily')
+  @ApiOperation({
+    summary: 'Pulse §5.1 — Daily digest спринта (AI Daily Standup + светофор задач)',
+  })
+  async dailyDigest(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SprintDailyDigestDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    await this.svc.requireCycle(id, t);
+    return this.analyst.getDailyDigest({ cycleId: id, tenantId: t });
+  }
+
+  @Get('cycles/:id/dashboard/weekly')
+  @ApiOperation({
+    summary:
+      'Pulse §5.2 — Weekly digest спринта (recap гипотезы, velocity, обучения, forecast)',
+  })
+  async weeklyDigest(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SprintWeeklyDigestDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    await this.svc.requireCycle(id, t);
+    return this.analyst.getWeeklyDigest({ cycleId: id, tenantId: t });
   }
 
   @Post('cycles/:id/start-meeting')

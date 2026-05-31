@@ -60,6 +60,7 @@
 ## Архитектура
 
 - [[02_architecture/project-overview]] — что такое проект и основной флоу
+- [[02_architecture/company-memory-overview]] — **обзорная карта 7 слоёв второго мозга компании-клиента** (RawEvent → IdeaBlock → 9 специалистов → Curator → Chat-v2 → Probe → Themes); сравнение с разработческим `second-brain/`, multi-tenancy, RBAC, DataClassPolicy, bitemporal
 - [[02_architecture/tech-stack]] — стек технологий
 - [[02_architecture/module-map]] — карта модулей и потоков данных (включая Фазу 0: departments/roles-domain/persons/job-descriptions/skills/documents/role-profiles/structure/graph)
 - [[02_architecture/data-model]] — сущности (Meeting, Participant, Recording, AI Result) и FSM статусов; Фаза 0: группа А (с UI) + группа Б (слоты каркаса) + расширения existing + Apache AGE

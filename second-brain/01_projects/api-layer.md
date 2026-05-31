@@ -36,6 +36,18 @@ covers: реестр всех REST endpoints backend по модулям
 
 19 эндпоинтов. Все под `CookieAuthGuard + TenantGuard`. RBAC ресурс `table` в `policy.csv` (owner/admin/manager r/w/d, manager — self-scope на write/delete). См. [[smart-tables]].
 
+**Дополнение Фазы 3 — сохраняемые срезы (2026-05-31):**
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/tables/:tableId/views` | Список views (visibility-фильтр: personal только свои + все shared/public). |
+| POST | `/api/v1/tables/:tableId/views` | Создать view. Body `{ name, type, config, visibility }`. `ownerId=currentUser`. |
+| GET | `/api/v1/tables/:tableId/views/:viewId` | Один view. |
+| PATCH | `/api/v1/tables/:tableId/views/:viewId` | Обновить. Только owner или admin. |
+| DELETE | `/api/v1/tables/:tableId/views/:viewId` | Удалить. Только owner или admin. |
+
+Итого Smart Tables: **24 эндпоинта** (19 базовый CRUD + 5 views).
+
 ## Партнёрский кабинет — обновление (2026-05-31)
 
 | Метод | Путь | Назначение |

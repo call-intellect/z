@@ -1,4 +1,12 @@
-import type { Table, TablePropType, TableProperty, TableRow } from '@prisma/client';
+import type {
+  Table,
+  TablePropType,
+  TableProperty,
+  TableRow,
+  TableView,
+  TableViewType,
+  TableViewVisibility,
+} from '@prisma/client';
 import { z } from 'zod';
 
 /**
@@ -227,5 +235,80 @@ export function toRowViewDto(r: TableRow): RowViewDto {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     pageContent: (r.pageContent as Record<string, unknown> | null) ?? null,
+  };
+}
+
+// ─────────────────────────── TableView ───────────────────────────────────
+
+/**
+ * Сохраняемые срезы (Saved Views) — Фаза 3 smart-tables.
+ *
+ * Полный список `TableViewType` — должен совпадать с enum'ом в
+ * `backend/prisma/schema.prisma`. В Фазе 3 реально рендерится только `grid`;
+ * остальные типы принимаются в БД (форвард-совместимость), но Grid view
+ * рисуется в любом случае.
+ */
+export const TableViewTypeSchema = z.enum([
+  'grid',
+  'kanban',
+  'calendar',
+  'gantt',
+  'gallery',
+  'timeline',
+  'map',
+  'form',
+  'chart',
+]) satisfies z.ZodType<TableViewType>;
+
+export const TableViewVisibilitySchema = z.enum([
+  'personal',
+  'shared',
+  'public',
+]) satisfies z.ZodType<TableViewVisibility>;
+
+/**
+ * `config` — UI-специфичный JSON. На уровне API валидируем только верхний
+ * уровень (record). Семантика полей (filters/sorts/groupBy/hiddenProps/
+ * propOrder/rowHeight) проверяется в Domain-слое фронта.
+ */
+export const CreateTableViewBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  type: TableViewTypeSchema.default('grid'),
+  config: z.record(z.string(), z.unknown()).default({}),
+  visibility: TableViewVisibilitySchema.default('personal'),
+});
+export type CreateTableViewBody = z.infer<typeof CreateTableViewBodySchema>;
+
+export const UpdateTableViewBodySchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  type: TableViewTypeSchema.optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  visibility: TableViewVisibilitySchema.optional(),
+});
+export type UpdateTableViewBody = z.infer<typeof UpdateTableViewBodySchema>;
+
+export interface TableViewViewDto {
+  id: string;
+  tableId: string;
+  name: string;
+  type: TableViewType;
+  config: Record<string, unknown>;
+  visibility: TableViewVisibility;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function toTableViewViewDto(v: TableView): TableViewViewDto {
+  return {
+    id: v.id,
+    tableId: v.tableId,
+    name: v.name,
+    type: v.type,
+    config: (v.config as Record<string, unknown>) ?? {},
+    visibility: v.visibility,
+    ownerId: v.ownerId,
+    createdAt: v.createdAt.toISOString(),
+    updatedAt: v.updatedAt.toISOString(),
   };
 }

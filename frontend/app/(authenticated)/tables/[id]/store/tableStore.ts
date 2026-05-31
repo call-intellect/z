@@ -19,14 +19,19 @@
 
 import { create } from 'zustand';
 
-import { tablesApi } from '@/api/tables.api';
+import { tableViewsApi, tablesApi } from '@/api/tables.api';
 import type { TablePropTypeApi } from '@/api/types/tables';
 import {
   propertyFromApi,
   rowFromApi,
+  tableViewConfigToApi,
+  tableViewFromApi,
   type TableDomain,
   type TablePropertyDomain,
   type TableRowDomain,
+  type TableViewConfig,
+  type TableViewDomain,
+  type TableViewVisibility,
 } from '@/domain/table';
 
 // ─────────────────────────── debounce helper ─────────────────────────────
@@ -41,7 +46,7 @@ interface PendingCellPatch {
 
 // ─────────────────────────── state ───────────────────────────────────────
 
-interface TableStoreState {
+export interface TableStoreState {
   /** Контекст текущей таблицы (после init). */
   orgId: string | null;
   tableId: string | null;
@@ -70,6 +75,15 @@ interface TableStoreState {
     propertyId: string,
     value: unknown,
   ) => Promise<void>;
+  /**
+   * Обновить `pageContent` строки (rich-text карточки, Фаза 2).
+   * Debounce 500ms — store optimistic-обновляет state и шлёт один PATCH
+   * после последнего изменения.
+   */
+  updatePageContent: (
+    rowId: string,
+    pageContentJson: Record<string, unknown> | null,
+  ) => Promise<void>;
   addRow: () => Promise<TableRowDomain | null>;
   addColumn: (
     type: TablePropTypeApi,
@@ -82,11 +96,52 @@ interface TableStoreState {
     newIndex: number,
   ) => Promise<void>;
   reorderRow: (rowId: string, newIndex: number) => Promise<void>;
+
+  // ─── Saved Views (Фаза 3) ────────────────────────────────────────
+  /** Все доступные пользователю виды (свои personal + shared/public). */
+  views: TableViewDomain[];
+  /** Активный view (из URL `?view=...`). null = «без вида / Все колонки». */
+  currentView: TableViewDomain | null;
+  /** Локальный draft-конфиг: hiddenProps, propOrder, rowHeight. */
+  draftConfig: TableViewConfig;
+  /** true, если draftConfig отличается от config'а текущего вида. */
+  hasUnsavedChanges: boolean;
+  /** Положить список доступных видов (SWR → store). */
+  setViews: (views: TableViewDomain[]) => void;
+  /** Применить view по id (или сбросить если null). */
+  applyView: (viewId: string | null) => void;
+  /** Локально скрыть колонку (мутация draftConfig). */
+  setHiddenProperty: (propertyId: string, hidden: boolean) => void;
+  /** Локально изменить порядок колонок (draft). */
+  setDraftPropOrder: (propertyIds: string[]) => void;
+  /** Локально сменить плотность строк. */
+  setRowHeight: (rowHeight: 'compact' | 'default' | 'tall') => void;
+  /** Сохранить текущий draft как новый вид. */
+  saveCurrentAsView: (
+    name: string,
+    visibility: TableViewVisibility,
+  ) => Promise<TableViewDomain | null>;
+  /** Сохранить изменения в текущий активный вид. */
+  saveChangesToCurrentView: () => Promise<TableViewDomain | null>;
+  /** Удалить вид. Если был активный — сбросить currentView. */
+  deleteView: (viewId: string) => Promise<void>;
 }
 
 // ─────────────────────────── module-level debounce-bucket ────────────────
 
 const pending: Map<string, PendingCellPatch> = new Map();
+
+interface PendingPageContent {
+  rowId: string;
+  pageContent: Record<string, unknown> | null;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** Отдельный bucket для pageContent — не смешиваем с cells, чтобы PATCH'и
+ *  по rich-text не задерживали PATCH'и по ячейкам и наоборот. */
+const pendingPageContent: Map<string, PendingPageContent> = new Map();
+
+const PAGE_CONTENT_DEBOUNCE_MS = 500;
 
 function clearPendingFor(rowId: string): void {
   const p = pending.get(rowId);
@@ -94,6 +149,46 @@ function clearPendingFor(rowId: string): void {
     clearTimeout(p.timer);
     pending.delete(rowId);
   }
+  const pc = pendingPageContent.get(rowId);
+  if (pc) {
+    clearTimeout(pc.timer);
+    pendingPageContent.delete(rowId);
+  }
+}
+
+// ─────────────────────────── Saved Views helpers ─────────────────────────
+
+function cloneConfig(c: TableViewConfig): TableViewConfig {
+  return {
+    hiddenProps: c.hiddenProps ? [...c.hiddenProps] : undefined,
+    propOrder: c.propOrder ? [...c.propOrder] : undefined,
+    rowHeight: c.rowHeight,
+    sorts: c.sorts ? c.sorts.map((s) => ({ ...s })) : undefined,
+    filters: c.filters ? c.filters.map((f) => ({ ...f })) : undefined,
+    groupBy: c.groupBy,
+  };
+}
+
+/**
+ * Сравнение draftConfig и applied-config по нормализованному JSON.
+ * `undefined`/пустой массив/пустой объект приравниваются — это позволяет
+ * сравнить «свежий» pristine view с draft'ом, в котором поля просто `undefined`.
+ */
+function hasDiff(a: TableViewConfig, b: TableViewConfig): boolean {
+  return normalize(a) !== normalize(b);
+}
+
+function normalize(c: TableViewConfig): string {
+  const o: Record<string, unknown> = {};
+  if (c.hiddenProps && c.hiddenProps.length > 0) {
+    o.hiddenProps = [...c.hiddenProps].sort();
+  }
+  if (c.propOrder && c.propOrder.length > 0) o.propOrder = c.propOrder;
+  if (c.rowHeight) o.rowHeight = c.rowHeight;
+  if (c.sorts && c.sorts.length > 0) o.sorts = c.sorts;
+  if (c.filters && c.filters.length > 0) o.filters = c.filters;
+  if (c.groupBy) o.groupBy = c.groupBy;
+  return JSON.stringify(o);
 }
 
 // ─────────────────────────── store ───────────────────────────────────────
@@ -106,6 +201,10 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   rows: [],
   mutationError: null,
   isMutating: false,
+  views: [],
+  currentView: null,
+  draftConfig: {},
+  hasUnsavedChanges: false,
 
   hydrate: ({ orgId, tableId, table, properties, rows }) => {
     set({
@@ -121,6 +220,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   reset: () => {
     pending.forEach((p) => clearTimeout(p.timer));
     pending.clear();
+    pendingPageContent.forEach((p) => clearTimeout(p.timer));
+    pendingPageContent.clear();
     set({
       orgId: null,
       tableId: null,
@@ -129,7 +230,159 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       rows: [],
       mutationError: null,
       isMutating: false,
+      views: [],
+      currentView: null,
+      draftConfig: {},
+      hasUnsavedChanges: false,
     });
+  },
+
+  // ─── Saved Views (Фаза 3) ─────────────────────────────────────────
+  setViews: (views) => {
+    set({ views });
+    // Если currentView пропал — сбросим.
+    const cv = get().currentView;
+    if (cv && !views.find((v) => v.id === cv.id)) {
+      set({ currentView: null, draftConfig: {}, hasUnsavedChanges: false });
+    }
+  },
+
+  applyView: (viewId) => {
+    const { views } = get();
+    if (!viewId) {
+      set({ currentView: null, draftConfig: {}, hasUnsavedChanges: false });
+      return;
+    }
+    const v = views.find((x) => x.id === viewId);
+    if (!v) {
+      // Vid id не найден среди доступных — игнорим, остаёмся «без вида».
+      set({ currentView: null, draftConfig: {}, hasUnsavedChanges: false });
+      return;
+    }
+    set({
+      currentView: v,
+      draftConfig: cloneConfig(v.config),
+      hasUnsavedChanges: false,
+    });
+  },
+
+  setHiddenProperty: (propertyId, hidden) => {
+    const { draftConfig, currentView } = get();
+    const current = new Set(draftConfig.hiddenProps ?? []);
+    if (hidden) current.add(propertyId);
+    else current.delete(propertyId);
+    const next: TableViewConfig = {
+      ...draftConfig,
+      hiddenProps: Array.from(current),
+    };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  setDraftPropOrder: (propertyIds) => {
+    const { draftConfig, currentView } = get();
+    const next: TableViewConfig = { ...draftConfig, propOrder: propertyIds };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  setRowHeight: (rowHeight) => {
+    const { draftConfig, currentView } = get();
+    const next: TableViewConfig = { ...draftConfig, rowHeight };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  saveCurrentAsView: async (name, visibility) => {
+    const { orgId, tableId, draftConfig, views } = get();
+    if (!orgId || !tableId) return null;
+    set({ isMutating: true, mutationError: null });
+    try {
+      const created = await tableViewsApi.create(orgId, tableId, {
+        name,
+        type: 'grid',
+        config: tableViewConfigToApi(draftConfig),
+        visibility,
+      });
+      const domain = tableViewFromApi(created);
+      set({
+        views: [...views, domain],
+        currentView: domain,
+        draftConfig: cloneConfig(domain.config),
+        hasUnsavedChanges: false,
+        isMutating: false,
+      });
+      return domain;
+    } catch (e) {
+      set({
+        isMutating: false,
+        mutationError:
+          e instanceof Error ? e.message : 'Не удалось сохранить вид',
+      });
+      return null;
+    }
+  },
+
+  saveChangesToCurrentView: async () => {
+    const { orgId, tableId, currentView, draftConfig, views } = get();
+    if (!orgId || !tableId || !currentView) return null;
+    set({ isMutating: true, mutationError: null });
+    try {
+      const updated = await tableViewsApi.update(
+        orgId,
+        tableId,
+        currentView.id,
+        { config: tableViewConfigToApi(draftConfig) },
+      );
+      const domain = tableViewFromApi(updated);
+      set({
+        views: views.map((v) => (v.id === domain.id ? domain : v)),
+        currentView: domain,
+        draftConfig: cloneConfig(domain.config),
+        hasUnsavedChanges: false,
+        isMutating: false,
+      });
+      return domain;
+    } catch (e) {
+      set({
+        isMutating: false,
+        mutationError:
+          e instanceof Error
+            ? e.message
+            : 'Не удалось сохранить изменения в виде',
+      });
+      return null;
+    }
+  },
+
+  deleteView: async (viewId) => {
+    const { orgId, tableId, views, currentView } = get();
+    if (!orgId || !tableId) return;
+    set({ isMutating: true, mutationError: null });
+    try {
+      await tableViewsApi.remove(orgId, tableId, viewId);
+      const nextViews = views.filter((v) => v.id !== viewId);
+      const wasActive = currentView?.id === viewId;
+      set({
+        views: nextViews,
+        currentView: wasActive ? null : currentView,
+        draftConfig: wasActive ? {} : get().draftConfig,
+        hasUnsavedChanges: wasActive ? false : get().hasUnsavedChanges,
+        isMutating: false,
+      });
+    } catch (e) {
+      set({
+        isMutating: false,
+        mutationError:
+          e instanceof Error ? e.message : 'Не удалось удалить вид',
+      });
+    }
   },
 
   // ─── updateCell с debounce ────────────────────────────────────────
@@ -177,6 +430,53 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       })();
     }, CELL_DEBOUNCE_MS);
     pending.set(rowId, { rowId, cells: accumulated, timer });
+  },
+
+  // ─── updatePageContent с debounce ──────────────────────────────────
+  updatePageContent: async (rowId, pageContentJson) => {
+    const { orgId, tableId, rows } = get();
+    if (!orgId || !tableId) return;
+
+    const prev = rows.find((r) => r.id === rowId);
+    if (!prev) return;
+
+    // Optimistic.
+    set({
+      rows: rows.map((r) =>
+        r.id === rowId ? { ...r, pageContent: pageContentJson } : r,
+      ),
+    });
+
+    const existing = pendingPageContent.get(rowId);
+    if (existing) clearTimeout(existing.timer);
+    const timer = setTimeout(() => {
+      void (async () => {
+        const snapshot = pendingPageContent.get(rowId);
+        if (!snapshot) return;
+        pendingPageContent.delete(rowId);
+        try {
+          const updated = await tablesApi.updateRow(orgId, tableId, rowId, {
+            pageContent: snapshot.pageContent,
+          });
+          const domain = rowFromApi(updated);
+          set({
+            rows: get().rows.map((r) => (r.id === rowId ? domain : r)),
+          });
+        } catch (e) {
+          set({
+            mutationError:
+              e instanceof Error
+                ? e.message
+                : 'Не удалось сохранить содержимое',
+          });
+        }
+      })();
+    }, PAGE_CONTENT_DEBOUNCE_MS);
+    pendingPageContent.set(rowId, {
+      rowId,
+      pageContent: pageContentJson,
+      timer,
+    });
   },
 
   // ─── addRow в конец ─────────────────────────────────────────────────
@@ -384,3 +684,71 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     }
   },
 }));
+
+// ─────────────────────────── selectors (view-aware) ──────────────────────
+
+/**
+ * Возвращает видимые колонки в правильном порядке с учётом draftConfig:
+ *   1. фильтр по `hiddenProps`,
+ *   2. если задан `propOrder` — сортируем по нему (остальные — в конец
+ *      по исходному order).
+ *
+ * Используется в UI вместо прямого `useTableStore(s => s.properties)`,
+ * когда нужно отрисовать grid через призму активного view.
+ */
+export function selectVisibleProperties(
+  s: TableStoreState,
+): TablePropertyDomain[] {
+  const all = s.properties;
+  const hidden = new Set(s.draftConfig.hiddenProps ?? []);
+  const visible = all.filter((p) => !hidden.has(p.id));
+  const propOrder = s.draftConfig.propOrder;
+  if (!propOrder || propOrder.length === 0) {
+    return [...visible].sort((a, b) => a.order - b.order);
+  }
+  const orderIndex = new Map(propOrder.map((id, i) => [id, i] as const));
+  return [...visible].sort((a, b) => {
+    const ai = orderIndex.has(a.id) ? orderIndex.get(a.id)! : Number.MAX_SAFE_INTEGER;
+    const bi = orderIndex.has(b.id) ? orderIndex.get(b.id)! : Number.MAX_SAFE_INTEGER;
+    if (ai !== bi) return ai - bi;
+    return a.order - b.order;
+  });
+}
+
+/**
+ * Возвращает строки с учётом draftConfig.sorts (Фаза 3 — минимальная
+ * поддержка: equality-сравнение для строковых/числовых значений; для
+ * чего сложнее — будет Фаза 4). filters не применяются (Фаза 4+).
+ */
+export function selectVisibleRows(s: TableStoreState): TableRowDomain[] {
+  const sorts = s.draftConfig.sorts ?? [];
+  let rows = [...s.rows];
+  // Применяем сорты последовательно (последний — самый приоритетный).
+  for (let i = sorts.length - 1; i >= 0; i--) {
+    const sort = sorts[i]!;
+    const dir = sort.direction === 'desc' ? -1 : 1;
+    rows.sort((a, b) => {
+      const av = a.cells[sort.propertyId];
+      const bv = b.cells[sort.propertyId];
+      if (av === bv) return 0;
+      if (av === undefined || av === null) return 1;
+      if (bv === undefined || bv === null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number')
+        return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), 'ru') * dir;
+    });
+  }
+  return rows;
+}
+
+/** Числовой `rowHeight` для Glide Data Grid (compact / default / tall). */
+export function selectRowHeightPx(s: TableStoreState): number {
+  switch (s.draftConfig.rowHeight) {
+    case 'compact':
+      return 24;
+    case 'tall':
+      return 48;
+    default:
+      return 34;
+  }
+}

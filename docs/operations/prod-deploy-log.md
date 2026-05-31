@@ -257,6 +257,69 @@ p.referral.count({where:{contractAcceptedAt: null}})
 
 ⚠️ **Известное ограничение Фазы 1.** Bubble cells (status / selectSingle / selectMulti) в Glide Data Grid отображаются, но не редактируются inline (overlay-edit не поддержан Glide для Bubble). В коде помечено комментарием. Доработка — Фаза 2 (custom popover-редактор поверх Bubble).
 
+**Дополнение Волны 3 / Smart Tables Фазы 2 + 3 (2026-05-31, тот же общий cut):**
+
+**Фаза 2 — карточка строки = мини-документ**:
+- Frontend: новый `RowDetail.tsx` (Sheet-панель), Tiptap-editor для `TableRow.pageContent` (поле уже было в Prisma из Фазы 0).
+- Новые зависимости фронта: `@tiptap/react@^3.24.0`, `@tiptap/starter-kit@^3.24.0`, `@tiptap/extension-link@^3.24.0`.
+- Backend: никаких изменений (`UpdateRowBodySchema.pageContent` уже принимался).
+
+**Фаза 3 — сохраняемые срезы (saved views)**:
+- Backend: новый `TableViewsController` + `TableViewsService` в `backend/src/modules/tables/`. **5 новых эндпоинтов** под `/api/v1/tables/:tableId/views`.
+- Никаких Prisma-изменений (модель `TableView` уже была в Фазе 0).
+- Frontend: `ViewSelector`, `SaveViewDialog`. URL state `/tables/:id?view=:viewId`.
+
+**Прод-операций НЕ нужно** (нет новых ENV, нет Prisma-push, нет seed/patch/migrate, нет новых очередей). Достаточно `docker compose up -d --build backend frontend` — Шаг 11 общий с Фазами 0+1 и остальной Волной 3.
+
+**Дополнительные smoke-проверки (опц.):**
+```bash
+# Список views — пустой для новой таблицы
+curl -i -H 'Cookie:<session>' -H 'X-Org-Id:<orgId>' \
+     https://prod.host/api/v1/tables/$TABLE_ID/views
+# Ожидаемо: 200 []
+
+# Создать view
+curl -i -X POST -H 'Cookie:<session>' -H 'X-Org-Id:<orgId>' \
+     -H 'Content-Type: application/json' \
+     -d '{"name":"Только важное","type":"grid","visibility":"personal","config":{"hiddenProps":["<propId>"]}}' \
+     https://prod.host/api/v1/tables/$TABLE_ID/views
+# Ожидаемо: 201 { id, ownerId, ... }
+
+# UI:
+# /tables/<id> — в шапке dropdown «Виды» (пустой) + «Колонки» (видимость колонок и плотность)
+# Кликнул на маркер строки → справа выезжает Sheet с property'ями + Tiptap editor «Содержимое»
+```
+
+---
+
+### 🌊 2026-05-31 — Волна 3 Блок B: document-ingest Фаза 0 smoke-test (RESEARCH, без прод-выкатки)
+
+План: [plans/tz/2026-05-31-document-ingest-universal.md](../../plans/tz/2026-05-31-document-ingest-universal.md) §Фаза 0.
+
+**Сделано:** smoke-test финального стека (Docling 2.96 + RapidOCR + PP-OCRv5 eslav-веса) на 5 публичных фикстурах. Все гейты §0.3 либо пройдены, либо имеют архитектурное решение в Фазе 1.
+
+**Прод-операций НЕТ.** Это research-фаза — она ничего не выкатывает в прод. Артефакты:
+- `backend/test/fixtures/documents/{README.md, download-fixtures.sh, .gitignore}` — фикстуры скачиваются локально (бинарники не в git).
+- `infra/document-conversion/smoke/{Dockerfile, docker-compose.yml, run.py}` — smoke-CLI, запускается локально через docker.
+- `plans/analysis/2026-05-31-document-conversion-stack.md` — дополнен разделом «Smoke-test results» с цифрами.
+- `plans/tz/2026-05-31-document-ingest-universal.md` — статус «Фаза 0 закрыт 2026-05-31».
+
+**Локально воспроизвести** (для другой машины разработчика):
+```bash
+cd backend/test/fixtures/documents && bash download-fixtures.sh
+cd ../../../../infra/document-conversion/smoke
+docker compose build
+docker compose run --rm smoke
+```
+
+**Решение по Фазе 1**: ✅ Docling+RapidOCR подтверждён. Не переходим на план B (OpenDataLoader PDF). Фаза 1 (полноценный DCS sidecar) разблокирована для отдельной сессии.
+
+⚠️ **Критическая находка для Фазы 1:** PP-OCRv5 eslav-веса (`monkt/paddleocr-onnx`) обязательны. С дефолтным китайским ch_PP-OCRv4 — OCR на русском 0%. С eslav — 100%. Зафиксировать в ТЗ Фазы 1.
+
+---
+
+### 🌊 2026-05-31 — Pulse Этапы A+A2+B+C (gaps + 3.2/4.6/4.7 + Волна 5 + Волна 6)
+
 ---
 
 ### 🌊 2026-05-31 — Pulse Этапы A+A2+B+C (gaps + 3.2/4.6/4.7 + Волна 5 + Волна 6)

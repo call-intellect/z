@@ -93,6 +93,19 @@ export interface TableRowApi {
   pageContent: Record<string, unknown> | null;
 }
 
+/** Сохраняемый срез (Saved View) — Фаза 3. */
+export interface TableViewApi {
+  id: string;
+  tableId: string;
+  name: string;
+  type: TableViewTypeApi;
+  config: Record<string, unknown>;
+  visibility: TableViewVisibilityApi;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─────────────────────────── Request DTO ─────────────────────────────────
 
 export interface CreateTableBodyApi {
@@ -153,4 +166,18 @@ export interface RowsListQueryApi {
   archived?: 'all' | 'active' | 'archived';
   limit?: number;
   offset?: number;
+}
+
+export interface CreateTableViewBodyApi {
+  name: string;
+  type?: TableViewTypeApi;
+  config?: Record<string, unknown>;
+  visibility?: TableViewVisibilityApi;
+}
+
+export interface UpdateTableViewBodyApi {
+  name?: string;
+  type?: TableViewTypeApi;
+  config?: Record<string, unknown>;
+  visibility?: TableViewVisibilityApi;
 }

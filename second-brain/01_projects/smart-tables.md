@@ -18,7 +18,7 @@ related_projects:
 
 Конкурентный паритет с Teamly Spring 2026 («Умные таблицы» как «российский Notion-database») + 5 наших преимуществ (AI внутри, Excel-импорт со схема-инференсом, связь со графом знаний, bi-directional embed, granular permissions). ТЗ полный: [plans/tz/2026-05-31-smart-tables.md](../../plans/tz/2026-05-31-smart-tables.md).
 
-## Что сделано (Волна 3, MVP-старт 2026-05-31, Фазы 0+1)
+## Что сделано (Волна 3, MVP-старт 2026-05-31, Фазы 0+1+2+3)
 
 ### Backend (Фаза 0)
 
@@ -57,10 +57,33 @@ related_projects:
 - **Парные цветовые токены** — никаких `text-white`. Status colors через mapping `bg-{color}-100/text-{color}-900`.
 - Все UI-копи на русском (память `feedback_admin_ui_russian_only`).
 
+### Frontend (Фаза 2 — карточка строки = мини-документ)
+
+- Клик на маркер строки (column -1) в Grid → открывается `RowDetail` Sheet справа (640px desktop, fullscreen mobile).
+- В шапке Sheet: заголовок из `isPrimary`-property, метки created/updated, кнопка X.
+- Список 14 интерактивных property'ей в формате `[140px_1fr]` с inline-редактированием (text/longtext/number/currency/percent/url/email/phone/checkbox). Read-only display для status/select/person/date. Заглушка «Тип пока не поддерживается» для file/formula/etc.
+- Под property'ями — секция «Содержимое»: **Tiptap-editor** (`@tiptap/react@3.24` + `StarterKit` + `Link`, `immediatelyRender: false` для React 19 SSR) с mini-toolbar (B/I/S/H1/H2/list/numbered/blockquote/link, lucide-иконки). Сохранение через `store.updatePageContent(rowId, json)` → debounce 500мс → PATCH `pageContent` в `/rows/:rowId`.
+- Заглушки `Комментарии — Скоро будет в Фазе 2+` и `История изменений — в разработке`.
+- Новые зависимости фронта: `@tiptap/react@3.24.0`, `@tiptap/starter-kit@3.24.0`, `@tiptap/extension-link@3.24.0` (+188 transitive).
+
+### Backend (Фаза 3 — сохраняемые срезы)
+
+- `TableViewsController` (`/api/v1/tables/:tableId/views`) — **5 эндпоинтов** CRUD (list, getById, create, update, delete).
+- `TableViewsService` с visibility-фильтром: пользователь видит personal только свои + все shared/public; owner-or-admin guard на update/delete.
+- 6 unit-тестов (create-mine, list-visible, list-hides-other-personal, findById-чужой-personal, update-own, update-other-forbidden).
+
+### Frontend (Фаза 3 — сохраняемые срезы)
+
+- Маршрут с URL state: `/tables/:id?view=:viewId` через `useSearchParams`.
+- `ViewSelector` в шапке таблицы: dropdown «Виды» (список SWR), dropdown «Колонки» (видимость + плотность compact/default/tall), кнопки «Сохранить вид» / «×».
+- `SaveViewDialog`: input «Название» + radio «Только мне» / «Всей команде» / «Публичная ссылка».
+- Store расширения: `views[]`, `currentView`, `draftConfig`, `hasUnsavedChanges`, методы `setViews/applyView/setHiddenProperty/setDraftPropOrder/setRowHeight/saveCurrentAsView/saveChangesToCurrentView/deleteView`, селекторы `selectVisibleProperties/selectVisibleRows/selectRowHeightPx`.
+- TableClient использует селекторы для рендера → колонки скрываются/появляются мгновенно по applyView.
+- `GridView` принимает `rowHeight?: number` и пробрасывает в `DataEditor.rowHeight` (compact 24, default 34, tall 48).
+- Минимально реализовано: **hiddenProps + propOrder + rowHeight**. Sorts — реализован в селекторе, но без UI-крутилки. Filters/groupBy — структуры поддержаны, UI не добавлен (Фаза 4+).
+
 ## Что НЕ сделано (явно отложено — отдельные сессии)
 
-- **Фаза 2**: карточка строки = мини-документ (ProseMirror editor для `pageContent`, comments, audit-журнал).
-- **Фаза 3**: сохраняемые срезы (`TableView` views, dropdown «Виды», personal/shared/public).
 - **Фаза 4**: Канбан view (через dnd-kit).
 - **Фаза 5**: Excel-импорт со schema-инференсом через LLM (зависит от document-ingest Фазы 1).
 - **Фаза 6**: Calendar / Gantt / Gallery / Timeline / Map views.
@@ -73,13 +96,15 @@ related_projects:
 - **Фаза 13**: API + webhooks.
 - **Фаза 14**: Forms-view.
 
-## Известные ограничения Фазы 1
+## Известные ограничения Фаз 1-3
 
-- **Bubble cells (status/selectSingle/selectMulti) не редактируются inline** — Glide Data Grid Bubble не входит в `EditableGridCell`. В Фазе 1 — display-only с пометкой в коде. В Фазе 2 поверх Bubble добавим кастомный popover-редактор.
+- **Bubble cells (status/selectSingle/selectMulti) не редактируются inline** — Glide Data Grid Bubble не входит в `EditableGridCell`. В Grid view — display-only с пометкой в коде. В `RowDetail` карточке (Фаза 2) — read-only display. Кастомный popover-редактор поверх Bubble — отдельная задача.
 - **Permissions на уровне таблицы** — только owner/admin/manager через `policy.csv`. Cell/column/row permissions — Фаза 11.
 - **Bulk delete колонок/строк не реализован** — только через единичные действия. Header-context-menu — Фаза 2+.
 - **Real-time через polling** (SWR), не Yjs — Фаза 10.
-- **`/tables` (list-страница)** не реализована — Фаза 1 только `/tables/[id]`. Создание новой таблицы — через CRUD API напрямую (POST /api/v1/tables) или будет добавлен в Фазе 2.
+- **`/tables` (list-страница)** не реализована — пока только `/tables/[id]`. Создание новой таблицы — через CRUD API напрямую (POST /api/v1/tables) или будет добавлен отдельной задачей.
+
+- **Drag&drop колонок vs view-local propOrder (Фаза 3)** — текущий `reorderColumn` мутирует глобальный `TableProperty.order` через PATCH/reorder API. Если активен view с собственным `propOrder`, drag-and-drop может конфликтовать (глобальный order перетрётся, локальный `propOrder` останется в config'е view). На MVP допустимо. Изоляция per-view reorder — отдельная задача.
 
 ## Связи
 

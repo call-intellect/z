@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
@@ -24,8 +24,14 @@ import {
 } from '@app/(admin)/admin/AdminStateViews';
 
 import { EmptyState } from './components/EmptyState';
+import { RowDetail } from './components/RowDetail';
 import { TableHeader } from './components/TableHeader';
-import { useTableStore } from './store/tableStore';
+import {
+  selectRowHeightPx,
+  selectVisibleProperties,
+  selectVisibleRows,
+  useTableStore,
+} from './store/tableStore';
 
 /**
  * `GridView` использует `@glideapps/glide-data-grid`, который работает на
@@ -146,15 +152,35 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
 
 function Loaded() {
   const table = useTableStore((s) => s.table);
-  const properties = useTableStore((s) => s.properties);
-  const rows = useTableStore((s) => s.rows);
+  const tableId = useTableStore((s) => s.tableId);
+  const allProperties = useTableStore((s) => s.properties);
+  // View-aware: учитывает hiddenProps / propOrder / sorts из active view.
+  const properties = useTableStore(selectVisibleProperties);
+  const rows = useTableStore(selectVisibleRows);
+  const allRows = useTableStore((s) => s.rows);
+  const rowHeightPx = useTableStore(selectRowHeightPx);
   const isMutating = useTableStore((s) => s.isMutating);
   const mutationError = useTableStore((s) => s.mutationError);
   const updateCell = useTableStore((s) => s.updateCell);
+  const updatePageContent = useTableStore((s) => s.updatePageContent);
   const addRow = useTableStore((s) => s.addRow);
   const addColumn = useTableStore((s) => s.addColumn);
   const reorderColumn = useTableStore((s) => s.reorderColumn);
   const reorderRow = useTableStore((s) => s.reorderRow);
+
+  // ─── Карточка строки (Фаза 2) ──────────────────────────────────────
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  // Карточка ищет в полном списке (allRows) — даже если строка скрыта view-
+  // фильтром или сорт сдвинул индекс, ссылка по id всё равно работает.
+  const openRow = allRows.find((r) => r.id === openRowId) ?? null;
+  const onOpenRow = (rowId: string) => setOpenRowId(rowId);
+  const onCloseRow = () => setOpenRowId(null);
+  const onUpdatePageContent = (
+    rowId: string,
+    json: Record<string, unknown> | null,
+  ) => {
+    void updatePageContent(rowId, json);
+  };
 
   // Stable ref для AddColumnButton: пробрасываем addColumn без unwrap.
   const onAddColumn = async (type: TablePropType, name: string) => {
@@ -237,9 +263,26 @@ function Loaded() {
             onRowAppended={onAddRow}
             onColumnMoved={onColumnMoved}
             onRowMoved={onRowMoved}
+            onOpenRow={onOpenRow}
+            rowHeight={rowHeightPx}
           />
         </div>
       )}
+
+      {/* Карточка строки (Фаза 2) — отрисовываем все свойства, включая скрытые
+          view-фильтром, чтобы можно было править любое поле из карточки. */}
+      {tableId ? (
+        <RowDetail
+          open={openRowId !== null}
+          onClose={onCloseRow}
+          tableId={tableId}
+          rowId={openRowId}
+          properties={allProperties}
+          rowData={openRow}
+          onUpdateCell={onCellEdited}
+          onUpdatePageContent={onUpdatePageContent}
+        />
+      ) : null}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import type {
   TablePropTypeApi,
   TablePropertyApi,
   TableRowApi,
+  TableViewApi,
   TableViewTypeApi,
   TableViewVisibilityApi,
 } from '@/api/types/tables';
@@ -65,6 +66,46 @@ export interface TableRowDomain {
   pageContent: Record<string, unknown> | null;
 }
 
+// ─────────────────────────── TableView (Saved Views, Фаза 3) ─────────────
+
+/**
+ * Семантика полей конфига сохраняемого вида.
+ *
+ * Все поля опциональны: пустой config = «всё видимо, без сортировки, без
+ * фильтров». На бэк уходит как `Record<string, unknown>` без жёсткой Zod-
+ * валидации (см. backend DTO) — стабильность UI обеспечивает этот тип.
+ */
+export interface TableViewConfig {
+  /** Какие propertyId скрыть из отрисовки. Фаза 3. */
+  hiddenProps?: string[];
+  /** Кастомный порядок колонок (override `TableProperty.order`). Фаза 3. */
+  propOrder?: string[];
+  /** Плотность строк Grid (compact / default / tall). Фаза 3. */
+  rowHeight?: 'compact' | 'default' | 'tall';
+  /** Локальная сортировка (Фаза 3 — минимально, equality + order). */
+  sorts?: Array<{ propertyId: string; direction: 'asc' | 'desc' }>;
+  /** Простые фильтры. Полноценно — Фаза 4. */
+  filters?: Array<{
+    propertyId: string;
+    op: 'eq' | 'neq' | 'contains' | 'gt' | 'lt';
+    value: unknown;
+  }>;
+  /** Для канбана/группировок. Фаза 4. */
+  groupBy?: string;
+}
+
+export interface TableViewDomain {
+  id: string;
+  tableId: string;
+  name: string;
+  type: TableViewType;
+  config: TableViewConfig;
+  visibility: TableViewVisibility;
+  ownerId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─────────────────────────── мапперы ─────────────────────────────────────
 
 export function tableFromApi(t: TableApi): TableDomain {
@@ -113,6 +154,101 @@ export function rowFromApi(r: TableRowApi): TableRowDomain {
     updatedAt: new Date(r.updatedAt),
     pageContent: r.pageContent,
   };
+}
+
+export function tableViewFromApi(v: TableViewApi): TableViewDomain {
+  // `config` приходит как Record<string, unknown>. Безопасно сужаем до
+  // TableViewConfig (поля опциональные, неизвестные ключи игнорятся).
+  const rawConfig = (v.config ?? {}) as Record<string, unknown>;
+  const config: TableViewConfig = {};
+  if (Array.isArray(rawConfig.hiddenProps)) {
+    config.hiddenProps = rawConfig.hiddenProps.filter(
+      (x): x is string => typeof x === 'string',
+    );
+  }
+  if (Array.isArray(rawConfig.propOrder)) {
+    config.propOrder = rawConfig.propOrder.filter(
+      (x): x is string => typeof x === 'string',
+    );
+  }
+  if (
+    rawConfig.rowHeight === 'compact' ||
+    rawConfig.rowHeight === 'default' ||
+    rawConfig.rowHeight === 'tall'
+  ) {
+    config.rowHeight = rawConfig.rowHeight;
+  }
+  if (Array.isArray(rawConfig.sorts)) {
+    config.sorts = rawConfig.sorts.filter(
+      (s): s is { propertyId: string; direction: 'asc' | 'desc' } =>
+        !!s &&
+        typeof s === 'object' &&
+        typeof (s as { propertyId?: unknown }).propertyId === 'string' &&
+        ((s as { direction?: unknown }).direction === 'asc' ||
+          (s as { direction?: unknown }).direction === 'desc'),
+    );
+  }
+  if (Array.isArray(rawConfig.filters)) {
+    config.filters = rawConfig.filters.filter(
+      (
+        f,
+      ): f is {
+        propertyId: string;
+        op: 'eq' | 'neq' | 'contains' | 'gt' | 'lt';
+        value: unknown;
+      } => {
+        if (!f || typeof f !== 'object') return false;
+        const o = f as Record<string, unknown>;
+        if (typeof o.propertyId !== 'string') return false;
+        return (
+          o.op === 'eq' ||
+          o.op === 'neq' ||
+          o.op === 'contains' ||
+          o.op === 'gt' ||
+          o.op === 'lt'
+        );
+      },
+    );
+  }
+  if (typeof rawConfig.groupBy === 'string') {
+    config.groupBy = rawConfig.groupBy;
+  }
+  return {
+    id: v.id,
+    tableId: v.tableId,
+    name: v.name,
+    type: v.type,
+    config,
+    visibility: v.visibility,
+    ownerId: v.ownerId,
+    createdAt: new Date(v.createdAt),
+    updatedAt: new Date(v.updatedAt),
+  };
+}
+
+/** Метки видимости для UI (русский, по `feedback_admin_ui_russian_only`). */
+export const VIEW_VISIBILITY_LABEL_RU: Record<TableViewVisibility, string> = {
+  personal: 'Только мне',
+  shared: 'Всей команде',
+  public: 'Публичная ссылка',
+};
+
+/** Сериализация TableViewConfig обратно в JSON для отправки на backend. */
+export function tableViewConfigToApi(
+  config: TableViewConfig,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (config.hiddenProps && config.hiddenProps.length > 0) {
+    out.hiddenProps = config.hiddenProps;
+  }
+  if (config.propOrder && config.propOrder.length > 0) {
+    out.propOrder = config.propOrder;
+  }
+  if (config.rowHeight) out.rowHeight = config.rowHeight;
+  if (config.sorts && config.sorts.length > 0) out.sorts = config.sorts;
+  if (config.filters && config.filters.length > 0) out.filters = config.filters;
+  if (config.groupBy) out.groupBy = config.groupBy;
+  return out;
 }
 
 // ─────────────────────────── лейблы типов ────────────────────────────────

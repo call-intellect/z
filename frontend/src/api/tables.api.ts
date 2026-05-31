@@ -37,15 +37,18 @@ import type {
   CreatePropertyBodyApi,
   CreateRowBodyApi,
   CreateTableBodyApi,
+  CreateTableViewBodyApi,
   ReorderPropertyBodyApi,
   RowsListQueryApi,
   TableApi,
   TablePropertyApi,
   TableRowApi,
+  TableViewApi,
   TablesListQueryApi,
   UpdatePropertyBodyApi,
   UpdateRowBodyApi,
   UpdateTableBodyApi,
+  UpdateTableViewBodyApi,
 } from './types/tables';
 
 export const tablesApi = {
@@ -176,6 +179,61 @@ export const tablesApi = {
   deleteRow: (orgId: string, tableId: string, rowId: string) =>
     apiClient.del<{ id: string }>(
       `/api/v1/tables/${encodeURIComponent(tableId)}/rows/${encodeURIComponent(rowId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+};
+
+/**
+ * Saved Views — Фаза 3 smart-tables.
+ *
+ *   GET    /api/v1/tables/:tableId/views
+ *   POST   /api/v1/tables/:tableId/views
+ *   GET    /api/v1/tables/:tableId/views/:viewId
+ *   PATCH  /api/v1/tables/:tableId/views/:viewId
+ *   DELETE /api/v1/tables/:tableId/views/:viewId
+ *
+ * Visibility-фильтр на backend: пользователь видит свои personal + все
+ * shared/public. Edit/delete — только владелец или admin.
+ */
+export const tableViewsApi = {
+  list: (orgId: string, tableId: string) =>
+    apiClient.get<{ items: TableViewApi[] }>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/views`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  byId: (orgId: string, tableId: string, viewId: string) =>
+    apiClient.get<TableViewApi>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  create: (
+    orgId: string,
+    tableId: string,
+    body: CreateTableViewBodyApi,
+  ) =>
+    apiClient.post<TableViewApi>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/views`,
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  update: (
+    orgId: string,
+    tableId: string,
+    viewId: string,
+    body: UpdateTableViewBodyApi,
+  ) =>
+    apiClient.patch<TableViewApi>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  remove: (orgId: string, tableId: string, viewId: string) =>
+    apiClient.del<{ id: string }>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
       { headers: orgHeaders(orgId) },
     ),
 };

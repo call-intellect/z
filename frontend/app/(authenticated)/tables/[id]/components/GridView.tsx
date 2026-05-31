@@ -9,6 +9,7 @@ import {
   type EditableGridCell,
   type GridCell,
   type GridColumn,
+  type GridMouseEventArgs,
   type Item,
 } from '@glideapps/glide-data-grid';
 import { useCallback, useMemo } from 'react';
@@ -45,6 +46,16 @@ export interface GridViewProps {
   onRowAppended: () => void;
   onColumnMoved: (from: number, to: number) => void;
   onRowMoved: (from: number, to: number) => void;
+  /**
+   * Открыть карточку строки (Фаза 2). Если не передан — клик по rowMarker
+   * ничего не делает.
+   */
+  onOpenRow?: (rowId: string) => void;
+  /**
+   * Высота строки в пикселях (Фаза 3, saved views).
+   * compact 24 / default 34 / tall 48. Default — 34, если не передан.
+   */
+  rowHeight?: number;
 }
 
 export function GridView({
@@ -54,6 +65,8 @@ export function GridView({
   onRowAppended,
   onColumnMoved,
   onRowMoved,
+  onOpenRow,
+  rowHeight,
 }: GridViewProps) {
   const columns = useMemo<GridColumn[]>(
     () =>
@@ -259,6 +272,29 @@ export function GridView({
     [onRowMoved],
   );
 
+  // Открытие карточки строки (Фаза 2).
+  //
+  // UX-решение: одиночный клик НЕ должен открывать карточку — он включает
+  // inline-edit в Grid (нужно для быстрой правки таблицы). Поэтому используем
+  // два триггера:
+  //   1. Клик по row-marker (col === -1) — слева есть колонка с № строки и
+  //      чекбоксом, клик по ней безопасно открывает карточку.
+  //   2. Кнопка «Открыть» в первой колонке (вне Glide) — fallback из ТЗ. В
+  //      Phase 2 пока используем (1), кнопочный fallback можно добавить
+  //      позже отдельной колонкой если row-marker недостаточен.
+  const onCellClicked = useCallback(
+    (cell: Item, event: GridMouseEventArgs) => {
+      if (!onOpenRow) return;
+      const [col, row] = cell;
+      if (col !== -1) return;
+      if (event.button !== 0) return;
+      const rowData = rows[row];
+      if (!rowData) return;
+      onOpenRow(rowData.id);
+    },
+    [rows, onOpenRow],
+  );
+
   return (
     <>
       {/* Portal element для overlay-редакторов Glide. */}
@@ -274,7 +310,9 @@ export function GridView({
         onColumnMoved={onColumnMovedInner}
         onRowMoved={onRowMovedInner}
         onRowAppended={onRowAppended}
+        onCellClicked={onCellClicked}
         rowMarkers="both"
+        rowHeight={rowHeight ?? 34}
         smoothScrollX
         smoothScrollY
         getCellsForSelection

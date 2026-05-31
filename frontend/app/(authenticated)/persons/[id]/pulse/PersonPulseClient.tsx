@@ -18,8 +18,14 @@ import {
 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
+import { activityFeedApi } from '@/api/activity-feed.api';
 import { personsApi } from '@/api/persons.api';
 import { useAuth } from '@/contexts/auth-context';
+import {
+  feedItemFromApi,
+  type FeedItemDomain,
+  type FeedStatus,
+} from '@/domain/activity-feed';
 import type {
   PersonPulse,
   PersonPulseHrSuggestion,
@@ -148,6 +154,7 @@ function PersonPulseContent({
       </div>
       <PromisesCard data={data} />
       <RiskFlagsSection data={data} />
+      <PersonProbeQuestionsSection viewedUserId={data.viewedUserId} />
       <ComingSoonSection />
     </div>
   );
@@ -702,6 +709,188 @@ function riskFlagLabel(type: string): string {
   }
 }
 
+// ────────────────────────── Probe-вопросы AI ────────────────────────────
+//
+// Секция «Вопросы AI этому человеку» — лента ActivityFeed, отфильтрованная
+// по `targetUserId === viewedUserId` и `feedType='probe_question'`.
+//
+// До задачи A1 — был placeholder в ComingSoonSection; теперь живая секция.
+// Источник API: `GET /api/v1/feed/probe_question?viewedUserId=<userId>`.
+//
+// Edge: `viewedUserId === null` → Person ещё не зарегистрирован, и AI ему
+// вопросы не отправляет. Показываем friendly empty Card.
+
+function PersonProbeQuestionsSection({
+  viewedUserId,
+}: {
+  viewedUserId: string | null;
+}) {
+  const [items, setItems] = useState<FeedItemDomain[]>([]);
+  const [loading, setLoading] = useState(viewedUserId !== null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (viewedUserId === null) {
+      setItems([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const res = await activityFeedApi.list({
+          feedType: 'probe_question',
+          viewedUserId,
+          scopedToMe: false,
+          limit: 10,
+        });
+        if (!alive) return;
+        setItems(res.items.map(feedItemFromApi));
+      } catch (e) {
+        if (!alive) return;
+        setError(
+          e instanceof ApiError
+            ? e.message
+            : 'Не удалось загрузить вопросы AI',
+        );
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [viewedUserId]);
+
+  if (viewedUserId === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageCircle size={16} className="text-accent" />
+            Вопросы AI этому человеку
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-fg-tertiary">
+            Этот человек ещё не зарегистрирован — вопросы AI отправляются
+            только зарегистрированным пользователям.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageCircle size={16} className="text-accent" />
+          Вопросы AI этому человеку
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : error ? (
+          <p className="text-sm text-chip-danger-fg">{error}</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-fg-tertiary">
+            У этого человека ещё не было вопросов AI. Они появятся, когда
+            помощник захочет уточнить что-то у этого сотрудника.
+          </p>
+        ) : (
+          <ul
+            className={cn(
+              'space-y-2',
+              items.length > 5 && 'max-h-96 overflow-y-auto pr-1',
+            )}
+          >
+            {items.map((it) => (
+              <ProbeQuestionItem key={it.id} item={it} />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProbeQuestionItem({ item }: { item: FeedItemDomain }) {
+  const meta = PROBE_STATUS_META[item.status];
+  return (
+    <li className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-3 shadow-card-soft">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="text-sm font-medium leading-snug text-fg-primary">
+            {item.title}
+          </div>
+          {item.summary && (
+            <p className="line-clamp-2 text-xs text-fg-secondary">
+              {item.summary}
+            </p>
+          )}
+          <div className="text-[11px] text-fg-tertiary">
+            {formatDateRu(item.emittedAt)}
+          </div>
+        </div>
+        <span
+          className={cn(
+            'inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide',
+            meta.className,
+          )}
+        >
+          {meta.label}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+const PROBE_STATUS_META: Record<FeedStatus, { label: string; className: string }> = {
+  emitted: {
+    label: 'активный',
+    className: 'bg-chip-info-bg text-chip-info-fg',
+  },
+  delivered: {
+    label: 'активный',
+    className: 'bg-chip-info-bg text-chip-info-fg',
+  },
+  seen: {
+    label: 'активный',
+    className: 'bg-chip-info-bg text-chip-info-fg',
+  },
+  responded: {
+    label: 'отвечен',
+    className: 'bg-chip-success-bg text-chip-success-fg',
+  },
+  actioned: {
+    label: 'отвечен',
+    className: 'bg-chip-success-bg text-chip-success-fg',
+  },
+  dismissed: {
+    label: 'скрыт',
+    className: 'bg-bg-overlay text-fg-tertiary',
+  },
+  expired: {
+    label: 'истёк',
+    className: 'bg-bg-overlay text-fg-tertiary',
+  },
+};
+
+function formatDateRu(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('ru-RU');
+}
+
 // ────────────────────────── Coming soon ──────────────────────────────────
 
 function ComingSoonSection() {
@@ -710,7 +899,6 @@ function ComingSoonSection() {
     { title: 'Активность в трекере', hint: 'Закрытые задачи, темп, переоценки' },
     { title: 'Граф связей', hint: 'С кем чаще всего общается на встречах' },
     { title: 'Темы знаний', hint: 'Чем человек экспертно владеет' },
-    { title: 'Probe-вопросы AI', hint: 'История уточнений от помощника' },
   ];
   return (
     <Card>

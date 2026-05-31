@@ -15,7 +15,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
  *   - sentiment_index      (0.35): green-share минус red-share за 14 дней (нормированный).
  *   - checkin_regularity   (0.25): доля дней с чек-ином за 14 дней.
  *   - commitment_kept_ratio (0.20): kept / (kept + broken + overdue) за 30 дней.
- *   - meeting_activity     (0.20): placeholder 0.5 (полная импл — next iteration).
+ *   - meeting_activity     (0.20): avg(personTurns / meetingAvgTurns) по
+ *     встречам Person за 14 дней, нормировано в [0..1] через окно [0.2..2.0].
  *
  * Запись:
  *   - `Person.engagementScore` + `Person.engagementScoreAt`
@@ -67,7 +68,9 @@ export class EngagementScorerCron {
 
     const persons = await this.prisma.person.findMany({
       where: { deletedAt: null, relationship: 'employee' },
-      select: { id: true, tenantId: true },
+      // userId нужен для сигнала `meeting_activity` — он матчит участников
+      // встреч `MeetingParticipantBehavior.participant.userId`.
+      select: { id: true, tenantId: true, userId: true },
     });
 
     let personsScored = 0;
@@ -94,7 +97,7 @@ export class EngagementScorerCron {
    * Все методы — best-effort и используют `NEUTRAL_BASELINE` как default'ы.
    */
   private async computeForPerson(args: {
-    person: { id: string; tenantId: string };
+    person: { id: string; tenantId: string; userId: string | null };
     now: Date;
     since14: Date;
     since30: Date;
@@ -152,9 +155,13 @@ export class EngagementScorerCron {
     const commitmentKeptRatio =
       commitDenom > 0 ? kept / commitDenom : EngagementScorerCron.NEUTRAL_BASELINE;
 
-    // 4. Meeting activity: v1 — placeholder 0.5 (см. ТЗ §3.3 — оставлено
-    // на next iteration; нужен сервис MeetingParticipantBehavior сравнения).
-    const meetingActivity = EngagementScorerCron.NEUTRAL_BASELINE;
+    // 4. Meeting activity: avg(personTurns / meetingAvgTurns) по встречам
+    // Person за 14 дней, нормированный окном [0.2..2.0] → [0..1]. Подробнее —
+    // см. `computeMeetingActivity` ниже.
+    const meetingActivity = await this.computeMeetingActivity({
+      person,
+      since14,
+    });
 
     // Композитный score.
     const score =
@@ -173,6 +180,78 @@ export class EngagementScorerCron {
         baseline: EngagementScorerCron.NEUTRAL_BASELINE,
       },
     };
+  }
+
+  /**
+   * Сигнал `meeting_activity`: насколько активно Person говорит на встречах
+   * относительно остальных участников той же встречи. Источник —
+   * `MeetingParticipantBehavior.turnsCount` (число turn'ов спикера).
+   *
+   * Алгоритм:
+   *  1. Найти все `MeetingParticipantBehavior`, где Participant принадлежит
+   *     Person (через `participant.userId === person.userId`) и встреча
+   *     прошла за последние 14 дней.
+   *  2. Для каждой такой встречи взять avg(turnsCount) ВСЕХ её участников
+   *     (по `meetingBehaviorMetricsId`).
+   *  3. ratio = person.turnsCount / avg.
+   *  4. Усреднить ratio по встречам Person.
+   *  5. Маппинг [0.2..2.0] → [0..1] через линейную интерполяцию с clamp.
+   *
+   * Edge cases:
+   *  - person.userId === null → NEUTRAL_BASELINE (Person не привязан к User —
+   *    не можем связать со встречами).
+   *  - 0 встреч за 14 дней → NEUTRAL_BASELINE.
+   *  - avg === 0 (вырожденный случай) → ratio = 1 (нейтрально).
+   */
+  private async computeMeetingActivity(args: {
+    person: { id: string; tenantId: string; userId: string | null };
+    since14: Date;
+  }): Promise<number> {
+    if (!args.person.userId) return EngagementScorerCron.NEUTRAL_BASELINE;
+
+    const personBehaviors =
+      await this.prisma.meetingParticipantBehavior.findMany({
+        where: {
+          tenantId: args.person.tenantId,
+          participant: {
+            userId: args.person.userId,
+            meeting: { startedAt: { gte: args.since14 } },
+          },
+        },
+        select: { meetingBehaviorMetricsId: true, turnsCount: true },
+      });
+    if (personBehaviors.length === 0) {
+      return EngagementScorerCron.NEUTRAL_BASELINE;
+    }
+
+    const metricsIds = [
+      ...new Set(personBehaviors.map((b) => b.meetingBehaviorMetricsId)),
+    ];
+    const allBehaviors =
+      await this.prisma.meetingParticipantBehavior.findMany({
+        where: { meetingBehaviorMetricsId: { in: metricsIds } },
+        select: { meetingBehaviorMetricsId: true, turnsCount: true },
+      });
+
+    const avgByMetrics = new Map<string, number>();
+    for (const id of metricsIds) {
+      const items = allBehaviors.filter(
+        (b) => b.meetingBehaviorMetricsId === id,
+      );
+      const sum = items.reduce((s, b) => s + b.turnsCount, 0);
+      const avg = sum / Math.max(1, items.length);
+      avgByMetrics.set(id, avg);
+    }
+
+    const ratios = personBehaviors.map((b) => {
+      const avg = avgByMetrics.get(b.meetingBehaviorMetricsId) ?? 1;
+      // avg === 0 — все молчали, считаем нейтрально (ratio=1).
+      return avg > 0 ? b.turnsCount / avg : 1;
+    });
+    const avgRatio = ratios.reduce((s, r) => s + r, 0) / ratios.length;
+
+    // Маппинг [0.2..2.0] → [0..1] с clamp.
+    return Math.max(0, Math.min(1, (avgRatio - 0.2) / 1.8));
   }
 
   private async persistScore(args: {

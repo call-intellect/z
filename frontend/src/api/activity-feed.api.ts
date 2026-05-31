@@ -24,6 +24,12 @@ export const activityFeedApi = {
     page?: number;
     scopedToMe?: boolean;
     teamId?: string;
+    /**
+     * Фильтр «адресовано конкретному User.id». Используется секцией
+     * «Вопросы AI этому человеку» на карточке сотрудника
+     * (`PersonProbeQuestionsSection`). Работает поверх `scopedToMe`.
+     */
+    viewedUserId?: string;
   }) => {
     const params = new URLSearchParams();
     if (args.status) params.set('status', args.status);
@@ -31,6 +37,7 @@ export const activityFeedApi = {
     if (args.page !== undefined) params.set('page', String(args.page));
     params.set('scopedToMe', String(args.scopedToMe ?? false));
     if (args.teamId) params.set('teamId', args.teamId);
+    if (args.viewedUserId) params.set('viewedUserId', args.viewedUserId);
     const query = params.toString();
     return apiClient.get<FeedListApi>(
       `/api/v1/feed/${encodeURIComponent(args.feedType)}${query ? `?${query}` : ''}`,

@@ -95,6 +95,17 @@ export const ListFeedQuerySchema = z.object({
   projectId: z.string().min(1).max(60).optional(),
   goalId: z.string().min(1).max(60).optional(),
   sourceAgentName: z.string().min(1).max(120).optional(),
+  /**
+   * Фильтр «кому адресовано» (`ActivityFeedItem.targetUserId`).
+   *
+   * Используется для секций вида «вопросы AI этому человеку» на карточке
+   * сотрудника (Pulse §3.0.1 ActivityFeed реестр; `PersonPulseClient`).
+   *
+   * Visibility-фильтр `scopedToMe` НЕ отключается этим параметром —
+   * `viewedUserId` работает поверх (служит дополнительным WHERE-условием
+   * `targetUserId = viewedUserId`).
+   */
+  viewedUserId: z.string().min(1).max(60).optional(),
   /** Окно публикации `from` (ISO 8601). */
   emittedFrom: z.string().datetime().optional(),
   /** Окно публикации `to` (ISO 8601). */

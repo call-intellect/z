@@ -62,6 +62,12 @@ export interface PersonPulse {
   personId: string;
   personName: string;
   email: string;
+  /**
+   * User.id, к которому привязан Person (после accept'а приглашения). null
+   * если Person ещё не зарегистрировался. Используется секцией
+   * «Вопросы AI этому человеку» как фильтр ленты ActivityFeed.
+   */
+  viewedUserId: string | null;
   departmentName: string | null;
   isHead: boolean;
   lastOneOnOneAt: string | null;

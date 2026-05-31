@@ -202,6 +202,11 @@ export class ActivityFeedService {
     if (q.projectId) where.projectId = q.projectId;
     if (q.goalId) where.goalId = q.goalId;
     if (q.sourceAgentName) where.sourceAgentName = q.sourceAgentName;
+    // Фильтр «адресовано конкретному пользователю» (см. DTO §viewedUserId).
+    // Применяется ДО visibility-фильтра — это обычный WHERE-критерий, поверх
+    // которого ещё может срабатывать `scopedToMe`. Используется секцией
+    // «Вопросы AI этому человеку» на карточке сотрудника (`PersonPulseClient`).
+    if (q.viewedUserId) where.targetUserId = q.viewedUserId;
 
     if (q.emittedFrom || q.emittedTo) {
       where.emittedAt = {};

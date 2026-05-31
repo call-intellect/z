@@ -55,6 +55,13 @@ export interface PersonPulseDto {
   personId: string;
   personName: string;
   email: string;
+  /**
+   * User.id, к которому привязан Person (после accept'а приглашения). Используется
+   * для фильтра ленты «Вопросы AI этому человеку» (`PersonProbeQuestionsSection`,
+   * см. `activityFeedApi.list({viewedUserId})`). NULL — Person ещё не
+   * зарегистрировался; вопросы AI отправляются только зарегистрированным.
+   */
+  viewedUserId: string | null;
   departmentName: string | null;
   /** true если этот Person — глава своего primaryDepartment'а. */
   isHead: boolean;
@@ -120,6 +127,9 @@ export class PersonPulseService {
         id: true,
         name: true,
         email: true,
+        // User.id, к которому привязан Person (после accept'а приглашения).
+        // Нужен для фильтра ленты «Вопросы AI этому человеку» на карточке.
+        userId: true,
         engagementScore: true,
         engagementScoreAt: true,
         hrSuggestionsJson: true,
@@ -179,6 +189,7 @@ export class PersonPulseService {
       personId: person.id,
       personName: person.name,
       email: person.email,
+      viewedUserId: person.userId ?? null,
       departmentName: person.primaryDepartment?.name ?? null,
       isHead:
         person.primaryDepartment !== null &&

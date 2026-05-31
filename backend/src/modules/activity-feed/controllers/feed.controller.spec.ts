@@ -127,6 +127,17 @@ describe('FeedController', () => {
     expect(call.query.feedType).toBe('insight');
   });
 
+  it('GET /api/v1/feed — фильтр viewedUserId пробрасывается в сервис', async () => {
+    const { ctrl, svc } = build();
+    const query: ListFeedQuery = {
+      ...baseQuery,
+      viewedUserId: 'user-X',
+    };
+    await ctrl.listAll(query, sampleUser, 't-1');
+    const call = (svc.getFeed as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(call.query.viewedUserId).toBe('user-X');
+  });
+
   it('GET /api/v1/feed/:type — невалидный тип → BadRequest', async () => {
     const { ctrl } = build();
     await expect(

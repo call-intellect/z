@@ -1084,6 +1084,17 @@ model Meeting {
   /// Статус AI-оценки качества встречи (воркер ai.quality-score).
   /// NULL = не запускался; 'pending'|'ready'|'failed'|'disabled'.
   qualityScoreStatus    String?
+  /// Pulse Wave 6 §6.3 — Meeting ROI:
+  ///   (decisions × 10 + commitments × 5 + tasks × 3) /
+  ///   (avgParticipants × durationMinutes / 60).
+  /// Считается `MeetingRoiScorerWorker` (`dashboard.meeting-roi`) после
+  /// успешного analyze (см. `analyze.worker` шаг 13a). NULL до прогона.
+  /// Decimal(8,3) — потенциально большие значения для коротких встреч с
+  /// большим числом решений / задач (внутри ТЗ §4.1 указано Decimal(4,3),
+  /// но 4,3 даёт максимум 9.999 — недостаточно; согласовано с оркестратором).
+  roiScore              Decimal?      @db.Decimal(8, 3)
+  /// Когда `MeetingRoiScorerWorker` последний раз пересчитал `roiScore`.
+  roiScoreAt            DateTime?
   createdAt             DateTime      @default(now())
   deletedAt             DateTime?
 
@@ -5297,6 +5308,16 @@ model Decision {
   /// Pulse Wave 1 §1.2 — последний раз когда решение было упомянуто.
   /// При создании = createdAt; при verdict='merge' = momentum merge'а.
   lastRaisedAt    DateTime?
+  /// Pulse Wave 6 §6.8 — Bezos two-way door classification:
+  /// 'type-1' = необратимое (large investments, hiring senior, public
+  /// commitments); 'type-2' = обратимое.
+  /// Считается `DecisionHygieneScorerWorker` (`dashboard.decision-hygiene`)
+  /// на каждое новое Decision. NULL до прогона. Хранится строкой —
+  /// при расширении словаря не потребует миграции.
+  reversibility   String?
+  /// Когда `DecisionHygieneScorerWorker` последний раз проставил
+  /// `reversibility`.
+  reversibilityAt DateTime?
 
   org             Org             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   decidedBy       Person?         @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)

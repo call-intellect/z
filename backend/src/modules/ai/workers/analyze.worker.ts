@@ -6,6 +6,11 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+// Pulse Wave 6 §6.3 — best-effort enqueue Meeting-ROI после ai_ready.
+// Optional injection: старые unit-тесты AnalyzeWorker не передают
+// DashboardQueueService, и поведение остаётся идентичным (worker просто не
+// постит job в dashboard.meeting-roi).
+import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
 import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { MeetingsService } from '../../meetings/meetings.service';
 // Wave 3 / Tracker Phase 3 part B — best-effort вызов meeting-extract-actions
@@ -97,6 +102,12 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(MeetingExtractActionsService)
     private readonly meetingExtractActions?: MeetingExtractActionsService,
+    // Pulse Wave 6 §6.3 — Meeting-ROI-Scorer. После ai_ready enqueue'им
+    // пересчёт `Meeting.roiScore`. Best-effort: отсутствие DashboardModule в
+    // unit-тестах не ломает analyze.
+    @Optional()
+    @Inject(DashboardQueueService)
+    private readonly dashboardQueue?: DashboardQueueService,
   ) {}
 
   onModuleInit(): void {
@@ -393,6 +404,21 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           `analyze: enqueueQualityScore упал: ${err instanceof Error ? err.message : String(err)}`,
         ),
       );
+
+    // 13a. Pulse Wave 6 §6.3 — Meeting-ROI-Scorer (event-driven). Считается
+    //      детерминистически из БД (decisions/commitments/tasks/duration/
+    //      participants), поэтому ставим после ai_ready (quality-score и tasks
+    //      уже могли записаться). Best-effort + Optional: если DashboardModule
+    //      не подключён (unit-тест AnalyzeWorker) — просто skip.
+    if (this.dashboardQueue) {
+      await this.dashboardQueue
+        .enqueueMeetingRoi(meetingId)
+        .catch((err) =>
+          this.logger.warn(
+            `analyze: enqueueMeetingRoi упал: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+    }
 
     // 14. Wave 3 / Tracker Phase 3 part B — meeting-extract-actions.
     //     Извлекаем структурированные «автозадачи» из транскрипта и

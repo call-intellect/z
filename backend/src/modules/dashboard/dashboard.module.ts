@@ -5,16 +5,24 @@ import { OperationsModule } from '../operations/operations.module';
 
 import { BurnoutRiskDetectorCron } from './agents/burnout-risk-detector.cron';
 import { BusFactorAnalyzerCron } from './agents/bus-factor-analyzer.cron';
+// Pulse Wave 6 §6.8 — Decision-Hygiene-Scorer (event-driven worker).
+import { DecisionHygieneScorerWorker } from './agents/decision-hygiene-scorer.worker';
 import { EngagementScorerCron } from './agents/engagement-scorer.cron';
 import { ForecasterCron } from './agents/forecaster.cron';
 import { GoalVectorTrackerCron } from './agents/goal-vector-tracker.cron';
 import { HrRecommenderCron } from './agents/hr-recommender.cron';
 import { KnowledgeVelocityTrackerCron } from './agents/knowledge-velocity-tracker.cron';
+// Pulse Wave 6 §6.3 — Meeting-ROI-Scorer (event-driven worker).
+import { MeetingRoiScorerWorker } from './agents/meeting-roi-scorer.worker';
 import { PromiseNetworkAnalyzerCron } from './agents/promise-network-analyzer.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
 import { TopicRecurrenceDetectorCron } from './agents/topic-recurrence-detector.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { CommitmentReliabilityService } from './services/commitment-reliability.service';
+// Pulse Wave 6 §6.3/§6.8 — producer для воркеров ROI и Decision-Hygiene.
+// Экспортируется наружу, чтобы AnalyzeWorker / Specialist33DecisionsWorker
+// могли его @Optional() инжектить из WorkersModule.
+import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { HangingDecisionsService } from './services/hanging-decisions.service';
 import { NarrativeCitationsParserService } from './services/narrative-citations-parser.service';
@@ -82,6 +90,14 @@ import { TeamHealthService } from './services/team-health.service';
     PromiseNetworkAnalyzerCron,
     GoalVectorTrackerCron,
     KnowledgeVelocityTrackerCron,
+    // Pulse Wave 6 §6.3 / §6.8 — event-driven воркеры (BullMQ) и producer.
+    // - DashboardQueueService — producer (enqueueMeetingRoi / enqueueDecisionHygiene).
+    // - MeetingRoiScorerWorker — consumer dashboard.meeting-roi (NO LLM, формула).
+    // - DecisionHygieneScorerWorker — consumer dashboard.decision-hygiene
+    //   (LLM taskType='decision-hygiene', Bezos type-1/type-2).
+    DashboardQueueService,
+    MeetingRoiScorerWorker,
+    DecisionHygieneScorerWorker,
   ],
   exports: [
     CommitmentReliabilityService,
@@ -89,6 +105,9 @@ import { TeamHealthService } from './services/team-health.service';
     SentimentIndexService,
     TeamHealthService,
     TeamDetailService,
+    // Pulse Wave 6 §6.3/§6.8 — producer для cross-module enqueue из
+    // AnalyzeWorker / Specialist33DecisionsWorker.
+    DashboardQueueService,
     // парсер не экспортируем — внутренний для dashboard
   ],
 })

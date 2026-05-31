@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -14,6 +15,10 @@ import {
   CORE_QUEUE_NAMES,
   type SpecialistRoutingJobData,
 } from '../../core-queue/queues';
+// Pulse Wave 6 §6.8 — Decision-Hygiene-Scorer enqueue после processBlock.
+// Optional: spec-тесты Specialist33Worker не передают DashboardModule в DI,
+// и поведение должно остаться идентичным.
+import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
 import { RouterService } from '../services/router.service';
 import { Specialist33Service } from '../services/specialist-3-3-decisions.service';
 
@@ -56,6 +61,11 @@ export class Specialist33DecisionsWorker
     @Inject(Specialist33Service) private readonly svc: Specialist33Service,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // Pulse Wave 6 §6.8 — Decision-Hygiene producer. Best-effort: если
+    // DashboardModule не подключён (старые spec-тесты) — просто skip enqueue.
+    @Optional()
+    @Inject(DashboardQueueService)
+    private readonly dashboardQueue?: DashboardQueueService,
   ) {}
 
   onModuleInit(): void {
@@ -143,10 +153,60 @@ export class Specialist33DecisionsWorker
         { blockId, signalType: block.signalType },
         'specialist-3-3: блок обработан',
       );
+
+      // Pulse Wave 6 §6.8 — enqueue Decision-Hygiene для каждого
+      // не классифицированного Decision этого блока. Запрос лёгкий
+      // (по индексу `sourceIdeaBlockId` или GIN по `sourceBlockIds`).
+      // Не критично к точности счёта — worker сам skip'ает уже
+      // классифицированные. Не валим основной поток на ошибке.
+      if (this.dashboardQueue) {
+        await this.enqueueHygieneForBlock({ tenantId, blockId }).catch(
+          (err) => {
+            this.logger.warn(
+              {
+                blockId,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'specialist-3-3: enqueueHygiene упал — пропуск',
+            );
+          },
+        );
+      }
     } finally {
       this.metrics.observeCoreSpecialistPipelineDuration({
         type: 'decision',
         seconds: (Date.now() - start) / 1000,
+      });
+    }
+  }
+
+  /**
+   * Pulse Wave 6 §6.8 — собирает Decision'ы данного блока (через legacy
+   * `sourceIdeaBlockId` и через GIN-массив `sourceBlockIds`) и enqueue'ит
+   * Decision-Hygiene для каждого с `reversibility=null`. Идемпотентно
+   * по `dashboard-queue:decision-hygiene:<decisionId>`.
+   */
+  private async enqueueHygieneForBlock(args: {
+    tenantId: string;
+    blockId: string;
+  }): Promise<void> {
+    const dq = this.dashboardQueue;
+    if (!dq) return;
+    const decisions = await this.prisma.decision.findMany({
+      where: {
+        tenantId: args.tenantId,
+        reversibility: null,
+        OR: [
+          { sourceIdeaBlockId: args.blockId },
+          { sourceBlockIds: { has: args.blockId } },
+        ],
+      },
+      select: { id: true },
+    });
+    for (const d of decisions) {
+      await dq.enqueueDecisionHygiene({
+        decisionId: d.id,
+        tenantId: args.tenantId,
       });
     }
   }

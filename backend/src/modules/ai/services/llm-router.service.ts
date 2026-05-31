@@ -459,7 +459,14 @@ export type LlmTaskType =
   // вычисление pro/contra/net score per Person. JSON-strict, дёшево
   // (deepseek-v4-flash primary). Cache-friendly: SYSTEM статичен, переменные
   // данные (goal + artefacts) — в конце user.
-  | 'goal-vector-tracker';
+  | 'goal-vector-tracker'
+  // Pulse Wave 6 §6.8 (2026-05-30) — Decision-Hygiene-Scorer: Bezos two-way
+  // door classification (type-1 = необратимое; type-2 = обратимое).
+  // JSON-strict, дешёвый частый вызов (вход — statement + alternatives;
+  // выход — { reversibility, rationale }). Primary deepseek-v4-flash;
+  // secondary gpt-5.4-mini; tertiary ollama qwen3.5:9b. Cache-friendly:
+  // SYSTEM статичен, переменные данные (statement) — в конце user.
+  | 'decision-hygiene';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -617,6 +624,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'sprint-weekly-digest',
   // Pulse Wave 6 §6.6 (2026-05-30) — Goal-Vector-Tracker: pro/contra/net per (person, goal).
   'goal-vector-tracker',
+  // Pulse Wave 6 §6.8 (2026-05-30) — Decision-Hygiene-Scorer: Bezos type-1/type-2.
+  'decision-hygiene',
 ] as const;
 
 /**

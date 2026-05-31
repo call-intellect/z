@@ -1,0 +1,230 @@
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { type Job, Worker } from 'bullmq';
+
+import { PrismaService } from '../../../common/prisma/prisma.service';
+import { RedisService } from '../../../common/redis/redis.service';
+import {
+  DASHBOARD_QUEUE_NAMES,
+  type MeetingRoiJobData,
+} from '../queues';
+
+/**
+ * Pulse Wave 6 §6.3 — Meeting-ROI-Scorer.
+ *
+ * Источник: plans/tz/2026-05-30-pulse-full.md §6.3.
+ *
+ * Event-driven worker (`dashboard.meeting-roi`). Producer — `analyze.worker`
+ * после ai_ready (см. шаг 13a там), а также любые ручные regenerate-флоу,
+ * которые ходят через `DashboardQueueService.enqueueMeetingRoi`.
+ *
+ * Формула:
+ *   roiScore = (decisions × 10 + commitments × 5 + tasks × 3) /
+ *              (avgParticipants × durationMinutes / 60)
+ *
+ * Где:
+ *   - decisions    = Decision.count где sourceMeetingId = meetingId
+ *                    (legacy single-link; для β-3 multi-source — расширим
+ *                    при подключении join-таблицы).
+ *   - commitments  = IdeaBlock.count где signalType='commitment' И связан с
+ *                    встречей через цепочку IdeaBlockEvidence → RawEvent
+ *                    (sourceType='meeting', sourceExternalId = meetingId).
+ *   - tasks        = Task.count где meetingId = meetingId.
+ *   - avgParticipants = max(1, participants.count) — реальные участники.
+ *   - durationMinutes = durationMs / 60_000.
+ *
+ * Защита от деления на 0: если знаменатель ≤ 0 (нет участников или нет
+ * длительности) — roiScore = 0.
+ *
+ * Без LLM-вызовов. Идемпотентность: повторный запуск пересчитывает (значение
+ * детерминистическое от состояния БД).
+ */
+@Injectable()
+export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MeetingRoiScorerWorker.name);
+  private worker: Worker<MeetingRoiJobData> | null = null;
+
+  /** Веса формулы — экспортируем константами для удобства тестов. */
+  static readonly WEIGHT_DECISIONS = 10;
+  static readonly WEIGHT_COMMITMENTS = 5;
+  static readonly WEIGHT_TASKS = 3;
+
+  constructor(
+    @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+  ) {}
+
+  onModuleInit(): void {
+    this.worker = new Worker<MeetingRoiJobData>(
+      DASHBOARD_QUEUE_NAMES.MEETING_ROI,
+      async (job) => this.process(job),
+      {
+        connection: this.redis.client,
+        concurrency: 4,
+      },
+    );
+    this.worker.on('failed', (job, err) => {
+      this.logger.warn(
+        {
+          meetingId: job?.data?.meetingId,
+          attempt: job?.attemptsMade,
+          err: err?.message,
+        },
+        'meeting-roi-scorer: job failed (повтор по политике BullMQ)',
+      );
+    });
+    this.logger.log(
+      `MeetingRoiScorerWorker запущен (${DASHBOARD_QUEUE_NAMES.MEETING_ROI})`,
+    );
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.worker) {
+      await this.worker.close();
+      this.worker = null;
+    }
+  }
+
+  /**
+   * Главный handler. Экспортирован публичным методом — integration-тест
+   * вызывает напрямую без BullMQ.
+   */
+  async process(job: Job<MeetingRoiJobData>): Promise<void> {
+    const { meetingId } = job.data;
+    const startedAt = Date.now();
+
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: {
+        id: true,
+        tenantId: true,
+        durationMs: true,
+        startedAt: true,
+        endedAt: true,
+        _count: { select: { participants: true } },
+      },
+    });
+    if (!meeting) {
+      this.logger.warn({ meetingId }, 'meeting-roi: meeting не найден — skip');
+      return;
+    }
+
+    const decisions = await this.prisma.decision.count({
+      where: { sourceMeetingId: meetingId, tenantId: meeting.tenantId },
+    });
+
+    // commitments — IdeaBlock.count(signalType='commitment') через RawEvent
+    // (sourceType='meeting', sourceExternalId=meetingId).
+    const commitments = await this.countCommitments(
+      meetingId,
+      meeting.tenantId,
+    );
+
+    const tasks = await this.prisma.task.count({
+      where: { meetingId, tenantId: meeting.tenantId },
+    });
+
+    const durationMs = computeDurationMs(
+      meeting.startedAt,
+      meeting.endedAt,
+      meeting.durationMs,
+    );
+    const durationHours = durationMs / 3_600_000;
+    const participantCount = Math.max(1, meeting._count.participants);
+    const denominator = participantCount * durationHours;
+
+    const numerator =
+      decisions * MeetingRoiScorerWorker.WEIGHT_DECISIONS +
+      commitments * MeetingRoiScorerWorker.WEIGHT_COMMITMENTS +
+      tasks * MeetingRoiScorerWorker.WEIGHT_TASKS;
+
+    const roiScoreFloat = denominator > 0 ? numerator / denominator : 0;
+    // Decimal(8,3) — округляем до 3 знаков (как и хранится в БД).
+    const roiScore = new Prisma.Decimal(roiScoreFloat.toFixed(3));
+
+    await this.prisma.meeting.update({
+      where: { id: meetingId },
+      data: {
+        roiScore,
+        roiScoreAt: new Date(),
+      },
+    });
+
+    this.logger.log(
+      {
+        meetingId,
+        decisions,
+        commitments,
+        tasks,
+        participantCount,
+        durationMs,
+        roiScore: roiScore.toString(),
+        durationProcessingMs: Date.now() - startedAt,
+      },
+      'meeting-roi: рассчитан',
+    );
+  }
+
+  /**
+   * Считает IdeaBlock'и встречи с signalType='commitment'.
+   * Канон: RawEvent(sourceType='meeting', sourceExternalId=meetingId) →
+   * IdeaBlockEvidence.rawEventId → IdeaBlock.id (status='canonical').
+   *
+   * Берём только canonical-блоки, чтобы не считать дубликаты до distill'а.
+   */
+  private async countCommitments(
+    meetingId: string,
+    tenantId: string,
+  ): Promise<number> {
+    const rawEvents = await this.prisma.rawEvent.findMany({
+      where: {
+        tenantId,
+        sourceType: 'meeting',
+        sourceExternalId: meetingId,
+      },
+      select: { id: true },
+    });
+    if (rawEvents.length === 0) return 0;
+    const rawEventIds = rawEvents.map((r) => r.id);
+
+    const evidence = await this.prisma.ideaBlockEvidence.findMany({
+      where: { rawEventId: { in: rawEventIds } },
+      select: { blockId: true },
+    });
+    if (evidence.length === 0) return 0;
+    const blockIds = [...new Set(evidence.map((e) => e.blockId))];
+
+    return this.prisma.ideaBlock.count({
+      where: {
+        id: { in: blockIds },
+        tenantId,
+        signalType: 'commitment',
+        status: 'canonical',
+      },
+    });
+  }
+}
+
+/**
+ * Длительность встречи в мс. Приоритет:
+ *   1. `durationMs` (если уже посчитано в БД при ended);
+ *   2. `endedAt - startedAt` (fallback);
+ *   3. 0 — даст roiScore=0 (защита от деления на 0).
+ */
+function computeDurationMs(
+  startedAt: Date | null,
+  endedAt: Date | null,
+  durationMs: number | null,
+): number {
+  if (typeof durationMs === 'number' && durationMs > 0) return durationMs;
+  if (startedAt && endedAt) {
+    return Math.max(0, endedAt.getTime() - startedAt.getTime());
+  }
+  return 0;
+}

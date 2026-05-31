@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
 
 import { CurationModule } from '../curation/curation.module';
+// Pulse Wave 6 §6.3/§6.8 — DashboardModule экспортит DashboardQueueService,
+// который @Optional()-инжектится в AnalyzeWorker (для enqueueMeetingRoi после
+// ai_ready) и в Specialist33DecisionsWorker (для enqueueDecisionHygiene
+// после processBlock).
+import { DashboardModule } from '../dashboard/dashboard.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -93,6 +98,11 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // MeetingExtractActionsService (через @Optional()) для извлечения
     // автозадач из встречи. Импорт нужен, чтобы провайдер был виден в DI.
     TrackerModule,
+    // Pulse Wave 6 §6.3/§6.8 — DashboardQueueService нужен AnalyzeWorker
+    // (enqueue Meeting-ROI после ai_ready) и Specialist33DecisionsWorker
+    // (enqueue Decision-Hygiene после processBlock). Оба инжектят
+    // @Optional() — отсутствие импорта в spec-тестах не ломает их.
+    DashboardModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).

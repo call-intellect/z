@@ -7,7 +7,20 @@ import {
 } from '@nestjs/common';
 
 import { seedChatNotifications } from './demo-data/chat-notifications';
+import {
+  seedBrandVoice,
+  seedCalendar,
+  seedDocuments,
+  seedExperiments,
+  seedFeedback,
+  seedIdeas,
+  seedProbeEvents,
+  seedReferrals,
+  seedRegulations,
+  seedVendors,
+} from './demo-data/extras';
 import { seedGoalsClones } from './demo-data/goals-clones';
+import { seedHelpfulness } from './demo-data/helpfulness';
 import { seedKnowledgeGraph } from './demo-data/knowledge-graph';
 import {
   DEMO_EXTERNAL_SOURCE,
@@ -17,8 +30,11 @@ import { seedMeetings } from './demo-data/meetings';
 import { seedOperations } from './demo-data/operations';
 import { seedOrgStructure } from './demo-data/org-structure';
 import { seedPolish } from './demo-data/polish';
+import { seedProcessTemplates } from './demo-data/process-templates';
+import { seedPulseSnapshots } from './demo-data/pulse-snapshots';
 import { seedTracker } from './demo-data/tracker';
 import { createEmptyIdMap, type SeedContext } from './demo-data/types';
+import { seedUsers } from './demo-data/users';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';
@@ -232,12 +248,32 @@ ${featureList}
 
     this.logger.log(`Seeding demo workspace for org=${orgId}`);
 
+    // ТЗ 2026-05-31-demo-content-expansion-pulse — порядок §5:
+    // users → org-structure → process-templates → vendors → tracker →
+    // meetings → knowledge-graph → goals-clones → regulations → ideas →
+    // documents → calendar → experiments → brand-voice → probe-events →
+    // operations → pulse-snapshots → helpfulness → referrals → feedback →
+    // chat-notifications → polish.
+    await seedUsers(ctx, ids);
     await seedOrgStructure(ctx, ids);
+    await seedProcessTemplates(ctx, ids);
+    await seedVendors(ctx, ids);
     await seedTracker(ctx, ids);
     await seedMeetings(ctx, ids);
     await seedKnowledgeGraph(ctx, ids);
     await seedGoalsClones(ctx, ids);
+    await seedRegulations(ctx, ids);
+    await seedIdeas(ctx, ids);
+    await seedDocuments(ctx, ids);
+    await seedCalendar(ctx, ids);
+    await seedExperiments(ctx, ids);
+    await seedBrandVoice(ctx, ids);
+    await seedProbeEvents(ctx, ids);
     await seedOperations(ctx, ids);
+    await seedPulseSnapshots(ctx, ids);
+    await seedHelpfulness(ctx, ids);
+    await seedReferrals(ctx, ids);
+    await seedFeedback(ctx, ids);
     await seedChatNotifications(ctx, ids);
     await seedPolish(ctx, ids);
 
@@ -537,12 +573,133 @@ ${featureList}
           where: { tenantId, externalSource: DEMO },
         }));
 
+        // ── ТЗ 2026-05-31 demo-content-expansion-pulse §7.8 ──
+        //
+        // Pulse snapshot-таблицы НЕ имеют externalSource → чистим по
+        // tenantId. Это безопасно: precondition `demoWorkspaceSeededAt`
+        // выше уже отсёк боевые Org'и.
+        remember('knowledgeRiskSnapshot', await tx.knowledgeRiskSnapshot.deleteMany({
+          where: { tenantId },
+        }));
+        remember('recurringTopic', await tx.recurringTopic.deleteMany({
+          where: { tenantId },
+        }));
+        remember('promiseNetworkSnapshot', await tx.promiseNetworkSnapshot.deleteMany({
+          where: { tenantId },
+        }));
+        remember('personGoalContribution', await tx.personGoalContribution.deleteMany({
+          where: { tenantId },
+        }));
+        remember('knowledgeVelocitySnapshot', await tx.knowledgeVelocitySnapshot.deleteMany({
+          where: { tenantId },
+        }));
+        remember('personEngagementSnapshot', await tx.personEngagementSnapshot.deleteMany({
+          where: { tenantId },
+        }));
+        remember('forecastSnapshot', await tx.forecastSnapshot.deleteMany({
+          where: { tenantId },
+        }));
+        remember('crossFunctionalFrictionReport', await tx.crossFunctionalFrictionReport.deleteMany({
+          where: { tenantId },
+        }));
+
+        // Helpfulness / Contribution — tenantId-фильтр (без externalSource).
+        remember('helpfulnessTrait', await tx.helpfulnessTrait.deleteMany({
+          where: { tenantId },
+        }));
+        remember('socialContributionProfile', await tx.socialContributionProfile.deleteMany({
+          where: { tenantId },
+        }));
+
+        // ProcessTemplate (вместе с ProcessTemplateVersion):
+        remember('processTemplateVersion', await tx.processTemplateVersion.deleteMany({
+          where: { tenantId },
+        }));
+        remember('processTemplate', await tx.processTemplate.deleteMany({
+          where: { tenantId },
+        }));
+
+        // Новый контент: Regulations / Ideas / IdeaClusters / Documents.
+        remember('regulation', await tx.regulation.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('idea', await tx.idea.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('ideaCluster', await tx.ideaCluster.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('document', await tx.document.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Calendar — EventReminder и EventParticipant каскадятся через Event.
+        remember('event', await tx.event.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Experiments / BrandVoice / Vendors / ProbeEvents.
+        remember('experiment', await tx.experiment.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('brandVoiceProfile', await tx.brandVoiceProfile.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('vendor', await tx.vendor.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+        remember('probeEvent', await tx.probeEvent.deleteMany({
+          where: { tenantId, externalSource: DEMO },
+        }));
+
+        // Feedback (FeedbackTopic — глобальный, не трогаем; FeedbackItem —
+        // каскад через FeedbackMessage).
+        remember('feedbackMessage', await tx.feedbackMessage.deleteMany({
+          where: { orgId: tenantId },
+        }));
+
+        // Referrals — Referral принадлежит ownerUser. Удаляем ТОЛЬКО если
+        // это «демо-Referral», т.е. slug начинается с 'demo' (сидим в
+        // seedReferrals именно так).
+        remember('referralPayout', await tx.referralPayout.deleteMany({
+          where: { clientReferralLink: { tenantId } },
+        }));
+        remember('clientReferralLink', await tx.clientReferralLink.deleteMany({
+          where: { tenantId },
+        }));
+        remember('referral', await tx.referral.deleteMany({
+          where: { slug: { startsWith: 'demo' } },
+        }));
+
+        // ── Демо-User'ы: список в Org.demoUserIds. ──
+        // Сначала отвязать Person.userId (FK SetNull), потом удалить User'ы.
+        const orgRow = await tx.org.findUnique({
+          where: { id: orgId },
+          select: { demoUserIds: true },
+        });
+        const demoUserIds = orgRow?.demoUserIds ?? [];
+        if (demoUserIds.length > 0) {
+          await tx.person.updateMany({
+            where: { tenantId, userId: { in: demoUserIds } },
+            data: { userId: null },
+          });
+          remember('contributionSnapshot', await tx.contributionSnapshot.deleteMany({
+            where: { userId: { in: demoUserIds } },
+          }));
+          remember('helpfulnessSpotlight', await tx.helpfulnessSpotlight.deleteMany({
+            where: { tenantId, helperUserId: { in: demoUserIds } },
+          }));
+          remember('user', await tx.user.deleteMany({
+            where: { id: { in: demoUserIds } },
+          }));
+        }
+
         await tx.org.update({
           where: { id: orgId },
-          data: { demoWorkspaceSeededAt: null },
+          data: { demoWorkspaceSeededAt: null, demoUserIds: { set: [] } },
         });
       },
-      { timeout: 30_000 },
+      { timeout: 60_000 },
     );
 
     this.logger.warn(

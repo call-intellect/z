@@ -180,6 +180,9 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
           knowledgeProfile: p.knowledgeProfile
             ? (p.knowledgeProfile as object)
             : undefined,
+          // Ключевые сотрудники получают связку с User'ом, созданным
+          // ранее в seedUsers (нужна для Helpfulness*/Contribution*).
+          userId: ids.users[p.key] ?? undefined,
         },
       });
       ids.persons[p.key] = person.id;

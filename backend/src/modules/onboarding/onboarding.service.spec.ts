@@ -89,7 +89,7 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
       decision: { deleteMany: _del('decision') },
       department: { deleteMany: _del('department'), updateMany: _upd('department') },
       appointment: { deleteMany: _del('appointment') },
-      person: { deleteMany: _del('person') },
+      person: { deleteMany: _del('person'), updateMany: _upd('person') },
       role: { deleteMany: _del('role') },
       companyProfile: { deleteMany: _del('companyProfile') },
       functionalDomain: { deleteMany: _del('functionalDomain') },
@@ -99,6 +99,38 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
       cycle: { deleteMany: _del('cycle') },
       label: { deleteMany: _del('label') },
       project: { deleteMany: _del('project') },
+
+      // ── ТЗ 2026-05-31 demo-content-expansion-pulse §7.8 ──
+      // Pulse snapshot-таблицы (без externalSource — чистка по tenantId).
+      knowledgeRiskSnapshot: { deleteMany: _del('knowledgeRiskSnapshot') },
+      recurringTopic: { deleteMany: _del('recurringTopic') },
+      promiseNetworkSnapshot: { deleteMany: _del('promiseNetworkSnapshot') },
+      personGoalContribution: { deleteMany: _del('personGoalContribution') },
+      knowledgeVelocitySnapshot: { deleteMany: _del('knowledgeVelocitySnapshot') },
+      personEngagementSnapshot: { deleteMany: _del('personEngagementSnapshot') },
+      forecastSnapshot: { deleteMany: _del('forecastSnapshot') },
+      crossFunctionalFrictionReport: { deleteMany: _del('crossFunctionalFrictionReport') },
+      helpfulnessTrait: { deleteMany: _del('helpfulnessTrait') },
+      socialContributionProfile: { deleteMany: _del('socialContributionProfile') },
+      processTemplateVersion: { deleteMany: _del('processTemplateVersion') },
+      processTemplate: { deleteMany: _del('processTemplate') },
+      // Новый контент (с externalSource='demo').
+      regulation: { deleteMany: _del('regulation') },
+      idea: { deleteMany: _del('idea') },
+      ideaCluster: { deleteMany: _del('ideaCluster') },
+      document: { deleteMany: _del('document') },
+      event: { deleteMany: _del('event') },
+      experiment: { deleteMany: _del('experiment') },
+      brandVoiceProfile: { deleteMany: _del('brandVoiceProfile') },
+      vendor: { deleteMany: _del('vendor') },
+      probeEvent: { deleteMany: _del('probeEvent') },
+      feedbackMessage: { deleteMany: _del('feedbackMessage') },
+      referralPayout: { deleteMany: _del('referralPayout') },
+      clientReferralLink: { deleteMany: _del('clientReferralLink') },
+      referral: { deleteMany: _del('referral') },
+      contributionSnapshot: { deleteMany: _del('contributionSnapshot') },
+      user: { deleteMany: _del('user') },
+
       $transaction,
       __deleteCalls: deleteCalls,
       __updateCalls: updateCalls,
@@ -149,24 +181,34 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     expect(result.deletedByTable.issue).toBe(42);
 
     // Все вызовы delete должны фильтровать ИЛИ externalSource='demo',
-    // ИЛИ через родителя с externalSource='demo' / roomName demo-room-…
+    // ИЛИ через родителя с externalSource='demo' / roomName demo-room-…,
+    // ИЛИ для snapshot-таблиц без externalSource — по tenantId/orgId
+    // (precondition demoWorkspaceSeededAt уже отсёк боевые Org'и).
     const safeFilter = (args: unknown): boolean => {
       const w = (args as { where?: unknown }).where as Record<string, unknown> | undefined;
       if (!w) return false;
       const str = JSON.stringify(w);
       return (
         str.includes('"externalSource":"demo"') ||
-        str.includes('"startsWith":"demo-room-"')
+        str.includes('"startsWith":"demo-room-"') ||
+        // Snapshot-таблицы (Pulse/Helpfulness/Process/Vendor/...).
+        str.includes('"tenantId":"org-1"') ||
+        // FeedbackMessage (orgId, не tenantId).
+        str.includes('"orgId":"org-1"') ||
+        // Referral (slug starts with 'demo').
+        str.includes('"startsWith":"demo"') ||
+        // ContributionSnapshot/HelpfulnessSpotlight/User — по списку userId.
+        str.includes('"in":[]')
       );
     };
     for (const call of prisma.__deleteCalls) {
       expect(safeFilter(call.args), `deleteMany ${call.name} не имеет demo-фильтра: ${JSON.stringify(call.args)}`).toBe(true);
     }
-    // Org обновлён: demoWorkspaceSeededAt: null
+    // Org обновлён: demoWorkspaceSeededAt: null (+ demoUserIds сброшены).
     expect(prisma.org.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'org-1' },
-        data: { demoWorkspaceSeededAt: null },
+        data: expect.objectContaining({ demoWorkspaceSeededAt: null }),
       }),
     );
   });

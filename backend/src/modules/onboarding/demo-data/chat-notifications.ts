@@ -126,9 +126,35 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
   console.log('[demo/chat-notifications] Создание уведомлений...');
 
   const notificationDefs = [
+    // ── Свежие (за последние сутки) ──
     {
       eventType: 'issue_assigned',
       payload: { issueId: 'PLAT-18', title: 'Новая задача PLAT-18 назначена на вас' },
+      daysAgoN: 0,
+    },
+    {
+      eventType: 'mention',
+      payload: { authorName: 'Марина Волкова', context: 'комментарий к Sprint 14', text: 'Марина Волкова упомянула вас в обсуждении Sprint 14' },
+      daysAgoN: 0,
+    },
+    {
+      eventType: 'spotlight_published',
+      payload: { helperName: 'Дмитрий Козлов', text: 'Опубликован spotlight: «Mentor of the week — Дмитрий Козлов»' },
+      daysAgoN: 0,
+    },
+    {
+      eventType: 'promise_due_today',
+      payload: { ideaBlockId: 'ib33', text: 'Сегодня дедлайн обещания: auth-контракт для frontend' },
+      daysAgoN: 0,
+    },
+    {
+      eventType: 'meeting_starting_soon',
+      payload: { meetingTitle: 'Утренний стендап', text: 'Встреча «Утренний стендап» начнётся через 15 минут' },
+      daysAgoN: 0,
+    },
+    {
+      eventType: 'issue_assigned',
+      payload: { issueId: 'PLAT-7', title: 'PLAT-7 переназначена на вас' },
       daysAgoN: 1,
     },
     {
@@ -175,6 +201,62 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
       eventType: 'meeting_quality',
       payload: { meetingTitle: 'Стендап', score: 82, text: 'Meeting quality score: Стендап 82/100' },
       daysAgoN: 3,
+    },
+    // ── Дополнительные за неделю ──
+    {
+      eventType: 'sprint_alert',
+      payload: { cycleName: 'Sprint 14', text: 'Sprint 14: 3 задачи в риске не закрыться' },
+      daysAgoN: 2,
+    },
+    {
+      eventType: 'helpful_comment',
+      payload: { authorName: 'Дмитрий Козлов', text: 'Дмитрий Козлов оставил полезный ответ на ваш вопрос' },
+      daysAgoN: 2,
+    },
+    {
+      eventType: 'goal_progress',
+      payload: { goalName: 'ARR 10M к концу года', delta: '+5', text: 'Цель «ARR 10M» прибавила 5 пунктов alignment' },
+      daysAgoN: 2,
+    },
+    {
+      eventType: 'forecast_warning',
+      payload: { text: 'Прогноз: ожидается падение engagement Козлова на следующей неделе' },
+      daysAgoN: 3,
+    },
+    {
+      eventType: 'system',
+      payload: { text: 'Plan check-in от менеджера на пятницу' },
+      daysAgoN: 3,
+    },
+    {
+      eventType: 'recurring_topic_alert',
+      payload: { themeName: 'Storage capacity у клиентов', text: 'Тема «Storage capacity» повторилась 7 раз без решения' },
+      daysAgoN: 4,
+    },
+    {
+      eventType: 'idea_supported',
+      payload: { text: 'Ваша идея «Slack-интеграция» получила поддержку 3 коллег' },
+      daysAgoN: 4,
+    },
+    {
+      eventType: 'bus_factor_warning',
+      payload: { categoryName: 'Авторизация / OAuth2', text: 'Bus Factor=1 в категории «Авторизация» — критический риск' },
+      daysAgoN: 4,
+    },
+    {
+      eventType: 'recognition',
+      payload: { fromName: 'Алексей Морозов', text: 'Алексей Морозов поблагодарил вас за проактивность' },
+      daysAgoN: 4,
+    },
+    {
+      eventType: 'invite_received',
+      payload: { eventTitle: 'CustDev: Сбербанк', text: 'Получено приглашение на встречу «CustDev: Сбербанк»' },
+      daysAgoN: 5,
+    },
+    {
+      eventType: 'document_uploaded',
+      payload: { docName: 'Брендбук v2', text: 'Загружен новый документ: «Брендбук v2»' },
+      daysAgoN: 5,
     },
   ];
 

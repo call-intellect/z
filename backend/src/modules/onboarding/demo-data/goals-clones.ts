@@ -319,6 +319,11 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       meetingKey: 'security_discussion',
       decidedAt: daysAgo(2),
       status: 'approved' as const,
+      reversibility: 'type-2' as const,
+      alternatives: [
+        { option: 'Magic-link логин', reasonRejected: 'Не подходит для enterprise (SSO/LDAP)' },
+        { option: 'Тек. JWT + Refresh', reasonRejected: 'Полумера, не решает revocation' },
+      ],
     },
     {
       key: 'd_design',
@@ -328,6 +333,10 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       meetingKey: 'mobile_review',
       decidedAt: daysAgo(6),
       status: 'approved' as const,
+      reversibility: 'type-2' as const,
+      alternatives: [
+        { option: 'Минималистичный layout v2', reasonRejected: 'Слишком сухо — снижает retention' },
+      ],
     },
     {
       key: 'd_pilot',
@@ -337,6 +346,10 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       meetingKey: 'custdev_rostelecom',
       decidedAt: daysAgo(8),
       status: 'approved' as const,
+      reversibility: 'type-1' as const,
+      alternatives: [
+        { option: 'Пилот на 100 юзеров', reasonRejected: 'Недостаточно для валидации enterprise-сценариев' },
+      ],
     },
     {
       key: 'd_zoom',
@@ -346,6 +359,10 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       meetingKey: 'retro13',
       decidedAt: daysAgo(10),
       status: 'cancelled' as const,
+      reversibility: 'type-2' as const,
+      alternatives: [
+        { option: 'Партнёрство с Zoom', reasonRejected: 'Зависимость от чужой роадмапы' },
+      ],
     },
     {
       key: 'd_review_sl',
@@ -355,6 +372,48 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       meetingKey: 'retro13',
       decidedAt: daysAgo(10),
       status: 'approved' as const,
+      reversibility: 'type-2' as const,
+      alternatives: [
+        { option: '48-часовой SLA', reasonRejected: 'Слишком долго при текущей скорости спринтов' },
+      ],
+    },
+    {
+      key: 'd_arr_target',
+      statement: 'ARR-цель 10M к концу года',
+      rationale: 'Совет директоров утвердил публичную цель 10M ARR на 2026 как условие следующего раунда.',
+      decidedByPersonKeys: ['morozov'],
+      meetingKey: 'custdev_rostelecom',
+      decidedAt: daysAgo(15),
+      status: 'approved' as const,
+      reversibility: 'type-1' as const,
+      // Намеренно пустой — alertCount должен инкрементнуться (см. pulse-patterns).
+      alternatives: [] as Array<{ option: string; reasonRejected: string }>,
+    },
+    {
+      key: 'd_partner_1c',
+      statement: 'Стратегическое партнёрство с 1С',
+      rationale: 'Совместный canal-sales-канал в SMB-сегменте: 1С пушит нас в свою клиентскую базу.',
+      decidedByPersonKeys: ['morozov', 'sokolova'],
+      meetingKey: 'custdev_rostelecom',
+      decidedAt: daysAgo(20),
+      status: 'approved' as const,
+      reversibility: 'type-2' as const,
+      alternatives: [
+        { option: 'Самостоятельный SMB-канал', reasonRejected: 'Слишком дорогой CAC на стадии MVP' },
+      ],
+    },
+    {
+      key: 'd_freeze_features',
+      statement: 'Заморозить новые фичи в Q3 в пользу стабильности',
+      rationale: 'Команда перегружена, NPS под угрозой. Q3 — стабилизация и bug-fix, без новых фич.',
+      decidedByPersonKeys: ['morozov', 'volkova'],
+      meetingKey: 'retro13',
+      decidedAt: daysAgo(18),
+      status: 'approved' as const,
+      reversibility: 'type-2' as const,
+      alternatives: [
+        { option: 'Параллельно фичи + стабилизация', reasonRejected: 'Команда не вытянет' },
+      ],
     },
   ];
 
@@ -372,6 +431,10 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
         decidedAt: d.decidedAt,
         status: d.status,
         dataClass: 'internal',
+        reversibility: d.reversibility,
+        reversibilityAt: daysAgo(0),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        alternatives: d.alternatives as any,
       },
     });
     decisionIds[d.key] = dec.id;

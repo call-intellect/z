@@ -21,6 +21,77 @@
 
 ---
 
+### 🌊 2026-05-31 — Pulse Этапы A+A2+B+C (gaps + 3.2/4.6/4.7 + Волна 5 + Волна 6)
+
+План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §5-10.
+Коммиты: `84b0f89` + `572f31b` + `ef9cd5a` + `1491d7f` + `dda094e` + `050d094`.
+Рефлексия: [`second-brain/05_история/2026-05-31-pulse-volna-5-6.md`](../../second-brain/05_история/2026-05-31-pulse-volna-5-6.md).
+
+**Сделано** (≈22 фазы ТЗ):
+- A: backend gaps — viewedUserId в ActivityFeed (разблокировка PersonPulse 9.5) + meeting_activity в Engagement-Scorer.
+- A2: Conflict-Detector extension (CheckInConflictDetectorCron) + Forecaster (новая модель ForecastSnapshot + LLM cron Mon 04:00) + hr_partner роль (+ canViewEmployeeFullCard в RbacService).
+- Волна 5: Sprint Daily/Weekly табы + new endpoints, Архив гипотез `/sprints/archive`, Telegram sprint section, 5 Concierge tools.
+- Волна 6: 5 weekly cron-агентов Mon 05:00 (Bus Factor / Topic Recurrence / Promise Network / Goal Vector / Knowledge Velocity) + 2 event-driven worker'а (Meeting ROI после analyze, Decision Hygiene после specialist-3-3) + единый `GET /api/v1/dashboard/pulse-patterns` endpoint + 7 виджетов на главной.
+
+**Schema-изменения** (одной prisma:push):
+- +6 новых моделей: `ForecastSnapshot` (4.6), `KnowledgeRiskSnapshot` (6.1), `RecurringTopic` (6.2), `PromiseNetworkSnapshot` (6.5), `PersonGoalContribution` (6.6, unique по tenant+person+goal+week), `KnowledgeVelocitySnapshot` (6.7).
+- +5 новых полей в существующих: `Meeting.roiScore/roiScoreAt` (6.3, Decimal(8,3) — не 4,3 как в ТЗ §4.1, защита от переполнения), `Decision.reversibility/reversibilityAt` (6.8).
+- +1 enum value: `MembershipRole.hr_partner` (4.7).
+- Все nullable/defaulted — без data-loss.
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — без новых ENV (все feature-flags inline в коде).
+- **Шаг 4 — Prisma** — **обязательно** (новые модели и поля):
+  ```bash
+  docker compose exec backend bun run prisma:push
+  docker compose exec backend bun run prisma:generate
+  ```
+- **Шаг 5 — postgres-init.sql** — не трогали.
+- **Шаги 6–10 (patch/seed/backfill/migrate/setup)** — НЕТ. Все новые модели снапшотные (cron сам наполнит при первом запуске); enum hr_partner не требует backfill (никто пока не назначен).
+- **Шаг 11 — Docker rebuild** — обязателен:
+  ```bash
+  docker compose up -d --build backend
+  ```
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Pulse-patterns endpoint:
+  curl -i -H 'Cookie:<auth>' -H 'X-Org-Id:<orgId>' \
+       https://prod.host/api/v1/dashboard/pulse-patterns?period=week
+  # Ожидаемо: 200 { busFactor, recurringTopics, lowRoiMeetings, bottlenecks, goalVector, knowledgeVelocity, irreversibleDecisions }
+
+  # 2. Sprint dashboard daily/weekly:
+  curl -i -H 'Cookie:<auth>' -H 'X-Org-Id:<orgId>' \
+       https://prod.host/api/v1/cycles/<cycleId>/dashboard/daily
+  curl -i ... /api/v1/cycles/<cycleId>/dashboard/weekly
+
+  # 3. Sprints archive:
+  curl -i ... /api/v1/sprints/archive?period=quarter
+
+  # 4. ActivityFeed viewedUserId (PersonPulse 9.5):
+  curl -i ... '/api/v1/feed/probe_question?viewedUserId=<userId>&scopedToMe=false&limit=10'
+
+  # 5. Concierge tools (через chat):
+  curl -i -X POST ... /api/v1/concierge/chat \
+       -d '{"message":"что с Иваном"}'  # должен вызвать get_person_pulse
+
+  # 6. Cron-агенты зарегистрированы:
+  docker compose logs backend | grep -E 'Forecaster|BusFactorAnalyzer|TopicRecurrence|PromiseNetwork|GoalVectorTracker|KnowledgeVelocity'
+  # Также после Mon 05:00 UTC — увидеть «проход завершён» от каждого.
+
+  # 7. Frontend:
+  # /dashboard — 7 новых виджетов + KnowledgeVelocity KpiHero + IrreversibleDecisions banner
+  # /sprints/[id] — табы Main/Daily/Weekly
+  # /sprints/archive — список всех Cycle
+  # /persons/[id]/pulse — секция «Вопросы AI этому человеку» теперь живая
+  ```
+
+- **Откат:** `git revert <commit_range>` + `docker compose up -d --build`. Schema-добавления nullable — данные не теряются. Cron'ы можно остановить через рестарт (они идемпотентны).
+
+⚠️ **Юридический check** для irreversible decisions UI: алерт «3 необратимых решения без альтернатив» виден только owner/admin (через RBAC dashboard_operations). Для hr_partner новые правила — см. policy.csv новый раздел «Pulse Wave 4 §4.7 — hr_partner».
+
+---
+
 ### 🌊 2026-05-30 — Pulse Волна 4 (152-ФЗ + audit + Risk-агенты)
 
 План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §8.

@@ -51,11 +51,7 @@ import type {
 
 import { BillingEventService } from './billing-event.service';
 import { InvoiceService } from './invoice.service';
-import {
-  SeatService,
-  YEARLY_MONTHS,
-  type SubscriptionPricing,
-} from './seat.service';
+import { SeatService, type SubscriptionPricing } from './seat.service';
 import { SubscriptionService } from './subscription.service';
 
 export interface WebhookHandleResult {

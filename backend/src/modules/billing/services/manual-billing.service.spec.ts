@@ -22,6 +22,7 @@ import {
 } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { MeetingsBalanceService } from '../../meetings-balance/meetings-balance.service';
 
@@ -114,7 +115,12 @@ interface Mocks {
     findOrFail: ReturnType<typeof vi.fn>;
   };
   eventLog: { log: ReturnType<typeof vi.fn> };
-  balance: { grant: ReturnType<typeof vi.fn> };
+  balance: {
+    grant: ReturnType<typeof vi.fn>;
+    getBaseMeetingsGrant: ReturnType<typeof vi.fn>;
+    getPerExtraSeatMeetingsGrant: ReturnType<typeof vi.fn>;
+    calculateMeetingsGrant: ReturnType<typeof vi.fn>;
+  };
 }
 
 function makeMocks(): Mocks {
@@ -149,8 +155,30 @@ function makeMocks(): Mocks {
       findOrFail: vi.fn(),
     },
     eventLog: { log: vi.fn().mockResolvedValue({ duplicate: false }) },
-    balance: { grant: vi.fn() },
+    balance: {
+      grant: vi.fn(),
+      // SeatService.calculateMeetingsGrant + ManualBillingService.adjustSeats
+      // читают параметры гранта через MeetingsBalanceService (источник правды —
+      // AdminSetting, code-fallback дефолты 150 / 5). В spec'е мокаем константами.
+      getBaseMeetingsGrant: vi.fn().mockResolvedValue(150),
+      getPerExtraSeatMeetingsGrant: vi.fn().mockResolvedValue(5),
+      calculateMeetingsGrant: vi
+        .fn()
+        .mockImplementation(async (seatsExtra: number) => 150 + Math.max(0, seatsExtra) * 5),
+    },
   };
+}
+
+function makeSeatService(balance: Mocks['balance']): SeatService {
+  // SeatService требует TypedConfigService.getDynamic (для billing.*) +
+  // MeetingsBalanceService (для calculateMeetingsGrant делегации).
+  // В spec'е cfgMock всегда отдаёт code-fallback дефолты — этого хватает
+  // на расчёт цены `tier_standard` 60 000 ₽ / 100 000 ₽ / 0.8.
+  const cfgMock = {
+    getDynamic: async <T,>(_key: string, _env: string | undefined, def: T): Promise<T> =>
+      def,
+  } as unknown as TypedConfigService;
+  return new SeatService(cfgMock, balance as unknown as MeetingsBalanceService);
 }
 
 function makeService(mocks: Mocks): ManualBillingService {
@@ -159,7 +187,7 @@ function makeService(mocks: Mocks): ManualBillingService {
     mocks.events as unknown as never,
     mocks.subscriptions as unknown as SubscriptionService,
     mocks.invoices as unknown as InvoiceService,
-    new SeatService(),
+    makeSeatService(mocks.balance),
     mocks.eventLog as unknown as BillingEventService,
     mocks.balance as unknown as MeetingsBalanceService,
   );

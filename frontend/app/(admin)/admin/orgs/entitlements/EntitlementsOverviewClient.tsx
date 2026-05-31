@@ -5,27 +5,15 @@ import { useMemo, useState } from 'react';
 import { Edit3, Search } from 'lucide-react';
 
 import { adminEntitlementsApi } from '@/api/admin-entitlements.api';
-import { adminPlansApi } from '@/api/admin-plans.api';
 import {
   entitlementOverviewFromApi,
   type EntitlementOverviewItemDomain,
 } from '@/domain/admin-entitlement';
-import {
-  planListFromApi,
-  type PlanItemDomain,
-} from '@/domain/admin-plan';
 import { AdminSection } from '@/ui/components/admin/AdminSection';
 import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/ui/shadcn/select';
 import { Switch } from '@/ui/shadcn/switch';
 
 import {
@@ -80,26 +68,21 @@ export function EntitlementsOverviewClient() {
 
 function ByOrgTab() {
   const [hasOverrides, setHasOverrides] = useState(true);
-  const [planFilter, setPlanFilter] = useState<string>('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
 
-  const plansQ = useAdminQuery('admin-entitlements:plans', async () => {
-    const res = await adminPlansApi.list();
-    return planListFromApi(res);
-  });
-
+  // После collapse-to-standard (ТЗ 2026-05-31) тариф один — фильтр по plan
+  // больше не нужен.
   const entQ = useAdminQuery(
-    `admin-entitlements:overview:${hasOverrides}:${planFilter}`,
+    `admin-entitlements:overview:${hasOverrides}`,
     async () => {
       const res = await adminEntitlementsApi.listOverview({
         hasOverrides,
-        ...(planFilter ? { plan: planFilter } : {}),
         limit: 200,
       });
       return entitlementOverviewFromApi(res);
     },
-    [hasOverrides, planFilter],
+    [hasOverrides],
   );
 
   const filtered = useMemo(() => {
@@ -124,22 +107,6 @@ function ByOrgTab() {
           />
           Только с override
         </label>
-        <Select
-          value={planFilter || 'all'}
-          onValueChange={(v) => setPlanFilter(v === 'all' ? '' : v)}
-        >
-          <SelectTrigger className="w-[220px]">
-            <SelectValue placeholder="Все тарифы" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все тарифы</SelectItem>
-            {plansQ.data?.items.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.displayName} ({p.id})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <form
           className="flex items-center gap-2"
           onSubmit={(e) => {
@@ -235,141 +202,17 @@ function EntRow({ row }: { row: EntitlementOverviewItemDomain }) {
 
 // ──────────────────────────── По фиче ───────────────────────────────────────
 
-type FeaturePivotRow = {
-  key: string;
-  /** Сколько Plan содержат этот ключ. */
-  inPlans: number;
-  /** Сколько Org override'ят этот ключ (приближённо: всем Org с overrides>0). */
-  orgsWithOverridesApprox: number;
-  /** Список планов, где встречается. */
-  planIds: string[];
-};
-
+/**
+ * После collapse-to-standard (ТЗ 2026-05-31) тариф у Z один — `tier_standard`,
+ * pivot «по фичам тарифов» теряет смысл (фичи зашиты в TIER_CONFIG и
+ * редактируются релизом). Состав фич смотрим на карточке тарифа.
+ */
 function ByFeatureTab() {
-  const plansQ = useAdminQuery('admin-entitlements:plans-feat', async () => {
-    const res = await adminPlansApi.list();
-    return planListFromApi(res);
-  });
-
-  const entQ = useAdminQuery('admin-entitlements:overview-all', async () => {
-    const res = await adminEntitlementsApi.listOverview({
-      hasOverrides: true,
-      limit: 200,
-    });
-    return entitlementOverviewFromApi(res);
-  });
-
-  const rows = useMemo<FeaturePivotRow[]>(() => {
-    if (!plansQ.data) return [];
-    // Соберём список всех feature-ключей по Plan.
-    const map = new Map<string, { inPlans: number; planIds: string[] }>();
-    for (const plan of plansQ.data.items) {
-      for (const key of Object.keys(plan.features)) {
-        const existing = map.get(key);
-        if (existing) {
-          existing.inPlans += 1;
-          existing.planIds.push(plan.id);
-        } else {
-          map.set(key, { inPlans: 1, planIds: [plan.id] });
-        }
-      }
-    }
-    // listOverview не отдаёт сами ключи — отдаёт лишь counts. Поэтому
-    // «orgsWithOverridesApprox» — это сумма Org, у которых хотя бы один
-    // featureOverride; точное «сколько именно по этому ключу» требует
-    // отдельного агрегата на бэке (Фаза 9).
-    const orgsWithFeatureOverrides = entQ.data
-      ? entQ.data.items.filter((it) => it.featureOverridesKeys > 0).length
-      : 0;
-
-    const result: FeaturePivotRow[] = [];
-    for (const [key, info] of map) {
-      result.push({
-        key,
-        inPlans: info.inPlans,
-        planIds: info.planIds,
-        orgsWithOverridesApprox: orgsWithFeatureOverrides,
-      });
-    }
-    result.sort((a, b) => a.key.localeCompare(b.key));
-    return result;
-  }, [plansQ.data, entQ.data]);
-
-  const isLoading = plansQ.isLoading || entQ.isLoading;
-  const isForbidden = plansQ.isForbidden || entQ.isForbidden;
-  const errorMsg = plansQ.error ?? entQ.error;
-
-  if (isLoading) return <AdminLoading rows={5} />;
-  if (isForbidden) return <AdminForbidden />;
-  if (errorMsg) {
-    return (
-      <AdminError
-        message={errorMsg}
-        onRetry={() => {
-          plansQ.refetch();
-          entQ.refetch();
-        }}
-      />
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <AdminEmpty
-        title="Нет ни одной фичи в планах"
-        description="Добавьте features в Plan через раздел «Тарифы»."
-      />
-    );
-  }
-
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-fg-tertiary">
-        Pivot по всем feature-ключам, упомянутым в Plan.features. Колонка
-        «Org с override» — приблизительная: считает Org, где есть хотя бы один
-        override-ключ (точная разбивка по ключам появится в Фазе 9).
-      </p>
-      <div className="overflow-x-auto rounded-lg border border-border-subtle">
-        <table className="w-full text-sm">
-          <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
-            <tr>
-              <th className="px-3 py-2 text-left">Фича</th>
-              <th className="px-3 py-2 text-right">В тарифах</th>
-              <th className="px-3 py-2 text-left">Список тарифов</th>
-              <th className="px-3 py-2 text-right">Org с override (≈)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.key}
-                className="border-t border-border-subtle hover:bg-bg-overlay"
-              >
-                <td className="px-3 py-2 font-mono text-xs">{row.key}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {row.inPlans}
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    {row.planIds.map((id) => (
-                      <Badge
-                        key={id}
-                        variant="default"
-                        className="text-[10px]"
-                      >
-                        {id}
-                      </Badge>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {row.orgsWithOverridesApprox}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <AdminEmpty
+      title="Свёрнут в карточку тарифа"
+      description="Тариф у Z один. Состав фич (features) и квот (quotas) показывается на /admin/orgs/plans вместе с ценой и параметрами пакета."
+    />
   );
 }
 

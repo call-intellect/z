@@ -51,7 +51,11 @@ import {
 
 import { BillingEventService } from './billing-event.service';
 import { InvoiceService } from './invoice.service';
-import { SeatService, YEARLY_MONTHS } from './seat.service';
+import {
+  SeatService,
+  YEARLY_MONTHS,
+  type SubscriptionPricing,
+} from './seat.service';
 import { SubscriptionService } from './subscription.service';
 
 export interface AdminActivateInput {
@@ -132,7 +136,7 @@ export class ManualBillingService {
 
     // Расчёт периода и суммы.
     const periodEnd = this.calculatePeriodEnd(input.startedAt, input.billingPeriod);
-    const pricing = this.seats.calculatePricing(
+    const pricing = await this.seats.calculatePricing(
       input.billingPeriod === 'monthly' ? 'monthly' : 'yearly',
       input.seatsExtra,
     );
@@ -141,7 +145,7 @@ export class ManualBillingService {
 
     // Транзакция: Invoice (сразу paid/bonus) + Subscription update +
     // SubscriptionEvent. После tx: грант MeetingsBalance + emit.
-    const grantAmount = this.seats.calculateMeetingsGrant(input.seatsExtra);
+    const grantAmount = await this.seats.calculateMeetingsGrant(input.seatsExtra);
 
     const txResult = await this.prisma.$transaction(async (tx) => {
       const invoice = await this.invoices.create({
@@ -327,11 +331,11 @@ export class ManualBillingService {
     // Увеличение — pro-rata доплата.
     const prorata =
       sub.billingPeriod === 'yearly'
-        ? this.seats.calculateAddSeatsYearlyProrata({
+        ? await this.seats.calculateAddSeatsYearlyProrata({
             seatsToAdd: diff,
             monthsLeftInPeriod: input.monthsLeftInYearlyPeriod ?? YEARLY_MONTHS,
           })
-        : this.seats.calculateAddSeatsMonthlyProrata({
+        : await this.seats.calculateAddSeatsMonthlyProrata({
             seatsToAdd: diff,
             daysLeftInPeriod: input.daysLeftInMonthlyPeriod ?? 30,
           });
@@ -402,7 +406,12 @@ export class ManualBillingService {
     });
 
     // Грант доп. встреч за добавленные места.
-    const grantAmount = diff * this.seats.perExtraSeatMeetingsGrant;
+    // Источник правды — AdminSetting `billing.perExtraSeatMeetingsGrant` через
+    // MeetingsBalanceService (см. ТЗ 2026-05-31 §3.1). Code-fallback внутри
+    // сервиса = 5 встреч/место.
+    const perExtraSeatMeetingsGrant =
+      await this.meetingsBalance.getPerExtraSeatMeetingsGrant();
+    const grantAmount = diff * perExtraSeatMeetingsGrant;
     await this.meetingsBalance.grant(input.tenantId, grantAmount);
 
     return { ...txResult, grantedMeetings: grantAmount };
@@ -454,7 +463,7 @@ export class ManualBillingService {
   private buildItems(
     seatsExtra: number,
     billingPeriod: BillingPeriod,
-    pricing: ReturnType<SeatService['calculatePricing']>,
+    pricing: SubscriptionPricing,
   ): InvoiceItem[] {
     const months = pricing.monthsInPeriod;
     const items: InvoiceItem[] = [

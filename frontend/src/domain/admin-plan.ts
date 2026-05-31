@@ -1,155 +1,139 @@
 /**
- * Доменная модель Plan (тариф продукта) для Z-Admin Фаза 4.
+ * Доменная модель тарифа продукта Z для Z-Admin.
  *
- * Контракт: backend `AdminPlansService.PlanItem` + `PlanUsageItem`.
- * Префикс эндпоинтов: `/api/v1/admin/orgs/plans`.
+ * После collapse-to-standard (ТЗ 2026-05-31) у Z **один** тариф —
+ * `tier_standard`. Цена и параметры пакета редактируются через
+ * `AdminSetting` (ключи `billing.*`). CRUD над таблицей `Plan` упразднён.
+ *
+ * Единственный API-метод — `GET /api/v1/admin/orgs/plans/current`, который
+ * возвращает снимок `PlanSnapshotApi` (см. backend
+ * `dto/plan-snapshot.dto.ts`, ТЗ §3.4).
  */
 
-/** Произвольный JSON-словарь features (boolean / string / number). */
-export type PlanFeaturesMap = Record<string, boolean | string | number>;
-/** Произвольный JSON-словарь quotas (number / string / boolean). */
-export type PlanQuotasMap = Record<string, number | string | boolean>;
+// ─────────────────────────────────── ApiDto ──
 
-export type PlanItemApi = {
-  id: string;
+/** Структура `base` в PlanSnapshot — параметры базового пакета. */
+export type PlanSnapshotBaseApi = {
+  monthlyPriceRub: number;
+  monthlyPriceKopecks: number;
+  seatsIncluded: number;
+  meetingsIncludedPerMonth: number;
+};
+
+/** Структура `extraSeat` — параметры доп. сотрудника (единственная опция). */
+export type PlanSnapshotExtraSeatApi = {
+  monthlyPriceRubPerSeat: number;
+  monthlyPriceKopecksPerSeat: number;
+  meetingsPerSeat: number;
+};
+
+/** Структура `yearly` — параметры годовой подписки. */
+export type PlanSnapshotYearlyApi = {
+  discountPercent: number;
+  monthlyEquivalentRub: number;
+  fullYearRub: number;
+};
+
+export type PlanSnapshotSeverity = 'low' | 'medium' | 'high' | 'destructive';
+
+/** Один редактируемый AdminSetting-ключ — метаданные для UI. */
+export type PlanSnapshotEditableSettingApi = {
+  key: string;
+  currentValue: number;
+  severity: PlanSnapshotSeverity;
+};
+
+/** Снимок тарифа — ответ `GET /admin/orgs/plans/current`. */
+export type PlanSnapshotApi = {
+  tier: 'tier_standard';
   displayName: string;
-  description: string | null;
-  features: unknown;
-  quotas: unknown;
-  monthlyPriceRub: number | null;
-  isActive: boolean;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-  orgsCount: number;
+  description: string;
+  base: PlanSnapshotBaseApi;
+  extraSeat: PlanSnapshotExtraSeatApi;
+  yearly: PlanSnapshotYearlyApi;
+  features: Record<string, boolean>;
+  quotas: Record<string, number>;
+  orgsUsingCount: number;
+  legacyOrgsRemainingCount: number;
+  editableSettings: PlanSnapshotEditableSettingApi[];
 };
 
-export type PlanListApi = {
-  items: PlanItemApi[];
-};
+// ─────────────────────────────────── DomainModel ──
 
-export type PlanUsageItemApi = {
-  tenantId: string;
-  orgName: string;
-  orgSlug: string;
-  membersCount: number;
-  meetingsCount: number;
-  createdAt: string;
-};
+/** В DomainModel структура повторяет API — здесь нет дат / null'ов / snake_case. */
+export type PlanSnapshotDomain = PlanSnapshotApi;
 
-export type PlanUsageApi = {
-  plan: { id: string; displayName: string; isActive: boolean };
-  orgsCount: number;
-  items: PlanUsageItemApi[];
-};
-
-export type PlanItemDomain = Omit<
-  PlanItemApi,
-  'features' | 'quotas' | 'createdAt' | 'updatedAt'
-> & {
-  features: PlanFeaturesMap;
-  quotas: PlanQuotasMap;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type PlanListDomain = { items: PlanItemDomain[] };
-
-export type PlanUsageItemDomain = Omit<PlanUsageItemApi, 'createdAt'> & {
-  createdAt: Date;
-};
-
-export type PlanUsageDomain = {
-  plan: { id: string; displayName: string; isActive: boolean };
-  orgsCount: number;
-  items: PlanUsageItemDomain[];
-};
-
-function asFeaturesMap(v: unknown): PlanFeaturesMap {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-  const out: PlanFeaturesMap = {};
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (typeof val === 'boolean' || typeof val === 'string' || typeof val === 'number') {
-      out[k] = val;
-    } else if (val === null) {
-      // skip nulls — Backend хранит null, в UI значит «не задано»
-      continue;
-    } else {
-      // объекты/массивы выводим как строку — пользователь увидит и сможет починить
-      out[k] = JSON.stringify(val);
-    }
-  }
-  return out;
-}
-
-function asQuotasMap(v: unknown): PlanQuotasMap {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-  const out: PlanQuotasMap = {};
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (typeof val === 'number' || typeof val === 'string' || typeof val === 'boolean') {
-      out[k] = val;
-    } else if (val === null) {
-      continue;
-    } else {
-      out[k] = JSON.stringify(val);
-    }
-  }
-  return out;
-}
-
-export function planItemFromApi(api: PlanItemApi): PlanItemDomain {
+/** Маппер ApiDto → Domain. Сейчас тождественен — оставлен явно для слойности. */
+export function planSnapshotFromApi(api: PlanSnapshotApi): PlanSnapshotDomain {
   return {
-    id: api.id,
+    tier: api.tier,
     displayName: api.displayName,
     description: api.description,
-    monthlyPriceRub: api.monthlyPriceRub,
-    isActive: api.isActive,
-    sortOrder: api.sortOrder,
-    orgsCount: api.orgsCount,
-    features: asFeaturesMap(api.features),
-    quotas: asQuotasMap(api.quotas),
-    createdAt: new Date(api.createdAt),
-    updatedAt: new Date(api.updatedAt),
+    base: { ...api.base },
+    extraSeat: { ...api.extraSeat },
+    yearly: { ...api.yearly },
+    features: { ...api.features },
+    quotas: { ...api.quotas },
+    orgsUsingCount: api.orgsUsingCount,
+    legacyOrgsRemainingCount: api.legacyOrgsRemainingCount,
+    editableSettings: api.editableSettings.map((s) => ({ ...s })),
   };
 }
 
-export function planListFromApi(api: PlanListApi): PlanListDomain {
-  return { items: api.items.map(planItemFromApi) };
-}
+// ─────────────────────────────────── helpers ──
 
-export function planUsageFromApi(api: PlanUsageApi): PlanUsageDomain {
-  return {
-    plan: api.plan,
-    orgsCount: api.orgsCount,
-    items: api.items.map((it) => ({
-      ...it,
-      createdAt: new Date(it.createdAt),
-    })),
-  };
-}
-
-export type CreatePlanRequest = {
-  id: string;
-  displayName: string;
-  description?: string;
-  features: PlanFeaturesMap;
-  quotas: PlanQuotasMap;
-  monthlyPriceRub?: number;
-  sortOrder?: number;
-};
-
-export type UpdatePlanRequest = {
-  displayName?: string;
-  description?: string | null;
-  features?: PlanFeaturesMap;
-  quotas?: PlanQuotasMap;
-  monthlyPriceRub?: number | null;
-  sortOrder?: number;
-  isActive?: boolean;
-};
-
-/** Форматируем цену как «1 200 ₽/мес» либо «бесплатно». */
+/** Форматируем цену как «60 000 ₽/мес» либо «бесплатно» (для legacy-вызовов). */
 export function formatPlanPrice(rub: number | null): string {
   if (rub === null || rub === undefined) return 'бесплатно';
   return `${rub.toLocaleString('ru-RU')} ₽/мес`;
+}
+
+/**
+ * Считает итоговую цену тарифа для заданного количества доп. сотрудников.
+ *
+ * Логика дублирует backend `SeatService.calculateMonthlyPriceKopecks` /
+ * `calculateYearlyPriceKopecks` — но **только для UI-калькулятора**. Источник
+ * цены на бэке остаётся единственный (AdminSetting). Здесь — лишь
+ * визуализация снимка, переданного через `PlanSnapshotApi`.
+ *
+ * Возвращает значения в рублях (целочисленные — копейки на UI не нужны).
+ *
+ *   monthly                  — цена за месяц с учётом доп. мест.
+ *   yearlyMonthEquivalent    — эквивалентная месячная стоимость
+ *                              по годовой подписке (со скидкой).
+ *   yearlyFull               — полная стоимость за 12 месяцев со скидкой.
+ *   yearlySavings            — экономия за год по сравнению с месячной.
+ */
+export function calculatePlanPrice(
+  snapshot: PlanSnapshotDomain,
+  seatsExtra: number,
+): {
+  monthly: number;
+  yearlyMonthEquivalent: number;
+  yearlyFull: number;
+  yearlySavings: number;
+} {
+  const seats = Math.max(0, Math.floor(seatsExtra));
+  const monthly =
+    snapshot.base.monthlyPriceRub +
+    seats * snapshot.extraSeat.monthlyPriceRubPerSeat;
+
+  // discountPercent уже посчитан на бэке как (1 - yearlyDiscountRate) * 100.
+  // yearlyDiscountRate = 0.8 → discountPercent = 20 → коэффициент 0.8.
+  const yearlyRate = 1 - snapshot.yearly.discountPercent / 100;
+  const yearlyMonthEquivalent = Math.round(monthly * yearlyRate);
+  const yearlyFull = yearlyMonthEquivalent * 12;
+  const yearlySavings = monthly * 12 - yearlyFull;
+
+  return {
+    monthly,
+    yearlyMonthEquivalent,
+    yearlyFull,
+    yearlySavings: Math.max(0, yearlySavings),
+  };
+}
+
+/** Форматирует целое число рублей с разделителями: 60000 → «60 000 ₽». */
+export function formatRub(rub: number): string {
+  return `${Math.round(rub).toLocaleString('ru-RU')} ₽`;
 }

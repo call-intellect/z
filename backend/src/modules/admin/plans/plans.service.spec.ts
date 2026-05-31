@@ -1,271 +1,217 @@
 /**
- * Admin-redesign Фаза 4 — unit-тесты `AdminPlansService`.
+ * Admin-redesign Фаза 4 (collapse-to-standard, ТЗ 2026-05-31) —
+ * unit-тесты `AdminPlansService.getCurrentSnapshot()`.
  *
- * Покрываем:
- *   1) list(): возвращает Plan'ы + считает Org по tier.
- *   2) create(): создаёт Plan; 400 если id занят.
- *   3) update(): обновляет partial-поля.
- *   4) softDelete(): isActive=false; не блокируется наличием Org.
- *   5) hardDelete(): 400 если есть Org с tier === id.
- *   6) getUsage(): возвращает Plan + список Org + общий count.
+ * После collapse-to-standard CRUD-методы удалены. Тестируем один публичный
+ * метод — `getCurrentSnapshot()`:
+ *   1) собирает значения из `AdminSettingsService.getMany(...)`;
+ *   2) при отсутствии ключа — берёт code-fallback (защита от bootstrap-сценария);
+ *   3) при кривом типе значения — берёт code-fallback (защита от мусора в БД);
+ *   4) дёргает `SeatService.calculatePricing('monthly', 0)` для базовой строки
+ *      (UI и расчёт цены подписки — один источник правды);
+ *   5) считает COUNT'ы Org на `tier_standard` и на legacy-тирах;
+ *   6) features/quotas — берёт из `TIER_CONFIG['tier_standard']`;
+ *   7) editableSettings — 6 ключей `billing.*` с severity=high.
  */
 
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { SeatService } from '../../billing/services/seat.service';
+import { TIER_CONFIG } from '../../entitlements/tier-config';
+import type { AdminSettingsService } from '../settings/admin-settings.service';
 
 import { AdminPlansService } from './plans.service';
 
-interface PlanRow {
-  id: string;
-  displayName: string;
-  description: string | null;
-  features: unknown;
-  quotas: unknown;
-  monthlyPriceRub: number | null;
-  isActive: boolean;
-  sortOrder: number;
-  createdAt: Date;
-  updatedAt: Date;
+interface PrismaCounts {
+  /** Сколько Org на `tier_standard`. */
+  standardCount: number;
+  /** Сколько Org на legacy-тирах (basic/pro/enterprise). */
+  legacyCount: number;
 }
 
-interface EntRow {
-  tenantId: string;
-  tier: string;
-  org: {
-    id: string;
-    name: string;
-    slug: string;
-    createdAt: Date;
-    _count: { memberships: number; meetings: number };
-  } | null;
-  createdAt: Date;
-}
-
-function buildPrisma(state: { plans: PlanRow[]; ents: EntRow[] }): PrismaService {
-  const planFindUnique = vi.fn(async ({ where }: { where: { id: string } }) => {
-    return state.plans.find((p) => p.id === where.id) ?? null;
-  });
-  const planFindMany = vi.fn(async (_args: unknown) => {
-    void _args;
-    return [...state.plans].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
-  });
-  const planCreate = vi.fn(async ({ data }: { data: Partial<PlanRow> & { id: string } }) => {
-    const row: PlanRow = {
-      id: data.id,
-      displayName: data.displayName ?? '',
-      description: data.description ?? null,
-      features: data.features ?? {},
-      quotas: data.quotas ?? {},
-      monthlyPriceRub: data.monthlyPriceRub ?? null,
-      isActive: data.isActive ?? true,
-      sortOrder: data.sortOrder ?? 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    state.plans.push(row);
-    return row;
-  });
-  const planUpdate = vi.fn(
-    async ({ where, data }: { where: { id: string }; data: Partial<PlanRow> }) => {
-      const p = state.plans.find((x) => x.id === where.id);
-      if (!p) throw new Error('not found');
-      Object.assign(p, data, { updatedAt: new Date() });
-      return p;
-    },
-  );
-  const planDelete = vi.fn(async ({ where }: { where: { id: string } }) => {
-    const idx = state.plans.findIndex((x) => x.id === where.id);
-    if (idx < 0) throw new Error('not found');
-    const [removed] = state.plans.splice(idx, 1);
-    return removed;
-  });
-
-  const entGroupBy = vi.fn(async () => {
-    const buckets = new Map<string, number>();
-    for (const e of state.ents) {
-      buckets.set(e.tier, (buckets.get(e.tier) ?? 0) + 1);
+function buildPrisma(counts: PrismaCounts): PrismaService {
+  const count = vi.fn(async (args: { where: { tier: unknown } }) => {
+    const tier = args.where.tier;
+    if (tier === 'tier_standard') return counts.standardCount;
+    if (
+      typeof tier === 'object' &&
+      tier !== null &&
+      'in' in (tier as Record<string, unknown>)
+    ) {
+      return counts.legacyCount;
     }
-    return Array.from(buckets.entries()).map(([tier, count]) => ({
-      tier,
-      _count: { _all: count },
-    }));
+    return 0;
   });
-  const entCount = vi.fn(async ({ where }: { where: { tier: string } }) => {
-    return state.ents.filter((e) => e.tier === where.tier).length;
-  });
-  const entFindMany = vi.fn(
-    async (args: { where: { tier: string }; take?: number }) => {
-      const rows = state.ents.filter((e) => e.tier === args.where.tier).slice(0, args.take ?? 10);
-      return rows;
-    },
-  );
-
   return {
-    plan: {
-      findUnique: planFindUnique,
-      findMany: planFindMany,
-      create: planCreate,
-      update: planUpdate,
-      delete: planDelete,
-    },
-    orgEntitlement: {
-      groupBy: entGroupBy,
-      count: entCount,
-      findMany: entFindMany,
-    },
+    orgEntitlement: { count },
   } as unknown as PrismaService;
 }
 
-function makePlan(over: Partial<PlanRow>): PlanRow {
+function buildAdminSettings(
+  values: Record<string, unknown>,
+): AdminSettingsService {
   return {
-    id: over.id ?? 'tier_basic',
-    displayName: over.displayName ?? 'Basic',
-    description: over.description ?? null,
-    features: over.features ?? {},
-    quotas: over.quotas ?? {},
-    monthlyPriceRub: over.monthlyPriceRub ?? null,
-    isActive: over.isActive ?? true,
-    sortOrder: over.sortOrder ?? 0,
-    createdAt: over.createdAt ?? new Date('2026-01-01T00:00:00Z'),
-    updatedAt: over.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
-  };
+    getMany: vi.fn(async (keys: string[]) => {
+      const out: Record<string, unknown> = {};
+      for (const k of keys) {
+        if (k in values) out[k] = values[k];
+      }
+      return out;
+    }),
+  } as unknown as AdminSettingsService;
 }
 
-function makeEnt(over: Partial<EntRow>): EntRow {
+function buildSeat(monthlyKopecks: number): SeatService {
   return {
-    tenantId: over.tenantId ?? 'tenant-1',
-    tier: over.tier ?? 'tier_basic',
-    org: over.org ?? {
-      id: over.tenantId ?? 'tenant-1',
-      name: 'Org 1',
-      slug: 'org-1',
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      _count: { memberships: 3, meetings: 10 },
-    },
-    createdAt: over.createdAt ?? new Date(),
-  };
+    calculatePricing: vi.fn(async (_period: 'monthly' | 'yearly', _extra: number) => ({
+      baseMonthlyKopecks: monthlyKopecks,
+      seatsExtraKopecks: 0,
+      monthlyKopecks,
+      periodKopecks: monthlyKopecks,
+      discountKopecks: 0,
+      monthsInPeriod: 1,
+    })),
+  } as unknown as SeatService;
 }
 
-describe('AdminPlansService', () => {
-  it('list(): возвращает Plan + считает Org по tier', async () => {
-    const prisma = buildPrisma({
-      plans: [
-        makePlan({ id: 'tier_basic', sortOrder: 1 }),
-        makePlan({ id: 'tier_pro', sortOrder: 2 }),
-      ],
-      ents: [
-        makeEnt({ tenantId: 't1', tier: 'tier_basic' }),
-        makeEnt({ tenantId: 't2', tier: 'tier_basic' }),
-        makeEnt({ tenantId: 't3', tier: 'tier_pro' }),
-      ],
+describe('AdminPlansService.getCurrentSnapshot', () => {
+  it('собирает снимок из AdminSetting + SeatService + COUNT Org', async () => {
+    const prisma = buildPrisma({ standardCount: 42, legacyCount: 3 });
+    const settings = buildAdminSettings({
+      'billing.baseMonthlyKopecks': 6_000_000,
+      'billing.perExtraSeatKopecks': 100_000,
+      'billing.yearlyDiscountRate': 0.8,
+      'billing.baseSeatsIncluded': 31,
+      'billing.baseMeetingsGrant': 150,
+      'billing.perExtraSeatMeetingsGrant': 5,
     });
-    const svc = new AdminPlansService(prisma);
-    const res = await svc.list();
-    expect(res.items.length).toBe(2);
-    expect(res.items[0]?.id).toBe('tier_basic');
-    expect(res.items[0]?.orgsCount).toBe(2);
-    expect(res.items[1]?.orgsCount).toBe(1);
+    const seat = buildSeat(6_000_000);
+    const svc = new AdminPlansService(prisma, settings, seat);
+
+    const snap = await svc.getCurrentSnapshot();
+
+    expect(snap.tier).toBe('tier_standard');
+    expect(snap.displayName).toBe('Стандартный');
+    expect(snap.description).toBe('Единый тариф Z. Все фичи Z.');
+
+    // base — пришла через SeatService.calculatePricing.
+    expect(snap.base.monthlyPriceKopecks).toBe(6_000_000);
+    expect(snap.base.monthlyPriceRub).toBe(60_000);
+    expect(snap.base.seatsIncluded).toBe(31);
+    expect(snap.base.meetingsIncludedPerMonth).toBe(150);
+
+    // extraSeat — из AdminSetting напрямую.
+    expect(snap.extraSeat.monthlyPriceKopecksPerSeat).toBe(100_000);
+    expect(snap.extraSeat.monthlyPriceRubPerSeat).toBe(1_000);
+    expect(snap.extraSeat.meetingsPerSeat).toBe(5);
+
+    // yearly — производное от yearlyDiscountRate (0.8 → -20%).
+    expect(snap.yearly.discountPercent).toBe(20);
+    expect(snap.yearly.monthlyEquivalentRub).toBe(48_000);
+    expect(snap.yearly.fullYearRub).toBe(576_000);
+
+    // features/quotas — из TIER_CONFIG, не из AdminSetting.
+    expect(snap.features).toEqual(TIER_CONFIG['tier_standard'].features);
+    expect(snap.quotas).toEqual(TIER_CONFIG['tier_standard'].quotas);
+
+    // COUNT'ы Org.
+    expect(snap.orgsUsingCount).toBe(42);
+    expect(snap.legacyOrgsRemainingCount).toBe(3);
+
+    // editableSettings — ровно 6 ключей billing.*, все severity=high.
+    expect(snap.editableSettings).toHaveLength(6);
+    expect(snap.editableSettings.map((s) => s.key).sort()).toEqual([
+      'billing.baseMeetingsGrant',
+      'billing.baseMonthlyKopecks',
+      'billing.baseSeatsIncluded',
+      'billing.perExtraSeatKopecks',
+      'billing.perExtraSeatMeetingsGrant',
+      'billing.yearlyDiscountRate',
+    ]);
+    for (const s of snap.editableSettings) {
+      expect(s.severity).toBe('high');
+    }
   });
 
-  it('create(): создаёт Plan; 400 если id занят', async () => {
-    const state = {
-      plans: [makePlan({ id: 'tier_basic' })],
-      ents: [],
-    };
-    const svc = new AdminPlansService(buildPrisma(state));
-    await expect(
-      svc.create({
-        id: 'tier_basic',
-        displayName: 'Dup',
-        features: {},
-        quotas: {},
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+  it('использует code-fallback, если ключа нет в AdminSetting (bootstrap)', async () => {
+    const prisma = buildPrisma({ standardCount: 0, legacyCount: 0 });
+    // Возвращаем пустой объект — ни одного ключа billing.* не сидено.
+    const settings = buildAdminSettings({});
+    const seat = buildSeat(6_000_000);
+    const svc = new AdminPlansService(prisma, settings, seat);
 
-    const created = await svc.create({
-      id: 'tier_team',
-      displayName: 'Team',
-      features: { ai_chat: true },
-      quotas: { max_meetings_per_day: 100 },
-      monthlyPriceRub: 5000,
-      sortOrder: 5,
+    const snap = await svc.getCurrentSnapshot();
+
+    // Должны взяться дефолты 60 000 ₽ / 1 000 ₽ / 20% / 31 / 150 / 5.
+    expect(snap.base.monthlyPriceKopecks).toBe(6_000_000);
+    expect(snap.extraSeat.monthlyPriceKopecksPerSeat).toBe(100_000);
+    expect(snap.yearly.discountPercent).toBe(20);
+    expect(snap.base.seatsIncluded).toBe(31);
+    expect(snap.base.meetingsIncludedPerMonth).toBe(150);
+    expect(snap.extraSeat.meetingsPerSeat).toBe(5);
+  });
+
+  it('берёт code-fallback, если значение AdminSetting кривого типа', async () => {
+    const prisma = buildPrisma({ standardCount: 1, legacyCount: 0 });
+    const settings = buildAdminSettings({
+      // Все 6 ключей — строки/null/NaN. Сервис должен warn'нуть и взять fallback.
+      'billing.baseMonthlyKopecks': '6000000',
+      'billing.perExtraSeatKopecks': null,
+      'billing.yearlyDiscountRate': Number.NaN,
+      'billing.baseSeatsIncluded': 'thirty-one',
+      'billing.baseMeetingsGrant': {},
+      'billing.perExtraSeatMeetingsGrant': true,
     });
-    expect(created.id).toBe('tier_team');
-    expect(created.monthlyPriceRub).toBe(5000);
-    expect(state.plans.length).toBe(2);
+    const seat = buildSeat(6_000_000);
+    const svc = new AdminPlansService(prisma, settings, seat);
+
+    const snap = await svc.getCurrentSnapshot();
+
+    expect(snap.base.monthlyPriceKopecks).toBe(6_000_000);
+    expect(snap.extraSeat.monthlyPriceKopecksPerSeat).toBe(100_000);
+    expect(snap.yearly.discountPercent).toBe(20);
+    expect(snap.base.seatsIncluded).toBe(31);
+    expect(snap.base.meetingsIncludedPerMonth).toBe(150);
+    expect(snap.extraSeat.meetingsPerSeat).toBe(5);
   });
 
-  it('update(): обновляет partial-поля + считает orgsCount', async () => {
-    const state = {
-      plans: [makePlan({ id: 'tier_pro', displayName: 'Pro' })],
-      ents: [makeEnt({ tier: 'tier_pro' })],
-    };
-    const svc = new AdminPlansService(buildPrisma(state));
-    const upd = await svc.update('tier_pro', {
-      displayName: 'Pro+',
-      monthlyPriceRub: 12000,
+  it('отражает изменение прайса: 70 000 ₽ → base.monthlyPriceRub=70000, discount пересчитан', async () => {
+    const prisma = buildPrisma({ standardCount: 5, legacyCount: 0 });
+    const settings = buildAdminSettings({
+      'billing.baseMonthlyKopecks': 7_000_000,
+      'billing.perExtraSeatKopecks': 150_000,
+      'billing.yearlyDiscountRate': 0.75, // -25%
+      'billing.baseSeatsIncluded': 50,
+      'billing.baseMeetingsGrant': 200,
+      'billing.perExtraSeatMeetingsGrant': 10,
     });
-    expect(upd.displayName).toBe('Pro+');
-    expect(upd.monthlyPriceRub).toBe(12000);
-    expect(upd.orgsCount).toBe(1);
+    // SeatService при baseMonthlyKopecks=7_000_000 и seatsExtra=0 вернёт 7_000_000.
+    const seat = buildSeat(7_000_000);
+    const svc = new AdminPlansService(prisma, settings, seat);
+
+    const snap = await svc.getCurrentSnapshot();
+
+    expect(snap.base.monthlyPriceRub).toBe(70_000);
+    expect(snap.base.monthlyPriceKopecks).toBe(7_000_000);
+    expect(snap.extraSeat.monthlyPriceRubPerSeat).toBe(1_500);
+    expect(snap.yearly.discountPercent).toBe(25);
+    expect(snap.yearly.monthlyEquivalentRub).toBe(52_500); // 70000 × 0.75
+    expect(snap.yearly.fullYearRub).toBe(630_000); // 52500 × 12
+    expect(snap.base.seatsIncluded).toBe(50);
+    expect(snap.base.meetingsIncludedPerMonth).toBe(200);
+    expect(snap.extraSeat.meetingsPerSeat).toBe(10);
   });
 
-  it('update(): NotFoundException для несуществующего id', async () => {
-    const svc = new AdminPlansService(buildPrisma({ plans: [], ents: [] }));
-    await expect(svc.update('missing', { displayName: 'X' })).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
-  });
+  it('legacyOrgsRemainingCount=0 после миграции — нормальное прод-состояние', async () => {
+    const prisma = buildPrisma({ standardCount: 100, legacyCount: 0 });
+    const settings = buildAdminSettings({});
+    const seat = buildSeat(6_000_000);
+    const svc = new AdminPlansService(prisma, settings, seat);
 
-  it('softDelete(): isActive=false; не блокируется наличием Org', async () => {
-    const state = {
-      plans: [makePlan({ id: 'tier_basic', isActive: true })],
-      ents: [makeEnt({ tier: 'tier_basic' })],
-    };
-    const svc = new AdminPlansService(buildPrisma(state));
-    const res = await svc.softDelete('tier_basic');
-    expect(res.ok).toBe(true);
-    expect(state.plans[0]?.isActive).toBe(false);
-  });
+    const snap = await svc.getCurrentSnapshot();
 
-  it('hardDelete(): 400 если есть Org с tier === id', async () => {
-    const state = {
-      plans: [makePlan({ id: 'tier_basic' })],
-      ents: [makeEnt({ tier: 'tier_basic' })],
-    };
-    const svc = new AdminPlansService(buildPrisma(state));
-    await expect(svc.hardDelete('tier_basic')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(state.plans.length).toBe(1);
-  });
-
-  it('hardDelete(): успех, если Org с этим tier нет', async () => {
-    const state = {
-      plans: [makePlan({ id: 'tier_unused' })],
-      ents: [],
-    };
-    const svc = new AdminPlansService(buildPrisma(state));
-    const res = await svc.hardDelete('tier_unused');
-    expect(res.ok).toBe(true);
-    expect(state.plans.length).toBe(0);
-  });
-
-  it('getUsage(): возвращает Plan + список Org + общий count', async () => {
-    const state = {
-      plans: [makePlan({ id: 'tier_pro' })],
-      ents: [
-        makeEnt({ tenantId: 't1', tier: 'tier_pro' }),
-        makeEnt({ tenantId: 't2', tier: 'tier_pro' }),
-      ],
-    };
-    const svc = new AdminPlansService(buildPrisma(state));
-    const res = await svc.getUsage('tier_pro');
-    expect(res.plan.id).toBe('tier_pro');
-    expect(res.orgsCount).toBe(2);
-    expect(res.items.length).toBe(2);
-    expect(res.items[0]?.tenantId).toBe('t1');
+    expect(snap.orgsUsingCount).toBe(100);
+    expect(snap.legacyOrgsRemainingCount).toBe(0);
   });
 });

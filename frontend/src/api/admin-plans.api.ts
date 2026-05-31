@@ -1,44 +1,18 @@
 /**
- * API-клиент для CRUD тарифов (Plan) — Z-Admin Фаза 4.
+ * API-клиент тарифа продукта Z (Z-Admin).
  *
- * Контракт сервера: `backend/src/modules/admin/plans/plans.controller.ts`
- * (префикс `/api/v1/admin/orgs/plans`).
+ * После collapse-to-standard (ТЗ 2026-05-31) остался **один** read-only
+ * эндпоинт `GET /api/v1/admin/orgs/plans/current` — снимок единого тарифа
+ * `tier_standard`. CRUD-методы (`list/create/update/remove/usage`) удалены
+ * вместе с бэкенд-контроллером — цена и параметры пакета редактируются через
+ * `/api/v1/admin/settings/billing.*` (см. `admin-settings.api.ts`).
  */
 
 import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
-import type {
-  CreatePlanRequest,
-  PlanItemApi,
-  PlanListApi,
-  PlanUsageApi,
-  UpdatePlanRequest,
-} from '@/domain/admin-plan';
+import type { PlanSnapshotApi } from '@/domain/admin-plan';
 
 export const adminPlansApi = {
-  list: () =>
-    apiClient.get<PlanListApi>('/api/v1/admin/orgs/plans'),
-
-  create: (body: CreatePlanRequest) =>
-    apiClient.post<PlanItemApi>('/api/v1/admin/orgs/plans', body),
-
-  update: (id: string, body: UpdatePlanRequest) =>
-    apiClient.patch<PlanItemApi>(
-      `/api/v1/admin/orgs/plans/${encodeURIComponent(id)}`,
-      body,
-    ),
-
-  /**
-   * По умолчанию soft-delete (isActive=false). С `hard=true` — полностью удаляет
-   * запись из БД (бэкенд вернёт 400, если хотя бы одна Org использует тариф).
-   */
-  remove: (id: string, opts: { hard?: boolean } = {}) =>
-    apiClient.del<{ ok: true }>(
-      `/api/v1/admin/orgs/plans/${encodeURIComponent(id)}${buildQuery({ hard: opts.hard })}`,
-    ),
-
-  usage: (id: string) =>
-    apiClient.get<PlanUsageApi>(
-      `/api/v1/admin/orgs/plans/${encodeURIComponent(id)}/usage`,
-    ),
+  /** Снимок текущего тарифа: цена/мест/встреч + features/quotas + COUNT Org. */
+  getCurrent: () =>
+    apiClient.get<PlanSnapshotApi>('/api/v1/admin/orgs/plans/current'),
 };

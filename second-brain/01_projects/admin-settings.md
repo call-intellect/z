@@ -119,7 +119,24 @@ Eager sync-путь — читает из `TypedConfigService.cacheMap`, зап�
 - [x] `cfg.idle.*` — 2 поля (`idle.*`).
 - [x] `cfg.quotas.*` — 2 поля (`limits.maxParticipantsPerMeeting`, `limits.maxMeetingDurationHours`).
 
-**Итого ~64 поля мигрировано в 12 геттерах.** Остальные ~40 геттеров (`knowledgeCore`, `chatV2`, `curation`, `insights`, `ideas`, `skill`, `persona`, `conversational`, `telegramBot`, `maxBot`, `bot`, `mailInbox`, `bitemporal`, `extraction`, `document`, `brandVoice`, `roleMap`, `betaOps`, `proactive`, `concierge`, `budget`, `tracker`, `companyFoundation`, `processTemplate`, `experiments`, `dataClassPolicy`, `confidenceCalibration`, `temporalProbe`, `signalTypeStats`, `voice`, `invites`, `push`, `router`, `entityIngest`, `projectionRebuild`, `admin`, и пр.) — пока ENV-only, мигрировать по мере необходимости отдельными ТЗ.
+**Итого ~64 поля мигрировано в 12 геттерах через `resolveSync` + 6 полей `billing.*` через `getDynamic` (см. ниже).**
+
+### `billing.*` — единый тариф `tier_standard` (2026-05-31)
+
+ТЗ [admin-plans-collapse-to-standard](plans/tz/2026-05-31-admin-plans-collapse-to-standard.md) перевёл цену тарифа и грант встреч в AdminSetting (`category=billing`, `section=tariff-standard`, `severity=high` — `reason` обязателен). Читается через **async** `getDynamic` (а не sync `resolveSync`) — `SeatService` и `MeetingsBalanceService` стали async, все call-site'ы используют `await`.
+
+| Ключ | Тип | Default (code-fallback) |
+|---|---|---|
+| `billing.baseMonthlyKopecks` | `int >= 0` | `6_000_000` (60 000 ₽) |
+| `billing.perExtraSeatKopecks` | `int >= 0` | `100_000` (1 000 ₽) |
+| `billing.yearlyDiscountRate` | `0..1` | `0.8` (-20%) |
+| `billing.baseSeatsIncluded` | `int > 0` | `31` (1 владелец + 30) |
+| `billing.baseMeetingsGrant` | `int >= 0` | `150` (встреч/мес) |
+| `billing.perExtraSeatMeetingsGrant` | `int >= 0` | `5` |
+
+Seed — `backend/scripts/seed-admin-settings-billing.ts` (идемпотентный, защищает админ-правки). Активные `Subscription.monthlyPriceKopecks` при правке прайса **не** пересчитываются (зафиксированы на момент покупки/продления).
+
+UI — `/admin/orgs/plans` (одна карточка «Стандартный тариф Z», калькулятор seats, история через `AdminSettingHistoryDrawer`). Остальные ~40 геттеров (`knowledgeCore`, `chatV2`, `curation`, `insights`, `ideas`, `skill`, `persona`, `conversational`, `telegramBot`, `maxBot`, `bot`, `mailInbox`, `bitemporal`, `extraction`, `document`, `brandVoice`, `roleMap`, `betaOps`, `proactive`, `concierge`, `budget`, `tracker`, `companyFoundation`, `processTemplate`, `experiments`, `dataClassPolicy`, `confidenceCalibration`, `temporalProbe`, `signalTypeStats`, `voice`, `invites`, `push`, `router`, `entityIngest`, `projectionRebuild`, `admin`, и пр.) — пока ENV-only, мигрировать по мере необходимости отдельными ТЗ.
 
 ТЗ миграции: [plans/tz/2026-05-25-env-to-admin-setting-call-sites-migration.md](plans/tz/2026-05-25-env-to-admin-setting-call-sites-migration.md).
 

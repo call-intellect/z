@@ -10,30 +10,57 @@
  *   Б3 +1 место → +1 000 ₽/мес → +5 встреч/мес
  *   Б4 годовая = base × 12 × 0.80 (скидка 20%)
  *
- * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §4 + §7.1.
+ * Источник цены — **AdminSetting** (ключи `billing.*`), редактируется через
+ * UI super_admin с history + audit. См. ТЗ
+ * `plans/tz/2026-05-31-admin-plans-collapse-to-standard.md` §3.1–3.2.
+ * Дефолты `DEFAULT_*` — code-fallback на случай недоступности
+ * `AdminSettingsService` (минимальный bootstrap, тесты, первый запуск
+ * до сидов).
  *
- * Все функции — pure (не зависят от DI/БД), чтобы юнит-тесты не требовали моков.
+ * Все публичные методы — **async**. Чтение через `TypedConfigService.getDynamic`:
+ *   - LRU-кэш 30s в `AdminSettingsService` → повторные вызовы стоят ≈0;
+ *   - Redis pub/sub `admin:setting:invalidate` → инвалидация во всех процессах
+ *     (HTTP + workers) за <1s.
+ *
+ * Грант встреч делегируется в `MeetingsBalanceService.calculateMeetingsGrant`
+ * (единый источник правды для формулы гранта — там же админ-параметры
+ * `billing.baseMeetingsGrant` / `billing.perExtraSeatMeetingsGrant`).
+ *
+ * Активные `Subscription.monthlyPriceKopecks` ретроактивно НЕ пересчитываются:
+ * цена фиксируется на момент покупки/продления (см. ТЗ §1 п.6 / §3.6).
+ *
+ * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §4 + §7.1
+ * и plans/tz/2026-05-31-admin-plans-collapse-to-standard.md §3.1–3.2.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
-import {
-  BASE_MEETINGS_GRANT,
-  calculateMeetingsGrant,
-  PER_EXTRA_SEAT_MEETINGS_GRANT,
-} from '../../meetings-balance/meetings-balance.service';
+import { TypedConfigService } from '../../../common/config';
+import { MeetingsBalanceService } from '../../meetings-balance/meetings-balance.service';
 
-// ────────────────────────── Тарифные константы ──────────────────────────
+// ────────────────────────── Code-fallback константы ──────────────────────────
 
-/** Базовая цена `tier_standard` в копейках = 60 000 ₽ × 100. */
-export const BASE_MONTHLY_PRICE_KOPECKS = 6_000_000;
-/** Доплата за каждое доп. место в копейках = 1 000 ₽ × 100. */
-export const PER_EXTRA_SEAT_KOPECKS = 100_000;
-/** Скидка на годовую подписку. 0.80 = -20%. */
-export const YEARLY_DISCOUNT_RATE = 0.8;
-/** Число месяцев в годовом периоде. */
+/** Базовая цена `tier_standard` в копейках = 60 000 ₽ × 100 (code-fallback). */
+const DEFAULT_BASE_MONTHLY_PRICE_KOPECKS = 6_000_000;
+/** Доплата за каждое доп. место в копейках = 1 000 ₽ × 100 (code-fallback). */
+const DEFAULT_PER_EXTRA_SEAT_KOPECKS = 100_000;
+/** Скидка на годовую подписку. 0.80 = -20% (code-fallback). */
+const DEFAULT_YEARLY_DISCOUNT_RATE = 0.8;
+
+/**
+ * Число месяцев в годовом периоде — **формат биллинга, не цена**, остаётся
+ * в коде (не редактируется через AdminSetting).
+ *
+ * Экспортируется, потому что используется в `manual-billing.service.ts`
+ * (`monthsLeftInYearlyPeriod ?? YEARLY_MONTHS`) и `billing.service.ts`
+ * (re-export для cron'ов продления).
+ */
 export const YEARLY_MONTHS = 12;
-/** Принятый «месяц» для pro-rata по дням. 30 дней — стандарт SaaS-биллинга. */
+/**
+ * Принятый «месяц» для pro-rata по дням. 30 дней — стандарт SaaS-биллинга,
+ * **не цена**, остаётся в коде. Экспортируется для тестов и потенциальных
+ * call-site'ов pro-rata, которым нужен cap по дням.
+ */
 export const PRORATA_DAYS_IN_MONTH = 30;
 
 /** Pure-проверка: `count >= 0` целое. */
@@ -57,12 +84,56 @@ export interface SubscriptionPricing {
   monthsInPeriod: number;
 }
 
+interface PricingParams {
+  /** Базовая месячная цена в копейках. */
+  base: number;
+  /** Цена за доп. место в копейках. */
+  perSeat: number;
+  /** Скидка годовой подписки (доля, 0.8 = -20%). */
+  yearly: number;
+}
+
 @Injectable()
 export class SeatService {
-  /** Месячная цена в копейках для (seatsBase=30 + seatsExtra) мест. */
-  calculateMonthlyPriceKopecks(seatsExtra: number): number {
+  constructor(
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(MeetingsBalanceService)
+    private readonly meetingsBalance: MeetingsBalanceService,
+  ) {}
+
+  /**
+   * Прочитать 3 ценовых параметра параллельно. После прогрева LRU-кэша
+   * (TTL 30s) все три ветки возвращают синхронно из памяти.
+   *
+   * Параметры гранта встреч НЕ читаются здесь — это ответственность
+   * `MeetingsBalanceService.calculateMeetingsGrant`.
+   */
+  private async readPricing(): Promise<PricingParams> {
+    const [base, perSeat, yearly] = await Promise.all([
+      this.cfg.getDynamic<number>(
+        'billing.baseMonthlyKopecks',
+        undefined,
+        DEFAULT_BASE_MONTHLY_PRICE_KOPECKS,
+      ),
+      this.cfg.getDynamic<number>(
+        'billing.perExtraSeatKopecks',
+        undefined,
+        DEFAULT_PER_EXTRA_SEAT_KOPECKS,
+      ),
+      this.cfg.getDynamic<number>(
+        'billing.yearlyDiscountRate',
+        undefined,
+        DEFAULT_YEARLY_DISCOUNT_RATE,
+      ),
+    ]);
+    return { base, perSeat, yearly };
+  }
+
+  /** Месячная цена в копейках для (seatsBase=31 + seatsExtra) мест. */
+  async calculateMonthlyPriceKopecks(seatsExtra: number): Promise<number> {
     ensureNonNegativeInt('seatsExtra', seatsExtra);
-    return BASE_MONTHLY_PRICE_KOPECKS + seatsExtra * PER_EXTRA_SEAT_KOPECKS;
+    const { base, perSeat } = await this.readPricing();
+    return base + seatsExtra * perSeat;
   }
 
   /**
@@ -70,10 +141,12 @@ export class SeatService {
    *   gross   = monthly × 12
    *   yearly  = round(gross × 0.80)
    */
-  calculateYearlyPriceKopecks(seatsExtra: number): number {
-    const monthly = this.calculateMonthlyPriceKopecks(seatsExtra);
+  async calculateYearlyPriceKopecks(seatsExtra: number): Promise<number> {
+    ensureNonNegativeInt('seatsExtra', seatsExtra);
+    const { base, perSeat, yearly } = await this.readPricing();
+    const monthly = base + seatsExtra * perSeat;
     const gross = monthly * YEARLY_MONTHS;
-    return Math.round(gross * YEARLY_DISCOUNT_RATE);
+    return Math.round(gross * yearly);
   }
 
   /**
@@ -81,21 +154,23 @@ export class SeatService {
    * Для monthly: discountKopecks=0, periodKopecks=monthlyKopecks.
    * Для yearly:  periodKopecks = gross - discount.
    */
-  calculatePricing(
+  async calculatePricing(
     period: 'monthly' | 'yearly',
     seatsExtra: number,
-  ): SubscriptionPricing {
-    const monthly = this.calculateMonthlyPriceKopecks(seatsExtra);
+  ): Promise<SubscriptionPricing> {
+    ensureNonNegativeInt('seatsExtra', seatsExtra);
+    const { base, perSeat, yearly } = await this.readPricing();
+    const monthly = base + seatsExtra * perSeat;
     const months = period === 'yearly' ? YEARLY_MONTHS : 1;
     const gross = monthly * months;
-    const yearly =
-      period === 'yearly' ? Math.round(gross * YEARLY_DISCOUNT_RATE) : monthly;
-    const discount = period === 'yearly' ? gross - yearly : 0;
+    const periodKopecks =
+      period === 'yearly' ? Math.round(gross * yearly) : monthly;
+    const discount = period === 'yearly' ? gross - periodKopecks : 0;
     return {
-      baseMonthlyKopecks: BASE_MONTHLY_PRICE_KOPECKS,
-      seatsExtraKopecks: seatsExtra * PER_EXTRA_SEAT_KOPECKS,
+      baseMonthlyKopecks: base,
+      seatsExtraKopecks: seatsExtra * perSeat,
       monthlyKopecks: monthly,
-      periodKopecks: yearly,
+      periodKopecks,
       discountKopecks: discount,
       monthsInPeriod: months,
     };
@@ -111,15 +186,16 @@ export class SeatService {
    * `daysLeft` — целые дни до конца текущего месяца (или до currentPeriodEnd
    * если он раньше). Вычисляется вызывающей стороной (нужны календарные данные).
    */
-  calculateAddSeatsMonthlyProrata(args: {
+  async calculateAddSeatsMonthlyProrata(args: {
     seatsToAdd: number;
     daysLeftInPeriod: number;
-  }): number {
+  }): Promise<number> {
     ensureNonNegativeInt('seatsToAdd', args.seatsToAdd);
     ensureNonNegativeInt('daysLeftInPeriod', args.daysLeftInPeriod);
     if (args.seatsToAdd === 0 || args.daysLeftInPeriod === 0) return 0;
+    const { perSeat } = await this.readPricing();
     const daysCapped = Math.min(args.daysLeftInPeriod, PRORATA_DAYS_IN_MONTH);
-    const fullSeatPrice = args.seatsToAdd * PER_EXTRA_SEAT_KOPECKS;
+    const fullSeatPrice = args.seatsToAdd * perSeat;
     return Math.round((fullSeatPrice * daysCapped) / PRORATA_DAYS_IN_MONTH);
   }
 
@@ -129,31 +205,31 @@ export class SeatService {
    *
    * monthsLeft — целые месяцы до currentPeriodEnd, считается вызывающей стороной.
    */
-  calculateAddSeatsYearlyProrata(args: {
+  async calculateAddSeatsYearlyProrata(args: {
     seatsToAdd: number;
     monthsLeftInPeriod: number;
-  }): number {
+  }): Promise<number> {
     ensureNonNegativeInt('seatsToAdd', args.seatsToAdd);
     ensureNonNegativeInt('monthsLeftInPeriod', args.monthsLeftInPeriod);
     if (args.seatsToAdd === 0 || args.monthsLeftInPeriod === 0) return 0;
+    const { perSeat, yearly } = await this.readPricing();
     const monthsCapped = Math.min(args.monthsLeftInPeriod, YEARLY_MONTHS);
-    const full = args.seatsToAdd * PER_EXTRA_SEAT_KOPECKS * monthsCapped;
-    return Math.round(full * YEARLY_DISCOUNT_RATE);
+    const full = args.seatsToAdd * perSeat * monthsCapped;
+    return Math.round(full * yearly);
   }
 
   // ────────────────────────── Грант встреч ──────────────────────────
 
   /**
-   * Стартовый/ежемесячный грант встреч. Re-export из MeetingsBalanceService,
-   * чтобы биллинг-код не лазил в чужой модуль напрямую — это собственная
-   * вычислимая величина биллинга (нужна при создании Invoice + грантовании
-   * MeetingsBalance.grant).
+   * Стартовый/ежемесячный грант встреч. Делегируется в
+   * `MeetingsBalanceService.calculateMeetingsGrant` (единый источник правды
+   * для формулы гранта — там же админ-параметры
+   * `billing.baseMeetingsGrant` / `billing.perExtraSeatMeetingsGrant`).
+   *
+   * SeatService остаётся «прокси» для биллинг-кода, чтобы не разносить
+   * импорты meetings-balance по billing-сервисам.
    */
-  calculateMeetingsGrant(seatsExtra: number): number {
-    return calculateMeetingsGrant(seatsExtra);
+  async calculateMeetingsGrant(seatsExtra: number): Promise<number> {
+    return this.meetingsBalance.calculateMeetingsGrant(seatsExtra);
   }
-
-  /** Re-export базы для UI/PDF. */
-  readonly baseMeetingsGrant = BASE_MEETINGS_GRANT;
-  readonly perExtraSeatMeetingsGrant = PER_EXTRA_SEAT_MEETINGS_GRANT;
 }

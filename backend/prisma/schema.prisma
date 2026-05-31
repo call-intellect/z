@@ -8683,6 +8683,12 @@ model AdminSettingHistory {
   @@index([key, changedAt])
 }
 
+/// LEGACY (ТЗ 2026-05-31 admin-plans-collapse-to-standard).
+/// Модель оставлена в схеме для обратной совместимости и data-recovery;
+/// CRUD-эндпоинты упразднены — на /api/v1/admin/orgs/plans остался только
+/// GET /current (снимок единого `tier_standard` из AdminSetting + TIER_CONFIG).
+/// Физическое удаление таблицы — отдельным ТЗ через 2 недели prod-наблюдений.
+///
 /// Plan — глобальный план продукта (basic/pro/enterprise/...). Содержит
 /// фичи и квоты по умолчанию. Конкретная Org ссылается через OrgEntitlement.tier
 /// (string, без foreign key — чтобы можно было soft-deactivate план).
@@ -9201,12 +9207,15 @@ model Referral {
   /// Уникальный slug 6–8 символов, генерируется системой. URL вида
   /// https://app.z.ru/?ref=<slug>.
   slug               String    @unique
-  inn                String    @db.VarChar(20)
+  /// Optional. Заполняется отдельно при подготовке к выводу (см. ТЗ §6.1).
+  inn                String?   @db.VarChar(20)
   /// Подтверждение по API ИНН через InnLookupService.
   innVerifiedAt      DateTime?
-  legalForm          ReferralLegalForm
+  /// Optional. Обязателен если задан inn — проверка на уровне сервиса (ReferralsService.create).
+  legalForm          ReferralLegalForm?
   /// Реквизиты для выплат (структура зависит от legalForm).
-  payoutDetails      Json
+  /// Optional — заполняется отдельно при подготовке к выводу денег (см. ТЗ referrals-cabinet-revamp §6.1).
+  payoutDetails      Json?
   /// Дата принятия оферты. Фиксируется при первой выплате.
   contractAcceptedAt DateTime?
 

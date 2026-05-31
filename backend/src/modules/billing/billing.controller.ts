@@ -152,11 +152,11 @@ export class BillingController {
   })
   @ApiOkResponse({ type: QuotaResponseDto })
   @UsePipes(new ZodValidationPipe(QuotaQuerySchema))
-  getQuote(@Query() query: QuotaQueryBody): QuotaResponseBody {
-    const pricing = this.seats.calculatePricing(
-      query.billingPeriod,
-      query.seatsExtra,
-    );
+  async getQuote(@Query() query: QuotaQueryBody): Promise<QuotaResponseBody> {
+    const [pricing, meetingsGrant] = await Promise.all([
+      this.seats.calculatePricing(query.billingPeriod, query.seatsExtra),
+      this.seats.calculateMeetingsGrant(query.seatsExtra),
+    ]);
     return {
       billingPeriod: query.billingPeriod,
       seatsExtra: query.seatsExtra,
@@ -164,7 +164,7 @@ export class BillingController {
       periodKopecks: pricing.periodKopecks,
       discountKopecks: pricing.discountKopecks,
       monthsInPeriod: pricing.monthsInPeriod,
-      meetingsGrant: this.seats.calculateMeetingsGrant(query.seatsExtra),
+      meetingsGrant,
     };
   }
 

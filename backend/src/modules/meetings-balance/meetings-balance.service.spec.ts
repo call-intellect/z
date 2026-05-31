@@ -2,26 +2,27 @@
  * Unit-тесты MeetingsBalanceService.
  *
  * Покрытие:
- *   - calculateMeetingsGrant: 150 + seatsExtra*5, clamp negative
+ *   - calculateMeetingsGrant: 150 + seatsExtra×5 (code-fallback), clamp negative
+ *   - calculateMeetingsGrant: AdminSetting override (правка super_admin)
  *   - getBalance: запись есть → view; запись нет → нулевой view
  *   - grant: upsert (create на первом и increment на втором)
  *   - grant(0 или -1) → no-op
  *   - consume: affected=1 → не throw; affected=0 → ForbiddenException
  *   - consume(0) → no-op (не лезет в БД)
  *   - SQL содержит правильный tenantId и amount (через template tag)
+ *
+ * `TypedConfigService.getDynamic` мокается так, чтобы возвращать `defaultValue`
+ * (= code-fallback), что эмулирует «AdminSettingsService недоступен» или
+ * «ключа нет в БД».
  */
 
 import { ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../common/config';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
-import {
-  BASE_MEETINGS_GRANT,
-  calculateMeetingsGrant,
-  MeetingsBalanceService,
-  PER_EXTRA_SEAT_MEETINGS_GRANT,
-} from './meetings-balance.service';
+import { MeetingsBalanceService } from './meetings-balance.service';
 
 interface FakePrisma {
   meetingsBalance: {
@@ -41,24 +42,91 @@ function makePrisma(): FakePrisma {
   };
 }
 
-describe('calculateMeetingsGrant', () => {
-  it('базовый грант = 150 при seatsExtra=0', () => {
-    expect(calculateMeetingsGrant(0)).toBe(BASE_MEETINGS_GRANT);
-    expect(calculateMeetingsGrant(0)).toBe(150);
+/**
+ * Мок `TypedConfigService.getDynamic`, который возвращает code-fallback.
+ * Эмулирует «AdminSettingsService недоступен / ключа нет».
+ */
+function makeFallbackCfg(): TypedConfigService {
+  return {
+    getDynamic: async <T>(
+      _key: string,
+      _envKey: string | undefined,
+      def: T,
+    ): Promise<T> => def,
+  } as unknown as TypedConfigService;
+}
+
+/**
+ * Мок `TypedConfigService.getDynamic` с явными overrides для отдельных ключей —
+ * имитация правки прайса через AdminSetting.
+ */
+function makeOverridingCfg(
+  overrides: Record<string, number>,
+): TypedConfigService {
+  return {
+    getDynamic: async <T>(
+      key: string,
+      _envKey: string | undefined,
+      def: T,
+    ): Promise<T> => {
+      if (key in overrides) return overrides[key] as unknown as T;
+      return def;
+    },
+  } as unknown as TypedConfigService;
+}
+
+describe('MeetingsBalanceService.calculateMeetingsGrant (code-fallback)', () => {
+  let svc: MeetingsBalanceService;
+
+  beforeEach(() => {
+    const prisma = makePrisma();
+    svc = new MeetingsBalanceService(
+      prisma as unknown as PrismaService,
+      makeFallbackCfg(),
+    );
   });
 
-  it('+5 за каждое доп. место', () => {
-    expect(calculateMeetingsGrant(1)).toBe(155);
-    expect(calculateMeetingsGrant(10)).toBe(200);
-    expect(calculateMeetingsGrant(100)).toBe(650);
+  it('базовый грант = 150 при seatsExtra=0', async () => {
+    expect(await svc.calculateMeetingsGrant(0)).toBe(150);
   });
 
-  it('per-extra-seat = 5', () => {
-    expect(PER_EXTRA_SEAT_MEETINGS_GRANT).toBe(5);
+  it('+5 за каждое доп. место', async () => {
+    expect(await svc.calculateMeetingsGrant(1)).toBe(155);
+    expect(await svc.calculateMeetingsGrant(10)).toBe(200);
+    expect(await svc.calculateMeetingsGrant(100)).toBe(650);
   });
 
-  it('отрицательный seatsExtra → clamp до 0', () => {
-    expect(calculateMeetingsGrant(-5)).toBe(BASE_MEETINGS_GRANT);
+  it('отрицательный seatsExtra → clamp до 0', async () => {
+    expect(await svc.calculateMeetingsGrant(-5)).toBe(150);
+  });
+
+  it('getBaseMeetingsGrant() / getPerExtraSeatMeetingsGrant() — code-fallback', async () => {
+    expect(await svc.getBaseMeetingsGrant()).toBe(150);
+    expect(await svc.getPerExtraSeatMeetingsGrant()).toBe(5);
+  });
+});
+
+describe('MeetingsBalanceService.calculateMeetingsGrant — AdminSetting override', () => {
+  it('правка billing.baseMeetingsGrant применяется сразу', async () => {
+    const prisma = makePrisma();
+    const cfg = makeOverridingCfg({ 'billing.baseMeetingsGrant': 200 });
+    const svc = new MeetingsBalanceService(
+      prisma as unknown as PrismaService,
+      cfg,
+    );
+    expect(await svc.calculateMeetingsGrant(0)).toBe(200);
+    expect(await svc.calculateMeetingsGrant(10)).toBe(250); // 200 + 10×5 (fallback)
+  });
+
+  it('правка billing.perExtraSeatMeetingsGrant применяется сразу', async () => {
+    const prisma = makePrisma();
+    const cfg = makeOverridingCfg({ 'billing.perExtraSeatMeetingsGrant': 10 });
+    const svc = new MeetingsBalanceService(
+      prisma as unknown as PrismaService,
+      cfg,
+    );
+    expect(await svc.calculateMeetingsGrant(0)).toBe(150);
+    expect(await svc.calculateMeetingsGrant(5)).toBe(200); // 150 + 5×10
   });
 });
 
@@ -68,7 +136,10 @@ describe('MeetingsBalanceService', () => {
 
   beforeEach(() => {
     prisma = makePrisma();
-    svc = new MeetingsBalanceService(prisma as unknown as PrismaService);
+    svc = new MeetingsBalanceService(
+      prisma as unknown as PrismaService,
+      makeFallbackCfg(),
+    );
   });
 
   // ────────── getBalance ──────────

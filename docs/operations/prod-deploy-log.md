@@ -21,6 +21,110 @@
 
 ---
 
+### 🌊 2026-05-31 — Волна 2: Z-Admin Тариф (один tier_standard) + Партнёрский кабинет
+
+Планы:
+- [plans/tz/2026-05-31-admin-plans-collapse-to-standard.md](../../plans/tz/2026-05-31-admin-plans-collapse-to-standard.md)
+- [plans/tz/2026-05-31-referrals-cabinet-revamp.md](../../plans/tz/2026-05-31-referrals-cabinet-revamp.md)
+
+**ТЗ №3 — admin-plans-collapse-to-standard:**
+- Backend: `/api/v1/admin/orgs/plans` CRUD → один `GET /current` (PlanSnapshotDto). `SeatService` и `MeetingsBalanceService` стали `async`, читают 6 ключей `billing.*` из AdminSetting через `getDynamic` с code-fallback. Активные `Subscription.monthlyPriceKopecks` НЕ пересчитываются при правке прайса.
+- AdminSetting: 6 новых ключей `billing.*` (severity=`high`, reason обязателен).
+- Frontend: `/admin/orgs/plans` переписан — одна карточка «Стандартный тариф Z» + 6 редактируемых `AdminSettingField` + калькулятор (slider 0..1000 seats) + история через `AdminSettingHistoryDrawer`.
+- Prisma: `model Plan` помечен `// LEGACY` (физическое удаление — отдельным ТЗ через 2 недели).
+
+**ТЗ №4 — referrals-cabinet-revamp:**
+- Backend Prisma: `Referral.inn / legalForm / payoutDetails` → optional (`bun run prisma:push`, безопасно).
+- Backend service: `create()` — `contractAccepted` обязателен, ИНН/реквизиты опциональны; `listClients()` маскированный (`clientCode`, без `org.name/id` — юридический приоритет); новые методы `getIncomeChart` (12 точек), `getFunnel(30d|90d|all)`; `getStats` расширен (+5 полей: clicks30d/signups30d/firstPayments30d/2 конверсии). `ReferralPayoutService.closePeriod` теперь требует `payoutDetails != null && Object.keys > 0`.
+- Backend контроллер: новые `POST /me` body (`contractAccepted: z.literal(true)`), `GET /me/income-chart`, `GET /me/funnel`, `POST /me/promo-event` (throttle 30/min/IP).
+- `AdminReferralsController.detail()` использует новый `listClientsForAdmin()` — super_admin сохраняет видимость `org.name/id` (маскировка только для партнёра).
+- 3 новые Prometheus-метрики: `referral_promo_{impression,click,dismissed}_total{role}`.
+- Frontend: `ReferralsClient.tsx` переписан на 3 состояния (A/B/C), 10 новых компонентов (`MarketingHero`, `CreateLinkCard`, `WithdrawalStrip`, `ReferralLinkCard`+QR, `IncomeChart` recharts, `FunnelCard`, `ClientsTableMasked`, `PayoutDetailsCard`, `WithdrawButton`, `PayoutsTable`). Терминологические замены (реферал → партнёр, paid → оплата).
+- Frontend: `ReferralPromoStrip` в `AppShell` под `PaywallBanner` — мягкий promo-баннер с whitelisted страницами, разной копи для owner/member, dismiss на 30 дней, профиль-кэш на 24 часа.
+- Новая зависимость: `qrcode.react@4.2.0` (~3 KB).
+
+**Шаги прод-инструкции:**
+
+- **Шаг 1 — ENV** — без новых.
+- **Шаг 4 — Prisma** — **обязательно**:
+  ```bash
+  docker compose exec backend bun run prisma:push
+  docker compose exec backend bun run prisma:generate
+  ```
+  Делает `Referral.inn / legalForm / payoutDetails` nullable (безопасно, данных не теряем) + добавляет `// LEGACY` docstring над `model Plan` (no-op для Postgres, нужен только generate).
+- **Шаг 7 — Seed billing.* AdminSetting** — обязательно:
+  ```bash
+  docker compose exec backend bun run scripts/seed-admin-settings-billing.ts
+  ```
+  Идемпотентен. Создаёт 6 ключей `billing.*` с дефолтами 60_000 ₽ / 1_000 ₽ / 0.8 / 31 / 150 / 5. Если ключ уже есть — пропускает (защита админ-правок). Уже зарегистрирован в `apply-prod-deploy.ts STEPS` (phase=`seed-base`).
+- **Шаг 9 — Migrate legacy tiers** — если в проде остались Org на `tier_basic/pro/enterprise`:
+  ```bash
+  docker compose exec backend bun run scripts/migrate-entitlements-to-standard.ts --dry-run
+  docker compose exec backend bun run scripts/migrate-entitlements-to-standard.ts
+  ```
+  Уже зарегистрирован в `apply-prod-deploy.ts STEPS` (phase=`patch`, `skipBootstrap: true`).
+- **Шаг 11 — Docker rebuild** — обязательно (новые backend-модули + frontend-страницы):
+  ```bash
+  docker compose up -d --build backend frontend
+  ```
+  (Уже было в записи Волны 1 от ai-chat-quota / z-admin-route-group — этот выкат накатываем общим cut'ом.)
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Snapshot единого тарифа
+  curl -i -H 'Cookie: <super_admin_session>' -H 'X-Org-Id: <orgId>' \
+       https://prod.host/api/v1/admin/orgs/plans/current
+  # Ожидаемо: 200 { tier: 'tier_standard', base: { monthlyPriceRub: 60000, … }, editableSettings: [...] }
+
+  # 2. Правка прайса AdminSetting — live-инвалидация через <1s
+  curl -i -X POST -H 'Cookie: <super_admin_session>' \
+       -H 'Content-Type: application/json' \
+       -d '{"value":7000000,"reason":"тест: подняли базу"}' \
+       https://prod.host/api/v1/admin/settings/billing.baseMonthlyKopecks
+  curl -i https://prod.host/api/v1/admin/orgs/plans/current  # base.monthlyPriceRub теперь 70000
+
+  # 3. Старые CRUD-эндпоинты 404
+  curl -i -X POST -H 'Cookie: <super_admin_session>' https://prod.host/api/v1/admin/orgs/plans
+  # Ожидаемо: 404 (или 405)
+
+  # 4. Партнёр без ИНН может создать профиль
+  curl -i -X POST -H 'Cookie: <session>' -H 'Content-Type: application/json' \
+       -d '{"contractAccepted":true}' https://prod.host/api/v1/referrals/me
+  # Ожидаемо: 201 { id, slug, inn: null, legalForm: null, payoutDetails: null, contractAcceptedAt }
+
+  # 5. Маскированный список клиентов
+  curl -i -H 'Cookie: <session>' https://prod.host/api/v1/referrals/me/clients
+  # Ожидаемо: 200 [{clientCode: 'C...', attachedAt, status, monthlyEarningsKopecks, totalEarnedKopecks}, ...]
+  # Без org.name / org.id
+
+  # 6. Новые аналитические эндпоинты
+  curl -i https://prod.host/api/v1/referrals/me/income-chart  # 200, массив длиной 12
+  curl -i https://prod.host/api/v1/referrals/me/funnel?period=30d  # 200, {clicks, signups, firstPayments, activeNow, conversions}
+
+  # 7. Promo-event
+  curl -i -X POST -H 'Cookie: <session>' -H 'Content-Type: application/json' \
+       -d '{"type":"impression","role":"owner"}' \
+       https://prod.host/api/v1/referrals/me/promo-event
+  # Ожидаемо: 204 (без тела)
+  curl -s https://prod.host/metrics | grep -E 'referral_promo_(impression|click|dismissed)_total'
+  # Ожидаемо: счётчики увеличиваются при следующих вызовах
+
+  # 8. UI:
+  # - /admin/orgs/plans — одна карточка, 6 редактируемых полей, калькулятор, история
+  # - /referrals — три состояния (A/B/C), маркетинговый герой, чекбокс оферты, без обязательных полей
+  # - / (любая whitelisted страница) под пользователем без Referral — видна полоска ReferralPromoStrip; нажатие на × скрывает на 30 дней
+  ```
+
+- **Откат:**
+  ```bash
+  git revert <hash_tz3> <hash_tz4>
+  docker compose up -d --build backend frontend
+  ```
+  AdminSetting записи `billing.*` остаются (не ломают старый код — он на них не смотрел). Опциональность полей `Referral` ретро-вернуть в `required` нельзя без backfill дефолтами — не рекомендую откатывать prisma:push, только код.
+
+⚠️ **Юридический момент.** Маскировка клиентов `/referrals/me/clients` обязательна — партнёр НЕ должен видеть `org.name/org.id`. Тест-кейсы в `referrals.service.spec.ts` проверяют это. Контракт: super_admin (`/admin/referrals/:id`) ВИДИТ полные данные через `listClientsForAdmin()` (отдельный метод сервиса).
+
+---
+
 ### 🌊 2026-05-31 — Pulse Этапы A+A2+B+C (gaps + 3.2/4.6/4.7 + Волна 5 + Волна 6)
 
 План: [plans/tz/2026-05-30-pulse-full.md](../../plans/tz/2026-05-30-pulse-full.md) §5-10.

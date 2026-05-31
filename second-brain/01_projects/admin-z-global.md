@@ -79,7 +79,7 @@ CookieAuthGuard → SuperAdminGuard → SuperAdminAuditInterceptor
 | URL | Раздел |
 |---|---|
 | `/admin/orgs` | Список Org |
-| `/admin/orgs/plans` | Тарифы (планы) |
+| `/admin/orgs/plans` | **Тариф** (одна карточка `tier_standard`; 6 ключей `billing.*` через AdminSetting; калькулятор seats; история правок) — 2026-05-31 |
 | `/admin/orgs/entitlements` | Entitlements (overrides) |
 
 ### 5. Контент продукта

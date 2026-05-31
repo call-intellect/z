@@ -92,6 +92,14 @@ const registry = new Map<string, ZodTypeAny>([
   ['embeddings.batchSize', POSITIVE_INT],
   ['embeddings.chunkTargetTokens', POSITIVE_INT],
   ['embeddings.chunkOverlapTokens', NON_NEGATIVE_INT],
+
+  // ── billing: tier_standard ───────────────────────────────────────────
+  ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
+  ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],
+  ['billing.yearlyDiscountRate', UNIT_INTERVAL],
+  ['billing.baseSeatsIncluded', POSITIVE_INT],
+  ['billing.baseMeetingsGrant', NON_NEGATIVE_INT],
+  ['billing.perExtraSeatMeetingsGrant', NON_NEGATIVE_INT],
 ]);
 
 /**

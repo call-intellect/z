@@ -22,30 +22,17 @@ import {
 import Link from 'next/link';
 import { toast } from 'sonner';
 
-import { adminPlansApi } from '@/api/admin-plans.api';
 import { ApiError } from '@/api/api-error';
 import { GLOBAL_LIMITS, type LimitSpec } from '@/domain/admin-limit';
-import {
-  formatPlanPrice,
-  planListFromApi,
-  type PlanItemDomain,
-} from '@/domain/admin-plan';
 import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
 import { AdminSection } from '@/ui/components/admin/AdminSection';
 import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
 import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
 import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
 
-import {
-  AdminEmpty,
-  AdminError,
-  AdminForbidden,
-  AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+import { AdminEmpty } from '../../AdminStateViews';
 
 const MIN_REASON_LENGTH = 10;
 
@@ -215,87 +202,27 @@ function LimitRow({
 
 // ─────────────────────────── By-plan tab ───────────────────────────
 
+/**
+ * После collapse-to-standard (ТЗ 2026-05-31) тариф в Z один — `tier_standard`,
+ * и его лимиты/квоты редактируются вместе с ценой на отдельной карточке
+ * `/admin/orgs/plans`. Здесь оставлена только ссылка туда — отдельный pivot
+ * «лимиты по каждому тарифу» больше не нужен.
+ */
 function ByPlanTab() {
-  const q = useAdminQuery('admin-platform-limits-plans', async () => {
-    const res = await adminPlansApi.list();
-    return planListFromApi(res);
-  });
-
   return (
     <div className="space-y-3">
-      {q.isLoading && <AdminLoading rows={3} />}
-      {!q.isLoading && q.isForbidden && <AdminForbidden />}
-      {!q.isLoading && q.error && (
-        <AdminError message={q.error} onRetry={q.refetch} />
-      )}
-      {!q.isLoading && q.data && q.data.items.length === 0 ? (
-        <AdminEmpty
-          title="Тарифы не созданы"
-          description="Создайте тарифы в разделе «Тенанты → Тарифы»."
-        />
-      ) : null}
-      {!q.isLoading && q.data && q.data.items.length > 0 ? (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-fg-tertiary">
-              Лимиты по каждому тарифу применяются к Org с этим `tier`. Редактирование — в разделе «Тенанты → Тарифы».
-            </p>
-            <Link
-              href="/admin/orgs/plans"
-              className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-hover"
-            >
-              Открыть тарифы <ArrowRight size={12} aria-hidden />
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {q.data.items.map((plan) => (
-              <PlanQuotasRow key={plan.id} plan={plan} />
-            ))}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function PlanQuotasRow({ plan }: { plan: PlanItemDomain }) {
-  const entries = Object.entries(plan.quotas);
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-card p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h4 className="text-sm font-medium text-fg-primary">
-            {plan.displayName}{' '}
-            <code className="ml-1 rounded bg-bg-overlay px-1 py-0.5 text-[10px] text-fg-secondary">
-              {plan.id}
-            </code>
-          </h4>
-          <p className="text-[11px] text-fg-tertiary">
-            {formatPlanPrice(plan.monthlyPriceRub)} · Org с этим тарифом:{' '}
-            {plan.orgsCount}
-          </p>
-        </div>
-        {!plan.isActive ? (
-          <Badge variant="warning" className="text-[10px]">
-            неактивен
-          </Badge>
-        ) : null}
+      <AdminEmpty
+        title="Тариф один — стандартный"
+        description="После collapse-to-standard у Z единственный тариф `tier_standard`. Квоты пакета (мест, встреч) и цена редактируются на карточке тарифа."
+      />
+      <div className="flex justify-center">
+        <Link
+          href="/admin/orgs/plans"
+          className="inline-flex items-center gap-1 text-sm text-accent hover:text-accent-hover"
+        >
+          Открыть карточку тарифа <ArrowRight size={14} aria-hidden />
+        </Link>
       </div>
-      {entries.length === 0 ? (
-        <p className="text-xs text-fg-tertiary">Квоты не заданы.</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {entries.map(([key, value]) => (
-            <Badge
-              key={key}
-              variant="secondary"
-              className="text-[10px] font-mono"
-            >
-              {key}: {String(value)}
-            </Badge>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

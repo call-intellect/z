@@ -51,7 +51,11 @@ import type {
 
 import { BillingEventService } from './billing-event.service';
 import { InvoiceService } from './invoice.service';
-import { SeatService, YEARLY_MONTHS } from './seat.service';
+import {
+  SeatService,
+  YEARLY_MONTHS,
+  type SubscriptionPricing,
+} from './seat.service';
 import { SubscriptionService } from './subscription.service';
 
 export interface WebhookHandleResult {
@@ -135,7 +139,7 @@ export class BillingService {
   ): Promise<CreatePaymentResultView> {
     this.assertFeature('card_recurring');
     const sub = await this.subscriptions.getByTenantOrFail(input.tenantId);
-    const pricing = this.seats.calculatePricing(
+    const pricing = await this.seats.calculatePricing(
       input.billingPeriod === 'yearly' ? 'yearly' : 'monthly',
       input.seatsExtra,
     );
@@ -251,7 +255,7 @@ export class BillingService {
     if (!org) throw new NotFoundException(`Org ${input.tenantId} не найден`);
     this.assertBillingDetailsReady(org);
 
-    const pricing = this.seats.calculatePricing(
+    const pricing = await this.seats.calculatePricing(
       input.billingPeriod === 'yearly' ? 'yearly' : 'monthly',
       input.seatsExtra,
     );
@@ -574,7 +578,7 @@ export class BillingService {
   private buildItems(
     seatsExtra: number,
     billingPeriod: BillingPeriod,
-    pricing: ReturnType<SeatService['calculatePricing']>,
+    pricing: SubscriptionPricing,
   ): InvoiceItem[] {
     const months = pricing.monthsInPeriod;
     const items: InvoiceItem[] = [
@@ -611,5 +615,3 @@ export class BillingService {
   }
 }
 
-// для будущего использования cron'ов
-export { YEARLY_MONTHS };

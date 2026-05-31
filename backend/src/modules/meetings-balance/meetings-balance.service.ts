@@ -7,8 +7,19 @@
  *   - Грантуется при активации/продлении подписки (см. ManualBillingService
  *     Фаза 4) или вручную через admin-эндпоинт.
  *
- * Формула стартового гранта (см. ТЗ §10):
- *   meetingsGrant = 150 + seatsExtra * 5
+ * Формула стартового гранта (ТЗ 2026-05-27 §10 + 2026-05-31 §3.1):
+ *   meetingsGrant = baseMeetingsGrant + max(0, seatsExtra) × perExtraSeatMeetingsGrant
+ *
+ * Параметры гранта живут в **AdminSetting** (ключи `billing.baseMeetingsGrant`
+ * и `billing.perExtraSeatMeetingsGrant`) и редактируются super_admin через UI.
+ * Дефолты — `DEFAULT_BASE_MEETINGS_GRANT` и `DEFAULT_PER_EXTRA_SEAT_MEETINGS_GRANT`
+ * как code-fallback (см. ТЗ 2026-05-31-admin-plans-collapse-to-standard.md §3.1).
+ *
+ * Чтение через `TypedConfigService.getDynamic(...)`:
+ *   - LRU-кэш 30s + Redis pub/sub `admin:setting:invalidate` → новый прайс
+ *     видно во всех процессах за <1s.
+ *   - При недоступности `AdminSettingsService` (минимальный bootstrap, тесты) —
+ *     fallback на DEFAULT_*.
  *
  * Атомарность `consume`:
  *   Используем `$executeRaw UPDATE ... WHERE balance >= amount`. PG row-lock
@@ -21,22 +32,19 @@
  *   meetings.service.ts. Бизнес-приоритет: лучше дать встречу бесплатно,
  *   чем заблокировать клиента из-за инфра-сбоя.
  *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §10.
+ * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §10 и
+ * plans/tz/2026-05-31-admin-plans-collapse-to-standard.md §3.1–3.2.
  */
 
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../common/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/** Базовый стартовый грант: 150 встреч/мес у плана `tier_standard`. */
-export const BASE_MEETINGS_GRANT = 150;
-/** Доп. встречи на каждое доп. место сверх базы. */
-export const PER_EXTRA_SEAT_MEETINGS_GRANT = 5;
-
-/** Pure helper — расчёт стартового/ежемесячного гранта. */
-export function calculateMeetingsGrant(seatsExtra: number): number {
-  return BASE_MEETINGS_GRANT + Math.max(0, seatsExtra) * PER_EXTRA_SEAT_MEETINGS_GRANT;
-}
+/** Базовый стартовый грант — code-fallback (60 000 ₽ / 150 встреч). */
+const DEFAULT_BASE_MEETINGS_GRANT = 150;
+/** Доп. встречи на каждое доп. место сверх базы — code-fallback. */
+const DEFAULT_PER_EXTRA_SEAT_MEETINGS_GRANT = 5;
 
 export interface MeetingsBalanceView {
   balance: number;
@@ -49,7 +57,49 @@ export interface MeetingsBalanceView {
 export class MeetingsBalanceService {
   private readonly logger = new Logger(MeetingsBalanceService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+  ) {}
+
+  /**
+   * Базовый грант (число встреч на тарифе без доп. мест).
+   * Читается из AdminSetting `billing.baseMeetingsGrant`, fallback — DEFAULT_*.
+   */
+  async getBaseMeetingsGrant(): Promise<number> {
+    return this.cfg.getDynamic<number>(
+      'billing.baseMeetingsGrant',
+      undefined,
+      DEFAULT_BASE_MEETINGS_GRANT,
+    );
+  }
+
+  /**
+   * Доп. грант за каждое доп. место.
+   * Читается из AdminSetting `billing.perExtraSeatMeetingsGrant`, fallback — DEFAULT_*.
+   */
+  async getPerExtraSeatMeetingsGrant(): Promise<number> {
+    return this.cfg.getDynamic<number>(
+      'billing.perExtraSeatMeetingsGrant',
+      undefined,
+      DEFAULT_PER_EXTRA_SEAT_MEETINGS_GRANT,
+    );
+  }
+
+  /**
+   * Стартовый/ежемесячный грант встреч:
+   *   meetingsGrant = base + max(0, seatsExtra) × perSeat
+   *
+   * Оба параметра читаются параллельно через `Promise.all`. После прогрева
+   * LRU-кэша обе ветки возвращают синхронно из памяти.
+   */
+  async calculateMeetingsGrant(seatsExtra: number): Promise<number> {
+    const [base, perSeat] = await Promise.all([
+      this.getBaseMeetingsGrant(),
+      this.getPerExtraSeatMeetingsGrant(),
+    ]);
+    return base + Math.max(0, seatsExtra) * perSeat;
+  }
 
   /**
    * Текущий баланс Org. Если записи нет — возвращает 0/нулевые поля

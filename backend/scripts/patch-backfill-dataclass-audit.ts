@@ -92,6 +92,11 @@ async function main(args: RunArgs): Promise<void> {
   // dataClassAudit уже проставлен — выходим, не поднимая Nest (BullMQ/Redis),
   // иначе app.close() засыпает лог ioredis-флудом «Connection is closed» на
   // каждом выкате. На уже-забэкфилленном проде это steady-state-случай.
+  // Набор modelKey, чьи таблицы реально имеют колонку dataClassAudit. Часть
+  // проекций (напр. insight) могли её потерять в эволюции схемы — Prisma-запрос
+  // `where:{dataClassAudit:null}` по ним падает валидацией. Пробуем count в
+  // try/catch: успех → колонка есть; ошибка → модель пропускаем везде.
+  const supportedKeys = new Set<string>();
   const preCheck = createPrismaClient();
   try {
     let pending = 0;
@@ -102,13 +107,20 @@ async function main(args: RunArgs): Promise<void> {
           { count: (a: unknown) => Promise<number> }
         >
       )[p.modelKey];
-      pending += await model.count({ where: { dataClassAudit: null } });
-      if (pending > 0) break;
+      try {
+        const n = await model.count({ where: { dataClassAudit: null } });
+        supportedKeys.add(p.modelKey);
+        pending += n;
+      } catch {
+        console.log(
+          `[${p.kind}] модель "${p.modelKey}" без колонки dataClassAudit — пропускаем`,
+        );
+      }
     }
     if (pending === 0) {
       // eslint-disable-next-line no-console
       console.log(
-        'patch-backfill-dataclass-audit: dataClassAudit уже проставлен во всех проекциях — обновление не требуется.',
+        'patch-backfill-dataclass-audit: dataClassAudit уже проставлен во всех применимых проекциях — обновление не требуется.',
       );
       return;
     }
@@ -129,6 +141,9 @@ async function main(args: RunArgs): Promise<void> {
     );
 
     for (const projection of PROJECTIONS) {
+      // Пропускаем модели без колонки dataClassAudit (определено в pre-check).
+      if (!supportedKeys.has(projection.modelKey)) continue;
+
       const stats: ProjectionStats = {
         kind: projection.kind,
         scanned: 0,

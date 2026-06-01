@@ -22,6 +22,8 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+import { columnExists } from './_lib/schema-guards';
+
 // Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
@@ -42,6 +44,17 @@ async function main(): Promise<void> {
   console.log(
     `=== patch-clones-dataclass-update START (dry-run=${opts.dryRun}) ===`,
   );
+
+  // Guard: колонка ExecutablePersona.dataClass удалена из схемы (теперь
+  // dataClass выводится политикой, фиксируется в dataClassAudit). Этот
+  // one-time backfill от 2026-05-25 устарел — выходим чисто.
+  if (!(await columnExists(prisma, 'executable_personas', 'dataClass'))) {
+    console.log(
+      'ExecutablePersona.dataClass удалён из схемы — backfill применён ранее / неактуален, обновление не требуется.',
+    );
+    await prisma.$disconnect();
+    return;
+  }
 
   // Берём role-scope personas с dataClass != 'internal'.
   const candidates = await prisma.executablePersona.findMany({

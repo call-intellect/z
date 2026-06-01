@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   ForbiddenException,
-  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -28,7 +27,7 @@ import {
   type UpdateCompanyRoleBody,
 } from './dto/update-company-role.dto';
 import { WelcomePatchSchema, type WelcomePatchBody } from './dto/welcome-patch.dto';
-import { OnboardingService, type DemoSeedStatusDto } from './onboarding.service';
+import { OnboardingService } from './onboarding.service';
 
 @ApiTags('onboarding')
 @ApiBearerAuth()
@@ -92,42 +91,6 @@ export class OnboardingController {
   ): Promise<{ ok: true }> {
     await this.requireOwnerOrAdmin(user.id, orgId);
     return this.svc.completeSetup({ orgId: tenantId ?? orgId });
-  }
-
-  @Get('orgs/:orgId/demo-seed-status')
-  @UseGuards(TenantGuard)
-  @ApiOperation({
-    summary: 'Статус авто-заливки демо-кабинета (для loading-экрана онбординга)',
-  })
-  @ApiOkResponse({
-    description: '{ status: "pending" | "in_progress" | "completed" | "failed" }',
-  })
-  async demoSeedStatus(
-    @Param('orgId') orgId: string,
-    @CurrentUser() user: CurrentUserPayload,
-    @CurrentOrg() tenantId: string | undefined,
-  ): Promise<DemoSeedStatusDto> {
-    await this.requireOwnerOrAdmin(user.id, orgId);
-    return this.svc.getDemoSeedStatus(tenantId ?? orgId);
-  }
-
-  @Post('orgs/:orgId/demo-workspace/ensure')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(TenantGuard)
-  @ApiOperation({
-    summary:
-      'Fallback: гарантировать заполнение DEMO-кабинета синтетикой (идемпотентно)',
-  })
-  @ApiOkResponse({
-    description: '{ status, enqueued } — enqueued=true если seed реально запущен',
-  })
-  async ensureDemoSeed(
-    @Param('orgId') orgId: string,
-    @CurrentUser() user: CurrentUserPayload,
-    @CurrentOrg() tenantId: string | undefined,
-  ): Promise<DemoSeedStatusDto & { enqueued: boolean }> {
-    await this.requireOwnerOrAdmin(user.id, orgId);
-    return this.svc.ensureDemoSeed(tenantId ?? orgId);
   }
 
   @Post('orgs/:orgId/demo-workspace')

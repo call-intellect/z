@@ -95,7 +95,14 @@ export class BillingOverviewService {
       payoutsPendingAgg,
       payoutsPaidThisMonthAgg,
     ] = await Promise.all([
-      this.prisma.subscription.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.subscription.count({
+        where: {
+          status: 'ACTIVE',
+          // ТЗ 2026-06-01-demo-shared-org-model §4.9: исключаем эталонную
+          // демо-Org (paymentMode='reference') из счётчика активных клиентов.
+          paymentMode: { in: ['paid', 'bonus'] },
+        },
+      }),
       this.prisma.subscription.count({
         where: { status: 'ACTIVE', paymentMode: 'paid' },
       }),

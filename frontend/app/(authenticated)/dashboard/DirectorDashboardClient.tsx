@@ -84,7 +84,7 @@ import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
  *   - Зарезервировано место для виджета «Согласованность стратегии» (Phase 9).
  */
 export function DirectorDashboardClient() {
-  const { user } = useAuth();
+  const { user, currentOrgId } = useAuth();
   const [period, setPeriod] = useState<DirectorDashboardPeriod>('week');
   const [data, setData] = useState<DirectorDashboardDomain | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,10 +98,11 @@ export function DirectorDashboardClient() {
 
   const load = useCallback(
     async (nextPeriod: DirectorDashboardPeriod) => {
+      if (!currentOrgId) return;
       setLoading(true);
       setError(null);
       try {
-        const res = await dashboardApi.getDirectorView(nextPeriod);
+        const res = await dashboardApi.getDirectorView(currentOrgId, nextPeriod);
         setData(directorDashboardFromApi(res));
       } catch (e) {
         const message =
@@ -111,15 +112,16 @@ export function DirectorDashboardClient() {
         setLoading(false);
       }
     },
-    [],
+    [currentOrgId],
   );
 
   const loadPulse = useCallback(
     async (nextPeriod: DirectorDashboardPeriod) => {
+      if (!currentOrgId) return;
       setPulseLoading(true);
       setPulseError(null);
       try {
-        const res = await dashboardApi.getPulsePatterns(nextPeriod);
+        const res = await dashboardApi.getPulsePatterns(currentOrgId, nextPeriod);
         setPulse(pulsePatternsFromApi(res));
       } catch (e) {
         const message =
@@ -131,13 +133,14 @@ export function DirectorDashboardClient() {
         setPulseLoading(false);
       }
     },
-    [],
+    [currentOrgId],
   );
 
   useEffect(() => {
+    if (!currentOrgId) return;
     void load(period);
     void loadPulse(period);
-  }, [period, load, loadPulse]);
+  }, [period, load, loadPulse, currentOrgId]);
 
   const greetingName = useMemo(() => {
     return user?.name?.trim() || user?.email?.split('@')[0] || 'друг';
@@ -212,7 +215,7 @@ export function DirectorDashboardClient() {
           delta={data?.kpiCommitmentReliability?.delta}
           deltaLabel="за 14 дней"
           threshold={{ green: 80, yellow: 60 }}
-          href="/me/commitments"
+          href="/me/promises"
         />
         <KpiHero
           label="Висящие решения"

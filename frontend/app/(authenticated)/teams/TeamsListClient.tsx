@@ -13,6 +13,7 @@ import {
 
 import { ApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
+import { useAuth } from '@/contexts/auth-context';
 import {
   teamHealthFromApi,
   type HealthToneDomain,
@@ -66,6 +67,7 @@ const TONE_RANK: Record<HealthToneDomain, number> = {
 };
 
 export function TeamsListClient() {
+  const { currentOrgId } = useAuth();
   const [data, setData] = useState<TeamHealthDomain | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +75,11 @@ export function TeamsListClient() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   const load = useCallback(async () => {
+    if (!currentOrgId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await dashboardApi.getTeamHealth();
+      const res = await dashboardApi.getTeamHealth(currentOrgId);
       setData(teamHealthFromApi(res));
     } catch (e) {
       setError(
@@ -85,7 +88,7 @@ export function TeamsListClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentOrgId]);
 
   useEffect(() => {
     void load();

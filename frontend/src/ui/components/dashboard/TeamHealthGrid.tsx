@@ -6,6 +6,7 @@ import { ArrowDownRight, ArrowUpRight, Minus, Users } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
+import { useAuth } from '@/contexts/auth-context';
 import type {
   HealthToneDomain,
   TeamHealthAttrDomain,
@@ -43,15 +44,17 @@ const TONE_CHIP: Record<HealthToneDomain, string> = {
 };
 
 export function TeamHealthGrid({ className }: Props) {
+  const { currentOrgId } = useAuth();
   const [data, setData] = useState<TeamHealthDomain | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!currentOrgId) return;
     let alive = true;
     void (async () => {
       try {
-        const res = await dashboardApi.getTeamHealth();
+        const res = await dashboardApi.getTeamHealth(currentOrgId);
         if (alive) setData(teamHealthFromApi(res));
       } catch (e) {
         if (alive) {
@@ -66,7 +69,7 @@ export function TeamHealthGrid({ className }: Props) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [currentOrgId]);
 
   return (
     <Card className={cn('lg:col-span-2', className)}>

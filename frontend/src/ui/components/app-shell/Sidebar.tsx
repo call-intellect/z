@@ -360,7 +360,7 @@ const INTAKE_NAV_ITEM: NavItem = {
 };
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
-  { href: '/settings/templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/settings/templates' },
+  { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
   { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
 ];

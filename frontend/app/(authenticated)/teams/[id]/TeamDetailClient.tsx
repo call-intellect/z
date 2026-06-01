@@ -15,6 +15,7 @@ import {
 
 import { ApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
+import { useAuth } from '@/contexts/auth-context';
 import {
   teamDetailFromApi,
   type TeamDetailDomain,
@@ -61,6 +62,7 @@ const SENTIMENT_CHIP_CLASS: Record<
 };
 
 export function TeamDetailClient({ departmentId }: { departmentId: string }) {
+  const { currentOrgId } = useAuth();
   const [data, setData] = useState<TeamDetailDomain | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<{ code: string; message: string } | null>(
@@ -68,10 +70,11 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
   );
 
   const load = useCallback(async () => {
+    if (!currentOrgId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await dashboardApi.getTeamDetail(departmentId);
+      const res = await dashboardApi.getTeamDetail(currentOrgId, departmentId);
       setData(teamDetailFromApi(res));
     } catch (e) {
       if (e instanceof ApiError) {
@@ -85,7 +88,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [departmentId]);
+  }, [departmentId, currentOrgId]);
 
   useEffect(() => {
     void load();

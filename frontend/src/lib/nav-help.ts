@@ -185,9 +185,9 @@ export const NAV_HELP: Record<string, NavHelp> = {
     title: 'Настройки',
     body: 'Профиль, уведомления, интеграции и настройки аккаунта.',
   },
-  '/settings/templates': {
+  '/team-templates': {
     title: 'Шаблоны',
-    body: 'Шаблоны встреч, документов и отчётов для вашей компании.',
+    body: 'Готовые шаблоны команд и процессов для быстрого старта.',
   },
   '/settings/integrations': {
     title: 'Интеграции',

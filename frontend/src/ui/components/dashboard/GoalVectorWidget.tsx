@@ -3,6 +3,12 @@
 import { Target } from 'lucide-react';
 
 import type { PulsePatternGoalVectorApi } from '@/domain/pulse-patterns';
+import {
+  MiniDonut,
+  MiniStackedBar,
+  type ChartTone,
+  type StackedSegment,
+} from '@/ui/components/dashboard/charts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -13,6 +19,12 @@ import { cn } from '@/ui/shadcn/lib/utils';
  * Топ-N активных целей с агрегатом `PersonGoalContribution.netScore` за
  * окно. Прогресс-полоска отражает знак (positive → success, negative →
  * danger). Под целью — топ contributors.
+ *
+ * Полировка (Фаза 3 ТЗ dashboards-wow-polish, 2026-06-01):
+ *   - Слева от цели — `MiniDonut` с долей |netScore|/maxAbs (centerLabel —
+ *     знак+число).
+ *   - Под progress-bar — `MiniStackedBar` из top-3 contributors с разными
+ *     акцентными тонами + подпись с именами.
  */
 
 type Props = {
@@ -20,6 +32,9 @@ type Props = {
   loading: boolean;
   error: string | null;
 };
+
+// Чередующиеся тоны для контрибьюторов внутри одной цели.
+const CONTRIBUTOR_TONES: ChartTone[] = ['accent', 'success', 'warning'];
 
 export function GoalVectorWidget({ data, loading, error }: Props) {
   const maxAbs = (() => {
@@ -68,49 +83,68 @@ export function GoalVectorWidget({ data, loading, error }: Props) {
                 maxAbs > 0
                   ? Math.min(1, Math.abs(g.netScore) / maxAbs)
                   : 0;
+              const donutTone: ChartTone = positive ? 'success' : 'danger';
+              const top3 = g.topContributors.slice(0, 3);
+              const segments: StackedSegment[] = top3.map((c, i) => ({
+                value: Math.max(0.01, Math.abs(c.netScore)),
+                tone: CONTRIBUTOR_TONES[i % CONTRIBUTOR_TONES.length]!,
+                label: `${c.personName} (${c.netScore >= 0 ? '+' : ''}${c.netScore.toFixed(1)})`,
+              }));
               return (
-                <li key={g.goalId} className="space-y-1.5">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className="truncate text-sm font-medium text-fg-primary">
-                      {g.goalTitle}
-                    </p>
-                    <span
-                      className={cn(
-                        'text-sm font-semibold tabular-nums',
-                        positive
-                          ? 'text-chip-success-fg'
-                          : 'text-chip-danger-fg',
-                      )}
-                    >
-                      {positive ? '+' : ''}
-                      {g.netScore.toFixed(1)}
-                    </span>
+                <li key={g.goalId} className="flex items-start gap-3">
+                  <MiniDonut
+                    value={ratio}
+                    tone={donutTone}
+                    size={36}
+                    centerLabel={`${positive ? '+' : ''}${Math.round(g.netScore)}`}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="truncate text-sm font-medium text-fg-primary">
+                        {g.goalTitle}
+                      </p>
+                      <span
+                        className={cn(
+                          'text-sm font-semibold tabular-nums',
+                          positive
+                            ? 'text-chip-success-fg'
+                            : 'text-chip-danger-fg',
+                        )}
+                      >
+                        {positive ? '+' : ''}
+                        {g.netScore.toFixed(1)}
+                      </span>
+                    </div>
+                    <div className="relative h-1.5 overflow-hidden rounded-full bg-bg-overlay/60">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all',
+                          positive
+                            ? 'bg-chip-success-fg/70'
+                            : 'bg-chip-danger-fg/70',
+                        )}
+                        style={{
+                          width: `${Math.max(4, Math.round(ratio * 100))}%`,
+                        }}
+                      />
+                    </div>
+                    {segments.length > 0 && (
+                      <>
+                        <MiniStackedBar segments={segments} height={10} />
+                        <p className="text-xs text-fg-tertiary">
+                          {top3
+                            .map(
+                              (c) =>
+                                `${c.personName} (${
+                                  c.netScore >= 0 ? '+' : ''
+                                }${c.netScore.toFixed(1)})`,
+                            )
+                            .join(' · ')}
+                        </p>
+                      </>
+                    )}
                   </div>
-                  <div className="relative h-1.5 overflow-hidden rounded-full bg-bg-overlay/60">
-                    <div
-                      className={cn(
-                        'h-full rounded-full transition-all',
-                        positive
-                          ? 'bg-chip-success-fg/70'
-                          : 'bg-chip-danger-fg/70',
-                      )}
-                      style={{
-                        width: `${Math.max(4, Math.round(ratio * 100))}%`,
-                      }}
-                    />
-                  </div>
-                  {g.topContributors.length > 0 && (
-                    <p className="text-xs text-fg-tertiary">
-                      {g.topContributors
-                        .map(
-                          (c) =>
-                            `${c.personName} (${
-                              c.netScore >= 0 ? '+' : ''
-                            }${c.netScore.toFixed(1)})`,
-                        )
-                        .join(' · ')}
-                    </p>
-                  )}
                 </li>
               );
             })}

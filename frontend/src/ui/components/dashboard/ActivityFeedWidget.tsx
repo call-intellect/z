@@ -2,7 +2,21 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowRight, HelpCircle, MessageSquare } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { ru } from 'date-fns/locale';
+import {
+  ArrowRight,
+  HelpCircle,
+  Lightbulb,
+  ListTodo,
+  type LucideIcon,
+  MessageSquare,
+  Sparkles,
+  GitBranch,
+  AlertOctagon,
+  BookOpenCheck,
+  Award,
+} from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { activityFeedApi } from '@/api/activity-feed.api';
@@ -11,6 +25,7 @@ import {
   type FeedItemDomain,
   type FeedType,
 } from '@/domain/activity-feed';
+import type { ChartTone } from '@/ui/components/dashboard/charts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -169,6 +184,37 @@ const BUCKET_STYLE: Record<BucketTone, string> = {
   expired: 'border-l-fg-tertiary/30',
 };
 
+/**
+ * Карта event-type → иконка lucide + цветной тон. Тон — для парного
+ * фона `bg-chip-{tone}-bg/15 text-chip-{tone}-fg`.
+ */
+const FEED_TYPE_VISUAL: Record<FeedType, { Icon: LucideIcon; tone: ChartTone }> = {
+  probe_question: { Icon: HelpCircle, tone: 'accent' },
+  insight: { Icon: Lightbulb, tone: 'warning' },
+  decision: { Icon: GitBranch, tone: 'success' },
+  task: { Icon: ListTodo, tone: 'accent' },
+  idea: { Icon: Sparkles, tone: 'warning' },
+  conflict: { Icon: AlertOctagon, tone: 'danger' },
+  knowledge_change: { Icon: BookOpenCheck, tone: 'accent' },
+  recognition: { Icon: Award, tone: 'success' },
+};
+
+const FEED_ICON_BG: Record<ChartTone, string> = {
+  success: 'bg-chip-success-bg/15 text-chip-success-fg',
+  warning: 'bg-chip-warning-bg/15 text-chip-warning-fg',
+  danger: 'bg-chip-danger-bg/15 text-chip-danger-fg',
+  accent: 'bg-accent-muted text-accent',
+  neutral: 'bg-bg-overlay text-fg-tertiary',
+};
+
+/**
+ * Относительное время «5 мин назад» через `date-fns` с локалью ru.
+ * `date-fns` уже в `frontend/package.json` — никаких новых зависимостей.
+ */
+function formatRelativeTime(date: Date): string {
+  return formatDistanceToNow(date, { addSuffix: true, locale: ru });
+}
+
 function Bucket({
   title,
   items,
@@ -187,27 +233,48 @@ function Bucket({
         {title}
       </div>
       <ul className="space-y-1">
-        {items.slice(0, 5).map((it) => (
-          <li
-            key={it.id}
-            className={cn(
-              'rounded-md border-l-2 bg-bg-overlay/40 px-2 py-1.5',
-              BUCKET_STYLE[tone],
-            )}
-          >
-            <Link
-              href={drillDownHref}
-              className="block text-sm text-fg-primary hover:text-accent"
-            >
-              {it.title}
-              {it.summary && (
-                <span className="ml-2 text-xs text-fg-tertiary">
-                  {truncate(it.summary, 80)}
-                </span>
+        {items.slice(0, 5).map((it) => {
+          const visual = FEED_TYPE_VISUAL[it.feedType];
+          const Icon = visual?.Icon ?? HelpCircle;
+          const iconBg = FEED_ICON_BG[visual?.tone ?? 'neutral'];
+          return (
+            <li
+              key={it.id}
+              className={cn(
+                'rounded-md border-l-2 bg-bg-overlay/40 px-2 py-1.5',
+                BUCKET_STYLE[tone],
               )}
-            </Link>
-          </li>
-        ))}
+            >
+              <Link
+                href={drillDownHref}
+                className="flex items-start gap-2 text-sm text-fg-primary hover:text-accent"
+              >
+                <span
+                  className={cn(
+                    'mt-0.5 inline-flex shrink-0 items-center justify-center rounded-full p-1.5',
+                    iconBg,
+                  )}
+                  aria-hidden="true"
+                >
+                  <Icon size={12} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {it.title}
+                    {it.summary && (
+                      <span className="ml-2 text-xs text-fg-tertiary">
+                        {truncate(it.summary, 80)}
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-fg-tertiary">
+                    {formatRelativeTime(it.emittedAtDate)}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

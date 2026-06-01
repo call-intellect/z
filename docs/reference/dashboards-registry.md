@@ -46,20 +46,20 @@
 
 | Виджет | Файл | Где используется | Доминирующий тон | Статус |
 |---|---|---|---|---|
-| ActivityFeedWidget | `ActivityFeedWidget.tsx` | DirectorDashboardClient | accent | 🟡 нужна полировка (иконки-категории, относительное время) |
+| ActivityFeedWidget | `ActivityFeedWidget.tsx` | DirectorDashboardClient | accent | ✅ полировано Фазой 3 (2026-06-01): event-type → иконка+тон, `formatDistanceToNow` (ru) |
 | AiNarrativeWithSources | `AiNarrativeWithSources.tsx` | DirectorDashboardClient | accent / info | ✅ эталон (inline-цитаты, тон тона) |
 | AssistantSidebar | `AssistantSidebar.tsx` | AuthenticatedShell (FAB) | accent | ✅ эталон |
 | BottleneckHeatmapWidget | `BottleneckHeatmapWidget.tsx` | DirectorDashboardClient | warning → danger | ✅ эталон (живая heatmap) |
-| BusFactorWidget | `BusFactorWidget.tsx` | DirectorDashboardClient | danger / warning | 🟡 нужна полировка (градиент по severity, stacked-bar по уровню экспертизы) |
-| GoalVectorWidget | `GoalVectorWidget.tsx` | DirectorDashboardClient | success / accent | 🟡 нужна полировка (top-3 contributors через stacked-bar) |
-| IrreversibleDecisionsAlert | `IrreversibleDecisionsAlert.tsx` | DirectorDashboardClient | danger | 🟡 нужна полировка (градиентный banner, border-l-4) |
-| KnowledgeVelocityKpi | `KnowledgeVelocityKpi.tsx` | DirectorDashboardClient | success / warning / danger | 🟡 нужна полировка (sparkline фоном, CountUp) |
-| LowRoiMeetingsWidget | `LowRoiMeetingsWidget.tsx` | DirectorDashboardClient | danger / warning | 🟡 нужна полировка (MiniBarRow по ROI, hover-tone) |
-| RecurringTopicsWidget | `RecurringTopicsWidget.tsx` | DirectorDashboardClient | accent / warning | 🟡 нужна полировка (MiniBarRow по частоте + общий sparkline) |
+| BusFactorWidget | `BusFactorWidget.tsx` | DirectorDashboardClient | danger / warning | ✅ полировано Фазой 3 (2026-06-01): `MiniBarRow` глубины + цветной чип по severity (API даёт только `expertsCount`, без уровней — stacked не применим) |
+| GoalVectorWidget | `GoalVectorWidget.tsx` | DirectorDashboardClient | success / accent | ✅ полировано Фазой 3 (2026-06-01): `MiniDonut` слева цели + `MiniStackedBar` top-3 contributors |
+| IrreversibleDecisionsAlert | `IrreversibleDecisionsAlert.tsx` | DirectorDashboardClient | danger | ✅ полировано Фазой 3 (2026-06-01): градиентный фон, иконка `AlertTriangle` в круге, `border-l-4` |
+| KnowledgeVelocityKpi | `KnowledgeVelocityKpi.tsx` | DirectorDashboardClient | success / warning / danger | ✅ полировано Фазой 3 (2026-06-01): главное число через `CountUp` (sparkline-данных в API нет) |
+| LowRoiMeetingsWidget | `LowRoiMeetingsWidget.tsx` | DirectorDashboardClient | danger / warning | ✅ полировано Фазой 3 (2026-06-01): ROI как `MiniBarRow` (danger), hover-tone `bg-chip-danger-bg/5` (массив участников в API виджета отсутствует — чипы пропущены) |
+| RecurringTopicsWidget | `RecurringTopicsWidget.tsx` | DirectorDashboardClient | accent / warning | ✅ полировано Фазой 3 (2026-06-01): общий `MiniSparkline` плотности + `MiniBarRow` справа от каждой темы, авто-тон |
 | SampleStoryBanner | `SampleStoryBanner.tsx` | DirectorDashboardClient (demo) | info | ✅ эталон |
-| TeamHealthGrid | `TeamHealthGrid.tsx` | DirectorDashboardClient | по строке (sentiment.tone) | 🟡 нужна полировка (hover-tone по строке, MiniDonut вместо числа) |
+| TeamHealthGrid | `TeamHealthGrid.tsx` | DirectorDashboardClient | по строке (sentiment.tone) | ✅ полировано Фазой 3 (2026-06-01): hover-tone строки по `sentiment.tone`, колонка «Обещания» — `MiniDonut` + `centerLabel` |
 
-**Итого:** 12 виджетов. 5 эталонных ✅, 7 на полировку 🟡, 0 черновых 🔴.
+**Итого:** 12 виджетов. 12 эталонных/полированных ✅, 0 на полировку 🟡, 0 черновых 🔴.
 
 ## 3. Эталонные виджеты — тон проекта
 

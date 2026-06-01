@@ -7,12 +7,15 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
+  Brain,
   HelpCircle,
+  LayoutDashboard,
   Lightbulb,
   Loader2,
   MessageCircle,
   RefreshCcw,
   Sparkles,
+  Target,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -60,6 +63,7 @@ import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/Irreversib
 import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
 import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
 import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
+import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
@@ -383,10 +387,25 @@ type TabContentProps = {
   periodLabel?: string;
 };
 
-function OverviewTab({ data, pulse }: TabContentProps) {
+function OverviewTab({ data, pulse, loading, pulseLoading }: TabContentProps) {
   const themes = data?.newThemes ?? [];
   const signals = data?.newSignals ?? [];
   const decisions = (pulse?.irreversibleDecisions?.decisions ?? []).slice(0, 3);
+  const allEmpty =
+    !loading &&
+    !pulseLoading &&
+    themes.length === 0 &&
+    signals.length === 0 &&
+    decisions.length === 0;
+  if (allEmpty) {
+    return (
+      <TabEmptyState
+        tabLabel="Обзор"
+        icon={LayoutDashboard}
+        hint="Дайджест недели заполнится после первой встречи или появления тем."
+      />
+    );
+  }
   return (
     <StaggerSection delayMs={0}>
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -454,6 +473,26 @@ function KnowledgeTab({
   pulseError,
   periodLabel,
 }: TabContentProps) {
+  const themes = data?.newThemes ?? [];
+  const entities = data?.hotEntities ?? [];
+  const questions = data?.openQuestions ?? [];
+  const allEmpty =
+    !loading &&
+    !pulseLoading &&
+    !pulse?.recurringTopics &&
+    !pulse?.bottlenecks &&
+    themes.length === 0 &&
+    entities.length === 0 &&
+    questions.length === 0;
+  if (allEmpty) {
+    return (
+      <TabEmptyState
+        tabLabel="Знания"
+        icon={Brain}
+        hint="Раздел заполнится после первой встречи или загрузки документов — AI извлечёт темы и сущности."
+      />
+    );
+  }
   return (
     <StaggerSection delayMs={0}>
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -504,6 +543,23 @@ function GoalsTab({
   pulseLoading,
   pulseError,
 }: TabContentProps) {
+  const meetingsCount = pulse?.lowRoiMeetings?.meetings?.length ?? 0;
+  const decisionsCount = pulse?.irreversibleDecisions?.decisions?.length ?? 0;
+  const allEmpty =
+    !loading &&
+    !pulseLoading &&
+    !pulse?.goalVector &&
+    meetingsCount === 0 &&
+    decisionsCount === 0;
+  if (allEmpty) {
+    return (
+      <TabEmptyState
+        tabLabel="Цели и встречи"
+        icon={Target}
+        hint="Цели и решения появятся после фиксации первой стратегической встречи."
+      />
+    );
+  }
   return (
     <StaggerSection delayMs={0}>
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">

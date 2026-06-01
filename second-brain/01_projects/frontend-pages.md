@@ -78,6 +78,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 | `/projects/[slug]/settings` | Настройки проекта (members, states, **email-inbox T5**) |
 | `/issues` | Список задач (фильтр по assignee, state, label, cycle) |
 | `/issues/[id]` | Карточка задачи: Description / **IssueComments (T8 переписан)** / Activity / Versions / **IssueChat (T6b scope='issue')** |
+| `/me/pulse` | **pulse-full Волна 3** — личная Pulse-карточка сотрудника. Резолвит свой `personId` через `GET /me/profile` и переиспользует `PersonPulseClient` (backend RBAC разрешает self-view). Пункт меню «Мой пульс» в «Моё пространство». |
 | `/me/inbox` | Мои входящие задачи (cursor pagination + badge counter T6a) |
 | `/me/mentions` | **T8 — Лента моих @mention'ов** |
 | `/me/check-ins` | Мои чек-ины |

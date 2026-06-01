@@ -260,6 +260,8 @@ const ME_GROUP: NavGroup = {
   label: 'Моё пространство',
   items: [
     { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me', overviewTarget: 'overview.me' },
+    // pulse-full Волна 3 — личная Pulse-карточка сотрудника.
+    { href: '/me/pulse', label: 'Мой пульс', icon: Activity, matchPrefix: '/me/pulse' },
     { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
     { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
     // SBA β-8.2 — «Мои обещания».

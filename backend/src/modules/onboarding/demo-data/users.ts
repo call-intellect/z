@@ -32,9 +32,16 @@ export const seedUsers: SeedFn = async (ctx, ids) => {
 
   const createdIds: string[] = [];
   for (const u of USER_DEFS) {
+    // email ОБЯЗАН быть org-scoped: constraint `(email, signupSource)` уникален,
+    // а демо-юзеры одинаковы для всех Org. Без суффикса tenantId вторая Org,
+    // заливающая демо, падала бы на дубле email (регрессия мержа #7 —
+    // глобально-фиксированные технострим-email ломали multi-org demo-seed).
+    // `+`-subaddress сохраняет читаемый префикс, домен всё равно внешний.
+    const [local, domain] = u.email.split('@');
+    const orgScopedEmail = `${local}+${tenantId}@${domain}`;
     const user = await prisma.user.create({
       data: {
-        email: u.email,
+        email: orgScopedEmail,
         name: u.name,
         passwordHash: null,
         signupSource: 'standalone',

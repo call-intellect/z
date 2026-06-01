@@ -620,11 +620,14 @@ ${featureList}
         remember('themeEntity', await tx.themeEntity.deleteMany({
           where: { theme: { tenantId, externalSource: DEMO } },
         }));
+        // ideaBlockLink / entityLink — junction-таблицы БЕЗ externalSource.
+        // DEMO-org → все записи демо (precondition demoWorkspaceSeededAt +
+        // SubscriptionGuard блокирует реальные мутации). Чистим по tenantId.
         remember('ideaBlockLink', await tx.ideaBlockLink.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('entityLink', await tx.entityLink.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('ideaBlock', await tx.ideaBlock.deleteMany({
           where: { tenantId, externalSource: DEMO },
@@ -797,37 +800,40 @@ ${featureList}
           where: { tenantId },
         }));
 
-        // Новый контент: Regulations / Ideas / IdeaClusters / Documents.
+        // Новый контент (Demo Content Expansion): эти модели НЕ имеют колонки
+        // externalSource → чистим по tenantId. Безопасно: precondition
+        // demoWorkspaceSeededAt + SubscriptionGuard гарантируют, что в DEMO-org
+        // все эти записи демо (реальные создать нельзя).
         remember('regulation', await tx.regulation.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('idea', await tx.idea.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('ideaCluster', await tx.ideaCluster.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('document', await tx.document.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
 
         // Calendar — EventReminder и EventParticipant каскадятся через Event.
         remember('event', await tx.event.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
 
         // Experiments / BrandVoice / Vendors / ProbeEvents.
         remember('experiment', await tx.experiment.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('brandVoiceProfile', await tx.brandVoiceProfile.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('vendor', await tx.vendor.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
         remember('probeEvent', await tx.probeEvent.deleteMany({
-          where: { tenantId, externalSource: DEMO },
+          where: { tenantId },
         }));
 
         // Feedback (FeedbackTopic — глобальный, не трогаем; FeedbackItem —

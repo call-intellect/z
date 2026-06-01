@@ -16,7 +16,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
   // --- Conversation 1: «Стратегия Q2» ---
   const conv1 = await prisma.chatV2Conversation.create({
     data: {
-      id: 'demo-chat-1',
       tenantId,
       userId: ownerUserId,
       scope: 'org',
@@ -27,7 +26,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
 
   await prisma.chatV2Message.create({
     data: {
-      id: 'demo-msg-1',
       conversationId: conv1.id,
       role: 'user',
       text: 'Какие у нас главные риски на Q2?',
@@ -37,7 +35,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
 
   await prisma.chatV2Message.create({
     data: {
-      id: 'demo-msg-2',
       conversationId: conv1.id,
       role: 'assistant',
       mode: 'synthetic',
@@ -54,7 +51,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
   // --- Conversation 2: «Что знает Козлов?» ---
   const conv2 = await prisma.chatV2Conversation.create({
     data: {
-      id: 'demo-chat-2',
       tenantId,
       userId: ownerUserId,
       scope: 'org',
@@ -65,7 +61,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
 
   await prisma.chatV2Message.create({
     data: {
-      id: 'demo-msg-3',
       conversationId: conv2.id,
       role: 'user',
       text: 'Что будет если Козлов уволится?',
@@ -75,7 +70,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
 
   await prisma.chatV2Message.create({
     data: {
-      id: 'demo-msg-4',
       conversationId: conv2.id,
       role: 'assistant',
       mode: 'synthetic',
@@ -90,7 +84,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
   // --- Conversation 3: «Сводка по команде» ---
   const conv3 = await prisma.chatV2Conversation.create({
     data: {
-      id: 'demo-chat-3',
       tenantId,
       userId: ownerUserId,
       scope: 'org',
@@ -101,7 +94,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
 
   await prisma.chatV2Message.create({
     data: {
-      id: 'demo-msg-5',
       conversationId: conv3.id,
       role: 'user',
       text: 'Дай сводку по команде за неделю',
@@ -111,7 +103,6 @@ export const seedChatNotifications: SeedFn = async (ctx, _ids) => {
 
   await prisma.chatV2Message.create({
     data: {
-      id: 'demo-msg-6',
       conversationId: conv3.id,
       role: 'assistant',
       mode: 'synthetic',

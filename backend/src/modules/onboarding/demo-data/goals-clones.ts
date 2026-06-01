@@ -236,8 +236,12 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
   ];
 
   for (const cl of cloneDefs) {
-    const profileId = `demo-sp-${cl.key}`;
-    const personaId = `demo-ep-${cl.key}`;
+    // id ОБЯЗАН быть org-scoped (включать tenantId): иначе вторая Org,
+    // заливающая демо, падает на дубле PK (регрессия мержа #7 — глобальные
+    // demo-sp/ep/st-id ломали multi-org demo-seed; demoId-helper для PK здесь
+    // не использовался).
+    const profileId = `demo-sp-${cl.key}-${tenantId}`;
+    const personaId = `demo-ep-${cl.key}-${tenantId}`;
 
     // SkillProfile
     await prisma.skillProfile.create({
@@ -256,7 +260,7 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     const traitIds: string[] = [];
     for (let i = 0; i < cl.traits.length; i++) {
       const t = cl.traits[i]!;
-      const traitId = `demo-st-${cl.key}-${i}`;
+      const traitId = `demo-st-${cl.key}-${i}-${tenantId}`;
       traitIds.push(traitId);
       await prisma.skillTrait.create({
         data: {

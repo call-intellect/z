@@ -40,8 +40,10 @@ const DEMO_TENANT_TABLES = [
   'project', 'projectDocument', 'issueState', 'cycle', 'sprintHint',
 
   // ── Knowledge graph ──
+  // NB: ideaBlockLink / entityLink СЮДА НЕ входят — у них НЕТ колонки
+  // externalSource (junction-таблицы). Чистятся в resetDemoWorkspace по tenantId
+  // (ideaBlockLink дополнительно каскадно удаляется при удалении demo-IdeaBlock).
   'ideaBlock', 'entity', 'theme', 'goal', 'goalAlignmentSnapshot',
-  'ideaBlockLink', 'entityLink',
 
   // ── Processes / decisions / insights ──
   'process', 'processStep', 'decision', 'insight',
@@ -59,11 +61,13 @@ const DEMO_TENANT_TABLES = [
   'helpfulnessSpotlight', 'recognition', 'card',
 
   // ── Demo Content Expansion 2026-05-31 ──
-  'regulation', 'idea', 'ideaCluster', 'document', 'event',
-  'experiment', 'vendor', 'probeEvent',
-  'feedbackMessage', 'feedbackTopic', 'feedbackItem',
-  'clientReferralLink', 'referral', 'referralPayout',
-  'brandVoiceProfile',
+  // ВАЖНО: модели НИЖЕ (regulation, idea, ideaCluster, document, event,
+  // experiment, vendor, probeEvent, feedbackMessage/Topic/Item, referral*,
+  // brandVoiceProfile) НЕ имеют колонки externalSource → их НЕЛЬЗЯ помечать
+  // здесь (markAll падал бы на updateMany). Регрессия мержа #7 (985d802):
+  // их по ошибке добавили в этот список, что ломало ВЕСЬ demo-seed. Чистка —
+  // в resetDemoWorkspace напрямую по tenantId (DEMO-org → все такие записи
+  // демо, реальные невозможны из-за SubscriptionGuard).
 ] as const;
 
 export async function markAllDemoEntitiesForTenant(

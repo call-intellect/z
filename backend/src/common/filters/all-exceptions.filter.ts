@@ -4,13 +4,17 @@ import {
   type ExceptionFilter,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SystemLogCategory } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
+import type { WriteLogInput } from '../../modules/logging/log.constants';
+import { LogService } from '../../modules/logging/log.service';
 import { DomainError } from '../errors/domain-errors';
 
 interface ErrorPayload {
@@ -54,6 +58,11 @@ interface MappedError {
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  constructor(
+    // @Optional: фильтр не зависит жёстко от LoggingModule (тесты, ранний bootstrap).
+    @Optional() @Inject(LogService) private readonly logService?: LogService,
+  ) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -61,6 +70,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const requestId = this.extractRequestId(request);
 
     const mapped = this.toMapped(exception, requestId);
+
+    // Запись в SystemLog (best-effort, не ломает обработку ошибки).
+    // 4xx/5xx логирует ИМЕННО фильтр — интерсептор успешных запросов их не трогает.
+    this.writeSystemLog(exception, request, mapped.status);
 
     // Логируем всё одним объектом.
     const logBindings: Record<string, unknown> = {
@@ -92,6 +105,48 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     response.status(mapped.status).json(mapped.payload);
+  }
+
+  // ────────────────────────── SystemLog ────────────────────────────────
+
+  private writeSystemLog(
+    exception: unknown,
+    request: Request,
+    status: number,
+  ): void {
+    if (!this.logService) return;
+    const r = request as Request & {
+      user?: { id?: string; role?: string } | null;
+      tenantId?: string;
+    };
+    const path = request.originalUrl ?? request.url;
+    const ua = request.headers['user-agent'];
+
+    const input: WriteLogInput = {
+      level: status >= 500 ? 'ERROR' : status === 401 || status === 403 || status === 429 ? 'WARN' : 'DEBUG',
+      category:
+        status >= 500
+          ? SystemLogCategory.REQUEST
+          : status === 401
+            ? SystemLogCategory.AUTH
+            : status === 403 || status === 429
+              ? SystemLogCategory.SECURITY
+              : SystemLogCategory.REQUEST,
+      module: 'http',
+      action: 'error_response',
+      message: `${request.method} ${path} → ${status}`,
+      method: request.method,
+      path,
+      statusCode: status,
+      ip: request.ip,
+      ...(ua ? { userAgent: String(ua) } : {}),
+      ...(r.user?.id ? { userId: r.user.id } : {}),
+      ...(r.user?.role ? { userRole: r.user.role } : {}),
+      ...(r.tenantId ? { orgId: r.tenantId } : {}),
+      // Саму exception (со stack) передаём только для 5xx.
+      ...(status >= 500 ? { error: exception } : {}),
+    };
+    this.logService.write(input);
   }
 
   // ────────────────────────── маппинг ──────────────────────────────────

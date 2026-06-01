@@ -84,6 +84,28 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── logging (LoggingModule defaults) ──
+  /**
+   * Env-дефолты технического логирования. Используются `LogSettingsService`
+   * как base при старте; в рантайме переопределяются через PATCH-настройки
+   * (`PlatformSetting[logging_settings]`). См. plans/tz/2026-06-01-logging-module.md.
+   */
+  get logging() {
+    return {
+      dbLoggingEnabled: this.get('LOG_DB_ENABLED'),
+      minLevel: this.get('LOG_DB_MIN_LEVEL'),
+      batchSize: this.get('LOG_DB_BATCH_SIZE'),
+      flushIntervalMs: this.get('LOG_DB_FLUSH_INTERVAL_MS'),
+      maxBufferSize: this.get('LOG_DB_MAX_BUFFER'),
+      retentionDays: this.get('LOG_DB_RETENTION_DAYS'),
+      logStackTraces: this.get('LOG_DB_STACK_TRACES'),
+      requestBodyLogging: this.get('LOG_DB_REQUEST_BODY'),
+      responseBodyLogging: this.get('LOG_DB_RESPONSE_BODY'),
+      logSuccessfulRequests: this.get('LOG_DB_SUCCESS_REQUESTS'),
+      slowRequestThresholdMs: this.get('LOG_DB_SLOW_REQUEST_MS'),
+    } as const;
+  }
+
   // ─────────────────────────── db / redis ────────────────────────
   get db() {
     return {

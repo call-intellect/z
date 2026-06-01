@@ -1754,6 +1754,25 @@ const SmartTablesSchema = z.object({
 });
 
 /**
+ * ENV для LoggingModule (технические логи в БД). Дефолты при старте; в рантайме
+ * переопределяются супер-админом через PATCH /api/v1/platform/logs/settings и
+ * применяются без рестарта (см. plans/tz/2026-06-01-logging-module.md §3).
+ */
+const LoggingSchema = z.object({
+  LOG_DB_ENABLED: zBool(true),
+  LOG_DB_MIN_LEVEL: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']).default('INFO'),
+  LOG_DB_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(50),
+  LOG_DB_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).max(600_000).default(5_000),
+  LOG_DB_MAX_BUFFER: z.coerce.number().int().min(100).max(100_000).default(5_000),
+  LOG_DB_RETENTION_DAYS: z.coerce.number().int().min(1).max(3_650).default(30),
+  LOG_DB_STACK_TRACES: zBool(true),
+  LOG_DB_REQUEST_BODY: zBool(false),
+  LOG_DB_RESPONSE_BODY: zBool(false),
+  LOG_DB_SUCCESS_REQUESTS: zBool(false),
+  LOG_DB_SLOW_REQUEST_MS: z.coerce.number().int().min(0).max(600_000).default(2_000),
+});
+
+/**
  * ENV для биллинга, реферальной программы, ИНН-лукапа.
  * Один schema — НЕ дробить на 4 (TS2589 на длинной merge-цепочке EnvSchema).
  * См. ТЗ plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §5.
@@ -1882,7 +1901,9 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   // CLONE_ASK_PER_USER_PER_DAY (SkillSchema) пока остаётся; удаление — Фаза 4.
   .merge(AiChatQuotaSchema)
   // ТЗ 2026-05-31 smart-tables — лимиты-guard от злоупотребления.
-  .merge(SmartTablesSchema);
+  .merge(SmartTablesSchema)
+  // LoggingModule (2026-06-01) — LOG_DB_* дефолты технического логирования.
+  .merge(LoggingSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

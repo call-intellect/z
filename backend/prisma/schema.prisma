@@ -9764,3 +9764,94 @@ model TableAutomation {
 
   table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
 }
+
+// ─────────────────────── logging (технические логи) ───────────────────────
+// Модуль LoggingModule: операционная диагностика приложения в БД.
+// ВАЖНО: это НЕ audit trail (бизнес-аудит — SuperAdminAccessLog, вечный, без
+// ретеншена). SystemLog — диагностика с автоудалением (retentionDays), БЕЗ
+// FK-связей: userId/orgId — «мягкие» ссылки-строки.
+// План: plans/tz/2026-06-01-logging-module.md.
+
+enum SystemLogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+  FATAL
+}
+
+enum SystemLogCategory {
+  SYSTEM
+  REQUEST
+  BUSINESS
+  SECURITY
+  PAYMENT
+  WEBHOOK
+  AUTH
+  DB
+  INTEGRATION
+  AUDIT
+  FRONTEND
+  JOB
+  OTHER
+}
+
+/// Контур = крупная зона доступа Коры (адаптация домена orgs/tenancy).
+enum SystemLogContour {
+  GUEST
+  MEMBER
+  ORG_ADMIN
+  SUPERADMIN
+  PLATFORM
+  PUBLIC
+  SYSTEM
+}
+
+model SystemLog {
+  id           String            @id @default(uuid())
+  level        SystemLogLevel
+  category     SystemLogCategory @default(SYSTEM)
+  contour      SystemLogContour  @default(SYSTEM)
+  module       String?
+  action       String?
+  message      String
+  details      Json?
+  userId       String?
+  userRole     String?
+  /// Soft-ref на Org (tenantId). Без FK — лог переживает удаление org.
+  orgId        String?
+  requestId    String?
+  traceId      String?
+  ip           String?
+  userAgent    String?
+  method       String?
+  path         String?
+  statusCode   Int?
+  durationMs   Int?
+  errorName    String?
+  errorMessage String?
+  errorStack   String?
+  environment  String?
+  instanceId   String?
+  createdAt    DateTime          @default(now())
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([category, createdAt])
+  @@index([contour, createdAt])
+  @@index([module, createdAt])
+  @@index([statusCode, createdAt])
+  @@index([userId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([requestId])
+}
+
+/// Платформенная key-value таблица настроек (singleton-строки по ключу).
+/// Ключ `logging_settings` хранит runtime-настройки LoggingModule.
+model PlatformSetting {
+  key       String   @id
+  valueJson Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

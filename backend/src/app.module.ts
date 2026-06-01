@@ -76,13 +76,15 @@ import { Specialist35Module } from './modules/knowledge-core/specialist-3-5.modu
 import { Specialist36Module } from './modules/knowledge-core/specialist-3-6.module';
 import { KpiModule } from './modules/kpi/kpi.module';
 import { LivekitModule } from './modules/livekit/livekit.module';
+import { LoggingModule } from './modules/logging/logging.module';
+import { RequestContextMiddleware } from './modules/logging/request-context.middleware';
 import { MailInboundModule } from './modules/mail/inbound/mail-inbound.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
-import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { OrgMembersModule } from './modules/org-members/org-members.module';
@@ -99,8 +101,8 @@ import { PublicApiModule } from './modules/public-api/public-api.module';
 import { PushModule } from './modules/push/push.module';
 import { QualityScoreModule } from './modules/quality-score/quality-score.module';
 import { QuotasModule } from './modules/quotas/quotas.module';
-import { RbacModule } from './modules/rbac/rbac.module';
 import { TenantMiddleware } from './modules/rbac/middleware/tenant.middleware';
+import { RbacModule } from './modules/rbac/rbac.module';
 import { RecognitionModule } from './modules/recognition/recognition.module';
 import { RecordingsModule } from './modules/recordings/recordings.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
@@ -614,6 +616,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // ConfigModule (TypedConfigService для TABLE_MAX_* лимитов).
     // См. plans/tz/2026-05-31-smart-tables.md.
     TablesModule,
+
+    // LoggingModule (2026-06-01) — централизованное техническое логирование в БД.
+    // @Global: LogService доступен всему приложению; регистрирует глобальный
+    // RequestLoggingInterceptor. См. plans/tz/2026-06-01-logging-module.md.
+    LoggingModule,
   ],
   providers: [
     // Фильтр зарегистрирован через DI.
@@ -653,6 +660,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer.apply(RequestIdMiddleware).forRoutes('*');
+
+    // RequestContextMiddleware — оборачивает запрос в AsyncLocalStorage-контекст
+    // ПОСЛЕ RequestIdMiddleware (нужен req.id) и ПЕРЕД TenantMiddleware/guards,
+    // чтобы LogService мог читать requestId/userId/orgId на горячем пути.
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
 
     // TenantMiddleware — выставляет `req.tenantId` ДО глобальных guards
     // (SubscriptionGuard / EntitlementGuard), чтобы они могли работать на

@@ -766,9 +766,10 @@ docker compose exec backend bun run scripts/patch-migrate-old-demo-orgs.ts
 
 ### Фаза 0 — Pre-flight аудит (1ч)
 
-- [ ] **0.1** Прогнать `git log --since="2026-05-30"` по `backend/src/modules/onboarding`, `rbac`, `billing` — убедиться, что список existing-файлов в frontmatter актуален.
-- [ ] **0.2** Проверить порядок выполнения `APP_GUARD` глобальных guard'ов и method-guard'ов в NestJS: убедиться, что `DemoObserverGuard` (`APP_GUARD`) сработает ПОСЛЕ `TenantGuard` (method-level). Если нет — переделать `DemoObserverGuard` в method-guard и подключить точечно.
-- [ ] **0.3** Найти существующий компонент org-switcher (если есть) либо подтвердить, что его надо создать. Записать в фазу 5.
+- [x] **0.1** `git log --since="2026-05-25"` — список existing-файлов в frontmatter актуален. Последние правки: `f585ffe fix(demo): починить демо-сидинг`, `deca505 fix(onboarding): устойчивый демо-сидинг`, `748fb71 feat(onboarding): авто-сидинг при регистрации + cleanup при оплате` — всё в `onboarding`, ничего не сломано.
+- [x] **0.2** **Порядок guard'ов:** глобальные `APP_GUARD` (SubscriptionGuard, EntitlementGuard, MustChangePasswordGuard) выполняются **РАНЬШЕ** method-level `TenantGuard`. К моменту `APP_GUARD` `req.rbacContext` ещё не выставлен (TenantGuard грузит `loadContext`, но НЕ кладёт в req). **Решение:** `DemoObserverGuard` ставим как `APP_GUARD`, который **сам** вызывает `rbac.loadContext(req.user.id, req.tenantId)`. `req.tenantId` уже выставлен `TenantMiddleware` (до guards). Дополнительно в `TenantGuard` всё равно добавляем `req.rbacContext = rbacCtx` для downstream-кода (как в §4.3). Дублирующий БД-запрос приемлем (membership.findFirst — дешёвый, мог бы быть кэширован, но без этого ок). Альтернатива «method-guard» отклонена — пришлось бы менять 100+ контроллеров.
+- [x] **0.3** **OrgSwitcher уже существует**: `frontend/src/ui/components/app-shell/OrgSwitcher.tsx` + `useMemberships` хук в `frontend/src/hooks/useMemberships.ts`. Фаза 5.3 — адаптация (бейджи «Демо»/«Пусто»), не «создать с нуля».
+- [x] **0.4** **`onboarding/demo-choice/page.tsx` уже удалён** в прошлой волне. Фаза 5.1 — no-op (фиксируем как «уже выполнено»).
 
 ### Фаза 1 — Schema + RBAC
 

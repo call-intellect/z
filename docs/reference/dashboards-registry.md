@@ -136,13 +136,33 @@
 | 5 | Своя | `member` | ACTIVE | Hero+Tabs полные. Онбординг-блок не показываем |
 | 6 | Своя | `owner` | ACTIVE без demo_observer | Hero+Tabs полные |
 
-Условие правила 3 в коде (`DirectorDashboardClient.tsx`, Шаг В.1):
+### 4.6. Реализация в коде (после Волны В, 2026-06-02)
+
+Все 6 строк матрицы реализованы в [`frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx`](../../frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx):
+
 ```ts
-const showMainEmpty =
-  !currentOrg?.isReferenceDemo &&
-  subscription?.status === 'DEMO' &&
-  isEmpty;  // data?.isEmpty или эквивалент
+// Состояние 3 — MainEmptyState замещает Hero+Tabs.
+const isPageEmpty =
+  isOwnOrg &&                              // isReferenceDemo === false
+  subscriptionStatus === 'DEMO' &&         // своя Org не оплачена
+  isOwnerOrAdmin &&                        // member никогда не видит
+  !loading && !subscriptionLoading &&
+  (data?.isEmpty === true || data === null);
+
+// Состояние 1 — read-only CTA + paywall trigger.
+<TopRiskCard
+  isReadOnlyDemo={currentOrgRole === 'demo_observer'}
+  onPaywallTrigger={showPaywallModal}
+  ...
+/>
 ```
+
+Static smoke-комментарий 6 ветвей зафиксирован inline в коде (поиск `Static smoke матрицы 6 состояний`). Дополнительные правила:
+
+- **№1** — `DemoObserverGuard` (backend) режет мутации на ресурсах эталона. `@PublicDemo()` на `/concierge/messages` + `/concierge/messages/once` + `/chat-v2/messages` позволяет LLM-чат.
+- **№2** — `super_admin` bypass в `DemoObserverGuard` (req.user.isSuperAdmin).
+- **№3** — `setupProgress` встроен в `MainEmptyState` через prop (Шаг В.3) — компактная плашка «Настройка компании · N/6» с CTA `/onboarding/company/step-1`.
+- **№4-6** — Hero+Tabs стандартно. `IntroWizardWidget` сам проверяет role и `setupCompletedAt`-возраст (Фаза Б.5).
 
 ## 5. Семь «вау»-критериев
 

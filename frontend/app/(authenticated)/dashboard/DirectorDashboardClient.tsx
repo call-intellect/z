@@ -234,6 +234,20 @@ export function DirectorDashboardClient() {
     return { completed: n, total: 6 };
   }, [orgSwr.data, isOwnerOrAdmin]);
 
+  // Static smoke матрицы 6 состояний (Шаг В.6 зонтика main-screen-umbrella):
+  // 1. Эталон + demo_observer → isOwnOrg=false → !isPageEmpty → Hero+Tabs.
+  //    isReadOnlyDemo=true (TopRiskCard prop) → CTA «Открыть» + «+ ещё N»
+  //    рендерятся как <button onClick={showPaywallModal}>, не <Link>.
+  // 2. Эталон + super_admin → isReferenceDemo=true, но role не demo_observer →
+  //    Hero+Tabs полные, CTA активны (DemoObserverGuard bypass на backend).
+  // 3. Своя + owner/admin + DEMO + isEmpty → isPageEmpty=true → MainEmptyState
+  //    замещает Hero+Tabs (см. ниже).
+  // 4. Своя + owner/admin + ACTIVE → status≠'DEMO' → !isPageEmpty → Hero+Tabs.
+  //    Per-таб empty-state из TabEmptyState (Фаза Б.6).
+  // 5. Своя + member + ACTIVE → isOwnerOrAdmin=false → !isPageEmpty →
+  //    Hero+Tabs. IntroWizardWidget сам себя скрывает (member-check внутри).
+  // 6. Своя + owner + ACTIVE без demo_observer → как №4.
+  //
   // Ранний return: MainEmptyState замещает Hero+Tabs целиком.
   if (isPageEmpty) {
     return (

@@ -916,3 +916,26 @@ describe('RbacService.canViewEmployeeFullCard', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * 2026-06-01 (ТЗ shared-demo-org-model §4.2.2) — RbacService.canMutate.
+ *
+ * Чистая функция роли: возвращает false ТОЛЬКО для `demo_observer`. Используется
+ * `DemoObserverGuard` чтобы блокировать POST/PUT/PATCH/DELETE для пользователей
+ * в shared эталонной демо-Org до первой оплаты.
+ */
+describe('RbacService.canMutate (demo_observer)', () => {
+  const service = buildRbac({ membership: null });
+
+  it('возвращает true для всех ролей кроме demo_observer', () => {
+    expect(service.canMutate('owner')).toBe(true);
+    expect(service.canMutate('admin')).toBe(true);
+    expect(service.canMutate('manager')).toBe(true);
+    expect(service.canMutate('coo')).toBe(true);
+    expect(service.canMutate('hr_partner')).toBe(true);
+  });
+
+  it('возвращает false для demo_observer', () => {
+    expect(service.canMutate('demo_observer')).toBe(false);
+  });
+});

@@ -168,8 +168,9 @@ export function DirectorDashboardClient() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-      {/* §4.2 — Sticky-header страницы с backdrop-blur и тонким border. */}
-      <header className="sticky top-0 z-20 -mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle/50 bg-bg-base/85 px-4 py-3 backdrop-blur-md md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
+      {/* Б.8 — снят sticky, чтобы не конфликтовать с sticky Hero (top-0 z-20).
+          Header теперь обычный, скроллится за Hero. */}
+      <header className="-mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle/50 px-4 py-3 md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Привет, {greetingName}

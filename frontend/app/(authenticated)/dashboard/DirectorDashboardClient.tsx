@@ -62,6 +62,7 @@ import { GoalVectorWidget } from '@/ui/components/dashboard/GoalVectorWidget';
 import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
 import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
 import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
+import { PeopleAtRiskWidget } from '@/ui/components/dashboard/PeopleAtRiskWidget';
 import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
 import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
@@ -459,7 +460,12 @@ function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
           />
         </div>
       </div>
-      {/* TODO Б.7: PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. */}
+      {/* PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. Пока endpoint
+          /dashboard/people-at-risk не реализован — items=null → виджет скрыт.
+          См. dashboards-registry §4.4 «Открытые хвосты». */}
+      <div className="mb-6">
+        <PeopleAtRiskWidget items={null} />
+      </div>
       <TabBottomLink href="/teams" label="Открыть /teams →" />
     </StaggerSection>
   );

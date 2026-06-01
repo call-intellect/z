@@ -30,7 +30,7 @@ import { cn } from '@/ui/shadcn/lib/utils';
  *   - Решения (decisions, плейсхолдер v1 — neutral)
  *
  * Отделы <3 чел. показываются с заглушкой «нужно ≥3».
- * При отсутствии отделов — empty-state со ссылкой в /admin/departments.
+ * При отсутствии отделов — empty-state со ссылкой в /departments.
  */
 type Props = {
   className?: string;
@@ -195,7 +195,7 @@ function EmptyState() {
         Создайте отделы — здоровье команд будет считаться автоматически.
       </p>
       <Link
-        href="/admin/departments"
+        href="/departments"
         className="mt-3 inline-block text-sm text-accent underline-offset-2 hover:underline"
       >
         Перейти в настройки отделов →

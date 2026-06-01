@@ -158,7 +158,7 @@ export function TeamsListClient() {
             Создайте отделы — здоровье команд будет считаться автоматически.
           </p>
           <Link
-            href="/admin/departments"
+            href="/departments"
             className="mt-4 inline-block text-sm text-accent underline-offset-2 hover:underline"
           >
             Перейти в настройки отделов →

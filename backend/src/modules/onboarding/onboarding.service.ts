@@ -234,20 +234,32 @@ export class OnboardingService {
       return { status: 'completed', enqueued: false };
     }
 
-    // Только DEMO-подписка. Пустой ACTIVE/EXPIRED-кабинет демо НЕ заливаем.
-    const sub = await this.subscriptions.getByTenant(orgId);
-    if (sub?.status !== 'DEMO') {
+    // Fallback — best-effort: НИКАКАЯ ошибка не должна давать 500 (фронт дёргает
+    // это на каждой DEMO-загрузке через SubscriptionContext). Любой сбой
+    // (подписка/очередь/Redis) логируем и возвращаем pending.
+    try {
+      // Только DEMO-подписка. Пустой ACTIVE/EXPIRED-кабинет демо НЕ заливаем.
+      const sub = await this.subscriptions.getByTenant(orgId);
+      if (sub?.status !== 'DEMO') {
+        return { status: 'pending', enqueued: false };
+      }
+
+      const result = await this.demoSeedQueue.ensure({
+        orgId,
+        ownerUserId: org.ownerId,
+      });
+      return { status: 'in_progress', enqueued: result.enqueued };
+    } catch (err) {
+      this.logger.error(
+        {
+          orgId,
+          err: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        },
+        'ensureDemoSeed: fallback дозаливки демо упал — возвращаем pending',
+      );
       return { status: 'pending', enqueued: false };
     }
-
-    const result = await this.demoSeedQueue.ensure({
-      orgId,
-      ownerUserId: org.ownerId,
-    });
-    return {
-      status: 'in_progress',
-      enqueued: result.enqueued,
-    };
   }
 
   /** POST /orgs/:orgId/setup/complete — все 6 шагов Блока B пройдены/пропущены */

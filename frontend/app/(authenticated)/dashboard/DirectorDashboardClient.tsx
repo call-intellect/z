@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -10,6 +11,7 @@ import {
   Loader2,
   MessageCircle,
   RefreshCcw,
+  Sparkles,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -145,9 +147,19 @@ export function DirectorDashboardClient() {
 
   const periodLabel = period === 'week' ? 'неделю' : 'месяц';
 
+  // Stagger-делей для enter-анимации секций. Cap 400ms (см. §4.6 ТЗ).
+  // Анимация выполняется один раз на mount через `animate-in` + `fill-mode: backwards`.
+  let staggerStep = 0;
+  const nextStagger = () => {
+    const ms = Math.min(staggerStep * 60, 400);
+    staggerStep += 1;
+    return ms;
+  };
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-      <header className="sticky top-0 z-10 -mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle bg-bg-base/72 px-4 py-4 backdrop-blur-glass md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
+      {/* §4.2 — Sticky-header страницы с backdrop-blur и тонким border. */}
+      <header className="sticky top-0 z-20 -mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle/50 bg-bg-base/85 px-4 py-3 backdrop-blur-md md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Привет, {greetingName}
@@ -182,173 +194,251 @@ export function DirectorDashboardClient() {
         </div>
       )}
 
-      {data?.isEmpty && <SampleStoryBanner />}
+      {/* §4.1 — Hero-strip KPI в карточке с градиентом и shadow-lg.
+          CountUp числа отрисовываются внутри `KpiHero` — здесь оборачиваем
+          сам блок без правки внешних компонентов (см. ограничение ТЗ). */}
+      <StaggerSection delayMs={nextStagger()}>
+        <div className="mb-6 rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-4 shadow-lg md:p-5">
+          {data?.isEmpty && <SampleStoryBanner />}
 
-      {/* Pulse Wave 6 §6.8 — Алерт о необратимых решениях без альтернатив.
-          Возвращает null если alertCount=0. */}
-      {pulse && !pulseLoading && (
-        <IrreversibleDecisionsAlert
-          decisions={pulse.irreversibleDecisions.decisions}
-          alertCount={pulse.irreversibleDecisions.alertCount}
-        />
-      )}
+          {/* Pulse Wave 6 §6.8 — Алерт о необратимых решениях без альтернатив. */}
+          {pulse && !pulseLoading && (
+            <IrreversibleDecisionsAlert
+              decisions={pulse.irreversibleDecisions.decisions}
+              alertCount={pulse.irreversibleDecisions.alertCount}
+            />
+          )}
 
-      {/* Pulse Wave 1 §1.5 + Wave 6 §6.7 — KPI hero strip. */}
-      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KpiHero
-          label="Индекс настроения недели"
-          value={data?.kpiSentimentIndex?.value ?? 0}
-          numericValue={data?.kpiSentimentIndex?.value ?? 0}
-          sparkline={data?.kpiSentimentIndex?.sparkline}
-          trend={data?.kpiSentimentIndex?.trend}
-          threshold={{ green: 30, yellow: 0 }}
-          href="/dashboard/operations"
-        />
-        <KpiHero
-          label="Обещания"
-          value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
-          numericValue={data?.kpiCommitmentReliability?.value ?? 0}
-          sparkline={data?.kpiCommitmentReliability?.sparkline}
-          delta={data?.kpiCommitmentReliability?.delta}
-          deltaLabel="за 14 дней"
-          threshold={{ green: 80, yellow: 60 }}
-          href="/me/commitments"
-        />
-        <KpiHero
-          label="Висящие решения"
-          value={data?.kpiHangingDecisions?.value ?? 0}
-          numericValue={data?.kpiHangingDecisions?.value ?? 0}
-          sparkline={data?.kpiHangingDecisions?.sparkline}
-          threshold={{ green: 2, yellow: 5, inverted: true }}
-          href="/decisions?status=hanging"
-        />
-        {/* Pulse Wave 6 §6.7 — Knowledge Velocity (median hours to answer). */}
-        <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
-      </div>
-
-      <div className="mb-6">
-        <IntroWizardWidget />
-      </div>
-
-      {data?.narrativeSummary && (
-        <AiNarrativeWithSources
-          data={data.narrativeSummary}
-          periodLabel={periodLabel}
-        />
-      )}
-
-      {/* Pulse Wave 1 §1.6 — Team Health Grid (per-dept агрегаты по 4 метрикам). */}
-      <div className="mb-6">
-        <TeamHealthGrid />
-      </div>
-
-      {/* Pulse Wave 1 §1.8 — ActivityFeedWidget (probe_question на главной). */}
-      <div className="mb-6">
-        <ActivityFeedWidget
-          feedTypes={['probe_question']}
-          scope="company"
-          pageSize={5}
-          liveUpdate
-          drillDownHref="/me/notifications"
-          title="Вопросы AI команде"
-          emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
-        />
-      </div>
-
-      {/* Pulse Wave 6 — паттерны компании. 2x2 grid для 4 виджетов
-          (Bus Factor, Recurring Topics, Low ROI, Goal Vector). */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <BusFactorWidget
-          data={pulse?.busFactor ?? null}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-        <RecurringTopicsWidget
-          data={pulse?.recurringTopics ?? null}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-        <LowRoiMeetingsWidget
-          meetings={pulse?.lowRoiMeetings.meetings ?? []}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-        <GoalVectorWidget
-          data={pulse?.goalVector ?? null}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-      </div>
-
-      {/* Pulse Wave 6 §6.4 — Bottleneck Heatmap (полная ширина внизу). */}
-      <div className="mb-6">
-        <BottleneckHeatmapWidget
-          data={pulse?.bottlenecks ?? null}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <StructureSummaryWidget />
-        <WhatLearnedWidget
-          loading={loading}
-          newThemes={data?.newThemes ?? []}
-          newSignals={data?.newSignals ?? []}
-          periodLabel={periodLabel}
-        />
-        <SignalCountersWidget
-          loading={loading}
-          counters={data?.signalCounters ?? null}
-        />
-        <ActiveThemesWidget
-          loading={loading}
-          themes={data?.activeThemes ?? []}
-        />
-        <HotEntitiesWidget
-          loading={loading}
-          entities={data?.hotEntities ?? []}
-        />
-        <OpenQuestionsWidget
-          loading={loading}
-          questions={data?.openQuestions ?? []}
-        />
-        <StrategicAlignmentWidget
-          data={data?.strategicAlignment}
-          loading={loading}
-        />
-        {/* Фаза C — карточка «Качество встреч» (только owner/admin; backend защищает 403). */}
-        <QualityScoreWidget />
-        {/* SBA α-4 — карточка «На проверке у меня» (Layer 4 Curation). */}
-        <CurationPendingWidget />
-        {/* SBA β-4 — карточка «Топ-5 повторяющихся проблем» (Insights Radar). */}
-        <InsightsTopWidget />
-      </div>
-
-      <section className="mt-8">
-        <header className="mb-3 flex items-center gap-2">
-          <MessageCircle size={16} className="text-accent" />
-          <div>
-            <h2 className="text-sm font-semibold text-fg-primary">
-              Спросите про вашу компанию
-            </h2>
-            <p className="text-xs text-fg-tertiary">
-              AI ищет ответ в архиве встреч и знаний организации, отвечает с цитатами.
-            </p>
+          {/* Pulse Wave 1 §1.5 + Wave 6 §6.7 — KPI hero strip. */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <KpiHero
+              label="Индекс настроения недели"
+              value={data?.kpiSentimentIndex?.value ?? 0}
+              numericValue={data?.kpiSentimentIndex?.value ?? 0}
+              sparkline={data?.kpiSentimentIndex?.sparkline}
+              trend={data?.kpiSentimentIndex?.trend}
+              threshold={{ green: 30, yellow: 0 }}
+              href="/dashboard/operations"
+            />
+            <KpiHero
+              label="Обещания"
+              value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
+              numericValue={data?.kpiCommitmentReliability?.value ?? 0}
+              sparkline={data?.kpiCommitmentReliability?.sparkline}
+              delta={data?.kpiCommitmentReliability?.delta}
+              deltaLabel="за 14 дней"
+              threshold={{ green: 80, yellow: 60 }}
+              href="/me/commitments"
+            />
+            <KpiHero
+              label="Висящие решения"
+              value={data?.kpiHangingDecisions?.value ?? 0}
+              numericValue={data?.kpiHangingDecisions?.value ?? 0}
+              sparkline={data?.kpiHangingDecisions?.sparkline}
+              threshold={{ green: 2, yellow: 5, inverted: true }}
+              href="/decisions?status=hanging"
+            />
+            {/* Pulse Wave 6 §6.7 — Knowledge Velocity (median hours to answer). */}
+            <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
           </div>
-        </header>
-        <OrgChatPanel
-          withHistory={false}
-          height="400px"
-          placeholder="Например: какие основные риски за неделю?"
-          intro={
-            <div className="px-4 py-8 text-center text-xs text-fg-tertiary">
-              Например: «Какие основные риски за неделю?» или «О чём договорились
-              с ключевыми клиентами?»
+        </div>
+      </StaggerSection>
+
+      <StaggerSection delayMs={nextStagger()}>
+        <div className="mb-6">
+          <IntroWizardWidget />
+        </div>
+      </StaggerSection>
+
+      {/* §4.4 — AI-сводка с inner-glow карточкой и микро-лейблом. */}
+      {data?.narrativeSummary && (
+        <StaggerSection delayMs={nextStagger()}>
+          <div className="mb-6 rounded-2xl border border-accent/20 bg-bg-card p-5 shadow-lg shadow-accent/15">
+            <div className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
+              <Sparkles size={12} aria-hidden />
+              <span>AI-сводка</span>
             </div>
-          }
-        />
-      </section>
+            <AiNarrativeWithSources
+              data={data.narrativeSummary}
+              periodLabel={periodLabel}
+            />
+          </div>
+        </StaggerSection>
+      )}
+
+      {/* §4.3 «Решения и риски» — см. блок IrreversibleDecisionsAlert + SampleStoryBanner
+          выше внутри Hero-strip (по позиции — над KPI). Здесь — категория «Команда и здоровье». */}
+      <StaggerSection delayMs={nextStagger()}>
+        <SectionHeader title="Команда и здоровье" />
+        <div className="mb-6">
+          <TeamHealthGrid />
+        </div>
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Pulse Wave 6 §6.2 — Bus Factor (узкая колонка слева). */}
+          <div className="lg:col-span-1">
+            <BusFactorWidget
+              data={pulse?.busFactor ?? null}
+              loading={pulseLoading}
+              error={pulseError}
+            />
+          </div>
+          {/* Pulse Wave 1 §1.8 — ActivityFeedWidget (probe_question на главной). */}
+          <div className="lg:col-span-2">
+            <ActivityFeedWidget
+              feedTypes={['probe_question']}
+              scope="company"
+              pageSize={5}
+              liveUpdate
+              drillDownHref="/me/notifications"
+              title="Вопросы AI команде"
+              emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
+            />
+          </div>
+        </div>
+      </StaggerSection>
+
+      {/* §4.3 «Знания» — Knowledge Velocity уже в Hero-strip; здесь — RecurringTopics. */}
+      <StaggerSection delayMs={nextStagger()}>
+        <SectionHeader title="Знания" />
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-3">
+          <div className="lg:col-span-1 xl:col-span-1">
+            <RecurringTopicsWidget
+              data={pulse?.recurringTopics ?? null}
+              loading={pulseLoading}
+              error={pulseError}
+            />
+          </div>
+          {/* Bottleneck Heatmap — крупный, занимает 2 колонки (§4.5 mosaic). */}
+          <div className="lg:col-span-2 xl:col-span-2">
+            <BottleneckHeatmapWidget
+              data={pulse?.bottlenecks ?? null}
+              loading={pulseLoading}
+              error={pulseError}
+            />
+          </div>
+        </div>
+      </StaggerSection>
+
+      {/* §4.3 «Цели и встречи» — GoalVector + LowRoiMeetings (mosaic 2/1). */}
+      <StaggerSection delayMs={nextStagger()}>
+        <SectionHeader title="Цели и встречи" />
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-3">
+          <div className="lg:col-span-2 xl:col-span-2">
+            <GoalVectorWidget
+              data={pulse?.goalVector ?? null}
+              loading={pulseLoading}
+              error={pulseError}
+            />
+          </div>
+          <div className="lg:col-span-1 xl:col-span-1">
+            <LowRoiMeetingsWidget
+              meetings={pulse?.lowRoiMeetings.meetings ?? []}
+              loading={pulseLoading}
+              error={pulseError}
+            />
+          </div>
+        </div>
+      </StaggerSection>
+
+      {/* Базовый блок виджетов knowledge-core (Фаза 8) — без рекомпозиции, заголовка нет. */}
+      <StaggerSection delayMs={nextStagger()}>
+        <SectionHeader title="Темы, сигналы, открытые вопросы" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <StructureSummaryWidget />
+          <WhatLearnedWidget
+            loading={loading}
+            newThemes={data?.newThemes ?? []}
+            newSignals={data?.newSignals ?? []}
+            periodLabel={periodLabel}
+          />
+          <SignalCountersWidget
+            loading={loading}
+            counters={data?.signalCounters ?? null}
+          />
+          <ActiveThemesWidget
+            loading={loading}
+            themes={data?.activeThemes ?? []}
+          />
+          <HotEntitiesWidget
+            loading={loading}
+            entities={data?.hotEntities ?? []}
+          />
+          <OpenQuestionsWidget
+            loading={loading}
+            questions={data?.openQuestions ?? []}
+          />
+          <StrategicAlignmentWidget
+            data={data?.strategicAlignment}
+            loading={loading}
+          />
+          {/* Фаза C — карточка «Качество встреч» (только owner/admin; backend защищает 403). */}
+          <QualityScoreWidget />
+          {/* SBA α-4 — карточка «На проверке у меня» (Layer 4 Curation). */}
+          <CurationPendingWidget />
+          {/* SBA β-4 — карточка «Топ-5 повторяющихся проблем» (Insights Radar). */}
+          <InsightsTopWidget />
+        </div>
+      </StaggerSection>
+
+      <StaggerSection delayMs={nextStagger()}>
+        <section className="mt-8">
+          <header className="mb-3 flex items-center gap-2">
+            <MessageCircle size={16} className="text-accent" />
+            <div>
+              <h2 className="text-sm font-semibold text-fg-primary">
+                Спросите про вашу компанию
+              </h2>
+              <p className="text-xs text-fg-tertiary">
+                AI ищет ответ в архиве встреч и знаний организации, отвечает с цитатами.
+              </p>
+            </div>
+          </header>
+          <OrgChatPanel
+            withHistory={false}
+            height="400px"
+            placeholder="Например: какие основные риски за неделю?"
+            intro={
+              <div className="px-4 py-8 text-center text-xs text-fg-tertiary">
+                Например: «Какие основные риски за неделю?» или «О чём договорились
+                с ключевыми клиентами?»
+              </div>
+            }
+          />
+        </section>
+      </StaggerSection>
+    </div>
+  );
+}
+
+// ─── §4.3 SectionHeader — заголовок категории виджетов с тонким divider. ─────
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="mb-3 mt-2 flex items-center gap-3 border-t border-border-subtle/30 pt-4">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-secondary">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+// ─── §4.6 StaggerSection — обёртка для enter-анимации виджетов. ──────────────
+// `motion-safe:` уважает prefers-reduced-motion. fill-mode: backwards через
+// tailwindcss-animate гарантирует один прогон на mount без повторов.
+
+function StaggerSection({
+  children,
+  delayMs,
+}: {
+  children: ReactNode;
+  delayMs: number;
+}) {
+  return (
+    <div
+      className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      {children}
     </div>
   );
 }

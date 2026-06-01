@@ -35,21 +35,40 @@ AppShell скрыт (см. `AuthenticatedShell.tsx`).
 - Шаблоны индустрий.
 - Прохождение admin'ом без owner'а.
 
-## Авто-сидинг демо-кабинета при регистрации (ТЗ 2026-05-31)
+## Shared эталонная демо-Org «Демо: ТехноСтрим» (ТЗ 2026-06-01)
 
-Источник: [`plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md`](../../plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md). Убрали ручной выбор `/onboarding/demo-choice` (страница удалена) — теперь демо «ТехноСтрим» заливается автоматически каждой новой Org.
+Источник: [`plans/tz/2026-06-01-demo-shared-org-model.md`](../../plans/tz/2026-06-01-demo-shared-org-model.md), анализ [`plans/analysis/2026-06-01-demo-shared-org-architecture.md`](../../plans/analysis/2026-06-01-demo-shared-org-architecture.md). **Полностью заменяет** старую модель «копия ТехноСтрим в каждую Org» (ТЗ 2026-05-31-demo-auto-seed-and-cleanup отменён).
 
-**Поток регистрации:**
-1. Welcome 6 шагов → `POST /orgs/:orgId/welcome/complete`.
-2. Бэк ставит job в очередь `onboarding.demo-seed` (jobId=`demo-seed:<orgId>`, идемпотентно) и возвращает `redirectTo='/onboarding/welcome/complete'`.
-3. Фронт-loading-экран `/onboarding/welcome/complete` опрашивает `GET /orgs/:orgId/demo-seed-status` каждые 700 мс (таймаут 60 с) → при `completed` уводит на `/dashboard` с залитым демо + `PaywallBanner`.
-4. `DemoSeedWorker` (concurrency 2): precondition `Subscription.status==='DEMO'` → `seedDemoWorkspace`.
+**Идея.** Демо — это не операция (seed), это **состояние** (membership). Эталонная Org «ТехноСтрим» (`isReferenceDemo=true`) живёт **одна** в БД, новые пользователи получают `OrgMember(role='demo_observer')` к ней автоматически — без копирования, без ожидания, без тоста «Готовим…».
+
+**Поток регистрации (новый):**
+1. Signup → `AccountsService.register` создаёт User + свою пустую Org + `Membership(owner)` к своей + `Membership(demo_observer)` к эталону (из ENV `ZDEMO_ORG_ID`) в одной `$transaction`. Идемпотентно через UNIQUE `(orgId, userId)`.
+2. Welcome 6 шагов → `POST /orgs/:orgId/welcome/complete` создаёт документ «Знакомство», ставит `welcomeCompletedAt`, возвращает `{ redirectTo: '/dashboard' }` сразу (никаких очередей).
+3. `AccountsService.getMe` явно предпочитает demo_observer-membership как `currentOrgId/Role` — пользователь по умолчанию видит **эталон** с реальными данными.
+4. В шапке/sidebar — `OrgSwitcher` показывает обе Org (эталон с бейджем «Демо», своя пустая).
 
 **Поток первой оплаты (DEMO→ACTIVE):**
-- `manual-billing`/webhook эмитит `billing.subscription.activated_paid`/`_bonus`.
-- `SubscriptionActivatedListener`: если `Org.demoWorkspaceSeededAt!=null` → enqueue `onboarding.demo-cleanup`.
-- `DemoCleanupWorker` (concurrency 1) → `resetDemoWorkspace` (стирает только `externalSource='demo'`). Кабинет становится чистым.
+- `manual-billing` / Tochka webhook → `billing.subscription.activated_paid|_bonus`.
+- `SubscriptionActivatedListener` → `prisma.membership.deleteMany({ userId: Org.ownerId, orgId: ZDEMO_ORG_ID, role: 'demo_observer' })`. Эталонная Org **не тронута**. Своя Org становится ACTIVE.
+- `OrgSwitcher` после SWR-refetch показывает только свою Org.
 
-**Fallback пустого DEMO-кабинета (2026-06-01):** `SubscriptionContext` при `status==='DEMO'` один раз за сессию дёргает `POST /orgs/:orgId/demo-workspace/ensure`. Бэк идемпотентно ставит свежий seed-job, если демо ещё не залито и нет активного job'а (закрывает старые DEMO-Org до выката + неудавшийся seed). При успешном запуске фронт поллит статус и один раз перезагружает страницу с готовыми данными.
+**Read-only enforcement в эталоне:**
+- `DemoObserverGuard` (глобальный APP_GUARD) режет POST/PUT/PATCH/DELETE для роли `demo_observer` с 403 `demo_observer_readonly`.
+- super_admin bypass + GET/HEAD/OPTIONS пропускаются + BYPASS-пути `/billing`, `/auth`, `/me/*`, `/accounts/me` + `@PublicDemo()` декоратор для исключений (concierge LLM-чат).
+- В эталоне `Subscription.status=ACTIVE, paymentMode='reference'` — пользователь видит работающий продукт без paywall'а. `BillingOverviewService` исключает `reference` из метрик paid/bonus.
+
+**Удалено (по сравнению с прошлой моделью):**
+- `OnboardingService.triggerDemoSeed` / `getDemoSeedStatus` / `ensureDemoSeed` + endpoint'ы `GET /orgs/:orgId/demo-seed-status` и `POST /orgs/:orgId/demo-workspace/ensure`.
+- Воркеры `demo-seed.queue.ts` / `demo-seed.worker.ts` (но `demo-cleanup.queue/worker` остались для force-update эталона через `/admin/demo`).
+- Frontend loading-страница `/onboarding/welcome/complete` (теперь redirect сразу `/dashboard`).
+- Старая `/onboarding/demo-choice` (была удалена ещё раньше).
+- `SubscriptionContext` fallback polling demo-seed.
+
+**Доставка контента в эталон:**
+- CLI: `docker compose exec backend bun run scripts/patch-create-reference-demo-org.ts` — создаёт эталон один раз, печатает `ZDEMO_ORG_ID=<cuid>` для записи в `.env`.
+- Миграция существующих копий: `docker compose exec backend bun run scripts/patch-migrate-old-demo-orgs.ts` — чистит копии с external='demo', прикрепляет owner'ов наблюдателями.
+- Force-update эталона (`/admin/demo` super-admin): `DemoCleanupWorker` с guard'ом `isReferenceDemo=true` → `resetDemoWorkspace` → re-seed.
+
+Полная prod-инструкция: [`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md) → блок «🌟 2026-06-01 — Shared demo Org».
 
 Очереди — см. [[workers-queues]].

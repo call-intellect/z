@@ -1,6 +1,6 @@
 ---
 type: tz
-status: draft
+status: implemented (Фазы 1–5, 2026-06-01; Фаза 6 E2E — на проде)
 date: 2026-05-31
 feature: Авто-заливка демо-кабинета при регистрации новой Org + авто-стирание демо-данных при первой оплате (DEMO → ACTIVE).
 relates_to:
@@ -360,4 +360,23 @@ Concurrency=**1** — внутри одной Org гонок не должно �
 
 ## 11. Итог
 
-_Заполняется по факту реализации._
+**Реализовано 2026-06-01 (Фазы 1–5).**
+
+Backend:
+- Очереди `onboarding.demo-seed` / `onboarding.demo-cleanup` + воркеры `DemoSeedWorker` (concurrency 2, precondition `status==='DEMO'`) / `DemoCleanupWorker` (concurrency 1, `no_demo_to_reset`=success-skip). Файлы: `backend/src/modules/onboarding/workers/*`.
+- `SubscriptionActivatedListener` (`@OnEvent` на `_PAID`/`_BONUS`, фильтр по `demoWorkspaceSeededAt`). Unit-тест 5 кейсов — зелёный.
+- `OnboardingService.completeWelcome` ставит seed-job + редирект `/onboarding/welcome/complete`; новый `getDemoSeedStatus` + `GET /api/v1/orgs/:orgId/demo-seed-status`.
+- `OnboardingModule` импортирует `BillingModule` (ради `SubscriptionService`), регистрирует 4 провайдера + listener. Отдельного worker-процесса в Z нет — воркеры поднимаются с main-процессом.
+
+Frontend:
+- Удалён `/onboarding/demo-choice`. Новый loading-экран `/onboarding/welcome/complete` (polling 700 мс, таймаут 60 с). Step-6 редиректит по `redirectTo` из ответа. `onboardingApi.getDemoSeedStatus`.
+
+Попутно (вне исходного ТЗ, по тому же баг-репорту):
+- Фикс **403** дашборда: `dashboard.api.ts` теперь шлёт `X-Org-Id` (была причина — глобальный `EntitlementGuard` без tenant). 4 клиента пробрасывают `currentOrgId`.
+- Фикс **404**: `/me/commitments`→`/me/promises`, `/settings/templates`→`/team-templates`.
+
+Верификация: backend+frontend `typecheck`/`lint`/`build` — зелёные; unit-тесты listener (5) + onboarding.service (3) — зелёные.
+
+**Не сделано (вне локального окружения):** Фаза 6 E2E на живом стенде (нужны поднятые Postgres+Redis+LiveKit) — выполняется на проде по smoke-чек-листу из `docs/operations/prod-deploy-log.md` (запись 2026-06-01). Метрики Prometheus (§4.7) — не реализованы (опционально, не входили в баг-фикс; отдельной задачей при необходимости).
+
+**Примечание про vitest:** worker-spec'и, импортирующие `bullmq`, роняют forks-pool vitest в текущем WSL2-окружении (баг окружения, не кода — baseline `recognition-formulate.worker.spec` падает так же). В новых спеках добавлен `vi.mock('bullmq')`.

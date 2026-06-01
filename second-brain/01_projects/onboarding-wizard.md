@@ -34,3 +34,20 @@ AppShell скрыт (см. `AuthenticatedShell.tsx`).
 - CSV-импорт сотрудников (γ).
 - Шаблоны индустрий.
 - Прохождение admin'ом без owner'а.
+
+## Авто-сидинг демо-кабинета при регистрации (ТЗ 2026-05-31)
+
+Источник: [`plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md`](../../plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md). Убрали ручной выбор `/onboarding/demo-choice` (страница удалена) — теперь демо «ТехноСтрим» заливается автоматически каждой новой Org.
+
+**Поток регистрации:**
+1. Welcome 6 шагов → `POST /orgs/:orgId/welcome/complete`.
+2. Бэк ставит job в очередь `onboarding.demo-seed` (jobId=`demo-seed:<orgId>`, идемпотентно) и возвращает `redirectTo='/onboarding/welcome/complete'`.
+3. Фронт-loading-экран `/onboarding/welcome/complete` опрашивает `GET /orgs/:orgId/demo-seed-status` каждые 700 мс (таймаут 60 с) → при `completed` уводит на `/dashboard` с залитым демо + `PaywallBanner`.
+4. `DemoSeedWorker` (concurrency 2): precondition `Subscription.status==='DEMO'` → `seedDemoWorkspace`.
+
+**Поток первой оплаты (DEMO→ACTIVE):**
+- `manual-billing`/webhook эмитит `billing.subscription.activated_paid`/`_bonus`.
+- `SubscriptionActivatedListener`: если `Org.demoWorkspaceSeededAt!=null` → enqueue `onboarding.demo-cleanup`.
+- `DemoCleanupWorker` (concurrency 1) → `resetDemoWorkspace` (стирает только `externalSource='demo'`). Кабинет становится чистым.
+
+Очереди — см. [[workers-queues]]. Старые DEMO-Org (до выката) НЕ бэкфилятся.

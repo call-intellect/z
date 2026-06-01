@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { PrismaService } from '../../common/prisma/prisma.service';
+
 import { seedChatNotifications } from './demo-data/chat-notifications';
 import {
   seedBrandVoice,
@@ -35,16 +37,23 @@ import { seedPulseSnapshots } from './demo-data/pulse-snapshots';
 import { seedTracker } from './demo-data/tracker';
 import { createEmptyIdMap, type SeedContext } from './demo-data/types';
 import { seedUsers } from './demo-data/users';
-import { PrismaService } from '../../common/prisma/prisma.service';
-
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';
 import { humanize } from './onboarding-labels';
+import { DemoSeedQueue } from './workers/demo-seed.queue';
+
+/** Статус авто-заливки демо-кабинета (GET /orgs/:orgId/demo-seed-status). */
+export interface DemoSeedStatusDto {
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+}
 
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(DemoSeedQueue) private readonly demoSeedQueue: DemoSeedQueue,
+  ) {}
 
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение ответов Блока A */
   async patchWelcome(args: {
@@ -91,6 +100,7 @@ export class OnboardingService {
         painPoints: true,
         currentStack: true,
         plannedFeatures: true,
+        demoWorkspaceSeededAt: true,
       },
     });
     if (!org) {
@@ -140,7 +150,56 @@ export class OnboardingService {
       this.prisma.user.update({ where: { id: userId }, data: { profileCompletedAt: now } }),
     ]);
 
+    // ТЗ 2026-05-31-demo-auto-seed-and-cleanup: автозаливка демо-кабинета
+    // «ТехноСтрим» для каждой новой Org (вместо ручного выбора /demo-choice).
+    // Идемпотентно: jobId='demo-seed:<orgId>' + сам seed бросает
+    // demo_already_seeded. Не делаем при уже залитом демо.
+    if (!org.demoWorkspaceSeededAt) {
+      try {
+        await this.demoSeedQueue.enqueue({ orgId, ownerUserId: userId });
+      } catch (err) {
+        // Очередь не должна валить завершение онбординга — loading-экран
+        // переживёт (polling вернёт pending/failed, есть таймаут на /dashboard).
+        this.logger.error(
+          {
+            orgId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'не удалось поставить demo-seed в очередь после welcome/complete',
+        );
+      }
+      // Редирект на loading-экран, который дождётся завершения seed'а.
+      return { ok: true, redirectTo: '/onboarding/welcome/complete' };
+    }
+
     return { ok: true, redirectTo: '/dashboard' };
+  }
+
+  /**
+   * GET /orgs/:orgId/demo-seed-status — статус авто-заливки демо-кабинета.
+   * `completed` если `demoWorkspaceSeededAt != null`; иначе спрашиваем BullMQ
+   * по jobId. Неизвестный/рассинхрон-статус трактуем как `pending` (фронт
+   * продолжит polling до таймаута → уйдёт на /dashboard).
+   */
+  async getDemoSeedStatus(orgId: string): Promise<DemoSeedStatusDto> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: { id: true, demoWorkspaceSeededAt: true },
+    });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    if (org.demoWorkspaceSeededAt) {
+      return { status: 'completed' };
+    }
+    const jobStatus = await this.demoSeedQueue.statusOf(orgId);
+    if (jobStatus === 'failed') return { status: 'failed' };
+    if (jobStatus === 'in_progress') return { status: 'in_progress' };
+    // 'pending' | 'unknown' → pending (job ещё не взяли / рассинхрон).
+    return { status: 'pending' };
   }
 
   /** POST /orgs/:orgId/setup/complete — все 6 шагов Блока B пройдены/пропущены */

@@ -1,9 +1,18 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// bullmq тянет ioredis с нативными биндингами, которые роняют forks-pool
+// vitest в части окружений. OnboardingService импортирует DemoSeedQueue
+// (→ bullmq); мокаем модуль на пустые классы — в тестах очередь приходит моком.
+vi.mock('bullmq', () => ({
+  Queue: class {},
+  Worker: class {},
+}));
+
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { OnboardingService } from './onboarding.service';
+import type { DemoSeedQueue } from './workers/demo-seed.queue';
 
 /**
  * audit Б3 (2026-05-29) — спецификация на `resetDemoWorkspace`.
@@ -141,7 +150,14 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    svc = new OnboardingService(prisma as unknown as PrismaService);
+    const demoSeedQueue = {
+      enqueue: vi.fn(async () => ({ jobId: 'demo-seed:org-1' })),
+      statusOf: vi.fn(async () => 'unknown' as const),
+    };
+    svc = new OnboardingService(
+      prisma as unknown as PrismaService,
+      demoSeedQueue as unknown as DemoSeedQueue,
+    );
   });
 
   it('400 no_demo_to_reset, если у Org НЕТ demoWorkspaceSeededAt', async () => {

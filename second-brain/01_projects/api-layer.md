@@ -343,6 +343,12 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | POST | `/admin/demo/orgs/:orgId/seed` | залить демо «ТехноСтрим» (от имени owner'а Org) |
 | POST | `/admin/demo/orgs/:orgId/reset` | сбросить демо |
 
+### Onboarding — авто-сидинг демо (ТЗ 2026-05-31)
+`OnboardingController` (`CookieAuthGuard + TenantGuard`, owner/admin). Авто-заливка демо при регистрации — см. [[onboarding-wizard]] и [[workers-queues]] (очереди `onboarding.demo-seed`/`demo-cleanup`).
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/orgs/:orgId/demo-seed-status` | статус авто-заливки демо (`pending`/`in_progress`/`completed`/`failed`) для loading-экрана `/onboarding/welcome/complete` |
+
 ### Content (Фаза 5)
 | Метод | Путь | Назначение |
 |---|---|---|

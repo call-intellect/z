@@ -79,6 +79,41 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🎬 2026-06-01 — Авто-сидинг демо при регистрации + авто-cleanup при оплате + фикс 403/404 дашборда
+
+План: [plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md](../../plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md).
+
+**Что выкатывается:**
+- Backend: 2 новые BullMQ-очереди `onboarding.demo-seed` / `onboarding.demo-cleanup` + воркеры + `SubscriptionActivatedListener` (слушает `billing.subscription.activated_paid`/`_bonus`). `completeWelcome` ставит seed-job и редиректит на `/onboarding/welcome/complete`. Новый `GET /api/v1/orgs/:orgId/demo-seed-status`.
+- Frontend: убрана страница `/onboarding/demo-choice`; новый loading-экран `/onboarding/welcome/complete`; фикс 403 дашборда (`dashboard.api.ts` теперь шлёт `X-Org-Id`); фикс 404 мёртвых ссылок (`/me/commitments`→`/me/promises`, `/settings/templates`→`/team-templates`).
+
+**Прод-операции:** только Docker rebuild. **Нет** новых ENV, миграций схемы (поле `Org.demoWorkspaceSeededAt` уже существует), seed/patch-скриптов. Очереди поднимаются вместе с backend-процессом (отдельного worker-процесса в Z нет).
+
+- **Шаг 1 — ENV** — без новых.
+- **Шаг 4 — Prisma** — не требуется (схема не менялась).
+- **Шаг 11 — Docker rebuild** — обязательно:
+  ```bash
+  docker compose up -d --build backend frontend
+  ```
+- **Шаг 12 — Smoke**:
+  ```bash
+  # 1. Очереди demo-seed / demo-cleanup инициализированы (лог при старте backend)
+  docker compose logs backend | grep -E 'DemoSeedQueue инициализирован|DemoCleanupQueue инициализирован|DemoSeedWorker запущен|DemoCleanupWorker запущен'
+
+  # 2. Новый эндпоинт статуса отвечает (для своей Org owner'ом)
+  curl -i -H 'Cookie: <owner_session>' -H 'X-Org-Id: <orgId>' \
+    https://meet.crossmark.ru/api/v1/orgs/<orgId>/demo-seed-status
+  # ожидаем {"status":"completed"} для уже залитой Org или pending/in_progress в процессе
+
+  # 3. Дашборд директора больше НЕ отдаёт 403 (owner с X-Org-Id)
+  curl -i -H 'Cookie: <owner_session>' -H 'X-Org-Id: <orgId>' \
+    'https://meet.crossmark.ru/api/v1/dashboard/director?period=week'
+  # ожидаем 200 (раньше 403 tenant_required из-за отсутствия X-Org-Id)
+  ```
+- **E2E (ручной):** регистрация новой Org → welcome 6 шагов → редирект на `/onboarding/welcome/complete` (спиннер «Готовим демо-кабинет») → авто-уход на `/dashboard` с данными «ТехноСтрим» + `PaywallBanner`. Затем активация подписки (manual bonus в Z-Admin) → через ~30 сек кабинет пуст.
+
+---
+
 ### 🌊 2026-05-31 — Волна 2: Z-Admin Тариф (один tier_standard) + Партнёрский кабинет
 
 Планы:

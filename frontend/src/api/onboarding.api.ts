@@ -8,6 +8,8 @@ export interface WelcomePatchBody {
   plannedFeatures?: string[];
 }
 
+export type DemoSeedStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
 export const onboardingApi = {
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение Блока A */
   patchWelcome: (orgId: string, body: WelcomePatchBody) =>
@@ -20,6 +22,16 @@ export const onboardingApi = {
     apiClient.post<{ ok: true; redirectTo: string }>(
       `/api/v1/orgs/${encodeURIComponent(orgId)}/welcome/complete`,
       {},
+      { headers: { 'X-Org-Id': orgId } },
+    ),
+
+  /**
+   * GET /orgs/:orgId/demo-seed-status — статус авто-заливки демо-кабинета.
+   * Используется loading-экраном `/onboarding/welcome/complete` (polling).
+   */
+  getDemoSeedStatus: (orgId: string) =>
+    apiClient.get<{ status: DemoSeedStatus }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/demo-seed-status`,
       { headers: { 'X-Org-Id': orgId } },
     ),
 

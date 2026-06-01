@@ -38,9 +38,11 @@ export default function Step6Page() {
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, { plannedFeatures: [...selected] });
-      await onboardingApi.completeWelcome(currentOrgId);
+      const { redirectTo } = await onboardingApi.completeWelcome(currentOrgId);
       await refresh();
-      router.push('/dashboard');
+      // Бэк возвращает '/onboarding/welcome/complete' (loading-экран авто-заливки
+      // демо) для новой Org, иначе '/dashboard'.
+      router.push(redirectTo || '/onboarding/welcome/complete');
     } catch {
       setSaving(false);
     }

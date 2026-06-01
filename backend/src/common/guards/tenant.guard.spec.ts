@@ -76,46 +76,50 @@ function buildGuard(opts: {
 }
 
 describe('TenantGuard', () => {
-  it('Header X-Org-Id имеет приоритет над URL и body', async () => {
+  // ВАЖНО: TenantGuard НЕ парсит сам headers/URL/body — это делает
+  // `TenantMiddleware` ДО guard'а и выставляет `req.tenantId`. Guard
+  // только проверяет membership и доделывает single-org fallback.
+  // Соответствующие тесты на парсинг — в `tenant.middleware.spec.ts`.
+
+  it('использует уже-выставленный req.tenantId (из middleware с X-Org-Id)', async () => {
     const { guard } = buildGuard({ hasMembership: true });
     const req: ReqShape = {
       user: { id: 'u-1' },
       headers: { 'x-org-id': 't-from-header' },
-      params: { orgId: 't-from-url' },
-      body: { tenantId: 't-from-body' },
+      tenantId: 't-from-header',
     };
     await expect(guard.canActivate(buildExecCtx(req))).resolves.toBe(true);
     expect(req.tenantId).toBe('t-from-header');
   });
 
-  it('URL :orgId используется если заголовка нет', async () => {
+  it('использует req.tenantId (из middleware с URL :orgId)', async () => {
     const { guard } = buildGuard({ hasMembership: true });
     const req: ReqShape = {
       user: { id: 'u-1' },
       headers: {},
-      params: { orgId: 't-from-url' },
+      tenantId: 't-from-url',
     };
     await guard.canActivate(buildExecCtx(req));
     expect(req.tenantId).toBe('t-from-url');
   });
 
-  it('body.tenantId используется если ни заголовка, ни URL', async () => {
+  it('использует req.tenantId (из middleware с body.tenantId)', async () => {
     const { guard } = buildGuard({ hasMembership: true });
     const req: ReqShape = {
       user: { id: 'u-1' },
       headers: {},
-      body: { tenantId: 't-from-body' },
+      tenantId: 't-from-body',
     };
     await guard.canActivate(buildExecCtx(req));
     expect(req.tenantId).toBe('t-from-body');
   });
 
-  it('body.orgId как alias для body.tenantId', async () => {
+  it('использует req.tenantId (из middleware с body.orgId как алиасом)', async () => {
     const { guard } = buildGuard({ hasMembership: true });
     const req: ReqShape = {
       user: { id: 'u-1' },
       headers: {},
-      body: { orgId: 't-from-body-orgid' },
+      tenantId: 't-from-body-orgid',
     };
     await guard.canActivate(buildExecCtx(req));
     expect(req.tenantId).toBe('t-from-body-orgid');

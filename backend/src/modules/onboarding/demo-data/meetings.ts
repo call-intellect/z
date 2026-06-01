@@ -43,6 +43,8 @@ interface MeetingDef {
   type: 'standup' | 'plan_fact' | 'project' | 'custdev' | 'retrospective' | 'team' | 'task_discussion';
   daysAgoN: number;
   durationMs: number;
+  /** Pulse Wave 6 §6.3 — формульный roi (Decimal(8,3)). Передаётся строкой. */
+  roiScore: string;
   participants: { key: string; isHost: boolean }[];
   summary: string;
   structuredData: Record<string, unknown>;
@@ -89,6 +91,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'standup',
     daysAgoN: 1,
     durationMs: 900_000,
+    roiScore: '0.850',
     participants: [
       { key: 'morozov', isHost: true },
       { key: 'kozlov', isHost: false },
@@ -175,6 +178,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'plan_fact',
     daysAgoN: 9,
     durationMs: 2_700_000,
+    roiScore: '1.200',
     participants: [
       { key: 'kozlov', isHost: true },
       { key: 'novikov', isHost: false },
@@ -268,6 +272,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'project',
     daysAgoN: 6,
     durationMs: 1_800_000,
+    roiScore: '1.550',
     participants: [
       { key: 'volkova', isHost: true },
       { key: 'petrova', isHost: false },
@@ -348,6 +353,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'custdev',
     daysAgoN: 8,
     durationMs: 3_600_000,
+    roiScore: '2.100',
     participants: [
       { key: 'sokolova', isHost: true },
       { key: 'volkova', isHost: false },
@@ -441,6 +447,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'retrospective',
     daysAgoN: 10,
     durationMs: 2_400_000,
+    roiScore: '1.850',
     participants: [
       { key: 'kozlov', isHost: true },
       { key: 'novikov', isHost: false },
@@ -532,6 +539,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'team',
     daysAgoN: 5,
     durationMs: 1_500_000,
+    roiScore: '0.450',
     participants: [
       { key: 'kuznetsova', isHost: true },
       { key: 'sokolova', isHost: false },
@@ -607,6 +615,7 @@ const MEETINGS: MeetingDef[] = [
     type: 'task_discussion',
     daysAgoN: 2,
     durationMs: 2_100_000,
+    roiScore: '2.400',
     participants: [
       { key: 'kozlov', isHost: true },
       { key: 'novikov', isHost: false },
@@ -726,6 +735,8 @@ export const seedMeetings: SeedFn = async (ctx, ids) => {
         embeddingsStatus: 'ready',
         behaviorMetricsStatus: 'ready',
         qualityScoreStatus: 'ready',
+        roiScore: def.roiScore,
+        roiScoreAt: daysAgo(def.daysAgoN - 1),
       },
     });
     console.log(`  [meeting] «${def.title}» (${def.type})`);
@@ -864,5 +875,81 @@ export const seedMeetings: SeedFn = async (ctx, ids) => {
     console.log(`  [ok] «${def.title}» — полностью создана`);
   }
 
-  console.log(`[demo/meetings] Готово: ${MEETINGS.length} встреч с AI-отчётами, транскриптами, главами, quality & behavior.`);
+  // ──────────────────────────────────────────────────────────────────────
+  // Дополнительные «лёгкие» встречи (без AI-отчётов и транскриптов).
+  // Цель — заполнить 12 недель историей для Pulse-виджетов
+  // (LowRoiMeetings + список встреч на /meetings).
+  // ──────────────────────────────────────────────────────────────────────
+
+  const LITE_MEETINGS: Array<{
+    key: string;
+    seqNum: number;
+    title: string;
+    type: MeetingDef['type'];
+    daysAgoN: number;
+    durationMin: number;
+    participantKeys: string[];
+    roiScore: string;
+  }> = [
+    { key: 'standup_w12', seqNum: 8,  title: 'Стендап неделя 12', type: 'standup', daysAgoN: 82, durationMin: 15, participantKeys: ['morozov', 'kozlov', 'volkova', 'petrova'], roiScore: '0.700' },
+    { key: 'product_review_w11', seqNum: 9, title: 'Продуктовое ревью Q1 итоги', type: 'project', daysAgoN: 75, durationMin: 60, participantKeys: ['volkova', 'morozov', 'petrova'], roiScore: '1.450' },
+    { key: 'sales_pipeline_w10', seqNum: 10, title: 'Sales pipeline review', type: 'team', daysAgoN: 68, durationMin: 45, participantKeys: ['sokolova', 'morozov', 'lebedev'], roiScore: '0.380' },
+    { key: 'sprint12_planning', seqNum: 11, title: 'Планирование Sprint 12', type: 'plan_fact', daysAgoN: 61, durationMin: 60, participantKeys: ['kozlov', 'novikov', 'sidorov', 'popov'], roiScore: '1.250' },
+    { key: 'custdev_sberbank', seqNum: 12, title: 'CustDev: Сбербанк', type: 'custdev', daysAgoN: 54, durationMin: 60, participantKeys: ['sokolova', 'volkova'], roiScore: '1.900' },
+    { key: 'hr_sync', seqNum: 13, title: 'HR-синк по найму', type: 'team', daysAgoN: 47, durationMin: 40, participantKeys: ['mikhailova', 'morozov'], roiScore: '0.420' },
+    { key: 'mobile_review_w7', seqNum: 14, title: 'Обзор мобайла — апдейт', type: 'project', daysAgoN: 40, durationMin: 60, participantKeys: ['petrova', 'sidorov', 'volkova'], roiScore: '1.350' },
+    { key: 'design_critique', seqNum: 15, title: 'Дизайн-критика CallScreen v2', type: 'project', daysAgoN: 33, durationMin: 45, participantKeys: ['petrova', 'volkova', 'morozov'], roiScore: '1.100' },
+    { key: 'retro12', seqNum: 16, title: 'Ретро Sprint 12', type: 'retrospective', daysAgoN: 26, durationMin: 45, participantKeys: ['kozlov', 'novikov', 'sidorov', 'petrova', 'popov'], roiScore: '1.650' },
+    { key: 'all_hands_q2', seqNum: 17, title: 'All-hands старт Q2', type: 'team', daysAgoN: 19, durationMin: 60, participantKeys: ['morozov', 'volkova', 'kozlov', 'sokolova', 'mikhailova'], roiScore: '0.480' },
+    { key: 'product_review_w2', seqNum: 18, title: 'Продуктовое ревью — пилоты', type: 'project', daysAgoN: 12, durationMin: 45, participantKeys: ['volkova', 'morozov', 'sokolova'], roiScore: '1.750' },
+    { key: 'standup2', seqNum: 19, title: 'Утренний стендап', type: 'standup', daysAgoN: 4, durationMin: 15, participantKeys: ['morozov', 'kozlov', 'volkova', 'petrova'], roiScore: '0.920' },
+    { key: 'partner_1c', seqNum: 20, title: 'Переговоры с 1С — интеграция', type: 'custdev', daysAgoN: 0, durationMin: 60, participantKeys: ['morozov', 'sokolova', 'volkova'], roiScore: '2.250' },
+  ];
+
+  for (const m of LITE_MEETINGS) {
+    const meetingId = demoId('mtg', m.seqNum);
+    ids.meetings[m.key] = meetingId;
+
+    const startedAt = daysAgo(m.daysAgoN);
+    const endedAt = new Date(startedAt.getTime() + m.durationMin * 60_000);
+
+    const existing = await prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (existing) continue;
+
+    await prisma.meeting.create({
+      data: {
+        id: meetingId,
+        title: m.title,
+        type: m.type,
+        tenantId,
+        ownerId: ownerUserId,
+        roomName: `demo-room-${m.key}`,
+        status: 'completed',
+        startedAt,
+        endedAt,
+        durationMs: m.durationMin * 60_000,
+        roiScore: m.roiScore,
+        roiScoreAt: daysAgo(Math.max(0, m.daysAgoN - 1)),
+      },
+    });
+
+    for (const key of m.participantKeys) {
+      await prisma.participant.create({
+        data: {
+          meetingId,
+          livekitIdentity: `demo-${key}-${m.seqNum}`,
+          name: PERSON_NAMES[key] ?? key,
+          role: key === m.participantKeys[0] ? 'host' : 'guest',
+          isRegisteredUser: true,
+          joinedAt: startedAt,
+          leftAt: endedAt,
+        },
+      });
+    }
+  }
+
+  console.log(
+    `[demo/meetings] Готово: ${MEETINGS.length} полных + ${LITE_MEETINGS.length} лёгких ` +
+      `= ${MEETINGS.length + LITE_MEETINGS.length} встреч.`,
+  );
 };

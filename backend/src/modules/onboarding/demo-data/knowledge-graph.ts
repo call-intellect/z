@@ -23,6 +23,7 @@ import type {
 } from '@prisma/client';
 
 import type { SeedFn, SeedContext, IdMap } from './types';
+import { daysAgo, req } from './types';
 
 // ──────────────────────────── IdeaBlock definitions ────────────────────────────
 
@@ -561,6 +562,83 @@ export const seedKnowledgeGraph: SeedFn = async (
 
   console.log(
     `[knowledge-graph] ✓ ${IDEA_BLOCKS.length} IdeaBlocks created`,
+  );
+
+  // ── 1b. Дополнительные IdeaBlock (commitments + knowledge_gap) ─────────
+  //
+  // 15 commitments с commitmentRecipientPersonId — заполняют граф обещаний
+  // (PromiseNetwork) и страницу `/me/promises`.
+  // 5 knowledge_gap — нужны KnowledgeVelocity-виджету (см. cron-логику).
+
+  const EXTRA_BLOCKS: Array<{
+    key: string;
+    name: string;
+    signalType: SignalType;
+    confidence: number;
+    criticalQuestion: string;
+    trustedAnswer: string;
+    authorPersonKey: string;
+    recipientPersonKey: string | null;
+    commitmentStatus: string | null;
+    commitmentDueDaysAhead: number | null;
+    daysAgoCreated: number;
+  }> = [
+    // 15 commitments
+    { key: 'ib21', name: 'Морозов обещает Козлову нанять security-инженера', signalType: 'commitment' as SignalType, confidence: 0.85, criticalQuestion: 'Кто закроет single-point-of-failure по auth?', trustedAnswer: 'Найм security-инженера к 15 июня', authorPersonKey: 'morozov', recipientPersonKey: 'kozlov', commitmentStatus: 'open', commitmentDueDaysAhead: 14, daysAgoCreated: 5 },
+    { key: 'ib22', name: 'Морозов обещает Волковой junior PM на разгрузку', signalType: 'commitment' as SignalType, confidence: 0.80, criticalQuestion: 'Как разгрузить Волкову?', trustedAnswer: 'Открытая вакансия PM на следующей неделе', authorPersonKey: 'morozov', recipientPersonKey: 'volkova', commitmentStatus: 'open', commitmentDueDaysAhead: 7, daysAgoCreated: 8 },
+    { key: 'ib23', name: 'Морозов обещает Соколовой пересмотр sales commission', signalType: 'commitment' as SignalType, confidence: 0.75, criticalQuestion: 'Когда апдейт sales-комиссии?', trustedAnswer: 'Пересмотр после закрытия Ростелекома', authorPersonKey: 'morozov', recipientPersonKey: 'sokolova', commitmentStatus: 'open', commitmentDueDaysAhead: 30, daysAgoCreated: 6 },
+    { key: 'ib24', name: 'Морозов обещает совету директоров ARR 7.5M к Q3', signalType: 'commitment' as SignalType, confidence: 0.85, criticalQuestion: 'ARR-обещание борду?', trustedAnswer: '7.5M к концу Q3', authorPersonKey: 'morozov', recipientPersonKey: 'volkova', commitmentStatus: 'open', commitmentDueDaysAhead: 60, daysAgoCreated: 12 },
+    { key: 'ib25', name: 'Соколова обещает Волковой расшифровки CustDev еженедельно', signalType: 'commitment' as SignalType, confidence: 0.80, criticalQuestion: 'Доступ продакта к голосу клиента?', trustedAnswer: 'Расшифровки каждый понедельник', authorPersonKey: 'sokolova', recipientPersonKey: 'volkova', commitmentStatus: 'fulfilled', commitmentDueDaysAhead: -1, daysAgoCreated: 3 },
+    { key: 'ib26', name: 'Соколова обещает Волковой sales playbook для enterprise', signalType: 'commitment' as SignalType, confidence: 0.75, criticalQuestion: 'Стандартизация enterprise-продаж?', trustedAnswer: 'Playbook к 10 июня', authorPersonKey: 'sokolova', recipientPersonKey: 'volkova', commitmentStatus: 'open', commitmentDueDaysAhead: 10, daysAgoCreated: 7 },
+    { key: 'ib27', name: 'Соколова обещает Морозову закрытие Сбербанка', signalType: 'commitment' as SignalType, confidence: 0.70, criticalQuestion: 'Когда закроется Сбербанк?', trustedAnswer: 'Договор на финальной стадии — до конца месяца', authorPersonKey: 'sokolova', recipientPersonKey: 'morozov', commitmentStatus: 'open', commitmentDueDaysAhead: 20, daysAgoCreated: 4 },
+    { key: 'ib28', name: 'Петрова обещает Козлову Figma-handoff для CallScreen', signalType: 'commitment' as SignalType, confidence: 0.85, criticalQuestion: 'Когда дизайн готов к разработке?', trustedAnswer: 'Файлы переданы Сидорову, копия Козлову', authorPersonKey: 'petrova', recipientPersonKey: 'kozlov', commitmentStatus: 'fulfilled', commitmentDueDaysAhead: -2, daysAgoCreated: 2 },
+    { key: 'ib29', name: 'Петрова обещает Волковой обновлённый прототип онбординга', signalType: 'commitment' as SignalType, confidence: 0.80, criticalQuestion: 'Когда новый онбординг?', trustedAnswer: 'Прототип готов к 5 июня', authorPersonKey: 'petrova', recipientPersonKey: 'volkova', commitmentStatus: 'open', commitmentDueDaysAhead: 5, daysAgoCreated: 9 },
+    { key: 'ib30', name: 'Волкова обещает Морозову Q3 roadmap к 25 июня', signalType: 'commitment' as SignalType, confidence: 0.85, criticalQuestion: 'Когда Q3 план?', trustedAnswer: 'Roadmap + KPI к 25 июня', authorPersonKey: 'volkova', recipientPersonKey: 'morozov', commitmentStatus: 'open', commitmentDueDaysAhead: 25, daysAgoCreated: 6 },
+    { key: 'ib31', name: 'Волкова обещает Соколовой обновить pitch deck', signalType: 'commitment' as SignalType, confidence: 0.75, criticalQuestion: 'Pitch deck обновление?', trustedAnswer: 'Новый deck с AI-фичами через неделю', authorPersonKey: 'volkova', recipientPersonKey: 'sokolova', commitmentStatus: 'open', commitmentDueDaysAhead: 7, daysAgoCreated: 5 },
+    { key: 'ib32', name: 'Волкова обещает Петровой timebox по дизайн-ревью', signalType: 'commitment' as SignalType, confidence: 0.70, criticalQuestion: 'Скорость дизайн-ревью?', trustedAnswer: 'Ревью в течение 48 часов', authorPersonKey: 'volkova', recipientPersonKey: 'petrova', commitmentStatus: 'fulfilled', commitmentDueDaysAhead: -3, daysAgoCreated: 11 },
+    { key: 'ib33', name: 'Козлов обещает Сидорову auth-контракт для frontend', signalType: 'commitment' as SignalType, confidence: 0.85, criticalQuestion: 'Auth-API для фронта?', trustedAnswer: 'Контракт + примеры в Notion', authorPersonKey: 'kozlov', recipientPersonKey: 'kozlov', commitmentStatus: 'open', commitmentDueDaysAhead: 4, daysAgoCreated: 4 },
+    { key: 'ib34', name: 'Козлов обещает Волковой OAuth2 миграцию к Sprint 15', signalType: 'commitment' as SignalType, confidence: 0.75, criticalQuestion: 'OAuth2 сроки?', trustedAnswer: 'Sprint 15 — полная миграция', authorPersonKey: 'kozlov', recipientPersonKey: 'volkova', commitmentStatus: 'open', commitmentDueDaysAhead: 21, daysAgoCreated: 10 },
+    { key: 'ib35', name: 'Козлов обещает Морозову security audit раз в квартал', signalType: 'commitment' as SignalType, confidence: 0.80, criticalQuestion: 'Регулярность security-аудитов?', trustedAnswer: 'Раз в квартал начиная с Q3', authorPersonKey: 'kozlov', recipientPersonKey: 'morozov', commitmentStatus: 'open', commitmentDueDaysAhead: 45, daysAgoCreated: 2 },
+    // 5 knowledge_gap
+    { key: 'ib36', name: 'Гэп: как разворачивать TURN-серверы в кластере', signalType: 'knowledge_gap' as SignalType, confidence: 0.70, criticalQuestion: 'TURN-кластер деплой?', trustedAnswer: 'Документации нет, разбирается Новиков', authorPersonKey: 'kozlov', recipientPersonKey: null, commitmentStatus: null, commitmentDueDaysAhead: null, daysAgoCreated: 18 },
+    { key: 'ib37', name: 'Гэп: как настроить ФСТЭК-сертификацию end-to-end', signalType: 'knowledge_gap' as SignalType, confidence: 0.65, criticalQuestion: 'ФСТЭК — процедура?', trustedAnswer: 'Ищем консультанта, экспертизы внутри нет', authorPersonKey: 'morozov', recipientPersonKey: null, commitmentStatus: null, commitmentDueDaysAhead: null, daysAgoCreated: 22 },
+    { key: 'ib38', name: 'Гэп: бенчмарки Telephony SIP против Twilio', signalType: 'knowledge_gap' as SignalType, confidence: 0.60, criticalQuestion: 'Какие альтернативы Twilio?', trustedAnswer: 'Не проверяли — нужен PoC', authorPersonKey: 'novikov', recipientPersonKey: null, commitmentStatus: null, commitmentDueDaysAhead: null, daysAgoCreated: 13 },
+    { key: 'ib39', name: 'Гэп: правовые требования к хранению аудио по 152-ФЗ', signalType: 'knowledge_gap' as SignalType, confidence: 0.55, criticalQuestion: 'Срок хранения аудио в РФ?', trustedAnswer: 'Юрист подтвердит к концу июня', authorPersonKey: 'morozov', recipientPersonKey: null, commitmentStatus: null, commitmentDueDaysAhead: null, daysAgoCreated: 9 },
+    { key: 'ib40', name: 'Гэп: как мерить latency end-to-end в LiveKit Egress', signalType: 'knowledge_gap' as SignalType, confidence: 0.70, criticalQuestion: 'E2E latency в Egress?', trustedAnswer: 'Метрик нет — нужен dashboard в Grafana', authorPersonKey: 'kozlov', recipientPersonKey: null, commitmentStatus: null, commitmentDueDaysAhead: null, daysAgoCreated: 15 },
+  ];
+
+  for (const e of EXTRA_BLOCKS) {
+    const recipientId = e.recipientPersonKey
+      ? ids.persons[e.recipientPersonKey] ?? null
+      : null;
+    const block = await prisma.ideaBlock.create({
+      data: {
+        tenantId,
+        name: e.name,
+        criticalQuestion: e.criticalQuestion,
+        trustedAnswer: e.trustedAnswer,
+        signalType: e.signalType,
+        confidence: e.confidence,
+        status: 'canonical',
+        dataClass: 'internal',
+        tags: [`author:${e.authorPersonKey}`],
+        commitmentRecipientPersonId: recipientId,
+        commitmentStatus: e.commitmentStatus,
+        commitmentDueDate:
+          e.commitmentDueDaysAhead !== null
+            ? daysAgo(-e.commitmentDueDaysAhead)
+            : null,
+        createdAt: daysAgo(e.daysAgoCreated),
+      },
+    });
+    ids.ideaBlocks[e.key] = block.id;
+  }
+  // req used here only to keep import side-effect for ts noUnused.
+  void req;
+
+  console.log(
+    `[knowledge-graph] ✓ ${EXTRA_BLOCKS.length} extra IdeaBlocks ` +
+      `(${EXTRA_BLOCKS.filter((b) => b.signalType === ('commitment' as SignalType)).length} commitments).`,
   );
 
   // ── 2. IdeaBlockLinks ──────────────────────────────────────────────

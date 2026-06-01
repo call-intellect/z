@@ -193,6 +193,43 @@ export const seedTracker: SeedFn = async (
     { key: 'sprint2_mob', project: 'mob',  name: 'Sprint 2',  startDaysAgo: 23, endDaysAgo: 10, completed: true },
   ];
 
+  const COMPLETED_PROGRESS: Record<string, Record<string, unknown>> = {
+    sprint13: {
+      total: 18,
+      completed: 14,
+      inProgress: 2,
+      cancelled: 2,
+      blocked: 0,
+      storyPointsCompleted: 42,
+      storyPointsTotal: 51,
+      topAchievements: [
+        'OAuth2-миграция завершена',
+        'Дизайн CallScreen v3 утверждён',
+        'Code review SLA внедрён',
+      ],
+      topMisses: ['Mobile pricing не доделан'],
+      aiSummary:
+        'Спринт закрыт успешно — 14 из 18 задач (78%), основные стратегические цели достигнуты. ' +
+        'OAuth2-миграция и дизайн CallScreen — главные победы. Mobile pricing перенесён в Sprint 14 ' +
+        'из-за технического долга на frontend\'е. Команда работала на ~82% velocity, что соответствует норме.',
+    },
+    sprint2_mob: {
+      total: 12,
+      completed: 9,
+      inProgress: 1,
+      cancelled: 2,
+      blocked: 0,
+      storyPointsCompleted: 28,
+      storyPointsTotal: 34,
+      topAchievements: ['SDK видеозвонка интегрирован', 'Push-уведомления MVP'],
+      topMisses: ['Onboarding flow не успели'],
+      aiSummary:
+        'Мобильный Sprint 2 закрыт на 75%. SDK видеозвонка — главное достижение, ' +
+        'удалось обойти ограничения LiveKit React Native. Onboarding flow перенесён в Sprint 3 — ' +
+        'дизайн-handoff пришёл поздно. Velocity упала из-за блокера на Android-конфигурации.',
+    },
+  };
+
   for (const c of cycleDefs) {
     const endDate = daysAgo(c.endDaysAgo);
     const cycle = await prisma.cycle.create({
@@ -203,6 +240,11 @@ export const seedTracker: SeedFn = async (
         startDate: daysAgo(c.startDaysAgo),
         endDate,
         completedAt: c.completed ? endDate : null,
+        progressSnapshot:
+          c.completed && COMPLETED_PROGRESS[c.key]
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ? (COMPLETED_PROGRESS[c.key] as any)
+            : undefined,
       },
     });
     ids.cycles[c.key] = cycle.id;

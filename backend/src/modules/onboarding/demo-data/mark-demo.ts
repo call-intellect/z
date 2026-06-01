@@ -23,39 +23,47 @@ import type { PrismaClient } from '@prisma/client';
 export const DEMO_EXTERNAL_SOURCE = 'demo';
 
 /** Список таблиц, у которых есть `tenantId` + `externalSource`. Обновлять,
- *  если добавляется новая верхнеуровневая модель в `resetDemoWorkspace`. */
+ *  если добавляется новая верхнеуровневая модель в `resetDemoWorkspace`.
+ *
+ *  ВАЖНО: Pulse snapshot-таблицы (KnowledgeRiskSnapshot, RecurringTopic,
+ *  PromiseNetworkSnapshot, PersonGoalContribution, KnowledgeVelocitySnapshot,
+ *  PersonEngagementSnapshot, ForecastSnapshot, CrossFunctionalFrictionReport,
+ *  HelpfulnessTrait, SocialContributionProfile, ContributionSnapshot,
+ *  ProcessTemplate) — НЕ имеют колонки `externalSource`. Их чистка идёт в
+ *  `resetDemoWorkspace` напрямую по tenantId / userId. */
 const DEMO_TENANT_TABLES = [
-  'cloneAccessGrant',
-  'ideaBlock',
-  'entity',
-  'theme',
-  'goal',
-  'goalAlignmentSnapshot',
-  'department',
-  'role',
-  'person',
-  'appointment',
-  'companyProfile',
+  // ── Org-structure ──
+  'department', 'role', 'person', 'appointment', 'companyProfile',
   'functionalDomain',
-  'process',
-  'processStep',
-  'decision',
-  'insight',
-  'notification',
-  'dailyCheckIn',
-  'weeklyOperationsDigest',
-  'dailyOperationsDigest',
-  'chatV2Conversation',
-  'skillProfile',
-  'executablePersona',
-  'project',
-  'projectDocument',
-  'issueState',
-  'cycle',
-  'sprintHint',
-  'helpfulnessSpotlight',
-  'recognition',
-  'card',
+
+  // ── Tracker ──
+  'project', 'projectDocument', 'issueState', 'cycle', 'sprintHint',
+
+  // ── Knowledge graph ──
+  'ideaBlock', 'entity', 'theme', 'goal', 'goalAlignmentSnapshot',
+  'ideaBlockLink', 'entityLink',
+
+  // ── Processes / decisions / insights ──
+  'process', 'processStep', 'decision', 'insight',
+
+  // ── Notifications / chat ──
+  'notification', 'chatV2Conversation',
+
+  // ── Operations ──
+  'dailyCheckIn', 'weeklyOperationsDigest', 'dailyOperationsDigest',
+
+  // ── Skills / personas ──
+  'skillProfile', 'executablePersona', 'cloneAccessGrant',
+
+  // ── Polish ──
+  'helpfulnessSpotlight', 'recognition', 'card',
+
+  // ── Demo Content Expansion 2026-05-31 ──
+  'regulation', 'idea', 'ideaCluster', 'document', 'event',
+  'experiment', 'vendor', 'probeEvent',
+  'feedbackMessage', 'feedbackTopic', 'feedbackItem',
+  'clientReferralLink', 'referral', 'referralPayout',
+  'brandVoiceProfile',
 ] as const;
 
 export async function markAllDemoEntitiesForTenant(

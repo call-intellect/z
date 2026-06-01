@@ -40,6 +40,37 @@ export interface IdMap {
   // Polish
   cards: Record<string, string>;
   processes: Record<string, string>;
+
+  // ── 2026-05-31 Demo Content Expansion ──
+  users: Record<string, string>;
+  processTemplates: Record<string, string>;
+  regulations: Record<string, string>;
+  ideas: Record<string, string>;
+  ideaClusters: Record<string, string>;
+  events: Record<string, string>;
+  documents: Record<string, string>;
+  referralLinkId: string | null;
+  referrals: Record<string, string>;
+  feedbackMessages: Record<string, string>;
+  feedbackTopics: Record<string, string>;
+  experiments: Record<string, string>;
+  vendors: Record<string, string>;
+  probeEvents: Record<string, string>;
+
+  pulseSnapshotIds: {
+    knowledgeRisks: string[];
+    recurringTopics: string[];
+    personGoalContributions: string[];
+    promiseNetwork: string | null;
+    knowledgeVelocity: string | null;
+    personEngagements: string[];
+    forecasts: string[];
+    frictionReports: string[];
+    helpfulnessTraits: string[];
+    helpfulnessSpotlights: string[];
+    socialContributions: string[];
+    contributions: string[];
+  };
 }
 
 export function createEmptyIdMap(): IdMap {
@@ -61,6 +92,34 @@ export function createEmptyIdMap(): IdMap {
     skillProfiles: {},
     cards: {},
     processes: {},
+    users: {},
+    processTemplates: {},
+    regulations: {},
+    ideas: {},
+    ideaClusters: {},
+    events: {},
+    documents: {},
+    referralLinkId: null,
+    referrals: {},
+    feedbackMessages: {},
+    feedbackTopics: {},
+    experiments: {},
+    vendors: {},
+    probeEvents: {},
+    pulseSnapshotIds: {
+      knowledgeRisks: [],
+      recurringTopics: [],
+      personGoalContributions: [],
+      promiseNetwork: null,
+      knowledgeVelocity: null,
+      personEngagements: [],
+      forecasts: [],
+      frictionReports: [],
+      helpfulnessTraits: [],
+      helpfulnessSpotlights: [],
+      socialContributions: [],
+      contributions: [],
+    },
   };
 }
 
@@ -95,4 +154,26 @@ export function demoId(prefix: string, n: number): string {
 export function req(val: string | undefined, label: string): string {
   if (!val) throw new Error(`Demo seed: missing required id "${label}"`);
   return val;
+}
+
+/** Понедельник недели (UTC-aware) для даты d. Возвращает 00:00:00.000Z в локальной TZ дня. */
+export function mondayOf(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const dow = (x.getDay() + 6) % 7; // Monday=0..Sunday=6
+  x.setDate(x.getDate() - dow);
+  return x;
+}
+
+/**
+ * Детерминированный псевдо-«рандом» 0..1 по строковому ключу.
+ * Используется вместо Math.random() — повторный seed даёт тот же кабинет.
+ */
+export function hashFloat(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 100_000) / 100_000;
 }

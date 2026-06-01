@@ -2176,6 +2176,11 @@ model Org {
   setupCompletedAt        DateTime?
   /// Когда был загружен демо-воркспейс «ТехноСтрим» (seed-demo-workspace).
   demoWorkspaceSeededAt   DateTime?
+  /// Демо-пользователи, созданные seed'ом (User.id). Используется
+  /// `resetDemoWorkspace` чтобы при отвязке Person.userId и удалении User
+  /// чистить ТОЛЬКО эти записи, не задевая реальных пользователей.
+  /// Пустой массив = демо-User'ы не создавались / уже удалены.
+  demoUserIds             String[]  @default([])
 
   memberships            Membership[]
   invitations            OrgInvitation[]

@@ -6,17 +6,32 @@
  * Зависит от OrgIds (persons).
  */
 import type { SeedFn } from './types';
-import { req } from './types';
+import { daysAgo, localDate, req } from './types';
+
+/**
+ * Возвращает массив `count` последних рабочих дней (исключая Sat/Sun),
+ * упорядоченных от самого старого к самому новому.
+ */
+function generateWorkdays(count: number): Date[] {
+  const dates: Date[] = [];
+  let offset = 0;
+  // Safety guard от бесконечного цикла на абсурдных аргументах.
+  while (dates.length < count && offset < count * 3 + 60) {
+    const d = daysAgo(offset++);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) dates.push(d);
+  }
+  return dates.reverse();
+}
 
 export const seedOperations: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
-  // ── Workdays: 10 рабочих дней (15-28 мая, пропуская 17,18,24,25) ──
-
-  const _WORKDAYS = [
-    '2026-05-15', '2026-05-16', '2026-05-19', '2026-05-20', '2026-05-21',
-    '2026-05-22', '2026-05-23', '2026-05-26', '2026-05-27', '2026-05-28',
-  ];
+  // 10 рабочих дней назад → теперь динамически: workdayDates[0] — самый старый,
+  // workdayDates[9] — последний. Сохраняем тексты под индексами из готового
+  // массива (см. ниже), чтобы не переписывать 100 чек-инов вручную.
+  const workdayDates = generateWorkdays(10);
+  const workdayStrings = workdayDates.map(localDate);
 
   // ── 1. DailyCheckIn (100 records) ─────────────────────────────────────
 
@@ -303,32 +318,41 @@ export const seedOperations: SeedFn = async (ctx, ids) => {
     { personKey: 'petrova', days: petrovaDays },
   ];
 
-  // Petrova misses 2 evening check-ins (May 23 and May 27)
-  const petrovaSkipEvenings = new Set(['2026-05-23', '2026-05-27']);
+  // Petrova пропускает 2 вечерних чек-ина — индексы 6 и 8 (предпоследний и
+  // последний рабочие дни недели). Через индексы — устойчиво к смене дат.
+  const PETROVA_SKIP_EVENING_IDX = new Set<number>([6, 8]);
 
   let checkInCount = 0;
 
   for (const { personKey, days } of personDayArrays) {
     const personId = req(ids.persons[personKey], `persons.${personKey}`);
 
-    for (const day of days) {
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i]!;
+      const dateStr = workdayStrings[i] ?? day.date;
+      const baseDate = workdayDates[i] ?? new Date(`${day.date}T09:30:00Z`);
+      const morningCompletedAt = new Date(baseDate);
+      morningCompletedAt.setHours(9, 30, 0, 0);
+      const eveningCompletedAt = new Date(baseDate);
+      eveningCompletedAt.setHours(18, 30, 0, 0);
+
       // Morning
       await prisma.dailyCheckIn.create({
         data: {
           tenantId,
           personId,
           kind: 'morning',
-          dateLocal: day.date,
+          dateLocal: dateStr,
           plansJson: day.morning.plans as object[],
           sentiment: day.morning.sentiment,
           sentimentRationale: day.morning.rationale,
-          completedAt: new Date(`${day.date}T09:30:00Z`),
+          completedAt: morningCompletedAt,
         },
       });
       checkInCount++;
 
       // Evening (skip some for Petrova)
-      if (personKey === 'petrova' && petrovaSkipEvenings.has(day.date)) {
+      if (personKey === 'petrova' && PETROVA_SKIP_EVENING_IDX.has(i)) {
         continue;
       }
 
@@ -337,12 +361,12 @@ export const seedOperations: SeedFn = async (ctx, ids) => {
           tenantId,
           personId,
           kind: 'evening',
-          dateLocal: day.date,
+          dateLocal: dateStr,
           donesJson: day.evening.dones as object[],
           blockersJson: day.evening.blockers.length > 0 ? (day.evening.blockers as object[]) : undefined,
           sentiment: day.evening.sentiment,
           sentimentRationale: day.evening.rationale,
-          completedAt: new Date(`${day.date}T18:30:00Z`),
+          completedAt: eveningCompletedAt,
         },
       });
       checkInCount++;
@@ -352,27 +376,47 @@ export const seedOperations: SeedFn = async (ctx, ids) => {
   console.log(`[demo/operations] Создано ${checkInCount} DailyCheckIn записей.`);
 
   // ── 2. WeeklyOperationsDigest (3) ─────────────────────────────────────
+  //
+  // Динамические даты: 3 / 2 / 1 неделя назад от today.
 
   console.log('[demo/operations] Создание WeeklyOperationsDigest...');
 
+  const mondayOfWeek = (weeksAgo: number): Date => {
+    const d = daysAgo(weeksAgo * 7);
+    d.setHours(0, 0, 0, 0);
+    const dow = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - dow);
+    return d;
+  };
+  const fmtDate = (d: Date): string => localDate(d);
+  const week3Start = mondayOfWeek(3);
+  const week3End = new Date(week3Start);
+  week3End.setDate(week3End.getDate() + 6);
+  const week2Start = mondayOfWeek(2);
+  const week2End = new Date(week2Start);
+  week2End.setDate(week2End.getDate() + 6);
+  const week1Start = mondayOfWeek(1);
+  const week1End = new Date(week1Start);
+  week1End.setDate(week1End.getDate() + 6);
+
   const weeklyDigests = [
     {
-      weekStart: '2026-05-12',
-      weekEnd: '2026-05-18',
+      weekStart: fmtDate(week3Start),
+      weekEnd: fmtDate(week3End),
       bodyMarkdown: `## Неделя 12–18 мая\n\n### Общий тонус\nКоманда в зелёной зоне: 70% чек-инов с sentiment=green. Козлов активно закрывает уязвимости auth. Волкова провела продуктивный CustDev с Ростелеком.\n\n### Ключевые решения\n- Hotfix rate limiting на login endpoint — задеплоен\n- JWT expiration hotfix — готов к деплою\n\n### Блокеры\n- CI-тесты падают на интеграционных (решено к среде)\n- Мобильное отстаёт на 3 дня (SDK видеозвонка)\n\n### Цели\n- ARR: 62/100 — стабильный рост\n- v2.0: 71/100 — в графике\n- Мобильное: 42/100 — требует внимания\n- NPS: 76/100 — выше ожиданий\n\n### Рекомендации\n1. Выделить Козлову помощника на auth-задачи\n2. Рассмотреть обходной путь для SDK видеозвонка\n3. Подготовить демо для Ростелеком к 28 мая`,
       metricsJson: { checkInCompliance: 85, avgSentiment: 'green', blockersResolved: 4, newIssues: 6, closedIssues: 5 },
       sourcesJson: { meetings: 3, checkIns: 48 },
     },
     {
-      weekStart: '2026-05-19',
-      weekEnd: '2026-05-25',
+      weekStart: fmtDate(week2Start),
+      weekEnd: fmtDate(week2End),
       bodyMarkdown: `## Неделя 19–25 мая\n\n### Общий тонус\nКоманда работает интенсивно: 55% green, 30% yellow, 15% red. Козлов под давлением (2 red-дня), но справляется. Волкова ведёт 3 продукта — нужна помощь.\n\n### Ключевые решения\n- OAuth2 + PKCE: миграция начата\n- Дизайн CallScreen v3: утверждён\n- Пилот Ростелеком: 500 юзеров — согласован\n- Code review SLA: 24 часа — принято\n\n### Блокеры\n- Token revocation не работает для refresh (решено)\n- SDK видеозвонка не совместим с OAuth2 (workaround найден)\n- Нет QA-процесса в мобильной команде\n\n### Цели\n- ARR: 72/100 (+10 за неделю — пилоты конвертируются)\n- v2.0: 65/100 (-6 — auth замедлил)\n- Мобильное: 55/100 (+13 — прогресс)\n- NPS: 80/100 (+4)\n\n### Рекомендации\n1. Нанять junior PM для разгрузки Волковой\n2. Запустить QA-процесс в мобильной команде\n3. Подготовить борд-материалы`,
       metricsJson: { checkInCompliance: 90, avgSentiment: 'yellow', blockersResolved: 5, newIssues: 8, closedIssues: 6 },
       sourcesJson: { meetings: 4, checkIns: 50 },
     },
     {
-      weekStart: '2026-05-26',
-      weekEnd: '2026-06-01',
+      weekStart: fmtDate(week1Start),
+      weekEnd: fmtDate(week1End),
       bodyMarkdown: `## Неделя 26 мая – 1 июня\n\n### Общий тонус\nФинальная неделя перед демо Ростелеком. 65% green, 25% yellow, 10% red. Команда мобилизовалась. Договор с Ростелеком подписан.\n\n### Ключевые события\n- Демо Ростелеком: прошло успешно, клиент впечатлён\n- Договор Ростелеком: подписан\n- Sprint 14: начат, 18 story points запланировано\n- Slack-интеграция: договорились о пилоте\n\n### Блокеры\n- UI-баги в мобильном (3 штуки, исправлены)\n- Перегрузка Волковой (нужен junior PM)\n\n### Цели\n- ARR: прогноз 75+ к концу недели\n- v2.0: 65 — auth под контролем\n- Мобильное: 60+ — ускоряется\n- NPS: 80+ — стабилен\n\n### Рекомендации\n1. Начать найм junior PM (приоритет — июнь)\n2. Подготовить Q3 roadmap\n3. Запустить пилот Ростелеком в срок`,
       metricsJson: { checkInCompliance: 87, avgSentiment: 'green', blockersResolved: 3, newIssues: 4, closedIssues: 5 },
       sourcesJson: { meetings: 3, checkIns: 48 },
@@ -396,37 +440,38 @@ export const seedOperations: SeedFn = async (ctx, ids) => {
 
   console.log('[demo/operations] Создание DailyOperationsDigest...');
 
+  // Последние 5 рабочих дней — берём из workdayStrings (от старого к новому).
   const dailyDigests = [
     {
-      dateLocal: '2026-05-22',
+      dateLocal: workdayStrings[5] ?? '2026-05-22',
       bodyMarkdown: `## Четверг, 22 мая\n\n### Чек-ины\n5 из 5 сотрудников заполнили утренние чек-ины. Вечерние: 5/5.\n\n### Новые блокеры\n- SDK видеозвонка не совместим с OAuth2 (Козлов, medium)\n\n### Решения\n- Token revocation — фикс на ревью\n\n### Цели\n- ARR: +5 за 3 дня — пилоты конвертируются\n\n### Тонус\n60% green, 40% yellow. Козлов и Волкова под нагрузкой.`,
       metricsJson: { greenShare: 60, yellowShare: 40, redShare: 0, topBlockers: ['SDK+OAuth2'], openCommitments: 3 },
       sourcesJson: { checkIns: 10, blockers: 1, decisions: 1 },
       shortSummary: 'Команда в рабочем режиме. Один новый блокер (SDK+OAuth2). Козлов закрывает token revocation.',
     },
     {
-      dateLocal: '2026-05-23',
+      dateLocal: workdayStrings[6] ?? '2026-05-23',
       bodyMarkdown: `## Пятница, 23 мая\n\n### Чек-ины\nУтро: 5/5. Вечер: 4/5 (Петрова не заполнила).\n\n### Ретроспектива Sprint 13\n- Закрыто 85% задач в срок\n- 3 action items: ускорить code review, добавить QA, документация K8s\n\n### Планирование Sprint 14\n- 18 story points запланировано\n- Приоритет: OAuth2, мобильное, push-уведомления\n\n### Тонус\n80% green, 20% yellow. Команда завершила спринт на позитиве.`,
       metricsJson: { greenShare: 80, yellowShare: 20, redShare: 0, topBlockers: [], openCommitments: 2 },
       sourcesJson: { checkIns: 9, meetings: 1, retrospective: true },
       shortSummary: 'Ретро Sprint 13: 85% задач закрыто. Sprint 14 спланирован. Команда на подъёме.',
     },
     {
-      dateLocal: '2026-05-26',
+      dateLocal: workdayStrings[7] ?? '2026-05-26',
       bodyMarkdown: `## Понедельник, 26 мая\n\n### Чек-ины\nУтро: 5/5. Вечер: 5/5.\n\n### Sprint 14 — старт\n- OAuth2 scope parameter: Козлов начал\n- Мобильный чат: Петрова спроектировала\n- Slack-интеграция: Морозов договорился о пилоте\n\n### Новые сделки\n- Тинькофф: квалифицирован, демо на среду\n\n### Тонус\n80% green, 20% yellow. Свежая энергия нового спринта.`,
       metricsJson: { greenShare: 80, yellowShare: 20, redShare: 0, topBlockers: [], openCommitments: 4 },
       sourcesJson: { checkIns: 10, newDeals: 1 },
       shortSummary: 'Sprint 14 стартовал. Козлов на OAuth2, Петрова на мобильном. Тинькофф — новый лид.',
     },
     {
-      dateLocal: '2026-05-27',
+      dateLocal: workdayStrings[8] ?? '2026-05-27',
       bodyMarkdown: `## Вторник, 27 мая\n\n### Чек-ины\nУтро: 5/5. Вечер: 4/5 (Петрова не заполнила).\n\n### Ключевые события\n- Договор Ростелеком подписан!\n- Борд-материалы финализированы\n- Демо Тинькофф: проведено, просят PoC\n\n### Блокеры\n- UI-баги в мобильном (3 штуки) — Сидоров + Петрова\n\n### Тонус\n60% green, 40% yellow. Морозов и Соколова в зелёной зоне.`,
       metricsJson: { greenShare: 60, yellowShare: 40, redShare: 0, topBlockers: ['UI bugs mobile'], openCommitments: 3 },
       sourcesJson: { checkIns: 9, signedDeals: 1, demos: 1 },
       shortSummary: 'Договор Ростелеком подписан — большая победа. Тинькофф просят PoC. UI-баги в работе.',
     },
     {
-      dateLocal: '2026-05-28',
+      dateLocal: workdayStrings[9] ?? '2026-05-28',
       bodyMarkdown: `## Среда, 28 мая\n\n### Чек-ины\nУтро: 5/5. Вечер: 5/5.\n\n### Демо Ростелеком\n- Прошло успешно, клиент впечатлён AI-отчётами\n- Следующий шаг: запуск пилота на 500 юзеров\n\n### Метрики дня\n- Sales: конверсия 22%, pipeline 4.2M\n- NPS: 52 (цель >50 — достигнута!)\n\n### Тонус\n80% green, 20% yellow. Команда на подъёме после успешного демо.`,
       metricsJson: { greenShare: 80, yellowShare: 20, redShare: 0, topBlockers: [], openCommitments: 2 },
       sourcesJson: { checkIns: 10, demos: 1, npsScore: 52 },

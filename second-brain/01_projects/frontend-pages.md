@@ -103,6 +103,15 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 
 Сайдбар: пункт «Спринты» в группе «Каждый день» рядом с «Проекты», иконка `Rocket`, `data-tour-target="welcome.sprints"` для будущего onboarding-tour.
 
+## Smart Tables (2026-05-31, MVP)
+
+**Источник:** smart-tables ТЗ Фазы 0+1+2+3. Коммиты `acfd5dc`, `ab735c8`.
+
+| Путь | Что |
+|---|---|
+| `/tables` | **Индекс таблиц** Org (2026-05-31): grid карточек активных таблиц `{icon, name, description}`, кнопка «+ Новая таблица» (prompt → POST /api/v1/tables → router.push). Пустое состояние с CTA. Стейты loading/forbidden/error через `AdminStateViews`. `TablesListClient.tsx`. |
+| `/tables/[id]` | Smart-table детали: `TableHeader` (имя/иконка) + `ViewSelector` (Saved Views Фаза 3) + `GridView` (cell-edit, row-add/archive/delete) + `RowDetail` Sheet с pageContent. `TableClient.tsx` + Zustand store `tableStore.ts`. Кнопка «← Все таблицы» ведёт на `/tables`. |
+
 ## Clones — маркетплейс (2026-05-26, Clones=Roles финальный UI)
 
 **Источник:** [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md). Коммит `578a777` (user) + `eab4d8f` (admin).

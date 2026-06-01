@@ -11,6 +11,29 @@
 
 ---
 
+## ⚡ Быстрый выкат (одной командой)
+
+С 2026-06-01 весь выкат сводится к 4 шагам — `apply-prod-deploy.ts --with-schema` делает авто-бэкап БД → dedupe → `prisma db push --accept-data-loss` → `apply-postgres-init` → все seed/patch/backfill:
+
+```bash
+cd /home/docker/z
+git pull origin dev
+docker compose build backend frontend                       # 1. собрать образы
+docker compose up -d postgres redis                          # 2. поднять БД и Redis
+docker compose run --rm --no-deps backend \                  # 3. ВЕСЬ выкат одной командой
+  bun run scripts/apply-prod-deploy.ts --mode update --with-schema
+docker compose up -d                                         # 4. поднять стек (migrate=no-op)
+```
+
+- **Авто-бэкап обязателен** перед `--accept-data-loss`: `pg_dump` пишет в docker-volume `z-backups` (`/app/backups/pre-deploy-<ts>.dump`). Если бэкап не удался — push НЕ выполняется. Restore: `docker compose run --rm --no-deps backend pg_restore --clean --if-exists -d "$DATABASE_URL" /app/backups/<file>`.
+- `--no-deps` обязателен: иначе `run backend` стартует сервис `migrate` (голый `prisma db push` без `--accept-data-loss`), который падает на новых unique-констрейнтах.
+- Все скрипты идемпотентны → повторный прогон безопасен. Для прогона «не останавливаясь на первой ошибке» добавь `--continue-on-fail` и смотри `=== SUMMARY ===`.
+- Требует `pg_dump` в образе (`postgresql16-client`, добавлен в `backend/Dockerfile`) и volume `z-backups` (в `docker-compose.yml`).
+
+Подробная пошаговая инструкция со smoke-проверками — ниже (Шаги 0–12). Быстрый путь её заменяет в типовом случае.
+
+---
+
 ## 🚨 Накоплено к выкату
 
 **Окно:** 2026-05-20 .. 2026-05-30 (с момента последнего prod-cut).

@@ -268,12 +268,15 @@ interface ParsedArgs {
   mode: 'bootstrap' | 'update' | 'all';
   dryRun: boolean;
   continueOnFail: boolean;
+  /** Прогнать schema-фазу: авто-бэкап → dedupe → prisma db push --accept-data-loss → apply-postgres-init. */
+  withSchema: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   let mode: ParsedArgs['mode'] = 'all';
   let dryRun = false;
   let continueOnFail = false;
+  let withSchema = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--mode') {
@@ -282,15 +285,111 @@ function parseArgs(argv: string[]): ParsedArgs {
       else throw new Error(`Unknown --mode value: ${v}`);
     } else if (a === '--dry-run') dryRun = true;
     else if (a === '--continue-on-fail') continueOnFail = true;
+    else if (a === '--with-schema') withSchema = true;
     else if (a === '--help' || a === '-h') {
       // eslint-disable-next-line no-console
       console.log(
-        `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--dry-run] [--continue-on-fail]`,
+        `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail]\n` +
+          `  --with-schema  авто-бэкап БД → dedupe → prisma db push --accept-data-loss → apply-postgres-init,\n` +
+          `                 затем обычные seed/patch/backfill. Делает выкат одной командой.`,
       );
       process.exit(0);
     }
   }
-  return { mode, dryRun, continueOnFail };
+  return { mode, dryRun, continueOnFail, withSchema };
+}
+
+/**
+ * Авто-бэкап БД через pg_dump ДО `prisma db push --accept-data-loss`.
+ * Пишет в /app/backups (docker-volume z-backups). Если бэкап не удался —
+ * возвращает false, и schema-фаза НЕ выполняет push (data-loss без бэкапа
+ * недопустим). Требует pg_dump в образе (postgresql16-client) и DATABASE_URL.
+ */
+async function autoBackup(): Promise<boolean> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) {
+    // eslint-disable-next-line no-console
+    console.error('[schema] autoBackup: DATABASE_URL не задан — бэкап невозможен, push отменён.');
+    return false;
+  }
+  const dir = '/app/backups';
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const file = `${dir}/pre-deploy-${ts}.dump`;
+  // eslint-disable-next-line no-console
+  console.log(`\n=== AUTO-BACKUP (перед --accept-data-loss) → ${file} ===`);
+  await Bun.spawn(['mkdir', '-p', dir], { stdout: 'inherit', stderr: 'inherit' }).exited;
+  const proc = Bun.spawn(['pg_dump', url, '-Fc', '-f', file], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  const code = await proc.exited;
+  if (code !== 0) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[schema] ✗ pg_dump упал (exit ${code}). --accept-data-loss НЕ выполняется без бэкапа. ` +
+        `Проверь, что pg_dump есть в образе (postgresql16-client) и postgres доступен.`,
+    );
+    return false;
+  }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[schema] ✓ Бэкап создан: ${file}\n` +
+      `         restore: docker compose run --rm --no-deps backend ` +
+      `pg_restore --clean --if-exists -d "$DATABASE_URL" ${file}`,
+  );
+  return true;
+}
+
+/**
+ * Schema-фаза (--with-schema): авто-бэкап → pre-push dedupe (чтобы unique не
+ * упали на дублях) → prisma db push --accept-data-loss → apply-postgres-init.
+ * Возвращает false при фатальной ошибке (бэкап/push), чтобы main остановился.
+ */
+async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise<boolean> {
+  // eslint-disable-next-line no-console
+  console.log('\n=== SCHEMA PHASE (--with-schema) ===');
+  if (dryRun) {
+    // eslint-disable-next-line no-console
+    console.log(
+      '>>> [schema] (dry-run) auto-backup + dedupe + prisma db push --accept-data-loss + apply-postgres-init',
+    );
+    return true;
+  }
+
+  // 1. Авто-бэкап — обязателен перед data-loss. Не удался → не пушим.
+  if (!(await autoBackup())) return false;
+
+  // 2. Pre-push dedupe — ДО создания unique-констрейнтов (Б7), иначе push
+  //    упадёт на существующих дублях. dateBucket-дедуп (Б8) идёт позже в
+  //    patch-фазе: его колонку создаёт сам push.
+  const preDedupe: Step[] = [
+    { phase: 'patch', script: 'scripts/patch-dedupe-billing-event-log.ts' },
+    { phase: 'patch', script: 'scripts/patch-dedupe-referral-payout.ts' },
+  ];
+  for (const s of preDedupe) {
+    const r = await runOne(s, false);
+    if (!r.ok && !continueOnFail) return false;
+  }
+
+  // 3. prisma db push --accept-data-loss (бэкап уже сделан выше).
+  // eslint-disable-next-line no-console
+  console.log('\n>>> [schema] bunx prisma db push --accept-data-loss');
+  const push = Bun.spawn(['bunx', 'prisma', 'db', 'push', '--accept-data-loss'], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  if ((await push.exited) !== 0) return false; // push критичен — всегда стоп
+
+  // 4. postgres-init (HNSW/GIN/extensions/partial-unique).
+  // eslint-disable-next-line no-console
+  console.log('\n>>> [schema] bun scripts/apply-postgres-init.ts');
+  const init = Bun.spawn(['bun', 'scripts/apply-postgres-init.ts'], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  if ((await init.exited) !== 0 && !continueOnFail) return false;
+
+  return true;
 }
 
 function filterSteps(steps: readonly Step[], mode: ParsedArgs['mode']): Step[] {
@@ -316,7 +415,19 @@ async function main(): Promise<void> {
   const steps = filterSteps(STEPS, args.mode);
 
   // eslint-disable-next-line no-console
-  console.log(`=== apply-prod-deploy mode=${args.mode} dryRun=${args.dryRun} steps=${steps.length} ===`);
+  console.log(
+    `=== apply-prod-deploy mode=${args.mode} withSchema=${args.withSchema} dryRun=${args.dryRun} steps=${steps.length} ===`,
+  );
+
+  // Schema-фаза (--with-schema) — ДО seed/patch/backfill: бэкап + push + init.
+  if (args.withSchema) {
+    const ok = await runSchemaPhase(args.dryRun, args.continueOnFail);
+    if (!ok) {
+      // eslint-disable-next-line no-console
+      console.error('\n✗ SCHEMA PHASE упала (бэкап или push). Остановка — данные не тронуты.');
+      process.exit(1);
+    }
+  }
 
   const results: { step: Step; ok: boolean; code: number }[] = [];
   for (const step of steps) {

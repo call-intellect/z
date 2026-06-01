@@ -124,6 +124,10 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # z-backups — авто-бэкапы БД от apply-prod-deploy.ts --with-schema (pg_dump
+    # перед --accept-data-loss). Лежат в docker-volume, переживают пересборку.
+    volumes:
+      - z-backups:/app/backups
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:${PORT:-3000}/health']
       interval: 15s
@@ -168,6 +172,7 @@ services:
 volumes:
   z-postgres-data:
   z-redis-data:
+  z-backups:
 
 networks:
   z-internal:

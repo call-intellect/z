@@ -39,7 +39,9 @@ WORKDIR /app
 # (`backend/python/gepa/runner.py`). Без них GepaRunnerService логирует
 # warning и работает в no-op режиме — это безопасно, но в prod хотим
 # реальную evolution.
-RUN apk add --no-cache openssl python3 py3-pip
+# postgresql16-client — pg_dump для авто-бэкапа БД перед `prisma db push
+# --accept-data-loss` (apply-prod-deploy.ts --with-schema). pg16 = версия сервера.
+RUN apk add --no-cache openssl python3 py3-pip postgresql16-client
 ENV NODE_ENV=production
 ENV PORT=3000
 
@@ -78,6 +80,10 @@ COPY python ./python
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
   -r python/gepa/requirements.txt || \
   echo "WARN: pip install gepa failed — GEPA disabled in this image"
+
+# Папка для авто-бэкапов БД (apply-prod-deploy.ts --with-schema пишет сюда
+# pg_dump перед --accept-data-loss). Монтируется как volume z-backups в compose.
+RUN mkdir -p /app/backups
 
 # Непривилегированный пользователь.
 RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app

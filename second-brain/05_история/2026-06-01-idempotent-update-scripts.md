@@ -31,3 +31,15 @@ commit: d4b17d5
 - **Эталон уже был в репо** (`backfill-orgs-fase0.ts` `isColumnNullable` + заметка строки 1215 в логе) — масштабировал его в общий `_lib` хелпер вместо изобретения паттерна.
 - **При выносе inline-where в переменную теряется контекстная типизация** — строковые литералы Prisma-enum (`role: 'subject'`) виджутся до `string` и ломают тип; лечится `as const`. [[code-pitfalls]]
 - **Параллельные аудит-агенты** хорошо масштабируются на «прочитать 48 файлов и вернуть структурированный вердикт» без раздувания основного контекста.
+
+## Добавление (тот же день) — реальный выкат вскрыл дыры процесса
+
+Пока вёл владельца по выкату на сервере — всплыло то, чего аудит не покрыл:
+1. **`migrate`-контейнер с голым `prisma db push` падает на первом выкате с новыми unique** (`BillingEventLog.jti/(provider,eventId)`, `ReferralAttribution(...)`, `ReferralPayout.triggerInvoiceId`): `--accept-data-loss` не задан, а dedupe-скрипты в агрегаторе стоят ПОСЛЕ push. Классический ordering-баг.
+2. **`docker compose run backend` дёргает зависимость `migrate`** → нужен `--no-deps`, чтобы прогнать gate/push в обход.
+3. **`frontend/bun.lock` был сгенерён через `registry.npmmirror.com`** (776 URL) → 404 на свежий `@livekit/components-react@2.9.21` при сборке прода. Фикс: sed-замена хоста на `registry.npmjs.org` (integrity-хэши те же, версии не тронуты), проверено `bun install --frozen-lockfile --dry-run`. [[code-pitfalls]]
+4. Я несколько раз давал **дженерик-инструкцию вместо реальной инфры** (выдумал отдельный `worker`-сервис, ручной `prisma:push` вместо контейнера `migrate`). Урок: **читать `docker-compose.yml` ПЕРЕД тем, как писать инструкцию по выкату**, а не после того как владелец ткнёт носом.
+
+**Что сделал в ответ:** `apply-prod-deploy.ts --with-schema` — единый вход: авто-бэкап (`pg_dump` в volume `z-backups`) → pre-push dedupe → `prisma db push --accept-data-loss` → `apply-postgres-init` → seeds/patches/backfills. `--accept-data-loss` теперь ВСЕГДА с бэкапом (нет бэкапа → нет push). Dockerfile +`postgresql16-client`, compose +volume `z-backups`, prod-deploy-log +«⚡ Быстрый выкат». Зафиксировал в памяти feedback-правило: новый prod-скрипт → сразу в `STEPS`; выкат = одна команда. Коммиты `1f56567` (lockfile), `e782417` (--with-schema).
+
+**Главный урок:** идемпотентность отдельных скриптов — половина дела; вторая половина — чтобы их не надо было запускать руками по одному. Оркестратор должен покрывать ВЕСЬ путь (включая схему и бэкап), иначе оператор всё равно тонет в командах.

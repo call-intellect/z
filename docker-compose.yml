@@ -98,14 +98,29 @@ services:
     build: *backend-build
     container_name: z-migrate
     env_file: [.env]
+    # Полный выкат одной командой: авто-бэкап (pg_dump → z-backups) → dedupe →
+    # prisma db push --accept-data-loss → apply-postgres-init → seed/patch/backfill.
+    # --no-fail-on-steps: сбой схемы (бэкап/push) валит migrate и блокирует backend
+    # (это правильно), а осечка идемпотентного seed/backfill — НЕ блокирует стек
+    # (смотри `docker compose logs migrate`, перезапусти упавшие скрипты руками).
     command:
-      - sh
-      - -c
-      - 'bunx prisma db push && bun scripts/apply-postgres-init.ts'
+      - bun
+      - run
+      - scripts/apply-prod-deploy.ts
+      - --mode
+      - update
+      - --with-schema
+      - --continue-on-fail
+      - --no-fail-on-steps
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: 'no'
+    # z-backups — pg_dump перед --accept-data-loss (тот же volume, что у backend).
+    volumes:
+      - z-backups:/app/backups
     networks: [z-internal]
 
   backend:

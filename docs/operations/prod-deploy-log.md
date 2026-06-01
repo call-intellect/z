@@ -11,24 +11,40 @@
 
 ---
 
-## ⚡ Быстрый выкат (одной командой)
+## ⚡ Быстрый выкат (`docker compose up -d`)
 
-С 2026-06-01 весь выкат сводится к 4 шагам — `apply-prod-deploy.ts --with-schema` делает авто-бэкап БД → dedupe → `prisma db push --accept-data-loss` → `apply-postgres-init` → все seed/patch/backfill:
+С 2026-06-01 контейнер `migrate` сам прогоняет весь выкат. Выкат = собрать образ + поднять стек:
 
 ```bash
 cd /home/docker/z
 git pull origin dev
-docker compose build backend frontend                       # 1. собрать образы
-docker compose up -d postgres redis                          # 2. поднять БД и Redis
-docker compose run --rm --no-deps backend \                  # 3. ВЕСЬ выкат одной командой
-  bun run scripts/apply-prod-deploy.ts --mode update --with-schema
-docker compose up -d                                         # 4. поднять стек (migrate=no-op)
+docker compose build backend frontend
+docker compose up -d
+docker compose logs -f migrate     # дождаться завершения + посмотреть SUMMARY
+docker compose ps                  # z-migrate=Exited(0), backend/frontend=healthy
 ```
 
-- **Авто-бэкап обязателен** перед `--accept-data-loss`: `pg_dump` пишет в docker-volume `z-backups` (`/app/backups/pre-deploy-<ts>.dump`). Если бэкап не удался — push НЕ выполняется. Restore: `docker compose run --rm --no-deps backend pg_restore --clean --if-exists -d "$DATABASE_URL" /app/backups/<file>`.
-- `--no-deps` обязателен: иначе `run backend` стартует сервис `migrate` (голый `prisma db push` без `--accept-data-loss`), который падает на новых unique-констрейнтах.
-- Все скрипты идемпотентны → повторный прогон безопасен. Для прогона «не останавливаясь на первой ошибке» добавь `--continue-on-fail` и смотри `=== SUMMARY ===`.
-- Требует `pg_dump` в образе (`postgresql16-client`, добавлен в `backend/Dockerfile`) и volume `z-backups` (в `docker-compose.yml`).
+`migrate` выполняет (через `apply-prod-deploy.ts --mode update --with-schema --continue-on-fail --no-fail-on-steps`):
+**авто-бэкап БД** (`pg_dump` → volume `z-backups`) → **dedupe** → **`prisma db push --accept-data-loss`** → **`apply-postgres-init`** → **все seed/patch/backfill**. Затем стартуют `backend` и `frontend`.
+
+Семантика отказов (важно):
+- **Сбой схемы** (бэкап не сделался / push упал) → `migrate` exit 1 → `backend` НЕ стартует. Это правильно: схема-mismatch фатален. Чини и `up -d` снова.
+- **Осечка отдельного seed/backfill** → залогирована в `=== SUMMARY ===`, но `migrate` выходит 0 → стек поднимается. Идемпотентные скрипты перезапусти руками: `docker compose exec backend bun run scripts/<имя>.ts`.
+
+**Авто-бэкап обязателен** перед `--accept-data-loss`. Файл: `/app/backups/pre-deploy-<ts>.dump` в volume `z-backups`. Restore:
+```bash
+docker compose run --rm --no-deps backend \
+  pg_restore --clean --if-exists -d "$DATABASE_URL" /app/backups/<file>.dump
+```
+Список бэкапов: `docker compose run --rm --no-deps backend ls -lh /app/backups`.
+
+> Требует `pg_dump` в образе (`postgresql16-client`, `backend/Dockerfile`) и volume `z-backups` (`docker-compose.yml`).
+>
+> **Ручной прогон** (например, доехать сиды без пересборки) — через работающий backend:
+> `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update --continue-on-fail`.
+> Прогон схемы вручную в обход migrate: `docker compose run --rm --no-deps backend bun run scripts/apply-prod-deploy.ts --mode update --with-schema`.
+>
+> **Первый bootstrap с нуля** (пустая БД): замени `--mode update` на `--mode all` (добавит супер-админа и базовые сиды). Для существующего прода — всегда `--mode update`.
 
 Подробная пошаговая инструкция со smoke-проверками — ниже (Шаги 0–12). Быстрый путь её заменяет в типовом случае.
 

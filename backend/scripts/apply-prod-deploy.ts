@@ -270,6 +270,13 @@ interface ParsedArgs {
   continueOnFail: boolean;
   /** Прогнать schema-фазу: авто-бэкап → dedupe → prisma db push --accept-data-loss → apply-postgres-init. */
   withSchema: boolean;
+  /**
+   * Не падать (exit 1) из-за упавших STEP'ов в финале. Schema-фаза при сбое
+   * всё равно завершает процесс с кодом 1. Нужно для `migrate`-контейнера:
+   * сбой схемы должен блокировать старт backend, а осечка идемпотентного
+   * seed/backfill — нет (иначе один скрипт кладёт весь стек).
+   */
+  failOnSteps: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -277,6 +284,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let dryRun = false;
   let continueOnFail = false;
   let withSchema = false;
+  let failOnSteps = true;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--mode') {
@@ -286,17 +294,20 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else if (a === '--dry-run') dryRun = true;
     else if (a === '--continue-on-fail') continueOnFail = true;
     else if (a === '--with-schema') withSchema = true;
+    else if (a === '--no-fail-on-steps') failOnSteps = false;
     else if (a === '--help' || a === '-h') {
       // eslint-disable-next-line no-console
       console.log(
-        `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail]\n` +
-          `  --with-schema  авто-бэкап БД → dedupe → prisma db push --accept-data-loss → apply-postgres-init,\n` +
-          `                 затем обычные seed/patch/backfill. Делает выкат одной командой.`,
+        `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail] [--no-fail-on-steps]\n` +
+          `  --with-schema       авто-бэкап БД → dedupe → prisma db push --accept-data-loss → apply-postgres-init,\n` +
+          `                      затем обычные seed/patch/backfill. Делает выкат одной командой.\n` +
+          `  --no-fail-on-steps  не падать из-за упавших seed/backfill (schema-сбой всё равно = exit 1).\n` +
+          `                      Для migrate-контейнера: схема блокирует backend, осечка сида — нет.`,
       );
       process.exit(0);
     }
   }
-  return { mode, dryRun, continueOnFail, withSchema };
+  return { mode, dryRun, continueOnFail, withSchema, failOnSteps };
 }
 
 /**
@@ -452,7 +463,15 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console
       console.log(`  ✗ ${f.step.script} (exit ${f.code})`);
     }
-    process.exit(1);
+    if (args.failOnSteps) {
+      process.exit(1);
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `\n⚠ ${failed.length} step(s) упали, но --no-fail-on-steps → выходим 0 ` +
+        `(схема применена, backend может стартовать; перезапусти скрипты по списку выше).`,
+    );
+    return;
   }
   // eslint-disable-next-line no-console
   console.log(`✓ ALL APPLIED`);

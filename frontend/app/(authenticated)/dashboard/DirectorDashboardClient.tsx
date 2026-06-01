@@ -59,8 +59,8 @@ import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/Irreversib
 import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
 import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
 import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
-import { SampleStoryBanner } from '@/ui/components/dashboard/SampleStoryBanner';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
+import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
 import { CurationPendingWidget } from './widgets/CurationPendingWidget';
 import { InsightsTopWidget } from './widgets/InsightsTopWidget';
@@ -207,25 +207,14 @@ export function DirectorDashboardClient() {
         </div>
       )}
 
-      {/* §4.1 — Hero-strip KPI в карточке с градиентом и shadow-lg.
-          CountUp числа отрисовываются внутри `KpiHero` — здесь оборачиваем
-          сам блок без правки внешних компонентов (см. ограничение ТЗ). */}
-      <StaggerSection delayMs={nextStagger()}>
-        <div className="mb-6 rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-4 shadow-lg md:p-5">
-          {data?.isEmpty && <SampleStoryBanner />}
-
-          {/* Pulse Wave 6 §6.8 — Алерт о необратимых решениях без альтернатив. */}
-          {pulse && !pulseLoading && (
-            <IrreversibleDecisionsAlert
-              decisions={pulse.irreversibleDecisions.decisions}
-              alertCount={pulse.irreversibleDecisions.alertCount}
-            />
-          )}
-
-          {/* Pulse Wave 1 §1.5 + Wave 6 §6.7 — KPI hero strip. */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {/* === STICKY HERO (3 зоны: 3 KPI · AI-сводка · Топ-1 риск) ===
+          Фаза Б.2 ТЗ `2026-06-01-dashboard-main-tabs-restructure.md`. */}
+      <div className="sticky top-0 z-20 -mx-4 mb-4 bg-gradient-to-br from-bg-base via-bg-base to-accent/5 px-4 pb-3 pt-3 backdrop-blur md:pt-4">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {/* Зона 1: 3 KPI с MiniSparkline. */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:col-span-1">
             <KpiHero
-              label="Индекс настроения недели"
+              label="Настроение"
               value={data?.kpiSentimentIndex?.value ?? 0}
               numericValue={data?.kpiSentimentIndex?.value ?? 0}
               sparkline={data?.kpiSentimentIndex?.sparkline}
@@ -252,36 +241,68 @@ export function DirectorDashboardClient() {
               threshold={{ green: 2, yellow: 5, inverted: true }}
               href="/decisions?status=hanging"
             />
-            {/* Pulse Wave 6 §6.7 — Knowledge Velocity (median hours to answer). */}
-            <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
           </div>
-        </div>
-      </StaggerSection>
 
+          {/* Зона 2: AI-сводка. */}
+          <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
+            <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
+              <Sparkles size={12} aria-hidden />
+              <span>AI-сводка</span>
+            </div>
+            {data?.narrativeSummary ? (
+              <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
+            ) : (
+              <p className="text-xs text-fg-tertiary">AI-сводка появится после первой встречи или анализа знаний.</p>
+            )}
+          </div>
+
+          {/* Зона 3: Топ-1 риск. */}
+          <TopRiskCard
+            risk={
+              pulse?.irreversibleDecisions?.decisions?.[0]
+                ? {
+                    id: pulse.irreversibleDecisions.decisions[0].decisionId,
+                    title: pulse.irreversibleDecisions.decisions[0].statement,
+                    subtitle: null,
+                  }
+                : null
+            }
+            totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
+          />
+        </div>
+      </div>
+
+      {/* === Узкая sticky-полоса под Hero: структура + «Спросите Кору» === */}
+      <div className="sticky top-[var(--hero-h,200px)] z-10 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 bg-bg-base/95 px-4 py-2 backdrop-blur">
+        <div className="min-w-0 flex-1">
+          <StructureSummaryWidget />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            // TODO Б.4: открыть AssistantSidebar на табе «Спросить».
+            // Пока заглушка — для Б.2 достаточно UI-плейсхолдера.
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('assistant-sidebar:open-ask'));
+            }
+          }}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/15 px-3.5 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <MessageCircle size={14} strokeWidth={1.75} />
+          Спросите Кору
+        </button>
+      </div>
+
+      {/* Онбординг-блок (Б.5 — рефактор логики; пока оставляем как есть). */}
       <StaggerSection delayMs={nextStagger()}>
         <div className="mb-6">
           <IntroWizardWidget />
         </div>
       </StaggerSection>
 
-      {/* §4.4 — AI-сводка с inner-glow карточкой и микро-лейблом. */}
-      {data?.narrativeSummary && (
-        <StaggerSection delayMs={nextStagger()}>
-          <div className="mb-6 rounded-2xl border border-accent/20 bg-bg-card p-5 shadow-lg shadow-accent/15">
-            <div className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
-              <Sparkles size={12} aria-hidden />
-              <span>AI-сводка</span>
-            </div>
-            <AiNarrativeWithSources
-              data={data.narrativeSummary}
-              periodLabel={periodLabel}
-            />
-          </div>
-        </StaggerSection>
-      )}
-
-      {/* §4.3 «Решения и риски» — см. блок IrreversibleDecisionsAlert + SampleStoryBanner
-          выше внутри Hero-strip (по позиции — над KPI). Здесь — категория «Команда и здоровье». */}
+      {/* §4.3 «Команда и здоровье» — категория виджетов под Hero/онбордингом.
+          Решения и риски теперь только в Топ-1 виде через TopRiskCard в Hero;
+          полный список переедет в таб «Цели и встречи» в Фазе Б.3. */}
       <StaggerSection delayMs={nextStagger()}>
         <SectionHeader title="Команда и здоровье" />
         <div className="mb-6">

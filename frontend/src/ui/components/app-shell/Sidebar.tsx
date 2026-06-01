@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  Archive,
   BarChart3,
   Bot,
   Brain,
@@ -43,6 +44,7 @@ import {
   Shapes,
   Shield,
   Sparkles,
+  Table2,
   Target,
   Truck,
   User,
@@ -232,9 +234,16 @@ const DAILY_GROUP: NavGroup = {
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
     { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump', overviewTarget: 'overview.dump' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
+    // Smart-tables (2026-06-01 dashboards-wow-polish Фаза 1) — закрываем dead route.
+    { href: '/tables', label: 'Таблицы', icon: Table2, matchPrefix: '/tables' },
     { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects', overviewTarget: 'overview.projects' },
     // Sprints (2026-05-27) — Wave 4 frontend, отдельный раздел рядом с трекером.
     { href: '/sprints', label: 'Спринты', icon: Rocket, matchPrefix: '/sprints', tourTarget: 'welcome.sprints' },
+    // Sprint archive (2026-06-01 dashboards-wow-polish Фаза 1) — закрываем dead route.
+    // matchPrefix важен: /sprints/archive должен быть более специфичным, чем /sprints,
+    // иначе winnerHref подсветит «Спринты» при заходе на архив. Алгоритм
+    // выбора winner'а сравнивает длину префиксов — здесь это работает корректно.
+    { href: '/sprints/archive', label: 'Архив спринтов', icon: Archive, matchPrefix: '/sprints/archive' },
     {
       href: '/chat',
       label: 'Помощник компании',

@@ -21,6 +21,8 @@ import {
   type DailyDigestPersonStruggledDomain,
   type DailyDigestUrgentItemDomain,
 } from '@/domain/operations-daily-digest';
+import { CountUp } from '@/ui/components/dashboard/charts';
+import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 
 /**
  * SBA β-8.3 Wave 1 — клиентский UI ежедневного отчёта операционного директора.
@@ -118,16 +120,20 @@ export function DailyDigestClient() {
 
   return (
     <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-fg-primary">
+      {/* §5.2 — Sticky-header. */}
+      <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
           Ежедневный отчёт
         </h1>
-        <p className="text-sm text-fg-secondary">
+        <p className="mt-1 text-sm text-fg-secondary">
           Сводка за сутки в МСК: температура команды, новые блокеры,
           просроченные обещания, цели, сигналы. Генерируется автоматически
           каждый день в 01:00 МСК.
         </p>
       </header>
+
+      {/* §5.1 — Общая навигация по операционному разделу. */}
+      <OperationsTabs />
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded border border-border-subtle bg-bg-surface p-3">
         <button
@@ -279,16 +285,23 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
         )}
       </section>
 
-      <CountersRow
-        items={[
-          { label: 'Новые блокеры', value: m.newBlockers.length },
-          { label: 'Просроченные обещания', value: m.overdueCommitments.length },
-          { label: 'Цели закрыты', value: m.goals.completed },
-          { label: 'Цели провалены', value: m.goals.failed },
-          { label: 'Новые сигналы', value: m.newHighInsights.length },
-          { label: 'Решения', value: m.decisions.length },
-        ]}
-      />
+      {/* §5.3/§5.4 — Hero-strip главных метрик дня с CountUp.
+          Временных рядов в API daily-digest нет — sparkline не выдумываем. */}
+      <section className="rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-4 shadow-lg motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards md:p-5">
+        <h2 className="mb-3 text-xs uppercase tracking-widest text-fg-tertiary">
+          Главное за день
+        </h2>
+        <CountersRow
+          items={[
+            { label: 'Новые блокеры', value: m.newBlockers.length },
+            { label: 'Просроченные обещания', value: m.overdueCommitments.length },
+            { label: 'Цели закрыты', value: m.goals.completed },
+            { label: 'Цели провалены', value: m.goals.failed },
+            { label: 'Новые сигналы', value: m.newHighInsights.length },
+            { label: 'Решения', value: m.decisions.length },
+          ]}
+        />
+      </section>
 
       {m.newBlockers.length > 0 ? (
         <section className="rounded border border-border-subtle bg-bg-surface p-4">
@@ -372,21 +385,21 @@ function CountersRow(props: {
   items: Array<{ label: string; value: number }>;
 }) {
   return (
-    <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {props.items.map((it) => (
         <div
           key={it.label}
-          className="rounded border border-border-subtle bg-bg-surface p-3"
+          className="rounded-xl border border-border-subtle bg-bg-surface p-3 shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="text-[10px] uppercase tracking-wide text-fg-tertiary">
             {it.label}
           </div>
           <div className="mt-1 text-2xl font-bold tabular-nums text-fg-primary">
-            {it.value}
+            <CountUp to={it.value} />
           </div>
         </div>
       ))}
-    </section>
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import {
   Bold,
+  ChevronRight,
   Italic,
   Strikethrough,
   Heading1,
@@ -68,6 +69,8 @@ export interface RowDetailProps {
   open: boolean;
   onClose: () => void;
   tableId: string;
+  /** Имя таблицы для breadcrumb. Если не передано — fallback «Таблица». */
+  tableName?: string;
   rowId: string | null;
   properties: TablePropertyDomain[];
   rowData: TableRowDomain | null;
@@ -81,6 +84,7 @@ export interface RowDetailProps {
 export function RowDetail({
   open,
   onClose,
+  tableName,
   rowId,
   properties,
   rowData,
@@ -103,6 +107,7 @@ export function RowDetail({
         {rowId && rowData ? (
           <RowDetailContent
             rowId={rowId}
+            tableName={tableName}
             properties={properties}
             rowData={rowData}
             onUpdateCell={onUpdateCell}
@@ -121,6 +126,7 @@ export function RowDetail({
 
 interface RowDetailContentProps {
   rowId: string;
+  tableName?: string;
   properties: TablePropertyDomain[];
   rowData: TableRowDomain;
   onUpdateCell: (rowId: string, propertyId: string, value: unknown) => void;
@@ -131,8 +137,58 @@ interface RowDetailContentProps {
   onClose: () => void;
 }
 
+/**
+ * Tone-маппинг для шапки строки (фон + текст) по значению status-property.
+ * Совпадает с эвристикой GridView (русские/английские синонимы).
+ */
+type HeaderTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+
+const HEADER_TONE_BG: Record<HeaderTone, string> = {
+  success: 'bg-chip-success-bg/10',
+  warning: 'bg-chip-warning-bg/10',
+  danger: 'bg-chip-danger-bg/10',
+  info: 'bg-chip-info-bg/10',
+  neutral: 'bg-bg-subtle',
+};
+
+const HEADER_TONE_DOT: Record<HeaderTone, string> = {
+  success: 'bg-chip-success-fg',
+  warning: 'bg-chip-warning-fg',
+  danger: 'bg-chip-danger-fg',
+  info: 'bg-chip-info-fg',
+  neutral: 'bg-fg-tertiary',
+};
+
+function pickHeaderTone(label: string | null): HeaderTone {
+  if (!label) return 'neutral';
+  const l = label.trim().toLowerCase();
+  if (!l) return 'neutral';
+  if (/^(готово|сделано|завершено|done|complete|closed|success|ок|ok)$/.test(l))
+    return 'success';
+  if (
+    /^(в работе|in.progress|active|идёт|идет|review|на проверке|открыт)$/.test(
+      l,
+    )
+  )
+    return 'info';
+  if (
+    /^(планируется|backlog|todo|новая|новое|новый|план|to.?do|ожидание|waiting)$/.test(
+      l,
+    )
+  )
+    return 'warning';
+  if (
+    /^(блокировано|отменено|cancelled|canceled|blocked|fail|failed|error|просрочено|overdue)$/.test(
+      l,
+    )
+  )
+    return 'danger';
+  return 'neutral';
+}
+
 function RowDetailContent({
   rowId,
+  tableName,
   properties,
   rowData,
   onUpdateCell,
@@ -163,28 +219,70 @@ function RowDetailContent({
     [properties],
   );
 
+  // Tone шапки — по значению первой `status`-колонки строки, если есть.
+  const headerTone = useMemo<HeaderTone>(() => {
+    const statusProp = properties.find((p) => p.type === 'status');
+    if (!statusProp) return 'neutral';
+    const label = formatCellValue(rowData.cells[statusProp.id], 'status');
+    return pickHeaderTone(label || null);
+  }, [properties, rowData.cells]);
+
+  const statusLabel = useMemo(() => {
+    const statusProp = properties.find((p) => p.type === 'status');
+    if (!statusProp) return null;
+    const label = formatCellValue(rowData.cells[statusProp.id], 'status');
+    return label || null;
+  }, [properties, rowData.cells]);
+
   return (
     <div className="flex h-full flex-col">
-      {/* Шапка */}
-      <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-6 py-4">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-fg-primary">
-            {title}
-          </h2>
-          <p className="mt-0.5 text-xs text-fg-tertiary">
-            Создано {rowData.createdAt.toLocaleDateString('ru-RU')} ·{' '}
-            Обновлено {rowData.updatedAt.toLocaleDateString('ru-RU')}
-          </p>
+      {/* Шапка — тоновый фон по статусу строки */}
+      <div
+        className={`border-b border-border-subtle px-6 pb-5 pt-4 transition-colors ${HEADER_TONE_BG[headerTone]}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <nav
+              aria-label="Хлебные крошки"
+              className="mb-2 flex items-center gap-1 text-xs text-fg-tertiary"
+            >
+              <span className="truncate">{tableName ?? 'Таблица'}</span>
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+              <span className="text-fg-secondary">Строка</span>
+            </nav>
+            <h2 className="truncate text-lg font-semibold text-fg-primary">
+              {title}
+            </h2>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-fg-secondary">
+              {statusLabel ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${HEADER_TONE_DOT[headerTone]}`}
+                    aria-hidden
+                  />
+                  {statusLabel}
+                </span>
+              ) : null}
+              {statusLabel ? <span className="text-fg-tertiary">·</span> : null}
+              <span className="text-fg-tertiary">
+                Создано {rowData.createdAt.toLocaleDateString('ru-RU')}
+              </span>
+              <span className="text-fg-tertiary">·</span>
+              <span className="text-fg-tertiary">
+                Обновлено {rowData.updatedAt.toLocaleDateString('ru-RU')}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="-mr-2 shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          aria-label="Закрыть"
-          className="-mr-2 shrink-0"
-        >
-          <X className="h-4 w-4" />
-        </Button>
       </div>
 
       {/* Body */}

@@ -12,6 +12,8 @@ import {
   type GridMouseEventArgs,
   type Item,
 } from '@glideapps/glide-data-grid';
+import { formatDistanceToNow } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { useCallback, useMemo } from 'react';
 
 import {
@@ -21,6 +23,99 @@ import {
   type TablePropertyDomain,
   type TableRowDomain,
 } from '@/domain/table';
+
+/**
+ * Тональная палитра для status / select ячеек.
+ *
+ * Glide Data Grid 6 не позволяет per-cell custom React-рендер без serialization
+ * через `customRenderers` (это требует регистрации классов и риск ломки
+ * copy/paste / undo). Безопасный путь — `themeOverride` на ячейке: подкрашиваем
+ * фон и текст самой ячейки в тона `chip-*` из tokens.css. Это даёт визуальный
+ * «цветной чип» без custom canvas-рендера.
+ *
+ * Если значение неизвестно — нейтральный тон.
+ */
+type CellTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+
+const TONE_THEME: Record<
+  CellTone,
+  { bgCell: string; textDark: string; textLight: string }
+> = {
+  success: {
+    bgCell: 'var(--chip-success-bg)',
+    textDark: 'var(--chip-success-fg)',
+    textLight: 'var(--chip-success-fg)',
+  },
+  warning: {
+    bgCell: 'var(--chip-warning-bg)',
+    textDark: 'var(--chip-warning-fg)',
+    textLight: 'var(--chip-warning-fg)',
+  },
+  danger: {
+    bgCell: 'var(--chip-danger-bg)',
+    textDark: 'var(--chip-danger-fg)',
+    textLight: 'var(--chip-danger-fg)',
+  },
+  info: {
+    bgCell: 'var(--chip-info-bg)',
+    textDark: 'var(--chip-info-fg)',
+    textLight: 'var(--chip-info-fg)',
+  },
+  neutral: {
+    bgCell: 'var(--bg-overlay)',
+    textDark: 'var(--text-secondary)',
+    textLight: 'var(--text-secondary)',
+  },
+};
+
+/**
+ * Эвристика тона по строке-значению статуса.
+ * Совпадает с маппингом ColumnTypeSelector / админ-фильтров (русские синонимы).
+ */
+function pickToneByLabel(label: string): CellTone {
+  const l = label.trim().toLowerCase();
+  if (!l) return 'neutral';
+  if (
+    /^(готово|сделано|завершено|done|complete|closed|success|ок|ok)$/.test(l)
+  )
+    return 'success';
+  if (
+    /^(в работе|in.progress|active|идёт|идет|review|на проверке|открыт)$/.test(
+      l,
+    )
+  )
+    return 'info';
+  if (
+    /^(планируется|backlog|todo|новая|новое|новый|план|to.?do|ожидание|waiting)$/.test(
+      l,
+    )
+  )
+    return 'warning';
+  if (
+    /^(блокировано|отменено|cancelled|canceled|blocked|fail|failed|error|просрочено|overdue)$/.test(
+      l,
+    )
+  )
+    return 'danger';
+  return 'neutral';
+}
+
+/**
+ * Относительное представление даты для отображения в Grid: «2 часа назад»,
+ * «3 дня назад». Если значение невалидное — пустая строка.
+ *
+ * Glide рисует только текст, поэтому это безопасный путь.
+ */
+function formatRelativeDate(raw: unknown): string {
+  if (raw === null || raw === undefined || raw === '') return '';
+  try {
+    const date = raw instanceof Date ? raw : new Date(String(raw));
+    if (Number.isNaN(date.getTime())) return '';
+    return formatDistanceToNow(date, { addSuffix: true, locale: ru });
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Обёртка `DataEditor` Glide Data Grid под наши DomainModel'и.
@@ -101,7 +196,7 @@ export function GridView({
           data: 'Тип пока не поддерживается',
           displayData: 'Тип пока не поддерживается',
           allowOverlay: false,
-          themeOverride: { textDark: '#94a3b8' },
+          themeOverride: { textDark: 'var(--text-tertiary)' },
         };
       }
 
@@ -149,10 +244,16 @@ export function GridView({
         case 'status':
         case 'selectSingle': {
           const label = formatCellValue(raw, property.type);
+          // Префикс «●» рисует цветную точку. Bubble — иммутабельный
+          // (overlay-редактор появится в следующих фазах с popover).
+          // Сам Bubble оборачиваем в `themeOverride` — фон/текст подкрашиваем
+          // в тон tokens.css. См. комментарий к TONE_THEME выше.
+          const tone = label ? pickToneByLabel(label) : 'neutral';
           return {
             kind: GridCellKind.Bubble,
             data: label ? [label] : [],
             allowOverlay: true,
+            themeOverride: label ? TONE_THEME[tone] : undefined,
           };
         }
 
@@ -164,18 +265,25 @@ export function GridView({
                   : String(v),
               )
             : [];
+          // Тон берём по первому значению — нейтральная фоновая подкраска
+          // ячейки. Per-bubble цвета в Glide 6 без custom renderer недоступны.
+          const tone = arr.length > 0 ? pickToneByLabel(arr[0] ?? '') : 'neutral';
           return {
             kind: GridCellKind.Bubble,
             data: arr,
             allowOverlay: true,
+            themeOverride: arr.length > 0 ? TONE_THEME[tone] : undefined,
           };
         }
 
         case 'date': {
-          const display = formatCellValue(raw, property.type);
+          // Относительное время «3 дня назад» через date-fns. Сырое значение
+          // хранится как ISO — `data` оставляем raw для копирования, а
+          // `displayData` — для отрисовки.
+          const display = formatRelativeDate(raw);
           return {
             kind: GridCellKind.Text,
-            data: typeof raw === 'string' ? raw : display,
+            data: typeof raw === 'string' ? raw : formatCellValue(raw, property.type),
             displayData: display,
             allowOverlay: true,
           };
@@ -195,18 +303,22 @@ export function GridView({
         case 'updatedAt':
         case 'createdBy': {
           // Computed — берём фактическое поле строки, ячейка cells игнорируется.
+          // Для дат показываем относительное время («2 часа назад»), для
+          // createdBy — id/имя как есть.
           let value: string;
           if (property.type === 'createdAt')
-            value = rowData.createdAt.toLocaleString('ru-RU');
+            value = formatRelativeDate(rowData.createdAt);
           else if (property.type === 'updatedAt')
-            value = rowData.updatedAt.toLocaleString('ru-RU');
+            value = formatRelativeDate(rowData.updatedAt);
           else value = rowData.createdBy;
           return {
             kind: GridCellKind.Text,
             data: value,
             displayData: value,
             allowOverlay: false,
-            themeOverride: isReadOnly ? { textDark: '#94a3b8' } : undefined,
+            themeOverride: isReadOnly
+              ? { textDark: 'var(--text-tertiary)' }
+              : undefined,
           };
         }
 

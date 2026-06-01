@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { ContributionsView } from '../../../me/contributions/ContributionsView';
+import { PersonContributionsClient } from './PersonContributionsClient';
 
 export const metadata: Metadata = {
   title: 'Профиль сотрудника — Z',
@@ -14,13 +14,15 @@ export const metadata: Metadata = {
  * прав — backend вернёт 403, и страница покажет «недоступно».
  *
  * Не показываем тоггл opt-out — это управляется только самим сотрудником.
+ *
+ * 2026-06-01 dashboards-wow-polish Фаза 1: оборачиваем общий
+ * `ContributionsView` в `PersonContributionsClient`, чтобы добавить
+ * горизонтальную навигацию `PersonSubpagesNav` по подстраницам карточки.
  */
 export default function PersonContributionsPage({
   params,
 }: {
   params: { id: string };
 }) {
-  return (
-    <ContributionsView personId={params.id} title="Профиль вклада сотрудника" />
-  );
+  return <PersonContributionsClient personId={params.id} />;
 }

@@ -14,6 +14,7 @@ import type {
   TeamHealthRowDomain,
 } from '@/domain/team-health';
 import { teamHealthFromApi } from '@/domain/team-health';
+import { MiniDonut } from '@/ui/components/dashboard/charts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -42,6 +43,22 @@ const TONE_CHIP: Record<HealthToneDomain, string> = {
   danger: 'bg-chip-danger-bg text-chip-danger-fg',
   neutral: 'bg-bg-overlay text-fg-tertiary',
 };
+
+const TONE_ROW_HOVER: Record<HealthToneDomain, string> = {
+  success: 'hover:bg-chip-success-bg/10',
+  warning: 'hover:bg-chip-warning-bg/10',
+  danger: 'hover:bg-chip-danger-bg/10',
+  neutral: 'hover:bg-bg-overlay/40',
+};
+
+/**
+ * Нормализует значение promises (0..100 %) в долю 0..1 для MiniDonut.
+ * При NaN/некорректных значениях возвращает 0.
+ */
+function normalizePromisesScore(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value / 100));
+}
 
 export function TeamHealthGrid({ className }: Props) {
   const { currentOrgId } = useAuth();
@@ -130,9 +147,14 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
       </tr>
     );
   }
+  const rowHoverClass = TONE_ROW_HOVER[row.sentiment.tone];
+  const promisesScore = normalizePromisesScore(row.promises.value);
   return (
     <tr
-      className="border-t border-border-subtle/60 hover:bg-bg-overlay/40"
+      className={cn(
+        'border-t border-border-subtle/60 transition-colors',
+        rowHoverClass,
+      )}
       title="Подробности появятся в следующих обновлениях"
     >
       <td className="px-2 py-3">
@@ -142,8 +164,15 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
       <td className="px-2 py-3 text-center">
         <AttrChip attr={row.sentiment} formatter={formatSigned} />
       </td>
-      <td className="px-2 py-3 text-center">
-        <AttrChip attr={row.promises} formatter={(v) => `${v}%`} />
+      <td className="px-2 py-3">
+        <div className="flex items-center justify-center gap-2">
+          <MiniDonut
+            value={promisesScore}
+            tone={row.promises.tone}
+            size={28}
+            centerLabel={`${row.promises.value}%`}
+          />
+        </div>
       </td>
       <td className="px-2 py-3 text-center">
         <AttrChip attr={row.conflicts} formatter={(v) => String(v)} />

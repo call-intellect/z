@@ -1,9 +1,13 @@
 'use client';
 
-import { Plus, Table as TableIcon } from 'lucide-react';
+import { Plus, TableProperties } from 'lucide-react';
 
 import { Button } from '@/ui/shadcn/button';
 
+/**
+ * Пустое состояние внутри страницы таблицы. Рендерится, если ещё нет ни одной
+ * колонки или ни одной строки. CTA адаптируется к контексту.
+ */
 export function EmptyState({
   onAddRow,
   onAddColumnClick,
@@ -16,16 +20,19 @@ export function EmptyState({
   isMutating: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border-subtle bg-bg-card px-6 py-16 text-center">
-      <TableIcon className="mb-3 h-10 w-10 text-fg-secondary" />
-      <h2 className="text-base font-medium text-fg-primary">
-        Таблица пустая
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border-subtle bg-bg-card px-6 py-16 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-muted text-accent">
+        <TableProperties className="h-6 w-6" aria-hidden />
+      </div>
+      <h2 className="mt-4 text-base font-medium text-fg-primary">
+        {hasProperties ? 'В этой таблице пока нет строк' : 'Пока пустая таблица'}
       </h2>
       <p className="mt-1 max-w-sm text-sm text-fg-secondary">
-        Добавьте колонку и строку, чтобы начать. Поддерживаются 14 типов
-        колонок — от текста и чисел до статусов и людей.
+        {hasProperties
+          ? 'Добавьте первую строку, чтобы начать наполнять данные.'
+          : 'Создайте колонку — поддерживаются 14 типов от текста и чисел до статусов и людей.'}
       </p>
-      <div className="mt-4 flex gap-2">
+      <div className="mt-5 flex gap-2">
         {hasProperties ? (
           <Button
             size="sm"

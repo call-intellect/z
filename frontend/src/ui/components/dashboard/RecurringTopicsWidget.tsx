@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { CircleHelp, Repeat } from 'lucide-react';
 
 import type { PulsePatternRecurringTopicApi } from '@/domain/pulse-patterns';
+import {
+  MiniBarRow,
+  MiniSparkline,
+  autoTone,
+} from '@/ui/components/dashboard/charts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
@@ -12,6 +17,13 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
  *
  * Топ-N тем без implemented Decision из последних snapshot'ов
  * `RecurringTopic`. Кликом — на страницу темы (если есть themeId).
+ *
+ * Полировка (Фаза 3 ТЗ dashboards-wow-polish, 2026-06-01):
+ *   - Под заголовком — общий `MiniSparkline` по mentionCount всех тем
+ *     (визуальная плотность; временной ряд в API не приходит).
+ *   - Справа от каждой темы — `MiniBarRow` по `mentionCount`. Max —
+ *     максимум по показанному списку. Тон — авто: ratio>0.7 → danger,
+ *     0.3..0.7 → warning, ≥0 → success.
  */
 
 type Props = {
@@ -21,6 +33,13 @@ type Props = {
 };
 
 export function RecurringTopicsWidget({ data, loading, error }: Props) {
+  const topics = data?.topics ?? [];
+  const maxMention = topics.reduce(
+    (acc, t) => (t.mentionCount > acc ? t.mentionCount : acc),
+    0,
+  );
+  const sparklineData = topics.map((t) => t.mentionCount);
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -49,32 +68,60 @@ export function RecurringTopicsWidget({ data, loading, error }: Props) {
           </div>
         )}
         {!loading && !error && data && data.topics.length > 0 && (
-          <ul className="space-y-1">
-            {data.topics.map((t) => {
-              const inner = (
-                <div className="rounded-md p-2 text-sm hover:bg-bg-overlay/40">
-                  <p className="truncate font-medium text-fg-primary">
-                    {t.themeName}
-                  </p>
-                  <p className="mt-0.5 text-xs text-fg-tertiary">
-                    {t.mentionCount} упоминаний · {t.meetingCount} встреч · окно
-                    {' '}
-                    {t.windowDays} дн.
-                  </p>
-                </div>
-              );
-              if (t.themeId) {
-                return (
-                  <li key={t.themeId}>
-                    <Link href={`/themes/${encodeURIComponent(t.themeId)}`}>
-                      {inner}
-                    </Link>
-                  </li>
+          <>
+            {sparklineData.length > 1 && (
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-fg-tertiary">
+                  Плотность упоминаний
+                </span>
+                <MiniSparkline
+                  data={sparklineData}
+                  tone="accent"
+                  width={120}
+                  height={20}
+                  className="flex-1"
+                />
+              </div>
+            )}
+            <ul className="space-y-1">
+              {data.topics.map((t) => {
+                const ratio = maxMention > 0 ? t.mentionCount / maxMention : 0;
+                const tone = autoTone(1 - ratio);
+                const inner = (
+                  <div className="rounded-md p-2 text-sm hover:bg-bg-overlay/40">
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-fg-primary">
+                          {t.themeName}
+                        </p>
+                        <p className="mt-0.5 text-xs text-fg-tertiary">
+                          {t.meetingCount} встреч · окно {t.windowDays} дн.
+                        </p>
+                      </div>
+                      <div className="w-28 shrink-0 sm:w-36">
+                        <MiniBarRow
+                          value={t.mentionCount}
+                          max={maxMention || 1}
+                          tone={tone}
+                          suffix="уп."
+                        />
+                      </div>
+                    </div>
+                  </div>
                 );
-              }
-              return <li key={t.themeName}>{inner}</li>;
-            })}
-          </ul>
+                if (t.themeId) {
+                  return (
+                    <li key={t.themeId}>
+                      <Link href={`/themes/${encodeURIComponent(t.themeId)}`}>
+                        {inner}
+                      </Link>
+                    </li>
+                  );
+                }
+                return <li key={t.themeName}>{inner}</li>;
+              })}
+            </ul>
+          </>
         )}
       </CardContent>
     </Card>

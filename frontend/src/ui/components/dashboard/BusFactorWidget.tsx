@@ -3,14 +3,24 @@
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 
 import type { PulsePatternBusFactorApi } from '@/domain/pulse-patterns';
+import {
+  MiniBarRow,
+  type ChartTone,
+} from '@/ui/components/dashboard/charts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { cn } from '@/ui/shadcn/lib/utils';
 
 /**
  * BusFactorWidget (Pulse Wave 6 §6.1) — «Угрозы непрерывности».
  *
  * Показывает топ-N категорий знаний с `riskLevel='critical'` (≤1 эксперта).
  * Источник: `KnowledgeRiskSnapshot` через `PulsePatternsService`.
+ *
+ * Полировка (Фаза 3 ТЗ dashboards-wow-polish, 2026-06-01):
+ *   - API даёт только `expertsCount` (без разбивки expert/advanced/beginner) —
+ *     `MiniStackedBar` не имеет смысла. Используем `MiniBarRow` (1 сегмент) с
+ *     тоном по severity, плюс цветной чип severity рядом.
  */
 
 type Props = {
@@ -18,6 +28,30 @@ type Props = {
   loading: boolean;
   error: string | null;
 };
+
+// Условный максимум «здоровая» экспертная глубина — 5 человек. На фоне этого
+// 0..2 эксперта читается как тонкая полоска (danger/warning).
+const HEALTHY_EXPERTS_MAX = 5;
+
+function severityForExperts(expertsCount: number): ChartTone {
+  if (expertsCount === 0) return 'danger';
+  if (expertsCount === 1) return 'warning';
+  return 'success';
+}
+
+const TONE_CHIP: Record<ChartTone, string> = {
+  success: 'bg-chip-success-bg text-chip-success-fg',
+  warning: 'bg-chip-warning-bg text-chip-warning-fg',
+  danger: 'bg-chip-danger-bg text-chip-danger-fg',
+  accent: 'bg-bg-overlay text-accent',
+  neutral: 'bg-bg-overlay text-fg-tertiary',
+};
+
+function chipLabel(expertsCount: number): string {
+  if (expertsCount === 0) return 'Нет экспертов';
+  if (expertsCount === 1) return '1 эксперт';
+  return `${expertsCount} экспертов`;
+}
 
 export function BusFactorWidget({ data, loading, error }: Props) {
   return (
@@ -49,28 +83,45 @@ export function BusFactorWidget({ data, loading, error }: Props) {
         )}
         {!loading && !error && data && data.critical.length > 0 && (
           <ul className="space-y-2">
-            {data.critical.map((item) => (
-              <li
-                key={item.categoryName}
-                className="flex items-start justify-between gap-3 rounded-md p-2 hover:bg-bg-overlay/40"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-fg-primary">
-                    {item.categoryName}
-                  </p>
-                  {item.topExperts.length > 0 && (
-                    <p className="mt-0.5 truncate text-xs text-fg-tertiary">
-                      Эксперт: {item.topExperts.join(', ')}
-                    </p>
-                  )}
-                </div>
-                <span className="inline-flex shrink-0 items-center rounded-full bg-chip-danger-bg px-2.5 py-1 text-xs font-medium text-chip-danger-fg">
-                  {item.expertsCount === 0
-                    ? 'Нет экспертов'
-                    : `${item.expertsCount} эксперт`}
-                </span>
-              </li>
-            ))}
+            {data.critical.map((item) => {
+              const tone = severityForExperts(item.expertsCount);
+              return (
+                <li
+                  key={item.categoryName}
+                  className="rounded-md p-2 transition-colors hover:bg-bg-overlay/40"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-fg-primary">
+                        {item.categoryName}
+                      </p>
+                      {item.topExperts.length > 0 && (
+                        <p className="mt-0.5 truncate text-xs text-fg-tertiary">
+                          Эксперт: {item.topExperts.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={cn(
+                        'inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium',
+                        TONE_CHIP[tone],
+                      )}
+                    >
+                      {chipLabel(item.expertsCount)}
+                    </span>
+                  </div>
+                  <div className="mt-2">
+                    <MiniBarRow
+                      value={item.expertsCount}
+                      max={HEALTHY_EXPERTS_MAX}
+                      tone={tone}
+                      label="Глубина"
+                      suffix="чел."
+                    />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
         {!loading && !error && data && data.warningCount > 0 && (

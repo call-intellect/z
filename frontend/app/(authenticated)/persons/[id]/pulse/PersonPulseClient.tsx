@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
+  BarChartHorizontalBig,
   Calendar,
   HandCoins,
   Heart,
@@ -15,6 +17,7 @@ import {
   Star,
   TrendingDown,
   TrendingUp,
+  UserRound,
 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
@@ -34,7 +37,13 @@ import type {
   PersonPulseRiskFlag,
   PersonPulseSentiment,
 } from '@/domain/person-pulse';
+import {
+  CountUp,
+  MiniDonut,
+  MiniSparkline,
+} from '@/ui/components/dashboard/charts';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
+import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -146,16 +155,72 @@ function PersonPulseContent({
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
       <BackLink personId={personId} />
-      <HeaderBlock data={data} />
-      <HrResumeSection data={data} />
-      <div className="grid gap-4 md:grid-cols-2">
-        <MoodTrendCard data={data} />
-        <CheckInsCard data={data} />
-      </div>
-      <PromisesCard data={data} />
-      <RiskFlagsSection data={data} />
-      <PersonProbeQuestionsSection viewedUserId={data.viewedUserId} />
-      <ComingSoonSection />
+      <StaggerSection delayMs={0}>
+        <HeaderBlock data={data} personId={personId} />
+      </StaggerSection>
+      <PersonSubpagesNav entityId={personId} />
+      <StaggerSection delayMs={60}>
+        <SectionHeading icon={Activity} label="Активность" />
+        <HrResumeSection data={data} />
+      </StaggerSection>
+      <StaggerSection delayMs={120}>
+        <SectionHeading icon={Heart} label="Здоровье и настроение" />
+        <div className="grid gap-4 md:grid-cols-2">
+          <MoodTrendCard data={data} />
+          <CheckInsCard data={data} />
+        </div>
+      </StaggerSection>
+      <StaggerSection delayMs={180}>
+        <PromisesCard data={data} />
+      </StaggerSection>
+      <StaggerSection delayMs={240}>
+        <RiskFlagsSection data={data} />
+        <PersonProbeQuestionsSection viewedUserId={data.viewedUserId} />
+      </StaggerSection>
+      <StaggerSection delayMs={300}>
+        <ComingSoonSection />
+      </StaggerSection>
+    </div>
+  );
+}
+
+// ────────────────────────── stagger helper ───────────────────────────────
+
+/**
+ * StaggerSection — обёртка для enter-анимации виджетов (паттерн Фазы 4).
+ * `motion-safe:` уважает `prefers-reduced-motion`, `fill-mode: backwards`
+ * гарантирует один прогон без повторов.
+ */
+function StaggerSection({
+  children,
+  delayMs,
+}: {
+  children: ReactNode;
+  delayMs: number;
+}) {
+  return (
+    <div
+      className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionHeading({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof Activity;
+  label: string;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2 border-t border-border-subtle/30 pt-4">
+      <Icon size={14} className="text-fg-tertiary" strokeWidth={1.75} />
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-secondary">
+        {label}
+      </h2>
     </div>
   );
 }
@@ -174,38 +239,151 @@ function BackLink({ personId }: { personId: string }) {
   );
 }
 
-function HeaderBlock({ data }: { data: PersonPulse }) {
+function HeaderBlock({
+  data,
+  personId,
+}: {
+  data: PersonPulse;
+  personId: string;
+}) {
+  const pulse = useMemo(() => computePulseScore(data), [data]);
+  const initials = getInitials(data.personName);
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 rounded-xl bg-bg-card p-6 shadow-card-soft">
-      <div className="space-y-2">
-        <p className="text-[11px] uppercase tracking-[0.08em] text-fg-tertiary">
-          Pulse · карточка сотрудника
-        </p>
-        <h1 className="text-3xl font-semibold leading-tight text-fg-primary">
-          {data.personName}
-        </h1>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-secondary">
-          <span className="inline-flex items-center gap-1">
-            <Mail size={13} className="text-fg-tertiary" />
-            {data.email}
-          </span>
-          {data.departmentName && (
-            <>
-              <span className="text-fg-tertiary">·</span>
-              <span>{data.departmentName}</span>
-            </>
-          )}
-          {data.isHead && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-chip-info-bg px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-chip-info-fg">
-              <ShieldCheck size={11} />
-              руководитель
+    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-5 shadow-lg">
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <div
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent/15 text-base font-semibold uppercase tracking-wide text-accent-fg"
+          aria-hidden="true"
+        >
+          {initials}
+        </div>
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[11px] uppercase tracking-[0.08em] text-fg-tertiary">
+            Pulse · карточка сотрудника
+          </p>
+          <h1 className="truncate text-3xl font-semibold leading-tight text-fg-primary">
+            {data.personName}
+          </h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-secondary">
+            <span className="inline-flex items-center gap-1">
+              <Mail size={13} className="text-fg-tertiary" />
+              {data.email}
             </span>
-          )}
+            {data.departmentName && (
+              <>
+                <span className="text-fg-tertiary">·</span>
+                <span>{data.departmentName}</span>
+              </>
+            )}
+            {data.isHead && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-chip-info-bg px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-chip-info-fg">
+                <ShieldCheck size={11} />
+                руководитель
+              </span>
+            )}
+          </div>
+          <Link
+            href={`/persons/${personId}`}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-bg-overlay/70 px-3 py-1 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+          >
+            <UserRound size={13} strokeWidth={1.75} />
+            Открыть полный профиль
+          </Link>
         </div>
       </div>
-      <EngagementChip data={data} />
+      <div className="flex flex-wrap items-center gap-3">
+        {pulse !== null ? (
+          <PulseScoreBadge value={pulse} />
+        ) : (
+          <PulseScoreFallback data={data} />
+        )}
+        <EngagementChip data={data} />
+      </div>
     </header>
   );
+}
+
+/**
+ * Pulse-score = среднее по доступным нормированным показателям 0..1:
+ * - engagementScore (если есть)
+ * - доля «зелёных» чек-инов в `moodTrend30d` (если есть отвеченные)
+ * - promisesReliabilityPercent/100 (если хоть одно обещание учтено)
+ *
+ * Это сводный индикатор «всё ок / что-то не так», не строгая метрика.
+ * Если ни одного сигнала нет — null, тогда показываем fallback по
+ * существующим числам.
+ */
+function computePulseScore(data: PersonPulse): number | null {
+  const parts: number[] = [];
+  if (data.engagementScore !== null) parts.push(data.engagementScore);
+
+  const moods = data.moodTrend30d.filter((p) => p.sentiment !== null);
+  if (moods.length > 0) {
+    const greens = moods.filter((p) => p.sentiment === 'green').length;
+    const yellows = moods.filter((p) => p.sentiment === 'yellow').length;
+    // green=1, yellow=0.5, red=0 — среднее по отвеченным дням.
+    parts.push((greens + yellows * 0.5) / moods.length);
+  }
+
+  const totalPromises =
+    data.promisesKept14d + data.promisesBroken14d + data.promisesOverdue14d;
+  if (totalPromises > 0) {
+    parts.push(data.promisesReliabilityPercent / 100);
+  }
+
+  if (parts.length === 0) return null;
+  const avg = parts.reduce((s, v) => s + v, 0) / parts.length;
+  return Math.max(0, Math.min(1, avg));
+}
+
+function PulseScoreBadge({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-bg-overlay/50 px-3 py-2">
+      <MiniDonut
+        value={value}
+        size={80}
+        centerLabel={`${pct}`}
+      />
+      <div className="text-left">
+        <div className="text-[10px] uppercase tracking-wider text-fg-tertiary">
+          Pulse score
+        </div>
+        <div className="text-2xl font-semibold tabular-nums text-fg-primary">
+          <CountUp to={pct} />
+        </div>
+        <div className="text-[10px] text-fg-tertiary">из 100</div>
+      </div>
+    </div>
+  );
+}
+
+function PulseScoreFallback({ data }: { data: PersonPulse }) {
+  // Совсем нет сигналов — показываем число чек-инов, как самое «живое»
+  // существующее число (или 0).
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-bg-overlay/40 px-3 py-2">
+      <Activity size={20} className="text-fg-tertiary" />
+      <div className="text-left">
+        <div className="text-[10px] uppercase tracking-wider text-fg-tertiary">
+          Чек-инов за 30 дней
+        </div>
+        <div className="text-2xl font-semibold tabular-nums text-fg-primary">
+          <CountUp to={data.checkInsTotal30d} />
+        </div>
+        <div className="text-[10px] text-fg-tertiary">
+          сигналов мало для Pulse-score
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '—';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
 }
 
 function EngagementChip({ data }: { data: PersonPulse }) {
@@ -249,7 +427,7 @@ function EngagementChip({ data }: { data: PersonPulse }) {
 
 function HrResumeSection({ data }: { data: PersonPulse }) {
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles size={16} className="text-accent" />
@@ -385,8 +563,10 @@ const HR_TYPE_META: Record<
 function MoodTrendCard({ data }: { data: PersonPulse }) {
   const points = data.moodTrend30d;
   const counts = useMemo(() => countSentiments(points), [points]);
+  const trendSeries = useMemo(() => moodTrendSeries(points), [points]);
+  const answeredCount = counts.green + counts.yellow + counts.red;
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Heart size={16} className="text-accent" />
@@ -394,13 +574,23 @@ function MoodTrendCard({ data }: { data: PersonPulse }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {points.length === 0 ? (
-          <p className="text-sm text-fg-tertiary">
-            За последние 30 дней нет чек-инов. Когда сотрудник начнёт отвечать
-            на вечерние вопросы, тут появится тренд настроения.
-          </p>
+        {points.length === 0 || answeredCount === 0 ? (
+          <MoodEmptyState />
         ) : (
           <>
+            {trendSeries.length >= 2 && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] uppercase tracking-wider text-fg-tertiary">
+                  Тренд тона
+                </span>
+                <MiniSparkline
+                  data={trendSeries}
+                  tone={moodTrendTone(trendSeries)}
+                  width={120}
+                  height={24}
+                />
+              </div>
+            )}
             <MoodSparkline points={points} />
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
               <SentimentLegend label="хорошее" tone="green" count={counts.green} />
@@ -417,6 +607,51 @@ function MoodTrendCard({ data }: { data: PersonPulse }) {
       </CardContent>
     </Card>
   );
+}
+
+function MoodEmptyState() {
+  return (
+    <div className="flex flex-col items-center gap-2 py-2 text-center">
+      <BarChartHorizontalBig
+        size={48}
+        strokeWidth={1.2}
+        className="text-fg-tertiary"
+        aria-hidden="true"
+      />
+      <p className="text-sm font-medium text-fg-secondary">
+        Недостаточно данных
+      </p>
+      <p className="max-w-xs text-xs text-fg-tertiary">
+        Нужны ответы на вечерние чек-ины. Когда сотрудник ответит хотя бы на 3
+        вопроса за период, появится тренд тона.
+      </p>
+    </div>
+  );
+}
+
+/** Числовой ряд тона: green→1, yellow→0.5, red→0. Дни без ответа пропускаем. */
+function moodTrendSeries(points: PersonPulseMoodPoint[]): number[] {
+  const series: number[] = [];
+  for (const p of points) {
+    if (p.sentiment === 'green') series.push(1);
+    else if (p.sentiment === 'yellow') series.push(0.5);
+    else if (p.sentiment === 'red') series.push(0);
+  }
+  return series;
+}
+
+/** Тренд: первая половина vs вторая — если падает, рисуем danger/warning. */
+function moodTrendTone(series: number[]): 'success' | 'warning' | 'danger' {
+  if (series.length < 2) return 'success';
+  const mid = Math.floor(series.length / 2);
+  const left = series.slice(0, mid);
+  const right = series.slice(mid);
+  const avg = (arr: number[]) =>
+    arr.length === 0 ? 0 : arr.reduce((s, v) => s + v, 0) / arr.length;
+  const diff = avg(right) - avg(left);
+  if (diff <= -0.25) return 'danger';
+  if (diff <= -0.1) return 'warning';
+  return 'success';
 }
 
 function MoodSparkline({ points }: { points: PersonPulseMoodPoint[] }) {
@@ -495,7 +730,7 @@ function CheckInsCard({ data }: { data: PersonPulse }) {
       : null;
 
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Calendar size={16} className="text-accent" />
@@ -554,7 +789,7 @@ function CheckInsCard({ data }: { data: PersonPulse }) {
 
 function PromisesCard({ data }: { data: PersonPulse }) {
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <MessageCircle size={16} className="text-accent" />
@@ -567,6 +802,7 @@ function PromisesCard({ data }: { data: PersonPulse }) {
             label="Reliability"
             value={`${data.promisesReliabilityPercent}%`}
             numericValue={data.promisesReliabilityPercent}
+            format={(n) => `${Math.round(n)}%`}
             delta={data.promisesDelta14d}
             deltaLabel="за 14 дней"
             threshold={{ green: 80, yellow: 60 }}
@@ -632,7 +868,7 @@ function PromiseStat({
 function RiskFlagsSection({ data }: { data: PersonPulse }) {
   if (data.riskFlags.length === 0) return null;
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <AlertTriangle size={16} className="text-chip-warning-fg" />
@@ -767,7 +1003,7 @@ function PersonProbeQuestionsSection({
 
   if (viewedUserId === null) {
     return (
-      <Card>
+      <Card className="transition-shadow hover:shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <MessageCircle size={16} className="text-accent" />
@@ -785,7 +1021,7 @@ function PersonProbeQuestionsSection({
   }
 
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <MessageCircle size={16} className="text-accent" />
@@ -901,7 +1137,7 @@ function ComingSoonSection() {
     { title: 'Темы знаний', hint: 'Чем человек экспертно владеет' },
   ];
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base text-fg-secondary">
           <TrendingDown size={16} />

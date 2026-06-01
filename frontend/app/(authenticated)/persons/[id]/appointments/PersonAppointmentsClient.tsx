@@ -13,6 +13,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
+import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
+
 import {
   AdminEmpty,
   AdminError,
@@ -66,6 +68,8 @@ function Content({ orgId, entityId }: { orgId: string; entityId: string }) {
           Полный timeline должностей: отделы, нагрузка, длительности, статусы.
         </p>
       </header>
+
+      <PersonSubpagesNav entityId={entityId} />
 
       {swr.isLoading ? (
         <div className="space-y-2">

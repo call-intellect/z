@@ -19,6 +19,7 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  Activity,
   ChevronRight,
   HandHeart,
   Sparkles,
@@ -32,6 +33,7 @@ import type {
   SprintDailyIssueWithActivityApi,
 } from '@/domain/sprint';
 import { cn } from '@/ui/shadcn/lib/utils';
+import { CountUp } from '@/ui/components/dashboard/charts';
 
 export function SprintDailyPanel({
   orgId,
@@ -58,6 +60,12 @@ export function SprintDailyPanel({
     <div className="flex flex-col gap-4">
       {d.alarmCount > 0 && <AlarmBar count={d.alarmCount} />}
 
+      <TodayHeroStrip
+        issues={d.issuesWithActivity}
+        topClosers={d.topClosers}
+        alarmCount={d.alarmCount}
+      />
+
       <HypothesisAndNarrative
         hypothesisText={d.hypothesisText}
         aiNarrative={d.aiNarrative}
@@ -69,6 +77,105 @@ export function SprintDailyPanel({
         topClosers={d.topClosers}
         topHelpers={d.topHelpers}
       />
+    </div>
+  );
+}
+
+// ───────────────────────── Hero-strip «Сегодня в спринте» ─────────────────
+
+/**
+ * Hero-strip из 3 KPI поверх Daily-таба (Фаза 7.1).
+ * KPI: всего задач в работе, свежих сегодня (activityColor==='success'),
+ * закрыто сегодня (sum по topClosers.closedCount).
+ *
+ * Стиль: эталон Фазы 4 из DirectorDashboardClient — rounded-2xl + gradient.
+ * Числа — `CountUp`. Sparkline/trend в Daily-API нет, поэтому только числа.
+ */
+function TodayHeroStrip({
+  issues,
+  topClosers,
+  alarmCount,
+}: {
+  issues: SprintDailyIssueWithActivityApi[];
+  topClosers: SprintDailyDigestApi['topClosers'];
+  alarmCount: number;
+}) {
+  const totalIssues = issues.length;
+  const freshIssues = issues.filter((i) => i.activityColor === 'success').length;
+  const closedToday = topClosers.reduce((sum, c) => sum + c.closedCount, 0);
+
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-4 shadow-lg md:p-5">
+      <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-fg-tertiary">
+        <Activity size={12} aria-hidden />
+        <span>Сегодня в спринте</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiTile
+          label="Задач в работе"
+          value={totalIssues}
+          tone={totalIssues === 0 ? 'neutral' : 'info'}
+          hint={
+            totalIssues === 0
+              ? 'спринт пуст'
+              : pluralRu(totalIssues, ['задача', 'задачи', 'задач'])
+          }
+        />
+        <KpiTile
+          label="Свежих задач"
+          value={freshIssues}
+          tone={freshIssues > 0 ? 'success' : 'neutral'}
+          hint={
+            totalIssues > 0
+              ? `${Math.round((freshIssues / totalIssues) * 100)}% от спринта`
+              : 'нет активных задач'
+          }
+        />
+        <KpiTile
+          label="Закрыто сегодня"
+          value={closedToday}
+          tone={closedToday > 0 ? 'success' : alarmCount > 0 ? 'warning' : 'neutral'}
+          hint={
+            closedToday === 0
+              ? 'день только начался'
+              : pluralRu(closedToday, ['задача', 'задачи', 'задач'])
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function KpiTile({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: number;
+  tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+  hint: string;
+}) {
+  const valueColor =
+    tone === 'success'
+      ? 'text-chip-success-fg'
+      : tone === 'warning'
+        ? 'text-chip-warning-fg'
+        : tone === 'danger'
+          ? 'text-chip-danger-fg'
+          : tone === 'info'
+            ? 'text-chip-info-fg'
+            : 'text-fg-secondary';
+  return (
+    <div className="rounded-xl border border-border-subtle/40 bg-bg-base/40 px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+        {label}
+      </div>
+      <div className={cn('mt-1 text-3xl font-semibold tabular-nums', valueColor)}>
+        <CountUp to={value} />
+      </div>
+      <div className="mt-1 text-[11px] text-fg-tertiary">{hint}</div>
     </div>
   );
 }
@@ -110,14 +217,18 @@ function HypothesisAndNarrative({
   aiNarrative: string | null;
 }) {
   return (
-    <section className="rounded-xl border border-border-subtle bg-bg-elevated p-5 shadow-card-soft">
+    <section className="rounded-2xl border border-accent/20 bg-bg-card p-5 shadow-lg shadow-accent/15">
+      <div className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
+        <Sparkles size={12} aria-hidden />
+        <span>AI-сводка</span>
+      </div>
       <div className="flex items-start gap-3">
         <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg">
           <Sparkles size={16} />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
-            AI Daily Standup
+            Брифинг на сегодня
           </h2>
           {hypothesisText ? (
             <div className="mt-2 rounded-md bg-bg-overlay px-3 py-2 text-xs text-fg-secondary">
@@ -207,13 +318,19 @@ function IssuesActivitySection({
       <ul className="flex flex-col divide-y divide-border-subtle">
         {issues.map((i) => {
           const style = ACTIVITY_COLOR_STYLE[i.activityColor];
+          const hoverTone =
+            i.activityColor === 'danger'
+              ? 'hover:bg-chip-danger-bg/10'
+              : i.activityColor === 'warning'
+                ? 'hover:bg-chip-warning-bg/10'
+                : 'hover:bg-chip-success-bg/10';
           return (
             <li key={i.issueId}>
               <Link
                 href={`/issues/${encodeURIComponent(i.issueId)}`}
                 className={cn(
                   'group flex items-center gap-3 px-5 py-3 transition-colors',
-                  'hover:bg-bg-overlay',
+                  hoverTone,
                 )}
               >
                 <span

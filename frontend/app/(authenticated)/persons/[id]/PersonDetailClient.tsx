@@ -32,6 +32,8 @@ import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 import { Textarea } from '@/ui/shadcn/textarea';
 
+import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
+
 import {
   AdminError,
   AdminForbidden,
@@ -172,6 +174,8 @@ function PersonDetailContent({
           )}
         </p>
       </header>
+
+      <PersonSubpagesNav entityId={entityId} />
 
       <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
         <h2 className="mb-3 text-base font-medium">Связанные блоки знаний</h2>

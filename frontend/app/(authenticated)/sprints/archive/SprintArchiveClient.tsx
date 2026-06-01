@@ -16,14 +16,17 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import {
   ArrowLeft,
+  CalendarDays,
   CheckCircle2,
   Flag,
   HelpCircle,
+  ListChecks,
   Search,
   XCircle,
 } from 'lucide-react';
 
 import { Input } from '@/ui/shadcn/input';
+import { MiniDonut } from '@/ui/components/dashboard/charts';
 import {
   Select,
   SelectContent,
@@ -281,9 +284,15 @@ function SummaryTile({
 
 function ItemsGrid({ items }: { items: SprintArchiveItemApi[] }) {
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => (
-        <ArchiveCard key={item.cycleId} item={item} />
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((item, idx) => (
+        <div
+          key={item.cycleId}
+          className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards"
+          style={{ animationDelay: `${Math.min(idx, 9) * 40}ms` }}
+        >
+          <ArchiveCard item={item} />
+        </div>
       ))}
     </div>
   );
@@ -291,12 +300,25 @@ function ItemsGrid({ items }: { items: SprintArchiveItemApi[] }) {
 
 function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
   const statusBadge = renderStatusBadge(item);
+  const durationDays = computeDurationDays(item.startDate, item.endDate);
+  const percent = computeCompletedPercent(item.issuesClosed, item.issuesTotal);
+  const donutTone =
+    item.status === 'cancelled'
+      ? 'neutral'
+      : percent === null
+        ? 'neutral'
+        : percent >= 80
+          ? 'success'
+          : percent >= 50
+            ? 'warning'
+            : 'danger';
+
   return (
     <Link
       href={`/sprints/${encodeURIComponent(item.cycleId)}`}
       className={cn(
-        'group flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elevated p-5 shadow-card-soft transition-all',
-        'hover:-translate-y-0.5 hover:shadow-card-raised',
+        'group flex h-full flex-col gap-3 rounded-xl border border-border-subtle/40 bg-bg-elevated p-5 shadow-card-soft transition-all',
+        'hover:-translate-y-0.5 hover:shadow-md',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
       )}
     >
@@ -308,12 +330,51 @@ function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
           <h3 className="mt-0.5 truncate text-base font-semibold text-fg-primary">
             {item.name}
           </h3>
+          <div className="mt-1 text-[11px] text-fg-tertiary">
+            {formatSprintDateRange(item.startDate, item.endDate)}
+          </div>
         </div>
         {statusBadge}
       </div>
 
-      <div className="text-[11px] text-fg-tertiary">
-        {formatSprintDateRange(item.startDate, item.endDate)}
+      {/* Фаза 7.5 — 3 мини-stat'а в карточке: длительность / % выполнено / задачи */}
+      <div className="flex items-center gap-3 rounded-lg bg-bg-overlay/60 px-3 py-2">
+        <MiniStat
+          icon={<CalendarDays size={11} aria-hidden />}
+          label="Длительность"
+          value={
+            durationDays !== null
+              ? `${durationDays} ${pluralRu(durationDays, ['день', 'дня', 'дней'])}`
+              : '—'
+          }
+        />
+        <div className="h-8 w-px bg-border-subtle/40" aria-hidden />
+        <div className="flex min-w-0 items-center gap-2">
+          {percent !== null ? (
+            <MiniDonut
+              value={percent / 100}
+              size={32}
+              tone={donutTone}
+              centerLabel={`${percent}%`}
+            />
+          ) : (
+            <span className="inline-block h-8 w-8 rounded-full bg-bg-overlay" aria-hidden />
+          )}
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+              Выполнено
+            </div>
+            <div className="truncate text-xs text-fg-secondary">
+              {percent !== null ? `${percent}% от плана` : 'нет данных'}
+            </div>
+          </div>
+        </div>
+        <div className="h-8 w-px bg-border-subtle/40" aria-hidden />
+        <MiniStat
+          icon={<ListChecks size={11} aria-hidden />}
+          label="Задач"
+          value={`${item.issuesClosed} / ${item.issuesTotal}`}
+        />
       </div>
 
       {item.hypothesisText ? (
@@ -327,19 +388,62 @@ function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
       )}
 
       {item.learningSummary && (
-        <div className="rounded-md bg-bg-overlay px-3 py-2 text-xs text-fg-secondary">
+        <div className="mt-auto rounded-md bg-bg-overlay px-3 py-2 text-xs text-fg-secondary">
           <span className="font-medium text-fg-primary">Что узнали: </span>
           <span className="line-clamp-2">{item.learningSummary}</span>
         </div>
       )}
-
-      <div className="mt-auto flex items-center justify-between text-[11px] text-fg-tertiary">
-        <span>
-          Задач: {item.issuesClosed} / {item.issuesTotal}
-        </span>
-      </div>
     </Link>
   );
+}
+
+function MiniStat({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="mt-0.5 truncate text-xs font-medium text-fg-secondary">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function computeDurationDays(
+  startDate: string,
+  endDate: string,
+): number | null {
+  const s = new Date(startDate).getTime();
+  const e = new Date(endDate).getTime();
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return null;
+  return Math.max(1, Math.round((e - s) / 86_400_000) + 1);
+}
+
+function computeCompletedPercent(
+  closed: number,
+  total: number,
+): number | null {
+  if (total <= 0) return null;
+  return Math.max(0, Math.min(100, Math.round((closed / total) * 100)));
+}
+
+function pluralRu(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return forms[2];
+  if (mod10 === 1) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4) return forms[1];
+  return forms[2];
 }
 
 function renderStatusBadge(item: SprintArchiveItemApi): React.ReactNode {

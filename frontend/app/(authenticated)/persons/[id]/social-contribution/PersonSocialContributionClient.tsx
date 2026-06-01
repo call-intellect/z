@@ -39,6 +39,7 @@ import {
 import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
 
 export function PersonSocialContributionClient({
   personId,
@@ -91,6 +92,8 @@ export function PersonSocialContributionClient({
           наблюдения — никаких рейтингов и сравнений.
         </p>
       </header>
+
+      <PersonSubpagesNav entityId={personId} />
 
       {loading && <ProfileSkeleton />}
 

@@ -11,6 +11,8 @@ import {
   type WeeklyOperationsDigestApi,
   type WeeklyTeamDynamicsRowApi,
 } from '@/api/weekly-digest.api';
+import { CountUp } from '@/ui/components/dashboard/charts';
+import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 
 /**
  * SBA β-8.1 — клиентский UI «Недельной сводки операционного директора».
@@ -82,13 +84,19 @@ export function WeeklyDigestClient() {
 
   return (
     <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold">Недельная сводка</h1>
-        <p className="text-sm text-fg-secondary">
+      {/* §5.2 — Sticky-header. */}
+      <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+          Недельная сводка
+        </h1>
+        <p className="mt-1 text-sm text-fg-secondary">
           Обзор для операционного директора: температура команды,
           повторяющиеся блокеры, сигналы, цели, висящие решения.
         </p>
       </header>
+
+      {/* §5.1 — Общая навигация по операционному разделу. */}
+      <OperationsTabs />
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded border bg-bg-card p-3">
         <button
@@ -285,8 +293,10 @@ function signedRu(v: number): string {
 
 function KpiDeltasSection({ items }: { items: WeeklyKpiDeltaApi[] }) {
   if (items.length === 0) return null;
+  // §5.3/§5.4 — Hero-strip главных KPI с CountUp и градиент-фоном.
+  // Временных рядов (за 30 дней) в weekly-digest API нет — sparkline не выдумываем.
   return (
-    <section className="rounded border bg-bg-card p-4">
+    <section className="rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-4 shadow-lg motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards md:p-5">
       <h2 className="mb-3 text-lg font-semibold">Главные показатели</h2>
       <p className="mb-3 text-xs text-fg-tertiary">
         Сравнение с прошлой неделей.
@@ -327,13 +337,13 @@ function KpiDeltaCard({ k }: { k: WeeklyKpiDeltaApi }) {
   const arrow = direction === 'up' ? '↑' : direction === 'down' ? '↓' : '·';
   const unitSuffix = k.unit === '%' ? '%' : k.unit === 'pts' ? ' pts' : ' шт';
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-3">
+    <div className="rounded-xl border border-border-subtle bg-bg-surface p-3 shadow-sm transition-shadow hover:shadow-md">
       <div className="text-[10px] uppercase tracking-wide text-fg-tertiary">
         {k.label}
       </div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className="text-2xl font-bold tabular-nums text-fg-primary">
-          {k.current}
+          <CountUp to={k.current} />
           <span className="ml-0.5 text-sm font-normal text-fg-secondary">
             {unitSuffix}
           </span>

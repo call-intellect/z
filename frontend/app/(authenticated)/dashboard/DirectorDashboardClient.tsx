@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import {
+  Activity,
   AlertCircle,
   ArrowRight,
   HelpCircle,
@@ -169,6 +170,15 @@ export function DirectorDashboardClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* §5.5 — Pill-ссылка на операционную сводку. */}
+          <Link
+            href="/dashboard/operations"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            aria-label="Открыть операционную сводку"
+          >
+            <Activity size={14} strokeWidth={1.75} className="shrink-0" />
+            <span>Операционная сводка</span>
+          </Link>
           <PeriodSwitch value={period} onChange={setPeriod} disabled={loading} />
           <Button
             variant="outline"

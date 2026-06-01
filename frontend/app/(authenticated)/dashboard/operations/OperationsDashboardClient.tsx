@@ -24,6 +24,8 @@ import {
   type OperationsOverviewDomain,
 } from '@/domain/operations-dashboard';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
+import { CountUp } from '@/ui/components/dashboard/charts';
+import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
@@ -128,12 +130,18 @@ export function OperationsDashboardClient() {
 
   return (
     <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold">Операции — пульс компании</h1>
-        <p className="text-sm text-fg-secondary">
+      {/* §5.2 — Sticky-header c backdrop-blur и тонким border. */}
+      <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+          Операции — пульс компании
+        </h1>
+        <p className="mt-1 text-sm text-fg-secondary">
           Обновлено {data.generatedAt.toLocaleString('ru-RU')}
         </p>
       </header>
+
+      {/* §5.1 — Общая навигация по операционному разделу. */}
+      <OperationsTabs />
 
       <YesterdayDigestCard
         loading={dailyDigestSwr.isLoading}
@@ -144,7 +152,9 @@ export function OperationsDashboardClient() {
         <MaturityWidget maturity={data.maturity} />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* §5.3/§5.4 — Hero-strip главных KPI с CountUp и hover-эффектом.
+          Временных рядов в overview-API нет — sparkline не выдумываем. */}
+      <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards md:grid-cols-2 lg:grid-cols-4">
         <Card
           title="Активные блокеры"
           value={data.blockersCount}
@@ -165,7 +175,8 @@ export function OperationsDashboardClient() {
         />
         <Card
           title="Средняя загрузка"
-          value={`${data.capacityAvgPercent}%`}
+          value={data.capacityAvgPercent}
+          suffix="%"
           accent={data.capacityOverloadedCount > 0 ? 'amber' : 'green'}
           subtitle={`перегружены: ${data.capacityOverloadedCount}`}
         />
@@ -274,6 +285,8 @@ export function OperationsDashboardClient() {
 function Card(props: {
   title: string;
   value: number | string;
+  /** Доп. суффикс к числу (`%`, ` шт`, и т.п.). Используется только для number. */
+  suffix?: string;
   accent: 'green' | 'amber' | 'red';
   subtitle?: string;
 }) {
@@ -283,12 +296,20 @@ function Card(props: {
       : props.accent === 'amber'
         ? 'border-chip-warning-bg bg-chip-warning-bg'
         : 'border-chip-success-bg bg-chip-success-bg';
+  const isNumeric = typeof props.value === 'number';
   return (
-    <div className={`rounded border p-4 ${colour}`}>
+    <div
+      className={`rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md ${colour}`}
+    >
       <div className="text-xs uppercase tracking-wide text-fg-secondary">
         {props.title}
       </div>
-      <div className="mt-1 text-3xl font-bold">{props.value}</div>
+      <div className="mt-1 text-3xl font-bold">
+        {isNumeric ? <CountUp to={props.value as number} /> : props.value}
+        {props.suffix ? (
+          <span className="ml-0.5 text-2xl font-semibold">{props.suffix}</span>
+        ) : null}
+      </div>
       {props.subtitle ? (
         <div className="mt-1 text-xs text-fg-secondary">{props.subtitle}</div>
       ) : null}

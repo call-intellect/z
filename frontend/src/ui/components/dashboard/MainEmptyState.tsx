@@ -13,16 +13,39 @@
  */
 
 import Link from 'next/link';
-import { ArrowRight, Building2 } from 'lucide-react';
+import { ArrowRight, Building2, Sparkles } from 'lucide-react';
 
 export type MainEmptyStateProps = {
   /** Если true — показать CTA «Вернуться в демо» (есть membership к эталону). */
   canReturnToDemo?: boolean;
   /** Колбэк для возврата в эталон — обычно дергает org-switcher. */
   onReturnToDemo?: () => void;
+  /**
+   * Прогресс настройки компании (Шаг В.3 зонтика).
+   * Если задан и `completed < total` — между текстом и CTA выводится
+   * компактная секция «Настройка компании · N/M» с прогресс-баром и
+   * CTA-ссылкой на онбординг. Предполагается, что вызывающая сторона
+   * НЕ передаёт props если пользователь — обычный member (только owner/admin).
+   */
+  setupProgress?: { completed: number; total: number };
 };
 
-export function MainEmptyState({ canReturnToDemo = false, onReturnToDemo }: MainEmptyStateProps) {
+export function MainEmptyState({
+  canReturnToDemo = false,
+  onReturnToDemo,
+  setupProgress,
+}: MainEmptyStateProps) {
+  const showProgress =
+    setupProgress != null &&
+    setupProgress.total > 0 &&
+    setupProgress.completed < setupProgress.total;
+  const pct = showProgress
+    ? Math.max(
+        0,
+        Math.min(100, Math.round((setupProgress!.completed / setupProgress!.total) * 100)),
+      )
+    : 0;
+
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-6 py-12">
       <div className="w-full max-w-xl rounded-2xl border border-border-default bg-bg-surface p-8 text-center shadow-sm">
@@ -36,6 +59,27 @@ export function MainEmptyState({ canReturnToDemo = false, onReturnToDemo }: Main
           Демо «ТехноСтрим» показал, как работает Кора. Чтобы создавать встречи,
           задачи и регламенты в своей компании — оплатите подписку.
         </p>
+        {showProgress ? (
+          <div className="mb-6 rounded-xl border border-accent/30 bg-accent/5 p-4 text-left">
+            <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-accent">
+              <Sparkles size={14} />
+              Настройка компании · {setupProgress!.completed}/{setupProgress!.total}
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-bg-overlay/60">
+              <div
+                className="h-full bg-accent transition-all"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <Link
+              href="/onboarding/company/step-1"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent-fg hover:underline"
+            >
+              Настроить компанию
+              <ArrowRight size={12} />
+            </Link>
+          </div>
+        ) : null}
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center">
           <Link
             href="/settings/subscription"

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import useSWR from 'swr';
 import {
   Activity,
   AlertCircle,
@@ -22,8 +23,11 @@ import {
 
 import { ApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
+import { orgsApi } from '@/api/orgs.api';
 import { useAuth } from '@/contexts/auth-context';
+import { useSubscription } from '@/contexts/subscription-context';
 import { useDashboardTab } from '@/hooks/useDashboardTab';
+import { useMemberships } from '@/hooks/useMemberships';
 import {
   pulsePatternsFromApi,
   type PulsePatternsDomain,
@@ -54,6 +58,7 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
 import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
+import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
 // Pulse Wave 6 — 7 виджетов паттернов на главной директора.
 import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
 import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
@@ -92,8 +97,11 @@ import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
  *   - Зарезервировано место для виджета «Согласованность стратегии» (Phase 9).
  */
 export function DirectorDashboardClient() {
-  const { user, currentOrgId } = useAuth();
+  const { user, currentOrgId, currentOrgRole } = useAuth();
   const { activeTab, setActiveTab } = useDashboardTab(user?.id ?? null);
+  const { memberships } = useMemberships();
+  const { status: subscriptionStatus, loading: subscriptionLoading, showPaywallModal } =
+    useSubscription();
   const [period, setPeriod] = useState<DirectorDashboardPeriod>('week');
   const [data, setData] = useState<DirectorDashboardDomain | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,6 +164,88 @@ export function DirectorDashboardClient() {
   }, [user]);
 
   const periodLabel = period === 'week' ? 'неделю' : 'месяц';
+
+  // ─── Матрица 6 состояний (Шаг В.1+В.2+В.3 зонтика ─────────────────────────
+  // `2026-06-01-main-screen-umbrella.md`).
+  // Org.isReferenceDemo + currentOrgRole + subscriptionStatus + data.isEmpty.
+  const currentMembership = useMemo(
+    () => memberships.find((m) => m.id === currentOrgId) ?? null,
+    [memberships, currentOrgId],
+  );
+  // Если memberships ещё не загружены — считаем что своя Org (консервативный
+  // дефолт, чтобы не показать MainEmptyState вместо эталонного flow).
+  const isOwnOrg = currentMembership ? !currentMembership.isReferenceDemo : true;
+  const isOwnerOrAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+
+  // Состояние 3 матрицы: своя Org, DEMO-подписка, owner/admin, нет данных.
+  const isPageEmpty =
+    isOwnOrg &&
+    subscriptionStatus === 'DEMO' &&
+    isOwnerOrAdmin &&
+    !loading &&
+    !subscriptionLoading &&
+    (data?.isEmpty === true || data === null);
+
+  // Есть ли эталон в memberships → можно ли предложить «Вернуться в демо».
+  const referenceMembership = useMemo(
+    () => memberships.find((m) => m.isReferenceDemo) ?? null,
+    [memberships],
+  );
+  const canReturnToDemo = !!referenceMembership;
+  const handleReturnToDemo = useCallback(() => {
+    if (typeof window === 'undefined' || !referenceMembership) return;
+    // OrgSwitcher fallback использует тот же ключ — после reload активная Org
+    // подхватится из cookie/localStorage.
+    window.localStorage.setItem('z.activeOrgId', referenceMembership.id);
+    window.location.href = '/dashboard';
+  }, [referenceMembership]);
+
+  // Прогресс настройки компании — только для owner/admin (Шаг В.3 + правило 5
+  // матрицы: онбординг скрыт для member). Дублируем countCompleted из
+  // IntroWizardWidget, чтобы не плодить cross-import — это 6 строк.
+  const orgSwr = useSWR(
+    isPageEmpty && isOwnerOrAdmin && currentOrgId
+      ? ['main-empty-org', currentOrgId]
+      : null,
+    () => orgsApi.byId(currentOrgId!),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const setupProgress = useMemo(() => {
+    if (!isOwnerOrAdmin) return undefined;
+    const org = orgSwr.data?.org as
+      | {
+          welcomeCompletedAt?: string | null;
+          companyInfoCompletedAt?: string | null;
+          departmentsCompletedAt?: string | null;
+          rolesCompletedAt?: string | null;
+          teamInvitedAt?: string | null;
+          firstMeetingCreatedAt?: string | null;
+          firstSprintCreatedAt?: string | null;
+        }
+      | undefined;
+    if (!org) return undefined;
+    let n = 0;
+    if (org.welcomeCompletedAt) n++;
+    if (org.companyInfoCompletedAt) n++;
+    if (org.departmentsCompletedAt) n++;
+    if (org.rolesCompletedAt) n++;
+    if (org.teamInvitedAt) n++;
+    if (org.firstMeetingCreatedAt || org.firstSprintCreatedAt) n++;
+    return { completed: n, total: 6 };
+  }, [orgSwr.data, isOwnerOrAdmin]);
+
+  // Ранний return: MainEmptyState замещает Hero+Tabs целиком.
+  if (isPageEmpty) {
+    return (
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+        <MainEmptyState
+          canReturnToDemo={canReturnToDemo}
+          onReturnToDemo={handleReturnToDemo}
+          setupProgress={setupProgress}
+        />
+      </div>
+    );
+  }
 
   // Stagger-делей для enter-анимации секций. Cap 400ms (см. §4.6 ТЗ).
   // Анимация выполняется один раз на mount через `animate-in` + `fill-mode: backwards`.
@@ -275,6 +365,8 @@ export function DirectorDashboardClient() {
                 : null
             }
             totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
+            isReadOnlyDemo={(currentOrgRole as string | null) === 'demo_observer'}
+            onPaywallTrigger={showPaywallModal}
           />
         </div>
       </div>

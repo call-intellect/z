@@ -27,9 +27,22 @@ export type TopRiskCardProps = {
   risk: RiskItem | null;
   /** Сколько ещё рисков в списке (для ссылки «+ N»). */
   totalCount?: number;
+  /**
+   * Если true — CTA-кнопка «Открыть» отрисовывается как обычная кнопка
+   * (без перехода на /insights) и при клике дергает `onPaywallTrigger`.
+   * Используется для роли `demo_observer` в эталонной Org (Шаг В.2 зонтика).
+   */
+  isReadOnlyDemo?: boolean;
+  /** Колбэк для открытия PaywallModal (обычно `showPaywallModal` из subscription-context). */
+  onPaywallTrigger?: () => void;
 };
 
-export function TopRiskCard({ risk, totalCount = 0 }: TopRiskCardProps) {
+export function TopRiskCard({
+  risk,
+  totalCount = 0,
+  isReadOnlyDemo = false,
+  onPaywallTrigger,
+}: TopRiskCardProps) {
   if (!risk) {
     return (
       <div className="flex h-full flex-col gap-2 rounded-2xl border border-chip-success-bg bg-chip-success-bg/30 p-4">
@@ -62,17 +75,40 @@ export function TopRiskCard({ risk, totalCount = 0 }: TopRiskCardProps) {
         <p className="text-xs text-fg-tertiary">{risk.subtitle}</p>
       ) : null}
       <div className="mt-auto flex items-center justify-between">
-        <Link
-          href="/insights"
-          className="inline-flex items-center gap-1 text-xs font-medium text-accent-fg hover:underline"
-        >
-          Открыть
-          <ArrowRight size={12} />
-        </Link>
-        {extra > 0 ? (
-          <Link href="/insights" className="text-xs text-fg-tertiary hover:text-fg-secondary">
-            + ещё {extra} рисков
+        {isReadOnlyDemo ? (
+          <button
+            type="button"
+            onClick={onPaywallTrigger}
+            title="Это демо. Оплатите чтобы создавать в своей компании."
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Открыть
+            <ArrowRight size={12} />
+          </button>
+        ) : (
+          <Link
+            href="/insights"
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-fg hover:underline"
+          >
+            Открыть
+            <ArrowRight size={12} />
           </Link>
+        )}
+        {extra > 0 ? (
+          isReadOnlyDemo ? (
+            <button
+              type="button"
+              onClick={onPaywallTrigger}
+              title="Это демо. Оплатите чтобы создавать в своей компании."
+              className="text-xs text-fg-tertiary hover:text-fg-secondary"
+            >
+              + ещё {extra} рисков
+            </button>
+          ) : (
+            <Link href="/insights" className="text-xs text-fg-tertiary hover:text-fg-secondary">
+              + ещё {extra} рисков
+            </Link>
+          )
         ) : null}
       </div>
     </div>

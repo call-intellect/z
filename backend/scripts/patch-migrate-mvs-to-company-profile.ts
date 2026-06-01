@@ -21,6 +21,7 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { tableExists } from './_lib/schema-guards';
 
 const APPLY = process.argv.includes('--apply');
 const prisma = createPrismaClient();
@@ -54,6 +55,21 @@ async function main(): Promise<void> {
   console.log(
     `=== patch-migrate-mvs-to-company-profile START (${APPLY ? 'APPLY' : 'DRY-RUN'}) ===`,
   );
+
+  // Guard: legacy-модели Mission/Vision/Strategy планово удаляются после
+  // переноса в CompanyProfile. Если их таблиц уже нет — обращение к
+  // prisma.mission/vision/strategy упало бы. Выходим чисто.
+  const [hasMission, hasVision, hasStrategy] = await Promise.all([
+    tableExists(prisma, 'Mission'),
+    tableExists(prisma, 'Vision'),
+    tableExists(prisma, 'Strategy'),
+  ]);
+  if (!hasMission && !hasVision && !hasStrategy) {
+    console.log(
+      'Таблицы Mission/Vision/Strategy удалены — миграция в CompanyProfile применена ранее, обновление не требуется.',
+    );
+    return;
+  }
 
   const orgs = await prisma.org.findMany({ select: { id: true } });
   for (const org of orgs) {

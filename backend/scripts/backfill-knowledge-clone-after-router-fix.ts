@@ -29,6 +29,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { CoreQueueService } from '../src/modules/core-queue/core-queue.service';
 
+import { createPrismaClient } from './_lib/prisma';
+
 /**
  * SignalType'ы, по которым router фикс расширен. Должны совпадать с
  * router.service.ts:case 'expertise'|'experience'|'competence'.
@@ -84,6 +86,40 @@ async function main(opts: Options): Promise<void> {
       `limit=${opts.limit ?? '<none>'}) ===`,
   );
 
+  // Лёгкий pre-check ДО подъёма AppModule (Nest DI + Redis/BullMQ): если
+  // нет сотрудников с подходящими блоками — выходим чисто, не поднимая
+  // тяжёлый контекст и не требуя готовой очереди.
+  const matchWhere = {
+    relationship: 'employee' as const,
+    deletedAt: null,
+    ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
+    entity: {
+      blockMentions: {
+        some: {
+          role: 'subject' as const,
+          block: {
+            signalType: { in: SIGNAL_TYPES as unknown as SignalType[] },
+            status: 'canonical' as const,
+            ...(opts.since ? { createdAt: { gte: opts.since } } : {}),
+          },
+        },
+      },
+    },
+  };
+  const preCheck = createPrismaClient();
+  try {
+    const pending = await preCheck.person.count({ where: matchWhere });
+    if (pending === 0) {
+      console.log(
+        'backfill-knowledge-clone-after-router-fix: нет сотрудников с expertise/experience/competence-блоками — обновление не требуется.',
+      );
+      return;
+    }
+    console.log(`backfill-knowledge-clone-after-router-fix: кандидатов ${pending}`);
+  } finally {
+    await preCheck.$disconnect();
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });
@@ -97,23 +133,7 @@ async function main(opts: Options): Promise<void> {
     //    (Person → Entity через entityId — см. schema.prisma:Person/Entity).
     //    Используем nested-фильтр, чтобы Postgres не материализовывал все блоки.
     const employees = await prisma.person.findMany({
-      where: {
-        relationship: 'employee',
-        deletedAt: null,
-        ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
-        entity: {
-          blockMentions: {
-            some: {
-              role: 'subject',
-              block: {
-                signalType: { in: SIGNAL_TYPES as unknown as SignalType[] },
-                status: 'canonical',
-                ...(opts.since ? { createdAt: { gte: opts.since } } : {}),
-              },
-            },
-          },
-        },
-      },
+      where: matchWhere,
       select: { id: true, tenantId: true },
       ...(opts.limit ? { take: opts.limit } : {}),
     });

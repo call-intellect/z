@@ -27,6 +27,7 @@
 
 import { Prisma, PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { tableExists } from './_lib/schema-guards';
 
 import { resolveAppointmentStatus } from '../src/modules/appointments/services/tenant-top';
 
@@ -60,6 +61,16 @@ async function main(): Promise<void> {
       APPLY ? 'APPLY' : 'DRY-RUN'
     }) ===`,
   );
+
+  // Guard: legacy-модель PersonRole планово удаляется через ~1 месяц после
+  // прод-миграции. Если её таблицы уже нет — prisma.personRole упал бы.
+  if (!(await tableExists(prisma, 'PersonRole'))) {
+    console.log(
+      'Таблица PersonRole удалена — миграция в Appointment завершена ранее, обновление не требуется.',
+    );
+    await prisma.$disconnect();
+    return;
+  }
 
   const personRoles = await prisma.personRole.findMany({
     select: {

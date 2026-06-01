@@ -40,6 +40,8 @@ import { CryptoService } from '../src/common/crypto/crypto.service';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { TelegramProxyAdminClient } from '../src/modules/conversational/adapters/telegram-bot/telegram-proxy-admin.client';
 
+import { createPrismaClient } from './_lib/prisma';
+
 interface CliArgs {
   dryRun: boolean;
   rotateSecret: boolean;
@@ -75,6 +77,38 @@ function generateWebhookSecret(): string {
 }
 
 async function main(args: CliArgs): Promise<void> {
+  // Pre-check ДО подъёма AppModule: если прокси явно выключен / нет admin-кредов
+  // / нет глобального telegram-канала — делать нечего, выходим без Nest. Иначе
+  // app.close() рвёт ioredis/BullMQ и засыпает лог флудом «Connection is closed»
+  // на каждом выкате. Сам proxy.enabled-флаг (с дефолтом) проверяется уже внутри.
+  const proxyExplicitlyDisabled = ['false', '0'].includes(
+    (process.env['TELEGRAM_PROXY_ENABLED'] ?? '').toLowerCase(),
+  );
+  const hasCreds =
+    !!process.env['TELEGRAM_PROXY_ADMIN_EMAIL'] &&
+    !!process.env['TELEGRAM_PROXY_ADMIN_PASSWORD'];
+  if (proxyExplicitlyDisabled || !hasCreds) {
+    log(
+      'TELEGRAM_PROXY выключен или admin-креды не заданы — регистрация бота пропущена (Nest не поднимаем). ' +
+        'Задай TELEGRAM_PROXY_* в .env и запусти скрипт снова.',
+    );
+    return;
+  }
+  const preCheck = createPrismaClient();
+  try {
+    const ch = await preCheck.channel.findFirst({
+      where: { tenantId: null, kind: 'telegram_bot' },
+    });
+    if (!ch) {
+      log(
+        'Глобальный telegram-канал не найден — пропуск (настрой токен в /admin/system/telegram-bot и запусти снова).',
+      );
+      return;
+    }
+  } finally {
+    await preCheck.$disconnect();
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });
@@ -91,10 +125,12 @@ async function main(args: CliArgs): Promise<void> {
       return;
     }
     if (!cfg.telegramProxy.adminEmail || !cfg.telegramProxy.adminPassword) {
-      throw new Error(
-        'TELEGRAM_PROXY_ADMIN_EMAIL / TELEGRAM_PROXY_ADMIN_PASSWORD не заданы в env. ' +
-          'Без них скрипт не может залогиниться в прокси.',
+      log(
+        'TELEGRAM_PROXY_ADMIN_EMAIL / TELEGRAM_PROXY_ADMIN_PASSWORD не заданы в env — ' +
+          'регистрация бота в прокси пропущена (конфигурация ещё не готова). ' +
+          'Задай креды прокси в .env и запусти скрипт снова. Обновление не требуется сейчас.',
       );
+      return;
     }
 
     const channel = await prisma.channel.findFirst({
@@ -115,13 +151,20 @@ async function main(args: CliArgs): Promise<void> {
     const cfgRaw = (channel.config as Record<string, unknown> | null) ?? {};
     const tokenEnc = String(cfgRaw['botToken'] ?? '');
     if (!tokenEnc) {
-      throw new Error(
-        'Channel.config.botToken пустой. Установи токен в /admin/system/telegram-bot.',
+      log(
+        'Channel.config.botToken пустой — токен бота ещё не установлен. ' +
+          'Установи токен в /admin/system/telegram-bot и запусти скрипт снова. ' +
+          'Регистрация пропущена, обновление не требуется сейчас.',
       );
+      return;
     }
     const token = crypto.isEncrypted(tokenEnc) ? crypto.decrypt(tokenEnc) : tokenEnc;
     if (!token) {
-      throw new Error('Не удалось расшифровать токен.');
+      log(
+        'Не удалось расшифровать Channel.config.botToken (возможно сменился CRYPTO_MASTER_KEY). ' +
+          'Переустанови токен в /admin/system/telegram-bot. Регистрация пропущена.',
+      );
+      return;
     }
 
     const existingSecretEnc = String(cfgRaw['webhookSecret'] ?? '');
@@ -152,7 +195,11 @@ async function main(args: CliArgs): Promise<void> {
     const targetUrl =
       args.webhookUrlOverride ?? `${publicHostUrl}/api/v1/webhooks/telegram-bot`;
     if (!/^https:\/\//i.test(targetUrl)) {
-      throw new Error(`targetUrl должен быть https://... — получено: ${targetUrl}`);
+      log(
+        `targetUrl должен быть https://... — получено: ${targetUrl}. ` +
+          'Проверь PUBLIC_HOST_URL в .env или передай --webhook-url=https://... . Регистрация пропущена.',
+      );
+      return;
     }
 
     log(
@@ -166,7 +213,6 @@ async function main(args: CliArgs): Promise<void> {
     }
 
     let proxyBotId: string;
-    let proxyLastSyncError: string | null = null;
     try {
       const info = await proxyAdmin.upsertBot({
         token,
@@ -175,10 +221,23 @@ async function main(args: CliArgs): Promise<void> {
       });
       proxyBotId = info.id;
     } catch (err) {
-      proxyLastSyncError = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Прокси отверг upsertBot: ${proxyLastSyncError}. Проверь TELEGRAM_PROXY_ADMIN_* и доступность ${cfg.telegramProxy.apiBase}.`,
+      // Прокси — нестабильная внешняя зависимость (сеть / протухший JWT).
+      // Не валим весь `apply-prod-deploy` из-за неё: фиксируем причину в
+      // Channel.config.proxyLastSyncError для observability и выходим чисто.
+      // Оператор перезапустит скрипт после восстановления прокси.
+      const proxyLastSyncError = err instanceof Error ? err.message : String(err);
+      log(
+        `WARN: прокси отверг upsertBot: ${proxyLastSyncError}. ` +
+          `Проверь TELEGRAM_PROXY_ADMIN_* и доступность ${cfg.telegramProxy.apiBase}, затем запусти скрипт снова. ` +
+          'Регистрация бота отложена — остальной выкат не блокируется.',
       );
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: {
+          config: { ...cfgRaw, proxyLastSyncError } as never,
+        },
+      });
+      return;
     }
 
     const newSecretEnc = secretGenerated ? crypto.encrypt(secret) : existingSecretEnc;
@@ -186,7 +245,7 @@ async function main(args: CliArgs): Promise<void> {
       ...cfgRaw,
       proxyBotId,
       proxyRegisteredAt: new Date().toISOString(),
-      proxyLastSyncError,
+      proxyLastSyncError: null,
       webhookUrl: targetUrl,
       webhookSecret: newSecretEnc,
     };

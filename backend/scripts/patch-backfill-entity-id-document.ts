@@ -13,6 +13,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { isColumnNullable } from './_lib/schema-guards';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const BATCH_SIZE = 1000;
@@ -38,6 +39,15 @@ async function main(): Promise<void> {
     console.log(
       `=== patch-backfill-entity-id-document START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
     );
+
+    // Guard: если Document.entityId уже NOT NULL (cleanup-миграция применена) —
+    // типизированный where:{entityId:null} упал бы Prisma 7-валидацией.
+    if (!(await isColumnNullable(prisma, 'Document', 'entityId'))) {
+      console.log(
+        'Document.entityId уже NOT NULL — backfill применён ранее, обновление не требуется.',
+      );
+      return;
+    }
 
     let cursorId: string | undefined = undefined;
     // eslint-disable-next-line no-constant-condition

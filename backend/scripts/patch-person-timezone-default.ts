@@ -18,6 +18,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { isColumnNullable } from './_lib/schema-guards';
 
 const prisma = createPrismaClient();
 
@@ -29,6 +30,16 @@ async function main(): Promise<void> {
   console.log(
     `=== patch-person-timezone-default START (dryRun=${dryRun}) ===`,
   );
+
+  // Guard: если Person.timezone уже NOT NULL (cleanup-миграция применена) —
+  // типизированный where:{timezone:null} упал бы Prisma 7-валидацией.
+  if (!(await isColumnNullable(prisma, 'Person', 'timezone'))) {
+    // eslint-disable-next-line no-console
+    console.log(
+      'Person.timezone уже NOT NULL — дефолт проставлен ранее, обновление не требуется.',
+    );
+    return;
+  }
 
   const toUpdateCount = await prisma.person.count({
     where: { timezone: null },

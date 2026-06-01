@@ -24,6 +24,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { enumHasValue } from './_lib/schema-guards';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -34,6 +35,15 @@ async function main(): Promise<void> {
     console.log(
       `=== patch-migrate-entity-custom-to-topic START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
     );
+
+    // Guard: если значение 'custom' уже удалено из enum EntityType — raw-cast
+    // 'custom'::"EntityType" ниже упал бы ошибкой Postgres. Выходим чисто.
+    if (!(await enumHasValue(prisma, 'EntityType', 'custom'))) {
+      console.log(
+        "enum-значение 'custom' уже удалено из EntityType — миграция применена ранее, обновление не требуется.",
+      );
+      return;
+    }
 
     const beforeRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint AS count FROM "Entity" WHERE type = 'custom'::"EntityType"

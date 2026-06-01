@@ -69,7 +69,82 @@
 - **AiNarrativeWithSources** — [frontend/src/ui/components/dashboard/AiNarrativeWithSources.tsx](../../frontend/src/ui/components/dashboard/AiNarrativeWithSources.tsx) — inline-цитаты прямо в нарративе, `chip-info`-фон для пометки источников, аккуратная типографика.
 - **SprintWeeklyPanel** — [frontend/app/(authenticated)/sprints/[id]/SprintWeeklyPanel.tsx](../../frontend/app/(authenticated)/sprints/[id]/SprintWeeklyPanel.tsx) — информационная иерархия: KPI-шапка → AI-нарратив → секции с цвет-кодированием, всё на парных токенах.
 
-## 4. Семь «вау»-критериев
+## 4. Карта главной — табы (зонтик main-screen-umbrella, 2026-06-01)
+
+> Источник: [`plans/tz/2026-06-01-dashboard-main-tabs-restructure.md`](../../plans/tz/2026-06-01-dashboard-main-tabs-restructure.md) Фаза 0. Sticky Hero + 4 таба `Обзор/Команда/Знания/Цели и встречи` (один экран — одна тема).
+
+### 4.1. Sticky Hero (видим всегда)
+
+| Зона | Содержимое | Источник данных |
+|---|---|---|
+| 3 KPI с MiniSparkline | Настроение / Обещания / Висящие решения. CountUp + цвет тренда | `pulse.kpi.*` (DirectorDashboard API) |
+| AI-сводка | `<AiNarrativeWithSources>` (без изменений) | `data?.narrative` |
+| Топ-1 риск | Первый из `pulsePatterns.irreversibleDecisions` или fallback «✅ Нет критических рисков» | API `/dashboard/pulse-patterns` |
+
+Под Hero (узкая sticky-полоса):
+- Слева: 4 мини-счётчика «Структура компании» (`StructureSummaryWidget`) — отделы / должности / сотрудники / документы.
+- Справа: Pill «💬 Спросите Кору» — открывает `AssistantSidebar` на табе «Спросить».
+
+### 4.2. Виджеты по табам
+
+| Виджет | Файл | Таб | Позиция | Источник данных | Статус |
+|---|---|---|---|---|---|
+| **WeeklyDigestSection** | inline в DirectorDashboardClient | Обзор | 1 | `themesApi.recent` + `insightsApi.recent` + `decisionsApi.recent` (или top-3 из общего списка) | 🆕 inline-секция (нет отдельного файла) |
+| **TeamHealthGrid** | TeamHealthGrid.tsx | Команда | 1 | `pulse.teamHealth` | ✅ existing |
+| **BusFactorWidget** | BusFactorWidget.tsx | Команда | 2 | `pulse.busFactor` | ✅ existing |
+| **ActivityFeedWidget** | ActivityFeedWidget.tsx | Команда | 3 | `dashboard.activityFeed` | ✅ existing |
+| **PeopleAtRiskWidget** | PeopleAtRiskWidget.tsx | Команда | 4 | ranked Pulse score per Person — **открытый хвост** (см. §4.4) | 🆕 создаётся в Фазе Б.7 |
+| **RecurringTopicsWidget** | RecurringTopicsWidget.tsx | Знания | 1 | `pulse.recurringTopics` | ✅ existing |
+| **BottleneckHeatmapWidget** | BottleneckHeatmapWidget.tsx | Знания | 2 | `pulse.bottleneckHeatmap` | ✅ existing |
+| **ActiveThemesWidget** | inline в DirectorDashboardClient | Знания | 3 | `data?.activeThemes` | ✅ inline |
+| **HotEntitiesWidget** | inline | Знания | 4 | `data?.hotEntities` | ✅ inline |
+| **OpenQuestionsWidget** | inline (стр. 797) | Знания | 5 | `data?.openQuestions` | ✅ inline |
+| **SignalCountersWidget** | inline | Знания | 6 | `data?.signalCounters` | ✅ inline |
+| **InsightsTopWidget** | widgets/InsightsTopWidget.tsx | Знания | 7 | SBA β-4 (Insights Radar) | ✅ existing |
+| **KnowledgeVelocityKpi** | KnowledgeVelocityKpi.tsx | Знания | 8 (перенесён из Hero) | `pulse.knowledgeVelocity` | ✅ existing |
+| **GoalVectorWidget** | GoalVectorWidget.tsx | Цели и встречи | 1 | `pulse.goalVector` | ✅ existing |
+| **IrreversibleDecisionsAlert** | IrreversibleDecisionsAlert.tsx | Цели и встречи | 2 | `pulsePatterns.irreversibleDecisions` | ✅ existing |
+| **LowRoiMeetingsWidget** | LowRoiMeetingsWidget.tsx | Цели и встречи | 3 | `pulse.lowRoiMeetings` | ✅ existing |
+| **StrategicAlignmentWidget** | widgets/StrategicAlignmentWidget.tsx | Цели и встречи | 4 | `data?.strategicAlignment` | ✅ existing |
+| **QualityScoreWidget** | widgets/QualityScoreWidget.tsx | Цели и встречи | 5 | Фаза C (owner/admin only) | ✅ existing |
+
+### 4.3. Виджеты на главной → переезд / out of scope
+
+| Виджет | Куда | Причина |
+|---|---|---|
+| `SampleStoryBanner` | остаётся в DirectorDashboardClient (для demo) | Не вписывается в табы — глобальный баннер демо-режима |
+| `IntroWizardWidget` (онбординг) | между Hero и Tabs (Фаза Б.5) | Видим только owner/admin при `setup < 6/6`; компактная плашка для 6/6 ≤30 дн; иначе скрыт |
+| `CurationPendingWidget` (SBA α-4) | НЕ в главную | Профильная функция куратора — отдельная страница `/curation` |
+| `OrgChatPanel` (низ страницы «Спросите про вашу компанию») | в AssistantSidebar.Спросить (Фаза Б.4) | Перенос из inline в боковую панель |
+
+### 4.4. Открытые хвосты по данным
+
+| Хвост | Влияет на | Кто чинит / когда |
+|---|---|---|
+| **Ranked Pulse score per Person** | `PeopleAtRiskWidget` (Фаза Б.7) | Backend endpoint нужен `/dashboard/people-at-risk` (top-N). Пока — виджет рендерит `null` (скрывается); фикс в следующем backend-цикле |
+| **Themes/Insights/Decisions `.recent` (за неделю)** | `WeeklyDigestSection` (Фаза Б.3, таб Обзор) | Используем top-3 из общего списка, отфильтрованного по `createdAt > startOfWeek` |
+| **`chatApi.askCompany()` endpoint** | AssistantSidebar.Спросить (Фаза Б.4) | Если concierge `/concierge/ask` подходит — переиспользуем (с `@PublicDemo()` для demo_observer); иначе UI-заглушка «Скоро» |
+
+### 4.5. Матрица состояний главной (для Шага В.7)
+
+| # | Org | Role | Подписка | Рендер DirectorDashboardClient |
+|---|---|---|---|---|
+| 1 | Эталон | `demo_observer` | (n/a) | Hero+Tabs полные. CTA disabled+PaywallDialog |
+| 2 | Эталон | `super_admin` | (n/a) | Hero+Tabs полные. CTA активны (bypass) |
+| 3 | Своя | `owner`/`admin` | DEMO | **`MainEmptyState`** замещает Hero+Tabs (правило 3 матрицы) |
+| 4 | Своя | `owner`/`admin` | ACTIVE | Hero+Tabs полные. Per-таб empty-state если виджеты пусты |
+| 5 | Своя | `member` | ACTIVE | Hero+Tabs полные. Онбординг-блок не показываем |
+| 6 | Своя | `owner` | ACTIVE без demo_observer | Hero+Tabs полные |
+
+Условие правила 3 в коде (`DirectorDashboardClient.tsx`, Шаг В.1):
+```ts
+const showMainEmpty =
+  !currentOrg?.isReferenceDemo &&
+  subscription?.status === 'DEMO' &&
+  isEmpty;  // data?.isEmpty или эквивалент
+```
+
+## 5. Семь «вау»-критериев
 
 Чеклист, по которому проверяем каждый виджет / страницу:
 

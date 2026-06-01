@@ -189,6 +189,40 @@ export class AccountsService {
       if (!existingOwned) {
         await this.orgs.createForOwner({ name: orgName, ownerId: user.id }, tx);
       }
+
+      // 2026-06-01 (ТЗ shared-demo-org-model §4.4) — подключаем новичка
+      // наблюдателем в эталонную демо-Org. ID эталона из ENV ZDEMO_ORG_ID.
+      // Idempotent через UNIQUE (orgId, userId). Если ENV не задана — fallback
+      // без эталона (dev / pre-prod без выкаченного patch-скрипта).
+      const demoOrgId = this.cfg.demo.referenceOrgId;
+      if (demoOrgId) {
+        const demoOrg = await tx.org.findUnique({
+          where: { id: demoOrgId },
+          select: { id: true, isReferenceDemo: true, deletedAt: true },
+        });
+        if (demoOrg && demoOrg.isReferenceDemo && !demoOrg.deletedAt) {
+          const exists = await tx.membership.findUnique({
+            where: { orgId_userId: { orgId: demoOrgId, userId: user.id } },
+            select: { id: true },
+          });
+          if (!exists) {
+            await tx.membership.create({
+              data: {
+                userId: user.id,
+                orgId: demoOrgId,
+                role: 'demo_observer',
+                invitedBy: null,
+                joinedAt: new Date(),
+              },
+            });
+          }
+        } else {
+          this.logger.warn(
+            { demoOrgId, found: !!demoOrg, isRef: demoOrg?.isReferenceDemo },
+            'register: ZDEMO_ORG_ID указан, но Org не найдена/не эталонная — пропускаем demo-attach',
+          );
+        }
+      }
     });
 
     const loginUrl = `${this.cfg.auth.publicFrontendUrl}/login`;
@@ -663,22 +697,31 @@ export class AccountsService {
     if (!user) return null;
     // Догружаем флаг super_admin + первую membership-роль
     // (Фаза 7 — нужно для гейта Z-Admin / Org-Admin на фронте).
-    const [fresh, firstMembership] = await Promise.all([
+    //
+    // 2026-06-01 (ТЗ shared-demo-org-model §4.5) — если у user есть membership
+    // к эталонной демо-Org (role='demo_observer'), он default'ит как currentOrg.
+    // После оплаты listener снимает demo_observer → возвращается своя Org.
+    const [fresh, demoMembership, firstOwnedMembership] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
         select: { isSuperAdmin: true },
       }),
       this.prisma.membership.findFirst({
-        where: { userId, org: { deletedAt: null } },
+        where: { userId, role: 'demo_observer', org: { deletedAt: null } },
+        select: { orgId: true, role: true },
+      }),
+      this.prisma.membership.findFirst({
+        where: { userId, role: { not: 'demo_observer' }, org: { deletedAt: null } },
         orderBy: { joinedAt: 'asc' },
         select: { orgId: true, role: true },
       }),
     ]);
+    const defaultMembership = demoMembership ?? firstOwnedMembership;
     return {
       ...this.toPublicUser(user),
       isSuperAdmin: fresh?.isSuperAdmin === true,
-      currentOrgRole: firstMembership?.role ?? null,
-      currentOrgId: firstMembership?.orgId ?? null,
+      currentOrgRole: defaultMembership?.role ?? null,
+      currentOrgId: defaultMembership?.orgId ?? null,
     };
   }
 

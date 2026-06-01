@@ -20,6 +20,7 @@ import {
 import { ApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { useAuth } from '@/contexts/auth-context';
+import { useDashboardTab } from '@/hooks/useDashboardTab';
 import {
   pulsePatternsFromApi,
   type PulsePatternsDomain,
@@ -48,12 +49,12 @@ import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
-import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
 import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
 // Pulse Wave 6 — 7 виджетов паттернов на главной директора.
 import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
 import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
+import { DashboardTabs } from '@/ui/components/dashboard/DashboardTabs';
 import { GoalVectorWidget } from '@/ui/components/dashboard/GoalVectorWidget';
 import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
 import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
@@ -62,7 +63,6 @@ import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopics
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
-import { CurationPendingWidget } from './widgets/CurationPendingWidget';
 import { InsightsTopWidget } from './widgets/InsightsTopWidget';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
 import { QualityScoreWidget } from './widgets/QualityScoreWidget';
@@ -83,11 +83,12 @@ import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
  *   - Опциональная narrativeSummary (LLM-сводка «Главное за период»).
  *   - 5 виджетов на сетке: новые темы+сигналы, счётчики сигналов,
  *     активные темы, главные сущности, открытые вопросы.
- *   - Inline org-chat внизу (на Фазе 8 шаг 5 будет вынесен в OrgChatPanel).
+ *   - Org-chat вынесен из главной в AssistantSidebar (Б.4 ТЗ tabs-restructure).
  *   - Зарезервировано место для виджета «Согласованность стратегии» (Phase 9).
  */
 export function DirectorDashboardClient() {
   const { user, currentOrgId } = useAuth();
+  const { activeTab, setActiveTab } = useDashboardTab(user?.id ?? null);
   const [period, setPeriod] = useState<DirectorDashboardPeriod>('week');
   const [data, setData] = useState<DirectorDashboardDomain | null>(null);
   const [loading, setLoading] = useState(true);
@@ -300,159 +301,52 @@ export function DirectorDashboardClient() {
         </div>
       </StaggerSection>
 
-      {/* §4.3 «Команда и здоровье» — категория виджетов под Hero/онбордингом.
-          Решения и риски теперь только в Топ-1 виде через TopRiskCard в Hero;
-          полный список переедет в таб «Цели и встречи» в Фазе Б.3. */}
-      <StaggerSection delayMs={nextStagger()}>
-        <SectionHeader title="Команда и здоровье" />
-        <div className="mb-6">
-          <TeamHealthGrid />
-        </div>
-        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* Pulse Wave 6 §6.2 — Bus Factor (узкая колонка слева). */}
-          <div className="lg:col-span-1">
-            <BusFactorWidget
-              data={pulse?.busFactor ?? null}
-              loading={pulseLoading}
-              error={pulseError}
-            />
-          </div>
-          {/* Pulse Wave 1 §1.8 — ActivityFeedWidget (probe_question на главной). */}
-          <div className="lg:col-span-2">
-            <ActivityFeedWidget
-              feedTypes={['probe_question']}
-              scope="company"
-              pageSize={5}
-              liveUpdate
-              drillDownHref="/me/notifications"
-              title="Вопросы AI команде"
-              emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
-            />
-          </div>
-        </div>
-      </StaggerSection>
+      {/* === Sticky tabs под Hero === */}
+      <div className="sticky top-[var(--hero-tabs-top,260px)] z-10 -mx-4 mb-4 bg-bg-base/95 px-4 pt-1 backdrop-blur">
+        <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
+      </div>
 
-      {/* §4.3 «Знания» — Knowledge Velocity уже в Hero-strip; здесь — RecurringTopics. */}
-      <StaggerSection delayMs={nextStagger()}>
-        <SectionHeader title="Знания" />
-        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-3">
-          <div className="lg:col-span-1 xl:col-span-1">
-            <RecurringTopicsWidget
-              data={pulse?.recurringTopics ?? null}
-              loading={pulseLoading}
-              error={pulseError}
-            />
-          </div>
-          {/* Bottleneck Heatmap — крупный, занимает 2 колонки (§4.5 mosaic). */}
-          <div className="lg:col-span-2 xl:col-span-2">
-            <BottleneckHeatmapWidget
-              data={pulse?.bottlenecks ?? null}
-              loading={pulseLoading}
-              error={pulseError}
-            />
-          </div>
-        </div>
-      </StaggerSection>
-
-      {/* §4.3 «Цели и встречи» — GoalVector + LowRoiMeetings (mosaic 2/1). */}
-      <StaggerSection delayMs={nextStagger()}>
-        <SectionHeader title="Цели и встречи" />
-        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-3">
-          <div className="lg:col-span-2 xl:col-span-2">
-            <GoalVectorWidget
-              data={pulse?.goalVector ?? null}
-              loading={pulseLoading}
-              error={pulseError}
-            />
-          </div>
-          <div className="lg:col-span-1 xl:col-span-1">
-            <LowRoiMeetingsWidget
-              meetings={pulse?.lowRoiMeetings.meetings ?? []}
-              loading={pulseLoading}
-              error={pulseError}
-            />
-          </div>
-        </div>
-      </StaggerSection>
-
-      {/* Базовый блок виджетов knowledge-core (Фаза 8) — без рекомпозиции, заголовка нет. */}
-      <StaggerSection delayMs={nextStagger()}>
-        <SectionHeader title="Темы, сигналы, открытые вопросы" />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <StructureSummaryWidget />
-          <WhatLearnedWidget
+      {/* === Контент активного таба === */}
+      <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+        {activeTab === 'overview' && (
+          <OverviewTab
+            data={data}
+            pulse={pulse}
             loading={loading}
-            newThemes={data?.newThemes ?? []}
-            newSignals={data?.newSignals ?? []}
+            pulseLoading={pulseLoading}
+            pulseError={pulseError}
             periodLabel={periodLabel}
           />
-          <SignalCountersWidget
+        )}
+        {activeTab === 'team' && (
+          <TeamTab
+            data={data}
+            pulse={pulse}
             loading={loading}
-            counters={data?.signalCounters ?? null}
+            pulseLoading={pulseLoading}
+            pulseError={pulseError}
           />
-          <ActiveThemesWidget
+        )}
+        {activeTab === 'knowledge' && (
+          <KnowledgeTab
+            data={data}
+            pulse={pulse}
             loading={loading}
-            themes={data?.activeThemes ?? []}
+            pulseLoading={pulseLoading}
+            pulseError={pulseError}
+            periodLabel={periodLabel}
           />
-          <HotEntitiesWidget
+        )}
+        {activeTab === 'goals' && (
+          <GoalsTab
+            pulse={pulse}
+            data={data}
             loading={loading}
-            entities={data?.hotEntities ?? []}
+            pulseLoading={pulseLoading}
+            pulseError={pulseError}
           />
-          <OpenQuestionsWidget
-            loading={loading}
-            questions={data?.openQuestions ?? []}
-          />
-          <StrategicAlignmentWidget
-            data={data?.strategicAlignment}
-            loading={loading}
-          />
-          {/* Фаза C — карточка «Качество встреч» (только owner/admin; backend защищает 403). */}
-          <QualityScoreWidget />
-          {/* SBA α-4 — карточка «На проверке у меня» (Layer 4 Curation). */}
-          <CurationPendingWidget />
-          {/* SBA β-4 — карточка «Топ-5 повторяющихся проблем» (Insights Radar). */}
-          <InsightsTopWidget />
-        </div>
-      </StaggerSection>
-
-      <StaggerSection delayMs={nextStagger()}>
-        <section className="mt-8">
-          <header className="mb-3 flex items-center gap-2">
-            <MessageCircle size={16} className="text-accent" />
-            <div>
-              <h2 className="text-sm font-semibold text-fg-primary">
-                Спросите про вашу компанию
-              </h2>
-              <p className="text-xs text-fg-tertiary">
-                AI ищет ответ в архиве встреч и знаний организации, отвечает с цитатами.
-              </p>
-            </div>
-          </header>
-          <OrgChatPanel
-            withHistory={false}
-            height="400px"
-            placeholder="Например: какие основные риски за неделю?"
-            intro={
-              <div className="px-4 py-8 text-center text-xs text-fg-tertiary">
-                Например: «Какие основные риски за неделю?» или «О чём договорились
-                с ключевыми клиентами?»
-              </div>
-            }
-          />
-        </section>
-      </StaggerSection>
-    </div>
-  );
-}
-
-// ─── §4.3 SectionHeader — заголовок категории виджетов с тонким divider. ─────
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="mb-3 mt-2 flex items-center gap-3 border-t border-border-subtle/30 pt-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-secondary">
-        {title}
-      </h2>
+        )}
+      </div>
     </div>
   );
 }
@@ -474,6 +368,226 @@ function StaggerSection({
       style={{ animationDelay: `${delayMs}ms` }}
     >
       {children}
+    </div>
+  );
+}
+
+// ─── Tab contents (Фаза 3 ТЗ 2026-06-01-dashboard-main-tabs-restructure) ────
+
+type TabContentProps = {
+  data: DirectorDashboardDomain | null;
+  pulse: PulsePatternsDomain | null;
+  loading: boolean;
+  pulseLoading: boolean;
+  pulseError: string | null;
+  periodLabel?: string;
+};
+
+function OverviewTab({ data, pulse }: TabContentProps) {
+  const themes = data?.newThemes ?? [];
+  const signals = data?.newSignals ?? [];
+  const decisions = (pulse?.irreversibleDecisions?.decisions ?? []).slice(0, 3);
+  return (
+    <StaggerSection delayMs={0}>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <DigestCard
+          title="Темы недели"
+          items={themes.slice(0, 3).map((t) => ({ id: t.id, label: t.name }))}
+          href="/themes"
+          emptyLabel="Новых тем пока нет"
+        />
+        <DigestCard
+          title="Сигналы недели"
+          items={signals.slice(0, 3).map((s) => ({ id: s.id, label: s.name }))}
+          href="/insights"
+          emptyLabel="Новых сигналов пока нет"
+        />
+        <DigestCard
+          title="Решения недели"
+          items={decisions.map((d) => ({ id: d.decisionId, label: d.statement }))}
+          href="/decisions"
+          emptyLabel="Свежих решений пока нет"
+        />
+      </div>
+      <TabBottomLink href="/themes" label="Открыть полный раздел «Память компании» →" />
+    </StaggerSection>
+  );
+}
+
+function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
+  return (
+    <StaggerSection delayMs={0}>
+      <div className="mb-6">
+        <TeamHealthGrid />
+      </div>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <BusFactorWidget
+            data={pulse?.busFactor ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <ActivityFeedWidget
+            feedTypes={['probe_question']}
+            scope="company"
+            pageSize={5}
+            liveUpdate
+            drillDownHref="/me/notifications"
+            title="Вопросы AI команде"
+            emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
+          />
+        </div>
+      </div>
+      {/* TODO Б.7: PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. */}
+      <TabBottomLink href="/teams" label="Открыть /teams →" />
+    </StaggerSection>
+  );
+}
+
+function KnowledgeTab({
+  data,
+  pulse,
+  loading,
+  pulseLoading,
+  pulseError,
+  periodLabel,
+}: TabContentProps) {
+  return (
+    <StaggerSection delayMs={0}>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <RecurringTopicsWidget
+            data={pulse?.recurringTopics ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <BottleneckHeatmapWidget
+            data={pulse?.bottlenecks ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+      </div>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <WhatLearnedWidget
+          loading={loading}
+          newThemes={data?.newThemes ?? []}
+          newSignals={data?.newSignals ?? []}
+          periodLabel={periodLabel ?? 'неделю'}
+        />
+        <SignalCountersWidget
+          loading={loading}
+          counters={data?.signalCounters ?? null}
+        />
+        <ActiveThemesWidget loading={loading} themes={data?.activeThemes ?? []} />
+        <HotEntitiesWidget loading={loading} entities={data?.hotEntities ?? []} />
+        <OpenQuestionsWidget
+          loading={loading}
+          questions={data?.openQuestions ?? []}
+        />
+        <InsightsTopWidget />
+        <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
+      </div>
+      <TabBottomLink href="/themes" label="Открыть полный раздел «Память компании» →" />
+    </StaggerSection>
+  );
+}
+
+function GoalsTab({
+  data,
+  pulse,
+  loading,
+  pulseLoading,
+  pulseError,
+}: TabContentProps) {
+  return (
+    <StaggerSection delayMs={0}>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <GoalVectorWidget
+            data={pulse?.goalVector ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+        <div className="lg:col-span-1">
+          <LowRoiMeetingsWidget
+            meetings={pulse?.lowRoiMeetings.meetings ?? []}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+      </div>
+      <div className="mb-6">
+        <IrreversibleDecisionsAlert
+          decisions={pulse?.irreversibleDecisions?.decisions ?? []}
+          alertCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
+        />
+      </div>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <StrategicAlignmentWidget
+          data={data?.strategicAlignment}
+          loading={loading}
+        />
+        <QualityScoreWidget />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <TabBottomLink href="/goals" label="Открыть /goals →" />
+        <TabBottomLink href="/meetings" label="Открыть /meetings →" />
+      </div>
+    </StaggerSection>
+  );
+}
+
+function TabBottomLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center text-sm font-medium text-accent-fg transition-colors hover:underline"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function DigestCard({
+  title,
+  items,
+  href,
+  emptyLabel,
+}: {
+  title: string;
+  items: ReadonlyArray<{ id?: string; label?: string | null }>;
+  href: string;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="flex h-full flex-col gap-2 rounded-2xl border border-border-subtle/60 bg-bg-card p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-secondary">
+        {title}
+      </h3>
+      {items.length === 0 ? (
+        <p className="text-xs text-fg-tertiary">{emptyLabel}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((it, i) => (
+            <li key={it.id ?? i} className="line-clamp-2 text-sm text-fg-primary">
+              {it.label || '—'}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link
+        href={href}
+        className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-accent-fg hover:underline"
+      >
+        Открыть
+        <ArrowRight size={12} />
+      </Link>
     </div>
   );
 }

@@ -45,3 +45,12 @@ references:
 2. **`bun install` + `prisma generate` — обязательны после чистого чекаута**: typecheck падал «Cannot find module react/jsx-runtime» и «@prisma/client has no exported member» — это отсутствующие node_modules / несгенерированный клиент, а не реальные ошибки.
 3. **vitest forks-pool роняется на импорте `bullmq`** в этом WSL2-окружении — baseline `recognition-formulate.worker.spec` падает так же. Решение для своих спеков: `vi.mock('bullmq', () => ({ Queue: class {}, Worker: class {} }))`.
 4. **В Z нет отдельного worker-процесса** — `src/workers/main.ts` из CLAUDE.md не существует, всё бутстрапится из `src/main.ts`. Воркеры (`@Injectable` + `new Worker()` в `OnModuleInit`) поднимаются вместе с HTTP. Значит queue+worker провайдеры одного модуля работают в одном процессе.
+
+## Добивка: fallback пустого DEMO-кабинета (тот же день)
+
+Запрос владельца после первого пуша: «если кабинет в DEMO, а синтетики нет — заполнять». Это закрывает старые DEMO-Org (до выката авто-сидинга, которые по ТЗ решили не бэкфилить) и неудавшийся seed.
+
+- Backend: `POST /orgs/:orgId/demo-workspace/ensure` + `OnboardingService.ensureDemoSeed` (инжектнул `SubscriptionService`). Идемпотентно: enqueue только при `status==='DEMO' && !demoWorkspaceSeededAt && нет активного job'а`. `DemoSeedQueue.ensure` снимает `completed`/`failed` job перед повторной постановкой — иначе `queue.add` с тем же jobId = no-op (BullMQ не перезапускает завершённый job).
+- Frontend: триггер в `SubscriptionContext` (знает `status`, грузится на каждой авторизованной странице) — один раз за монтирование при DEMO; при `enqueued=true` поллит статус и один раз `window.location.reload()` с готовыми данными.
+
+**Урок:** `queue.add(name, data, {jobId})` на существующий (даже `completed`/`failed`) job — **no-op**, не перезапуск. Для повторной постановки нужно сначала `job.remove()`. Это ловушка идемпотентности BullMQ: jobId защищает от дублей, но и блокирует ретрай вручную.

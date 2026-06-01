@@ -67,4 +67,21 @@ references:
 
 **5. `/me/pulse` — последняя дыра pulse-full.** Собрал переиспользованием `PersonPulseClient` (резолв своего personId через `/me/profile`; backend уже авторизует self-view) + пункт меню. `/me/privacy` оказался не дырой (подстраницы access-log + consents готовы).
 
-**Сводный итог дня:** демо-флоу (seed+cleanup+fallback), фикс 403/404, мерж дашбордов начальника, устойчивый сидинг, 3 патч-скрипта, nginx WS, /me/pulse. Всё в `dev`, ждёт одного передеплоя. Открытый хвост: настоящая причина 500 на `ensure` (нужен прод-лог `ensureDemoSeed: fallback`/`demo-seed inline: упал`).
+**Сводный итог дня:** демо-флоу (seed+cleanup+fallback), фикс 403/404, мерж дашбордов начальника, устойчивый сидинг, 3 патч-скрипта, nginx WS, /me/pulse.
+
+## ДОБИТО: настоящий корень «демо не заливается» + 500 — локальным воспроизведением
+
+Вместо ожидания прод-лога поднял dev-стек (postgres+redis), спушил схему и написал repro-скрипт, прогоняющий **реальные seed-функции для 2 разных Org подряд на чистой БД**. Это вскрыло **3 регрессии мержа #7 (demo-content-expansion, `985d802`)**, которые ломали `seedDemoWorkspace` для ВСЕХ Org (а не infra/Redis, как я думал):
+
+1. **`markAllDemoEntitiesForTenant`** — в `DEMO_TENANT_TABLES` добавили 19 таблиц **без колонки `externalSource`** (`ideaBlockLink`, `entityLink` + 17 expansion-моделей: regulation/idea/document/event/experiment/vendor/probeEvent/feedback*/referral*/brandVoiceProfile/ideaCluster). `markAll` (идёт ПОСЛЕДНИМ в seed) падал на `updateMany({data:{externalSource}})` первой же такой таблицы → весь seed валился в конце (хотя все 22 модуля данных уже отработали). Авторитетный список колонок взял из dev-БД (`information_schema`).
+2. **`seedUsers`** — глобально-фиксированные email (`morozov@technostream.io`) + constraint `(email, signupSource)` → вторая Org падала на дубле. Сделал email org-scoped (`+${tenantId}`-subaddress).
+3. **Глобальные explicit PK** в goals-clones (`demo-sp/ep/st-${key}`) и chat-notifications (`demo-chat/msg-N`) без tenantId → вторая Org падала на дубле PK. Демо изначально проектировался под ОДНУ admin-org; авто-сидинг (каждой Org) с глобальными id несовместим. goals-clones — org-scoped, chat-notifications — убрал явные id (`@default(uuid)`).
+4. **`resetDemoWorkspace`** — те же column-less таблицы чистились по `externalSource` → упал бы cleanup при оплате. Перевёл на `tenantId` (precondition `demoWorkspaceSeededAt` + SubscriptionGuard → в DEMO-org всё демо).
+
+**Уроки:**
+- Когда прод-лог недоступен — **воспроизводи локально**: поднять dev-БД + repro-скрипт быстрее, чем гадать. 2 итерации Org в одном прогоне на ЧИСТОЙ БД мгновенно выявляют cross-org коллизии (глобальные id/email), которые на 1 org незаметны.
+- **`information_schema` из dev-БД** — авторитетный источник «есть ли колонка», надёжнее, чем awk по schema.prisma.
+- **Демо/seed под multi-tenancy ОБЯЗАН org-scope'ить все explicit id и unique-поля** (email, PK). Любой глобальный литерал в seed = бомба для второй Org.
+- Bun на ARM-WSL крашится на нативном `msgpackr-extract` (транзитив bullmq) — импортировать seed-функции напрямую, без `OnboardingService` (он тянет очередь).
+
+Схема НЕ менялась — прод нужен только **rebuild** (`docker compose up -d --build backend`). Inline-fallback (`triggerDemoSeed`) теперь реально доводит сидинг до конца, т.к. сам seed починен.

@@ -51,12 +51,74 @@ export interface DemoSeedStatusDto {
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
+  /**
+   * In-process lock от дублей inline-сидинга (когда BullMQ недоступен и мы
+   * заливаем демо прямым фоновым вызовом). Прод — один backend-контейнер, так
+   * что Set в памяти процесса достаточно. Сам `seedDemoWorkspace` дополнительно
+   * бросает `demo_already_seeded` по `Org.demoWorkspaceSeededAt`.
+   */
+  private readonly demoSeedInFlight = new Set<string>();
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(DemoSeedQueue) private readonly demoSeedQueue: DemoSeedQueue,
     @Inject(SubscriptionService)
     private readonly subscriptions: SubscriptionService,
   ) {}
+
+  /**
+   * Запустить демо-сидинг устойчиво к сбоям BullMQ.
+   *
+   * Сначала пытаемся через очередь (retries + observability в админке). Если
+   * enqueue падает (Redis/BullMQ-сбой) — fallback на ПРЯМОЙ фоновый сидинг в
+   * процессе бэка, чтобы кабинет всё равно залился. `void` — не блокируем
+   * HTTP-ответ (seed 3-8 сек); фронт поллит `demo-seed-status` и обновится.
+   *
+   * Возврат: `true` — сидинг реально стартовал/поставлен; `false` — уже идёт
+   * (дубль) или нет смысла.
+   */
+  private async triggerDemoSeed(
+    orgId: string,
+    ownerUserId: string,
+  ): Promise<boolean> {
+    // 1. Предпочтительно — очередь.
+    try {
+      const r = await this.demoSeedQueue.ensure({ orgId, ownerUserId });
+      return r.enqueued;
+    } catch (queueErr) {
+      this.logger.error(
+        {
+          orgId,
+          err: queueErr instanceof Error ? queueErr.message : String(queueErr),
+        },
+        'demo-seed: очередь недоступна — fallback на inline-сидинг',
+      );
+    }
+
+    // 2. Fallback — прямой фоновый сидинг (in-process lock от дублей).
+    if (this.demoSeedInFlight.has(orgId)) return false;
+    this.demoSeedInFlight.add(orgId);
+    void this.seedDemoWorkspace({ orgId, userId: ownerUserId })
+      .then(() => {
+        this.logger.log({ orgId }, 'demo-seed inline: успешно залит');
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        // demo_already_seeded — нормальный путь (гонка), не ошибка.
+        if (msg.includes('demo_already_seeded')) {
+          this.logger.log({ orgId }, 'demo-seed inline: уже залит, пропуск');
+        } else {
+          this.logger.error(
+            { orgId, err: msg, stack: err instanceof Error ? err.stack : undefined },
+            'demo-seed inline: упал',
+          );
+        }
+      })
+      .finally(() => {
+        this.demoSeedInFlight.delete(orgId);
+      });
+    return true;
+  }
 
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение ответов Блока A */
   async patchWelcome(args: {
@@ -158,19 +220,9 @@ export class OnboardingService {
     // Идемпотентно: jobId='demo-seed:<orgId>' + сам seed бросает
     // demo_already_seeded. Не делаем при уже залитом демо.
     if (!org.demoWorkspaceSeededAt) {
-      try {
-        await this.demoSeedQueue.enqueue({ orgId, ownerUserId: userId });
-      } catch (err) {
-        // Очередь не должна валить завершение онбординга — loading-экран
-        // переживёт (polling вернёт pending/failed, есть таймаут на /dashboard).
-        this.logger.error(
-          {
-            orgId,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'не удалось поставить demo-seed в очередь после welcome/complete',
-        );
-      }
+      // Устойчиво к сбоям BullMQ: очередь → fallback inline-сидинг. Не валит
+      // онбординг (triggerDemoSeed сам глотает ошибки и логирует).
+      await this.triggerDemoSeed(orgId, userId);
       // Редирект на loading-экран, который дождётся завершения seed'а.
       return { ok: true, redirectTo: '/onboarding/welcome/complete' };
     }
@@ -198,7 +250,16 @@ export class OnboardingService {
     if (org.demoWorkspaceSeededAt) {
       return { status: 'completed' };
     }
-    const jobStatus = await this.demoSeedQueue.statusOf(orgId);
+    // Inline-сидинг (fallback при недоступной очереди) идёт прямо в процессе.
+    if (this.demoSeedInFlight.has(orgId)) {
+      return { status: 'in_progress' };
+    }
+    let jobStatus: 'pending' | 'in_progress' | 'failed' | 'unknown' = 'unknown';
+    try {
+      jobStatus = await this.demoSeedQueue.statusOf(orgId);
+    } catch {
+      // Очередь недоступна — не валим polling, трактуем как pending.
+    }
     if (jobStatus === 'failed') return { status: 'failed' };
     if (jobStatus === 'in_progress') return { status: 'in_progress' };
     // 'pending' | 'unknown' → pending (job ещё не взяли / рассинхрон).
@@ -244,11 +305,9 @@ export class OnboardingService {
         return { status: 'pending', enqueued: false };
       }
 
-      const result = await this.demoSeedQueue.ensure({
-        orgId,
-        ownerUserId: org.ownerId,
-      });
-      return { status: 'in_progress', enqueued: result.enqueued };
+      // Устойчиво: очередь → fallback inline-сидинг (см. triggerDemoSeed).
+      const started = await this.triggerDemoSeed(orgId, org.ownerId);
+      return { status: 'in_progress', enqueued: started };
     } catch (err) {
       this.logger.error(
         {

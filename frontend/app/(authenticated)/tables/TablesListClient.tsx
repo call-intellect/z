@@ -160,7 +160,7 @@ function TableCard({ table }: { table: TableApi }) {
   return (
     <Link
       href={`/tables/${table.id}`}
-      className="group flex h-full flex-col gap-3 rounded-xl border border-border-subtle/40 bg-bg-card p-4 transition-all hover:border-border-strong/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="group flex h-full flex-col gap-3 rounded-xl border border-border-subtle/40 bg-bg-card p-4 transition-all duration-150 hover:-translate-y-[0.5px] hover:border-border-strong/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-muted text-accent">

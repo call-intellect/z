@@ -234,6 +234,7 @@ export function DirectorDashboardClient() {
               label="Обещания"
               value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
               numericValue={data?.kpiCommitmentReliability?.value ?? 0}
+              format={(n) => `${Math.round(n)}%`}
               sparkline={data?.kpiCommitmentReliability?.sparkline}
               delta={data?.kpiCommitmentReliability?.delta}
               deltaLabel="за 14 дней"

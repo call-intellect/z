@@ -108,7 +108,7 @@ function SummaryTile({
   return (
     <Link
       href={href}
-      className="block rounded-md border border-border-subtle bg-bg-card p-3 transition-colors hover:border-accent"
+      className="block rounded-md border border-border-subtle bg-bg-card p-3 transition-all duration-150 hover:-translate-y-[0.5px] hover:border-accent hover:shadow-md"
     >
       <div className="flex items-center justify-between text-fg-tertiary">
         {icon}

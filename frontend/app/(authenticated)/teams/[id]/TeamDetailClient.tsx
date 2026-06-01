@@ -195,6 +195,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
           label="Настроение команды · 7 дней"
           value={formatSigned(data.sentimentIndex)}
           numericValue={data.sentimentIndex}
+          format={(n) => formatSigned(Math.round(n))}
           trend={data.sentimentTrend}
           threshold={{ green: 30, yellow: 0 }}
         />
@@ -202,6 +203,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
           label="Надёжность обещаний · 14 дней"
           value={`${data.commitmentReliabilityPercent}%`}
           numericValue={data.commitmentReliabilityPercent}
+          format={(n) => `${Math.round(n)}%`}
           delta={data.commitmentDelta14d}
           deltaLabel="за 14 дней"
           threshold={{ green: 80, yellow: 60 }}

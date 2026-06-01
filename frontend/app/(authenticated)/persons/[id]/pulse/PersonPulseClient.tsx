@@ -802,6 +802,7 @@ function PromisesCard({ data }: { data: PersonPulse }) {
             label="Reliability"
             value={`${data.promisesReliabilityPercent}%`}
             numericValue={data.promisesReliabilityPercent}
+            format={(n) => `${Math.round(n)}%`}
             delta={data.promisesDelta14d}
             deltaLabel="за 14 дней"
             threshold={{ green: 80, yellow: 60 }}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 
 import { Sparkline } from './Sparkline';
+import { CountUp } from '@/ui/components/dashboard/charts';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 /**
@@ -44,6 +45,13 @@ export type KpiHeroProps = {
   threshold?: KpiThreshold;
   /** Числовое value для threshold-проверки (если value ReactNode). */
   numericValue?: number;
+  /**
+   * Форматтер для CountUp-анимации. Если задан вместе с `numericValue`,
+   * `value` игнорируется при рендере цифры и используется `format(n)`.
+   * Если не задан, но `value === number` (или передан `numericValue`),
+   * число анимируется с дефолтным форматтером CountUp.
+   */
+  format?: (n: number) => string;
   /** Drill-down href. */
   href?: string;
   /** Дополнительный класс. */
@@ -94,6 +102,7 @@ export function KpiHero({
   sparkline,
   threshold,
   numericValue,
+  format,
   href,
   className,
 }: KpiHeroProps) {
@@ -104,6 +113,18 @@ export function KpiHero({
         ? value
         : 0;
   const tone = thresholdTone(v, threshold);
+
+  // Решение об анимации:
+  //   - если `format` задан — анимируем `numericValue` (или v) через format,
+  //     это покрывает «42%», «1.2k» и т.п.
+  //   - если `value` — голое число, анимируем его дефолтным форматтером.
+  //   - иначе рендерим `value` как есть (ReactNode/строка остаются без анимации,
+  //     чтобы не ломать существующий API).
+  const renderedValue: ReactNode = (() => {
+    if (format) return <CountUp to={v} format={format} />;
+    if (typeof value === 'number') return <CountUp to={value} />;
+    return value;
+  })();
 
   // sparkline c null → 0 для отрисовки. Может быть улучшено в будущем
   // (gap-rendering в Sparkline пока не поддерживается).
@@ -136,7 +157,7 @@ export function KpiHero({
           VALUE_TONE_CLASS[tone],
         )}
       >
-        {value}
+        {renderedValue}
       </div>
       <div className="flex items-end justify-between gap-3">
         <DeltaOrTrend delta={delta} deltaLabel={deltaLabel} trend={trend} />

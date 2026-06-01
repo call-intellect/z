@@ -40,6 +40,8 @@ import { CryptoService } from '../src/common/crypto/crypto.service';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { TelegramProxyAdminClient } from '../src/modules/conversational/adapters/telegram-bot/telegram-proxy-admin.client';
 
+import { createPrismaClient } from './_lib/prisma';
+
 interface CliArgs {
   dryRun: boolean;
   rotateSecret: boolean;
@@ -75,6 +77,38 @@ function generateWebhookSecret(): string {
 }
 
 async function main(args: CliArgs): Promise<void> {
+  // Pre-check ДО подъёма AppModule: если прокси явно выключен / нет admin-кредов
+  // / нет глобального telegram-канала — делать нечего, выходим без Nest. Иначе
+  // app.close() рвёт ioredis/BullMQ и засыпает лог флудом «Connection is closed»
+  // на каждом выкате. Сам proxy.enabled-флаг (с дефолтом) проверяется уже внутри.
+  const proxyExplicitlyDisabled = ['false', '0'].includes(
+    (process.env['TELEGRAM_PROXY_ENABLED'] ?? '').toLowerCase(),
+  );
+  const hasCreds =
+    !!process.env['TELEGRAM_PROXY_ADMIN_EMAIL'] &&
+    !!process.env['TELEGRAM_PROXY_ADMIN_PASSWORD'];
+  if (proxyExplicitlyDisabled || !hasCreds) {
+    log(
+      'TELEGRAM_PROXY выключен или admin-креды не заданы — регистрация бота пропущена (Nest не поднимаем). ' +
+        'Задай TELEGRAM_PROXY_* в .env и запусти скрипт снова.',
+    );
+    return;
+  }
+  const preCheck = createPrismaClient();
+  try {
+    const ch = await preCheck.channel.findFirst({
+      where: { tenantId: null, kind: 'telegram_bot' },
+    });
+    if (!ch) {
+      log(
+        'Глобальный telegram-канал не найден — пропуск (настрой токен в /admin/system/telegram-bot и запусти снова).',
+      );
+      return;
+    }
+  } finally {
+    await preCheck.$disconnect();
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });

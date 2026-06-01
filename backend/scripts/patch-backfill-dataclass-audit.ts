@@ -26,6 +26,8 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { DataClassPolicyService } from '../src/modules/knowledge-core/services/dataclass-policy.service';
 import type { DerivedKind } from '../src/modules/knowledge-core/services/dataclass-policy.types';
 
+import { createPrismaClient } from './_lib/prisma';
+
 interface RunArgs {
   dryRun: boolean;
 }
@@ -86,6 +88,34 @@ const PROJECTIONS: Array<{
 ];
 
 async function main(args: RunArgs): Promise<void> {
+  // Лёгкий pre-check ДО подъёма AppModule: если во всех проекциях
+  // dataClassAudit уже проставлен — выходим, не поднимая Nest (BullMQ/Redis),
+  // иначе app.close() засыпает лог ioredis-флудом «Connection is closed» на
+  // каждом выкате. На уже-забэкфилленном проде это steady-state-случай.
+  const preCheck = createPrismaClient();
+  try {
+    let pending = 0;
+    for (const p of PROJECTIONS) {
+      const model = (
+        preCheck as unknown as Record<
+          string,
+          { count: (a: unknown) => Promise<number> }
+        >
+      )[p.modelKey];
+      pending += await model.count({ where: { dataClassAudit: null } });
+      if (pending > 0) break;
+    }
+    if (pending === 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        'patch-backfill-dataclass-audit: dataClassAudit уже проставлен во всех проекциях — обновление не требуется.',
+      );
+      return;
+    }
+  } finally {
+    await preCheck.$disconnect();
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });

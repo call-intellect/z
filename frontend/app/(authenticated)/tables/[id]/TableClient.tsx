@@ -276,6 +276,7 @@ function Loaded() {
           open={openRowId !== null}
           onClose={onCloseRow}
           tableId={tableId}
+          tableName={table.name}
           rowId={openRowId}
           properties={allProperties}
           rowData={openRow}

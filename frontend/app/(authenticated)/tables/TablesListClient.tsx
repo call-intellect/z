@@ -3,16 +3,19 @@
 /**
  * `/tables` — индекс Smart Tables.
  *
- * Минимальный MVP для §1.5 smart-tables: список таблиц tenant'а с переходом
- * на `/tables/[id]` и быстрым созданием новой через prompt.
+ * Notion-стиль grid карточек: иконка типа в круге, название, метаданные
+ * (тип сущности, описание), относительное время обновления. Sticky-header
+ * с CTA «Новая таблица» в правом углу.
  *
  * Создание: prompt(name) → POST /api/v1/tables → router.push.
  * Полноценный диалог с настройкой колонок будет в следующей фазе.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { formatDistanceToNow } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { Plus, Table2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
@@ -96,52 +99,138 @@ function TablesListContent({ orgId }: { orgId: string }) {
   if (!items) return null;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Таблицы</h1>
+    <div className="mx-auto w-full max-w-6xl px-6 py-6">
+      <header className="sticky top-0 z-10 -mx-6 mb-6 flex items-end justify-between gap-4 border-b border-border-subtle/40 bg-bg-base/85 px-6 pb-4 pt-4 backdrop-blur supports-[backdrop-filter]:bg-bg-base/70">
+        <div className="min-w-0">
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-fg-primary">
+            Таблицы
+          </h1>
           <p className="mt-1 text-sm text-fg-secondary">
-            Всего: {total}. Показано: {items.length}.
+            {total === 0
+              ? 'Создайте первую таблицу для команды'
+              : `Всего ${total} · показано ${items.length}`}
           </p>
         </div>
         <Button onClick={onCreate} disabled={isCreating} size="sm">
           <Plus className="h-4 w-4" />
-          Новая таблица
+          Создать таблицу
         </Button>
       </header>
 
       {items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border-subtle bg-bg-card px-6 py-10 text-center">
-          <Table2 className="mx-auto h-8 w-8 text-fg-tertiary" />
-          <p className="mt-3 text-sm text-fg-secondary">
-            Ещё нет ни одной таблицы.
-          </p>
-          <p className="mt-1 text-xs text-fg-tertiary">
-            Нажмите «Новая таблица», чтобы создать первую.
-          </p>
-        </div>
+        <EmptyTablesList onCreate={onCreate} isCreating={isCreating} />
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {items.map((t) => (
             <li key={t.id}>
-              <Link
-                href={`/tables/${t.id}`}
-                className="block rounded-lg border border-border-subtle bg-bg-card px-4 py-3 transition-colors hover:border-border-strong hover:bg-bg-hover"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-base">{t.icon ?? '📊'}</span>
-                  <span className="truncate text-sm font-medium">{t.name}</span>
-                </div>
-                {t.description ? (
-                  <p className="mt-1 line-clamp-2 text-xs text-fg-tertiary">
-                    {t.description}
-                  </p>
-                ) : null}
-              </Link>
+              <TableCard table={t} />
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────── TableCard ─────────────────────────────────
+
+function TableCard({ table }: { table: TableApi }) {
+  const updated = useMemo(() => new Date(table.updatedAt), [table.updatedAt]);
+  const updatedText = useMemo(() => {
+    try {
+      return formatDistanceToNow(updated, { addSuffix: true, locale: ru });
+    } catch {
+      return updated.toLocaleDateString('ru-RU');
+    }
+  }, [updated]);
+
+  // Тип привязки в entitySync — мини-чип под названием.
+  const entityBadge = useMemo(() => {
+    const t = (table.entitySync as { type?: unknown } | null)?.type;
+    if (typeof t !== 'string') return null;
+    const labels: Record<string, string> = {
+      org: 'Организации',
+      person: 'Люди',
+      meeting: 'Встречи',
+      document: 'Документы',
+    };
+    return labels[t] ?? null;
+  }, [table.entitySync]);
+
+  return (
+    <Link
+      href={`/tables/${table.id}`}
+      className="group flex h-full flex-col gap-3 rounded-xl border border-border-subtle/40 bg-bg-card p-4 transition-all hover:border-border-strong/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-muted text-accent">
+          {table.icon ? (
+            <span className="text-lg leading-none" aria-hidden>
+              {table.icon}
+            </span>
+          ) : (
+            <Table2 className="h-5 w-5" aria-hidden />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-medium text-fg-primary group-hover:text-fg-primary">
+            {table.name}
+          </div>
+          <div className="mt-0.5 text-xs text-fg-tertiary">
+            Обновлено {updatedText}
+          </div>
+        </div>
+      </div>
+
+      {table.description ? (
+        <p className="line-clamp-2 text-sm text-fg-secondary">
+          {table.description}
+        </p>
+      ) : (
+        <p className="text-sm italic text-fg-tertiary">
+          Без описания
+        </p>
+      )}
+
+      {entityBadge ? (
+        <div className="mt-auto flex items-center gap-1.5 pt-1">
+          <span className="inline-flex items-center rounded-full bg-chip-info-bg/15 px-2 py-0.5 text-[11px] font-medium text-chip-info-fg">
+            {entityBadge}
+          </span>
+        </div>
+      ) : null}
+    </Link>
+  );
+}
+
+function EmptyTablesList({
+  onCreate,
+  isCreating,
+}: {
+  onCreate: () => void;
+  isCreating: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border-subtle bg-bg-card px-6 py-16 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-muted text-accent">
+        <Table2 className="h-6 w-6" aria-hidden />
+      </div>
+      <h2 className="mt-4 text-base font-medium text-fg-primary">
+        Пока нет таблиц
+      </h2>
+      <p className="mt-1 max-w-sm text-sm text-fg-secondary">
+        Smart-таблицы — это база знаний команды: задачи, клиенты, идеи. Каждая
+        строка может быть связана с сущностями графа.
+      </p>
+      <Button
+        size="sm"
+        onClick={onCreate}
+        disabled={isCreating}
+        className="mt-5"
+      >
+        <Plus className="h-4 w-4" />
+        Создать таблицу
+      </Button>
     </div>
   );
 }

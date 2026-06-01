@@ -66,7 +66,7 @@ export function AddColumnButton({
           Колонка
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent align="end" className="w-[22rem]">
         {type === null ? (
           <ColumnTypeSelector
             selected={type}

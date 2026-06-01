@@ -219,10 +219,24 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 
 ### Dashboard CEO (`frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx`)
 
-- KPI strip из 5 `<StatCard>` сверху (`grid-cols-1 md:grid-cols-3 xl:grid-cols-5`).
-- «Активные темы» — `variant="dark"` (визуальный якорь).
-- Sticky header: `sticky top-0 backdrop-blur-glass bg-bg-base/72` с responsive `-mx-4 md:-mx-6`.
-- Error banner: `bg-chip-danger-bg text-chip-danger-fg shadow-card-soft` (вместо hardcoded red-50/red-700).
+**С 2026-06-02 (зонтик main-screen-umbrella, Поток Б):** структура «sticky Hero + 4 pill-таба».
+
+- **Sticky Hero** (top-0 z-20): 3 KPI (Настроение / Обещания / Висящие решения) с MiniSparkline + AI-сводка (центр) + TopRiskCard (Топ-1 риск из pulse.irreversibleDecisions). Header не sticky (избегаем конфликта с Hero).
+- **Узкая sticky-полоса** под Hero: StructureSummaryWidget слева + Pill «💬 Спросите Кору» справа (dispatchEvent `assistant-sidebar:open-ask`).
+- **`<IntroWizardWidget />`** между Hero и Tabs — 4 состояния по `Org.setupCompletedAt` + 6-шаговый прогресс + кнопка «Отложить на неделю» (localStorage `dashboard.onboardingDeferredUntil`).
+- **`<DashboardTabs />`** — 4 pill-таба: Обзор / Команда / Знания / Цели и встречи. Persistence per-user (`useDashboardTab(user.id)`).
+- **Контент таба** через функции `OverviewTab`/`TeamTab`/`KnowledgeTab`/`GoalsTab`:
+  - Overview — Дайджест недели (3 DigestCard с темами/сигналами/решениями).
+  - Team — TeamHealthGrid + BusFactor + ActivityFeed (probe_question) + `PeopleAtRiskWidget` (пока скрыт, ожидает backend `/dashboard/people-at-risk`).
+  - Knowledge — RecurringTopics + Bottleneck + WhatLearned + SignalCounters + ActiveThemes + HotEntities + OpenQuestions + InsightsTop + KnowledgeVelocityKpi.
+  - Goals — GoalVector + LowRoi + IrreversibleDecisionsAlert (полный список) + StrategicAlignment + QualityScore.
+- **Матрица 6 состояний** (см. [docs/reference/dashboards-registry.md](../../docs/reference/dashboards-registry.md) §4.5-4.6):
+  - Если `isOwnOrg && status==='DEMO' && (owner|admin) && data?.isEmpty` — `MainEmptyState` замещает Hero+Tabs целиком (правило 3) с CTA «Оплатить» + опц. «Вернуться в демо» + встроенным онбордингом (setupProgress).
+  - Если `currentOrgRole==='demo_observer'` — TopRiskCard CTA становятся `<button onClick={showPaywallModal}>` с tooltip, открывая PaywallModal.
+- **`<TabEmptyState />`** в Overview/Knowledge/Goals — единый empty-state когда все виджеты пусты И ничего не loading.
+- **AssistantSidebar** (`frontend/src/ui/components/dashboard/AssistantSidebar.tsx`) — 4 pill-таба (urgent/feed/probes/ask). AskSection использует существующий `OrgChatPanel` (POST `/chat-v2/messages` с `@PublicDemo()` для demo_observer).
+
+Историческая нота: до 2026-06-02 главная имела 5 `<StatCard>` сверху + Sticky header + плоские секции виджетов. Sticky header убран, чтобы не конфликтовать с Hero. Все 12 эталонных виджетов из `dashboards-registry.md` переехали в табы без потерь.
 
 ### Toast — sonner единственный
 
@@ -264,6 +278,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-05-25 (β-8.3):** добавлена страница `/dashboard/operations/daily` + новые виджеты `CauseCategoryMapWidget` и `MaturityWidget` на `/dashboard/operations` + блок «Вчерашний отчёт» + кликабельные бэйджи `cause_category` в `InsightsTopWidget` (deep-link `/insights?cause_category=…`). Файл `frontend/src/lib/cause-category-presentation.ts` — 8 русских лейблов + Tailwind палитра.
 - **2026-05-25 (feedback):** добавлены страницы `/feedback` (пользователь), `/admin/feedback` (super_admin дашборд блоков), `/admin/feedback/[topicId]` (детали блока). Полная заметка фичи — [[feedback]].
 - **2026-05-26 (clones marketplace + admin):** добавлены маршруты `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]` (маркетплейс ролевых клонов + чат с боковой панелью диалогов), `/roles/[id]/clone` теперь redirect на `/clones/[id]`, новая admin-страница `/admin/clones` (управление `CloneAccessGrant`). Удалены `/me/clone` и `/persons/[id]/skill-profile` (legacy первой итерации Clones-Roles). См. [plans/tz/2026-05-26-clones-marketplace-frontend.md](../../plans/tz/2026-05-26-clones-marketplace-frontend.md).
+- **2026-06-02 (main-screen-umbrella — зонтик A+Б+В, 24 коммита):** главная страница перестроена в «sticky Hero + 4 pill-таба + AssistantSidebar.Спросить + MainEmptyState». Поток А: shared эталонная демо-Org «Демо: ТехноСтрим» (`isReferenceDemo=true`), роль `demo_observer`, `DemoObserverGuard` (APP_GUARD), `RbacService.canMutate`, ENV `ZDEMO_ORG_ID`, listener detach при оплате, удалён авто-сидинг копий. Поток Б: `DashboardTabs` + `useDashboardTab` (per-user localStorage), Hero refactor (3 KPI + AI-сводка + `TopRiskCard`), 4 функции-таба `OverviewTab/TeamTab/KnowledgeTab/GoalsTab`, `IntroWizardWidget` 4-state, `TabEmptyState`, `PeopleAtRiskWidget`, mobile + sticky header fix. Поток В: подключение `MainEmptyState` (правило 3 матрицы), TopRiskCard CTA disabled+Paywall для `demo_observer`, setupProgress встроен в EmptyState, `@PublicDemo()` на `/concierge/messages` + `/chat-v2/messages` (LLM-чат разрешён в эталоне). Источник: [plans/tz/2026-06-01-main-screen-umbrella.md](../../plans/tz/2026-06-01-main-screen-umbrella.md). Профильные заметки [[demo-workspace]] + раздел в [[onboarding-wizard]].
 - **2026-06-01 (dashboards-wow-polish — 11 фаз):** общая полировка всех 5 семейств дашбордов (CEO / Operations / Person / Sprint / Tables). Закрыты 3 dead routes — `/tables` и `/sprints/archive` в Sidebar (`DAILY_GROUP`), системный `PersonSubpagesNav` (pill-табы 7 пунктов) для карточки сотрудника. Новая библиотека мини-визуализаций `frontend/src/ui/components/dashboard/charts/` (MiniSparkline / MiniBarRow / MiniStackedBar / MiniDonut / MiniHeatCell / CountUp + preview-страница `/charts`). 12 виджетов CEO-дашборда переведены с «MVP-стиля» в режим с живой визуализацией; DirectorDashboard получил «cinema mode» (hero-strip с градиентом, sticky-header с backdrop-blur, AI-сводка с inner-glow, mosaic-layout, motion-safe enter-stagger). Operations Daily/Weekly/Overview объединены навигационным `OperationsTabs`. Person Pulse — Hero с MiniDonut Pulse score. Sprint Daily получил Hero-strip; Archive переоформлен в карточный grid с MiniDonut процента. Smart-tables — карточки таблиц, цветные ячейки status/select через `themeOverride` Glide (без custom canvas-рендера), TYPE_HINTS для ColumnTypeSelector. CountUp интегрирован в общий `KpiHero` (backward-compatible через опц. `format`). Все 12 виджетов реестра `docs/reference/dashboards-registry.md` помечены ✅. См. [plans/tz/2026-06-01-dashboards-wow-polish.md](../../plans/tz/2026-06-01-dashboards-wow-polish.md).
 
 [[../index|← index]]

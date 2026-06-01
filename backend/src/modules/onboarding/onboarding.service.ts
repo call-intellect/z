@@ -220,24 +220,24 @@ export class OnboardingService {
   async ensureDemoSeed(
     orgId: string,
   ): Promise<DemoSeedStatusDto & { enqueued: boolean }> {
-    const org = await this.prisma.org.findUnique({
-      where: { id: orgId },
-      select: { id: true, ownerId: true, demoWorkspaceSeededAt: true },
-    });
-    if (!org) {
-      throw new NotFoundException({
-        ok: false,
-        error: { code: 'org_not_found', message: 'Org не найдена' },
-      });
-    }
-    if (org.demoWorkspaceSeededAt) {
-      return { status: 'completed', enqueued: false };
-    }
-
-    // Fallback — best-effort: НИКАКАЯ ошибка не должна давать 500 (фронт дёргает
-    // это на каждой DEMO-загрузке через SubscriptionContext). Любой сбой
-    // (подписка/очередь/Redis) логируем и возвращаем pending.
+    // Fallback — best-effort: ВЕСЬ метод в try/catch. Фронт дёргает его на
+    // каждой DEMO-загрузке через SubscriptionContext, поэтому НИКАКАЯ ошибка
+    // (Prisma/подписка/очередь/Redis) не должна давать 500 — логируем причину
+    // и возвращаем pending. Реальный корень виден в логе по этому сообщению.
     try {
+      const org = await this.prisma.org.findUnique({
+        where: { id: orgId },
+        select: { id: true, ownerId: true, demoWorkspaceSeededAt: true },
+      });
+      if (!org) {
+        // org действительно нет → pending (фронт это игнорирует; 404 не нужен,
+        // чтобы не плодить ошибки в консоли на гонках/удалённых Org).
+        return { status: 'pending', enqueued: false };
+      }
+      if (org.demoWorkspaceSeededAt) {
+        return { status: 'completed', enqueued: false };
+      }
+
       // Только DEMO-подписка. Пустой ACTIVE/EXPIRED-кабинет демо НЕ заливаем.
       const sub = await this.subscriptions.getByTenant(orgId);
       if (sub?.status !== 'DEMO') {

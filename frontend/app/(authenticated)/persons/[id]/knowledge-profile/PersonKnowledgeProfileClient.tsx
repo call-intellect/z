@@ -14,6 +14,7 @@ import {
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
 import { SkillsTable } from '@/ui/components/knowledge-profile/SkillsTable';
 
 /**
@@ -74,6 +75,8 @@ export function PersonKnowledgeProfileClient({
           Области экспертизы, которые Кора собрала из встреч и материалов.
         </p>
       </header>
+
+      <PersonSubpagesNav entityId={personId} />
 
       {loadingProfile && (
         <div className="space-y-4">

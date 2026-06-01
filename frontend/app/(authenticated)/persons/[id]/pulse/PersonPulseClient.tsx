@@ -35,6 +35,7 @@ import type {
   PersonPulseSentiment,
 } from '@/domain/person-pulse';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
+import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -147,6 +148,7 @@ function PersonPulseContent({
     <div className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
       <BackLink personId={personId} />
       <HeaderBlock data={data} />
+      <PersonSubpagesNav entityId={personId} />
       <HrResumeSection data={data} />
       <div className="grid gap-4 md:grid-cols-2">
         <MoodTrendCard data={data} />

@@ -105,6 +105,15 @@ export function DemoClient() {
           {orgs.map((org) => {
             const seeded = org.demoSeededAt !== null;
             const busy = busyId === org.id;
+            const isReference = org.isReferenceDemo;
+            // Демо больше не копируется в каждую Org. Эталон один, остальные Org
+            // получают доступ к нему через membership demo_observer (см. ТЗ
+            // demo-shared-org-model.md). Поэтому seed/reset включены только для
+            // эталонной Org.
+            const actionsDisabled = !isReference;
+            const disabledTitle = actionsDisabled
+              ? 'Демо больше не копируется в каждую Org. Эталон один (выделен бейджем).'
+              : undefined;
             return (
               <li
                 key={org.id}
@@ -115,6 +124,9 @@ export function DemoClient() {
                     <span className="truncate font-medium text-fg-primary">
                       {org.name}
                     </span>
+                    {isReference ? (
+                      <Badge variant="default">🌟 Эталон</Badge>
+                    ) : null}
                     {seeded ? (
                       <Badge variant="secondary">демо залито</Badge>
                     ) : null}
@@ -127,7 +139,8 @@ export function DemoClient() {
                   <Button
                     size="sm"
                     onClick={() => void seed(org)}
-                    disabled={busy}
+                    disabled={busy || actionsDisabled}
+                    title={disabledTitle}
                   >
                     {busy ? 'Заливаем…' : seeded ? 'Перезалить демо' : 'Создать демо'}
                   </Button>
@@ -136,7 +149,8 @@ export function DemoClient() {
                       size="sm"
                       variant="outline"
                       onClick={() => void reset(org)}
-                      disabled={busy}
+                      disabled={busy || actionsDisabled}
+                      title={disabledTitle}
                     >
                       Сбросить
                     </Button>

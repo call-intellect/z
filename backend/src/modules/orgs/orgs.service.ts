@@ -36,6 +36,7 @@ export interface OrgDomain {
   ownerId: string;
   createdAt: string;
   industry?: string | null;
+  isReferenceDemo: boolean;
 }
 
 export interface MembershipDomain {
@@ -279,6 +280,7 @@ export class OrgsService {
       ownerId: o.ownerId,
       createdAt: o.createdAt.toISOString(),
       industry: o.industry ?? null,
+      isReferenceDemo: o.isReferenceDemo,
     };
   }
 

@@ -130,6 +130,11 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
             >
               <Building2 size={14} className="shrink-0 text-fg-tertiary" />
               <span className="max-w-[160px] truncate">{activeOrg.name}</span>
+              {activeOrg.isReferenceDemo ? (
+                <span className="ml-auto rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
+                  Демо
+                </span>
+              ) : null}
             </div>
           </TooltipTrigger>
           <TooltipContent side={variant === 'sidebar' ? 'right' : 'bottom'}>
@@ -186,6 +191,11 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
           <span className="max-w-[160px] flex-1 truncate text-left">
             {activeOrg.name}
           </span>
+          {activeOrg.isReferenceDemo ? (
+            <span className="rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
+              Демо
+            </span>
+          ) : null}
           <ChevronDown size={14} className="shrink-0 text-fg-tertiary" />
         </button>
       </DropdownMenuTrigger>
@@ -196,10 +206,15 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
       >
         <DropdownMenuLabel>Активная компания</DropdownMenuLabel>
         <DropdownMenuItem
-          className="font-medium text-accent-fg focus:text-accent-fg"
+          className="flex items-center gap-2 font-medium text-accent-fg focus:text-accent-fg"
           disabled
         >
-          {activeOrg.name}
+          <span className="truncate">{activeOrg.name}</span>
+          {activeOrg.isReferenceDemo ? (
+            <span className="ml-auto rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
+              Демо
+            </span>
+          ) : null}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-fg-tertiary">
@@ -218,6 +233,11 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
             >
               <Building2 size={14} className="text-fg-tertiary" />
               <span className="truncate">{m.name}</span>
+              {m.isReferenceDemo ? (
+                <span className="ml-auto rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
+                  Демо
+                </span>
+              ) : null}
             </DropdownMenuItem>
           ))}
       </DropdownMenuContent>

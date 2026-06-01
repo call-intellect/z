@@ -47,6 +47,7 @@ export class AdminDemoController {
     orgs: Array<{
       id: string;
       name: string;
+      isReferenceDemo: boolean;
       demoSeededAt: Date | null;
       owner: { id: string; email: string; name: string } | null;
     }>;
@@ -56,6 +57,7 @@ export class AdminDemoController {
       select: {
         id: true,
         name: true,
+        isReferenceDemo: true,
         demoWorkspaceSeededAt: true,
         owner: { select: { id: true, email: true, name: true } },
       },
@@ -65,6 +67,7 @@ export class AdminDemoController {
       orgs: orgs.map((o) => ({
         id: o.id,
         name: o.name,
+        isReferenceDemo: o.isReferenceDemo,
         demoSeededAt: o.demoWorkspaceSeededAt,
         owner: o.owner
           ? { id: o.owner.id, email: o.owner.email, name: o.owner.name }

@@ -22,14 +22,11 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { toast } from 'sonner';
 
 import { billingApi } from '@/api/billing.api';
-import { onboardingApi } from '@/api/onboarding.api';
 import type { SubscriptionStatusApi } from '@/api/types/billing';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -51,14 +48,12 @@ type SubscriptionContextValue = SubscriptionState & {
 const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
-  const { user, currentOrgId, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [state, setState] = useState<SubscriptionState>({
     status: null,
     loading: true,
   });
   const [modalOpen, setModalOpen] = useState(false);
-  // Fallback демо-сидинга срабатывает максимум один раз за монтирование.
-  const demoEnsureFiredRef = useRef(false);
 
   const refetch = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
@@ -84,58 +79,6 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     }
     void refetch();
   }, [authLoading, user, refetch]);
-
-  // Fallback: если кабинет в DEMO-режиме, но синтетики ещё нет (старые Org до
-  // выката авто-сидинга или неудавшийся seed) — фоном дозаливаем. Бэкенд
-  // идемпотентен: enqueue только если реально нечего показать. При успешном
-  // запуске поллим статус и один раз перезагружаем страницу с готовыми данными.
-  useEffect(() => {
-    if (state.loading || state.status !== 'DEMO' || !currentOrgId) return;
-    if (demoEnsureFiredRef.current) return;
-    demoEnsureFiredRef.current = true;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await onboardingApi.ensureDemoSeed(currentOrgId);
-        if (!res.enqueued || cancelled) return;
-        toast.loading('Готовим демо-данные «ТехноСтрим»…', { id: 'demo-seed' });
-        // Поллим статус до завершения (макс ~40 сек), затем reload.
-        const startedAt = Date.now();
-        const poll = async (): Promise<void> => {
-          if (cancelled) return;
-          if (Date.now() - startedAt > 40_000) {
-            toast.dismiss('demo-seed');
-            return;
-          }
-          try {
-            const { status } = await onboardingApi.getDemoSeedStatus(currentOrgId);
-            if (status === 'completed') {
-              toast.dismiss('demo-seed');
-              if (!cancelled && typeof window !== 'undefined') {
-                window.location.reload();
-              }
-              return;
-            }
-            if (status === 'failed') {
-              toast.dismiss('demo-seed');
-              return;
-            }
-          } catch {
-            /* polling errors не критичны */
-          }
-          setTimeout(() => void poll(), 1500);
-        };
-        setTimeout(() => void poll(), 1500);
-      } catch {
-        /* fallback fire-and-forget — ошибки не показываем */
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [state.loading, state.status, currentOrgId]);
 
   // Refetch на фокус вкладки.
   useEffect(() => {

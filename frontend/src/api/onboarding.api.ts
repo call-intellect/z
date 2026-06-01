@@ -35,6 +35,18 @@ export const onboardingApi = {
       { headers: { 'X-Org-Id': orgId } },
     ),
 
+  /**
+   * POST /orgs/:orgId/demo-workspace/ensure — fallback: гарантировать заливку
+   * демо-кабинета, если Org в DEMO-режиме, но синтетики ещё нет (старые Org /
+   * неудавшийся seed). Идемпотентно. `enqueued=true` — seed реально запущен.
+   */
+  ensureDemoSeed: (orgId: string) =>
+    apiClient.post<{ status: DemoSeedStatus; enqueued: boolean }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/demo-workspace/ensure`,
+      {},
+      { headers: { 'X-Org-Id': orgId } },
+    ),
+
   /** PATCH /users/me — обновить companyRole */
   patchUserRole: (body: { companyRole: string }) =>
     apiClient.patch<{ ok: true }>('/api/v1/users/me', body),

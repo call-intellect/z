@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { SubscriptionService } from '../billing/services/subscription.service';
 
 import { seedChatNotifications } from './demo-data/chat-notifications';
 import {
@@ -53,6 +54,8 @@ export class OnboardingService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(DemoSeedQueue) private readonly demoSeedQueue: DemoSeedQueue,
+    @Inject(SubscriptionService)
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение ответов Блока A */
@@ -200,6 +203,51 @@ export class OnboardingService {
     if (jobStatus === 'in_progress') return { status: 'in_progress' };
     // 'pending' | 'unknown' → pending (job ещё не взяли / рассинхрон).
     return { status: 'pending' };
+  }
+
+  /**
+   * Fallback: гарантировать заполнение DEMO-кабинета синтетикой.
+   *
+   * Закрывает кейсы: старые DEMO-Org (зарегистрированы до выката авто-сидинга)
+   * и неудавшийся/недозапущенный seed. Идемпотентно и безопасно:
+   *   - не-DEMO подписка → ничего не делаем (пустой ACTIVE-кабинет — это норма);
+   *   - демо уже залито (`demoWorkspaceSeededAt != null`) → ничего;
+   *   - есть активный/ожидающий seed-job → ничего (`enqueued=false`);
+   *   - иначе — ставим свежий seed-job (от имени owner'а Org).
+   *
+   * Вызывается фронтом (SubscriptionContext) один раз за сессию при DEMO.
+   */
+  async ensureDemoSeed(
+    orgId: string,
+  ): Promise<DemoSeedStatusDto & { enqueued: boolean }> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: { id: true, ownerId: true, demoWorkspaceSeededAt: true },
+    });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    if (org.demoWorkspaceSeededAt) {
+      return { status: 'completed', enqueued: false };
+    }
+
+    // Только DEMO-подписка. Пустой ACTIVE/EXPIRED-кабинет демо НЕ заливаем.
+    const sub = await this.subscriptions.getByTenant(orgId);
+    if (sub?.status !== 'DEMO') {
+      return { status: 'pending', enqueued: false };
+    }
+
+    const result = await this.demoSeedQueue.ensure({
+      orgId,
+      ownerUserId: org.ownerId,
+    });
+    return {
+      status: 'in_progress',
+      enqueued: result.enqueued,
+    };
   }
 
   /** POST /orgs/:orgId/setup/complete — все 6 шагов Блока B пройдены/пропущены */

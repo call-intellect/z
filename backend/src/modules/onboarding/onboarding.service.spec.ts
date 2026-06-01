@@ -10,6 +10,7 @@ vi.mock('bullmq', () => ({
 }));
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { SubscriptionService } from '../billing/services/subscription.service';
 
 import { OnboardingService } from './onboarding.service';
 import type { DemoSeedQueue } from './workers/demo-seed.queue';
@@ -148,16 +149,65 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     return prisma;
   }
 
+  let demoSeedQueue: {
+    enqueue: ReturnType<typeof vi.fn>;
+    statusOf: ReturnType<typeof vi.fn>;
+    ensure: ReturnType<typeof vi.fn>;
+  };
+  let subscriptions: { getByTenant: ReturnType<typeof vi.fn> };
+
   beforeEach(() => {
     prisma = makePrismaMock();
-    const demoSeedQueue = {
+    demoSeedQueue = {
       enqueue: vi.fn(async () => ({ jobId: 'demo-seed:org-1' })),
       statusOf: vi.fn(async () => 'unknown' as const),
+      ensure: vi.fn(async () => ({ enqueued: true, state: null })),
     };
+    subscriptions = { getByTenant: vi.fn(async () => ({ status: 'DEMO' })) };
     svc = new OnboardingService(
       prisma as unknown as PrismaService,
       demoSeedQueue as unknown as DemoSeedQueue,
+      subscriptions as unknown as SubscriptionService,
     );
+  });
+
+  describe('ensureDemoSeed (fallback пустого DEMO-кабинета)', () => {
+    it('DEMO + не залито + нет job → enqueue', async () => {
+      prisma.org.findUnique.mockResolvedValueOnce({
+        id: 'org-1',
+        ownerId: 'owner-1',
+        demoWorkspaceSeededAt: null,
+      } as unknown as { id: string; demoWorkspaceSeededAt: Date });
+      const r = await svc.ensureDemoSeed('org-1');
+      expect(r.enqueued).toBe(true);
+      expect(demoSeedQueue.ensure).toHaveBeenCalledWith({
+        orgId: 'org-1',
+        ownerUserId: 'owner-1',
+      });
+    });
+
+    it('уже залито → не трогаем очередь', async () => {
+      prisma.org.findUnique.mockResolvedValueOnce({
+        id: 'org-1',
+        ownerId: 'owner-1',
+        demoWorkspaceSeededAt: new Date(),
+      } as unknown as { id: string; demoWorkspaceSeededAt: Date });
+      const r = await svc.ensureDemoSeed('org-1');
+      expect(r).toEqual({ status: 'completed', enqueued: false });
+      expect(demoSeedQueue.ensure).not.toHaveBeenCalled();
+    });
+
+    it('не DEMO (ACTIVE) → не заливаем', async () => {
+      prisma.org.findUnique.mockResolvedValueOnce({
+        id: 'org-1',
+        ownerId: 'owner-1',
+        demoWorkspaceSeededAt: null,
+      } as unknown as { id: string; demoWorkspaceSeededAt: Date });
+      subscriptions.getByTenant.mockResolvedValueOnce({ status: 'ACTIVE' });
+      const r = await svc.ensureDemoSeed('org-1');
+      expect(r.enqueued).toBe(false);
+      expect(demoSeedQueue.ensure).not.toHaveBeenCalled();
+    });
   });
 
   it('400 no_demo_to_reset, если у Org НЕТ demoWorkspaceSeededAt', async () => {

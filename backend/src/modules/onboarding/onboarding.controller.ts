@@ -111,6 +111,25 @@ export class OnboardingController {
     return this.svc.getDemoSeedStatus(tenantId ?? orgId);
   }
 
+  @Post('orgs/:orgId/demo-workspace/ensure')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(TenantGuard)
+  @ApiOperation({
+    summary:
+      'Fallback: гарантировать заполнение DEMO-кабинета синтетикой (идемпотентно)',
+  })
+  @ApiOkResponse({
+    description: '{ status, enqueued } — enqueued=true если seed реально запущен',
+  })
+  async ensureDemoSeed(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<DemoSeedStatusDto & { enqueued: boolean }> {
+    await this.requireOwnerOrAdmin(user.id, orgId);
+    return this.svc.ensureDemoSeed(tenantId ?? orgId);
+  }
+
   @Post('orgs/:orgId/demo-workspace')
   @HttpCode(HttpStatus.OK)
   @UseGuards(TenantGuard)

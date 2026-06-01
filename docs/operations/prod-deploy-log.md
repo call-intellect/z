@@ -86,6 +86,7 @@ docker compose run --rm --no-deps backend \
 **Что выкатывается:**
 - Backend: 2 новые BullMQ-очереди `onboarding.demo-seed` / `onboarding.demo-cleanup` + воркеры + `SubscriptionActivatedListener` (слушает `billing.subscription.activated_paid`/`_bonus`). `completeWelcome` ставит seed-job и редиректит на `/onboarding/welcome/complete`. Новый `GET /api/v1/orgs/:orgId/demo-seed-status`.
 - Frontend: убрана страница `/onboarding/demo-choice`; новый loading-экран `/onboarding/welcome/complete`; фикс 403 дашборда (`dashboard.api.ts` теперь шлёт `X-Org-Id`); фикс 404 мёртвых ссылок (`/me/commitments`→`/me/promises`, `/settings/templates`→`/team-templates`).
+- **Fallback пустого DEMO-кабинета:** `POST /api/v1/orgs/:orgId/demo-workspace/ensure` (идемпотентно) + триггер в `SubscriptionContext` при `status==='DEMO'`. Закрывает старые DEMO-Org (зарегистрированы до выката авто-сидинга) и неудавшийся seed — при первом заходе кабинет дозаливается синтетикой автоматически.
 
 **Прод-операции:** только Docker rebuild. **Нет** новых ENV, миграций схемы (поле `Org.demoWorkspaceSeededAt` уже существует), seed/patch-скриптов. Очереди поднимаются вместе с backend-процессом (отдельного worker-процесса в Z нет).
 

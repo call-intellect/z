@@ -91,6 +91,39 @@ export class DemoSeedQueue implements OnModuleInit, OnModuleDestroy {
     return { jobId };
   }
 
+  /**
+   * Гарантировать, что seed запущен (fallback для пустого DEMO-кабинета).
+   * Если job уже активен/ожидает — ничего не делаем (`enqueued=false`). Если
+   * предыдущий job завершился/упал — снимаем его и ставим свежий (`add` с тем
+   * же jobId на уже существующий job — no-op, поэтому удаляем перед добавлением).
+   */
+  async ensure(
+    data: DemoSeedJobData,
+  ): Promise<{ enqueued: boolean; state: string | null }> {
+    const jobId = `demo-seed:${data.orgId}`;
+    const existing = await this.raw.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (
+        state === 'active' ||
+        state === 'waiting' ||
+        state === 'delayed' ||
+        state === 'waiting-children'
+      ) {
+        return { enqueued: false, state };
+      }
+      // completed (без seededAt — рассинхрон) / failed — снимаем и ставим заново.
+      try {
+        await existing.remove();
+      } catch {
+        /* гонка: job мог уже сняться — продолжаем */
+      }
+    }
+    await this.raw.add('seed', data, { jobId });
+    this.logger.log({ jobId, orgId: data.orgId }, 'demo-seed: ensure → enqueued');
+    return { enqueued: true, state: null };
+  }
+
   /** Статус job'а по orgId (для GET /demo-seed-status). */
   async statusOf(
     orgId: string,

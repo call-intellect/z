@@ -50,4 +50,6 @@ AppShell скрыт (см. `AuthenticatedShell.tsx`).
 - `SubscriptionActivatedListener`: если `Org.demoWorkspaceSeededAt!=null` → enqueue `onboarding.demo-cleanup`.
 - `DemoCleanupWorker` (concurrency 1) → `resetDemoWorkspace` (стирает только `externalSource='demo'`). Кабинет становится чистым.
 
-Очереди — см. [[workers-queues]]. Старые DEMO-Org (до выката) НЕ бэкфилятся.
+**Fallback пустого DEMO-кабинета (2026-06-01):** `SubscriptionContext` при `status==='DEMO'` один раз за сессию дёргает `POST /orgs/:orgId/demo-workspace/ensure`. Бэк идемпотентно ставит свежий seed-job, если демо ещё не залито и нет активного job'а (закрывает старые DEMO-Org до выката + неудавшийся seed). При успешном запуске фронт поллит статус и один раз перезагружает страницу с готовыми данными.
+
+Очереди — см. [[workers-queues]].

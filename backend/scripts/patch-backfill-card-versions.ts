@@ -45,6 +45,11 @@ async function main(): Promise<void> {
     `=== patch-backfill-card-versions START (dryRun=${DRY_RUN}, batch=${BATCH_SIZE}) ===`,
   );
 
+  // Курсор по id: в dry-run записи не получают currentVersionId и не
+  // покидают фильтр, поэтому без курсора цикл крутился бы вечно на одном
+  // и том же первом батче. Курсор продвигает выборку в обоих режимах.
+  let cursor: string | null = null;
+
   try {
     while (true) {
       const batch = await prisma.card.findMany({
@@ -64,11 +69,13 @@ async function main(): Promise<void> {
           sourceBlockIds: true,
         },
         take: BATCH_SIZE,
-        orderBy: { createdAt: 'asc' },
+        orderBy: { id: 'asc' },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       });
 
       if (batch.length === 0) break;
       counters.scanned += batch.length;
+      cursor = batch[batch.length - 1]!.id;
 
       for (const card of batch) {
         if (!card.tenantId) {

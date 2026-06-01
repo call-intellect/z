@@ -21,6 +21,25 @@
 
 ---
 
+### 🛡️ 2026-06-01 — Идемпотентность update-скриптов (самопроверка вместо сырых падений)
+
+Все patch/backfill/migrate-скрипты UPDATE-пути теперь **сами проверяют актуальность данных** и при «нечего делать / уже применено» печатают человекочитаемую причину и выходят с кодом `0`, а не валят `apply-prod-deploy`. Это значит: **повторный прогон `--mode update` безопасен**, и выкат не падает «сырой» ошибкой на уже-мигрированном проде.
+
+Новый общий хелпер: `backend/scripts/_lib/schema-guards.ts` (`enumHasValue` / `isColumnNullable` / `tableExists` / `columnExists`) — read-only проверки `information_schema` / `pg_enum`.
+
+Что изменилось по группам:
+- **P1 (раньше падали на типичном проде):**
+  - `patch-telegram-register-in-proxy.ts` — нет admin-кредов прокси / пустой токен / прокси недоступен → лог-причина + exit 0 (недоступность прокси пишется в `Channel.config.proxyLastSyncError`, выкат не блокируется). Перезапусти скрипт после настройки.
+  - `patch-encrypt-tochka-oauth.ts` — `CRYPTO_MASTER_KEY` запрашивается только когда реально есть что шифровать (раньше падал, даже если всё уже зашифровано).
+  - `backfill-demo-subscriptions.ts` — per-org ошибки → warning + exit 0; `exit 1` только при системном сбое (все Org упали).
+  - `patch-backfill-card-versions.ts` — курсор по `id`, устранён бесконечный цикл в `--dry-run`.
+- **P2 (поднимали весь AppModule):** `backfill-commitment-due-dates.ts`, `backfill-knowledge-clone-after-router-fix.ts` — лёгкий `count` + early-return ДО подъёма Nest; `migrate-telegram-channels-to-global.ts` переведён на `createPrismaClient()` (без AppModule).
+- **P3 (защита от будущих cleanup-миграций):** enum DROP VALUE (`rename-client-to-customer`, `migrate-entity-custom-to-topic`), NOT NULL tightening (`org/person-timezone-default`, `backfill-entity-id-{document,goal,person}`), удаление legacy-моделей/колонок (`migrate-mvs-to-company-profile`, `migrate-person-role-to-appointment`, `skill-trait-categories-from-strings`, `bitemporal-backfill`).
+
+Прод-операций сам по себе этот пункт НЕ добавляет — только делает существующие шаги 3/6/8/9 устойчивее. Достаточно общего Docker rebuild (Шаг 11).
+
+---
+
 ### 🌊 2026-05-31 — Волна 2: Z-Admin Тариф (один tier_standard) + Партнёрский кабинет
 
 Планы:
@@ -1212,7 +1231,7 @@ docker compose build
 
 `prisma db push` (внутри `migrate`-сервиса) сделает `Meeting.tenantId` NOT NULL. Если есть legacy-Meeting с NULL — push упадёт и весь `docker compose up` зависнет.
 
-> ⚠️ **Если прод уже проходил этот выкат раньше** (`Meeting.tenantId` уже NOT NULL) — **GATE пропусти целиком.** Сначала прогони только `backfill-meeting-tenant-id.ts` (он на raw-SQL, безопасен): если он пишет «Найдено … IS NULL: 0» — миграция уже применена, `backfill-orgs-fase0.ts` и `tighten-*` НЕ запускай. С версии после 2026-05-29 эти два скрипта на уже-мигрированной схеме сами печатают «обновление не требуется» и выходят `0` (раньше — падали Prisma 7-валидацией на `where:{tenantId:null}`, что пугало оператора).
+> ⚠️ **Если прод уже проходил этот выкат раньше** (`Meeting.tenantId` уже NOT NULL) — **GATE пропусти целиком.** Сначала прогони только `backfill-meeting-tenant-id.ts` (он на raw-SQL, безопасен): если он пишет «Найдено … IS NULL: 0» — миграция уже применена, `backfill-orgs-fase0.ts` и `tighten-*` НЕ запускай. С версии после 2026-05-29 эти два скрипта на уже-мигрированной схеме сами печатают «обновление не требуется» и выходят `0` (раньше — падали Prisma 7-валидацией на `where:{tenantId:null}`, что пугало оператора). С 2026-06-01 такое самопроверочное поведение распространено на ВСЕ update-скрипты — см. раздел [🛡️ Идемпотентность update-скриптов](#️-2026-06-01--идемпотентность-update-скриптов-самопроверка-вместо-сырых-падений).
 
 Сначала чиним — через `run --rm backend` (одноразовый контейнер с новым кодом, postgres уже запущен с прошлого выката):
 

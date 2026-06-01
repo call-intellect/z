@@ -29,6 +29,8 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+import { columnExists } from './_lib/schema-guards';
+
 // Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
@@ -146,10 +148,21 @@ async function backfillEntityLinks(opts: CliOptions): Promise<void> {
   console.log('\n=== EntityLink backfill (validUntil ← validTo, recordedAt) ===');
 
   // 1) Перенос validTo → validUntil (только если validUntil ещё NULL).
-  const candidates1 = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-    `SELECT COUNT(*)::bigint AS count FROM "EntityLink"
-     WHERE "validUntil" IS NULL AND "validTo" IS NOT NULL`,
-  );
+  // Guard: legacy-колонка EntityLink.validTo помечена «только для чтения» и
+  // планово удаляется. Если её уже нет — COUNT по ней упал бы raw-ошибкой
+  // `column "validTo" does not exist`. Тогда перенос не нужен — он сделан ранее.
+  const hasValidTo = await columnExists(prisma, 'EntityLink', 'validTo');
+  if (!hasValidTo) {
+    console.log(
+      '[entityLink] колонка validTo удалена — перенос validTo → validUntil выполнен ранее, пропуск',
+    );
+  }
+  const candidates1 = hasValidTo
+    ? await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+        `SELECT COUNT(*)::bigint AS count FROM "EntityLink"
+         WHERE "validUntil" IS NULL AND "validTo" IS NOT NULL`,
+      )
+    : [{ count: 0n }];
   const total1 = Number(candidates1[0]?.count ?? 0n);
   console.log(`[entityLink] кандидатов validTo → validUntil: ${total1}`);
 

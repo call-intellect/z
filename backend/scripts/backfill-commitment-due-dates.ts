@@ -24,6 +24,8 @@ import { TypedConfigService } from '../src/common/config/index';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { HolidayService } from '../src/modules/tracker/services/holiday.service';
 
+import { createPrismaClient } from './_lib/prisma';
+
 interface RunArgs {
   dryRun: boolean;
 }
@@ -36,6 +38,27 @@ interface Stats {
 }
 
 async function main(args: RunArgs): Promise<void> {
+  // Лёгкий pre-check ДО подъёма всего AppModule (Nest DI + HolidayService +
+  // конфиг): если бэкфилить нечего — выходим чисто, не поднимая тяжёлый
+  // контекст и не рискуя упасть на bootstrap при неготовой инфраструктуре.
+  const preCheck = createPrismaClient();
+  try {
+    const pending = await preCheck.ideaBlock.count({
+      where: { signalType: 'commitment', commitmentStatus: null },
+    });
+    if (pending === 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        'backfill-commitment-due-dates: нет commitment-блоков без статуса — обновление не требуется, данные актуальны.',
+      );
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.log(`backfill-commitment-due-dates: к обработке ${pending} блоков`);
+  } finally {
+    await preCheck.$disconnect();
+  }
+
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });

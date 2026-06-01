@@ -24,6 +24,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { columnExists } from './_lib/schema-guards';
 
 import { SkillTraitCategoryService } from '../src/modules/skills/services/skill-trait-categories.service';
 
@@ -54,6 +55,16 @@ async function main(): Promise<void> {
     console.log(
       `=== patch-skill-trait-categories-from-strings START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
     );
+
+    // Guard: legacy-колонка SkillTrait.category планово удаляется после
+    // перехода на FK SkillTraitCategory. Если её уже нет — where:{category}
+    // упал бы. Выходим чисто.
+    if (!(await columnExists(prisma, 'SkillTrait', 'category'))) {
+      console.log(
+        'SkillTrait.category удалён — миграция в SkillTraitCategory применена ранее, обновление не требуется.',
+      );
+      return;
+    }
 
     const orgs = await prisma.org.findMany({
       where: { deletedAt: null },

@@ -94,8 +94,19 @@ async function main(): Promise<Result> {
 main()
   .then(async (res) => {
     await prisma.$disconnect();
-    if (res.errors > 0) {
+    // Per-org ошибки (транзиентные) не должны валить весь apply-prod-deploy.
+    // Падаем только если сбой системный: были Org для обработки, но НИ одной
+    // не удалось создать/пропустить — значит проблема не в отдельной строке.
+    if (res.errors > 0 && res.created === 0 && res.skipped === 0) {
+      console.error(
+        `[backfill-demo-subscriptions] системный сбой: все ${res.errors} Org упали, ни одной подписки не создано`,
+      );
       process.exit(1);
+    }
+    if (res.errors > 0) {
+      console.warn(
+        `[backfill-demo-subscriptions] завершено с предупреждениями: ${res.errors} Org пропущено из-за ошибок (перезапусти скрипт для добивки). Выкат не блокируется.`,
+      );
     }
     process.exit(0);
   })

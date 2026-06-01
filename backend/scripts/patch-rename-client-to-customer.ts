@@ -21,6 +21,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
+import { enumHasValue } from './_lib/schema-guards';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -31,6 +32,16 @@ async function main(): Promise<void> {
     console.log(
       `=== patch-rename-client-to-customer START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
     );
+
+    // Guard: если значение 'client' уже удалено из enum EntityType (cleanup-
+    // миграция прошла в прошлый выкат) — raw-cast 'client'::"EntityType" ниже
+    // упал бы ошибкой Postgres. Выходим чисто.
+    if (!(await enumHasValue(prisma, 'EntityType', 'client'))) {
+      console.log(
+        "enum-значение 'client' уже удалено из EntityType — миграция применена ранее, обновление не требуется.",
+      );
+      return;
+    }
 
     // Подсчитаем кандидатов до изменения.
     const beforeRows = await prisma.$queryRaw<Array<{ count: bigint }>>`

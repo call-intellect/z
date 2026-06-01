@@ -76,10 +76,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // CryptoService требует TypedConfigService → берём stub.
-  const cfgStub = makeCfgStub();
-  const crypto = new CryptoService(cfgStub as never);
-
   let alreadyEncrypted = 0;
   let toEncrypt = 0;
   for (const row of rows) {
@@ -94,10 +90,25 @@ async function main(): Promise<void> {
     `[audit Б5 encrypt-tochka-oauth] enc уже: ${alreadyEncrypted}, plain→encrypt: ${toEncrypt}`,
   );
 
+  // Если всё уже зашифровано — выходим чисто ДО запроса CRYPTO_MASTER_KEY.
+  // Иначе на ноде без ключа скрипт падал бы, хотя шифровать нечего —
+  // обновление не требуется.
+  if (toEncrypt === 0) {
+    console.log(
+      '[audit Б5 encrypt-tochka-oauth] все токены уже зашифрованы — обновление не требуется',
+    );
+    return;
+  }
+
   if (opts.dryRun) {
     console.log('[audit Б5 encrypt-tochka-oauth] dry-run: ничего не пишем');
     return;
   }
+
+  // CryptoService требует TypedConfigService → берём stub (запрашивает
+  // CRYPTO_MASTER_KEY только когда реально есть что шифровать).
+  const cfgStub = makeCfgStub();
+  const crypto = new CryptoService(cfgStub as never);
 
   let updated = 0;
   for (const row of rows) {

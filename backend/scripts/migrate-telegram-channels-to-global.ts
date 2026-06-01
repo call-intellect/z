@@ -26,7 +26,8 @@
  *      глобальный, per-tenant каналы пометить broken. Токены per-tenant
  *      сохранить в config.legacyTokens[].
  *
- * Идемпотентность: повторный запуск падает в случай Б и завершается без изменений.
+ * Идемпотентность: повторный запуск попадает в case Б (уже мигрировано) и
+ * завершается без изменений и без ошибки (exit 0).
  *
  * ВАЖНО. Скрипт меняет channel_bindings и channels. Перед запуском на проде:
  *   1. Сделать снапшот БД.
@@ -39,10 +40,7 @@
  *   bun run scripts/migrate-telegram-channels-to-global.ts
  */
 
-import { NestFactory } from '@nestjs/core';
-
-import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/common/prisma/prisma.service';
+import { createPrismaClient } from './_lib/prisma';
 
 interface RunArgs {
   dryRun: boolean;
@@ -61,12 +59,10 @@ const KIND = 'telegram_bot' as const;
 const BROKEN_REASON = 'migrated-to-global';
 
 async function main(args: RunArgs): Promise<void> {
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn'],
-  });
+  // Скрипт работает только с prisma — не поднимаем весь AppModule (Nest DI),
+  // чтобы не зависеть от готовности всей инфраструктуры на момент выката.
+  const prisma = createPrismaClient();
   try {
-    const prisma = app.get(PrismaService);
-
     log(`=== migrate-telegram-channels-to-global START (dryRun=${args.dryRun}) ===`);
 
     const all = await prisma.channel.findMany({
@@ -258,7 +254,7 @@ async function main(args: RunArgs): Promise<void> {
       log('Изменения применены. Если что-то не так — `bun run scripts/migrate-telegram-channels-back.ts`.');
     }
   } finally {
-    await app.close();
+    await prisma.$disconnect();
   }
 }
 

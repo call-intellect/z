@@ -32,7 +32,6 @@ import {
   type BillingPaymentMethod,
   type Invoice,
   type InvoiceStatus,
-  type PaymentMode,
 } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -57,7 +56,10 @@ export interface CreateInvoiceInput {
 
 export interface MarkPaidInput {
   invoiceId: string;
-  paymentMode: PaymentMode;
+  // 2026-06-01 — `reference` режим эталонной демо-Org не порождает инвойсов,
+  // markPaid вызывается только для платных подписок (paid/bonus). См. ТЗ
+  // demo-shared-org-model §4.11 (Billing исключает reference из метрик).
+  paymentMode: 'paid' | 'bonus';
   byUserId?: string | null;
   externalRef?: string | null;
 }

@@ -1,26 +1,19 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// bullmq тянет ioredis с нативными биндингами, которые роняют forks-pool
-// vitest в части окружений. OnboardingService импортирует DemoSeedQueue
-// (→ bullmq); мокаем модуль на пустые классы — в тестах очередь приходит моком.
-vi.mock('bullmq', () => ({
-  Queue: class {},
-  Worker: class {},
-}));
-
 import type { PrismaService } from '../../common/prisma/prisma.service';
-import type { SubscriptionService } from '../billing/services/subscription.service';
 
 import { OnboardingService } from './onboarding.service';
-import type { DemoSeedQueue } from './workers/demo-seed.queue';
 
 /**
  * audit Б3 (2026-05-29) — спецификация на `resetDemoWorkspace`.
+ * Обновлено 2026-06-01-demo-shared-org-model §4.2: добавлен precondition
+ * `Org.isReferenceDemo=true`.
  *
  * Покрытие:
- *   - precondition `Org.demoWorkspaceSeededAt IS NULL` → 400 no_demo_to_reset,
  *   - precondition `Org` не найдена → 404 org_not_found,
+ *   - precondition `Org.isReferenceDemo IS FALSE` → 400 not_reference_org,
+ *   - precondition `Org.demoWorkspaceSeededAt IS NULL` → 400 no_demo_to_reset,
  *   - happy path → каждый `deleteMany` фильтруется по `externalSource: 'demo'`
  *     либо через demo-meeting `roomName.startsWith('demo-room-')`,
  *   - возврат `deletedByTable` со счётчиками от `deleteMany`.
@@ -49,7 +42,11 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     const counters: Record<string, number> = {};
     const prisma = {
       org: {
-        findUnique: vi.fn(async () => ({ id: 'org-1', demoWorkspaceSeededAt: new Date() })),
+        findUnique: vi.fn(async () => ({
+          id: 'org-1',
+          demoWorkspaceSeededAt: new Date(),
+          isReferenceDemo: true,
+        })),
         update: vi.fn(async () => ({ id: 'org-1' })),
       },
       issueActivity: { deleteMany: _del('issueActivity') },
@@ -149,71 +146,29 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     return prisma;
   }
 
-  let demoSeedQueue: {
-    enqueue: ReturnType<typeof vi.fn>;
-    statusOf: ReturnType<typeof vi.fn>;
-    ensure: ReturnType<typeof vi.fn>;
-  };
-  let subscriptions: { getByTenant: ReturnType<typeof vi.fn> };
-
   beforeEach(() => {
     prisma = makePrismaMock();
-    demoSeedQueue = {
-      enqueue: vi.fn(async () => ({ jobId: 'demo-seed:org-1' })),
-      statusOf: vi.fn(async () => 'unknown' as const),
-      ensure: vi.fn(async () => ({ enqueued: true, state: null })),
-    };
-    subscriptions = { getByTenant: vi.fn(async () => ({ status: 'DEMO' })) };
-    svc = new OnboardingService(
-      prisma as unknown as PrismaService,
-      demoSeedQueue as unknown as DemoSeedQueue,
-      subscriptions as unknown as SubscriptionService,
-    );
+    svc = new OnboardingService(prisma as unknown as PrismaService);
   });
 
-  describe('ensureDemoSeed (fallback пустого DEMO-кабинета)', () => {
-    it('DEMO + не залито + нет job → enqueue', async () => {
-      prisma.org.findUnique.mockResolvedValueOnce({
-        id: 'org-1',
-        ownerId: 'owner-1',
-        demoWorkspaceSeededAt: null,
-      } as unknown as { id: string; demoWorkspaceSeededAt: Date });
-      const r = await svc.ensureDemoSeed('org-1');
-      expect(r.enqueued).toBe(true);
-      expect(demoSeedQueue.ensure).toHaveBeenCalledWith({
-        orgId: 'org-1',
-        ownerUserId: 'owner-1',
-      });
+  it('400 not_reference_org, если у Org isReferenceDemo=false', async () => {
+    prisma.org.findUnique.mockResolvedValueOnce({
+      id: 'org-1',
+      demoWorkspaceSeededAt: new Date(),
+      isReferenceDemo: false,
     });
-
-    it('уже залито → не трогаем очередь', async () => {
-      prisma.org.findUnique.mockResolvedValueOnce({
-        id: 'org-1',
-        ownerId: 'owner-1',
-        demoWorkspaceSeededAt: new Date(),
-      } as unknown as { id: string; demoWorkspaceSeededAt: Date });
-      const r = await svc.ensureDemoSeed('org-1');
-      expect(r).toEqual({ status: 'completed', enqueued: false });
-      expect(demoSeedQueue.ensure).not.toHaveBeenCalled();
-    });
-
-    it('не DEMO (ACTIVE) → не заливаем', async () => {
-      prisma.org.findUnique.mockResolvedValueOnce({
-        id: 'org-1',
-        ownerId: 'owner-1',
-        demoWorkspaceSeededAt: null,
-      } as unknown as { id: string; demoWorkspaceSeededAt: Date });
-      subscriptions.getByTenant.mockResolvedValueOnce({ status: 'ACTIVE' });
-      const r = await svc.ensureDemoSeed('org-1');
-      expect(r.enqueued).toBe(false);
-      expect(demoSeedQueue.ensure).not.toHaveBeenCalled();
-    });
+    await expect(
+      svc.resetDemoWorkspace({ orgId: 'org-1', actorUserId: 'u-1' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    // НИЧЕГО не удаляем
+    expect(prisma.__deleteCalls.length).toBe(0);
   });
 
   it('400 no_demo_to_reset, если у Org НЕТ demoWorkspaceSeededAt', async () => {
     prisma.org.findUnique.mockResolvedValueOnce({
       id: 'org-1',
       demoWorkspaceSeededAt: null as unknown as Date,
+      isReferenceDemo: true,
     });
     await expect(
       svc.resetDemoWorkspace({ orgId: 'org-1', actorUserId: 'u-1' }),
@@ -223,7 +178,9 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
   });
 
   it('404 org_not_found, если Org нет', async () => {
-    prisma.org.findUnique.mockResolvedValueOnce(null as unknown as { id: string; demoWorkspaceSeededAt: Date });
+    prisma.org.findUnique.mockResolvedValueOnce(
+      null as unknown as { id: string; demoWorkspaceSeededAt: Date; isReferenceDemo: boolean },
+    );
     await expect(
       svc.resetDemoWorkspace({ orgId: 'org-x', actorUserId: 'u-1' }),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -233,6 +190,7 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     prisma.org.findUnique.mockResolvedValueOnce({
       id: 'org-1',
       demoWorkspaceSeededAt: new Date(),
+      isReferenceDemo: true,
     });
     prisma.__counters['person'] = 12;
     prisma.__counters['issue'] = 42;

@@ -2178,4 +2178,18 @@ export class TypedConfigService {
     this.resolveSourceLogged.add(tag);
     this.logger.debug({ adminKey, source }, 'resolveSync');
   }
+
+  /**
+   * Параметры эталонной демо-Org «Демо: ТехноСтрим». Если `referenceOrgId=null` —
+   * shared-demo-org-model выключен (новые пользователи не подключаются как
+   * наблюдатели). См. ТЗ plans/tz/2026-06-01-demo-shared-org-model.md §4.6.
+   *
+   * 2026-06-01.
+   */
+  get demo(): { referenceOrgId: string | null } {
+    const id = this.get('ZDEMO_ORG_ID');
+    return {
+      referenceOrgId: typeof id === 'string' && id.length > 0 ? id : null,
+    };
+  }
 }

@@ -38,7 +38,11 @@ export class TenantGuard implements CanActivate {
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const req = ctx.switchToHttp().getRequest<Request>();
+    const req = ctx.switchToHttp().getRequest<
+      Request & {
+        rbacContext?: { role: string; visibility: string; isSuperAdmin: boolean };
+      }
+    >();
     const user = req.user;
     if (!user || !user.id) {
       throw new ForbiddenException({
@@ -77,6 +81,13 @@ export class TenantGuard implements CanActivate {
 
     // Кладём в req для downstream-кода (даже если уже стояло — идемпотентно).
     req.tenantId = tenantId;
+    // 2026-06-01 (ТЗ shared-demo-org-model §4.3) — кэшируем rbacCtx для
+    // downstream guards/handlers, чтобы избежать повторного loadContext.
+    req.rbacContext = {
+      role: rbacCtx.role,
+      visibility: rbacCtx.visibility,
+      isSuperAdmin: rbacCtx.isSuperAdmin,
+    };
     return true;
   }
 

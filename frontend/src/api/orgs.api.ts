@@ -11,6 +11,7 @@ export type OrgApi = {
   slug: string;
   visibilityMode: 'open' | 'strict';
   tier: 'basic' | 'pro' | 'enterprise';
+  isReferenceDemo: boolean;
   ownerId: string;
   createdAt: string;
   industry?: string | null;

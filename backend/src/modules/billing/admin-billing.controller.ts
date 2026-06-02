@@ -303,7 +303,9 @@ export class AdminBillingController {
   private toSubscriptionView(sub: Subscription): SubscriptionViewBody {
     return {
       status: sub.status,
-      paymentMode: sub.paymentMode,
+      // 2026-06-01 — `reference` (эталонная демо-Org) маппится в `null` для DTO.
+      // Подробнее см. ТЗ demo-shared-org-model §4.10 и billing.controller.toSubscriptionView.
+      paymentMode: sub.paymentMode === 'reference' ? null : sub.paymentMode,
       billingPeriod: sub.billingPeriod,
       startedAt: sub.startedAt?.toISOString() ?? null,
       currentPeriodStart: sub.currentPeriodStart?.toISOString() ?? null,

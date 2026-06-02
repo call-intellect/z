@@ -180,7 +180,10 @@ export class BillingController {
   private toSubscriptionView(sub: Subscription): SubscriptionViewBody {
     return {
       status: sub.status,
-      paymentMode: sub.paymentMode,
+      // 2026-06-01 — `reference` режим (эталонная демо-Org) не показывается клиенту
+      // как реальный платёжный режим. Внутренне ACTIVE+reference означает «не наша
+      // подписка», фронту отдаём `null`. См. ТЗ demo-shared-org-model §4.10.
+      paymentMode: sub.paymentMode === 'reference' ? null : sub.paymentMode,
       billingPeriod: sub.billingPeriod,
       startedAt: sub.startedAt?.toISOString() ?? null,
       currentPeriodStart: sub.currentPeriodStart?.toISOString() ?? null,

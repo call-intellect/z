@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { PublicDemo } from '../../common/guards/public-demo.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   CurrentUser,
@@ -66,6 +67,7 @@ export class ChatV2Controller {
 
   @Post('messages')
   @RequireSubscription()
+  @PublicDemo()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Задать вопрос AI-чату (создаёт диалог если нет)' })
   async ask(

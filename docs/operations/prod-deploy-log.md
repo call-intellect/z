@@ -60,6 +60,62 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🌟 2026-06-01 — Shared demo Org «Демо: ТехноСтрим» + demo_observer (зонтик main-screen-umbrella, Поток А)
+
+**Контекст.** Демо-кабинет «ТехноСтрим» теперь живёт **одной shared Org** в БД (isReferenceDemo=true). Новые пользователи получают `Membership(demo_observer)` к эталону сразу при регистрации (нет копий, нет ожидания «Готовим…»). При первой оплате listener снимает membership — пользователь видит только свою.
+
+**Что выкачено в коде:**
+- Schema: `enum MembershipRole +demo_observer`, `Org.isReferenceDemo`, `enum PaymentMode +reference`.
+- ENV: `ZDEMO_ORG_ID` (optional CUID эталона).
+- Backend: `DemoObserverGuard` (APP_GUARD), `RbacService.canMutate`, `AccountsService.register/getMe` интегрированы, `SubscriptionActivatedListener` снимает membership.
+- Удалён авто-сидинг копий: `demo-seed.queue/worker`, `OnboardingService.triggerDemoSeed/getDemoSeedStatus/ensureDemoSeed`, endpoints `GET /demo-seed-status` / `POST /demo-workspace/ensure`, frontend loading-страница `/onboarding/welcome/complete`.
+- Frontend: OrgSwitcher показывает бейдж «Демо», `/admin/demo` — «🌟 Эталон» с force-update только для эталона, MainEmptyState компонент.
+
+**Шаги выката (порядок ВАЖЕН):**
+
+- **Шаг 4 — Prisma** — да, новые enum values + поле:
+  - `MembershipRole +demo_observer`
+  - `Org.isReferenceDemo Boolean @default(false)`
+  - `PaymentMode +reference`
+  - Применяется автоматически через `migrate`-контейнер (`prisma db push --accept-data-loss`).
+
+- **Шаг 6 — Patch (первый запуск)**: создать эталон + получить его id для ENV:
+  ```bash
+  docker compose exec backend bun run scripts/patch-create-reference-demo-org.ts
+  ```
+  Скрипт напечатает `ZDEMO_ORG_ID=<cuid>` — скопируй эту строку.
+
+- **Шаг 1 — ENV**: добавить в `.env` (рядом с прочими ENV):
+  ```bash
+  ZDEMO_ORG_ID=<значение из шага 6 выше>
+  ```
+  Перезапустить backend:
+  ```bash
+  docker compose up -d backend
+  ```
+
+- **Шаг 6 — Patch (второй запуск)**: мигрировать старые «копии ТехноСтрим»:
+  ```bash
+  docker compose exec backend bun run scripts/patch-migrate-old-demo-orgs.ts
+  ```
+  Можно сделать сначала `--dry-run` для проверки.
+
+- **Шаг 12 — Smoke**:
+  - `curl -H "X-Org-Id: $ZDEMO_ORG_ID" -X POST http://localhost:3000/api/v1/meetings` (от owner'а эталона как demo_observer) → 403 `demo_observer_readonly`.
+  - Зарегистрировать нового тест-юзера → проверить, что `/api/v1/accounts/me` возвращает `currentOrgId === ZDEMO_ORG_ID` И в `/api/v1/orgs/me` две Org (эталон + своя).
+  - В админке `/admin/demo` — эталон помечен бейджем «🌟 Эталон», у остальных Org кнопки seed/reset disabled.
+
+**Откат.** Если что-то пошло не так:
+1. Удалить ENV `ZDEMO_ORG_ID` из `.env`, перезапустить backend — авто-привязка наблюдателей отключится (новые пользователи будут видеть только свою Org).
+2. Memberships к эталону можно убрать через `prisma.membership.deleteMany({ where: { orgId: '<id>', role: 'demo_observer' } })`.
+3. Саму эталонную Org можно soft-delete (`deletedAt: now()`) — schema fallback в register всё равно её отфильтрует.
+
+**Известные ограничения:**
+- Старые Org с `demoWorkspaceSeededAt != null` НО уже с реальными данными (`Person.externalSource <> 'demo'` или реальные `Meeting`) — НЕ мигрируются (skip-alive). Им остаётся прежнее состояние, в дашборде может быть «гибрид» демо + своих данных. По-хорошему надо просить пользователя оплатить, тогда listener снимет membership.
+- frontend `(authenticated)/onboarding/welcome/complete/page.tsx` удалён — старые сессии, оказавшиеся на этой странице в момент выката, увидят 404. Они уйдут на `/dashboard` после refresh.
+
+---
+
 ### 🛡️ 2026-06-01 — Идемпотентность update-скриптов (самопроверка вместо сырых падений)
 
 Все patch/backfill/migrate-скрипты UPDATE-пути теперь **сами проверяют актуальность данных** и при «нечего делать / уже применено» печатают человекочитаемую причину и выходят с кодом `0`, а не валят `apply-prod-deploy`. Это значит: **повторный прогон `--mode update` безопасен**, и выкат не падает «сырой» ошибкой на уже-мигрированном проде.

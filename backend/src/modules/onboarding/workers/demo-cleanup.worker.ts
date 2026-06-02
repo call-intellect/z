@@ -24,6 +24,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { OnboardingService } from '../onboarding.service';
 
@@ -40,6 +41,7 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(OnboardingService) private readonly onboarding: OnboardingService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   onModuleInit(): void {
@@ -81,6 +83,22 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<DemoCleanupJobData>): Promise<void> {
     const { orgId, actorUserId } = job.data;
+
+    // ТЗ 2026-06-01-demo-shared-org-model §4.8: cleanup разрешён только для
+    // эталонной демо-Org. Без этой проверки случайный enqueue на боевую Org
+    // приведёт к 35-табличному deleteMany по живым данным.
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: { id: true, isReferenceDemo: true },
+    });
+    if (!org?.isReferenceDemo) {
+      this.logger.error(
+        { jobId: job.id, orgId },
+        'demo-cleanup отменён: org не эталонная (isReferenceDemo=false)',
+      );
+      return;
+    }
+
     this.logger.log({ jobId: job.id, orgId }, 'demo-cleanup: starting cleanup');
     try {
       const result = await this.onboarding.resetDemoWorkspace({

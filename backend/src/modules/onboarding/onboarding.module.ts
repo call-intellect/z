@@ -10,15 +10,17 @@ import { OnboardingService } from './onboarding.service';
 import { ConsentService } from './services/consent.service';
 import { DemoCleanupQueue } from './workers/demo-cleanup.queue';
 import { DemoCleanupWorker } from './workers/demo-cleanup.worker';
-import { DemoSeedQueue } from './workers/demo-seed.queue';
-import { DemoSeedWorker } from './workers/demo-seed.worker';
 
 /**
  * OnboardingModule.
  *
- * ТЗ 2026-05-31-demo-auto-seed-and-cleanup: авто-заливка демо-кабинета при
- * регистрации (очередь `onboarding.demo-seed`) + авто-стирание при первой
- * оплате (очередь `onboarding.demo-cleanup`, слушает billing-события).
+ * ТЗ 2026-06-01-demo-shared-org-model: shared demo-Org «Демо: ТехноСтрим»,
+ * новый user получает membership(demo_observer) к эталону вместо копии данных.
+ * При активации платной/бонусной подписки слушатель снимает demo_observer.
+ *
+ * `DemoCleanupQueue / DemoCleanupWorker` оставлены для force-update эталонной
+ * Org (CLI / админка). DemoSeedQueue/Worker удалены — авто-копирование больше
+ * не происходит.
  *
  * BillingModule импортируется ради `SubscriptionService` (precondition seed'а
  * `status === 'DEMO'`). RedisService / PrismaService / EventEmitter — глобальные.
@@ -29,8 +31,6 @@ import { DemoSeedWorker } from './workers/demo-seed.worker';
   providers: [
     OnboardingService,
     ConsentService,
-    DemoSeedQueue,
-    DemoSeedWorker,
     DemoCleanupQueue,
     DemoCleanupWorker,
     SubscriptionActivatedListener,

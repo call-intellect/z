@@ -17,6 +17,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
 import { TypedConfigService } from '../../common/config/index';
+import { PublicDemo } from '../../common/guards/public-demo.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
@@ -74,6 +75,7 @@ export class ConciergeController {
 
   @Post('messages')
   @RequireSubscription()
+  @PublicDemo()
   @ApiOperation({ summary: 'Отправить сообщение Concierge (SSE stream ответа)' })
   async stream(
     @Body(new ZodValidationPipe(PostConciergeMessageBodySchema))
@@ -135,6 +137,7 @@ export class ConciergeController {
 
   @Post('messages/once')
   @RequireSubscription()
+  @PublicDemo()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Polling fallback: одно сообщение → JSON c финальным ответом',

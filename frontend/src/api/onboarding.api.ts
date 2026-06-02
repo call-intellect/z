@@ -8,8 +8,6 @@ export interface WelcomePatchBody {
   plannedFeatures?: string[];
 }
 
-export type DemoSeedStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
-
 export const onboardingApi = {
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение Блока A */
   patchWelcome: (orgId: string, body: WelcomePatchBody) =>
@@ -21,28 +19,6 @@ export const onboardingApi = {
   completeWelcome: (orgId: string) =>
     apiClient.post<{ ok: true; redirectTo: string }>(
       `/api/v1/orgs/${encodeURIComponent(orgId)}/welcome/complete`,
-      {},
-      { headers: { 'X-Org-Id': orgId } },
-    ),
-
-  /**
-   * GET /orgs/:orgId/demo-seed-status — статус авто-заливки демо-кабинета.
-   * Используется loading-экраном `/onboarding/welcome/complete` (polling).
-   */
-  getDemoSeedStatus: (orgId: string) =>
-    apiClient.get<{ status: DemoSeedStatus }>(
-      `/api/v1/orgs/${encodeURIComponent(orgId)}/demo-seed-status`,
-      { headers: { 'X-Org-Id': orgId } },
-    ),
-
-  /**
-   * POST /orgs/:orgId/demo-workspace/ensure — fallback: гарантировать заливку
-   * демо-кабинета, если Org в DEMO-режиме, но синтетики ещё нет (старые Org /
-   * неудавшийся seed). Идемпотентно. `enqueued=true` — seed реально запущен.
-   */
-  ensureDemoSeed: (orgId: string) =>
-    apiClient.post<{ status: DemoSeedStatus; enqueued: boolean }>(
-      `/api/v1/orgs/${encodeURIComponent(orgId)}/demo-workspace/ensure`,
       {},
       { headers: { 'X-Org-Id': orgId } },
     ),

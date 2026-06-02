@@ -264,7 +264,7 @@ LiveKit чистит атрибуты автоматически при disconne
 
 ### Frontend (фазы 7–12)
 - `frontend/app/(admin)/admin/*` — Z-Admin (8 страниц + AdminShell). С 2026-05-31 перенесён из `(authenticated)/admin/` в standalone route-группу с собственным root-layout и `AdminAuthGuard` (без AppShell/EntitlementProvider).
-- `frontend/app/(authenticated)/settings/admin/*` — Org-Admin (4 страницы).
+- `frontend/app/(authenticated)/company-admin/*` — Org-Admin (3 страницы: Доступ к памяти / Источники / Встречи; своя route-группа + `CompanyAdminSidebar`, с 2026-06-02). «Экономика» удалена вместе с backend `OrgAdminUsageController` (`/api/v1/org-admin/usage/*`); «Ядро знаний» убрано из клиента; старый `/settings/admin/*` — redirect-заглушки на `/company-admin`.
 - `frontend/app/(authenticated)/dashboard/{DashboardRouter, DirectorDashboardClient}.tsx` + `widgets/StrategicAlignmentWidget.tsx`.
 - `frontend/app/(authenticated)/goals/{page, GoalsClient, [id]/{page, GoalDetailClient}}.tsx`.
 - `frontend/app/(authenticated)/settings/{sources, retention, billing}/*.tsx`.

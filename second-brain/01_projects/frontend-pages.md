@@ -6,7 +6,7 @@ covers: реестр всех страниц Next.js App Router
 
 # Frontend Pages — реестр страниц
 
-Сжатый реестр страниц Next.js App Router (`frontend/app/`). Route-группы: `(public)` / `(authenticated)` / `(admin)` / `(design-preview)`. Все страницы под `(authenticated)` требуют сессии (cookie `z_session`). С 2026-05-31 Z-Admin (`/admin/*`) физически перенесён из `(authenticated)/admin/` в свою standalone route-группу `app/(admin)/admin/*` с собственным root-layout и `AdminAuthGuard` (без AppShell/EntitlementProvider) — см. `plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin (`/settings/admin/*`) остаётся в `(authenticated)`.
+Сжатый реестр страниц Next.js App Router (`frontend/app/`). Route-группы: `(public)` / `(authenticated)` / `(admin)` / `(design-preview)`. Все страницы под `(authenticated)` требуют сессии (cookie `z_session`). С 2026-05-31 Z-Admin (`/admin/*`) физически перенесён из `(authenticated)/admin/` в свою standalone route-группу `app/(admin)/admin/*` с собственным root-layout и `AdminAuthGuard` (без AppShell/EntitlementProvider) — см. `plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin с 2026-06-02 вынесен в собственную route-группу `(authenticated)/company-admin/*` (свой layout + `CompanyAdminSidebar`, ТЗ `plans/tz/2026-06-02-org-admin-cleanup-no-costs-nav-split.md`). Старый `/settings/admin/*` оставлен только как redirect-заглушки на `/company-admin`.
 
 Файл создан 2026-05-25 как часть финального handoff Wave 1-3 (Wave 1 закрытие). Пополняется по факту.
 
@@ -19,7 +19,7 @@ covers: реестр всех страниц Next.js App Router
 3. **Память компании** — `/ideas`, `/regulations`, `/decisions`, `/insights`, `/entities`, `/themes`. Items фильтруются `useMemoryAccess()`.
 4. **Управление** *(только owner/admin/coo)* — `/dashboard/operations`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`, `/goals`.
 5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/structure`, `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`).
-6. **Настройки** — `/settings/templates`, `/settings/integrations`, `/settings` + подгруппа «Админка» (`/settings/admin`, `/admin`) для owner/admin/super_admin.
+6. **Настройки** — `/settings/templates`, `/settings/integrations`, `/settings` + подгруппа «Админка» (`/company-admin` для owner/admin, `/admin` для super_admin). С 2026-06-02 «Админка компании» — отдельная поверхность `/company-admin/*` (Доступ к памяти / Источники / Встречи); «Экономика» (расходы LLM) и тех. «Ядро знаний» убраны из клиента — владелец Org себестоимость не видит.
 
 CTA «Создать встречу» (Plus + ссылка на `/meetings/create`) и `OrgSwitcher` живут в шапке Sidebar над списком групп.
 

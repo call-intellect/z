@@ -4,9 +4,12 @@ import { TablePropertiesController } from './controllers/table-properties.contro
 import { TableRowsController } from './controllers/table-rows.controller';
 import { TableViewsController } from './controllers/table-views.controller';
 import { TablesController } from './controllers/tables.controller';
+import { TableSyncListener } from './listeners/table-sync.listener';
 import { TableAgentService } from './services/table-agent.service';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
+import { TableSyncQueueService } from './services/table-sync-queue.service';
+import { TableSyncService } from './services/table-sync.service';
 import { TableViewsService } from './services/table-views.service';
 import { TablesAutoProvisionService } from './services/tables-auto-provision.service';
 import { TablesService } from './services/tables.service';
@@ -41,7 +44,19 @@ import { TablesService } from './services/tables.service';
     TableViewsService,
     TablesAutoProvisionService,
     TableAgentService,
+    // Smart-tables Фаза 2 — live entitySync. Listener слушает события графа и
+    // кладёт job в `tables.sync`; сам воркер живёт в WorkersModule (in-process).
+    TableSyncQueueService,
+    TableSyncService,
+    TableSyncListener,
   ],
-  exports: [TablesService, TablesAutoProvisionService, TableAgentService],
+  exports: [
+    TablesService,
+    TablesAutoProvisionService,
+    TableAgentService,
+    // Экспортируем для WorkersModule (TableSyncWorker) и для backfill-сценариев.
+    TableSyncService,
+    TableSyncQueueService,
+  ],
 })
 export class TablesModule {}

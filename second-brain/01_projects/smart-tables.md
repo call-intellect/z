@@ -153,10 +153,20 @@ related_projects:
 - **Тесты**: `table-agent.service.spec.ts` — 5 случаев (успех, hallucinated type, no entity match, инвариант isPrimary). Все tables-тесты зелёные (34).
 - **Feature-flag default off** — включается только после прохождения Eval (Фаза 1.5, ≥0.85 accuracy).
 
+### Фаза 2 — Graph-driven rows (живой entitySync) ✅
+
+Системная таблица автоматически содержит связанные сущности графа как строки: создаётся/обновляется/архивируется Entity → строка появляется/обновляется/уходит в архив.
+
+- **entitySync расширен** опц. `entityTypes: EntityType[]` (точный фильтр) + дефолт-маппинг `resolveEntityTypes` (`entity-sync.util.ts`): org→[customer,vendor], person→[person], document→[document], meeting→[]. Каталог: 4 sync-таблицы получили `autoCreate:true` + точные `entityTypes` (clients_deals→customer, vendors→vendor, team→person, regulations→document).
+- **Шина событий Entity** (раньше отсутствовала): `EntityResolutionService` эмитит `entity.created`/`entity.updated` (через `@Optional() EventEmitter2`, best-effort), `entity-resolver.worker` — `entity.archived` при merge. Константы в `tables/events/entity-sync.events.ts`.
+- **Sync-пайплайн**: `TableSyncListener` (`@OnEvent`) → очередь `tables.sync` (`TableSyncQueueService`) → `table-sync.worker` (зарегистрирован в `ai/workers.module.ts`, in-process) → `TableSyncService.applyEntityEvent` (upsert/archive строки, заполнение entity-cells по `config.entityAttribute`). Конфликт-резолвер: ручная строка с совпадающим primary/email сливается с Entity (проставляется `entityId`), без дубля.
+- **Initial backfill**: при включении `autoCreate false→true` (`TablesService.update`) → `runInitialBackfill` (≤1000 синхронно `createMany`, >1000 — батчи в очередь). Скрипт `backfill-table-entity-sync.ts` для существующих Org (в `apply-prod-deploy.ts`).
+- **Read-only attribute-колонки**: `config.{readonly,source:'entity',entityAttribute}`. Backend guard в `TableRowsService.update` → `422 table_cell_readonly`. Frontend: 🔗 в заголовке + tooltip, `allowOverlay:false` (грид), нередактируемый рендер в RowDetail, грейсфул-обработка 422.
+- **Тесты**: `table-sync.service.spec` (created/updated/archived/идемпотентность/конфликт-резолвер) + read-only guard. 52 backend-теста зелёные (tables 43 + entity-resolution 9).
+
 ## В работе / далее
 
-- **Фаза 1.5** (параллельно, блокер для включения флага) — Eval Text-to-Schema на 100 русских NL-промптах.
-- **Фаза 2** — Graph-driven rows (живой `entitySync`): расширить enum, `table-sync.worker`, read-only attribute-колонки.
+- **Фаза 1.5** (параллельно, блокер для включения флага Фазы 1) — Eval Text-to-Schema на 100 русских NL-промптах.
 - **Фаза 3** — Event-to-Cells из транскриптов + `TableCellProvenance` + очередь подтверждений.
 - **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
 - **Фаза 5** — NL Saved Views.

@@ -287,6 +287,16 @@ const STEPS: Step[] = [
     hint: 'Smart-tables Фаза 0: 10 системных таблиц для существующих Org',
     skipBootstrap: true,
   },
+  // Smart-tables Фаза 2 — graph-driven rows: наполнить системные autoCreate-таблицы
+  // строками по «живым» Entity графа (customer/vendor/person/document).
+  // Идемпотентен (skip привязанных entityId + конфликт-резолвер ручных строк).
+  // Должен идти ПОСЛЕ backfill-system-tables (таблицы уже созданы).
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-table-entity-sync.ts',
+    hint: 'Smart-tables Фаза 2: graph-driven строки в системные autoCreate-таблицы',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

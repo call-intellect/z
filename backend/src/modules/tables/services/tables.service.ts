@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { type Table, Prisma } from '@prisma/client';
 
@@ -15,6 +16,9 @@ import type {
   TablesListQuery,
   UpdateTableBody,
 } from '../dto/tables.dto';
+
+import { parseEntitySync } from './entity-sync.util';
+import { TableSyncService } from './table-sync.service';
 
 /**
  * Smart Tables — CRUD верхнего уровня (Фаза 0).
@@ -33,6 +37,12 @@ export class TablesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // Smart-tables Фаза 2 — initial backfill при включении autoCreate.
+    // @Optional: существующие unit-тесты TablesService конструируют сервис
+    // двумя аргументами; без TableSyncService backfill просто не запускается.
+    @Optional()
+    @Inject(TableSyncService)
+    private readonly tableSync?: TableSyncService,
   ) {}
 
   // ─────────────────────────── create ─────────────────────────────────────
@@ -179,10 +189,35 @@ export class TablesService {
           : (args.input.entitySync as unknown as Prisma.InputJsonValue);
     }
 
-    return this.prisma.table.update({
+    const updated = await this.prisma.table.update({
       where: { id: existing.id },
       data,
     });
+
+    // Smart-tables Фаза 2 — если autoCreate переключился false/несинк → true,
+    // наполняем таблицу строками по «живым» Entity (initial backfill). Не
+    // блокируем ответ при ошибке — лог + продолжаем (синк догонит по событиям).
+    if (args.input.entitySync !== undefined && this.tableSync) {
+      const before = parseEntitySync(existing.entitySync);
+      const after = parseEntitySync(updated.entitySync);
+      const wasAuto = before?.autoCreate === true;
+      const nowAuto = after?.autoCreate === true;
+      if (!wasAuto && nowAuto) {
+        await this.tableSync
+          .runInitialBackfill({ tenantId: args.tenantId, tableId: updated.id })
+          .catch((err) => {
+            this.logger.warn(
+              {
+                tableId: updated.id,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'tables.update: initial backfill упал — синк догонит по событиям',
+            );
+          });
+      }
+    }
+
+    return updated;
   }
 
   // ─────────────────────────── archive / unarchive ────────────────────────

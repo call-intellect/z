@@ -20,14 +20,47 @@ import { z } from 'zod';
 // ─────────────────────────── Table ───────────────────────────────────────
 
 /**
+ * Полный список значений `EntityType` (см. enum в schema.prisma). Используется
+ * для точного фильтра `entitySync.entityTypes`. Держим как явный z.enum, чтобы
+ * не зависеть от рантайм-импорта enum'а из @prisma/client (он не существует как
+ * значение — только как тип).
+ */
+export const EntityTypeSchema = z.enum([
+  'client',
+  'person',
+  'customer',
+  'vendor',
+  'project',
+  'product',
+  'document',
+  'goal',
+  'event',
+  'topic',
+  'location',
+  'technology',
+  'metric',
+  'market',
+  'org_unit',
+  'custom',
+]);
+export type EntityTypeValue = z.infer<typeof EntityTypeSchema>;
+
+/**
  * Полный список валидных значений `entitySync.type` — соответствует
  * полю `entitySync` в `Table` (см. schema.prisma §Smart Tables).
+ *
+ * Smart-tables Фаза 2 (graph-driven rows): `entityTypes` — точный фильтр
+ * классов Entity для живого синка строк. `type` остаётся грубой категорией
+ * (org/person/meeting/document); если `entityTypes` не задан — резолвер
+ * выводит дефолт по `type` (см. `resolveEntityTypes`).
  */
 export const TableEntitySyncSchema = z.object({
   type: z.enum(['org', 'person', 'meeting', 'document']),
   autoCreate: z.boolean(),
   /** id колонки, по которой ищем дубликаты при autoCreate. */
   primaryProperty: z.string().min(1).max(100).optional(),
+  /** Точный фильтр классов Entity для синка (Фаза 2). Если пуст — дефолт по `type`. */
+  entityTypes: z.array(EntityTypeSchema).optional(),
 });
 export type TableEntitySync = z.infer<typeof TableEntitySyncSchema>;
 

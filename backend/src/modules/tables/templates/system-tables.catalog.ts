@@ -20,6 +20,12 @@ import type { TablePropType } from '@prisma/client';
  *     где `color` — тон из палитры Grid (success/warning/danger/info/neutral).
  *   - остальные типы (text/longtext/number/currency/date/person/...) → `{}`.
  *
+ * Smart-tables Фаза 2 (graph-driven rows): колонки, значение которых приходит
+ * из связанной Entity графа, помечаются read-only:
+ *   `{ readonly: true, source: 'entity', entityAttribute: 'canonicalName'|'email'|'phone' }`.
+ * Такие ячейки нельзя редактировать в таблице (PATCH → 422 `table_cell_readonly`) —
+ * они обновляются автоматически из памяти компании при изменении сущности.
+ *
  * NB: все пользовательские строки (названия таблиц, колонок, опций) — на русском.
  */
 
@@ -48,6 +54,11 @@ export interface SystemTablePropertyTemplate {
 export interface SystemTableEntitySync {
   type: 'org' | 'person' | 'meeting' | 'document';
   autoCreate: boolean;
+  /**
+   * Точный фильтр классов Entity для живого синка строк (Smart-tables Фаза 2).
+   * Если не задан — резолвер выводит дефолт по `type` (см. `resolveEntityTypes`).
+   */
+  entityTypes?: string[];
 }
 
 export interface SystemTableTemplate {
@@ -77,12 +88,25 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'clients_deals',
     name: 'Клиенты и сделки',
     icon: '💼',
-    entitySync: { type: 'org', autoCreate: false },
+    entitySync: { type: 'org', autoCreate: true, entityTypes: ['customer'] },
     properties: [
-      { name: 'Название', type: 'text', isPrimary: true },
+      {
+        name: 'Название',
+        type: 'text',
+        isPrimary: true,
+        config: { readonly: true, source: 'entity', entityAttribute: 'canonicalName' },
+      },
       { name: 'Контакт', type: 'person' },
-      { name: 'Телефон', type: 'phone' },
-      { name: 'Email', type: 'email' },
+      {
+        name: 'Телефон',
+        type: 'phone',
+        config: { readonly: true, source: 'entity', entityAttribute: 'phone' },
+      },
+      {
+        name: 'Email',
+        type: 'email',
+        config: { readonly: true, source: 'entity', entityAttribute: 'email' },
+      },
       {
         name: 'Стадия',
         type: 'status',
@@ -104,9 +128,14 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'team',
     name: 'Команда',
     icon: '👥',
-    entitySync: { type: 'person', autoCreate: false },
+    entitySync: { type: 'person', autoCreate: true, entityTypes: ['person'] },
     properties: [
-      { name: 'Имя', type: 'text', isPrimary: true },
+      {
+        name: 'Имя',
+        type: 'text',
+        isPrimary: true,
+        config: { readonly: true, source: 'entity', entityAttribute: 'canonicalName' },
+      },
       { name: 'Должность', type: 'text' },
       {
         name: 'Отдел',
@@ -162,9 +191,14 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'vendors',
     name: 'Поставщики и подрядчики',
     icon: '🤝',
-    entitySync: { type: 'org', autoCreate: false },
+    entitySync: { type: 'org', autoCreate: true, entityTypes: ['vendor'] },
     properties: [
-      { name: 'Название', type: 'text', isPrimary: true },
+      {
+        name: 'Название',
+        type: 'text',
+        isPrimary: true,
+        config: { readonly: true, source: 'entity', entityAttribute: 'canonicalName' },
+      },
       {
         name: 'Услуга',
         type: 'selectSingle',
@@ -329,9 +363,14 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'regulations',
     name: 'Регламенты и документы',
     icon: '📋',
-    entitySync: { type: 'document', autoCreate: false },
+    entitySync: { type: 'document', autoCreate: true, entityTypes: ['document'] },
     properties: [
-      { name: 'Название', type: 'text', isPrimary: true },
+      {
+        name: 'Название',
+        type: 'text',
+        isPrimary: true,
+        config: { readonly: true, source: 'entity', entityAttribute: 'canonicalName' },
+      },
       {
         name: 'Область',
         type: 'selectSingle',

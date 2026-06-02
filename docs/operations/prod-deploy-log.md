@@ -86,6 +86,18 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔗 2026-06-02 — Smart-tables Фаза 2: graph-driven rows (живой entitySync)
+
+- **Шаг 4 — Prisma** — **не требуется** (entitySync и config — Json-поля, расширены без миграции).
+- **Шаг 8 — Backfill** — наполнить sync-таблицы строками из живых сущностей графа для существующих Org: `docker compose exec backend bun run scripts/backfill-table-entity-sync.ts` (идемпотентен, конфликт-резолвер по primary/email). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`, `skipBootstrap: true`, после `backfill-system-tables`). Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. **Порядок:** сначала `backfill-system-tables`, затем `backfill-table-entity-sync`.
+- **Новая очередь BullMQ `tables.sync`** + воркер `TableSyncWorker` (in-process, поднимается в `ai/workers.module.ts` — отдельного процесса воркеров нет). Новые доменные события `entity.created/updated/archived` (EventEmitter2, in-process). Доп. инфраструктура не нужна — Redis уже есть.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новые сервисы/воркер/события + правка `EntityResolutionService`; frontend: read-only колонки): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - создать новую Entity типа `customer` (через любой knowledge-core flow) → в течение ≤5с строка появляется в системной таблице «Клиенты и сделки».
+  - попытка отредактировать read-only колонку «Название» через PATCH `/rows/:id` → `422 table_cell_readonly`; в UI ячейка помечена 🔗 и не открывает редактор.
+
+---
+
 ### 🪵 2026-06-01 — LoggingModule (технические логи в БД + админ-UI `/admin/logs`)
 
 - **Шаг 1 — ENV** — **11 новых опциональных** `LOG_DB_*` (все с код-дефолтами, можно не выставлять):

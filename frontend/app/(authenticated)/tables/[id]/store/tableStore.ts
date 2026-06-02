@@ -17,8 +17,10 @@
  * состояния). store берёт уже загруженные данные через `hydrate(...)`.
  */
 
+import { toast } from 'sonner';
 import { create } from 'zustand';
 
+import { ApiError } from '@/api/api-error';
 import { tableViewsApi, tablesApi } from '@/api/tables.api';
 import type { TablePropTypeApi } from '@/api/types/tables';
 import {
@@ -142,6 +144,19 @@ interface PendingPageContent {
 const pendingPageContent: Map<string, PendingPageContent> = new Map();
 
 const PAGE_CONTENT_DEBOUNCE_MS = 500;
+
+/**
+ * Грейсфул-обработка 422 `table_cell_readonly` (Smart-tables Фаза 2).
+ * Возвращает true, если это именно read-only-ошибка (тогда вызывающий код
+ * откатывает оптимистичное обновление и не пишет mutationError-баннер —
+ * сообщение уже показано тостом).
+ */
+function isReadonlyCellError(e: unknown): boolean {
+  return e instanceof ApiError && e.code === 'table_cell_readonly';
+}
+
+const READONLY_TOAST =
+  'Эту ячейку нельзя изменить вручную — значение приходит из памяти компании';
 
 function clearPendingFor(rowId: string): void {
   const p = pending.get(rowId);
@@ -420,6 +435,17 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
             rows: get().rows.map((r) => (r.id === rowId ? domain : r)),
           });
         } catch (e) {
+          // Read-only ячейка (значение из памяти компании): откатываем
+          // оптимистичное изменение и показываем понятный тост, без баннера.
+          if (isReadonlyCellError(e)) {
+            toast.error(READONLY_TOAST);
+            set({
+              rows: get().rows.map((r) =>
+                r.id === rowId ? { ...r, cells: prev.cells } : r,
+              ),
+            });
+            return;
+          }
           set({
             mutationError:
               e instanceof Error

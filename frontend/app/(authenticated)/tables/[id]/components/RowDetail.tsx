@@ -10,6 +10,7 @@ import {
   Strikethrough,
   Heading1,
   Heading2,
+  Link2,
   List,
   ListOrdered,
   Quote,
@@ -23,6 +24,7 @@ import {
   FAZA1_SUPPORTED_TYPES,
   PROP_TYPE_LABEL_RU,
   formatCellValue,
+  isReadonlyProperty,
   type TablePropertyDomain,
   type TableRowDomain,
 } from '@/domain/table';
@@ -64,6 +66,14 @@ const ALLOWED_INLINE_TYPES = new Set([
   'phone',
   'checkbox',
 ]);
+
+/**
+ * Подсказка для read-only attribute-полей (Smart-tables Фаза 2): значение
+ * приходит из памяти компании (граф знаний / Entity) и редактируется в самой
+ * сущности, а не в таблице.
+ */
+const READONLY_HINT =
+  'Значение приходит из памяти компании и редактируется в самой сущности';
 
 export interface RowDetailProps {
   open: boolean;
@@ -349,14 +359,28 @@ interface PropertyRowProps {
 function PropertyRow({ property, value, row, onChange }: PropertyRowProps) {
   const isSupported = FAZA1_SUPPORTED_TYPES.has(property.type);
   const isComputed = COMPUTED_TYPES.has(property.type);
+  // Read-only attribute-колонка (значение из памяти компании) — приоритетнее
+  // inline-редактируемости: даже text/email/phone не должны иметь редактор.
+  const isReadonlyAttr = isReadonlyProperty(property);
   const isInlineEditable =
-    isSupported && !isComputed && ALLOWED_INLINE_TYPES.has(property.type);
+    !isReadonlyAttr &&
+    isSupported &&
+    !isComputed &&
+    ALLOWED_INLINE_TYPES.has(property.type);
 
   return (
     <div className="grid grid-cols-[140px_1fr] items-start gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-bg-subtle/50">
       <div className="pt-1.5 text-xs text-fg-tertiary">
-        <div className="truncate" title={property.name}>
-          {property.name}
+        <div className="flex items-center gap-1">
+          {isReadonlyAttr ? (
+            <Link2
+              className="h-3 w-3 shrink-0 text-fg-tertiary"
+              aria-hidden
+            />
+          ) : null}
+          <span className="truncate" title={property.name}>
+            {property.name}
+          </span>
         </div>
         <div className="mt-0.5 text-[10px] uppercase tracking-wide text-fg-disabled">
           {PROP_TYPE_LABEL_RU[property.type]}
@@ -364,7 +388,22 @@ function PropertyRow({ property, value, row, onChange }: PropertyRowProps) {
       </div>
 
       <div className="min-w-0">
-        {!isSupported ? (
+        {isReadonlyAttr ? (
+          // Значение приходит из памяти компании — только отображение, без
+          // редактора. Иконка-«звено» + подсказка поясняют, почему.
+          <div
+            className="flex min-h-9 items-center gap-1.5 px-2 py-1.5 text-sm"
+            title={READONLY_HINT}
+          >
+            <span className={value ? 'text-fg-secondary' : 'text-fg-tertiary'}>
+              {formatCellValue(value, property.type) || '—'}
+            </span>
+            <Link2
+              className="h-3 w-3 shrink-0 text-fg-tertiary"
+              aria-label={READONLY_HINT}
+            />
+          </div>
+        ) : !isSupported ? (
           <ReadOnlyText text="Тип пока не поддерживается" muted />
         ) : isComputed ? (
           <ComputedDisplay property={property} row={row} />

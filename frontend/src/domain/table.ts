@@ -412,6 +412,31 @@ export function isComputed(type: TablePropType): boolean {
   return COMPUTED_TYPES.has(type);
 }
 
+/**
+ * Read-only attribute-колонка (Smart-tables Фаза 2): значение приходит из
+ * памяти компании / графа знаний (Entity) и редактируется в самой сущности,
+ * а не в таблице.
+ *
+ * Backend помечает такие колонки в `config`:
+ *   `{ readonly: true }` ИЛИ `{ source: 'entity', entityAttribute: '...' }`.
+ * PATCH такой ячейки возвращает 422 `table_cell_readonly`
+ * (см. `backend/src/modules/tables/services/table-rows.service.ts`).
+ *
+ * Хелпер принимает либо доменную property, либо «сырой» config —
+ * чтобы вызываться и из Grid, и из карточки строки без дублирования логики.
+ */
+export function isReadonlyProperty(
+  prop:
+    | Pick<TablePropertyDomain, 'config'>
+    | { config?: Record<string, unknown> | null }
+    | null
+    | undefined,
+): boolean {
+  const config = prop?.config;
+  if (!config || typeof config !== 'object') return false;
+  return config.readonly === true || config.source === 'entity';
+}
+
 // ─────────────────────────── формат значений ─────────────────────────────
 
 /**

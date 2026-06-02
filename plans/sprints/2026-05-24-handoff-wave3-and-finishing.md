@@ -209,7 +209,7 @@ to: next-orchestrator
 | `plans/analysis/2026-05-22-unified-product-architecture.md` | Единая архитектура продукта | Для понимания общей картины |
 | `plans/analysis/2026-05-23-kora-v2-shipping-report.md` | Отчёт о доставке Кора v2 | Для понимания текущего состояния |
 | `plans/analysis/2026-05-23-kora-v2-techdolgi-plain-russian.md` | Техдолги Кора v2 простым русским | Для понимания технического долга |
-| `plans/analysis/2026-05-22-second-brain-visualization.md` | Визуализация второго мозга | Для дизайнера |
+| `plans/archive/2026-05-22-second-brain-visualization.md` | Визуализация второго мозга (архив → заменён `plans/tz/2026-06-02-brain-visualization-people.md`) | Для дизайнера |
 | `plans/analysis/2026-05-22-ontology-reasoning-from-scratch.md` | Онтология reasoning с нуля | Для AI-агентов |
 | `plans/analysis/2026-05-22-dialog-layer-query-processing.md` | Dialog layer query processing | Уже реализован — справочно |
 | `plans/analysis/2026-05-22-ui-design-deep-audit.md` | UI design deep audit | 12 правил UI — обязательно для frontend |

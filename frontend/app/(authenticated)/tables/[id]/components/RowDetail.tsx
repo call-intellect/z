@@ -6,16 +6,22 @@ import Link from '@tiptap/extension-link';
 import {
   Bold,
   ChevronRight,
+  ExternalLink,
   Italic,
   Strikethrough,
   Heading1,
   Heading2,
+  Link2,
+  Link as LinkProvenanceIcon,
   List,
   ListOrdered,
+  Loader2,
   Quote,
   Link as LinkIcon,
+  Undo2,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -23,12 +29,20 @@ import {
   FAZA1_SUPPORTED_TYPES,
   PROP_TYPE_LABEL_RU,
   formatCellValue,
+  formatConfidencePercent,
+  isReadonlyProperty,
+  type CellProvenanceDomain,
   type TablePropertyDomain,
   type TableRowDomain,
 } from '@/domain/table';
 import { Button } from '@/ui/shadcn/button';
 import { Checkbox } from '@/ui/shadcn/checkbox';
 import { Input } from '@/ui/shadcn/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/ui/shadcn/popover';
 import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
 import { Textarea } from '@/ui/shadcn/textarea';
 
@@ -65,6 +79,14 @@ const ALLOWED_INLINE_TYPES = new Set([
   'checkbox',
 ]);
 
+/**
+ * Подсказка для read-only attribute-полей (Smart-tables Фаза 2): значение
+ * приходит из памяти компании (граф знаний / Entity) и редактируется в самой
+ * сущности, а не в таблице.
+ */
+const READONLY_HINT =
+  'Значение приходит из памяти компании и редактируется в самой сущности';
+
 export interface RowDetailProps {
   open: boolean;
   onClose: () => void;
@@ -79,6 +101,18 @@ export interface RowDetailProps {
     rowId: string,
     pageContentJson: Record<string, unknown> | null,
   ) => void;
+  /**
+   * Загрузить провенансы строки (источники авто-правок ячеек). Фаза 3.
+   * Возвращает только актуальные записи (откатанные отфильтрованы).
+   */
+  onLoadProvenance?: (rowId: string) => Promise<CellProvenanceDomain[]>;
+  /** Откатить авто-правку ячейки. Возвращает true при успехе. */
+  onUndoProvenance?: (provenanceId: string) => Promise<boolean>;
+  /**
+   * Локально записать значение в ячейку (без PATCH). Используется после undo:
+   * backend уже восстановил previousValue, нужно лишь синхронизировать стор.
+   */
+  onApplyCellLocal?: (rowId: string, propertyId: string, value: unknown) => void;
 }
 
 export function RowDetail({
@@ -90,6 +124,9 @@ export function RowDetail({
   rowData,
   onUpdateCell,
   onUpdatePageContent,
+  onLoadProvenance,
+  onUndoProvenance,
+  onApplyCellLocal,
 }: RowDetailProps) {
   return (
     <Sheet
@@ -113,6 +150,9 @@ export function RowDetail({
             onUpdateCell={onUpdateCell}
             onUpdatePageContent={onUpdatePageContent}
             onClose={onClose}
+            onLoadProvenance={onLoadProvenance}
+            onUndoProvenance={onUndoProvenance}
+            onApplyCellLocal={onApplyCellLocal}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-fg-secondary">
@@ -135,6 +175,9 @@ interface RowDetailContentProps {
     pageContentJson: Record<string, unknown> | null,
   ) => void;
   onClose: () => void;
+  onLoadProvenance?: (rowId: string) => Promise<CellProvenanceDomain[]>;
+  onUndoProvenance?: (provenanceId: string) => Promise<boolean>;
+  onApplyCellLocal?: (rowId: string, propertyId: string, value: unknown) => void;
 }
 
 /**
@@ -194,7 +237,51 @@ function RowDetailContent({
   onUpdateCell,
   onUpdatePageContent,
   onClose,
+  onLoadProvenance,
+  onUndoProvenance,
+  onApplyCellLocal,
 }: RowDetailContentProps) {
+  // Provenance (Фаза 3): загружаем источники авто-правок строки при открытии.
+  // Держим локально в карточке (стор не засоряем — это вспомогательные данные).
+  const [provenance, setProvenance] = useState<CellProvenanceDomain[]>([]);
+  useEffect(() => {
+    if (!onLoadProvenance) return;
+    let cancelled = false;
+    void onLoadProvenance(rowId).then((items) => {
+      if (!cancelled) setProvenance(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rowId, onLoadProvenance]);
+
+  // Map propertyId → последняя актуальная запись провенанса.
+  const provByProperty = useMemo(() => {
+    const map = new Map<string, CellProvenanceDomain>();
+    for (const p of provenance) {
+      const existing = map.get(p.propertyId);
+      if (!existing || p.appliedAt > existing.appliedAt) {
+        map.set(p.propertyId, p);
+      }
+    }
+    return map;
+  }, [provenance]);
+
+  // Откат авто-правки: backend восстановит previousValue в cells, локально
+  // синхронизируем значение и убираем иконку провенанса у этой ячейки.
+  const handleUndo = async (prov: CellProvenanceDomain) => {
+    if (!onUndoProvenance) return false;
+    const ok = await onUndoProvenance(prov.id);
+    if (ok) {
+      onApplyCellLocal?.(rowId, prov.propertyId, prov.previousValue ?? null);
+      setProvenance((prev) => prev.filter((x) => x.id !== prov.id));
+      toast.success('Изменение отменено');
+    } else {
+      toast.error('Не удалось отменить изменение');
+    }
+    return ok;
+  };
+
   // Заголовок берём из isPrimary property — если её нет, из первой текстовой,
   // иначе — «Без названия».
   const title = useMemo(() => {
@@ -297,6 +384,8 @@ function RowDetailContent({
                 value={rowData.cells[property.id]}
                 row={rowData}
                 onChange={(v) => onUpdateCell(rowId, property.id, v)}
+                provenance={provByProperty.get(property.id) ?? null}
+                onUndoProvenance={onUndoProvenance ? handleUndo : undefined}
               />
             ))}
           </div>
@@ -344,27 +433,68 @@ interface PropertyRowProps {
   value: unknown;
   row: TableRowDomain;
   onChange: (v: unknown) => void;
+  /** Провенанс ячейки (источник авто-правки), если есть. Фаза 3. */
+  provenance?: CellProvenanceDomain | null;
+  /** Откатить авто-правку. Если не передан — кнопка «Отменить» скрыта. */
+  onUndoProvenance?: (prov: CellProvenanceDomain) => Promise<boolean>;
 }
 
-function PropertyRow({ property, value, row, onChange }: PropertyRowProps) {
+function PropertyRow({
+  property,
+  value,
+  row,
+  onChange,
+  provenance,
+  onUndoProvenance,
+}: PropertyRowProps) {
   const isSupported = FAZA1_SUPPORTED_TYPES.has(property.type);
   const isComputed = COMPUTED_TYPES.has(property.type);
+  // Read-only attribute-колонка (значение из памяти компании) — приоритетнее
+  // inline-редактируемости: даже text/email/phone не должны иметь редактор.
+  const isReadonlyAttr = isReadonlyProperty(property);
   const isInlineEditable =
-    isSupported && !isComputed && ALLOWED_INLINE_TYPES.has(property.type);
+    !isReadonlyAttr &&
+    isSupported &&
+    !isComputed &&
+    ALLOWED_INLINE_TYPES.has(property.type);
 
   return (
     <div className="grid grid-cols-[140px_1fr] items-start gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-bg-subtle/50">
       <div className="pt-1.5 text-xs text-fg-tertiary">
-        <div className="truncate" title={property.name}>
-          {property.name}
+        <div className="flex items-center gap-1">
+          {isReadonlyAttr ? (
+            <Link2
+              className="h-3 w-3 shrink-0 text-fg-tertiary"
+              aria-hidden
+            />
+          ) : null}
+          <span className="truncate" title={property.name}>
+            {property.name}
+          </span>
         </div>
         <div className="mt-0.5 text-[10px] uppercase tracking-wide text-fg-disabled">
           {PROP_TYPE_LABEL_RU[property.type]}
         </div>
       </div>
 
-      <div className="min-w-0">
-        {!isSupported ? (
+      <div className="flex min-w-0 items-start gap-1">
+        <div className="min-w-0 flex-1">
+        {isReadonlyAttr ? (
+          // Значение приходит из памяти компании — только отображение, без
+          // редактора. Иконка-«звено» + подсказка поясняют, почему.
+          <div
+            className="flex min-h-9 items-center gap-1.5 px-2 py-1.5 text-sm"
+            title={READONLY_HINT}
+          >
+            <span className={value ? 'text-fg-secondary' : 'text-fg-tertiary'}>
+              {formatCellValue(value, property.type) || '—'}
+            </span>
+            <Link2
+              className="h-3 w-3 shrink-0 text-fg-tertiary"
+              aria-label={READONLY_HINT}
+            />
+          </div>
+        ) : !isSupported ? (
           <ReadOnlyText text="Тип пока не поддерживается" muted />
         ) : isComputed ? (
           <ComputedDisplay property={property} row={row} />
@@ -379,8 +509,102 @@ function PropertyRow({ property, value, row, onChange }: PropertyRowProps) {
             muted={!value}
           />
         )}
+        </div>
+
+        {/* Индикатор провенанса (Фаза 3): значение обновлено из источника. */}
+        {provenance ? (
+          <ProvenanceIndicator
+            provenance={provenance}
+            onUndo={onUndoProvenance}
+          />
+        ) : null}
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────── ProvenanceIndicator ─────────────────────────
+
+function ProvenanceIndicator({
+  provenance,
+  onUndo,
+}: {
+  provenance: CellProvenanceDomain;
+  onUndo?: (prov: CellProvenanceDomain) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const confidence = formatConfidencePercent(provenance.confidence);
+
+  const handleUndo = async () => {
+    if (!onUndo) return;
+    setBusy(true);
+    try {
+      const ok = await onUndo(provenance);
+      if (ok) setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Источник значения"
+          title="Значение обновлено автоматически — нажмите, чтобы увидеть источник"
+          className="mt-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-accent transition-colors hover:bg-accent-muted"
+        >
+          <LinkProvenanceIcon className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 space-y-2">
+        <div className="text-xs text-fg-tertiary">Обновлено из:</div>
+        <div className="text-sm font-medium text-fg-primary">
+          {provenance.sourceLabel || 'Источник'}
+        </div>
+        {confidence ? (
+          <div className="text-xs text-fg-secondary">
+            Уверенность {confidence}
+          </div>
+        ) : null}
+        <div className="text-xs text-fg-tertiary">
+          {provenance.appliedAt.toLocaleString('ru-RU')}
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-1">
+          {provenance.sourceLink ? (
+            <a
+              href={provenance.sourceLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-accent transition-colors hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" aria-hidden />
+              Открыть встречу
+            </a>
+          ) : (
+            <span />
+          )}
+          {onUndo ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => void handleUndo()}
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Undo2 className="h-3.5 w-3.5" />
+              )}
+              Отменить
+            </Button>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

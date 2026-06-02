@@ -19,6 +19,7 @@ import type {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SubscriptionService } from '../billing/services/subscription.service';
 import { RbacService } from '../rbac/rbac.service';
+import { TablesAutoProvisionService } from '../tables/services/tables-auto-provision.service';
 
 /**
  * Бизнес-сервис Org / Membership.
@@ -58,6 +59,8 @@ export class OrgsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(SubscriptionService) private readonly subscriptions: SubscriptionService,
+    @Inject(TablesAutoProvisionService)
+    private readonly tablesAutoProvision: TablesAutoProvisionService,
   ) {}
 
   /**
@@ -107,6 +110,8 @@ export class OrgsService {
     // ТЗ paywall-no-trial §3 — для каждой новой Org создаём запись
     // Subscription со status=DEMO, чтобы SubscriptionGuard работал детерминированно.
     await this.subscriptions.ensureDemo(org.id, tx);
+    // Smart-tables Фаза 0 — 10 системных таблиц (пустых), видны в /tables сразу.
+    await this.tablesAutoProvision.provisionDefaults(org.id, input.ownerId, tx);
     this.rbac.invalidate(input.ownerId, org.id);
     return org;
   }

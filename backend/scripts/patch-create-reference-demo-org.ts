@@ -21,16 +21,14 @@
  * Источник: ТЗ plans/tz/2026-06-01-demo-shared-org-model.md §6.1.
  */
 
+import { runAllSeedSteps } from '../src/modules/onboarding/demo-data';
+import { markAllDemoEntitiesForTenant } from '../src/modules/onboarding/demo-data/mark-demo';
+import {
+  createEmptyIdMap,
+  type IdMap,
+  type SeedContext,
+} from '../src/modules/onboarding/demo-data/types';
 import { createPrismaClient } from './_lib/prisma';
-import { createEmptyIdMap, type IdMap, type SeedContext } from '../src/modules/onboarding/demo-data/types';
-import { seedOrgStructure } from '../src/modules/onboarding/demo-data/org-structure';
-import { seedTracker } from '../src/modules/onboarding/demo-data/tracker';
-import { seedMeetings } from '../src/modules/onboarding/demo-data/meetings';
-import { seedKnowledgeGraph } from '../src/modules/onboarding/demo-data/knowledge-graph';
-import { seedGoalsClones } from '../src/modules/onboarding/demo-data/goals-clones';
-import { seedOperations } from '../src/modules/onboarding/demo-data/operations';
-import { seedChatNotifications } from '../src/modules/onboarding/demo-data/chat-notifications';
-import { seedPolish } from '../src/modules/onboarding/demo-data/polish';
 
 const prisma = createPrismaClient();
 
@@ -135,21 +133,23 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[create] Эталонная Org создана: id=${orgId}, name="${DEMO_ORG_NAME}"`);
 
-  // 4. Заливаем демо-данные (23 модуля; см. seed-demo-workspace.ts).
+  // 4. Заливаем демо-данные через единый рантайм (23 модуля). См.
+  //    `backend/src/modules/onboarding/demo-data/index.ts` (DEMO_SEED_STEPS) —
+  //    единый источник правды для HTTP/CLI/patch.
   const ids: IdMap = createEmptyIdMap();
   const ctx: SeedContext = { prisma, tenantId: orgId, ownerUserId: ownerId };
 
-  // eslint-disable-next-line no-console
-  console.log('── Заливка демо-данных: org-structure → tracker → meetings → knowledge-graph → goals/clones → operations → chat → polish');
+  await runAllSeedSteps(ctx, ids, (step, i, total) => {
+    // eslint-disable-next-line no-console
+    console.log(`── [${i + 1}/${total}] ${step.label} (${step.key})`);
+  });
 
-  await seedOrgStructure(ctx, ids);
-  await seedTracker(ctx, ids);
-  await seedMeetings(ctx, ids);
-  await seedKnowledgeGraph(ctx, ids);
-  await seedGoalsClones(ctx, ids);
-  await seedOperations(ctx, ids);
-  await seedChatNotifications(ctx, ids);
-  await seedPolish(ctx, ids);
+  // ТЗ 2026-05-29 audit Б3: помечаем externalSource='demo' у всех сущностей
+  // эталона — резервный путь для resetDemoWorkspace, если эталон когда-то
+  // понадобится сбросить через --force-update.
+  const marked = await markAllDemoEntitiesForTenant(prisma, orgId);
+  // eslint-disable-next-line no-console
+  console.log(`── externalSource='demo' проставлен: updated=${marked.updated}`);
 
   await prisma.org.update({
     where: { id: orgId },

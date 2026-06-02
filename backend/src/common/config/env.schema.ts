@@ -1753,6 +1753,12 @@ const SmartTablesSchema = z.object({
   TABLE_MAX_PROPS_PER_TABLE: z.coerce.number().int().positive().default(200),
   TABLE_MAX_TABLES_PER_ORG: z.coerce.number().int().positive().default(1_000),
   TABLE_MAX_CELL_SIZE_BYTES: z.coerce.number().int().positive().default(1_048_576),
+  // Document-to-Table (Фаза 4) — лимиты импорта из файла.
+  //   TABLE_IMPORT_MAX_FILE_MB — максимальный размер загружаемого Excel/CSV.
+  //   TABLE_IMPORT_MAX_ROWS    — максимум строк, переносимых за один импорт
+  //     (парсер всё равно читает не больше, лишнее отбрасывается с предупреждением).
+  TABLE_IMPORT_MAX_FILE_MB: z.coerce.number().int().positive().default(25),
+  TABLE_IMPORT_MAX_ROWS: z.coerce.number().int().positive().default(5_000),
 });
 
 /**

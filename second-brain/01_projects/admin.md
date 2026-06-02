@@ -7,8 +7,9 @@ updated: 2026-05-26
 
 С 2026-05-31 — Z-Admin живёт в отдельной route-группе `app/(admin)/admin/*`
 (root-layout с `AdminAuthGuard`, без AppShell/EntitlementProvider). См.
-`plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin
-(`settings/admin/*`) остаётся в `(authenticated)` — это другая роль.
+`plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin с
+2026-06-02 вынесен в `(authenticated)/company-admin/*` (свой
+`CompanyAdminSidebar`) — это другая роль; см. [[admin-org-knowledge-core]].
 
 Список фактически работающих страниц админки. Полная карта сайдбара — в
 [frontend/app/(admin)/admin/navigation.ts](../../frontend/app/(admin)/admin/navigation.ts).

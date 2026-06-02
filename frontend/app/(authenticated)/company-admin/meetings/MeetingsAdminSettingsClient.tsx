@@ -8,7 +8,7 @@ import { orgQualityScoreSettingsFromApi } from '@/domain/quality-score';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 
 /**
- * Клиент страницы `/settings/admin/meetings` (Фаза C §8.3).
+ * Клиент страницы `/company-admin/meetings` (ТЗ 2026-06-02).
  *
  * Содержит блок «Считать оценку для типов встреч» — чекбокс-список 9 типов.
  * Под капотом — `Org.qualityScoreDisabledForTypes`: ВЫКЛЮЧЕННЫЙ чекбокс

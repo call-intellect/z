@@ -179,6 +179,13 @@ export type ConciergeStreamEvent =
       status: number;
       undoLogId?: string;
       preview: string;
+      /**
+       * Smart-tables ТЗ Фаза 1 — для whitelist-инструментов с богатым превью
+       * (см. RICH_PREVIEW_TOOLS) кладём ПОЛНЫЙ результат, чтобы фронт мог
+       * отрисовать интерактивную карточку (например, превью схемы таблицы).
+       * Для остальных инструментов поле отсутствует — достаточно `preview`.
+       */
+      data?: unknown;
     }
   | { type: 'message'; text: string }
   | { type: 'done'; messageId: string }
@@ -189,6 +196,13 @@ export type ConciergeStreamEvent =
       /** ТЗ 2026-05-31 — для `user_daily` приходит из QuotaService (Retry-After в секундах). */
       retryAfterSeconds?: number;
     };
+
+/**
+ * Smart-tables ТЗ Фаза 1 — инструменты, для которых в SSE-событие `tool_result`
+ * прокидывается ПОЛНЫЙ результат (`data`), а не только текстовый `preview`.
+ * Нужно фронту для интерактивных карточек (например, превью схемы таблицы).
+ */
+const RICH_PREVIEW_TOOLS = new Set<string>(['infer_table_schema']);
 
 @Injectable()
 export class ConciergeService {
@@ -544,6 +558,7 @@ export class ConciergeService {
         status: execResult.status,
         ...(undoLogId ? { undoLogId } : {}),
         preview,
+        ...(RICH_PREVIEW_TOOLS.has(toolName) ? { data: execResult.result } : {}),
       };
 
       // Сохраняем tool-message в conversation.

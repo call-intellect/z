@@ -24,11 +24,16 @@ export type ListOrgsQuery = z.infer<typeof ListOrgsQuerySchema>;
 
 export const UpdateOrgSchema = z
   .object({
+    /**
+     * @deprecated После collapse-to-standard `Org.tier` ни на что не влияет
+     * (биллинг/фичи идут от Subscription + OrgEntitlement). Поле оставлено
+     * опциональным только для обратной совместимости и больше не используется UI.
+     */
     tier: z.enum(['basic', 'pro', 'enterprise']).optional(),
     /** true = freeze (Org.deletedAt = now), false = unfreeze (Org.deletedAt = null). */
     freeze: z.boolean().optional(),
   })
-  .refine((v) => v.tier !== undefined || v.freeze !== undefined, {
-    message: 'необходимо указать хотя бы одно поле (tier или freeze)',
+  .refine((v) => v.freeze !== undefined, {
+    message: 'необходимо указать freeze',
   });
 export type UpdateOrgDto = z.infer<typeof UpdateOrgSchema>;

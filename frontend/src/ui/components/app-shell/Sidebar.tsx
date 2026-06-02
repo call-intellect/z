@@ -402,10 +402,10 @@ export function Sidebar({
   const adminItems: NavItem[] = [];
   if (currentOrgRole === 'owner' || currentOrgRole === 'admin') {
     adminItems.push({
-      href: '/settings/admin',
+      href: '/company-admin',
       label: 'Админка компании',
       icon: Settings2,
-      matchPrefix: '/settings/admin',
+      matchPrefix: '/company-admin',
       overviewTarget: 'overview.admin',
     });
   }

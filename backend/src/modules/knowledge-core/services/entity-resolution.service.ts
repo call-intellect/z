@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type Entity, type EntityType, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -8,6 +9,11 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
+import {
+  ENTITY_CREATED,
+  ENTITY_UPDATED,
+  type EntitySyncEventName,
+} from '../../tables/events/entity-sync.events';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 
@@ -50,7 +56,44 @@ export class EntityResolutionService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    // Smart-tables Фаза 2 — live entitySync. Эмитим entity.created/updated
+    // после успешного create/обновления, чтобы TableSyncListener (модуль
+    // tables) поддерживал строки системных таблиц. @Optional: интеграционные
+    // spec'и конструируют сервис с двумя аргументами — без эмиттера эмит
+    // просто пропускается (no-op).
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
   ) {}
+
+  /**
+   * Smart-tables Фаза 2 — best-effort эмит события графа для live entitySync.
+   * Никогда не бросает в основной поток: при отсутствии эмиттера или ошибке
+   * подписчика логируем debug и продолжаем. EventEmitter2.emit синхронный, но
+   * на всякий случай оборачиваем в try/catch (sync-исключение подписчика).
+   */
+  private emitEntityEvent(
+    name: EntitySyncEventName,
+    entity: { id: string; tenantId: string; type: EntityType },
+  ): void {
+    if (!this.events) return;
+    try {
+      this.events.emit(name, {
+        tenantId: entity.tenantId,
+        entityId: entity.id,
+        entityType: entity.type,
+      });
+    } catch (err) {
+      this.logger.debug(
+        {
+          event: name,
+          entityId: entity.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'entity-sync: эмит события не удался (best-effort) — продолжаем',
+      );
+    }
+  }
 
   /**
    * KC-Temporal W1.5 — синхронный resolver: exact match (raw SQL, без findMany+filter)
@@ -115,6 +158,7 @@ export class EntityResolutionService {
       await this.writeCache(cacheKey, updated.id);
       this.metrics?.incKcEntityResolvePath({ path: 'strong_id' });
       observeLatency();
+      this.emitEntityEvent(ENTITY_UPDATED, updated);
       return { entity: updated, created: false };
     }
 
@@ -137,6 +181,7 @@ export class EntityResolutionService {
         });
         this.metrics?.incKcEntityResolvePath({ path: 'cache_hit' });
         observeLatency();
+        this.emitEntityEvent(ENTITY_UPDATED, updated);
         return { entity: updated, created: false };
       }
       // Cache miss: запись устарела — удаляем ключ, дальше идём обычным путём.
@@ -188,6 +233,7 @@ export class EntityResolutionService {
         await this.writeCache(cacheKey, updated.id);
         this.metrics?.incKcEntityResolvePath({ path: 'exact' });
         observeLatency();
+        this.emitEntityEvent(ENTITY_UPDATED, updated);
         return { entity: updated, created: false };
       }
     }
@@ -224,6 +270,7 @@ export class EntityResolutionService {
       await this.writeCache(cacheKey, updated.id);
       this.metrics?.incKcEntityResolvePath({ path: 'knn' });
       observeLatency();
+      this.emitEntityEvent(ENTITY_UPDATED, updated);
       return { entity: updated, created: false };
     }
 
@@ -293,6 +340,7 @@ export class EntityResolutionService {
     await this.writeCache(cacheKey, created.id);
     this.metrics?.incKcEntityResolvePath({ path: 'create' });
     observeLatency();
+    this.emitEntityEvent(ENTITY_CREATED, created);
     return { entity: created, created: true };
   }
 

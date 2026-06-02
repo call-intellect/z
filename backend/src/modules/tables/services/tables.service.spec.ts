@@ -47,6 +47,8 @@ describe('TablesService', () => {
       entitySync: null,
       defaultViewId: null,
       archivedAt: null,
+      isSystem: false,
+      systemKey: null,
       createdBy: USER,
       createdAt: new Date('2026-05-31T10:00:00Z'),
       updatedAt: new Date('2026-05-31T10:00:00Z'),
@@ -176,6 +178,19 @@ describe('TablesService', () => {
     await expect(
       svc.hardDelete({ tenantId: TENANT, id: 't-1' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tableDelete).not.toHaveBeenCalled();
+  });
+
+  it('hardDelete системной таблицы — ForbiddenException (system_table_hard_delete_forbidden)', async () => {
+    // Системная таблица в архиве — всё равно нельзя удалить навсегда.
+    tableFindUnique.mockResolvedValueOnce(
+      row({ isSystem: true, systemKey: 'clients_deals', archivedAt: new Date() }),
+    );
+    await expect(
+      svc.hardDelete({ tenantId: TENANT, id: 't-1' }),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'system_table_hard_delete_forbidden' } },
+    });
     expect(tableDelete).not.toHaveBeenCalled();
   });
 

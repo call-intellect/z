@@ -64,8 +64,12 @@ export class ProactiveWatcherService {
     notificationsSent: number;
     dedupSkipped: number;
   }> {
+    // ТЗ 2026-06-01-demo-shared-org-model §4.13: исключаем эталонную демо-Org
+    // (`isReferenceDemo=true`). Иначе watcher будет генерить ProactiveNotification
+    // на demo-Person'ов / случайных demo_observer-наблюдателей внутри shared
+    // эталона — это бессмыссленно: наблюдатели не могут ни на что повлиять.
     const orgs = await this.prisma.org.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, isReferenceDemo: false },
       select: { id: true },
     });
 

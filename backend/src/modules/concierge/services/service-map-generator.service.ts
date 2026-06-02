@@ -469,6 +469,31 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'dashboard_operations',
         rbacAction: 'read',
       },
+      // ──────────────────────────── Smart-tables Text-to-Schema ───────────
+      // Smart-tables auto-creation (2026-06-02, Фаза 1). Read-only превью:
+      // ассистент предлагает схему новой таблицы по описанию, НИЧЕГО не создаёт
+      // (создание — отдельным подтверждённым действием на UI). Не undoable.
+      // Эндпоинт сам гейтит фичу по feature.tables_text_to_schema (вернёт 403
+      // если выключена), поэтому tool в whitelist всегда, но безопасен.
+      {
+        name: 'infer_table_schema',
+        description:
+          'Предложить схему новой таблицы по описанию пользователя (превью, без создания). Используй для «создай таблицу клиентов с контактами», «нужна таблица учёта оборудования». Возвращает предлагаемую структуру колонок — пользователь подтверждает создание отдельно.',
+        method: 'POST',
+        path: '/api/v1/tables/infer-schema',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: {
+              type: 'string',
+              description: 'Описание желаемой таблицы в свободной форме (3..2000 символов).',
+            },
+          },
+          required: ['prompt'],
+        },
+        rbacResource: 'table',
+        rbacAction: 'write',
+      },
       {
         name: 'list_ignored_probe_questions',
         description:

@@ -990,6 +990,10 @@ export class TypedConfigService {
       maxPropsPerTable: this.get('TABLE_MAX_PROPS_PER_TABLE') as number,
       maxTablesPerOrg: this.get('TABLE_MAX_TABLES_PER_ORG') as number,
       maxCellSizeBytes: this.get('TABLE_MAX_CELL_SIZE_BYTES') as number,
+      // Document-to-Table (Фаза 4) — лимиты импорта из Excel/CSV.
+      importMaxFileMb: this.get('TABLE_IMPORT_MAX_FILE_MB') as number,
+      importMaxFileBytes: (this.get('TABLE_IMPORT_MAX_FILE_MB') as number) * 1024 * 1024,
+      importMaxRows: this.get('TABLE_IMPORT_MAX_ROWS') as number,
     } as const;
   }
 

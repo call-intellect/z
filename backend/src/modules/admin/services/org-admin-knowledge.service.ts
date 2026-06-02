@@ -418,12 +418,12 @@ export class OrgAdminKnowledgeService {
       }),
       this.prisma.aiUsageLog.aggregate({
         where: { tenantId, createdAt: { gte: oneDayAgo } },
-        _sum: { inputTokens: true, outputTokens: true, costUsd: true },
+        _sum: { inputTokens: true, outputTokens: true },
         _count: { _all: true },
       }),
       this.prisma.aiUsageLog.aggregate({
         where: { tenantId, createdAt: { gte: sevenDaysAgo } },
-        _sum: { inputTokens: true, outputTokens: true, costUsd: true },
+        _sum: { inputTokens: true, outputTokens: true },
         _count: { _all: true },
       }),
     ]);
@@ -438,32 +438,21 @@ export class OrgAdminKnowledgeService {
         block: { active: blockLinksActive },
         entity: { active: entityLinksActive },
       },
+      // costUsd намеренно НЕ отдаётся: себестоимость LLM не показывается
+      // владельцу Org (defense-in-depth, ТЗ 2026-06-02 §4). Остаются только
+      // счётчики calls/tokens без стоимости и без провайдеров/моделей.
       llm: {
         last24h: {
           calls: ai24h._count._all,
           inputTokens: ai24h._sum.inputTokens ?? 0,
           outputTokens: ai24h._sum.outputTokens ?? 0,
-          costUsd: decimalToNumber(ai24h._sum.costUsd),
         },
         last7d: {
           calls: ai7d._count._all,
           inputTokens: ai7d._sum.inputTokens ?? 0,
           outputTokens: ai7d._sum.outputTokens ?? 0,
-          costUsd: decimalToNumber(ai7d._sum.costUsd),
         },
       },
     };
   }
-}
-
-function decimalToNumber(v: Prisma.Decimal | null | undefined): number {
-  if (v === null || v === undefined) return 0;
-  if (typeof (v as unknown as { toNumber?: () => number }).toNumber === 'function') {
-    try {
-      return (v as unknown as { toNumber: () => number }).toNumber();
-    } catch {
-      return 0;
-    }
-  }
-  return Number(v) || 0;
 }

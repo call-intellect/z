@@ -60,6 +60,83 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📊 2026-06-02 — Smart-tables Фаза 0: 10 системных таблиц при создании Org (auto-provision)
+
+- **Шаг 4 — Prisma** — **обязательно** (безопасное добавление — только новые поля + индексы, опасных изменений нет): `docker compose exec backend bun run prisma:push`.
+  В `Table`: `isSystem Boolean @default(false)`, `systemKey String?`, `@@unique([tenantId, systemKey])`, `@@index([tenantId, isSystem])`. У существующих строк `systemKey=NULL` — composite unique допускает множество NULL, дедуп не нужен.
+- **Шаг 8 — Backfill** — завести 10 системных таблиц для всех существующих Org: `docker compose exec backend bun run scripts/backfill-system-tables.ts` (идемпотентен — повторный прогон пропускает уже созданные). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`, `skipBootstrap: true`), поэтому идёт и через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый `TablesAutoProvisionService` + фронт-маркер 🔒): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - зарегистрировать нового пользователя → на `/tables` 10 системных таблиц с маркером 🔒 (Клиенты и сделки, Команда, Гипотезы и эксперименты, Поставщики, Реестр рисков, Идеи, Обещания, Контент-план, Регламенты, Цели и метрики).
+  - попытка hard-delete системной таблицы через API → `403 system_table_hard_delete_forbidden`.
+  - архив системной таблицы и восстановление из архива работают.
+
+---
+
+### 🤖 2026-06-02 — Smart-tables Фаза 1: Text-to-Schema через Кору (за feature-flag, default OFF)
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 7 — Seed** — два сидера (оба идемпотентны, уже в агрегаторе `apply-prod-deploy.ts`):
+  - `scripts/seed-llm-task-routes-smart-tables.ts` — primary-маршруты для taskType `table-infer-schema`/`table-architect-pass`/`table-entity-check` на **DeepSeek V4 Pro**. Опционально: без сидера работает code-fallback chain (deepseek-chat→openai→ollama).
+  - `scripts/seed-admin-settings.ts` — новый ключ `feature.tables_text_to_schema = false` (фича по умолчанию выключена).
+  - Одной командой: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый backend-сервис + frontend-компоненты Concierge): `docker compose up -d --build backend frontend`.
+- **Включение фичи** (ТОЛЬКО после прохождения Eval Фазы 1.5 ≥ 0.85 accuracy): super_admin переключает `feature.tables_text_to_schema = true` в админке настроек (или PATCH admin-settings). До этого эндпоинты `/tables/infer-schema` и `/tables/from-schema` отвечают `403 feature_tables_text_to_schema_disabled` — это ожидаемо.
+- **Шаг 12 — Smoke** (после включения флага): в Кора (Concierge) написать «нужна таблица клиентов с контактами и стадией сделки» → приходит карточка-превью схемы → «Подтвердить и создать» → таблица появляется в `/tables`.
+
+---
+
+### 🔗 2026-06-02 — Smart-tables Фаза 2: graph-driven rows (живой entitySync)
+
+- **Шаг 4 — Prisma** — **не требуется** (entitySync и config — Json-поля, расширены без миграции).
+- **Шаг 8 — Backfill** — наполнить sync-таблицы строками из живых сущностей графа для существующих Org: `docker compose exec backend bun run scripts/backfill-table-entity-sync.ts` (идемпотентен, конфликт-резолвер по primary/email). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`, `skipBootstrap: true`, после `backfill-system-tables`). Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. **Порядок:** сначала `backfill-system-tables`, затем `backfill-table-entity-sync`.
+- **Новая очередь BullMQ `tables.sync`** + воркер `TableSyncWorker` (in-process, поднимается в `ai/workers.module.ts` — отдельного процесса воркеров нет). Новые доменные события `entity.created/updated/archived` (EventEmitter2, in-process). Доп. инфраструктура не нужна — Redis уже есть.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новые сервисы/воркер/события + правка `EntityResolutionService`; frontend: read-only колонки): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - создать новую Entity типа `customer` (через любой knowledge-core flow) → в течение ≤5с строка появляется в системной таблице «Клиенты и сделки».
+  - попытка отредактировать read-only колонку «Название» через PATCH `/rows/:id` → `422 table_cell_readonly`; в UI ячейка помечена 🔗 и не открывает редактор.
+
+---
+
+### 📝 2026-06-02 — Smart-tables Фаза 3: Event-to-Cells из транскриптов встреч
+
+- **Шаг 4 — Prisma** — **обязательно** (2 новые модели, безопасно): `docker compose exec backend bun run prisma:push`.
+  Создаёт `TableCellProvenance` и `TableCellPendingPatch` (Decimal(3,2) confidence, индексы). Опасных изменений нет (только новые таблицы).
+- **Шаг 7 — Seed** — перепрогнать (идемпотентно, уже в агрегаторе):
+  - `seed-admin-settings.ts` — 3 ключа `table.agent.confirmation_threshold=0.85`, `table.agent.max_concurrent_enrich_jobs_per_org=100`, `table.agent.max_daily_tokens=1000000`.
+  - `seed-llm-task-routes-smart-tables.ts` — маршруты `table-extract-rows`/`table-auto-fill` → DeepSeek V4 Flash (опционально; code-fallback chain работает и без них).
+  - Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Новая очередь BullMQ `tables.enrich`** + воркер `TableEnrichWorker` (in-process, `ai/workers.module.ts`). Новое событие `meeting.ai_ready` (EventEmitter2, in-process, эмит в AnalyzeWorker). Доп. инфраструктура не нужна.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: enrich-сервис/воркер/событие + правка AnalyzeWorker; frontend: provenance/undo/панель подтверждений): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - завершить встречу с транскриптом, где прозвучал факт по колонке клиента → после `ai_ready` в течение секунд пустая ячейка патчится (если conf≥0.85), у ячейки в карточке строки появляется 🔗 с ссылкой на тайминг встречи; «Отменить» откатывает.
+  - правка с conf<0.85 или перезапись непустой ячейки → попадает в «🔔 Правки на подтверждении» (не применяется молча).
+  - проверить, что повторная обработка той же встречи не вызывает повторный LLM-патч (кэш по meetingId).
+
+---
+
+### 📥 2026-06-02 — Smart-tables Фаза 4: Document-to-Table (Excel/CSV, in-process exceljs)
+
+- **Шаг 1 — ENV** — 2 новых опциональных (есть код-дефолты): `TABLE_IMPORT_MAX_FILE_MB=25`, `TABLE_IMPORT_MAX_ROWS=5000`.
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 7 — Seed** — `seed-admin-settings.ts` добавляет ключ `table.import.dedup_threshold=0.85` (идемпотентно, уже в агрегаторе). Прогон: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Новая npm-зависимость** `exceljs@^4.4.0` (парсинг XLSX/CSV) — попадает в образ при rebuild (она в package.json + bun.lock). **Особых prod-действий нет** (не native-модуль).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: парсер/импорт-сервис + exceljs; frontend: диалог «Из файла»): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**: на `/tables` кнопка «Из файла» → загрузить тестовый Excel/CSV → приходит превью схемы (+ блок слияния, если есть похожая таблица) → «Создать новую» → таблица со строками появляется. Загрузка PDF → понятная ошибка «формат пока не поддерживается».
+- **Примечание (долг):** парсинг in-process на `exceljs` — временное Node-решение (владелец 2026-06-02 решил пока не поднимать Python-микросервис DCS). PDF/сканы/HTML не поддержаны до появления DCS (см. `plans/tz/2026-05-31-document-ingest-universal.md`).
+
+---
+
+### 🔍 2026-06-02 — Smart-tables Фаза 5: NL Saved Views (семантический фильтр)
+
+- **Шаг 4 — Prisma** — **не требуется** (моделей не добавляли; фильтры живут в `TableView.config`).
+- **Шаг 7 — Seed** — `seed-llm-task-routes-smart-tables.ts` дополнен маршрутом taskType `table-semantic-filter` → DeepSeek V4 Flash. Опционально (без сида — code-fallback chain на `deepseek-chat`): чтобы primary был Flash, прогнать `docker compose exec backend bun run scripts/seed-llm-task-routes-smart-tables.ts --update-existing` (уже в `apply-prod-deploy.ts` STEPS). 
+- **Redis** — новый кэш-ключ `table:semfilter:{tableId}:{sha1(normQuery)}` (TTL 7д). Redis уже есть, доп. действий нет.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: semantic-filter сервис/эндпоинт; frontend: SemanticFilterBar + клиентская фильтрация): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**: открыть таблицу с данными → поле «Найти срез» → «клиенты без активности месяц» (или по реальной колонке-дате) → строки фильтруются → «Сохранить как новый вид» сохраняет фильтр.
+
+---
+
 ### 🪵 2026-06-01 — LoggingModule (технические логи в БД + админ-UI `/admin/logs`)
 
 - **Шаг 1 — ENV** — **11 новых опциональных** `LOG_DB_*` (все с код-дефолтами, можно не выставлять):

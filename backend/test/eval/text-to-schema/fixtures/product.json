@@ -1,0 +1,280 @@
+[
+  {
+    "id": "product-01",
+    "category": "product",
+    "specificity": "low",
+    "nlPrompt": "таблица задач",
+    "golden": {
+      "name": "Задачи",
+      "entitySync": null,
+      "properties": [
+        { "name": "Задача", "type": "text", "isPrimary": true },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Исполнитель", "type": "person", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-02",
+    "category": "product",
+    "specificity": "low",
+    "nlPrompt": "таблица багов",
+    "golden": {
+      "name": "Баги",
+      "entitySync": null,
+      "properties": [
+        { "name": "Описание", "type": "text", "isPrimary": true },
+        { "name": "Приоритет", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-03",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица фич-реквестов с автором, статусом и числом голосов",
+    "golden": {
+      "name": "Фич-реквесты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Автор", "type": "person", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Голоса", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-04",
+    "category": "product",
+    "specificity": "high",
+    "nlPrompt": "бэклог продукта: название задачи, эпик, приоритет, оценка в стори-поинтах, исполнитель, статус, дедлайн и описание",
+    "golden": {
+      "name": "Бэклог",
+      "entitySync": null,
+      "properties": [
+        { "name": "Задача", "type": "text", "isPrimary": true },
+        { "name": "Эпик", "type": "selectSingle", "isPrimary": false },
+        { "name": "Приоритет", "type": "selectSingle", "isPrimary": false },
+        { "name": "Стори-поинты", "type": "number", "isPrimary": false },
+        { "name": "Исполнитель", "type": "person", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Дедлайн", "type": "date", "isPrimary": false },
+        { "name": "Описание", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-05",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица релизов с версией, датой выпуска и статусом",
+    "golden": {
+      "name": "Релизы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Версия", "type": "text", "isPrimary": true },
+        { "name": "Дата выпуска", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-06",
+    "category": "product",
+    "specificity": "high",
+    "nlPrompt": "таблица гипотез: гипотеза, метрика успеха, ожидаемый эффект в процентах, статус проверки, ответственный, дата старта эксперимента и вывод",
+    "golden": {
+      "name": "Гипотезы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Гипотеза", "type": "text", "isPrimary": true },
+        { "name": "Метрика успеха", "type": "text", "isPrimary": false },
+        { "name": "Ожидаемый эффект", "type": "percent", "isPrimary": false },
+        { "name": "Статус проверки", "type": "status", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Дата старта", "type": "date", "isPrimary": false },
+        { "name": "Вывод", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-07",
+    "category": "product",
+    "specificity": "low",
+    "nlPrompt": "таблица пользовательских историй",
+    "golden": {
+      "name": "Пользовательские истории",
+      "entitySync": null,
+      "properties": [
+        { "name": "История", "type": "text", "isPrimary": true },
+        { "name": "Роль", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-08",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица интервью с пользователями: участник, дата интервью и инсайты",
+    "golden": {
+      "name": "Интервью с пользователями",
+      "entitySync": { "type": "meeting" },
+      "properties": [
+        { "name": "Участник", "type": "person", "isPrimary": true },
+        { "name": "Дата интервью", "type": "date", "isPrimary": false },
+        { "name": "Инсайты", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-09",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица метрик продукта с названием метрики, текущим значением и целью",
+    "golden": {
+      "name": "Метрики продукта",
+      "entitySync": null,
+      "properties": [
+        { "name": "Метрика", "type": "text", "isPrimary": true },
+        { "name": "Текущее значение", "type": "number", "isPrimary": false },
+        { "name": "Цель", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-10",
+    "category": "product",
+    "specificity": "high",
+    "nlPrompt": "роадмап: инициатива, квартал, статус, владелец, бизнес-ценность по шкале, зависит от других инициатив и ссылка на спецификацию",
+    "golden": {
+      "name": "Роадмап",
+      "entitySync": null,
+      "properties": [
+        { "name": "Инициатива", "type": "text", "isPrimary": true },
+        { "name": "Квартал", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Владелец", "type": "person", "isPrimary": false },
+        { "name": "Бизнес-ценность", "type": "selectSingle", "isPrimary": false },
+        { "name": "Зависимости", "type": "longtext", "isPrimary": false },
+        { "name": "Спецификация", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-11",
+    "category": "product",
+    "specificity": "low",
+    "nlPrompt": "таблица A/B тестов",
+    "golden": {
+      "name": "A/B тесты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название теста", "type": "text", "isPrimary": true },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Победитель", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-12",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица техдолга с описанием, оценкой трудозатрат и приоритетом",
+    "golden": {
+      "name": "Техдолг",
+      "entitySync": null,
+      "properties": [
+        { "name": "Описание", "type": "text", "isPrimary": true },
+        { "name": "Оценка трудозатрат", "type": "number", "isPrimary": false },
+        { "name": "Приоритет", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-13",
+    "category": "product",
+    "specificity": "high",
+    "nlPrompt": "таблица инцидентов: заголовок, severity, дата возникновения, время до восстановления в минутах, ответственный, постмортем сделан да/нет и ссылка на постмортем",
+    "golden": {
+      "name": "Инциденты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Заголовок", "type": "text", "isPrimary": true },
+        { "name": "Severity", "type": "selectSingle", "isPrimary": false },
+        { "name": "Дата возникновения", "type": "date", "isPrimary": false },
+        { "name": "Время восстановления", "type": "number", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Постмортем сделан", "type": "checkbox", "isPrimary": false },
+        { "name": "Ссылка на постмортем", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-14",
+    "category": "product",
+    "specificity": "low",
+    "nlPrompt": "таблица интеграций",
+    "golden": {
+      "name": "Интеграции",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сервис", "type": "text", "isPrimary": true },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Документация", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-15",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица обратной связи от пользователей с текстом, оценкой и категорией",
+    "golden": {
+      "name": "Обратная связь",
+      "entitySync": null,
+      "properties": [
+        { "name": "Текст", "type": "longtext", "isPrimary": true },
+        { "name": "Оценка", "type": "number", "isPrimary": false },
+        { "name": "Категория", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-16",
+    "category": "product",
+    "specificity": "high",
+    "nlPrompt": "таблица фич-флагов: название флага, окружение, включён да/нет, процент раскатки, владелец, дата включения и описание",
+    "golden": {
+      "name": "Фич-флаги",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название флага", "type": "text", "isPrimary": true },
+        { "name": "Окружение", "type": "selectSingle", "isPrimary": false },
+        { "name": "Включён", "type": "checkbox", "isPrimary": false },
+        { "name": "Процент раскатки", "type": "percent", "isPrimary": false },
+        { "name": "Владелец", "type": "person", "isPrimary": false },
+        { "name": "Дата включения", "type": "date", "isPrimary": false },
+        { "name": "Описание", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "product-17",
+    "category": "product",
+    "specificity": "mid",
+    "nlPrompt": "таблица компонентов дизайн-системы с названием, статусом готовности и ссылкой в фигме",
+    "golden": {
+      "name": "Дизайн-система",
+      "entitySync": null,
+      "properties": [
+        { "name": "Компонент", "type": "text", "isPrimary": true },
+        { "name": "Статус готовности", "type": "status", "isPrimary": false },
+        { "name": "Ссылка в Figma", "type": "url", "isPrimary": false }
+      ]
+    }
+  }
+]

@@ -466,7 +466,31 @@ export type LlmTaskType =
   // выход — { reversibility, rationale }). Primary deepseek-v4-flash;
   // secondary gpt-5.4-mini; tertiary ollama qwen3.5:9b. Cache-friendly:
   // SYSTEM статичен, переменные данные (statement) — в конце user.
-  | 'decision-hygiene';
+  | 'decision-hygiene'
+  // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
+  // 3 LLM-pass'а генерации схемы Smart-таблицы по NL-описанию пользователя:
+  //   'table-infer-schema'    — DRAFT: NL -> черновик схемы. JSON object.
+  //   'table-architect-pass'  — ARCHITECT-рефлексия (дедуп колонок, типы, 1 isPrimary).
+  //   'table-entity-check'    — сопоставление entitySync.type с доступными; нет -> null.
+  // Capable модель + JSON object. Primary = deepseek deepseek-v4-pro
+  // (тот же capable-профиль, что у skill-trait-detect / sprint-helper-suggest).
+  // Cache-friendly: SYSTEM (каталог типов/правила) стабилен, переменное в USER.
+  | 'table-infer-schema'
+  | 'table-architect-pass'
+  | 'table-entity-check'
+  // Smart-tables auto-creation (2026-06-02, Фаза 3) — Event-to-Cells.
+  //   'table-extract-rows' — извлечение фактов по схеме колонок из транскрипта.
+  //   'table-auto-fill'    — рекомендация значения для одной ячейки.
+  // Дешёвые частые задачи → primary deepseek-v4-flash (cheap tier). JSON object.
+  // Cache-friendly: SYSTEM (роль + каталог типов + правила) стабилен, переменное в USER.
+  | 'table-extract-rows'
+  | 'table-auto-fill'
+  // Smart-tables auto-creation (2026-06-02, Фаза 5) — NL Saved Views.
+  //   'table-semantic-filter' — NL-запрос пользователя → JSON-фильтр таблицы.
+  // Дешёвая частая задача → primary deepseek-v4-flash (cheap tier). JSON object.
+  // Cache-friendly: SYSTEM (роль + каталог операторов + правила) стабилен, переменное
+  // (колонки таблицы + дата + запрос) — в USER.
+  | 'table-semantic-filter';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -626,6 +650,15 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'goal-vector-tracker',
   // Pulse Wave 6 §6.8 (2026-05-30) — Decision-Hygiene-Scorer: Bezos type-1/type-2.
   'decision-hygiene',
+  // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema (3 pass).
+  'table-infer-schema',
+  'table-architect-pass',
+  'table-entity-check',
+  // Smart-tables auto-creation (2026-06-02, Фаза 3) — Event-to-Cells (cheap).
+  'table-extract-rows',
+  'table-auto-fill',
+  // Smart-tables auto-creation (2026-06-02, Фаза 5) — NL Saved Views (cheap).
+  'table-semantic-filter',
 ] as const;
 
 /**

@@ -17,7 +17,6 @@ import { AdminPricesController } from './controllers/admin-prices.controller';
 import { AdminUsageController } from './controllers/admin-usage.controller';
 import { OrgAdminKnowledgeController } from './controllers/org-admin-knowledge.controller';
 import { OrgAdminMemoryAccessController } from './controllers/org-admin-memory-access.controller';
-import { OrgAdminUsageController } from './controllers/org-admin-usage.controller';
 import { AdminCronsModule } from './crons/admin-crons.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AdminEconomicsController } from './economics/admin-economics.controller';
@@ -127,7 +126,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminFeedbackController,
     MeetingResultFeedbackController,
     AdminUsageController,
-    OrgAdminUsageController,
     AdminFunctionsController,
     AdminExperimentsController,
     AdminPricesController,

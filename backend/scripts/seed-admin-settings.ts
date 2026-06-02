@@ -17,7 +17,7 @@
  *   bun run scripts/seed-admin-settings.ts
  */
 
-import { PrismaClient, type Prisma } from '@prisma/client';
+import { type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 import {
@@ -286,6 +286,59 @@ function buildSettings(): SettingSeed[] {
   ];
   for (const [key, value, severity, description] of aiFeatures) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });
+  }
+
+  // ── Feature-flags (feature.*) — продуктовые тумблеры.
+  // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
+  // Default OFF: фича включается super_admin'ом из админки после готовности UI.
+  const features: Array<[string, unknown, Severity, string]> = [
+    [
+      'feature.tables_text_to_schema',
+      envBool('FEATURE_TABLES_TEXT_TO_SCHEMA', false),
+      'medium',
+      'Создание Smart-таблиц по текстовому описанию (Text-to-Schema)',
+    ],
+  ];
+  for (const [key, value, severity, description] of features) {
+    out.push({ key, value, category: 'platform', section: 'features', severity, description });
+  }
+
+  // ── Smart-tables агент (table.agent.*) — Фаза 3 Event-to-Cells. 3 крутилки.
+  const tableAgent: Array<[string, unknown, Severity, string]> = [
+    [
+      'table.agent.confirmation_threshold',
+      envFloat('TABLE_AGENT_CONFIRMATION_THRESHOLD', 0.85),
+      'medium',
+      'Порог уверенности авто-патча ячейки: ≥ порога и ячейка пуста → заполняем; иначе очередь подтверждений',
+    ],
+    [
+      'table.agent.max_concurrent_enrich_jobs_per_org',
+      envInt('TABLE_AGENT_MAX_CONCURRENT_ENRICH_JOBS_PER_ORG', 100),
+      'medium',
+      'Максимум одновременных enrich-задач агента таблиц на одну Org (throttle)',
+    ],
+    [
+      'table.agent.max_daily_tokens',
+      envInt('TABLE_AGENT_MAX_DAILY_TOKENS', 1000000),
+      'medium',
+      'Дневной бюджет LLM-токенов агента таблиц на одну Org',
+    ],
+  ];
+  for (const [key, value, severity, description] of tableAgent) {
+    out.push({ key, value, category: 'platform', section: 'features', severity, description });
+  }
+
+  // ── Smart-tables импорт из файла (table.import.*) — Фаза 4 Document-to-Table.
+  const tableImport: Array<[string, unknown, Severity, string]> = [
+    [
+      'table.import.dedup_threshold',
+      envFloat('TABLE_IMPORT_DEDUP_THRESHOLD', 0.85),
+      'medium',
+      'Порог cosine-схожести схем при импорте файла: ≥ порога → предлагаем слить с существующей таблицей, иначе создать новую',
+    ],
+  ];
+  for (const [key, value, severity, description] of tableImport) {
+    out.push({ key, value, category: 'platform', section: 'features', severity, description });
   }
 
   // ── Conversational (conversational.*) — 15.

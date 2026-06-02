@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type AiResult, type Meeting, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -13,6 +14,10 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
 import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { MeetingsService } from '../../meetings/meetings.service';
+// Smart-tables auto-creation Фаза 3 — Event-to-Cells. После ai_ready эмитим
+// `meeting.ai_ready` (best-effort), который ловит TableEnrichListener в модуле
+// tables и ставит enrich-job. Импортируем только константу-строку имени события.
+import { MEETING_AI_READY } from '../../tables/events/entity-sync.events';
 // Wave 3 / Tracker Phase 3 part B — best-effort вызов meeting-extract-actions
 // после ai_ready. Optional injection (старые тесты analyze.worker не сломаются).
 // Импорт оставлен type-only, чтобы не тащить tracker в граф ai/workers — DI
@@ -108,6 +113,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(DashboardQueueService)
     private readonly dashboardQueue?: DashboardQueueService,
+    // Smart-tables auto-creation Фаза 3 — Event-to-Cells. После ai_ready
+    // эмитим `meeting.ai_ready`. @Optional: в старых unit-тестах analyze.worker
+    // эмиттер не передаётся — эмит просто пропускается (no-op), pipeline не
+    // ломается.
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
   ) {}
 
   onModuleInit(): void {
@@ -298,6 +310,25 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     await this.meetings.transitionStatus(meetingId, 'ai_ready', {
       reason: 'ai:analyze:done',
     });
+
+    // 8a. Smart-tables auto-creation Фаза 3 — Event-to-Cells. Best-effort эмит
+    //     `meeting.ai_ready` ПОСЛЕ успешного перехода статуса. TableEnrichListener
+    //     поставит enrich-job в `tables.enrich`. Никогда не валит analyze:
+    //     EventEmitter2.emit синхронный, оборачиваем в try/catch.
+    if (this.events && meeting.tenantId) {
+      try {
+        this.events.emit(MEETING_AI_READY, {
+          meetingId,
+          tenantId: meeting.tenantId,
+          type: meeting.type,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { meetingId, err: err instanceof Error ? err.message : String(err) },
+          'analyze: эмит meeting.ai_ready не удался (best-effort) — продолжаем',
+        );
+      }
+    }
 
     // 9. суммарная метрика.
     this.metrics.observeAiPipelineDuration({

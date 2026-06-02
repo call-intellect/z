@@ -1,12 +1,11 @@
 import { redirect } from 'next/navigation';
 
 /**
- * `/settings/admin/sources` — устаревший путь (Фаза 7-заглушка).
+ * `/settings/admin/sources` — устаревший путь.
  *
- * В Фазе 10 управление источниками переехало в `/settings/sources`
- * (доступно owner/admin Org без `/admin` префикса). Старые ссылки
- * редиректим, чтобы не плодить дубль.
+ * Управление источниками переехало в `/company-admin/sources`
+ * (ТЗ 2026-06-02). Старые ссылки редиректим, чтобы не плодить дубль.
  */
 export default function SettingsAdminSourcesRedirect(): never {
-  redirect('/settings/sources');
+  redirect('/company-admin/sources');
 }

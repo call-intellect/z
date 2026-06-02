@@ -20,10 +20,15 @@ import {
   Loader2,
   Network,
   Sparkles,
+  Target,
   Video,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { ApiError } from '@/api/api-error';
+import { goalsApi } from '@/api/goals.api';
 import { Button } from '@/ui/shadcn/button';
 import { Progress } from '@/ui/shadcn/progress';
+import { GoalPickerDialog } from '@/ui/components/shared/GoalPickerDialog';
 import { useAuth } from '@/contexts/auth-context';
 import { useCycle } from '@/hooks/tracker/useCycle';
 import { cyclesApi } from '@/api/tracker/cycles.api';
@@ -48,10 +53,49 @@ import { SprintDailyPanel } from './SprintDailyPanel';
 import { SprintWeeklyPanel } from './SprintWeeklyPanel';
 
 export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
-  const { currentOrgId } = useAuth();
+  const { currentOrgId, currentOrgRole } = useAuth();
   const router = useRouter();
+  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
 
-  const { cycle, isLoading: cycleLoading } = useCycle(currentOrgId, cycleId);
+  const {
+    cycle,
+    isLoading: cycleLoading,
+    mutate: mutateCycle,
+  } = useCycle(currentOrgId, cycleId);
+
+  const [goalDialogOpen, setGoalDialogOpen] = useState(false);
+
+  // Имя цели спринта — ленивый одиночный запрос только при наличии primaryGoalId.
+  const primaryGoalId = cycle?.primaryGoalId ?? null;
+  const { data: primaryGoal } = useSWR(
+    primaryGoalId && currentOrgId
+      ? (['sprint-primary-goal', currentOrgId, primaryGoalId] as const)
+      : null,
+    async ([, oid, gid]) => goalsApi.get(oid, gid),
+  );
+
+  const handleLinkGoal = async (goalId: string | null) => {
+    if (!currentOrgId) {
+      toast.error('Сначала выберите организацию');
+      return;
+    }
+    try {
+      await cyclesApi.update(currentOrgId, cycleId, { primaryGoalId: goalId });
+      toast.success(goalId ? 'Спринт привязан к цели' : 'Спринт отвязан от цели');
+      await mutateCycle();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'forbidden') {
+        toast.error('Привязывать цель могут только owner / admin');
+      } else if (e instanceof ApiError && e.code === 'goal_not_found') {
+        toast.error('Выбранная цель не найдена');
+      } else {
+        toast.error(
+          e instanceof ApiError ? e.message : 'Не удалось привязать цель',
+        );
+      }
+      throw e;
+    }
+  };
 
   const dashboardKey =
     currentOrgId && cycleId
@@ -188,6 +232,31 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
           {cycle.description && (
             <p className="text-sm text-fg-secondary">{cycle.description}</p>
           )}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1 text-fg-tertiary">
+              <Target size={12} className="text-accent" />
+              Продвигает цель:
+            </span>
+            {cycle.primaryGoalId ? (
+              <Link
+                href={`/goals/${encodeURIComponent(cycle.primaryGoalId)}`}
+                className="font-medium text-accent hover:underline"
+              >
+                {primaryGoal?.name ?? 'Открыть цель'}
+              </Link>
+            ) : (
+              <span className="text-fg-tertiary">— не задана —</span>
+            )}
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={() => setGoalDialogOpen(true)}
+                className="text-fg-secondary underline-offset-2 hover:text-fg-primary hover:underline"
+              >
+                {cycle.primaryGoalId ? 'Изменить' : 'Привязать цель…'}
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="flex shrink-0 flex-col gap-2 md:items-end">
           <div className="flex flex-wrap gap-2">
@@ -350,6 +419,18 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
           )}
         </TabsContent>
       </Tabs>
+
+      {currentOrgId && canEdit ? (
+        <GoalPickerDialog
+          open={goalDialogOpen}
+          onOpenChange={setGoalDialogOpen}
+          orgId={currentOrgId}
+          currentGoalId={cycle.primaryGoalId}
+          onPick={handleLinkGoal}
+          title="Продвигает цель"
+          description="Выберите цель компании, на которую работает этот спринт."
+        />
+      ) : null}
     </div>
   );
 }

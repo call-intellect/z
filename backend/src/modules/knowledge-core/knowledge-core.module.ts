@@ -26,6 +26,7 @@ import { EntityResolutionService } from './services/entity-resolution.service';
 import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
+import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
@@ -176,6 +177,12 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // goal-hierarchy-link → Goal(source='ai', promotionState='suggested') + опц. KR.
     // Worker (Specialist314GoalsWorker) живёт в WorkersModule и инжектит этот сервис.
     Specialist314GoalsService,
+    // Goals OKR v2 (2026-06-02, Фаза 5): GoalsCheckpointProbeHandler — слушает
+    // `idea.status_changed`; при shipped + Idea.goalId предлагает (probe, не
+    // авто-запись) обновить checkpoint KR цели. ProbeService @Optional — в
+    // worker-процессе его нет, там handler — no-op (idea.status_changed
+    // эмитится в HTTP-процессе из IdeasController → Specialist36Service).
+    GoalsCheckpointProbeHandler,
     // SBA γ-1: Specialist37Service (SkillProfile rebuild — KNN-группировка
     // reasoning-блоков → LLM detect → KNN-merge → decay) и
     // Specialist37ProbeService (skill.profile_starved / contradicting_traits) +

@@ -29,6 +29,8 @@ export interface UpdateCycleRequest {
   ownedById?: string | null;
   description?: string | null;
   timezone?: string;
+  /** Goals OKR v2 — цель, которую продвигает спринт (null = отвязать). */
+  primaryGoalId?: string | null;
 }
 
 export const cyclesApi = {

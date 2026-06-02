@@ -10,6 +10,8 @@ export interface CycleResponseDto {
   progressSnapshot: unknown;
   version: number;
   timezone: string;
+  /** Goals OKR v2 (Фаза 5) — цель, которую продвигает спринт. */
+  primaryGoalId: string | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;

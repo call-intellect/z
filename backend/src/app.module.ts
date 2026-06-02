@@ -8,6 +8,7 @@ import { ConfigModule } from './common/config/index';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { GraphModule } from './common/graph/graph.module';
+import { DemoObserverGuard } from './common/guards/demo-observer.guard';
 import { IdempotencyMiddleware } from './common/idempotency/idempotency.middleware';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { MetricsModule } from './common/metrics/metrics.module';
@@ -654,6 +655,14 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     {
       provide: APP_GUARD,
       useClass: MustChangePasswordGuard,
+    },
+    // 2026-06-01 (ТЗ shared-demo-org-model §4.3) — глобальный DemoObserverGuard.
+    // Режет mutating-эндпоинты для роли `demo_observer` в эталонной демо-Org.
+    // Сам грузит membership через RbacService.loadContext (req.tenantId уже от
+    // TenantMiddleware). super_admin bypass + @PublicDemo() для исключений.
+    {
+      provide: APP_GUARD,
+      useClass: DemoObserverGuard,
     },
   ],
 })

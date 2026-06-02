@@ -375,6 +375,17 @@ export class RbacService implements OnModuleInit {
   }
 
   /**
+   * Может ли роль выполнять write-операции (POST/PUT/PATCH/DELETE) в Org.
+   * `demo_observer` — единственная роль, которая возвращает false. Используется
+   * глобальным `DemoObserverGuard`. super_admin bypass обрабатывается в guard'е.
+   *
+   * 2026-06-01 (ТЗ shared-demo-org-model §4.2.2).
+   */
+  canMutate(role: MembershipRole): boolean {
+    return role !== 'demo_observer';
+  }
+
+  /**
    * Возвращает `Membership.role` пользователя в указанной Org или null,
    * если членства нет. Используется в AiChatQuotaService (ТЗ 2026-05-31
    * ai-chat-quota) для resolve'а лимита по роли (admin-tier vs member).
@@ -713,7 +724,9 @@ function isMembershipRole(s: string): s is MembershipRole {
     s === 'manager' ||
     s === 'coo' ||
     // Pulse Wave 4 §4.7 — HR-партнёр.
-    s === 'hr_partner'
+    s === 'hr_partner' ||
+    // 2026-06-01 (ТЗ shared-demo-org-model §4.2.1) — read-only роль в эталонной демо-Org.
+    s === 'demo_observer'
   );
 }
 function isVisibility(s: string): s is OrgVisibilityMode {

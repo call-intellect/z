@@ -1,7 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Sparkles, AlertTriangle, HelpCircle, ChevronRight } from 'lucide-react';
+import {
+  X,
+  Sparkles,
+  AlertTriangle,
+  HelpCircle,
+  ChevronRight,
+  MessageCircle,
+} from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import {
@@ -12,26 +19,35 @@ import { activityFeedApi } from '@/api/activity-feed.api';
 import type { FeedItemApi } from '@/domain/activity-feed';
 import { useAuth } from '@/contexts/auth-context';
 import { cn } from '@/ui/shadcn/lib/utils';
+import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
+
+type SidebarTab = 'urgent' | 'feed' | 'probes' | 'ask';
 
 /**
- * Pulse §9 — Sidebar Помощник.
+ * Pulse §9 + Фаза 4 умбреллы — Sidebar Помощник с 4 pill-табами.
  *
  * Floating-panel справа (default closed → FAB-кнопка в правом нижнем углу).
- * Открывается по клику; внутри 3 секции:
- *   1. «Срочное» — proactive notifications (`severity ∈ {medium, high}`).
- *   2. «Из ленты компании» — feed `insight` со `severity ∈ {critical, high}`.
- *   3. «Уточнения от Коры» — feed `probe_question` со `status='emitted'`.
+ * Открывается по клику или через event `assistant-sidebar:open-ask`
+ * (из Hero «Спросите Кору» — открыть и переключиться на таб «Спросить»).
+ *
+ * Табы:
+ *   1. «Срочное» (`urgent`) — proactive notifications (`severity ∈ {medium, high}`).
+ *   2. «Сигналы» (`feed`) — feed `insight` со `severity ∈ {critical, high}`.
+ *   3. «Вопросы» (`probes`) — feed `probe_question` со `status='emitted'`.
+ *   4. «Спросить» (`ask`) — AI-чат компании через `OrgChatPanel`.
  *
  * Polling каждые 60 сек (WS оставим на следующую волну).
  * Источники объединяются на клиенте: бэк отдаёт два независимых эндпоинта
  * (`GET /me/proactive-notifications` и `GET /feed/:type`), мы дергаем оба
- * в параллель и считаем общий счётчик для FAB-бейджа.
+ * в параллель и считаем общий счётчик для FAB-бейджа
+ * (proactives + probes + otherUrgent; вкладка «Спросить» в unread не входит).
  */
 const POLL_MS = 60_000;
 
 export function AssistantSidebar() {
   const { currentOrgId } = useAuth();
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('urgent');
   const [proactives, setProactives] = useState<ProactiveNotificationApi[]>([]);
   const [probes, setProbes] = useState<FeedItemApi[]>([]);
   const [otherUrgent, setOtherUrgent] = useState<FeedItemApi[]>([]);
@@ -93,6 +109,21 @@ export function AssistantSidebar() {
     return () => clearInterval(id);
   }, [load]);
 
+  // Слушаем событие из Hero «Спросите Кору» — открыть Sidebar и таб «Спросить».
+  useEffect(() => {
+    function handleOpenAsk() {
+      setOpen(true);
+      setActiveTab('ask');
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('assistant-sidebar:open-ask', handleOpenAsk);
+      return () => {
+        window.removeEventListener('assistant-sidebar:open-ask', handleOpenAsk);
+      };
+    }
+    return undefined;
+  }, []);
+
   const unreadCount = proactives.length + probes.length + otherUrgent.length;
 
   const handleDismiss = async (id: string) => {
@@ -151,77 +182,214 @@ export function AssistantSidebar() {
             </button>
           </header>
 
-          <div className="flex-1 overflow-y-auto p-4">
-            {loading &&
-              proactives.length === 0 &&
-              probes.length === 0 &&
-              otherUrgent.length === 0 && (
-                <p className="text-sm text-fg-tertiary">Загружаем…</p>
-              )}
-            {error && <p className="text-sm text-chip-danger-fg">{error}</p>}
-            {!loading && !error && unreadCount === 0 && (
-              <div className="rounded-xl bg-bg-overlay/40 p-6 text-center">
-                <p className="text-sm text-fg-secondary">Сейчас всё спокойно.</p>
-                <p className="mt-2 text-xs text-fg-tertiary">
-                  Кора задаст вопросы и подскажет, когда появится что-то важное.
-                </p>
-              </div>
-            )}
-
-            {proactives.length > 0 && (
-              <section className="mb-6">
-                <h3 className="mb-2 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-chip-warning-fg">
-                  <AlertTriangle size={12} />
-                  Срочное ({proactives.length})
-                </h3>
-                <ul className="space-y-2">
-                  {proactives.slice(0, 10).map((p) => (
-                    <ProactiveItem
-                      key={p.id}
-                      item={p}
-                      onDismiss={() => void handleDismiss(p.id)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {otherUrgent.length > 0 && (
-              <section className="mb-6">
-                <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-fg-tertiary">
-                  Из ленты компании
-                </h3>
-                <ul className="space-y-2">
-                  {otherUrgent.slice(0, 5).map((it) => (
-                    <FeedItemRow key={it.id} item={it} />
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {probes.length > 0 && (
-              <section>
-                <h3 className="mb-2 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-accent">
-                  <HelpCircle size={12} />
-                  Уточнения от Коры ({probes.length})
-                </h3>
-                <ul className="space-y-2">
-                  {probes.slice(0, 5).map((it) => (
-                    <FeedItemRow key={it.id} item={it} compactDate />
-                  ))}
-                </ul>
-                <a
-                  href="/me/notifications"
-                  className="mt-3 inline-flex items-center text-xs text-accent hover:underline"
+          <nav
+            aria-label="Разделы помощника"
+            className="-mx-2 flex gap-1 overflow-x-auto border-b border-border-subtle px-2 pb-2 pt-2 scrollbar-none"
+          >
+            {(['urgent', 'feed', 'probes', 'ask'] as const).map((tab) => {
+              const label =
+                tab === 'urgent'
+                  ? 'Срочное'
+                  : tab === 'feed'
+                    ? 'Сигналы'
+                    : tab === 'probes'
+                      ? 'Вопросы'
+                      : 'Спросить';
+              const Icon =
+                tab === 'urgent'
+                  ? AlertTriangle
+                  : tab === 'feed'
+                    ? Sparkles
+                    : tab === 'probes'
+                      ? HelpCircle
+                      : MessageCircle;
+              const count =
+                tab === 'urgent'
+                  ? proactives.length
+                  : tab === 'feed'
+                    ? otherUrgent.length
+                    : tab === 'probes'
+                      ? probes.length
+                      : 0;
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    isActive
+                      ? 'bg-accent/15 text-accent-fg'
+                      : 'bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
+                  )}
+                  aria-current={isActive ? 'page' : undefined}
                 >
-                  Все вопросы <ChevronRight size={12} />
-                </a>
-              </section>
+                  <Icon size={12} strokeWidth={1.75} className="shrink-0" />
+                  <span>{label}</span>
+                  {count > 0 ? (
+                    <span className="ml-0.5 rounded-full bg-bg-base/60 px-1.5 text-[10px] text-fg-tertiary">
+                      {count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {activeTab === 'urgent' && (
+              <UrgentSection
+                proactives={proactives}
+                loading={loading}
+                error={error}
+                onDismiss={(id) => void handleDismiss(id)}
+              />
             )}
+            {activeTab === 'feed' && (
+              <FeedSection items={otherUrgent} loading={loading} error={error} />
+            )}
+            {activeTab === 'probes' && (
+              <ProbesSection items={probes} loading={loading} error={error} />
+            )}
+            {activeTab === 'ask' && <AskSection />}
           </div>
         </div>
       </aside>
     </>
+  );
+}
+
+function UrgentSection({
+  proactives,
+  loading,
+  error,
+  onDismiss,
+}: {
+  proactives: ProactiveNotificationApi[];
+  loading: boolean;
+  error: string | null;
+  onDismiss: (id: string) => void;
+}) {
+  if (loading && proactives.length === 0) {
+    return <p className="text-sm text-fg-tertiary">Загружаем…</p>;
+  }
+  if (error) return <p className="text-sm text-chip-danger-fg">{error}</p>;
+  if (proactives.length === 0) {
+    return (
+      <div className="rounded-xl bg-bg-overlay/40 p-6 text-center">
+        <p className="text-sm text-fg-secondary">Срочного сейчас нет.</p>
+        <p className="mt-2 text-xs text-fg-tertiary">
+          Кора подскажет, когда что-то требует вашего внимания.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ul className="space-y-2">
+      {proactives.slice(0, 10).map((p) => (
+        <ProactiveItem key={p.id} item={p} onDismiss={() => onDismiss(p.id)} />
+      ))}
+    </ul>
+  );
+}
+
+function FeedSection({
+  items,
+  loading,
+  error,
+}: {
+  items: FeedItemApi[];
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading && items.length === 0)
+    return <p className="text-sm text-fg-tertiary">Загружаем…</p>;
+  if (error) return <p className="text-sm text-chip-danger-fg">{error}</p>;
+  if (items.length === 0) {
+    return (
+      <div className="rounded-xl bg-bg-overlay/40 p-6 text-center">
+        <p className="text-sm text-fg-secondary">Свежих сигналов нет.</p>
+      </div>
+    );
+  }
+  return (
+    <ul className="space-y-2">
+      {items.slice(0, 10).map((it) => (
+        <FeedItemRow key={it.id} item={it} />
+      ))}
+    </ul>
+  );
+}
+
+function ProbesSection({
+  items,
+  loading,
+  error,
+}: {
+  items: FeedItemApi[];
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading && items.length === 0)
+    return <p className="text-sm text-fg-tertiary">Загружаем…</p>;
+  if (error) return <p className="text-sm text-chip-danger-fg">{error}</p>;
+  if (items.length === 0) {
+    return (
+      <div className="rounded-xl bg-bg-overlay/40 p-6 text-center">
+        <p className="text-sm text-fg-secondary">
+          Уточнений от Коры пока нет.
+        </p>
+        <p className="mt-2 text-xs text-fg-tertiary">
+          Когда появятся уточняющие вопросы — они будут здесь.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <>
+      <ul className="space-y-2">
+        {items.slice(0, 10).map((it) => (
+          <FeedItemRow key={it.id} item={it} compactDate />
+        ))}
+      </ul>
+      <a
+        href="/me/notifications"
+        className="mt-3 inline-flex items-center text-xs text-accent hover:underline"
+      >
+        Все вопросы <ChevronRight size={12} />
+      </a>
+    </>
+  );
+}
+
+function AskSection() {
+  return (
+    <div className="flex h-full flex-col gap-3">
+      <div>
+        <h3 className="text-sm font-semibold text-fg-primary">
+          Спросите про вашу компанию
+        </h3>
+        <p className="mt-1 text-xs text-fg-tertiary">
+          AI ищет ответ в архиве встреч и знаний — с цитатами.
+        </p>
+      </div>
+      <div className="flex min-h-[420px] flex-1">
+        <OrgChatPanel
+          withHistory={false}
+          height="100%"
+          placeholder="Например: какие основные риски за неделю?"
+          className="flex-1"
+          intro={
+            <div className="px-3 py-6 text-center text-xs text-fg-tertiary">
+              Например: «Какие основные риски за неделю?» или «О чём
+              договорились с ключевыми клиентами?»
+            </div>
+          }
+        />
+      </div>
+    </div>
   );
 }
 

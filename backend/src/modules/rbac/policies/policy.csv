@@ -1048,3 +1048,53 @@ p, hr_partner, *, self, concierge, read
 p, hr_partner, *, self, concierge, write
 p, hr_partner, *, *, voice, read
 p, hr_partner, *, *, voice, write
+
+# ──────────────────────────── 2026-06-01 — demo_observer (shared demo Org) ────────────────────────────
+# `demo_observer` — read-only роль для пользователей до оплаты. Все мутации
+# блокируются на уровне `DemoObserverGuard` ПЕРЕД RBAC (HTTP-метод POST/PUT/
+# PATCH/DELETE → 403). Эти правила фиксируют read-доступ к ключевым ресурсам
+# (для будущих read-эндпоинтов). audit-log, ai-usage, billing, subscription,
+# settings.members — НЕ даём (privacy в shared Org). См. ТЗ §4.2.3.
+p, demo_observer, *, *, org, read
+p, demo_observer, *, *, meeting, read
+p, demo_observer, *, *, card, read
+p, demo_observer, *, *, task, read
+p, demo_observer, *, *, chapter, read
+p, demo_observer, *, *, highlight, read
+p, demo_observer, *, *, chat-message, read
+p, demo_observer, *, *, tag, read
+p, demo_observer, *, *, block, read
+p, demo_observer, *, *, entity, read
+p, demo_observer, *, *, theme, read
+p, demo_observer, *, *, goal, read
+p, demo_observer, *, *, person, read
+p, demo_observer, *, *, department, read
+p, demo_observer, *, *, role, read
+p, demo_observer, *, *, document, read
+p, demo_observer, *, *, role-profile, read
+p, demo_observer, *, *, process, read
+p, demo_observer, *, *, regulation, read
+p, demo_observer, *, *, policy, read
+p, demo_observer, *, *, decision, read
+p, demo_observer, *, *, idea, read
+p, demo_observer, *, *, insight, read
+p, demo_observer, *, *, experiment, read
+p, demo_observer, *, *, knowledge_profile, read
+p, demo_observer, *, *, skill_profile, read
+p, demo_observer, *, *, clone_persona, read
+p, demo_observer, *, *, brand_voice, read
+p, demo_observer, *, *, company_profile, read
+p, demo_observer, *, *, dashboard_operations, read
+p, demo_observer, *, *, dashboard_operations_temperature, read
+p, demo_observer, *, *, dashboard_operations_weekly, read
+p, demo_observer, *, *, activity_feed_item, read
+p, demo_observer, *, *, project, read
+p, demo_observer, *, *, issue, read
+p, demo_observer, *, *, cycle, read
+p, demo_observer, *, *, board, read
+p, demo_observer, *, *, project_document, read
+p, demo_observer, *, *, appointment, read
+# concierge — read+write self: чат с AI разрешён (LLM не мутирует доменные данные,
+# мутации перехватываются на самом tool-call внутри ToolRouterService). См. ТЗ §4.3 «AssistantSidebar».
+p, demo_observer, *, self, concierge, read
+p, demo_observer, *, self, concierge, write

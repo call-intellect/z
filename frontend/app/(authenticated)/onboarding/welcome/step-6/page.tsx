@@ -40,9 +40,11 @@ export default function Step6Page() {
       await onboardingApi.patchWelcome(currentOrgId, { plannedFeatures: [...selected] });
       const { redirectTo } = await onboardingApi.completeWelcome(currentOrgId);
       await refresh();
-      // Бэк возвращает '/onboarding/welcome/complete' (loading-экран авто-заливки
-      // демо) для новой Org, иначе '/dashboard'.
-      router.push(redirectTo || '/onboarding/welcome/complete');
+      // Бэк всегда возвращает '/dashboard' — демо больше не копируется per-Org,
+      // membership к эталонной Org оформляется при регистрации (см. ТЗ
+      // demo-shared-org-model.md §2). Если redirectTo пустой — на всякий случай
+      // тоже ведём в dashboard.
+      router.push(redirectTo || '/dashboard');
     } catch {
       setSaving(false);
     }

@@ -9,6 +9,7 @@ import { apiClient } from './api-client';
 export type AdminDemoOrgApi = {
   id: string;
   name: string;
+  isReferenceDemo: boolean;
   demoSeededAt: string | null;
   owner: { id: string; email: string; name: string } | null;
 };

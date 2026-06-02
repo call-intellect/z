@@ -28,6 +28,7 @@ export type Membership = {
   name: string;
   slug: string;
   tier: OrgApi['tier'];
+  isReferenceDemo: boolean;
 };
 
 export type UseMembershipsResult = {
@@ -48,6 +49,7 @@ export function useMemberships(): UseMembershipsResult {
         name: org.name,
         slug: org.slug,
         tier: org.tier,
+        isReferenceDemo: org.isReferenceDemo,
       }));
     },
     {

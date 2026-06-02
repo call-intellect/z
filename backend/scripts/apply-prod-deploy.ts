@@ -199,6 +199,26 @@ const STEPS: Step[] = [
     hint: 'legacy tier → tier_standard',
     skipBootstrap: true,
   },
+  // 2026-06-01 — shared-demo-org-model: создать эталонную Demo-Org «ТехноСтрим»
+  // и подключить ZDEMO_ORG_ID в ENV. Идемпотентен (skip если уже создан).
+  // Печатает ZDEMO_ORG_ID=<cuid> — программист руками вставляет в .env.
+  // ТЗ: plans/tz/2026-06-01-demo-shared-org-model.md §6.1.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-create-reference-demo-org.ts',
+    hint: 'эталонная Demo-Org «ТехноСтрим» + ZDEMO_ORG_ID',
+    skipBootstrap: false, // Нужен и для bootstrap, и для update — это создаёт сам эталон.
+  },
+  // 2026-06-01 — миграция existing «копий ТехноСтрим» в shared-модель:
+  // очищаем демо-данные у Org с demoWorkspaceSeededAt != null И не-isReferenceDemo,
+  // прикрепляем owner'ов наблюдателями к эталону. Требует ZDEMO_ORG_ID в ENV.
+  // ТЗ: plans/tz/2026-06-01-demo-shared-org-model.md §6.2.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-migrate-old-demo-orgs.ts',
+    hint: 'миграция старых «копий ТехноСтрим» → demo_observer наблюдатели',
+    skipBootstrap: true, // На чистой БД нечего мигрировать.
+  },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },

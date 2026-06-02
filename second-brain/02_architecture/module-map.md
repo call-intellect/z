@@ -246,7 +246,14 @@ LiveKit чистит атрибуты автоматически при disconne
 ### `backend/src/modules/billing/` (Paywall без trial, 2026-05-28)
 - **`guards/subscription.guard.ts`** — `SubscriptionGuard`, проверяет `Subscription.status === 'ACTIVE'`. Блокирует (403) если DEMO/SUSPENDED/CANCELED/EXPIRED/PAST_DUE.
 - **`guards/require-subscription.decorator.ts`** — декоратор `@RequireSubscription()` для мутирующих эндпоинтов.
-- **Цепочка guard'ов:** `CookieAuthGuard → TenantGuard → SubscriptionGuard → EntitlementGuard → RbacGuard`.
+- **Цепочка guard'ов:** `CookieAuthGuard → TenantGuard → SubscriptionGuard → EntitlementGuard → DemoObserverGuard → RbacGuard`.
+
+### `backend/src/common/guards/` (Shared demo Org, 2026-06-01)
+- **`demo-observer.guard.ts`** — `DemoObserverGuard` (APP_GUARD). Режет POST/PUT/PATCH/DELETE для роли `demo_observer` в эталонной демо-Org (`Org.isReferenceDemo=true`). Сам грузит membership через `RbacService.loadContext` (req.tenantId от TenantMiddleware). super_admin bypass + GET/HEAD/OPTIONS + BYPASS-пути `/billing`/`/auth`/`/me/*`/`/accounts/me` пропускаются.
+- **`public-demo.decorator.ts`** — `@PublicDemo()` декоратор для точечных исключений (concierge LLM-чат — read-only по природе, не мутирует данные).
+- **403 ответ:** `{ok: false, error: {code: 'demo_observer_readonly', message: 'Это демо-кабинет «Демо: ТехноСтрим» — здесь доступен только просмотр. Чтобы создавать данные, переключитесь в свою компанию и оплатите подписку.'}}`.
+- **Тесты:** 23 unit-тестов в `demo-observer.guard.spec.ts` (все ✅).
+- **ТЗ:** `plans/tz/2026-06-01-demo-shared-org-model.md` §4.3, профильная заметка [[demo-workspace]].
 - **Применение:** ~126 мутирующих эндпоинтов (POST/PATCH/DELETE) в 31 контроллере: tracker (projects/issues/sprints/cycles/boards/checklists/comments/labels/relations/attachments/documents/holidays/intake/imports/webhooks), meetings (meetings/participants/room-messages/recordings/reports/highlights/decisions), clones (clones/clones-admin), AI chat (chat/chat-v2/concierge), orgs (orgs/retention/goals/sprint-review).
 - **403 ответ:** `{ok: false, error: {code: 'subscription_required', message: 'Оплатите подписку, чтобы начать работу', currentStatus, price: 60000, currency: 'RUB', paymentUrl: '/settings/subscription'}}`.
 - **Исключения:** GET-запросы (read-only), `/auth/*`, `/billing/*`, webhook'и от платёжных провайдеров (HMAC-guarded), server-to-server (Crossmark).

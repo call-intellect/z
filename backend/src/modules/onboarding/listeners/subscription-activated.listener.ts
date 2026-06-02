@@ -1,26 +1,21 @@
 /**
- * SubscriptionActivatedListener — слушает активацию подписки и ставит cleanup
- * демо-данных в очередь при первой оплате (FSM `DEMO → ACTIVE`).
+ * SubscriptionActivatedListener — при FSM `DEMO → ACTIVE` (paid/bonus)
+ * снимает у владельца Org его `Membership(demo_observer)` к эталонной демо-Org.
  *
- * События `SUBSCRIPTION_ACTIVATED_PAID` / `_BONUS` эмитятся при ЛЮБОЙ
- * активации (DEMO→ACTIVE, EXPIRED→ACTIVE, SUSPENDED→ACTIVE, ...). Нам нужен
- * только первый переход из DEMO, поэтому фильтруем по `demoWorkspaceSeededAt`:
- *   - если демо никогда не лили (`null`) → выходим (нечего стирать);
- *   - иначе enqueue в `demo.cleanup`.
- * Это исключает ложные срабатывания при продлении/восстановлении подписки.
- *
- * Источник: plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md §4.5.
+ * Старая логика (cleanup 35 таблиц через DemoCleanupQueue) удалена: shared
+ * demo-модель больше не копирует данные, нечего чистить per-user.
+ * Источник: plans/tz/2026-06-01-demo-shared-org-model.md §4.8.
  */
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   BillingEvent,
   type SubscriptionActivatedPayload,
 } from '../../billing/events/billing.events';
-import { DemoCleanupQueue } from '../workers/demo-cleanup.queue';
 
 @Injectable()
 export class SubscriptionActivatedListener {
@@ -28,39 +23,51 @@ export class SubscriptionActivatedListener {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(DemoCleanupQueue) private readonly cleanupQueue: DemoCleanupQueue,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @OnEvent(BillingEvent.SUBSCRIPTION_ACTIVATED_PAID)
   @OnEvent(BillingEvent.SUBSCRIPTION_ACTIVATED_BONUS)
   async onActivated(payload: SubscriptionActivatedPayload): Promise<void> {
-    const org = await this.prisma.org.findUnique({
+    const demoOrgId = this.cfg.demo.referenceOrgId;
+    if (!demoOrgId) {
+      this.logger.debug(
+        { orgId: payload.tenantId },
+        'ZDEMO_ORG_ID не задана — пропуск detach demo_observer',
+      );
+      return;
+    }
+    // Не отвязываем сам эталон (защита).
+    if (payload.tenantId === demoOrgId) return;
+
+    const activated = await this.prisma.org.findUnique({
       where: { id: payload.tenantId },
-      select: { demoWorkspaceSeededAt: true },
+      select: { ownerId: true },
     });
-    if (!org?.demoWorkspaceSeededAt) {
-      // Демо не лили (или уже почистили) → cleanup не нужен.
+    if (!activated) {
+      this.logger.warn(
+        { orgId: payload.tenantId },
+        'subscription activated → Org не найдена, пропуск',
+      );
       return;
     }
 
-    try {
-      const { jobId } = await this.cleanupQueue.enqueue({
+    const result = await this.prisma.membership.deleteMany({
+      where: {
+        userId: activated.ownerId,
+        orgId: demoOrgId,
+        role: 'demo_observer',
+      },
+    });
+
+    this.logger.log(
+      {
         orgId: payload.tenantId,
-        actorUserId: 'system:subscription-activated',
-      });
-      this.logger.log(
-        { orgId: payload.tenantId, jobId, mode: payload.paymentMode },
-        'subscription activated → enqueued demo-cleanup',
-      );
-    } catch (err) {
-      // Очередь не должна валить активацию подписки (fire-and-forget).
-      this.logger.error(
-        {
-          orgId: payload.tenantId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'не удалось поставить demo-cleanup в очередь',
-      );
-    }
+        ownerId: activated.ownerId,
+        deleted: result.count,
+        mode: payload.paymentMode,
+      },
+      'subscription activated → demo_observer membership detached from reference org',
+    );
   }
 }

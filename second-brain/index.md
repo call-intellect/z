@@ -21,7 +21,8 @@
 
 ## Проекты
 
-- [[01_projects/onboarding-wizard]] — wizard «Знакомство с компанией» (Фаза 0c): 5 шагов, owner-only, AppShell скрыт
+- [[01_projects/onboarding-wizard]] — wizard «Знакомство с компанией» (Фаза 0c): 5 шагов, owner-only, AppShell скрыт. С 2026-06-01 в hub-секции описана shared-demo-org-model (новые пользователи → demo_observer наблюдателями к эталону «Демо: ТехноСтрим» без копий).
+- [[01_projects/demo-workspace]] — Демо-кабинет как shared эталон (2026-06-01): одна Org с `isReferenceDemo=true`, роль `demo_observer`, DemoObserverGuard (read-only), listener снимает membership при оплате. Заменяет старую модель «копия в каждую Org».
 - [[01_projects/company-framework-slots]] — слоты каркаса 5 уровней группы Б (Mission/Vision/Strategy/Process/Regulation/Policy/Tool/Metric/Decision): модели без UI до Фазы γ, наполняются автоматически
 - [[01_projects/document-ingest]] — pipeline загрузки документов (Фаза 0b): PDF/DOCX/MD/TXT через document.adapter, text.adapter для /dump, extraction группы Б с провенансом
 - [[01_projects/role-profile-agent]] — RoleProfileAgent (Фаза 0d): BullMQ-воркер карты должности, cron каждые 4 часа + on-demand rebuild, порог N=5

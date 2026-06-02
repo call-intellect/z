@@ -1,33 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// bullmq тянет ioredis с нативными биндингами, которые роняют forks-pool
-// vitest в части окружений. Мокаем модуль на пустые классы — listener сам
-// bullmq не использует (очередь приходит как мок через DI).
-vi.mock('bullmq', () => ({
-  Queue: class {},
-  Worker: class {},
-}));
-
+import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   BillingEvent,
   type SubscriptionActivatedPayload,
 } from '../../billing/events/billing.events';
-import type { DemoCleanupQueue } from '../workers/demo-cleanup.queue';
 
 import { SubscriptionActivatedListener } from './subscription-activated.listener';
 
 /**
- * ТЗ 2026-05-31-demo-auto-seed-and-cleanup §2.3.
+ * ТЗ 2026-06-01-demo-shared-org-model §4.8.
  *
  * Покрытие:
- *   - Org.demoWorkspaceSeededAt != null → enqueue cleanup с jobId по orgId;
- *   - Org.demoWorkspaceSeededAt == null → НЕ enqueue (skip);
- *   - оба события (_PAID и _BONUS) ведут к одному поведению.
+ *   - happy path: при активации snimaем `Membership(demo_observer)` у владельца
+ *     Org к эталонной демо-Org;
+ *   - ZDEMO_ORG_ID не задана → ничего не делаем;
+ *   - tenant == demoOrgId → не отвязываем сам эталон;
+ *   - Org не найдена → не падаем, лог + return;
+ *   - оба события (_PAID и _BONUS) обрабатываются одинаково.
  */
 describe('SubscriptionActivatedListener', () => {
-  let prisma: { org: { findUnique: ReturnType<typeof vi.fn> } };
-  let cleanupQueue: { enqueue: ReturnType<typeof vi.fn> };
+  let prisma: {
+    org: { findUnique: ReturnType<typeof vi.fn> };
+    membership: { deleteMany: ReturnType<typeof vi.fn> };
+  };
+  let cfg: { demo: { referenceOrgId: string | null } };
   let listener: SubscriptionActivatedListener;
 
   const payload = (tenantId: string): SubscriptionActivatedPayload => ({
@@ -42,50 +40,52 @@ describe('SubscriptionActivatedListener', () => {
   });
 
   beforeEach(() => {
-    prisma = { org: { findUnique: vi.fn() } };
-    cleanupQueue = { enqueue: vi.fn(async () => ({ jobId: 'demo-cleanup:org-1' })) };
+    prisma = {
+      org: { findUnique: vi.fn() },
+      membership: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+    };
+    cfg = { demo: { referenceOrgId: 'demo-org-id' } };
     listener = new SubscriptionActivatedListener(
       prisma as unknown as PrismaService,
-      cleanupQueue as unknown as DemoCleanupQueue,
+      cfg as unknown as TypedConfigService,
     );
   });
 
-  it('enqueue cleanup, если демо лили (demoWorkspaceSeededAt != null)', async () => {
-    prisma.org.findUnique.mockResolvedValueOnce({
-      demoWorkspaceSeededAt: new Date(),
-    });
+  it('detach demo_observer membership owner-а активированной Org', async () => {
+    prisma.org.findUnique.mockResolvedValueOnce({ ownerId: 'owner-1' });
 
     await listener.onActivated(payload('org-1'));
 
-    expect(cleanupQueue.enqueue).toHaveBeenCalledWith({
-      orgId: 'org-1',
-      actorUserId: 'system:subscription-activated',
+    expect(prisma.membership.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'owner-1',
+        orgId: 'demo-org-id',
+        role: 'demo_observer',
+      },
     });
   });
 
-  it('НЕ enqueue, если демо не лили (demoWorkspaceSeededAt == null)', async () => {
-    prisma.org.findUnique.mockResolvedValueOnce({ demoWorkspaceSeededAt: null });
+  it('ZDEMO_ORG_ID не задана → ничего не трогаем', async () => {
+    cfg.demo.referenceOrgId = null;
 
-    await listener.onActivated(payload('org-2'));
+    await listener.onActivated(payload('org-1'));
 
-    expect(cleanupQueue.enqueue).not.toHaveBeenCalled();
+    expect(prisma.org.findUnique).not.toHaveBeenCalled();
+    expect(prisma.membership.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('НЕ enqueue, если Org не найдена', async () => {
+  it('активация самой эталонной Org → не отвязываем сам эталон', async () => {
+    await listener.onActivated(payload('demo-org-id'));
+
+    expect(prisma.org.findUnique).not.toHaveBeenCalled();
+    expect(prisma.membership.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('Org не найдена → не падаем, deleteMany не вызывается', async () => {
     prisma.org.findUnique.mockResolvedValueOnce(null);
 
-    await listener.onActivated(payload('org-x'));
-
-    expect(cleanupQueue.enqueue).not.toHaveBeenCalled();
-  });
-
-  it('ошибка очереди не пробрасывается (fire-and-forget)', async () => {
-    prisma.org.findUnique.mockResolvedValueOnce({
-      demoWorkspaceSeededAt: new Date(),
-    });
-    cleanupQueue.enqueue.mockRejectedValueOnce(new Error('redis down'));
-
-    await expect(listener.onActivated(payload('org-1'))).resolves.toBeUndefined();
+    await expect(listener.onActivated(payload('org-x'))).resolves.toBeUndefined();
+    expect(prisma.membership.deleteMany).not.toHaveBeenCalled();
   });
 
   it('событие _BONUS обрабатывается так же, как _PAID', async () => {

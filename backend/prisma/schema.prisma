@@ -190,6 +190,12 @@ enum MembershipRole {
   /// write на meeting/card/task. Проверка карточки — через
   /// `RbacService.canViewEmployeeFullCard`.
   hr_partner
+  /// 2026-06-01 (ТЗ shared-demo-org-model §4.1) — пользователь до оплаты:
+  /// членство в эталонной демо-Org с read-only доступом. Все мутации режутся
+  /// `DemoObserverGuard` + `RbacService.canMutate`. Снимается listener'ом
+  /// `SubscriptionActivatedListener` при первой оплате (DEMO→ACTIVE) на
+  /// собственной Org пользователя.
+  demo_observer
 }
 
 enum OrgInvitationStatus {
@@ -2181,6 +2187,13 @@ model Org {
   /// чистить ТОЛЬКО эти записи, не задевая реальных пользователей.
   /// Пустой массив = демо-User'ы не создавались / уже удалены.
   demoUserIds             String[]  @default([])
+  /// 2026-06-01 — флаг эталонной демо-Org «Демо: ТехноСтрим». Единственная Org
+  /// с этим флагом в БД. Используется:
+  ///   - admin-страницей /admin/demo (нельзя удалять, нельзя сидить второй раз);
+  ///   - `seed-demo-workspace.ts --force-update` (разрешает re-seed ТОЛЬКО для
+  ///     помеченной этим флагом);
+  ///   - аналитикой (исключается из счёта paying/bonus orgs).
+  isReferenceDemo  Boolean  @default(false)
 
   memberships            Membership[]
   invitations            OrgInvitation[]
@@ -8983,6 +8996,10 @@ enum SubscriptionStatus {
 enum PaymentMode {
   paid
   bonus
+  /// 2026-06-01 — режим эталонной демо-Org. НЕ идёт в выручку, НЕ порождает
+  /// реф-выплат, НЕ считается в `paid`/`bonus` метриках в billing-overview.
+  /// Используется только на Org с `isReferenceDemo=true`.
+  reference
 }
 
 /// Статус инвойса. Источник истины «клиент платный» = `Invoice { status='paid' }`.

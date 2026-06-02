@@ -77,7 +77,18 @@ describe('AccountsService', () => {
   let disposable: { isDisposable: ReturnType<typeof vi.fn> };
   let prisma: {
     $transaction: ReturnType<typeof vi.fn>;
-    org: { findFirst: ReturnType<typeof vi.fn> };
+    org: {
+      findFirst: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
+    };
+    membership: {
+      findUnique: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+      create: ReturnType<typeof vi.fn>;
+    };
+    user: {
+      findUnique: ReturnType<typeof vi.fn>;
+    };
   };
   let orgs: { createForOwner: ReturnType<typeof vi.fn> };
   let cfg: TypedConfigService;
@@ -118,7 +129,21 @@ describe('AccountsService', () => {
     disposable = { isDisposable: vi.fn(() => false) };
     prisma = {
       $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma)),
-      org: { findFirst: vi.fn(async () => null) },
+      org: {
+        findFirst: vi.fn(async () => null),
+        findUnique: vi.fn(async () => null),
+      },
+      // 2026-06-01 (shared-demo-org-model) — register дергает membership.{findUnique,create}
+      // только если cfg.demo.referenceOrgId не пустой. getMe — membership.findFirst и
+      // user.findUnique. По умолчанию все возвращают null.
+      membership: {
+        findUnique: vi.fn(async () => null),
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(async () => ({ id: 'mem-1' })),
+      },
+      user: {
+        findUnique: vi.fn(async () => ({ isSuperAdmin: false })),
+      },
     };
     orgs = { createForOwner: vi.fn(async () => ({ id: 'org-1', name: 'Компания Alice' })) };
     cfg = {
@@ -127,6 +152,9 @@ describe('AccountsService', () => {
         magicLinkRateLimitPerHour: 5,
         magicLinkTtlMinutes: 15,
       },
+      // 2026-06-01 (ТЗ shared-demo-org-model §4.6) — по умолчанию демо-Org
+      // не подключена; тесты, проверяющие demo-attach, переопределяют cfg.demo.
+      demo: { referenceOrgId: null as string | null },
     } as unknown as TypedConfigService;
     redis = {
       client: {
@@ -624,5 +652,121 @@ describe('AccountsService', () => {
   it('generateTempPassword: достаточно длинный', () => {
     const pw = AccountsService.generateTempPassword();
     expect(pw.length).toBeGreaterThanOrEqual(10);
+  });
+
+  // ───────────────────── shared-demo-org-model (ТЗ 2026-06-01) ─────────────────
+  describe('register: demo-attach (shared-demo-org-model)', () => {
+    it('cfg.demo.referenceOrgId=null → membership.create НЕ вызывается', async () => {
+      // По умолчанию demo.referenceOrgId=null (см. beforeEach).
+      const svc = make();
+      await svc.register({
+        email: 'newby@example.com',
+        name: 'Newby',
+        consentDataProcessing: true,
+      });
+      expect(prisma.membership.create).not.toHaveBeenCalled();
+    });
+
+    it('cfg.demo.referenceOrgId задан + Org валидна → membership.create("demo_observer")', async () => {
+      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId = 'demo-org-1';
+      prisma.org.findUnique.mockResolvedValueOnce({
+        id: 'demo-org-1',
+        isReferenceDemo: true,
+        deletedAt: null,
+      });
+      prisma.membership.findUnique.mockResolvedValueOnce(null);
+
+      const svc = make();
+      await svc.register({
+        email: 'demo@example.com',
+        name: 'Demo',
+        consentDataProcessing: true,
+      });
+      expect(prisma.membership.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'u1',
+          orgId: 'demo-org-1',
+          role: 'demo_observer',
+        }),
+      });
+    });
+
+    it('cfg.demo.referenceOrgId задан, но Org не isReferenceDemo → create НЕ вызывается (warn)', async () => {
+      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId = 'fake-org';
+      prisma.org.findUnique.mockResolvedValueOnce({
+        id: 'fake-org',
+        isReferenceDemo: false,
+        deletedAt: null,
+      });
+      const svc = make();
+      await svc.register({
+        email: 'x@example.com',
+        name: 'X',
+        consentDataProcessing: true,
+      });
+      expect(prisma.membership.create).not.toHaveBeenCalled();
+    });
+
+    it('membership уже существует → create НЕ вызывается (idempotent)', async () => {
+      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId = 'demo-org-1';
+      prisma.org.findUnique.mockResolvedValueOnce({
+        id: 'demo-org-1',
+        isReferenceDemo: true,
+        deletedAt: null,
+      });
+      prisma.membership.findUnique.mockResolvedValueOnce({ id: 'mem-existing' });
+      const svc = make();
+      await svc.register({
+        email: 'again@example.com',
+        name: 'Again',
+        consentDataProcessing: true,
+      });
+      expect(prisma.membership.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMe: default membership prefers demo_observer', () => {
+    it('есть demo + owner → currentOrgRole=demo_observer (предпочтение demo)', async () => {
+      repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
+      // Первый findFirst — для demo_observer, второй — для owned.
+      prisma.membership.findFirst
+        .mockResolvedValueOnce({ orgId: 'demo-org', role: 'demo_observer' })
+        .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' });
+
+      const svc = make();
+      const me = await svc.getMe('u1');
+
+      expect(me?.currentOrgRole).toBe('demo_observer');
+      expect(me?.currentOrgId).toBe('demo-org');
+    });
+
+    it('нет demo, есть owner → currentOrgRole=owner', async () => {
+      repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
+      prisma.membership.findFirst
+        .mockResolvedValueOnce(null) // demo
+        .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' }); // owned
+
+      const svc = make();
+      const me = await svc.getMe('u1');
+
+      expect(me?.currentOrgRole).toBe('owner');
+      expect(me?.currentOrgId).toBe('own-org');
+    });
+
+    it('нет membership вообще → currentOrgRole=null, currentOrgId=null', async () => {
+      repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
+      prisma.membership.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      const svc = make();
+      const me = await svc.getMe('u1');
+
+      expect(me?.currentOrgRole).toBeNull();
+      expect(me?.currentOrgId).toBeNull();
+    });
   });
 });

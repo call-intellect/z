@@ -1773,6 +1773,23 @@ const LoggingSchema = z.object({
 });
 
 /**
+ * ENV для shared-demo-org-model (ТЗ plans/tz/2026-06-01-demo-shared-org-model.md).
+ * Отдельная schema, чтобы не наращивать длину `.merge` цепочки EnvSchema по
+ * существующим разделам и не плодить TS2589.
+ */
+const SharedDemoOrgSchema = z.object({
+  /**
+   * CUID/UUID эталонной демо-Org «Демо: ТехноСтрим». Если пуста — авто-привязка
+   * наблюдателей отключена (новые пользователи видят только свою пустую Org).
+   * Значение выставляется один раз на проде после запуска
+   * `patch-create-reference-demo-org.ts` (см. ТЗ shared-demo-org-model §6.1).
+   * Локально (dev) можно оставить пустой — register работает в fallback-режиме.
+   * 2026-06-01.
+   */
+  ZDEMO_ORG_ID: z.string().min(1).optional(),
+});
+
+/**
  * ENV для биллинга, реферальной программы, ИНН-лукапа.
  * Один schema — НЕ дробить на 4 (TS2589 на длинной merge-цепочке EnvSchema).
  * См. ТЗ plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §5.
@@ -1903,7 +1920,9 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   // ТЗ 2026-05-31 smart-tables — лимиты-guard от злоупотребления.
   .merge(SmartTablesSchema)
   // LoggingModule (2026-06-01) — LOG_DB_* дефолты технического логирования.
-  .merge(LoggingSchema);
+  .merge(LoggingSchema)
+  // ТЗ 2026-06-01 shared-demo-org-model — ID эталонной демо-Org.
+  .merge(SharedDemoOrgSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

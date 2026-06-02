@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { SubscriptionService } from '../billing/services/subscription.service';
 
 import { seedChatNotifications } from './demo-data/chat-notifications';
 import {
@@ -40,85 +39,14 @@ import { createEmptyIdMap, type SeedContext } from './demo-data/types';
 import { seedUsers } from './demo-data/users';
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';
 import { humanize } from './onboarding-labels';
-import { DemoSeedQueue } from './workers/demo-seed.queue';
-
-/** Статус авто-заливки демо-кабинета (GET /orgs/:orgId/demo-seed-status). */
-export interface DemoSeedStatusDto {
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-}
 
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
-  /**
-   * In-process lock от дублей inline-сидинга (когда BullMQ недоступен и мы
-   * заливаем демо прямым фоновым вызовом). Прод — один backend-контейнер, так
-   * что Set в памяти процесса достаточно. Сам `seedDemoWorkspace` дополнительно
-   * бросает `demo_already_seeded` по `Org.demoWorkspaceSeededAt`.
-   */
-  private readonly demoSeedInFlight = new Set<string>();
-
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(DemoSeedQueue) private readonly demoSeedQueue: DemoSeedQueue,
-    @Inject(SubscriptionService)
-    private readonly subscriptions: SubscriptionService,
   ) {}
-
-  /**
-   * Запустить демо-сидинг устойчиво к сбоям BullMQ.
-   *
-   * Сначала пытаемся через очередь (retries + observability в админке). Если
-   * enqueue падает (Redis/BullMQ-сбой) — fallback на ПРЯМОЙ фоновый сидинг в
-   * процессе бэка, чтобы кабинет всё равно залился. `void` — не блокируем
-   * HTTP-ответ (seed 3-8 сек); фронт поллит `demo-seed-status` и обновится.
-   *
-   * Возврат: `true` — сидинг реально стартовал/поставлен; `false` — уже идёт
-   * (дубль) или нет смысла.
-   */
-  private async triggerDemoSeed(
-    orgId: string,
-    ownerUserId: string,
-  ): Promise<boolean> {
-    // 1. Предпочтительно — очередь.
-    try {
-      const r = await this.demoSeedQueue.ensure({ orgId, ownerUserId });
-      return r.enqueued;
-    } catch (queueErr) {
-      this.logger.error(
-        {
-          orgId,
-          err: queueErr instanceof Error ? queueErr.message : String(queueErr),
-        },
-        'demo-seed: очередь недоступна — fallback на inline-сидинг',
-      );
-    }
-
-    // 2. Fallback — прямой фоновый сидинг (in-process lock от дублей).
-    if (this.demoSeedInFlight.has(orgId)) return false;
-    this.demoSeedInFlight.add(orgId);
-    void this.seedDemoWorkspace({ orgId, userId: ownerUserId })
-      .then(() => {
-        this.logger.log({ orgId }, 'demo-seed inline: успешно залит');
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        // demo_already_seeded — нормальный путь (гонка), не ошибка.
-        if (msg.includes('demo_already_seeded')) {
-          this.logger.log({ orgId }, 'demo-seed inline: уже залит, пропуск');
-        } else {
-          this.logger.error(
-            { orgId, err: msg, stack: err instanceof Error ? err.stack : undefined },
-            'demo-seed inline: упал',
-          );
-        }
-      })
-      .finally(() => {
-        this.demoSeedInFlight.delete(orgId);
-      });
-    return true;
-  }
 
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение ответов Блока A */
   async patchWelcome(args: {
@@ -165,7 +93,6 @@ export class OnboardingService {
         painPoints: true,
         currentStack: true,
         plannedFeatures: true,
-        demoWorkspaceSeededAt: true,
       },
     });
     if (!org) {
@@ -215,110 +142,10 @@ export class OnboardingService {
       this.prisma.user.update({ where: { id: userId }, data: { profileCompletedAt: now } }),
     ]);
 
-    // ТЗ 2026-05-31-demo-auto-seed-and-cleanup: автозаливка демо-кабинета
-    // «ТехноСтрим» для каждой новой Org (вместо ручного выбора /demo-choice).
-    // Идемпотентно: jobId='demo-seed:<orgId>' + сам seed бросает
-    // demo_already_seeded. Не делаем при уже залитом демо.
-    if (!org.demoWorkspaceSeededAt) {
-      // Устойчиво к сбоям BullMQ: очередь → fallback inline-сидинг. Не валит
-      // онбординг (triggerDemoSeed сам глотает ошибки и логирует).
-      await this.triggerDemoSeed(orgId, userId);
-      // Редирект на loading-экран, который дождётся завершения seed'а.
-      return { ok: true, redirectTo: '/onboarding/welcome/complete' };
-    }
-
+    // ТЗ 2026-06-01-demo-shared-org-model: больше не копируем демо в каждую
+    // Org. Новый user получает membership(demo_observer) к эталонной демо-Org
+    // (см. AccountsService.register). После welcome — сразу /dashboard.
     return { ok: true, redirectTo: '/dashboard' };
-  }
-
-  /**
-   * GET /orgs/:orgId/demo-seed-status — статус авто-заливки демо-кабинета.
-   * `completed` если `demoWorkspaceSeededAt != null`; иначе спрашиваем BullMQ
-   * по jobId. Неизвестный/рассинхрон-статус трактуем как `pending` (фронт
-   * продолжит polling до таймаута → уйдёт на /dashboard).
-   */
-  async getDemoSeedStatus(orgId: string): Promise<DemoSeedStatusDto> {
-    const org = await this.prisma.org.findUnique({
-      where: { id: orgId },
-      select: { id: true, demoWorkspaceSeededAt: true },
-    });
-    if (!org) {
-      throw new NotFoundException({
-        ok: false,
-        error: { code: 'org_not_found', message: 'Org не найдена' },
-      });
-    }
-    if (org.demoWorkspaceSeededAt) {
-      return { status: 'completed' };
-    }
-    // Inline-сидинг (fallback при недоступной очереди) идёт прямо в процессе.
-    if (this.demoSeedInFlight.has(orgId)) {
-      return { status: 'in_progress' };
-    }
-    let jobStatus: 'pending' | 'in_progress' | 'failed' | 'unknown' = 'unknown';
-    try {
-      jobStatus = await this.demoSeedQueue.statusOf(orgId);
-    } catch {
-      // Очередь недоступна — не валим polling, трактуем как pending.
-    }
-    if (jobStatus === 'failed') return { status: 'failed' };
-    if (jobStatus === 'in_progress') return { status: 'in_progress' };
-    // 'pending' | 'unknown' → pending (job ещё не взяли / рассинхрон).
-    return { status: 'pending' };
-  }
-
-  /**
-   * Fallback: гарантировать заполнение DEMO-кабинета синтетикой.
-   *
-   * Закрывает кейсы: старые DEMO-Org (зарегистрированы до выката авто-сидинга)
-   * и неудавшийся/недозапущенный seed. Идемпотентно и безопасно:
-   *   - не-DEMO подписка → ничего не делаем (пустой ACTIVE-кабинет — это норма);
-   *   - демо уже залито (`demoWorkspaceSeededAt != null`) → ничего;
-   *   - есть активный/ожидающий seed-job → ничего (`enqueued=false`);
-   *   - иначе — ставим свежий seed-job (от имени owner'а Org).
-   *
-   * Вызывается фронтом (SubscriptionContext) один раз за сессию при DEMO.
-   */
-  async ensureDemoSeed(
-    orgId: string,
-  ): Promise<DemoSeedStatusDto & { enqueued: boolean }> {
-    // Fallback — best-effort: ВЕСЬ метод в try/catch. Фронт дёргает его на
-    // каждой DEMO-загрузке через SubscriptionContext, поэтому НИКАКАЯ ошибка
-    // (Prisma/подписка/очередь/Redis) не должна давать 500 — логируем причину
-    // и возвращаем pending. Реальный корень виден в логе по этому сообщению.
-    try {
-      const org = await this.prisma.org.findUnique({
-        where: { id: orgId },
-        select: { id: true, ownerId: true, demoWorkspaceSeededAt: true },
-      });
-      if (!org) {
-        // org действительно нет → pending (фронт это игнорирует; 404 не нужен,
-        // чтобы не плодить ошибки в консоли на гонках/удалённых Org).
-        return { status: 'pending', enqueued: false };
-      }
-      if (org.demoWorkspaceSeededAt) {
-        return { status: 'completed', enqueued: false };
-      }
-
-      // Только DEMO-подписка. Пустой ACTIVE/EXPIRED-кабинет демо НЕ заливаем.
-      const sub = await this.subscriptions.getByTenant(orgId);
-      if (sub?.status !== 'DEMO') {
-        return { status: 'pending', enqueued: false };
-      }
-
-      // Устойчиво: очередь → fallback inline-сидинг (см. triggerDemoSeed).
-      const started = await this.triggerDemoSeed(orgId, org.ownerId);
-      return { status: 'in_progress', enqueued: started };
-    } catch (err) {
-      this.logger.error(
-        {
-          orgId,
-          err: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-        },
-        'ensureDemoSeed: fallback дозаливки демо упал — возвращаем pending',
-      );
-      return { status: 'pending', enqueued: false };
-    }
   }
 
   /** POST /orgs/:orgId/setup/complete — все 6 шагов Блока B пройдены/пропущены */
@@ -406,12 +233,29 @@ ${featureList}
 
     const org = await this.prisma.org.findUnique({
       where: { id: orgId },
-      select: { id: true, welcomeCompletedAt: true, demoWorkspaceSeededAt: true },
+      select: {
+        id: true,
+        welcomeCompletedAt: true,
+        demoWorkspaceSeededAt: true,
+        isReferenceDemo: true,
+      },
     });
     if (!org) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    // ТЗ 2026-06-01-demo-shared-org-model §4.2: seed разрешён только для
+    // эталонной демо-Org (isReferenceDemo=true). Защита от случайного вызова
+    // на боевой Org — никаких 35-табличных вставок поверх живых данных.
+    if (!org.isReferenceDemo) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'not_reference_org',
+          message: 'Seed разрешён только для эталонной демо-Org (isReferenceDemo=true).',
+        },
       });
     }
     if (org.demoWorkspaceSeededAt) {
@@ -509,12 +353,24 @@ ${featureList}
     const { orgId, actorUserId } = args;
     const org = await this.prisma.org.findUnique({
       where: { id: orgId },
-      select: { id: true, demoWorkspaceSeededAt: true },
+      select: { id: true, demoWorkspaceSeededAt: true, isReferenceDemo: true },
     });
     if (!org) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    // ТЗ 2026-06-01-demo-shared-org-model §4.2: reset разрешён только для
+    // эталонной демо-Org. Если кто-то дёрнет эндпоинт на боевой Org — 400,
+    // никакого 35-табличного deleteMany по живым данным.
+    if (!org.isReferenceDemo) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'not_reference_org',
+          message: 'Reset разрешён только для эталонной демо-Org (isReferenceDemo=true).',
+        },
       });
     }
     if (!org.demoWorkspaceSeededAt) {

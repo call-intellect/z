@@ -31,7 +31,6 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type {
   BillingPeriod,
-  PaymentMode,
   Subscription,
   SubscriptionStatus,
 } from '@prisma/client';
@@ -64,7 +63,10 @@ export interface AdminActivateInput {
   seatsBase?: number;
   seatsExtra: number;
   startedAt: Date;
-  paymentMode: PaymentMode;
+  // 2026-06-01 — `reference` (эталонная демо-Org) активируется CLI-скриптом
+  // `patch-create-reference-demo-org.ts` напрямую через Prisma, минуя
+  // manual-billing/admin-billing. Поэтому admin-activate допускает только paid|bonus.
+  paymentMode: 'paid' | 'bonus';
   reason: string;
   byUserId: string;
   /** Внешний референс (номер платёжки клиента). Опционален. */

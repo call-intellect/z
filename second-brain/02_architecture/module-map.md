@@ -2012,3 +2012,49 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 (super_admin). Контекст — `RequestContextService` (AsyncLocalStorage). Подробнее: [[../01_projects/logging]].
 
 [[../index|← index]]
+
+## Goals OKR v2 — Граф целей (2026-06-02)
+
+**Источник:** [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md). Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` + новый специалист Слоя 3 knowledge-core. Координаты воркера/cron'ов — [[../01_projects/workers-queues]], taskType'ы — [[../01_projects/ai-jobs]].
+
+### `backend/src/modules/goals/` (расширение)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `GoalsService` (расширен) | `goals/services/goals.service.ts` | `supersede()` (новая версия + старой `validUntil`), reparent через `PATCH parentGoalId` с `assertNoCycle`/`assertParentExists`, `mergeManualOverride` на ручной правке. |
+| `GoalKeyResultsService` | `goals/services/goal-key-results.service.ts` | CRUD Key Results; при ручном `currentValue` пишет `GoalKeyResultCheckpoint(recordedBy='manual')` в `$transaction`. |
+| `GoalsController` (расширен) | `goals/goals.controller.ts` | KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState). |
+| DTO | `goals/dto/goals.dto.ts` | Zod-схемы Create/Update KeyResult, Supersede, расширенные Create/Update Goal. |
+| RBAC | `rbac/policies/policy.csv` + ResourceType | ресурс `goal_key_result` (owner r/w/d, admin/manager r). |
+
+### Специалист `3-14-goals` — авто-добыча целей (Слой 3 knowledge-core)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `Specialist314GoalsWorker` | `knowledge-core/workers/specialist-3-14-goals.worker.ts` | Consumer `core.specialist-routing`, jobName-фильтр `'3-14-goals'`, concurrency 2. Триггер: блоки с `signalType ∈ {commitment, plan_item}`. |
+| `Specialist314GoalsService` | `knowledge-core/services/specialist-3-14-goals.service.ts` | `extract → KNN-dedup → hierarchy-арбитр → create`. AI-цель `source='ai', promotionState='suggested'`; promote при `confidence≥0.8` / повторе; cap=7 на горизонт; `manualOverride` уважается. |
+| Промпты | `knowledge-core/prompts/goal-extract.prompt.ts`, `goal-hierarchy-link.prompt.ts` | extract (может вернуть `isGoal=false`) + арбитр родителя. Cache-friendly, strict JSON Schema. |
+| `RouterService` (расширен) | `knowledge-core/services/router.service.ts` | `SPECIALIST.GOALS='3-14-goals'`, PRIORITY 3.8, `matchSpecialists` на commitment+plan_item. |
+| LLM seed | `backend/scripts/seed-llm-task-routes-goals.ts` | 3 taskType (`goal-extract`/`goal-hierarchy-link`/`goals-pulse-summarize`) без anthropic, идемпотентен. |
+
+### Авто-прогресс KR + пульс (cron'ы)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `GoalKrProgressService` + `GoalKrProgressCron` | `goals/cron/goal-kr-progress.cron.ts` (+ сервис) | `@Cron('0 5 * * *')` (ежедн. 05:00 UTC). По `sourceKind` (meeting_count/issue_rollup/metric_entity) пересчитывает `currentValue`, пишет checkpoint при изменении, пересчитывает `progressStatus` по тренду 14д. Метрика `goal_kr_autoprogress_total{source_kind,status}`. |
+| `GoalsPulseService` + `GoalsPulseCron` | `goals/cron/goals-pulse.cron.ts` (+ сервис) | `@Cron('0 6 * * 1')` (пн 06:00 UTC = 09:00 МСК). Агрегат счётчиков по `progressStatus` + LLM `goals-pulse-summarize`; идемпотентность по `(tenantId, isoWeek)` в `WeeklyGoalsPulseDigest`; доставка owner/coo через `ConversationalService.sendNotification(eventType='goals.pulse')`. Тумблеры AdminSetting `goals.pulse.{enabled,deliver_to_telegram}`. Метрики `goals_pulse_{generated,failed,delivered}_total`. Хелпер `common/utils/iso-week.ts`. |
+
+### Мост к гипотезам (Фаза 5)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `IdeasService.linkGoal` | `ideas/...` | `POST /ideas/:id/goal` — привязка гипотезы к цели. |
+| `CyclesService.update` (расширен) | `tracker/...` | `primaryGoalId` в `UpdateCycleSchema` + `CycleResponseDto`. |
+| `GoalsCheckpointProbeHandler` | `knowledge-core/...` (зарегистрирован в `knowledge-core.module`) | `@OnEvent('idea.status_changed')`: при `shipped` + `idea.goalId` → `ProbeService.suggest(reason='goal.kr_checkpoint_suggested')`, НЕ авто-запись KR. `ProbeService` через `@Optional`. |
+
+### Дашборд + Frontend
+
+- `DirectorDashboardDto.goalsTree?` / `goalsPulse?` (наполняются `fetchGoalsTree`/`fetchGoalsPulse` в `getDirectorView`).
+- Frontend: `GoalsPulseWidget`, `GoalsTreeView`, переключатель «Список/Дерево» на `/goals`, `GoalPickerDialog`; виджет+дерево на дашборде. Мапперы `progressStatusChipClasses`/`progressStatusTone`/`buildTree`, `krProgressBarColor`.
+
+[[../index|← index]]

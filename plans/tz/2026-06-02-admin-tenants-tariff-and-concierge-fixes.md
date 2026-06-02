@@ -68,12 +68,12 @@ existing_critical_files:
 
 Цель: страница перестаёт падать; KPI и таблицы рендерятся по фактическому ответу бэка; `null`-метрики показываются как «нет данных», а не NaN/краш.
 
-- [ ] **1.1.** В `admin-concierge-analytics.ts` переписать `AdminConciergeOverviewApi` под **плоский** ответ бэка: `{ period: 'day'|'week'|'month'; from: string; to: string; totalQuestions: number; noAnswerRate: number | null; avgLatencyMs: number | null; activeUsers: number; notes: { noAnswerRateIsHeuristic: boolean; avgLatencyAvailable: boolean } }`. Опционально добавить `noAnswerCount?: number` (см. 1.5).
-- [ ] **1.2.** Переписать `adminConciergeOverviewFromApi` → доменная модель без вложенного `totals` (или с `totals`, собранным маппером из плоских полей — на усмотрение, главное чтобы компонент и маппер совпадали). `from/to` → `Date`.
-- [ ] **1.3.** В `ConciergeAnalyticsClient.tsx` `OverviewTab`: рендер `totalQuestions`, `activeUsers` напрямую; `noAnswerRate === null` → «нет данных» (без `*100`); `avgLatencyMs === null` → «нет данных»; hint по `noAnswerCount` показывать только если поле пришло.
-- [ ] **1.4.** Привести `TopQueriesTab`/`NoAnswerTab` к фактическим полям бэка: top — `{query,count}` (убрать колонки avgLatency/successRate ИЛИ показывать «—»); no-answer — `messageId` как key, убрать `tenantName`/`reason` (бэк их не отдаёт) либо рендерить условно. Цель — ни одного обращения к недоставленному полю.
-- [ ] **1.5.** (Опц., 1 строка бэка) В `concierge-analytics.service.ts` поднять `noAnswerCount` из локальной переменной (строки ~174-178) в возвращаемый объект `getOverview`, чтобы hint «X запросов» был честным. Без доп. запросов.
-- [ ] **1.6.** Defensive guard: если `q.data` есть, но ключевое поле `undefined` — показывать `AdminEmpty`, а не падать (страница не должна ронять сегмент из-за формы API).
+- [x] **1.1.** В `admin-concierge-analytics.ts` переписать `AdminConciergeOverviewApi` под **плоский** ответ бэка: `{ period: 'day'|'week'|'month'; from: string; to: string; totalQuestions: number; noAnswerRate: number | null; avgLatencyMs: number | null; activeUsers: number; notes: { noAnswerRateIsHeuristic: boolean; avgLatencyAvailable: boolean } }`. Опционально добавить `noAnswerCount?: number` (см. 1.5).
+- [x] **1.2.** Переписать `adminConciergeOverviewFromApi` → доменная модель без вложенного `totals` (или с `totals`, собранным маппером из плоских полей — на усмотрение, главное чтобы компонент и маппер совпадали). `from/to` → `Date`.
+- [x] **1.3.** В `ConciergeAnalyticsClient.tsx` `OverviewTab`: рендер `totalQuestions`, `activeUsers` напрямую; `noAnswerRate === null` → «нет данных» (без `*100`); `avgLatencyMs === null` → «нет данных»; hint по `noAnswerCount` показывать только если поле пришло.
+- [x] **1.4.** Привести `TopQueriesTab`/`NoAnswerTab` к фактическим полям бэка: top — `{query,count}` (убрать колонки avgLatency/successRate ИЛИ показывать «—»); no-answer — `messageId` как key, убрать `tenantName`/`reason` (бэк их не отдаёт) либо рендерить условно. Цель — ни одного обращения к недоставленному полю.
+- [x] **1.5.** (Опц., 1 строка бэка) В `concierge-analytics.service.ts` поднять `noAnswerCount` из локальной переменной (строки ~174-178) в возвращаемый объект `getOverview`, чтобы hint «X запросов» был честным. Без доп. запросов.
+- [x] **1.6.** Defensive guard: если `q.data` есть, но ключевое поле `undefined` — показывать `AdminEmpty`, а не падать (страница не должна ронять сегмент из-за формы API).
 
 **Верификация:** `cd frontend && bun run typecheck && bun run lint && bun run build`; ручной заход на `/admin/analytics/concierge` — все 4 вкладки открываются без краша; при пустой БД чата — `AdminEmpty`, не падение.
 

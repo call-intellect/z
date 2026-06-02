@@ -46,6 +46,11 @@ export interface ConciergeOverview {
   /** Уникальные пользователи (по `ConciergeConversation.userId`). */
   activeUsers: number;
   /**
+   * Сколько assistant-ответов попало под эвристику «не нашёл ответ» за период.
+   * Даёт честный hint в UI («X запросов») без отдельного запроса.
+   */
+  noAnswerCount: number;
+  /**
    * TODO-флаги для UI: какие из метрик являются эвристиками / стабами.
    * UI может показать значок «(эвристика)».
    */
@@ -140,6 +145,7 @@ export class ConciergeAnalyticsService {
         noAnswerRate: null,
         avgLatencyMs: null,
         activeUsers: 0,
+        noAnswerCount: 0,
         notes: {
           noAnswerRateIsHeuristic: true,
           avgLatencyAvailable: false,
@@ -166,12 +172,13 @@ export class ConciergeAnalyticsService {
     //    проекцией только content) и считаем долю по эвристике маркеров.
     //    Объём: на week — ожидаем < 50k записей, что приемлемо.
     let noAnswerRate: number | null = null;
+    let noAnswerCount = 0;
     if (totalAssistantMessages > 0) {
       const assistant = await this.prisma.conciergeMessage.findMany({
         where: { role: 'assistant', createdAt: { gte: from, lt: to } },
         select: { content: true },
       });
-      const noAnswerCount = assistant.reduce(
+      noAnswerCount = assistant.reduce(
         (acc, m) => (isNoAnswer(m.content) ? acc + 1 : acc),
         0,
       );
@@ -191,6 +198,7 @@ export class ConciergeAnalyticsService {
       noAnswerRate,
       avgLatencyMs,
       activeUsers: activeUsersGrouped.length,
+      noAnswerCount,
       notes: {
         noAnswerRateIsHeuristic: true,
         avgLatencyAvailable: false,

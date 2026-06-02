@@ -918,7 +918,7 @@ Status: proposed | accepted | rejected | superseded
 **Цель:** доверие масштабируется только когда видна причина.
 
 **Frontend:** новая страница `/entities/[id]/graph`:
-- **Библиотека: `react-force-graph` в 2D-режиме** (решение №5; та же библиотека, что использована для главной «Карты мозга» — см. `plans/analysis/2026-05-22-second-brain-visualization.md`). Один движок графов в продукте.
+- **Библиотека: `react-force-graph` в 2D-режиме** (решение №5; та же библиотека, что использована для главной «Карты мозга» — см. `plans/archive/2026-05-22-second-brain-visualization.md`). Один движок графов в продукте.
 - Центр — текущая entity. Соседи на depth 1-2.
 - Rich edges: тип, период (если есть), confidence (цвет), hover — quote из evidence.
 - Клик на ребро → панель «как мы это узнали» (top-3 source blocks + цитаты).
@@ -1151,7 +1151,7 @@ docker compose up -d --build worker
 | 2 | Допустимый прирост AI-биллинга от `fact-supersede-detect` | Лимит **5%**. Прогноз: ~0.07$/Org/мес (<1% baseline). Алерт при превышении (см. W1.2). |
 | 3 | Внешний справочник компаний | **Отложено.** Не делаем. Если возникнет проблема — вернёмся. Strong IDs (W3.4) остаются — для дедупа внутри Org. |
 | 4 | Темпоральный probe — частота | **Раз в неделю**, понедельник 7:00. Лимит 50 probe на Org. Эскалация owner'у через 2 недели без ответа (см. W2.4). |
-| 5 | Библиотека графа для G.3 | **react-force-graph (2D)**. Та же библиотека, что для «Карты мозга» из `plans/analysis/2026-05-22-second-brain-visualization.md`. React Flow — только для блок-схем процессов / reasoning chains (W3.2). |
+| 5 | Библиотека графа для G.3 | **react-force-graph (2D)**. Та же библиотека, что для «Карты мозга» из `plans/archive/2026-05-22-second-brain-visualization.md`. React Flow — только для блок-схем процессов / reasoning chains (W3.2). |
 | 6 | Floor для профиля знаний | **`internal`.** Клоны ролевые (не персональные) — рабочий артефакт компании. UI отдельным ТЗ: `plans/tz/2026-05-25-clones-role-based-rebrand.md`. |
 | 7 | `telegram_dm.maxDataClass` | **Default `internal`**, opt-in до `sensitive` с предупреждением, `private` — никогда (см. W4.3). |
 | 8 | LLM-провайдеры — фильтр по DataClass | **Отложено.** В этой версии ТЗ — без ограничений. Решит владелец отдельно. |

@@ -2001,3 +2001,14 @@ CyclesController расширен: `GET /cycles/:id/dashboard`, `POST /cycles/:i
 См. [[../01_projects/sprints]].
 
 [[../index|← index]]
+
+## logging (LoggingModule, 2026-06-01)
+
+`backend/src/modules/logging/` — централизованное техническое логирование в БД (`@Global`).
+Pipeline: `LogService.write → in-memory буфер → bulk createMany → SystemLog`. Глобальный
+`RequestLoggingInterceptor` (успешные/медленные запросы) + `AllExceptionsFilter` (4xx/5xx, через
+`@Optional() LogService`). Настройки runtime — `PlatformSetting[logging_settings]` + кэш с reload 30с.
+Ретеншен — `LogCleanupService` (`setInterval` 1ч, advisory-lock). REST `/api/v1/platform/logs/*`
+(super_admin). Контекст — `RequestContextService` (AsyncLocalStorage). Подробнее: [[../01_projects/logging]].
+
+[[../index|← index]]

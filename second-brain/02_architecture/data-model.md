@@ -1116,3 +1116,26 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 Реализовано в Фазе 0 (backend) и Фазе 1 (frontend Grid). Подробнее: [[../01_projects/smart-tables]].
 
 [[../index|← index]]
+
+## Технические логи (LoggingModule, 2026-06-01)
+
+```prisma
+enum SystemLogLevel    { DEBUG INFO WARN ERROR FATAL }
+enum SystemLogCategory { SYSTEM REQUEST BUSINESS SECURITY PAYMENT WEBHOOK AUTH DB INTEGRATION AUDIT FRONTEND JOB OTHER }
+enum SystemLogContour  { GUEST MEMBER ORG_ADMIN SUPERADMIN PLATFORM PUBLIC SYSTEM }
+
+model SystemLog       { id, level, category, contour, module?, action?, message, details? (Json),
+                        userId?, userRole?, orgId?, requestId?, traceId?, ip?, userAgent?, method?, path?,
+                        statusCode?, durationMs?, errorName?, errorMessage?, errorStack?, environment?, instanceId?, createdAt }
+model PlatformSetting  { key @id, valueJson (Json), updatedBy?, updatedAt, createdAt }
+```
+
+- **`SystemLog`** — операционная диагностика с ретеншеном (автоудаление по `retentionDays`).
+  Намеренно **без FK**: `userId`/`orgId` — «мягкие» строки (лог переживает удаление сущности).
+  9 индексов: `createdAt`, `[level|category|contour|module|statusCode|userId|orgId, createdAt]`, `requestId`.
+  Это **не** audit trail (бизнес-аудит — `SuperAdminAccessLog`, вечный).
+- **`PlatformSetting`** — KV-настройки платформы; ключ `logging_settings` хранит runtime-конфиг логирования.
+
+Применяется через `bun run prisma:push` (не migrate). Подробнее: [[../01_projects/logging]].
+
+[[../index|← index]]

@@ -60,6 +60,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🪵 2026-06-01 — LoggingModule (технические логи в БД + админ-UI `/admin/logs`)
+
+- **Шаг 1 — ENV** — **11 новых опциональных** `LOG_DB_*` (все с код-дефолтами, можно не выставлять):
+  `LOG_DB_ENABLED=true`, `LOG_DB_MIN_LEVEL=INFO`, `LOG_DB_BATCH_SIZE=50`, `LOG_DB_FLUSH_INTERVAL_MS=5000`,
+  `LOG_DB_MAX_BUFFER=5000`, `LOG_DB_RETENTION_DAYS=30`, `LOG_DB_STACK_TRACES=true`,
+  `LOG_DB_REQUEST_BODY=false`, `LOG_DB_RESPONSE_BODY=false`, `LOG_DB_SUCCESS_REQUESTS=false`,
+  `LOG_DB_SLOW_REQUEST_MS=2000`. Все переопределяются в рантайме через PATCH `/api/v1/platform/logs/settings` (без рестарта).
+- **Шаг 4 — Prisma** — **обязательно** (новые модели/enum'ы): `docker compose exec backend bun run prisma:push`.
+  Создаёт `SystemLog` (+9 индексов) и `PlatformSetting`, enum'ы `SystemLogLevel/Category/Contour`. Опасных изменений нет (только новые таблицы).
+- **Seed/patch/backfill/migrate — НЕТ.** Cleanup-ретеншен — внутренний `setInterval` в backend-процессе (не cron-сервис).
+- **Шаг 11 — Docker rebuild** — обязателен (новый backend-модуль + frontend-страница): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - `curl -s localhost:3000/api/docs | grep platform-logs` (Swagger-тег появился).
+  - под super_admin: `GET /api/v1/platform/logs?limit=5` → `{total, items, limit, offset}`; `GET /api/v1/platform/logs/settings` → настройки.
+  - проверить запись: вызвать любой 5xx/404 → запись в `SystemLog` (через UI `/admin/logs`).
+
+---
+
 ### 🌟 2026-06-01 — Shared demo Org «Демо: ТехноСтрим» + demo_observer (зонтик main-screen-umbrella, Поток А)
 
 **Контекст.** Демо-кабинет «ТехноСтрим» теперь живёт **одной shared Org** в БД (isReferenceDemo=true). Новые пользователи получают `Membership(demo_observer)` к эталону сразу при регистрации (нет копий, нет ожидания «Готовим…»). При первой оплате listener снимает membership — пользователь видит только свою.

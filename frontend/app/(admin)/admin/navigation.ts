@@ -112,6 +112,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         icon: ClipboardList,
         matchPrefix: '/admin/audit',
       },
+      {
+        href: '/admin/logs',
+        label: 'Технические логи',
+        icon: FileText,
+        matchPrefix: '/admin/logs',
+      },
     ],
   },
 

@@ -307,7 +307,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('seed-demo-workspace failed:', err);
-  process.exit(1);
-});
+// Запускаем CLI ТОЛЬКО когда файл вызван напрямую (`bun run scripts/seed-demo-workspace.ts`).
+// Без этого guard'а любой `import { resetDemoWorkspace } from './seed-demo-workspace'`
+// (например, в patch-migrate-old-demo-orgs.ts) исполнял бы main() при импорте —
+// читал пустой process.argv, печатал Usage и делал process.exit(1), роняя вызывающий скрипт.
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error('seed-demo-workspace failed:', err);
+    process.exit(1);
+  });
+}

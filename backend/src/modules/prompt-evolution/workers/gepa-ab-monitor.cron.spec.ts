@@ -28,7 +28,7 @@ function makeCfg(enabled = true): Partial<TypedConfigService> {
         abMinInvocationsBeforeDecision: 100,
         abPromoteThreshold: 0.05,
         abRejectThreshold: 0.1,
-        pythonPath: '/usr/bin/python3',
+        serviceUrl: 'http://gepa:8000',
         timeoutMs: 3_600_000,
       } as const;
     },

@@ -901,8 +901,7 @@ docker compose run --rm smoke
 **Краткое содержание:**
 - Новая Prisma модель `PromptCandidate` + enum `CandidateStatus` + back-relation в `Org`.
 - В `LlmTaskRoute` добавлены 2 поля: `evolutionEnabled Boolean @default(true)`, `promptOverride String?`.
-- Python subprocess `backend/python/gepa/runner.py` + `requirements.txt` (gepa, dspy-ai, requests, tiktoken).
-- Dockerfile runner stage: установка `python3 py3-pip` + `pip install -r python/gepa/requirements.txt` (с `--break-system-packages` для alpine PEP 668).
+- **(ревизия 2026-06-02)** GEPA вынесен в **отдельный контейнер `z-gepa`** — HTTP-сервис на FastAPI (`backend/python/gepa/server.py` + `backend/python/Dockerfile`, base `python:3.11-slim`). Backend больше НЕ спавнит Python: `GepaRunnerService` ходит по `POST {GEPA_SERVICE_URL}/optimize`. Из `backend/Dockerfile` убраны `python3 py3-pip` и `pip install gepa` → образ backend легче. `requirements.txt`: gepa, dspy-ai, requests, tiktoken + fastapi, uvicorn.
 - 3 cron'a в `prompt-evolution` модуле: `GepaOptimizeCron` (Sun 04:00), `GepaPromoteCron` (Sun 05:00), `GepaAbMonitorCron` (каждые 15 мин).
 - `LlmRouterService` теперь подхватывает `PromptCandidate(status='testing')` через минутный refresh кэша; на каждый `call()` deterministic-hash A/B sampling → подменяет systemPrompt + помечает `AiUsageLog.experimentGroup='gepa_candidate'`.
 - 4 admin REST-эндпоинта в `/api/v1/admin/prompt-evolution/`: `GET candidates`, `PATCH candidates/:id/reject`, `POST rollback/:promptKey`, `PATCH lock/:promptKey`.
@@ -917,15 +916,16 @@ docker compose run --rm smoke
   - `GEPA_AB_TRAFFIC_SHARE=0.1` — 10% трафика на candidate.
   - `GEPA_AB_MIN_INVOCATIONS_BEFORE_DECISION=100` — минимум B-вызовов для promote.
   - `GEPA_AB_PROMOTE_THRESHOLD=0.05` / `GEPA_AB_REJECT_THRESHOLD=0.10` — пороги composite score.
-  - `GEPA_PYTHON_PATH=/usr/bin/python3` — путь к Python (alpine).
-  - `GEPA_TIMEOUT_MS=3600000` — hard-timeout subprocess (1ч).
+  - `GEPA_SERVICE_URL=http://gepa:8000` — base URL gepa-сервиса (контейнер `z-gepa`, DNS внутри `z-internal`). Заменил `GEPA_PYTHON_PATH` (ревизия 2026-06-02). На dev — `http://127.0.0.1:58000`.
+  - `GEPA_TIMEOUT_MS=3600000` — hard-timeout HTTP-вызова /optimize (1ч).
+  - **Важно:** gepa-контейнер получает `.env` целиком (`env_file: [.env]`) — нужны те же LLM-креды (litellm/deepseek), что раньше наследовал subprocess.
 - **Шаг 4 — Prisma** — безопасное добавление: новая модель `PromptCandidate` + 2 nullable/defaulted поля в `LlmTaskRoute`. Применить через `docker compose exec backend bun run prisma:push`.
-- **Шаг 11 — Docker image rebuild** — **обязателен**: runner stage теперь устанавливает Python + pip. Без rebuild — старый образ запустится, но GEPA-cron'ы будут пропускать optimization (status=`skipped_no_python`) — безопасный no-op.
+- **Шаг 11 — Docker image rebuild** — **обязателен новый сервис `gepa`**: `docker compose build backend gepa && docker compose up -d`. Образ backend стал легче (без Python). Если `gepa` не поднят — GEPA-cron'ы пропускают optimization (status=`skipped_no_python`) — безопасный no-op.
 - **Шаг 12 — Smoke**:
   ```bash
-  # 1. Python и runner внутри контейнера:
-  docker compose exec backend python3 python/gepa/runner.py --version
-  # Ожидаемо: JSON {"runner":"gepa-runner","version":"0.1.0","python":"3.x..."}
+  # 1. gepa-контейнер жив (health + version):
+  docker compose exec backend wget -qO- http://gepa:8000/health    # {"status":"ok"}
+  docker compose exec backend wget -qO- http://gepa:8000/version   # {"runner":"gepa-runner",...}
 
   # 2. Метрики GEPA появляются после первого optimize-cron (Sun 04:00 + при PROMPT_EVOLUTION_ENABLED=true):
   curl -s https://prod.host/metrics | grep -E 'z_gepa_(optimizations|candidates|promoted|rejected|ab_active|cost_usd|rollback)_total'

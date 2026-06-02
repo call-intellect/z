@@ -922,8 +922,8 @@ export class TypedConfigService {
    *   - `abMinInvocationsBeforeDecision` — минимум B-invocations перед
    *     принятием решения promote/reject в ab-monitor cron'е.
    *   - `abPromoteThreshold` / `abRejectThreshold` — Δ composite score.
-   *   - `pythonPath` — путь к python3 (alpine: /usr/bin/python3).
-   *   - `timeoutMs` — hard-timeout subprocess'а (default 1ч).
+   *   - `serviceUrl` — base URL gepa-сервиса (контейнер z-gepa, http://gepa:8000).
+   *   - `timeoutMs` — hard-timeout HTTP-вызова /optimize (default 1ч).
    *
    * См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
    */
@@ -939,7 +939,7 @@ export class TypedConfigService {
       ) as number,
       abPromoteThreshold: this.get('GEPA_AB_PROMOTE_THRESHOLD') as number,
       abRejectThreshold: this.get('GEPA_AB_REJECT_THRESHOLD') as number,
-      pythonPath: this.get('GEPA_PYTHON_PATH') as string,
+      serviceUrl: this.get('GEPA_SERVICE_URL') as string,
       timeoutMs: this.get('GEPA_TIMEOUT_MS') as number,
     } as const;
   }

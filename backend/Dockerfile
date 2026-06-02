@@ -35,13 +35,13 @@ RUN bun run build
 FROM oven/bun:1.3-alpine AS runner
 WORKDIR /app
 # openssl — Prisma engine.
-# python3 + py3-pip — Agents v2 Фаза C2: GEPA prompt evolution runner
-# (`backend/python/gepa/runner.py`). Без них GepaRunnerService логирует
-# warning и работает в no-op режиме — это безопасно, но в prod хотим
-# реальную evolution.
 # postgresql16-client — pg_dump для авто-бэкапа БД перед `prisma db push
 # --accept-data-loss` (apply-prod-deploy.ts --with-schema). pg16 = версия сервера.
-RUN apk add --no-cache openssl python3 py3-pip postgresql16-client
+#
+# GEPA prompt evolution (Agents v2 Фаза C2) ВЫНЕСЕН в отдельный контейнер z-gepa
+# (см. backend/python/Dockerfile). Python/pip в этом образе больше не нужны —
+# backend ходит к gepa-сервису по HTTP (GepaRunnerService → GEPA_SERVICE_URL).
+RUN apk add --no-cache openssl postgresql16-client
 ENV NODE_ENV=production
 ENV PORT=3000
 
@@ -70,16 +70,6 @@ COPY tsconfig.json ./
 # по prod-deploy-log.md. Bun исполняет .ts напрямую, зависимости — только prod-deps.
 # Исключения через .dockerignore (см. __snapshots__/, eval/, benchmark-*).
 COPY scripts ./scripts
-
-# Agents v2 Фаза C2 — Python runner + установка pip-зависимостей.
-# `--break-system-packages` — обходит PEP 668 защиту в alpine (нет venv внутри
-# минимального образа). Если установка падает — оставляем no-op python3:
-# `runner.py --version` всё равно работает, GepaRunnerService увидит ImportError
-# и пометит status='failed'/'skipped_no_python' без падения cron'а.
-COPY python ./python
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
-  -r python/gepa/requirements.txt || \
-  echo "WARN: pip install gepa failed — GEPA disabled in this image"
 
 # Папка для авто-бэкапов БД (apply-prod-deploy.ts --with-schema пишет сюда
 # pg_dump перед --accept-data-loss). Монтируется как volume z-backups в compose.

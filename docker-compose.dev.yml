@@ -49,6 +49,30 @@ services:
       timeout: 3s
       retries: 10
 
+  # GEPA prompt evolution (Agents v2 Фаза C2) — Python-сервис в своём контейнере.
+  # Dev-backend крутится процессом на хосте, поэтому порт публикуем на 127.0.0.1.
+  # В .env для dev укажи: GEPA_SERVICE_URL=http://127.0.0.1:58000
+  # Запуск только при необходимости: docker compose -f docker-compose.dev.yml up -d gepa
+  gepa:
+    image: z-gepa:latest
+    build:
+      context: ./backend/python
+      dockerfile: Dockerfile
+    container_name: z-dev-gepa
+    # Локальные LLM-креды для litellm/deepseek — из dev .env (если есть).
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - '127.0.0.1:58000:8000'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   minio:
     image: minio/minio:latest
     container_name: z-dev-minio

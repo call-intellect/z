@@ -1,56 +1,26 @@
 /**
- * Agents v2 Фаза C2 (2026-05-30) — Unit-тесты `GepaRunnerService`.
+ * Agents v2 Фаза C2 — Unit-тесты `GepaRunnerService`.
  *
- * Мокируем `child_process.spawn`. Сценарии:
+ * С 2026-06 GEPA крутится в отдельном контейнере z-gepa, backend ходит туда по
+ * HTTP. Поэтому мокируем глобальный `fetch` (раньше — `child_process.spawn`).
+ * Сценарии:
  *   1. Successful run → возвращает Pareto frontier.
- *   2. Python недоступен (ENOENT) → пустой массив, статус 'skipped_no_python'.
- *   3. Timeout → пустой массив, статус 'timeout'.
- *   4. Subprocess вернул error JSON → пустой массив, статус 'failed'.
- *   5. Пустой feedback → пустой массив, спавн не вызывался.
+ *   2. Сервис недоступен (fetch failed) → пустой массив, статус 'skipped_no_python'.
+ *   3. Timeout (AbortController) → пустой массив, статус 'timeout'.
+ *   4. Сервис вернул error JSON → пустой массив, статус 'failed'.
+ *   5. Пустой feedback → пустой массив, fetch не вызывался.
+ *   6. Feedback без editedOutput → пустой dataset → статус 'failed'.
  */
-import { EventEmitter } from 'node:events';
-
 import type { PromptFeedback } from '@prisma/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import { GepaRunnerService } from './gepa-runner.service';
 
-// ── child_process mock ──
-// Заводим управляемый mock spawn (resolved snapshot per test).
-const spawnMock = vi.fn();
-vi.mock('node:child_process', () => ({
-  spawn: (...args: unknown[]) => spawnMock(...args),
-}));
-
-interface FakeChild extends EventEmitter {
-  stdin: { write: (s: string) => void; end: () => void };
-  stdout: EventEmitter;
-  stderr: EventEmitter;
-  kill: (sig: string) => void;
-}
-
-function makeFakeChild(): FakeChild {
-  const child = new EventEmitter() as FakeChild;
-  const stdout = new EventEmitter();
-  const stderr = new EventEmitter();
-  child.stdout = stdout;
-  child.stderr = stderr;
-  child.stdin = {
-    write: () => {
-      /* no-op */
-    },
-    end: () => {
-      /* no-op */
-    },
-  };
-  child.kill = () => {
-    /* no-op */
-  };
-  return child;
-}
+// ── fetch mock ──
+const fetchMock = vi.fn();
 
 function fb(i: number): PromptFeedback {
   return {
@@ -83,7 +53,7 @@ function makeCfg(timeoutMs = 5000): Partial<TypedConfigService> {
         abMinInvocationsBeforeDecision: 100,
         abPromoteThreshold: 0.05,
         abRejectThreshold: 0.1,
-        pythonPath: '/usr/bin/python3',
+        serviceUrl: 'http://gepa:8000',
         timeoutMs,
       } as const;
     },
@@ -97,32 +67,28 @@ function makeMetrics() {
   } as unknown as BusinessMetricsService;
 }
 
+/** Имитация Response с заданным JSON-телом. */
+function jsonResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  } as unknown as Response;
+}
+
 beforeEach(() => {
-  spawnMock.mockReset();
+  fetchMock.mockReset();
+  vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('GepaRunnerService', () => {
-  it('1) successful subprocess → возвращает Pareto frontier candidates', async () => {
-    const child = makeFakeChild();
-    spawnMock.mockReturnValueOnce(child);
-
-    const cfg = makeCfg();
-    const metrics = makeMetrics();
-    const svc = new GepaRunnerService(
-      cfg as TypedConfigService,
-      metrics,
-    );
-
-    const promise = svc.runOptimization({
-      promptKey: 'meeting-report-fast',
-      feedback: [fb(1), fb(2), fb(3)],
-      seedPrompt: 'You are helpful.',
-      tenantTop: 't000',
-    });
-
-    // Имитируем работу subprocess: stdout с валидным JSON.
-    setImmediate(() => {
-      const payload = JSON.stringify({
+  it('1) successful → возвращает Pareto frontier candidates', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
         pareto_frontier: [
           {
             text: 'You are concise and helpful.',
@@ -131,16 +97,32 @@ describe('GepaRunnerService', () => {
           },
         ],
         cost_usd: 12.5,
-      });
-      child.stdout.emit('data', Buffer.from(payload));
-      child.emit('close', 0);
+      }),
+    );
+
+    const cfg = makeCfg();
+    const metrics = makeMetrics();
+    const svc = new GepaRunnerService(cfg as TypedConfigService, metrics);
+
+    const result = await svc.runOptimization({
+      promptKey: 'meeting-report-fast',
+      feedback: [fb(1), fb(2), fb(3)],
+      seedPrompt: 'You are helpful.',
+      tenantTop: 't000',
     });
 
-    const result = await promise;
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0]!.text).toContain('concise');
     expect(result.candidates[0]!.metrics).toEqual({ accuracy: 0.91, cost: 0.05 });
     expect(result.costUsd).toBe(12.5);
+
+    // POST на {serviceUrl}/optimize с JSON-payload.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('http://gepa:8000/optimize');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body).seed_prompt).toBe('You are helpful.');
+
     expect(metrics.incGepaOptimization).toHaveBeenCalledWith({
       promptKey: 'meeting-report-fast',
       status: 'success',
@@ -151,37 +133,19 @@ describe('GepaRunnerService', () => {
     });
   });
 
-  it('2) Python недоступен (ENOENT) → пустой массив, status=skipped_no_python', async () => {
-    const child = makeFakeChild();
-    // Второй вызов (fallback на altScript) тоже падает с ENOENT.
-    const child2 = makeFakeChild();
-    spawnMock.mockReturnValueOnce(child).mockReturnValueOnce(child2);
+  it('2) сервис недоступен (fetch failed) → status=skipped_no_python', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
 
     const cfg = makeCfg();
     const metrics = makeMetrics();
     const svc = new GepaRunnerService(cfg as TypedConfigService, metrics);
 
-    const promise = svc.runOptimization({
+    const result = await svc.runOptimization({
       promptKey: 'meeting-report-fast',
       feedback: [fb(1)],
       seedPrompt: 'seed',
     });
 
-    setImmediate(() => {
-      const err = Object.assign(new Error('spawn ENOENT'), {
-        code: 'ENOENT',
-      });
-      child.emit('error', err);
-      // fallback тоже падает
-      setImmediate(() => {
-        const err2 = Object.assign(new Error('spawn ENOENT'), {
-          code: 'ENOENT',
-        });
-        child2.emit('error', err2);
-      });
-    });
-
-    const result = await promise;
     expect(result.candidates).toEqual([]);
     expect(metrics.incGepaOptimization).toHaveBeenCalledWith({
       promptKey: 'meeting-report-fast',
@@ -189,15 +153,21 @@ describe('GepaRunnerService', () => {
     });
   });
 
-  it('3) timeout → пустой массив, status=timeout', async () => {
-    const child = makeFakeChild();
-    spawnMock.mockReturnValueOnce(child);
+  it('3) timeout (AbortController) → status=timeout', async () => {
+    // fetch зависает и отклоняется AbortError по signal'у — как в реальности.
+    fetchMock.mockImplementationOnce(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          });
+        }),
+    );
 
     const cfg = makeCfg(50); // 50ms timeout
     const metrics = makeMetrics();
     const svc = new GepaRunnerService(cfg as TypedConfigService, metrics);
 
-    // child никогда не отвечает — таймаут сработает.
     const result = await svc.runOptimization({
       promptKey: 'meeting-report-fast',
       feedback: [fb(1)],
@@ -211,30 +181,24 @@ describe('GepaRunnerService', () => {
     });
   });
 
-  it('4) subprocess вернул error JSON → status=failed', async () => {
-    const child = makeFakeChild();
-    spawnMock.mockReturnValueOnce(child);
+  it('4) сервис вернул error JSON → status=failed', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        error: 'GEPA не установлен (ImportError)',
+        pareto_frontier: [],
+      }),
+    );
 
     const cfg = makeCfg();
     const metrics = makeMetrics();
     const svc = new GepaRunnerService(cfg as TypedConfigService, metrics);
 
-    const promise = svc.runOptimization({
+    const result = await svc.runOptimization({
       promptKey: 'meeting-report-fast',
       feedback: [fb(1)],
       seedPrompt: 'seed',
     });
 
-    setImmediate(() => {
-      const payload = JSON.stringify({
-        error: 'GEPA не установлен (ImportError)',
-        pareto_frontier: [],
-      });
-      child.stdout.emit('data', Buffer.from(payload));
-      child.emit('close', 0);
-    });
-
-    const result = await promise;
     expect(result.candidates).toEqual([]);
     expect(metrics.incGepaOptimization).toHaveBeenCalledWith({
       promptKey: 'meeting-report-fast',
@@ -242,7 +206,7 @@ describe('GepaRunnerService', () => {
     });
   });
 
-  it('5) пустой feedback → пустой массив, spawn не вызывался', async () => {
+  it('5) пустой feedback → пустой массив, fetch не вызывался', async () => {
     const cfg = makeCfg();
     const metrics = makeMetrics();
     const svc = new GepaRunnerService(cfg as TypedConfigService, metrics);
@@ -253,7 +217,7 @@ describe('GepaRunnerService', () => {
       seedPrompt: 'seed',
     });
     expect(result.candidates).toEqual([]);
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('6) feedback без editedOutput → пустой dataset → status=failed', async () => {
@@ -272,23 +236,10 @@ describe('GepaRunnerService', () => {
       seedPrompt: 'seed',
     });
     expect(result.candidates).toEqual([]);
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(metrics.incGepaOptimization).toHaveBeenCalledWith({
       promptKey: 'meeting-report-fast',
       status: 'failed',
     });
-  });
-});
-
-describe('GepaRunnerService — real subprocess', () => {
-  it('запускает реальный python3 runner.py --version (skip если нет python3)', async () => {
-    // SKIP по умолчанию; включается через GEPA_REAL_TEST=1.
-    if (process.env.GEPA_REAL_TEST !== '1') {
-      expect(true).toBe(true);
-      return;
-    }
-    // Этот тест — placeholder для интеграционного запуска.
-    // Реальный smoke выполняется в `gepa-runner-real.spec.ts`.
-    expect(true).toBe(true);
   });
 });

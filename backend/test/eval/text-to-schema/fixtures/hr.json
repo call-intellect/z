@@ -1,0 +1,281 @@
+[
+  {
+    "id": "hr-01",
+    "category": "hr",
+    "specificity": "low",
+    "nlPrompt": "нужна таблица сотрудников",
+    "golden": {
+      "name": "Сотрудники",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "ФИО", "type": "text", "isPrimary": true },
+        { "name": "Должность", "type": "text", "isPrimary": false },
+        { "name": "Email", "type": "email", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-02",
+    "category": "hr",
+    "specificity": "low",
+    "nlPrompt": "сделай таблицу отпусков",
+    "golden": {
+      "name": "Отпуска",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Дата начала", "type": "date", "isPrimary": false },
+        { "name": "Дата окончания", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-03",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "таблица кандидатов с этапом найма и контактами",
+    "golden": {
+      "name": "Кандидаты",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "Имя", "type": "text", "isPrimary": true },
+        { "name": "Этап найма", "type": "status", "isPrimary": false },
+        { "name": "Телефон", "type": "phone", "isPrimary": false },
+        { "name": "Email", "type": "email", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-04",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "учёт обучения сотрудников: курс, сотрудник, дата прохождения и статус",
+    "golden": {
+      "name": "Обучение",
+      "entitySync": null,
+      "properties": [
+        { "name": "Курс", "type": "text", "isPrimary": true },
+        { "name": "Сотрудник", "type": "person", "isPrimary": false },
+        { "name": "Дата прохождения", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-05",
+    "category": "hr",
+    "specificity": "high",
+    "nlPrompt": "таблица вакансий: название вакансии, отдел, статус (открыта/закрыта/на паузе), оклад от, оклад до, число откликов, ответственный рекрутер и ссылка на описание",
+    "golden": {
+      "name": "Вакансии",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название вакансии", "type": "text", "isPrimary": true },
+        { "name": "Отдел", "type": "text", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Оклад от", "type": "currency", "isPrimary": false },
+        { "name": "Оклад до", "type": "currency", "isPrimary": false },
+        { "name": "Число откликов", "type": "number", "isPrimary": false },
+        { "name": "Рекрутер", "type": "person", "isPrimary": false },
+        { "name": "Описание", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-06",
+    "category": "hr",
+    "specificity": "high",
+    "nlPrompt": "адаптация новичков: сотрудник, должность, дата выхода, наставник, прогресс онбординга в процентах, испытательный срок пройден да/нет",
+    "golden": {
+      "name": "Адаптация новичков",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Должность", "type": "text", "isPrimary": false },
+        { "name": "Дата выхода", "type": "date", "isPrimary": false },
+        { "name": "Наставник", "type": "person", "isPrimary": false },
+        { "name": "Прогресс онбординга", "type": "percent", "isPrimary": false },
+        { "name": "Испытательный пройден", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-07",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "таблица для 1-на-1 встреч с сотрудниками: сотрудник, дата встречи и заметки",
+    "golden": {
+      "name": "Встречи 1-на-1",
+      "entitySync": { "type": "meeting" },
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Дата встречи", "type": "date", "isPrimary": false },
+        { "name": "Заметки", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-08",
+    "category": "hr",
+    "specificity": "low",
+    "nlPrompt": "таблица должностей в компании",
+    "golden": {
+      "name": "Должности",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Грейд", "type": "selectSingle", "isPrimary": false },
+        { "name": "Отдел", "type": "text", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-09",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "учёт переработок сотрудников с количеством часов и датой",
+    "golden": {
+      "name": "Переработки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Дата", "type": "date", "isPrimary": false },
+        { "name": "Часы", "type": "number", "isPrimary": false },
+        { "name": "Комментарий", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-10",
+    "category": "hr",
+    "specificity": "high",
+    "nlPrompt": "ревью производительности: сотрудник, период, оценка руководителя по 5-балльной шкале, самооценка, цели на квартал, статус ревью и дата следующего пересмотра",
+    "golden": {
+      "name": "Ревью производительности",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Период", "type": "text", "isPrimary": false },
+        { "name": "Оценка руководителя", "type": "number", "isPrimary": false },
+        { "name": "Самооценка", "type": "number", "isPrimary": false },
+        { "name": "Цели на квартал", "type": "longtext", "isPrimary": false },
+        { "name": "Статус ревью", "type": "status", "isPrimary": false },
+        { "name": "Дата следующего пересмотра", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-11",
+    "category": "hr",
+    "specificity": "low",
+    "nlPrompt": "список заявок на больничный",
+    "golden": {
+      "name": "Больничные",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Дата начала", "type": "date", "isPrimary": false },
+        { "name": "Дней", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-12",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "таблица навыков сотрудников: навык, уровень владения и сотрудник",
+    "golden": {
+      "name": "Навыки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Навык", "type": "text", "isPrimary": true },
+        { "name": "Уровень владения", "type": "selectSingle", "isPrimary": false },
+        { "name": "Сотрудник", "type": "person", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-13",
+    "category": "hr",
+    "specificity": "high",
+    "nlPrompt": "реферальная программа: кандидат, кто порекомендовал, вакансия, статус (на рассмотрении/нанят/отказ), бонус за рекомендацию и дата выплаты",
+    "golden": {
+      "name": "Рефералы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Кандидат", "type": "text", "isPrimary": true },
+        { "name": "Кто порекомендовал", "type": "person", "isPrimary": false },
+        { "name": "Вакансия", "type": "text", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Бонус", "type": "currency", "isPrimary": false },
+        { "name": "Дата выплаты", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-14",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "таблица собеседований с кандидатом, интервьюером, датой и результатом",
+    "golden": {
+      "name": "Собеседования",
+      "entitySync": { "type": "meeting" },
+      "properties": [
+        { "name": "Кандидат", "type": "text", "isPrimary": true },
+        { "name": "Интервьюер", "type": "person", "isPrimary": false },
+        { "name": "Дата", "type": "date", "isPrimary": false },
+        { "name": "Результат", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-15",
+    "category": "hr",
+    "specificity": "low",
+    "nlPrompt": "таблица заявлений от сотрудников",
+    "golden": {
+      "name": "Заявления",
+      "entitySync": null,
+      "properties": [
+        { "name": "Тема", "type": "text", "isPrimary": true },
+        { "name": "Сотрудник", "type": "person", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-16",
+    "category": "hr",
+    "specificity": "high",
+    "nlPrompt": "учёт выданной техники сотрудникам: сотрудник, тип устройства, инвентарный номер, дата выдачи, стоимость, возвращено да/нет и комментарий",
+    "golden": {
+      "name": "Выданная техника",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Тип устройства", "type": "selectSingle", "isPrimary": false },
+        { "name": "Инвентарный номер", "type": "text", "isPrimary": false },
+        { "name": "Дата выдачи", "type": "date", "isPrimary": false },
+        { "name": "Стоимость", "type": "currency", "isPrimary": false },
+        { "name": "Возвращено", "type": "checkbox", "isPrimary": false },
+        { "name": "Комментарий", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "hr-17",
+    "category": "hr",
+    "specificity": "mid",
+    "nlPrompt": "таблица увольнений: сотрудник, дата увольнения, причина и проведено ли exit-интервью",
+    "golden": {
+      "name": "Увольнения",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Дата увольнения", "type": "date", "isPrimary": false },
+        { "name": "Причина", "type": "selectSingle", "isPrimary": false },
+        { "name": "Exit-интервью проведено", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  }
+]

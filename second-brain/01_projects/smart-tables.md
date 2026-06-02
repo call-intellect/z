@@ -205,7 +205,7 @@ related_projects:
 
 ## Долг / далее
 
-- **Фаза 1.5** (блокер для включения флага `feature.tables_text_to_schema`) — Eval Text-to-Schema на 100 русских NL-промптах.
+- **Фаза 1.5 ✅ (harness готов; прогон — на проде)** — Eval Text-to-Schema: 102 русские фикстуры (6 категорий: HR/sales/product/ops/finance/marketing) + метрики (`backend/test/eval/text-to-schema/metrics.ts`: schema-F1, type-correctness, entity-binding, hallucination-rate) + 124 offline unit-теста + runner `backend/scripts/eval/run-text-to-schema-eval.ts`. Пороги: F1 ≥ 0.85 И hallucination ≤ 0.05. **Полный прогон требует LLM-прокси** (`docker compose exec backend bun run scripts/eval/run-text-to-schema-eval.ts`) — он и есть финальный gate для включения флага `feature.tables_text_to_schema`.
 - **Поток Privacy** — research конфиденциальности до публичного GTM.
 - **Долг Фазы 4:** миграция парсинга Excel/CSV на DCS (Docling) + PDF/сканы/HTML, когда поднимем document-conversion микросервис.
 - **Долг Фазы 5:** серверная фильтрация по cells (GIN) для масштаба; сейчас клиент-сайд.

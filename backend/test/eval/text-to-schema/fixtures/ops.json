@@ -1,0 +1,281 @@
+[
+  {
+    "id": "ops-01",
+    "category": "ops",
+    "specificity": "low",
+    "nlPrompt": "таблица поставщиков",
+    "golden": {
+      "name": "Поставщики",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Контакт", "type": "person", "isPrimary": false },
+        { "name": "Телефон", "type": "phone", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-02",
+    "category": "ops",
+    "specificity": "low",
+    "nlPrompt": "таблица закупок",
+    "golden": {
+      "name": "Закупки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Позиция", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-03",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица складских остатков с товаром, количеством и единицей измерения",
+    "golden": {
+      "name": "Складские остатки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Товар", "type": "text", "isPrimary": true },
+        { "name": "Количество", "type": "number", "isPrimary": false },
+        { "name": "Единица измерения", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-04",
+    "category": "ops",
+    "specificity": "high",
+    "nlPrompt": "реестр оборудования: наименование, инвентарный номер, местоположение, ответственный, дата покупки, стоимость, состояние и дата следующего ТО",
+    "golden": {
+      "name": "Оборудование",
+      "entitySync": null,
+      "properties": [
+        { "name": "Наименование", "type": "text", "isPrimary": true },
+        { "name": "Инвентарный номер", "type": "text", "isPrimary": false },
+        { "name": "Местоположение", "type": "text", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Дата покупки", "type": "date", "isPrimary": false },
+        { "name": "Стоимость", "type": "currency", "isPrimary": false },
+        { "name": "Состояние", "type": "selectSingle", "isPrimary": false },
+        { "name": "Следующее ТО", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-05",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица заявок в поддержку с темой, приоритетом, ответственным и статусом",
+    "golden": {
+      "name": "Заявки в поддержку",
+      "entitySync": null,
+      "properties": [
+        { "name": "Тема", "type": "text", "isPrimary": true },
+        { "name": "Приоритет", "type": "selectSingle", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-06",
+    "category": "ops",
+    "specificity": "low",
+    "nlPrompt": "таблица офисов",
+    "golden": {
+      "name": "Офисы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Город", "type": "text", "isPrimary": true },
+        { "name": "Адрес", "type": "text", "isPrimary": false },
+        { "name": "Площадь", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-07",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица аренды: объект, арендодатель, ежемесячная плата и дата окончания договора",
+    "golden": {
+      "name": "Аренда",
+      "entitySync": null,
+      "properties": [
+        { "name": "Объект", "type": "text", "isPrimary": true },
+        { "name": "Арендодатель", "type": "text", "isPrimary": false },
+        { "name": "Ежемесячная плата", "type": "currency", "isPrimary": false },
+        { "name": "Дата окончания", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-08",
+    "category": "ops",
+    "specificity": "high",
+    "nlPrompt": "таблица логистики: номер отправления, отправитель, получатель, перевозчик, дата отправки, дата доставки, стоимость доставки, вес в килограммах и статус",
+    "golden": {
+      "name": "Логистика",
+      "entitySync": null,
+      "properties": [
+        { "name": "Номер отправления", "type": "text", "isPrimary": true },
+        { "name": "Отправитель", "type": "text", "isPrimary": false },
+        { "name": "Получатель", "type": "text", "isPrimary": false },
+        { "name": "Перевозчик", "type": "selectSingle", "isPrimary": false },
+        { "name": "Дата отправки", "type": "date", "isPrimary": false },
+        { "name": "Дата доставки", "type": "date", "isPrimary": false },
+        { "name": "Стоимость доставки", "type": "currency", "isPrimary": false },
+        { "name": "Вес", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-09",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица планёрок с датой, темой и принятыми решениями",
+    "golden": {
+      "name": "Планёрки",
+      "entitySync": { "type": "meeting" },
+      "properties": [
+        { "name": "Тема", "type": "text", "isPrimary": true },
+        { "name": "Дата", "type": "date", "isPrimary": false },
+        { "name": "Решения", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-10",
+    "category": "ops",
+    "specificity": "low",
+    "nlPrompt": "таблица регламентов",
+    "golden": {
+      "name": "Регламенты",
+      "entitySync": { "type": "document" },
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Ссылка", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-11",
+    "category": "ops",
+    "specificity": "high",
+    "nlPrompt": "учёт рисков проекта: риск, вероятность в процентах, влияние, статус, владелец, план митигации и дата пересмотра",
+    "golden": {
+      "name": "Риски",
+      "entitySync": null,
+      "properties": [
+        { "name": "Риск", "type": "text", "isPrimary": true },
+        { "name": "Вероятность", "type": "percent", "isPrimary": false },
+        { "name": "Влияние", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Владелец", "type": "person", "isPrimary": false },
+        { "name": "План митигации", "type": "longtext", "isPrimary": false },
+        { "name": "Дата пересмотра", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-12",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица проектов с названием, менеджером, статусом и дедлайном",
+    "golden": {
+      "name": "Проекты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Менеджер", "type": "person", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Дедлайн", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-13",
+    "category": "ops",
+    "specificity": "low",
+    "nlPrompt": "таблица подрядчиков",
+    "golden": {
+      "name": "Подрядчики",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Услуга", "type": "text", "isPrimary": false },
+        { "name": "Контакт", "type": "phone", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-14",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица заявок на закупку с инициатором, суммой, статусом согласования и комментарием",
+    "golden": {
+      "name": "Заявки на закупку",
+      "entitySync": null,
+      "properties": [
+        { "name": "Предмет закупки", "type": "text", "isPrimary": true },
+        { "name": "Инициатор", "type": "person", "isPrimary": false },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Статус согласования", "type": "status", "isPrimary": false },
+        { "name": "Комментарий", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-15",
+    "category": "ops",
+    "specificity": "high",
+    "nlPrompt": "таблица автопарка: марка, госномер, водитель, пробег, дата ТО, страховка действует до, расход топлива и статус",
+    "golden": {
+      "name": "Автопарк",
+      "entitySync": null,
+      "properties": [
+        { "name": "Марка", "type": "text", "isPrimary": true },
+        { "name": "Госномер", "type": "text", "isPrimary": false },
+        { "name": "Водитель", "type": "person", "isPrimary": false },
+        { "name": "Пробег", "type": "number", "isPrimary": false },
+        { "name": "Дата ТО", "type": "date", "isPrimary": false },
+        { "name": "Страховка до", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-16",
+    "category": "ops",
+    "specificity": "low",
+    "nlPrompt": "таблица доступов",
+    "golden": {
+      "name": "Доступы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Система", "type": "text", "isPrimary": true },
+        { "name": "Сотрудник", "type": "person", "isPrimary": false },
+        { "name": "Выдан", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "ops-17",
+    "category": "ops",
+    "specificity": "mid",
+    "nlPrompt": "таблица инвентаризации с активом, ответственным, фактическим наличием и датой проверки",
+    "golden": {
+      "name": "Инвентаризация",
+      "entitySync": null,
+      "properties": [
+        { "name": "Актив", "type": "text", "isPrimary": true },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "В наличии", "type": "checkbox", "isPrimary": false },
+        { "name": "Дата проверки", "type": "date", "isPrimary": false }
+      ]
+    }
+  }
+]

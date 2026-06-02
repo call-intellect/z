@@ -1,18 +1,9 @@
-import type { Metadata } from 'next';
-
-import { SourcesClient } from './SourcesClient';
-
-export const metadata: Metadata = {
-  title: 'Источники — Z',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * Страница `/settings/sources` (Фаза 10 knowledge-core).
- *
- * Управление подключёнными адаптерами Org: Telegram-бот, Mango-телефония,
- * IMAP-почта, web-form ("дамп мысли"). Доступна owner/admin Org;
- * RBAC-проверка делается на бэке (`policy.csv` ресурс=source).
+ * Старый путь `/settings/sources` — раздел «Источники» переехал в
+ * `/company-admin/sources` (ТЗ 2026-06-02). Редирект для совместимости.
  */
-export default function SettingsSourcesPage() {
-  return <SourcesClient />;
+export default function SettingsSourcesRedirectPage(): never {
+  redirect('/company-admin/sources');
 }

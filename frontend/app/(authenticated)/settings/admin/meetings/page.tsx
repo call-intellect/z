@@ -1,20 +1,9 @@
-import type { Metadata } from 'next';
-
-import { MeetingsAdminSettingsClient } from './MeetingsAdminSettingsClient';
-
-export const metadata: Metadata = {
-  title: 'Админка организации — Встречи',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * `/settings/admin/meetings` — настройки Org для встреч (Фаза C §8.3).
- *
- * Сейчас содержит один блок — управление списком типов встреч, для которых
- * НЕ рассчитывается AI-оценка качества (`Org.qualityScoreDisabledForTypes`).
- *
- * Доступ: owner / admin Org. Backend защищает `/api/v1/org/settings/quality-score`,
- * клиент показывает 403 как empty-state.
+ * Старый путь `/settings/admin/meetings` — раздел переехал в
+ * `/company-admin/meetings` (ТЗ 2026-06-02). Редирект для совместимости.
  */
-export default function SettingsAdminMeetingsPage() {
-  return <MeetingsAdminSettingsClient />;
+export default function MeetingsAdminRedirectPage(): never {
+  redirect('/company-admin/meetings');
 }

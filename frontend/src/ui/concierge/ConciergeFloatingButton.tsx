@@ -1,19 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { MessageCircle, X } from 'lucide-react';
 
 import { ConciergeChat } from './ConciergeChat';
 
 /**
+ * Имя глобального события для программного открытия Concierge с префиллом.
+ * Любая страница может вызвать:
+ *   window.dispatchEvent(
+ *     new CustomEvent('concierge:open', { detail: { prefill: '…' } }),
+ *   );
+ * (см. кнопку «Спросить Кору» в Таблицах).
+ */
+export const CONCIERGE_OPEN_EVENT = 'concierge:open';
+
+/**
  * SBA γ-2 — Floating button Concierge'а. Видна на всех authenticated
  * страницах. Клик открывает popover с ConciergeChat. Получает текущий
  * `pathname` через `usePathname()` — подмешивается в pageContext.
+ *
+ * Также слушает глобальное событие `concierge:open` — открывает окно с
+ * предзаполненным сообщением (например, из «Спросить Кору» в Таблицах).
  */
 export function ConciergeFloatingButton() {
   const [open, setOpen] = useState(false);
+  const [prefill, setPrefill] = useState<string | undefined>(undefined);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ prefill?: string }>).detail;
+      // Меняем ключ префилла, чтобы повторное открытие гарантированно
+      // обновило поле ввода (ConciergeChat реагирует на смену initialInput).
+      setPrefill(detail?.prefill ?? '');
+      setOpen(true);
+    };
+    window.addEventListener(CONCIERGE_OPEN_EVENT, handler);
+    return () => window.removeEventListener(CONCIERGE_OPEN_EVENT, handler);
+  }, []);
 
   return (
     <>
@@ -44,6 +70,7 @@ export function ConciergeFloatingButton() {
           <ConciergeChat
             pageContext={{ clientPath: pathname ?? undefined }}
             className="flex flex-1 flex-col"
+            {...(prefill ? { initialInput: prefill } : {})}
           />
         </div>
       )}

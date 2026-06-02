@@ -18,6 +18,7 @@ import {
   type EntityResolverJobData,
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { ENTITY_ARCHIVED } from '../../tables/events/entity-sync.events';
 import { EntityMergeService } from '../services/entity-merge.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
@@ -270,6 +271,28 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       { entityId: entity.id, targetId, explanation: args.explanation },
       'entity-resolver: merged',
     );
+
+    // Smart-tables Фаза 2 — объединённая сущность (entity.id) теперь
+    // mergedInto target и больше не «живая». Эмитим entity.archived, чтобы
+    // TableSyncListener пометил её строку archivedAt (строка target'а остаётся).
+    // Best-effort: ошибка эмита не валит merge.
+    if (this.eventEmitter) {
+      try {
+        this.eventEmitter.emit(ENTITY_ARCHIVED, {
+          tenantId: entity.tenantId,
+          entityId: entity.id,
+          entityType: entity.type,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            entityId: entity.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'entity-resolver: emit entity.archived упал — пропускаем (best-effort)',
+        );
+      }
+    }
 
     // KC-Temporal W3.5 — emit'им `idea_block.updated` для каждого блока,
     // у которого был mention объединённой сущности. Сущность теперь

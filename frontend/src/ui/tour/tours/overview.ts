@@ -164,8 +164,8 @@ export const overviewTour: TourDefinition = {
     {
       id: 'admin',
       target: '[data-overview-target="overview.admin"]',
-      title: help('/settings/admin').title,
-      body: help('/settings/admin').body,
+      title: help('/company-admin').title,
+      body: help('/company-admin').body,
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },

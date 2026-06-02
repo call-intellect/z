@@ -14,15 +14,31 @@ import {
 } from '@glideapps/glide-data-grid';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import {
   COMPUTED_TYPES,
   FAZA1_SUPPORTED_TYPES,
   formatCellValue,
+  isReadonlyProperty,
   type TablePropertyDomain,
   type TableRowDomain,
 } from '@/domain/table';
+
+/**
+ * Текст подсказки для read-only attribute-колонок (Smart-tables Фаза 2).
+ * Значение приходит из памяти компании (граф знаний / Entity) и
+ * редактируется в самой сущности, а не в таблице.
+ */
+const READONLY_HINT =
+  'Значение приходит из памяти компании и редактируется в самой сущности';
+
+/** Приглушённый тон для read-only attribute-ячеек (парные токены tokens.css). */
+const READONLY_CELL_THEME = {
+  bgCell: 'var(--bg-subtle)',
+  textDark: 'var(--text-secondary)',
+  textLight: 'var(--text-secondary)',
+} as const;
 
 /**
  * Тональная палитра для status / select ячеек.
@@ -133,6 +149,14 @@ function formatRelativeDate(raw: unknown): string {
  * Drag&drop колонок и строк прокидывается наружу через коллбэки.
  * Glide встроенно поддерживает copy/paste: при `onPaste=true` + `getCellsForSelection`
  * вставка из Excel вызовет `onCellsEdited` / `onCellEdited` для диапазона.
+ *
+ * Провенанс авто-правок (Фаза 3): per-cell иконка-«звено» в canvas-гриде
+ * Glide без custom-renderer'а недоступна, а backend отдаёт провенанс только
+ * пер-строку (`GET rows/:rowId/provenance`) — массовая загрузка по всем
+ * видимым строкам дала бы N запросов. Поэтому провенанс показываем в карточке
+ * строки (RowDetail) и в панели подтверждений, а не в самом гриде. Здесь
+ * остаётся только существующий маркер read-only attribute-колонок (🔗 в
+ * заголовке).
  */
 export interface GridViewProps {
   properties: TablePropertyDomain[];
@@ -163,15 +187,26 @@ export function GridView({
   onOpenRow,
   rowHeight,
 }: GridViewProps) {
+  // Read-only attribute-колонки (значение из памяти компании / графа знаний):
+  // помечаем заголовок иконкой-«звеном» 🔗. Glide рисует заголовок на canvas и
+  // не поддерживает произвольный React-элемент, поэтому префикс эмодзи —
+  // самый надёжный минимальный способ. Подсказку показываем при наведении
+  // (onItemHovered → headerHint).
   const columns = useMemo<GridColumn[]>(
     () =>
       properties.map((p) => ({
         id: p.id,
-        title: p.name,
+        title: isReadonlyProperty(p) ? `🔗 ${p.name}` : p.name,
         width: 180,
       })),
     [properties],
   );
+
+  // Подсказка при наведении на заголовок read-only колонки.
+  const [headerHint, setHeaderHint] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const getCellContent = useCallback<DataEditorProps['getCellContent']>(
     (cell: Item): GridCell => {
@@ -197,6 +232,20 @@ export function GridView({
           displayData: 'Тип пока не поддерживается',
           allowOverlay: false,
           themeOverride: { textDark: 'var(--text-tertiary)' },
+        };
+      }
+
+      // Read-only attribute-колонка: значение приходит из памяти компании
+      // (граф знаний / Entity) и редактируется в самой сущности. Рисуем
+      // приглушённую Text-ячейку без overlay-редактора — править нельзя.
+      if (isReadonlyProperty(property)) {
+        const display = formatCellValue(raw, property.type);
+        return {
+          kind: GridCellKind.Text,
+          data: typeof raw === 'string' ? raw : display,
+          displayData: display,
+          allowOverlay: false,
+          themeOverride: READONLY_CELL_THEME,
         };
       }
 
@@ -342,6 +391,9 @@ export function GridView({
       const property = properties[col];
       const rowData = rows[row];
       if (!property || !rowData) return;
+      // Read-only attribute-колонка (значение из памяти компании) — игнорируем
+      // правку (в т.ч. paste из Excel в диапазон), PATCH не шлём.
+      if (isReadonlyProperty(property)) return;
       if (COMPUTED_TYPES.has(property.type)) return;
       if (!FAZA1_SUPPORTED_TYPES.has(property.type)) return;
 
@@ -407,6 +459,29 @@ export function GridView({
     [rows, onOpenRow],
   );
 
+  // Подсказка для read-only заголовков: показываем при наведении на header-
+  // ячейку колонки с config.readonly/source==='entity'. Координаты — из
+  // bounds события (позиция относительно вьюпорта).
+  const onItemHovered = useCallback(
+    (args: GridMouseEventArgs) => {
+      if (args.kind !== 'header') {
+        setHeaderHint((prev) => (prev ? null : prev));
+        return;
+      }
+      const [col] = args.location;
+      const property = properties[col];
+      if (property && isReadonlyProperty(property)) {
+        setHeaderHint({
+          x: args.bounds.x + args.bounds.width / 2,
+          y: args.bounds.y + args.bounds.height,
+        });
+      } else {
+        setHeaderHint((prev) => (prev ? null : prev));
+      }
+    },
+    [properties],
+  );
+
   return (
     <>
       {/* Portal element для overlay-редакторов Glide. */}
@@ -423,6 +498,7 @@ export function GridView({
         onRowMoved={onRowMovedInner}
         onRowAppended={onRowAppended}
         onCellClicked={onCellClicked}
+        onItemHovered={onItemHovered}
         rowMarkers="both"
         rowHeight={rowHeight ?? 34}
         smoothScrollX
@@ -437,6 +513,15 @@ export function GridView({
         width="100%"
         height={600}
       />
+      {headerHint ? (
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-[10000] max-w-[260px] -translate-x-1/2 rounded-md border border-border-subtle bg-bg-overlay px-2.5 py-1.5 text-xs leading-snug text-fg-secondary shadow-md"
+          style={{ left: headerHint.x, top: headerHint.y + 4 }}
+        >
+          {READONLY_HINT}
+        </div>
+      ) : null}
     </>
   );
 }

@@ -1,12 +1,24 @@
 import { Module } from '@nestjs/common';
 
+import { PendingPatchesController } from './controllers/pending-patches.controller';
 import { TablePropertiesController } from './controllers/table-properties.controller';
 import { TableRowsController } from './controllers/table-rows.controller';
 import { TableViewsController } from './controllers/table-views.controller';
 import { TablesController } from './controllers/tables.controller';
+import { TableEnrichListener } from './listeners/table-enrich.listener';
+import { TableSyncListener } from './listeners/table-sync.listener';
+import { TableAgentService } from './services/table-agent.service';
+import { TableEnrichQueueService } from './services/table-enrich-queue.service';
+import { TableEnrichService } from './services/table-enrich.service';
+import { TableFileParserService } from './services/table-file-parser.service';
+import { TableImportService } from './services/table-import.service';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
+import { TableSemanticFilterService } from './services/table-semantic-filter.service';
+import { TableSyncQueueService } from './services/table-sync-queue.service';
+import { TableSyncService } from './services/table-sync.service';
 import { TableViewsService } from './services/table-views.service';
+import { TablesAutoProvisionService } from './services/tables-auto-provision.service';
 import { TablesService } from './services/tables.service';
 
 /**
@@ -31,13 +43,42 @@ import { TablesService } from './services/tables.service';
     TablePropertiesController,
     TableRowsController,
     TableViewsController,
+    // Smart-tables Фаза 3 — Event-to-Cells: очередь подтверждений + провенанс.
+    PendingPatchesController,
   ],
   providers: [
     TablesService,
     TablePropertiesService,
     TableRowsService,
     TableViewsService,
+    TablesAutoProvisionService,
+    TableAgentService,
+    // Smart-tables Фаза 5 — NL Saved Views (NL-запрос → JSON-фильтр + Redis-кэш).
+    TableSemanticFilterService,
+    // Smart-tables Фаза 4 — Document-to-Table (импорт Excel/CSV).
+    TableFileParserService,
+    TableImportService,
+    // Smart-tables Фаза 2 — live entitySync. Listener слушает события графа и
+    // кладёт job в `tables.sync`; сам воркер живёт в WorkersModule (in-process).
+    TableSyncQueueService,
+    TableSyncService,
+    TableSyncListener,
+    // Smart-tables Фаза 3 — Event-to-Cells. Listener слушает `meeting.ai_ready`
+    // и кладёт job в `tables.enrich`; воркер живёт в WorkersModule (in-process).
+    TableEnrichQueueService,
+    TableEnrichService,
+    TableEnrichListener,
   ],
-  exports: [TablesService],
+  exports: [
+    TablesService,
+    TablesAutoProvisionService,
+    TableAgentService,
+    // Экспортируем для WorkersModule (TableSyncWorker) и для backfill-сценариев.
+    TableSyncService,
+    TableSyncQueueService,
+    // Экспортируем для WorkersModule (TableEnrichWorker).
+    TableEnrichService,
+    TableEnrichQueueService,
+  ],
 })
 export class TablesModule {}

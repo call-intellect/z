@@ -21,6 +21,7 @@
 4. **Аудио — отдельными дорожками на каждого участника.** Не полагаться на общий микс — он разрушает качество AI-анализа.
 5. **AI-отчёт зависит от типа встречи** — главное продуктовое отличие. Шаблоны см. [second-brain/01_projects/ai-analysis-by-type.md](second-brain/01_projects/ai-analysis-by-type.md).
 6. **В prod ничего не на одной ноде** — SFU / Egress / TURN / Backend / DB / Storage разделять.
+7. **Единый стек backend — Bun + Node + TypeScript.** В продакшен-пути `backend/` Python не вводить. Если в исследовании найден работающий Python (subprocess, скрипт, библиотека) — открыть ТЗ на порт в TS, не закрывать «как есть». Исключения: отдельные HTTP-микросервисы в `infra/*`, build-time зависимости Docker (native-модули), `.claude/` tooling. Обоснование и пример порта: [plans/tz/2026-06-02-gepa-port-to-node.md](plans/tz/2026-06-02-gepa-port-to-node.md).
 
 ## КРИТИЧЕСКОЕ РАЗДЕЛЕНИЕ: second-brain vs plans
 

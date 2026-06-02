@@ -28,4 +28,11 @@ describe('Smart Tables CRUD (e2e)', () => {
   it.skip('отказывает при превышении TABLE_MAX_PROPS_PER_TABLE', async () => {
     // Требует test-Postgres + override ENV TABLE_MAX_PROPS_PER_TABLE=2.
   });
+
+  it.skip('hard-delete системной таблицы возвращает 403', async () => {
+    // Smart-tables Фаза 0: системная таблица (isSystem:true) не удаляется навсегда.
+    // Сценарий: создать Org → авто-провижинг 10 таблиц → DELETE /api/v1/tables/:id
+    // системной → 403 { error.code: 'system_table_hard_delete_forbidden' }.
+    // Требует test-Postgres + bootstrapped Nest app.
+  });
 });

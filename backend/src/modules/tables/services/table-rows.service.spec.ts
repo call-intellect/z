@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +31,7 @@ describe('TableRowsService', () => {
   let svc: TableRowsService;
 
   let tableFindUnique: ReturnType<typeof vi.fn>;
+  let propertyFindMany: ReturnType<typeof vi.fn>;
   let rowFindMany: ReturnType<typeof vi.fn>;
   let rowFindFirst: ReturnType<typeof vi.fn>;
   let rowFindUnique: ReturnType<typeof vi.fn>;
@@ -54,6 +60,7 @@ describe('TableRowsService', () => {
 
   beforeEach(() => {
     tableFindUnique = vi.fn();
+    propertyFindMany = vi.fn();
     rowFindMany = vi.fn();
     rowFindFirst = vi.fn();
     rowFindUnique = vi.fn();
@@ -64,6 +71,7 @@ describe('TableRowsService', () => {
 
     prisma = {
       table: { findUnique: tableFindUnique },
+      tableProperty: { findMany: propertyFindMany },
       tableRow: {
         findMany: rowFindMany,
         findFirst: rowFindFirst,
@@ -179,5 +187,50 @@ describe('TableRowsService', () => {
     await expect(
       svc.findById({ tenantId: TENANT, rowId: 'r-1' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('update — PATCH read-only entity-ячейки → 422 table_cell_readonly', async () => {
+    rowFindUnique.mockResolvedValueOnce(rowEntity());
+    // колонка p-name read-only (source='entity')
+    propertyFindMany.mockResolvedValueOnce([
+      {
+        id: 'p-name',
+        name: 'Название',
+        config: { source: 'entity', entityAttribute: 'canonicalName' },
+      },
+    ]);
+
+    try {
+      await svc.update({
+        tenantId: TENANT,
+        rowId: 'r-1',
+        input: { cells: { 'p-name': 'Хочу переименовать' } },
+      });
+      throw new Error('должно было упасть');
+    } catch (e) {
+      expect(e).toBeInstanceOf(UnprocessableEntityException);
+      const body = (e as UnprocessableEntityException).getResponse() as {
+        error: { code: string };
+      };
+      expect(body.error.code).toBe('table_cell_readonly');
+    }
+    expect(rowUpdate).not.toHaveBeenCalled();
+  });
+
+  it('update — PATCH ручной ячейки → проходит', async () => {
+    rowFindUnique.mockResolvedValueOnce(rowEntity());
+    // колонка p-stage ручная (config пустой)
+    propertyFindMany.mockResolvedValueOnce([
+      { id: 'p-stage', name: 'Стадия', config: {} },
+    ]);
+    rowUpdate.mockResolvedValueOnce(rowEntity({ cells: { 'p-stage': 'opt-2' } }));
+
+    const out = await svc.update({
+      tenantId: TENANT,
+      rowId: 'r-1',
+      input: { cells: { 'p-stage': 'opt-2' } },
+    });
+    expect(out.id).toBe('r-1');
+    expect(rowUpdate).toHaveBeenCalledTimes(1);
   });
 });

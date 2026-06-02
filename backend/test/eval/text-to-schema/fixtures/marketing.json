@@ -1,0 +1,284 @@
+[
+  {
+    "id": "marketing-01",
+    "category": "marketing",
+    "specificity": "low",
+    "nlPrompt": "таблица рекламных кампаний",
+    "golden": {
+      "name": "Рекламные кампании",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Канал", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-02",
+    "category": "marketing",
+    "specificity": "low",
+    "nlPrompt": "таблица контент-плана",
+    "golden": {
+      "name": "Контент-план",
+      "entitySync": null,
+      "properties": [
+        { "name": "Тема", "type": "text", "isPrimary": true },
+        { "name": "Дата публикации", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-03",
+    "category": "marketing",
+    "specificity": "mid",
+    "nlPrompt": "таблица блогеров для рекламы с именем, площадкой, охватом и стоимостью размещения",
+    "golden": {
+      "name": "Блогеры",
+      "entitySync": null,
+      "properties": [
+        { "name": "Имя", "type": "text", "isPrimary": true },
+        { "name": "Площадка", "type": "selectSingle", "isPrimary": false },
+        { "name": "Охват", "type": "number", "isPrimary": false },
+        { "name": "Стоимость размещения", "type": "currency", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-04",
+    "category": "marketing",
+    "specificity": "high",
+    "nlPrompt": "таблица email-рассылок: название письма, сегмент, дата отправки, число получателей, open rate в процентах, click rate в процентах и ответственный",
+    "golden": {
+      "name": "Email-рассылки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название письма", "type": "text", "isPrimary": true },
+        { "name": "Сегмент", "type": "selectSingle", "isPrimary": false },
+        { "name": "Дата отправки", "type": "date", "isPrimary": false },
+        { "name": "Получателей", "type": "number", "isPrimary": false },
+        { "name": "Open rate", "type": "percent", "isPrimary": false },
+        { "name": "Click rate", "type": "percent", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-05",
+    "category": "marketing",
+    "specificity": "mid",
+    "nlPrompt": "таблица ключевых слов с запросом, частотностью и позицией в выдаче",
+    "golden": {
+      "name": "Ключевые слова",
+      "entitySync": null,
+      "properties": [
+        { "name": "Запрос", "type": "text", "isPrimary": true },
+        { "name": "Частотность", "type": "number", "isPrimary": false },
+        { "name": "Позиция", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-06",
+    "category": "marketing",
+    "specificity": "low",
+    "nlPrompt": "таблица мероприятий",
+    "golden": {
+      "name": "Мероприятия",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Дата", "type": "date", "isPrimary": false },
+        { "name": "Город", "type": "text", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-07",
+    "category": "marketing",
+    "specificity": "high",
+    "nlPrompt": "таблица рекламных креативов: название, формат, канал, ссылка на креатив, CTR в процентах, расход бюджета, конверсий и статус модерации",
+    "golden": {
+      "name": "Креативы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Формат", "type": "selectSingle", "isPrimary": false },
+        { "name": "Канал", "type": "selectSingle", "isPrimary": false },
+        { "name": "Ссылка на креатив", "type": "url", "isPrimary": false },
+        { "name": "CTR", "type": "percent", "isPrimary": false },
+        { "name": "Расход бюджета", "type": "currency", "isPrimary": false },
+        { "name": "Конверсий", "type": "number", "isPrimary": false },
+        { "name": "Статус модерации", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-08",
+    "category": "marketing",
+    "specificity": "mid",
+    "nlPrompt": "таблица вебинаров с темой, спикером, датой и числом регистраций",
+    "golden": {
+      "name": "Вебинары",
+      "entitySync": { "type": "meeting" },
+      "properties": [
+        { "name": "Тема", "type": "text", "isPrimary": true },
+        { "name": "Спикер", "type": "person", "isPrimary": false },
+        { "name": "Дата", "type": "date", "isPrimary": false },
+        { "name": "Регистраций", "type": "number", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-09",
+    "category": "marketing",
+    "specificity": "low",
+    "nlPrompt": "таблица посадочных страниц",
+    "golden": {
+      "name": "Посадочные страницы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "URL", "type": "url", "isPrimary": false },
+        { "name": "Конверсия", "type": "percent", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-10",
+    "category": "marketing",
+    "specificity": "high",
+    "nlPrompt": "таблица SMM-постов: текст поста, площадка, дата публикации, лайки, репосты, комментарии, охват и автор",
+    "golden": {
+      "name": "SMM-посты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Текст поста", "type": "longtext", "isPrimary": true },
+        { "name": "Площадка", "type": "selectSingle", "isPrimary": false },
+        { "name": "Дата публикации", "type": "date", "isPrimary": false },
+        { "name": "Лайки", "type": "number", "isPrimary": false },
+        { "name": "Репосты", "type": "number", "isPrimary": false },
+        { "name": "Комментарии", "type": "number", "isPrimary": false },
+        { "name": "Охват", "type": "number", "isPrimary": false },
+        { "name": "Автор", "type": "person", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-11",
+    "category": "marketing",
+    "specificity": "mid",
+    "nlPrompt": "таблица партнёрских интеграций с партнёром, типом размещения и стоимостью",
+    "golden": {
+      "name": "Партнёрские интеграции",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Партнёр", "type": "text", "isPrimary": true },
+        { "name": "Тип размещения", "type": "selectSingle", "isPrimary": false },
+        { "name": "Стоимость", "type": "currency", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-12",
+    "category": "marketing",
+    "specificity": "low",
+    "nlPrompt": "таблица отзывов клиентов",
+    "golden": {
+      "name": "Отзывы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Автор", "type": "text", "isPrimary": true },
+        { "name": "Оценка", "type": "number", "isPrimary": false },
+        { "name": "Текст", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-13",
+    "category": "marketing",
+    "specificity": "high",
+    "nlPrompt": "таблица промокодов: код, скидка в процентах, дата старта, дата окончания, лимит активаций, использовано и активен да/нет",
+    "golden": {
+      "name": "Промокоды",
+      "entitySync": null,
+      "properties": [
+        { "name": "Код", "type": "text", "isPrimary": true },
+        { "name": "Скидка", "type": "percent", "isPrimary": false },
+        { "name": "Дата старта", "type": "date", "isPrimary": false },
+        { "name": "Дата окончания", "type": "date", "isPrimary": false },
+        { "name": "Лимит активаций", "type": "number", "isPrimary": false },
+        { "name": "Использовано", "type": "number", "isPrimary": false },
+        { "name": "Активен", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-14",
+    "category": "marketing",
+    "specificity": "mid",
+    "nlPrompt": "таблица каналов привлечения с каналом, расходом, числом лидов и стоимостью лида",
+    "golden": {
+      "name": "Каналы привлечения",
+      "entitySync": null,
+      "properties": [
+        { "name": "Канал", "type": "text", "isPrimary": true },
+        { "name": "Расход", "type": "currency", "isPrimary": false },
+        { "name": "Лидов", "type": "number", "isPrimary": false },
+        { "name": "Стоимость лида", "type": "currency", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-15",
+    "category": "marketing",
+    "specificity": "low",
+    "nlPrompt": "таблица брендов конкурентов",
+    "golden": {
+      "name": "Конкуренты",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Бренд", "type": "text", "isPrimary": true },
+        { "name": "Сайт", "type": "url", "isPrimary": false },
+        { "name": "Сегмент", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-16",
+    "category": "marketing",
+    "specificity": "mid",
+    "nlPrompt": "таблица PR-публикаций со СМИ, заголовком, датой выхода и ссылкой",
+    "golden": {
+      "name": "PR-публикации",
+      "entitySync": null,
+      "properties": [
+        { "name": "Заголовок", "type": "text", "isPrimary": true },
+        { "name": "СМИ", "type": "text", "isPrimary": false },
+        { "name": "Дата выхода", "type": "date", "isPrimary": false },
+        { "name": "Ссылка", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "marketing-17",
+    "category": "marketing",
+    "specificity": "high",
+    "nlPrompt": "таблица маркетинговых экспериментов: гипотеза, канал, бюджет, метрика, базовое значение, результат, прирост в процентах и вывод",
+    "golden": {
+      "name": "Маркетинговые эксперименты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Гипотеза", "type": "text", "isPrimary": true },
+        { "name": "Канал", "type": "selectSingle", "isPrimary": false },
+        { "name": "Бюджет", "type": "currency", "isPrimary": false },
+        { "name": "Метрика", "type": "text", "isPrimary": false },
+        { "name": "Базовое значение", "type": "number", "isPrimary": false },
+        { "name": "Результат", "type": "number", "isPrimary": false },
+        { "name": "Прирост", "type": "percent", "isPrimary": false },
+        { "name": "Вывод", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  }
+]

@@ -2,9 +2,10 @@
 name: smart-tables
 title: Умные таблицы (Smart Tables) — MVP-старт
 status_overall: partial
-last_audited: 2026-05-31
+last_audited: 2026-06-02
 related_plans:
   - plans/tz/2026-05-31-smart-tables.md
+  - plans/tz/2026-06-02-smart-tables-auto-creation.md
 related_processes: []
 related_projects:
   - 01_projects/api-layer.md
@@ -119,3 +120,95 @@ related_projects:
 2. **`apply-prod-deploy.ts STEPS`** — для Фазы 0 нет seed/patch/backfill (только Prisma push + postgres-init), регистрация не нужна. В Фазах 2+ при появлении seed-скриптов — добавить.
 3. **`/tables` list-страница** — Фаза 2.
 4. **Tanstack Virtual** установлен, в Фазе 1 не используется (Glide само виртуализирует). Зарезервирован для Gallery/Timeline views.
+
+---
+
+# Smart-tables auto-creation (ТЗ [2026-06-02](../../plans/tz/2026-06-02-smart-tables-auto-creation.md))
+
+Продолжение базового Smart-tables: уход от ручного труда. 6 фаз (0→5) + потоки Eval/Privacy. Принцип — автоматика поверх единого графа знаний; ручным остаётся только свободный текст в карточке строки, override превью схемы и подтверждение спорных правок из встреч.
+
+## Что сделано
+
+### Фаза 0 — системные таблицы при создании Org (auto-provision) ✅
+
+При создании любой новой Org автоматически заводятся **10 системных таблиц** (пустыми; наполнение — Фаза 2). Видны в `/tables` сразу, помечены 🔒. Можно архивировать/восстанавливать/менять колонки, но **нельзя удалить навсегда**.
+
+- **Prisma `Table`**: `isSystem Boolean @default(false)`, `systemKey String?`, `@@unique([tenantId, systemKey])`, `@@index([tenantId, isSystem])`.
+- **Каталог** `backend/src/modules/tables/templates/system-tables.catalog.ts` — 10 TypeScript-шаблонов (`clients_deals`, `team`, `hypotheses`, `vendors`, `risks`, `ideas`, `promises`, `content_plan`, `regulations`, `okr`), у каждого ровно одна `isPrimary`-колонка. `entitySync` проставлен только для уже поддержанных DTO-типов (`org`→clients_deals/vendors, `person`→team, `document`→regulations); остальным `null` с TODO на Фазу 2 (расширение enum + живой sync).
+- **`TablesAutoProvisionService.provisionDefaults(tenantId, ownerId, tx?)`** — идемпотентен через `findFirst({tenantId, systemKey})`. Вызывается из `OrgsService.createForOwner` в той же транзакции (`OrgsModule` импортирует `TablesModule`, цикла нет).
+- **`TablesService.hardDelete`** — guard: `isSystem` → `403 system_table_hard_delete_forbidden`.
+- **Backfill** `backend/scripts/backfill-system-tables.ts` для существующих Org (зарегистрирован в `apply-prod-deploy.ts` STEPS, `phase: backfill`, `skipBootstrap`).
+- **Фронт**: `TableApi`/`TableDomain` получили `isSystem`/`systemKey`; на карточке системной таблицы — маркер 🔒 + tooltip. (Кнопки hard-delete в UI и не было — реальная защита на backend.)
+- **Тесты**: `tables-auto-provision.service.spec.ts` (идемпотентность, 10 шаблонов, валидность типов) + тест guard'а в `tables.service.spec.ts`. 12 unit-тестов зелёные; e2e-заглушка 403 — `it.skip` (нет test-Postgres).
+
+### Фаза 1 — Text-to-Schema через Кору (Concierge) ✅ (за feature-flag, default off)
+
+Пользователь пишет ассистенту Кора «нужна таблица клиентов» → бэк генерит схему в 3 LLM-pass'а → карточка-превью прямо в окне Concierge → правка/подтверждение → таблица создаётся.
+
+- **3 pass'а** в `TableAgentService.inferSchemaFromText` (`backend/src/modules/tables/services/table-agent.service.ts`): DRAFT (`table-infer-schema`) → ARCHITECT (`table-architect-pass`, дедуп колонок/оптимизация типов) → ENTITY-CHECK (`table-entity-check`, сверка `entitySync` с доступными типами, иначе `null`). После pass'ов — жёсткая нормализация инвариантов (≥1 колонка, ровно одна `isPrimary`, валидные `TablePropType`).
+- **Prompt-keys** (code-fallback, cache-friendly — стабильный SYSTEM с каталогом типов/системных таблиц, переменное в USER): `backend/src/modules/ai/services/prompts/table-{infer-schema,architect-pass,entity-check}.prompt.ts`. taskType primary → **DeepSeek V4 Pro** (`seed-llm-task-routes-smart-tables.ts`; code-fallback chain работает и без seed).
+- **Эндпоинты**: `POST /api/v1/tables/infer-schema` (превью) и `POST /api/v1/tables/from-schema` (создание) — оба за feature-flag `feature.tables_text_to_schema` (off → `403 feature_tables_text_to_schema_disabled`). `TablePropertiesService.createMany` — bulk-вставка колонок.
+- **Concierge-tool** `infer_table_schema` (read-only превью); SSE `tool_result` расширен опциональным `data` для whitelist-инструментов (`RICH_PREVIEW_TOOLS`) — полная схема доходит до фронта (обрезанный `preview` остаётся для текстовой реплики).
+- **Frontend**: `TableSchemaPreview.tsx` (карточка с правкой колонок/типов/ключевой), интеграция в `ConciergeChat`, кнопка «Спросить Кору» на `/tables` (открывает Concierge через CustomEvent `concierge:open` с префиллом). `tablesApi.createFromSchema`.
+- **Тесты**: `table-agent.service.spec.ts` — 5 случаев (успех, hallucinated type, no entity match, инвариант isPrimary). Все tables-тесты зелёные (34).
+- **Feature-flag default off** — включается только после прохождения Eval (Фаза 1.5, ≥0.85 accuracy).
+
+### Фаза 2 — Graph-driven rows (живой entitySync) ✅
+
+Системная таблица автоматически содержит связанные сущности графа как строки: создаётся/обновляется/архивируется Entity → строка появляется/обновляется/уходит в архив.
+
+- **entitySync расширен** опц. `entityTypes: EntityType[]` (точный фильтр) + дефолт-маппинг `resolveEntityTypes` (`entity-sync.util.ts`): org→[customer,vendor], person→[person], document→[document], meeting→[]. Каталог: 4 sync-таблицы получили `autoCreate:true` + точные `entityTypes` (clients_deals→customer, vendors→vendor, team→person, regulations→document).
+- **Шина событий Entity** (раньше отсутствовала): `EntityResolutionService` эмитит `entity.created`/`entity.updated` (через `@Optional() EventEmitter2`, best-effort), `entity-resolver.worker` — `entity.archived` при merge. Константы в `tables/events/entity-sync.events.ts`.
+- **Sync-пайплайн**: `TableSyncListener` (`@OnEvent`) → очередь `tables.sync` (`TableSyncQueueService`) → `table-sync.worker` (зарегистрирован в `ai/workers.module.ts`, in-process) → `TableSyncService.applyEntityEvent` (upsert/archive строки, заполнение entity-cells по `config.entityAttribute`). Конфликт-резолвер: ручная строка с совпадающим primary/email сливается с Entity (проставляется `entityId`), без дубля.
+- **Initial backfill**: при включении `autoCreate false→true` (`TablesService.update`) → `runInitialBackfill` (≤1000 синхронно `createMany`, >1000 — батчи в очередь). Скрипт `backfill-table-entity-sync.ts` для существующих Org (в `apply-prod-deploy.ts`).
+- **Read-only attribute-колонки**: `config.{readonly,source:'entity',entityAttribute}`. Backend guard в `TableRowsService.update` → `422 table_cell_readonly`. Frontend: 🔗 в заголовке + tooltip, `allowOverlay:false` (грид), нередактируемый рендер в RowDetail, грейсфул-обработка 422.
+- **Тесты**: `table-sync.service.spec` (created/updated/archived/идемпотентность/конфликт-резолвер) + read-only guard. 52 backend-теста зелёные (tables 43 + entity-resolution 9).
+
+### Фаза 3 — Event-to-Cells из транскриптов встреч ✅
+
+После встречи агент извлекает факты из транскрипта и патчит ПУСТЫЕ ячейки sync-таблиц с audit-link на тайминг; перезапись/спорное — в очередь подтверждений.
+
+- **Новые Prisma-модели**: `TableCellProvenance` (что/откуда/когда + `previousValue` для undo + `sourceLink` на тайминг + `confidence`) и `TableCellPendingPatch` (очередь: `proposedValue`/`currentValue`/`reason: low_confidence|overwrite`/`status`).
+- **Событие** `meeting.ai_ready` (EventEmitter2, best-effort) — эмитится в `AnalyzeWorker` после перехода встречи в `ai_ready`. Ловит `TableEnrichListener` → очередь `tables.enrich` → `table-enrich.worker` (Redis-throttle `table:enrich:jobs:${tenantId}` ≤ `table.agent.max_concurrent_enrich_jobs_per_org`).
+- **`TableEnrichService.enrichFromEvent`**: резолв сущностей встречи (3 уровня: граф `RawEvent→IdeaBlockEvidence→IdeaBlockEntity→Entity` по `sourceExternalId=meetingId`; `Event.relatedMeetingId`; fallback — canonicalName в транскрипте) → строки sync-таблиц по `entityId` → LLM `table-extract-rows` (DeepSeek V4 Flash) по не-readonly колонкам → факты с confidence/quote/timeSec. Пустая ячейка + conf≥`table.agent.confirmation_threshold` (0.85) → авто-патч + provenance; непустая/низкий conf → pending. Кэш-идемпотентность по `(row, property, sourceId=meetingId)`.
+- **Эндпоинты**: `GET /tables/rows/:rowId/provenance`, `POST /tables/cell-provenance/:id/undo`, `GET /tables/pending-patches?tableId`, `POST /tables/pending-patches/:id/decide`.
+- **AdminSettings**: `table.agent.confirmation_threshold` (0.85), `table.agent.max_concurrent_enrich_jobs_per_org` (100), `table.agent.max_daily_tokens` (1000000).
+- **Concierge-уведомление** через `ProactiveNotification` (`ruleType:'table_cells_enriched'`, owner встречи): «После встречи … обновила N ячеек и подготовила M правок».
+- **Frontend**: в `RowDetail` — 🔗 + popover (источник/уверенность/ссылка на встречу/«Отменить»→undo); в `TableHeader` — бейдж «🔔 Правки на подтверждении: N» → `PendingPatchesPanel` (принять/отклонить по одной или все).
+- **prompt-keys**: `table-extract-rows`, `table-auto-fill` (Flash; auto-fill заведён как hook, в pipeline пока не вызывается). **Тесты**: `table-enrich.service.spec` (7: авто-патч/overwrite-pending/low-conf-pending/readonly-skip/кэш/decide/undo). 50+ tables-тестов зелёные.
+
+### Фаза 4 — Document-to-Table (Excel/CSV) ✅
+
+Пользователь грузит Excel/CSV на `/tables` → инференс схемы → cosine-dedup со схемами существующих таблиц → «слить» или «создать новую» → строки появляются.
+
+- **Парсинг — in-process Node (`exceljs`)** для XLSX/CSV. Решение владельца 2026-06-02: пока остаёмся на Node, Python-микросервис DCS не поднимаем. **Долг:** структурный парсинг по-хорошему должен идти через DCS (Docling) из [document-ingest-universal ТЗ](../../plans/tz/2026-05-31-document-ingest-universal.md) — Д2; PDF/сканы/HTML/PPTX **не поддержаны** (ждут DCS). Это сознательный stopgap, не финальная архитектура.
+- **`TableFileParserService.parseFileToTable`** — первый лист/таблица → `{kind, headers, rows[][]}`, потолок 50k строк, неподдерживаемый формат → `400 unsupported_file_format`.
+- **`TableAgentService.inferSchemaFromTabular`** — переиспользует 3-pass pipeline Фазы 1, вход — headers+первые 20 строк; `alignToHeaders` гарантирует «колонка файла j ↔ property j». **`findSimilarTables`** — cosine (text-embedding-3-small) схемы vs существующих, порог `table.import.dedup_threshold` (0.85). **`linkRowsToEntities`** — матч строк к Entity по canonicalName/aliases (не создаёт новые).
+- **`TableImportService`** — `commitCreate`/`commitMerge` (merge сопоставляет колонки по имени), приведение типов ячеек.
+- **Эндпоинты**: `POST /tables/import/analyze` (multipart → схема+rows+mergeCandidates), `POST /tables/import/commit` (mode create|merge). rows — `string[][]` по индексу колонок. ENV `TABLE_IMPORT_MAX_FILE_MB` (25), `TABLE_IMPORT_MAX_ROWS` (5000). Без feature-flag.
+- **Frontend**: кнопка «Из файла» на `/tables` → `ImportFromFileDialog` (drag&drop → превью схемы + блок слияния → «Слить»/«Создать новую»).
+- **Тесты**: `table-file-parser.service.spec` (xlsx/csv/неподдерживаемый) + дополнения в `table-agent.service.spec` (tabular-маппинг, cosine, entity-link). 63 tables-теста зелёные.
+
+### Фаза 5 — NL Saved Views ✅
+
+Пользователь пишет «покажи клиентов, кому месяц никто не писал» → LLM конвертит в filter JSON → фильтр применяется → можно сохранить как вид.
+
+- **Фильтрация впервые реализована** (до Фазы 5 её не было — `selectVisibleRows` применял только сортировки). 10 операторов: `eq/neq/gt/lt/contains/in/empty/before/after/older_than`. Применяется **клиент-сайд** в `selectVisibleRows` (`applyFilters`) — согласованно с клиентскими сортировками; серверная JSON-фильтрация (GIN) — будущая оптимизация.
+- **Backend**: prompt-key `table-semantic-filter` (DeepSeek V4 Flash, cache-friendly — стабильный SYSTEM с каталогом операторов, переменное в USER). `TableSemanticFilterService.parseSemanticFilter` → Redis-кэш `table:semfilter:{tableId}:{sha1(normQuery)}` (TTL 7д) → LLM → `validateFilters` (отбор по совместимости op×TablePropType, отброс несуществующих propertyId/битых value). `POST /tables/:id/semantic-filter`. `table-filter.dto.ts` — `FILTER_OPS`, `TableFilterCondition`, `validateFilters`.
+- **Frontend**: `SemanticFilterBar` (поле «Найти срез» + индикатор/сброс + «Сохранить как новый вид» через `SaveViewDialog`). `applyFilters` в `domain/table.ts` (устойчивое сравнение по типам: status/select объекты по name, даты через Date.parse, older_than от now). `tableViewsApi.semanticFilter`. Сохранённые виды с фильтрами применяются автоматически (`applyView` копирует config.filters).
+- **Visibility** (personal/shared/public) у видов уже была реализована (база Smart-tables).
+- **Тесты**: backend `table-semantic-filter.service.spec` (cache hit/miss, валидатор, мусор-JSON) + `validateFilters` unit — 94 tables-теста; frontend `applyFilters` — 11 тестов.
+
+## Итог
+
+**Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/tz/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз.
+
+## Долг / далее
+
+- **Фаза 1.5 ✅ (harness готов; прогон — на проде)** — Eval Text-to-Schema: 102 русские фикстуры (6 категорий: HR/sales/product/ops/finance/marketing) + метрики (`backend/test/eval/text-to-schema/metrics.ts`: schema-F1, type-correctness, entity-binding, hallucination-rate) + 124 offline unit-теста + runner `backend/scripts/eval/run-text-to-schema-eval.ts`. Пороги: F1 ≥ 0.85 И hallucination ≤ 0.05. **Полный прогон требует LLM-прокси** (`docker compose exec backend bun run scripts/eval/run-text-to-schema-eval.ts`) — он и есть финальный gate для включения флага `feature.tables_text_to_schema`.
+- **Поток Privacy ✅ (research готов)** — [`plans/analysis/2026-06-02-smart-tables-privacy-positioning.md`](../../plans/analysis/2026-06-02-smart-tables-privacy-positioning.md). **Критичная находка R1 (CRITICAL):** все table-задачи передают `dataClass:'internal'` → транскрипты встреч (Фаза 3) и содержимое импортируемых файлов (Фаза 2) штатно уходят во внешний **DeepSeek (Китай)**, fallback — OpenAI/США; механизм локальной маршрутизации (Ollama, `localOnly`) для table-задач **не задействован**. Это стоп-фактор для крупного B2B/госсектора (ФСТЭК-117). Рекомендации в доке: признак «конфиденциальная таблица/встреча» + повышение `dataClass` → переиспользовать готовый фильтр роутера; RF-резидентный/in-perimeter inference; уведомления РКН; фиксация ToS провайдеров. Дифференциатор vs Notion/Coda/Airtable/Tana/MS Fabric: ни у кого нет on-prem AI-инференса и RF residency.
+- **Долг Фазы 4:** миграция парсинга Excel/CSV на DCS (Docling) + PDF/сканы/HTML, когда поднимем document-conversion микросервис.
+- **Долг Фазы 5:** серверная фильтрация по cells (GIN) для масштаба; сейчас клиент-сайд.
+- **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
+- **Фаза 5** — NL Saved Views.
+- Потоки: Eval Text-to-Schema (100 русских промптов, блокер для feature-flag), Privacy research (до GTM).

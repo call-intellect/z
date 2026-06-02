@@ -82,6 +82,49 @@ export class TablePropertiesService {
     });
   }
 
+  // ─────────────────────────── createMany ─────────────────────────────────
+
+  /**
+   * Smart-tables auto-creation (Фаза 1) — bulk-создание колонок при создании
+   * таблицы из сгенерированной схемы (`POST /tables/from-schema`).
+   *
+   * `order` — фракционная сортировка по возрастанию: (i+1)*1000 (Decimal).
+   * Шаг 1000 оставляет место под последующую вставку колонок между ними.
+   * Возвращает число созданных записей.
+   *
+   * NB: предполагается вызов на ТОЛЬКО ЧТО созданной (пустой) таблице, поэтому
+   * existing-колонки не учитываем — порядок считаем с нуля.
+   */
+  async createMany(args: {
+    tenantId: string;
+    tableId: string;
+    properties: Array<{
+      name: string;
+      type: CreatePropertyBody['type'];
+      isPrimary?: boolean;
+      config?: Record<string, unknown>;
+    }>;
+  }): Promise<number> {
+    await this.requireTable(args.tenantId, args.tableId);
+    if (args.properties.length === 0) return 0;
+
+    const data = args.properties.map((p, i) => ({
+      tableId: args.tableId,
+      name: p.name,
+      type: p.type,
+      config: (p.config ?? {}) as Prisma.InputJsonValue,
+      isPrimary: p.isPrimary ?? false,
+      order: new Prisma.Decimal((i + 1) * 1000),
+    }));
+
+    const res = await this.prisma.tableProperty.createMany({ data });
+    this.logger.log(
+      { tableId: args.tableId, count: res.count },
+      'tables.properties: bulk-create from schema',
+    );
+    return res.count;
+  }
+
   // ─────────────────────────── update ─────────────────────────────────────
 
   async update(args: {

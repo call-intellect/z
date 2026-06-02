@@ -62,6 +62,8 @@ export interface TableApi {
   entitySync: Record<string, unknown> | null;
   defaultViewId: string | null;
   archivedAt: string | null;
+  isSystem: boolean;
+  systemKey: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -180,4 +182,49 @@ export interface UpdateTableViewBodyApi {
   type?: TableViewTypeApi;
   config?: Record<string, unknown>;
   visibility?: TableViewVisibilityApi;
+}
+
+// ─────────────── Pending-patches / provenance (Фаза 3) ────────────────────
+//
+// Контракты backend — `backend/src/modules/tables/dto/tables.dto.ts`
+// (`CellProvenanceDto`, `PendingPatchDto`, `DecidePendingPatchBody`).
+
+/** Причина, по которой авто-правка попала в очередь подтверждений. */
+export type PendingPatchReasonApi = 'low_confidence' | 'overwrite';
+
+/** Одна запись провенанса (происхождения) значения ячейки. */
+export interface CellProvenanceApi {
+  id: string;
+  propertyId: string;
+  sourceType: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceLink: string | null;
+  appliedValue: unknown;
+  previousValue: unknown;
+  confidence: number | null;
+  appliedAt: string;
+  appliedBy: string;
+  rolledBackAt: string | null;
+}
+
+/** Одна правка ячейки на подтверждении (очередь подтверждений). */
+export interface PendingPatchApi {
+  id: string;
+  tableId: string;
+  tableRowId: string;
+  propertyId: string;
+  proposedValue: unknown;
+  currentValue: unknown;
+  confidence: number;
+  sourceType: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceLink: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface DecidePendingPatchBodyApi {
+  decision: 'approve' | 'reject';
 }

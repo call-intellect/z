@@ -15,7 +15,7 @@ related:
   - plans/analysis/2026-05-22-coo-dashboard-and-checkins.md
   - plans/tz/2026-05-21-second-brain-agents-umbrella.md
   - plans/analysis/2026-05-22-ui-design-deep-audit.md
-  - plans/analysis/2026-05-22-second-brain-visualization.md
+  - plans/archive/2026-05-22-second-brain-visualization.md
   - second-brain/06_marketing/positioning.md
   - second-brain/02_architecture/knowledge-core.md
 ---

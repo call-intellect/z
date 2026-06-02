@@ -8,6 +8,12 @@ phase: 7
 
 > Локальная админка владельца Org. Доступ — `Membership.role IN ('owner', 'admin')`.
 
+> ⚠️ **Обновление 2026-06-02 (ТЗ `plans/tz/2026-06-02-org-admin-cleanup-no-costs-nav-split.md`).**
+> Org-admin развёрнут в отдельную поверхность `/company-admin/*` (свой `CompanyAdminSidebar`), в клиенте остались только: **Доступ к памяти**, **Источники**, **Встречи**.
+> - **«Экономика»** (расход LLM) **удалена целиком**: backend `OrgAdminUsageController` (`/api/v1/org-admin/usage/*`) удалён, frontend `OrgUsageClient`/`org-admin-usage.api` удалены. Владелец Org себестоимость LLM **не видит** (он платит за тариф, остальное — на платформе).
+> - **«Ядро знаний» (debug)** удалена из клиента (страница + `org-admin-knowledge.api`/домен). Backend `OrgAdminKnowledgeController`/сервис оставлены живыми, но из ответа вырезан `llm.costUsd` (defense-in-depth). Возможный перенос debug под супер-админку — отдельная задача.
+> Разделы «Назначение/API/Тумблеры» ниже описывают backend-механику (актуальна), но привязка к клиентской странице устарела.
+
 ## Назначение
 
 Дать владельцу Org инструменты для:

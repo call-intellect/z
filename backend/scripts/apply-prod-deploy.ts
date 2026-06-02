@@ -92,6 +92,9 @@ const STEPS: Step[] = [
     'pulse-w3',
     // Pulse Wave 4 (2026-05-30 §4.4) — meeting-speaker-analyzer (per-speaker text sentiment).
     'pulse-w4',
+    // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema
+    // (table-infer-schema / table-architect-pass / table-entity-check).
+    'smart-tables',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -277,6 +280,22 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-edge-temporal.ts',
     hint: 'validFrom = createdAt, validUntil = NULL для IdeaBlockLink/EntityLink (Agents v2 Фаза A1)',
     skipBootstrap: false,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-system-tables.ts',
+    hint: 'Smart-tables Фаза 0: 10 системных таблиц для существующих Org',
+    skipBootstrap: true,
+  },
+  // Smart-tables Фаза 2 — graph-driven rows: наполнить системные autoCreate-таблицы
+  // строками по «живым» Entity графа (customer/vendor/person/document).
+  // Идемпотентен (skip привязанных entityId + конфликт-резолвер ручных строк).
+  // Должен идти ПОСЛЕ backfill-system-tables (таблицы уже созданы).
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-table-entity-sync.ts',
+    hint: 'Smart-tables Фаза 2: graph-driven строки в системные autoCreate-таблицы',
+    skipBootstrap: true,
   },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===

@@ -7,10 +7,10 @@ import { Search, Snowflake, Trash2, Wallet } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { adminOrgsApi } from '@/api/admin-orgs.api';
 import {
-  ORG_TIER_LABELS,
   adminOrgListFromApi,
+  orgSubscriptionBadgeVariant,
+  orgSubscriptionLabel,
   type AdminOrgRowDomain,
-  type OrgTier,
 } from '@/domain/admin-org';
 import {
   ADMIN_PERIOD_LABELS,
@@ -40,7 +40,6 @@ import {
 import { useAdminQuery } from '../useAdminQuery';
 
 const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
-const TIERS: OrgTier[] = ['basic', 'pro', 'enterprise'];
 
 export function OrgsClient() {
   const [period, setPeriod] = useState<AdminPeriod>('month');
@@ -68,7 +67,7 @@ export function OrgsClient() {
         <div>
           <h1 className="text-2xl font-semibold">Организации</h1>
           <p className="text-sm text-fg-tertiary">
-            Все Org: тариф, владелец, экономика, действия (заморозка/удаление).
+            Все Org: статус подписки, владелец, экономика, действия (заморозка/удаление).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -146,7 +145,7 @@ function OrgsTable({
         <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
           <tr>
             <th className="px-3 py-2 text-left">Org</th>
-            <th className="px-3 py-2 text-left">Тариф</th>
+            <th className="px-3 py-2 text-left">Подписка</th>
             <th className="px-3 py-2 text-left">Owner</th>
             <th className="px-3 py-2 text-right">Members</th>
             <th className="px-3 py-2 text-right">Встреч</th>
@@ -173,19 +172,6 @@ function OrgRow({
 }) {
   const [busy, setBusy] = useState(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
-
-  const updateTier = async (tier: OrgTier) => {
-    setBusy(true);
-    try {
-      await adminOrgsApi.update(org.id, { tier });
-      toast.success('Тариф обновлён');
-      onChanged();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось обновить');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const toggleFreeze = async () => {
     const ok = await ask({
@@ -242,22 +228,21 @@ function OrgRow({
         )}
       </td>
       <td className="px-3 py-2">
-        <Select
-          value={org.tier}
-          onValueChange={(v) => void updateTier(v as OrgTier)}
-          disabled={busy}
+        <Link
+          href={`/admin/orgs/${encodeURIComponent(org.id)}?tab=subscription`}
+          title="Открыть «Подписка и счета» — выбор платный/бонус"
+          className="inline-flex"
         >
-          <SelectTrigger className="h-8 w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TIERS.map((t) => (
-              <SelectItem key={t} value={t}>
-                {ORG_TIER_LABELS[t]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Badge
+            variant={orgSubscriptionBadgeVariant(
+              org.subscriptionStatus,
+              org.paymentMode,
+            )}
+            className="cursor-pointer hover:opacity-80"
+          >
+            {orgSubscriptionLabel(org.subscriptionStatus, org.paymentMode)}
+          </Badge>
+        </Link>
       </td>
       <td className="px-3 py-2 text-xs text-fg-tertiary">{org.ownerEmail ?? '—'}</td>
       <td className="px-3 py-2 text-right tabular-nums">{org.membersCount}</td>

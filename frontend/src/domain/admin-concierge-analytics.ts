@@ -2,7 +2,9 @@
  * Доменная модель для админ-аналитики Concierge / AI-чат (Фаза 2 редизайна).
  *
  * Контракт: backend `GET /api/v1/admin/analytics/concierge/{overview,top-queries,no-answer}`.
- * Бэкенд готовится параллельно — здесь только TypeScript-типы.
+ * Бэкенд отдаёт ПЛОСКИЕ объекты — типы ниже синхронизированы с фактическим
+ * ответом `ConciergeAnalyticsService` (см.
+ * backend/src/modules/admin/analytics/concierge-analytics.service.ts).
  *
  * Слой: ApiDto → DomainModel (Date).
  */
@@ -11,20 +13,39 @@ import type { AdminPeriod } from './admin-usage';
 
 // ─── Overview ───────────────────────────────────────────────────────────────
 
+/**
+ * Фактический ПЛОСКИЙ ответ бэка `/overview`.
+ * `noAnswerRate` / `avgLatencyMs` — nullable (нет данных за период / нет поля).
+ */
 export type AdminConciergeOverviewApi = {
-  period: { from: string; to: string; kind: AdminPeriod };
-  totals: {
-    totalQuestions: number;
-    noAnswerCount: number;
-    noAnswerRate: number;
-    avgLatencyMs: number;
-    activeUsers: number;
+  period: AdminPeriod;
+  from: string;
+  to: string;
+  totalQuestions: number;
+  noAnswerRate: number | null;
+  avgLatencyMs: number | null;
+  activeUsers: number;
+  noAnswerCount: number;
+  notes: {
+    noAnswerRateIsHeuristic: boolean;
+    avgLatencyAvailable: boolean;
   };
 };
 
+/**
+ * Доменная модель. `from/to` → `Date`. Для удобства компонента собираем
+ * `totals` из плоских полей (но без обращения к недоставленным значениям).
+ */
 export type AdminConciergeOverviewDomain = {
   period: { from: Date; to: Date; kind: AdminPeriod };
-  totals: AdminConciergeOverviewApi['totals'];
+  totals: {
+    totalQuestions: number;
+    noAnswerCount: number;
+    noAnswerRate: number | null;
+    avgLatencyMs: number | null;
+    activeUsers: number;
+  };
+  notes: AdminConciergeOverviewApi['notes'];
 };
 
 export function adminConciergeOverviewFromApi(
@@ -32,21 +53,27 @@ export function adminConciergeOverviewFromApi(
 ): AdminConciergeOverviewDomain {
   return {
     period: {
-      from: new Date(api.period.from),
-      to: new Date(api.period.to),
-      kind: api.period.kind,
+      from: new Date(api.from),
+      to: new Date(api.to),
+      kind: api.period,
     },
-    totals: api.totals,
+    totals: {
+      totalQuestions: api.totalQuestions,
+      noAnswerCount: api.noAnswerCount,
+      noAnswerRate: api.noAnswerRate,
+      avgLatencyMs: api.avgLatencyMs,
+      activeUsers: api.activeUsers,
+    },
+    notes: api.notes,
   };
 }
 
 // ─── Top queries ────────────────────────────────────────────────────────────
 
+/** Фактический ответ бэка `/top-queries` — только `{ query, count }`. */
 export type AdminConciergeTopQueryApi = {
   query: string;
   count: number;
-  avgLatencyMs: number;
-  successRate: number;
 };
 
 export type AdminConciergeTopQueriesApi = {
@@ -63,15 +90,18 @@ export function adminConciergeTopQueriesFromApi(
 
 // ─── No-answer feed ─────────────────────────────────────────────────────────
 
+/**
+ * Фактический ответ бэка `/no-answer`. Ключ строки — `messageId` (НЕ `id`);
+ * полей `tenantName`/`reason` бэк не отдаёт.
+ */
 export type AdminConciergeNoAnswerRowApi = {
-  id: string;
-  createdAt: string;
-  query: string;
+  messageId: string;
+  conversationId: string;
+  tenantId: string | null;
   userId: string | null;
   userEmail: string | null;
-  tenantId: string | null;
-  tenantName: string | null;
-  reason: string | null;
+  query: string;
+  createdAt: string;
 };
 
 export type AdminConciergeNoAnswerApi = {

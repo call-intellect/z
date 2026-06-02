@@ -32,12 +32,20 @@
  */
 
 import { apiClient } from './api-client';
+import { ApiError } from './api-error';
 import { buildQuery, orgHeaders } from './admin-helpers';
 import type {
+  ImportAnalyzeResult,
+  InferredTableSchema,
+  TableFilterCondition,
+} from '@/domain/table';
+import type {
+  CellProvenanceApi,
   CreatePropertyBodyApi,
   CreateRowBodyApi,
   CreateTableBodyApi,
   CreateTableViewBodyApi,
+  PendingPatchApi,
   ReorderPropertyBodyApi,
   RowsListQueryApi,
   TableApi,
@@ -50,6 +58,46 @@ import type {
   UpdateTableBodyApi,
   UpdateTableViewBodyApi,
 } from './types/tables';
+
+/**
+ * Multipart-загрузка файла на анализ схемы (Smart-tables Фаза 4). apiClient
+ * умеет только JSON, поэтому делаем raw `fetch` с FormData (поле `file`),
+ * сохраняя cookie-сессию и заголовок X-Org-Id. Паттерн повторяет
+ * `documentsApi.upload`.
+ */
+async function importAnalyzeMultipart(
+  orgId: string,
+  file: File,
+): Promise<ImportAnalyzeResult> {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+  const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/tables/import/analyze`;
+  const form = new FormData();
+  form.append('file', file);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Org-Id': orgId },
+    body: form,
+  });
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as {
+        error?: { code?: string; message?: string };
+      };
+      if (body?.error?.message) message = body.error.message;
+      if (body?.error?.code) code = body.error.code;
+    } catch {
+      // тело не JSON — оставляем дефолтные code/message
+    }
+    throw new ApiError({ code, message });
+  }
+  return (await res.json()) as ImportAnalyzeResult;
+}
 
 export const tablesApi = {
   // ─── Tables ───────────────────────────────────────────────────────────
@@ -66,6 +114,52 @@ export const tablesApi = {
 
   create: (orgId: string, body: CreateTableBodyApi) =>
     apiClient.post<TableApi>(`/api/v1/tables`, body, {
+      headers: orgHeaders(orgId),
+    }),
+
+  /**
+   * Smart-tables Text-to-Schema (Фаза 1) — создать таблицу из
+   * (возможно отредактированной) сгенерированной схемы.
+   * `POST /api/v1/tables/from-schema` за feature-flag
+   * `feature.tables_text_to_schema` (off → 403
+   * `feature_tables_text_to_schema_disabled`). Инференс схемы делает
+   * Concierge через свой tool — отдельный front-метод не нужен.
+   */
+  createFromSchema: (orgId: string, body: InferredTableSchema) =>
+    apiClient.post<TableApi>(`/api/v1/tables/from-schema`, body, {
+      headers: orgHeaders(orgId),
+    }),
+
+  /**
+   * Smart-tables auto-creation (Фаза 4) — анализ загруженного файла
+   * (Excel/CSV). multipart, поле `file`. Идём не через apiClient (он
+   * JSON-only), но соблюдаем те же headers (X-Org-Id) и cookie-сессию —
+   * паттерн как у `documentsApi.upload`.
+   * `POST /api/v1/tables/import/analyze`.
+   */
+  importAnalyze: (orgId: string, file: File) =>
+    importAnalyzeMultipart(orgId, file),
+
+  /**
+   * Smart-tables auto-creation (Фаза 4) — создать новую таблицу или слить
+   * со существующей по результату анализа. `schema` и `rows` берутся из
+   * ответа `importAnalyze` без изменений.
+   * `POST /api/v1/tables/import/commit`.
+   */
+  importCommit: (
+    orgId: string,
+    body: {
+      mode: 'create' | 'merge';
+      targetTableId?: string;
+      schema: InferredTableSchema;
+      rows: string[][];
+    },
+  ) =>
+    apiClient.post<{
+      tableId: string;
+      rowsCreated: number;
+      entitiesLinked: number;
+    }>(`/api/v1/tables/import/commit`, body, {
       headers: orgHeaders(orgId),
     }),
 
@@ -234,6 +328,72 @@ export const tableViewsApi = {
   remove: (orgId: string, tableId: string, viewId: string) =>
     apiClient.del<{ id: string }>(
       `/api/v1/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * NL Saved Views (Фаза 5) — конвертирует естественно-языковой запрос
+   * пользователя в JSON-фильтр таблицы. Backend прогоняет запрос через LLM,
+   * валидирует условия против реальной схемы колонок и кэширует результат в
+   * Redis (`cached: true` — попадание в кэш).
+   *
+   * `POST /api/v1/tables/:tableId/semantic-filter` body `{ nlQuery }`.
+   * Контракт — `backend/src/modules/tables/dto/tables.dto.ts`
+   * (`SemanticFilterResultDto`). Фронт применяет `filters` к строкам
+   * клиент-сайд (см. `applyFilters` в `domain/table.ts`).
+   */
+  semanticFilter: (orgId: string, tableId: string, nlQuery: string) =>
+    apiClient.post<{ filters: TableFilterCondition[]; cached: boolean }>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/semantic-filter`,
+      { nlQuery },
+      { headers: orgHeaders(orgId) },
+    ),
+};
+
+/**
+ * Provenance (audit-link) + очередь подтверждений правок — Фаза 3
+ * smart-tables (Event-to-Cells).
+ *
+ *   GET  /api/v1/tables/rows/:rowId/provenance        → { items: CellProvenanceApi[] }
+ *   POST /api/v1/tables/cell-provenance/:id/undo      → { rolledBack: boolean }
+ *   GET  /api/v1/tables/pending-patches?tableId=      → { items: PendingPatchApi[] }
+ *   POST /api/v1/tables/pending-patches/:id/decide    → { status: string }
+ *
+ * Все за CookieAuthGuard + TenantGuard (заголовок `X-Org-Id`).
+ * Контракт backend — `backend/src/modules/tables/controllers/pending-patches.controller.ts`.
+ */
+export const tableProvenanceApi = {
+  /** Провенансы значений ячеек строки (источники авто-правок). */
+  getRowProvenance: (orgId: string, rowId: string) =>
+    apiClient.get<{ items: CellProvenanceApi[] }>(
+      `/api/v1/tables/rows/${encodeURIComponent(rowId)}/provenance`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Откатить авто-правку ячейки (восстановить previousValue). */
+  undoCellProvenance: (orgId: string, provenanceId: string) =>
+    apiClient.post<{ rolledBack: boolean }>(
+      `/api/v1/tables/cell-provenance/${encodeURIComponent(provenanceId)}/undo`,
+      undefined,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Список правок ячеек на подтверждении (опц. фильтр по таблице). */
+  listPendingPatches: (orgId: string, tableId: string) =>
+    apiClient.get<{ items: PendingPatchApi[] }>(
+      `/api/v1/tables/pending-patches${buildQuery({ tableId })}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Подтвердить или отклонить правку ячейки. */
+  decidePendingPatch: (
+    orgId: string,
+    patchId: string,
+    decision: 'approve' | 'reject',
+  ) =>
+    apiClient.post<{ status: string }>(
+      `/api/v1/tables/pending-patches/${encodeURIComponent(patchId)}/decide`,
+      { decision },
       { headers: orgHeaders(orgId) },
     ),
 };

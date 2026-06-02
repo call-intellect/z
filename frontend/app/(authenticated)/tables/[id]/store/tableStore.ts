@@ -17,16 +17,28 @@
  * состояния). store берёт уже загруженные данные через `hydrate(...)`.
  */
 
+import { toast } from 'sonner';
 import { create } from 'zustand';
 
-import { tableViewsApi, tablesApi } from '@/api/tables.api';
+import { ApiError } from '@/api/api-error';
+import {
+  tableProvenanceApi,
+  tableViewsApi,
+  tablesApi,
+} from '@/api/tables.api';
 import type { TablePropTypeApi } from '@/api/types/tables';
 import {
+  applyFilters,
+  cellProvenanceFromApi,
+  pendingPatchFromApi,
   propertyFromApi,
   rowFromApi,
   tableViewConfigToApi,
   tableViewFromApi,
+  type CellProvenanceDomain,
+  type PendingPatchDomain,
   type TableDomain,
+  type TableFilterCondition,
   type TablePropertyDomain,
   type TableRowDomain,
   type TableViewConfig,
@@ -116,6 +128,14 @@ export interface TableStoreState {
   setDraftPropOrder: (propertyIds: string[]) => void;
   /** Локально сменить плотность строк. */
   setRowHeight: (rowHeight: 'compact' | 'default' | 'tall') => void;
+  /**
+   * Локально задать условия фильтра (NL Saved Views, Фаза 5). Передаётся
+   * результат `semanticFilter` или пустой массив для сброса. Выставляет
+   * `hasUnsavedChanges`, грид перерисуется через `selectVisibleRows`.
+   */
+  setDraftFilters: (filters: TableFilterCondition[]) => void;
+  /** Очистить фильтры (сброс среза до полного набора строк). */
+  clearDraftFilters: () => void;
   /** Сохранить текущий draft как новый вид. */
   saveCurrentAsView: (
     name: string,
@@ -125,6 +145,36 @@ export interface TableStoreState {
   saveChangesToCurrentView: () => Promise<TableViewDomain | null>;
   /** Удалить вид. Если был активный — сбросить currentView. */
   deleteView: (viewId: string) => Promise<void>;
+
+  // ─── Pending-patches + provenance (Фаза 3, Event-to-Cells) ─────────
+  /** Правки ячеек, ожидающие подтверждения (вся таблица). */
+  pendingPatches: PendingPatchDomain[];
+  /** Кол-во pending-правок (для бейджа в шапке). */
+  pendingCount: number;
+  /** Загрузить очередь подтверждений (вызывается при загрузке таблицы). */
+  loadPendingPatches: () => Promise<void>;
+  /** Принять одну правку: применить proposedValue в ячейку + убрать из очереди. */
+  approvePatch: (patchId: string) => Promise<void>;
+  /** Отклонить одну правку: убрать из очереди без изменения ячейки. */
+  rejectPatch: (patchId: string) => Promise<void>;
+  /** Принять все pending-правки разом. */
+  approveAllPatches: () => Promise<void>;
+  /** Отклонить все pending-правки разом. */
+  rejectAllPatches: () => Promise<void>;
+  /**
+   * Загрузить провенансы строки (источники авто-правок ячеек).
+   * Не кладёт в store — возвращает напрямую (карточка строки держит локально).
+   * Скрывает откатанные записи (rolledBackAt != null).
+   */
+  loadRowProvenance: (rowId: string) => Promise<CellProvenanceDomain[]>;
+  /** Откатить авто-правку ячейки (восстановить previousValue). */
+  undoCellProvenance: (provenanceId: string) => Promise<boolean>;
+  /**
+   * Локально записать значение ячейки в store БЕЗ PATCH на backend.
+   * Нужно после undo провенанса: backend уже восстановил previousValue в
+   * cells, поэтому повторный PATCH не нужен — только синхронизация состояния.
+   */
+  setRowCellLocal: (rowId: string, propertyId: string, value: unknown) => void;
 }
 
 // ─────────────────────────── module-level debounce-bucket ────────────────
@@ -142,6 +192,19 @@ interface PendingPageContent {
 const pendingPageContent: Map<string, PendingPageContent> = new Map();
 
 const PAGE_CONTENT_DEBOUNCE_MS = 500;
+
+/**
+ * Грейсфул-обработка 422 `table_cell_readonly` (Smart-tables Фаза 2).
+ * Возвращает true, если это именно read-only-ошибка (тогда вызывающий код
+ * откатывает оптимистичное обновление и не пишет mutationError-баннер —
+ * сообщение уже показано тостом).
+ */
+function isReadonlyCellError(e: unknown): boolean {
+  return e instanceof ApiError && e.code === 'table_cell_readonly';
+}
+
+const READONLY_TOAST =
+  'Эту ячейку нельзя изменить вручную — значение приходит из памяти компании';
 
 function clearPendingFor(rowId: string): void {
   const p = pending.get(rowId);
@@ -205,6 +268,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   currentView: null,
   draftConfig: {},
   hasUnsavedChanges: false,
+  pendingPatches: [],
+  pendingCount: 0,
 
   hydrate: ({ orgId, tableId, table, properties, rows }) => {
     set({
@@ -234,6 +299,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       currentView: null,
       draftConfig: {},
       hasUnsavedChanges: false,
+      pendingPatches: [],
+      pendingCount: 0,
     });
   },
 
@@ -293,6 +360,27 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   setRowHeight: (rowHeight) => {
     const { draftConfig, currentView } = get();
     const next: TableViewConfig = { ...draftConfig, rowHeight };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  setDraftFilters: (filters) => {
+    const { draftConfig, currentView } = get();
+    const next: TableViewConfig = {
+      ...draftConfig,
+      filters: filters.length > 0 ? filters : undefined,
+    };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  clearDraftFilters: () => {
+    const { draftConfig, currentView } = get();
+    const next: TableViewConfig = { ...draftConfig, filters: undefined };
     set({
       draftConfig: next,
       hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
@@ -420,6 +508,17 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
             rows: get().rows.map((r) => (r.id === rowId ? domain : r)),
           });
         } catch (e) {
+          // Read-only ячейка (значение из памяти компании): откатываем
+          // оптимистичное изменение и показываем понятный тост, без баннера.
+          if (isReadonlyCellError(e)) {
+            toast.error(READONLY_TOAST);
+            set({
+              rows: get().rows.map((r) =>
+                r.id === rowId ? { ...r, cells: prev.cells } : r,
+              ),
+            });
+            return;
+          }
           set({
             mutationError:
               e instanceof Error
@@ -683,6 +782,139 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       });
     }
   },
+
+  // ─── Pending-patches + provenance (Фаза 3) ──────────────────────────
+  loadPendingPatches: async () => {
+    const { orgId, tableId } = get();
+    if (!orgId || !tableId) return;
+    try {
+      const res = await tableProvenanceApi.listPendingPatches(orgId, tableId);
+      const items = res.items.map(pendingPatchFromApi);
+      set({ pendingPatches: items, pendingCount: items.length });
+    } catch {
+      // Тихо: очередь подтверждений вторична, не ломаем загрузку таблицы.
+    }
+  },
+
+  approvePatch: async (patchId) => {
+    const { orgId, pendingPatches, rows } = get();
+    if (!orgId) return;
+    const patch = pendingPatches.find((p) => p.id === patchId);
+    if (!patch) return;
+
+    // Optimistic: убираем из очереди + применяем proposedValue в ячейку.
+    const nextPending = pendingPatches.filter((p) => p.id !== patchId);
+    set({
+      pendingPatches: nextPending,
+      pendingCount: nextPending.length,
+      rows: rows.map((r) =>
+        r.id === patch.tableRowId
+          ? {
+              ...r,
+              cells: { ...r.cells, [patch.propertyId]: patch.proposedValue },
+            }
+          : r,
+      ),
+    });
+
+    try {
+      await tableProvenanceApi.decidePendingPatch(orgId, patchId, 'approve');
+      toast.success('Правка принята');
+    } catch (e) {
+      // Откат: возвращаем правку в очередь и старое значение в ячейку.
+      set({
+        pendingPatches: [...get().pendingPatches, patch],
+        pendingCount: get().pendingCount + 1,
+        rows: get().rows.map((r) =>
+          r.id === patch.tableRowId
+            ? {
+                ...r,
+                cells: { ...r.cells, [patch.propertyId]: patch.currentValue },
+              }
+            : r,
+        ),
+      });
+      toast.error(
+        e instanceof Error ? e.message : 'Не удалось принять правку',
+      );
+    }
+  },
+
+  rejectPatch: async (patchId) => {
+    const { orgId, pendingPatches } = get();
+    if (!orgId) return;
+    const patch = pendingPatches.find((p) => p.id === patchId);
+    if (!patch) return;
+
+    const nextPending = pendingPatches.filter((p) => p.id !== patchId);
+    set({ pendingPatches: nextPending, pendingCount: nextPending.length });
+
+    try {
+      await tableProvenanceApi.decidePendingPatch(orgId, patchId, 'reject');
+      toast.success('Правка отклонена');
+    } catch (e) {
+      set({
+        pendingPatches: [...get().pendingPatches, patch],
+        pendingCount: get().pendingCount + 1,
+      });
+      toast.error(
+        e instanceof Error ? e.message : 'Не удалось отклонить правку',
+      );
+    }
+  },
+
+  approveAllPatches: async () => {
+    const { pendingPatches, approvePatch } = get();
+    // Снимок id — список меняется по ходу (approvePatch мутирует state).
+    const ids = pendingPatches.map((p) => p.id);
+    for (const id of ids) {
+      // Последовательно: backend decide идемпотентен per-patch, а
+      // последовательность даёт предсказуемый порядок применения в cells.
+      await approvePatch(id);
+    }
+  },
+
+  rejectAllPatches: async () => {
+    const { pendingPatches, rejectPatch } = get();
+    const ids = pendingPatches.map((p) => p.id);
+    for (const id of ids) {
+      await rejectPatch(id);
+    }
+  },
+
+  loadRowProvenance: async (rowId) => {
+    const { orgId } = get();
+    if (!orgId) return [];
+    try {
+      const res = await tableProvenanceApi.getRowProvenance(orgId, rowId);
+      // Скрываем откатанные записи — у них нет актуального источника значения.
+      return res.items
+        .map(cellProvenanceFromApi)
+        .filter((p) => p.rolledBackAt === null);
+    } catch {
+      return [];
+    }
+  },
+
+  undoCellProvenance: async (provenanceId) => {
+    const { orgId } = get();
+    if (!orgId) return false;
+    const res = await tableProvenanceApi.undoCellProvenance(
+      orgId,
+      provenanceId,
+    );
+    return res.rolledBack === true;
+  },
+
+  setRowCellLocal: (rowId, propertyId, value) => {
+    set({
+      rows: get().rows.map((r) =>
+        r.id === rowId
+          ? { ...r, cells: { ...r.cells, [propertyId]: value } }
+          : r,
+      ),
+    });
+  },
 }));
 
 // ─────────────────────────── selectors (view-aware) ──────────────────────
@@ -716,14 +948,20 @@ export function selectVisibleProperties(
 }
 
 /**
- * Возвращает строки с учётом draftConfig.sorts (Фаза 3 — минимальная
- * поддержка: equality-сравнение для строковых/числовых значений; для
- * чего сложнее — будет Фаза 4). filters не применяются (Фаза 4+).
+ * Возвращает строки с учётом draftConfig:
+ *   1. фильтры (`draftConfig.filters`) — клиент-сайд, AND-семантика (Фаза 5,
+ *      NL Saved Views). Полный набор операторов (eq/neq/gt/lt/contains/in/
+ *      empty/before/after/older_than) — см. `applyFilters` в `domain/table.ts`.
+ *   2. сортировки (`draftConfig.sorts`) — equality для строк/чисел (Фаза 3).
+ *
+ * Карточка строки (RowDetail) и панель подтверждений работают по полному
+ * `s.rows`, поэтому фильтр влияет только на отрисовку грида.
  */
 export function selectVisibleRows(s: TableStoreState): TableRowDomain[] {
+  // 1. Фильтры (AND) — отбираем подмножество строк.
+  let rows = applyFilters(s.rows, s.draftConfig.filters, s.properties);
+  // 2. Сорты последовательно (последний — самый приоритетный).
   const sorts = s.draftConfig.sorts ?? [];
-  let rows = [...s.rows];
-  // Применяем сорты последовательно (последний — самый приоритетный).
   for (let i = sorts.length - 1; i >= 0; i--) {
     const sort = sorts[i]!;
     const dir = sort.direction === 'desc' ? -1 : 1;

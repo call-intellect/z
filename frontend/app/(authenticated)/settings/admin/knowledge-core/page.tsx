@@ -1,9 +1,10 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { KnowledgeCoreClient } from './KnowledgeCoreClient';
-
-export const metadata: Metadata = { title: 'Org-Admin — Ядро знаний' };
-
-export default function KnowledgeCorePage() {
-  return <KnowledgeCoreClient />;
+/**
+ * Старый путь `/settings/admin/knowledge-core` («Ядро знаний») удалён из
+ * клиента — это была инженерная отладка + утечка себестоимости LLM,
+ * владельцу Org не нужна (ТЗ 2026-06-02). Редиректим на «Админку компании».
+ */
+export default function KnowledgeCoreRedirectPage(): never {
+  redirect('/company-admin');
 }

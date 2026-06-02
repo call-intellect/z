@@ -1,0 +1,284 @@
+[
+  {
+    "id": "sales-01",
+    "category": "sales",
+    "specificity": "mid",
+    "nlPrompt": "нужна таблица клиентов с контактами и стадией сделки",
+    "golden": {
+      "name": "Клиенты",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Контакт", "type": "person", "isPrimary": false },
+        { "name": "Телефон", "type": "phone", "isPrimary": false },
+        { "name": "Стадия", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-02",
+    "category": "sales",
+    "specificity": "low",
+    "nlPrompt": "таблица сделок",
+    "golden": {
+      "name": "Сделки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название сделки", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Стадия", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-03",
+    "category": "sales",
+    "specificity": "low",
+    "nlPrompt": "сделай таблицу лидов",
+    "golden": {
+      "name": "Лиды",
+      "entitySync": null,
+      "properties": [
+        { "name": "Имя", "type": "text", "isPrimary": true },
+        { "name": "Email", "type": "email", "isPrimary": false },
+        { "name": "Источник", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-04",
+    "category": "sales",
+    "specificity": "high",
+    "nlPrompt": "воронка продаж: компания, контактное лицо, сумма сделки, стадия, вероятность закрытия в процентах, ответственный менеджер, дата ожидаемого закрытия и источник лида",
+    "golden": {
+      "name": "Воронка продаж",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Компания", "type": "text", "isPrimary": true },
+        { "name": "Контактное лицо", "type": "person", "isPrimary": false },
+        { "name": "Сумма сделки", "type": "currency", "isPrimary": false },
+        { "name": "Стадия", "type": "status", "isPrimary": false },
+        { "name": "Вероятность закрытия", "type": "percent", "isPrimary": false },
+        { "name": "Менеджер", "type": "person", "isPrimary": false },
+        { "name": "Дата закрытия", "type": "date", "isPrimary": false },
+        { "name": "Источник лида", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-05",
+    "category": "sales",
+    "specificity": "mid",
+    "nlPrompt": "таблица коммерческих предложений: клиент, сумма, статус и дата отправки",
+    "golden": {
+      "name": "Коммерческие предложения",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Клиент", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Дата отправки", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-06",
+    "category": "sales",
+    "specificity": "mid",
+    "nlPrompt": "таблица звонков менеджеров с клиентом, датой звонка и результатом",
+    "golden": {
+      "name": "Звонки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Клиент", "type": "text", "isPrimary": true },
+        { "name": "Менеджер", "type": "person", "isPrimary": false },
+        { "name": "Дата звонка", "type": "date", "isPrimary": false },
+        { "name": "Результат", "type": "selectSingle", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-07",
+    "category": "sales",
+    "specificity": "low",
+    "nlPrompt": "таблица контрагентов",
+    "golden": {
+      "name": "Контрагенты",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "ИНН", "type": "text", "isPrimary": false },
+        { "name": "Сайт", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-08",
+    "category": "sales",
+    "specificity": "high",
+    "nlPrompt": "таблица отгрузок: номер заказа, клиент, товар, количество, сумма, дата отгрузки, статус доставки и трек-номер",
+    "golden": {
+      "name": "Отгрузки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Номер заказа", "type": "text", "isPrimary": true },
+        { "name": "Клиент", "type": "text", "isPrimary": false },
+        { "name": "Товар", "type": "text", "isPrimary": false },
+        { "name": "Количество", "type": "number", "isPrimary": false },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Дата отгрузки", "type": "date", "isPrimary": false },
+        { "name": "Статус доставки", "type": "status", "isPrimary": false },
+        { "name": "Трек-номер", "type": "text", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-09",
+    "category": "sales",
+    "specificity": "mid",
+    "nlPrompt": "таблица договоров с контрагентом, суммой, датой подписания и статусом",
+    "golden": {
+      "name": "Договоры",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Номер договора", "type": "text", "isPrimary": true },
+        { "name": "Контрагент", "type": "text", "isPrimary": false },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Дата подписания", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-10",
+    "category": "sales",
+    "specificity": "low",
+    "nlPrompt": "таблица возражений клиентов",
+    "golden": {
+      "name": "Возражения",
+      "entitySync": null,
+      "properties": [
+        { "name": "Возражение", "type": "text", "isPrimary": true },
+        { "name": "Тип", "type": "selectSingle", "isPrimary": false },
+        { "name": "Ответ", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-11",
+    "category": "sales",
+    "specificity": "high",
+    "nlPrompt": "таблица квартальных планов продаж по менеджерам: менеджер, квартал, план в рублях, факт в рублях, выполнение в процентах и комментарий руководителя",
+    "golden": {
+      "name": "Планы продаж",
+      "entitySync": null,
+      "properties": [
+        { "name": "Менеджер", "type": "person", "isPrimary": true },
+        { "name": "Квартал", "type": "selectSingle", "isPrimary": false },
+        { "name": "План", "type": "currency", "isPrimary": false },
+        { "name": "Факт", "type": "currency", "isPrimary": false },
+        { "name": "Выполнение", "type": "percent", "isPrimary": false },
+        { "name": "Комментарий", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-12",
+    "category": "sales",
+    "specificity": "mid",
+    "nlPrompt": "таблица демо-встреч с клиентом, датой и итогом встречи",
+    "golden": {
+      "name": "Демо-встречи",
+      "entitySync": { "type": "meeting" },
+      "properties": [
+        { "name": "Клиент", "type": "text", "isPrimary": true },
+        { "name": "Дата", "type": "date", "isPrimary": false },
+        { "name": "Итог", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-13",
+    "category": "sales",
+    "specificity": "low",
+    "nlPrompt": "таблица скидок",
+    "golden": {
+      "name": "Скидки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Размер скидки", "type": "percent", "isPrimary": false },
+        { "name": "Активна", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-14",
+    "category": "sales",
+    "specificity": "high",
+    "nlPrompt": "пайплайн партнёрств: партнёр, тип партнёрства, статус, ответственный, потенциальная выручка, дата старта и ссылка на соглашение",
+    "golden": {
+      "name": "Партнёрства",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Партнёр", "type": "text", "isPrimary": true },
+        { "name": "Тип партнёрства", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Потенциальная выручка", "type": "currency", "isPrimary": false },
+        { "name": "Дата старта", "type": "date", "isPrimary": false },
+        { "name": "Соглашение", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-15",
+    "category": "sales",
+    "specificity": "mid",
+    "nlPrompt": "таблица входящих заявок с сайта: имя, email, телефон и тема обращения",
+    "golden": {
+      "name": "Заявки с сайта",
+      "entitySync": null,
+      "properties": [
+        { "name": "Имя", "type": "text", "isPrimary": true },
+        { "name": "Email", "type": "email", "isPrimary": false },
+        { "name": "Телефон", "type": "phone", "isPrimary": false },
+        { "name": "Тема обращения", "type": "text", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-16",
+    "category": "sales",
+    "specificity": "low",
+    "nlPrompt": "таблица счетов",
+    "golden": {
+      "name": "Счета",
+      "entitySync": null,
+      "properties": [
+        { "name": "Номер счёта", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Оплачен", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "sales-17",
+    "category": "sales",
+    "specificity": "high",
+    "nlPrompt": "таблица тендеров: название, заказчик, начальная цена, дата подачи, статус участия, ответственный и ссылка на закупку",
+    "golden": {
+      "name": "Тендеры",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Название", "type": "text", "isPrimary": true },
+        { "name": "Заказчик", "type": "text", "isPrimary": false },
+        { "name": "Начальная цена", "type": "currency", "isPrimary": false },
+        { "name": "Дата подачи", "type": "date", "isPrimary": false },
+        { "name": "Статус участия", "type": "status", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Ссылка на закупку", "type": "url", "isPrimary": false }
+      ]
+    }
+  }
+]

@@ -1,11 +1,12 @@
 'use client';
 
-import { Plus, Table2 } from 'lucide-react';
+import { Bell, Plus, Table2 } from 'lucide-react';
 
 import type { TableDomain } from '@/domain/table';
 import { Button } from '@/ui/shadcn/button';
 
 import { AddColumnButton } from './AddColumnButton';
+import { SemanticFilterBar } from './SemanticFilterBar';
 import { ViewSelector } from './ViewSelector';
 import type { TablePropType } from '@/domain/table';
 
@@ -23,11 +24,17 @@ export function TableHeader({
   onAddRow,
   onAddColumn,
   isMutating,
+  pendingCount,
+  onOpenPending,
 }: {
   table: TableDomain;
   onAddRow: () => Promise<void> | void;
   onAddColumn: (type: TablePropType, name: string) => Promise<void> | void;
   isMutating: boolean;
+  /** Кол-во правок ячеек, ожидающих подтверждения (Фаза 3). */
+  pendingCount: number;
+  /** Открыть панель очереди подтверждений. */
+  onOpenPending: () => void;
 }) {
   return (
     <div className="mb-4 flex flex-col gap-3">
@@ -54,6 +61,18 @@ export function TableHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {pendingCount > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenPending}
+              aria-label={`Правки на подтверждении: ${pendingCount}`}
+              className="border-warning/40 text-warning hover:bg-warning/10"
+            >
+              <Bell className="h-4 w-4" />
+              Правки на подтверждении: {pendingCount}
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             size="sm"
@@ -69,6 +88,7 @@ export function TableHeader({
         </div>
       </div>
       <ViewSelector tableId={table.id} />
+      <SemanticFilterBar tableId={table.id} />
     </div>
   );
 }

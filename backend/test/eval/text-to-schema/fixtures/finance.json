@@ -1,0 +1,284 @@
+[
+  {
+    "id": "finance-01",
+    "category": "finance",
+    "specificity": "low",
+    "nlPrompt": "таблица расходов",
+    "golden": {
+      "name": "Расходы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Статья", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Дата", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-02",
+    "category": "finance",
+    "specificity": "low",
+    "nlPrompt": "таблица доходов",
+    "golden": {
+      "name": "Доходы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Источник", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Дата", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-03",
+    "category": "finance",
+    "specificity": "mid",
+    "nlPrompt": "таблица счетов на оплату с контрагентом, суммой, сроком оплаты и статусом",
+    "golden": {
+      "name": "Счета на оплату",
+      "entitySync": null,
+      "properties": [
+        { "name": "Номер счёта", "type": "text", "isPrimary": true },
+        { "name": "Контрагент", "type": "text", "isPrimary": false },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Срок оплаты", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-04",
+    "category": "finance",
+    "specificity": "high",
+    "nlPrompt": "бюджет по отделам: отдел, статья бюджета, план на квартал, факт расхода, отклонение в процентах, ответственный и комментарий",
+    "golden": {
+      "name": "Бюджет по отделам",
+      "entitySync": null,
+      "properties": [
+        { "name": "Отдел", "type": "text", "isPrimary": true },
+        { "name": "Статья бюджета", "type": "selectSingle", "isPrimary": false },
+        { "name": "План на квартал", "type": "currency", "isPrimary": false },
+        { "name": "Факт расхода", "type": "currency", "isPrimary": false },
+        { "name": "Отклонение", "type": "percent", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false },
+        { "name": "Комментарий", "type": "longtext", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-05",
+    "category": "finance",
+    "specificity": "mid",
+    "nlPrompt": "таблица авансовых отчётов: сотрудник, сумма аванса, потрачено и остаток",
+    "golden": {
+      "name": "Авансовые отчёты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Сумма аванса", "type": "currency", "isPrimary": false },
+        { "name": "Потрачено", "type": "currency", "isPrimary": false },
+        { "name": "Остаток", "type": "currency", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-06",
+    "category": "finance",
+    "specificity": "low",
+    "nlPrompt": "таблица платежей",
+    "golden": {
+      "name": "Платежи",
+      "entitySync": null,
+      "properties": [
+        { "name": "Назначение", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Оплачено", "type": "checkbox", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-07",
+    "category": "finance",
+    "specificity": "high",
+    "nlPrompt": "таблица подписок на сервисы: сервис, тариф, ежемесячная стоимость, валюта, дата следующего списания, автопродление и ответственный",
+    "golden": {
+      "name": "Подписки",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сервис", "type": "text", "isPrimary": true },
+        { "name": "Тариф", "type": "selectSingle", "isPrimary": false },
+        { "name": "Ежемесячная стоимость", "type": "currency", "isPrimary": false },
+        { "name": "Валюта", "type": "selectSingle", "isPrimary": false },
+        { "name": "Дата списания", "type": "date", "isPrimary": false },
+        { "name": "Автопродление", "type": "checkbox", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-08",
+    "category": "finance",
+    "specificity": "mid",
+    "nlPrompt": "таблица возвратов клиентам с клиентом, суммой возврата, причиной и статусом",
+    "golden": {
+      "name": "Возвраты",
+      "entitySync": null,
+      "properties": [
+        { "name": "Клиент", "type": "text", "isPrimary": true },
+        { "name": "Сумма возврата", "type": "currency", "isPrimary": false },
+        { "name": "Причина", "type": "selectSingle", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-09",
+    "category": "finance",
+    "specificity": "low",
+    "nlPrompt": "таблица налогов",
+    "golden": {
+      "name": "Налоги",
+      "entitySync": null,
+      "properties": [
+        { "name": "Налог", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Срок уплаты", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-10",
+    "category": "finance",
+    "specificity": "high",
+    "nlPrompt": "движение денежных средств: дата операции, тип (приход/расход), категория, сумма, контрагент, счёт и баланс после операции",
+    "golden": {
+      "name": "Движение денежных средств",
+      "entitySync": null,
+      "properties": [
+        { "name": "Операция", "type": "text", "isPrimary": true },
+        { "name": "Дата операции", "type": "date", "isPrimary": false },
+        { "name": "Тип", "type": "selectSingle", "isPrimary": false },
+        { "name": "Категория", "type": "selectSingle", "isPrimary": false },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Контрагент", "type": "text", "isPrimary": false },
+        { "name": "Баланс после", "type": "currency", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-11",
+    "category": "finance",
+    "specificity": "mid",
+    "nlPrompt": "таблица зарплат: сотрудник, оклад, премия и итого к выплате",
+    "golden": {
+      "name": "Зарплаты",
+      "entitySync": { "type": "person" },
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Оклад", "type": "currency", "isPrimary": false },
+        { "name": "Премия", "type": "currency", "isPrimary": false },
+        { "name": "Итого к выплате", "type": "currency", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-12",
+    "category": "finance",
+    "specificity": "low",
+    "nlPrompt": "таблица инвойсов",
+    "golden": {
+      "name": "Инвойсы",
+      "entitySync": null,
+      "properties": [
+        { "name": "Номер", "type": "text", "isPrimary": true },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-13",
+    "category": "finance",
+    "specificity": "high",
+    "nlPrompt": "таблица инвесторов: инвестор, раунд, сумма инвестиций, доля в процентах, дата сделки, контактное лицо и ссылка на терм-шит",
+    "golden": {
+      "name": "Инвесторы",
+      "entitySync": { "type": "org" },
+      "properties": [
+        { "name": "Инвестор", "type": "text", "isPrimary": true },
+        { "name": "Раунд", "type": "selectSingle", "isPrimary": false },
+        { "name": "Сумма инвестиций", "type": "currency", "isPrimary": false },
+        { "name": "Доля", "type": "percent", "isPrimary": false },
+        { "name": "Дата сделки", "type": "date", "isPrimary": false },
+        { "name": "Контактное лицо", "type": "person", "isPrimary": false },
+        { "name": "Терм-шит", "type": "url", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-14",
+    "category": "finance",
+    "specificity": "mid",
+    "nlPrompt": "таблица дебиторской задолженности с контрагентом, суммой долга и сроком погашения",
+    "golden": {
+      "name": "Дебиторка",
+      "entitySync": null,
+      "properties": [
+        { "name": "Контрагент", "type": "text", "isPrimary": true },
+        { "name": "Сумма долга", "type": "currency", "isPrimary": false },
+        { "name": "Срок погашения", "type": "date", "isPrimary": false },
+        { "name": "Статус", "type": "status", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-15",
+    "category": "finance",
+    "specificity": "low",
+    "nlPrompt": "таблица бюджетов проектов",
+    "golden": {
+      "name": "Бюджеты проектов",
+      "entitySync": null,
+      "properties": [
+        { "name": "Проект", "type": "text", "isPrimary": true },
+        { "name": "Бюджет", "type": "currency", "isPrimary": false },
+        { "name": "Освоено", "type": "percent", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-16",
+    "category": "finance",
+    "specificity": "mid",
+    "nlPrompt": "таблица командировочных расходов с сотрудником, городом, суммой и датой",
+    "golden": {
+      "name": "Командировочные",
+      "entitySync": null,
+      "properties": [
+        { "name": "Сотрудник", "type": "person", "isPrimary": true },
+        { "name": "Город", "type": "text", "isPrimary": false },
+        { "name": "Сумма", "type": "currency", "isPrimary": false },
+        { "name": "Дата", "type": "date", "isPrimary": false }
+      ]
+    }
+  },
+  {
+    "id": "finance-17",
+    "category": "finance",
+    "specificity": "high",
+    "nlPrompt": "таблица финансовых KPI: показатель, единица, план на месяц, факт, выполнение в процентах, тренд и ответственный за метрику",
+    "golden": {
+      "name": "Финансовые KPI",
+      "entitySync": null,
+      "properties": [
+        { "name": "Показатель", "type": "text", "isPrimary": true },
+        { "name": "Единица", "type": "selectSingle", "isPrimary": false },
+        { "name": "План на месяц", "type": "number", "isPrimary": false },
+        { "name": "Факт", "type": "number", "isPrimary": false },
+        { "name": "Выполнение", "type": "percent", "isPrimary": false },
+        { "name": "Тренд", "type": "selectSingle", "isPrimary": false },
+        { "name": "Ответственный", "type": "person", "isPrimary": false }
+      ]
+    }
+  }
+]

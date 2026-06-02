@@ -16,13 +16,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { Plus, Table2 } from 'lucide-react';
+import { FileSpreadsheet, Plus, Sparkles, Table2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { tablesApi } from '@/api/tables.api';
 import type { TableApi } from '@/api/types/tables';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/ui/shadcn/button';
+import { CONCIERGE_OPEN_EVENT } from '@/ui/concierge/ConciergeFloatingButton';
+
+import { ImportFromFileDialog } from './components/ImportFromFileDialog';
 
 import {
   AdminError,
@@ -53,6 +56,7 @@ function TablesListContent({ orgId }: { orgId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -93,6 +97,18 @@ function TablesListContent({ orgId }: { orgId: string }) {
     }
   }, [orgId, router]);
 
+  // «Спросить Кору» — открываем Concierge с префилл-сообщением. Сам инференс
+  // схемы делает Concierge через свой tool `infer_table_schema`. Гейтинг
+  // (feature.tables_text_to_schema) на backend: если выключено — ассистент
+  // ответит, что функция отключена (фронт не знает этот флаг).
+  const onAskConcierge = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent(CONCIERGE_OPEN_EVENT, {
+        detail: { prefill: 'Помогите создать таблицу для ' },
+      }),
+    );
+  }, []);
+
   if (isLoading && !items) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;
   if (error) return <AdminError message={error} onRetry={load} />;
@@ -111,11 +127,36 @@ function TablesListContent({ orgId }: { orgId: string }) {
               : `Всего ${total} · показано ${items.length}`}
           </p>
         </div>
-        <Button onClick={onCreate} disabled={isCreating} size="sm">
-          <Plus className="h-4 w-4" />
-          Создать таблицу
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            onClick={onAskConcierge}
+            variant="secondary"
+            size="sm"
+          >
+            <Sparkles className="h-4 w-4" />
+            Спросить Кору
+          </Button>
+          <Button
+            onClick={() => setImportOpen(true)}
+            variant="secondary"
+            size="sm"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Из файла
+          </Button>
+          <Button onClick={onCreate} disabled={isCreating} size="sm">
+            <Plus className="h-4 w-4" />
+            Создать таблицу
+          </Button>
+        </div>
       </header>
+
+      {importOpen ? (
+        <ImportFromFileDialog
+          orgId={orgId}
+          onClose={() => setImportOpen(false)}
+        />
+      ) : null}
 
       {items.length === 0 ? (
         <EmptyTablesList onCreate={onCreate} isCreating={isCreating} />
@@ -173,8 +214,19 @@ function TableCard({ table }: { table: TableApi }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-medium text-fg-primary group-hover:text-fg-primary">
-            {table.name}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-base font-medium text-fg-primary group-hover:text-fg-primary">
+              {table.name}
+            </span>
+            {table.isSystem ? (
+              <span
+                className="shrink-0 text-sm leading-none"
+                aria-label="Системная таблица"
+                title="Системная таблица — её можно архивировать, но не удалить навсегда"
+              >
+                🔒
+              </span>
+            ) : null}
           </div>
           <div className="mt-0.5 text-xs text-fg-tertiary">
             Обновлено {updatedText}

@@ -24,6 +24,7 @@ import {
 } from '@app/(admin)/admin/AdminStateViews';
 
 import { EmptyState } from './components/EmptyState';
+import { PendingPatchesPanel } from './components/PendingPatchesPanel';
 import { RowDetail } from './components/RowDetail';
 import { TableHeader } from './components/TableHeader';
 import {
@@ -86,6 +87,7 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
   // Hydrate store при первой успешной загрузке всех трёх SWR'ов.
   const hydrate = useTableStore((s) => s.hydrate);
   const reset = useTableStore((s) => s.reset);
+  const loadPendingPatches = useTableStore((s) => s.loadPendingPatches);
   const hydratedKey = useRef<string | null>(null);
   useEffect(() => {
     if (!tableSwr.data || !propsSwr.data || !rowsSwr.data) return;
@@ -99,7 +101,17 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
       rows: rowsSwr.data.items.map(rowFromApi),
     });
     hydratedKey.current = key;
-  }, [orgId, tableId, tableSwr.data, propsSwr.data, rowsSwr.data, hydrate]);
+    // Очередь подтверждений правок (Фаза 3) — после гидрата, тихо.
+    void loadPendingPatches();
+  }, [
+    orgId,
+    tableId,
+    tableSwr.data,
+    propsSwr.data,
+    rowsSwr.data,
+    hydrate,
+    loadPendingPatches,
+  ]);
 
   useEffect(
     () => () => {
@@ -167,6 +179,18 @@ function Loaded() {
   const addColumn = useTableStore((s) => s.addColumn);
   const reorderColumn = useTableStore((s) => s.reorderColumn);
   const reorderRow = useTableStore((s) => s.reorderRow);
+
+  // ─── Очередь подтверждений + провенанс (Фаза 3) ────────────────────
+  const pendingPatches = useTableStore((s) => s.pendingPatches);
+  const pendingCount = useTableStore((s) => s.pendingCount);
+  const approvePatch = useTableStore((s) => s.approvePatch);
+  const rejectPatch = useTableStore((s) => s.rejectPatch);
+  const approveAllPatches = useTableStore((s) => s.approveAllPatches);
+  const rejectAllPatches = useTableStore((s) => s.rejectAllPatches);
+  const loadRowProvenance = useTableStore((s) => s.loadRowProvenance);
+  const undoCellProvenance = useTableStore((s) => s.undoCellProvenance);
+  const setRowCellLocal = useTableStore((s) => s.setRowCellLocal);
+  const [pendingOpen, setPendingOpen] = useState(false);
 
   // ─── Карточка строки (Фаза 2) ──────────────────────────────────────
   const [openRowId, setOpenRowId] = useState<string | null>(null);
@@ -238,6 +262,8 @@ function Loaded() {
           onAddRow={onAddRow}
           onAddColumn={onAddColumn}
           isMutating={isMutating}
+          pendingCount={pendingCount}
+          onOpenPending={() => setPendingOpen(true)}
         />
       </div>
 
@@ -270,7 +296,8 @@ function Loaded() {
       )}
 
       {/* Карточка строки (Фаза 2) — отрисовываем все свойства, включая скрытые
-          view-фильтром, чтобы можно было править любое поле из карточки. */}
+          view-фильтром, чтобы можно было править любое поле из карточки.
+          Provenance (Фаза 3): карточка сама грузит источники авто-правок. */}
       {tableId ? (
         <RowDetail
           open={openRowId !== null}
@@ -282,8 +309,24 @@ function Loaded() {
           rowData={openRow}
           onUpdateCell={onCellEdited}
           onUpdatePageContent={onUpdatePageContent}
+          onLoadProvenance={loadRowProvenance}
+          onUndoProvenance={undoCellProvenance}
+          onApplyCellLocal={setRowCellLocal}
         />
       ) : null}
+
+      {/* Очередь подтверждений правок (Фаза 3, Event-to-Cells). */}
+      <PendingPatchesPanel
+        open={pendingOpen}
+        onClose={() => setPendingOpen(false)}
+        patches={pendingPatches}
+        properties={allProperties}
+        rows={allRows}
+        onApprove={approvePatch}
+        onReject={rejectPatch}
+        onApproveAll={approveAllPatches}
+        onRejectAll={rejectAllPatches}
+      />
     </div>
   );
 }

@@ -8,19 +8,17 @@
  * граф знаний, клоны, чек-ины, дайджесты, чат, уведомления и др.
  * Все данные помечаются externalSource: 'demo' (где поле доступно).
  */
-import { createPrismaClient } from './_lib/prisma';
 import type { PrismaClient } from '@prisma/client';
-import { createEmptyIdMap, type IdMap, type SeedContext } from '../src/modules/onboarding/demo-data/types';
 
-// Модули данных
-import { seedOrgStructure } from '../src/modules/onboarding/demo-data/org-structure';
-import { seedTracker } from '../src/modules/onboarding/demo-data/tracker';
-import { seedMeetings } from '../src/modules/onboarding/demo-data/meetings';
-import { seedKnowledgeGraph } from '../src/modules/onboarding/demo-data/knowledge-graph';
-import { seedGoalsClones } from '../src/modules/onboarding/demo-data/goals-clones';
-import { seedOperations } from '../src/modules/onboarding/demo-data/operations';
-import { seedChatNotifications } from '../src/modules/onboarding/demo-data/chat-notifications';
-import { seedPolish } from '../src/modules/onboarding/demo-data/polish';
+import { runAllSeedSteps } from '../src/modules/onboarding/demo-data';
+import { markAllDemoEntitiesForTenant } from '../src/modules/onboarding/demo-data/mark-demo';
+import {
+  createEmptyIdMap,
+  type IdMap,
+  type SeedContext,
+} from '../src/modules/onboarding/demo-data/types';
+
+import { createPrismaClient } from './_lib/prisma';
 
 function getArg(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
@@ -93,19 +91,7 @@ async function seedDemoWorkspace(
 ): Promise<{
   skipped?: boolean;
   reason?: string;
-  departmentsCreated?: number;
-  personsCreated?: number;
-  projectsCreated?: number;
-  issuesCreated?: number;
-  meetingsCreated?: number;
-  ideaBlocksCreated?: number;
-  entitiesCreated?: number;
-  themesCreated?: number;
-  goalsCreated?: number;
-  clonesCreated?: number;
-  checkInsCreated?: number;
-  digestsCreated?: number;
-  chatConversationsCreated?: number;
+  [key: string]: number | string | boolean | undefined;
 }> {
   const eligibility = await ensureOrgEligibleForDemoSeed(prisma, tenantId, options);
   if (eligibility.skip) {
@@ -115,33 +101,16 @@ async function seedDemoWorkspace(
   const ids: IdMap = createEmptyIdMap();
   const ctx: SeedContext = { prisma, tenantId, ownerUserId };
 
-  // ── Фаза 1: Скелет ──────────────────────────────────────
-  console.log('── Фаза 1: Орг-структура ──');
-  await seedOrgStructure(ctx, ids);
+  // ТЗ 2026-06-01-demo-shared-org-model §4.7: один список 23 модулей в
+  // `backend/src/modules/onboarding/demo-data/index.ts` (DEMO_SEED_STEPS).
+  await runAllSeedSteps(ctx, ids, (step, i, total) => {
+    console.log(`── [${i + 1}/${total}] ${step.label} (${step.key}) ──`);
+  });
 
-  console.log('── Фаза 1: Трекер ──');
-  await seedTracker(ctx, ids);
-
-  console.log('── Фаза 1: Встречи ──');
-  await seedMeetings(ctx, ids);
-
-  // ── Фаза 2: Граф и клоны ────────────────────────────────
-  console.log('── Фаза 2: Граф знаний ──');
-  await seedKnowledgeGraph(ctx, ids);
-
-  console.log('── Фаза 2: Цели и клоны ──');
-  await seedGoalsClones(ctx, ids);
-
-  // ── Фаза 3: Операционка ─────────────────────────────────
-  console.log('── Фаза 3: Чек-ины и дайджесты ──');
-  await seedOperations(ctx, ids);
-
-  console.log('── Фаза 3: Чат и уведомления ──');
-  await seedChatNotifications(ctx, ids);
-
-  // ── Фаза 4: Полировка ───────────────────────────────────
-  console.log('── Фаза 4: Полировка ──');
-  await seedPolish(ctx, ids);
+  // audit Б3 (2026-05-29): помечаем externalSource='demo' — без этого
+  // resetDemoWorkspace потом не сможет адресно почистить.
+  const marked = await markAllDemoEntitiesForTenant(prisma, tenantId);
+  console.log(`── externalSource='demo' проставлен: updated=${marked.updated} ──`);
 
   // ── Пометка Org ─────────────────────────────────────────
   await prisma.org.update({
@@ -160,9 +129,13 @@ async function seedDemoWorkspace(
     themesCreated: Object.keys(ids.themes).length,
     goalsCreated: Object.keys(ids.goals).length,
     clonesCreated: Object.keys(ids.skillProfiles).length,
-    checkInsCreated: 100, // фиксированное значение из ТЗ
-    digestsCreated: 8, // 3 weekly + 5 daily
-    chatConversationsCreated: 3,
+    regulationsCreated: Object.keys(ids.regulations).length,
+    ideasCreated: Object.keys(ids.ideas).length,
+    documentsCreated: Object.keys(ids.documents).length,
+    eventsCreated: Object.keys(ids.events).length,
+    feedbackMessagesCreated: Object.keys(ids.feedbackMessages).length,
+    experimentsCreated: Object.keys(ids.experiments).length,
+    probeEventsCreated: Object.keys(ids.probeEvents).length,
   };
 
   console.log('\n=== Демо-воркспейс «ТехноСтрим» успешно создан ===');

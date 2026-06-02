@@ -4,11 +4,8 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Bell,
-  Brain,
   Building2,
   Download,
-  Eye,
-  Link2,
   Palette,
   Plug,
   ShieldCheck,
@@ -40,13 +37,6 @@ const ITEMS: Item[] = [
   { href: '/settings/exports', label: 'Экспорты', icon: Download },
 ];
 
-const ADMIN_ITEMS: Item[] = [
-  { href: '/settings/admin/knowledge-core', label: 'Ядро знаний', icon: Brain },
-  // ТЗ 2026-05-26 §6 — доступ к разделам «Памяти компании» для member.
-  { href: '/settings/admin/memory-access', label: 'Доступ к памяти', icon: Eye },
-  { href: '/settings/sources', label: 'Источники', icon: Link2 },
-];
-
 const OWNER_ITEMS: Item[] = [
   { href: '/settings/subscription', label: 'Подписка и оплата', icon: Wallet },
   { href: '/settings/billing', label: 'Тариф и лимиты', icon: Wallet },
@@ -57,7 +47,6 @@ export function SettingsSidebar() {
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get('tab') ?? null;
   const { currentOrgRole } = useAuth();
-  const showAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
   const showOwner = currentOrgRole === 'owner';
 
   return (
@@ -73,23 +62,6 @@ export function SettingsSidebar() {
             />
           ))}
         </ul>
-        {showAdmin && (
-          <>
-            <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-              Админка
-            </div>
-            <ul className="flex flex-col gap-0.5 pt-1">
-              {ADMIN_ITEMS.map((item) => (
-                <SidebarLink
-                  key={`${item.href}-${item.tab ?? 'default'}`}
-                  item={item}
-                  pathname={pathname}
-                  tabParam={tabParam}
-                />
-              ))}
-            </ul>
-          </>
-        )}
         {showOwner && (
           <>
             <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">

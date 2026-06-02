@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { type TableRow, Prisma } from '@prisma/client';
 
@@ -125,6 +126,40 @@ export class TableRowsService {
     });
   }
 
+  // ─────────────────────────── createMany ─────────────────────────────────
+
+  /**
+   * Bulk-вставка строк (Smart-tables Фаза 2 — initial backfill).
+   *
+   * order назначается возрастающим от maxOrder+1. Не проверяет лимит строк
+   * по-одному (вызывается только системным backfill'ом по «живым» Entity);
+   * cells-размер проверяется на каждой строке. createdBy='system' по умолчанию.
+   */
+  async createMany(args: {
+    tenantId: string;
+    tableId: string;
+    userId?: string;
+    rows: Array<{ cells: Record<string, unknown>; entityId?: string | null }>;
+  }): Promise<{ created: number }> {
+    await this.requireTable(args.tenantId, args.tableId);
+    if (args.rows.length === 0) return { created: 0 };
+
+    let order = await this.nextOrder(args.tableId);
+    const data = args.rows.map((r) => {
+      this.assertCellsSize(r.cells ?? {});
+      return {
+        tableId: args.tableId,
+        tenantId: args.tenantId,
+        cells: (r.cells ?? {}) as Prisma.InputJsonValue,
+        entityId: r.entityId ?? null,
+        order: new Prisma.Decimal(order++),
+        createdBy: args.userId ?? 'system',
+      };
+    });
+    const res = await this.prisma.tableRow.createMany({ data });
+    return { created: res.count };
+  }
+
   // ─────────────────────────── update ─────────────────────────────────────
 
   async update(args: {
@@ -133,6 +168,13 @@ export class TableRowsService {
     input: UpdateRowBody;
   }): Promise<TableRow> {
     const existing = await this.requireRow(args.tenantId, args.rowId);
+
+    // Smart-tables Фаза 2 — read-only guard. Если в input есть значение для
+    // колонки, привязанной к Entity (config.source==='entity' или readonly),
+    // редактирование запрещено: значение приходит из памяти компании.
+    if (args.input.cells !== undefined) {
+      await this.assertNoReadonlyCells(existing.tableId, args.input.cells);
+    }
 
     const data: Prisma.TableRowUpdateInput = {};
     if (args.input.cells !== undefined) {
@@ -237,6 +279,41 @@ export class TableRowsService {
     });
     if (!last) return 1;
     return Number(last.order.toString()) + 1;
+  }
+
+  /**
+   * Smart-tables Фаза 2 — read-only guard. Бросает 422 `table_cell_readonly`,
+   * если input меняет ячейку колонки, привязанной к Entity графа
+   * (config.readonly===true ИЛИ config.source==='entity'). Такие значения
+   * приходят из памяти компании и редактируются в самой сущности.
+   *
+   * Проверяем ДО записи. Считаем «изменением» само присутствие ключа
+   * propertyId в input.cells (PATCH-семантика: переданные ячейки перезаписывают).
+   */
+  private async assertNoReadonlyCells(
+    tableId: string,
+    cells: Record<string, unknown>,
+  ): Promise<void> {
+    const keys = Object.keys(cells);
+    if (keys.length === 0) return;
+
+    const props = await this.prisma.tableProperty.findMany({
+      where: { tableId, id: { in: keys } },
+      select: { id: true, name: true, config: true },
+    });
+    for (const p of props) {
+      const cfg = (p.config as Record<string, unknown> | null) ?? {};
+      const isReadonly = cfg['readonly'] === true || cfg['source'] === 'entity';
+      if (isReadonly) {
+        throw new UnprocessableEntityException({
+          ok: false,
+          error: {
+            code: 'table_cell_readonly',
+            message: `Колонка «${p.name}» заполняется автоматически из памяти компании — её нельзя изменить в таблице. Отредактируйте саму сущность.`,
+          },
+        });
+      }
+    }
   }
 
   /**

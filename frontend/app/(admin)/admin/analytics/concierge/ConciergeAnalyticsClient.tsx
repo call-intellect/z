@@ -127,6 +127,17 @@ function OverviewTab({ period }: { period: AdminPeriod }) {
 
   const t = q.data.totals;
 
+  // Defensive guard: форма API внезапно без ключевого поля — показать пусто,
+  // а не ронять сегмент.
+  if (t === undefined || typeof t.totalQuestions !== 'number') {
+    return (
+      <AdminEmpty
+        title="Нет данных"
+        description="Будет подключено к chat-модулю."
+      />
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
       <KpiCard
@@ -135,13 +146,29 @@ function OverviewTab({ period }: { period: AdminPeriod }) {
       />
       <KpiCard
         title="Доля «не ответил»"
-        value={`${(t.noAnswerRate * 100).toFixed(1)}%`}
-        hint={`${t.noAnswerCount.toLocaleString('ru-RU')} запросов`}
-        tone={t.noAnswerRate > 0.1 ? 'warning' : undefined}
+        value={
+          t.noAnswerRate === null
+            ? 'нет данных'
+            : `${(t.noAnswerRate * 100).toFixed(1)}%`
+        }
+        hint={
+          t.noAnswerCount > 0
+            ? `${t.noAnswerCount.toLocaleString('ru-RU')} запросов`
+            : undefined
+        }
+        tone={
+          t.noAnswerRate !== null && t.noAnswerRate > 0.1
+            ? 'warning'
+            : undefined
+        }
       />
       <KpiCard
         title="Средняя задержка"
-        value={formatDurationMs(t.avgLatencyMs)}
+        value={
+          t.avgLatencyMs === null
+            ? 'нет данных'
+            : formatDurationMs(t.avgLatencyMs)
+        }
       />
       <KpiCard
         title="Активных пользователей"
@@ -225,8 +252,6 @@ function TopQueriesTable({
   const csvRows: Array<Record<string, unknown>> = items.map((q) => ({
     query: q.query,
     count: q.count,
-    avgLatencyMs: q.avgLatencyMs,
-    successRatePct: (q.successRate * 100).toFixed(2),
   }));
 
   return (
@@ -237,8 +262,6 @@ function TopQueriesTable({
           columns={[
             { key: 'query', label: 'Запрос' },
             { key: 'count', label: 'Раз' },
-            { key: 'avgLatencyMs', label: 'Avg latency, ms' },
-            { key: 'successRatePct', label: 'Success rate, %' },
           ]}
           filename={`admin-concierge-top-queries-${period}.csv`}
         />
@@ -249,8 +272,6 @@ function TopQueriesTable({
             <tr>
               <th className="px-3 py-2 text-left">Запрос</th>
               <th className="px-3 py-2 text-right">Раз</th>
-              <th className="px-3 py-2 text-right">Avg latency</th>
-              <th className="px-3 py-2 text-right">Success rate</th>
             </tr>
           </thead>
           <tbody>
@@ -264,16 +285,6 @@ function TopQueriesTable({
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {row.count.toLocaleString('ru-RU')}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {formatDurationMs(row.avgLatencyMs)}
-                </td>
-                <td
-                  className={`px-3 py-2 text-right tabular-nums ${
-                    row.successRate < 0.8 ? 'text-warning' : ''
-                  }`}
-                >
-                  {(row.successRate * 100).toFixed(1)}%
                 </td>
               </tr>
             ))}
@@ -325,8 +336,6 @@ function NoAnswerList({
     createdAt: r.createdAt.toISOString(),
     query: r.query,
     userEmail: r.userEmail ?? '',
-    tenantName: r.tenantName ?? '',
-    reason: r.reason ?? '',
   }));
 
   return (
@@ -338,8 +347,6 @@ function NoAnswerList({
             { key: 'createdAt', label: 'Когда' },
             { key: 'query', label: 'Запрос' },
             { key: 'userEmail', label: 'Пользователь' },
-            { key: 'tenantName', label: 'Org' },
-            { key: 'reason', label: 'Причина' },
           ]}
           filename={`admin-concierge-no-answer-${period}.csv`}
         />
@@ -347,7 +354,7 @@ function NoAnswerList({
       <ul className="space-y-2">
         {items.map((row) => (
           <li
-            key={row.id}
+            key={row.messageId}
             className="rounded-lg border border-border-subtle bg-bg-card p-3 text-sm"
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -360,18 +367,8 @@ function NoAnswerList({
                       {row.userEmail}
                     </span>
                   )}
-                  {row.tenantName && (
-                    <span className="rounded bg-bg-overlay px-1.5 py-0.5">
-                      {row.tenantName}
-                    </span>
-                  )}
                 </div>
               </div>
-              {row.reason && (
-                <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">
-                  {row.reason}
-                </span>
-              )}
             </div>
           </li>
         ))}

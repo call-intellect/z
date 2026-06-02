@@ -4,6 +4,7 @@ import { TablePropertiesController } from './controllers/table-properties.contro
 import { TableRowsController } from './controllers/table-rows.controller';
 import { TableViewsController } from './controllers/table-views.controller';
 import { TablesController } from './controllers/tables.controller';
+import { TableAgentService } from './services/table-agent.service';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
 import { TableViewsService } from './services/table-views.service';
@@ -39,7 +40,8 @@ import { TablesService } from './services/tables.service';
     TableRowsService,
     TableViewsService,
     TablesAutoProvisionService,
+    TableAgentService,
   ],
-  exports: [TablesService, TablesAutoProvisionService],
+  exports: [TablesService, TablesAutoProvisionService, TableAgentService],
 })
 export class TablesModule {}

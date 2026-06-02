@@ -310,6 +310,75 @@ export const FAZA1_SUPPORTED_TYPES: ReadonlySet<TablePropType> = new Set([
   'createdBy',
 ]);
 
+// ─────────────── Inferred schema (Text-to-Schema, Фаза 1) ────────────────
+
+/** Тип привязки сгенерированной таблицы к памяти (сущностям графа). */
+export type InferredEntitySyncType = 'org' | 'person' | 'meeting' | 'document';
+
+/** Русские лейблы привязки к памяти для бейджа в превью схемы. */
+export const ENTITY_SYNC_LABEL_RU: Record<InferredEntitySyncType, string> = {
+  org: 'Организации',
+  person: 'Люди',
+  meeting: 'Встречи',
+  document: 'Документы',
+};
+
+/** Одна колонка в сгенерированной/редактируемой схеме. */
+export interface InferredSchemaProperty {
+  name: string;
+  type: TablePropType;
+  isPrimary: boolean;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Сгенерированная Concierge-инструментом `infer_table_schema` схема таблицы.
+ * Форма совпадает с backend `InferredTableSchemaDto`
+ * (`backend/src/modules/tables/dto/tables.dto.ts`) и с телом
+ * `POST /tables/from-schema` (`CreateTableFromSchemaBody`).
+ */
+export interface InferredTableSchema {
+  name: string;
+  description: string | null;
+  icon: string | null;
+  entitySync: { type: InferredEntitySyncType } | null;
+  properties: InferredSchemaProperty[];
+}
+
+const ALL_PROP_TYPES = new Set<string>(Object.keys(PROP_TYPE_LABEL_RU));
+const ENTITY_SYNC_TYPES = new Set<string>(['org', 'person', 'meeting', 'document']);
+
+/**
+ * Type-guard для безопасного парса `ev.data` из SSE-события Concierge
+ * (`tool_result` инструмента `infer_table_schema`). Проверяет форму, не
+ * полагаясь на доверие к backend.
+ */
+export function isInferredTableSchema(x: unknown): x is InferredTableSchema {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  if (typeof o.name !== 'string') return false;
+  if (o.description !== null && typeof o.description !== 'string') return false;
+  if (o.icon !== null && typeof o.icon !== 'string') return false;
+  if (o.entitySync !== null) {
+    if (!o.entitySync || typeof o.entitySync !== 'object') return false;
+    const sync = o.entitySync as Record<string, unknown>;
+    if (typeof sync.type !== 'string' || !ENTITY_SYNC_TYPES.has(sync.type)) {
+      return false;
+    }
+  }
+  if (!Array.isArray(o.properties)) return false;
+  return o.properties.every((p) => {
+    if (!p || typeof p !== 'object') return false;
+    const prop = p as Record<string, unknown>;
+    if (typeof prop.name !== 'string') return false;
+    if (typeof prop.type !== 'string' || !ALL_PROP_TYPES.has(prop.type)) {
+      return false;
+    }
+    if (typeof prop.isPrimary !== 'boolean') return false;
+    return true;
+  });
+}
+
 /** Только реально редактируемые типы (без computed). Для UI кнопки «+ Колонка». */
 export const FAZA1_CREATABLE_TYPES: readonly TablePropType[] = [
   'text',

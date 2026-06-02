@@ -73,6 +73,19 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🤖 2026-06-02 — Smart-tables Фаза 1: Text-to-Schema через Кору (за feature-flag, default OFF)
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 7 — Seed** — два сидера (оба идемпотентны, уже в агрегаторе `apply-prod-deploy.ts`):
+  - `scripts/seed-llm-task-routes-smart-tables.ts` — primary-маршруты для taskType `table-infer-schema`/`table-architect-pass`/`table-entity-check` на **DeepSeek V4 Pro**. Опционально: без сидера работает code-fallback chain (deepseek-chat→openai→ollama).
+  - `scripts/seed-admin-settings.ts` — новый ключ `feature.tables_text_to_schema = false` (фича по умолчанию выключена).
+  - Одной командой: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый backend-сервис + frontend-компоненты Concierge): `docker compose up -d --build backend frontend`.
+- **Включение фичи** (ТОЛЬКО после прохождения Eval Фазы 1.5 ≥ 0.85 accuracy): super_admin переключает `feature.tables_text_to_schema = true` в админке настроек (или PATCH admin-settings). До этого эндпоинты `/tables/infer-schema` и `/tables/from-schema` отвечают `403 feature_tables_text_to_schema_disabled` — это ожидаемо.
+- **Шаг 12 — Smoke** (после включения флага): в Кора (Concierge) написать «нужна таблица клиентов с контактами и стадией сделки» → приходит карточка-превью схемы → «Подтвердить и создать» → таблица появляется в `/tables`.
+
+---
+
 ### 🪵 2026-06-01 — LoggingModule (технические логи в БД + админ-UI `/admin/logs`)
 
 - **Шаг 1 — ENV** — **11 новых опциональных** `LOG_DB_*` (все с код-дефолтами, можно не выставлять):

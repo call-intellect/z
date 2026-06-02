@@ -141,9 +141,21 @@ related_projects:
 - **Фронт**: `TableApi`/`TableDomain` получили `isSystem`/`systemKey`; на карточке системной таблицы — маркер 🔒 + tooltip. (Кнопки hard-delete в UI и не было — реальная защита на backend.)
 - **Тесты**: `tables-auto-provision.service.spec.ts` (идемпотентность, 10 шаблонов, валидность типов) + тест guard'а в `tables.service.spec.ts`. 12 unit-тестов зелёные; e2e-заглушка 403 — `it.skip` (нет test-Postgres).
 
+### Фаза 1 — Text-to-Schema через Кору (Concierge) ✅ (за feature-flag, default off)
+
+Пользователь пишет ассистенту Кора «нужна таблица клиентов» → бэк генерит схему в 3 LLM-pass'а → карточка-превью прямо в окне Concierge → правка/подтверждение → таблица создаётся.
+
+- **3 pass'а** в `TableAgentService.inferSchemaFromText` (`backend/src/modules/tables/services/table-agent.service.ts`): DRAFT (`table-infer-schema`) → ARCHITECT (`table-architect-pass`, дедуп колонок/оптимизация типов) → ENTITY-CHECK (`table-entity-check`, сверка `entitySync` с доступными типами, иначе `null`). После pass'ов — жёсткая нормализация инвариантов (≥1 колонка, ровно одна `isPrimary`, валидные `TablePropType`).
+- **Prompt-keys** (code-fallback, cache-friendly — стабильный SYSTEM с каталогом типов/системных таблиц, переменное в USER): `backend/src/modules/ai/services/prompts/table-{infer-schema,architect-pass,entity-check}.prompt.ts`. taskType primary → **DeepSeek V4 Pro** (`seed-llm-task-routes-smart-tables.ts`; code-fallback chain работает и без seed).
+- **Эндпоинты**: `POST /api/v1/tables/infer-schema` (превью) и `POST /api/v1/tables/from-schema` (создание) — оба за feature-flag `feature.tables_text_to_schema` (off → `403 feature_tables_text_to_schema_disabled`). `TablePropertiesService.createMany` — bulk-вставка колонок.
+- **Concierge-tool** `infer_table_schema` (read-only превью); SSE `tool_result` расширен опциональным `data` для whitelist-инструментов (`RICH_PREVIEW_TOOLS`) — полная схема доходит до фронта (обрезанный `preview` остаётся для текстовой реплики).
+- **Frontend**: `TableSchemaPreview.tsx` (карточка с правкой колонок/типов/ключевой), интеграция в `ConciergeChat`, кнопка «Спросить Кору» на `/tables` (открывает Concierge через CustomEvent `concierge:open` с префиллом). `tablesApi.createFromSchema`.
+- **Тесты**: `table-agent.service.spec.ts` — 5 случаев (успех, hallucinated type, no entity match, инвариант isPrimary). Все tables-тесты зелёные (34).
+- **Feature-flag default off** — включается только после прохождения Eval (Фаза 1.5, ≥0.85 accuracy).
+
 ## В работе / далее
 
-- **Фаза 1** — Text-to-Schema через Concierge (SchemaAgent draft → ARCHITECT-pass → ENTITY-CHECK) + feature-flag `feature.tables_text_to_schema` (default off).
+- **Фаза 1.5** (параллельно, блокер для включения флага) — Eval Text-to-Schema на 100 русских NL-промптах.
 - **Фаза 2** — Graph-driven rows (живой `entitySync`): расширить enum, `table-sync.worker`, read-only attribute-колонки.
 - **Фаза 3** — Event-to-Cells из транскриптов + `TableCellProvenance` + очередь подтверждений.
 - **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).

@@ -41,6 +41,12 @@ export type ConciergeStreamEvent =
       status: number;
       undoLogId?: string;
       preview: string;
+      /**
+       * Smart-tables ТЗ Фаза 1 — для whitelist-инструментов с богатым превью
+       * (например `infer_table_schema`) backend кладёт сюда полный результат,
+       * чтобы фронт отрисовал интерактивную карточку. Для прочих — отсутствует.
+       */
+      data?: unknown;
     }
   | { type: 'message'; text: string }
   | { type: 'done'; messageId: string }

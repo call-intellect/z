@@ -16,13 +16,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { Plus, Table2 } from 'lucide-react';
+import { Plus, Sparkles, Table2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { tablesApi } from '@/api/tables.api';
 import type { TableApi } from '@/api/types/tables';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/ui/shadcn/button';
+import { CONCIERGE_OPEN_EVENT } from '@/ui/concierge/ConciergeFloatingButton';
 
 import {
   AdminError,
@@ -93,6 +94,18 @@ function TablesListContent({ orgId }: { orgId: string }) {
     }
   }, [orgId, router]);
 
+  // «Спросить Кору» — открываем Concierge с префилл-сообщением. Сам инференс
+  // схемы делает Concierge через свой tool `infer_table_schema`. Гейтинг
+  // (feature.tables_text_to_schema) на backend: если выключено — ассистент
+  // ответит, что функция отключена (фронт не знает этот флаг).
+  const onAskConcierge = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent(CONCIERGE_OPEN_EVENT, {
+        detail: { prefill: 'Помогите создать таблицу для ' },
+      }),
+    );
+  }, []);
+
   if (isLoading && !items) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;
   if (error) return <AdminError message={error} onRetry={load} />;
@@ -111,10 +124,20 @@ function TablesListContent({ orgId }: { orgId: string }) {
               : `Всего ${total} · показано ${items.length}`}
           </p>
         </div>
-        <Button onClick={onCreate} disabled={isCreating} size="sm">
-          <Plus className="h-4 w-4" />
-          Создать таблицу
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            onClick={onAskConcierge}
+            variant="secondary"
+            size="sm"
+          >
+            <Sparkles className="h-4 w-4" />
+            Спросить Кору
+          </Button>
+          <Button onClick={onCreate} disabled={isCreating} size="sm">
+            <Plus className="h-4 w-4" />
+            Создать таблицу
+          </Button>
+        </div>
       </header>
 
       {items.length === 0 ? (

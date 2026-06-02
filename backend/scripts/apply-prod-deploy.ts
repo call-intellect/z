@@ -92,6 +92,9 @@ const STEPS: Step[] = [
     'pulse-w3',
     // Pulse Wave 4 (2026-05-30 §4.4) — meeting-speaker-analyzer (per-speaker text sentiment).
     'pulse-w4',
+    // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema
+    // (table-infer-schema / table-architect-pass / table-entity-check).
+    'smart-tables',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

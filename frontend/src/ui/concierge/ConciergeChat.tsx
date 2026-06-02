@@ -2,12 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useRouter } from 'next/navigation';
+
 import {
   conciergeApi,
   conciergeStreamApi,
   type ConciergePageContextApi,
   type ConciergeStreamEvent,
 } from '@/api/concierge.api';
+import { tablesApi } from '@/api/tables.api';
+import { ApiError } from '@/api/api-error';
+import { useAuth } from '@/contexts/auth-context';
+import {
+  isInferredTableSchema,
+  type InferredTableSchema,
+} from '@/domain/table';
+import { TableSchemaPreview } from './TableSchemaPreview';
 import { toast } from 'sonner';
 /**
  * SBA γ-2 — ConciergeChat.
@@ -32,13 +42,22 @@ export interface ConciergeChatProps {
   className?: string;
   /** Когда новый conversation создан — сообщаем родителю (для URL/state). */
   onConversationStarted?: (id: string) => void;
+  /** Префилл поля ввода (например, при открытии «Спросить Кору» из Таблиц). */
+  initialInput?: string;
 }
 
 interface ChatRow {
   id: string;
+  /**
+   * `table_schema_preview` — спец-строка с интерактивной карточкой схемы
+   * таблицы (Smart-tables Text-to-Schema, Фаза 1).
+   */
+  kind?: 'table_schema_preview';
   role: 'user' | 'assistant' | 'tool' | 'system';
   text: string;
   meta?: { toolName?: string; ok?: boolean; undoLogId?: string };
+  /** Заполнено только для `kind === 'table_schema_preview'`. */
+  schema?: InferredTableSchema;
 }
 
 export function ConciergeChat({
@@ -46,16 +65,62 @@ export function ConciergeChat({
   conversationId,
   className,
   onConversationStarted,
+  initialInput,
 }: ConciergeChatProps) {
+  const router = useRouter();
+  const { currentOrgId } = useAuth();
 
   const [rows, setRows] = useState<ChatRow[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialInput ?? '');
   const [busy, setBusy] = useState(false);
+  /** Идёт ли создание таблицы из схемы (блокирует кнопку «Подтвердить»). */
+  const [creatingTable, setCreatingTable] = useState(false);
   const [currentConv, setCurrentConv] = useState<string | undefined>(
     conversationId,
   );
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Префилл из родителя (например, кнопка «Спросить Кору» в Таблицах).
+  useEffect(() => {
+    if (initialInput) setInput(initialInput);
+  }, [initialInput]);
+
+  const handleCreateFromSchema = useCallback(
+    async (schema: InferredTableSchema) => {
+      if (!currentOrgId) {
+        toast.error('Не выбрана организация');
+        return;
+      }
+      setCreatingTable(true);
+      try {
+        const created = await tablesApi.createFromSchema(currentOrgId, schema);
+        toast.success('Таблица создана', {
+          action: {
+            label: 'Открыть',
+            onClick: () => router.push(`/tables/${created.id}`),
+          },
+        });
+        router.push(`/tables/${created.id}`);
+      } catch (e) {
+        if (
+          e instanceof ApiError &&
+          e.code === 'feature_tables_text_to_schema_disabled'
+        ) {
+          toast.error(
+            'Создание таблиц по описанию пока отключено в этой организации',
+          );
+        } else {
+          toast.error(
+            e instanceof ApiError ? e.message : 'Не удалось создать таблицу',
+          );
+        }
+      } finally {
+        setCreatingTable(false);
+      }
+    },
+    [currentOrgId, router],
+  );
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -187,6 +252,27 @@ export function ConciergeChat({
           ]);
           break;
         case 'tool_result':
+          // Smart-tables Text-to-Schema (Фаза 1) — для инструмента
+          // `infer_table_schema` backend кладёт полную схему в `ev.data`.
+          // Рисуем интерактивную карточку-превью вместо текстовой строки.
+          if (
+            ev.toolName === 'infer_table_schema' &&
+            ev.ok &&
+            isInferredTableSchema(ev.data)
+          ) {
+            const schema = ev.data;
+            setRows((prev) => [
+              ...prev,
+              {
+                id: `ts-${Date.now()}`,
+                kind: 'table_schema_preview',
+                role: 'tool',
+                text: 'Предлагаю такую таблицу',
+                schema,
+              },
+            ]);
+            break;
+          }
           setRows((prev) => [
             ...prev,
             {
@@ -242,20 +328,29 @@ export function ConciergeChat({
             Я Concierge. Спросите что-нибудь или попросите выполнить действие.
           </div>
         )}
-        {rows.map((row) => (
-          <div
-            key={row.id}
-            className={
-              row.role === 'user'
-                ? 'rounded-md bg-bg-overlay p-2'
-                : row.role === 'assistant'
-                  ? 'rounded-md bg-chip-success-bg p-2'
-                  : 'rounded-md bg-bg-subtle p-2 text-xs text-fg-tertiary'
-            }
-          >
-            {row.text}
-          </div>
-        ))}
+        {rows.map((row) =>
+          row.kind === 'table_schema_preview' && row.schema ? (
+            <TableSchemaPreview
+              key={row.id}
+              schema={row.schema}
+              onConfirm={handleCreateFromSchema}
+              busy={creatingTable}
+            />
+          ) : (
+            <div
+              key={row.id}
+              className={
+                row.role === 'user'
+                  ? 'rounded-md bg-bg-overlay p-2'
+                  : row.role === 'assistant'
+                    ? 'rounded-md bg-chip-success-bg p-2 text-chip-success-fg'
+                    : 'rounded-md bg-bg-subtle p-2 text-xs text-fg-tertiary'
+              }
+            >
+              {row.text}
+            </div>
+          ),
+        )}
         {busy && (
           <div className="text-xs text-fg-tertiary">Concierge печатает…</div>
         )}

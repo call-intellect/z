@@ -288,6 +288,21 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });
   }
 
+  // ── Feature-flags (feature.*) — продуктовые тумблеры.
+  // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
+  // Default OFF: фича включается super_admin'ом из админки после готовности UI.
+  const features: Array<[string, unknown, Severity, string]> = [
+    [
+      'feature.tables_text_to_schema',
+      envBool('FEATURE_TABLES_TEXT_TO_SCHEMA', false),
+      'medium',
+      'Создание Smart-таблиц по текстовому описанию (Text-to-Schema)',
+    ],
+  ];
+  for (const [key, value, severity, description] of features) {
+    out.push({ key, value, category: 'platform', section: 'features', severity, description });
+  }
+
   // ── Conversational (conversational.*) — 15.
   const conversational: Array<[string, unknown, Severity, string]> = [
     ['conversational.outboundConcurrency', envInt('CONVERSATIONAL_OUTBOUND_CONCURRENCY', 5), 'medium', 'Concurrency outbound-воркера каналов'],

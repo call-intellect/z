@@ -33,6 +33,7 @@
 
 import { apiClient } from './api-client';
 import { buildQuery, orgHeaders } from './admin-helpers';
+import type { InferredTableSchema } from '@/domain/table';
 import type {
   CreatePropertyBodyApi,
   CreateRowBodyApi,
@@ -66,6 +67,19 @@ export const tablesApi = {
 
   create: (orgId: string, body: CreateTableBodyApi) =>
     apiClient.post<TableApi>(`/api/v1/tables`, body, {
+      headers: orgHeaders(orgId),
+    }),
+
+  /**
+   * Smart-tables Text-to-Schema (Фаза 1) — создать таблицу из
+   * (возможно отредактированной) сгенерированной схемы.
+   * `POST /api/v1/tables/from-schema` за feature-flag
+   * `feature.tables_text_to_schema` (off → 403
+   * `feature_tables_text_to_schema_disabled`). Инференс схемы делает
+   * Concierge через свой tool — отдельный front-метод не нужен.
+   */
+  createFromSchema: (orgId: string, body: InferredTableSchema) =>
+    apiClient.post<TableApi>(`/api/v1/tables/from-schema`, body, {
       headers: orgHeaders(orgId),
     }),
 

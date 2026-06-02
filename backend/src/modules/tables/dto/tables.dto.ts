@@ -101,6 +101,86 @@ export function toTableViewDto(t: Table): TableViewDto {
   };
 }
 
+// ─────────────────────── Text-to-Schema (Фаза 1) ─────────────────────────
+
+/**
+ * Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
+ *
+ * `POST /tables/infer-schema` — body запроса на генерацию схемы по NL-описанию.
+ */
+export const InferSchemaBodySchema = z.object({
+  /** NL-описание желаемой таблицы. Минимум 3 символа. */
+  prompt: z.string().trim().min(3).max(2000),
+});
+export type InferSchemaBody = z.infer<typeof InferSchemaBodySchema>;
+
+/**
+ * Колонка в сгенерированной/создаваемой-из-схемы таблице. `type` ограничен
+ * пользовательскими типами (без системных createdAt/createdBy/entityLink/...).
+ */
+const SchemaPropertyUserTypeSchema = z.enum([
+  'text',
+  'longtext',
+  'number',
+  'currency',
+  'percent',
+  'date',
+  'status',
+  'selectSingle',
+  'selectMulti',
+  'checkbox',
+  'person',
+  'url',
+  'email',
+  'phone',
+  'file',
+  'formula',
+  'relation',
+  'rollup',
+]);
+
+export const InferredSchemaPropertySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  type: SchemaPropertyUserTypeSchema,
+  isPrimary: z.boolean(),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * Response-DTO `POST /tables/infer-schema` — превью схемы (без создания).
+ * Совпадает по форме с `InferredTableSchema` из TableAgentService.
+ */
+export interface InferredTableSchemaDto {
+  name: string;
+  description: string | null;
+  icon: string | null;
+  entitySync: { type: 'org' | 'person' | 'meeting' | 'document' } | null;
+  properties: Array<{
+    name: string;
+    type: TablePropType;
+    isPrimary: boolean;
+    config?: Record<string, unknown>;
+  }>;
+}
+
+/**
+ * `POST /tables/from-schema` — создать таблицу из (отредактированной) схемы.
+ * Колонки создаются bulk-ом после создания самой таблицы.
+ */
+export const CreateTableFromSchemaBodySchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(5000).nullable().optional(),
+  icon: z.string().trim().max(50).nullable().optional(),
+  entitySync: z
+    .object({ type: z.enum(['org', 'person', 'meeting', 'document']) })
+    .nullable()
+    .optional(),
+  properties: z.array(InferredSchemaPropertySchema).min(1).max(50),
+});
+export type CreateTableFromSchemaBody = z.infer<
+  typeof CreateTableFromSchemaBodySchema
+>;
+
 // ─────────────────────────── TableProperty ───────────────────────────────
 
 /**

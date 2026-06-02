@@ -93,6 +93,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['embeddings.chunkTargetTokens', POSITIVE_INT],
   ['embeddings.chunkOverlapTokens', NON_NEGATIVE_INT],
 
+  // ── feature-flags (feature.*) ────────────────────────────────────────
+  // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
+  ['feature.tables_text_to_schema', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

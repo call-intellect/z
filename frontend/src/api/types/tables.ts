@@ -62,6 +62,8 @@ export interface TableApi {
   entitySync: Record<string, unknown> | null;
   defaultViewId: string | null;
   archivedAt: string | null;
+  isSystem: boolean;
+  systemKey: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

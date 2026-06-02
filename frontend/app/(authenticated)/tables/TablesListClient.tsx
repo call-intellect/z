@@ -173,8 +173,19 @@ function TableCard({ table }: { table: TableApi }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-medium text-fg-primary group-hover:text-fg-primary">
-            {table.name}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-base font-medium text-fg-primary group-hover:text-fg-primary">
+              {table.name}
+            </span>
+            {table.isSystem ? (
+              <span
+                className="shrink-0 text-sm leading-none"
+                aria-label="Системная таблица"
+                title="Системная таблица — её можно архивировать, но не удалить навсегда"
+              >
+                🔒
+              </span>
+            ) : null}
           </div>
           <div className="mt-0.5 text-xs text-fg-tertiary">
             Обновлено {updatedText}

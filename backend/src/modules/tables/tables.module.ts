@@ -7,6 +7,7 @@ import { TablesController } from './controllers/tables.controller';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
 import { TableViewsService } from './services/table-views.service';
+import { TablesAutoProvisionService } from './services/tables-auto-provision.service';
 import { TablesService } from './services/tables.service';
 
 /**
@@ -37,7 +38,8 @@ import { TablesService } from './services/tables.service';
     TablePropertiesService,
     TableRowsService,
     TableViewsService,
+    TablesAutoProvisionService,
   ],
-  exports: [TablesService],
+  exports: [TablesService, TablesAutoProvisionService],
 })
 export class TablesModule {}

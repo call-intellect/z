@@ -217,6 +217,16 @@ export class TablesService {
     id: string;
   }): Promise<{ id: string }> {
     const existing = await this.findById({ tenantId: args.tenantId, id: args.id });
+    if (existing.isSystem) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'system_table_hard_delete_forbidden',
+          message:
+            'Системную таблицу нельзя удалить навсегда — её можно только перевести в архив.',
+        },
+      });
+    }
     if (!existing.archivedAt) {
       throw new ForbiddenException({
         ok: false,

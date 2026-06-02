@@ -60,6 +60,19 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📊 2026-06-02 — Smart-tables Фаза 0: 10 системных таблиц при создании Org (auto-provision)
+
+- **Шаг 4 — Prisma** — **обязательно** (безопасное добавление — только новые поля + индексы, опасных изменений нет): `docker compose exec backend bun run prisma:push`.
+  В `Table`: `isSystem Boolean @default(false)`, `systemKey String?`, `@@unique([tenantId, systemKey])`, `@@index([tenantId, isSystem])`. У существующих строк `systemKey=NULL` — composite unique допускает множество NULL, дедуп не нужен.
+- **Шаг 8 — Backfill** — завести 10 системных таблиц для всех существующих Org: `docker compose exec backend bun run scripts/backfill-system-tables.ts` (идемпотентен — повторный прогон пропускает уже созданные). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`, `skipBootstrap: true`), поэтому идёт и через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый `TablesAutoProvisionService` + фронт-маркер 🔒): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - зарегистрировать нового пользователя → на `/tables` 10 системных таблиц с маркером 🔒 (Клиенты и сделки, Команда, Гипотезы и эксперименты, Поставщики, Реестр рисков, Идеи, Обещания, Контент-план, Регламенты, Цели и метрики).
+  - попытка hard-delete системной таблицы через API → `403 system_table_hard_delete_forbidden`.
+  - архив системной таблицы и восстановление из архива работают.
+
+---
+
 ### 🪵 2026-06-01 — LoggingModule (технические логи в БД + админ-UI `/admin/logs`)
 
 - **Шаг 1 — ENV** — **11 новых опциональных** `LOG_DB_*` (все с код-дефолтами, можно не выставлять):

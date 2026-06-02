@@ -2,9 +2,10 @@
 name: smart-tables
 title: Умные таблицы (Smart Tables) — MVP-старт
 status_overall: partial
-last_audited: 2026-05-31
+last_audited: 2026-06-02
 related_plans:
   - plans/tz/2026-05-31-smart-tables.md
+  - plans/tz/2026-06-02-smart-tables-auto-creation.md
 related_processes: []
 related_projects:
   - 01_projects/api-layer.md
@@ -119,3 +120,32 @@ related_projects:
 2. **`apply-prod-deploy.ts STEPS`** — для Фазы 0 нет seed/patch/backfill (только Prisma push + postgres-init), регистрация не нужна. В Фазах 2+ при появлении seed-скриптов — добавить.
 3. **`/tables` list-страница** — Фаза 2.
 4. **Tanstack Virtual** установлен, в Фазе 1 не используется (Glide само виртуализирует). Зарезервирован для Gallery/Timeline views.
+
+---
+
+# Smart-tables auto-creation (ТЗ [2026-06-02](../../plans/tz/2026-06-02-smart-tables-auto-creation.md))
+
+Продолжение базового Smart-tables: уход от ручного труда. 6 фаз (0→5) + потоки Eval/Privacy. Принцип — автоматика поверх единого графа знаний; ручным остаётся только свободный текст в карточке строки, override превью схемы и подтверждение спорных правок из встреч.
+
+## Что сделано
+
+### Фаза 0 — системные таблицы при создании Org (auto-provision) ✅
+
+При создании любой новой Org автоматически заводятся **10 системных таблиц** (пустыми; наполнение — Фаза 2). Видны в `/tables` сразу, помечены 🔒. Можно архивировать/восстанавливать/менять колонки, но **нельзя удалить навсегда**.
+
+- **Prisma `Table`**: `isSystem Boolean @default(false)`, `systemKey String?`, `@@unique([tenantId, systemKey])`, `@@index([tenantId, isSystem])`.
+- **Каталог** `backend/src/modules/tables/templates/system-tables.catalog.ts` — 10 TypeScript-шаблонов (`clients_deals`, `team`, `hypotheses`, `vendors`, `risks`, `ideas`, `promises`, `content_plan`, `regulations`, `okr`), у каждого ровно одна `isPrimary`-колонка. `entitySync` проставлен только для уже поддержанных DTO-типов (`org`→clients_deals/vendors, `person`→team, `document`→regulations); остальным `null` с TODO на Фазу 2 (расширение enum + живой sync).
+- **`TablesAutoProvisionService.provisionDefaults(tenantId, ownerId, tx?)`** — идемпотентен через `findFirst({tenantId, systemKey})`. Вызывается из `OrgsService.createForOwner` в той же транзакции (`OrgsModule` импортирует `TablesModule`, цикла нет).
+- **`TablesService.hardDelete`** — guard: `isSystem` → `403 system_table_hard_delete_forbidden`.
+- **Backfill** `backend/scripts/backfill-system-tables.ts` для существующих Org (зарегистрирован в `apply-prod-deploy.ts` STEPS, `phase: backfill`, `skipBootstrap`).
+- **Фронт**: `TableApi`/`TableDomain` получили `isSystem`/`systemKey`; на карточке системной таблицы — маркер 🔒 + tooltip. (Кнопки hard-delete в UI и не было — реальная защита на backend.)
+- **Тесты**: `tables-auto-provision.service.spec.ts` (идемпотентность, 10 шаблонов, валидность типов) + тест guard'а в `tables.service.spec.ts`. 12 unit-тестов зелёные; e2e-заглушка 403 — `it.skip` (нет test-Postgres).
+
+## В работе / далее
+
+- **Фаза 1** — Text-to-Schema через Concierge (SchemaAgent draft → ARCHITECT-pass → ENTITY-CHECK) + feature-flag `feature.tables_text_to_schema` (default off).
+- **Фаза 2** — Graph-driven rows (живой `entitySync`): расширить enum, `table-sync.worker`, read-only attribute-колонки.
+- **Фаза 3** — Event-to-Cells из транскриптов + `TableCellProvenance` + очередь подтверждений.
+- **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
+- **Фаза 5** — NL Saved Views.
+- Потоки: Eval Text-to-Schema (100 русских промптов, блокер для feature-flag), Privacy research (до GTM).

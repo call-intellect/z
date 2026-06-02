@@ -278,6 +278,12 @@ const STEPS: Step[] = [
     hint: 'validFrom = createdAt, validUntil = NULL для IdeaBlockLink/EntityLink (Agents v2 Фаза A1)',
     skipBootstrap: false,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-system-tables.ts',
+    hint: 'Smart-tables Фаза 0: 10 системных таблиц для существующих Org',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

@@ -72,6 +72,10 @@ export interface TableViewDto {
   entitySync: Record<string, unknown> | null;
   defaultViewId: string | null;
   archivedAt: string | null;
+  /** Системная таблица (авто-создана при создании Org). Hard-delete запрещён. */
+  isSystem: boolean;
+  /** Ключ системного шаблона (clients_deals / team / …) или null. */
+  systemKey: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -89,6 +93,8 @@ export function toTableViewDto(t: Table): TableViewDto {
     entitySync: (t.entitySync as Record<string, unknown> | null) ?? null,
     defaultViewId: t.defaultViewId,
     archivedAt: t.archivedAt ? t.archivedAt.toISOString() : null,
+    isSystem: t.isSystem,
+    systemKey: t.systemKey,
     createdBy: t.createdBy,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),

@@ -35,6 +35,8 @@ export interface TableDomain {
   entitySync: Record<string, unknown> | null;
   defaultViewId: string | null;
   archivedAt: Date | null;
+  isSystem: boolean;
+  systemKey: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -120,6 +122,8 @@ export function tableFromApi(t: TableApi): TableDomain {
     entitySync: t.entitySync,
     defaultViewId: t.defaultViewId,
     archivedAt: t.archivedAt ? new Date(t.archivedAt) : null,
+    isSystem: t.isSystem ?? false,
+    systemKey: t.systemKey ?? null,
     createdBy: t.createdBy,
     createdAt: new Date(t.createdAt),
     updatedAt: new Date(t.updatedAt),

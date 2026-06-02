@@ -9619,6 +9619,12 @@ model Table {
   /// Soft-delete: archivedAt = когда пользователь нажал «архивировать»;
   /// deletedAt = когда поставлен в очередь на hard-delete воркером retention.
   archivedAt       DateTime?
+  /// Системная таблица — создаётся автоматически при создании Org (Smart-tables Фаза 0).
+  /// Системную таблицу нельзя удалить навсегда (hard-delete), только архивировать.
+  isSystem  Boolean @default(false)
+  /// Стабильный ключ системного шаблона (clients_deals / team / …). NULL у пользовательских таблиц.
+  /// Уникален в пределах Org — гарантирует идемпотентность авто-провижининга.
+  systemKey String?
   createdBy        String
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -9630,8 +9636,10 @@ model Table {
   views       TableView[]
   automations TableAutomation[]
 
+  @@unique([tenantId, systemKey])
   @@index([tenantId, archivedAt])
   @@index([parentDocumentId])
+  @@index([tenantId, isSystem])
 }
 
 model TableProperty {

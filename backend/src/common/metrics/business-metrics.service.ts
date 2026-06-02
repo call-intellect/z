@@ -364,6 +364,16 @@ export class BusinessMetricsService implements OnModuleInit {
   // «как часто решения переписываются»).
   private decisionSupersedeChainLength!: Histogram<never>;
 
+  // ── Goals OKR v2 Фаза 3 (2026-06-02) — авто-прогресс KR ──────────────
+  // `goal_kr_autoprogress_total{source_kind,status}` — каждая попытка
+  // авто-пересчёта currentValue одного GoalKeyResult cron'ом.
+  //   source_kind ∈ manual | meeting_count | issue_rollup | metric_entity;
+  //   status ∈ ok (значение изменилось, checkpoint записан) |
+  //            unchanged (значение не изменилось — no-op) |
+  //            skipped (manual / manualOverride / нет конфигурации) |
+  //            error (исключение при расчёте).
+  private goalKrAutoprogressTotal!: Counter<'source_kind' | 'status'>;
+
   // ── Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges ──────────────
   // `temporal_edges_invalidated_total{relationType}` — каждый раз когда
   // TemporalConflictService закрывает existing open-link новой противоречащей
@@ -1806,6 +1816,13 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA β-3 — длина supersede-цепочек Decision (chain length = сколько раз решение переписывалось). 0 — изначальное, 1 — заменено один раз, и т.д.',
       labelNames: [] as const,
       buckets: [0, 1, 2, 3, 5, 8, 13, 21],
+    });
+
+    // Goals OKR v2 Фаза 3 (2026-06-02) — авто-прогресс KR.
+    this.goalKrAutoprogressTotal = this.getOrCreateCounter({
+      name: 'goal_kr_autoprogress_total',
+      help: 'Goals OKR v2 Фаза 3 — попытки авто-пересчёта GoalKeyResult.currentValue cron\'ом (source_kind × status). status: ok|unchanged|skipped|error.',
+      labelNames: ['source_kind', 'status'] as const,
     });
 
     // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
@@ -3307,6 +3324,20 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incLivekitWebhookEvent(type: string): void {
     this.livekitWebhookEventsTotal.inc({ type });
+  }
+
+  /**
+   * Goals OKR v2 Фаза 3 — попытка авто-пересчёта currentValue одного KR.
+   *   status='ok'        — значение изменилось, checkpoint записан;
+   *   status='unchanged' — значение не изменилось (no-op);
+   *   status='skipped'   — manual / manualOverride / нет конфигурации источника;
+   *   status='error'     — исключение при расчёте.
+   */
+  incGoalKrAutoprogress(
+    sourceKind: string,
+    status: 'ok' | 'skipped' | 'unchanged' | 'error',
+  ): void {
+    this.goalKrAutoprogressTotal.inc({ source_kind: sourceKind, status });
   }
 
   /**

@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
+import { GoalKrProgressCron } from './cron/goal-kr-progress.cron';
 import { StrategicAlignmentCron } from './cron/strategic-alignment.cron';
 import { GoalsController } from './goals.controller';
 import { GoalKeyResultsService } from './services/goal-key-results.service';
+import { GoalKrProgressService } from './services/goal-kr-progress.service';
 import { GoalsService } from './services/goals.service';
 import { StrategicAlignmentIssuesService } from './services/strategic-alignment-issues.service';
 
@@ -31,9 +33,16 @@ import { StrategicAlignmentIssuesService } from './services/strategic-alignment-
   providers: [
     GoalsService,
     GoalKeyResultsService,
+    GoalKrProgressService,
     StrategicAlignmentIssuesService,
     StrategicAlignmentCron,
+    GoalKrProgressCron,
   ],
-  exports: [GoalsService, GoalKeyResultsService, StrategicAlignmentIssuesService],
+  exports: [
+    GoalsService,
+    GoalKeyResultsService,
+    GoalKrProgressService,
+    StrategicAlignmentIssuesService,
+  ],
 })
 export class GoalsModule {}

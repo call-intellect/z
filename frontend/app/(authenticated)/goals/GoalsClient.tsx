@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
 import {
-  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   Loader2,
   Minus,
   Plus,
+  Sparkles,
   Target,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -270,6 +270,10 @@ function GoalCard({
         </Badge>
       </div>
 
+      {(goal.source === 'ai' || goal.promotionState === 'suggested') && (
+        <SuggestedByKoraBadge />
+      )}
+
       {goal.description && (
         <p className="line-clamp-3 text-sm text-fg-secondary">
           {goal.description.length > 200
@@ -351,6 +355,16 @@ function GoalCard({
         )}
       </div>
     </li>
+  );
+}
+
+/** Маркер AI-кандидата цели. Парные токены chip-info (bg + fg). */
+function SuggestedByKoraBadge() {
+  return (
+    <span className="inline-flex w-fit items-center gap-1 rounded-full bg-chip-info-bg px-2 py-0.5 text-[11px] font-medium text-chip-info-fg">
+      <Sparkles size={11} />
+      Предложено Корой
+    </span>
   );
 }
 

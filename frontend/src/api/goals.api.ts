@@ -9,6 +9,9 @@ import { apiClient } from './api-client';
 import { buildQuery, orgHeaders } from './admin-helpers';
 import type {
   GoalDetailApi,
+  GoalHorizon,
+  GoalKeyResultApi,
+  GoalKrSourceKind,
   GoalListApi,
   GoalListItemApi,
   GoalStatus,
@@ -33,9 +36,45 @@ export type UpdateGoalRequest = {
   targetDate?: string | null;
   weight?: number;
   status?: GoalStatus;
+  /** Goals OKR v2 — перепривязка в дереве (null = открепить от родителя). */
+  parentGoalId?: string | null;
+  horizon?: GoalHorizon;
+  progressStatus?: string;
+  promotionState?: 'suggested' | 'active' | 'dismissed';
 };
 
 export type AddThemesRequest = { themeIds: string[] };
+
+/** Goals OKR v2 — создание измеримого ориентира (Key Result). */
+export type CreateKeyResultRequest = {
+  name: string;
+  unit?: string | null;
+  startValue: number;
+  targetValue: number;
+  currentValue?: number;
+  sourceKind?: GoalKrSourceKind;
+  sourceConfig?: Record<string, unknown>;
+};
+
+/** Goals OKR v2 — частичное обновление KR (≥1 поле). */
+export type UpdateKeyResultRequest = {
+  name?: string;
+  unit?: string | null;
+  startValue?: number;
+  targetValue?: number;
+  currentValue?: number;
+  sourceKind?: GoalKrSourceKind;
+  sourceConfig?: Record<string, unknown>;
+};
+
+/** Goals OKR v2 — «передумали»: создать новую версию цели (все поля опц.). */
+export type SupersedeGoalRequest = {
+  name?: string;
+  description?: string;
+  targetDate?: string | null;
+  horizon?: GoalHorizon;
+  weight?: number;
+};
 
 export const goalsApi = {
   list: (orgId: string, req: ListGoalsRequest = {}) =>
@@ -87,6 +126,40 @@ export const goalsApi = {
     apiClient.post<{ enqueued: true; jobId: string }>(
       `/api/v1/goals/${encodeURIComponent(goalId)}/recompute`,
       undefined,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // ── Goals OKR v2 — Key Results ──
+  createKeyResult: (orgId: string, goalId: string, body: CreateKeyResultRequest) =>
+    apiClient.post<GoalKeyResultApi>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/key-results`,
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  updateKeyResult: (
+    orgId: string,
+    goalId: string,
+    krId: string,
+    body: UpdateKeyResultRequest,
+  ) =>
+    apiClient.patch<GoalKeyResultApi>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/key-results/${encodeURIComponent(krId)}`,
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  removeKeyResult: (orgId: string, goalId: string, krId: string) =>
+    apiClient.del<{ removed: boolean }>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/key-results/${encodeURIComponent(krId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // ── Goals OKR v2 — supersede («передумали») ──
+  supersede: (orgId: string, goalId: string, body: SupersedeGoalRequest) =>
+    apiClient.post<GoalDetailApi>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/supersede`,
+      body,
       { headers: orgHeaders(orgId) },
     ),
 };

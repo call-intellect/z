@@ -4,6 +4,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 
 import { StrategicAlignmentCron } from './cron/strategic-alignment.cron';
 import { GoalsController } from './goals.controller';
+import { GoalKeyResultsService } from './services/goal-key-results.service';
 import { GoalsService } from './services/goals.service';
 import { StrategicAlignmentIssuesService } from './services/strategic-alignment-issues.service';
 
@@ -29,9 +30,10 @@ import { StrategicAlignmentIssuesService } from './services/strategic-alignment-
   controllers: [GoalsController],
   providers: [
     GoalsService,
+    GoalKeyResultsService,
     StrategicAlignmentIssuesService,
     StrategicAlignmentCron,
   ],
-  exports: [GoalsService, StrategicAlignmentIssuesService],
+  exports: [GoalsService, GoalKeyResultsService, StrategicAlignmentIssuesService],
 })
 export class GoalsModule {}

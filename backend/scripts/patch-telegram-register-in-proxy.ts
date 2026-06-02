@@ -41,6 +41,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { TelegramProxyAdminClient } from '../src/modules/conversational/adapters/telegram-bot/telegram-proxy-admin.client';
 
 import { createPrismaClient } from './_lib/prisma';
+import { silenceRedisShutdownNoise } from './_lib/silence-redis-shutdown';
 
 interface CliArgs {
   dryRun: boolean;
@@ -260,6 +261,7 @@ async function main(args: CliArgs): Promise<void> {
   }
 }
 
+silenceRedisShutdownNoise();
 main(parseArgs(process.argv.slice(2))).catch((err) => {
   // eslint-disable-next-line no-console
   console.error('patch-telegram-register-in-proxy FAILED:', err);

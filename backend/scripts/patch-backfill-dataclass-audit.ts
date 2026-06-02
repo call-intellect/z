@@ -27,6 +27,7 @@ import { DataClassPolicyService } from '../src/modules/knowledge-core/services/d
 import type { DerivedKind } from '../src/modules/knowledge-core/services/dataclass-policy.types';
 
 import { createPrismaClient } from './_lib/prisma';
+import { silenceRedisShutdownNoise } from './_lib/silence-redis-shutdown';
 
 interface RunArgs {
   dryRun: boolean;
@@ -299,6 +300,7 @@ const args: RunArgs = {
   dryRun: process.argv.includes('--dry-run'),
 };
 
+silenceRedisShutdownNoise();
 main(args)
   .then(() => process.exit(0))
   .catch((err) => {

@@ -30,6 +30,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { CoreQueueService } from '../src/modules/core-queue/core-queue.service';
 
 import { createPrismaClient } from './_lib/prisma';
+import { silenceRedisShutdownNoise } from './_lib/silence-redis-shutdown';
 
 /**
  * SignalType'ы, по которым router фикс расширен. Должны совпадать с
@@ -183,6 +184,7 @@ async function main(opts: Options): Promise<void> {
 }
 
 const opts = parseArgs(process.argv.slice(2));
+silenceRedisShutdownNoise();
 main(opts)
   .then(() => process.exit(0))
   .catch((err) => {

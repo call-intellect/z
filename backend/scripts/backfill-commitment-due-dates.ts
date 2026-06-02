@@ -25,6 +25,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { HolidayService } from '../src/modules/tracker/services/holiday.service';
 
 import { createPrismaClient } from './_lib/prisma';
+import { silenceRedisShutdownNoise } from './_lib/silence-redis-shutdown';
 
 interface RunArgs {
   dryRun: boolean;
@@ -166,6 +167,7 @@ async function addWorkdays(
 }
 
 const dryRun = process.argv.includes('--dry-run');
+silenceRedisShutdownNoise();
 main({ dryRun })
   .then(() => process.exit(0))
   .catch((err) => {

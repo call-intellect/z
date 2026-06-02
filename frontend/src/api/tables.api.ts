@@ -37,6 +37,7 @@ import { buildQuery, orgHeaders } from './admin-helpers';
 import type {
   ImportAnalyzeResult,
   InferredTableSchema,
+  TableFilterCondition,
 } from '@/domain/table';
 import type {
   CellProvenanceApi,
@@ -327,6 +328,24 @@ export const tableViewsApi = {
   remove: (orgId: string, tableId: string, viewId: string) =>
     apiClient.del<{ id: string }>(
       `/api/v1/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * NL Saved Views (Фаза 5) — конвертирует естественно-языковой запрос
+   * пользователя в JSON-фильтр таблицы. Backend прогоняет запрос через LLM,
+   * валидирует условия против реальной схемы колонок и кэширует результат в
+   * Redis (`cached: true` — попадание в кэш).
+   *
+   * `POST /api/v1/tables/:tableId/semantic-filter` body `{ nlQuery }`.
+   * Контракт — `backend/src/modules/tables/dto/tables.dto.ts`
+   * (`SemanticFilterResultDto`). Фронт применяет `filters` к строкам
+   * клиент-сайд (см. `applyFilters` в `domain/table.ts`).
+   */
+  semanticFilter: (orgId: string, tableId: string, nlQuery: string) =>
+    apiClient.post<{ filters: TableFilterCondition[]; cached: boolean }>(
+      `/api/v1/tables/${encodeURIComponent(tableId)}/semantic-filter`,
+      { nlQuery },
       { headers: orgHeaders(orgId) },
     ),
 };

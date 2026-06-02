@@ -25,6 +25,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
@@ -48,6 +49,9 @@ import {
   InferSchemaBodySchema,
   type InferSchemaBody,
   type InferredTableSchemaDto,
+  SemanticFilterBodySchema,
+  type SemanticFilterBody,
+  type SemanticFilterResultDto,
   type TableViewDto,
   TablesListQuerySchema,
   type TablesListQuery,
@@ -60,6 +64,7 @@ import { TableAgentService } from '../services/table-agent.service';
 import { TableFileParserService } from '../services/table-file-parser.service';
 import { TableImportService } from '../services/table-import.service';
 import { TablePropertiesService } from '../services/table-properties.service';
+import { TableSemanticFilterService } from '../services/table-semantic-filter.service';
 import { TablesService } from '../services/tables.service';
 
 /**
@@ -117,6 +122,9 @@ export class TablesController {
     @Inject(TableFileParserService)
     private readonly fileParser: TableFileParserService,
     @Inject(TableImportService) private readonly importer: TableImportService,
+    // NL Saved Views (Фаза 5) — NL-запрос → JSON-фильтр.
+    @Inject(TableSemanticFilterService)
+    private readonly semanticFilter: TableSemanticFilterService,
   ) {}
 
   // ──────────────────── Text-to-Schema (Фаза 1, за feature-flag) ───────────
@@ -356,6 +364,40 @@ export class TablesController {
     await this.requireRead(user.id, t);
     const row = await this.tables.findById({ tenantId: t, id });
     return toTableViewDto(row);
+  }
+
+  // ──────────────────── NL Saved Views (Фаза 5) ───────────────────────────
+
+  @Post(':id/semantic-filter')
+  @HttpCode(HttpStatus.OK)
+  // Точечный rate-limit ТОЛЬКО на этот платный LLM-эндпоинт (не глобально):
+  // 20 запросов/мин на клиента. ThrottlerGuard навешан per-route (глобально он
+  // не зарегистрирован), @Throttle строже дефолта (120/мин) — защита от
+  // случайного/злонамеренного расхода LLM-бюджета через NL-фильтр.
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Конвертировать NL-запрос в JSON-фильтр таблицы (LLM + кэш)',
+  })
+  @ApiOkResponse({
+    description: 'Очищенный против схемы набор условий фильтра + флаг cached',
+  })
+  async semanticFilterQuery(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SemanticFilterBodySchema))
+    body: SemanticFilterBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SemanticFilterResultDto> {
+    const t = this.requireTenant(tenantId);
+    // Read-доступа достаточно: NL-фильтр лишь отбирает строки для просмотра,
+    // ничего не мутирует.
+    await this.requireRead(user.id, t);
+    return this.semanticFilter.parseSemanticFilter({
+      tenantId: t,
+      tableId: id,
+      nlQuery: body.nlQuery,
+    });
   }
 
   @Patch(':id')

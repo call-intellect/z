@@ -28,6 +28,7 @@ import {
 } from '@/api/tables.api';
 import type { TablePropTypeApi } from '@/api/types/tables';
 import {
+  applyFilters,
   cellProvenanceFromApi,
   pendingPatchFromApi,
   propertyFromApi,
@@ -37,6 +38,7 @@ import {
   type CellProvenanceDomain,
   type PendingPatchDomain,
   type TableDomain,
+  type TableFilterCondition,
   type TablePropertyDomain,
   type TableRowDomain,
   type TableViewConfig,
@@ -126,6 +128,14 @@ export interface TableStoreState {
   setDraftPropOrder: (propertyIds: string[]) => void;
   /** Локально сменить плотность строк. */
   setRowHeight: (rowHeight: 'compact' | 'default' | 'tall') => void;
+  /**
+   * Локально задать условия фильтра (NL Saved Views, Фаза 5). Передаётся
+   * результат `semanticFilter` или пустой массив для сброса. Выставляет
+   * `hasUnsavedChanges`, грид перерисуется через `selectVisibleRows`.
+   */
+  setDraftFilters: (filters: TableFilterCondition[]) => void;
+  /** Очистить фильтры (сброс среза до полного набора строк). */
+  clearDraftFilters: () => void;
   /** Сохранить текущий draft как новый вид. */
   saveCurrentAsView: (
     name: string,
@@ -350,6 +360,27 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   setRowHeight: (rowHeight) => {
     const { draftConfig, currentView } = get();
     const next: TableViewConfig = { ...draftConfig, rowHeight };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  setDraftFilters: (filters) => {
+    const { draftConfig, currentView } = get();
+    const next: TableViewConfig = {
+      ...draftConfig,
+      filters: filters.length > 0 ? filters : undefined,
+    };
+    set({
+      draftConfig: next,
+      hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
+    });
+  },
+
+  clearDraftFilters: () => {
+    const { draftConfig, currentView } = get();
+    const next: TableViewConfig = { ...draftConfig, filters: undefined };
     set({
       draftConfig: next,
       hasUnsavedChanges: hasDiff(next, currentView?.config ?? {}),
@@ -917,14 +948,20 @@ export function selectVisibleProperties(
 }
 
 /**
- * Возвращает строки с учётом draftConfig.sorts (Фаза 3 — минимальная
- * поддержка: equality-сравнение для строковых/числовых значений; для
- * чего сложнее — будет Фаза 4). filters не применяются (Фаза 4+).
+ * Возвращает строки с учётом draftConfig:
+ *   1. фильтры (`draftConfig.filters`) — клиент-сайд, AND-семантика (Фаза 5,
+ *      NL Saved Views). Полный набор операторов (eq/neq/gt/lt/contains/in/
+ *      empty/before/after/older_than) — см. `applyFilters` в `domain/table.ts`.
+ *   2. сортировки (`draftConfig.sorts`) — equality для строк/чисел (Фаза 3).
+ *
+ * Карточка строки (RowDetail) и панель подтверждений работают по полному
+ * `s.rows`, поэтому фильтр влияет только на отрисовку грида.
  */
 export function selectVisibleRows(s: TableStoreState): TableRowDomain[] {
+  // 1. Фильтры (AND) — отбираем подмножество строк.
+  let rows = applyFilters(s.rows, s.draftConfig.filters, s.properties);
+  // 2. Сорты последовательно (последний — самый приоритетный).
   const sorts = s.draftConfig.sorts ?? [];
-  let rows = [...s.rows];
-  // Применяем сорты последовательно (последний — самый приоритетный).
   for (let i = sorts.length - 1; i >= 0; i--) {
     const sort = sorts[i]!;
     const dir = sort.direction === 'desc' ? -1 : 1;

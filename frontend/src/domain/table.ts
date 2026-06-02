@@ -73,6 +73,40 @@ export interface TableRowDomain {
 // ─────────────────────────── TableView (Saved Views, Фаза 3) ─────────────
 
 /**
+ * Операторы фильтра таблицы (Smart-tables Фаза 5 — NL Saved Views).
+ * Синхронизировано с backend `FILTER_OPS`
+ * (`backend/src/modules/tables/dto/table-filter.dto.ts`).
+ *
+ * Семантика:
+ *   - eq/neq        — равно / не равно (любой тип).
+ *   - contains      — подстрока (text/longtext/email/phone/url), case-insensitive.
+ *   - gt/lt         — больше / меньше (number/currency/percent/date).
+ *   - before/after  — дата строго раньше / позже заданной ISO-даты (value — строка-дата).
+ *   - older_than    — значение-дата старше, чем N дней назад (value — число дней).
+ *   - in            — значение ∈ массив (select/status/person; value — string[]).
+ *   - empty         — ячейка пуста (value не нужен).
+ */
+export type TableFilterOp =
+  | 'eq'
+  | 'neq'
+  | 'gt'
+  | 'lt'
+  | 'contains'
+  | 'in'
+  | 'empty'
+  | 'before'
+  | 'after'
+  | 'older_than';
+
+/** Одно условие фильтра. Форма совпадает с backend `TableFilterCondition`. */
+export interface TableFilterCondition {
+  propertyId: string;
+  op: TableFilterOp;
+  /** Для `empty` не нужен; для остальных — зависит от оператора. */
+  value?: unknown;
+}
+
+/**
  * Семантика полей конфига сохраняемого вида.
  *
  * Все поля опциональны: пустой config = «всё видимо, без сортировки, без
@@ -88,15 +122,25 @@ export interface TableViewConfig {
   rowHeight?: 'compact' | 'default' | 'tall';
   /** Локальная сортировка (Фаза 3 — минимально, equality + order). */
   sorts?: Array<{ propertyId: string; direction: 'asc' | 'desc' }>;
-  /** Простые фильтры. Полноценно — Фаза 4. */
-  filters?: Array<{
-    propertyId: string;
-    op: 'eq' | 'neq' | 'contains' | 'gt' | 'lt';
-    value: unknown;
-  }>;
+  /** Условия фильтра (AND). Полный набор операторов — Фаза 5 (NL Saved Views). */
+  filters?: TableFilterCondition[];
   /** Для канбана/группировок. Фаза 4. */
   groupBy?: string;
 }
+
+/** Все валидные операторы фильтра (для type-guard при парсе config из API). */
+const FILTER_OPS_SET: ReadonlySet<string> = new Set<TableFilterOp>([
+  'eq',
+  'neq',
+  'gt',
+  'lt',
+  'contains',
+  'in',
+  'empty',
+  'before',
+  'after',
+  'older_than',
+]);
 
 export interface TableViewDomain {
   id: string;
@@ -243,23 +287,11 @@ export function tableViewFromApi(v: TableViewApi): TableViewDomain {
   }
   if (Array.isArray(rawConfig.filters)) {
     config.filters = rawConfig.filters.filter(
-      (
-        f,
-      ): f is {
-        propertyId: string;
-        op: 'eq' | 'neq' | 'contains' | 'gt' | 'lt';
-        value: unknown;
-      } => {
+      (f): f is TableFilterCondition => {
         if (!f || typeof f !== 'object') return false;
         const o = f as Record<string, unknown>;
         if (typeof o.propertyId !== 'string') return false;
-        return (
-          o.op === 'eq' ||
-          o.op === 'neq' ||
-          o.op === 'contains' ||
-          o.op === 'gt' ||
-          o.op === 'lt'
-        );
+        return typeof o.op === 'string' && FILTER_OPS_SET.has(o.op);
       },
     );
   }
@@ -669,8 +701,20 @@ export function formatCellValue(
 
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const n = Number(value);
+  if (typeof value === 'string') {
+    // Толерантный парс ru-RU чисел (зеркалит backend parseNumericLoose в
+    // table-import.service.ts): срезаем валюту/%/буквы/пробелы (включая
+    // неразрывные — разделители тысяч), затем определяем десятичный разделитель
+    // по последнему вхождению `,`/`.` («1 234,56» → 1234.56; «1,234.56» → 1234.56).
+    const s0 = value.replace(/[^\d.,\-]/g, '');
+    if (!s0) return null;
+    const lastComma = s0.lastIndexOf(',');
+    const lastDot = s0.lastIndexOf('.');
+    const s =
+      lastComma > lastDot
+        ? s0.replace(/\./g, '').replace(',', '.')
+        : s0.replace(/,/g, '');
+    const n = Number(s);
     return Number.isFinite(n) ? n : null;
   }
   return null;
@@ -680,4 +724,211 @@ function formatNumber(value: unknown): string {
   const n = toNumber(value);
   if (n === null) return String(value ?? '');
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 }).format(n);
+}
+
+// ─────────────────────────── фильтры (Фаза 5) ────────────────────────────
+
+/**
+ * Извлекает сравнимое строковое представление значения ячейки для текстовых
+ * операторов и `in`/`eq`/`neq` по статусам/селектам/людям. Учитывает формы,
+ * в которых backend кладёт значения в `TableRow.cells`:
+ *   - text/longtext/url/email/phone → string
+ *   - status/selectSingle/person/createdBy → string ИЛИ объект `{ id?, name }`
+ *   - selectMulti → массив (string | { id?, name })
+ *   - createdAt/updatedAt/date → ISO-строка
+ *
+ * Возвращает массив атомарных строк (для скаляра — один элемент; для
+ * selectMulti — несколько). Объект сводится к `name` (а если нет — к `id`).
+ */
+function cellToStrings(value: unknown): string[] {
+  if (value === null || value === undefined || value === '') return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((v) => cellToStrings(v));
+  }
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    const label = o.name ?? o.id;
+    return label === undefined || label === null ? [] : [String(label)];
+  }
+  return [String(value)];
+}
+
+/** Дата из значения ячейки (ISO-строка / Date / число-таймстамп) → ms или null. */
+function cellToDateMs(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? null : t;
+  }
+  return null;
+}
+
+/** Пуста ли ячейка: undefined / null / '' / пустой массив. */
+function isCellEmpty(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim() === '';
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/** Является ли тип колонки датой (для календарного eq/neq и т.п.). */
+function isDatePropType(type: TablePropType | undefined): boolean {
+  return type === 'date' || type === 'createdAt' || type === 'updatedAt';
+}
+
+/**
+ * Проверяет одно условие фильтра против значения ячейки `raw`.
+ *
+ * Контракт устойчивости: если значение нельзя осмысленно сравнить под
+ * оператор (например, для `gt`/`before` ячейка не парсится в число/дату) —
+ * строка НЕ проходит это условие (возвращаем false). Так фильтр никогда не
+ * «роняется» и не показывает мусорные строки.
+ *
+ * `now` параметризован для детерминированных unit-тестов (older_than).
+ */
+function matchCondition(
+  raw: unknown,
+  cond: TableFilterCondition,
+  now: number,
+  propertyType?: TablePropType,
+): boolean {
+  switch (cond.op) {
+    case 'empty':
+      return isCellEmpty(raw);
+
+    case 'eq':
+    case 'neq': {
+      // ФИКС 7: пустая ячейка не участвует в «равно/не равно X». И для eq, и для
+      // neq возвращаем false — иначе neq:«Активен» ложно «проходил» бы строки с
+      // пустым статусом (пустое ≠ «Активен» формально true, но семантически это
+      // «значение не задано», а не «не равно X»). Симметрично с eq.
+      if (isCellEmpty(raw)) return false;
+
+      // ФИКС 3: для date-колонок сравниваем по КАЛЕНДАРНОМУ ДНЮ (floor к началу
+      // суток UTC), а не по строкам — иначе «2026-05-30» и «2026-05-30T10:00:00Z»
+      // считались бы разными. Если хотя бы одна сторона не парсится в дату —
+      // падаем в строковое сравнение ниже.
+      if (isDatePropType(propertyType)) {
+        const cellMs = cellToDateMs(raw);
+        const targetMs = cellToDateMs(cond.value);
+        if (cellMs !== null && targetMs !== null) {
+          const sameDay =
+            Math.floor(cellMs / MS_PER_DAY) === Math.floor(targetMs / MS_PER_DAY);
+          return cond.op === 'eq' ? sameDay : !sameDay;
+        }
+      }
+
+      const target = cellToStrings(cond.value)[0] ?? '';
+      const cells = cellToStrings(raw);
+      const hit = cells.some(
+        (c) => c.toLowerCase() === target.toLowerCase(),
+      );
+      return cond.op === 'eq' ? hit : !hit;
+    }
+
+    case 'contains': {
+      if (typeof cond.value !== 'string') return false;
+      const needle = cond.value.trim().toLowerCase();
+      if (needle === '') return false;
+      return cellToStrings(raw).some((c) =>
+        c.toLowerCase().includes(needle),
+      );
+    }
+
+    case 'in': {
+      if (!Array.isArray(cond.value)) return false;
+      const set = new Set(
+        cond.value
+          .filter((v): v is string => typeof v === 'string')
+          .map((v) => v.toLowerCase()),
+      );
+      if (set.size === 0) return false;
+      return cellToStrings(raw).some((c) => set.has(c.toLowerCase()));
+    }
+
+    case 'gt':
+    case 'lt': {
+      // number/currency/percent → числовое сравнение; date → по дате.
+      // Пробуем число, затем дату (cond.value может быть ISO-строкой даты).
+      const cellNum = toNumber(raw);
+      const targetNum = toNumber(cond.value);
+      if (cellNum !== null && targetNum !== null) {
+        return cond.op === 'gt' ? cellNum > targetNum : cellNum < targetNum;
+      }
+      const cellDate = cellToDateMs(raw);
+      const targetDate = cellToDateMs(cond.value);
+      if (cellDate !== null && targetDate !== null) {
+        return cond.op === 'gt'
+          ? cellDate > targetDate
+          : cellDate < targetDate;
+      }
+      return false;
+    }
+
+    case 'before':
+    case 'after': {
+      const cellDate = cellToDateMs(raw);
+      const targetDate = cellToDateMs(cond.value);
+      if (cellDate === null || targetDate === null) return false;
+      return cond.op === 'before'
+        ? cellDate < targetDate
+        : cellDate > targetDate;
+    }
+
+    case 'older_than': {
+      // value — число дней; ячейка-дата старше, чем (now - value дней).
+      const days = toNumber(cond.value);
+      if (days === null || days <= 0) return false;
+      const cellDate = cellToDateMs(raw);
+      if (cellDate === null) return false;
+      return cellDate < now - days * MS_PER_DAY;
+    }
+
+    default:
+      return false;
+  }
+}
+
+/**
+ * Применяет набор условий фильтра к строкам клиент-сайд (Smart-tables Фаза 5).
+ *
+ * Семантика — AND: строка проходит, только если выполнены ВСЕ условия. Пустой
+ * массив условий → строки возвращаются без изменений. Условие с propertyId,
+ * которого нет среди properties, игнорируется (не валит фильтр) — это безопасно,
+ * т.к. backend уже валидирует фильтр против схемы, но UI остаётся устойчивым.
+ *
+ * `now` параметризован для тестируемости `older_than` (по умолчанию Date.now()).
+ */
+export function applyFilters<R extends { cells: Record<string, unknown> }>(
+  rows: readonly R[],
+  filters: readonly TableFilterCondition[] | undefined,
+  properties: ReadonlyArray<{ id: string; type?: TablePropType }>,
+  now: number = Date.now(),
+): R[] {
+  if (!filters || filters.length === 0) return [...rows];
+  // Тип колонки по id — нужен matchCondition для date-aware операторов (eq/neq
+  // по календарному дню). `type` опционален: старые вызовы без типа работают
+  // как раньше (строковое сравнение).
+  const typeById = new Map<string, TablePropType | undefined>();
+  for (const p of properties) typeById.set(p.id, p.type);
+  const knownIds = new Set(properties.map((p) => p.id));
+  const active = filters.filter((f) => knownIds.has(f.propertyId));
+  if (active.length === 0) return [...rows];
+  return rows.filter((row) =>
+    active.every((cond) =>
+      matchCondition(
+        row.cells[cond.propertyId],
+        cond,
+        now,
+        typeById.get(cond.propertyId),
+      ),
+    ),
+  );
 }

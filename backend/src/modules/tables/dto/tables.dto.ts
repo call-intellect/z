@@ -9,6 +9,8 @@ import type {
 } from '@prisma/client';
 import { z } from 'zod';
 
+import type { TableFilterCondition } from './table-filter.dto';
+
 /**
  * Zod-схемы и DTO для Smart Tables (Фаза 0 — каркас CRUD).
  *
@@ -514,6 +516,28 @@ export function toTableViewViewDto(v: TableView): TableViewViewDto {
     createdAt: v.createdAt.toISOString(),
     updatedAt: v.updatedAt.toISOString(),
   };
+}
+
+// ─────────────── NL Saved Views — semantic-filter (Фаза 5) ─────────────────
+
+/**
+ * Тело запроса `POST /api/v1/tables/:tableId/semantic-filter`: NL-запрос
+ * пользователя («покажи клиентов, кому месяц никто не писал»). Минимум 2 символа
+ * — иначе LLM нечего конвертировать.
+ */
+export const SemanticFilterBodySchema = z.object({
+  nlQuery: z.string().trim().min(2).max(500),
+});
+export type SemanticFilterBody = z.infer<typeof SemanticFilterBodySchema>;
+
+/**
+ * Ответ semantic-filter: очищенный (валидированный против схемы) набор условий
+ * фильтра + флаг `cached` (попадание в Redis-кэш по нормализованному запросу).
+ * Тип `TableFilterCondition` — в `table-filter.dto.ts`.
+ */
+export interface SemanticFilterResultDto {
+  filters: TableFilterCondition[];
+  cached: boolean;
 }
 
 // ─────────────── Pending-patches / provenance (Фаза 3) ────────────────────

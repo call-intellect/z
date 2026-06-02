@@ -189,11 +189,26 @@ related_projects:
 - **Frontend**: кнопка «Из файла» на `/tables` → `ImportFromFileDialog` (drag&drop → превью схемы + блок слияния → «Слить»/«Создать новую»).
 - **Тесты**: `table-file-parser.service.spec` (xlsx/csv/неподдерживаемый) + дополнения в `table-agent.service.spec` (tabular-маппинг, cosine, entity-link). 63 tables-теста зелёные.
 
-## В работе / далее
+### Фаза 5 — NL Saved Views ✅
 
-- **Фаза 1.5** (параллельно, блокер для включения флага Фазы 1) — Eval Text-to-Schema на 100 русских NL-промптах.
-- **Фаза 5** — NL Saved Views.
-- **Долг Фазы 4:** миграция парсинга Excel/CSV на DCS (Docling) + поддержка PDF/сканов/HTML, когда поднимем document-conversion микросервис.
+Пользователь пишет «покажи клиентов, кому месяц никто не писал» → LLM конвертит в filter JSON → фильтр применяется → можно сохранить как вид.
+
+- **Фильтрация впервые реализована** (до Фазы 5 её не было — `selectVisibleRows` применял только сортировки). 10 операторов: `eq/neq/gt/lt/contains/in/empty/before/after/older_than`. Применяется **клиент-сайд** в `selectVisibleRows` (`applyFilters`) — согласованно с клиентскими сортировками; серверная JSON-фильтрация (GIN) — будущая оптимизация.
+- **Backend**: prompt-key `table-semantic-filter` (DeepSeek V4 Flash, cache-friendly — стабильный SYSTEM с каталогом операторов, переменное в USER). `TableSemanticFilterService.parseSemanticFilter` → Redis-кэш `table:semfilter:{tableId}:{sha1(normQuery)}` (TTL 7д) → LLM → `validateFilters` (отбор по совместимости op×TablePropType, отброс несуществующих propertyId/битых value). `POST /tables/:id/semantic-filter`. `table-filter.dto.ts` — `FILTER_OPS`, `TableFilterCondition`, `validateFilters`.
+- **Frontend**: `SemanticFilterBar` (поле «Найти срез» + индикатор/сброс + «Сохранить как новый вид» через `SaveViewDialog`). `applyFilters` в `domain/table.ts` (устойчивое сравнение по типам: status/select объекты по name, даты через Date.parse, older_than от now). `tableViewsApi.semanticFilter`. Сохранённые виды с фильтрами применяются автоматически (`applyView` копирует config.filters).
+- **Visibility** (personal/shared/public) у видов уже была реализована (база Smart-tables).
+- **Тесты**: backend `table-semantic-filter.service.spec` (cache hit/miss, валидатор, мусор-JSON) + `validateFilters` unit — 94 tables-теста; frontend `applyFilters` — 11 тестов.
+
+## Итог
+
+**Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/tz/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз.
+
+## Долг / далее
+
+- **Фаза 1.5** (блокер для включения флага `feature.tables_text_to_schema`) — Eval Text-to-Schema на 100 русских NL-промптах.
+- **Поток Privacy** — research конфиденциальности до публичного GTM.
+- **Долг Фазы 4:** миграция парсинга Excel/CSV на DCS (Docling) + PDF/сканы/HTML, когда поднимем document-conversion микросервис.
+- **Долг Фазы 5:** серверная фильтрация по cells (GIN) для масштаба; сейчас клиент-сайд.
 - **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
 - **Фаза 5** — NL Saved Views.
 - Потоки: Eval Text-to-Schema (100 русских промптов, блокер для feature-flag), Privacy research (до GTM).

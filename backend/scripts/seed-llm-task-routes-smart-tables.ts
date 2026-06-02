@@ -14,6 +14,9 @@
  * транскрипту):
  *   - table-extract-rows    — извлечение фактов по схеме колонок.
  *   - table-auto-fill       — рекомендация значения одной ячейки.
+ * Фаза 5 — 1 taskType NL Saved Views (cheap модель — частый JSON-вызов
+ * конвертации NL-запроса в фильтр таблицы):
+ *   - table-semantic-filter — NL-запрос пользователя → JSON-фильтр таблицы.
  * Cheap профиль:
  *   primary   — deepseek deepseek-v4-flash
  *   secondary — openai-via-proxy gpt-5.4-mini
@@ -71,6 +74,8 @@ const SEEDS: TaskRouteSeed[] = [
   // Фаза 3 — Event-to-Cells (cheap tier).
   { taskType: 'table-extract-rows', chain: CHEAP_CHAIN },
   { taskType: 'table-auto-fill', chain: CHEAP_CHAIN },
+  // Фаза 5 — NL Saved Views (cheap tier).
+  { taskType: 'table-semantic-filter', chain: CHEAP_CHAIN },
 ];
 
 interface SeedStats {

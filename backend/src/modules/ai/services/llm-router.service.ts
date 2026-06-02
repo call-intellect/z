@@ -484,7 +484,13 @@ export type LlmTaskType =
   // Дешёвые частые задачи → primary deepseek-v4-flash (cheap tier). JSON object.
   // Cache-friendly: SYSTEM (роль + каталог типов + правила) стабилен, переменное в USER.
   | 'table-extract-rows'
-  | 'table-auto-fill';
+  | 'table-auto-fill'
+  // Smart-tables auto-creation (2026-06-02, Фаза 5) — NL Saved Views.
+  //   'table-semantic-filter' — NL-запрос пользователя → JSON-фильтр таблицы.
+  // Дешёвая частая задача → primary deepseek-v4-flash (cheap tier). JSON object.
+  // Cache-friendly: SYSTEM (роль + каталог операторов + правила) стабилен, переменное
+  // (колонки таблицы + дата + запрос) — в USER.
+  | 'table-semantic-filter';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -651,6 +657,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Smart-tables auto-creation (2026-06-02, Фаза 3) — Event-to-Cells (cheap).
   'table-extract-rows',
   'table-auto-fill',
+  // Smart-tables auto-creation (2026-06-02, Фаза 5) — NL Saved Views (cheap).
+  'table-semantic-filter',
 ] as const;
 
 /**

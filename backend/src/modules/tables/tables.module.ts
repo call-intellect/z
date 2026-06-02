@@ -14,6 +14,7 @@ import { TableFileParserService } from './services/table-file-parser.service';
 import { TableImportService } from './services/table-import.service';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
+import { TableSemanticFilterService } from './services/table-semantic-filter.service';
 import { TableSyncQueueService } from './services/table-sync-queue.service';
 import { TableSyncService } from './services/table-sync.service';
 import { TableViewsService } from './services/table-views.service';
@@ -52,6 +53,8 @@ import { TablesService } from './services/tables.service';
     TableViewsService,
     TablesAutoProvisionService,
     TableAgentService,
+    // Smart-tables Фаза 5 — NL Saved Views (NL-запрос → JSON-фильтр + Redis-кэш).
+    TableSemanticFilterService,
     // Smart-tables Фаза 4 — Document-to-Table (импорт Excel/CSV).
     TableFileParserService,
     TableImportService,

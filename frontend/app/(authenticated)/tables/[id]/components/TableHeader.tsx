@@ -6,6 +6,7 @@ import type { TableDomain } from '@/domain/table';
 import { Button } from '@/ui/shadcn/button';
 
 import { AddColumnButton } from './AddColumnButton';
+import { SemanticFilterBar } from './SemanticFilterBar';
 import { ViewSelector } from './ViewSelector';
 import type { TablePropType } from '@/domain/table';
 
@@ -87,6 +88,7 @@ export function TableHeader({
         </div>
       </div>
       <ViewSelector tableId={table.id} />
+      <SemanticFilterBar tableId={table.id} />
     </div>
   );
 }

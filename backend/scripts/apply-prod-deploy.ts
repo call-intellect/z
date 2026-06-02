@@ -297,6 +297,17 @@ const STEPS: Step[] = [
     hint: 'Smart-tables Фаза 2: graph-driven строки в системные autoCreate-таблицы',
     skipBootstrap: true,
   },
+  // Goals OKR v2 (2026-06-02) Фаза 0 — после prisma:push legacy-цели получили
+  // recordedAt=now() от @default(now()). Backfill выставляет recordedAt=createdAt
+  // живым версиям (validUntil/supersededById IS NULL). Идемпотентен. На чистом
+  // старте целей нет → skipBootstrap. ТЗ: plans/tz/2026-06-02-goals-okr-v2.md §2.5.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-goal-v2-defaults.ts',
+    hint: 'Goals OKR v2: recordedAt=createdAt для legacy-целей',
+    args: ['--apply'],
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

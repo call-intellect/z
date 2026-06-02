@@ -16,7 +16,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { Plus, Sparkles, Table2 } from 'lucide-react';
+import { FileSpreadsheet, Plus, Sparkles, Table2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { tablesApi } from '@/api/tables.api';
@@ -24,6 +24,8 @@ import type { TableApi } from '@/api/types/tables';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/ui/shadcn/button';
 import { CONCIERGE_OPEN_EVENT } from '@/ui/concierge/ConciergeFloatingButton';
+
+import { ImportFromFileDialog } from './components/ImportFromFileDialog';
 
 import {
   AdminError,
@@ -54,6 +56,7 @@ function TablesListContent({ orgId }: { orgId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -133,12 +136,27 @@ function TablesListContent({ orgId }: { orgId: string }) {
             <Sparkles className="h-4 w-4" />
             Спросить Кору
           </Button>
+          <Button
+            onClick={() => setImportOpen(true)}
+            variant="secondary"
+            size="sm"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Из файла
+          </Button>
           <Button onClick={onCreate} disabled={isCreating} size="sm">
             <Plus className="h-4 w-4" />
             Создать таблицу
           </Button>
         </div>
       </header>
+
+      {importOpen ? (
+        <ImportFromFileDialog
+          orgId={orgId}
+          onClose={() => setImportOpen(false)}
+        />
+      ) : null}
 
       {items.length === 0 ? (
         <EmptyTablesList onCreate={onCreate} isCreating={isCreating} />

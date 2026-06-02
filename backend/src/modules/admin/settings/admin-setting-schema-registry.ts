@@ -105,6 +105,10 @@ const registry = new Map<string, ZodTypeAny>([
   // Дневной бюджет токенов агента таблиц на Org.
   ['table.agent.max_daily_tokens', POSITIVE_INT],
 
+  // ── Smart-tables импорт из файла (table.import.*) — Фаза 4 Document-to-Table
+  // Порог cosine-схожести схем: ≥ порога → предлагаем «слить» с таблицей.
+  ['table.import.dedup_threshold', UNIT_INTERVAL],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

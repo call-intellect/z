@@ -10,6 +10,8 @@ import { TableSyncListener } from './listeners/table-sync.listener';
 import { TableAgentService } from './services/table-agent.service';
 import { TableEnrichQueueService } from './services/table-enrich-queue.service';
 import { TableEnrichService } from './services/table-enrich.service';
+import { TableFileParserService } from './services/table-file-parser.service';
+import { TableImportService } from './services/table-import.service';
 import { TablePropertiesService } from './services/table-properties.service';
 import { TableRowsService } from './services/table-rows.service';
 import { TableSyncQueueService } from './services/table-sync-queue.service';
@@ -50,6 +52,9 @@ import { TablesService } from './services/tables.service';
     TableViewsService,
     TablesAutoProvisionService,
     TableAgentService,
+    // Smart-tables Фаза 4 — Document-to-Table (импорт Excel/CSV).
+    TableFileParserService,
+    TableImportService,
     // Smart-tables Фаза 2 — live entitySync. Listener слушает события графа и
     // кладёт job в `tables.sync`; сам воркер живёт в WorkersModule (in-process).
     TableSyncQueueService,

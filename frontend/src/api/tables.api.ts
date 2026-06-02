@@ -32,8 +32,12 @@
  */
 
 import { apiClient } from './api-client';
+import { ApiError } from './api-error';
 import { buildQuery, orgHeaders } from './admin-helpers';
-import type { InferredTableSchema } from '@/domain/table';
+import type {
+  ImportAnalyzeResult,
+  InferredTableSchema,
+} from '@/domain/table';
 import type {
   CellProvenanceApi,
   CreatePropertyBodyApi,
@@ -53,6 +57,46 @@ import type {
   UpdateTableBodyApi,
   UpdateTableViewBodyApi,
 } from './types/tables';
+
+/**
+ * Multipart-загрузка файла на анализ схемы (Smart-tables Фаза 4). apiClient
+ * умеет только JSON, поэтому делаем raw `fetch` с FormData (поле `file`),
+ * сохраняя cookie-сессию и заголовок X-Org-Id. Паттерн повторяет
+ * `documentsApi.upload`.
+ */
+async function importAnalyzeMultipart(
+  orgId: string,
+  file: File,
+): Promise<ImportAnalyzeResult> {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+  const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/tables/import/analyze`;
+  const form = new FormData();
+  form.append('file', file);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Org-Id': orgId },
+    body: form,
+  });
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as {
+        error?: { code?: string; message?: string };
+      };
+      if (body?.error?.message) message = body.error.message;
+      if (body?.error?.code) code = body.error.code;
+    } catch {
+      // тело не JSON — оставляем дефолтные code/message
+    }
+    throw new ApiError({ code, message });
+  }
+  return (await res.json()) as ImportAnalyzeResult;
+}
 
 export const tablesApi = {
   // ─── Tables ───────────────────────────────────────────────────────────
@@ -82,6 +126,39 @@ export const tablesApi = {
    */
   createFromSchema: (orgId: string, body: InferredTableSchema) =>
     apiClient.post<TableApi>(`/api/v1/tables/from-schema`, body, {
+      headers: orgHeaders(orgId),
+    }),
+
+  /**
+   * Smart-tables auto-creation (Фаза 4) — анализ загруженного файла
+   * (Excel/CSV). multipart, поле `file`. Идём не через apiClient (он
+   * JSON-only), но соблюдаем те же headers (X-Org-Id) и cookie-сессию —
+   * паттерн как у `documentsApi.upload`.
+   * `POST /api/v1/tables/import/analyze`.
+   */
+  importAnalyze: (orgId: string, file: File) =>
+    importAnalyzeMultipart(orgId, file),
+
+  /**
+   * Smart-tables auto-creation (Фаза 4) — создать новую таблицу или слить
+   * со существующей по результату анализа. `schema` и `rows` берутся из
+   * ответа `importAnalyze` без изменений.
+   * `POST /api/v1/tables/import/commit`.
+   */
+  importCommit: (
+    orgId: string,
+    body: {
+      mode: 'create' | 'merge';
+      targetTableId?: string;
+      schema: InferredTableSchema;
+      rows: string[][];
+    },
+  ) =>
+    apiClient.post<{
+      tableId: string;
+      rowsCreated: number;
+      entitiesLinked: number;
+    }>(`/api/v1/tables/import/commit`, body, {
       headers: orgHeaders(orgId),
     }),
 

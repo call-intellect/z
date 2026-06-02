@@ -455,6 +455,37 @@ export interface InferredTableSchema {
   properties: InferredSchemaProperty[];
 }
 
+/**
+ * Кандидат на слияние при импорте из файла (Фаза 4 Smart-tables
+ * auto-creation). Backend сравнивает инферренную схему с существующими
+ * таблицами по эмбеддингу и возвращает близкие по косинусной мере.
+ * `cosine` — 0..1 (1 = идентичны).
+ */
+export interface ImportMergeCandidate {
+  tableId: string;
+  name: string;
+  cosine: number;
+}
+
+/**
+ * Результат анализа загруженного файла (Excel/CSV) для авто-создания
+ * таблицы. Форма совпадает с backend-ответом
+ * `POST /api/v1/tables/import/analyze`.
+ *
+ * `rows` — массив МАССИВОВ строк: `rows[i][j]` соответствует
+ * `schema.properties[j]` ПО ПОРЯДКУ (propertyId ещё нет — таблица не
+ * создана). Тот же формат уходит обратно в `import/commit`.
+ */
+export interface ImportAnalyzeResult {
+  schema: InferredTableSchema;
+  rows: string[][];
+  rawRowsCount: number;
+  truncated: boolean;
+  /** true, если в файле было больше 50 колонок и лишние столбцы отброшены. */
+  truncatedColumns: boolean;
+  mergeCandidates: ImportMergeCandidate[];
+}
+
 const ALL_PROP_TYPES = new Set<string>(Object.keys(PROP_TYPE_LABEL_RU));
 const ENTITY_SYNC_TYPES = new Set<string>(['org', 'person', 'meeting', 'document']);
 

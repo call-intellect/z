@@ -177,11 +177,23 @@ related_projects:
 - **Frontend**: в `RowDetail` — 🔗 + popover (источник/уверенность/ссылка на встречу/«Отменить»→undo); в `TableHeader` — бейдж «🔔 Правки на подтверждении: N» → `PendingPatchesPanel` (принять/отклонить по одной или все).
 - **prompt-keys**: `table-extract-rows`, `table-auto-fill` (Flash; auto-fill заведён как hook, в pipeline пока не вызывается). **Тесты**: `table-enrich.service.spec` (7: авто-патч/overwrite-pending/low-conf-pending/readonly-skip/кэш/decide/undo). 50+ tables-тестов зелёные.
 
+### Фаза 4 — Document-to-Table (Excel/CSV) ✅
+
+Пользователь грузит Excel/CSV на `/tables` → инференс схемы → cosine-dedup со схемами существующих таблиц → «слить» или «создать новую» → строки появляются.
+
+- **Парсинг — in-process Node (`exceljs`)** для XLSX/CSV. Решение владельца 2026-06-02: пока остаёмся на Node, Python-микросервис DCS не поднимаем. **Долг:** структурный парсинг по-хорошему должен идти через DCS (Docling) из [document-ingest-universal ТЗ](../../plans/tz/2026-05-31-document-ingest-universal.md) — Д2; PDF/сканы/HTML/PPTX **не поддержаны** (ждут DCS). Это сознательный stopgap, не финальная архитектура.
+- **`TableFileParserService.parseFileToTable`** — первый лист/таблица → `{kind, headers, rows[][]}`, потолок 50k строк, неподдерживаемый формат → `400 unsupported_file_format`.
+- **`TableAgentService.inferSchemaFromTabular`** — переиспользует 3-pass pipeline Фазы 1, вход — headers+первые 20 строк; `alignToHeaders` гарантирует «колонка файла j ↔ property j». **`findSimilarTables`** — cosine (text-embedding-3-small) схемы vs существующих, порог `table.import.dedup_threshold` (0.85). **`linkRowsToEntities`** — матч строк к Entity по canonicalName/aliases (не создаёт новые).
+- **`TableImportService`** — `commitCreate`/`commitMerge` (merge сопоставляет колонки по имени), приведение типов ячеек.
+- **Эндпоинты**: `POST /tables/import/analyze` (multipart → схема+rows+mergeCandidates), `POST /tables/import/commit` (mode create|merge). rows — `string[][]` по индексу колонок. ENV `TABLE_IMPORT_MAX_FILE_MB` (25), `TABLE_IMPORT_MAX_ROWS` (5000). Без feature-flag.
+- **Frontend**: кнопка «Из файла» на `/tables` → `ImportFromFileDialog` (drag&drop → превью схемы + блок слияния → «Слить»/«Создать новую»).
+- **Тесты**: `table-file-parser.service.spec` (xlsx/csv/неподдерживаемый) + дополнения в `table-agent.service.spec` (tabular-маппинг, cosine, entity-link). 63 tables-теста зелёные.
+
 ## В работе / далее
 
 - **Фаза 1.5** (параллельно, блокер для включения флага Фазы 1) — Eval Text-to-Schema на 100 русских NL-промптах.
-- **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
 - **Фаза 5** — NL Saved Views.
+- **Долг Фазы 4:** миграция парсинга Excel/CSV на DCS (Docling) + поддержка PDF/сканов/HTML, когда поднимем document-conversion микросервис.
 - **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
 - **Фаза 5** — NL Saved Views.
 - Потоки: Eval Text-to-Schema (100 русских промптов, блокер для feature-flag), Privacy research (до GTM).

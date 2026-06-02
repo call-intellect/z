@@ -214,6 +214,90 @@ export type CreateTableFromSchemaBody = z.infer<
   typeof CreateTableFromSchemaBodySchema
 >;
 
+// ─────────────────── Document-to-Table (Фаза 4) ──────────────────────────
+
+/**
+ * Smart-tables auto-creation (2026-06-02, Фаза 4) — Document-to-Table.
+ *
+ * Поток: пользователь грузит Excel/CSV → `POST /tables/import/analyze` парсит
+ * файл, инфёрит схему и ищет похожие таблицы для слияния → фронт показывает
+ * превью и кандидатов → `POST /tables/import/commit` создаёт таблицу (или
+ * сливает строки в существующую).
+ *
+ * ВАЖНО — формат `rows`. На этапе analyze колонок ещё нет (propertyId не
+ * существует, таблица не создана), поэтому `rows` передаются как массив МАССИВОВ
+ * строковых значений: `rows[i][j]` — значение j-го столбца в i-й строке, где `j`
+ * соответствует `schema.properties[j]` (и заголовку файла j) ПО ПОРЯДКУ. Этот же
+ * формат фронт возвращает в commit. Сопоставление столбец↔колонка — строго по
+ * индексу j (см. TableAgentService.inferSchemaFromTabular, alignToHeaders).
+ */
+
+/**
+ * Одна строка импорта — массив строковых значений ЯЧЕЕК по порядку столбцов.
+ * `.max(500)` — потолок числа ЯЧЕЕК В СТРОКЕ (защита от аномально широких
+ * строк), а НЕ лимит количества строк. Лимит строк — `rows.max(5000)` ниже.
+ */
+const ImportRowSchema = z.array(z.string()).max(500);
+
+/**
+ * Response-DTO `POST /tables/import/analyze` (превью без создания).
+ *   - `schema`         — предложенная схема (как InferredTableSchemaDto);
+ *   - `rows`           — все строки в пределах лимита импорта (`importMaxRows`,
+ *     до commit-потолка 5000), массивы значений по индексу столбца. Фронт шлёт
+ *     их в commit без потерь; превью обрезается только для отображения;
+ *   - `rawRowsCount`   — сколько строк всего в файле (после лимита парсера);
+ *   - `truncated`      — true, если исходных строк больше, чем влезло в `rows`
+ *     (т.е. файл длиннее лимита импорта `importMaxRows`);
+ *   - `truncatedColumns`— true, если в файле было больше 50 колонок и лишние
+ *     столбцы отброшены парсером;
+ *   - `mergeCandidates`— похожие существующие таблицы (cosine ≥ порог), топ-3.
+ */
+export interface ImportAnalyzeDto {
+  schema: InferredTableSchemaDto;
+  rows: string[][];
+  rawRowsCount: number;
+  truncated: boolean;
+  truncatedColumns: boolean;
+  mergeCandidates: Array<{ tableId: string; name: string; cosine: number }>;
+}
+
+/**
+ * `POST /tables/import/commit` — материализация импорта.
+ *   - mode 'create' — создать новую таблицу из `schema` + перенести `rows`.
+ *   - mode 'merge'  — добавить `rows` в существующую `targetTableId`
+ *     (сопоставление колонок входной схемы и таблицы — по нормализованному имени).
+ *
+ * `rows` — тот же массив массивов значений по индексу столбца, что в analyze.
+ */
+export const ImportCommitBodySchema = z
+  .object({
+    mode: z.enum(['create', 'merge']),
+    targetTableId: z.string().cuid().optional(),
+    schema: z.object({
+      name: z.string().trim().min(1).max(255),
+      description: z.string().trim().max(5000).nullable().optional(),
+      icon: z.string().trim().max(50).nullable().optional(),
+      entitySync: z
+        .object({ type: z.enum(['org', 'person', 'meeting', 'document']) })
+        .nullable()
+        .optional(),
+      properties: z.array(InferredSchemaPropertySchema).min(1).max(50),
+    }),
+    rows: z.array(ImportRowSchema).max(5000),
+  })
+  .refine((b) => b.mode !== 'merge' || !!b.targetTableId, {
+    message: 'Для слияния нужно указать targetTableId',
+    path: ['targetTableId'],
+  });
+export type ImportCommitBody = z.infer<typeof ImportCommitBodySchema>;
+
+/** Response-DTO `POST /tables/import/commit`. */
+export interface ImportCommitResultDto {
+  tableId: string;
+  rowsCreated: number;
+  entitiesLinked: number;
+}
+
 // ─────────────────────────── TableProperty ───────────────────────────────
 
 /**

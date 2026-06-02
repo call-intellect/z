@@ -328,6 +328,19 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'platform', section: 'features', severity, description });
   }
 
+  // ── Smart-tables импорт из файла (table.import.*) — Фаза 4 Document-to-Table.
+  const tableImport: Array<[string, unknown, Severity, string]> = [
+    [
+      'table.import.dedup_threshold',
+      envFloat('TABLE_IMPORT_DEDUP_THRESHOLD', 0.85),
+      'medium',
+      'Порог cosine-схожести схем при импорте файла: ≥ порога → предлагаем слить с существующей таблицей, иначе создать новую',
+    ],
+  ];
+  for (const [key, value, severity, description] of tableImport) {
+    out.push({ key, value, category: 'platform', section: 'features', severity, description });
+  }
+
   // ── Conversational (conversational.*) — 15.
   const conversational: Array<[string, unknown, Severity, string]> = [
     ['conversational.outboundConcurrency', envInt('CONVERSATIONAL_OUTBOUND_CONCURRENCY', 5), 'medium', 'Concurrency outbound-воркера каналов'],

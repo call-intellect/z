@@ -35,6 +35,20 @@ export class ProactiveNotificationsService {
     limit?: number;
   }): Promise<ProactiveNotification[]> {
     const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+
+    // ТЗ 2026-06-01-demo-shared-org-model §4.13 (defence-in-depth): в эталонной
+    // shared demo-Org реальный watcher отключён (`ProactiveWatcherService` пропускает
+    // эталон), но если ProactiveNotification попадёт сюда другим путём —
+    // не показываем её demo_observer-наблюдателям. Эти уведомления
+    // адресованы реальным владельцам и не должны утекать к гостям-наблюдателям.
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId: args.userId, orgId: args.tenantId },
+      select: { role: true },
+    });
+    if (membership?.role === 'demo_observer') {
+      return [];
+    }
+
     return this.prisma.proactiveNotification.findMany({
       where: {
         tenantId: args.tenantId,

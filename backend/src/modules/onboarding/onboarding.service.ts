@@ -8,35 +8,12 @@ import {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-import { seedChatNotifications } from './demo-data/chat-notifications';
-import {
-  seedBrandVoice,
-  seedCalendar,
-  seedDocuments,
-  seedExperiments,
-  seedFeedback,
-  seedIdeas,
-  seedProbeEvents,
-  seedReferrals,
-  seedRegulations,
-  seedVendors,
-} from './demo-data/extras';
-import { seedGoalsClones } from './demo-data/goals-clones';
-import { seedHelpfulness } from './demo-data/helpfulness';
-import { seedKnowledgeGraph } from './demo-data/knowledge-graph';
+import { runAllSeedSteps } from './demo-data';
 import {
   DEMO_EXTERNAL_SOURCE,
   markAllDemoEntitiesForTenant,
 } from './demo-data/mark-demo';
-import { seedMeetings } from './demo-data/meetings';
-import { seedOperations } from './demo-data/operations';
-import { seedOrgStructure } from './demo-data/org-structure';
-import { seedPolish } from './demo-data/polish';
-import { seedProcessTemplates } from './demo-data/process-templates';
-import { seedPulseSnapshots } from './demo-data/pulse-snapshots';
-import { seedTracker } from './demo-data/tracker';
 import { createEmptyIdMap, type SeedContext } from './demo-data/types';
-import { seedUsers } from './demo-data/users';
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';
 import { humanize } from './onboarding-labels';
 
@@ -270,34 +247,10 @@ ${featureList}
 
     this.logger.log(`Seeding demo workspace for org=${orgId}`);
 
-    // ТЗ 2026-05-31-demo-content-expansion-pulse — порядок §5:
-    // users → org-structure → process-templates → vendors → tracker →
-    // meetings → knowledge-graph → goals-clones → regulations → ideas →
-    // documents → calendar → experiments → brand-voice → probe-events →
-    // operations → pulse-snapshots → helpfulness → referrals → feedback →
-    // chat-notifications → polish.
-    await seedUsers(ctx, ids);
-    await seedOrgStructure(ctx, ids);
-    await seedProcessTemplates(ctx, ids);
-    await seedVendors(ctx, ids);
-    await seedTracker(ctx, ids);
-    await seedMeetings(ctx, ids);
-    await seedKnowledgeGraph(ctx, ids);
-    await seedGoalsClones(ctx, ids);
-    await seedRegulations(ctx, ids);
-    await seedIdeas(ctx, ids);
-    await seedDocuments(ctx, ids);
-    await seedCalendar(ctx, ids);
-    await seedExperiments(ctx, ids);
-    await seedBrandVoice(ctx, ids);
-    await seedProbeEvents(ctx, ids);
-    await seedOperations(ctx, ids);
-    await seedPulseSnapshots(ctx, ids);
-    await seedHelpfulness(ctx, ids);
-    await seedReferrals(ctx, ids);
-    await seedFeedback(ctx, ids);
-    await seedChatNotifications(ctx, ids);
-    await seedPolish(ctx, ids);
+    // ТЗ 2026-06-01-demo-shared-org-model §4.7: список 23 модулей живёт в
+    // `demo-data/index.ts` (DEMO_SEED_STEPS) — единый источник правды для
+    // HTTP-эндпоинта, CLI и patch-скриптов.
+    await runAllSeedSteps(ctx, ids);
 
     // audit Б3 (2026-05-29) — пробегаемся по всем tenant-scoped моделям и
     // проставляем `externalSource = 'demo'` свежесозданным записям.

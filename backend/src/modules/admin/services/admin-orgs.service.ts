@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { type OrgTier, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -165,7 +165,13 @@ export class AdminOrgsService {
   ): Promise<{ ok: true }> {
     const data: Prisma.OrgUpdateInput = {};
     if (args.tier !== undefined) data.tier = args.tier;
-    if (args.freeze === true) data.deletedAt = new Date();
+    if (args.freeze === true) {
+      // ТЗ 2026-06-01-demo-shared-org-model §7 (edge-case): эталонную демо-Org
+      // нельзя «заморозить» (soft-delete через freeze=true). Она должна
+      // оставаться видимой всем `demo_observer`-наблюдателям.
+      await this.assertNotReferenceDemo(orgId, 'freeze');
+      data.deletedAt = new Date();
+    }
     if (args.freeze === false) data.deletedAt = null;
     if (Object.keys(data).length === 0) return { ok: true };
     await this.prisma.org.update({ where: { id: orgId }, data });
@@ -173,11 +179,34 @@ export class AdminOrgsService {
   }
 
   async deleteOrg(orgId: string): Promise<{ ok: true }> {
+    // ТЗ 2026-06-01-demo-shared-org-model §7 (edge-case): эталонная Org
+    // (`isReferenceDemo=true`) НЕ удаляется. Иначе все memberships
+    // `demo_observer` повисли бы orphan'ами, getMe вернёт null currentOrgId.
+    await this.assertNotReferenceDemo(orgId, 'delete');
     await this.prisma.org.update({
       where: { id: orgId },
       data: { deletedAt: new Date() },
     });
     return { ok: true };
+  }
+
+  private async assertNotReferenceDemo(orgId: string, action: 'freeze' | 'delete'): Promise<void> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: { isReferenceDemo: true },
+    });
+    if (org?.isReferenceDemo) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'cannot_delete_reference',
+          message:
+            action === 'delete'
+              ? 'Эталонную демо-Org нельзя удалить (isReferenceDemo=true). Сначала снимите флаг через прямой запрос к БД.'
+              : 'Эталонную демо-Org нельзя «заморозить» — она должна оставаться доступной наблюдателям.',
+        },
+      });
+    }
   }
 
   // ─────────────────────────── Admin-redesign Фаза 4 ───────────────────────

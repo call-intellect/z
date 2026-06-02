@@ -1,6 +1,3 @@
-import { spawn } from 'node:child_process';
-import { join } from 'node:path';
-
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { PromptFeedback } from '@prisma/client';
 
@@ -10,16 +7,21 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 /**
  * Agents v2 Фаза C2 (2026-05-30) — GepaRunnerService.
  *
- * Запускает GEPA optimization через Python subprocess. См.
- * `backend/python/gepa/runner.py` и
+ * Вызывает GEPA optimization в ОТДЕЛЬНОМ контейнере `z-gepa` по HTTP. См.
+ * `backend/python/gepa/server.py` (FastAPI), `backend/python/Dockerfile` и
  * `plans/tz/2026-05-29-agents-v2-umbrella.md` §C2.
+ *
+ * До 2026-06 Python запускался через `child_process.spawn` ВНУТРИ контейнера
+ * backend — раздувало образ pip-зависимостями и плодило дочерние процессы в API.
+ * Теперь GEPA крутится отдельным сервисом, backend ходит сюда по
+ * `POST {GEPA_SERVICE_URL}/optimize`.
  *
  * Workflow:
  *   1. `runOptimization(promptKey, feedback, seedPrompt)` строит reflective
- *      dataset из feedback, spawn'ит python3 runner.py с JSON-payload.
- *   2. Ждёт результат stdout (с hard-timeout cfg.gepa.timeoutMs).
+ *      dataset из feedback и POST'ит JSON-payload на gepa-сервис.
+ *   2. Ждёт JSON-ответ (с hard-timeout cfg.gepa.timeoutMs через AbortController).
  *   3. Парсит ответ → `{ candidates: [{ text, metrics, traces }], costUsd? }`.
- *   4. Если subprocess недоступен (ENOENT при spawn'е) или timeout — лог warn
+ *   4. Если сервис недоступен (connection refused / DNS) или timeout — лог warn
  *      + возвращает пустой массив (cron не падает).
  *
  * GepaRunner НЕ записывает candidates в БД — это делает caller (cron).
@@ -27,17 +29,13 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
  *
  * Метрики:
  *   - `incGepaOptimization({promptKey, status: 'success'|'failed'|'timeout'|'skipped_no_python'})`
+ *     ('skipped_no_python' = gepa-сервис недоступен; имя сохранено для
+ *     совместимости с существующими дашбордами/метриками).
  *   - `incGepaCost({tenantTop, costUsd})` (если runner вернул cost_usd)
  */
 @Injectable()
 export class GepaRunnerService {
   private readonly logger = new Logger(GepaRunnerService.name);
-
-  /**
-   * Кэш проверки доступности Python. Делаем lazy один раз на процесс,
-   * чтобы не блокировать startup.
-   */
-  private pythonAvailable: boolean | null = null;
 
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -97,24 +95,14 @@ export class GepaRunnerService {
       max_metric_calls: this.cfg.gepa.maxMetricCalls,
     };
 
-    const scriptPath = join(
-      process.cwd(),
-      'backend',
-      'python',
-      'gepa',
-      'runner.py',
-    );
-    // Fallback на относительный путь от backend/ (в Docker WORKDIR=/app).
-    const altScriptPath = join(process.cwd(), 'python', 'gepa', 'runner.py');
-
     let result: GepaRunnerOutput;
     try {
-      result = await this.spawnRunner(scriptPath, altScriptPath, payload);
+      result = await this.callGepaService(payload);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('ENOENT') || msg.includes('no_python')) {
+      if (msg.includes('unavailable')) {
         this.logger.warn(
-          `GEPA: python3 недоступен (${msg}) — пропускаю optimization для promptKey=${promptKey}`,
+          `GEPA: сервис ${this.cfg.gepa.serviceUrl} недоступен (${msg}) — пропускаю optimization для promptKey=${promptKey}`,
         );
         this.metrics?.incGepaOptimization({
           promptKey,
@@ -130,7 +118,7 @@ export class GepaRunnerService {
         return { candidates: [], costUsd: null };
       }
       this.logger.warn(
-        `GEPA: subprocess failed для promptKey=${promptKey}: ${msg}`,
+        `GEPA: service call failed для promptKey=${promptKey}: ${msg}`,
       );
       this.metrics?.incGepaOptimization({ promptKey, status: 'failed' });
       return { candidates: [], costUsd: null };
@@ -173,94 +161,59 @@ export class GepaRunnerService {
   }
 
   /**
-   * Низкоуровневая обёртка вокруг child_process.spawn. Пробуем основной путь
-   * (backend/python/gepa/runner.py от cwd проекта), при ENOENT — fallback на
-   * python/gepa/runner.py (Docker WORKDIR=/app).
+   * HTTP-вызов gepa-сервиса (`POST {serviceUrl}/optimize`). Тело — тот же
+   * JSON-payload, что раньше уходил в stdin subprocess'а; ответ — тот же JSON,
+   * что раньше приходил из stdout.
    *
-   * timeout: cfg.gepa.timeoutMs (default 1ч). На timeout — kill subprocess.
+   * timeout: cfg.gepa.timeoutMs (default 1ч) через AbortController.
+   * Различаем три класса ошибок по тексту message (caller матчит по подстроке):
+   *   - 'timeout'      — превышен hard-timeout (AbortError).
+   *   - 'unavailable'  — сервис не отвечает (connection refused / DNS / 5xx).
+   *   - прочее         — невалидный ответ → caller пометит status='failed'.
    */
-  private async spawnRunner(
-    primaryScript: string,
-    altScript: string,
+  private async callGepaService(
     payload: Record<string, unknown>,
   ): Promise<GepaRunnerOutput> {
-    const tryRun = (script: string): Promise<GepaRunnerOutput> =>
-      new Promise((resolve, reject) => {
-        const child = spawn(this.cfg.gepa.pythonPath, [script], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
+    const url = `${this.cfg.gepa.serviceUrl.replace(/\/+$/, '')}/optimize`;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      this.cfg.gepa.timeoutMs,
+    );
 
-        let stdout = '';
-        let stderr = '';
-        let settled = false;
-
-        const timer = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          try {
-            child.kill('SIGKILL');
-          } catch {
-            // ignore
-          }
-          reject(new Error(`GEPA subprocess timeout`));
-        }, this.cfg.gepa.timeoutMs);
-
-        child.stdout.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString('utf8');
-        });
-        child.stderr.on('data', (chunk: Buffer) => {
-          stderr += chunk.toString('utf8');
-        });
-        child.on('error', (err: NodeJS.ErrnoException) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          reject(err);
-        });
-        child.on('close', (code) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          if (code !== 0 && stdout.trim().length === 0) {
-            reject(
-              new Error(
-                `GEPA subprocess exit ${code}: ${stderr.slice(0, 500) || 'no stderr'}`,
-              ),
-            );
-            return;
-          }
-          try {
-            const parsed = JSON.parse(stdout.trim()) as GepaRunnerOutput;
-            resolve(parsed);
-          } catch (err) {
-            reject(
-              new Error(
-                `GEPA subprocess вернул не-JSON: ${err instanceof Error ? err.message : String(err)} (stdout=${stdout.slice(0, 200)})`,
-              ),
-            );
-          }
-        });
-
-        try {
-          child.stdin.write(JSON.stringify(payload));
-          child.stdin.end();
-        } catch (err) {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          reject(err);
-        }
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(`GEPA service timeout`, { cause: err });
+      }
+      // fetch failed / ECONNREFUSED / ENOTFOUND — сервис недоступен.
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`GEPA service unavailable: ${msg}`, { cause: err });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (res.status >= 500) {
+      throw new Error(`GEPA service unavailable: HTTP ${res.status}`);
+    }
+    if (!res.ok) {
+      throw new Error(`GEPA service HTTP ${res.status}`);
+    }
 
     try {
-      return await tryRun(primaryScript);
+      return (await res.json()) as GepaRunnerOutput;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // ENOENT на самом скрипте — пробуем альтернативный путь.
-      if (msg.includes('ENOENT')) {
-        return await tryRun(altScript);
-      }
-      throw err;
+      throw new Error(
+        `GEPA service вернул не-JSON: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
   }
 }

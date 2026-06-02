@@ -1714,8 +1714,10 @@ const TrackerSchema = z.object({
   //     признаётся «лучше» (default 0.05).
   //   - GEPA_AB_REJECT_THRESHOLD — Δ score, при котором B «хуже»
   //     и сразу rollback (default 0.10).
-  //   - GEPA_PYTHON_PATH — путь к Python (default /usr/bin/python3, alpine).
-  //   - GEPA_TIMEOUT_MS — hard-timeout subprocess (default 1ч).
+  //   - GEPA_SERVICE_URL — base URL gepa-сервиса (отдельный контейнер z-gepa,
+  //     default http://gepa:8000 — DNS внутри docker-сети z-internal). До 2026-06
+  //     был GEPA_PYTHON_PATH (spawn внутри backend).
+  //   - GEPA_TIMEOUT_MS — hard-timeout HTTP-вызова /optimize (default 1ч).
   PROMPT_EVOLUTION_ENABLED: zBool(false),
   GEPA_MAX_METRIC_CALLS: z.coerce.number().int().positive().default(150),
   GEPA_REFLECTION_LM: z.string().min(1).default('deepseek-v4-pro'),
@@ -1728,7 +1730,7 @@ const TrackerSchema = z.object({
     .default(100),
   GEPA_AB_PROMOTE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.05),
   GEPA_AB_REJECT_THRESHOLD: z.coerce.number().min(0).max(1).default(0.10),
-  GEPA_PYTHON_PATH: z.string().min(1).default('/usr/bin/python3'),
+  GEPA_SERVICE_URL: z.string().url().default('http://gepa:8000'),
   GEPA_TIMEOUT_MS: z.coerce.number().int().positive().default(3_600_000),
 });
 

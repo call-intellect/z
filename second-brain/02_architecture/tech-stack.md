@@ -54,6 +54,10 @@ type: architecture
     отдельного worker-процесса/контейнера нет;
   - frontend — Next `output: 'standalone'` контейнером (`bun server.js`, 127.0.0.1:${FRONTEND_PORT}),
     тем же compose; nginx на хосте проксирует (как и backend);
+  - **gepa** — Python-сервис prompt evolution (FastAPI, `python:3.11-slim`, `backend/python/Dockerfile`),
+    отдельный контейнер `z-gepa` в том же compose; backend ходит по HTTP (`GEPA_SERVICE_URL=http://gepa:8000`),
+    наружу не публикуется. Вынесен из образа backend 2026-06-02 (раньше Python спавнился subprocess'ом
+    внутри backend) — принцип #6, лёгкий образ backend, изоляция ML-зависимостей;
   - порты публикации/приложений — через `.env` (`BACKEND_HOST_PORT`/`PORT`,
     `FRONTEND_HOST_PORT`/`FRONTEND_PORT`);
   - медиа-стек (LiveKit+Egress) — ОТДЕЛЬНЫЙ compose `infra/livekit/docker-compose.yml`

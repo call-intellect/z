@@ -123,6 +123,32 @@ services:
       - z-backups:/app/backups
     networks: [z-internal]
 
+  # GEPA prompt evolution (Agents v2 Фаза C2) — отдельный Python-сервис.
+  # Раньше Python вшивался в образ backend и запускался через child_process.spawn;
+  # вынесен в свой контейнер ради лёгкого образа backend, изоляции ML-зависимостей
+  # и атомарной сборки. Backend ходит сюда по HTTP (GEPA_SERVICE_URL=http://gepa:8000).
+  # env_file: [.env] — нужны те же LLM-креды (litellm/deepseek), что раньше
+  # subprocess наследовал от backend. Наружу порт не публикуем — только z-internal.
+  gepa:
+    image: z-gepa:latest
+    build:
+      context: ./backend/python
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    container_name: z-gepa
+    env_file: [.env]
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [z-internal]
+
   backend:
     image: z-backend:latest
     build: *backend-build

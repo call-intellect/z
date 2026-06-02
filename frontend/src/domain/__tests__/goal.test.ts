@@ -10,10 +10,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildTree,
   goalFromApi,
   goalKeyResultFromApi,
   goalSourceLabel,
   krProgressBarColor,
+  progressStatusChipClasses,
+  progressStatusTone,
   type GoalKeyResultApi,
   type GoalListItemApi,
 } from '../goal';
@@ -131,5 +134,107 @@ describe('goalSourceLabel', () => {
   it('возвращает русские подписи источника', () => {
     expect(goalSourceLabel('ai')).toBe('Предложено Корой');
     expect(goalSourceLabel('manual')).toBe('Создано вручную');
+  });
+});
+
+describe('progressStatusChipClasses (Фаза 4 — парные токены)', () => {
+  it('маппит все 5 статусов в парные bg/fg токены chip-*', () => {
+    expect(progressStatusChipClasses('on_track')).toEqual({
+      bg: 'bg-chip-success-bg',
+      fg: 'text-chip-success-fg',
+    });
+    expect(progressStatusChipClasses('at_risk')).toEqual({
+      bg: 'bg-chip-warning-bg',
+      fg: 'text-chip-warning-fg',
+    });
+    expect(progressStatusChipClasses('stalled')).toEqual({
+      bg: 'bg-chip-danger-bg',
+      fg: 'text-chip-danger-fg',
+    });
+    expect(progressStatusChipClasses('achieved')).toEqual({
+      bg: 'bg-chip-info-bg',
+      fg: 'text-chip-info-fg',
+    });
+    expect(progressStatusChipClasses('dropped')).toEqual({
+      bg: 'bg-chip-sand-bg',
+      fg: 'text-chip-sand-fg',
+    });
+  });
+
+  it('каждая пара — корректный bg + соответствующий -fg (без text-white)', () => {
+    for (const s of [
+      'on_track',
+      'at_risk',
+      'stalled',
+      'achieved',
+      'dropped',
+    ] as const) {
+      const { bg, fg } = progressStatusChipClasses(s);
+      expect(bg.startsWith('bg-chip-')).toBe(true);
+      expect(bg.endsWith('-bg')).toBe(true);
+      expect(fg.startsWith('text-chip-')).toBe(true);
+      expect(fg.endsWith('-fg')).toBe(true);
+    }
+  });
+});
+
+describe('progressStatusTone (Фаза 4 — тон для MiniSparkline)', () => {
+  it('маппит статусы в валидные ChartTone', () => {
+    expect(progressStatusTone('on_track')).toBe('success');
+    expect(progressStatusTone('at_risk')).toBe('warning');
+    expect(progressStatusTone('stalled')).toBe('danger');
+    // ChartTone не содержит info/sand → achieved→accent, dropped→neutral.
+    expect(progressStatusTone('achieved')).toBe('accent');
+    expect(progressStatusTone('dropped')).toBe('neutral');
+  });
+});
+
+describe('buildTree (Фаза 4 — сборка дерева из плоского списка)', () => {
+  const mk = (
+    id: string,
+    parentGoalId: string | null,
+    name = id,
+  ): GoalListItemApi => ({
+    ...baseGoal,
+    id,
+    name,
+    parentGoalId,
+  });
+
+  it('собирает иерархию: родитель с детьми', () => {
+    const goals = [
+      mk('root', null, 'Корень'),
+      mk('child-a', 'root', 'Ребёнок A'),
+      mk('child-b', 'root', 'Ребёнок B'),
+    ].map(goalFromApi);
+
+    const tree = buildTree(goals);
+    expect(tree).toHaveLength(1);
+    expect(tree[0]!.id).toBe('root');
+    expect(tree[0]!.children.map((c) => c.id)).toEqual(['child-a', 'child-b']);
+    expect(tree[0]!.children[0]!.children).toEqual([]);
+  });
+
+  it('сирота (родитель вне набора) становится корнем', () => {
+    const goals = [
+      mk('root', null),
+      mk('orphan', 'missing-parent'),
+    ].map(goalFromApi);
+
+    const tree = buildTree(goals);
+    expect(tree.map((n) => n.id).sort()).toEqual(['orphan', 'root']);
+  });
+
+  it('пробрасывает progressStatus и игнорирует self-родителя', () => {
+    const goals = [mk('self', 'self')].map(goalFromApi);
+    const tree = buildTree(goals);
+    expect(tree).toHaveLength(1);
+    expect(tree[0]!.id).toBe('self');
+    // baseGoal.progressStatus === 'at_risk'
+    expect(tree[0]!.progressStatus).toBe('at_risk');
+  });
+
+  it('пустой список → пустое дерево', () => {
+    expect(buildTree([])).toEqual([]);
   });
 });

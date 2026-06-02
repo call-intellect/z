@@ -8,6 +8,8 @@
  * Контракт: `backend/src/modules/goals/dto/goals.dto.ts`.
  */
 
+import type { ChartTone } from '@/ui/components/dashboard/charts/tones';
+
 // ─── Enums ──────────────────────────────────────────────────────────────────
 
 export type GoalStatus = 'active' | 'paused' | 'achieved' | 'abandoned';
@@ -113,6 +115,53 @@ export const GOAL_PROGRESS_STATUS_LABELS: Record<GoalProgressStatus, string> = {
   achieved: 'Достигнута',
   dropped: 'Выпала',
 };
+
+/**
+ * Goals OKR v2 — парные цветовые токены чипа статуса движения.
+ *
+ * Каждый статус → пара `bg-chip-*-bg` + `text-chip-*-fg` (см. правило «парные
+ * цветовые токены»: никогда text-white на цветном фоне, никаких hex/slate).
+ * Эталон логики — `alignmentBarColor()` ниже (Фаза 1).
+ */
+export function progressStatusChipClasses(status: GoalProgressStatus): {
+  bg: string;
+  fg: string;
+} {
+  switch (status) {
+    case 'on_track':
+      return { bg: 'bg-chip-success-bg', fg: 'text-chip-success-fg' };
+    case 'at_risk':
+      return { bg: 'bg-chip-warning-bg', fg: 'text-chip-warning-fg' };
+    case 'stalled':
+      return { bg: 'bg-chip-danger-bg', fg: 'text-chip-danger-fg' };
+    case 'achieved':
+      return { bg: 'bg-chip-info-bg', fg: 'text-chip-info-fg' };
+    case 'dropped':
+      return { bg: 'bg-chip-sand-bg', fg: 'text-chip-sand-fg' };
+  }
+}
+
+/**
+ * Goals OKR v2 — тон статуса движения для `MiniSparkline` / тон-визуализаций.
+ *
+ * `ChartTone` (см. `charts/tones.ts`) поддерживает только
+ * `success|warning|danger|accent|neutral` — нет отдельных `info`/`sand`.
+ * Поэтому achieved → `accent` (близкий к info), dropped → `neutral`.
+ */
+export function progressStatusTone(status: GoalProgressStatus): ChartTone {
+  switch (status) {
+    case 'on_track':
+      return 'success';
+    case 'at_risk':
+      return 'warning';
+    case 'stalled':
+      return 'danger';
+    case 'achieved':
+      return 'accent';
+    case 'dropped':
+      return 'neutral';
+  }
+}
 
 // ─── Goals OKR v2 — горизонт цели ─────────────────────────────────────────────
 
@@ -490,6 +539,61 @@ export function targetDateLabel(targetDate: Date | null): string | null {
   if (days === 0) return 'Сегодня';
   if (days < 0) return `Просрочена на ${Math.abs(days)} дн.`;
   return `Осталось ${days} дн.`;
+}
+
+// ─── Goals OKR v2 — сборка дерева целей из плоского списка ─────────────────────
+
+/**
+ * Узел дерева целей для рендера (`GoalsTreeView`).
+ *
+ * Обобщённый: на `/goals` собирается из плоского списка `GoalDomain` (без
+ * `keyResults`), на дашборде директора приходит готовым из `goalsTree`
+ * (с `keyResults`). Поля — минимально нужные `GoalsTreeView`.
+ */
+export type GoalTreeRenderNode = {
+  id: string;
+  name: string;
+  progressStatus: GoalProgressStatus;
+  keyResults?: Array<{
+    id: string;
+    name: string;
+    progressPercent: number;
+    unit: string | null;
+  }>;
+  children: GoalTreeRenderNode[];
+};
+
+/**
+ * Собирает дерево целей из плоского списка целей по `parentGoalId`.
+ *
+ * Корни — цели без родителя ИЛИ цели, чей родитель отсутствует в наборе
+ * (сирота → корень, чтобы ничего не потерять при фильтрации). Порядок детей
+ * сохраняет порядок исходного списка. Защита от циклов: каждая цель попадает
+ * в дерево не более одного раза.
+ */
+export function buildTree(goals: readonly GoalDomain[]): GoalTreeRenderNode[] {
+  const byId = new Map<string, GoalTreeRenderNode>();
+  for (const g of goals) {
+    byId.set(g.id, {
+      id: g.id,
+      name: g.name,
+      progressStatus: g.progressStatus,
+      children: [],
+    });
+  }
+
+  const roots: GoalTreeRenderNode[] = [];
+  for (const g of goals) {
+    const node = byId.get(g.id)!;
+    const parent =
+      g.parentGoalId !== null ? byId.get(g.parentGoalId) : undefined;
+    if (parent && parent !== node) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
 }
 
 /** Helper для статус-бэйджа: вариант shadcn по статусу. */

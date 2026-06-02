@@ -9,6 +9,8 @@ import type {
   DirectorDashboardAlertGoalDto,
   DirectorDashboardDto,
   DirectorDashboardEntityDto,
+  DirectorDashboardGoalsPulseDto,
+  DirectorDashboardGoalTreeNodeDto,
   DirectorDashboardKpiDto,
   DirectorDashboardOpenQuestionDto,
   DirectorDashboardSignalCountersDto,
@@ -108,6 +110,8 @@ export class DirectorDashboardService {
       hotEntities,
       openQuestions,
       strategicAlignment,
+      goalsTree,
+      goalsPulse,
       sentimentRes,
       commitRes,
       hangingRes,
@@ -119,6 +123,8 @@ export class DirectorDashboardService {
       this.fetchHotEntities(args.tenantId, since),
       this.fetchOpenQuestions(args.tenantId),
       this.fetchStrategicAlignment(args.tenantId),
+      this.fetchGoalsTree(args.tenantId),
+      this.fetchGoalsPulse(args.tenantId),
       this.sentimentSvc.getIndex({ tenantId: args.tenantId }),
       this.commitSvc.getReliability({
         tenantId: args.tenantId,
@@ -191,6 +197,8 @@ export class DirectorDashboardService {
           delta: null,
         },
         strategicAlignment,
+        goalsTree,
+        goalsPulse,
         isEmpty: true,
       };
       this.cache.setWithTtl(cacheKey, sampleResult, DASHBOARD_TTL_MS);
@@ -222,6 +230,8 @@ export class DirectorDashboardService {
       kpiCommitmentReliability,
       kpiHangingDecisions,
       strategicAlignment,
+      goalsTree,
+      goalsPulse,
       isEmpty: false,
     };
 
@@ -651,7 +661,153 @@ export class DirectorDashboardService {
     return { average, goalsCount, alertGoals };
   }
 
+  /**
+   * Goals OKR v2 Фаза 4 — дерево active-целей с KR-прогрессом и progressStatus.
+   *
+   * Берём active+живые цели (`status='active'`, `promotionState='active'`,
+   * `validUntil=null`, `archivedAt=null`) с их KR. Строим дерево
+   * parent→children: корни — цели с `parentGoalId=null` ИЛИ чей родитель не
+   * входит в активный набор (сирота → корень).
+   */
+  private async fetchGoalsTree(
+    tenantId: string,
+  ): Promise<DirectorDashboardGoalTreeNodeDto[]> {
+    const goals = await this.prisma.goal.findMany({
+      where: {
+        tenantId,
+        status: 'active',
+        promotionState: 'active',
+        validUntil: null,
+        archivedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        progressStatus: true,
+        cachedAlignment: true,
+        weight: true,
+        parentGoalId: true,
+        keyResults: {
+          select: {
+            id: true,
+            name: true,
+            unit: true,
+            startValue: true,
+            targetValue: true,
+            currentValue: true,
+          },
+        },
+      },
+    });
+
+    // Узлы по id (без children — заполним вторым проходом).
+    const nodeById = new Map<string, DirectorDashboardGoalTreeNodeDto>();
+    for (const g of goals) {
+      nodeById.set(g.id, {
+        id: g.id,
+        name: g.name,
+        status: g.status,
+        progressStatus: g.progressStatus,
+        cachedAlignment: g.cachedAlignment ?? null,
+        weight: this.decimalToNumber(g.weight),
+        parentGoalId: g.parentGoalId,
+        keyResults: g.keyResults.map((kr) => ({
+          id: kr.id,
+          name: kr.name,
+          unit: kr.unit ?? null,
+          progressPercent: this.krProgressPercent(
+            this.decimalToNumber(kr.startValue),
+            this.decimalToNumber(kr.targetValue),
+            this.decimalToNumber(kr.currentValue),
+          ),
+        })),
+        children: [],
+      });
+    }
+
+    // Сборка дерева: цель с родителем в наборе → ребёнок; иначе корень.
+    const roots: DirectorDashboardGoalTreeNodeDto[] = [];
+    for (const node of nodeById.values()) {
+      const parent =
+        node.parentGoalId !== null ? nodeById.get(node.parentGoalId) : undefined;
+      if (parent) {
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    return roots;
+  }
+
+  /**
+   * Goals OKR v2 Фаза 4 — счётчики недели по progressStatus для виджета
+   * «Пульс целей». Active+живые цели Org.
+   */
+  private async fetchGoalsPulse(
+    tenantId: string,
+  ): Promise<DirectorDashboardGoalsPulseDto> {
+    const rows = await this.prisma.goal.groupBy({
+      by: ['progressStatus'],
+      where: {
+        tenantId,
+        status: 'active',
+        promotionState: 'active',
+        validUntil: null,
+        archivedAt: null,
+      },
+      _count: { _all: true },
+    });
+
+    const pulse: DirectorDashboardGoalsPulseDto = {
+      onTrackCount: 0,
+      atRiskCount: 0,
+      stalledCount: 0,
+      achievedCount: 0,
+      droppedCount: 0,
+      total: 0,
+    };
+    for (const r of rows) {
+      const n = r._count._all;
+      pulse.total += n;
+      switch (r.progressStatus) {
+        case 'on_track':
+          pulse.onTrackCount += n;
+          break;
+        case 'at_risk':
+          pulse.atRiskCount += n;
+          break;
+        case 'stalled':
+          pulse.stalledCount += n;
+          break;
+        case 'achieved':
+          pulse.achievedCount += n;
+          break;
+        case 'dropped':
+          pulse.droppedCount += n;
+          break;
+        default:
+          break;
+      }
+    }
+    return pulse;
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────────────
+
+  /** Прогресс KR в %: clamp 0..100, защита от деления на 0 (target==start → 0). */
+  private krProgressPercent(
+    start: number,
+    target: number,
+    current: number,
+  ): number {
+    const span = target - start;
+    if (span === 0) return 0;
+    const pct = ((current - start) / span) * 100;
+    if (!Number.isFinite(pct)) return 0;
+    return Math.max(0, Math.min(100, pct));
+  }
 
   private calcSince(period: 'week' | 'month'): Date {
     const since = new Date();

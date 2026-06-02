@@ -6,8 +6,10 @@ import useSWR from 'swr';
 import {
   ArrowDownRight,
   ArrowUpRight,
+  List,
   Loader2,
   Minus,
+  Network,
   Plus,
   Sparkles,
   Target,
@@ -23,6 +25,7 @@ import {
   GOAL_STATUS_VALUES,
   alignmentBarColor,
   alignmentTextColor,
+  buildTree,
   daysUntil,
   deltaTone,
   formatAlignment,
@@ -33,6 +36,7 @@ import {
   type GoalDomain,
   type GoalStatus,
 } from '@/domain/goal';
+import { GoalsTreeView } from './GoalsTreeView';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -56,6 +60,7 @@ import { Textarea } from '@/ui/shadcn/textarea';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 type StatusFilter = GoalStatus | 'all';
+type ViewMode = 'list' | 'tree';
 
 const STATUS_TABS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: 'Все' },
@@ -70,6 +75,7 @@ export function GoalsClient() {
   const isOwner = currentOrgRole === 'owner';
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -103,6 +109,11 @@ export function GoalsClient() {
     const needle = debouncedSearch.toLowerCase();
     return goals.filter((g) => g.name.toLowerCase().includes(needle));
   }, [goals, debouncedSearch]);
+
+  // Дерево строим из всех загруженных целей (по текущему статус-фильтру),
+  // игнорируя поиск по названию — иначе фильтр обрезал бы родителей и ломал
+  // иерархию (сирота → корень в buildTree).
+  const tree = useMemo(() => buildTree(goals), [goals]);
 
   if (!currentOrgId) {
     return (
@@ -147,12 +158,44 @@ export function GoalsClient() {
             ))}
           </TabsList>
         </Tabs>
-        <Input
-          placeholder="Поиск по названию"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="max-w-xs"
-        />
+        {viewMode === 'list' && (
+          <Input
+            placeholder="Поиск по названию"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="max-w-xs"
+          />
+        )}
+        <div className="ml-auto inline-flex items-center rounded-md border border-border-subtle bg-bg-card p-0.5 text-sm">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors',
+              viewMode === 'list'
+                ? 'bg-accent text-accent-fg'
+                : 'text-fg-secondary hover:text-fg-primary',
+            )}
+            aria-pressed={viewMode === 'list'}
+          >
+            <List size={14} />
+            Список
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('tree')}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors',
+              viewMode === 'tree'
+                ? 'bg-accent text-accent-fg'
+                : 'text-fg-secondary hover:text-fg-primary',
+            )}
+            aria-pressed={viewMode === 'tree'}
+          >
+            <Network size={14} />
+            Дерево
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -165,6 +208,12 @@ export function GoalsClient() {
         <div className="flex items-center gap-2 text-sm text-fg-tertiary">
           <Loader2 size={14} className="animate-spin" /> Загрузка…
         </div>
+      ) : viewMode === 'tree' ? (
+        goals.length === 0 ? (
+          <EmptyState isOwner={isOwner} />
+        ) : (
+          <GoalsTreeView nodes={tree} />
+        )
       ) : filteredGoals.length === 0 ? (
         <EmptyState isOwner={isOwner} />
       ) : (

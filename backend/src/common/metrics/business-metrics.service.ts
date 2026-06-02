@@ -374,6 +374,15 @@ export class BusinessMetricsService implements OnModuleInit {
   //            error (исключение при расчёте).
   private goalKrAutoprogressTotal!: Counter<'source_kind' | 'status'>;
 
+  // ── Goals OKR v2 Фаза 4 (2026-06-02) — еженедельный пульс целей ──────
+  //   goals_pulse_generated_total{tenant_top} — успешно собранный пульс;
+  //   goals_pulse_failed_total{tenant_top,reason} — провал (reason ∈
+  //     llm_failed|notify_failed|exception);
+  //   goals_pulse_delivered_total{tenant_top,channel} — доставка пульса.
+  private goalsPulseGeneratedTotal!: Counter<'tenant_top'>;
+  private goalsPulseFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  private goalsPulseDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
+
   // ── Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges ──────────────
   // `temporal_edges_invalidated_total{relationType}` — каждый раз когда
   // TemporalConflictService закрывает existing open-link новой противоречащей
@@ -1823,6 +1832,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'goal_kr_autoprogress_total',
       help: 'Goals OKR v2 Фаза 3 — попытки авто-пересчёта GoalKeyResult.currentValue cron\'ом (source_kind × status). status: ok|unchanged|skipped|error.',
       labelNames: ['source_kind', 'status'] as const,
+    });
+
+    // Goals OKR v2 Фаза 4 (2026-06-02) — еженедельный пульс целей.
+    this.goalsPulseGeneratedTotal = this.getOrCreateCounter({
+      name: 'goals_pulse_generated_total',
+      help: 'Goals OKR v2 Фаза 4 — успешно сгенерированный еженедельный пульс целей.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.goalsPulseFailedTotal = this.getOrCreateCounter({
+      name: 'goals_pulse_failed_total',
+      help: 'Goals OKR v2 Фаза 4 — провал пульса целей (reason ∈ llm_failed|notify_failed|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.goalsPulseDeliveredTotal = this.getOrCreateCounter({
+      name: 'goals_pulse_delivered_total',
+      help: 'Goals OKR v2 Фаза 4 — счётчик удачных доставок пульса целей (channel ∈ conversational).',
+      labelNames: ['tenant_top', 'channel'] as const,
     });
 
     // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
@@ -3338,6 +3364,27 @@ export class BusinessMetricsService implements OnModuleInit {
     status: 'ok' | 'skipped' | 'unchanged' | 'error',
   ): void {
     this.goalKrAutoprogressTotal.inc({ source_kind: sourceKind, status });
+  }
+
+  /** Counter `goals_pulse_generated_total{tenant_top}`. */
+  incGoalsPulseGenerated(args: { tenantTop: string }): void {
+    this.goalsPulseGeneratedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `goals_pulse_failed_total{tenant_top, reason}`. */
+  incGoalsPulseFailed(args: { tenantTop: string; reason: string }): void {
+    this.goalsPulseFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Counter `goals_pulse_delivered_total{tenant_top, channel}`. */
+  incGoalsPulseDelivered(args: { tenantTop: string; channel: string }): void {
+    this.goalsPulseDeliveredTotal.inc({
+      tenant_top: args.tenantTop,
+      channel: args.channel,
+    });
   }
 
   /**

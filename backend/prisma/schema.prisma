@@ -2310,6 +2310,9 @@ model Org {
   // ── SBA β-8.3 — Daily operations digest (ежедневный отчёт COO) ──
   dailyOperationsDigests DailyOperationsDigest[]
 
+  // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей ──
+  weeklyGoalsPulseDigests WeeklyGoalsPulseDigest[]
+
   // ── SBA α-3 — Layer 2 ontology extension ──
   vendors  Vendor[]
   events   Event[]
@@ -3986,6 +3989,44 @@ model GoalKeyResultCheckpoint {
 
   @@index([keyResultId, createdAt])
   @@index([tenantId, createdAt])
+}
+
+/// Goals OKR v2 (Фаза 4) — еженедельный «пульс целей». Клон DailyOperationsDigest.
+///
+/// `GoalsPulseService.generate` собирает счётчики целей по progressStatus за
+/// прошедшую неделю и одним LLM-вызовом `goals-pulse-summarize` собирает
+/// связный markdown-нарратив (4-6 разделов + shortSummary).
+///
+/// Идемпотентность — `@@unique([tenantId, isoWeek])`. Cron `goals-pulse`
+/// (@Cron('0 6 * * 1') = пн 09:00 МСК) не создаёт второй дайджест за неделю.
+///
+/// `deliveredAt` — отметка доставки ролям owner/coo (NULL — не доставлено
+/// или тумблер `goals.pulse.deliver_to_telegram` выключен).
+model WeeklyGoalsPulseDigest {
+  id             String    @id @default(cuid())
+  tenantId       String
+  /// ISO-неделя YYYY-WXX (МСК), ЗА которую сделан пульс.
+  isoWeek        String    @db.VarChar(10)
+  /// Связный текст пульса от LLM. Markdown. При неудаче LLM — «сухой» вариант.
+  bodyMarkdown   String    @db.Text
+  /// Счётчики по progressStatus + провенанс: { achieved, on_track, at_risk, stalled, dropped, total, newThisWeek }.
+  metricsJson    Json
+  /// Идентификатор маршрута/модели LLM (`prompt-v1+<model>`). NULL при сухом fallback.
+  llmTaskRouteId String?
+  /// Кратко — для Telegram-рассылки и блока на главной.
+  shortSummary   String?   @db.Text
+  /// Доставка прошла. NULL — ещё не доставлено или выключено.
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource String?
+
+  @@unique([tenantId, isoWeek])
+  @@index([tenantId, isoWeek])
+  @@map("weekly_goals_pulse_digests")
 }
 
 // ──────────────────────────── knowledge-core: retention (Фаза 11) ────────────────────────────

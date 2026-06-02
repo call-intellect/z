@@ -66,6 +66,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-settings.ts' },
   { phase: 'seed-base', script: 'scripts/seed-admin-settings-billing.ts', hint: '6 ключей billing.* для tier_standard' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-goals-pulse.ts', hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
 

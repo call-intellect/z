@@ -164,10 +164,24 @@ related_projects:
 - **Read-only attribute-колонки**: `config.{readonly,source:'entity',entityAttribute}`. Backend guard в `TableRowsService.update` → `422 table_cell_readonly`. Frontend: 🔗 в заголовке + tooltip, `allowOverlay:false` (грид), нередактируемый рендер в RowDetail, грейсфул-обработка 422.
 - **Тесты**: `table-sync.service.spec` (created/updated/archived/идемпотентность/конфликт-резолвер) + read-only guard. 52 backend-теста зелёные (tables 43 + entity-resolution 9).
 
+### Фаза 3 — Event-to-Cells из транскриптов встреч ✅
+
+После встречи агент извлекает факты из транскрипта и патчит ПУСТЫЕ ячейки sync-таблиц с audit-link на тайминг; перезапись/спорное — в очередь подтверждений.
+
+- **Новые Prisma-модели**: `TableCellProvenance` (что/откуда/когда + `previousValue` для undo + `sourceLink` на тайминг + `confidence`) и `TableCellPendingPatch` (очередь: `proposedValue`/`currentValue`/`reason: low_confidence|overwrite`/`status`).
+- **Событие** `meeting.ai_ready` (EventEmitter2, best-effort) — эмитится в `AnalyzeWorker` после перехода встречи в `ai_ready`. Ловит `TableEnrichListener` → очередь `tables.enrich` → `table-enrich.worker` (Redis-throttle `table:enrich:jobs:${tenantId}` ≤ `table.agent.max_concurrent_enrich_jobs_per_org`).
+- **`TableEnrichService.enrichFromEvent`**: резолв сущностей встречи (3 уровня: граф `RawEvent→IdeaBlockEvidence→IdeaBlockEntity→Entity` по `sourceExternalId=meetingId`; `Event.relatedMeetingId`; fallback — canonicalName в транскрипте) → строки sync-таблиц по `entityId` → LLM `table-extract-rows` (DeepSeek V4 Flash) по не-readonly колонкам → факты с confidence/quote/timeSec. Пустая ячейка + conf≥`table.agent.confirmation_threshold` (0.85) → авто-патч + provenance; непустая/низкий conf → pending. Кэш-идемпотентность по `(row, property, sourceId=meetingId)`.
+- **Эндпоинты**: `GET /tables/rows/:rowId/provenance`, `POST /tables/cell-provenance/:id/undo`, `GET /tables/pending-patches?tableId`, `POST /tables/pending-patches/:id/decide`.
+- **AdminSettings**: `table.agent.confirmation_threshold` (0.85), `table.agent.max_concurrent_enrich_jobs_per_org` (100), `table.agent.max_daily_tokens` (1000000).
+- **Concierge-уведомление** через `ProactiveNotification` (`ruleType:'table_cells_enriched'`, owner встречи): «После встречи … обновила N ячеек и подготовила M правок».
+- **Frontend**: в `RowDetail` — 🔗 + popover (источник/уверенность/ссылка на встречу/«Отменить»→undo); в `TableHeader` — бейдж «🔔 Правки на подтверждении: N» → `PendingPatchesPanel` (принять/отклонить по одной или все).
+- **prompt-keys**: `table-extract-rows`, `table-auto-fill` (Flash; auto-fill заведён как hook, в pipeline пока не вызывается). **Тесты**: `table-enrich.service.spec` (7: авто-патч/overwrite-pending/low-conf-pending/readonly-skip/кэш/decide/undo). 50+ tables-тестов зелёные.
+
 ## В работе / далее
 
 - **Фаза 1.5** (параллельно, блокер для включения флага Фазы 1) — Eval Text-to-Schema на 100 русских NL-промптах.
-- **Фаза 3** — Event-to-Cells из транскриптов + `TableCellProvenance` + очередь подтверждений.
+- **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
+- **Фаза 5** — NL Saved Views.
 - **Фаза 4** — Document-to-Table (DCS, cosine-dedup, entity-linking).
 - **Фаза 5** — NL Saved Views.
 - Потоки: Eval Text-to-Schema (100 русских промптов, блокер для feature-flag), Privacy research (до GTM).

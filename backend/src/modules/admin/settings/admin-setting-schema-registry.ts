@@ -97,6 +97,14 @@ const registry = new Map<string, ZodTypeAny>([
   // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
   ['feature.tables_text_to_schema', z.boolean()],
 
+  // ── Smart-tables агент (table.agent.*) — Фаза 3 Event-to-Cells ────────
+  // Порог confidence: ≥ порога и ячейка пуста → авто-патч; иначе очередь.
+  ['table.agent.confirmation_threshold', UNIT_INTERVAL],
+  // Throttle: max одновременных enrich-job на Org (Redis-счётчик).
+  ['table.agent.max_concurrent_enrich_jobs_per_org', POSITIVE_INT],
+  // Дневной бюджет токенов агента таблиц на Org.
+  ['table.agent.max_daily_tokens', POSITIVE_INT],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

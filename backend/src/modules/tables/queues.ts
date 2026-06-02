@@ -7,6 +7,8 @@ import type { JobsOptions } from 'bullmq';
  */
 export const TABLES_QUEUE_NAMES = {
   SYNC: 'tables.sync',
+  /** Smart-tables auto-creation Фаза 3 — Event-to-Cells (enrich по встрече). */
+  ENRICH: 'tables.enrich',
 } as const;
 
 export type TablesQueueName =
@@ -38,6 +40,28 @@ export interface TableSyncBackfillBatchJobData {
 export type TableSyncJobData =
   | TableSyncEntityJobData
   | TableSyncBackfillBatchJobData;
+
+/**
+ * Job очереди `tables.enrich` (Smart-tables Фаза 3 — Event-to-Cells).
+ * Ставится после `meeting.ai_ready`: агент читает транскрипт встречи и
+ * патчит ПУСТЫЕ ячейки sync-таблиц фактами по схемам колонок.
+ */
+export interface TableEnrichJobData {
+  meetingId: string;
+  tenantId: string;
+}
+
+/**
+ * Опции job'ов очереди `tables.enrich`. Enrich идемпотентен (кэш по
+ * TableCellProvenance(tableRowId, propertyId, sourceId)), поэтому 3 попытки
+ * безопасны; дольше держим в Redis для дедупа по jobId.
+ */
+export const TABLE_ENRICH_JOB_OPTIONS: JobsOptions = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 10000 },
+  removeOnComplete: { age: 86400, count: 1000 },
+  removeOnFail: false,
+};
 
 /**
  * Дефолтные опции job'ов очереди `tables.sync`. Синк идемпотентен (upsert по

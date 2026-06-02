@@ -35,10 +35,12 @@ import { apiClient } from './api-client';
 import { buildQuery, orgHeaders } from './admin-helpers';
 import type { InferredTableSchema } from '@/domain/table';
 import type {
+  CellProvenanceApi,
   CreatePropertyBodyApi,
   CreateRowBodyApi,
   CreateTableBodyApi,
   CreateTableViewBodyApi,
+  PendingPatchApi,
   ReorderPropertyBodyApi,
   RowsListQueryApi,
   TableApi,
@@ -248,6 +250,54 @@ export const tableViewsApi = {
   remove: (orgId: string, tableId: string, viewId: string) =>
     apiClient.del<{ id: string }>(
       `/api/v1/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+};
+
+/**
+ * Provenance (audit-link) + очередь подтверждений правок — Фаза 3
+ * smart-tables (Event-to-Cells).
+ *
+ *   GET  /api/v1/tables/rows/:rowId/provenance        → { items: CellProvenanceApi[] }
+ *   POST /api/v1/tables/cell-provenance/:id/undo      → { rolledBack: boolean }
+ *   GET  /api/v1/tables/pending-patches?tableId=      → { items: PendingPatchApi[] }
+ *   POST /api/v1/tables/pending-patches/:id/decide    → { status: string }
+ *
+ * Все за CookieAuthGuard + TenantGuard (заголовок `X-Org-Id`).
+ * Контракт backend — `backend/src/modules/tables/controllers/pending-patches.controller.ts`.
+ */
+export const tableProvenanceApi = {
+  /** Провенансы значений ячеек строки (источники авто-правок). */
+  getRowProvenance: (orgId: string, rowId: string) =>
+    apiClient.get<{ items: CellProvenanceApi[] }>(
+      `/api/v1/tables/rows/${encodeURIComponent(rowId)}/provenance`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Откатить авто-правку ячейки (восстановить previousValue). */
+  undoCellProvenance: (orgId: string, provenanceId: string) =>
+    apiClient.post<{ rolledBack: boolean }>(
+      `/api/v1/tables/cell-provenance/${encodeURIComponent(provenanceId)}/undo`,
+      undefined,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Список правок ячеек на подтверждении (опц. фильтр по таблице). */
+  listPendingPatches: (orgId: string, tableId: string) =>
+    apiClient.get<{ items: PendingPatchApi[] }>(
+      `/api/v1/tables/pending-patches${buildQuery({ tableId })}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Подтвердить или отклонить правку ячейки. */
+  decidePendingPatch: (
+    orgId: string,
+    patchId: string,
+    decision: 'approve' | 'reject',
+  ) =>
+    apiClient.post<{ status: string }>(
+      `/api/v1/tables/pending-patches/${encodeURIComponent(patchId)}/decide`,
+      { decision },
       { headers: orgHeaders(orgId) },
     ),
 };

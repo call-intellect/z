@@ -98,6 +98,23 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📝 2026-06-02 — Smart-tables Фаза 3: Event-to-Cells из транскриптов встреч
+
+- **Шаг 4 — Prisma** — **обязательно** (2 новые модели, безопасно): `docker compose exec backend bun run prisma:push`.
+  Создаёт `TableCellProvenance` и `TableCellPendingPatch` (Decimal(3,2) confidence, индексы). Опасных изменений нет (только новые таблицы).
+- **Шаг 7 — Seed** — перепрогнать (идемпотентно, уже в агрегаторе):
+  - `seed-admin-settings.ts` — 3 ключа `table.agent.confirmation_threshold=0.85`, `table.agent.max_concurrent_enrich_jobs_per_org=100`, `table.agent.max_daily_tokens=1000000`.
+  - `seed-llm-task-routes-smart-tables.ts` — маршруты `table-extract-rows`/`table-auto-fill` → DeepSeek V4 Flash (опционально; code-fallback chain работает и без них).
+  - Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Новая очередь BullMQ `tables.enrich`** + воркер `TableEnrichWorker` (in-process, `ai/workers.module.ts`). Новое событие `meeting.ai_ready` (EventEmitter2, in-process, эмит в AnalyzeWorker). Доп. инфраструктура не нужна.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: enrich-сервис/воркер/событие + правка AnalyzeWorker; frontend: provenance/undo/панель подтверждений): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - завершить встречу с транскриптом, где прозвучал факт по колонке клиента → после `ai_ready` в течение секунд пустая ячейка патчится (если conf≥0.85), у ячейки в карточке строки появляется 🔗 с ссылкой на тайминг встречи; «Отменить» откатывает.
+  - правка с conf<0.85 или перезапись непустой ячейки → попадает в «🔔 Правки на подтверждении» (не применяется молча).
+  - проверить, что повторная обработка той же встречи не вызывает повторный LLM-патч (кэш по meetingId).
+
+---
+
 ### 🪵 2026-06-01 — LoggingModule (технические логи в БД + админ-UI `/admin/logs`)
 
 - **Шаг 1 — ENV** — **11 новых опциональных** `LOG_DB_*` (все с код-дефолтами, можно не выставлять):

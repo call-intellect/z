@@ -10,6 +10,8 @@
  */
 
 import type {
+  CellProvenanceApi,
+  PendingPatchApi,
   TableApi,
   TablePropTypeApi,
   TablePropertyApi,
@@ -106,6 +108,53 @@ export interface TableViewDomain {
   ownerId: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// ─────────────── Provenance / pending-patches (Фаза 3) ────────────────────
+
+/**
+ * Происхождение значения ячейки (audit-link): откуда агент взял значение,
+ * с какой уверенностью и когда применил. Если `rolledBackAt` != null —
+ * правка была отменена (в UI скрываем такие записи).
+ */
+export interface CellProvenanceDomain {
+  id: string;
+  propertyId: string;
+  sourceType: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceLink: string | null;
+  appliedValue: unknown;
+  previousValue: unknown;
+  /** 0..1, либо null если уверенность не зафиксирована. */
+  confidence: number | null;
+  appliedAt: Date;
+  appliedBy: string;
+  rolledBackAt: Date | null;
+}
+
+/** Причина попадания авто-правки в очередь подтверждений. */
+export type PendingPatchReason = 'low_confidence' | 'overwrite';
+
+/**
+ * Правка ячейки, ожидающая решения пользователя (очередь подтверждений).
+ * `reason` сужаем до известных значений; неизвестное → null (бейдж не рисуем).
+ */
+export interface PendingPatchDomain {
+  id: string;
+  tableId: string;
+  tableRowId: string;
+  propertyId: string;
+  proposedValue: unknown;
+  currentValue: unknown;
+  /** 0..1. */
+  confidence: number;
+  sourceType: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceLink: string | null;
+  reason: PendingPatchReason | null;
+  createdAt: Date;
 }
 
 // ─────────────────────────── мапперы ─────────────────────────────────────
@@ -228,6 +277,67 @@ export function tableViewFromApi(v: TableViewApi): TableViewDomain {
     createdAt: new Date(v.createdAt),
     updatedAt: new Date(v.updatedAt),
   };
+}
+
+export function cellProvenanceFromApi(
+  p: CellProvenanceApi,
+): CellProvenanceDomain {
+  return {
+    id: p.id,
+    propertyId: p.propertyId,
+    sourceType: p.sourceType,
+    sourceId: p.sourceId,
+    sourceLabel: p.sourceLabel,
+    sourceLink: p.sourceLink,
+    appliedValue: p.appliedValue,
+    previousValue: p.previousValue,
+    confidence: typeof p.confidence === 'number' ? p.confidence : null,
+    appliedAt: new Date(p.appliedAt),
+    appliedBy: p.appliedBy,
+    rolledBackAt: p.rolledBackAt ? new Date(p.rolledBackAt) : null,
+  };
+}
+
+export function pendingPatchFromApi(p: PendingPatchApi): PendingPatchDomain {
+  const reason: PendingPatchReason | null =
+    p.reason === 'low_confidence' || p.reason === 'overwrite'
+      ? p.reason
+      : null;
+  return {
+    id: p.id,
+    tableId: p.tableId,
+    tableRowId: p.tableRowId,
+    propertyId: p.propertyId,
+    proposedValue: p.proposedValue,
+    currentValue: p.currentValue,
+    confidence: typeof p.confidence === 'number' ? p.confidence : 0,
+    sourceType: p.sourceType,
+    sourceId: p.sourceId,
+    sourceLabel: p.sourceLabel,
+    sourceLink: p.sourceLink,
+    reason,
+    createdAt: new Date(p.createdAt),
+  };
+}
+
+/** Русские метки причины попадания правки в очередь подтверждений. */
+export const PENDING_PATCH_REASON_LABEL_RU: Record<PendingPatchReason, string> =
+  {
+    low_confidence: 'низкая уверенность',
+    overwrite: 'перезапись значения',
+  };
+
+/**
+ * Уверенность в процентах для UI (например «уверенность 82%»).
+ * Принимает как долю 0..1, так и уже-процент >1; null → пустая строка.
+ */
+export function formatConfidencePercent(confidence: number | null): string {
+  if (confidence === null || !Number.isFinite(confidence)) return '';
+  const fraction = confidence > 1 ? confidence / 100 : confidence;
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  }).format(fraction);
 }
 
 /** Метки видимости для UI (русский, по `feedback_admin_ui_russian_only`). */

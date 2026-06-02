@@ -149,6 +149,14 @@ function formatRelativeDate(raw: unknown): string {
  * Drag&drop колонок и строк прокидывается наружу через коллбэки.
  * Glide встроенно поддерживает copy/paste: при `onPaste=true` + `getCellsForSelection`
  * вставка из Excel вызовет `onCellsEdited` / `onCellEdited` для диапазона.
+ *
+ * Провенанс авто-правок (Фаза 3): per-cell иконка-«звено» в canvas-гриде
+ * Glide без custom-renderer'а недоступна, а backend отдаёт провенанс только
+ * пер-строку (`GET rows/:rowId/provenance`) — массовая загрузка по всем
+ * видимым строкам дала бы N запросов. Поэтому провенанс показываем в карточке
+ * строки (RowDetail) и в панели подтверждений, а не в самом гриде. Здесь
+ * остаётся только существующий маркер read-only attribute-колонок (🔗 в
+ * заголовке).
  */
 export interface GridViewProps {
   properties: TablePropertyDomain[];

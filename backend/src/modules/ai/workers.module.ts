@@ -51,6 +51,7 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
 import { TablesModule } from '../tables/tables.module';
+import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
 import { TrackerModule } from '../tracker/tracker.module';
 
@@ -256,6 +257,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // Smart-tables Фаза 2 — consumer `tables.sync`. Поддерживает строки
     // системных entitySync-таблиц в актуальном состоянии при изменениях графа.
     TableSyncWorker,
+    // Smart-tables Фаза 3 — consumer `tables.enrich` (Event-to-Cells). После
+    // `meeting.ai_ready` извлекает факты из транскрипта и патчит ПУСТЫЕ ячейки
+    // sync-таблиц; спорное — в очередь подтверждений.
+    TableEnrichWorker,
   ],
 })
 export class WorkersModule {}

@@ -431,3 +431,54 @@ export function toTableViewViewDto(v: TableView): TableViewViewDto {
     updatedAt: v.updatedAt.toISOString(),
   };
 }
+
+// ─────────────── Pending-patches / provenance (Фаза 3) ────────────────────
+
+/** Query: список pending-патчей (опц. фильтр по tableId). */
+export const PendingPatchesListQuerySchema = z.object({
+  tableId: z.string().trim().min(1).optional(),
+});
+export type PendingPatchesListQuery = z.infer<
+  typeof PendingPatchesListQuerySchema
+>;
+
+/** Body: решение по pending-патчу. */
+export const DecidePendingPatchBodySchema = z.object({
+  decision: z.enum(['approve', 'reject']),
+});
+export type DecidePendingPatchBody = z.infer<
+  typeof DecidePendingPatchBodySchema
+>;
+
+/** DTO одного pending-патча (для очереди подтверждений во фронте). */
+export interface PendingPatchDto {
+  id: string;
+  tableId: string;
+  tableRowId: string;
+  propertyId: string;
+  proposedValue: unknown;
+  currentValue: unknown;
+  confidence: number;
+  sourceType: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceLink: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+/** DTO одной записи провенанса ячейки (для иконок 🔗 и тултипов). */
+export interface CellProvenanceDto {
+  id: string;
+  propertyId: string;
+  sourceType: string;
+  sourceId: string;
+  sourceLabel: string;
+  sourceLink: string | null;
+  appliedValue: unknown;
+  previousValue: unknown;
+  confidence: number | null;
+  appliedAt: string;
+  appliedBy: string;
+  rolledBackAt: string | null;
+}

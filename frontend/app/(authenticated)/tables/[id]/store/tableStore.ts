@@ -21,13 +21,21 @@ import { toast } from 'sonner';
 import { create } from 'zustand';
 
 import { ApiError } from '@/api/api-error';
-import { tableViewsApi, tablesApi } from '@/api/tables.api';
+import {
+  tableProvenanceApi,
+  tableViewsApi,
+  tablesApi,
+} from '@/api/tables.api';
 import type { TablePropTypeApi } from '@/api/types/tables';
 import {
+  cellProvenanceFromApi,
+  pendingPatchFromApi,
   propertyFromApi,
   rowFromApi,
   tableViewConfigToApi,
   tableViewFromApi,
+  type CellProvenanceDomain,
+  type PendingPatchDomain,
   type TableDomain,
   type TablePropertyDomain,
   type TableRowDomain,
@@ -127,6 +135,36 @@ export interface TableStoreState {
   saveChangesToCurrentView: () => Promise<TableViewDomain | null>;
   /** Удалить вид. Если был активный — сбросить currentView. */
   deleteView: (viewId: string) => Promise<void>;
+
+  // ─── Pending-patches + provenance (Фаза 3, Event-to-Cells) ─────────
+  /** Правки ячеек, ожидающие подтверждения (вся таблица). */
+  pendingPatches: PendingPatchDomain[];
+  /** Кол-во pending-правок (для бейджа в шапке). */
+  pendingCount: number;
+  /** Загрузить очередь подтверждений (вызывается при загрузке таблицы). */
+  loadPendingPatches: () => Promise<void>;
+  /** Принять одну правку: применить proposedValue в ячейку + убрать из очереди. */
+  approvePatch: (patchId: string) => Promise<void>;
+  /** Отклонить одну правку: убрать из очереди без изменения ячейки. */
+  rejectPatch: (patchId: string) => Promise<void>;
+  /** Принять все pending-правки разом. */
+  approveAllPatches: () => Promise<void>;
+  /** Отклонить все pending-правки разом. */
+  rejectAllPatches: () => Promise<void>;
+  /**
+   * Загрузить провенансы строки (источники авто-правок ячеек).
+   * Не кладёт в store — возвращает напрямую (карточка строки держит локально).
+   * Скрывает откатанные записи (rolledBackAt != null).
+   */
+  loadRowProvenance: (rowId: string) => Promise<CellProvenanceDomain[]>;
+  /** Откатить авто-правку ячейки (восстановить previousValue). */
+  undoCellProvenance: (provenanceId: string) => Promise<boolean>;
+  /**
+   * Локально записать значение ячейки в store БЕЗ PATCH на backend.
+   * Нужно после undo провенанса: backend уже восстановил previousValue в
+   * cells, поэтому повторный PATCH не нужен — только синхронизация состояния.
+   */
+  setRowCellLocal: (rowId: string, propertyId: string, value: unknown) => void;
 }
 
 // ─────────────────────────── module-level debounce-bucket ────────────────
@@ -220,6 +258,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   currentView: null,
   draftConfig: {},
   hasUnsavedChanges: false,
+  pendingPatches: [],
+  pendingCount: 0,
 
   hydrate: ({ orgId, tableId, table, properties, rows }) => {
     set({
@@ -249,6 +289,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       currentView: null,
       draftConfig: {},
       hasUnsavedChanges: false,
+      pendingPatches: [],
+      pendingCount: 0,
     });
   },
 
@@ -708,6 +750,139 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
           e instanceof Error ? e.message : 'Не удалось изменить порядок строк',
       });
     }
+  },
+
+  // ─── Pending-patches + provenance (Фаза 3) ──────────────────────────
+  loadPendingPatches: async () => {
+    const { orgId, tableId } = get();
+    if (!orgId || !tableId) return;
+    try {
+      const res = await tableProvenanceApi.listPendingPatches(orgId, tableId);
+      const items = res.items.map(pendingPatchFromApi);
+      set({ pendingPatches: items, pendingCount: items.length });
+    } catch {
+      // Тихо: очередь подтверждений вторична, не ломаем загрузку таблицы.
+    }
+  },
+
+  approvePatch: async (patchId) => {
+    const { orgId, pendingPatches, rows } = get();
+    if (!orgId) return;
+    const patch = pendingPatches.find((p) => p.id === patchId);
+    if (!patch) return;
+
+    // Optimistic: убираем из очереди + применяем proposedValue в ячейку.
+    const nextPending = pendingPatches.filter((p) => p.id !== patchId);
+    set({
+      pendingPatches: nextPending,
+      pendingCount: nextPending.length,
+      rows: rows.map((r) =>
+        r.id === patch.tableRowId
+          ? {
+              ...r,
+              cells: { ...r.cells, [patch.propertyId]: patch.proposedValue },
+            }
+          : r,
+      ),
+    });
+
+    try {
+      await tableProvenanceApi.decidePendingPatch(orgId, patchId, 'approve');
+      toast.success('Правка принята');
+    } catch (e) {
+      // Откат: возвращаем правку в очередь и старое значение в ячейку.
+      set({
+        pendingPatches: [...get().pendingPatches, patch],
+        pendingCount: get().pendingCount + 1,
+        rows: get().rows.map((r) =>
+          r.id === patch.tableRowId
+            ? {
+                ...r,
+                cells: { ...r.cells, [patch.propertyId]: patch.currentValue },
+              }
+            : r,
+        ),
+      });
+      toast.error(
+        e instanceof Error ? e.message : 'Не удалось принять правку',
+      );
+    }
+  },
+
+  rejectPatch: async (patchId) => {
+    const { orgId, pendingPatches } = get();
+    if (!orgId) return;
+    const patch = pendingPatches.find((p) => p.id === patchId);
+    if (!patch) return;
+
+    const nextPending = pendingPatches.filter((p) => p.id !== patchId);
+    set({ pendingPatches: nextPending, pendingCount: nextPending.length });
+
+    try {
+      await tableProvenanceApi.decidePendingPatch(orgId, patchId, 'reject');
+      toast.success('Правка отклонена');
+    } catch (e) {
+      set({
+        pendingPatches: [...get().pendingPatches, patch],
+        pendingCount: get().pendingCount + 1,
+      });
+      toast.error(
+        e instanceof Error ? e.message : 'Не удалось отклонить правку',
+      );
+    }
+  },
+
+  approveAllPatches: async () => {
+    const { pendingPatches, approvePatch } = get();
+    // Снимок id — список меняется по ходу (approvePatch мутирует state).
+    const ids = pendingPatches.map((p) => p.id);
+    for (const id of ids) {
+      // Последовательно: backend decide идемпотентен per-patch, а
+      // последовательность даёт предсказуемый порядок применения в cells.
+      await approvePatch(id);
+    }
+  },
+
+  rejectAllPatches: async () => {
+    const { pendingPatches, rejectPatch } = get();
+    const ids = pendingPatches.map((p) => p.id);
+    for (const id of ids) {
+      await rejectPatch(id);
+    }
+  },
+
+  loadRowProvenance: async (rowId) => {
+    const { orgId } = get();
+    if (!orgId) return [];
+    try {
+      const res = await tableProvenanceApi.getRowProvenance(orgId, rowId);
+      // Скрываем откатанные записи — у них нет актуального источника значения.
+      return res.items
+        .map(cellProvenanceFromApi)
+        .filter((p) => p.rolledBackAt === null);
+    } catch {
+      return [];
+    }
+  },
+
+  undoCellProvenance: async (provenanceId) => {
+    const { orgId } = get();
+    if (!orgId) return false;
+    const res = await tableProvenanceApi.undoCellProvenance(
+      orgId,
+      provenanceId,
+    );
+    return res.rolledBack === true;
+  },
+
+  setRowCellLocal: (rowId, propertyId, value) => {
+    set({
+      rows: get().rows.map((r) =>
+        r.id === rowId
+          ? { ...r, cells: { ...r.cells, [propertyId]: value } }
+          : r,
+      ),
+    });
   },
 }));
 

@@ -477,7 +477,14 @@ export type LlmTaskType =
   // Cache-friendly: SYSTEM (каталог типов/правила) стабилен, переменное в USER.
   | 'table-infer-schema'
   | 'table-architect-pass'
-  | 'table-entity-check';
+  | 'table-entity-check'
+  // Smart-tables auto-creation (2026-06-02, Фаза 3) — Event-to-Cells.
+  //   'table-extract-rows' — извлечение фактов по схеме колонок из транскрипта.
+  //   'table-auto-fill'    — рекомендация значения для одной ячейки.
+  // Дешёвые частые задачи → primary deepseek-v4-flash (cheap tier). JSON object.
+  // Cache-friendly: SYSTEM (роль + каталог типов + правила) стабилен, переменное в USER.
+  | 'table-extract-rows'
+  | 'table-auto-fill';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -641,6 +648,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'table-infer-schema',
   'table-architect-pass',
   'table-entity-check',
+  // Smart-tables auto-creation (2026-06-02, Фаза 3) — Event-to-Cells (cheap).
+  'table-extract-rows',
+  'table-auto-fill',
 ] as const;
 
 /**

@@ -1,16 +1,23 @@
 /**
- * Smart-tables auto-creation (2026-06-02, Фаза 1) — Seed маршрутов LLM для
- * 3 новых taskType'ов Text-to-Schema:
+ * Smart-tables auto-creation (2026-06-02) — Seed маршрутов LLM.
+ *
+ * Фаза 1 — 3 taskType'а Text-to-Schema (capable модель):
  *   - table-infer-schema    — DRAFT: NL -> черновик схемы.
  *   - table-architect-pass  — ARCHITECT-рефлексия схемы.
  *   - table-entity-check    — сверка entitySync.type с доступными.
- *
- * Capable модель (доменное моделирование структуры таблицы) + JSON object.
- * Цепочка одинаковая для всех трёх (тот же capable-профиль, что у
- * skill-trait-detect / sprint-helper-suggest):
+ * Capable профиль (тот же, что у skill-trait-detect / sprint-helper-suggest):
  *   primary   — deepseek deepseek-v4-pro
  *   secondary — openai-via-proxy gpt-5.4-mini
  *   tertiary  — ollama qwen3.5:9b
+ *
+ * Фаза 3 — 2 taskType'а Event-to-Cells (cheap модель — частые JSON-вызовы по
+ * транскрипту):
+ *   - table-extract-rows    — извлечение фактов по схеме колонок.
+ *   - table-auto-fill       — рекомендация значения одной ячейки.
+ * Cheap профиль:
+ *   primary   — deepseek deepseek-v4-flash
+ *   secondary — openai-via-proxy gpt-5.4-mini
+ *   tertiary  — ollama qwen3.5:9b (safety-net)
  *
  * NB: LlmRouter имеет code-fallback DEFAULT_FALLBACK_CHAIN
  * (deepseek -> openai -> ollama), поэтому без этого seed router НЕ падает,
@@ -50,10 +57,20 @@ const CAPABLE_CHAIN: TierEntry[] = [
   { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
 ];
 
+// Фаза 3 — Event-to-Cells. Дешёвый частый extract из транскрипта → flash-tier.
+const CHEAP_CHAIN: TierEntry[] = [
+  { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+  { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+  { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+];
+
 const SEEDS: TaskRouteSeed[] = [
   { taskType: 'table-infer-schema', chain: CAPABLE_CHAIN },
   { taskType: 'table-architect-pass', chain: CAPABLE_CHAIN },
   { taskType: 'table-entity-check', chain: CAPABLE_CHAIN },
+  // Фаза 3 — Event-to-Cells (cheap tier).
+  { taskType: 'table-extract-rows', chain: CHEAP_CHAIN },
+  { taskType: 'table-auto-fill', chain: CHEAP_CHAIN },
 ];
 
 interface SeedStats {

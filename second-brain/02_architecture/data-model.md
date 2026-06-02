@@ -1115,6 +1115,14 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 
 Реализовано в Фазе 0 (backend) и Фазе 1 (frontend Grid). Подробнее: [[../01_projects/smart-tables]].
 
+### Smart-tables auto-creation (ТЗ 2026-06-02)
+
+Расширение Smart-tables (auto-creation, Фазы 0-3 этого ТЗ):
+- **`Table.isSystem Boolean`, `Table.systemKey String?`** + `@@unique([tenantId, systemKey])`, `@@index([tenantId, isSystem])` — системные таблицы (10 шаблонов, создаются при `Org.create`, hard-delete запрещён).
+- **`Table.entitySync`** (Json) расширен: `{ type: org|person|meeting|document, autoCreate: bool, entityTypes?: EntityType[], primaryProperty? }` — живой синк строк с сущностями графа (Фаза 2). **`TableProperty.config`** расширен `{ readonly?, source?: 'entity', entityAttribute? }` — read-only attribute-колонки.
+- **`TableCellProvenance`** (Фаза 3) — `{ id, tenantId, tableRowId, propertyId, sourceType (meeting|document|manual), sourceId, sourceLabel, sourceLink?, previousValue Json?, appliedValue Json?, confidence Decimal(3,2)?, appliedAt, appliedBy (agent|userId), rolledBackAt? }`. Индексы `[tableRowId, propertyId]`, `[tenantId, sourceType, sourceId]`. Audit-trail правок агента + undo.
+- **`TableCellPendingPatch`** (Фаза 3) — `{ id, tenantId, tableId, tableRowId, propertyId, proposedValue Json, currentValue Json?, confidence Decimal(3,2), sourceType, sourceId, sourceLabel, sourceLink?, status (pending|approved|rejected), reason (low_confidence|overwrite), createdAt, decidedAt?, decidedBy? }`. Индексы `[tenantId, status]`, `[tableId, status]`, `[tableRowId, propertyId]`. Очередь подтверждений спорных правок.
+
 [[../index|← index]]
 
 ## Технические логи (LoggingModule, 2026-06-01)

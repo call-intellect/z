@@ -28,3 +28,23 @@ export interface EntitySyncEventPayload {
   entityId: string;
   entityType: string;
 }
+
+/**
+ * Smart-tables auto-creation Фаза 3 — Event-to-Cells.
+ *
+ * Эмитится из `AnalyzeWorker` через `@nestjs/event-emitter` ПОСЛЕ успешного
+ * перехода встречи в статус `ai_ready` (best-effort, не ломает AI-pipeline).
+ * Слушает `TableEnrichListener` (модуль tables), который кладёт job в очередь
+ * `tables.enrich`. Воркер `TableEnrichWorker` вызывает
+ * `TableEnrichService.enrichFromEvent`.
+ */
+export const MEETING_AI_READY = 'meeting.ai_ready' as const;
+
+export type MeetingAiReadyEventName = typeof MEETING_AI_READY;
+
+/** Payload события `meeting.ai_ready`. `type` — значение `MeetingType`. */
+export interface MeetingAiReadyEventPayload {
+  meetingId: string;
+  tenantId: string;
+  type: string;
+}

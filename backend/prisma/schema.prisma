@@ -9790,6 +9790,74 @@ model TableAutomation {
   table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
 }
 
+/// TableCellProvenance — провенанс (происхождение) значения ячейки Smart-таблицы.
+/// Smart-tables auto-creation Фаза 3 — Event-to-Cells. После встречи агент
+/// патчит ПУСТЫЕ ячейки фактами из транскрипта и фиксирует здесь источник:
+/// какая встреча/документ, цитата-таймкод (deep-link), что было раньше (для
+/// undo). FK на Table/TableRow/TableProperty НЕ вешаем — связи по id (как в
+/// TableRow.entityId / Table.parentDocumentId), чтобы не плодить каскад-боли.
+model TableCellProvenance {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tableRowId    String
+  propertyId    String
+  /// 'meeting' | 'document' | 'manual'.
+  sourceType    String
+  /// meetingId / documentId (id сущности-источника).
+  sourceId      String
+  /// Человекочитаемая метка источника, например «Встреча Алексей×Бета-Корп, 14:32».
+  sourceLabel   String
+  /// Deep-link на тайминг источника (`/meetings/:id?t=872`). NULL — нет таймкода.
+  sourceLink    String?
+  /// Прежнее значение ячейки (для undo). NULL — ячейка была пустой.
+  previousValue Json?
+  /// Применённое значение.
+  appliedValue  Json?
+  confidence    Decimal?  @db.Decimal(3, 2)
+  appliedAt     DateTime  @default(now())
+  /// 'agent' (авто-патч) | userId (ручное подтверждение pending-патча).
+  appliedBy     String
+  /// Когда правка была откатена (undo). NULL — действует.
+  rolledBackAt  DateTime?
+
+  @@index([tableRowId, propertyId])
+  @@index([tenantId, sourceType, sourceId])
+}
+
+/// TableCellPendingPatch — очередь подтверждений правок ячеек Smart-таблицы.
+/// Smart-tables auto-creation Фаза 3 — Event-to-Cells. Если предложенный
+/// агентом факт перезаписал бы НЕпустую ячейку (overwrite) либо confidence ниже
+/// порога (low_confidence) — ячейка НЕ меняется, а кандидат кладётся сюда на
+/// подтверждение владельцем. FK не вешаем — связи по id (см. TableCellProvenance).
+model TableCellPendingPatch {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tableId       String
+  tableRowId    String
+  propertyId    String
+  proposedValue Json
+  /// Текущее значение ячейки на момент создания патча. NULL — была пустой
+  /// (для low_confidence пустой ячейки).
+  currentValue  Json?
+  confidence    Decimal   @db.Decimal(3, 2)
+  sourceType    String
+  sourceId      String
+  sourceLabel   String
+  sourceLink    String?
+  /// 'pending' | 'approved' | 'rejected'.
+  status        String    @default("pending")
+  /// Почему попало в очередь: 'low_confidence' | 'overwrite'.
+  reason        String?
+  createdAt     DateTime  @default(now())
+  decidedAt     DateTime?
+  /// userId, принявший решение (approve/reject).
+  decidedBy     String?
+
+  @@index([tenantId, status])
+  @@index([tableId, status])
+  @@index([tableRowId, propertyId])
+}
+
 // ─────────────────────── logging (технические логи) ───────────────────────
 // Модуль LoggingModule: операционная диагностика приложения в БД.
 // ВАЖНО: это НЕ audit trail (бизнес-аудит — SuperAdminAccessLog, вечный, без

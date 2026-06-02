@@ -1,0 +1,18 @@
+{
+  "fixtureId": "14-thanks",
+  "blockName": "Благодарность",
+  "signalType": "commitment",
+  "criticalQuestion": "Что прозвучало?",
+  "trustedAnswer": "Спасибо команде за отличный релиз, все молодцы!",
+  "tags": [
+    "ретро"
+  ],
+  "evidenceQuotes": [
+    "Лид: спасибо всем за релиз, отлично поработали!"
+  ],
+  "expected": {
+    "isGoal": false,
+    "reason": "благодарность, не цель"
+  },
+  "category": "reject"
+}

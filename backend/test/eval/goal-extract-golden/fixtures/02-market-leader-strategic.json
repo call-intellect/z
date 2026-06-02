@@ -1,0 +1,24 @@
+{
+  "fixtureId": "02-market-leader-strategic",
+  "blockName": "Видение",
+  "signalType": "plan_item",
+  "criticalQuestion": "Какая большая цель компании?",
+  "trustedAnswer": "Стать №1 платформой памяти компании на рынке РФ.",
+  "tags": [
+    "стратегия"
+  ],
+  "evidenceQuotes": [
+    "Маша: наша большая цель — стать №1 платформой памяти компании на рынке РФ."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "№1",
+      "рынк",
+      "лидер"
+    ],
+    "expectedHorizon": "strategic",
+    "hasMeasurable": false
+  },
+  "category": "valid"
+}

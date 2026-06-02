@@ -1,0 +1,24 @@
+{
+  "fixtureId": "03-five-demos-sprint",
+  "blockName": "Спринт",
+  "signalType": "commitment",
+  "criticalQuestion": "Что закрываем в спринте?",
+  "trustedAnswer": "За этот спринт закрыть 5 демо с клиентами enterprise.",
+  "tags": [
+    "спринт",
+    "продажи"
+  ],
+  "evidenceQuotes": [
+    "Иван: на этой неделе в спринте надо закрыть 5 демо с enterprise-клиентами."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "демо",
+      "5"
+    ],
+    "expectedHorizon": "sprint",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

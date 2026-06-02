@@ -73,6 +73,10 @@ export class RouterService {
     // помощи / mentoring / поддержки из переписки в задачах, чек-инов,
     // фрагментов транскриптов. Параллельно с другими специалистами.
     HELPFULNESS: '3-8-helpfulness',
+    // Goals OKR v2 (2026-06-02) — Specialist 3-14 (Goals). Авто-добыча целей
+    // компании из блоков (commitment / plan_item): outcome-формулировка,
+    // KNN-дедуп + иерархия родитель↔подцель, source='ai' promotionState='suggested'.
+    GOALS: '3-14-goals',
   } as const;
 
   /**
@@ -103,6 +107,10 @@ export class RouterService {
     // project-customer: социальный вклад важнее формальной customer-аналитики,
     // но менее срочный, чем решения/риски/правила/идеи.
     [RouterService.SPECIALIST.HELPFULNESS]: 5.5,
+    // Goals OKR v2 (2026-06-02) — Specialist 3-14 (Goals). Приоритет 3.8 —
+    // между insights/personal-relation (3-3.5) и ideas (4): цели стратегически
+    // важны, но менее срочны, чем явные риски и решения.
+    [RouterService.SPECIALIST.GOALS]: 3.8,
   };
 
   constructor(
@@ -358,9 +366,15 @@ export class RouterService {
       // sub-ТЗ ниже.
       case 'brand_principle':
       case 'content_artifact':
-      case 'plan_item':
       case 'done_item':
         // no-op до появления специалистов.
+        break;
+      // Goals OKR v2 (2026-06-02) — Specialist 3-14 (Goals) подписан на
+      // commitment + plan_item. LLM goal-extract сам решает «цель / не цель»
+      // (анти-плодёж: на не-цели вернёт isGoal=false и блок пропускается).
+      case 'commitment':
+      case 'plan_item':
+        targets.add(RouterService.SPECIALIST.GOALS);
         break;
       // SBA β-8.2 — commitment_status больше не no-op: эмиттим событие
       // `commitment.status_received`, на которое подписан CommitmentResponseHandler
@@ -401,7 +415,7 @@ export class RouterService {
       case 'task_mention':
         targets.add(RouterService.SPECIALIST.HELPFULNESS);
         break;
-      // Прочие signalType (commitment, mood, drift, metric_change, ...).
+      // Прочие signalType (mood, drift, metric_change, ...).
       default:
         // SBA α-3 wave 3 — LLM-fallback роутер.
         // Static mapping не нашёл targets'ов для этого signalType — пробуем

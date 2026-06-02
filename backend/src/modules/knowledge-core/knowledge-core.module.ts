@@ -35,6 +35,7 @@ import { SegmentBuilderService } from './services/segment-builder.service';
 import { SkillTraitConceptService } from './services/skill-trait-concept.service';
 import { Specialist31ProbeService } from './services/specialist-3-1-probe.service';
 import { Specialist31Service } from './services/specialist-3-1-regulations.service';
+import { Specialist314GoalsService } from './services/specialist-3-14-goals.service';
 import { Specialist32Service } from './services/specialist-3-2-knowledge-clone.service';
 import { Specialist32ProbeService } from './services/specialist-3-2-probe.service';
 import { Specialist33Service } from './services/specialist-3-3-decisions.service';
@@ -170,6 +171,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // и Specialist36ProbeService (probe.support_request + probe.status_unclear).
     Specialist36Service,
     Specialist36ProbeService,
+    // Goals OKR v2 (2026-06-02, Фаза 2): Specialist314GoalsService — авто-добыча
+    // целей из блоков (commitment/plan_item): LLM goal-extract → KNN-дедуп →
+    // goal-hierarchy-link → Goal(source='ai', promotionState='suggested') + опц. KR.
+    // Worker (Specialist314GoalsWorker) живёт в WorkersModule и инжектит этот сервис.
+    Specialist314GoalsService,
     // SBA γ-1: Specialist37Service (SkillProfile rebuild — KNN-группировка
     // reasoning-блоков → LLM detect → KNN-merge → decay) и
     // Specialist37ProbeService (skill.profile_starved / contradicting_traits) +
@@ -293,6 +299,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // (WorkersModule) и REST API IdeasModule + Specialist36Module.
     Specialist36Service,
     Specialist36ProbeService,
+    // Goals OKR v2 (2026-06-02): экспортируем для Specialist314GoalsWorker
+    // (WorkersModule) и тестов.
+    Specialist314GoalsService,
     // SBA γ-1: экспортируем — Specialist37SkillWorker / SkillProfileRebuildWorker
     // (WorkersModule), ClonesService (ClonesModule) и тесты инжектят.
     Specialist37Service,

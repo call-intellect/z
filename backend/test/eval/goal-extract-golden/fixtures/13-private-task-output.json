@@ -1,0 +1,18 @@
+{
+  "fixtureId": "13-private-task-output",
+  "blockName": "Задачи на день",
+  "signalType": "plan_item",
+  "criticalQuestion": "Что сегодня делаешь?",
+  "trustedAnswer": "Сегодня поправлю баг с логином и отвечу на письмо клиента.",
+  "tags": [
+    "задачи"
+  ],
+  "evidenceQuotes": [
+    "Петя: поправлю баг логина, отвечу клиенту по почте."
+  ],
+  "expected": {
+    "isGoal": false,
+    "reason": "частные задачи-output на день, не outcome"
+  },
+  "category": "reject"
+}

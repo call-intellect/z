@@ -81,18 +81,18 @@ existing_critical_files:
 
 Цель: колонка «Тариф» показывает реальное состояние оплаты (read-only), без обманчивого редактируемого контрола.
 
-- [ ] **2.1.** `admin-orgs.service.ts → listOrgs()`: добавить в выборку `Subscription` (по `tenantId` — у `Subscription.tenantId` есть `@unique`, так что `findMany({where:{tenantId:{in:orgIds}}})` или `include`/отдельный `groupBy`) — `status` + `paymentMode`. Расширить TS-интерфейс `AdminOrgRow` (в этом же файле) полями `subscriptionStatus: SubscriptionStatus | null` и `paymentMode: PaymentMode | null`. (Org без подписки → оба `null`, трактуем как DEMO.) **NB:** контроллер возвращает `AdminOrgRow` напрямую, отдельной Zod-response-DTO нет — Swagger-тип идёт от интерфейса.
-- [ ] **2.2.** `admin-orgs.dto.ts → UpdateOrgSchema`: убрать `tier` (или пометить `.optional()` + JSDoc «deprecated, не используется») и поправить `.refine` так, чтобы он требовал только `freeze !== undefined`. Не сломать ветку `freeze`.
-- [ ] **2.3.** `admin-org.ts` (frontend domain): добавить `subscriptionStatus`/`paymentMode` в `AdminOrgRowApi` + `AdminOrgRowDomain` + маппер. Человекочитаемые лейблы (DEMO/нет подписки → «Демо», ACTIVE+paid → «Платный», ACTIVE+bonus → «Бонус», ACTIVE+reference → «Эталон», PAST_DUE → «Просрочена», SUSPENDED → «Заморожена оплата», и т.д.). **Убрать** ставший мёртвым `ORG_TIER_LABELS`/`OrgTier`/`UpdateOrgRequest.tier`, если после правок они больше не используются (проверить grep по проекту). Парные цветовые токены через бейдж-варианты (никаких хардкод-hex / slate).
-- [ ] **2.4.** `OrgsClient.tsx`: удалить `TIERS`, `Select`/`updateTier` в `OrgRow`. Колонку «Тариф» заменить на бейдж статуса+режима. Сделать бейдж (или соседнюю иконку) ссылкой на **вкладку подписки**: `/admin/orgs/${id}?tab=subscription` (это и есть «Подписка и счета»; standalone `/subscription` редиректит туда же). Иконку «Кошелёк» (сейчас `?tab=billing`) оставить или свести — на усмотрение, главное чтобы был явный путь к paid/bonus.
-- [ ] **2.5.** Полное удаление `Org.tier`/enum `OrgTier` + перевод `getOrgOverview` (читает `org.tier`, `admin-orgs.service.ts:233`) на `Subscription`/`OrgEntitlement` — **вне этого ТЗ** (требует миграции, см. §6). Здесь только перестаём писать/показывать `Org.tier` из UI.
+- [x] **2.1.** `admin-orgs.service.ts → listOrgs()`: добавить в выборку `Subscription` (по `tenantId` — у `Subscription.tenantId` есть `@unique`, так что `findMany({where:{tenantId:{in:orgIds}}})` или `include`/отдельный `groupBy`) — `status` + `paymentMode`. Расширить TS-интерфейс `AdminOrgRow` (в этом же файле) полями `subscriptionStatus: SubscriptionStatus | null` и `paymentMode: PaymentMode | null`. (Org без подписки → оба `null`, трактуем как DEMO.) **NB:** контроллер возвращает `AdminOrgRow` напрямую, отдельной Zod-response-DTO нет — Swagger-тип идёт от интерфейса.
+- [x] **2.2.** `admin-orgs.dto.ts → UpdateOrgSchema`: убрать `tier` (или пометить `.optional()` + JSDoc «deprecated, не используется») и поправить `.refine` так, чтобы он требовал только `freeze !== undefined`. Не сломать ветку `freeze`.
+- [x] **2.3.** `admin-org.ts` (frontend domain): добавить `subscriptionStatus`/`paymentMode` в `AdminOrgRowApi` + `AdminOrgRowDomain` + маппер. Человекочитаемые лейблы (DEMO/нет подписки → «Демо», ACTIVE+paid → «Платный», ACTIVE+bonus → «Бонус», ACTIVE+reference → «Эталон», PAST_DUE → «Просрочена», SUSPENDED → «Заморожена оплата», и т.д.). **Убрать** ставший мёртвым `ORG_TIER_LABELS`/`OrgTier`/`UpdateOrgRequest.tier`, если после правок они больше не используются (проверить grep по проекту). Парные цветовые токены через бейдж-варианты (никаких хардкод-hex / slate).
+- [x] **2.4.** `OrgsClient.tsx`: удалить `TIERS`, `Select`/`updateTier` в `OrgRow`. Колонку «Тариф» заменить на бейдж статуса+режима. Сделать бейдж (или соседнюю иконку) ссылкой на **вкладку подписки**: `/admin/orgs/${id}?tab=subscription` (это и есть «Подписка и счета»; standalone `/subscription` редиректит туда же). Иконку «Кошелёк» (сейчас `?tab=billing`) оставить или свести — на усмотрение, главное чтобы был явный путь к paid/bonus.
+- [x] **2.5.** Полное удаление `Org.tier`/enum `OrgTier` + перевод `getOrgOverview` (читает `org.tier`, `admin-orgs.service.ts:233`) на `Subscription`/`OrgEntitlement` — **вне этого ТЗ** (требует миграции, см. §6). Здесь только перестаём писать/показывать `Org.tier` из UI.
 
 **Верификация:** `cd backend && bun run typecheck && bun run lint && bun run build` + `cd frontend && bun run typecheck && bun run lint && bun run build`. Ручной заход в `/admin/orgs`: колонка «Тариф» показывает корректные статусы; клик ведёт на страницу подписки; дропдауна больше нет.
 
 ### Фаза 3 — навигация к paid/bonus (закрывает вопрос №2; почти полностью покрыта Фазой 2)
 
-- [ ] **3.1.** Убедиться, что из списка Org за ≤1 клик пользователь попадает в «Ручную активацию» (paid/bonus) на `/admin/orgs/[id]/subscription`. Если нужен якорь/таб — добавить.
-- [ ] **3.2.** (Опц.) Под бейджем «Бонус»/«Демо» дать подсказку-tooltip: «бонус не идёт в выручку и аналитику» — чтобы смысл был очевиден без захода в карточку.
+- [x] **3.1.** Убедиться, что из списка Org за ≤1 клик пользователь попадает в «Ручную активацию» (paid/bonus) на `/admin/orgs/[id]/subscription`. Если нужен якорь/таб — добавить.
+- [x] **3.2.** (Опц.) Под бейджем «Бонус»/«Демо» дать подсказку-tooltip: «бонус не идёт в выручку и аналитику» — чтобы смысл был очевиден без захода в карточку.
 
 **Верификация:** ручной сценарий «выдать компании бесплатный (бонус) доступ» проходится из списка Org за 2 шага: бейдж → карточка → активация bonus.
 
@@ -117,4 +117,11 @@ existing_critical_files:
 
 ## 7. Итог
 
-_(заполняется по завершении)_ Реализовано: Фаза 1 [ ] · Фаза 2 [ ] · Фаза 3 [ ]. Осталось: —.
+Реализовано полностью: **Фаза 1 [x] · Фаза 2 [x] · Фаза 3 [x]** (2026-06-02, ветка `feature/demo-shared-org-gaps-fix`).
+
+- **Фаза 1** (коммит `1ae46fd`): сведён контракт Concierge-аналитики фронт↔бэк (плоский ответ), defensive guard, обработка null-метрик, `noAnswerCount` из сервиса. Краш `/admin/analytics/concierge` устранён.
+- **Фаза 2+3**: убран мёртвый дропдаун тарифа; колонка «Тариф»→«Подписка» = read-only бейдж статуса (`Демо/Платный/Бонус/Эталон/Просрочена/...`) со ссылкой на `?tab=subscription` (путь к выбору paid/bonus за 1 клик). Backend `listOrgs` отдаёт `subscriptionStatus`+`paymentMode`; `UpdateOrgSchema.tier` помечен `@deprecated`.
+
+Верификация: backend+frontend `typecheck`/`lint`/`build` — зелёные (проверено оркестратором независимо).
+
+**Осталось (вне ТЗ, §6):** полное удаление legacy `Org.tier`/`enum OrgTier` + перевод `getOrgOverview`/`OrgsAnalyticsClient` на `Subscription`/`OrgEntitlement` — отдельным ТЗ с миграцией. `ORG_TIER_LABELS`/`OrgTier` сознательно НЕ удалены — используются в `OrgsAnalyticsClient.tsx`.

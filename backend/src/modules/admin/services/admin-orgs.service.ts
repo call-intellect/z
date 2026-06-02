@@ -1,5 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { type OrgTier, Prisma } from '@prisma/client';
+import {
+  type OrgTier,
+  type PaymentMode,
+  Prisma,
+  type SubscriptionStatus,
+} from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AdminPeriod } from '../dto/admin-usage.dto';
@@ -11,6 +16,10 @@ export interface AdminOrgRow {
   name: string;
   slug: string;
   tier: OrgTier;
+  /** Реальное состояние оплаты — из Subscription (collapse-to-standard). null = нет подписки → трактуем как DEMO. */
+  subscriptionStatus: SubscriptionStatus | null;
+  /** paid/bonus/reference; null если статус не ACTIVE или подписки нет. */
+  paymentMode: PaymentMode | null;
   ownerId: string;
   ownerEmail: string | null;
   membersCount: number;
@@ -142,11 +151,20 @@ export class AdminOrgsService {
       ]),
     );
 
+    // Реальное состояние оплаты (collapse-to-standard): Subscription.tenantId @unique.
+    const subs = await this.prisma.subscription.findMany({
+      where: { tenantId: { in: orgIds } },
+      select: { tenantId: true, status: true, paymentMode: true },
+    });
+    const subById = new Map(subs.map((s) => [s.tenantId, s]));
+
     const items: AdminOrgRow[] = orgs.map((o) => ({
       id: o.id,
       name: o.name,
       slug: o.slug,
       tier: o.tier,
+      subscriptionStatus: subById.get(o.id)?.status ?? null,
+      paymentMode: subById.get(o.id)?.paymentMode ?? null,
       ownerId: o.ownerId,
       ownerEmail: o.owner?.email ?? null,
       membersCount: o._count.memberships,

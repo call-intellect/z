@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import { accountsApi } from '@/api/accounts.api';
+import { setApiClientOrgId } from '@/api/api-client';
 import { ApiError } from '@/api/api-error';
 import { authApi } from '@/api/auth.api';
 import {
@@ -187,6 +188,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('auth:expired', handler);
     return () => window.removeEventListener('auth:expired', handler);
   }, []);
+
+  // Синхронизируем текущую Org в api-client → он добавляет её в X-Org-Id по
+  // умолчанию. Нужно глобальным SubscriptionGuard/EntitlementGuard на бэке
+  // (резолвят tenant только из заголовка). См. api-client.setApiClientOrgId.
+  useEffect(() => {
+    setApiClientOrgId(state.user?.currentOrgId ?? null);
+  }, [state.user?.currentOrgId]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

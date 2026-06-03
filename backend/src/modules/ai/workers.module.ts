@@ -35,6 +35,7 @@ import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profi
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill-trait-concept-normalizer.cron';
 import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
+import { Specialist314GoalsWorker } from '../knowledge-core/workers/specialist-3-14-goals.worker';
 import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
 import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
 import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
@@ -199,6 +200,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // KNN-дедуп Idea, LLM extract, weight/supporters, EventEmitter
     // 'idea.created'.
     Specialist36IdeasWorker,
+    // Goals OKR v2 (2026-06-02, Фаза 2) — consumer `core.specialist-routing`
+    // jobName='3-14-goals'. Авто-добыча целей из блоков commitment/plan_item:
+    // LLM goal-extract → KNN-дедуп → goal-hierarchy-link → Goal(source='ai').
+    Specialist314GoalsWorker,
     // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
     // (KNN + LLM idea-cluster-merge на критической массе).
     IdeaClustererCron,

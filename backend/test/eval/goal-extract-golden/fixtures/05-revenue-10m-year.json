@@ -1,0 +1,25 @@
+{
+  "fixtureId": "05-revenue-10m-year",
+  "blockName": "Годовой план",
+  "signalType": "plan_item",
+  "criticalQuestion": "Цель по выручке на год?",
+  "trustedAnswer": "Вырасти в выручке до 10 млн рублей за год.",
+  "tags": [
+    "финансы",
+    "год"
+  ],
+  "evidenceQuotes": [
+    "CEO: к концу года выйти на 10 млн рублей выручки."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "выручк",
+      "10 млн",
+      "млн"
+    ],
+    "expectedHorizon": "annual",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

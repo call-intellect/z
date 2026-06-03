@@ -109,6 +109,10 @@ const registry = new Map<string, ZodTypeAny>([
   // Порог cosine-схожести схем: ≥ порога → предлагаем «слить» с таблицей.
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
+  // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей (goals.pulse.*) ────
+  ['goals.pulse.enabled', z.boolean()],
+  ['goals.pulse.deliver_to_telegram', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

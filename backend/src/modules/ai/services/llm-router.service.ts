@@ -490,7 +490,18 @@ export type LlmTaskType =
   // Дешёвая частая задача → primary deepseek-v4-flash (cheap tier). JSON object.
   // Cache-friendly: SYSTEM (роль + каталог операторов + правила) стабилен, переменное
   // (колонки таблицы + дата + запрос) — в USER.
-  | 'table-semantic-filter';
+  | 'table-semantic-filter'
+  // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals).
+  //   'goal-extract'           — из IdeaBlock (commitment/plan_item) → черновик
+  //     Goal (outcome-формулировка + горизонт + опц. измеримый KR). Может вернуть
+  //     isGoal=false (не цель). Capable: primary deepseek-v4-pro.
+  //   'goal-hierarchy-link'    — арбитр {duplicate|child_of|standalone} по KNN
+  //     top-5 существующим целям. Дешёвый: primary deepseek-v4-flash.
+  //   'goals-pulse-summarize'  — связный текст еженедельного пульса целей (Фаза 4).
+  //     Как operations-daily-digest.
+  | 'goal-extract'
+  | 'goal-hierarchy-link'
+  | 'goals-pulse-summarize';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -659,6 +670,10 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'table-auto-fill',
   // Smart-tables auto-creation (2026-06-02, Фаза 5) — NL Saved Views (cheap).
   'table-semantic-filter',
+  // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals).
+  'goal-extract',
+  'goal-hierarchy-link',
+  'goals-pulse-summarize',
 ] as const;
 
 /**

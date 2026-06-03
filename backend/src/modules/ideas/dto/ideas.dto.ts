@@ -78,6 +78,19 @@ export const ChangeIdeaStatusBodySchema = z
   .strict();
 export type ChangeIdeaStatusBody = z.infer<typeof ChangeIdeaStatusBodySchema>;
 
+// ────────────── Link idea → goal (Goals OKR v2, Фаза 5) ──────────────
+
+/**
+ * Goals OKR v2 (Фаза 5, мост к гипотезам). Привязать идею к цели —
+ * «эта гипотеза двигает цель X». `goalId = null` — отвязать.
+ */
+export const LinkIdeaGoalSchema = z
+  .object({
+    goalId: z.string().min(1).nullable(),
+  })
+  .strict();
+export type LinkIdeaGoalBody = z.infer<typeof LinkIdeaGoalSchema>;
+
 // ────────────── My Ideas ──────────────
 
 export const MyIdeasQuerySchema = z

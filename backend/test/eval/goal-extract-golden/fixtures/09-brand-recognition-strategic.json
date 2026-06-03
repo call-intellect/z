@@ -1,0 +1,24 @@
+{
+  "fixtureId": "09-brand-recognition-strategic",
+  "blockName": "Бренд",
+  "signalType": "plan_item",
+  "criticalQuestion": "Стратегическая цель бренда?",
+  "trustedAnswer": "Стать узнаваемым брендом среди CTO российских компаний.",
+  "tags": [
+    "бренд",
+    "стратегия"
+  ],
+  "evidenceQuotes": [
+    "CMO: наша долгая цель — узнаваемость бренда среди CTO в РФ."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "бренд",
+      "узнава"
+    ],
+    "expectedHorizon": "strategic",
+    "hasMeasurable": false
+  },
+  "category": "valid"
+}

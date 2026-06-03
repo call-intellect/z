@@ -17,14 +17,20 @@ import type {
   GoalAlignmentSnapshotDto,
   GoalDetailDto,
   GoalIssueProgressSnapshotDto,
+  GoalKeyResultDto,
   GoalListItemDto,
   GoalThemeLinkDto,
+  SupersedeGoalDto,
   UpdateGoalDto,
 } from '../dto/goals.dto';
 
+import { GoalKeyResultsService } from './goal-key-results.service';
 import { StrategicAlignmentIssuesService } from './strategic-alignment-issues.service';
 
 const TIMELINE_LIMIT = 30;
+
+/** Лимит глубины обхода дерева при защите от цикла (на случай битых данных). */
+const CYCLE_GUARD_MAX_DEPTH = 50;
 
 /**
  * Сервис целей компании (Фаза 9 knowledge-core).
@@ -124,6 +130,7 @@ export class GoalsService {
         themes: {
           include: { theme: { select: { id: true, name: true } } },
         },
+        keyResults: { orderBy: { createdAt: 'asc' } },
         _count: { select: { themes: true } },
       },
     });
@@ -151,11 +158,17 @@ export class GoalsService {
       createdAt: gt.createdAt.toISOString(),
     }));
 
+    const keyResults: GoalKeyResultDto[] = goal.keyResults.map((kr) =>
+      GoalKeyResultsService.map(kr),
+    );
+
     return {
       ...this.mapList(goal, goal._count.themes),
       themes,
       latestSnapshot,
       timeline,
+      confidence: this.decimalOrNull(goal.confidence),
+      keyResults,
     };
   }
 
@@ -174,6 +187,9 @@ export class GoalsService {
         error: { code: 'invalid_target_date', message: 'Некорректная дата' },
       });
     }
+    if (body.parentGoalId) {
+      await this.assertParentExists(tenantId, body.parentGoalId);
+    }
     const created = await this.prisma.goal.create({
       data: {
         tenantId,
@@ -183,6 +199,8 @@ export class GoalsService {
         ...(body.weight !== undefined
           ? { weight: new Prisma.Decimal(body.weight.toFixed(3)) }
           : {}),
+        ...(body.horizon !== undefined ? { horizon: body.horizon } : {}),
+        ...(body.parentGoalId ? { parentGoalId: body.parentGoalId } : {}),
         createdById: userId,
       },
       include: { _count: { select: { themes: true } } },
@@ -228,6 +246,30 @@ export class GoalsService {
       data.weight = new Prisma.Decimal(body.weight.toFixed(3));
     }
     if (body.status !== undefined) data.status = body.status;
+    if (body.horizon !== undefined) data.horizon = body.horizon;
+    if (body.progressStatus !== undefined) {
+      data.progressStatus = body.progressStatus;
+    }
+    if (body.promotionState !== undefined) {
+      data.promotionState = body.promotionState;
+    }
+    // Reparent: проверяем цикл/принадлежность/существование родителя.
+    if (body.parentGoalId !== undefined) {
+      if (body.parentGoalId) {
+        await this.assertParentExists(tenantId, body.parentGoalId);
+        await this.assertNoCycle(tenantId, goalId, body.parentGoalId);
+        data.parent = { connect: { id: body.parentGoalId } };
+      } else {
+        // null = открепить от родителя.
+        data.parent = { disconnect: true };
+      }
+    }
+
+    // M0: имена всех правленых полей «прибиваются» руками — AI их не перетрёт.
+    data.manualOverride = this.mergeManualOverride(
+      existing.manualOverride,
+      Object.keys(body),
+    ) as Prisma.InputJsonValue;
 
     const updated = await this.prisma.goal.update({
       where: { id: goalId },
@@ -243,6 +285,87 @@ export class GoalsService {
     });
 
     return this.mapList(updated, updated._count.themes);
+  }
+
+  // ─────────────────────────── supersede ────────────────────────────
+
+  /**
+   * Goals OKR v2 (M0) — «передумали через 2 дня»: создать новую версию цели
+   * (наследует поля старой + переопределения из body), старую увести в
+   * историю (`validUntil = now`, `status` сохраняется). KR в Фазе 1 НЕ
+   * копируются (привязаны к старой цели; перенос — vNext).
+   */
+  async supersede(args: {
+    tenantId: string;
+    userId: string;
+    goalId: string;
+    body: SupersedeGoalDto;
+  }): Promise<GoalDetailDto> {
+    const { tenantId, userId, goalId, body } = args;
+    const old = await this.prisma.goal.findUnique({ where: { id: goalId } });
+    if (!old || old.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'goal_not_found', message: 'Цель не найдена' },
+      });
+    }
+
+    const targetDate =
+      body.targetDate !== undefined
+        ? body.targetDate
+          ? new Date(body.targetDate)
+          : null
+        : old.targetDate;
+    if (targetDate && Number.isNaN(targetDate.getTime())) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'invalid_target_date', message: 'Некорректная дата' },
+      });
+    }
+    const weight =
+      body.weight !== undefined
+        ? new Prisma.Decimal(body.weight.toFixed(3))
+        : old.weight;
+
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.goal.create({
+        data: {
+          tenantId,
+          name: body.name ?? old.name,
+          description: body.description ?? old.description,
+          targetDate,
+          weight,
+          horizon: body.horizon ?? old.horizon,
+          ...(old.parentGoalId
+            ? { parentGoalId: old.parentGoalId }
+            : {}),
+          source: 'manual',
+          promotionState: 'active',
+          progressStatus: old.progressStatus,
+          supersededById: old.id,
+          validFrom: now,
+          validUntil: null,
+          recordedAt: now,
+          createdById: userId,
+        },
+      });
+      // Старую — в историю: проставляем validUntil, status НЕ трогаем.
+      await tx.goal.update({
+        where: { id: old.id },
+        data: { validUntil: now },
+      });
+      return created;
+    });
+
+    void this.audit.log({
+      userId,
+      action: 'goal.superseded',
+      resourceId: result.id,
+      metadata: { tenantId, oldGoalId: old.id, newGoalId: result.id },
+    });
+
+    return this.get({ tenantId, goalId: result.id });
   }
 
   async archive(args: {
@@ -429,7 +552,93 @@ export class GoalsService {
     return { enqueued: true, jobId };
   }
 
+  // ─────────────────────────── tree guards ──────────────────────────
+
+  /** Проверить, что parent существует и принадлежит тому же tenant'у. */
+  private async assertParentExists(
+    tenantId: string,
+    parentGoalId: string,
+  ): Promise<void> {
+    const parent = await this.prisma.goal.findUnique({
+      where: { id: parentGoalId },
+      select: { id: true, tenantId: true },
+    });
+    if (!parent || parent.tenantId !== tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'parent_goal_not_found',
+          message: 'Родительская цель не найдена',
+        },
+      });
+    }
+  }
+
+  /**
+   * Защита от цикла при перепривязке (`parentGoalId`):
+   *   - newParentId === goalId → цель не может быть родителем самой себя.
+   *   - поднимаемся вверх по цепочке parentGoalId от newParentId; если
+   *     встретили goalId — перепривязка создаёт цикл.
+   *   - newParentId === null обрабатывается выше (открепление, цикла нет).
+   * Лимит глубины — на случай уже повреждённых данных.
+   */
+  private async assertNoCycle(
+    tenantId: string,
+    goalId: string,
+    newParentId: string,
+  ): Promise<void> {
+    if (newParentId === goalId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'goal_cycle_self',
+          message: 'Цель не может быть родителем самой себя',
+        },
+      });
+    }
+    let cursor: string | null = newParentId;
+    let depth = 0;
+    while (cursor && depth < CYCLE_GUARD_MAX_DEPTH) {
+      if (cursor === goalId) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'goal_cycle',
+            message: 'Перепривязка создаёт цикл в дереве целей',
+          },
+        });
+      }
+      const node: { parentGoalId: string | null } | null =
+        await this.prisma.goal.findFirst({
+          where: { id: cursor, tenantId },
+          select: { parentGoalId: true },
+        });
+      cursor = node?.parentGoalId ?? null;
+      depth += 1;
+    }
+  }
+
+  /** Смердж имён правленых полей в Goal.manualOverride (Record<string,true>). */
+  private mergeManualOverride(
+    existing: unknown,
+    fields: string[],
+  ): Record<string, true> {
+    const out: Record<string, true> = {};
+    if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+      for (const key of Object.keys(existing as Record<string, unknown>)) {
+        out[key] = true;
+      }
+    }
+    for (const f of fields) out[f] = true;
+    return out;
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
+
+  private decimalOrNull(v: unknown): number | null {
+    if (v === null || v === undefined) return null;
+    return this.decimalToNumber(v);
+  }
 
   private mapList(
     g: {
@@ -445,6 +654,15 @@ export class GoalsService {
       archivedAt: Date | null;
       createdAt: Date;
       updatedAt: Date;
+      source: 'manual' | 'ai';
+      promotionState: 'suggested' | 'active' | 'dismissed';
+      progressStatus:
+        | 'on_track'
+        | 'at_risk'
+        | 'stalled'
+        | 'achieved'
+        | 'dropped';
+      parentGoalId: string | null;
     },
     themesCount: number,
   ): GoalListItemDto {
@@ -464,6 +682,10 @@ export class GoalsService {
       archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
       createdAt: g.createdAt.toISOString(),
       updatedAt: g.updatedAt.toISOString(),
+      source: g.source,
+      promotionState: g.promotionState,
+      progressStatus: g.progressStatus,
+      parentGoalId: g.parentGoalId,
     };
   }
 

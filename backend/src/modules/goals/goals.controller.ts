@@ -31,16 +31,24 @@ import { RbacService } from '../rbac/rbac.service';
 import {
   AddThemesSchema,
   CreateGoalSchema,
+  CreateKeyResultSchema,
   ListGoalsQuerySchema,
+  SupersedeGoalSchema,
   UpdateGoalSchema,
+  UpdateKeyResultSchema,
   type AddThemesDto,
   type CreateGoalDto,
+  type CreateKeyResultDto,
   type GoalDetailDto,
   type GoalIssueProgressSnapshotDto,
+  type GoalKeyResultDto,
   type GoalListItemDto,
   type ListGoalsQuery,
+  type SupersedeGoalDto,
   type UpdateGoalDto,
+  type UpdateKeyResultDto,
 } from './dto/goals.dto';
+import { GoalKeyResultsService } from './services/goal-key-results.service';
 import { GoalsService } from './services/goals.service';
 
 /**
@@ -67,6 +75,8 @@ import { GoalsService } from './services/goals.service';
 export class GoalsController {
   constructor(
     @Inject(GoalsService) private readonly goals: GoalsService,
+    @Inject(GoalKeyResultsService)
+    private readonly keyResults: GoalKeyResultsService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
@@ -138,6 +148,94 @@ export class GoalsController {
     const t = this.requireTenant(tenantId);
     await this.requireDelete(user.id, t);
     return this.goals.archive({ tenantId: t, userId: user.id, goalId: id });
+  }
+
+  @Post(':id/supersede')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Заменить цель новой версией («передумали»); старая уходит в историю (validUntil)',
+  })
+  async supersede(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SupersedeGoalSchema)) body: SupersedeGoalDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<GoalDetailDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.goals.supersede({
+      tenantId: t,
+      userId: user.id,
+      goalId: id,
+      body,
+    });
+  }
+
+  // ─────────────────────────── Key Results (KR) ─────────────────────
+
+  @Post(':id/key-results')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Создать ключевой результат (KR) цели' })
+  async createKeyResult(
+    @Param('id') goalId: string,
+    @Body(new ZodValidationPipe(CreateKeyResultSchema)) body: CreateKeyResultDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<GoalKeyResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireKrWrite(user.id, t);
+    return this.keyResults.create({
+      tenantId: t,
+      userId: user.id,
+      goalId,
+      body,
+    });
+  }
+
+  @Patch(':id/key-results/:krId')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'Обновить KR (ручной ввод currentValue пишет checkpoint; правленые поля → manualOverride)',
+  })
+  async updateKeyResult(
+    @Param('id') goalId: string,
+    @Param('krId') krId: string,
+    @Body(new ZodValidationPipe(UpdateKeyResultSchema)) body: UpdateKeyResultDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<GoalKeyResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireKrWrite(user.id, t);
+    return this.keyResults.update({
+      tenantId: t,
+      userId: user.id,
+      goalId,
+      krId,
+      body,
+    });
+  }
+
+  @Delete(':id/key-results/:krId')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Удалить KR (hard delete, cascade снимет checkpoints)' })
+  async removeKeyResult(
+    @Param('id') goalId: string,
+    @Param('krId') krId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ removed: boolean }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireKrDelete(user.id, t);
+    return this.keyResults.remove({
+      tenantId: t,
+      userId: user.id,
+      goalId,
+      krId,
+    });
   }
 
   @Post(':id/themes')
@@ -269,6 +367,39 @@ export class GoalsController {
       throw new ForbiddenException({
         ok: false,
         error: { code: 'forbidden', message: 'Архивирует цели только владелец Org' },
+      });
+    }
+  }
+
+  // ── RBAC для KR (ресурс goal_key_result) ──
+
+  private async requireKrWrite(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.canWrite(userId, tenantId, 'goal_key_result');
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Ключевые результаты изменяет только владелец Org',
+        },
+      });
+    }
+  }
+
+  private async requireKrDelete(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.check({
+      userId,
+      tenantId,
+      obj: 'goal_key_result',
+      act: 'delete',
+    });
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Удаляет ключевые результаты только владелец Org',
+        },
       });
     }
   }

@@ -154,6 +154,7 @@ export class SprintAnalystService {
             progressSnapshot: cycle.progressSnapshot ?? null,
             version: cycle.version,
             timezone: cycle.timezone,
+            primaryGoalId: cycle.primaryGoalId,
             completedAt: cycle.completedAt?.toISOString() ?? null,
             createdAt: cycle.createdAt.toISOString(),
             updatedAt: cycle.updatedAt.toISOString(),

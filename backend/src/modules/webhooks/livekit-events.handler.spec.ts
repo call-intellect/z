@@ -251,4 +251,50 @@ describe('LivekitEventsHandler', () => {
     await handler.handle(evt('track_published', 'm-1'));
     expect(meetings.transitionStatus).not.toHaveBeenCalled();
   });
+
+  // ───────────────────── faststart enqueue (Фаза 3) ──────────────────────
+
+  function egressEndedEvt(meetingId: string): WebhookEvent {
+    return {
+      event: 'egress_ended',
+      egressInfo: {
+        egressId: 'EG_C1',
+        roomName: meetingId,
+        requestType: 'room_composite',
+        fileResults: [
+          { location: `https://s3.local/z-records/meetings/${meetingId}/composite.mp4`, size: 383, duration: 1_000_000_000 },
+        ],
+      },
+    } as unknown as WebhookEvent;
+  }
+
+  function makeEgressHandler(faststartEnabled: boolean): {
+    handler: LivekitEventsHandler;
+    aiQueue: any;
+  } {
+    const prisma = {
+      meeting: { findUnique: vi.fn(async () => ({ id: 'm-1', status: 'completed' })) },
+    } as unknown as PrismaService;
+    const meetings = { transitionStatus: vi.fn(async () => undefined) } as unknown as MeetingsService;
+    const metrics = { incLivekitWebhookEvent: vi.fn() } as unknown as BusinessMetricsService;
+    const recordings = {
+      onCompositeEnded: vi.fn(async () => ({ status: 'finalizing', allReady: false })),
+    } as any;
+    const aiQueue = { enqueueRecordingFaststart: vi.fn(async () => undefined) } as any;
+    const cfg = { recording: { faststartEnabled } } as any;
+    const handler = new LivekitEventsHandler(prisma, meetings, metrics, recordings, aiQueue, cfg);
+    return { handler, aiQueue };
+  }
+
+  it('egress_ended(composite): флаг RECORDING_FASTSTART_ENABLED on → ставит faststart в очередь', async () => {
+    const { handler, aiQueue } = makeEgressHandler(true);
+    await handler.handle(egressEndedEvt('m-1'));
+    expect(aiQueue.enqueueRecordingFaststart).toHaveBeenCalledWith('m-1');
+  });
+
+  it('egress_ended(composite): флаг off → faststart НЕ ставится', async () => {
+    const { handler, aiQueue } = makeEgressHandler(false);
+    await handler.handle(egressEndedEvt('m-1'));
+    expect(aiQueue.enqueueRecordingFaststart).not.toHaveBeenCalled();
+  });
 });

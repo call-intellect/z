@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { type WebhookEvent } from 'livekit-server-sdk';
 
+import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai/ai-queue.service';
@@ -76,6 +77,14 @@ export class LivekitEventsHandler {
     @Optional()
     @Inject(AiQueueService)
     private readonly aiQueue: AiQueueService | null = null,
+    /**
+     * `TypedConfigService` — для гейтинга faststart-постобработки видео
+     * (`RECORDING_FASTSTART_ENABLED`). `@Optional()`: в юнит-тестах Фазы 3 его
+     * нет, тогда faststart просто не ставится (дефолт-поведение «выключено»).
+     */
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
   ) {}
 
   async handle(event: WebhookEvent): Promise<void> {
@@ -377,6 +386,20 @@ export class LivekitEventsHandler {
             ? Math.round(file.duration / 1_000_000_000) // ns → s
             : null,
       });
+      // Фаза 3 (recording-reliability): faststart-постобработка composite MP4,
+      // чтобы браузер играл видео прогрессивно. За флагом RECORDING_FASTSTART_ENABLED
+      // (дефолт off). Non-fatal — не блокирует FSM-переход в ready.
+      if (this.cfg?.recording.faststartEnabled && this.aiQueue) {
+        try {
+          await this.aiQueue.enqueueRecordingFaststart(meetingId);
+          this.logger.log({ meetingId }, 'egress_ended: faststart-постобработка composite поставлена в очередь');
+        } catch (qerr) {
+          this.logger.warn(
+            { meetingId, err: qerr instanceof Error ? qerr.message : String(qerr) },
+            'egress_ended: enqueue faststart не удался (non-fatal)',
+          );
+        }
+      }
       await this.maybePromoteMeetingToReady(meetingId, result.allReady);
       return;
     }

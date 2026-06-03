@@ -37,11 +37,14 @@ WORKDIR /app
 # openssl — Prisma engine.
 # postgresql16-client — pg_dump для авто-бэкапа БД перед `prisma db push
 # --accept-data-loss` (apply-prod-deploy.ts --with-schema). pg16 = версия сервера.
+# ffmpeg — нужен воркерам, что шеллят `ffmpeg` из PATH: faststart composite MP4
+# (recording.faststart, ТЗ 2026-06-03) и нарезка клипов (clip.render). Без него
+# оба воркера падают с ENOENT.
 #
 # GEPA prompt evolution (Agents v2 Фаза C2) ВЫНЕСЕН в отдельный контейнер z-gepa
 # (см. backend/python/Dockerfile). Python/pip в этом образе больше не нужны —
 # backend ходит к gepa-сервису по HTTP (GepaRunnerService → GEPA_SERVICE_URL).
-RUN apk add --no-cache openssl postgresql16-client
+RUN apk add --no-cache openssl postgresql16-client ffmpeg
 ENV NODE_ENV=production
 ENV PORT=3000
 

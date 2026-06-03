@@ -51,6 +51,7 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 // SBA β-8 — PersonalRelationBuilderWorker.
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
+import { FaststartWorker } from '../recordings/workers/faststart.worker';
 import { TablesModule } from '../tables/tables.module';
 import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
@@ -141,6 +142,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     TranscriptCleanWorker,
     // Фаза E — дополнительные («custom») AI-отчёты по выбранному шаблону.
     CustomReportWorker,
+    // ТЗ 2026-06-03 meeting-recording-reliability, Фаза 3 — faststart-постобработка
+    // composite MP4 (ffmpeg -movflags +faststart). Consumer `recording.faststart`,
+    // producer — webhook egress_ended(composite) при RECORDING_FASTSTART_ENABLED.
+    FaststartWorker,
 
     // knowledge-core воркеры/cron'ы.
     BlockIngestWorker,

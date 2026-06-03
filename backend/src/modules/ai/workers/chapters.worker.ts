@@ -8,8 +8,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { ChapterExtractionService } from '../services/chapter-extraction.service';
 import type { DialogTurn } from '../services/prompts/common';
@@ -26,6 +28,9 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChaptersWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -36,7 +41,10 @@ export class ChaptersWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.CHAPTERS,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'ai.chapters', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

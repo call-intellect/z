@@ -1250,9 +1250,10 @@ GIN-индекс `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")
 ```prisma
 enum SystemLogLevel    { DEBUG INFO WARN ERROR FATAL }
 enum SystemLogCategory { SYSTEM REQUEST BUSINESS SECURITY PAYMENT WEBHOOK AUTH DB INTEGRATION AUDIT FRONTEND JOB OTHER }
-enum SystemLogContour  { GUEST MEMBER ORG_ADMIN SUPERADMIN PLATFORM PUBLIC SYSTEM }
+enum SystemLogContour  { GUEST MEMBER ORG_ADMIN SUPERADMIN PLATFORM PUBLIC SYSTEM }   // зона/роль
+enum SystemLogPipeline { MEETING_LIFECYCLE RECORDING TRANSCRIPTION AI_ANALYSIS KNOWLEDGE_GRAPH NOTIFICATIONS AUTH BILLING INTEGRATIONS ONBOARDING ADMIN SCHEDULER SYSTEM }  // процессная цепочка (2026-06-03)
 
-model SystemLog       { id, level, category, contour, module?, action?, message, details? (Json),
+model SystemLog       { id, level, category, contour, pipeline?, module?, action?, message, details? (Json),
                         userId?, userRole?, orgId?, requestId?, traceId?, ip?, userAgent?, method?, path?,
                         statusCode?, durationMs?, errorName?, errorMessage?, errorStack?, environment?, instanceId?, createdAt }
 model PlatformSetting  { key @id, valueJson (Json), updatedBy?, updatedAt, createdAt }
@@ -1260,8 +1261,10 @@ model PlatformSetting  { key @id, valueJson (Json), updatedBy?, updatedAt, creat
 
 - **`SystemLog`** — операционная диагностика с ретеншеном (автоудаление по `retentionDays`).
   Намеренно **без FK**: `userId`/`orgId` — «мягкие» строки (лог переживает удаление сущности).
-  9 индексов: `createdAt`, `[level|category|contour|module|statusCode|userId|orgId, createdAt]`, `requestId`.
-  Это **не** audit trail (бизнес-аудит — `SuperAdminAccessLog`, вечный).
+  11 индексов: `createdAt`, `[level|category|contour|pipeline|module|statusCode|userId|orgId, createdAt]`,
+  `requestId`, `[traceId, createdAt]`. Это **не** audit trail (бизнес-аудит — `SuperAdminAccessLog`, вечный).
+  - `pipeline` (2026-06-03) — процессный контур цепочки; `traceId` — корреляция одной цепочки
+    (для встречи `mtg_<id>` на всех стадиях). Заполняются через `PipelineRunner` + мост Nest Logger.
 - **`PlatformSetting`** — KV-настройки платформы; ключ `logging_settings` хранит runtime-конфиг логирования.
 
 Применяется через `bun run prisma:push` (не migrate). Подробнее: [[../01_projects/logging]].

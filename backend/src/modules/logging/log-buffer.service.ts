@@ -1,7 +1,9 @@
 import {
   type BeforeApplicationShutdown,
+  Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -9,6 +11,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 import { LogSettingsService } from './log-settings.service';
+import { LogStreamGateway } from './log-stream.gateway';
 
 /** Запись для bulk-insert — соответствует колонкам SystemLog. */
 export type SystemLogEntry = Prisma.SystemLogCreateManyInput;
@@ -35,6 +38,12 @@ export class LogBufferService implements OnModuleInit, BeforeApplicationShutdown
   private timer: NodeJS.Timeout | null = null;
   private droppedSinceLastWarn = 0;
   private inErrorState = false;
+
+  // Property-injection: live-стрим логов (опционален — отсутствует в unit-тестах
+  // буфера, где сервис конструируется напрямую с prisma+settings).
+  @Optional()
+  @Inject(LogStreamGateway)
+  private readonly stream: LogStreamGateway | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -97,6 +106,12 @@ export class LogBufferService implements OnModuleInit, BeforeApplicationShutdown
     const batch = this.buffer.splice(0, this.buffer.length);
     try {
       await this.prisma.systemLog.createMany({ data: batch });
+      // Live-стрим: пушим записанную пачку подписчикам (best-effort, не в БД-пути).
+      try {
+        this.stream?.broadcast(batch);
+      } catch {
+        /* стрим не должен влиять на запись логов */
+      }
       if (this.inErrorState) {
         this.inErrorState = false;
         this.droppedSinceLastWarn = 0;

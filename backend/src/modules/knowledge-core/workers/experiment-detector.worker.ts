@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -14,6 +15,7 @@ import {
   CORE_QUEUE_NAMES,
   type SpecialistRoutingJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { RouterService } from '../services/router.service';
 import { Specialist39ExperimentsService } from '../services/specialist-3-9-experiments.service';
 
@@ -50,6 +52,9 @@ export class ExperimentDetectorWorker
   /** jobName-фильтр. Совпадает с RouterService.SPECIALIST.EXPERIMENT_TRACKER. */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.EXPERIMENT_TRACKER;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -62,7 +67,10 @@ export class ExperimentDetectorWorker
   onModuleInit(): void {
     this.worker = new Worker<SpecialistRoutingJobData>(
       CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.experiment-detector', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

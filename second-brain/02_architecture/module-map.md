@@ -2002,14 +2002,17 @@ CyclesController расширен: `GET /cycles/:id/dashboard`, `POST /cycles/:i
 
 [[../index|← index]]
 
-## logging (LoggingModule, 2026-06-01)
+## logging (LoggingModule, 2026-06-01; контуры+мост 2026-06-03)
 
 `backend/src/modules/logging/` — централизованное техническое логирование в БД (`@Global`).
-Pipeline: `LogService.write → in-memory буфер → bulk createMany → SystemLog`. Глобальный
-`RequestLoggingInterceptor` (успешные/медленные запросы) + `AllExceptionsFilter` (4xx/5xx, через
-`@Optional() LogService`). Настройки runtime — `PlatformSetting[logging_settings]` + кэш с reload 30с.
-Ретеншен — `LogCleanupService` (`setInterval` 1ч, advisory-lock). REST `/api/v1/platform/logs/*`
-(super_admin). Контекст — `RequestContextService` (AsyncLocalStorage). Подробнее: [[../01_projects/logging]].
+Pipeline: `LogService.write → in-memory буфер → bulk createMany → SystemLog`. **Мост `DbLoggerBridge`**
+(`app.useLogger` в `main.ts`) дублирует все `this.logger.*` по приложению/воркерам в `SystemLog`.
+`AllExceptionsFilter` (4xx/5xx, через `@Optional() LogService`). HTTP-`RequestLoggingInterceptor`
+**отключён** (2026-06-03, REQUEST не пишется). Настройки runtime — `PlatformSetting[logging_settings]` + reload 30с.
+Ретеншен — `LogCleanupService` (advisory-lock). REST `/api/v1/platform/logs/*` (super_admin), вкл. `/chain?traceId=`.
+Процессные контуры: `SystemLog.pipeline` (enum) + `traceId`; проставляются через **`PipelineRunner`**
+(`log-pipeline.ts`) в воркерах и `LivekitEventsHandler`. Контекст — `RequestContextService` (AsyncLocalStorage,
+`runWith`). Подробнее: [[../01_projects/logging]].
 
 [[../index|← index]]
 

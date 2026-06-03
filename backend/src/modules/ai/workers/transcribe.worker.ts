@@ -3,10 +3,12 @@ import { Prisma } from '@prisma/client';
 import type { AudioTrack } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingsService } from '../../meetings/meetings.service';
 import { extractKeyFromUrl } from '../../recordings/s3-keys';
 import { S3Service } from '../../recordings/s3.service';
@@ -33,6 +35,9 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TranscribeWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -48,7 +53,10 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.TRANSCRIBE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.TRANSCRIPTION, 'ai.transcribe', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 4,

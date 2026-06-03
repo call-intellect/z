@@ -14,21 +14,31 @@
  * рефетч → 429.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { logsApi } from '@/api/admin-logs.api';
 import {
+  CATEGORY_LABELS,
+  CONTOUR_LABELS,
+  LEVEL_LABELS,
   LOG_CATEGORIES,
   LOG_CONTOURS,
   LOG_LEVELS,
+  LOG_PIPELINES,
+  PIPELINE_LABELS,
+  systemLogChainFromApi,
   systemLogListFromApi,
   systemLogRecordFromApi,
   type LoggingSettingsApi,
   type SystemLogAggregatesApi,
   type SystemLogCategory,
+  type SystemLogChain,
   type SystemLogLevel,
+  type SystemLogPipeline,
   type SystemLogRecord,
+  type SystemLogRecordApi,
 } from '@/domain/system-logs';
+import { useLogStream } from '@/hooks/admin/useLogStream';
 import { AdminSection } from '@/ui/components/admin/AdminSection';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
@@ -86,6 +96,7 @@ type Filters = {
   levelAtLeast: string;
   category: string;
   contour: string;
+  pipeline: string;
   module: string;
   statusCode: string;
   requestId: string;
@@ -96,18 +107,75 @@ const EMPTY_FILTERS: Filters = {
   levelAtLeast: ALL,
   category: ALL,
   contour: ALL,
+  pipeline: ALL,
   module: '',
   statusCode: '',
   requestId: '',
   search: '',
 };
 
+const LEVEL_ORDER: Record<SystemLogLevel, number> = {
+  DEBUG: 10,
+  INFO: 20,
+  WARN: 30,
+  ERROR: 40,
+  FATAL: 50,
+};
+
+const LIVE_BUFFER_CAP = 300;
+
+/** Совпадает ли пришедшая по WS запись с текущими фильтрами (клиентская проверка). */
+function matchesFilters(r: SystemLogRecord, f: Filters): boolean {
+  if (f.levelAtLeast !== ALL && LEVEL_ORDER[r.level] < LEVEL_ORDER[f.levelAtLeast as SystemLogLevel]) {
+    return false;
+  }
+  if (f.category !== ALL && r.category !== f.category) return false;
+  if (f.contour !== ALL && r.contour !== f.contour) return false;
+  if (f.pipeline !== ALL && r.pipeline !== f.pipeline) return false;
+  if (f.module.trim() && r.module !== f.module.trim()) return false;
+  if (f.statusCode.trim() && String(r.statusCode ?? '') !== f.statusCode.trim()) return false;
+  if (f.requestId.trim() && r.requestId !== f.requestId.trim()) return false;
+  if (f.search.trim()) {
+    const q = f.search.trim().toLowerCase();
+    const hay = `${r.message} ${r.action ?? ''} ${r.errorMessage ?? ''}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
 export function LogsClient() {
   const [period, setPeriod] = useState<Period>('24h');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<SystemLogRecord | null>(null);
+  const [chainTrace, setChainTrace] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [live, setLive] = useState(false);
+  const [liveItems, setLiveItems] = useState<SystemLogRecord[]>([]);
+
+  // Live-стрим по WebSocket (без поллинга). Входящие фильтруем клиентски и
+  // префиксуем к буферу (cap LIVE_BUFFER_CAP, дедуп по id).
+  const onLiveLogs = useCallback(
+    (incoming: SystemLogRecordApi[]) => {
+      setLiveItems((prev) => {
+        const matched = incoming
+          .map(systemLogRecordFromApi)
+          .filter((r) => matchesFilters(r, filters));
+        if (matched.length === 0) return prev;
+        const seen = new Set(prev.map((p) => p.id));
+        const fresh = matched.filter((r) => !seen.has(r.id));
+        if (fresh.length === 0) return prev;
+        return [...fresh.reverse(), ...prev].slice(0, LIVE_BUFFER_CAP);
+      });
+    },
+    [filters],
+  );
+  const { connected: liveConnected } = useLogStream(live, onLiveLogs);
+
+  // Смена фильтров/периода или переключение Live — очищаем live-буфер.
+  useEffect(() => {
+    setLiveItems([]);
+  }, [filters, period, live]);
 
   // ⚠️ Мемоизируем dateFrom по period — НЕ по каждому рендеру (иначе беск. рефетч).
   const dateFrom = useMemo(() => fromForPeriod(period), [period]);
@@ -129,6 +197,7 @@ export function LogsClient() {
       ...(filters.levelAtLeast !== ALL ? { levelAtLeast: filters.levelAtLeast } : {}),
       ...(filters.category !== ALL ? { category: filters.category } : {}),
       ...(filters.contour !== ALL ? { contour: filters.contour } : {}),
+      ...(filters.pipeline !== ALL ? { pipeline: filters.pipeline } : {}),
       ...(filters.module.trim() ? { module: filters.module.trim() } : {}),
       ...(filters.statusCode.trim() ? { statusCode: Number(filters.statusCode) } : {}),
       ...(filters.requestId.trim() ? { requestId: filters.requestId.trim() } : {}),
@@ -155,6 +224,15 @@ export function LogsClient() {
   const list = listQ.data;
   const agg = aggQ.data;
   const totalPages = list ? Math.max(1, Math.ceil(list.total / PAGE_SIZE)) : 1;
+
+  // Отображаемые строки: в Live-режиме префиксуем live-буфер к текущей странице
+  // (дедуп по id), иначе — как пришло с сервера.
+  const rows = useMemo<SystemLogRecord[]>(() => {
+    const base = list?.items ?? [];
+    if (!live || liveItems.length === 0) return base;
+    const seen = new Set(base.map((b) => b.id));
+    return [...liveItems.filter((r) => !seen.has(r.id)), ...base];
+  }, [live, liveItems, list]);
 
   if (listQ.isForbidden || aggQ.isForbidden) {
     return (
@@ -191,8 +269,25 @@ export function LogsClient() {
             ))}
           </ToggleGroup>
           <Button
+            variant={live ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setLive((v) => !v);
+              setPage(0);
+            }}
+            title="Стрим логов по WebSocket без обновления страницы"
+          >
+            <span
+              className={`mr-1.5 inline-block h-2 w-2 rounded-full ${
+                live ? (liveConnected ? 'animate-pulse bg-emerald-400' : 'bg-amber-400') : 'bg-fg-tertiary'
+              }`}
+            />
+            {live ? (liveConnected ? 'Live' : 'Подключение…') : 'Live'}
+          </Button>
+          <Button
             variant="outline"
             size="sm"
+            disabled={live}
             onClick={() => {
               listQ.refetch();
               aggQ.refetch();
@@ -236,11 +331,13 @@ export function LogsClient() {
             }))}
           />
           <TopCard
-            title="Топ endpoint'ов по ошибкам"
-            rows={(agg?.topErrorPaths ?? []).map((r) => ({
-              label: r.path ?? '—',
-              count: r.count,
-            }))}
+            title="Записей по контурам (за период)"
+            rows={Object.entries(agg?.byPipeline ?? {})
+              .sort((a, b) => b[1] - a[1])
+              .map(([key, count]) => ({
+                label: PIPELINE_LABELS[key as SystemLogPipeline] ?? key,
+                count,
+              }))}
           />
         </div>
 
@@ -251,19 +348,25 @@ export function LogsClient() {
               label="Уровень ≥"
               value={filters.levelAtLeast}
               onChange={(v) => updateFilter('levelAtLeast', v)}
-              options={LOG_LEVELS.map((l) => ({ value: l, label: l }))}
+              options={LOG_LEVELS.map((l) => ({ value: l, label: LEVEL_LABELS[l] }))}
             />
             <FilterSelect
               label="Категория"
               value={filters.category}
               onChange={(v) => updateFilter('category', v)}
-              options={LOG_CATEGORIES.map((c) => ({ value: c, label: c }))}
+              options={LOG_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))}
             />
             <FilterSelect
-              label="Контур"
+              label="Контур (процесс)"
+              value={filters.pipeline}
+              onChange={(v) => updateFilter('pipeline', v)}
+              options={LOG_PIPELINES.map((p) => ({ value: p, label: PIPELINE_LABELS[p] }))}
+            />
+            <FilterSelect
+              label="Зона (роль)"
               value={filters.contour}
               onChange={(v) => updateFilter('contour', v)}
-              options={LOG_CONTOURS.map((c) => ({ value: c, label: c }))}
+              options={LOG_CONTOURS.map((c) => ({ value: c, label: CONTOUR_LABELS[c] }))}
             />
             <LabeledInput
               label="Модуль"
@@ -314,11 +417,12 @@ export function LogsClient() {
                       <th className="px-3 py-2 text-left">Категория</th>
                       <th className="hidden px-3 py-2 text-left lg:table-cell">Контур</th>
                       <th className="px-3 py-2 text-left">Модуль</th>
+                      <th className="hidden px-3 py-2 text-left xl:table-cell">Цепочка</th>
                       <th className="px-3 py-2 text-left">Сообщение</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {list.items.map((it) => (
+                    {rows.map((it) => (
                       <tr
                         key={it.id}
                         className={`cursor-pointer border-t border-border-subtle align-top hover:bg-bg-overlay/60 ${rowClass(it.level)}`}
@@ -328,13 +432,30 @@ export function LogsClient() {
                           {it.createdAt.toLocaleString('ru-RU')}
                         </td>
                         <td className="px-3 py-2">
-                          <Badge className={LEVEL_CLASS[it.level]}>{it.level}</Badge>
+                          <Badge className={LEVEL_CLASS[it.level]}>{LEVEL_LABELS[it.level]}</Badge>
                         </td>
-                        <td className="px-3 py-2 text-xs">{it.category}</td>
+                        <td className="px-3 py-2 text-xs">{CATEGORY_LABELS[it.category]}</td>
                         <td className="hidden px-3 py-2 text-xs text-fg-tertiary lg:table-cell">
-                          {it.contour}
+                          {it.pipeline ? PIPELINE_LABELS[it.pipeline] : '—'}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs">{it.module ?? '—'}</td>
+                        <td className="hidden px-3 py-2 xl:table-cell">
+                          {it.traceId ? (
+                            <button
+                              type="button"
+                              className="font-mono text-[11px] text-accent hover:underline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setChainTrace(it.traceId);
+                              }}
+                              title="Показать всю цепочку"
+                            >
+                              {it.traceId}
+                            </button>
+                          ) : (
+                            <span className="text-fg-tertiary">—</span>
+                          )}
+                        </td>
                         <td className="max-w-[420px] px-3 py-2">
                           <div className="flex items-center gap-2">
                             {it.statusCode != null ? (
@@ -345,9 +466,9 @@ export function LogsClient() {
                         </td>
                       </tr>
                     ))}
-                    {list.items.length === 0 ? (
+                    {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-sm text-fg-tertiary">
+                        <td colSpan={7} className="px-3 py-8 text-center text-sm text-fg-tertiary">
                           Записей нет
                         </td>
                       </tr>
@@ -387,7 +508,12 @@ export function LogsClient() {
         ) : null}
       </div>
 
-      <LogDetailsDrawer record={selected} onClose={() => setSelected(null)} />
+      <LogDetailsDrawer
+        record={selected}
+        onClose={() => setSelected(null)}
+        onShowChain={(t) => setChainTrace(t)}
+      />
+      <ChainDrawer traceId={chainTrace} onClose={() => setChainTrace(null)} />
       <SettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -527,9 +653,11 @@ function LabeledInput({
 function LogDetailsDrawer({
   record,
   onClose,
+  onShowChain,
 }: {
   record: SystemLogRecord | null;
   onClose: () => void;
+  onShowChain: (traceId: string) => void;
 }) {
   return (
     <Sheet open={record !== null} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -538,8 +666,8 @@ function LogDetailsDrawer({
           <>
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
-                <Badge className={LEVEL_CLASS[record.level]}>{record.level}</Badge>
-                <span className="text-sm">{record.category}</span>
+                <Badge className={LEVEL_CLASS[record.level]}>{LEVEL_LABELS[record.level]}</Badge>
+                <span className="text-sm">{CATEGORY_LABELS[record.category]}</span>
               </SheetTitle>
               <SheetDescription>{record.createdAt.toLocaleString('ru-RU')}</SheetDescription>
             </SheetHeader>
@@ -551,7 +679,11 @@ function LogDetailsDrawer({
               </div>
 
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                <Field label="Контур" value={record.contour} />
+                <Field
+                  label="Контур (процесс)"
+                  value={record.pipeline ? PIPELINE_LABELS[record.pipeline] : null}
+                />
+                <Field label="Зона (роль)" value={record.contour ? CONTOUR_LABELS[record.contour] : null} />
                 <Field label="Модуль" value={record.module} mono />
                 <Field label="Action" value={record.action} mono />
                 <Field label="Метод" value={record.method} mono />
@@ -585,6 +717,22 @@ function LogDetailsDrawer({
                 ) : null}
               </div>
 
+              {record.traceId ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-fg-tertiary">traceId:</span>
+                  <code className="rounded bg-bg-overlay px-1.5 py-0.5 text-xs">
+                    {record.traceId}
+                  </code>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => onShowChain(record.traceId as string)}
+                  >
+                    Показать всю цепочку
+                  </Button>
+                </div>
+              ) : null}
+
               {record.errorName || record.errorMessage || record.errorStack ? (
                 <div className="rounded-md border border-red-500/40 bg-red-500/5 p-3">
                   <div className="text-xs font-semibold text-red-600 dark:text-red-400">
@@ -612,6 +760,94 @@ function LogDetailsDrawer({
             </div>
           </>
         ) : null}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ───────────────────────────── Drawer: цепочка ────────────────────────
+
+/**
+ * Вид «Цепочка» — все логи одного `traceId` по времени (timeline). Показывает
+ * всю последовательность стадий одного действия (встреча → S3 → транскрипция →
+ * AI → граф): вызовы, длительности, результаты и ошибки в одном месте.
+ */
+function ChainDrawer({
+  traceId,
+  onClose,
+}: {
+  traceId: string | null;
+  onClose: () => void;
+}) {
+  const chainQ = useAdminQuery<SystemLogChain | null>(
+    `logs-chain:${traceId ?? ''}`,
+    () => (traceId ? logsApi.chain(traceId).then(systemLogChainFromApi) : Promise.resolve(null)),
+    [traceId],
+  );
+  const chain = chainQ.data;
+  const t0 = chain?.items[0]?.createdAt.getTime() ?? 0;
+
+  return (
+    <Sheet open={traceId !== null} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2 text-sm">
+            Цепочка вызовов
+            <code className="rounded bg-bg-overlay px-1.5 py-0.5 text-xs">{traceId}</code>
+          </SheetTitle>
+          <SheetDescription>
+            {chain ? `${fmt(chain.total)} записей · по времени` : 'Загрузка…'}
+          </SheetDescription>
+        </SheetHeader>
+
+        {chainQ.isLoading && !chain ? (
+          <div className="mt-4"><AdminLoading rows={8} /></div>
+        ) : chainQ.error ? (
+          <div className="mt-4"><AdminError message={chainQ.error} onRetry={() => chainQ.refetch()} /></div>
+        ) : chain && chain.items.length > 0 ? (
+          <ol className="mt-4 space-y-0">
+            {chain.items.map((it, i) => {
+              const prev = i > 0 ? chain.items[i - 1] : null;
+              const pipelineChanged = !prev || prev.pipeline !== it.pipeline;
+              const deltaMs = it.createdAt.getTime() - t0;
+              return (
+                <li key={it.id} className="relative border-l-2 border-border-subtle pl-4">
+                  {pipelineChanged ? (
+                    <div className="mb-1 mt-3 flex items-center gap-2">
+                      <Badge variant="secondary" className="text-[11px]">
+                        {it.pipeline ? PIPELINE_LABELS[it.pipeline] : 'Без контура'}
+                      </Badge>
+                    </div>
+                  ) : null}
+                  <div
+                    className={`mb-1 rounded-md border border-border-subtle p-2 text-xs ${rowClass(it.level)}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Badge className={LEVEL_CLASS[it.level]}>{LEVEL_LABELS[it.level]}</Badge>
+                      <span className="font-mono text-[11px] text-fg-tertiary">
+                        +{(deltaMs / 1000).toFixed(2)}s
+                      </span>
+                      {it.module ? (
+                        <span className="font-mono text-[11px] text-fg-secondary">{it.module}</span>
+                      ) : null}
+                      {it.durationMs != null ? (
+                        <span className="text-[11px] text-fg-tertiary">{it.durationMs} мс</span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 break-words">{it.message}</div>
+                    {it.errorMessage ? (
+                      <div className="mt-1 break-words text-[11px] text-red-600 dark:text-red-400">
+                        {it.errorName ?? 'Error'}: {it.errorMessage}
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        ) : (
+          <div className="mt-6 text-center text-sm text-fg-tertiary">Записей цепочки нет.</div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -711,7 +947,7 @@ function SettingsDrawer({
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {LOG_LEVELS.map((l) => (
-                    <SelectItem key={l} value={l}>{l}</SelectItem>
+                    <SelectItem key={l} value={l}>{LEVEL_LABELS[l]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -727,6 +963,7 @@ function SettingsDrawer({
               label="Категории (пусто = все)"
               values={current.enabledCategories}
               all={LOG_CATEGORIES as readonly string[]}
+              labelOf={(c) => CATEGORY_LABELS[c as SystemLogCategory] ?? c}
               onToggle={(cat) => {
                 const has = current.enabledCategories.includes(cat as SystemLogCategory);
                 patch(
@@ -801,11 +1038,13 @@ function TagsRow({
   values,
   all,
   onToggle,
+  labelOf,
 }: {
   label: string;
   values: string[];
   all: readonly string[];
   onToggle: (v: string) => void;
+  labelOf?: (v: string) => string;
 }) {
   return (
     <div className="flex flex-col gap-1 text-xs text-fg-secondary">
@@ -820,7 +1059,7 @@ function TagsRow({
               onClick={() => onToggle(c)}
               className={`rounded border px-2 py-0.5 text-[11px] ${active ? 'border-accent bg-accent/10 text-accent' : 'border-border-subtle text-fg-tertiary'}`}
             >
-              {c}
+              {labelOf ? labelOf(c) : c}
             </button>
           );
         })}

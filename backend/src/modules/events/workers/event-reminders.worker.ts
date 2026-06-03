@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -16,6 +17,7 @@ import {
   CORE_QUEUE_NAMES,
   type EventReminderJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MailService } from '../../mail/mail.service';
 
 /**
@@ -57,6 +59,9 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EventRemindersWorker.name);
   private worker: Worker<EventReminderJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -71,7 +76,10 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<EventReminderJobData>(
       CORE_QUEUE_NAMES.EVENT_REMINDERS,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.NOTIFICATIONS, 'events.reminders', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 4,

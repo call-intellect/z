@@ -10,11 +10,13 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type IssueEmbedJobData, TRACKER_QUEUE_NAMES } from '../queues';
 
 /**
@@ -44,6 +46,9 @@ export class IssueEmbedWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(IssueEmbedWorker.name);
   private worker: Worker<IssueEmbedJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -57,7 +62,10 @@ export class IssueEmbedWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<IssueEmbedJobData>(
       TRACKER_QUEUE_NAMES.ISSUE_EMBED,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'tracker.issue-embed', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 4,

@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type AiResult, type Meeting, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -13,6 +14,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 // постит job в dashboard.meeting-roi).
 import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
 import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingsService } from '../../meetings/meetings.service';
 // Smart-tables auto-creation Фаза 3 — Event-to-Cells. После ai_ready эмитим
 // `meeting.ai_ready` (best-effort), который ловит TableEnrichListener в модуле
@@ -83,6 +85,9 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnalyzeWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -125,7 +130,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.ANALYZE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'ai.analyze', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

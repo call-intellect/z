@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -15,6 +16,7 @@ import {
   CORE_QUEUE_NAMES,
   type SpecialistRoutingJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ProcessExtractionService } from '../../processes/services/process-extraction.service';
 import { ProcessTemplateProbeService } from '../../processes/services/process-template-probe.service';
 
@@ -54,6 +56,9 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     'methodology_step',
   ]);
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -68,7 +73,10 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<SpecialistRoutingJobData>(
       CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.process-detector', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

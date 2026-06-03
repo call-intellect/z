@@ -8,6 +8,7 @@ import {
 import { type Job, Worker } from 'bullmq';
 
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type CardRollupJobData, QUEUE_NAMES } from '../queues';
 import { CardRollupService } from '../services/card-rollup.service';
 
@@ -30,6 +31,9 @@ export class CardRollupWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CardRollupWorker.name);
   private worker: Worker<CardRollupJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(CardRollupService) private readonly svc: CardRollupService,
@@ -38,7 +42,10 @@ export class CardRollupWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<CardRollupJobData>(
       QUEUE_NAMES.CARD_ROLLUP,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'ai.card-rollup', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

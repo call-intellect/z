@@ -8,10 +8,12 @@ import {
 import type { NotificationDelivery, NotificationStatus } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ChannelRegistry } from '../channel-registry';
 
 import {
@@ -45,6 +47,9 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConversationalSendWorker.name);
   private worker: Worker<ConversationalSendJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -58,7 +63,10 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<ConversationalSendJobData>(
       CONVERSATIONAL_SEND_QUEUE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.NOTIFICATIONS, 'conversational.send', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: this.cfg.conversational.outboundConcurrency,

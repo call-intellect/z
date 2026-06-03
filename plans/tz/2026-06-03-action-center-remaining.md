@@ -53,10 +53,12 @@ phases:
 **Что НЕ входит:** изменение логики канонизации (она в A1); новые эндпоинты решений (только проброс поля).
 
 **Acceptance:**
-- [ ] `trustTier`/`humanVerified` присутствует в read-DTO карточек регуляций/решений/процессов и в DTO цитат chat-v2.
-- [ ] Провизорная карточка в Карте знаний показывает плашку «не проверено человеком»; человеческая — без плашки.
-- [ ] Цитата в чате на провизорную карточку помечена.
-- [ ] Цвета — парные токены, без `text-white`/hex. typecheck/lint/тесты (back+front) зелёные. Unit на маппер плашки (provisional→badge, human→none).
+- [x] `trustTier` присутствует в read-DTO карточек регуляций/решений/процессов (regulations.service — regulation/process/policy; decisions.service — list/detail/supersede-chain; provenance документа). ⚠️ Цитаты chat-v2 — **карточек как цитат не существует** (цитаты только на встречи, `CardSpecialistRegistry` не подключён) → вынесено в суб-ТЗ **D** `2026-06-03-chat-v2-card-citations.md`.
+- [x] Провизорная карточка в Карте знаний показывает плашку «Не проверено человеком» (`TrustBadge`); человеческая — без плашки. Покрыты: `/regulations` (+ process/policy), `/decisions` (список+деталь), вкладка «Извлечённые сущности» документа.
+- [ ] Цитата в чате на провизорную карточку помечена — **невозможно сейчас** (нет цитат-карточек) → суб-ТЗ **D**.
+- [x] Цвета — парные токены (`Chip` warning/sand), без `text-white`/hex. typecheck/lint/тесты (back+front) зелёные. Unit на маппер плашки (`trustBadgeConfig`: provisional→warning, human→null, auto→sand) + backend-спеки проброса + тест трансформации `buildEntityGroups`.
+
+**Статус C1 (2026-06-03): закрыта по Карте знаний.** Доделано сверх дословного scope (правило «чини класс»): (1) **documents provenance** — те же критические карточки в `GET /documents/:id` показывались без метки; пробросил trustTier + починил pre-existing контрактный баг фронта (`entityGroups` vs `extractedEntities` — вкладка крашилась) трансформацией в api-слое; (2) **supersede-chain** decisions — предки/потомки тоже размечены. Два пробела вынесены в суб-ТЗ (ждут go владельца): **D** — цитаты-карточки chat-v2 (продукт+стоимость); **E** `2026-06-03-knowledge-card-mark-wrong.md` — кнопка «Это неверно» на карточках (в UI её нет; backend `recordDecision` готов).
 
 **Файлы-ориентиры:** `backend/prisma/schema.prisma` (Regulation/Decision/Process → currentVersion → CardVersion.trustTier); read-сервисы этих модулей в `backend/src/modules/knowledge-core/`; chat-v2 citations DTO; frontend `app/(authenticated)/{regulations,decisions,insights}/`, `src/domain/*`, чат-компоненты.
 

@@ -126,6 +126,7 @@ function makeService(setup: {
   const metrics = {
     incRecordingsBytes: vi.fn(),
     incRecordingsDeleted: vi.fn(),
+    incTrackEgressStartFailed: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const livekit = {
@@ -328,6 +329,35 @@ describe('RecordingsService', () => {
         }),
       }),
     );
+  });
+
+  it('ensureTrackEgress: провал старта egress → метрика + AudioTrack не создаётся', async () => {
+    const { svc, egress, prisma, metrics } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
+      recording: {
+        id: 'r-1',
+        meetingId: 'm-1',
+        status: 'recording',
+        retentionDays: 30,
+        expiresAt: new Date(),
+        compositeEgressId: 'EG_C1',
+        mainVideoUrl: null,
+        audioTracks: [],
+      },
+      participant: { id: 'p-1' },
+    });
+    (egress as any).startTrackEgress.mockRejectedValueOnce(new Error('egress capacity'));
+
+    await svc.ensureTrackEgress(
+      { id: 'm-1' },
+      { identity: 'guest:1', name: 'Гость' },
+      { sid: 'TR_1' },
+    );
+
+    expect((metrics as any).incTrackEgressStartFailed).toHaveBeenCalledWith({
+      reason: 'start_failed',
+    });
+    expect((prisma as any).audioTrack.create).not.toHaveBeenCalled();
   });
 
   // ─────────────────────────── reconcileTrackEgress ──────────────────────

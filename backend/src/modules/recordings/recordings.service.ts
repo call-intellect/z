@@ -340,7 +340,10 @@ export class RecordingsService {
         },
         'ensureTrackEgress: не удалось запустить track egress',
       );
-      // Без egress нет смысла создавать AudioTrack — выходим.
+      // Метрика для алерта: рост = дорожки теряются (egress-ёмкость/сбой LiveKit),
+      // несмотря на reconcile-бэкстоп. См. ТЗ §117 (мониторинг egress).
+      this.metrics.incTrackEgressStartFailed({ reason: 'start_failed' });
+      // Без egress нет смысла создавать AudioTrack — следующая сверка повторит.
       return;
     }
 

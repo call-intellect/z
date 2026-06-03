@@ -196,6 +196,32 @@ non-null — сервис подставляет `''`. Дублей это не 
 Регрессии: `frontend/src/api/structure.persons.spec.ts`,
 `backend/src/modules/persons/persons.spec.ts` (email-less create).
 
+## BullMQ 5.x: jobId с ':' только при ровно 3 частях
+
+BullMQ 5 (`Job.addJob`) бросает `Custom Id cannot contain :`, если кастомный
+`jobId` содержит ':' И `jobId.split(':').length !== 3` (легаси-совместимость с
+repeatable-джобами `repeat:<hash>:<ms>`). Поэтому `quality:<meetingId>` (1 ':')
+падает, а `<meetingId>:analyze:<attempt>` (2 ':') — работает. Симптом 2026-06-03:
+`AnalyzeWorker: enqueueQualityScore/MeetingRoi упал — Custom Id cannot contain :`
+(quality-score и meeting-roi не считались после встречи).
+
+**Правило:** НЕ использовать ':' как разделитель в jobId — только '_' (или
+'-'). Проверены и переведены на '_': quality, transcript-clean (ai-queue),
+meeting-roi, decision-hygiene (dashboard), intake-auto-triage, demo-cleanup,
+import-tracker, export, invoice (referral-payout), delivery + delivery-retry
+(webhooks-out), tbackfill (table-sync). Регрессия:
+`modules/ai/bullmq-jobid-rule.spec.ts`.
+
+## DeepSeek json_object требует слово "json" в промпте
+
+DeepSeek (OpenAI-compat) при `response_format: {type:'json_object'}` отвечает
+`400 «Prompt must contain the word 'json'...»`, если ни в одном сообщении нет
+слова «json». Симптом 2026-06-03: `meeting-report-fast` падал на DeepSeek
+(`LlmFormatNotSupportedError`), и т.к. Anthropic был под IP-блоком (403) — отчёт
+встречи не генерировался вовсе. Фикс в `deepseek.service.ts buildParams`:
+при json_object и отсутствии слова «json» подмешиваем подсказку в system.
+(`json_schema` это не касается — там своя ветка / автоконверт в tool для thinking.)
+
 ## Cypher только через GraphService
 
 С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.

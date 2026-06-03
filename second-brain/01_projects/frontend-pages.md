@@ -270,6 +270,25 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 **Frontend-роль:** `CurrentOrgRole` расширена значением `'coo'` (`frontend/src/api/types/accounts.ts` + `frontend/src/domain/account.ts`).
 
+## Action Center — Часть B (2026-06-03)
+
+**Источник:** [`plans/tz/2026-06-02-action-center-pending-confirmations.md`](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть B). Ветка `feature/action-center-trust-ladder`. Backend — [[../02_architecture/module-map]] §pending-actions, эндпоинты — [[api-layer]] §Pending Actions.
+
+| Путь | Что показывает |
+|---|---|
+| `/actions` | **Центр подтверждений** — единый список «что ждёт подтверждения» (curation / conflict / intake / probe). Фильтр по источнику, deep-link, snooze (1д/3д/7д), кнопка «Подтвердить» на элементах с `canQuickConfirm` (one-tap light curation). |
+
+**Глобальный колокольчик `PendingActionsBell`** — на desktop в top-bar `AppShell` + в мобильном `Header`; Popover со списком pending, кнопка «Подтвердить» на `canQuickConfirm`. Живой бейдж через `usePendingActionsCount` (SWR refresh 60с).
+
+**Сайдбар:** пункт «Подтверждения» с живым бейджем (`usePendingActionsCount`).
+
+**Дашборды (блок `requiresAction`):**
+- `RequiresActionTile` — на главном Director Dashboard.
+- `RequiresActionBanner` — на «Панели операций» (`/dashboard/operations`).
+- Оба: deep-link на `/actions`; `danger` при `conflict > 0`, янтарный иначе, скрыт при 0.
+
+**Слои api/domain/hooks:** `src/api/pending-actions.api.ts`, `src/domain/pending-action.ts`, хуки `usePendingActionsCount` / `usePendingActions`. actionUrl curation/conflict → `/curation` (рабочая очередь; detail-страницы `/curation/[id]`, `/curation/conflicts` — follow-up).
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.
@@ -279,6 +298,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-05-25 (feedback):** добавлены страницы `/feedback` (пользователь), `/admin/feedback` (super_admin дашборд блоков), `/admin/feedback/[topicId]` (детали блока). Полная заметка фичи — [[feedback]].
 - **2026-05-26 (clones marketplace + admin):** добавлены маршруты `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]` (маркетплейс ролевых клонов + чат с боковой панелью диалогов), `/roles/[id]/clone` теперь redirect на `/clones/[id]`, новая admin-страница `/admin/clones` (управление `CloneAccessGrant`). Удалены `/me/clone` и `/persons/[id]/skill-profile` (legacy первой итерации Clones-Roles). См. [plans/tz/2026-05-26-clones-marketplace-frontend.md](../../plans/tz/2026-05-26-clones-marketplace-frontend.md).
 - **2026-06-02 (main-screen-umbrella — зонтик A+Б+В, 24 коммита):** главная страница перестроена в «sticky Hero + 4 pill-таба + AssistantSidebar.Спросить + MainEmptyState». Поток А: shared эталонная демо-Org «Демо: ТехноСтрим» (`isReferenceDemo=true`), роль `demo_observer`, `DemoObserverGuard` (APP_GUARD), `RbacService.canMutate`, ENV `ZDEMO_ORG_ID`, listener detach при оплате, удалён авто-сидинг копий. Поток Б: `DashboardTabs` + `useDashboardTab` (per-user localStorage), Hero refactor (3 KPI + AI-сводка + `TopRiskCard`), 4 функции-таба `OverviewTab/TeamTab/KnowledgeTab/GoalsTab`, `IntroWizardWidget` 4-state, `TabEmptyState`, `PeopleAtRiskWidget`, mobile + sticky header fix. Поток В: подключение `MainEmptyState` (правило 3 матрицы), TopRiskCard CTA disabled+Paywall для `demo_observer`, setupProgress встроен в EmptyState, `@PublicDemo()` на `/concierge/messages` + `/chat-v2/messages` (LLM-чат разрешён в эталоне). Источник: [plans/tz/2026-06-01-main-screen-umbrella.md](../../plans/tz/2026-06-01-main-screen-umbrella.md). Профильные заметки [[demo-workspace]] + раздел в [[onboarding-wizard]].
+- **2026-06-03 (Action Center Часть B):** новая страница `/actions` (центр подтверждений), глобальный колокольчик `PendingActionsBell` (top-bar + мобильный Header), пункт сайдбара «Подтверждения» с живым бейджем, блок `requiresAction` (`RequiresActionTile` на главной + `RequiresActionBanner` на «Панели операций»). Слои `pending-actions.api` / `domain/pending-action` + хуки `usePendingActionsCount` / `usePendingActions`. Источник: [plans/tz/2026-06-02-action-center-pending-confirmations.md](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть B).
 - **2026-06-01 (dashboards-wow-polish — 11 фаз):** общая полировка всех 5 семейств дашбордов (CEO / Operations / Person / Sprint / Tables). Закрыты 3 dead routes — `/tables` и `/sprints/archive` в Sidebar (`DAILY_GROUP`), системный `PersonSubpagesNav` (pill-табы 7 пунктов) для карточки сотрудника. Новая библиотека мини-визуализаций `frontend/src/ui/components/dashboard/charts/` (MiniSparkline / MiniBarRow / MiniStackedBar / MiniDonut / MiniHeatCell / CountUp + preview-страница `/charts`). 12 виджетов CEO-дашборда переведены с «MVP-стиля» в режим с живой визуализацией; DirectorDashboard получил «cinema mode» (hero-strip с градиентом, sticky-header с backdrop-blur, AI-сводка с inner-glow, mosaic-layout, motion-safe enter-stagger). Operations Daily/Weekly/Overview объединены навигационным `OperationsTabs`. Person Pulse — Hero с MiniDonut Pulse score. Sprint Daily получил Hero-strip; Archive переоформлен в карточный grid с MiniDonut процента. Smart-tables — карточки таблиц, цветные ячейки status/select через `themeOverride` Glide (без custom canvas-рендера), TYPE_HINTS для ColumnTypeSelector. CountUp интегрирован в общий `KpiHero` (backward-compatible через опц. `format`). Все 12 виджетов реестра `docs/reference/dashboards-registry.md` помечены ✅. См. [plans/tz/2026-06-01-dashboards-wow-polish.md](../../plans/tz/2026-06-01-dashboards-wow-polish.md).
 
 [[../index|← index]]

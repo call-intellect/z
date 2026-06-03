@@ -177,6 +177,19 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 Полная карта курации (триаж, лестница доверия, AI-судья, autotune+kill-switch) — [[curation]]. Provisional-audit-статистика (`getProvisionalAuditStats`) пока только сервисный метод, отдельного эндпоинта нет.
 
+## Pending Actions (Action Center, Часть B, 2026-06-03)
+
+Единый агрегатор «что ждёт подтверждения» (curation / conflict / intake / probe). Модуль `backend/src/modules/pending-actions/`. Все под `CookieAuthGuard + TenantGuard`. owner/admin видят pending по curation/conflict/intake; probe — только свои. См. [[../02_architecture/module-map]] §pending-actions.
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/pending-actions/count` | `{ total, bySource }` — для живого бейджа сайдбара и колокольчика. | self (role-scoped) |
+| GET | `/api/v1/pending-actions` | Urgent-first список pending-элементов (`source`, `actionUrl`, `urgent`, `canQuickConfirm`). | self (role-scoped) |
+| POST | `/api/v1/pending-actions/snooze` | Отложить элемент (1д/3д/7д) — создаёт `PendingActionSnooze`. | self |
+| POST | `/api/v1/pending-actions/confirm` | One-tap подтверждение light curation → delegate в `CurationService.decide` (approve), RBAC внутри. | self (RBAC curation) |
+
+Блок `requiresAction` отдаётся также в `GET /api/v1/dashboard/director` (`DirectorDashboardDto`, персонально по `userId`, best-effort). Источник: `plans/tz/2026-06-02-action-center-pending-confirmations.md` (Часть B).
+
 ## Org / RBAC / Admin / LLM
 
 См. [`orgs-and-rbac.md`](orgs-and-rbac.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).

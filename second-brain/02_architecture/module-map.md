@@ -2012,3 +2012,35 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 (super_admin). Контекст — `RequestContextService` (AsyncLocalStorage). Подробнее: [[../01_projects/logging]].
 
 [[../index|← index]]
+
+## pending-actions (Action Center, Часть B, 2026-06-03)
+
+`backend/src/modules/pending-actions/` — единый агрегатор «что ждёт подтверждения». Часть B ТЗ
+`plans/tz/2026-06-02-action-center-pending-confirmations.md`. Ветка `feature/action-center-trust-ladder`.
+
+- **`PendingActionsService`** — агрегатор: собирает pending по 4 read-провайдерам (curation / conflict /
+  intake / probe), urgent-first сортировка, tenant + роль-scoped. owner/admin видят все pending по
+  curation/conflict/intake; probe — только свои. Используется и дашбордом (блок `requiresAction`).
+- **4 read-провайдера** — читают Prisma напрямую (curation/conflict/intake/probe), каждый отдаёт
+  нормализованный pending-элемент с `source`, `actionUrl`, `urgent`. Провайдер курации помечает urgent
+  за `LEAD_DAYS=3` до `CurationItem.expiresAt`. actionUrl curation/conflict → `/curation` (рабочая
+  очередь; detail-страницы `/curation/[id]`, `/curation/conflicts` — follow-up).
+- **Модель `PendingActionSnooze`** — generic «отложить» (см. [[data-model]]).
+- **REST** (`pending-actions.controller.ts`, `CookieAuthGuard + TenantGuard`):
+  `GET /api/v1/pending-actions/count` (`{total, bySource}`), `GET /api/v1/pending-actions` (urgent-first
+  список), `POST /api/v1/pending-actions/snooze` (1д/3д/7д), `POST /api/v1/pending-actions/confirm`
+  (one-tap подтверждение light curation → delegate в `CurationService.decide` approve, RBAC внутри).
+- **`PendingActionsReminderCron`** (`@Cron('0 * * * *')`) — Telegram-напоминания батчем по слотам
+  9/12/15/18/21 локального времени, только при `total>0`, уважает quietHours/disabledUntil, Redis-dedup
+  per слот, детерминированный шаблон без LLM. eventType `actions.reminder`. См. [[workers-queues]].
+- **`CurationItemLifecycleCron`** (`@Cron('0 2 * * *')`, per-Org) — pending `CurationItem` с
+  `expiresAt < now` → `status='expired'` (оживлён мёртвый expiresAt), метрика `curation_item_expired_total`
+  + age-гистограмма, best-effort уведомление owner/admin. См. [[workers-queues]].
+
+Зависит от `curation` (CurationService.decide / expiry) и `conversational` (Telegram-напоминания через
+ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorDashboardDto.requiresAction`)
+и фронт (`/actions`, колокольчик, пункт сайдбара «Подтверждения») — см. [[frontend-pages]],
+[[api-layer]]. **Telegram оставлен zero-button (β-1) намеренно** — быстрое подтверждение в приложении,
+не в чате (анти-штамповка).
+
+[[../index|← index]]

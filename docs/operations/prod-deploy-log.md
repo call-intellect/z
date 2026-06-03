@@ -1674,6 +1674,13 @@ docker compose exec backend bun run scripts/patch-chat-v2-to-pro.ts
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
 
+# 6.12 — Восстановить fallback-цепочку meeting-report-fast (2026-06-03)
+# Нормализованный primary (deepseek-v4-pro) затенял legacy 3-провайдерную
+# цепочку → single-provider timeout без fallback. Дописывает secondary
+# (openai-via-proxy/gpt-5.4-mini) + tertiary (ollama/qwen3.5:9b). Идемпотентен.
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts --dry-run
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts
+
 # 6.10 — Первичная миграция грантов CloneAccessGrant (2026-05-26, коммит 87fef5d)
 # ОБЯЗАТЕЛЬНО ДО переключения CLONE_V2_ENABLED=true (см. Шаг 1).
 docker compose exec backend bun run scripts/patch-migrate-clone-access.ts

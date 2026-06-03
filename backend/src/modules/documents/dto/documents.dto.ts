@@ -81,24 +81,46 @@ export function toDocumentDto(doc: Document): DocumentDto {
 }
 
 /**
+ * Метка доверия карточки знаний (Фаза C1). Контракт совпадает с enum
+ * `TrustTier` в Prisma и `TrustTier` во frontend `TrustBadge`.
+ */
+export type TrustTierDto = 'auto' | 'provisional' | 'human';
+
+/**
  * Provenance группы Б для GET /api/v1/documents/:id (Фаза 0b §10).
  * Readonly-список сущностей, извлечённых из этого документа.
  * Возвращается только для owner/admin (см. RBAC в контроллере).
+ *
+ * Фаза C1: критические карточки (process / decision / regulation / policy)
+ * несут `trustTier` — провизорные/авто карточки подсвечиваются плашкой
+ * на фронте. metric / tool не версионируются → без trustTier.
  */
 export interface DocumentExtractedEntitiesDto {
-  processes: Array<{ id: string; name: string; confidence: number | null }>;
-  decisions: Array<{ id: string; text: string; confidence: number | null }>;
+  processes: Array<{
+    id: string;
+    name: string;
+    confidence: number | null;
+    trustTier: TrustTierDto;
+  }>;
+  decisions: Array<{
+    id: string;
+    text: string;
+    confidence: number | null;
+    trustTier: TrustTierDto;
+  }>;
   regulations: Array<{
     id: string;
     name: string;
     category: RegulationCategory;
     confidence: number | null;
+    trustTier: TrustTierDto;
   }>;
   policies: Array<{
     id: string;
     name: string;
     severity: PolicySeverity;
     confidence: number | null;
+    trustTier: TrustTierDto;
   }>;
   metrics: Array<{
     id: string;
@@ -147,51 +169,81 @@ export interface DocumentDetailDto {
   extractedEntities?: DocumentExtractedEntitiesDto;
 }
 
-export function toProcessProvenance(p: Pick<Process, 'id' | 'name' | 'confidence'>): {
+export function toProcessProvenance(
+  p: Pick<Process, 'id' | 'name' | 'confidence'> & {
+    currentVersion: { trustTier: TrustTierDto } | null;
+  },
+): {
   id: string;
   name: string;
   confidence: number | null;
+  trustTier: TrustTierDto;
 } {
-  return { id: p.id, name: p.name, confidence: p.confidence };
+  return {
+    id: p.id,
+    name: p.name,
+    confidence: p.confidence,
+    trustTier: p.currentVersion?.trustTier ?? 'human',
+  };
 }
 
 export function toDecisionProvenance(
-  d: Pick<Decision, 'id' | 'text' | 'statement'>,
+  d: Pick<Decision, 'id' | 'text' | 'statement'> & {
+    currentVersion: { trustTier: TrustTierDto } | null;
+  },
 ): {
   id: string;
   text: string;
   confidence: number | null;
+  trustTier: TrustTierDto;
 } {
   // SBA β-3: Decision.text — legacy nullable; новые Decision'ы используют statement.
   // Если text пуст — fallback на statement.
-  return { id: d.id, text: d.text ?? d.statement ?? '', confidence: null };
+  return {
+    id: d.id,
+    text: d.text ?? d.statement ?? '',
+    confidence: null,
+    trustTier: d.currentVersion?.trustTier ?? 'human',
+  };
 }
 
-export function toRegulationProvenance(r: Pick<Regulation, 'id' | 'name' | 'category' | 'confidence'>): {
+export function toRegulationProvenance(
+  r: Pick<Regulation, 'id' | 'name' | 'category' | 'confidence'> & {
+    currentVersion: { trustTier: TrustTierDto } | null;
+  },
+): {
   id: string;
   name: string;
   category: RegulationCategory;
   confidence: number | null;
+  trustTier: TrustTierDto;
 } {
   return {
     id: r.id,
     name: r.name,
     category: r.category,
     confidence: r.confidence,
+    trustTier: r.currentVersion?.trustTier ?? 'human',
   };
 }
 
-export function toPolicyProvenance(p: Pick<Policy, 'id' | 'name' | 'severity' | 'confidence'>): {
+export function toPolicyProvenance(
+  p: Pick<Policy, 'id' | 'name' | 'severity' | 'confidence'> & {
+    currentVersion: { trustTier: TrustTierDto } | null;
+  },
+): {
   id: string;
   name: string;
   severity: PolicySeverity;
   confidence: number | null;
+  trustTier: TrustTierDto;
 } {
   return {
     id: p.id,
     name: p.name,
     severity: p.severity,
     confidence: p.confidence,
+    trustTier: p.currentVersion?.trustTier ?? 'human',
   };
 }
 

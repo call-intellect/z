@@ -18,6 +18,7 @@ import {
   type Process,
   type Regulation,
   type Tool,
+  type TrustTier,
   Prisma,
 } from '@prisma/client';
 
@@ -26,6 +27,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 import { DumpService } from '../ingest/adapters/web-form/dump.service';
 import { S3Service } from '../recordings/s3.service';
+
+/**
+ * Фаза C1 «метка доверия»: критические сущности группы Б (process / decision /
+ * regulation / policy) несут `currentVersion.trustTier` для провенанса документа.
+ * metric / tool — без версионирования (currentVersion нет), их не расширяем.
+ */
+type WithTrustTier<T> = T & { currentVersion: { trustTier: TrustTier } | null };
 
 /**
  * `DocumentsService` (Фаза 0b knowledge-core).
@@ -254,10 +262,10 @@ export class DocumentsService {
     document: Document;
     ideaBlocks: IdeaBlock[];
     extracted: {
-      processes: Process[];
-      decisions: Decision[];
-      regulations: Regulation[];
-      policies: Policy[];
+      processes: WithTrustTier<Process>[];
+      decisions: WithTrustTier<Decision>[];
+      regulations: WithTrustTier<Regulation>[];
+      policies: WithTrustTier<Policy>[];
       metrics: Metric[];
       tools: Tool[];
     };
@@ -294,10 +302,10 @@ export class DocumentsService {
 
     // Если admin/owner не запросил — не делаем тяжёлых запросов на group-Б.
     const empty: {
-      processes: Process[];
-      decisions: Decision[];
-      regulations: Regulation[];
-      policies: Policy[];
+      processes: WithTrustTier<Process>[];
+      decisions: WithTrustTier<Decision>[];
+      regulations: WithTrustTier<Regulation>[];
+      policies: WithTrustTier<Policy>[];
       metrics: Metric[];
       tools: Tool[];
     } = {
@@ -320,6 +328,7 @@ export class DocumentsService {
               tenantId: args.tenantId,
               sourceIdeaBlockId: { in: blockIds },
             },
+            include: { currentVersion: { select: { trustTier: true } } },
             orderBy: { decidedAt: 'desc' },
           })
         : [];
@@ -360,18 +369,21 @@ export class DocumentsService {
       byType.process.length > 0
         ? this.prisma.process.findMany({
             where: { id: { in: byType.process }, tenantId: args.tenantId },
+            include: { currentVersion: { select: { trustTier: true } } },
           })
-        : Promise.resolve<Process[]>([]),
+        : Promise.resolve<WithTrustTier<Process>[]>([]),
       byType.regulation.length > 0
         ? this.prisma.regulation.findMany({
             where: { id: { in: byType.regulation }, tenantId: args.tenantId },
+            include: { currentVersion: { select: { trustTier: true } } },
           })
-        : Promise.resolve<Regulation[]>([]),
+        : Promise.resolve<WithTrustTier<Regulation>[]>([]),
       byType.policy.length > 0
         ? this.prisma.policy.findMany({
             where: { id: { in: byType.policy }, tenantId: args.tenantId },
+            include: { currentVersion: { select: { trustTier: true } } },
           })
-        : Promise.resolve<Policy[]>([]),
+        : Promise.resolve<WithTrustTier<Policy>[]>([]),
       byType.metric.length > 0
         ? this.prisma.metric.findMany({
             where: { id: { in: byType.metric }, tenantId: args.tenantId },

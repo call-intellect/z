@@ -30,6 +30,8 @@ export type DecisionStatusApi =
 
 export type DeadlineFilterApi = 'overdue' | 'upcoming' | 'all';
 
+export type TrustTierApi = 'auto' | 'provisional' | 'human';
+
 export interface DecisionListItemApi {
   id: string;
   statement: string;
@@ -40,6 +42,7 @@ export interface DecisionListItemApi {
   supersedesId: string | null;
   affectsEntityIds: string[];
   confidence: number | null;
+  trustTier: TrustTierApi;
   updatedAt: string;
   createdAt: string;
 }

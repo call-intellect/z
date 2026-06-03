@@ -29,6 +29,7 @@ import type {
   ListDecisionsResponse,
   SetOutcomesBody,
   SupersedeDecisionBody,
+  TrustTierDto,
 } from '../dto/decisions.dto';
 
 /**
@@ -71,11 +72,14 @@ export class DecisionsService {
         orderBy: [{ decidedAt: 'desc' }, { updatedAt: 'desc' }],
         skip: (q.page - 1) * q.limit,
         take: q.limit,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.decision.count({ where }),
     ]);
     return {
-      items: items.map((d) => this.toListItem(d)),
+      items: items.map((d) =>
+        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: q.page,
       limit: q.limit,
@@ -91,9 +95,10 @@ export class DecisionsService {
   }): Promise<DecisionDetailDto> {
     const decision = await this.prisma.decision.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
+      include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!decision) this.notFound(args.id);
-    return this.toDetail(decision);
+    return this.toDetail(decision, decision.currentVersion?.trustTier ?? 'human');
   }
 
   // ───────────────────────────── history ─────────────────────────────
@@ -130,19 +135,26 @@ export class DecisionsService {
     tenantId: string;
     id: string;
   }): Promise<DecisionSupersedeChainResponse> {
-    const root = await this.prisma.decision.findFirst({
+    type DecisionWithTier = Decision & {
+      currentVersion: { trustTier: TrustTierDto } | null;
+    };
+
+    const root: DecisionWithTier | null = await this.prisma.decision.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
+      include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!root) this.notFound(args.id);
 
     // Идём вверх (родители) — пока supersedesId != null. Cap 50.
-    const ancestors: Decision[] = [];
-    let cur: Decision | null = root;
+    const ancestors: DecisionWithTier[] = [];
+    let cur: DecisionWithTier | null = root;
     const seen = new Set<string>([root.id]);
     while (cur?.supersedesId && ancestors.length < 50) {
-      const parent: Decision | null = await this.prisma.decision.findFirst({
-        where: { id: cur.supersedesId, tenantId: args.tenantId },
-      });
+      const parent: DecisionWithTier | null =
+        await this.prisma.decision.findFirst({
+          where: { id: cur.supersedesId, tenantId: args.tenantId },
+          include: { currentVersion: { select: { trustTier: true } } },
+        });
       if (!parent || seen.has(parent.id)) break;
       ancestors.push(parent);
       seen.add(parent.id);
@@ -151,7 +163,7 @@ export class DecisionsService {
 
     // Потомки — Decision'ы, у которых supersedesId = root.id (и далее
     // транзитивно). BFS, cap 50.
-    const descendants: Decision[] = [];
+    const descendants: DecisionWithTier[] = [];
     const queue: string[] = [root.id];
     const seenDesc = new Set<string>([root.id]);
     while (queue.length > 0 && descendants.length < 50) {
@@ -160,6 +172,7 @@ export class DecisionsService {
       const children = await this.prisma.decision.findMany({
         where: { supersedesId: cur, tenantId: args.tenantId },
         take: 20,
+        include: { currentVersion: { select: { trustTier: true } } },
       });
       for (const c of children) {
         if (seenDesc.has(c.id)) continue;
@@ -170,8 +183,12 @@ export class DecisionsService {
     }
 
     return {
-      ancestors: ancestors.map((d) => this.toListItem(d)),
-      descendants: descendants.map((d) => this.toListItem(d)),
+      ancestors: ancestors.map((d) =>
+        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
+      ),
+      descendants: descendants.map((d) =>
+        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
+      ),
     };
   }
 
@@ -465,7 +482,10 @@ export class DecisionsService {
     return where;
   }
 
-  private toListItem(d: Decision): DecisionListItemDto {
+  private toListItem(
+    d: Decision,
+    trustTier: TrustTierDto = 'human',
+  ): DecisionListItemDto {
     return {
       id: d.id,
       statement: d.statement ?? d.text ?? '',
@@ -476,15 +496,16 @@ export class DecisionsService {
       supersedesId: d.supersedesId,
       affectsEntityIds: d.affectsEntityIds,
       confidence: d.confidence !== null ? Number(d.confidence) : null,
+      trustTier,
       updatedAt: d.updatedAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };
   }
 
-  private toDetail(d: Decision): DecisionDetailDto {
+  private toDetail(d: Decision, trustTier: TrustTierDto): DecisionDetailDto {
     const alternatives = this.parseAlternatives(d.alternatives);
     return {
-      ...this.toListItem(d),
+      ...this.toListItem(d, trustTier),
       rationale: d.rationale,
       alternatives,
       sourceBlockIds: d.sourceBlockIds,

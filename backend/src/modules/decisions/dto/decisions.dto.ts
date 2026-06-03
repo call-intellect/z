@@ -25,6 +25,9 @@ export type DecisionStatusDto = z.infer<typeof DecisionStatusSchema>;
 export const DeadlineFilterSchema = z.enum(['overdue', 'upcoming', 'all']);
 export type DeadlineFilterDto = z.infer<typeof DeadlineFilterSchema>;
 
+export const TrustTierSchema = z.enum(['auto', 'provisional', 'human']);
+export type TrustTierDto = z.infer<typeof TrustTierSchema>;
+
 // ─────────────────────────── Query / Filters ─────────────────────────
 
 export const ListDecisionsQuerySchema = z.object({
@@ -90,6 +93,7 @@ export interface DecisionListItemDto {
   supersedesId: string | null;
   affectsEntityIds: string[];
   confidence: number | null;
+  trustTier: TrustTierDto;
   updatedAt: string;
   createdAt: string;
 }

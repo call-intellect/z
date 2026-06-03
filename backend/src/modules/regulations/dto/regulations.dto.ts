@@ -37,6 +37,9 @@ export const PolicySeverityDtoSchema = z.enum([
 ]);
 export type PolicySeverityDto = z.infer<typeof PolicySeverityDtoSchema>;
 
+export const TrustTierSchema = z.enum(['auto', 'provisional', 'human']);
+export type TrustTierDto = z.infer<typeof TrustTierSchema>;
+
 // ─────────────────────────── Query / Filters ─────────────────────────
 
 export const ListRegulationsQuerySchema = z.object({
@@ -80,6 +83,8 @@ export interface RegulationListItemDto {
   status: RegulationStatusDto;
   ownerPersonId: string | null;
   confidence: number | null;
+  /** Уровень доверия актуальной версии карточки (лестница доверия A1). */
+  trustTier: TrustTierDto;
   lastConfirmedAt: string | null;
   updatedAt: string;
   createdAt: string;

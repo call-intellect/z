@@ -23,6 +23,7 @@ import {
   mapRegulationDetail,
 } from '@/domain/regulation';
 import { Chip } from '@/ui/components/shared/Chip';
+import { TrustBadge } from '@/ui/components/shared/TrustBadge';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
 import { Button } from '@/ui/shadcn/button';
@@ -344,6 +345,7 @@ function RegulationsListContent() {
                             {POLICY_SEVERITY_LABEL[r.severity]}
                           </Chip>
                         ) : null}
+                        <TrustBadge tier={r.trustTier} size="sm" />
                       </div>
                       <div className="truncate text-sm font-medium text-fg-primary">
                         {r.name}
@@ -392,6 +394,7 @@ function RegulationsListContent() {
                       {POLICY_SEVERITY_LABEL[detail.severity]}
                     </Chip>
                   ) : null}
+                  <TrustBadge tier={detail.trustTier} size="sm" />
                 </div>
                 <h2 className="text-lg font-semibold">{detail.name}</h2>
                 <dl className="grid grid-cols-1 gap-1 text-xs text-fg-tertiary sm:grid-cols-2">

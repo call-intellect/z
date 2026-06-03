@@ -16,9 +16,11 @@ import type {
   DecisionStatusApi,
   DecisionSupersedeChainResponseApi,
   DecisionVersionItemApi,
+  TrustTierApi,
 } from '@/api/decisions.api';
 
 export type DecisionStatus = DecisionStatusApi;
+export type TrustTier = TrustTierApi;
 
 /** Лейблы статусов на русском (β-3 + legacy для совместимости). */
 export const DECISION_STATUS_LABEL: Record<DecisionStatus, string> = {
@@ -63,6 +65,7 @@ export interface DecisionListItem {
   supersedesId: string | null;
   affectsEntityIds: string[];
   confidence: number | null;
+  trustTier: TrustTier;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -111,6 +114,7 @@ export function mapDecisionListItem(dto: DecisionListItemApi): DecisionListItem 
     supersedesId: dto.supersedesId,
     affectsEntityIds: dto.affectsEntityIds,
     confidence: dto.confidence,
+    trustTier: dto.trustTier ?? 'human',
     updatedAt: new Date(dto.updatedAt),
     createdAt: new Date(dto.createdAt),
   };

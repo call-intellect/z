@@ -16,6 +16,7 @@ import type {
   RegulationKindDto,
   RegulationListItemDto,
   SupersedeRegulationBody,
+  TrustTierDto,
 } from '../dto/regulations.dto';
 
 /**
@@ -66,16 +67,19 @@ export class RegulationsService {
           where: this.regulationsWhere(args.tenantId, q),
           orderBy: { updatedAt: 'desc' },
           take: q.limit * q.page,
+          include: { currentVersion: { select: { trustTier: true } } },
         }),
         this.prisma.process.findMany({
           where: this.processesWhere(args.tenantId, q),
           orderBy: { updatedAt: 'desc' },
           take: q.limit * q.page,
+          include: { currentVersion: { select: { trustTier: true } } },
         }),
         this.prisma.policy.findMany({
           where: this.policiesWhere(args.tenantId, q),
           orderBy: { updatedAt: 'desc' },
           take: q.limit * q.page,
+          include: { currentVersion: { select: { trustTier: true } } },
         }),
         this.prisma.regulation.count({
           where: this.regulationsWhere(args.tenantId, q),
@@ -89,9 +93,15 @@ export class RegulationsService {
       ]);
 
     const merged = [
-      ...regs.map((r) => this.regulationToListItem(r)),
-      ...procs.map((p) => this.processToListItem(p)),
-      ...pols.map((p) => this.policyToListItem(p)),
+      ...regs.map((r) =>
+        this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
+      ),
+      ...procs.map((p) =>
+        this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
+      ...pols.map((p) =>
+        this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
     ];
     merged.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     const items = merged.slice(skip, skip + take);
@@ -122,11 +132,14 @@ export class RegulationsService {
         orderBy: { updatedAt: 'desc' },
         skip: args.skip,
         take: args.take,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.regulation.count({ where }),
     ]);
     return {
-      items: items.map((r) => this.regulationToListItem(r)),
+      items: items.map((r) =>
+        this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -147,11 +160,14 @@ export class RegulationsService {
         orderBy: { updatedAt: 'desc' },
         skip: args.skip,
         take: args.take,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.process.count({ where }),
     ]);
     return {
-      items: items.map((p) => this.processToListItem(p)),
+      items: items.map((p) =>
+        this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -172,11 +188,14 @@ export class RegulationsService {
         orderBy: { updatedAt: 'desc' },
         skip: args.skip,
         take: args.take,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.policy.count({ where }),
     ]);
     return {
-      items: items.map((p) => this.policyToListItem(p)),
+      items: items.map((p) =>
+        this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -194,17 +213,21 @@ export class RegulationsService {
     if (args.kind === 'process') {
       const proc = await this.prisma.process.findFirst({
         where: { id: args.id, tenantId: args.tenantId },
-        include: { steps: { orderBy: { order: 'asc' } } },
+        include: {
+          steps: { orderBy: { order: 'asc' } },
+          currentVersion: { select: { trustTier: true } },
+        },
       });
       if (!proc) this.notFound(args.kind, args.id);
-      return this.processToDetail(proc);
+      return this.processToDetail(proc, proc.currentVersion?.trustTier ?? 'human');
     }
     if (args.kind === 'policy') {
       const policy = await this.prisma.policy.findFirst({
         where: { id: args.id, tenantId: args.tenantId },
+        include: { currentVersion: { select: { trustTier: true } } },
       });
       if (!policy) this.notFound(args.kind, args.id);
-      return this.policyToDetail(policy);
+      return this.policyToDetail(policy, policy.currentVersion?.trustTier ?? 'human');
     }
     // regulation / standard
     const reg = await this.prisma.regulation.findFirst({
@@ -215,9 +238,10 @@ export class RegulationsService {
           ? { category: 'standard' }
           : { category: 'regulation' }),
       },
+      include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!reg) this.notFound(args.kind, args.id);
-    return this.regulationToDetail(reg);
+    return this.regulationToDetail(reg, reg.currentVersion?.trustTier ?? 'human');
   }
 
   // ───────────────────────────── history ─────────────────────────────
@@ -402,6 +426,7 @@ export class RegulationsService {
     r: Awaited<ReturnType<PrismaService['regulation']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
+    trustTier: TrustTierDto,
   ): RegulationListItemDto {
     return {
       id: r.id,
@@ -414,6 +439,7 @@ export class RegulationsService {
       status: r.status,
       ownerPersonId: r.ownerPersonId ?? null,
       confidence: r.confidence ?? null,
+      trustTier,
       lastConfirmedAt: r.lastConfirmedAt ? r.lastConfirmedAt.toISOString() : null,
       updatedAt: r.updatedAt.toISOString(),
       createdAt: r.createdAt.toISOString(),
@@ -424,6 +450,7 @@ export class RegulationsService {
     p: Awaited<ReturnType<PrismaService['process']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
+    trustTier: TrustTierDto,
   ): RegulationListItemDto {
     return {
       id: p.id,
@@ -436,6 +463,7 @@ export class RegulationsService {
       status: p.status,
       ownerPersonId: p.ownerPersonId ?? null,
       confidence: p.confidence ?? null,
+      trustTier,
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
@@ -446,6 +474,7 @@ export class RegulationsService {
     p: Awaited<ReturnType<PrismaService['policy']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
+    trustTier: TrustTierDto,
   ): RegulationListItemDto {
     return {
       id: p.id,
@@ -458,15 +487,19 @@ export class RegulationsService {
       status: p.status,
       ownerPersonId: p.ownerPersonId ?? null,
       confidence: p.confidence ?? null,
+      trustTier,
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
     };
   }
 
-  private regulationToDetail(r: NonNullable<Awaited<ReturnType<PrismaService['regulation']['findFirst']>>>): RegulationDetailDto {
+  private regulationToDetail(
+    r: NonNullable<Awaited<ReturnType<PrismaService['regulation']['findFirst']>>>,
+    trustTier: TrustTierDto,
+  ): RegulationDetailDto {
     return {
-      ...this.regulationToListItem(r),
+      ...this.regulationToListItem(r, trustTier),
       contentMd: r.contentMd,
       sourceBlockIds: r.sourceBlockIds,
       personSubjectIds: r.personSubjectIds,
@@ -489,8 +522,9 @@ export class RegulationsService {
         }>;
       }
     >,
+    trustTier: TrustTierDto,
   ): RegulationDetailDto {
-    const base = this.processToListItem(p);
+    const base = this.processToListItem(p, trustTier);
     return {
       ...base,
       contentMd: p.description ?? '',
@@ -509,8 +543,9 @@ export class RegulationsService {
 
   private policyToDetail(
     p: NonNullable<Awaited<ReturnType<PrismaService['policy']['findFirst']>>>,
+    trustTier: TrustTierDto,
   ): RegulationDetailDto {
-    const base = this.policyToListItem(p);
+    const base = this.policyToListItem(p, trustTier);
     return {
       ...base,
       contentMd: p.contentMd,

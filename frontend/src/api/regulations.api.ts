@@ -21,6 +21,8 @@ export type RegulationStatusApi = 'active' | 'deprecated' | 'archived';
 
 export type PolicySeverityApi = 'advisory' | 'mandatory' | 'blocking';
 
+export type TrustTierApi = 'auto' | 'provisional' | 'human';
+
 export interface RegulationListItemApi {
   id: string;
   kind: RegulationKindApi;
@@ -32,6 +34,7 @@ export interface RegulationListItemApi {
   status: RegulationStatusApi;
   ownerPersonId: string | null;
   confidence: number | null;
+  trustTier: TrustTierApi;
   lastConfirmedAt: string | null;
   updatedAt: string;
   createdAt: string;

@@ -58,7 +58,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§2.1 block-distill (similar complexity, structured JSON) + β-6 sub-TZ §9',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
@@ -72,7 +72,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§2.1 digest-task (multi-document summarization) + β-6 sub-TZ §9',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',

@@ -47,7 +47,7 @@ const SEEDS: TaskRouteSeed[] = [
     taskType: 'issue-infer-fields',
     playbookSection: 'Tracker Phase 3 part C — AI-suggest при создании задачи',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
@@ -60,7 +60,7 @@ const SEEDS: TaskRouteSeed[] = [
     taskType: 'issue-goal-suggest',
     playbookSection: 'Tracker Phase 3 part C — Goal-suggest fallback после KNN',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',

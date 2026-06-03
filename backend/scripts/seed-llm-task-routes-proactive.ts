@@ -44,7 +44,7 @@ const SEEDS: TaskRouteSeed[] = [
       '§δ-2 §9 — primary ollama (дёшево, частые вызовы; fallback в коде на deterministic-шаблон).',
     chain: [
       { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'tertiary',
         providerName: 'openai-via-proxy',

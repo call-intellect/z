@@ -42,7 +42,7 @@ const SEEDS: TaskRouteSeed[] = [
     taskType: 'department-extract',
     playbookSection: '§2.1 medium-complexity structured JSON',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
@@ -59,7 +59,7 @@ const SEEDS: TaskRouteSeed[] = [
       {
         tier: 'secondary',
         providerName: 'deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
       },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
@@ -72,7 +72,7 @@ const SEEDS: TaskRouteSeed[] = [
       {
         tier: 'secondary',
         providerName: 'deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
       },
       {
         tier: 'tertiary',

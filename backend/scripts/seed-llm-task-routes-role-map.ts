@@ -41,7 +41,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§2.1 medium-complexity structured JSON (батч extraction wave-2 элементов)',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
@@ -55,7 +55,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection: '§1.2 lightweight tooltip explanation',
     chain: [
       { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'tertiary',
         providerName: 'openai-via-proxy',

@@ -60,6 +60,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧠 2026-06-03 — DeepSeek response_format fix + унификация дешёвой модели (`deepseek-chat` → `deepseek-v4-flash`)
+
+**Контекст.** Боевой прогон встречи 2026-06-03 показал деградацию всего AI-слоя: `deepseek.service.ts` слал DeepSeek неподдерживаемые форматы. Probe (`scripts/eval/probe-deepseek-formats.ts` с `PROBE_MODEL=deepseek-v4-flash`) + офиц. дока подтвердили: DeepSeek-V4 (даже flash) поддерживает только `response_format: json_object` (требует слово «json» в промпте) и `tools + tool_choice='auto'`; `json_schema` (strict и без) → `400 «This response_format type is unavailable now»`, forced/required tool_choice → `400 «Thinking mode does not support…»`. Фикс провайдер-уровневый: `json_schema` для любой модели DeepSeek → авто-конверт в tool-путь; `json_object` → гарантия слова «json». Чинит `chapters`/`tasks`/`meeting-extract-actions`/`block-ingest`/`meeting-report-fast`. Параллельно выводим легаси-модель `deepseek-chat` из эксплуатации (везде `deepseek-v4-flash`).
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 6 — Patch** — `patch-deepseek-chat-to-flash.ts` — все `LlmTaskRoute` с `deepseek/deepseek-chat` (любой tier + legacy `providers[]`) → `deepseek-v4-flash`. Идемпотентен, `editedByAdmin` не трогает, повторный прогон = 0 кандидатов. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: patch`, `args: ['--apply']`, `skipBootstrap: true`). Сначала dry-run:
+  ```bash
+  docker compose exec backend bun run scripts/patch-deepseek-chat-to-flash.ts            # dry-run
+  docker compose exec backend bun run scripts/patch-deepseek-chat-to-flash.ts --apply    # запись
+  ```
+  Либо через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — 14 сидов `seed-llm-task-routes-*.ts` обновлены (`deepseek-chat`→`deepseek-v4-flash`). Для уже-засеянного прода перепрогон **не обязателен** (патч Шага 6 покрывает существующие данные); правка сидов нужна, чтобы bootstrap чистого прода не вернул `deepseek-chat`.
+- **Шаг 11 — Docker rebuild** — **обязателен** (правка `deepseek.service.ts` — это код): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после rebuild, на новой встрече или ретрае пайплайна):
+  - В логах backend по taskType `chapters`/`tasks`/`block-ingest`/`meeting-extract-actions`/`meeting-report-fast` больше нет `response_format не поддерживается` и `This response_format type is unavailable now` от DeepSeek.
+  - `meeting-report-fast` отдаёт отчёт через primary DeepSeek (а не fallback на MiniMax).
+  - `curl -s localhost:3000/metrics | grep -i deepseek_schema_to_tool` — счётчик авто-конверта json_schema→tool растёт (теперь и на flash).
+  - Идемпотентность: повторный `patch-deepseek-chat-to-flash.ts` (dry-run) → `updatedTier=0, updatedLegacy=0`.
+
+---
+
 ### 🎯 2026-06-02 — Goals OKR v2 (Граф целей): специалист 3-14 + авто-прогресс + пульс + дерево
 
 **Контекст.** Достройка модуля `goals` до «графа целей» (Цель → измеримые Key Results): авто-добыча из встреч (специалист `3-14-goals`), авто-прогресс KR (cron), еженедельный пульс (cron + доставка), дерево + мост к гипотезам. Принцип M0 — ручной контроль первичен, авто не перетирает `manualOverride`-поля. Изменения схемы **аддитивны** (только новые модели/поля/enum/FK). ТЗ — `plans/tz/2026-06-02-goals-okr-v2.md`.

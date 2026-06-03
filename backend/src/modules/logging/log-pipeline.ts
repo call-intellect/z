@@ -79,6 +79,11 @@ export function deriveTraceFromJob(job: {
   data?: unknown;
 }): string | undefined {
   const data = (job.data ?? {}) as Record<string, unknown>;
+  // Наивысший приоритет — явный traceId в payload (проброс цепочки сквозь
+  // очереди: продюсер вкладывает свой ctx.traceId, потомок наследует его).
+  if (typeof data['traceId'] === 'string' && (data['traceId'] as string).length > 0) {
+    return data['traceId'] as string;
+  }
   for (const [field, prefix] of TRACE_FIELDS) {
     const v = data[field];
     if (typeof v === 'string' && v.length > 0) return `${prefix}_${v}`;

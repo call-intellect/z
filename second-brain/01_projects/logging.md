@@ -65,6 +65,12 @@
 + 34 воркера прочих контуров (knowledge-graph / notifications / integrations / ...) через `PipelineRunner.job`.
 Остальные `this.logger.*` по приложению попадают в БД через мост (без pipeline/traceId, но с module/level/message).
 
+**Сшивка graph-контура (2026-06-03, [план](../../plans/tz/2026-06-03-logging-trace-stitch-graph.md)):**
+`deriveTraceFromJob` приоритезирует `data.traceId`; `CoreQueueService.stamp()` авто-вкладывает `ctx.traceId`
+в payload каждого enqueue. Поэтому trace встречи (`analyze.worker` → `ingestMeeting` → `enqueueRawReceived`)
+протекает по всей граф-цепочке (block-ingest → distill → linker → entity-resolver → specialists → rollup) —
+в виде «Цепочка» по `mtg_<id>` видны и AI_ANALYSIS, и KNOWLEDGE_GRAPH стадии.
+
 ## Frontend
 - `src/domain/system-logs.ts` (ApiDto + mappers), `src/api/admin-logs.api.ts` (`logsApi`).
 - `app/(admin)/admin/logs/` (`page.tsx` + `LogsClient.tsx`): период (Segmented) + stat-карточки +

@@ -60,6 +60,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧹 2026-06-03 — Фикс egress-фантомов + Content-Type видео + списание MeetingsBalance
+
+Багфикс по итогам тестовой конференции (без изменения схемы БД).
+
+**Что выкатывается:**
+- `webhooks/livekit-events.handler.ts` — `participant_joined` игнорирует identity не `host:`/`guest:` (egress-рекордеры больше не плодят фантомных гостей «Participant»).
+- `recordings/s3.service.ts` + `recordings.service.ts` — presign композита форсит `ResponseContentType=video/mp4` + `inline` (S3 отдавал mp4 как `octet-stream`, видео не игралось в плеере).
+- `meetings-balance/meetings-balance.service.ts` — `consume` переведён с битого `$executeRaw UPDATE meetings_balance` (таблица не существовала — `relation does not exist`, баланс не списывался) на типизированный `prisma.meetingsBalance.updateMany`. **Без миграции схемы.**
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 1 — ENV** — новых ENV нет.
+- **Шаг 6 — Patch** — 1 новый, идемпотентный, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true`): `scripts/patch-cleanup-egress-phantom-participants.ts` — удаляет уже накопленных фантомных Participant'ов (identity не `host:`/`guest:`) + их `MeetingParticipantBehavior`. Прогон: сначала `--dry-run`, затем без флага, либо через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (правки backend): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - провести тест-встречу хост+гость → в отчёте «Участники» ровно 2 строки, `participantsCount=2` в behavior-metrics (без «Participant»-фантомов).
+  - на странице результата видео проигрывается в плеере; запрос к `composite.mp4` в Network отдаёт `Content-Type: video/mp4`.
+  - создание встречи залогиненным юзером с балансом списывает 1 встречу: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.meetingsBalance.findMany({take:3,orderBy:{updatedAt:'desc'}}).then(r=>{console.log(r);return p.\$disconnect();});"` — `totalConsumed` растёт, ошибки `relation \"meetings_balance\" does not exist` пропали из логов.
+
+---
+
 ### 🪵 2026-06-03 — Логирование: процессные контуры (pipeline) + сквозной traceId + мост Nest Logger → БД
 
 План: [plans/tz/2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md). Модуль `backend/src/modules/logging`.

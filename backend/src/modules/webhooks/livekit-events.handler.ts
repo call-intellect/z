@@ -204,6 +204,23 @@ export class LivekitEventsHandler {
     const participantInfo = this.extractParticipant(event);
     if (!participantInfo?.identity) return;
 
+    // Egress-рекордеры (composite + per-track) заходят в комнату как участники и
+    // шлют participant_joined с identity вида `EG_...` без имени. Это НЕ наши
+    // участники — без этого фильтра fallback ниже плодит фантомных «Participant»-
+    // гостей (по одному на каждый egress) и ломает behavior-metrics/«Участники».
+    // Реальные участники всегда имеют identity `host:<userId>` / `guest:<nanoid>`
+    // (см. ParticipantsService + генерацию LiveKit-токенов).
+    if (
+      !participantInfo.identity.startsWith('host:') &&
+      !participantInfo.identity.startsWith('guest:')
+    ) {
+      this.logger.debug(
+        { meetingId, identity: participantInfo.identity },
+        'participant_joined: identity не host/guest (egress-рекордер?) — no-op',
+      );
+      return;
+    }
+
     const existing = await this.prisma.participant.findUnique({
       where: {
         meetingId_livekitIdentity: {

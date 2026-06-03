@@ -244,6 +244,15 @@ const STEPS: Step[] = [
     hint: 'миграция старых «копий ТехноСтрим» → demo_observer наблюдатели',
     skipBootstrap: true, // На чистой БД нечего мигрировать.
   },
+  // 2026-06-03 — фикс egress-фантомов: вебхук participant_joined создавал
+  // Participant'ов для egress-рекордеров (identity не host:/guest:). Чистим
+  // накопленное (Participant + их MeetingParticipantBehavior). Идемпотентен.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-cleanup-egress-phantom-participants.ts',
+    hint: 'удалить фантомных Participant с identity не host:/guest: (egress)',
+    skipBootstrap: true, // На чистой БД фантомов нет.
+  },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },

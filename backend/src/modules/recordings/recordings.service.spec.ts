@@ -362,7 +362,12 @@ describe('RecordingsService', () => {
     const result = await svc.getDownloadUrl('m-1', 'u-1');
 
     expect(result.url).toBe('https://signed.local/url');
-    expect((s3 as any).presignGet).toHaveBeenCalledWith('meetings/m-1/composite.mp4');
+    // Composite отдаётся как inline video/mp4 (иначе octet-stream ломает плеер).
+    expect((s3 as any).presignGet).toHaveBeenCalledWith(
+      'meetings/m-1/composite.mp4',
+      undefined,
+      { responseContentType: 'video/mp4', responseContentDisposition: 'inline' },
+    );
   });
 
   // ─────────────────────────── deleteEarly ───────────────────────────────

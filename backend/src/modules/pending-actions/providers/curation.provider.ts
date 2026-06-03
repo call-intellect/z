@@ -82,9 +82,8 @@ export class CurationPendingProvider implements PendingActionsProvider {
         i.expiresAt != null &&
         i.expiresAt.getTime() < now.getTime() + leadWindowMs;
       // resourceId = CurationItem.id — стабильный ключ для snooze/confirm.
-      // Detail-страница /curation/[id] пока не реализована (follow-up) —
-      // ведём на рабочую очередь /curation; light-карточки подтверждаются
-      // one-tap прямо на /actions без перехода.
+      // Ведём прямо на detail-карточку /curation/[id]; light-карточки
+      // по-прежнему подтверждаются one-tap прямо на /actions без перехода.
       return {
         source: this.source,
         resourceType: i.resourceType,
@@ -95,7 +94,7 @@ export class CurationPendingProvider implements PendingActionsProvider {
             ? 'urgent'
             : 'normal',
         ageDays,
-        actionUrl: `/curation`,
+        actionUrl: `/curation/${i.id}`,
         canQuickConfirm: i.level === 'light',
       } satisfies PendingActionItem;
     });

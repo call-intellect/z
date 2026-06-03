@@ -126,7 +126,7 @@ describe('CurationPendingProvider (B0)', () => {
     expect(items[0]!.severity).toBe('urgent');
     expect(items[0]!.canQuickConfirm).toBe(true);
     expect(items[0]!.resourceId).toBe('ci-1');
-    expect(items[0]!.actionUrl).toBe('/curation');
+    expect(items[0]!.actionUrl).toBe('/curation/ci-1');
   });
 
   it('list: severity urgent по ageDays >= 5; deep → canQuickConfirm=false', async () => {

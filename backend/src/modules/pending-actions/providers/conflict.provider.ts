@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import {
@@ -17,7 +18,8 @@ import {
  * Кому показываем: только owner/admin Org (резолюция конфликта — их
  * прерогатива). Член без привилегий видит 0.
  *
- * severity=urgent, если конфликт висит ≥ 5 дней. canQuickConfirm=false
+ * severity=urgent, если конфликт висит ≥ cfg.pendingActions.urgentAgeDays
+ * дней (порог — admin-editable крутилка). canQuickConfirm=false
  * (резолюция требует выбора стратегии — не «один клик»).
  */
 @Injectable()
@@ -26,6 +28,7 @@ export class ConflictPendingProvider implements PendingActionsProvider {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   private buildWhere(
@@ -64,11 +67,13 @@ export class ConflictPendingProvider implements PendingActionsProvider {
         resourceType: i.resourceType,
         resourceId: i.id,
         title: `Конфликт карточек: ${i.resourceType}`,
-        severity: ageDays >= 5 ? 'urgent' : 'normal',
+        severity:
+          ageDays >= this.cfg.pendingActions.urgentAgeDays
+            ? 'urgent'
+            : 'normal',
         ageDays,
-        // Страница /curation/conflicts/[id] пока не реализована (follow-up) —
-        // ведём на рабочую очередь /curation.
-        actionUrl: `/curation`,
+        // Ведём прямо на detail-страницу конфликта /curation/conflicts/[id].
+        actionUrl: `/curation/conflicts/${i.id}`,
         canQuickConfirm: false,
       } satisfies PendingActionItem;
     });

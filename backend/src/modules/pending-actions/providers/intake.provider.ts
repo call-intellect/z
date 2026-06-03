@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import {
@@ -17,7 +18,8 @@ import {
  * Кому показываем: только owner/admin Org (триаж inbox — их прерогатива).
  * Член без привилегий видит 0.
  *
- * severity=urgent, если карточка висит ≥ 5 дней. canQuickConfirm=false
+ * severity=urgent, если карточка висит ≥ cfg.pendingActions.urgentAgeDays
+ * дней (порог — admin-editable крутилка). canQuickConfirm=false
  * (accept требует выбора проекта/полей — не «один клик»).
  */
 @Injectable()
@@ -26,6 +28,7 @@ export class IntakePendingProvider implements PendingActionsProvider {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   private buildWhere(
@@ -71,7 +74,10 @@ export class IntakePendingProvider implements PendingActionsProvider {
         resourceType: 'intake_issue',
         resourceId: i.id,
         title: `Входящая задача: ${label}`,
-        severity: ageDays >= 5 ? 'urgent' : 'normal',
+        severity:
+          ageDays >= this.cfg.pendingActions.urgentAgeDays
+            ? 'urgent'
+            : 'normal',
         ageDays,
         actionUrl: '/intake',
         canQuickConfirm: false,

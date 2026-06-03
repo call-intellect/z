@@ -679,7 +679,12 @@ export class RecordingsService {
       throw new RecordingNotReadyError(meetingId);
     }
     const key = extractKeyFromUrl(recording.mainVideoUrl, this.cfg.s3.bucket);
-    return this.s3.presignGet(key);
+    // Принудительно отдаём composite как inline video/mp4 — иначе при
+    // `octet-stream` в хранилище браузер не проигрывает видео в плеере.
+    return this.s3.presignGet(key, undefined, {
+      responseContentType: 'video/mp4',
+      responseContentDisposition: 'inline',
+    });
   }
 
   private collectKeys(recording: {

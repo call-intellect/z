@@ -28,8 +28,8 @@ interface FakePrisma {
   meetingsBalance: {
     findUnique: ReturnType<typeof vi.fn>;
     upsert: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
-  $executeRaw: ReturnType<typeof vi.fn>;
 }
 
 function makePrisma(): FakePrisma {
@@ -37,8 +37,8 @@ function makePrisma(): FakePrisma {
     meetingsBalance: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
+      updateMany: vi.fn(),
     },
-    $executeRaw: vi.fn(),
   };
 }
 
@@ -206,44 +206,39 @@ describe('MeetingsBalanceService', () => {
   // ────────── consume ──────────
 
   it('consume: affected=1 → не throw', async () => {
-    prisma.$executeRaw.mockResolvedValueOnce(1);
+    prisma.meetingsBalance.updateMany.mockResolvedValueOnce({ count: 1 });
     await expect(svc.consume('t-1', 1)).resolves.toBeUndefined();
-    expect(prisma.$executeRaw).toHaveBeenCalledOnce();
+    expect(prisma.meetingsBalance.updateMany).toHaveBeenCalledOnce();
   });
 
   it('consume: affected=0 → ForbiddenException', async () => {
-    prisma.$executeRaw.mockResolvedValueOnce(0);
+    prisma.meetingsBalance.updateMany.mockResolvedValueOnce({ count: 0 });
     await expect(svc.consume('t-empty', 1)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
   });
 
-  it('consume(0) → no-op, $executeRaw не зовётся', async () => {
+  it('consume(0) → no-op, updateMany не зовётся', async () => {
     await svc.consume('t-1', 0);
-    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(prisma.meetingsBalance.updateMany).not.toHaveBeenCalled();
   });
 
   it('consume(-1) → no-op', async () => {
     await svc.consume('t-1', -1);
-    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(prisma.meetingsBalance.updateMany).not.toHaveBeenCalled();
   });
 
-  it('consume передаёт tenantId и amount в template tag', async () => {
-    prisma.$executeRaw.mockResolvedValueOnce(1);
+  it('consume передаёт tenantId и amount в типизированный updateMany', async () => {
+    prisma.meetingsBalance.updateMany.mockResolvedValueOnce({ count: 1 });
     await svc.consume('tenant-abc', 3);
-    // Prisma tagged template передаёт SQL+values массивом. Проверяем что
-    // строка содержит ключевые куски UPDATE.
-    const callArgs = prisma.$executeRaw.mock.calls[0];
-    expect(callArgs).toBeDefined();
-    // первый аргумент — массив строк template literal
-    const sqlParts = callArgs?.[0];
-    expect(Array.isArray(sqlParts)).toBe(true);
-    const sql = (sqlParts as string[]).join(' ').toLowerCase();
-    expect(sql).toContain('update meetings_balance');
-    expect(sql).toContain('balance >=');
-    // values (после первого аргумента) содержат amount + tenant + amount
-    const values = callArgs?.slice(1);
-    expect(values).toContain(3);
-    expect(values).toContain('tenant-abc');
+    // Атомарный UPDATE ... WHERE balance >= amount выражен через Prisma:
+    // where { tenantId, balance: { gte } } + data { decrement/increment }.
+    expect(prisma.meetingsBalance.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-abc', balance: { gte: 3 } },
+      data: {
+        balance: { decrement: 3 },
+        totalConsumed: { increment: 3 },
+      },
+    });
   });
 });

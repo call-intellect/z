@@ -163,6 +163,17 @@ describe('LivekitEventsHandler', () => {
     );
   });
 
+  it('participant_joined: egress-рекордер (identity не host:/guest:) → no-op, не создаёт фантома', async () => {
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
+    await handler.handle(
+      evt('participant_joined', 'm-1', { identity: 'EG_cxZHYyvp3SGD' }),
+    );
+
+    expect((prisma as any).participant.findUnique).not.toHaveBeenCalled();
+    expect((prisma as any).participant.create).not.toHaveBeenCalled();
+    expect((prisma as any).participant.update).not.toHaveBeenCalled();
+  });
+
   it('participant_left обновляет leftAt', async () => {
     const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' });
     await handler.handle(

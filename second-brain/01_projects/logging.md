@@ -1,6 +1,7 @@
 # Технические логи в БД (LoggingModule)
 
-> Статус: **работает** (2026-06-01). План: [plans/tz/2026-06-01-logging-module.md](../../plans/tz/2026-06-01-logging-module.md).
+> Статус: **работает** (2026-06-01; расширен 2026-06-03 — процессные контуры + мост Nest Logger + вид «Цепочка»).
+> Планы: [2026-06-01-logging-module.md](../../plans/tz/2026-06-01-logging-module.md), [2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md).
 
 ## Что это
 Централизованное **операционное** логирование приложения в Postgres (модель `SystemLog`),
@@ -30,8 +31,20 @@
   + чистые `buildLogWhere`/`expandLevelAtLeast`.
 - `request-context.service.ts` (+ `request-context.middleware.ts`) — `AsyncLocalStorage` (ленивые геттеры
   userId/orgId по `req`, т.к. guard'ы заполняют их позже middleware).
-- `request-logging.interceptor.ts` — глобальный (APP_INTERCEPTOR): пишет успешные/медленные запросы.
-  **4xx/5xx пишет `AllExceptionsFilter`** (через `@Optional() LogService`) — нет двойной записи.
+- `db-logger.bridge.ts` (2026-06-03) — **мост Nest `Logger` → БД**. Подключается в `main.ts`
+  через `app.useLogger(app.get(DbLoggerBridge))` (+ `bufferLogs:true`). Любой `this.logger.*` по
+  всему бэкенду (включая воркеры/кроны) дублируется в `SystemLog` (контекст логгера → `module`,
+  `pipeline`/`traceId` подмешиваются из ALS). Нормализует pino-стиль `(obj, 'msg')`. Анти-петля:
+  игнорирует внутренние логгеры LoggingModule + фреймворковые контексты Nest.
+- `log-pipeline.ts` (2026-06-03) — `traceFor*` (mtg/org/user/doc/...), `deriveTraceFromJob`,
+  `withPipelineJob`/`withPipeline` и инъектируемый **`PipelineRunner`** (методы `run`/`meeting`/`job`/`with`).
+  Воркеры одной строкой оборачивают handler в pipeline-контекст (property-injection `@Inject(PipelineRunner)`).
+- `log-stream.gateway.ts` (2026-06-03) — **`LogStreamGateway`**, Socket.IO namespace `/ws/platform-logs`
+  (только super_admin: JWT-handshake + сессия + `User.isSuperAdmin`, как у REST). После flush'а буфера
+  пушит пачку записей событием `logs` в room `platform-logs`. `LogBufferService` дергает `stream.broadcast(batch)`
+  (property-injection, best-effort). Чтобы стрим совпадал с БД, `LogService.write` проставляет явные `id`+`createdAt`.
+- `request-logging.interceptor.ts` — **отключён 2026-06-03** (D3: HTTP-логи «не нужны»). Код оставлен,
+  но НЕ регистрируется в `LoggingModule`. **4xx/5xx пишет `AllExceptionsFilter`** (через `@Optional() LogService`).
 - `log-cleanup.service.ts` — ретеншен: `setInterval` 1ч + ручной; advisory-lock; удаление батчами по 5000.
 - `dto/system-logs.dto.ts` — Zod (не class-validator); boolean — `zFlexBool`.
 - `system-logs.controller.ts` — `/api/v1/platform/logs[/aggregates|/settings|/cleanup|/:id]`, `@UseGuards(CookieAuthGuard, SuperAdminGuard)`.
@@ -39,13 +52,34 @@
 
 Подключение: `AppModule.imports += LoggingModule`; `RequestContextMiddleware` — после `RequestIdMiddleware`, до `TenantMiddleware`.
 
-## Контуры (адаптация домена Коры)
-`GUEST / MEMBER / ORG_ADMIN / SUPERADMIN / PLATFORM / PUBLIC / SYSTEM`. Soft-ref: `orgId` (= tenantId).
+## Два измерения контуров
+- **`contour`** — зона доступа/роль (адаптация домена Коры): `GUEST / MEMBER / ORG_ADMIN / SUPERADMIN / PLATFORM / PUBLIC / SYSTEM`.
+- **`pipeline`** (enum `SystemLogPipeline`, 2026-06-03) — **процессная цепочка** сквозь модули:
+  `MEETING_LIFECYCLE / RECORDING / TRANSCRIPTION / AI_ANALYSIS / KNOWLEDGE_GRAPH / NOTIFICATIONS /
+  AUTH / BILLING / INTEGRATIONS / ONBOARDING / ADMIN / SCHEDULER / SYSTEM`.
+- **`traceId`** — корреляция одной цепочки. Для встречи `mtg_<meetingId>` на всех стадиях
+  (webhook → запись/S3 → транскрипция → AI → KC-отчёты) → вся цепочка одного действия видна разом.
+  Для прочих воркеров `deriveTraceFromJob` берёт якорь из payload (block/card/entity/person/...).
+
+Инструментованы: livekit-вебхуки (старт цепочки) + 14 воркеров meeting-конвейера (ai + kc) с `mtg_`-traceId,
++ 34 воркера прочих контуров (knowledge-graph / notifications / integrations / ...) через `PipelineRunner.job`.
+Остальные `this.logger.*` по приложению попадают в БД через мост (без pipeline/traceId, но с module/level/message).
+
+**Сшивка graph-контура (2026-06-03, [план](../../plans/tz/2026-06-03-logging-trace-stitch-graph.md)):**
+`deriveTraceFromJob` приоритезирует `data.traceId`; `CoreQueueService.stamp()` авто-вкладывает `ctx.traceId`
+в payload каждого enqueue. Поэтому trace встречи (`analyze.worker` → `ingestMeeting` → `enqueueRawReceived`)
+протекает по всей граф-цепочке (block-ingest → distill → linker → entity-resolver → specialists → rollup) —
+в виде «Цепочка» по `mtg_<id>` видны и AI_ANALYSIS, и KNOWLEDGE_GRAPH стадии.
 
 ## Frontend
 - `src/domain/system-logs.ts` (ApiDto + mappers), `src/api/admin-logs.api.ts` (`logsApi`).
-- `app/(admin)/admin/logs/` (`page.tsx` + `LogsClient.tsx`): период (Segmented) + 4 stat-карточки +
-  топ модулей/endpoint'ов + фильтры + серверная таблица + Drawer деталей + Drawer настроек.
+- `app/(admin)/admin/logs/` (`page.tsx` + `LogsClient.tsx`): период (Segmented) + stat-карточки +
+  топ модулей + **разрез «по контурам»** + фильтры (включая «Контур (процесс)») + серверная таблица
+  (колонки Контур/Цепочка) + Drawer деталей + **Drawer «Цепочка»** (timeline по `traceId`) + Drawer настроек.
+- Эндпоинт цепочки: `GET /api/v1/platform/logs/chain?traceId=` (все записи по времени asc).
+- **Live-режим (2026-06-03):** тумблер «● Live» → хук `useLogStream` (`src/hooks/admin/useLogStream.ts`)
+  подключается к `/ws/platform-logs`; входящие логи фильтруются клиентски (`matchesFilters`) и
+  префиксуются в таблицу (дедуп по id, cap 300). Поллинг не используется.
 - Footgun: `dateFrom` мемоизирован по `period` (иначе беск. рефетч → 429).
 
 См. также: [[../02_architecture/data-model|data-model]], [[../02_architecture/module-map|module-map]], [[api-layer]], [[frontend-pages]].

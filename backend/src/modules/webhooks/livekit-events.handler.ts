@@ -5,6 +5,7 @@ import { type WebhookEvent } from 'livekit-server-sdk';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai/ai-queue.service';
+import { PipelineRunner, SystemLogPipeline, traceForMeeting } from '../logging/log-pipeline';
 import { MeetingsService } from '../meetings/meetings.service';
 import { RecordingsService } from '../recordings/recordings.service';
 
@@ -34,6 +35,12 @@ import { RecordingsService } from '../recordings/recordings.service';
 export class LivekitEventsHandler {
   private readonly logger = new Logger(LivekitEventsHandler.name);
 
+  // Property-injection: не ломает позиционные конструкторы в юнит-тестах
+  // (там `pipe` остаётся undefined — диспетчер вызывается без обёртки).
+  @Optional()
+  @Inject(PipelineRunner)
+  private readonly pipe: PipelineRunner | null = null;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
@@ -62,6 +69,28 @@ export class LivekitEventsHandler {
     // Бизнес-метрика — для всех событий, даже если meetingId не нашёлся.
     this.metrics.incLivekitWebhookEvent(eventType);
 
+    // Процессный контур: egress_* — это контур RECORDING, остальное —
+    // MEETING_LIFECYCLE. traceId = mtg_<id> объединяет с дальнейшей цепочкой
+    // (транскрипция/AI/граф) в один просмотр в админке.
+    const run = (): Promise<void> => this.route(eventType, meetingId, event);
+    if (this.pipe && meetingId) {
+      const pipeline = eventType.startsWith('egress')
+        ? SystemLogPipeline.RECORDING
+        : SystemLogPipeline.MEETING_LIFECYCLE;
+      return this.pipe.with(
+        { pipeline, traceId: traceForMeeting(meetingId), module: 'livekit.webhook' },
+        run,
+      );
+    }
+    return run();
+  }
+
+  /** Маршрутизация события по типу (выполняется внутри pipeline-контекста). */
+  private async route(
+    eventType: string,
+    meetingId: string | null,
+    event: WebhookEvent,
+  ): Promise<void> {
     switch (eventType) {
       case 'room_started':
         if (meetingId) await this.onRoomStarted(meetingId);

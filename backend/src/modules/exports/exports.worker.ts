@@ -9,10 +9,12 @@ import {
 import type { Export } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 import { S3Service } from '../recordings/s3.service';
 import { WebhookDispatcherService } from '../webhooks-out/webhook-dispatcher.service';
 
@@ -28,6 +30,9 @@ const EXPORT_TTL_DAYS = 7;
 export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ExportsWorker.name);
   private worker: Worker<ExportJobData> | null = null;
+
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
 
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
@@ -47,7 +52,10 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<ExportJobData>(
       EXPORT_QUEUE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'exports', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

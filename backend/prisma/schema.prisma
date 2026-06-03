@@ -10081,11 +10081,33 @@ enum SystemLogContour {
   SYSTEM
 }
 
+/// Процессный контур (pipeline) = крупная цепочка вызовов сквозь модули.
+/// В отличие от `contour` (роль/зона доступа) описывает ПРОЦЕСС, а не субъекта.
+/// Одна цепочка одного действия объединяется общим `traceId` (напр. mtg_<id>).
+/// План: plans/tz/2026-06-03-logging-pipelines-coverage.md.
+enum SystemLogPipeline {
+  MEETING_LIFECYCLE // создание/старт/join/leave/завершение, LiveKit room/токены/webhooks
+  RECORDING // egress, S3-загрузка дорожек, recording webhooks
+  TRANSCRIPTION // ASR: transcribe, transcript-clean, transcript-index, merge
+  AI_ANALYSIS // chapters, analyze, tasks, custom-report, clip, report-fast, analyze-v2, specialists-combined
+  KNOWLEDGE_GRAPH // ingest→block→distill→linker→entity-resolver→theme, specialists 3-*, rollup, profiles
+  NOTIFICATIONS // push, events/reminders, recognition, concierge, dialog, proactive
+  AUTH // login/guest/sessions/tokens, rbac
+  BILLING // billing/payments, entitlements, провайдеры
+  INTEGRATIONS // webhooks-out, tracker, tables, внешние API
+  ONBOARDING // company-foundation, onboarding, role-map
+  ADMIN // admin/platform операции
+  SCHEDULER // cron'ы, retention, фоновые периодические задачи
+  SYSTEM // прочее / bootstrap / не классифицировано
+}
+
 model SystemLog {
   id           String            @id @default(uuid())
   level        SystemLogLevel
   category     SystemLogCategory @default(SYSTEM)
   contour      SystemLogContour  @default(SYSTEM)
+  /// Процессный контур цепочки (nullable — старые логи и неклассифицированные).
+  pipeline     SystemLogPipeline?
   module       String?
   action       String?
   message      String
@@ -10113,11 +10135,13 @@ model SystemLog {
   @@index([level, createdAt])
   @@index([category, createdAt])
   @@index([contour, createdAt])
+  @@index([pipeline, createdAt])
   @@index([module, createdAt])
   @@index([statusCode, createdAt])
   @@index([userId, createdAt])
   @@index([orgId, createdAt])
   @@index([requestId])
+  @@index([traceId, createdAt])
 }
 
 /// Платформенная key-value таблица настроек (singleton-строки по ключу).

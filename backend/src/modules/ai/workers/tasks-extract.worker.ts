@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { ParticipantContextService } from '../services/participant-context.service';
 import type { DialogTurn } from '../services/prompts/common';
@@ -26,6 +28,9 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TasksExtractWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -39,7 +44,10 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.TASKS,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'ai.tasks', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

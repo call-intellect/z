@@ -25,6 +25,7 @@ import {
 import { type Job, Worker } from 'bullmq';
 
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { FeedbackDigestService } from '../services/feedback-digest.service';
 
 import {
@@ -37,6 +38,9 @@ export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FeedbackDigestWorker.name);
   private worker: Worker<FeedbackDigestJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(FeedbackDigestService)
@@ -46,7 +50,10 @@ export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<FeedbackDigestJobData>(
       FEEDBACK_DIGEST_QUEUE_NAME,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.NOTIFICATIONS, 'feedback.digest', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

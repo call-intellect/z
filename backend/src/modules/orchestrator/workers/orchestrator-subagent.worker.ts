@@ -8,9 +8,11 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import type {
   OrchestratorAgentType,
   OrchestratorPlanStep,
@@ -41,6 +43,9 @@ export class OrchestratorSubagentWorker
   private readonly logger = new Logger(OrchestratorSubagentWorker.name);
   private worker: Worker<OrchestratorSubagentJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -53,7 +58,10 @@ export class OrchestratorSubagentWorker
   onModuleInit(): void {
     this.worker = new Worker<OrchestratorSubagentJobData>(
       ORCHESTRATOR_SUBAGENTS_QUEUE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.AI_ANALYSIS, 'orchestrator.subagent', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 3,

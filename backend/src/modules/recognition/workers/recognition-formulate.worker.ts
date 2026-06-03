@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
@@ -16,6 +17,7 @@ import {
   CORE_QUEUE_NAMES,
   type RecognitionFormulateJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
   RECOGNITION_FORMULATE_JSON_SCHEMA,
   RECOGNITION_FORMULATE_SCHEMA_NAME,
@@ -81,6 +83,9 @@ export class RecognitionFormulateWorker
   private readonly logger = new Logger(RecognitionFormulateWorker.name);
   private worker: Worker<RecognitionFormulateJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -93,7 +98,10 @@ export class RecognitionFormulateWorker
   onModuleInit(): void {
     this.worker = new Worker<RecognitionFormulateJobData>(
       CORE_QUEUE_NAMES.RECOGNITION_FORMULATE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.NOTIFICATIONS, 'recognition.formulate', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

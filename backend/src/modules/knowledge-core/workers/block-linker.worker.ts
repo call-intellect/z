@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -17,6 +18,7 @@ import {
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { ConflictService } from '../../curation/services/conflict.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { BlockLinkService } from '../services/block-link.service';
 import { TemporalConflictService } from '../services/temporal-conflict.service';
 
@@ -50,6 +52,9 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockLinkerWorker.name);
   private worker: Worker<BlockLinkerJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -64,7 +69,10 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<BlockLinkerJobData>(
       CORE_QUEUE_NAMES.BLOCK_LINKER,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.block-linker', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

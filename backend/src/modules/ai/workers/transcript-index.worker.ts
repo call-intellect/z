@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { TranscriptIndexerService } from '../../embeddings/services/transcript-indexer.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 
 /**
@@ -26,6 +28,9 @@ export class TranscriptIndexWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TranscriptIndexWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -36,7 +41,10 @@ export class TranscriptIndexWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.EMBEDDINGS,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.TRANSCRIPTION, 'ai.transcript-index', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

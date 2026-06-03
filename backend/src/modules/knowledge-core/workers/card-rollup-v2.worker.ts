@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import {
   type CardRollupV2JobData,
   CORE_QUEUE_NAMES,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { CardRollupV2Service } from '../services/card-rollup-v2.service';
 
 /**
@@ -43,6 +45,9 @@ export class CardRollupV2Worker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CardRollupV2Worker.name);
   private worker: Worker<CardRollupV2JobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -52,7 +57,10 @@ export class CardRollupV2Worker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<CardRollupV2JobData>(
       CORE_QUEUE_NAMES.CARD_ROLLUP_V2,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.card-rollup-v2', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

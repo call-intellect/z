@@ -133,6 +133,23 @@ export const CurationSettingsSchema = z
     deepReviewThreshold: z.number().min(0).max(1),
     criticalTypes: z.array(z.string().trim().min(1).max(80)).max(64),
     itemExpiryDays: z.number().int().min(1).max(365),
+    /**
+     * A0 «лестница доверия» (2026-06-02) — пер-типовые пороги auto-canonical.
+     * Карта `resourceType → порог [0..1]`. Если для типа задан порог здесь —
+     * он перекрывает глобальный `autoThreshold` в triage'е. Опционально и
+     * обратносовместимо: отсутствие/пустая карта = поведение как раньше.
+     */
+    autoThresholdByType: z
+      .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
+      .optional(),
+    /**
+     * A0 «лестница доверия» (2026-06-02) — пер-типовые пороги deep-review.
+     * Карта `resourceType → порог [0..1]`. Перекрывает глобальный
+     * `deepReviewThreshold` для конкретного типа. Опционально.
+     */
+    deepReviewThresholdByType: z
+      .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
+      .optional(),
   })
   .strict();
 export type CurationSettingsDto = z.infer<typeof CurationSettingsSchema>;
@@ -141,6 +158,30 @@ export const UpdateCurationSettingsBodySchema = CurationSettingsSchema.partial()
 export type UpdateCurationSettingsBody = z.infer<
   typeof UpdateCurationSettingsBodySchema
 >;
+
+// ─────────────────────────── Override-rate read-model (A0) ────────
+//
+// A0 «лестница доверия» (2026-06-02) — агрегат override-rate по resourceType.
+// Используется для ручной/будущей авто-подстройки пер-типовых порогов:
+// высокий overrideRate (кураторы часто правят/отклоняют авто-предложения)
+// → стоит поднять порог auto-canonical для этого типа.
+
+export interface OverrideStatsItemDto {
+  resourceType: string;
+  /** Число items с финальным решением (есть хотя бы одно решение ≠ 'escalate'). */
+  totalDecided: number;
+  approve: number;
+  approveWithEdits: number;
+  reject: number;
+  /** Прочие финальные типы (split / merge / supersede / mark_as_misleading / merge_categories). */
+  other: number;
+  /** (reject + approveWithEdits) / totalDecided; 0 при totalDecided=0. */
+  overrideRate: number;
+}
+
+export interface OverrideStatsResponse {
+  items: OverrideStatsItemDto[];
+}
 
 // ─────────────────────────── Curator assignments (settings) ──────
 

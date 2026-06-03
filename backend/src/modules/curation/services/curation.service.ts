@@ -29,6 +29,8 @@ import type {
   CurationSettingsDto,
   ListCurationQueueQuery,
   ListCurationQueueResponse,
+  OverrideStatsItemDto,
+  OverrideStatsResponse,
   UpdateCurationSettingsBody,
 } from '../dto/curation.dto';
 
@@ -202,12 +204,18 @@ export class CurationService {
         ? Math.max(0, Math.min(1, input.calibratedConfidence))
         : input.confidence;
 
+    // A0 «лестница доверия» (2026-06-02) — пер-типовые пороги перекрывают
+    // глобальные для конкретного resourceType. Если карта не задана или в ней
+    // нет типа — fallback на глобальный порог (обратносовместимо). Гейты
+    // criticalTypes / conflict='hard' НЕ затрагиваются.
+    const autoT =
+      settings.autoThresholdByType?.[input.resourceType] ?? settings.autoThreshold;
+    const deepT =
+      settings.deepReviewThresholdByType?.[input.resourceType] ??
+      settings.deepReviewThreshold;
+
     // 1. auto-canonical
-    if (
-      !isCritical &&
-      conflict === 'none' &&
-      effectiveConfidence >= settings.autoThreshold
-    ) {
+    if (!isCritical && conflict === 'none' && effectiveConfidence >= autoT) {
       const version = await this.createInitialCardVersion(input);
       this.metrics.incCurationAutoCanonical({ resourceType: input.resourceType });
       this.logger.log(
@@ -229,11 +237,7 @@ export class CurationService {
 
     // 2. deep / light
     let level: CurationLevel;
-    if (
-      isCritical ||
-      conflict === 'hard' ||
-      effectiveConfidence < settings.deepReviewThreshold
-    ) {
+    if (isCritical || conflict === 'hard' || effectiveConfidence < deepT) {
       level = 'deep';
     } else {
       level = 'light';
@@ -250,8 +254,12 @@ export class CurationService {
       conflictSignal: conflict,
       conflictIds: input.conflictIds ?? [],
       criticalType: isCritical,
-      autoThreshold: settings.autoThreshold,
-      deepReviewThreshold: settings.deepReviewThreshold,
+      // A0 — фактически применённые пороги (с учётом пер-типового override).
+      autoThreshold: autoT,
+      deepReviewThreshold: deepT,
+      // Глобальные пороги для прозрачности (видно, был ли override).
+      autoThresholdGlobal: settings.autoThreshold,
+      deepThresholdGlobal: settings.deepReviewThreshold,
     };
 
     // ВНИМАНИЕ: dispatchProbe вне транзакции (notifications в БД создаются
@@ -753,6 +761,91 @@ export class CurationService {
     };
   }
 
+  // ──────────────────────────── override stats (A0) ───────────────
+
+  /**
+   * A0 «лестница доверия» (2026-06-02) — read-model override-rate по
+   * resourceType. Для каждого типа считает долю «переопределений» куратором
+   * (reject + approve_with_edits) среди items с финальным решением.
+   *
+   * Финальное решение = ПОСЛЕДНЕЕ по createdAt решение типа ≠ 'escalate'
+   * (escalate — это переадресация, не финал; item остаётся pending до
+   * настоящего решения). Items вообще без не-escalate решений не считаются
+   * decided.
+   *
+   * Высокий overrideRate сигналит: для типа порог auto-canonical занижен —
+   * кандидат на ручную/будущую авто-подстройку autoThresholdByType.
+   */
+  async getOverrideStats(args: { tenantId: string }): Promise<OverrideStatsResponse> {
+    const items = await this.prisma.curationItem.findMany({
+      where: { tenantId: args.tenantId },
+      select: {
+        resourceType: true,
+        decisions: { select: { decisionType: true, createdAt: true } },
+      },
+    });
+
+    interface Acc {
+      totalDecided: number;
+      approve: number;
+      approveWithEdits: number;
+      reject: number;
+      other: number;
+    }
+    const byType = items.reduce<Map<string, Acc>>((map, item) => {
+      // Финал = последнее по createdAt решение ≠ 'escalate'.
+      const finalDecision = item.decisions
+        .filter((d) => d.decisionType !== 'escalate')
+        .reduce<{ decisionType: string; createdAt: Date } | null>((latest, d) => {
+          if (!latest || d.createdAt.getTime() > latest.createdAt.getTime()) {
+            return d;
+          }
+          return latest;
+        }, null);
+      if (!finalDecision) return map; // нет финального решения — не decided.
+
+      const acc =
+        map.get(item.resourceType) ??
+        { totalDecided: 0, approve: 0, approveWithEdits: 0, reject: 0, other: 0 };
+      acc.totalDecided += 1;
+      switch (finalDecision.decisionType) {
+        case 'approve':
+          acc.approve += 1;
+          break;
+        case 'approve_with_edits':
+          acc.approveWithEdits += 1;
+          break;
+        case 'reject':
+          acc.reject += 1;
+          break;
+        default:
+          // split / merge / supersede / mark_as_misleading / merge_categories.
+          acc.other += 1;
+          break;
+      }
+      map.set(item.resourceType, acc);
+      return map;
+    }, new Map());
+
+    const result: OverrideStatsItemDto[] = [...byType.entries()].map(
+      ([resourceType, acc]) => ({
+        resourceType,
+        totalDecided: acc.totalDecided,
+        approve: acc.approve,
+        approveWithEdits: acc.approveWithEdits,
+        reject: acc.reject,
+        other: acc.other,
+        overrideRate:
+          acc.totalDecided > 0
+            ? (acc.reject + acc.approveWithEdits) / acc.totalDecided
+            : 0,
+      }),
+    );
+    // Стабильный порядок — по resourceType (детерминизм для UI/тестов).
+    result.sort((a, b) => a.resourceType.localeCompare(b.resourceType));
+    return { items: result };
+  }
+
   // ──────────────────────────── settings ──────────────────────────
 
   async getSettings(tenantId: string): Promise<CurationSettingsDto> {
@@ -768,12 +861,22 @@ export class CurationService {
     patch: UpdateCurationSettingsBody;
   }): Promise<CurationSettingsDto> {
     const current = await this.getSettings(args.tenantId);
+    // A0 — пер-типовые карты заменяются целиком (если переданы), иначе
+    // сохраняются текущие. Нормализуем, чтобы в БД легли только валидные записи.
+    const autoByType = this.normalizeThresholdMap(
+      args.patch.autoThresholdByType ?? current.autoThresholdByType ?? {},
+    );
+    const deepByType = this.normalizeThresholdMap(
+      args.patch.deepReviewThresholdByType ?? current.deepReviewThresholdByType ?? {},
+    );
     const next: CurationSettingsDto = {
       autoThreshold: args.patch.autoThreshold ?? current.autoThreshold,
       deepReviewThreshold:
         args.patch.deepReviewThreshold ?? current.deepReviewThreshold,
       criticalTypes: args.patch.criticalTypes ?? current.criticalTypes,
       itemExpiryDays: args.patch.itemExpiryDays ?? current.itemExpiryDays,
+      autoThresholdByType: autoByType,
+      deepReviewThresholdByType: deepByType,
     };
     if (next.autoThreshold < next.deepReviewThreshold) {
       throw new BadRequestException({
@@ -784,6 +887,20 @@ export class CurationService {
             'autoThreshold должен быть >= deepReviewThreshold (иначе triage не имеет «light» окна)',
         },
       });
+    }
+    // A0 — инвариант auto ≥ deep сохраняется и на уровне каждого типа,
+    // присутствующего в обеих картах (иначе у типа нет «light»-окна).
+    for (const [type, autoVal] of Object.entries(autoByType)) {
+      const deepVal = deepByType[type];
+      if (deepVal !== undefined && autoVal < deepVal) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'invalid_thresholds',
+            message: `autoThresholdByType[${type}] должен быть >= deepReviewThresholdByType[${type}]`,
+          },
+        });
+      }
     }
     await this.prisma.org.update({
       where: { id: args.tenantId },
@@ -979,6 +1096,9 @@ export class CurationService {
         (this.cfg.curation.criticalTypesDefault as readonly string[])?.slice() ??
         [...DEFAULT_CRITICAL_TYPES],
       itemExpiryDays: this.cfg.curation.itemExpiryDays ?? 30,
+      // A0 — пер-типовые пороги по умолчанию пусты (нет override).
+      autoThresholdByType: {},
+      deepReviewThresholdByType: {},
     };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
     const obj = raw as Record<string, unknown>;
@@ -998,7 +1118,40 @@ export class CurationService {
         typeof obj.itemExpiryDays === 'number'
           ? obj.itemExpiryDays
           : def.itemExpiryDays,
+      // A0 — парсим пер-типовые карты; невалидные записи отбрасываем,
+      // отсутствие карты → {} (поведение как раньше).
+      autoThresholdByType: this.normalizeThresholdMap(obj.autoThresholdByType),
+      deepReviewThresholdByType: this.normalizeThresholdMap(
+        obj.deepReviewThresholdByType,
+      ),
     };
+  }
+
+  /**
+   * A0 «лестница доверия» — валидация пер-типовой карты порогов.
+   * Принимает только записи `{ [resourceType: string]: number в [0..1] }`;
+   * всё прочее (не-объект, нечисловые/вне-диапазона значения) отбрасывается.
+   * Возвращает `{}` для отсутствующей/невалидной карты.
+   */
+  private normalizeThresholdMap(
+    raw: unknown,
+  ): Record<string, number> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      const type = key.trim();
+      if (
+        type.length >= 1 &&
+        type.length <= 80 &&
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value >= 0 &&
+        value <= 1
+      ) {
+        out[type] = value;
+      }
+    }
+    return out;
   }
 
   // ──────────────────────────── mappers ─────────────────────────

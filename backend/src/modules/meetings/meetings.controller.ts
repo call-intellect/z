@@ -172,10 +172,10 @@ export class MeetingsController {
   }
 
   /**
-   * Presigned URL на транскрипт (host-only).
+   * Транскрипт встречи (host-only) — массив реплик `turns` для UI.
    *
    * Query: `?cleaned=true|false` (default false).
-   *   - false → оригинал `merged.json` (как раньше).
+   *   - false → оригинал из БД-колонки `Transcript.turns` (источник правды).
    *   - true  → cleaned-транскрипт. Если cleaning не готов → 404 с
    *     `{ reason: 'pending'|'not_started'|'failed' }` (см. sub-TZ D §8.1).
    */
@@ -185,8 +185,7 @@ export class MeetingsController {
     @Query('cleaned') cleanedRaw: string | undefined,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{
-    url: string;
-    expiresAt: string;
+    turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
     durationSeconds: number | null;
     cleaned: boolean;
   }> {

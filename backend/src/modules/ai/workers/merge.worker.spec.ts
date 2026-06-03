@@ -6,6 +6,7 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { CoreQueueService } from '../../core-queue/core-queue.service';
 import type { MeetingsService } from '../../meetings/meetings.service';
+import type { S3Service } from '../../recordings/s3.service';
 import type { AiQueueService } from '../ai-queue.service';
 
 import { MergeWorker } from './merge.worker';
@@ -33,6 +34,7 @@ interface Mocks {
   queue: AiQueueService;
   metrics: BusinessMetricsService;
   redis: RedisService;
+  s3: S3Service;
   enqueueAnalyze: ReturnType<typeof vi.fn>;
   enqueueBehaviorMetrics: ReturnType<typeof vi.fn>;
   enqueueTranscriptClean: ReturnType<typeof vi.fn>;
@@ -80,12 +82,17 @@ function buildBaseMocks(opts: { meetingId: string }): Mocks {
 
   const redis = { client: {} } as unknown as RedisService;
 
+  const s3 = {
+    putJson: vi.fn(async () => undefined),
+  } as unknown as S3Service;
+
   return {
     prisma,
     meetings,
     queue,
     metrics,
     redis,
+    s3,
     enqueueAnalyze,
     enqueueBehaviorMetrics,
     enqueueTranscriptClean,
@@ -129,6 +136,7 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
       m.meetings,
       m.metrics,
       cfg,
+      m.s3,
       coreQueue,
     );
     await (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
@@ -155,6 +163,7 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
       m.meetings,
       m.metrics,
       cfg,
+      m.s3,
       coreQueue,
     );
     await (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
@@ -181,6 +190,7 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
       m.meetings,
       m.metrics,
       cfg,
+      m.s3,
     );
 
     await expect(
@@ -210,6 +220,7 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
       m.meetings,
       m.metrics,
       cfg,
+      m.s3,
       coreQueue,
     );
 

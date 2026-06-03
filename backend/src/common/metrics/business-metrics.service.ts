@@ -338,6 +338,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationAutoCanonicalTotal!: Counter<'resource_type'>;
   private curationConflictsTotal!: Counter<'relation_type' | 'resolution'>;
   private curationStaleDetectedTotal!: Counter<'resource_type'>;
+  // ── Action Center B5 «оживление expiresAt» (2026-06-02) ──
+  private curationItemExpiredTotal!: Counter<'resource_type'>;
+  private curationItemAgeSeconds!: Histogram<'level'>;
   // ── Action Center A1 «лестница доверия» (2026-06-02) ──
   private curationProvisionalTotal!: Counter<'resource_type'>;
   private curationAuditSampleTotal!: Counter<'resource_type'>;
@@ -1752,6 +1755,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_stale_detected_total',
       help: 'SBA α-4 — CardStaleDetectorCron: сколько карточек помечено кандидатами на stale (resource_type).',
       labelNames: ['resource_type'] as const,
+    });
+    // ── Action Center B5 «оживление expiresAt» (2026-06-02) ──
+    this.curationItemExpiredTotal = this.getOrCreateCounter({
+      name: 'curation_item_expired_total',
+      help: 'Action Center B5 — CurationItemLifecycleCron: pending CurationItem закрыт по истечении expiresAt (resource_type).',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationItemAgeSeconds = this.getOrCreateHistogram({
+      name: 'curation_item_age_seconds',
+      help: 'Action Center B5 — возраст CurationItem от createdAt до истечения (секунды, по level).',
+      labelNames: ['level'] as const,
+      buckets: [3600, 14_400, 86_400, 259_200, 604_800, 1_209_600, 2_592_000],
     });
     // ── Action Center A1 «лестница доверия» (2026-06-02) ──
     this.curationProvisionalTotal = this.getOrCreateCounter({
@@ -4427,6 +4442,18 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Карточка-кандидат на stale (probe владельцу). */
   incCurationStale(args: { resourceType: string }): void {
     this.curationStaleDetectedTotal.inc({ resource_type: args.resourceType });
+  }
+
+  // ─────────── Action Center B5 «оживление expiresAt» (2026-06-02) ───────────
+
+  /** Pending CurationItem закрыт по истечении expiresAt. */
+  incCurationItemExpired(args: { resourceType: string }): void {
+    this.curationItemExpiredTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** Возраст CurationItem от createdAt до истечения (секунды, по level). */
+  observeCurationItemAge(args: { level: string; seconds: number }): void {
+    this.curationItemAgeSeconds.observe({ level: args.level }, args.seconds);
   }
 
   /** A2 — сработал kill-switch (провизорный путь для типа отключён). */

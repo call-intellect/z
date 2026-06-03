@@ -12,6 +12,12 @@ import {
 } from './pending-actions-provider.types';
 
 /**
+ * Окно «скоро истечёт» (Action Center B5): карточка помечается urgent не только
+ * когда уже просрочена, но и за LEAD_DAYS суток до истечения expiresAt.
+ */
+const LEAD_DAYS = 3;
+
+/**
  * Провайдер «требует проверки» из Слоя 4 (CurationItem, status=pending).
  *
  * Кому показываем:
@@ -19,7 +25,8 @@ import {
  *     (assignedToUserId = user);
  *   - owner/admin Org — все pending-items (privileged).
  *
- * severity=urgent, если карточка просрочена (expiresAt < now) или висит ≥ 5 дней.
+ * severity=urgent, если карточка просрочена (expiresAt < now), скоро истечёт
+ * (expiresAt < now + LEAD_DAYS) или висит ≥ 5 дней.
  * canQuickConfirm = (level === 'light').
  */
 @Injectable()
@@ -69,9 +76,13 @@ export class CurationPendingProvider implements PendingActionsProvider {
       },
     });
     const now = new Date();
+    const leadWindowMs = LEAD_DAYS * 24 * 60 * 60 * 1000;
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
-      const overdue = i.expiresAt != null && i.expiresAt.getTime() < now.getTime();
+      // overdue (просрочена) ИЛИ скоро истечёт (в пределах LEAD_DAYS).
+      const expiringSoon =
+        i.expiresAt != null &&
+        i.expiresAt.getTime() < now.getTime() + leadWindowMs;
       // resourceId = CurationItem.id — стабильный ключ для snooze/confirm.
       // Detail-страница /curation/[id] пока не реализована (follow-up) —
       // ведём на рабочую очередь /curation; light-карточки подтверждаются
@@ -81,7 +92,7 @@ export class CurationPendingProvider implements PendingActionsProvider {
         resourceType: i.resourceType,
         resourceId: i.id,
         title: `Требует проверки: ${i.resourceType} ${i.resourceId}`,
-        severity: overdue || ageDays >= 5 ? 'urgent' : 'normal',
+        severity: expiringSoon || ageDays >= 5 ? 'urgent' : 'normal',
         ageDays,
         actionUrl: `/curation`,
         canQuickConfirm: i.level === 'light',

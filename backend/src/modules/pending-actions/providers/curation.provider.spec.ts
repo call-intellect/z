@@ -132,6 +132,52 @@ describe('CurationPendingProvider (B0)', () => {
     expect(items[0]!.canQuickConfirm).toBe(false);
   });
 
+  it('list (B5): expiresAt в пределах LEAD_DAYS → urgent (скоро истечёт)', async () => {
+    // expiresAt через 2 дня (< LEAD_DAYS=3), карточка свежая → urgent.
+    const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    findManyMock.mockResolvedValue([
+      {
+        id: 'ci-soon',
+        resourceType: 'regulation',
+        resourceId: 'reg-2',
+        level: 'light',
+        expiresAt: soon,
+        createdAt: new Date(),
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.severity).toBe('urgent');
+  });
+
+  it('list (B5): expiresAt дальше LEAD_DAYS и ageDays<5 → normal', async () => {
+    // expiresAt через 10 дней (> LEAD_DAYS), свежая (ageDays=0) → normal.
+    const far = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    findManyMock.mockResolvedValue([
+      {
+        id: 'ci-far',
+        resourceType: 'process',
+        resourceId: 'proc-2',
+        level: 'deep',
+        expiresAt: far,
+        createdAt: new Date(),
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.severity).toBe('normal');
+  });
+
   it('list: свежий light без expiry → normal', async () => {
     findManyMock.mockResolvedValue([
       {

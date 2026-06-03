@@ -118,7 +118,8 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
       await this.queue.add(
         'import-tracker',
         { tenantId, importLogId: created.id },
-        { jobId: `import-tracker:${created.id}` },
+        // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — '_'.
+        { jobId: `import-tracker_${created.id}` },
       );
     } catch (err) {
       await this.prisma.importLog

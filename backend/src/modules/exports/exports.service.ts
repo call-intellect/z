@@ -269,7 +269,8 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
     await this.queue.add(
       'export',
       { exportId },
-      { jobId: `export:${exportId}` },
+      // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — '_'.
+      { jobId: `export_${exportId}` },
     );
   }
 

@@ -84,7 +84,8 @@ export class DemoCleanupQueue implements OnModuleInit, OnModuleDestroy {
 
   /** Поставить cleanup демо-данных. jobId идемпотентен по orgId. */
   async enqueue(data: DemoCleanupJobData): Promise<{ jobId: string }> {
-    const jobId = `demo-cleanup:${data.orgId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `demo-cleanup_${data.orgId}`;
     await this.raw.add('cleanup', data, { jobId });
     this.logger.debug({ jobId, orgId: data.orgId }, 'demo-cleanup: enqueue');
     return { jobId };

@@ -166,7 +166,8 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const q = map.get(QUEUE_NAMES.QUALITY_SCORE);
     if (!q) throw new Error('AiQueueService: ai.quality-score не инициализирован');
-    const jobId = `quality:${meetingId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `quality_${meetingId}`;
     const payload: AiJobData = { meetingId, attempt: 1 };
     await q.add('quality-score', payload, { jobId });
     this.logger.debug(`enqueue ai.quality-score meeting=${meetingId}`);
@@ -184,7 +185,8 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const q = map.get(QUEUE_NAMES.TRANSCRIPT_CLEAN);
     if (!q) throw new Error('AiQueueService: ai.transcript-clean не инициализирован');
-    const jobId = `transcript-clean:${meetingId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `transcript-clean_${meetingId}`;
     const payload: AiJobData = { meetingId, attempt: 1 };
     await q.add('transcript-clean', payload, { jobId });
     this.logger.debug(`enqueue ai.transcript-clean meeting=${meetingId}`);

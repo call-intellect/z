@@ -87,7 +87,8 @@ export class TableSyncQueueService implements OnModuleInit, OnModuleDestroy {
       throw new Error('TableSyncQueueService: enqueue до onModuleInit');
     }
     const first = data.entityIds[0] ?? 'empty';
-    const jobId = `tbackfill:${data.tableId}:${first}:${data.entityIds.length}`;
+    // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — используем '_'.
+    const jobId = `tbackfill_${data.tableId}_${first}_${data.entityIds.length}`;
     await q.add(
       'backfill-batch',
       { kind: 'backfill-batch', ...data },

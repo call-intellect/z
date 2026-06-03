@@ -77,7 +77,8 @@ export class DashboardQueueService implements OnModuleInit, OnModuleDestroy {
   async enqueueMeetingRoi(meetingId: string): Promise<void> {
     const q = this.requireQueue(DASHBOARD_QUEUE_NAMES.MEETING_ROI);
     const payload: MeetingRoiJobData = { meetingId };
-    const jobId = `meeting-roi:${meetingId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `meeting-roi_${meetingId}`;
     await q.add('meeting-roi', payload, { jobId });
     this.logger.debug(`enqueue dashboard.meeting-roi meeting=${meetingId}`);
   }
@@ -96,7 +97,8 @@ export class DashboardQueueService implements OnModuleInit, OnModuleDestroy {
       decisionId: args.decisionId,
       tenantId: args.tenantId,
     };
-    const jobId = `decision-hygiene:${args.decisionId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `decision-hygiene_${args.decisionId}`;
     await q.add('decision-hygiene', payload, { jobId });
     this.logger.debug(
       `enqueue dashboard.decision-hygiene decision=${args.decisionId}`,

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import {
@@ -12,12 +13,6 @@ import {
 } from './pending-actions-provider.types';
 
 /**
- * Окно «скоро истечёт» (Action Center B5): карточка помечается urgent не только
- * когда уже просрочена, но и за LEAD_DAYS суток до истечения expiresAt.
- */
-const LEAD_DAYS = 3;
-
-/**
  * Провайдер «требует проверки» из Слоя 4 (CurationItem, status=pending).
  *
  * Кому показываем:
@@ -26,7 +21,8 @@ const LEAD_DAYS = 3;
  *   - owner/admin Org — все pending-items (privileged).
  *
  * severity=urgent, если карточка просрочена (expiresAt < now), скоро истечёт
- * (expiresAt < now + LEAD_DAYS) или висит ≥ 5 дней.
+ * (expiresAt < now + cfg.pendingActions.reminderLeadDays) или висит
+ * ≥ cfg.pendingActions.urgentAgeDays дней. Оба порога — admin-editable.
  * canQuickConfirm = (level === 'light').
  */
 @Injectable()
@@ -35,6 +31,7 @@ export class CurationPendingProvider implements PendingActionsProvider {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   private buildWhere(a: PendingActionsProviderArgs): Prisma.CurationItemWhereInput {
@@ -76,10 +73,11 @@ export class CurationPendingProvider implements PendingActionsProvider {
       },
     });
     const now = new Date();
-    const leadWindowMs = LEAD_DAYS * 24 * 60 * 60 * 1000;
+    const leadWindowMs =
+      this.cfg.pendingActions.reminderLeadDays * 24 * 60 * 60 * 1000;
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
-      // overdue (просрочена) ИЛИ скоро истечёт (в пределах LEAD_DAYS).
+      // overdue (просрочена) ИЛИ скоро истечёт (в пределах reminderLeadDays).
       const expiringSoon =
         i.expiresAt != null &&
         i.expiresAt.getTime() < now.getTime() + leadWindowMs;
@@ -92,7 +90,10 @@ export class CurationPendingProvider implements PendingActionsProvider {
         resourceType: i.resourceType,
         resourceId: i.id,
         title: `Требует проверки: ${i.resourceType} ${i.resourceId}`,
-        severity: expiringSoon || ageDays >= 5 ? 'urgent' : 'normal',
+        severity:
+          expiringSoon || ageDays >= this.cfg.pendingActions.urgentAgeDays
+            ? 'urgent'
+            : 'normal',
         ageDays,
         actionUrl: `/curation`,
         canQuickConfirm: i.level === 'light',

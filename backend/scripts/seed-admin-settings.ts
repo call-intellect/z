@@ -256,6 +256,16 @@ function buildSettings(): SettingSeed[] {
     ['knowledge.curationItemExpiryDays', envInt('CURATION_ITEM_EXPIRY_DAYS', 30), 'medium', 'Curation: срок жизни pending-item (дни)'],
     ['knowledge.curationStaleMonthsThreshold', envInt('CARD_STALE_MONTHS_THRESHOLD', 6), 'medium', 'Curation: порог stale по lastConfirmedAt (мес)'],
     ['knowledge.curationStaleDynamicScoreThreshold', envFloat('CARD_STALE_DYNAMIC_SCORE_THRESHOLD', 0.3), 'medium', 'Curation: порог stale по dynamicScore'],
+    // Action Center «лестница доверия» A1/A2 — admin-editable дефолты курации.
+    ['knowledge.curationProvisionalThresholdDefault', envFloat('CURATION_PROVISIONAL_THRESHOLD_DEFAULT', 0.8), 'medium', 'Курация: порог провизорной AI-канонизации'],
+    ['knowledge.curationAiVerifierEnabled', envBool('CURATION_AI_VERIFIER_ENABLED', true), 'medium', 'Курация: включён ли AI-судья для критических типов'],
+    ['knowledge.curationAuditSampleRate', envFloat('CURATION_AUDIT_SAMPLE_RATE', 0.05), 'low', 'Курация: доля авто/провизорных решений в аудит-выборку'],
+    ['knowledge.curationAutotuneEnabled', envBool('CURATION_AUTOTUNE_ENABLED', false), 'medium', 'Курация: автоподстройка порогов по override-rate'],
+    ['knowledge.curationThresholdMin', envFloat('CURATION_THRESHOLD_MIN', 0.6), 'medium', 'Курация: нижняя граница автоподстройки порога'],
+    ['knowledge.curationThresholdMax', envFloat('CURATION_THRESHOLD_MAX', 0.97), 'medium', 'Курация: верхняя граница автоподстройки порога'],
+    ['knowledge.curationAutotuneStep', envFloat('CURATION_AUTOTUNE_STEP', 0.02), 'low', 'Курация: шаг автоподстройки порога'],
+    ['knowledge.curationMinDecisionsForAutotune', envInt('CURATION_MIN_DECISIONS_FOR_AUTOTUNE', 20), 'low', 'Курация: минимум решений до автоподстройки'],
+    ['knowledge.curationMaxProvisionalOverride', envFloat('CURATION_MAX_PROVISIONAL_OVERRIDE', 0.2), 'medium', 'Курация: порог override-rate для kill-switch провизорного уровня'],
     ['knowledge.executablePersonaThresholdTraitsCount', envInt('EXECUTABLE_PERSONA_THRESHOLD_TRAITS_COUNT', 10), 'medium', 'ExecutablePersona: порог traits для rebuild'],
   ];
   for (const [key, value, severity, description] of knowledge) {
@@ -491,6 +501,18 @@ function buildSettings(): SettingSeed[] {
   ];
   for (const [key, value, severity, description] of idle) {
     out.push({ key, value, category: 'media', section: 'idle', severity, description });
+  }
+
+  // ── Pending-actions «требует действия» (pendingActions.*) — 5. Action Center C2.
+  const pendingActions: Array<[string, unknown, Severity, string]> = [
+    ['pendingActions.reminderWindowStartHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_START_HOUR', 9), 'low', 'Напоминания: начало окна слотов (локальный час)'],
+    ['pendingActions.reminderWindowEndHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_END_HOUR', 21), 'low', 'Напоминания: конец окна слотов (локальный час)'],
+    ['pendingActions.reminderStepHours', envInt('PENDING_ACTIONS_REMINDER_STEP_HOURS', 3), 'low', 'Напоминания: шаг между слотами (часы)'],
+    ['pendingActions.urgentAgeDays', envInt('PENDING_ACTIONS_URGENT_AGE_DAYS', 5), 'low', 'Pending Actions: возраст (дни), с которого item помечается срочным'],
+    ['pendingActions.reminderLeadDays', envInt('PENDING_ACTIONS_REMINDER_LEAD_DAYS', 3), 'low', 'Pending Actions: за сколько дней до истечения помечать срочным'],
+  ];
+  for (const [key, value, severity, description] of pendingActions) {
+    out.push({ key, value, category: 'platform', section: 'pending-actions', severity, description });
   }
 
   // ── W4.3 (2026-05-25) — DataClass policy floors + channel defaults.

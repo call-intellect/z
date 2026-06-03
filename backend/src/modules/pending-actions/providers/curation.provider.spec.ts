@@ -1,8 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { CurationPendingProvider } from './curation.provider';
+
+/**
+ * Заглушка TypedConfigService: геттер `pendingActions` отдаёт дефолты
+ * (urgentAgeDays=5, reminderLeadDays=3). `overrides` меняет крутилки в
+ * отдельном тесте.
+ */
+function makeCfg(
+  overrides: Partial<{ urgentAgeDays: number; reminderLeadDays: number }> = {},
+): TypedConfigService {
+  return {
+    pendingActions: {
+      reminderWindowStartHour: 9,
+      reminderWindowEndHour: 21,
+      reminderStepHours: 3,
+      urgentAgeDays: 5,
+      reminderLeadDays: 3,
+      ...overrides,
+    },
+  } as unknown as TypedConfigService;
+}
 
 /**
  * Unit-тесты CurationPendingProvider (Action Center B0).
@@ -27,7 +48,7 @@ describe('CurationPendingProvider (B0)', () => {
     prisma = {
       curationItem: { count: countMock, findMany: findManyMock },
     } as unknown as PrismaService;
-    provider = new CurationPendingProvider(prisma);
+    provider = new CurationPendingProvider(prisma, makeCfg());
   });
 
   it('candidate: count использует OR (assignedTo / candidateCuratorIds)', async () => {
@@ -130,6 +151,37 @@ describe('CurationPendingProvider (B0)', () => {
     expect(items[0]!.severity).toBe('urgent');
     expect(items[0]!.ageDays).toBeGreaterThanOrEqual(5);
     expect(items[0]!.canQuickConfirm).toBe(false);
+  });
+
+  it('крутилка urgentAgeDays=10: item возрастом 7 дней → normal (при дефолте 5 был бы urgent)', async () => {
+    const sevenDaysOld = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const row = {
+      id: 'ci-age7',
+      resourceType: 'process',
+      resourceId: 'proc-7',
+      level: 'deep',
+      expiresAt: null, // нет expiry → severity определяется только возрастом
+      createdAt: sevenDaysOld,
+    };
+    findManyMock.mockResolvedValue([row]);
+    const args = {
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set<string>(),
+    };
+
+    // При urgentAgeDays=10 — 7 < 10 → normal.
+    const raised = new CurationPendingProvider(prisma, makeCfg({ urgentAgeDays: 10 }));
+    const raisedItems = await raised.listForUser(args);
+    expect(raisedItems[0]!.ageDays).toBeGreaterThanOrEqual(7);
+    expect(raisedItems[0]!.severity).toBe('normal');
+
+    // Контроль: при дефолте 5 — 7 >= 5 → urgent.
+    const defaultProvider = new CurationPendingProvider(prisma, makeCfg());
+    const defaultItems = await defaultProvider.listForUser(args);
+    expect(defaultItems[0]!.severity).toBe('urgent');
   });
 
   it('list (B5): expiresAt в пределах LEAD_DAYS → urgent (скоро истечёт)', async () => {

@@ -83,13 +83,27 @@ function buildPrisma(args?: {
   return { prisma, createdCardVersions, createdCurationItems };
 }
 
-function buildCfg(): TypedConfigService {
+function buildCfg(overrides?: Partial<Record<string, unknown>>): TypedConfigService {
   return {
     curation: {
       autoThresholdDefault: 0.85,
       deepReviewThresholdDefault: 0.6,
       criticalTypesDefault: ['regulation', 'process', 'decision'],
       itemExpiryDays: 30,
+      // A1/A2 «лестница доверия» — платформенные дефолты теперь приходят из
+      // cfg.curation (AdminSetting → ENV → default), а не из констант сервиса.
+      // Значения совпадают с code-fallback (0.8 / true / 0.05 / false / 0.6 /
+      // 0.97 / 0.02 / 20 / 0.2), чтобы существующие A1-тесты не менялись.
+      provisionalThresholdDefault: 0.8,
+      aiVerifierEnabled: true,
+      auditSampleRate: 0.05,
+      autotuneEnabled: false,
+      thresholdMin: 0.6,
+      thresholdMax: 0.97,
+      autotuneStep: 0.02,
+      minDecisionsForAutotune: 20,
+      maxProvisionalOverride: 0.2,
+      ...overrides,
     },
   } as unknown as TypedConfigService;
 }
@@ -156,10 +170,11 @@ function makeService(opts: {
   routing: CuratorRoutingService;
   debate: MultiAgentDebateService | null;
   conversational?: ConversationalService;
+  cfg?: TypedConfigService;
 }): CurationService {
   return new CurationService(
     opts.prisma,
-    buildCfg(),
+    opts.cfg ?? buildCfg(),
     opts.metrics,
     opts.conversational ?? buildConversational(),
     opts.routing,
@@ -363,5 +378,85 @@ describe('CurationService — A1 «лестница доверия»', () => {
     expect(createdCardVersions).toHaveLength(0);
     expect(createdCurationItems[0]?.level).toBe('deep');
     expect(debate?.judge).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * C2 «курация» — дефолты «лестницы доверия» вынесены из code-констант в
+ * AdminSetting (cfg.curation, через resolveSync). Доказываем, что при
+ * отсутствии per-Org override (`curationSettings === null`) платформенные
+ * дефолты `getSettings` приходят ИЗ cfg, а не из захардкоженных DEFAULT_*.
+ *
+ * Детерминизм: только моки Prisma + cfg, без системного времени/сети.
+ */
+describe('CurationService.getSettings — дефолты курации из cfg/AdminSetting', () => {
+  let metrics: BusinessMetricsService;
+  let routing: CuratorRoutingService;
+
+  beforeEach(() => {
+    metrics = buildMetrics();
+    routing = buildRouting();
+  });
+
+  it('curationSettings=null → дефолты A1/A2 берутся из cfg.curation, не из констант', async () => {
+    const { prisma } = buildPrisma({ curationSettings: null });
+    // Кастомные значения, отличные от code-fallback: если бы дефолты были
+    // захардкожены — тест бы поймал регресс.
+    const cfg = buildCfg({
+      provisionalThresholdDefault: 0.91,
+      aiVerifierEnabled: false,
+      auditSampleRate: 0.11,
+      autotuneEnabled: true,
+      thresholdMin: 0.42,
+      thresholdMax: 0.93,
+      autotuneStep: 0.07,
+      minDecisionsForAutotune: 33,
+      maxProvisionalOverride: 0.27,
+    });
+    const service = makeService({
+      prisma,
+      metrics,
+      routing,
+      debate: null,
+      cfg,
+    });
+
+    const settings = await service.getSettings('tenant-A');
+
+    // A1.
+    expect(settings.provisionalThreshold).toBe(0.91);
+    expect(settings.aiVerifierEnabled).toBe(false);
+    expect(settings.auditSampleRate).toBe(0.11);
+    // A2.
+    expect(settings.autotuneEnabled).toBe(true);
+    expect(settings.thresholdMin).toBe(0.42);
+    expect(settings.thresholdMax).toBe(0.93);
+    expect(settings.autotuneStep).toBe(0.07);
+    expect(settings.minDecisionsForAutotune).toBe(33);
+    expect(settings.maxProvisionalOverride).toBe(0.27);
+  });
+
+  it('per-Org override перекрывает дефолт cfg пофайлово, остальное — из cfg', async () => {
+    const { prisma } = buildPrisma({
+      curationSettings: { provisionalThreshold: 0.5 },
+    });
+    const cfg = buildCfg({
+      provisionalThresholdDefault: 0.91,
+      aiVerifierEnabled: false,
+      autotuneEnabled: true,
+    });
+    const service = makeService({
+      prisma,
+      metrics,
+      routing,
+      debate: null,
+      cfg,
+    });
+
+    const settings = await service.getSettings('tenant-A');
+
+    expect(settings.provisionalThreshold).toBe(0.5); // per-Org override
+    expect(settings.aiVerifierEnabled).toBe(false); // дефолт из cfg
+    expect(settings.autotuneEnabled).toBe(true); // дефолт из cfg
   });
 });

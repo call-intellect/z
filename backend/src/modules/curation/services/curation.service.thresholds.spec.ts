@@ -70,6 +70,18 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
         deepReviewThresholdDefault: 0.6,
         criticalTypesDefault: ['regulation', 'process', 'decision'],
         itemExpiryDays: 30,
+        // A1/A2 «лестница доверия» — платформенные дефолты из AdminSetting/cfg.
+        provisionalThresholdDefault: 0.8,
+        aiVerifierEnabled: false,
+        auditSampleRate: 0.05,
+        autotuneEnabled: false,
+        // Намеренно НЕ-хардкодные значения: тест ниже проверяет, что
+        // partial-JSON откатывается именно на cfg, а не на старые константы.
+        thresholdMin: 0.55,
+        thresholdMax: 0.95,
+        autotuneStep: 0.03,
+        minDecisionsForAutotune: 25,
+        maxProvisionalOverride: 0.15,
       },
     } as unknown as TypedConfigService;
 
@@ -99,10 +111,13 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
 
   it('пониженный autoThresholdByType → авто-канонизация там, где глобальный порог ушёл бы в review', async () => {
     // Глобальный auto=0.85; для типа 'note' понижаем до 0.7.
+    // auditSampleRate=0 — отключаем post-факто аудит-выборку (rate 0.05 даёт
+    // вероятностный CurationItem через Math.random(), иначе тест флапает).
     setOrgSettings({
       autoThreshold: 0.85,
       deepReviewThreshold: 0.6,
       autoThresholdByType: { note: 0.7 },
+      auditSampleRate: 0,
     });
 
     const res = await svc.triage({
@@ -204,5 +219,23 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
     });
 
     expect(res.decision).toBe('deep');
+  });
+
+  it('A2: partial-JSON откатывает guardrail-поля на cfg.curation (admin-дефолт), а не на хардкод-константы', async () => {
+    // Org задала только autoThreshold — остальные поля отсутствуют в JSON.
+    // Раньше thresholdMin/Max/autotuneStep/minDecisions/maxProvisionalOverride
+    // откатывались на хардкод (0.6/0.97/0.02/20/0.2), обходя AdminSetting.
+    // Теперь должны взять значения из cfg.curation.* (мок выше).
+    setOrgSettings({ autoThreshold: 0.9 });
+
+    const settings = await svc.getSettings('t-1');
+
+    expect(settings.thresholdMin).toBe(0.55);
+    expect(settings.thresholdMax).toBe(0.95);
+    expect(settings.autotuneStep).toBe(0.03);
+    expect(settings.minDecisionsForAutotune).toBe(25);
+    expect(settings.maxProvisionalOverride).toBe(0.15);
+    // sanity: явно заданное поле сохранилось.
+    expect(settings.autoThreshold).toBe(0.9);
   });
 });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
@@ -59,6 +60,32 @@ function makePending(
   } as unknown as PendingActionsService;
 }
 
+/**
+ * Заглушка TypedConfigService: геттер `pendingActions` отдаёт дефолты
+ * (9/21/3/5/3) → слоты [9,12,15,18,21]. Через `overrides` отдельный тест
+ * меняет крутилки (например reminderStepHours=6).
+ */
+function makeCfg(
+  overrides: Partial<{
+    reminderWindowStartHour: number;
+    reminderWindowEndHour: number;
+    reminderStepHours: number;
+    urgentAgeDays: number;
+    reminderLeadDays: number;
+  }> = {},
+): TypedConfigService {
+  return {
+    pendingActions: {
+      reminderWindowStartHour: 9,
+      reminderWindowEndHour: 21,
+      reminderStepHours: 3,
+      urgentAgeDays: 5,
+      reminderLeadDays: 3,
+      ...overrides,
+    },
+  } as unknown as TypedConfigService;
+}
+
 function makeCron(
   deps: {
     prisma?: PrismaMock;
@@ -66,6 +93,7 @@ function makeCron(
     metrics?: BusinessMetricsService;
     conv?: ConversationalService;
     pending?: PendingActionsService;
+    cfg?: TypedConfigService;
   } = {},
 ): {
   cron: PendingActionsReminderCron;
@@ -74,20 +102,23 @@ function makeCron(
   metrics: BusinessMetricsService;
   conv: ConversationalService;
   pending: PendingActionsService;
+  cfg: TypedConfigService;
 } {
   const prisma = deps.prisma ?? makePrisma();
   const redis = deps.redis ?? makeRedis();
   const metrics = deps.metrics ?? makeMetrics();
   const conv = deps.conv ?? makeConv();
   const pending = deps.pending ?? makePending();
+  const cfg = deps.cfg ?? makeCfg();
   const cron = new PendingActionsReminderCron(
     prisma as unknown as PrismaService,
     redis,
     metrics,
     conv,
     pending,
+    cfg,
   );
-  return { cron, prisma, redis, metrics, conv, pending };
+  return { cron, prisma, redis, metrics, conv, pending, cfg };
 }
 
 const makeBindingRow = (
@@ -119,10 +150,41 @@ describe('PendingActionsReminderCron', () => {
     vi.clearAllMocks();
   });
 
-  it('слоты-часы = 9,12,15,18,21', () => {
-    expect([...PendingActionsReminderCron.SLOT_HOURS]).toEqual([
-      9, 12, 15, 18, 21,
+  it('дефолтные крутилки (9/21/3): 09:00 MSK — слот-час → обрабатывается', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
     ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    const { cron, redis } = makeCron({ prisma });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    // 09:00 ∈ [9,12,15,18,21] → не skippedSlot; дошли до Redis dedup.
+    expect(stats.skippedSlot).toBe(0);
+    expect(redis.client.set).toHaveBeenCalled();
+  });
+
+  it('крутилка reminderStepHours=6 → слоты [9,15,21]; 12:00 MSK → skippedSlot', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    // 2026-05-24T09:00:00Z = 12:00 Europe/Moscow — слот-час при step=3, но НЕ
+    // при step=6 (слоты [9,15,21]).
+    const nowAtMsk12 = new Date(Date.UTC(2026, 4, 24, 9, 0, 0));
+    const { cron, redis, conv } = makeCron({
+      prisma,
+      cfg: makeCfg({ reminderStepHours: 6 }),
+    });
+    const stats = await cron.run(nowAtMsk12);
+    expect(stats.skippedSlot).toBe(1);
+    expect(stats.sent).toBe(0);
+    expect(redis.client.set).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
   });
 
   it('нет binding\'ов → candidates=0', async () => {

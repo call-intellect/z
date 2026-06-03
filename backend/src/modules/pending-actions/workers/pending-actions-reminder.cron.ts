@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -55,17 +56,6 @@ import { PendingActionsService } from '../services/pending-actions.service';
 export class PendingActionsReminderCron {
   private readonly logger = new Logger(PendingActionsReminderCron.name);
 
-  /** Окно слотов (локальный час пользователя). */
-  static readonly REMINDER_WINDOW_START = 9;
-  static readonly REMINDER_WINDOW_END = 21;
-  static readonly REMINDER_STEP_HOURS = 3;
-  /** Слоты-часы 9,12,15,18,21 (вычислены из window+step). */
-  static readonly SLOT_HOURS: readonly number[] = buildSlotHours(
-    PendingActionsReminderCron.REMINDER_WINDOW_START,
-    PendingActionsReminderCron.REMINDER_WINDOW_END,
-    PendingActionsReminderCron.REMINDER_STEP_HOURS,
-  );
-
   /** Максимум пользователей в одной обработке (защита от runaway). */
   static readonly MAX_USERS_PER_RUN = 5_000;
 
@@ -86,6 +76,8 @@ export class PendingActionsReminderCron {
     private readonly conversational: ConversationalService,
     @Inject(PendingActionsService)
     private readonly pendingActions: PendingActionsService,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron('0 * * * *')
@@ -166,6 +158,14 @@ export class PendingActionsReminderCron {
       }
     }
 
+    // Слот-часы вычисляются динамически из admin-editable крутилок
+    // (cfg.pendingActions). Дефолты 9/21/3 → [9,12,15,18,21].
+    const slotHours = buildSlotHours(
+      this.cfg.pendingActions.reminderWindowStartHour,
+      this.cfg.pendingActions.reminderWindowEndHour,
+      this.cfg.pendingActions.reminderStepHours,
+    );
+
     let sent = 0;
     let empty = 0;
     let deduped = 0;
@@ -186,7 +186,7 @@ export class PendingActionsReminderCron {
       const localHour = getLocalHour(now, tz);
 
       // Гейт по слот-часам — вне слота тихий skip без метрики и без Redis.
-      if (!PendingActionsReminderCron.SLOT_HOURS.includes(localHour)) {
+      if (!slotHours.includes(localHour)) {
         skippedSlot++;
         continue;
       }

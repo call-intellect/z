@@ -25,3 +25,9 @@ body {
   -webkit-backdrop-filter: var(--blur-glass);
   border: 1px solid var(--accent-border);
 }
+
+/* LiveKit: одиночный участник без демонстрации — кадр целиком, без обрезки
+   на широких экранах. Специфичность (0,3,0) перебивает дефолт object-fit: cover. */
+.kora-video-solo .lk-participant-media-video[data-lk-source='camera'] {
+  object-fit: contain;
+}

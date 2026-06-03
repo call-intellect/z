@@ -214,24 +214,24 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
 });
 
 describe('LlmFallbackService.complete: cacheControl на system выставляется автоматически', () => {
-  it('caller передал system без cacheControl → anthropic.complete получает cacheControl: "ephemeral"', async () => {
+  it('caller передал system без cacheControl → minimax.complete (primary) получает cacheControl: "ephemeral"', async () => {
     let captured: LlmCompleteInput | null = null;
-    const anthropic = {
+    const minimax = {
       complete: vi.fn(async (input: LlmCompleteInput) => {
         captured = input;
         return {
           text: 'ok',
           inputTokens: 10,
           outputTokens: 5,
-          model: 'claude-sonnet-4-6',
-          provider: 'anthropic' as const,
+          model: 'MiniMax-M2.5',
+          provider: 'minimax' as const,
         } satisfies LlmCompleteOutput;
       }),
-    } as unknown as AnthropicService;
-    const minimax = { complete: vi.fn() } as unknown as MinimaxService;
+    } as unknown as MinimaxService;
     const openai = { complete: vi.fn() } as unknown as OpenAiProxyService;
 
-    const fallback = new LlmFallbackService(anthropic, minimax, openai);
+    // Anthropic выведен из каскада — primary теперь MiniMax.
+    const fallback = new LlmFallbackService(minimax, openai);
 
     await fallback.complete({
       system: { text: 'sys prompt' },
@@ -249,22 +249,21 @@ describe('LlmFallbackService.complete: cacheControl на system выставля
     // защищаем сценарий «caller явно поставил ephemeral» — проверяем что
     // не наслаиваем второй раз (тип всё равно тот же).
     let captured: LlmCompleteInput | null = null;
-    const anthropic = {
+    const minimax = {
       complete: vi.fn(async (input: LlmCompleteInput) => {
         captured = input;
         return {
           text: 'ok',
           inputTokens: 10,
           outputTokens: 5,
-          model: 'claude-sonnet-4-6',
-          provider: 'anthropic' as const,
+          model: 'MiniMax-M2.5',
+          provider: 'minimax' as const,
         } satisfies LlmCompleteOutput;
       }),
-    } as unknown as AnthropicService;
-    const minimax = { complete: vi.fn() } as unknown as MinimaxService;
+    } as unknown as MinimaxService;
     const openai = { complete: vi.fn() } as unknown as OpenAiProxyService;
 
-    const fallback = new LlmFallbackService(anthropic, minimax, openai);
+    const fallback = new LlmFallbackService(minimax, openai);
 
     await fallback.complete({
       system: { text: 'sys prompt', cacheControl: 'ephemeral' },

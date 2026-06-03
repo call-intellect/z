@@ -91,6 +91,7 @@ import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { OrgMembersModule } from './modules/org-members/org-members.module';
 import { OrgsModule } from './modules/orgs/orgs.module';
 import { ParticipantsModule } from './modules/participants/participants.module';
+import { PendingActionsModule } from './modules/pending-actions/pending-actions.module';
 import { PersonsModule } from './modules/persons/persons.module';
 import { PracticeSkillsModule } from './modules/practice-skills/practice-skills.module';
 import { ProactiveModule } from './modules/proactive/proactive.module';
@@ -396,6 +397,12 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // куратора, stale-detection cron. Должен быть ПОСЛЕ ConversationalModule
     // (использует sendNotification).
     CurationModule,
+
+    // Action Center B0 (2026-06-02) — единый агрегатор «требует действия»
+    // (PendingActionsService) + REST для бейджа/списка/snooze. Фундамент
+    // Части B (бейдж, колокольчик, дашборд CEO, Telegram). Провайдеры читают
+    // read-models напрямую — порядок относительно CurationModule не важен.
+    PendingActionsModule,
 
     // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
     // Classifier / MultiQuery / Summarizer + AnswerCache/RetrievalCache).

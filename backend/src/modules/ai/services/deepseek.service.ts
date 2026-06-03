@@ -178,6 +178,14 @@ export class DeepSeekService {
         );
       } else if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };
+        // DeepSeek/OpenAI json_object mode требует слово "json" в сообщениях,
+        // иначе 400 «Prompt must contain the word 'json'... to use
+        // 'response_format' of type 'json_object'». Гарантируем его наличие
+        // (иначе meeting-report-fast и др. промпты без слова JSON падают).
+        const hasJsonWord = messages.some((m) => /json/i.test(m.content));
+        if (!hasJsonWord && messages[0]) {
+          messages[0].content += '\n\nФормат ответа: верни валидный JSON.';
+        }
       } else if (fmt.type === 'json_schema') {
         params['response_format'] = {
           type: 'json_schema',

@@ -334,4 +334,49 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
     expect(callArgs.tools).toBeUndefined();
     expect(callArgs.tool_choice).toBeUndefined();
   });
+
+  it('json_object + промпт без слова "json" → подмешиваем слово в system (DeepSeek 400-guard)', async () => {
+    const { metrics } = makeMetricsMock();
+    const svc = new DeepSeekService(makeCfg(), metrics);
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({ content: '{"ok":true}' }),
+    );
+
+    await svc.complete({
+      system: { text: 'Сделай отчёт по встрече.' }, // нет слова json
+      user: 'Транскрипт...',
+      model: 'deepseek-v4-pro',
+      responseFormat: { type: 'json_object' },
+    });
+
+    const callArgs =
+      lastSdkInstance.chat.completions.create.mock.calls[0]![0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+    const allContent = callArgs.messages.map((m) => m.content).join('\n');
+    expect(allContent.toLowerCase()).toContain('json');
+  });
+
+  it('json_object + промпт уже содержит "json" → не дублируем подсказку', async () => {
+    const { metrics } = makeMetricsMock();
+    const svc = new DeepSeekService(makeCfg(), metrics);
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({ content: '{"ok":true}' }),
+    );
+
+    await svc.complete({
+      system: { text: 'Верни ответ в JSON.' },
+      user: 'u',
+      model: 'deepseek-v4-pro',
+      responseFormat: { type: 'json_object' },
+    });
+
+    const callArgs =
+      lastSdkInstance.chat.completions.create.mock.calls[0]![0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+    expect(callArgs.messages[0]!.content).toBe('Верни ответ в JSON.');
+  });
 });

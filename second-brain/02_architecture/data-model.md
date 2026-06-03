@@ -1250,9 +1250,10 @@ GIN-индекс `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")
 ```prisma
 enum SystemLogLevel    { DEBUG INFO WARN ERROR FATAL }
 enum SystemLogCategory { SYSTEM REQUEST BUSINESS SECURITY PAYMENT WEBHOOK AUTH DB INTEGRATION AUDIT FRONTEND JOB OTHER }
-enum SystemLogContour  { GUEST MEMBER ORG_ADMIN SUPERADMIN PLATFORM PUBLIC SYSTEM }
+enum SystemLogContour  { GUEST MEMBER ORG_ADMIN SUPERADMIN PLATFORM PUBLIC SYSTEM }   // зона/роль
+enum SystemLogPipeline { MEETING_LIFECYCLE RECORDING TRANSCRIPTION AI_ANALYSIS KNOWLEDGE_GRAPH NOTIFICATIONS AUTH BILLING INTEGRATIONS ONBOARDING ADMIN SCHEDULER SYSTEM }  // процессная цепочка (2026-06-03)
 
-model SystemLog       { id, level, category, contour, module?, action?, message, details? (Json),
+model SystemLog       { id, level, category, contour, pipeline?, module?, action?, message, details? (Json),
                         userId?, userRole?, orgId?, requestId?, traceId?, ip?, userAgent?, method?, path?,
                         statusCode?, durationMs?, errorName?, errorMessage?, errorStack?, environment?, instanceId?, createdAt }
 model PlatformSetting  { key @id, valueJson (Json), updatedBy?, updatedAt, createdAt }
@@ -1260,10 +1261,42 @@ model PlatformSetting  { key @id, valueJson (Json), updatedBy?, updatedAt, creat
 
 - **`SystemLog`** — операционная диагностика с ретеншеном (автоудаление по `retentionDays`).
   Намеренно **без FK**: `userId`/`orgId` — «мягкие» строки (лог переживает удаление сущности).
-  9 индексов: `createdAt`, `[level|category|contour|module|statusCode|userId|orgId, createdAt]`, `requestId`.
-  Это **не** audit trail (бизнес-аудит — `SuperAdminAccessLog`, вечный).
+  11 индексов: `createdAt`, `[level|category|contour|pipeline|module|statusCode|userId|orgId, createdAt]`,
+  `requestId`, `[traceId, createdAt]`. Это **не** audit trail (бизнес-аудит — `SuperAdminAccessLog`, вечный).
+  - `pipeline` (2026-06-03) — процессный контур цепочки; `traceId` — корреляция одной цепочки
+    (для встречи `mtg_<id>` на всех стадиях). Заполняются через `PipelineRunner` + мост Nest Logger.
 - **`PlatformSetting`** — KV-настройки платформы; ключ `logging_settings` хранит runtime-конфиг логирования.
 
 Применяется через `bun run prisma:push` (не migrate). Подробнее: [[../01_projects/logging]].
 
 [[../index|← index]]
+
+## Curation — лестница доверия (Часть A, 2026-06-03)
+
+**Источник:** `plans/tz/2026-06-02-action-center-pending-confirmations.md` (Часть A). Модуль
+`backend/src/modules/curation`. Архитектура триажа — [[knowledge-core|knowledge-core.md]] §«Лестница
+доверия», профильная заметка — [[../01_projects/curation]].
+
+**`CardVersion` (расширение):**
+
+```prisma
+trustTier  TrustTier @default(human)   // auto | provisional | human
+@@index([tenantId, trustTier])
+enum TrustTier { auto provisional human }
+```
+
+`auto` — авто-канонизация не-критического типа; `provisional` — критический тип, канонизированный
+AI-судьёй (`curation-verify` debate) без человека; `human` — прошёл человека (или дефолт для старых
+записей). Применяется `prisma db push` (новый enum + поле + индекс). Опц. будущий backfill старых
+`CardVersion` (`createdByUserId IS NULL → auto`) пока отложен — дефолт `human`.
+
+**`Org.curationSettings` (Json, новые ключи):**
+
+- `autoThresholdByType` / `deepReviewThresholdByType` — пер-типовые калиброванные пороги (fallback на
+  глобальные `autoThreshold` / `deepReviewThreshold`).
+- `provisionalThreshold` + `provisionalThresholdByType` — нижняя граница провизорной полосы для
+  критических типов.
+- `aiVerifierEnabled` (default true) — включён ли AI-судья для критических типов.
+- `auditSampleRate` (default 0.05) — доля авто/провизорных решений, попадающих в аудит-выборку.
+- Autotune guardrails: `autotuneEnabled` (default false), `maxProvisionalOverride`, `thresholdMin`,
+  `thresholdMax`, `autotuneStep`, `minDecisionsForAutotune` — для `CurationAutotuneCron`.

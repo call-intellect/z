@@ -8,6 +8,7 @@ import { ConflictService } from './services/conflict.service';
 import { CurationService } from './services/curation.service';
 import { CuratorRoutingService } from './services/curator-routing.service';
 import { CardStaleDetectorCron } from './workers/card-stale-detector.cron';
+import { CurationAutotuneCron } from './workers/curation-autotune.cron';
 import {
   CompletenessScannerCron,
   CompletenessScannerService,
@@ -30,6 +31,10 @@ import {
  *     (wave 2). Опционален: ConsistencyCheckerService инжектит ProbeService
  *     через `@Optional()` для unit-тестов.
  *   - RedisModule (@Global) — dedup-кеш для consistency-violations.
+ *   - AiModule (@Global) — MultiAgentDebateService для A1 «лестница доверия»
+ *     (AI-судья провизорной канонизации критических карточек). CurationService
+ *     инжектит его через @Optional(): в worker-процессе без AiModule зависимость
+ *     null → критические карточки безопасно идут к человеку (deep), как раньше.
  *
  * Экспортирует CurationService и ConflictService — публичный API для
  * специалистов Слоя 3 (вызывают triage / report). Также экспортирует
@@ -43,6 +48,8 @@ import {
     ConflictService,
     CuratorRoutingService,
     CardStaleDetectorCron,
+    // ── Action Center A2 «лестница доверия» (2026-06-02) ──
+    CurationAutotuneCron,
     // ── SBA α-4 wave 2 ──
     CompletenessScannerService,
     CompletenessScannerCron,

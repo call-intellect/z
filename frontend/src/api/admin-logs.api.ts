@@ -11,6 +11,7 @@ import type {
   LogCleanupResultApi,
   LoggingSettingsApi,
   SystemLogAggregatesApi,
+  SystemLogChainApi,
   SystemLogListApi,
   SystemLogRecordApi,
 } from '@/domain/system-logs';
@@ -20,6 +21,8 @@ export type SystemLogQuery = {
   levelAtLeast?: string;
   category?: string;
   contour?: string;
+  pipeline?: string;
+  traceId?: string;
   module?: string;
   userId?: string;
   orgId?: string;
@@ -52,6 +55,11 @@ export const logsApi = {
 
   getOne: (id: string) =>
     apiClient.get<SystemLogRecordApi>(`${BASE}/${encodeURIComponent(id)}`),
+
+  chain: (traceId: string, limit = 500) =>
+    apiClient.get<SystemLogChainApi>(
+      `${BASE}/chain${buildQuery({ traceId, limit })}`,
+    ),
 
   getSettings: () => apiClient.get<LoggingSettingsApi>(`${BASE}/settings`),
 

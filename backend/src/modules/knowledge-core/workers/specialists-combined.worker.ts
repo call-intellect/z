@@ -27,6 +27,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -34,6 +35,7 @@ import {
   CORE_QUEUE_NAMES,
   type SpecialistsCombinedJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import type { CombinedInputBlock } from '../prompts/specialists-combined.prompt';
 import { BlockFetchService } from '../services/block-fetch.service';
 import {
@@ -45,6 +47,9 @@ import {
 export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SpecialistsCombinedWorker.name);
   private worker: Worker<SpecialistsCombinedJobData> | null = null;
+
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
 
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
@@ -60,7 +65,10 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
   onModuleInit(): void {
     this.worker = new Worker<SpecialistsCombinedJobData>(
       CORE_QUEUE_NAMES.SPECIALISTS_COMBINED,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'kc.specialists-combined', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

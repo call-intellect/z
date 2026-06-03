@@ -587,5 +587,43 @@ CARD_ROLLUP_V2_DEBOUNCE_MS=60000      # дебаунс enqueueCardRollupV2
 
 Использовать из block-ingest / специалистов Слоя 3 — НЕ создавать `Vendor` / `Event` напрямую через `prisma.vendor.create`.
 
+## Лестница доверия в курации (Часть A, 2026-06-03)
+
+Источник: `plans/tz/2026-06-02-action-center-pending-confirmations.md` (Часть A), модуль
+`backend/src/modules/curation`. Ключевой архитектурный сдвиг в триаже `CurationService.triage`:
+
+- **Пер-типовые калиброванные пороги.** Триаж сравнивает калиброванную уверенность с
+  `autoThresholdByType` / `deepReviewThresholdByType` (хранятся в `Org.curationSettings` Json,
+  fallback на глобальные `autoThreshold` / `deepReviewThreshold`). Раньше пороги были едиными для
+  всех типов.
+
+- **Провизорный уровень доверия (`CardVersion.trustTier`, enum `TrustTier {auto | provisional | human}`).**
+  Критические типы (`regulation` / `process` / `decision`) больше **НЕ** блокируются человеком
+  безусловно. В «провизорной полосе» (`effectiveConfidence >= provisionalThreshold(ByType)`)
+  вызывается AI-судья — `MultiAgentDebateService.judge({ taskFamily: 'curation-verify' })` (3 голоса
+  разных провайдеров, см. [[../01_projects/ai-jobs]]):
+  - accept-консенсус → **провизорная канонизация** (`trustTier='provisional'`, без человека);
+  - reject / split / судья недоступен → deep `CurationItem` (человек, безопасный fallback).
+  Не-критические auto-решения → `trustTier='auto'`; всё, что прошло человека → `trustTier='human'`.
+
+- **Аудит-выборка 5%.** Доля авто/провизорных решений (`auditSampleRate`, default 0.05) превращается в
+  лёгкий `CurationItem(triageReason.reason='audit_sample')` — он **не блокирует** канонизацию, нужен
+  только для измерения частоты ошибок.
+
+- **Автоподстройка + kill-switch** — ночной `CurationAutotuneCron` (`@Cron('0 3 * * *')`,
+  см. [[../01_projects/workers-queues]]):
+  - **kill-switch (всегда активен):** если `provisionalWrongRate` (доля аудит-выборок с финалом
+    reject/mark_as_misleading/supersede) превышает `maxProvisionalOverride` и данных достаточно —
+    тип возвращается к человеку (`provisionalThresholdByType[type]=1.01`);
+  - **автоподстройка (opt-in `autotuneEnabled`, default false):** двигает `autoThresholdByType` по
+    override-rate в пределах guardrail'ов (`thresholdMin/Max`, `autotuneStep`, `minDecisionsForAutotune`).
+  Все сдвиги порогов идут через `updateSettings` + `AuditLogService.log`.
+
+Read-model: `CurationService.getOverrideStats(tenantId)` → эндпоинт
+`GET /api/v1/curation/override-stats` (доля override = (reject+approve_with_edits)/decided per
+resourceType). Метрики: `curation_provisional_total`, `curation_audit_sample_total`,
+`curation_verifier_verdict_total`, `curation_kill_switch_total`, `curation_autotune_adjustment_total`.
+Полная карта курации — [[../01_projects/curation]].
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

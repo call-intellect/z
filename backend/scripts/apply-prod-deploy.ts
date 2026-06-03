@@ -96,6 +96,9 @@ const STEPS: Step[] = [
     // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema
     // (table-infer-schema / table-architect-pass / table-entity-check).
     'smart-tables',
+    // Action Center A1 «лестница доверия» (2026-06-02) — curation-verify
+    // (debate-curation-verify[-critic|-supporter|-neutral]).
+    'curation',
     // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals):
     // goal-extract / goal-hierarchy-link / goals-pulse-summarize.
     'goals',
@@ -143,6 +146,9 @@ const STEPS: Step[] = [
     hint: 'deepseek-chat → deepseek-v4-flash во всех LlmTaskRoute',
     skipBootstrap: true,
   },
+  // 2026-06-03 — восстановить secondary/tertiary fallback для meeting-report-fast
+  // (нормализованный primary затенял legacy 3-провайдерную цепочку → single-provider timeout)
+  { phase: 'patch', script: 'scripts/patch-ensure-meeting-report-fast-fallback.ts', hint: 'fallback openai+ollama для meeting-report-fast', skipBootstrap: true },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
   // 2026-05-26 — регистрация глобального Telegram-бота в прокси

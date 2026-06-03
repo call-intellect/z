@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
   DECISION_HYGIENE_JSON_SCHEMA,
   DECISION_HYGIENE_SYSTEM_PROMPT,
@@ -52,6 +54,9 @@ export class DecisionHygieneScorerWorker
   private readonly logger = new Logger(DecisionHygieneScorerWorker.name);
   private worker: Worker<DecisionHygieneJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -61,7 +66,10 @@ export class DecisionHygieneScorerWorker
   onModuleInit(): void {
     this.worker = new Worker<DecisionHygieneJobData>(
       DASHBOARD_QUEUE_NAMES.DECISION_HYGIENE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.AI_ANALYSIS, 'dashboard.decision-hygiene', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ParticipantContextService } from '../../ai/services/participant-context.service';
@@ -15,6 +16,7 @@ import {
   CORE_QUEUE_NAMES,
   type MeetingAnalyzeV2JobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { BlockFetchService } from '../services/block-fetch.service';
 import { ChaptersExtractorV2Service } from '../services/chapters-extractor-v2.service';
 import { SummaryExtractorV2Service } from '../services/summary-extractor-v2.service';
@@ -57,6 +59,9 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MeetingAnalyzeV2Worker.name);
   private worker: Worker<MeetingAnalyzeV2JobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -76,7 +81,10 @@ export class MeetingAnalyzeV2Worker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<MeetingAnalyzeV2JobData>(
       CORE_QUEUE_NAMES.MEETING_ANALYZE_V2,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'kc.meeting-analyze-v2', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

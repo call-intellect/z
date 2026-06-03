@@ -240,6 +240,52 @@ describe('MultiAgentDebateService.judge', () => {
     expect(verdict.decision).toBe('merge');
   });
 
+  it('A1: taskFamily=curation-verify резолвит curation stance-taskType\'ы', async () => {
+    const { router, calls } = buildLlmRouter([
+      { verdict: 'accept', provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { verdict: 'accept', provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { verdict: 'accept', provider: 'deepseek', model: 'deepseek-v4-flash' },
+    ]);
+    const service = new MultiAgentDebateService(
+      router,
+      metrics as unknown as BusinessMetricsService,
+      buildCfg(),
+    );
+    const verdict = await service.judge({
+      ...baseRequest,
+      taskFamily: 'curation-verify',
+      taskType: 'debate-curation-verify',
+    });
+
+    expect(verdict.decision).toBe('accept');
+    expect(verdict.consensusType).toBe('unanimous');
+    expect(calls.map((c) => c.taskType)).toEqual([
+      'debate-curation-verify-critic',
+      'debate-curation-verify-supporter',
+      'debate-curation-verify-neutral',
+    ]);
+  });
+
+  it('A1: без taskFamily → старые decision-supersede stance-taskType\'ы (обратная совместимость)', async () => {
+    const { router, calls } = buildLlmRouter([
+      { verdict: 'new', provider: 'deepseek', model: 'deepseek-v4-pro' },
+      { verdict: 'new', provider: 'openai-via-proxy', model: 'gpt-5.4' },
+      { verdict: 'new', provider: 'deepseek', model: 'deepseek-v4-flash' },
+    ]);
+    const service = new MultiAgentDebateService(
+      router,
+      metrics as unknown as BusinessMetricsService,
+      buildCfg(),
+    );
+    await service.judge(baseRequest);
+
+    expect(calls.map((c) => c.taskType)).toEqual([
+      'debate-decision-supersede-critic',
+      'debate-decision-supersede-supporter',
+      'debate-decision-supersede-neutral',
+    ]);
+  });
+
   it('все 3 голоса упали → fallbackUsed=provider_unavailable, decision=split_uncertain', async () => {
     const { router } = buildLlmRouter([
       new Error('deepseek down'),

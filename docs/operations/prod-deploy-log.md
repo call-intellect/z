@@ -60,27 +60,45 @@ docker compose run --rm --no-deps backend \
 
 ---
 
-### 🧠 2026-06-03 — DeepSeek response_format fix + унификация дешёвой модели (`deepseek-chat` → `deepseek-v4-flash`)
+### 🪵 2026-06-03 — Логирование: процессные контуры (pipeline) + сквозной traceId + мост Nest Logger → БД
 
-**Контекст.** Боевой прогон встречи 2026-06-03 показал деградацию всего AI-слоя: `deepseek.service.ts` слал DeepSeek неподдерживаемые форматы. Probe (`scripts/eval/probe-deepseek-formats.ts` с `PROBE_MODEL=deepseek-v4-flash`) + офиц. дока подтвердили: DeepSeek-V4 (даже flash) поддерживает только `response_format: json_object` (требует слово «json» в промпте) и `tools + tool_choice='auto'`; `json_schema` (strict и без) → `400 «This response_format type is unavailable now»`, forced/required tool_choice → `400 «Thinking mode does not support…»`. Фикс провайдер-уровневый: `json_schema` для любой модели DeepSeek → авто-конверт в tool-путь; `json_object` → гарантия слова «json». Чинит `chapters`/`tasks`/`meeting-extract-actions`/`block-ingest`/`meeting-report-fast`. Параллельно выводим легаси-модель `deepseek-chat` из эксплуатации (везде `deepseek-v4-flash`).
+План: [plans/tz/2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md). Модуль `backend/src/modules/logging`.
 
-- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
-- **Шаг 6 — Patch** — `patch-deepseek-chat-to-flash.ts` — все `LlmTaskRoute` с `deepseek/deepseek-chat` (любой tier + legacy `providers[]`) → `deepseek-v4-flash`. Идемпотентен, `editedByAdmin` не трогает, повторный прогон = 0 кандидатов. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: patch`, `args: ['--apply']`, `skipBootstrap: true`). Сначала dry-run:
-  ```bash
-  docker compose exec backend bun run scripts/patch-deepseek-chat-to-flash.ts            # dry-run
-  docker compose exec backend bun run scripts/patch-deepseek-chat-to-flash.ts --apply    # запись
-  ```
-  Либо через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
-- **Шаг 7 — Seed** — 14 сидов `seed-llm-task-routes-*.ts` обновлены (`deepseek-chat`→`deepseek-v4-flash`). Для уже-засеянного прода перепрогон **не обязателен** (патч Шага 6 покрывает существующие данные); правка сидов нужна, чтобы bootstrap чистого прода не вернул `deepseek-chat`.
-- **Шаг 11 — Docker rebuild** — **обязателен** (правка `deepseek.service.ts` — это код): `docker compose up -d --build backend`.
-- **Шаг 12 — Smoke** (после rebuild, на новой встрече или ретрае пайплайна):
-  - В логах backend по taskType `chapters`/`tasks`/`block-ingest`/`meeting-extract-actions`/`meeting-report-fast` больше нет `response_format не поддерживается` и `This response_format type is unavailable now` от DeepSeek.
-  - `meeting-report-fast` отдаёт отчёт через primary DeepSeek (а не fallback на MiniMax).
-  - `curl -s localhost:3000/metrics | grep -i deepseek_schema_to_tool` — счётчик авто-конверта json_schema→tool растёт (теперь и на flash).
-  - Идемпотентность: повторный `patch-deepseek-chat-to-flash.ts` (dry-run) → `updatedTier=0, updatedLegacy=0`.
+**Что выкатывается:**
+- Новый enum `SystemLogPipeline` + поле `SystemLog.pipeline?` + 2 индекса (`[pipeline, createdAt]`, `[traceId, createdAt]`).
+- Мост `DbLoggerBridge` (`app.useLogger` в `main.ts`): все `this.logger.*` по бэкенду/воркерам дублируются в `SystemLog`.
+- HTTP-логирование (REQUEST) **отключено** — `RequestLoggingInterceptor` снят из `LoggingModule` (ошибки запросов пишет `AllExceptionsFilter`).
+- Инструментованы 48 воркеров + livekit-вебхуки (`pipeline`/`traceId`); админка — фильтр контура, вид «Цепочка» (`GET /platform/logs/chain?traceId=`), русские лейблы enum'ов.
+- **Live-стрим по WebSocket** `LogStreamGateway` (Socket.IO namespace `/ws/platform-logs`, только super_admin) — заменяет поллинг в `/admin/logs` (тумблер «● Live»). Схему БД не меняет.
+
+- **Шаг 4 — Prisma** — **обязательно** (аддитивно, без data-loss: nullable-поле `pipeline` + новый enum + 2 индекса): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер.
+- **Шаг 1 — ENV** — новых ENV нет (все `LOG_DB_*` уже существуют и опциональны). После выката HTTP-логи перестанут писаться — это ожидаемо (D3).
+- **Шаг 11 — Docker rebuild** — обязателен (правки `main.ts` + воркеров + фронт `/admin/logs`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - мост работает: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.systemLog.count({where:{pipeline:{not:null}}}).then(n=>{console.log('logs with pipeline:',n);return p.\$disconnect();});"` — после прохода встречи > 0.
+  - вид «Цепочка»: `/admin/logs` (super_admin) → у записи встречи кликнуть `traceId` (`mtg_<id>`) → Drawer «Цепочка» показывает webhook → транскрипцию → AI → KC одной лентой.
+  - REQUEST-логов больше нет: фильтр «Категория = REQUEST» за свежий период пуст.
+  - WS live: на `/admin/logs` включить «● Live» → индикатор зелёный (`connected`), новые логи появляются сверху без обновления страницы. За nginx убедиться, что `/ws/platform-logs` проксируется с `Upgrade`/`Connection` заголовками (как для существующих `/ws/*`).
 
 ---
 
+### 🪜 2026-06-03 — Action Center Часть A: Лестница доверия (пер-типовые пороги + AI-судья + autotune)
+
+План: [plans/tz/2026-06-02-action-center-pending-confirmations.md](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть A). Модуль `backend/src/modules/curation`.
+
+**Что выкатывается:**
+- A0 — триаж курации сравнивает калиброванную уверенность с пер-типовыми порогами `autoThresholdByType`/`deepReviewThresholdByType` (`Org.curationSettings`, fallback на глобальные); read-model `getOverrideStats` + `GET /api/v1/curation/override-stats` (owner/admin).
+- A1 — `CardVersion.trustTier` (enum `TrustTier {auto|provisional|human}`); критические типы (`regulation`/`process`/`decision`) в провизорной полосе проходят AI-судью `curation-verify` (3 голоса) → провизорная канонизация без человека либо deep review. Аудит-выборка 5%. Новые taskType `debate-curation-verify-*`.
+- A2 — `CurationAutotuneCron` (`@Cron('0 3 * * *')`): kill-switch (всегда активен) + автоподстройка порогов (opt-in `autotuneEnabled`).
+
+- **Шаг 4 — Prisma** — **обязательно** (новый enum `TrustTier` + поле `CardVersion.trustTier @default(human)` + `@@index([tenantId, trustTier])`; безопасно — defaulted, без data-loss): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер (`prisma db push --accept-data-loss`).
+- **Шаг 7 — Seed** — маршруты AI-судьи (идемпотентно, уже в агрегаторе `apply-prod-deploy.ts`, phase `seed-llm-routes`): `docker compose exec backend bun run scripts/seed-llm-task-routes-curation.ts` (cheap-цепочка `deepseek-v4-flash`→`gpt-5.4-mini`→`qwen3.5:9b`, без anthropic). Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Опционально — без сидера работает code-fallback chain.
+- **Шаг 11 — Docker rebuild** — обязателен (новый cron + curation-сервисы): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - новый REST: `curl -i -H 'Cookie:<owner_session>' -H 'X-Org-Id:<orgId>' https://prod.host/api/v1/curation/override-stats` → 200 (доля override per resourceType).
+  - новый cron зарегистрирован: `docker compose logs backend | grep -E 'CurationAutotuneCron'`.
+  - новые LLM taskType: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.llmTaskRoute.count({where:{taskType:{startsWith:'debate-curation-verify-'}}}).then(n=>{console.log('curation-verify routes:',n);return p.\$disconnect();});"`.
+- **Заметка (долг):** опц. будущий backfill `CardVersion.trustTier` (existing → `auto` при `createdByUserId IS NULL`) — пока отложен, дефолт `human` безопасен.
 ### 🎯 2026-06-02 — Goals OKR v2 (Граф целей): специалист 3-14 + авто-прогресс + пульс + дерево
 
 **Контекст.** Достройка модуля `goals` до «графа целей» (Цель → измеримые Key Results): авто-добыча из встреч (специалист `3-14-goals`), авто-прогресс KR (cron), еженедельный пульс (cron + доставка), дерево + мост к гипотезам. Принцип M0 — ручной контроль первичен, авто не перетирает `manualOverride`-поля. Изменения схемы **аддитивны** (только новые модели/поля/enum/FK). ТЗ — `plans/tz/2026-06-02-goals-okr-v2.md`.
@@ -1655,6 +1673,13 @@ docker compose exec backend bun run scripts/patch-prompt-role-profile-build-fase
 docker compose exec backend bun run scripts/patch-chat-v2-to-pro.ts
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
+
+# 6.12 — Восстановить fallback-цепочку meeting-report-fast (2026-06-03)
+# Нормализованный primary (deepseek-v4-pro) затенял legacy 3-провайдерную
+# цепочку → single-provider timeout без fallback. Дописывает secondary
+# (openai-via-proxy/gpt-5.4-mini) + tertiary (ollama/qwen3.5:9b). Идемпотентен.
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts --dry-run
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts
 
 # 6.10 — Первичная миграция грантов CloneAccessGrant (2026-05-26, коммит 87fef5d)
 # ОБЯЗАТЕЛЬНО ДО переключения CLONE_V2_ENABLED=true (см. Шаг 1).

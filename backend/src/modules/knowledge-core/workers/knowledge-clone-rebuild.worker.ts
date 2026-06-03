@@ -7,11 +7,13 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { RedisService } from '../../../common/redis/redis.service';
 import {
   CORE_QUEUE_NAMES,
   type RebuildKnowledgeProfileJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { Specialist32Service } from '../services/specialist-3-2-knowledge-clone.service';
 
 /**
@@ -37,6 +39,9 @@ export class KnowledgeCloneRebuildWorker
   private readonly logger = new Logger(KnowledgeCloneRebuildWorker.name);
   private worker: Worker<RebuildKnowledgeProfileJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(Specialist32Service)
@@ -46,7 +51,10 @@ export class KnowledgeCloneRebuildWorker
   onModuleInit(): void {
     this.worker = new Worker<RebuildKnowledgeProfileJobData>(
       CORE_QUEUE_NAMES.KNOWLEDGE_CLONE_REBUILD,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.knowledge-clone-rebuild', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

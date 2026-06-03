@@ -8,6 +8,7 @@ import {
 import { type DataClass, type ProbeEvent } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -21,6 +22,7 @@ import {
   PROBE_FORMULATE_SYSTEM_PROMPT,
   PROBE_FORMULATE_USER_TEMPLATE,
 } from '../knowledge-core/prompts/probe-formulate.prompt';
+import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
 import { ProbeService } from './probe.service';
 
@@ -52,6 +54,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProbeDispatcherWorker.name);
   private worker: Worker<ProbeEventJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -67,7 +72,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<ProbeEventJobData>(
       CORE_QUEUE_NAMES.PROBE_EVENTS,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.NOTIFICATIONS, 'probe.dispatcher', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

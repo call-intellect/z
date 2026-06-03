@@ -256,7 +256,7 @@ export class Specialist32Service {
 
       // 7. Triage. knowledge_profile НЕ в critical-types → auto-canonical
       //    при confidence ≥ autoThresholdDefault.
-      let triageDecision: 'auto' | 'light' | 'deep' = 'deep';
+      let triageDecision: 'auto' | 'provisional' | 'light' | 'deep' = 'deep';
       try {
         const res = await this.curation.triage({
           tenantId: args.tenantId,

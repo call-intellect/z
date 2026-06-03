@@ -171,6 +171,8 @@ export const meetingsApi = {
       `/api/v1/meetings${buildListQuery(opts)}`,
     ),
 
+  // X-Org-Id добавляется api-client'ом по умолчанию (текущая Org из auth-context).
+  // Нужен глобальному SubscriptionGuard на бэке. См. api-client.setApiClientOrgId.
   create: (body: CreateMeetingApiRequest) =>
     apiClient.post<CreateMeetingApiResponse>('/api/v1/meetings', body),
 

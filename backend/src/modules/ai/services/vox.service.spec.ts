@@ -97,6 +97,47 @@ describe('VoxService.poll', () => {
     expect(result.durationSeconds).toBe(1.5);
   });
 
+  it('COMPLETED с текстом под ключом `text` (top-level) — парсится', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ status: 'COMPLETED', text: 'Текст под другим ключом', durationSeconds: 2 }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.transcriptText).toBe('Текст под другим ключом');
+  });
+
+  it('COMPLETED с вложенным result.{text,words} — парсится', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          result: {
+            text: 'Вложенный текст',
+            durationSeconds: 3,
+            words: [{ word: 'Вложенный', startMs: 0, endMs: 400 }],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.transcriptText).toBe('Вложенный текст');
+    expect(result.words).toHaveLength(1);
+    expect(result.durationSeconds).toBe(3);
+  });
+
   it('FAILED — VoxError с errorMessage', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(

@@ -24,8 +24,10 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { OnboardingService } from '../onboarding.service';
 
 import {
@@ -38,6 +40,9 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DemoCleanupWorker.name);
   private worker: Worker<DemoCleanupJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(OnboardingService) private readonly onboarding: OnboardingService,
@@ -47,7 +52,10 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<DemoCleanupJobData>(
       DEMO_CLEANUP_QUEUE_NAME,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.ONBOARDING, 'onboarding.demo-cleanup', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

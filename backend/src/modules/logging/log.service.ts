@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 
 import { Injectable } from '@nestjs/common';
@@ -15,6 +16,7 @@ import {
   SystemLogCategory,
   SystemLogContour,
   type SystemLogLevel,
+  type SystemLogPipeline,
   type WriteLogInput,
 } from './log.constants';
 import { RequestContextService } from './request-context.service';
@@ -33,6 +35,8 @@ export interface LogQueryFilters {
   levelAtLeast?: SystemLogLevel;
   category?: SystemLogCategory;
   contour?: SystemLogContour;
+  pipeline?: SystemLogPipeline;
+  traceId?: string;
   module?: string;
   userId?: string;
   orgId?: string;
@@ -68,6 +72,8 @@ export function buildLogWhere(
 
   if (f.category) where.category = f.category;
   if (f.contour) where.contour = f.contour;
+  if (f.pipeline) where.pipeline = f.pipeline;
+  if (f.traceId) where.traceId = f.traceId;
   if (f.module) where.module = f.module;
   if (f.userId) where.userId = f.userId;
   if (f.orgId) where.orgId = f.orgId;
@@ -127,10 +133,15 @@ export class LogService {
         return;
       }
 
-      const module = input.module;
+      // module: прямое значение → из контекста (напр. имя стадии цепочки).
+      const module = input.module ?? this.ctx.module;
       if (module && cfg.disabledModules.includes(module)) return;
 
       const entry: SystemLogEntry = {
+        // Явные id/createdAt — чтобы live-стрим (LogStreamGateway) отдавал те же
+        // значения, что попадут в БД (иначе они генерятся БД и в стриме их нет).
+        id: randomUUID(),
+        createdAt: new Date(),
         level: input.level,
         category,
         contour: input.contour ?? SystemLogContour.SYSTEM,
@@ -142,18 +153,23 @@ export class LogService {
       if (module) entry.module = module;
       if (input.action) entry.action = input.action;
 
+      // Процессный контур цепочки: прямое значение → из контекста.
+      const pipeline = input.pipeline ?? this.ctx.pipeline;
+      if (pipeline) entry.pipeline = pipeline;
+
       // Обогащение из request-context (если есть прямые значения — приоритет им).
       const userId = input.userId ?? this.ctx.userId;
       const userRole = input.userRole ?? this.ctx.userRole;
       const orgId = input.orgId ?? this.ctx.orgId;
       const requestId = input.requestId ?? this.ctx.requestId;
+      const traceId = input.traceId ?? this.ctx.traceId;
       const path = input.path ?? this.ctx.route;
 
       if (userId) entry.userId = userId;
       if (userRole) entry.userRole = userRole;
       if (orgId) entry.orgId = orgId;
       if (requestId) entry.requestId = requestId;
-      if (input.traceId) entry.traceId = input.traceId;
+      if (traceId) entry.traceId = traceId;
       if (input.ip) entry.ip = input.ip;
       if (input.userAgent) entry.userAgent = truncate(input.userAgent, MAX_UA_LEN);
       if (input.method) entry.method = input.method;
@@ -254,16 +270,37 @@ export class LogService {
     return this.prisma.systemLog.findUnique({ where: { id } });
   }
 
+  /**
+   * Все записи одной цепочки по `traceId`, по времени (asc) — для вида
+   * «Цепочка» в админке (полная трассировка одного действия сквозь модули).
+   */
+  async chain(
+    traceId: string,
+    limit: number,
+  ): Promise<{ traceId: string; total: number; items: unknown[] }> {
+    const where: Prisma.SystemLogWhereInput = { traceId };
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.systemLog.count({ where }),
+      this.prisma.systemLog.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        take: limit,
+      }),
+    ]);
+    return { traceId, total, items };
+  }
+
   async aggregates(dateFrom: Date, dateTo: Date): Promise<unknown> {
     const where: Prisma.SystemLogWhereInput = {
       createdAt: { gte: dateFrom, lt: dateTo },
     };
 
-    const [total, byLevelRaw, byCategoryRaw, durationAgg, topModulesRaw, topPathsRaw] =
+    const [total, byLevelRaw, byCategoryRaw, byPipelineRaw, durationAgg, topModulesRaw, topPathsRaw] =
       await Promise.all([
         this.prisma.systemLog.count({ where }),
         this.prisma.systemLog.groupBy({ by: ['level'], where, _count: { _all: true } }),
         this.prisma.systemLog.groupBy({ by: ['category'], where, _count: { _all: true } }),
+        this.prisma.systemLog.groupBy({ by: ['pipeline'], where, _count: { _all: true } }),
         this.prisma.systemLog.aggregate({
           where: { ...where, category: SystemLogCategory.REQUEST },
           _avg: { durationMs: true },
@@ -290,6 +327,11 @@ export class LogService {
     const byCategory = Object.fromEntries(
       byCategoryRaw.map((r) => [r.category, r._count._all]),
     ) as Record<string, number>;
+    const byPipeline = Object.fromEntries(
+      byPipelineRaw
+        .filter((r) => r.pipeline != null)
+        .map((r) => [r.pipeline, r._count._all]),
+    ) as Record<string, number>;
 
     const errorCount = (byLevel['ERROR'] ?? 0) + (byLevel['FATAL'] ?? 0);
     const warnCount = byLevel['WARN'] ?? 0;
@@ -299,6 +341,7 @@ export class LogService {
       total,
       byLevel,
       byCategory,
+      byPipeline,
       errorCount,
       warnCount,
       avgRequestDurationMs: durationAgg._avg.durationMs ?? null,

@@ -28,7 +28,6 @@ import {
   Param,
   Post,
   UseGuards,
-  UsePipes,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -126,10 +125,9 @@ export class AdminBillingController {
     summary: 'Включить ACTIVE-подписку (paid/bonus) с reason ≥3 символа.',
   })
   @ApiOkResponse({ type: AdminActivateResultDto })
-  @UsePipes(new ZodValidationPipe(AdminActivateBodySchema))
   async activate(
     @Param('tenantId') tenantId: string,
-    @Body() body: AdminActivateBody,
+    @Body(new ZodValidationPipe(AdminActivateBodySchema)) body: AdminActivateBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<AdminActivateResultBody> {
     const result = await this.manual.activate({
@@ -155,10 +153,10 @@ export class AdminBillingController {
     summary: 'Изменить число доп. мест. При увеличении — pro-rata Invoice.',
   })
   @ApiOkResponse({ type: AdminActivateResultDto })
-  @UsePipes(new ZodValidationPipe(AdminAdjustSeatsBodySchema))
   async adjustSeats(
     @Param('tenantId') tenantId: string,
-    @Body() body: AdminAdjustSeatsBody,
+    @Body(new ZodValidationPipe(AdminAdjustSeatsBodySchema))
+    body: AdminAdjustSeatsBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{
     subscriptionId: string;
@@ -185,10 +183,10 @@ export class AdminBillingController {
     summary: 'Принудительный перевод статуса (обход FSM, super_admin).',
   })
   @ApiOkResponse({ type: SubscriptionViewDto })
-  @UsePipes(new ZodValidationPipe(AdminForceStatusBodySchema))
   async forceStatus(
     @Param('tenantId') tenantId: string,
-    @Body() body: AdminForceStatusBody,
+    @Body(new ZodValidationPipe(AdminForceStatusBodySchema))
+    body: AdminForceStatusBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<SubscriptionViewBody> {
     const sub = await this.manual.forceStatus({
@@ -240,10 +238,9 @@ export class AdminBillingController {
     summary: 'Отметить инвойс оплаченным (по банковскому переводу).',
   })
   @ApiOkResponse({ type: InvoiceViewDto })
-  @UsePipes(new ZodValidationPipe(AdminMarkPaidBodySchema))
   async markInvoicePaid(
     @Param('id') invoiceId: string,
-    @Body() body: AdminMarkPaidBody,
+    @Body(new ZodValidationPipe(AdminMarkPaidBodySchema)) body: AdminMarkPaidBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<InvoiceViewBody> {
     const inv = await this.invoices.findOrFail(invoiceId);
@@ -272,10 +269,10 @@ export class AdminBillingController {
   @Post('billing/invoices/:id/void')
   @ApiOperation({ summary: 'Отменить инвойс (только из draft/issued).' })
   @ApiOkResponse({ type: InvoiceViewDto })
-  @UsePipes(new ZodValidationPipe(AdminVoidInvoiceBodySchema))
   async voidInvoice(
     @Param('id') invoiceId: string,
-    @Body() body: AdminVoidInvoiceBody,
+    @Body(new ZodValidationPipe(AdminVoidInvoiceBodySchema))
+    body: AdminVoidInvoiceBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<InvoiceViewBody> {
     const voided = await this.invoices.void({

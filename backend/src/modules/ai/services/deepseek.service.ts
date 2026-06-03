@@ -132,16 +132,15 @@ export class DeepSeekService {
     const fmt = input.responseFormat;
     const callerHasTools = !!(input.tools && input.tools.length > 0);
 
-    // Детектор thinking-моделей (`llm-thinking-models.ts`) нужен теперь только
-    // для reasoning.effort. Для выбора формата он БОЛЬШЕ не используется:
-    // probe 2026-06-03 (scripts/eval/probe-deepseek-formats.ts) + офиц. дока
-    // DeepSeek показали, что у DeepSeek-V4 даже flash не поддерживает
-    // response_format=json_schema (400 «This response_format type is unavailable
-    // now») и forced/required tool_choice («Thinking mode does not support…»).
+    // ТЗ 2026-05-25 §4 + Фаза 1 — детектор thinking-моделей через единый helper
+    // (`llm-thinking-models.ts`). Pro / *-pro / *-thinking падают 400 на strict
+    // json_schema и forced tool_choice. Нужен ниже для reasoning-effort.
     const isThinking = isThinkingModel(model);
-    // json_schema ВСЕГДА реализуем через tool-путь (tools + tool_choice='auto')
-    // для ЛЮБОЙ модели DeepSeek — раньше конверт включался лишь для thinking,
-    // из-за чего flash/chat падали на каждом chapters/tasks/block-ingest.
+    // Фикс 2026-06-03 (mtg_01KT6HQ…): прокси отдаёт «This response_format type
+    // is unavailable now» для json_schema на ВСЕХ deepseek-моделях (flash/chat
+    // тоже, не только thinking-pro). Поэтому конвертируем json_schema →
+    // synthetic tool для любой модели, а не только thinking. Tools +
+    // tool_choice='auto' поддерживаются всеми, ответ достаём из tool_calls.
     const autoConvert = fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
@@ -166,25 +165,39 @@ export class DeepSeekService {
       }
       // response_format НЕ выставляем — модель ответит через tool_calls.
     } else if (fmt) {
-      // json_schema + caller уже передал свои tools: json_schema всё равно
-      // нельзя (DeepSeek не поддерживает его ни на одной модели). Снимаем тихо —
-      // остаются tools + tool_choice='auto' (выставляются ниже).
-      const stripSchema = fmt.type === 'json_schema' && callerHasTools;
-      if (stripSchema) {
-        // Метрика + лог для observability — caller передал нерабочий параметр.
+      // Фикс 2026-06-03 — strict json_schema не поддерживается ни одной
+      // deepseek-моделью текущего прокси. Если caller уже передал tools —
+      // forced-конверт не нужен, просто снимаем json_schema (оставляем
+      // tools + tool_choice='auto'), не выставляя response_format.
+      const skipStrict = fmt.type === 'json_schema' && callerHasTools;
+      if (skipStrict) {
+        // Метрика + лог для observability — caller передал лишний параметр.
         this.metrics?.incLlmThinkingModelGuard({
           kind: 'strict-stripped',
           model,
         });
         this.logger.warn(
-          `DeepSeek: json_schema снят на ${model} — DeepSeek не поддерживает response_format=json_schema; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем tools + tool_choice='auto'.`,
+          `DeepSeek: strict json_schema снят на ${model}; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем только tools + tool_choice='auto'.`,
         );
       } else if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };
-        // DeepSeek JSON mode требует слово «json» в system/user, иначе
-        // 400 «Prompt must contain the word 'json'». Гарантируем его наличие,
-        // не трогая SYSTEM (стабильный SYSTEM важен для prompt caching).
-        this.ensureJsonWord(messages);
+        // DeepSeek/OpenAI json_object mode требует слово "json" в сообщениях,
+        // иначе 400 «Prompt must contain the word 'json'... to use
+        // 'response_format' of type 'json_object'». Гарантируем его наличие
+        // (иначе meeting-report-fast и др. промпты без слова JSON падают).
+        const hasJsonWord = messages.some((m) => /json/i.test(m.content));
+        if (!hasJsonWord && messages[0]) {
+          messages[0].content += '\n\nФормат ответа: верни валидный JSON.';
+        }
+      } else if (fmt.type === 'json_schema') {
+        params['response_format'] = {
+          type: 'json_schema',
+          json_schema: {
+            name: fmt.name,
+            strict: fmt.strict,
+            schema: fmt.schema,
+          },
+        };
       }
       // json_schema без caller-tools сюда не доходит — обработан autoConvert.
     }

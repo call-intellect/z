@@ -8,7 +8,7 @@ import type {
   LlmCompleteOutput,
   LlmToolCall,
 } from './llm.types';
-import { LlmError, LlmFormatNotSupportedError } from './llm.types';
+import { LlmError } from './llm.types';
 
 /**
  * Ollama через OpenAI-совместимый endpoint `/v1/chat/completions`.
@@ -17,7 +17,8 @@ import { LlmError, LlmFormatNotSupportedError } from './llm.types';
  * - apiKey: `cfg.ai.ollama.apiKey` (опционально; default = пустая строка → `'no-key'`).
  * - Дефолт-модель: `qwen3:30b-a3b-instruct-2507`.
  * - JSON-mode: `response_format: {type:'json_object'}` поддерживается нативно.
- * - JSON Schema strict: НЕ поддерживается → `LlmFormatNotSupportedError`.
+ * - JSON Schema strict: НЕ поддерживается → тихий downgrade в json_object
+ *   (+ слово «json» в промпте). Структуру гарантирует zod-валидация в сервисах.
  * - Embeddings (`bge-m3`) — TODO Фаза 11.
  */
 @Injectable()
@@ -40,9 +41,13 @@ export class OllamaService {
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
 
+    // Фикс 2026-06-03 — Ollama не поддерживает strict json_schema, но это
+    // tertiary-провайдер: вместо throw (= гарантированное падение всей задачи)
+    // тихо деградируем json_schema → json_object. Структуру гарантирует
+    // zod-валидация на стороне сервисов (см. buildParams).
     if (input.responseFormat?.type === 'json_schema') {
-      throw new LlmFormatNotSupportedError(
-        `Ollama: json_schema strict не поддерживается (модель=${model}); используй json_object + zod-валидацию`,
+      this.logger.debug(
+        `Ollama: json_schema → json_object downgrade (модель=${model}, schema=${input.responseFormat.name})`,
       );
     }
 
@@ -95,8 +100,20 @@ export class OllamaService {
     if (input.temperature !== undefined) {
       params['temperature'] = input.temperature;
     }
-    if (input.responseFormat?.type === 'json_object') {
+    // json_object — нативно; json_schema деградируем в json_object (strict
+    // не поддерживается Ollama). В обоих случаях гарантируем слово «json» в
+    // промпте — иначе OpenAI-compat сервер отвергает json_object режим.
+    const fmtType = input.responseFormat?.type;
+    if (fmtType === 'json_object' || fmtType === 'json_schema') {
       params['response_format'] = { type: 'json_object' };
+      const messages = params['messages'] as Array<{
+        role: string;
+        content: string;
+      }>;
+      const hasJsonWord = messages.some((m) => /json/i.test(m.content));
+      if (!hasJsonWord && messages[0]) {
+        messages[0].content += '\n\nФормат ответа: верни валидный JSON.';
+      }
     }
     if (input.tools && input.tools.length > 0) {
       params['tools'] = input.tools.map((t) => ({

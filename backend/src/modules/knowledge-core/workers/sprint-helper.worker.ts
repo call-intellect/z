@@ -7,11 +7,13 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { RedisService } from '../../../common/redis/redis.service';
 import {
   CORE_QUEUE_NAMES,
   type SprintHelperJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { SprintHelperService } from '../services/sprint-helper.service';
 
 /**
@@ -30,6 +32,9 @@ export class SprintHelperWorker implements OnModuleInit, OnModuleDestroy {
 
   static readonly JOB_NAME = '3-13-sprint-helper';
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(SprintHelperService) private readonly svc: SprintHelperService,
@@ -38,7 +43,10 @@ export class SprintHelperWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<SprintHelperJobData>(
       CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.sprint-helper', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

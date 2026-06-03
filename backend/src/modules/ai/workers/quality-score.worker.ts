@@ -33,9 +33,11 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { S3Service } from '../../recordings/s3.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { LlmRouterService } from '../services/llm-router.service';
@@ -61,6 +63,9 @@ export class QualityScoreWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QualityScoreWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -76,7 +81,10 @@ export class QualityScoreWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.QUALITY_SCORE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'ai.quality-score', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

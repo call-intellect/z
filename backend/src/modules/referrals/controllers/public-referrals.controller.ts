@@ -21,7 +21,6 @@ import {
   Headers,
   Inject,
   Post,
-  UsePipes,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -43,14 +42,14 @@ export class PublicReferralsController {
   @Post('attribution')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @UsePipes(new ZodValidationPipe(PublicAttributionBodySchema))
   @ApiOperation({
     summary: 'Beacon от лендинга: зафиксировать касание (slug+fingerprint+referer).',
     description:
       'Public-эндпоинт. Rate-limit 10/мин/IP. Не возвращает ничего (204).',
   })
   async record(
-    @Body() body: PublicAttributionBody,
+    @Body(new ZodValidationPipe(PublicAttributionBodySchema))
+    body: PublicAttributionBody,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string | undefined,
   ): Promise<void> {

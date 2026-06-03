@@ -55,14 +55,56 @@ export class MultiAgentDebateService {
   private readonly logger = new Logger(MultiAgentDebateService.name);
 
   /**
-   * Stance-specific `LlmTaskType`'ы. Каждый — отдельный route в БД,
-   * админ может тюнить модели каждого голоса.
+   * Stance-specific `LlmTaskType`'ы по семейству задачи (`taskFamily`).
+   * Каждый stance — отдельный route в БД, админ может тюнить модели голоса.
+   *
+   * A1 «лестница доверия» (2026-06-02) — добавлено семейство `curation-verify`
+   * (AI-судья канонизации критических карточек). Семейство `decision-supersede`
+   * — историческое (специалист 3-3), поведение НЕ меняется.
    */
-  private static readonly STANCE_TASK_TYPES = {
-    'strict-critic': 'debate-decision-supersede-critic',
-    'empathetic-supporter': 'debate-decision-supersede-supporter',
-    'neutral-judge': 'debate-decision-supersede-neutral',
-  } as const;
+  private static readonly STANCE_TASK_TYPES_BY_FAMILY: Record<
+    DebateTaskFamily,
+    Record<DebateStance, string>
+  > = {
+    'decision-supersede': {
+      'strict-critic': 'debate-decision-supersede-critic',
+      'empathetic-supporter': 'debate-decision-supersede-supporter',
+      'neutral-judge': 'debate-decision-supersede-neutral',
+    },
+    'curation-verify': {
+      'strict-critic': 'debate-curation-verify-critic',
+      'empathetic-supporter': 'debate-curation-verify-supporter',
+      'neutral-judge': 'debate-curation-verify-neutral',
+    },
+  };
+
+  /**
+   * Резолв stance + семейство задачи → конкретный `LlmTaskType` (route в БД).
+   * Default-семейство — `decision-supersede` (обратная совместимость).
+   */
+  private resolveStanceTaskType(
+    family: DebateTaskFamily,
+    stance: DebateStance,
+  ): string {
+    const byStance =
+      MultiAgentDebateService.STANCE_TASK_TYPES_BY_FAMILY[family] ??
+      MultiAgentDebateService.STANCE_TASK_TYPES_BY_FAMILY['decision-supersede'];
+    return byStance[stance];
+  }
+
+  /**
+   * Резолв SYSTEM-промпта по семейству + stance. Каждый промпт стабилен
+   * (cache-friendly): переменные данные приходят в user-message.
+   */
+  private resolveStanceSystemPrompt(
+    family: DebateTaskFamily,
+    stance: DebateStance,
+  ): string {
+    const byStance =
+      STANCE_SYSTEM_PROMPTS_BY_FAMILY[family] ??
+      STANCE_SYSTEM_PROMPTS_BY_FAMILY['decision-supersede'];
+    return byStance[stance];
+  }
 
   constructor(
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
@@ -89,6 +131,7 @@ export class MultiAgentDebateService {
    * `z_debate_fallback_to_single_total`.
    */
   async judge(req: DebateRequest): Promise<DebateVerdict> {
+    const family: DebateTaskFamily = req.taskFamily ?? 'decision-supersede';
     const n = req.n ?? this.cfg?.debate.defaultN ?? 3;
     const rounds = req.rounds ?? this.cfg?.debate.defaultRounds ?? 1;
     const costCap = this.cfg?.debate.costCapUsdPerRun ?? 0.05;
@@ -107,6 +150,7 @@ export class MultiAgentDebateService {
       targetStances.map((stance) =>
         this.callOneStance({
           stance,
+          family,
           task: req.task,
           candidates: req.candidates,
           contextBlocks: req.contextBlocks,
@@ -204,6 +248,7 @@ export class MultiAgentDebateService {
         targetStances.map((stance) =>
           this.callOneStance({
             stance,
+            family,
             task: req.task,
             candidates: req.candidates,
             contextBlocks: req.contextBlocks,
@@ -255,14 +300,15 @@ export class MultiAgentDebateService {
    */
   private async callOneStance(args: {
     stance: DebateStance;
+    family: DebateTaskFamily;
     task: string;
     candidates: unknown[];
     contextBlocks: unknown[];
     tenantId: string;
     priorVotes: DebateVote[] | null;
   }): Promise<DebateVote> {
-    const taskType = MultiAgentDebateService.STANCE_TASK_TYPES[args.stance];
-    const systemPrompt = STANCE_SYSTEM_PROMPTS[args.stance];
+    const taskType = this.resolveStanceTaskType(args.family, args.stance);
+    const systemPrompt = this.resolveStanceSystemPrompt(args.family, args.stance);
     const userMessage = this.buildUserMessage({
       task: args.task,
       candidates: args.candidates,
@@ -446,10 +492,23 @@ export type DebateStance =
   | 'empathetic-supporter'
   | 'neutral-judge';
 
+/**
+ * Семейство debate-задачи. Определяет, какие stance-specific `LlmTaskType`'ы
+ * и SYSTEM-промпты использовать. Default — `decision-supersede` (специалист
+ * 3-3, историческое поведение). `curation-verify` (A1) — AI-судья канонизации
+ * критических карточек Слоя 4.
+ */
+export type DebateTaskFamily = 'decision-supersede' | 'curation-verify';
+
 export interface DebateRequest {
   task: string;
   candidates: unknown[];
   contextBlocks: unknown[];
+  /**
+   * Семейство задачи (определяет stance-taskType'ы и промпты). Default —
+   * `decision-supersede` (обратная совместимость со специалистом 3-3).
+   */
+  taskFamily?: DebateTaskFamily;
   /** Сколько голосов в round 1. Default из `cfg.debate.defaultN` (3). */
   n?: number;
   /** Сколько round'ов. Default из `cfg.debate.defaultRounds` (1). */
@@ -515,6 +574,47 @@ const STANCE_SYSTEM_PROMPTS: Record<DebateStance, string> = {
     'Дай честную оценку: что говорит за, что против, и какое решение более обосновано фактами.',
     'Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
   ].join('\n'),
+};
+
+/**
+ * A1 «лестница доверия» (2026-06-02) — stance-промпты семейства
+ * `curation-verify`: AI-судья решает, должна ли критическая карточка
+ * (regulation / process / decision) быть провизорно канонизирована в память
+ * компании. Verdict строго `accept | reject`.
+ *
+ * Совместимость с prompt caching: SYSTEM каждого stance — стабильная строка
+ * без переменных данных (resourceType / payload приходят в конце USER-message
+ * через `buildUserMessage`). Это держит cache hit ≈99% (DeepSeek/OpenAI-proxy
+ * кэшируют стабильный префикс). См. feedback `LLM-промпты — cache-friendly`.
+ */
+const CURATION_VERIFY_SYSTEM_PROMPTS: Record<DebateStance, string> = {
+  'strict-critic': [
+    'Ты — строгий критик-аудитор знаний компании. Решаешь, должна ли карточка быть канонизирована в постоянную память компании.',
+    'Default — reject при любом сомнении. Голосуй reject, если формулировка расплывчата, не обоснована фактами, противоречит здравому смыслу, дублирует существующее знание или источник вызывает сомнение.',
+    'Verdict строго: accept | reject. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+  ].join('\n'),
+  'empathetic-supporter': [
+    'Ты — поддерживающий арбитр-куратор знаний компании. Решаешь, должна ли карточка быть канонизирована в постоянную память компании.',
+    'Default — accept при наличии осмысленного, обоснованного содержания. Сомнения трактуй в пользу карточки, если нет явных противоречий или вреда.',
+    'Verdict строго: accept | reject. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+  ].join('\n'),
+  'neutral-judge': [
+    'Ты — нейтральный арбитр качества знаний компании. Взвесь pro и contra канонизации карточки одинаково: ни критик, ни сторонник.',
+    'Оцени: корректна ли карточка, обоснована ли фактами, достаточно ли ясна формулировка, чтобы стать каноническим знанием компании.',
+    'Verdict строго: accept | reject. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+  ].join('\n'),
+};
+
+/**
+ * Резолв SYSTEM-промптов по семейству задачи. Каждое семейство — свой набор
+ * stance-промптов. Default-семейство — `decision-supersede`.
+ */
+const STANCE_SYSTEM_PROMPTS_BY_FAMILY: Record<
+  DebateTaskFamily,
+  Record<DebateStance, string>
+> = {
+  'decision-supersede': STANCE_SYSTEM_PROMPTS,
+  'curation-verify': CURATION_VERIFY_SYSTEM_PROMPTS,
 };
 
 export const DEBATE_VOTE_SCHEMA_NAME = 'debate_vote_v1';

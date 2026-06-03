@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { TABLES_QUEUE_NAMES, type TableEnrichJobData } from '../queues';
 import { TableEnrichService } from '../services/table-enrich.service';
 
@@ -36,6 +38,9 @@ export class TableEnrichWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TableEnrichWorker.name);
   private worker: Worker<TableEnrichJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(TableEnrichService) private readonly enrich: TableEnrichService,
@@ -45,7 +50,10 @@ export class TableEnrichWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<TableEnrichJobData>(
       TABLES_QUEUE_NAMES.ENRICH,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'tables.enrich', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 4,

@@ -10,6 +10,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type Entity, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -18,6 +19,7 @@ import {
   type EntityResolverJobData,
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ENTITY_ARCHIVED } from '../../tables/events/entity-sync.events';
 import { EntityMergeService } from '../services/entity-merge.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
@@ -50,6 +52,9 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EntityResolverWorker.name);
   private worker: Worker<EntityResolverJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -68,7 +73,10 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<EntityResolverJobData>(
       CORE_QUEUE_NAMES.ENTITY_RESOLVER,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.entity-resolver', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

@@ -21,6 +21,8 @@ import { SuperAdminGuard } from '../auth/guards/super-admin.guard';
 import {
   AggregatesQuerySchema,
   type AggregatesQueryDto,
+  ChainQuerySchema,
+  type ChainQueryDto,
   SystemLogQuerySchema,
   type SystemLogQueryDto,
   UpdateLoggingSettingsSchema,
@@ -60,6 +62,8 @@ export class SystemLogsController {
       ...(q.levelAtLeast ? { levelAtLeast: q.levelAtLeast } : {}),
       ...(q.category ? { category: q.category } : {}),
       ...(q.contour ? { contour: q.contour } : {}),
+      ...(q.pipeline ? { pipeline: q.pipeline } : {}),
+      ...(q.traceId ? { traceId: q.traceId } : {}),
       ...(q.module ? { module: q.module } : {}),
       ...(q.userId ? { userId: q.userId } : {}),
       ...(q.orgId ? { orgId: q.orgId } : {}),
@@ -82,6 +86,14 @@ export class SystemLogsController {
     const to = q.dateTo ?? new Date();
     const from = q.dateFrom ?? new Date(to.getTime() - WEEK_MS);
     return this.logs.aggregates(from, to);
+  }
+
+  @Get('chain')
+  @ApiOperation({
+    summary: 'Вся цепочка логов по traceId (по времени, asc) — трассировка одного действия.',
+  })
+  async chain(@Query(new ZodValidationPipe(ChainQuerySchema)) q: ChainQueryDto) {
+    return this.logs.chain(q.traceId, q.limit);
   }
 
   @Get('settings')

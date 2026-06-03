@@ -20,6 +20,8 @@ import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 
 import {
+  ConfirmPendingActionBodySchema,
+  type ConfirmPendingActionBody,
   ListPendingActionsQuerySchema,
   type ListPendingActionsQuery,
   SnoozePendingActionBodySchema,
@@ -95,6 +97,27 @@ export class PendingActionsController {
       resourceId: body.resourceId,
       hours: body.hours,
     });
+  }
+
+  @Post('confirm')
+  @ApiOperation({
+    summary:
+      'Быстрое подтверждение item\'а (B4): one-tap approve для light-curation',
+  })
+  async confirm(
+    @Body(new ZodValidationPipe(ConfirmPendingActionBodySchema))
+    body: ConfirmPendingActionBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.svc.confirm({
+      tenantId: t,
+      userId: user.id,
+      source: body.source,
+      resourceId: body.resourceId,
+    });
+    return { ok: true };
   }
 
   private requireTenant(tenantId: string | undefined): string {

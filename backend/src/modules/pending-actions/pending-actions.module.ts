@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { CurationModule } from '../curation/curation.module';
 
 import { PendingActionsController } from './pending-actions.controller';
 import { ConflictPendingProvider } from './providers/conflict.provider';
@@ -23,12 +24,16 @@ import { PendingActionsReminderCron } from './workers/pending-actions-reminder.c
  *   - Action Center B3: PendingActionsReminderCron использует RedisService,
  *     BusinessMetricsService, ConversationalService — все @Global, импорт не нужен.
  *     ScheduleModule.forRoot() — в AppModule (для @Cron).
+ *   - Action Center B4: CurationModule (экспортирует CurationService) — делегат
+ *     быстрого подтверждения light-curation (POST /pending-actions/confirm).
  *
  * Экспортирует PendingActionsService — для будущих потребителей (Telegram,
  * дашборд CEO, ежедневный дайджест операций).
  */
 @Module({
-  imports: [PrismaModule],
+  // Action Center B4 — CurationModule экспортирует CurationService (делегат
+  // быстрого подтверждения). Цикла нет: curation НЕ импортирует pending-actions.
+  imports: [PrismaModule, CurationModule],
   controllers: [PendingActionsController],
   providers: [
     PendingActionsService,

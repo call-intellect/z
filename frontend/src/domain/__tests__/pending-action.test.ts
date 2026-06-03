@@ -15,6 +15,7 @@ import {
   mapPendingActionsCount,
   pendingSeverityBadgeVariant,
   pendingSeverityToneClass,
+  samePendingAction,
   PENDING_SOURCE_CHIP,
   PENDING_SOURCE_LABEL,
 } from '../pending-action';
@@ -93,6 +94,49 @@ describe('formatPendingAge', () => {
     expect(formatPendingAge(0)).toBe('сегодня');
     expect(formatPendingAge(3)).toBe('3 дн.');
     expect(formatPendingAge(-1)).toBe('сегодня');
+  });
+});
+
+describe('samePendingAction (B4 — оптимистичное удаление)', () => {
+  it('совпадает по (source, resourceId)', () => {
+    expect(
+      samePendingAction(
+        { source: 'curation', resourceId: 'ci-1' },
+        { source: 'curation', resourceId: 'ci-1' },
+      ),
+    ).toBe(true);
+  });
+
+  it('различает по source', () => {
+    expect(
+      samePendingAction(
+        { source: 'curation', resourceId: 'ci-1' },
+        { source: 'probe', resourceId: 'ci-1' },
+      ),
+    ).toBe(false);
+  });
+
+  it('различает по resourceId', () => {
+    expect(
+      samePendingAction(
+        { source: 'curation', resourceId: 'ci-1' },
+        { source: 'curation', resourceId: 'ci-2' },
+      ),
+    ).toBe(false);
+  });
+
+  it('удаляет только подтверждённый item из списка', () => {
+    const list = [
+      { source: 'curation' as const, resourceId: 'a' },
+      { source: 'curation' as const, resourceId: 'b' },
+      { source: 'probe' as const, resourceId: 'a' },
+    ];
+    const target = { source: 'curation' as const, resourceId: 'a' };
+    const rest = list.filter((it) => !samePendingAction(it, target));
+    expect(rest.map((r) => `${r.source}:${r.resourceId}`)).toEqual([
+      'curation:b',
+      'probe:a',
+    ]);
   });
 });
 

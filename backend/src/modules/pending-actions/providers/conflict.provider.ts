@@ -66,7 +66,9 @@ export class ConflictPendingProvider implements PendingActionsProvider {
         title: `Конфликт карточек: ${i.resourceType}`,
         severity: ageDays >= 5 ? 'urgent' : 'normal',
         ageDays,
-        actionUrl: `/curation/conflicts/${i.id}`,
+        // Страница /curation/conflicts/[id] пока не реализована (follow-up) —
+        // ведём на рабочую очередь /curation.
+        actionUrl: `/curation`,
         canQuickConfirm: false,
       } satisfies PendingActionItem;
     });

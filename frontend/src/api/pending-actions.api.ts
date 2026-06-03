@@ -5,6 +5,7 @@
  *   - GET  /api/v1/pending-actions/count
  *   - GET  /api/v1/pending-actions?limit=50
  *   - POST /api/v1/pending-actions/snooze
+ *   - POST /api/v1/pending-actions/confirm  (B4 — быстрый путь подтверждения)
  *
  * Все запросы org-scoped — заголовок `X-Org-Id` через `orgHeaders(orgId)`.
  */
@@ -53,6 +54,16 @@ export interface SnoozePendingActionRequest {
   hours: number;
 }
 
+/**
+ * Action Center B4 — быстрое подтверждение item'а (one-tap approve).
+ * Поддерживается только `source==='curation'` для light-уровня
+ * (`canQuickConfirm===true`).
+ */
+export interface ConfirmPendingActionRequest {
+  source: PendingActionSourceApi;
+  resourceId: string;
+}
+
 export const pendingActionsApi = {
   count: (orgId: string) =>
     apiClient.get<PendingActionsCountApi>('/api/v1/pending-actions/count', {
@@ -67,6 +78,11 @@ export const pendingActionsApi = {
 
   snooze: (orgId: string, body: SnoozePendingActionRequest) =>
     apiClient.post<void>('/api/v1/pending-actions/snooze', body, {
+      headers: orgHeaders(orgId),
+    }),
+
+  confirm: (orgId: string, body: ConfirmPendingActionRequest) =>
+    apiClient.post<{ ok: true }>('/api/v1/pending-actions/confirm', body, {
       headers: orgHeaders(orgId),
     }),
 };

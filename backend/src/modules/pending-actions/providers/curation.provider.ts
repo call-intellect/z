@@ -72,8 +72,10 @@ export class CurationPendingProvider implements PendingActionsProvider {
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
       const overdue = i.expiresAt != null && i.expiresAt.getTime() < now.getTime();
-      // resourceId = CurationItem.id — стабильный ключ для snooze и actionUrl
-      // (`/curation/{id}` совпадает с deep-link'ом probe-нотификаций).
+      // resourceId = CurationItem.id — стабильный ключ для snooze/confirm.
+      // Detail-страница /curation/[id] пока не реализована (follow-up) —
+      // ведём на рабочую очередь /curation; light-карточки подтверждаются
+      // one-tap прямо на /actions без перехода.
       return {
         source: this.source,
         resourceType: i.resourceType,
@@ -81,7 +83,7 @@ export class CurationPendingProvider implements PendingActionsProvider {
         title: `Требует проверки: ${i.resourceType} ${i.resourceId}`,
         severity: overdue || ageDays >= 5 ? 'urgent' : 'normal',
         ageDays,
-        actionUrl: `/curation/${i.id}`,
+        actionUrl: `/curation`,
         canQuickConfirm: i.level === 'light',
       } satisfies PendingActionItem;
     });

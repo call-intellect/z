@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CurationService } from '../../curation/services/curation.service';
 import type { ConflictPendingProvider } from '../providers/conflict.provider';
 import type { CurationPendingProvider } from '../providers/curation.provider';
 import type { IntakePendingProvider } from '../providers/intake.provider';
@@ -47,15 +48,23 @@ describe('PendingActionsService (B0)', () => {
   let conflict: ConflictPendingProvider;
   let intake: IntakePendingProvider;
   let probe: ProbePendingProvider;
+  let curationService: CurationService;
+  let curationItemFindUnique: ReturnType<typeof vi.fn>;
+  let decide: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     membershipFindUnique = vi.fn().mockResolvedValue({ role: 'owner' });
     snoozeFindMany = vi.fn().mockResolvedValue([]);
     snoozeUpsert = vi.fn().mockResolvedValue({});
+    curationItemFindUnique = vi.fn().mockResolvedValue(null);
     prisma = {
       membership: { findUnique: membershipFindUnique },
       pendingActionSnooze: { findMany: snoozeFindMany, upsert: snoozeUpsert },
+      curationItem: { findUnique: curationItemFindUnique },
     } as unknown as PrismaService;
+
+    decide = vi.fn().mockResolvedValue({ id: 'ci-1', status: 'decided' });
+    curationService = { decide } as unknown as CurationService;
 
     curation = {
       source: 'curation',
@@ -78,7 +87,14 @@ describe('PendingActionsService (B0)', () => {
       listForUser: vi.fn().mockResolvedValue([]),
     } as unknown as ProbePendingProvider;
 
-    svc = new PendingActionsService(prisma, curation, conflict, intake, probe);
+    svc = new PendingActionsService(
+      prisma,
+      curation,
+      conflict,
+      intake,
+      probe,
+      curationService,
+    );
   });
 
   it('getCount: total = сумма bySource', async () => {
@@ -198,5 +214,114 @@ describe('PendingActionsService (B0)', () => {
       }),
     ).rejects.toThrow();
     expect(snoozeUpsert).not.toHaveBeenCalled();
+  });
+
+  // ──────────────────────────── confirm (B4) ──────────────────────
+
+  it('confirm: light curation pending → decide(approve) вызван', async () => {
+    curationItemFindUnique.mockResolvedValue({
+      id: 'ci-1',
+      tenantId: 't-1',
+      status: 'pending',
+      level: 'light',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'curation',
+      resourceId: 'ci-1',
+    });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0]![0]).toEqual({
+      tenantId: 't-1',
+      curationItemId: 'ci-1',
+      reviewerUserId: 'u-1',
+      decisionType: 'approve',
+    });
+  });
+
+  it('confirm: не-curation source → BadRequest, decide не вызван', async () => {
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'probe',
+        resourceId: 'r',
+      }),
+    ).rejects.toThrow();
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('confirm: не-light уровень → BadRequest, decide не вызван', async () => {
+    curationItemFindUnique.mockResolvedValue({
+      id: 'ci-2',
+      tenantId: 't-1',
+      status: 'pending',
+      level: 'deep',
+    });
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'curation',
+        resourceId: 'ci-2',
+      }),
+    ).rejects.toThrow();
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('confirm: чужой tenant / не найден → BadRequest', async () => {
+    curationItemFindUnique.mockResolvedValue({
+      id: 'ci-3',
+      tenantId: 'other',
+      status: 'pending',
+      level: 'light',
+    });
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'curation',
+        resourceId: 'ci-3',
+      }),
+    ).rejects.toThrow();
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('confirm: не pending → BadRequest', async () => {
+    curationItemFindUnique.mockResolvedValue({
+      id: 'ci-4',
+      tenantId: 't-1',
+      status: 'decided',
+      level: 'light',
+    });
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'curation',
+        resourceId: 'ci-4',
+      }),
+    ).rejects.toThrow();
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('confirm: Forbidden из decide пробрасывается наружу (RBAC)', async () => {
+    curationItemFindUnique.mockResolvedValue({
+      id: 'ci-5',
+      tenantId: 't-1',
+      status: 'pending',
+      level: 'light',
+    });
+    decide.mockRejectedValue(new Error('not_in_candidates'));
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'curation',
+        resourceId: 'ci-5',
+      }),
+    ).rejects.toThrow();
+    expect(decide).toHaveBeenCalledTimes(1);
   });
 });

@@ -16,7 +16,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, Clock, ExternalLink } from 'lucide-react';
+import { Bell, Check, Clock, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/ui/shadcn/button';
@@ -49,7 +49,7 @@ export function PendingActionsBell({ className }: { className?: string }) {
   } = usePendingActionsCount(currentOrgId, Boolean(currentOrgId));
 
   // Список тянем только когда поповер открыт — экономим запросы.
-  const { items, isLoading, error, snooze, mutate } = usePendingActions(
+  const { items, isLoading, error, snooze, confirm } = usePendingActions(
     currentOrgId,
     8,
     Boolean(currentOrgId) && open,
@@ -74,6 +74,16 @@ export function PendingActionsBell({ className }: { className?: string }) {
       toast.success('Отложено на 1 день.');
     } catch {
       toast.error('Не удалось отложить.');
+    }
+  };
+
+  const handleConfirm = async (action: PendingAction) => {
+    try {
+      await confirm(action);
+      await mutateCount();
+      toast.success('Подтверждено.');
+    } catch {
+      toast.error('Не удалось подтвердить.');
     }
   };
 
@@ -166,6 +176,17 @@ export function PendingActionsBell({ className }: { className?: string }) {
                     </div>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
+                    {it.canQuickConfirm && (
+                      <Button
+                        size="sm"
+                        className="h-7 gap-1 bg-success px-2 text-xs text-success-fg hover:bg-success/90"
+                        onClick={() => void handleConfirm(it)}
+                        aria-label="Подтвердить"
+                      >
+                        <Check size={12} />
+                        Подтвердить
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

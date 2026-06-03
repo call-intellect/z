@@ -88,7 +88,7 @@ describe('ConflictPendingProvider (B0)', () => {
     });
     expect(items[0]!.severity).toBe('urgent');
     expect(items[0]!.canQuickConfirm).toBe(false);
-    expect(items[0]!.actionUrl).toBe('/curation/conflicts/cf-9');
+    expect(items[0]!.actionUrl).toBe('/curation');
   });
 });
 

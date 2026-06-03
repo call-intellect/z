@@ -19,10 +19,12 @@ import useSWR from 'swr';
 
 import {
   pendingActionsApi,
+  type PendingActionsListApi,
   type SnoozePendingActionRequest,
 } from '@/api/pending-actions.api';
 import {
   mapPendingAction,
+  samePendingAction,
   type PendingAction,
 } from '@/domain/pending-action';
 
@@ -36,6 +38,12 @@ export function usePendingActions(
   error: unknown;
   mutate: () => Promise<unknown>;
   snooze: (input: SnoozePendingActionRequest) => Promise<void>;
+  /**
+   * B4 — быстрое подтверждение item'а (one-tap approve). Оптимистично убирает
+   * item из списка, затем ревалидирует список (и счётчик через caller'а).
+   * Бросает наружу при ошибке (caller показывает тост и откатывает мутацию).
+   */
+  confirm: (action: PendingAction) => Promise<void>;
 } {
   const key =
     orgId && enabled
@@ -65,11 +73,39 @@ export function usePendingActions(
     [orgId, swr],
   );
 
+  const confirm = useCallback(
+    async (action: PendingAction) => {
+      if (!orgId) throw new Error('orgId required');
+      // Оптимистично убираем item из кэша (по source+resourceId).
+      const removeFromCache = (
+        cur: PendingActionsListApi | undefined,
+      ): PendingActionsListApi => ({
+        items: (cur?.items ?? []).filter((it) => !samePendingAction(it, action)),
+      });
+      await swr.mutate(
+        async (cur) => {
+          await pendingActionsApi.confirm(orgId, {
+            source: action.source,
+            resourceId: action.resourceId,
+          });
+          return removeFromCache(cur);
+        },
+        {
+          optimisticData: removeFromCache,
+          rollbackOnError: true,
+          revalidate: true,
+        },
+      );
+    },
+    [orgId, swr],
+  );
+
   return {
     items,
     isLoading: swr.isLoading,
     error: swr.error,
     mutate: () => swr.mutate(),
     snooze,
+    confirm,
   };
 }

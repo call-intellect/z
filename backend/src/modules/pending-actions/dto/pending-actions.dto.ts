@@ -44,3 +44,20 @@ export const SnoozePendingActionBodySchema = z.object({
 export type SnoozePendingActionBody = z.infer<
   typeof SnoozePendingActionBodySchema
 >;
+
+// ─────────────────────────── Confirm body (B4) ─────────────────────
+
+/**
+ * Action Center B4 «быстрый путь подтверждения» (2026-06-02).
+ *
+ * One-tap подтверждение item'а прямо из feed'а (страница /actions и колокольчик).
+ * Поддерживается ТОЛЬКО `source==='curation'` для light-уровня (canQuickConfirm);
+ * критические/deep подтверждаются только на странице карточки.
+ */
+export const ConfirmPendingActionBodySchema = z.object({
+  source: PendingActionSourceSchema,
+  resourceId: z.string().trim().min(1).max(80),
+});
+export type ConfirmPendingActionBody = z.infer<
+  typeof ConfirmPendingActionBodySchema
+>;

@@ -13,7 +13,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Clock, ExternalLink, Inbox } from 'lucide-react';
+import { Check, Clock, ExternalLink, Inbox } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/ui/shadcn/button';
@@ -58,7 +58,7 @@ export function ActionsClient() {
   const { currentOrgId } = useAuth();
   const [filter, setFilter] = useState<SourceFilter>('all');
 
-  const { items, isLoading, error, snooze } = usePendingActions(
+  const { items, isLoading, error, snooze, confirm } = usePendingActions(
     currentOrgId,
     50,
     Boolean(currentOrgId),
@@ -92,6 +92,16 @@ export function ActionsClient() {
       toast.success('Отложено.');
     } catch {
       toast.error('Не удалось отложить.');
+    }
+  };
+
+  const handleConfirm = async (action: PendingAction) => {
+    try {
+      await confirm(action);
+      await mutateCount();
+      toast.success('Подтверждено.');
+    } catch {
+      toast.error('Не удалось подтвердить.');
     }
   };
 
@@ -173,6 +183,16 @@ export function ActionsClient() {
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2">
+                  {it.canQuickConfirm && (
+                    <Button
+                      size="sm"
+                      className="gap-1 bg-success text-success-fg hover:bg-success/90"
+                      onClick={() => void handleConfirm(it)}
+                    >
+                      <Check size={14} />
+                      Подтвердить
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"

@@ -99,6 +99,17 @@ export function pendingSeverityBadgeVariant(
   return severity === 'urgent' ? 'danger' : 'secondary';
 }
 
+/**
+ * Идентичность item'а в feed'е = (source, resourceId). Используется для
+ * оптимистичного удаления при snooze/confirm (B4) и для React-key.
+ */
+export function samePendingAction(
+  a: { source: PendingActionSource; resourceId: string },
+  b: { source: PendingActionSource; resourceId: string },
+): boolean {
+  return a.source === b.source && a.resourceId === b.resourceId;
+}
+
 /** «X дн.» — короткая подпись возраста карточки. */
 export function formatPendingAge(ageDays: number): string {
   const d = Math.max(0, Math.round(ageDays));

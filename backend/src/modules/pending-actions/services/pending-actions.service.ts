@@ -1,6 +1,8 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import type { CurationItem } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { CurationService } from '../../curation/services/curation.service';
 import { ConflictPendingProvider } from '../providers/conflict.provider';
 import { CurationPendingProvider } from '../providers/curation.provider';
 import { IntakePendingProvider } from '../providers/intake.provider';
@@ -28,6 +30,13 @@ export interface SnoozeInput {
   resourceType: string;
   resourceId: string;
   hours: number;
+}
+
+export interface ConfirmInput {
+  tenantId: string;
+  userId: string;
+  source: PendingActionSource;
+  resourceId: string;
 }
 
 const SNOOZE_MIN_HOURS = 1;
@@ -58,6 +67,9 @@ export class PendingActionsService {
     private readonly intake: IntakePendingProvider,
     @Inject(ProbePendingProvider)
     private readonly probe: ProbePendingProvider,
+    // Action Center B4 — делегат быстрого подтверждения light-curation.
+    @Inject(CurationService)
+    private readonly curationService: CurationService,
   ) {
     // Порядок фиксирован — детерминизм для bySource/тестов.
     this.providers = [this.curation, this.conflict, this.intake, this.probe];
@@ -180,6 +192,85 @@ export class PendingActionsService {
       'pending-actions.snooze: item отложен',
     );
     return { ok: true, snoozedUntil: snoozedUntil.toISOString() };
+  }
+
+  // ──────────────────────────── confirm (B4) ──────────────────────
+
+  /**
+   * Action Center B4 «быстрый путь подтверждения» (2026-06-02).
+   *
+   * One-tap подтверждение item'а прямо из feed'а. Поддерживается ТОЛЬКО
+   * `source==='curation'` для light-уровня — делегирует
+   * `CurationService.decide({ decisionType: 'approve' })`. RBAC, проверка
+   * status==='pending' и наличие reasoning-окна — внутри `decide`
+   * (ForbiddenException/NotFound/BadRequest пробрасываются наружу).
+   *
+   * Критические / deep-карточки НЕ подтверждаются здесь — только на странице
+   * карточки (где куратор обязан оставить обоснование).
+   */
+  async confirm(input: ConfirmInput): Promise<CurationItem> {
+    if (input.source !== 'curation') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'quick_confirm_unsupported_source',
+          message: 'Быстрое подтверждение доступно только для источника curation',
+        },
+      });
+    }
+
+    const item = await this.prisma.curationItem.findUnique({
+      where: { id: input.resourceId },
+      select: { id: true, tenantId: true, status: true, level: true },
+    });
+    if (!item || item.tenantId !== input.tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'curation_item_not_found',
+          message: 'CurationItem не найден',
+        },
+      });
+    }
+    if (item.status !== 'pending') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'curation_item_not_pending',
+          message: `CurationItem уже в статусе ${item.status}`,
+        },
+      });
+    }
+    if (item.level !== 'light') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'quick_confirm_only_light',
+          message:
+            'Быстрое подтверждение доступно только для лёгких карточек — критические подтверждаются на странице карточки',
+        },
+      });
+    }
+
+    // decide сам проверяет RBAC (reviewer ∈ candidateCuratorIds | owner/admin),
+    // повторно валидирует status==='pending' и для light+approve НЕ требует
+    // reasoning. ForbiddenException из decide пробрасывается наружу как 403.
+    const decided = await this.curationService.decide({
+      tenantId: input.tenantId,
+      curationItemId: input.resourceId,
+      reviewerUserId: input.userId,
+      decisionType: 'approve',
+    });
+
+    this.logger.log(
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        curationItemId: input.resourceId,
+      },
+      'pending-actions.confirm: light-карточка подтверждена (approve)',
+    );
+    return decided;
   }
 
   // ──────────────────────────── helpers ───────────────────────────

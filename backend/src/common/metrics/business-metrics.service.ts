@@ -24,6 +24,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private recordingsBytesTotal!: Counter<string>;
   private recordingsDeletedTotal!: Counter<'reason'>;
   private recordingsFailedTotal!: Counter<'reason'>;
+  private recordingTrackEgressFailedTotal!: Counter<'reason'>;
 
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
@@ -942,6 +943,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.recordingsFailedTotal = this.getOrCreateCounter({
       name: 'recordings_failed_total',
       help: 'Сколько Egress-задач упало (по причине: timeout/s3-error/livekit-error/...).',
+      labelNames: ['reason'] as const,
+    });
+
+    this.recordingTrackEgressFailedTotal = this.getOrCreateCounter({
+      name: 'recording_track_egress_failed_total',
+      help: 'Сколько стартов per-track audio egress упало (дорожка не собралась). Алерт при росте = потеря дорожек/деградация транскрипта.',
       labelNames: ['reason'] as const,
     });
 
@@ -3240,6 +3247,15 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incRecordingFailed(reason: string): void {
     this.recordingsFailedTotal.inc({ reason });
+  }
+
+  /**
+   * Провал старта per-track audio egress (дорожка спикера не собралась).
+   * ТЗ 2026-06-03 meeting-recording-reliability §117 — мониторинг egress-ёмкости:
+   * рост этой метрики = дорожки теряются (даже с reconcile-бэкстопом), нужен алерт.
+   */
+  incTrackEgressStartFailed(args: { reason: string }): void {
+    this.recordingTrackEgressFailedTotal.inc({ reason: args.reason });
   }
 
   /** Алиас под имя из ТЗ Фазы 4 (`incRecordingsFailed({reason})`). */

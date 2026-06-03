@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type Recording, type RecordingStatus } from '@prisma/client';
+import { TrackType } from 'livekit-server-sdk';
 
 import { TypedConfigService } from '../../common/config/index';
 import {
@@ -12,6 +13,7 @@ import {
 } from '../../common/errors/domain-errors';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { LivekitService } from '../livekit/livekit.service';
 import { MeetingsService } from '../meetings/meetings.service';
 
 import { LivekitEgressClient } from './livekit-egress.client';
@@ -21,6 +23,16 @@ import {
   extractKeyFromUrl,
 } from './s3-keys';
 import { S3Service } from './s3.service';
+
+/**
+ * `ParticipantInfo.Kind.STANDARD = 0` — конечный пользователь (web-клиент).
+ * Числовой литерал, потому что enum `ParticipantInfo_Kind` НЕ реэкспортируется
+ * из `livekit-server-sdk`, а `@livekit/protocol` не является прямой
+ * зависимостью (импорт оттуда хрупок к hoisting'у). Значения: STANDARD=0,
+ * INGRESS=1, EGRESS=2, SIP=3, AGENT=4 (см. node_modules/@livekit/protocol).
+ * Для per-track сверки нас интересуют только STANDARD-участники.
+ */
+const PARTICIPANT_KIND_STANDARD = 0;
 
 /**
  * Сервис управления записями встреч.
@@ -43,6 +55,18 @@ import { S3Service } from './s3.service';
 export class RecordingsService {
   private readonly logger = new Logger(RecordingsService.name);
 
+  /**
+   * In-process lock для `ensureTrackEgress`. Ключ — `${meetingId}:${identity}`.
+   * Закрывает гонку «двойной старт track egress на один и тот же трек», когда
+   * реактивный путь (webhook `track_published`), догон на старте записи и
+   * периодическая сверка-cron срабатывают почти одновременно для одного
+   * участника. Прод Z — один процесс (HTTP + cron + BullMQ-воркеры в одном
+   * backend'е, см. WorkersModule), поэтому in-memory-Set достаточно — внешний
+   * Redis-лок не нужен. DB-проверка (`AudioTrack.findFirst`) остаётся как
+   * вторичный гард для steady-state и на случай рестарта процесса.
+   */
+  private readonly inflightTrackEgress = new Set<string>();
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LivekitEgressClient) private readonly egress: LivekitEgressClient,
@@ -50,6 +74,7 @@ export class RecordingsService {
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(LivekitService) private readonly livekit: LivekitService,
   ) {
     // suppress unused-warning: meetings нужен для будущих переходов (см. webhook handler);
     // здесь оставляем как dep для тестируемой связности.
@@ -133,6 +158,17 @@ export class RecordingsService {
       { meetingId, egressId: egressResult.egressId, retentionDays },
       'Recording start',
     );
+
+    // Догон уже опубликованных AUDIO-треков: участники, опубликовавшие микрофон
+    // ДО старта записи, не пришлют второй `track_published` — их дорожки иначе
+    // потеряются. Сверяемся с состоянием комнаты (pull) и добираем недостающее.
+    // Не валим старт записи, если сверка упала — её добьёт периодический cron.
+    await this.reconcileTrackEgress(meetingId).catch((err) => {
+      this.logger.warn(
+        { meetingId, err: err instanceof Error ? err.message : String(err) },
+        'Recording start: догон track egress не удался (добьёт сверка-cron)',
+      );
+    });
   }
 
   /**
@@ -220,9 +256,41 @@ export class RecordingsService {
       return;
     }
 
+    // In-process lock: не даём двум путям (реактивный webhook `track_published`,
+    // догон на старте записи, периодическая сверка-cron) одновременно
+    // стартовать egress на один и тот же трек до того, как первый успеет создать
+    // AudioTrack. DB-проверка ниже сама по себе гоночна (read-then-write).
+    const lockKey = `${meeting.id}:${participant.identity}`;
+    if (this.inflightTrackEgress.has(lockKey)) {
+      this.logger.debug(
+        { meetingId: meeting.id, identity: participant.identity },
+        'ensureTrackEgress: трек уже в обработке (in-process lock), no-op',
+      );
+      return;
+    }
+    this.inflightTrackEgress.add(lockKey);
+    try {
+      await this.startTrackEgressLocked(meeting, participant, track, recording.id);
+    } finally {
+      this.inflightTrackEgress.delete(lockKey);
+    }
+  }
+
+  /**
+   * Внутренняя часть `ensureTrackEgress` под in-process lock'ом: DB-дедуп по
+   * `recordingId+livekitIdentity`, старт track egress, создание `AudioTrack`.
+   * Вынесена отдельным методом, чтобы lock гарантированно снимался в `finally`
+   * вызывающего даже при ранних `return`/`throw` внутри.
+   */
+  private async startTrackEgressLocked(
+    meeting: { id: string },
+    participant: { identity: string; name: string },
+    track: { sid: string },
+    recordingId: string,
+  ): Promise<void> {
     // Если AudioTrack для этого livekitIdentity уже есть — не дублируем.
     const existing = await this.prisma.audioTrack.findFirst({
-      where: { recordingId: recording.id, livekitIdentity: participant.identity },
+      where: { recordingId, livekitIdentity: participant.identity },
     });
     if (existing) {
       this.logger.debug(
@@ -272,7 +340,10 @@ export class RecordingsService {
         },
         'ensureTrackEgress: не удалось запустить track egress',
       );
-      // Без egress нет смысла создавать AudioTrack — выходим.
+      // Метрика для алерта: рост = дорожки теряются (egress-ёмкость/сбой LiveKit),
+      // несмотря на reconcile-бэкстоп. См. ТЗ §117 (мониторинг egress).
+      this.metrics.incTrackEgressStartFailed({ reason: 'start_failed' });
+      // Без egress нет смысла создавать AudioTrack — следующая сверка повторит.
       return;
     }
 
@@ -283,7 +354,7 @@ export class RecordingsService {
     try {
       await this.prisma.audioTrack.create({
         data: {
-          recordingId: recording.id,
+          recordingId,
           ...(participantRecord ? { participantId: participantRecord.id } : {}),
           participantName: participant.name || 'Participant',
           livekitIdentity: participant.identity,
@@ -308,6 +379,81 @@ export class RecordingsService {
         return;
       }
       throw err;
+    }
+  }
+
+  /**
+   * Reconciliation (pull-модель): сверяет фактическое состояние комнаты в
+   * LiveKit с собранными per-track дорожками и добирает недостающие.
+   *
+   * Зачем: реактивный путь (`track_published → ensureTrackEgress`) структурно
+   * теряет треки — webhook'и LiveKit без гарантий доставки, а трек,
+   * опубликованный ДО старта записи или под reconnect, второго `track_published`
+   * не присылает. Pull от `listParticipants` не зависит от push и закрывает эти
+   * три класса потерь. Вызывается:
+   *   - догоном на старте записи (`start`);
+   *   - периодической сверкой-cron (`recording-track-reconcile`).
+   *
+   * Берём только STANDARD-участников (kind=0 — реальные люди; egress/agent/sip
+   * пропускаем) и только их AUDIO-треки (вход диаризации/транскрибации).
+   * Идемпотентность — внутри `ensureTrackEgress` (DB-дедуп + in-process lock).
+   */
+  async reconcileTrackEgress(meetingId: string): Promise<void> {
+    const recording = await this.prisma.recording.findUnique({
+      where: { meetingId },
+    });
+    if (!recording) return;
+    if (recording.status !== 'recording' && recording.status !== 'requested') {
+      return;
+    }
+
+    let participants;
+    try {
+      participants = await this.livekit.listParticipants({ id: meetingId });
+    } catch (err) {
+      this.logger.warn(
+        { meetingId, err: err instanceof Error ? err.message : String(err) },
+        'reconcileTrackEgress: listParticipants не удался — пропускаем тик',
+      );
+      return;
+    }
+
+    let added = 0;
+    for (const p of participants) {
+      // Только реальные участники (STANDARD); egress/agent/sip/ingress — мимо.
+      if ((p.kind as number) !== PARTICIPANT_KIND_STANDARD) continue;
+      if (!p.identity) continue;
+      for (const tr of p.tracks ?? []) {
+        if (tr.type !== TrackType.AUDIO) continue;
+        if (!tr.sid) continue;
+        try {
+          await this.ensureTrackEgress(
+            { id: meetingId },
+            { identity: p.identity, name: p.name ?? '' },
+            { sid: tr.sid },
+          );
+          added += 1;
+        } catch (err) {
+          // Одна неудачная дорожка не должна срывать сверку остальных —
+          // следующий тик/догон попробует снова (естественный backstop ретрая).
+          this.logger.warn(
+            {
+              meetingId,
+              identity: p.identity,
+              trackSid: tr.sid,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'reconcileTrackEgress: ensureTrackEgress упал для трека — добьёт следующий тик',
+          );
+        }
+      }
+    }
+
+    if (added > 0) {
+      this.logger.debug(
+        { meetingId, audioTracksConsidered: added },
+        'reconcileTrackEgress: сверка прошла',
+      );
     }
   }
 

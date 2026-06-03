@@ -2,12 +2,29 @@ import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { type WebhookEvent } from 'livekit-server-sdk';
 
+import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai/ai-queue.service';
 import { PipelineRunner, SystemLogPipeline, traceForMeeting } from '../logging/log-pipeline';
 import { MeetingsService } from '../meetings/meetings.service';
 import { RecordingsService } from '../recordings/recordings.service';
+
+/**
+ * Маппинг числовых значений `ParticipantInfo.Kind` (proto enum) к именам.
+ * Значения по @livekit/protocol: STANDARD=0, INGRESS=1, EGRESS=2, SIP=3,
+ * AGENT=4, CONNECTOR=7, BRIDGE=8. Используется, когда protojson сериализует
+ * kind числом, а не строкой.
+ */
+const KIND_BY_NUMBER: Record<number, string> = {
+  0: 'STANDARD',
+  1: 'INGRESS',
+  2: 'EGRESS',
+  3: 'SIP',
+  4: 'AGENT',
+  7: 'CONNECTOR',
+  8: 'BRIDGE',
+};
 
 /**
  * Маршрутизация LiveKit-вебхуков по типу события.
@@ -60,6 +77,14 @@ export class LivekitEventsHandler {
     @Optional()
     @Inject(AiQueueService)
     private readonly aiQueue: AiQueueService | null = null,
+    /**
+     * `TypedConfigService` — для гейтинга faststart-постобработки видео
+     * (`RECORDING_FASTSTART_ENABLED`). `@Optional()`: в юнит-тестах Фазы 3 его
+     * нет, тогда faststart просто не ставится (дефолт-поведение «выключено»).
+     */
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
   ) {}
 
   async handle(event: WebhookEvent): Promise<void> {
@@ -204,21 +229,38 @@ export class LivekitEventsHandler {
     const participantInfo = this.extractParticipant(event);
     if (!participantInfo?.identity) return;
 
-    // Egress-рекордеры (composite + per-track) заходят в комнату как участники и
-    // шлют participant_joined с identity вида `EG_...` без имени. Это НЕ наши
-    // участники — без этого фильтра fallback ниже плодит фантомных «Participant»-
-    // гостей (по одному на каждый egress) и ломает behavior-metrics/«Участники».
-    // Реальные участники всегда имеют identity `host:<userId>` / `guest:<nanoid>`
-    // (см. ParticipantsService + генерацию LiveKit-токенов).
-    if (
-      !participantInfo.identity.startsWith('host:') &&
-      !participantInfo.identity.startsWith('guest:')
-    ) {
-      this.logger.debug(
-        { meetingId, identity: participantInfo.identity },
-        'participant_joined: identity не host/guest (egress-рекордер?) — no-op',
-      );
-      return;
+    // Семантический фильтр (whitelist от LiveKit). `ParticipantInfo.Kind`
+    // отличает конечного пользователя (STANDARD) от сервисных процессов:
+    // EGRESS (server-side recording), INGRESS, SIP (телефония), AGENT
+    // (AI-ассистент), CONNECTOR, BRIDGE. Создаём `Participant` ТОЛЬКО для
+    // STANDARD — это надёжнее, чем строковый префикс identity (PR #17): не
+    // ломается на новых типах (AGENT/SIP) и не зависит от нашей конвенции.
+    const kind = this.extractParticipantKind(event);
+    if (kind !== null) {
+      if (kind !== 'STANDARD') {
+        this.logger.debug(
+          { meetingId, identity: participantInfo.identity, kind },
+          'participant_joined: сервисный участник (kind != STANDARD) — no-op',
+        );
+        return;
+      }
+      // kind === STANDARD → доверяем семантике LiveKit, создаём без префикс-проверки.
+    } else {
+      // Fallback (PR #17): kind отсутствует в payload (proto3 опускает дефолт
+      // STANDARD=0, а наш приёмник парсит сырой protojson). Полагаемся на
+      // конвенцию identity: реальные участники всегда `host:<userId>` /
+      // `guest:<nanoid>` (см. ParticipantsService + генерация LiveKit-токенов);
+      // egress-рекордеры приходят как `EG_...` без префикса — отсекаем.
+      if (
+        !participantInfo.identity.startsWith('host:') &&
+        !participantInfo.identity.startsWith('guest:')
+      ) {
+        this.logger.debug(
+          { meetingId, identity: participantInfo.identity },
+          'participant_joined: identity не host/guest и нет kind (egress-рекордер?) — no-op',
+        );
+        return;
+      }
     }
 
     const existing = await this.prisma.participant.findUnique({
@@ -344,6 +386,28 @@ export class LivekitEventsHandler {
             ? Math.round(file.duration / 1_000_000_000) // ns → s
             : null,
       });
+      // Фаза 3 (recording-reliability): faststart-постобработка composite MP4,
+      // чтобы браузер играл видео прогрессивно. За флагом RECORDING_FASTSTART_ENABLED
+      // (дефолт on) + порог по размеру (мелкие файлы не ремуксим). Non-fatal —
+      // не блокирует FSM-переход в ready. Размер неизвестен → ставим (воркер
+      // перепроверит по bytesTotal).
+      const compositeBytes = file?.size ?? null;
+      const faststartMinBytes = this.cfg?.recording.faststartMinBytes ?? 0;
+      if (
+        this.cfg?.recording.faststartEnabled &&
+        this.aiQueue &&
+        (compositeBytes === null || compositeBytes >= faststartMinBytes)
+      ) {
+        try {
+          await this.aiQueue.enqueueRecordingFaststart(meetingId);
+          this.logger.log({ meetingId }, 'egress_ended: faststart-постобработка composite поставлена в очередь');
+        } catch (qerr) {
+          this.logger.warn(
+            { meetingId, err: qerr instanceof Error ? qerr.message : String(qerr) },
+            'egress_ended: enqueue faststart не удался (non-fatal)',
+          );
+        }
+      }
       await this.maybePromoteMeetingToReady(meetingId, result.allReady);
       return;
     }
@@ -479,6 +543,32 @@ export class LivekitEventsHandler {
     const name = typeof p.name === 'string' ? p.name : '';
     if (!identity) return null;
     return { identity, name };
+  }
+
+  /**
+   * Нормализует `participant.kind` из webhook-payload к каноничному имени
+   * (`STANDARD` | `EGRESS` | `INGRESS` | `SIP` | `AGENT` | `CONNECTOR` |
+   * `BRIDGE`) или `null`, если поле отсутствует / нераспознано.
+   *
+   * Приёмник вебхуков парсит сырой protojson (`JSON.parse`, не
+   * `WebhookReceiver.receive`), поэтому `kind` может прийти:
+   *   - строкой `"EGRESS"` (protojson сериализует enum именем);
+   *   - числом `2` (если сериализован как int);
+   *   - отсутствовать вовсе (proto3 опускает дефолтное значение STANDARD=0).
+   * `null` (отсутствие) трактуется вызывающим как «нужен fallback по префиксу».
+   */
+  private extractParticipantKind(event: WebhookEvent): string | null {
+    const p = (event as unknown as { participant?: { kind?: unknown } }).participant;
+    if (!p) return null;
+    const k = p.kind;
+    if (typeof k === 'number') return KIND_BY_NUMBER[k] ?? null;
+    if (typeof k === 'string') {
+      const up = k.trim().toUpperCase();
+      if (up === '') return null;
+      if (/^\d+$/.test(up)) return KIND_BY_NUMBER[Number(up)] ?? null;
+      return up;
+    }
+    return null;
   }
 
   /**

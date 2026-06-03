@@ -44,6 +44,14 @@ export const QUEUE_NAMES = {
    * Результат пишется в `MeetingReport`. См. ТЗ E §5.
    */
   CUSTOM_REPORT: 'ai.custom-report',
+  /**
+   * ТЗ 2026-06-03 meeting-recording-reliability, Фаза 3 — faststart-постобработка
+   * composite MP4 (`ffmpeg -c copy -movflags +faststart`), чтобы браузер играл
+   * видео прогрессивно (moov-atom в начало файла). Enqueue из webhook
+   * `egress_ended`(composite) при включённом `RECORDING_FASTSTART_ENABLED`.
+   * CPU/IO-bound, concurrency=1. Идемпотентность — фиксированный jobId по meetingId.
+   */
+  RECORDING_FASTSTART: 'recording.faststart',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];

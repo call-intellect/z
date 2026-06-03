@@ -17,6 +17,8 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingsService } from '../../meetings/meetings.service';
+import { transcriptMergedKey } from '../../recordings/s3-keys';
+import { S3Service } from '../../recordings/s3.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import {
@@ -54,6 +56,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(S3Service) private readonly s3: S3Service,
     // ТЗ 2026-05-25, Фаза 4 — producer для новой цепочки `meeting-report-fast`.
     // Optional, чтобы спеки/тесты могли создавать worker без core-queue
     // (legacy ai-pipeline останется работать).
@@ -118,6 +121,10 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     // Идемпотентность: turns уже склеены — сразу к analyze.
     if (meeting.transcript.turns !== null) {
       this.logger.log({ meetingId }, 'merge: turns уже в БД — analyze');
+      // Бэкафилл merged.json для встреч, смерженных до появления S3-зеркала:
+      // без `mergedS3Url` behavior-metrics/quality-score/custom-report
+      // пропускаются («нет merged.json»).
+      await this.ensureMergedJsonMirror(meetingId, meeting.transcript);
       await this.queue.enqueueAnalyze(meetingId);
       // Фаза B — параллельно с analyze. Идемпотентность через jobId.
       await this.queue.enqueueBehaviorMetrics(meetingId);
@@ -156,7 +163,12 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       meetingId,
     });
 
-    // 4. Сохраняем в Transcript (БД).
+    // 4. Сохраняем в Transcript (БД) + зеркалим merged.json в S3.
+    //    Источник правды для отображения — колонка `turns`. merged.json в S3
+    //    нужен AI-воркерам, читающим транскрипт по `mergedS3Url`
+    //    (behavior-metrics, quality-score, custom-report, transcript-clean).
+    const mergedKey = transcriptMergedKey(meetingId);
+    await this.s3.putJson(mergedKey, { meetingId, turns: dialog });
     await this.prisma.transcript.update({
       where: { meetingId },
       data: {
@@ -164,6 +176,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
         roomChat: roomChat !== null ? (roomChat as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         totalWords,
         totalDurationSeconds,
+        mergedS3Url: mergedKey,
       },
     });
 
@@ -228,6 +241,25 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       },
       'merge: успешно — analyze + behavior-metrics поставлены',
     );
+  }
+
+  /**
+   * Гарантирует наличие merged.json в S3 и проставленный `Transcript.mergedS3Url`.
+   * No-op, если `mergedS3Url` уже задан. Нужен на идемпотентном пути и для встреч,
+   * смерженных до появления S3-зеркала (иначе зависимые AI-воркеры пропускаются).
+   */
+  private async ensureMergedJsonMirror(
+    meetingId: string,
+    transcript: { turns: unknown; mergedS3Url: string | null },
+  ): Promise<void> {
+    if (transcript.mergedS3Url) return;
+    const mergedKey = transcriptMergedKey(meetingId);
+    await this.s3.putJson(mergedKey, { meetingId, turns: transcript.turns ?? [] });
+    await this.prisma.transcript.update({
+      where: { meetingId },
+      data: { mergedS3Url: mergedKey },
+    });
+    this.logger.log({ meetingId, mergedKey }, 'merge: merged.json зеркалирован в S3 (backfill)');
   }
 
   /**

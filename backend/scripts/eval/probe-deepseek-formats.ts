@@ -19,7 +19,7 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-const MODEL = 'deepseek-v4-pro';
+const MODEL = process.env.PROBE_MODEL ?? 'deepseek-v4-pro';
 
 const SYSTEM_BASE =
   'Ты — извлекатель фактов. На вход получаешь предложение, возвращаешь 3 ключевых факта в виде JSON-объекта { "facts": [string, string, string] }.';

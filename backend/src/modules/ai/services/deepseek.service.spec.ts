@@ -6,12 +6,15 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 /**
  * DeepSeekService unit-тесты.
  *
- * Главная цель — ТЗ 2026-05-25 (auto json_schema → tool для Pro):
- *   1. flash + json_schema → response_format: json_schema (как было).
- *   2. pro + json_schema (без tools) → tools + tool_choice='auto', НЕТ
- *      response_format, hint в user-сообщении, метрика инкрементируется.
- *   3. pro + caller передал tools → tools от caller'а, без автоконвертации.
- *   4. pro + json_object → response_format: json_object, без автоконвертации.
+ * Probe 2026-06-03 + офиц. дока: DeepSeek-V4 (ВСЕ модели, включая flash) НЕ
+ * поддерживает response_format=json_schema. Поэтому:
+ *   1. flash + json_schema (без tools) → авто-конверт в tool + tool_choice='auto',
+ *      НЕТ response_format, hint в user, метрика инкрементируется (как и pro).
+ *   2. pro + json_schema (без tools) → то же.
+ *   3. flash/pro + caller передал tools + json_schema → json_schema снят
+ *      (strict-stripped), остаются tools + tool_choice='auto'.
+ *   4. json_object → response_format: json_object + гарантия слова «json» в
+ *      промпте (дописывается в хвост user, если его нет).
  *
  * Mocking SDK по образцу anthropic.service.spec.ts — mock-класс `OpenAI`,
  * сохраняющий ссылку на последний созданный инстанс в `lastSdkInstance`.
@@ -110,7 +113,9 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
     const svc = new DeepSeekService(makeCfg(), metrics);
     if (!lastSdkInstance) throw new Error('sdk not constructed');
     lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
-      okResponse({ content: '{"facts":["a"]}' }),
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+      }),
     );
 
     const out = await svc.complete({
@@ -125,6 +130,7 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
       },
     });
 
+    // text восстановлен из tool_calls[0].input стрингификацией.
     expect(out.text).toBe('{"facts":["a"]}');
     expect(out.provider).toBe('deepseek');
     expect(inc).toHaveBeenCalled();

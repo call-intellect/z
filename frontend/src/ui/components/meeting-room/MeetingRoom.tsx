@@ -1,12 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  CarouselLayout,
+  FocusLayout,
+  FocusLayoutContainer,
   GridLayout,
+  LayoutContextProvider,
   LiveKitRoom,
   ParticipantTile,
   RoomAudioRenderer,
+  isTrackReference,
+  useCreateLayoutContext,
+  usePinnedTracks,
   useTracks,
+} from '@livekit/components-react';
+import type {
+  TrackReference,
+  TrackReferenceOrPlaceholder,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import useSWR from 'swr';
@@ -181,6 +192,22 @@ export function MeetingRoom({
   );
 }
 
+/**
+ * Совпадают ли две дорожки — чтобы исключить дорожку «в фокусе» из карусели.
+ * Заменяет `isEqualTrackRef` из @livekit/components-core (не входит в публичный
+ * API @livekit/components-react, тянуть транзитивную зависимость не хотим).
+ */
+function isSameTrack(
+  a: TrackReferenceOrPlaceholder | undefined,
+  b: TrackReferenceOrPlaceholder | undefined,
+): boolean {
+  if (!a || !b) return false;
+  if (isTrackReference(a) && isTrackReference(b)) {
+    return a.publication.trackSid === b.publication.trackSid;
+  }
+  return a.participant.identity === b.participant.identity && a.source === b.source;
+}
+
 function VideoArea() {
   const tracks = useTracks(
     [
@@ -190,13 +217,67 @@ function VideoArea() {
     { onlySubscribed: false },
   );
 
+  const layoutContext = useCreateLayoutContext();
+
+  // Реальные дорожки демонстрации экрана (без плейсхолдеров).
+  const screenShareTracks = tracks
+    .filter(isTrackReference)
+    .filter((track) => track.publication.source === Track.Source.ScreenShare);
+
+  // Дорожка «в фокусе» = закреплённая (демонстрация экрана или ручной пин тайла).
+  const focusTrack = usePinnedTracks(layoutContext)?.[0];
+  const carouselTracks = tracks.filter((track) => !isSameTrack(track, focusTrack));
+
+  // Авто-фокус на демонстрации экрана: появилась → выводим на главную сцену,
+  // исчезла → возвращаемся к сетке. Повторяет поведение прелба VideoConference
+  // из @livekit/components-react, чтобы демонстрация не была «ещё одним участником».
+  const autoPinnedRef = useRef<TrackReference | null>(null);
+  const screenShareSignature = screenShareTracks
+    .map((track) => `${track.publication.trackSid}_${track.publication.isSubscribed}`)
+    .join();
+  useEffect(() => {
+    const hasSubscribedShare = screenShareTracks.some(
+      (track) => track.publication.isSubscribed,
+    );
+    if (hasSubscribedShare && autoPinnedRef.current === null) {
+      layoutContext.pin.dispatch?.({ msg: 'set_pin', trackReference: screenShareTracks[0] });
+      autoPinnedRef.current = screenShareTracks[0];
+    } else if (
+      autoPinnedRef.current &&
+      !screenShareTracks.some(
+        (track) => track.publication.trackSid === autoPinnedRef.current?.publication.trackSid,
+      )
+    ) {
+      layoutContext.pin.dispatch?.({ msg: 'clear_pin' });
+      autoPinnedRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screenShareSignature]);
+
+  // Один участник без демонстрации — показываем кадр целиком (object-fit: contain),
+  // иначе на широком экране одиночный тайл обрезается/«распирается» во всю ширину.
+  const isSolo = !focusTrack && tracks.length === 1;
+
   return (
-    <GridLayout
-      tracks={tracks}
-      style={{ height: '100%' }}
-      className="lk-grid-layout"
-    >
-      <ParticipantTile />
-    </GridLayout>
+    <LayoutContextProvider value={layoutContext}>
+      {focusTrack ? (
+        <div className="relative flex h-full w-full items-stretch justify-center">
+          <FocusLayoutContainer>
+            <CarouselLayout tracks={carouselTracks}>
+              <ParticipantTile />
+            </CarouselLayout>
+            <FocusLayout trackRef={focusTrack} />
+          </FocusLayoutContainer>
+        </div>
+      ) : (
+        <GridLayout
+          tracks={tracks}
+          style={{ height: '100%' }}
+          className={isSolo ? 'lk-grid-layout kora-video-solo' : 'lk-grid-layout'}
+        >
+          <ParticipantTile />
+        </GridLayout>
+      )}
+    </LayoutContextProvider>
   );
 }

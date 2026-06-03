@@ -45,7 +45,7 @@ const SEEDS: TaskRouteSeed[] = [
       '§γ-2 — primary gpt-4o для качественного tool-use; deepseek + ollama как fallback.',
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-4o' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
@@ -55,7 +55,7 @@ const SEEDS: TaskRouteSeed[] = [
       '§γ-2 — лёгкая валидация params, primary ollama (быстро+дёшево).',
     chain: [
       { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'tertiary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
     ],
   },

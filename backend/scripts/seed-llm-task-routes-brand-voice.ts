@@ -55,7 +55,7 @@ const SEEDS: TaskRouteSeed[] = [
       {
         tier: 'secondary',
         providerName: 'deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
       },
       {
         tier: 'tertiary',

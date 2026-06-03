@@ -26,6 +26,18 @@ export function audioTrackKey(meetingId: string, participantIdentity: string): s
 }
 
 /**
+ * Ключ объединённого транскрипта (`merged.json`, формат `{ meetingId, turns }`).
+ *
+ * Потребители читают его через `S3Service.getJson` по `Transcript.mergedS3Url`:
+ * behavior-metrics, quality-score, custom-report, transcript-clean.
+ * Источник правды для отображения — БД-колонка `Transcript.turns`; merged.json —
+ * S3-зеркало для AI-воркеров, которые исторически читают транскрипт из объекта.
+ */
+export function transcriptMergedKey(meetingId: string): string {
+  return `meetings/${meetingId}/transcripts/merged.json`;
+}
+
+/**
  * Извлекает S3-ключ из URL, который пришёл от LiveKit egress.
  *
  * Поддерживаемые форматы:

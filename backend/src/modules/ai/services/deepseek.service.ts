@@ -199,6 +199,7 @@ export class DeepSeekService {
           },
         };
       }
+      // json_schema без caller-tools сюда не доходит — обработан autoConvert.
     }
 
     if (callerHasTools) {
@@ -217,6 +218,26 @@ export class DeepSeekService {
       params['reasoning'] = { effort: input.reasoningEffort };
     }
     return { params, autoConvertedToolName };
+  }
+
+  /**
+   * DeepSeek JSON mode (`response_format: json_object`) требует, чтобы слово
+   * «json» присутствовало в system или user (офиц. дока + probe 2026-06-03),
+   * иначе 400 «Prompt must contain the word 'json'». Если его нет — дописываем
+   * короткую инструкцию в ХВОСТ последнего user-сообщения. SYSTEM не трогаем:
+   * стабильный SYSTEM нужен для prompt caching (правка SYSTEM ломает кеш).
+   */
+  private ensureJsonWord(
+    messages: Array<{ role: 'system' | 'user'; content: string }>,
+  ): void {
+    const hasJson = messages.some((m) =>
+      m.content.toLowerCase().includes('json'),
+    );
+    if (hasJson) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.role === 'user') {
+      lastMsg.content += '\n\nОтвет верни строго в формате JSON.';
+    }
   }
 
   private mapResponse(

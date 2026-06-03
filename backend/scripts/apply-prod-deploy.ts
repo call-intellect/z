@@ -134,6 +134,18 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-prompt-role-profile-build-fase0d.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-chat-v2-to-pro.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-mass-migrate-to-deepseek-pro.ts', args: ['--update-existing'], skipBootstrap: true },
+  // 2026-06-03 — унификация дешёвой модели DeepSeek: все LlmTaskRoute с legacy
+  // `deepseek-chat` → `deepseek-v4-flash` (DeepSeek-V4). Идемпотентен (skip
+  // editedByAdmin; повторный прогон = 0 кандидатов). На чистом старте сиды уже
+  // пишут flash → нечего мигрировать → skipBootstrap. Контекст: probe показал,
+  // что DeepSeek не поддерживает response_format=json_schema (см. deepseek.service.ts).
+  {
+    phase: 'patch',
+    script: 'scripts/patch-deepseek-chat-to-flash.ts',
+    args: ['--apply'],
+    hint: 'deepseek-chat → deepseek-v4-flash во всех LlmTaskRoute',
+    skipBootstrap: true,
+  },
   // 2026-06-03 — восстановить secondary/tertiary fallback для meeting-report-fast
   // (нормализованный primary затенял legacy 3-провайдерную цепочку → single-provider timeout)
   { phase: 'patch', script: 'scripts/patch-ensure-meeting-report-fast-fallback.ts', hint: 'fallback openai+ollama для meeting-report-fast', skipBootstrap: true },

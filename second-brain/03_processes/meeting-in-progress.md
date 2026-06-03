@@ -143,6 +143,7 @@ LiveKit отдаёт room_finished — но этот переход уже в [[
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-06-03 | `VideoArea` в `MeetingRoom.tsx`: демонстрация экрана авто-фокусится на главной сцене (`FocusLayout` + `CarouselLayout`), а не «4-м участником» в `GridLayout`; одиночный участник без демонстрации — `object-fit: contain` (класс `kora-video-solo`), чтобы кадр не обрезался на широких экранах. Появился `LayoutContextProvider` → работает ручной фокус тайла | [[05_история/2026-06-03-meeting-room-screenshare-focus-and-solo-fit]] |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-25 | recordByDefault → `true` по умолчанию | [[01_projects/recording]] |
 | 2026-05-21 | Шумоподавление в `MeetingRoom` | — |

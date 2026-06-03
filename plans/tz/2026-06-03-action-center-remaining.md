@@ -79,11 +79,13 @@ phases:
 **Что НЕ входит:** менять саму логику порогов; трогать per-Org `curationSettings` (это per-tenant override — остаётся; AdminSetting задаёт **дефолты платформы**).
 
 **Acceptance:**
-- [ ] Все перечисленные ключи зарегистрированы в `admin-setting-schema-registry.ts` (тип/диапазон/дефолт/описание RU).
-- [ ] Кроны и сервисы читают значения через `getDynamic` (code-fallback при отсутствии записи).
-- [ ] Меняешь значение в админке → поведение меняется без релиза; изменения в history/audit.
-- [ ] typecheck/lint/тесты зелёные; unit на «getDynamic → используется, fallback при отсутствии».
-- [ ] `prod-deploy-log.md` Шаг 1 обновлён (новые AdminSetting + seed дефолтов, если нужен).
+- [x] 14 ключей зарегистрированы в `admin-setting-schema-registry.ts` (9 курация `knowledge.curation*` + 5 `pendingActions.*`) и засижены в `seed-admin-settings.ts` (уже в `apply-prod-deploy`).
+- [x] Сервисы/кроны читают через `resolveSync` (cache→ENV→default; sync-вариант getDynamic для геттеров/кронов). Курация — единая точка `normalizeSettings` (через `cfg.curation`), покрывает триаж+autotune; напоминания — `cfg.pendingActions` в cron+провайдерах (curation/conflict/intake — все 3, после ревью).
+- [x] Меняешь значение в админке → поведение меняется без релиза (resolveSync читает hydrated cacheMap, applySync на pub/sub); history/audit — штатные у `AdminSettingsService.set`.
+- [x] typecheck/lint/build/тесты зелёные (319 в curation+pending-actions+admin); unit на «cfg-дефолт используется / fallback при отсутствии» + поведенческие на слоты/urgentAgeDays.
+- [x] `prod-deploy-log.md` Шаг 1 обновлён (14 ключей через seed-admin-settings, новых ENV нет — admin-only).
+
+**Статус C2 (2026-06-04): закрыта.** Сверх дословного scope (правило «чини класс», по адверс-ревью): `urgentAgeDays` мигрирован НЕ только в curation.provider, но и в **conflict/intake** провайдерах (была рассинхронизация с админкой в одной ленте); parse-fallback частичного per-Org JSON сведён на `def.*` (admin-дефолт применяется единообразно).
 
 **Файлы-ориентиры:** `backend/src/modules/admin/settings/admin-setting-schema-registry.ts`, `backend/src/common/config/typed-config.service.ts` (паттерн `getDynamic`), `curation.service.ts` (`normalizeSettings`), `curation/workers/curation-autotune.cron.ts`, `pending-actions/workers/pending-actions-reminder.cron.ts`, `pending-actions/providers/curation.provider.ts`.
 
@@ -101,10 +103,12 @@ phases:
 **Что НЕ входит:** менять контракты decide/resolve (готовы); RBAC (внутри сервисов).
 
 **Acceptance:**
-- [ ] `/curation/[id]` рендерит карточку, действия работают (decide → item уходит из очереди), deep-review требует reasoning.
-- [ ] Страница конфликтов: резолюция/dismiss работают.
-- [ ] `actionUrl` провайдеров точные; «Открыть» из `/actions`, колокольчика, Telegram ведёт на конкретную карточку (не 404).
-- [ ] typecheck/lint/тесты зелёные (вкл. обновлённые provider-спеки).
+- [x] `/curation/[id]` (page + CurationDetailClient): рендерит карточку (proposedPayload, triageReason, level/status, decisions, связанные конфликты), панель решения (8 типов из реального enum), `isReasoningRequired(level,decisionType)` = deep ИЛИ структурные типы; approve_with_edits парсит payload, escalate/merge_categories требуют свои поля; успех → mutate+redirect.
+- [x] Конфликты: список `/curation/conflicts` + detail `/curation/conflicts/[id]` (resolve accept_new/keep_old/merge/evolving — evolving требует обе ISO-даты; dismiss с reasoning). Роль-гейт строго owner/admin.
+- [x] `actionUrl` провайдеров точные: curation → `/curation/${id}`, conflict → `/curation/conflicts/${id}`; spec-ассерты обновлены. Deep-link из колокольчика/дашборда/Telegram ведёт на конкретную карточку.
+- [x] typecheck/lint/frontend-build/тесты зелёные (вкл. обновлённые provider-спеки + unit на isReasoningRequired/isResolveBlocked).
+
+**Статус C3 (2026-06-04): закрыта.** Фронт-слои `curation.api.ts`/`domain/curation.ts` уже существовали — реализованы только страницы. Backend-эндпоинты были готовы. Адверсариальное ревью пройдено.
 
 **Файлы-ориентиры:** `backend/src/modules/curation/curation.controller.ts` (готовые эндпоинты), `pending-actions/providers/{curation,conflict}.provider.ts` + их `*.spec.ts`, frontend `app/(authenticated)/curation/` (есть `page.tsx` очереди — образец), `src/api/curation*.api.ts` (если нет — создать слой).
 

@@ -625,5 +625,29 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 `curation_verifier_verdict_total`, `curation_kill_switch_total`, `curation_autotune_adjustment_total`.
 Полная карта курации — [[../01_projects/curation]].
 
+### Лестница доверия видна пользователю (A1, 2026-06-03)
+
+Раньше `trustTier` был чисто бэкендовым полем `CardVersion` — пользователь не знал, проверена
+карточка человеком или нет. Теперь уровень доверия **показывается в Карте знаний и в provenance
+документа**:
+
+- `trustTier` (из `CardVersion.currentVersion`) пробрасывается в read-DTO регуляций / решений /
+  процессов / политик (`regulations.service`, `decisions.service` — включая supersede-цепочку
+  решений) и в provenance документа (`documents.service`/dto + контроллер-мапперы).
+- Фронт: компонент `TrustBadge` (`frontend/src/ui/components/shared/TrustBadge.tsx`) рендерит метку
+  по уровню — `provisional` → предупреждающий чип **«Не проверено человеком»**, `auto` → нейтральный
+  «Авто», `human` → без метки (доверие по умолчанию, шума не добавляем). Метка стоит на `/regulations`,
+  `/decisions` (список + деталь) и на вкладке «Извлечённые сущности» документа.
+
+Таким образом провизорно канонизированные карточки (AI-судья без человека) **явно помечены как
+непроверенные** — пользователь видит границу автоматического и человеческого доверия прямо в
+интерфейсе.
+
+> **Известный пробел:** карточки пока **не цитируются** в корпоративном чате — там нет ссылок на
+> карточки как на источники, а значит и метки `trustTier` рядом с цитатами. Закрывается отдельным
+> суб-ТЗ D (цитаты chat-v2 + метка доверия у цитат).
+
+Полная карта курации — [[../01_projects/curation]].
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

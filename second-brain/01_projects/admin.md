@@ -1,6 +1,6 @@
 ---
 title: Z-Admin — карта страниц
-updated: 2026-05-26
+updated: 2026-06-03
 ---
 
 # Z-Admin (super_admin)
@@ -13,6 +13,72 @@ updated: 2026-05-26
 
 Список фактически работающих страниц админки. Полная карта сайдбара — в
 [frontend/app/(admin)/admin/navigation.ts](../../frontend/app/(admin)/admin/navigation.ts).
+
+## Крутилки курации и напоминаний (AdminSetting)
+
+С 2026-06-03 (Action Center, Фаза C2) 14 платформенных дефолтов лестницы
+доверия и напоминаний вынесены из code-констант в `AdminSetting` —
+редактируются super_admin через UI с history + audit, читаются через
+`TypedConfigService.resolveSync` (cache → ENV → default, code-fallback).
+Зарегистрированы в
+[admin-setting-schema-registry.ts](../../backend/src/modules/admin/settings/admin-setting-schema-registry.ts),
+засижены в [seed-admin-settings.ts](../../backend/scripts/seed-admin-settings.ts)
+(уже в `apply-prod-deploy`). Новых ENV нет — admin-only. Полный механизм
+AdminSetting — [[admin-settings]].
+
+### 9 ключей лестницы доверия (`knowledge.curation*`)
+
+Единая платформенная точка чтения — `normalizeSettings(cfg.curation)` в
+`CurationService` (покрывает триаж + autotune). Per-Org `curationSettings`
+не тронут — это глобальные дефолты.
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `knowledge.curationProvisionalThresholdDefault` | `0.8` | порог, ниже которого карточка получает метку «Не проверено человеком» (provisional). |
+| `knowledge.curationAiVerifierEnabled` | `true` | включён ли AI-верификатор в триаже. |
+| `knowledge.curationAuditSampleRate` | `0.05` | доля auto-канонизированных карточек, попадающих в выборочный аудит. |
+| `knowledge.curationAutotuneEnabled` | `false` | включён ли авто-подбор порогов по решениям кураторов. |
+| `knowledge.curationThresholdMin` | `0.6` | нижняя граница, до которой autotune может опустить порог. |
+| `knowledge.curationThresholdMax` | `0.97` | верхняя граница autotune. |
+| `knowledge.curationAutotuneStep` | `0.02` | шаг изменения порога за один прогон autotune. |
+| `knowledge.curationMinDecisionsForAutotune` | `20` | минимум решений кураторов, прежде чем autotune начнёт двигать порог. |
+| `knowledge.curationMaxProvisionalOverride` | `0.2` | максимальный override provisional-порога на стороне Org. |
+
+`autoThreshold` (`knowledge.curationAutoThresholdDefault`) и
+`deepReviewThreshold` (`knowledge.curationDeepReviewThresholdDefault`) — те же
+крутилки, переключены на `resolveSync` в этой же фазе.
+
+### 5 ключей напоминаний (`pendingActions.*`)
+
+Единая точка — `cfg.pendingActions`, читается в
+`pending-actions-reminder.cron` и во всех 3 провайдерах (curation / conflict /
+intake), чтобы окно и пороги не рассинхронились.
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `pendingActions.reminderWindowStartHour` | `9` | начало «тихого окна» — раньше напоминания не шлём (час, 0–23). |
+| `pendingActions.reminderWindowEndHour` | `21` | конец окна напоминаний (час, 0–23). |
+| `pendingActions.reminderStepHours` | `3` | минимальный интервал между повторными напоминаниями по одному действию. |
+| `pendingActions.urgentAgeDays` | `5` | возраст незакрытого действия, после которого оно помечается срочным. |
+| `pendingActions.reminderLeadDays` | `3` | за сколько дней до дедлайна начинать напоминать. |
+
+## Поверхности курации (detail-страницы)
+
+С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные
+admin-поверхности с разбором конкретной карточки/конфликта (раньше была только
+очередь `/curation`):
+
+- **`/curation/[id]`** — детальная карточка курации: решение куратора (8
+  `decisionType`), `reasoning` обязателен при deep- и структурных решениях.
+  Роль-гейт: `owner` / `admin`, плюс кандидат-куратор из `candidateCuratorIds`
+  и super_admin.
+- **`/curation/conflicts`** — список конфликтов, и **`/curation/conflicts/[id]`**
+  — резолюция (`accept_new` / `keep_old` / `merge` / `evolving`) либо `dismiss`.
+  Роль-гейт строго `owner` / `admin`.
+
+`actionUrl` провайдеров pending-actions ведут deep-link'ом прямо на эти
+страницы (`/curation/${id}`, `/curation/conflicts/${id}`). Фон фичи —
+[[curation]].
 
 ## AI и модели
 

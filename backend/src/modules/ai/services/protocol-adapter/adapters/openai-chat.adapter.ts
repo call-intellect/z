@@ -10,6 +10,7 @@ import type {
   LlmToolCall,
 } from '../../llm.types';
 import { LlmError } from '../../llm.types';
+import { toOpenAiStrictSchema } from '../../strict-json-schema.util';
 import type {
   LlmProtocolAdapter,
   ProtocolAdapterProviderInfo,
@@ -126,7 +127,10 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
           json_schema: {
             name: fmt.name,
             strict: fmt.strict,
-            schema: fmt.schema,
+            // OpenAI strict требует additionalProperties:false + required со
+            // всеми ключами на каждом объекте — нормализуем схему (см.
+            // strict-json-schema.util). Без strict — отдаём как есть.
+            schema: fmt.strict ? toOpenAiStrictSchema(fmt.schema) : fmt.schema,
           },
         };
       }

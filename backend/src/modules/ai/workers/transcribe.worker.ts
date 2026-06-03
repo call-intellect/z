@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Prisma, SystemLogCategory } from '@prisma/client';
 import type { AudioTrack } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -9,6 +9,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { LogService } from '../../logging/log.service';
 import { MeetingsService } from '../../meetings/meetings.service';
 import { extractKeyFromUrl } from '../../recordings/s3-keys';
 import { S3Service } from '../../recordings/s3.service';
@@ -48,7 +49,27 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(AiUsageLogService) private readonly usage: AiUsageLogService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // DB-логи (система логов в БД). Optional — spec'и строят воркер
+    // позиционно без LogService; в рантайме резолвится (@Global LoggingModule).
+    @Optional() @Inject(LogService) private readonly logs?: LogService,
   ) {}
+
+  /** Best-effort DB-лог под модулем `ai.transcribe` (наследует traceId из ALS). */
+  private dbLog(
+    level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+    action: string,
+    message: string,
+    details?: unknown,
+  ): void {
+    this.logs?.write({
+      level,
+      category: SystemLogCategory.JOB,
+      module: 'ai.transcribe',
+      action,
+      message,
+      ...(details !== undefined ? { details } : {}),
+    });
+  }
 
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
@@ -148,15 +169,36 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       update: {},
     });
 
+    let totalWords = 0;
+    let totalTextLength = 0;
     for (const [idx, track] of audioTracks.entries()) {
       this.logger.debug(
         { meetingId, trackIndex: idx + 1, total: audioTracks.length, identity: track.livekitIdentity, trackId: track.id },
         'transcribe: обрабатываем трек',
       );
-      await this.transcribeOneTrack(meetingId, transcript.id, track, baseStartedAt, job);
+      const summary = await this.transcribeOneTrack(meetingId, transcript.id, track, baseStartedAt, job);
+      totalWords += summary.wordsCount;
+      totalTextLength += summary.textLength;
       this.logger.debug(
         { meetingId, trackIndex: idx + 1, identity: track.livekitIdentity },
         'transcribe: трек транскрибирован',
+      );
+      // Результат по треку в DB-логи (видно спикера, слова, текст).
+      this.dbLog(
+        summary.wordsCount === 0 && summary.textLength === 0 ? 'WARN' : 'INFO',
+        'ai.transcribe.track',
+        `transcribe: трек ${idx + 1}/${audioTracks.length} «${summary.speakerName}» — ${summary.wordsCount} слов, ${summary.textLength} символов`,
+        {
+          trackIndex: idx + 1,
+          totalTracks: audioTracks.length,
+          trackId: track.id,
+          identity: track.livekitIdentity,
+          speakerName: summary.speakerName,
+          wordsCount: summary.wordsCount,
+          textLength: summary.textLength,
+          durationSeconds: summary.durationSeconds,
+          transcriptPreview: summary.transcriptPreview,
+        },
       );
     }
 
@@ -168,11 +210,59 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       seconds: (Date.now() - startedAt) / 1000,
     });
 
+    // Детект пустой транскрипции на уровне встречи: ни в одном треке нет ни слов,
+    // ни текста. Делаем это ЗАМЕТНЫМ в БД-логах (иначе пустой транскрипт уходит
+    // в merge → пустой показ + холостой прогон LLM по пустому вводу).
+    if (totalWords === 0 && totalTextLength === 0) {
+      this.dbLog(
+        'WARN',
+        'ai.transcribe.no_speech',
+        `transcribe: ПУСТАЯ транскрипция — все ${audioTracks.length} треков без слов и текста (нет речи / битое аудио / mismatch ответа Vox)`,
+        { meetingId, tracks: audioTracks.length },
+      );
+      this.logger.warn(
+        { meetingId, tracks: audioTracks.length },
+        'transcribe: пустая транскрипция (все треки пустые)',
+      );
+    }
+
     await this.queue.enqueueMerge(meetingId);
+    this.dbLog(
+      'INFO',
+      'ai.transcribe.merge_enqueued',
+      `transcribe: merge поставлен — ${audioTracks.length} треков, всего ${totalWords} слов`,
+      { meetingId, tracks: audioTracks.length, totalWords, totalTextLength },
+    );
     this.logger.log(
-      { meetingId, tracks: audioTracks.length },
+      { meetingId, tracks: audioTracks.length, totalWords, totalTextLength },
       'transcribe: успешно — merge поставлен',
     );
+  }
+
+  /** Сводка результата транскрипции одного трека (для логов и агрегации). */
+  private static trackSummary(
+    speakerName: string,
+    transcriptText: string,
+    wordsCount: number,
+    durationSeconds: number,
+  ): {
+    speakerName: string;
+    wordsCount: number;
+    textLength: number;
+    durationSeconds: number;
+    transcriptPreview: string;
+  } {
+    const max = 2000;
+    return {
+      speakerName,
+      wordsCount,
+      textLength: transcriptText.length,
+      durationSeconds,
+      transcriptPreview:
+        transcriptText.length > max
+          ? `${transcriptText.slice(0, max)}…[+${transcriptText.length - max}]`
+          : transcriptText,
+    };
   }
 
   // ───────────────────────── per-track ─────────────────────────────────────
@@ -183,7 +273,13 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
     track: AudioTrack,
     baseStartedAt: Date,
     job: Job<AiJobData>,
-  ): Promise<void> {
+  ): Promise<{
+    speakerName: string;
+    wordsCount: number;
+    textLength: number;
+    durationSeconds: number;
+    transcriptPreview: string;
+  }> {
     const startedAt = Date.now();
     const audioKey = extractKeyFromUrl(track.audioUrl, this.cfg.s3.bucket);
     if (!audioKey) {
@@ -264,6 +360,13 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
         words: (voxResult.words ?? []) as unknown as Prisma.InputJsonValue,
       },
     });
+
+    return TranscribeWorker.trackSummary(
+      track.participantName,
+      voxResult.transcriptText,
+      voxResult.words?.length ?? 0,
+      voxResult.durationSeconds,
+    );
   }
 
   // ────────────────────────── failure handling ─────────────────────────────

@@ -322,6 +322,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private telegramDigestSentTotal!: Counter<'tenant_top' | 'result'>;
   // Reply-classify result: status_command | comment | new_task | unknown.
   private telegramReplyClassifiedTotal!: Counter<'tenant_top' | 'kind'>;
+  // Action Center B3 — повторяющееся Telegram-напоминание о pending-подтверждениях.
+  // result ∈ sent | empty | dedup | error.
+  private pendingReminderSentTotal!: Counter<'tenant_top' | 'result'>;
 
   // ── core router (SBA α-3) ─────────────────────────────────────────
   private coreRouterDispatchedTotal!: Counter<'specialist' | 'signal_type'>;
@@ -1687,6 +1690,11 @@ export class BusinessMetricsService implements OnModuleInit {
     this.telegramDigestSentTotal = this.getOrCreateCounter({
       name: 'telegram_digest_sent_total',
       help: 'Tracker Phase 4 РФ — утренний дайджест задач, отправленный в Telegram. result: sent | empty | dedup_skip | error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
+    this.pendingReminderSentTotal = this.getOrCreateCounter({
+      name: 'pending_reminder_sent_total',
+      help: 'Action Center B3 — повторяющееся Telegram-напоминание о pending-подтверждениях. result: sent | empty | dedup | error.',
       labelNames: ['tenant_top', 'result'] as const,
     });
     this.telegramReplyClassifiedTotal = this.getOrCreateCounter({
@@ -4299,6 +4307,20 @@ export class BusinessMetricsService implements OnModuleInit {
     result: 'sent' | 'empty' | 'dedup_skip' | 'error';
   }): void {
     this.telegramDigestSentTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
+  /**
+   * Action Center B3 — повторяющееся Telegram-напоминание о
+   * pending-подтверждениях. result: sent | empty | dedup | error.
+   */
+  incPendingReminderSent(args: {
+    tenantTop: string;
+    result: 'sent' | 'empty' | 'dedup' | 'error';
+  }): void {
+    this.pendingReminderSentTotal.inc({
       tenant_top: args.tenantTop,
       result: args.result,
     });

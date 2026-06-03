@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { PendingActionsModule } from '../pending-actions/pending-actions.module';
 import { ProbeModule } from '../probe/probe.module';
 import { TrackerModule } from '../tracker/tracker.module';
 
@@ -65,6 +66,9 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // escalation) и HolidayService (расчёт «следующего рабочего дня»).
     ProbeModule,
     TrackerModule,
+    // Action Center B3 — DailyDigestService использует PendingActionsService
+    // для блока «Ждёт подтверждения» в ежедневном отчёте.
+    PendingActionsModule,
   ],
   controllers: [
     OperationsDashboardController,

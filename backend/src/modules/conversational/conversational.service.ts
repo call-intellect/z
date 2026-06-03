@@ -110,6 +110,12 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // самоинициированного чек-ина. Caller обычно передаёт preferredChannelKinds=
   // [originChannelKind], но если не передал — fallback на бот-каналы + in_app.
   'checkin.ack': ['telegram_bot', 'max_bot', 'in_app'],
+  // Action Center B3: повторяющееся напоминание о pending-подтверждениях.
+  // Бот-каналы (мгновенный пинг) + in_app fallback. Не critical — уважает
+  // quiet hours / disabledUntil. Cron явно передаёт preferredChannelKinds=
+  // ['telegram_bot'] и шлёт как system.message (рендер уже поддержан), эта
+  // policy — дефолт на случай прямого вызова с eventType 'actions.reminder'.
+  'actions.reminder': ['telegram_bot', 'max_bot', 'in_app'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

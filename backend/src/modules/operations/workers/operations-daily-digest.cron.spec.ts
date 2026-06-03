@@ -61,6 +61,8 @@ describe('OperationsDailyDigestCron', () => {
         createdAt: '2026-05-25T01:00:00Z',
       }),
       markDelivered: vi.fn().mockResolvedValue(undefined),
+      // Action Center B3 — персональный блок «Ждёт подтверждения».
+      buildPendingActionsLine: vi.fn().mockResolvedValue(null),
     };
     const conversational = {
       sendNotification: vi.fn().mockResolvedValue({ id: 'n1' }),

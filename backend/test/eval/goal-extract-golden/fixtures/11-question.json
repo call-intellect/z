@@ -1,0 +1,18 @@
+{
+  "fixtureId": "11-question",
+  "blockName": "Обсуждение",
+  "signalType": "plan_item",
+  "criticalQuestion": "Что обсуждали?",
+  "trustedAnswer": "А мы вообще будем делать тёмную тему в админке?",
+  "tags": [
+    "вопрос"
+  ],
+  "evidenceQuotes": [
+    "Анна: а мы вообще будем делать тёмную тему?"
+  ],
+  "expected": {
+    "isGoal": false,
+    "reason": "это вопрос, а не цель"
+  },
+  "category": "reject"
+}

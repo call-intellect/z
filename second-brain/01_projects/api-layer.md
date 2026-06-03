@@ -115,6 +115,28 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 | PATCH | `/api/v1/vendors/:id` | Обновить. RBAC `vendor:write`. 2026-05-28. |
 | DELETE | `/api/v1/vendors/:id` | Soft-delete. RBAC `vendor:delete`. 2026-05-28. |
 
+## Goals OKR v2 — Граф целей (2026-06-02)
+
+ТЗ — [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md). Полная заметка — [[goals-and-strategic-alignment]] §«Goals OKR v2». Все под `CookieAuthGuard + TenantGuard`. (Базовый CRUD целей `GET/POST/PATCH/DELETE /goals` и темы — описаны выше в Phase 9.)
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/goals/:id/key-results` | Создать Key Result. Body `{ name, unit?, startValue, targetValue, currentValue?, sourceKind?, sourceConfig? }` | owner (RBAC `goal_key_result:write`) |
+| PATCH | `/api/v1/goals/:id/key-results/:krId` | Обновить KR. Ручной `currentValue` → пишет `GoalKeyResultCheckpoint(recordedBy='manual')` + помечает поле в `manualOverride` (M0). | owner |
+| DELETE | `/api/v1/goals/:id/key-results/:krId` | Удалить KR (каскад checkpoints). | owner |
+| POST | `/api/v1/goals/:id/supersede` | Заменить цель новой версией: создаёт новый Goal с `supersededById`, старой `validUntil=now` (история сохраняется). | owner |
+| PATCH | `/api/v1/goals/:id` (расширен) | Помимо базовых полей принимает `parentGoalId` (reparent c `assertNoCycle`/`assertParentExists`), `progressStatus`, `promotionState` (например `suggested→active` — «Принять цель»). | owner |
+| POST | `/api/v1/ideas/:id/goal` | Привязать гипотезу к цели (`Idea.goalId`). Валидация goal+tenant, audit. «Двигает цель». | owner/admin |
+| PATCH | `/api/v1/cycles/:id` (расширен) | Принимает `primaryGoalId` — «этот спринт продвигает цель X» (валидация goal). | по RBAC спринтов |
+
+**Дашборд директора (`GET /api/v1/dashboard/director`)** — `DirectorDashboardDto` расширен опц. блоками:
+- `goalsTree?` — дерево active-целей (parent→children) с per-KR `progressPercent` и `progressStatus`.
+- `goalsPulse?` — счётчики недели по `progressStatus` (✅ выполнено / 🟢 в движении / 🟡 риск / 🔴 застряло / ⚪ выпало) + `newThisWeek`.
+
+Наполняются `fetchGoalsTree` / `fetchGoalsPulse` в `DirectorDashboardService.getDirectorView`.
+
+> RBAC: новый ресурс `goal_key_result` (owner r/w/d, admin/manager r). Доставка пульса — не REST, а `ConversationalService` eventType `goals.pulse` (см. [[workers-queues]] cron `goals-pulse`).
+
 ## Recognition + Gamification
 
 | Метод | Путь | Назначение | T |
@@ -412,5 +434,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-05-25 (feedback):** добавлен раздел «Feedback — канал обратной связи + AI-кластеризация» с пользовательскими и админскими эндпоинтами `/api/v1/feedback/*` и `/api/v1/admin/feedback/*`. Полная заметка фичи — [[feedback]].
 - **2026-05-26 (clones v2, Фаза 7 §9):** добавлены `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` — многотуровый диалог с клоном, dialog-layer, режимы factual / judgmental, taskType `dialog-multi-query-clone` на DeepSeek V4 Pro. Доступ через модель `CloneAccessGrant`, флаг `CLONE_V2_ENABLED`. См. [[skill-and-clone]] §«Доработки 2026-05-26».
 - **2026-05-26 (clones admin CRUD + user list):** добавлены 5 admin endpoints `/api/v1/admin/clones/access-grants` (list / create / revoke / extend / per-clone-view) + 2 user endpoints `/api/v1/clones/conversations` (мои диалоги с клоном) и `/api/v1/me/clone-access` (что мне выдано). `AdminAuditInterceptor.classifyAction` расширен 3 ветками (grant/revoke/extend, severity high). `RbacService.canAccess*Clone` исправлен: теперь фильтрует активность грантов (`revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())`). См. [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md).
+- **2026-06-02 (Goals OKR v2):** добавлен раздел «Goals OKR v2 — Граф целей» — KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, расширенный `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `POST /ideas/:id/goal`, расширенный `PATCH /cycles/:id` (primaryGoalId), дашборд `goalsTree`/`goalsPulse`. Новый RBAC-ресурс `goal_key_result`. См. [plans/tz/2026-06-02-goals-okr-v2.md](../../plans/tz/2026-06-02-goals-okr-v2.md).
 
 [[../index|← index]]

@@ -1,0 +1,18 @@
+{
+  "fixtureId": "12-smalltalk",
+  "blockName": "Болтовня",
+  "signalType": "plan_item",
+  "criticalQuestion": "О чём говорили?",
+  "trustedAnswer": "Погода сегодня отличная, кофе в офисе закончился, надо заказать.",
+  "tags": [
+    "офис"
+  ],
+  "evidenceQuotes": [
+    "Иван: кофе закончился, погода класс, идём гулять?"
+  ],
+  "expected": {
+    "isGoal": false,
+    "reason": "болтовня, не цель"
+  },
+  "category": "reject"
+}

@@ -8,6 +8,7 @@
  *   - GET  /api/v1/me/ideas?role=author|supporter
  *   - POST /api/v1/ideas/:id/status
  *   - POST /api/v1/ideas/:id/support
+ *   - POST /api/v1/ideas/:id/goal      (Goals OKR v2 — «двигает цель…»)
  *   - POST /api/v1/me/ideas/:id/withdraw
  *   - GET  /api/v1/idea-clusters
  *   - GET  /api/v1/idea-clusters/:id
@@ -16,6 +17,7 @@
  */
 
 import { apiClient } from './api-client';
+import { orgHeaders } from './admin-helpers';
 
 export type IdeaKindApi = 'internal' | 'client_request';
 export type IdeaStatusApi =
@@ -46,6 +48,8 @@ export interface IdeaListItemApi {
   firstProposedAt: string;
   lastDiscussedAt: string;
   createdByUserId: string | null;
+  /** Goals OKR v2 — цель, которую двигает эта гипотеза (null = не привязана). */
+  goalId: string | null;
 }
 
 export interface IdeaDetailApi extends IdeaListItemApi {
@@ -139,6 +143,22 @@ export const ideasApi = {
     return apiClient.post<{ ok: true; supporterCount: number }>(
       `/api/v1/ideas/${encodeURIComponent(id)}/support`,
       {},
+    );
+  },
+
+  /**
+   * Goals OKR v2 — привязать идею к цели («двигает цель…»).
+   * `goalId === null` отвязывает. RBAC: owner / admin / manager (write).
+   */
+  async linkGoal(
+    orgId: string,
+    ideaId: string,
+    goalId: string | null,
+  ): Promise<{ ok: true; goalId: string | null }> {
+    return apiClient.post<{ ok: true; goalId: string | null }>(
+      `/api/v1/ideas/${encodeURIComponent(ideaId)}/goal`,
+      { goalId },
+      { headers: orgHeaders(orgId) },
     );
   },
 

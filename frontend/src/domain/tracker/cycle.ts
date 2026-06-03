@@ -21,6 +21,8 @@ export interface CycleApi {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Goals OKR v2 — цель, которую продвигает спринт (null = не задана). */
+  primaryGoalId: string | null;
 }
 
 export interface ListCyclesResponseApi {
@@ -52,6 +54,8 @@ export interface Cycle {
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Goals OKR v2 — цель, которую продвигает спринт (null = не задана). */
+  primaryGoalId: string | null;
   // ─ computed ─
   isActive: boolean;
   isCompleted: boolean;
@@ -86,6 +90,7 @@ export function cycleFromApi(api: CycleApi): Cycle {
     completedAt,
     createdAt: new Date(api.createdAt),
     updatedAt: new Date(api.updatedAt),
+    primaryGoalId: api.primaryGoalId ?? null,
     isActive,
     isCompleted: completedAt !== null,
   };

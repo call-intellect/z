@@ -1,0 +1,24 @@
+{
+  "fixtureId": "10-activation-quarter",
+  "blockName": "Активация",
+  "signalType": "commitment",
+  "criticalQuestion": "Цель по активации?",
+  "trustedAnswer": "Довести активацию новых команд до 70% в первую неделю за квартал.",
+  "tags": [
+    "активация",
+    "квартал"
+  ],
+  "evidenceQuotes": [
+    "Рост: за квартал поднять week-1 активацию до 70%, сейчас 45%."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "активаци",
+      "70"
+    ],
+    "expectedHorizon": "quarterly",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

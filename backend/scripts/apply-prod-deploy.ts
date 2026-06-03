@@ -66,6 +66,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-settings.ts' },
   { phase: 'seed-base', script: 'scripts/seed-admin-settings-billing.ts', hint: '6 ключей billing.* для tier_standard' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-goals-pulse.ts', hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
 
@@ -98,6 +99,9 @@ const STEPS: Step[] = [
     // Action Center A1 «лестница доверия» (2026-06-02) — curation-verify
     // (debate-curation-verify[-critic|-supporter|-neutral]).
     'curation',
+    // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals):
+    // goal-extract / goal-hierarchy-link / goals-pulse-summarize.
+    'goals',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -298,6 +302,17 @@ const STEPS: Step[] = [
     phase: 'backfill',
     script: 'scripts/backfill-table-entity-sync.ts',
     hint: 'Smart-tables Фаза 2: graph-driven строки в системные autoCreate-таблицы',
+    skipBootstrap: true,
+  },
+  // Goals OKR v2 (2026-06-02) Фаза 0 — после prisma:push legacy-цели получили
+  // recordedAt=now() от @default(now()). Backfill выставляет recordedAt=createdAt
+  // живым версиям (validUntil/supersededById IS NULL). Идемпотентен. На чистом
+  // старте целей нет → skipBootstrap. ТЗ: plans/tz/2026-06-02-goals-okr-v2.md §2.5.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-goal-v2-defaults.ts',
+    hint: 'Goals OKR v2: recordedAt=createdAt для legacy-целей',
+    args: ['--apply'],
     skipBootstrap: true,
   },
 

@@ -620,3 +620,22 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Goals OKR v2 (2026-06-02): провенанс целей — поиск по блокам-источникам
+-- (KNN-dedup в специалисте 3-14). GIN-индекс на массиве Goal.sourceBlockIds —
+-- reverse-lookup «какие цели добыты из этого блока».
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Goal'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Goal_sourceBlockIds_gin"
+      ON "Goal" USING GIN ("sourceBlockIds")
+    $sql$;
+  END IF;
+END $$;

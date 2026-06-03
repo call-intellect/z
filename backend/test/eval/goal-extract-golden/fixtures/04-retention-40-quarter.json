@@ -1,0 +1,25 @@
+{
+  "fixtureId": "04-retention-40-quarter",
+  "blockName": "Метрики",
+  "signalType": "commitment",
+  "criticalQuestion": "Какая цель по удержанию?",
+  "trustedAnswer": "Поднять retention с 28% до 40% к концу квартала.",
+  "tags": [
+    "метрики",
+    "retention"
+  ],
+  "evidenceQuotes": [
+    "Аналитик: цель — поднять retention с 28% до 40% к концу квартала."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "retention",
+      "удерж",
+      "40"
+    ],
+    "expectedHorizon": "quarterly",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

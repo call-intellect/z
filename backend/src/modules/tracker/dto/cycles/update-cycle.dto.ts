@@ -13,6 +13,10 @@ export const UpdateCycleSchema = z
     ownedById: z.string().max(64).nullable().optional(),
     description: z.string().max(10_000).nullable().optional(),
     timezone: z.string().max(64).optional(),
+    /**
+     * Goals OKR v2 (Фаза 5) — «этот спринт продвигает цель X». null — отвязать.
+     */
+    primaryGoalId: z.string().min(1).nullable().optional(),
   })
   .strict();
 

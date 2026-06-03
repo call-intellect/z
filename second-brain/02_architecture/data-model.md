@@ -1125,6 +1125,126 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 
 [[../index|← index]]
 
+## Goals OKR v2 — Граф целей (2026-06-02)
+
+**Источник:** [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md) §2. Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` (НЕ переписывание) — расширение `Goal`, две новые модели измеримых ориентиров, тонкие FK слоёв, 4 enum'а. Применяется через `bun run prisma:push` (не migrate).
+
+### Расширение `model Goal`
+
+Существующие поля (`parentGoalId`, `horizon`, `entityId`, `cachedAlignment*`, `weight`, `status`) НЕ менялись. Добавлены:
+
+```prisma
+source            GoalSource         @default(manual)   // как появилась: руками или специалист 3-14
+promotionState    GoalPromotionState @default(active)   // suggested (AI-кандидат) | active | dismissed
+progressStatus    GoalProgressStatus @default(on_track) // отдельная ось «движение для пульса»
+sourceBlockIds    String[]           @default([])       // провенанс блоков графа (GIN-индекс)
+confidence        Decimal?           @db.Decimal(4, 3)  // уверенность извлечения 0..1 (NULL для ручных)
+manualOverride    Json               @default("{}")     // набор имён полей, «прибитых» ручной правкой (M0)
+// bitemporal — для «передумали через 2 дня»:
+validFrom         DateTime?
+validUntil        DateTime?
+recordedAt        DateTime           @default(now())
+supersededById    String?
+supersedes        Goal?   @relation("GoalSupersedes", fields: [supersededById], references: [id], onDelete: SetNull)
+supersedeChain    Goal[]  @relation("GoalSupersedes")
+keyResults        GoalKeyResult[]
+linkedIdeas       Idea[]  @relation("IdeaGoal")
+linkedCycles      Cycle[] @relation("CyclePrimaryGoal")
+@@index([tenantId, promotionState])
+@@index([tenantId, validUntil])
+```
+
+> `progressStatus` — самостоятельная ось «движение для пульса», `status` (GoalStatus) остаётся жизненным циклом. Их не путать.
+
+### `model GoalKeyResult` (новая) — измеримый ориентир, 0..N на цель
+
+```prisma
+model GoalKeyResult {
+  id            String   @id @default(cuid())
+  tenantId      String
+  goalId        String
+  goal          Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  name          String                                  // «Провести встречи с клиентами»
+  unit          String?                                 // «встреч», «%», «₽»; NULL — без числа
+  startValue    Decimal  @db.Decimal(18, 4)
+  targetValue   Decimal  @db.Decimal(18, 4)
+  currentValue  Decimal  @db.Decimal(18, 4) @default(0) // авто из источника или руками
+  sourceKind    GoalKrSourceKind @default(manual)       // откуда тянуть currentValue авто
+  sourceConfig  Json     @default("{}")                 // {meetingType, since} или {entityId}
+  source        GoalSource @default(manual)
+  manualOverride Json    @default("{}")
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  checkpoints   GoalKeyResultCheckpoint[]
+  @@index([tenantId, goalId])
+  @@index([goalId])
+}
+```
+
+### `model GoalKeyResultCheckpoint` (новая) — иммутабельная история значений (тренд для пульса)
+
+```prisma
+model GoalKeyResultCheckpoint {
+  id           String   @id @default(cuid())
+  tenantId     String
+  keyResultId  String
+  keyResult    GoalKeyResult @relation(fields: [keyResultId], references: [id], onDelete: Cascade)
+  value        Decimal  @db.Decimal(18, 4)
+  recordedBy   String   @default("auto")  // 'auto' (источник) | 'manual'
+  note         String?  @db.Text
+  createdAt    DateTime @default(now())
+  @@index([keyResultId, createdAt])
+  @@index([tenantId, createdAt])
+}
+```
+
+> Идиома Z: кэш текущего значения в `GoalKeyResult.currentValue` + неизменяемая история в `GoalKeyResultCheckpoint` — как `GoalAlignmentSnapshot` и `PersonGoalContribution`.
+
+### `model WeeklyGoalsPulseDigest` (новая) — еженедельный пульс целей
+
+Клон `DailyOperationsDigest` в окне 1 неделя. Идемпотентность cron'а `goals-pulse` (`0 6 * * 1`) по `(tenantId, isoWeek)`.
+
+```prisma
+model WeeklyGoalsPulseDigest {
+  id            String   @id @default(cuid())
+  tenantId      String
+  isoWeek       String                          // ISO-неделя, напр. '2026-W23'
+  bodyMarkdown  String   @db.Text
+  metricsJson   Json                            // счётчики целей по progressStatus + newThisWeek
+  deliveredAt   DateTime?                        // когда отправили owner/coo (если включён тумблер)
+  createdAt     DateTime @default(now())
+  @@unique([tenantId, isoWeek])
+}
+```
+
+### Тонкие FK слоёв (развилка 2)
+
+- **`Idea.goalId String?`** + relation `goal Goal? @relation("IdeaGoal", ...)` + `@@index([tenantId, goalId])` — гипотеза, двигающая цель.
+- **`Cycle.primaryGoalId String?`** + relation `primaryGoal Goal? @relation("CyclePrimaryGoal", ...)` + `@@index([tenantId, primaryGoalId])` — «этот спринт продвигает цель X».
+- **`Issue.goalId`** — уже был (relation `"IssueGoal"`), используется как есть для роллапа в `issue_rollup`.
+
+### Новые enum'ы
+
+```prisma
+enum GoalSource         { manual ai }
+enum GoalPromotionState { suggested active dismissed }
+enum GoalProgressStatus { on_track at_risk stalled achieved dropped }
+enum GoalKrSourceKind   { manual meeting_count issue_rollup metric_entity }
+```
+
+> Существующие `GoalStatus { active paused achieved abandoned }` и `GoalHorizon { strategic annual quarterly monthly sprint }` НЕ трогали.
+
+### Индексы вне schema.prisma
+
+GIN-индекс `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")` — через `backend/scripts/postgres-init.sql` (быстрый поиск целей по блокам-источникам для провенанса; Prisma не умеет GIN на `String[]`).
+
+### Backfill
+
+`backend/scripts/backfill-goal-v2-defaults.ts` — legacy-целям проставляет `source='manual'`, `promotionState='active'`, `progressStatus='on_track'`, `recordedAt=createdAt`. Идемпотентен, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`).
+
+[[../index|← index]]
+
 ## Технические логи (LoggingModule, 2026-06-01)
 
 ```prisma

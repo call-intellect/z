@@ -1,0 +1,25 @@
+{
+  "fixtureId": "07-hiring-team-month",
+  "blockName": "Команда",
+  "signalType": "commitment",
+  "criticalQuestion": "Цель по найму на месяц?",
+  "trustedAnswer": "Закрыть 3 вакансии в команду разработки за этот месяц.",
+  "tags": [
+    "найм",
+    "месяц"
+  ],
+  "evidenceQuotes": [
+    "HR: за месяц закрыть 3 вакансии бэкенда."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "ваканси",
+      "3",
+      "найм"
+    ],
+    "expectedHorizon": "monthly",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

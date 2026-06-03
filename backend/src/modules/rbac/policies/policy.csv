@@ -109,6 +109,14 @@ p, owner, *, *, goal, delete
 p, admin, *, *, goal, read
 p, manager, *, *, goal, read
 
+# Goals OKR v2 (2026-06-02) — goal_key_result. Те же права, что у goal:
+# owner r/w/d, admin / manager — read-only. super_admin — bypass.
+p, owner, *, *, goal_key_result, read
+p, owner, *, *, goal_key_result, write
+p, owner, *, *, goal_key_result, delete
+p, admin, *, *, goal_key_result, read
+p, manager, *, *, goal_key_result, read
+
 # knowledge-core (Фаза 10) — source. Внешние источники (telegram, mango,
 # IMAP, web-form). Owner — full manage; admin — write/read; manager —
 # read-only (видят список своих источников, не редактируют).

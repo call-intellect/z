@@ -1,10 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
+import useSWR from 'swr';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, Flame, Search, ThumbsUp } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Flame,
+  Search,
+  Target,
+  ThumbsUp,
+} from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
+import { goalsApi } from '@/api/goals.api';
 import {
   ideasApi,
   type IdeaClusterApi,
@@ -12,6 +22,7 @@ import {
   type IdeaStatusApi,
 } from '@/api/ideas.api';
 import { useAuth } from '@/contexts/auth-context';
+import { GoalPickerDialog } from '@/ui/components/shared/GoalPickerDialog';
 import {
   IDEA_KIND_LABEL,
   IDEA_STATUS_CHIP,
@@ -619,8 +630,20 @@ function IdeaDetailPane({
   onUpdated: (d: IdeaDetail) => void;
   onListChanged: () => Promise<void> | void;
 }) {
+  const { currentOrgId, currentOrgRole } = useAuth();
+  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+
   const [statusDialog, setStatusDialog] = useState<IdeaStatus | null>(null);
   const [statusReason, setStatusReason] = useState('');
+  const [goalDialogOpen, setGoalDialogOpen] = useState(false);
+
+  // Имя привязанной цели — ленивый одиночный запрос только при наличии goalId.
+  const { data: linkedGoal } = useSWR(
+    idea.goalId && currentOrgId
+      ? (['idea-linked-goal', currentOrgId, idea.goalId] as const)
+      : null,
+    async ([, oid, gid]) => goalsApi.get(oid, gid),
+  );
 
   const refreshIdea = useCallback(async () => {
     try {
@@ -632,6 +655,33 @@ function IdeaDetailPane({
       );
     }
   }, [idea.id, onUpdated]);
+
+  const handleLinkGoal = useCallback(
+    async (goalId: string | null) => {
+      if (!currentOrgId) {
+        toast.error('Сначала выберите организацию');
+        return;
+      }
+      try {
+        await ideasApi.linkGoal(currentOrgId, idea.id, goalId);
+        toast.success(goalId ? 'Идея привязана к цели' : 'Идея отвязана от цели');
+        await refreshIdea();
+        await onListChanged();
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'forbidden') {
+          toast.error('Привязывать цель могут только owner / admin');
+        } else if (e instanceof ApiError && e.code === 'goal_not_found') {
+          toast.error('Выбранная цель не найдена');
+        } else {
+          toast.error(
+            e instanceof ApiError ? e.message : 'Не удалось привязать цель',
+          );
+        }
+        throw e;
+      }
+    },
+    [currentOrgId, idea.id, refreshIdea, onListChanged],
+  );
 
   const handleSupport = useCallback(async () => {
     try {
@@ -725,6 +775,35 @@ function IdeaDetailPane({
         {(idea.confidence * 100).toFixed(0)}%
       </section>
 
+      <section className="rounded-md border border-border-subtle bg-bg-overlay/30 p-3">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium text-fg-primary">
+            <Target size={14} className="text-accent" />
+            Двигает цель
+          </h3>
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setGoalDialogOpen(true)}
+            >
+              {idea.goalId ? 'Изменить' : 'Привязать цель…'}
+            </Button>
+          ) : null}
+        </div>
+        {idea.goalId ? (
+          <Link
+            href={`/goals/${encodeURIComponent(idea.goalId)}`}
+            className="text-sm font-medium text-accent hover:underline"
+          >
+            {linkedGoal?.name ?? 'Открыть цель'}
+          </Link>
+        ) : (
+          <p className="text-sm text-fg-tertiary">—</p>
+        )}
+      </section>
+
       {idea.statusReason ? (
         <section className="rounded-md border border-border-subtle bg-bg-overlay/30 p-3">
           <h4 className="mb-1 text-xs font-medium uppercase tracking-wider text-fg-tertiary">
@@ -795,6 +874,18 @@ function IdeaDetailPane({
         confirmLabel="Подтвердить"
         onConfirm={handleChangeStatus}
       />
+
+      {currentOrgId && canEdit ? (
+        <GoalPickerDialog
+          open={goalDialogOpen}
+          onOpenChange={setGoalDialogOpen}
+          orgId={currentOrgId}
+          currentGoalId={idea.goalId}
+          onPick={handleLinkGoal}
+          title="Двигает цель"
+          description="Выберите цель компании, гипотезой для которой является эта идея."
+        />
+      ) : null}
     </article>
   );
 }

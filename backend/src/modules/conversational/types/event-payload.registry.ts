@@ -201,6 +201,23 @@ const OperationsWeeklyDigestPayloadSchema = z
   .strict();
 
 /**
+ * Goals OKR v2 Фаза 4 — еженедельный пульс целей.
+ *
+ * Payload `Notification(eventType='goals.pulse')`. Recipient — userId роли
+ * owner/coo Org'а. `digestId` ссылается на `WeeklyGoalsPulseDigest.id`,
+ * `isoWeek` — `YYYY-WXX` (drill-down на `/goals`).
+ */
+const GoalsPulsePayloadSchema = z
+  .object({
+    digestId: z.string().min(1).max(80),
+    isoWeek: z.string().regex(/^\d{4}-W\d{2}$/),
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(4_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+/**
  * ТЗ 2026-05-26 (clone-access-grant-admin-api) §5 — payload уведомления
  * `clone.access_granted`. Отправляется получателю гранта (`grantedToUserId`)
  * один раз, при успешном POST `/api/v1/admin/clones/access-grants`.
@@ -287,6 +304,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['proactive.notification', ProactiveNotificationPayloadSchema],
   // SBA β-8.1 — недельная сводка операционного директора.
   ['operations.weekly_digest', OperationsWeeklyDigestPayloadSchema],
+  // Goals OKR v2 Фаза 4 — еженедельный пульс целей.
+  ['goals.pulse', GoalsPulsePayloadSchema],
   // T8 (2026-05-24) — @-упоминание в комментарии задачи трекера.
   ['issue.mention', IssueMentionPayloadSchema],
   // Calendar MVP (2026-05-25) — напоминание о событии календаря.

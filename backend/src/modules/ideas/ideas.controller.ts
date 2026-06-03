@@ -27,6 +27,8 @@ import {
   type ChangeIdeaStatusBody,
   type IdeaClusterDto,
   type IdeaDetailDto,
+  LinkIdeaGoalSchema,
+  type LinkIdeaGoalBody,
   ListIdeaClustersQuerySchema,
   type ListIdeaClustersQuery,
   type ListIdeaClustersResponse,
@@ -127,6 +129,27 @@ export class IdeasController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.changeStatus({ tenantId: t, id, body, userId: user.id });
+  }
+
+  @Post('ideas/:id/goal')
+  @ApiOperation({
+    summary: 'Привязать/отвязать идею к цели (owner / admin). goalId=null — отвязать',
+  })
+  async linkGoal(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(LinkIdeaGoalSchema))
+    body: LinkIdeaGoalBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; goalId: string | null }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.linkGoal({
+      tenantId: t,
+      ideaId: id,
+      goalId: body.goalId,
+      userId: user.id,
+    });
   }
 
   @Post('ideas/:id/support')

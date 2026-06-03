@@ -1,0 +1,25 @@
+{
+  "fixtureId": "06-nps-quality",
+  "blockName": "Качество продукта",
+  "signalType": "plan_item",
+  "criticalQuestion": "Какая цель по качеству?",
+  "trustedAnswer": "Стать продуктом, которому клиенты доверяют — поднять NPS до 60.",
+  "tags": [
+    "качество",
+    "nps"
+  ],
+  "evidenceQuotes": [
+    "Продакт: к концу квартала довести NPS до 60, сейчас 42."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "nps",
+      "довер",
+      "60"
+    ],
+    "expectedHorizon": "quarterly",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

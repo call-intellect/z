@@ -66,7 +66,7 @@ export class DeepSeekService {
         model,
       });
       this.logger.debug(
-        `DeepSeek-Pro: автоконвертация json_schema → tool model=${model} schemaName=${autoConvertedToolName}`,
+        `DeepSeek: автоконвертация json_schema → tool model=${model} schemaName=${autoConvertedToolName}`,
       );
     }
 
@@ -132,12 +132,17 @@ export class DeepSeekService {
     const fmt = input.responseFormat;
     const callerHasTools = !!(input.tools && input.tools.length > 0);
 
-    // ТЗ 2026-05-25 §4 + Фаза 1 — детектор thinking-моделей через единый helper
-    // (`llm-thinking-models.ts`). Pro / *-pro / *-thinking падают 400 на strict
-    // json_schema и forced tool_choice.
+    // Детектор thinking-моделей (`llm-thinking-models.ts`) нужен теперь только
+    // для reasoning.effort. Для выбора формата он БОЛЬШЕ не используется:
+    // probe 2026-06-03 (scripts/eval/probe-deepseek-formats.ts) + офиц. дока
+    // DeepSeek показали, что у DeepSeek-V4 даже flash не поддерживает
+    // response_format=json_schema (400 «This response_format type is unavailable
+    // now») и forced/required tool_choice («Thinking mode does not support…»).
     const isThinking = isThinkingModel(model);
-    const autoConvert =
-      isThinking && fmt?.type === 'json_schema' && !callerHasTools;
+    // json_schema ВСЕГДА реализуем через tool-путь (tools + tool_choice='auto')
+    // для ЛЮБОЙ модели DeepSeek — раньше конверт включался лишь для thinking,
+    // из-за чего flash/chat падали на каждом chapters/tasks/block-ingest.
+    const autoConvert = fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
 
@@ -161,33 +166,27 @@ export class DeepSeekService {
       }
       // response_format НЕ выставляем — модель ответит через tool_calls.
     } else if (fmt) {
-      // ТЗ 2026-05-25 Фаза 1 — на thinking-модели НИКОГДА не выставляем strict
-      // json_schema: даже если caller сам передал tools (forced-конверт не
-      // нужен, но strict json_schema всё равно 400). Снимаем тихо до
-      // json_object, чтобы caller получил хотя бы JSON-mode.
-      const skipStrictOnThinking =
-        isThinking && fmt.type === 'json_schema' && callerHasTools;
-      if (skipStrictOnThinking) {
-        // Метрика + лог для observability — caller передал лишний параметр.
+      // json_schema + caller уже передал свои tools: json_schema всё равно
+      // нельзя (DeepSeek не поддерживает его ни на одной модели). Снимаем тихо —
+      // остаются tools + tool_choice='auto' (выставляются ниже).
+      const stripSchema = fmt.type === 'json_schema' && callerHasTools;
+      if (stripSchema) {
+        // Метрика + лог для observability — caller передал нерабочий параметр.
         this.metrics?.incLlmThinkingModelGuard({
           kind: 'strict-stripped',
           model,
         });
         this.logger.warn(
-          `DeepSeek-thinking: strict json_schema снят на ${model}; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем только tools + tool_choice='auto'.`,
+          `DeepSeek: json_schema снят на ${model} — DeepSeek не поддерживает response_format=json_schema; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем tools + tool_choice='auto'.`,
         );
       } else if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };
-      } else if (fmt.type === 'json_schema') {
-        params['response_format'] = {
-          type: 'json_schema',
-          json_schema: {
-            name: fmt.name,
-            strict: fmt.strict,
-            schema: fmt.schema,
-          },
-        };
+        // DeepSeek JSON mode требует слово «json» в system/user, иначе
+        // 400 «Prompt must contain the word 'json'». Гарантируем его наличие,
+        // не трогая SYSTEM (стабильный SYSTEM важен для prompt caching).
+        this.ensureJsonWord(messages);
       }
+      // json_schema без caller-tools сюда не доходит — обработан autoConvert.
     }
 
     if (callerHasTools) {
@@ -206,6 +205,26 @@ export class DeepSeekService {
       params['reasoning'] = { effort: input.reasoningEffort };
     }
     return { params, autoConvertedToolName };
+  }
+
+  /**
+   * DeepSeek JSON mode (`response_format: json_object`) требует, чтобы слово
+   * «json» присутствовало в system или user (офиц. дока + probe 2026-06-03),
+   * иначе 400 «Prompt must contain the word 'json'». Если его нет — дописываем
+   * короткую инструкцию в ХВОСТ последнего user-сообщения. SYSTEM не трогаем:
+   * стабильный SYSTEM нужен для prompt caching (правка SYSTEM ломает кеш).
+   */
+  private ensureJsonWord(
+    messages: Array<{ role: 'system' | 'user'; content: string }>,
+  ): void {
+    const hasJson = messages.some((m) =>
+      m.content.toLowerCase().includes('json'),
+    );
+    if (hasJson) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.role === 'user') {
+      lastMsg.content += '\n\nОтвет верни строго в формате JSON.';
+    }
   }
 
   private mapResponse(

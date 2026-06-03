@@ -66,7 +66,7 @@ export class DeepSeekService {
         model,
       });
       this.logger.debug(
-        `DeepSeek-Pro: автоконвертация json_schema → tool model=${model} schemaName=${autoConvertedToolName}`,
+        `DeepSeek: автоконвертация json_schema → tool model=${model} schemaName=${autoConvertedToolName}`,
       );
     }
 
@@ -134,10 +134,14 @@ export class DeepSeekService {
 
     // ТЗ 2026-05-25 §4 + Фаза 1 — детектор thinking-моделей через единый helper
     // (`llm-thinking-models.ts`). Pro / *-pro / *-thinking падают 400 на strict
-    // json_schema и forced tool_choice.
+    // json_schema и forced tool_choice. Нужен ниже для reasoning-effort.
     const isThinking = isThinkingModel(model);
-    const autoConvert =
-      isThinking && fmt?.type === 'json_schema' && !callerHasTools;
+    // Фикс 2026-06-03 (mtg_01KT6HQ…): прокси отдаёт «This response_format type
+    // is unavailable now» для json_schema на ВСЕХ deepseek-моделях (flash/chat
+    // тоже, не только thinking-pro). Поэтому конвертируем json_schema →
+    // synthetic tool для любой модели, а не только thinking. Tools +
+    // tool_choice='auto' поддерживаются всеми, ответ достаём из tool_calls.
+    const autoConvert = fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
 
@@ -161,20 +165,19 @@ export class DeepSeekService {
       }
       // response_format НЕ выставляем — модель ответит через tool_calls.
     } else if (fmt) {
-      // ТЗ 2026-05-25 Фаза 1 — на thinking-модели НИКОГДА не выставляем strict
-      // json_schema: даже если caller сам передал tools (forced-конверт не
-      // нужен, но strict json_schema всё равно 400). Снимаем тихо до
-      // json_object, чтобы caller получил хотя бы JSON-mode.
-      const skipStrictOnThinking =
-        isThinking && fmt.type === 'json_schema' && callerHasTools;
-      if (skipStrictOnThinking) {
+      // Фикс 2026-06-03 — strict json_schema не поддерживается ни одной
+      // deepseek-моделью текущего прокси. Если caller уже передал tools —
+      // forced-конверт не нужен, просто снимаем json_schema (оставляем
+      // tools + tool_choice='auto'), не выставляя response_format.
+      const skipStrict = fmt.type === 'json_schema' && callerHasTools;
+      if (skipStrict) {
         // Метрика + лог для observability — caller передал лишний параметр.
         this.metrics?.incLlmThinkingModelGuard({
           kind: 'strict-stripped',
           model,
         });
         this.logger.warn(
-          `DeepSeek-thinking: strict json_schema снят на ${model}; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем только tools + tool_choice='auto'.`,
+          `DeepSeek: strict json_schema снят на ${model}; caller передал tools=${input.tools!.length} + json_schema(${fmt.name}). Оставляем только tools + tool_choice='auto'.`,
         );
       } else if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };

@@ -64,7 +64,11 @@ function makeHandler(
   return { handler, prisma, meetings, metrics };
 }
 
-function evt(type: string, room: string, participant?: { identity: string; name?: string }): WebhookEvent {
+function evt(
+  type: string,
+  room: string,
+  participant?: { identity: string; name?: string; kind?: string | number },
+): WebhookEvent {
   return {
     event: type,
     room: { name: room },
@@ -163,7 +167,7 @@ describe('LivekitEventsHandler', () => {
     );
   });
 
-  it('participant_joined: egress-рекордер (identity не host:/guest:) → no-op, не создаёт фантома', async () => {
+  it('participant_joined: egress-рекордер (identity не host:/guest:, нет kind) → no-op, не создаёт фантома', async () => {
     const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
     await handler.handle(
       evt('participant_joined', 'm-1', { identity: 'EG_cxZHYyvp3SGD' }),
@@ -172,6 +176,52 @@ describe('LivekitEventsHandler', () => {
     expect((prisma as any).participant.findUnique).not.toHaveBeenCalled();
     expect((prisma as any).participant.create).not.toHaveBeenCalled();
     expect((prisma as any).participant.update).not.toHaveBeenCalled();
+  });
+
+  it('participant_joined: kind=EGRESS (строка) → no-op даже если identity случайно с префиксом', async () => {
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
+    await handler.handle(
+      evt('participant_joined', 'm-1', { identity: 'guest:fake', kind: 'EGRESS' }),
+    );
+
+    // Семантический фильтр приоритетнее строкового префикса.
+    expect((prisma as any).participant.findUnique).not.toHaveBeenCalled();
+    expect((prisma as any).participant.create).not.toHaveBeenCalled();
+  });
+
+  it('participant_joined: kind=2 (число EGRESS) → no-op', async () => {
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
+    await handler.handle(
+      evt('participant_joined', 'm-1', { identity: 'EG_x', kind: 2 }),
+    );
+
+    expect((prisma as any).participant.create).not.toHaveBeenCalled();
+  });
+
+  it('participant_joined: kind=AGENT → no-op (AI-ассистент не Participant)', async () => {
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
+    await handler.handle(
+      evt('participant_joined', 'm-1', { identity: 'agent:assistant', kind: 'AGENT' }),
+    );
+
+    expect((prisma as any).participant.create).not.toHaveBeenCalled();
+  });
+
+  it('participant_joined: kind=STANDARD (явно) → создаёт участника', async () => {
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
+    await handler.handle(
+      evt('participant_joined', 'm-1', { identity: 'host:u-1', name: 'Хост', kind: 'STANDARD' }),
+    );
+
+    expect((prisma as any).participant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          meetingId: 'm-1',
+          livekitIdentity: 'host:u-1',
+          role: 'host',
+        }),
+      }),
+    );
   });
 
   it('participant_left обновляет leftAt', async () => {

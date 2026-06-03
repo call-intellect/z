@@ -5,12 +5,14 @@ import type { SignalType } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminCacheService } from '../../admin/services/admin-cache.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 import type {
   DirectorDashboardAlertGoalDto,
   DirectorDashboardDto,
   DirectorDashboardEntityDto,
   DirectorDashboardKpiDto,
   DirectorDashboardOpenQuestionDto,
+  DirectorDashboardRequiresActionDto,
   DirectorDashboardSignalCountersDto,
   DirectorDashboardSignalDto,
   DirectorDashboardStrategicAlignmentDto,
@@ -81,6 +83,8 @@ export class DirectorDashboardService {
     private readonly commitSvc: CommitmentReliabilityService,
     @Inject(HangingDecisionsService)
     private readonly hangingSvc: HangingDecisionsService,
+    @Inject(PendingActionsService)
+    private readonly pendingActions: PendingActionsService,
   ) {}
 
   /**
@@ -91,12 +95,24 @@ export class DirectorDashboardService {
   async getDirectorView(args: {
     tenantId: string;
     period: 'week' | 'month';
+    userId?: string;
   }): Promise<DirectorDashboardDto> {
-    const cacheKey = `dashboard:director:${args.tenantId}:${args.period}`;
+    // userId входит в ключ — блок requiresAction персональный (pending-
+    // подтверждения текущего пользователя), нельзя отдавать чужой счётчик
+    // из кэша. Без userId (старые вызовы) — ключ без суффикса.
+    const cacheKey = `dashboard:director:${args.tenantId}:${args.period}${
+      args.userId ? `:u:${args.userId}` : ''
+    }`;
     const cached = this.cache.get<DirectorDashboardDto>(cacheKey);
     if (cached) {
       return cached;
     }
+
+    // Action Center B2 — блок «Требует вашего подтверждения». Best-effort:
+    // ошибка PendingActionsService не должна валить весь дашборд.
+    const requiresAction = args.userId
+      ? await this.fetchRequiresAction(args.tenantId, args.userId)
+      : undefined;
 
     const since = this.calcSince(args.period);
 
@@ -191,6 +207,7 @@ export class DirectorDashboardService {
           delta: null,
         },
         strategicAlignment,
+        requiresAction,
         isEmpty: true,
       };
       this.cache.setWithTtl(cacheKey, sampleResult, DASHBOARD_TTL_MS);
@@ -222,6 +239,7 @@ export class DirectorDashboardService {
       kpiCommitmentReliability,
       kpiHangingDecisions,
       strategicAlignment,
+      requiresAction,
       isEmpty: false,
     };
 
@@ -338,6 +356,41 @@ export class DirectorDashboardService {
         `narrativeSummary fail (tenantId=${args.tenantId}, period=${args.period}): ${err instanceof Error ? err.message : String(err)}`,
       );
       return null;
+    }
+  }
+
+  // ──────────────────────── requires action (B2) ───────────────────────────
+
+  /**
+   * Action Center B2 — сводка pending-подтверждений текущего пользователя.
+   * Best-effort: на любую ошибку PendingActionsService возвращает нулевую
+   * сводку, чтобы не валить дашборд. Frontend при total=0 плитку не рисует.
+   */
+  private async fetchRequiresAction(
+    tenantId: string,
+    userId: string,
+  ): Promise<DirectorDashboardRequiresActionDto> {
+    try {
+      const res = await this.pendingActions.getCount({ tenantId, userId });
+      return {
+        total: res.total,
+        bySource: {
+          curation: res.bySource.curation,
+          conflict: res.bySource.conflict,
+          intake: res.bySource.intake,
+          probe: res.bySource.probe,
+        },
+      };
+    } catch (err) {
+      this.logger.warn(
+        `requiresAction fail (tenantId=${tenantId}, userId=${userId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return {
+        total: 0,
+        bySource: { curation: 0, conflict: 0, intake: 0, probe: 0 },
+      };
     }
   }
 

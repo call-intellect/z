@@ -23,9 +23,11 @@ import {
   fromOperationsOverviewApi,
   type OperationsOverviewDomain,
 } from '@/domain/operations-dashboard';
+import { useAuth } from '@/contexts/auth-context';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
 import { CountUp } from '@/ui/components/dashboard/charts';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
+import { RequiresActionBanner } from '@/ui/components/dashboard/RequiresActionBanner';
 import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
@@ -45,6 +47,7 @@ import { MaturityWidget } from './widgets/MaturityWidget';
  * в `package.json` — переделаем на BarChart / PieChart.
  */
 export function OperationsDashboardClient() {
+  const { currentOrgId } = useAuth();
   const [data, setData] = useState<OperationsOverviewDomain | null>(null);
   const [commitments, setCommitments] =
     useState<OpenCommitmentsListApi | null>(null);
@@ -142,6 +145,11 @@ export function OperationsDashboardClient() {
 
       {/* §5.1 — Общая навигация по операционному разделу. */}
       <OperationsTabs />
+
+      {/* Action Center B2 — баннер «Требует подтверждения». Скрыт при total=0. */}
+      <div className="mb-4">
+        <RequiresActionBanner orgId={currentOrgId} />
+      </div>
 
       <YesterdayDigestCard
         loading={dailyDigestSwr.isLoading}

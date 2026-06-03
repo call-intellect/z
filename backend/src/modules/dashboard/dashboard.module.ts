@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { OperationsModule } from '../operations/operations.module';
+// Action Center B2 — блок «Требует вашего подтверждения» на дашборде директора.
+// Экспортирует PendingActionsService.
+import { PendingActionsModule } from '../pending-actions/pending-actions.module';
 
 import { BurnoutRiskDetectorCron } from './agents/burnout-risk-detector.cron';
 import { BusFactorAnalyzerCron } from './agents/bus-factor-analyzer.cron';
@@ -53,7 +56,7 @@ import { TeamHealthService } from './services/team-health.service';
  * в AppModule.
  */
 @Module({
-  imports: [PrismaModule, OperationsModule],
+  imports: [PrismaModule, OperationsModule, PendingActionsModule],
   controllers: [DirectorDashboardController],
   providers: [
     DirectorDashboardService,

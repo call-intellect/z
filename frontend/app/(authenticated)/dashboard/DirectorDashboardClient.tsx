@@ -69,6 +69,7 @@ import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocit
 import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
 import { PeopleAtRiskWidget } from '@/ui/components/dashboard/PeopleAtRiskWidget';
 import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
+import { RequiresActionTile } from '@/ui/components/dashboard/RequiresActionTile';
 import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
@@ -315,6 +316,14 @@ export function DirectorDashboardClient() {
         <div className="mb-6 flex items-center gap-2 rounded-xl bg-chip-danger-bg p-3 text-sm text-chip-danger-fg shadow-card-soft">
           <AlertCircle size={16} />
           {error}
+        </div>
+      )}
+
+      {/* Action Center B2 — «Требует вашего подтверждения». Призыв к действию
+          вверху главной; при total=0 компонент сам себя скрывает. */}
+      {data?.requiresAction && (
+        <div className="mb-4">
+          <RequiresActionTile data={data.requiresAction} loading={loading} />
         </div>
       )}
 

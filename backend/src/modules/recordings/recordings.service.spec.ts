@@ -10,7 +10,9 @@ import {
 } from '../../common/errors/domain-errors';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { LivekitService } from '../livekit/livekit.service';
 import type { MeetingsService } from '../meetings/meetings.service';
+
 
 import type { LivekitEgressClient } from './livekit-egress.client';
 import { RecordingsService } from './recordings.service';
@@ -40,6 +42,16 @@ function makeService(setup: {
   audioTrack?: { id: string; trackEgressId: string | null } | null;
   egressStartId?: string;
   egressTrackStartId?: string;
+  /** Что вернёт `livekit.listParticipants` (для reconcile-сверки). */
+  livekitParticipants?: Array<{
+    identity: string;
+    name?: string;
+    kind?: number;
+    tracks?: Array<{ sid: string; type: number }>;
+  }>;
+  /** Если задан — `audioTrack.findFirst` вернёт его (имитация уже собранной дорожки). */
+  existingAudioTrack?: { id: string } | null;
+  recordingsForReconcile?: Array<{ meetingId: string }>;
 }): {
   svc: RecordingsService;
   prisma: any;
@@ -47,6 +59,7 @@ function makeService(setup: {
   s3: any;
   metrics: any;
   cfg: any;
+  livekit: any;
 } {
   const meetingFindUnique = vi.fn(async () => setup.meeting ?? null);
   const recordingFindUnique = vi.fn(async (args: any) => {
@@ -61,7 +74,7 @@ function makeService(setup: {
   }));
   const recordingUpdate = vi.fn();
   const recordingActionCreate = vi.fn();
-  const audioTrackFindFirst = vi.fn(async () => null);
+  const audioTrackFindFirst = vi.fn(async () => setup.existingAudioTrack ?? null);
   const participantFindUnique = vi.fn(async () => setup.participant ?? null);
   const audioTrackCreate = vi.fn();
   const audioTrackUpdate = vi.fn();
@@ -115,6 +128,10 @@ function makeService(setup: {
     incRecordingsDeleted: vi.fn(),
   } as unknown as BusinessMetricsService;
 
+  const livekit = {
+    listParticipants: vi.fn(async () => setup.livekitParticipants ?? []),
+  } as unknown as LivekitService;
+
   const cfg = {
     retention: { defaultDays: 30, cron: '0 * * * *' },
     s3: {
@@ -127,8 +144,8 @@ function makeService(setup: {
     },
   } as unknown as TypedConfigService;
 
-  const svc = new RecordingsService(prisma, egress, s3, meetings, metrics, cfg);
-  return { svc, prisma, egress, s3, metrics, cfg };
+  const svc = new RecordingsService(prisma, egress, s3, meetings, metrics, cfg, livekit);
+  return { svc, prisma, egress, s3, metrics, cfg, livekit };
 }
 
 describe('RecordingsService', () => {
@@ -311,6 +328,103 @@ describe('RecordingsService', () => {
         }),
       }),
     );
+  });
+
+  // ─────────────────────────── reconcileTrackEgress ──────────────────────
+
+  const activeRecording = (): Recording => ({
+    id: 'r-1',
+    meetingId: 'm-1',
+    status: 'recording',
+    retentionDays: 30,
+    expiresAt: new Date(),
+    compositeEgressId: 'EG_C1',
+    mainVideoUrl: null,
+    audioTracks: [],
+  });
+
+  it('reconcileTrackEgress: догоняет AUDIO-треки STANDARD-участников (pull)', async () => {
+    const { svc, egress } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
+      recording: activeRecording(),
+      participant: { id: 'p-1' },
+      livekitParticipants: [
+        { identity: 'host:u-1', name: 'Хост', kind: 0, tracks: [{ sid: 'TR_A', type: 0 }] },
+        { identity: 'guest:g1', name: 'Гость', kind: 0, tracks: [{ sid: 'TR_B', type: 0 }] },
+      ],
+    });
+
+    await svc.reconcileTrackEgress('m-1');
+
+    expect((egress as any).startTrackEgress).toHaveBeenCalledTimes(2);
+    expect((egress as any).startTrackEgress).toHaveBeenCalledWith(
+      { id: 'm-1' },
+      'TR_A',
+      expect.objectContaining({ key: 'meetings/m-1/audio/host:u-1.ogg' }),
+    );
+    expect((egress as any).startTrackEgress).toHaveBeenCalledWith(
+      { id: 'm-1' },
+      'TR_B',
+      expect.objectContaining({ key: 'meetings/m-1/audio/guest:g1.ogg' }),
+    );
+  });
+
+  it('reconcileTrackEgress: пропускает egress-рекордеров (kind=EGRESS) и video-треки', async () => {
+    const { svc, egress } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
+      recording: activeRecording(),
+      participant: { id: 'p-1' },
+      livekitParticipants: [
+        // egress-рекордер — kind=EGRESS(2): пропустить целиком.
+        { identity: 'EG_xyz', kind: 2, tracks: [{ sid: 'TR_E', type: 0 }] },
+        // реальный участник, но трек видео (type=VIDEO=1): пропустить трек.
+        { identity: 'host:u-1', name: 'Хост', kind: 0, tracks: [{ sid: 'TR_V', type: 1 }] },
+      ],
+    });
+
+    await svc.reconcileTrackEgress('m-1');
+
+    expect((egress as any).startTrackEgress).not.toHaveBeenCalled();
+  });
+
+  it('reconcileTrackEgress: existing AudioTrack → не стартует повторный egress (идемпотентность)', async () => {
+    const { svc, egress } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
+      recording: activeRecording(),
+      existingAudioTrack: { id: 'a-1' },
+      livekitParticipants: [
+        { identity: 'host:u-1', name: 'Хост', kind: 0, tracks: [{ sid: 'TR_A', type: 0 }] },
+      ],
+    });
+
+    await svc.reconcileTrackEgress('m-1');
+
+    expect((egress as any).startTrackEgress).not.toHaveBeenCalled();
+  });
+
+  it('reconcileTrackEgress: recording не активна → не дёргает listParticipants', async () => {
+    const { svc, livekit } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
+      recording: { ...activeRecording(), status: 'finalizing' },
+      livekitParticipants: [
+        { identity: 'host:u-1', kind: 0, tracks: [{ sid: 'TR_A', type: 0 }] },
+      ],
+    });
+
+    await svc.reconcileTrackEgress('m-1');
+
+    expect((livekit as any).listParticipants).not.toHaveBeenCalled();
+  });
+
+  it('reconcileTrackEgress: записи нет → no-op', async () => {
+    const { svc, livekit } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
+      recording: null,
+    });
+
+    await svc.reconcileTrackEgress('m-1');
+
+    expect((livekit as any).listParticipants).not.toHaveBeenCalled();
   });
 
   // ─────────────────────────── getDownloadUrl ────────────────────────────

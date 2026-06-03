@@ -211,6 +211,24 @@ const IdleSchema = z.object({
   IDLE_MEETING_CRON: z.string().min(1).default('*/1 * * * *'),
 });
 
+/**
+ * Надёжность записи встреч (ТЗ 2026-06-03 meeting-recording-reliability).
+ *
+ *   - RECORDING_TRACK_RECONCILE_ENABLED — периодическая сверка per-track
+ *     аудиодорожек (cron `recording-track-reconcile`). Дефолт ON: это P0-фикс
+ *     полноты транскрипта (догоняет дорожки, потерянные на гонке старта записи
+ *     / reconnect / потере webhook). Kill-switch: выставить false, если сверка
+ *     создаёт нагрузку/дубли (защищено идемпотентностью, но оставляем рычаг).
+ *   - RECORDING_FASTSTART_ENABLED — пост-обработка composite MP4 в faststart
+ *     (`ffmpeg -movflags +faststart`), чтобы браузер играл видео прогрессивно,
+ *     не докачивая весь файл. Дефолт OFF: требует ffmpeg в образе + эмпирической
+ *     проверки на проде (moov в конце файла) перед включением.
+ */
+const RecordingReliabilitySchema = z.object({
+  RECORDING_TRACK_RECONCILE_ENABLED: zBool(true),
+  RECORDING_FASTSTART_ENABLED: zBool(false),
+});
+
 /** Базовые лимиты MVP. */
 const QuotasSchema = z.object({
   MAX_PARTICIPANTS_PER_MEETING: z.coerce.number().int().positive().default(10),
@@ -1888,6 +1906,7 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any).merge(D
   .merge(CrossmarkSchema)
   .merge(RetentionSchema)
   .merge(IdleSchema)
+  .merge(RecordingReliabilitySchema)
   .merge(QuotasSchema)
   .merge(AdminSchema)
   .merge(WebhooksOutSchema)

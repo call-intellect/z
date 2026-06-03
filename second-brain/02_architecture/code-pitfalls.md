@@ -119,6 +119,35 @@ official-типов. Правильно: `import { ZipArchive }` + локаль�
 **Как обойти:** при апгрейде `livekit-client`/`livekit-server-sdk` синхронно поднимать
 docker-образ `livekit/livekit-server` (и egress) до совместимой версии.
 
+## NestJS — валидация DTO: пайп только на уровне параметра
+
+`@UsePipes(new ZodValidationPipe(schema))` на уровне **метода/класса** прогоняет
+пайп через **ВСЕ** параметры хендлера, а не только `@Body`. Наш `ZodValidationPipe`
+(`common/pipes/zod-validation.pipe.ts`) не смотрит на `metatype`/тип параметра —
+слепо делает `schema.safeParse(value)`. Поэтому объектная схема падает на любом
+не-body аргументе: строковом `@Param('tenantId')`, объекте `@CurrentUser()`,
+строке `@CurrentOrg()`/`@Ip()` → **400 «Ошибка валидации входных данных»** ещё до
+бизнес-логики, при полностью валидном теле.
+
+**Симптом (2026-06-03):** супер-админ не мог активировать подписку Org
+(`POST /admin/orgs/:tenantId/billing/activate` → 400). Тем же багом скрыто были
+сломаны все мутирующие эндпоинты billing/referrals/inn-lookup, где кроме `@Body`
+есть ещё параметр (весь pay-flow кабинета, реф-выплаты, beacon атрибуции).
+
+**Канон проекта** — пайп на уровне параметра, валидирует ровно его:
+```ts
+async activate(
+  @Param('tenantId') tenantId: string,
+  @Body(new ZodValidationPipe(AdminActivateBodySchema)) body: AdminActivateBody,
+  @CurrentUser() user: CurrentUserPayload,
+) {}
+```
+Для query — `@Query(new ZodValidationPipe(QuerySchema))`.
+
+**Защита:** ESLint `no-restricted-syntax` (`backend/eslint.config.mjs`) запрещает
+`@UsePipes(new ZodValidationPipe(...))`. Регрессия — `common/pipes/zod-validation-pipe-param.e2e.spec.ts`
+и `modules/billing/admin-billing.controller.e2e.spec.ts`.
+
 ## Cypher только через GraphService
 
 С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.

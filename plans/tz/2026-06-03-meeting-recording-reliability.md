@@ -17,7 +17,27 @@ PR #17 (Tozix) уже закрыл два из трёх симптомов ча�
 
 ---
 
-## Фаза 1 — Надёжные per-track аудиодорожки (P0, новое) `[ ]`
+## Фаза 1 — Надёжные per-track аудиодорожки (P0, новое) `[x]`
+
+> **Реализовано 2026-06-03** (коммит `f6d89c80` + харднинг `c57e8fc8`). Гибрид push+pull:
+> реактивный `track_published` оставлен; добавлены догон на старте записи
+> (`recordings.start` → `reconcileTrackEgress`) и периодическая сверка-cron
+> `recording-track-reconcile` (`*/1`, kill-switch `RECORDING_TRACK_RECONCILE_ENABLED`,
+> дефолт ON). Идемпотентность: in-process `Set`-lock по `meetingId:identity`
+> (прод — один процесс) + DB-дедуп `findFirst(recordingId,livekitIdentity)` +
+> вынесен `startTrackEgressLocked`. Фильтр в сверке: `kind=STANDARD(0)` +
+> `TrackType.AUDIO(0)`. Метрика `recording_track_egress_failed_total` на провал
+> старта egress. Тесты: 6 кейсов (догон STANDARD, пропуск EGRESS/video,
+> идемпотентность, неактивная запись, нет записи, метрика при провале).
+>
+> **Решение по «расширить окно» (п.6):** гейт оставлен на статусе ЗАПИСИ
+> `{requested,recording}` (а не «пока встреча active») — это корректнее: важна
+> активность записи, а догон+сверка закрывают пропуск окна без риска старта
+> egress после остановки composite.
+> **`@@unique([recordingId,livekitIdentity])` НЕ добавлен:** push упал бы на
+> существующих дублях AudioTrack (а они вероятны — именно дубли мотивировали ТЗ);
+> при однопроцессной топологии lock+findFirst достаточны. Зафиксировано как
+> future-hardening для мультиреплики (см. итог).
 
 **Проблема:** дорожки спикеров создаются реактивно на webhook `track_published`; теряются на гонке старта записи, reconnect-republish и потере webhook → неполный транскрипт. (Доказано: `ensureTrackEgress` no-op при неактивной записи + нет ретрая + нет догона; webhook'и LiveKit без гарантий доставки — livekit#3976, #3725.)
 
@@ -53,7 +73,17 @@ PR #17 (Tozix) уже закрыл два из трёх симптомов ча�
 
 ---
 
-## Фаза 2 — Участники: усилить фильтр egress (P1, усиление PR #17) `[ ]`
+## Фаза 2 — Участники: усилить фильтр egress (P1, усиление PR #17) `[x]`
+
+> **Реализовано 2026-06-03** (коммит `90ca4fc4`). `extractParticipantKind`
+> нормализует `kind` из сырого protojson (строка `"EGRESS"` / число `2` /
+> отсутствие) к каноничному имени или `null`. `onParticipantJoined`:
+> `kind != STANDARD` → no-op; `kind` отсутствует (proto3 опускает дефолт
+> STANDARD=0) → fallback на префикс `host:`/`guest:` (PR #17, без регресса для
+> гостей). Подтверждено: приёмник парсит `JSON.parse`, НЕ `WebhookReceiver.receive`,
+> поэтому строко-/число-/absent-устойчивость обязательна. Тесты: kind=EGRESS
+> (строка/число) → no-op даже при ложном префиксе; kind=AGENT → no-op;
+> kind=STANDARD → создаётся; absent + EG_ → fallback no-op.
 
 **Оставляем:** корень PR #17 верен (egress-рекордеры = участники с `kind=EGRESS`), cleanup-скрипт хороший (dry-run, идемпотентный).
 
@@ -80,7 +110,22 @@ LiveKit даёт **семантическое поле `ParticipantKind`** (по
 
 ---
 
-## Фаза 3 — Видео: faststart (P1, усиление PR #17) `[ ]`
+## Фаза 3 — Видео: faststart (P1, усиление PR #17) `[x]`
+
+> **Реализовано 2026-06-03** (коммит `d9627c28`). `FaststartWorker`
+> (`recording.faststart`): скачивает composite → `ffmpeg -c copy -movflags
+> +faststart` → перезаливает по тому же S3-ключу (mainVideoUrl/presign не
+> меняются, idempotent). Enqueue из webhook `egress_ended`(composite) за флагом
+> `RECORDING_FASTSTART_ENABLED` (дефолт **OFF** — нужна эмпирическая проверка
+> на проде + ffmpeg в образе). `ffmpeg` добавлен в `backend/Dockerfile`
+> (попутно чинит `clip.render`, который тоже шеллит ffmpeg и падал бы ENOENT).
+> Подтверждено Context7: `EncodedFileOutput` MP4 НЕ выставляет faststart-опцию
+> → пост-обработка обязательна. Тесты: воркер (skip по флагу/без URL, happy-path
+> с key-extract + putObject + ffmpeg-args) + хендлер (enqueue gating on/off).
+>
+> **Эмпирическая проверка (п.2) — прод-шаг владельца:** воркер реализован,
+> но гейт OFF; включить `RECORDING_FASTSTART_ENABLED=true` после проверки
+> `ffprobe -v trace`/DevTools на боевой записи (см. prod-deploy-log).
 
 **Оставляем:** `ResponseContentType: video/mp4` + `inline` из PR #17 ([s3.service.ts](../../backend/src/modules/recordings/s3.service.ts), [recordings.service.ts:679](../../backend/src/modules/recordings/recordings.service.ts#L679)) — необходимый санитарный фикс.
 
@@ -126,10 +171,30 @@ LiveKit даёт **семантическое поле `ParticipantKind`** (по
 Не релевантно — LLM-промпты не затрагиваются.
 
 ## Итог
-Реализовано: участники (база) и Content-Type видео — в PR #17. Осталось:
-- **P0 Фаза 1** — надёжные аудиодорожки через reconciliation (главный незакрытый пункт, чинит полноту транскрипта/AI).
-- **P1 Фаза 2** — усилить фильтр участников до `ParticipantKind` (поверх PR #17).
-- **P1 Фаза 3** — faststart видео (поверх Content-Type PR #17), после эмпирической проверки.
-- P2 — HLS, стабильный identity, backfill.
 
-Доказательная база решений: сравнительная таблица механизмов записи (Фаза 1), семантическое поле `ParticipantKind` vs строковый префикс (Фаза 2), механизм GStreamer `qtmux` faststart=false + характер симптома (Фаза 3). Перед Фазой 1 — сверить в установленном SDK сигнатуры `listParticipants`/`TrackInfo.type` и наличие `kind` в webhook-payload.
+**Реализовано 2026-06-03** (ветка `fix/meeting-recording-reliability`, коммиты
+`f6d89c80`, `90ca4fc4`, `d9627c28`, `c57e8fc8`):
+- ✅ **P0 Фаза 1** — надёжные аудиодорожки через reconciliation (догон + cron + lock + метрика).
+- ✅ **P1 Фаза 2** — фильтр участников по `ParticipantKind` (семантика + префикс-fallback).
+- ✅ **P1 Фаза 3** — faststart-воркер видео + ffmpeg в образ (флаг OFF, ждёт прод-проверки).
+
+Верификация: `typecheck` чистый, `eslint` чистый, 47 unit-тестов зелёных
+(recordings 22 + webhooks 19 + faststart 4 + др.); независимое strict-review —
+критичных/high багов нет, P0/P1 мержабельны. Прод-аспекты — `docs/operations/prod-deploy-log.md`.
+
+**Future-hardening (не блокеры, по итогам ревью):**
+- `@@unique([recordingId, livekitIdentity])` на `AudioTrack` — превращает защиту от
+  двойного egress из «зависит от одного процесса» в инвариант БД. Нужен ПЕРЕД
+  переходом backend на >1 реплику. Перед push — дедуп существующих AudioTrack.
+- faststart-маркер «уже сделано» (`Recording.faststartDoneAt`) — short-circuit
+  повторного скачивания GB-файла после истечения Redis-дедупа. Только если флаг включат.
+
+**Осталось (P2, отдельные заходы):**
+- **Фаза 4** — HLS (`SegmentedFileOutput`) для встреч 1–2 ч (Context7 подтвердил как штатный путь длинных записей).
+- **Фаза 2 P2** — стабильный guest identity (надёжность reload гостя).
+- **Фаза 5** — backfill merged.json для старых встреч.
+
+Доказательная база (выполнена): сверены по типам `node_modules` сигнатуры
+`listParticipants`→`ParticipantInfo.{tracks,kind}`, `TrackType.AUDIO`,
+`EgressClient.listEgress`; форма webhook-payload (`JSON.parse` → kind строкой/
+числом/absent); отсутствие нативного faststart у `EncodedFileOutput` (Context7).

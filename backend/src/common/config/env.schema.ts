@@ -221,12 +221,16 @@ const IdleSchema = z.object({
  *     создаёт нагрузку/дубли (защищено идемпотентностью, но оставляем рычаг).
  *   - RECORDING_FASTSTART_ENABLED — пост-обработка composite MP4 в faststart
  *     (`ffmpeg -movflags +faststart`), чтобы браузер играл видео прогрессивно,
- *     не докачивая весь файл. Дефолт OFF: требует ffmpeg в образе + эмпирической
- *     проверки на проде (moov в конце файла) перед включением.
+ *     не докачивая весь файл. Дефолт ON. Операция идемпотентна и безопасна
+ *     (`-c copy`, перезалив после `exit 0`). Kill-switch — выставить false.
+ *   - RECORDING_FASTSTART_MIN_BYTES — порог размера composite, ниже которого
+ *     faststart НЕ запускается (мелкий файл браузер и так проглатывает мгновенно,
+ *     ремукс был бы лишней нагрузкой). Дефолт 50 МиБ.
  */
 const RecordingReliabilitySchema = z.object({
   RECORDING_TRACK_RECONCILE_ENABLED: zBool(true),
-  RECORDING_FASTSTART_ENABLED: zBool(false),
+  RECORDING_FASTSTART_ENABLED: zBool(true),
+  RECORDING_FASTSTART_MIN_BYTES: z.coerce.number().int().nonnegative().default(52_428_800),
 });
 
 /** Базовые лимиты MVP. */

@@ -112,20 +112,22 @@ LiveKit даёт **семантическое поле `ParticipantKind`** (по
 
 ## Фаза 3 — Видео: faststart (P1, усиление PR #17) `[x]`
 
-> **Реализовано 2026-06-03** (коммит `d9627c28`). `FaststartWorker`
+> **Реализовано 2026-06-03** (коммиты `d9627c28` + `ON+порог`). `FaststartWorker`
 > (`recording.faststart`): скачивает composite → `ffmpeg -c copy -movflags
 > +faststart` → перезаливает по тому же S3-ключу (mainVideoUrl/presign не
 > меняются, idempotent). Enqueue из webhook `egress_ended`(composite) за флагом
-> `RECORDING_FASTSTART_ENABLED` (дефолт **OFF** — нужна эмпирическая проверка
-> на проде + ffmpeg в образе). `ffmpeg` добавлен в `backend/Dockerfile`
-> (попутно чинит `clip.render`, который тоже шеллит ffmpeg и падал бы ENOENT).
+> `RECORDING_FASTSTART_ENABLED` (**дефолт ON** — операция безопасна: `-c copy`,
+> перезалив после `exit 0`) + **порог `RECORDING_FASTSTART_MIN_BYTES` (50 МиБ)**:
+> мелкий composite не ремуксим (браузер и так играет сразу), экономим
+> download+ffmpeg+upload на коротких встречах. `ffmpeg` добавлен в
+> `backend/Dockerfile` (попутно чинит `clip.render`, который тоже шеллит ffmpeg).
 > Подтверждено Context7: `EncodedFileOutput` MP4 НЕ выставляет faststart-опцию
-> → пост-обработка обязательна. Тесты: воркер (skip по флагу/без URL, happy-path
-> с key-extract + putObject + ffmpeg-args) + хендлер (enqueue gating on/off).
+> → пост-обработка обязательна. Тесты: воркер (skip по флагу/порогу/без URL,
+> happy-path) + хендлер (enqueue gating флаг + порог).
 >
-> **Эмпирическая проверка (п.2) — прод-шаг владельца:** воркер реализован,
-> но гейт OFF; включить `RECORDING_FASTSTART_ENABLED=true` после проверки
-> `ffprobe -v trace`/DevTools на боевой записи (см. prod-deploy-log).
+> **Решение по дефолту (владелец, 2026-06-03):** включить сразу, а не «после
+> ffprobe» — механизм moov-в-конце достоверен, операция идемпотентна; порог по
+> размеру снимает единственный реальный минус (лишний ремукс мелких файлов).
 
 **Оставляем:** `ResponseContentType: video/mp4` + `inline` из PR #17 ([s3.service.ts](../../backend/src/modules/recordings/s3.service.ts), [recordings.service.ts:679](../../backend/src/modules/recordings/recordings.service.ts#L679)) — необходимый санитарный фикс.
 

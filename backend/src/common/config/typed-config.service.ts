@@ -1408,7 +1408,9 @@ export class TypedConfigService {
   /**
    * Надёжность записи (ТЗ 2026-06-03 meeting-recording-reliability):
    *   - trackReconcileEnabled — периодическая сверка per-track дорожек (P0, ON).
-   *   - faststartEnabled      — faststart-постобработка composite MP4 (P1, OFF).
+   *   - faststartEnabled      — faststart-постобработка composite MP4 (P1, ON).
+   *   - faststartMinBytes     — порог: ниже него composite не ремуксится (мелкий
+   *     файл и так играет мгновенно). Дефолт 50 МиБ.
    */
   get recording() {
     return {
@@ -1420,7 +1422,12 @@ export class TypedConfigService {
       faststartEnabled: this.resolveSync<boolean>(
         'recording.faststartEnabled',
         'RECORDING_FASTSTART_ENABLED',
-        false,
+        true,
+      ),
+      faststartMinBytes: this.resolveSync<number>(
+        'recording.faststartMinBytes',
+        'RECORDING_FASTSTART_MIN_BYTES',
+        52_428_800,
       ),
     } as const;
   }

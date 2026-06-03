@@ -254,7 +254,7 @@ describe('LivekitEventsHandler', () => {
 
   // ───────────────────── faststart enqueue (Фаза 3) ──────────────────────
 
-  function egressEndedEvt(meetingId: string): WebhookEvent {
+  function egressEndedEvt(meetingId: string, size: number): WebhookEvent {
     return {
       event: 'egress_ended',
       egressInfo: {
@@ -262,7 +262,7 @@ describe('LivekitEventsHandler', () => {
         roomName: meetingId,
         requestType: 'room_composite',
         fileResults: [
-          { location: `https://s3.local/z-records/meetings/${meetingId}/composite.mp4`, size: 383, duration: 1_000_000_000 },
+          { location: `https://s3.local/z-records/meetings/${meetingId}/composite.mp4`, size, duration: 1_000_000_000 },
         ],
       },
     } as unknown as WebhookEvent;
@@ -281,20 +281,26 @@ describe('LivekitEventsHandler', () => {
       onCompositeEnded: vi.fn(async () => ({ status: 'finalizing', allReady: false })),
     } as any;
     const aiQueue = { enqueueRecordingFaststart: vi.fn(async () => undefined) } as any;
-    const cfg = { recording: { faststartEnabled } } as any;
+    const cfg = { recording: { faststartEnabled, faststartMinBytes: 52_428_800 } } as any;
     const handler = new LivekitEventsHandler(prisma, meetings, metrics, recordings, aiQueue, cfg);
     return { handler, aiQueue };
   }
 
-  it('egress_ended(composite): флаг RECORDING_FASTSTART_ENABLED on → ставит faststart в очередь', async () => {
+  it('egress_ended(composite): флаг on + размер выше порога → ставит faststart в очередь', async () => {
     const { handler, aiQueue } = makeEgressHandler(true);
-    await handler.handle(egressEndedEvt('m-1'));
+    await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
     expect(aiQueue.enqueueRecordingFaststart).toHaveBeenCalledWith('m-1');
+  });
+
+  it('egress_ended(composite): размер ниже порога → faststart НЕ ставится', async () => {
+    const { handler, aiQueue } = makeEgressHandler(true);
+    await handler.handle(egressEndedEvt('m-1', 1_000_000)); // 1 МБ < 50 МиБ
+    expect(aiQueue.enqueueRecordingFaststart).not.toHaveBeenCalled();
   });
 
   it('egress_ended(composite): флаг off → faststart НЕ ставится', async () => {
     const { handler, aiQueue } = makeEgressHandler(false);
-    await handler.handle(egressEndedEvt('m-1'));
+    await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
     expect(aiQueue.enqueueRecordingFaststart).not.toHaveBeenCalled();
   });
 });

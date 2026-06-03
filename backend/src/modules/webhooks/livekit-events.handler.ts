@@ -388,8 +388,16 @@ export class LivekitEventsHandler {
       });
       // Фаза 3 (recording-reliability): faststart-постобработка composite MP4,
       // чтобы браузер играл видео прогрессивно. За флагом RECORDING_FASTSTART_ENABLED
-      // (дефолт off). Non-fatal — не блокирует FSM-переход в ready.
-      if (this.cfg?.recording.faststartEnabled && this.aiQueue) {
+      // (дефолт on) + порог по размеру (мелкие файлы не ремуксим). Non-fatal —
+      // не блокирует FSM-переход в ready. Размер неизвестен → ставим (воркер
+      // перепроверит по bytesTotal).
+      const compositeBytes = file?.size ?? null;
+      const faststartMinBytes = this.cfg?.recording.faststartMinBytes ?? 0;
+      if (
+        this.cfg?.recording.faststartEnabled &&
+        this.aiQueue &&
+        (compositeBytes === null || compositeBytes >= faststartMinBytes)
+      ) {
         try {
           await this.aiQueue.enqueueRecordingFaststart(meetingId);
           this.logger.log({ meetingId }, 'egress_ended: faststart-постобработка composite поставлена в очередь');

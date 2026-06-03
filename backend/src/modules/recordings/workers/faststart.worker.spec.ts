@@ -27,7 +27,8 @@ class TestFaststartWorker extends FaststartWorker {
 
 function make(setup: {
   faststartEnabled?: boolean;
-  recording?: { mainVideoUrl: string | null } | null;
+  recording?: { mainVideoUrl: string | null; bytesTotal?: number | bigint | null } | null;
+  minBytes?: number;
 }): {
   worker: TestFaststartWorker;
   prisma: any;
@@ -49,7 +50,10 @@ function make(setup: {
   const redis = { client: {} } as unknown as RedisService;
 
   const cfg = {
-    recording: { faststartEnabled: setup.faststartEnabled ?? true },
+    recording: {
+      faststartEnabled: setup.faststartEnabled ?? true,
+      faststartMinBytes: setup.minBytes ?? 52_428_800,
+    },
     s3: { bucket: 'z-records' },
   } as unknown as TypedConfigService;
 
@@ -91,9 +95,26 @@ describe('FaststartWorker', () => {
     expect((s3 as any).getObject).not.toHaveBeenCalled();
   });
 
+  it('composite меньше порога (bytesTotal < minBytes) → skip', async () => {
+    const { worker, s3 } = make({
+      recording: {
+        mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
+        bytesTotal: 1_000_000, // 1 МБ < 50 МиБ
+      },
+    });
+
+    await worker.processMeeting('m-1');
+
+    expect((s3 as any).getObject).not.toHaveBeenCalled();
+    expect((s3 as any).putObject).not.toHaveBeenCalled();
+  });
+
   it('happy path: качает composite, гонит ffmpeg +faststart, перезаливает по тому же ключу', async () => {
     const { worker, s3 } = make({
-      recording: { mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4' },
+      recording: {
+        mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
+        bytesTotal: 400 * 1024 * 1024, // 400 МБ > порога
+      },
     });
 
     await worker.processMeeting('m-1');

@@ -94,6 +94,19 @@ export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Порог по размеру: мелкий composite браузер проглатывает мгновенно даже с
+    // moov в конце — ремукс был бы лишней нагрузкой. Если размер неизвестен
+    // (bytesTotal=null) — обрабатываем (мог быть большим).
+    const minBytes = this.cfg.recording.faststartMinBytes;
+    const bytes = recording.bytesTotal !== null ? Number(recording.bytesTotal) : null;
+    if (bytes !== null && bytes < minBytes) {
+      this.logger.debug(
+        { meetingId, bytes, minBytes },
+        'faststart: composite меньше порога — skip',
+      );
+      return;
+    }
+
     const key = extractKeyFromUrl(recording.mainVideoUrl, this.cfg.s3.bucket);
     if (!key) {
       this.logger.warn(

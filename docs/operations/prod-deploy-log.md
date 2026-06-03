@@ -70,16 +70,17 @@ docker compose run --rm --no-deps backend \
 - Фаза 3 (P1) — `FaststartWorker` (очередь `recording.faststart`): `ffmpeg -movflags +faststart` для composite, **за флагом, дефолт OFF**.
 
 - **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
-- **Шаг 1 — ENV** — **2 новых опциональных** (есть код-дефолты):
-  - `RECORDING_TRACK_RECONCILE_ENABLED` — kill-switch сверки дорожек. **Дефолт `true`** (P0-фикс активен сразу). Выставить `false` только если сверка создаёт проблемы.
-  - `RECORDING_FASTSTART_ENABLED` — **дефолт `false`**. Включать ТОЛЬКО после эмпирической проверки (см. ниже Smoke п. faststart).
+- **Шаг 1 — ENV** — **3 новых опциональных** (есть код-дефолты, можно не выставлять):
+  - `RECORDING_TRACK_RECONCILE_ENABLED` — kill-switch сверки дорожек. **Дефолт `true`** (P0-фикс активен сразу). `false` — только если сверка создаёт проблемы.
+  - `RECORDING_FASTSTART_ENABLED` — **дефолт `true`** (faststart включён сразу; операция идемпотентна и безопасна — `-c copy`, перезалив после `exit 0`). Kill-switch: `false`.
+  - `RECORDING_FASTSTART_MIN_BYTES` — **дефолт `52428800` (50 МиБ)**. Composite меньше порога не ремуксится (мелкий файл и так играет сразу). Поднять/опустить по вкусу.
 - **Шаг 11 — Docker rebuild** — **обязателен с пересборкой образа** (правки backend + **новый бинарь `ffmpeg` в Dockerfile**): `docker compose up -d --build backend`. ⚠ Образ должен пересобраться (не только рестарт) — иначе `recording.faststart` и `clip.render` упадут с `ENOENT ffmpeg`. Проверка: `docker compose exec backend ffmpeg -version` → версия печатается.
 - **Шаг 12 — Smoke**:
   - cron сверки зарегистрирован: `docker compose logs backend | grep -E 'RecordingTrackReconcileCron|recording-track-reconcile'`.
   - очередь faststart инициализирована: `docker compose logs backend | grep -E 'FaststartWorker запущен|recording.faststart'`.
   - **дорожки (главное):** провести тест-встречу 3 говоривших + умышленный reconnect одного → в результате встречи 3 полные аудиодорожки (не 2), транскрипт со всеми тремя.
   - участники: в отчёте «Участники» только реальные люди (без egress-фантомов), даже под записью.
-  - **faststart (эмпирическая проверка ПЕРЕД включением флага):** на боевой записи проверить `composite.mp4` — `ffprobe -v trace https://<presigned> 2>&1 | grep -E 'moov|mdat'` (или DevTools Network: растёт ли Size к полному размеру перед стартом плеера). Если `moov` ПОСЛЕ `mdat` (видео ждёт полной докачки) → выставить `RECORDING_FASTSTART_ENABLED=true`, перевыложить, провести новую встречу → composite стартует за пару секунд, `ffprobe` показывает `moov` ПЕРЕД `mdat`. Если видео уже играет сразу — флаг можно не включать.
+  - **faststart (работает сразу, проверка эффекта):** после записи встречи (>50 МБ composite) в логах `docker compose logs backend | grep 'faststart: composite переупакован'` → есть запись; видео на странице результата стартует за пару секунд, без «вечной крутилки». Опц. убедиться `ffprobe -v trace https://<presigned> 2>&1 | grep -E 'moov|mdat'` → `moov` ПЕРЕД `mdat`. Если нужно выключить — `RECORDING_FASTSTART_ENABLED=false`.
 
 ---
 

@@ -95,12 +95,14 @@ webhook (LiveKit не гарантирует доставку). Добавлен
 Семантика от LiveKit надёжнее строкового префикса PR #17. Fallback на префикс
 `host:`/`guest:`, когда `kind` отсутствует в payload (proto3 опускает дефолт STANDARD).
 
-**Видео — faststart (Фаза 3, P1, флаг OFF).** Egress пишет MP4 с moov-atom в конце
+**Видео — faststart (Фаза 3, P1, флаг ON).** Egress пишет MP4 с moov-atom в конце
 → браузер тянет весь файл до первого кадра. `FaststartWorker` (`recording.faststart`)
-делает `ffmpeg -c copy -movflags +faststart` и перезаливает по тому же ключу. За
-флагом `RECORDING_FASTSTART_ENABLED` (дефолт OFF — нужна прод-проверка). У
-`EncodedFileOutput` нативного faststart нет (Context7). Для длинных встреч (1–2 ч)
-штатный путь — HLS `SegmentedFileOutput` (Фаза 4, P2). `ffmpeg` теперь в Docker-образе.
+делает `ffmpeg -c copy -movflags +faststart` и перезаливает по тому же ключу. Флаг
+`RECORDING_FASTSTART_ENABLED` (дефолт ON, kill-switch) + порог
+`RECORDING_FASTSTART_MIN_BYTES` (50 МиБ — мелкий composite не ремуксим). Операция
+идемпотентна и безопасна (`-c copy`, перезалив после `exit 0`). У `EncodedFileOutput`
+нативного faststart нет (Context7). Для длинных встреч (1–2 ч) штатный путь — HLS
+`SegmentedFileOutput` (Фаза 4, P2). `ffmpeg` теперь в Docker-образе (попутно чинит clip.render).
 
 См. [[workers-queues]] (cron + очередь), [[ai-jobs]] (faststart-воркер).
 

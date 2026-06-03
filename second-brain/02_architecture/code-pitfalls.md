@@ -178,6 +178,24 @@ Paywall (`@RequireSubscription`, 2026-05-28) добавил глобальный
 `modules/rbac/middleware/tenant.middleware.e2e.spec.ts`,
 `frontend/src/api/api-client.org-header.spec.ts`.
 
+## Persons: имена полей UI ≠ контракт бэкенда + email опционален
+
+Бэкенд `CreatePersonSchema`/`UpdatePersonSchema` (`modules/persons/dto`) ждёт
+`name` и `primaryDepartmentId`. Фронтовая UI-модель использует `fullName` и
+`departmentId`. `personsDomainApi.create/update` (`frontend/src/api/structure.api.ts`)
+ОБЯЗАН мапить имена полей — иначе бэк отвечает `validation_error` «Имя сотрудника
+обязательно» (path: name), хотя форма заполнена. Симптом 2026-06-03: форма
+«Новый сотрудник» в `/structure`.
+
+`email` в `CreatePersonSchema` **опционален** (форма требует его в UI, но
+инлайн-флоу `SprintCreateWizard` создаёт по одному имени). В БД `Person.email`
+non-null — сервис подставляет `''`. Дублей это не плодит: unique
+`(tenantId, email, deletedAt)` с `deletedAt=NULL` в Postgres не ограничивает
+(NULL ≠ NULL в unique-индексе). Тот же приём — в `quickCreate`.
+
+Регрессии: `frontend/src/api/structure.persons.spec.ts`,
+`backend/src/modules/persons/persons.spec.ts` (email-less create).
+
 ## Cypher только через GraphService
 
 С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.

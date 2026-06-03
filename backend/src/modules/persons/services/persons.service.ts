@@ -199,7 +199,8 @@ export class PersonsService {
             tenantId: args.tenantId,
             userId: null,
             name: args.body.name,
-            email: args.body.email,
+            // Колонка non-null; при отсутствии email сохраняем '' (как quickCreate).
+            email: args.body.email ?? '',
             primaryDepartmentId: args.body.primaryDepartmentId ?? null,
           },
         });

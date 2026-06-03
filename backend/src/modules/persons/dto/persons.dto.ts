@@ -40,7 +40,14 @@ export type ListPersonsQuery = z.infer<typeof ListPersonsQuerySchema>;
 
 export const CreatePersonSchema = z.object({
   name: NameSchema,
-  email: EmailSchema,
+  /**
+   * Email опционален: форма «Новый сотрудник» требует его в UI, но инлайн-флоу
+   * (SprintCreateWizard) создаёт сотрудника по одному имени. В БД колонка
+   * non-null — сервис подставляет '' (как quickCreate). Дублей это не плодит:
+   * unique (tenantId, email, deletedAt) с deletedAt=NULL в Postgres не
+   * ограничивает (NULL ≠ NULL).
+   */
+  email: EmailSchema.optional(),
   /** Назначение в отдел (UI: основной отдел). */
   primaryDepartmentId: z.string().min(1).nullable().optional(),
   /** Опционально: сразу создать PersonRole. */

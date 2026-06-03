@@ -148,6 +148,36 @@ async activate(
 `@UsePipes(new ZodValidationPipe(...))`. Регрессия — `common/pipes/zod-validation-pipe-param.e2e.spec.ts`
 и `modules/billing/admin-billing.controller.e2e.spec.ts`.
 
+## Paywall: tenant_required на мутирующих эндпоинтах (X-Org-Id + порядок guard'ов)
+
+Paywall (`@RequireSubscription`, 2026-05-28) добавил глобальный `SubscriptionGuard`
+(APP_GUARD). Он резолвит tenant ТОЛЬКО из `req.tenantId`, который выставляет
+`TenantMiddleware` (header `X-Org-Id` / orgId в пути / body). Два неочевидных факта:
+
+1. **Глобальные APP_GUARD выполняются ДО controller-scoped `CookieAuthGuard`**
+   (проверено эмпирически). Значит в `SubscriptionGuard`/`EntitlementGuard`
+   `req.user` ещё `undefined` — single-org fallback по user-у там невозможен,
+   super-admin bypass на controller-auth роутах не срабатывает. Tenant — только
+   из middleware.
+2. **В middleware через `forRoutes('api/v1/*')` `req.url` обрезан до `/`**
+   (Express монтирует на под-роутер; `req.baseUrl` = полный путь). Парсить
+   orgId из пути нужно из **`req.originalUrl`**, а не `req.url` — иначе
+   path-резолвинг молча не работает.
+
+**Симптомы (2026-06-03):**
+- `POST /api/v1/meetings` (и весь lifecycle встречи — нет orgId в пути) → 403
+  `tenant_required`, потому что фронт не слал `X-Org-Id`. Фикс: `api-client`
+  шлёт `X-Org-Id` по умолчанию из текущей Org (`setApiClientOrgId`, синк из
+  auth-context); per-call header имеет приоритет.
+- `POST /api/v1/orgs/:id/invitations` (orgId В пути) → 403, потому что
+  `TenantMiddleware` парсил `req.url`=`/`. Фикс: парсинг из `req.originalUrl`.
+
+**Правило:** новый мутирующий org-scoped эндпоинт → либо orgId в пути
+`/orgs/:id/...` (резолвится автоматически), либо фронт шлёт `X-Org-Id`
+(api-client делает это по умолчанию). Регрессии —
+`modules/rbac/middleware/tenant.middleware.e2e.spec.ts`,
+`frontend/src/api/api-client.org-header.spec.ts`.
+
 ## Cypher только через GraphService
 
 С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.

@@ -6,6 +6,7 @@ import { Button } from '@/ui/shadcn/button';
 import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
 import { Sidebar } from './Sidebar';
 import { OrgSwitcher } from './OrgSwitcher';
+import { PendingActionsBell } from './PendingActionsBell';
 
 /**
  * Mobile header — burger который открывает sidebar в Sheet.
@@ -31,6 +32,9 @@ export function MobileHeader() {
       <div className="min-w-0 flex-1">
         <OrgSwitcher variant="mobile" />
       </div>
+
+      {/* Action Center B1 — глобальный колокольчик рядом с бургером. */}
+      <PendingActionsBell />
 
       <Button
         variant="ghost"

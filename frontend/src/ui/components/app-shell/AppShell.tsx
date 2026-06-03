@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { MobileHeader } from './Header';
+import { PendingActionsBell } from './PendingActionsBell';
 import {
   CommandPalette,
   CommandPaletteProvider,
@@ -41,6 +42,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* `pb-16` на мобильных — чтобы контент не закрывался TrackerBottomNav
             (~56px); на md+ bottom-nav скрыт и padding не нужен. */}
         <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
+          {/* Action Center B1 — компактный desktop top-bar с глобальным
+              колокольчиком (на мобильных колокольчик живёт в MobileHeader). */}
+          <div className="hidden h-header items-center justify-end gap-2 border-b border-border-subtle bg-bg-surface/60 px-4 backdrop-blur-glass md:flex">
+            <PendingActionsBell />
+          </div>
           <PaywallBanner />
           {/* Promo-полоса реферальной программы — видна только тем, у кого
               ещё нет Referral-профиля, не на paywall и не на blacklist-страницах.

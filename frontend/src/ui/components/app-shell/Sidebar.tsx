@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Archive,
   BarChart3,
+  BellRing,
   Bot,
   Brain,
   Building2,
@@ -77,6 +78,8 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useEntitlement } from '@/hooks/useEntitlement';
 import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
+// Action Center B1 — живой бейдж pending-подтверждений у пункта «Подтверждения».
+import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
 import { useMemoryAccess } from '@/hooks/useMemoryAccess';
 // ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
 import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
@@ -260,6 +263,9 @@ const ME_GROUP: NavGroup = {
   label: 'Моё пространство',
   items: [
     { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me', overviewTarget: 'overview.me' },
+    // Action Center B1 — pending-подтверждения пользователя (виден всем).
+    // badgeCount инжектится динамически в Sidebar (usePendingActionsCount).
+    { href: '/actions', label: 'Подтверждения', icon: BellRing, matchPrefix: '/actions' },
     // pulse-full Волна 3 — личная Pulse-карточка сотрудника.
     { href: '/me/pulse', label: 'Мой пульс', icon: Activity, matchPrefix: '/me/pulse' },
     { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
@@ -393,6 +399,12 @@ export function Sidebar({
     currentOrgId,
     canTriage,
   );
+  // Action Center B1 — счётчик pending-подтверждений для бейджа у пункта
+  // «Подтверждения» (виден всем ролям; запрос только при наличии orgId).
+  const { total: pendingActionsTotal } = usePendingActionsCount(
+    currentOrgId,
+    Boolean(currentOrgId),
+  );
   // ТЗ 2026-05-26 §5.5 — точка возле «Клоны», если выдан новый grant,
   // который пользователь ещё не видел (сравнение по количеству grants
   // в localStorage). Тушится при заходе на /clones.
@@ -459,6 +471,16 @@ export function Sidebar({
     return { ...DAILY_GROUP, items };
   })();
 
+  // Action Center B1 — инжектим живой badgeCount в пункт «Подтверждения».
+  const meGroup: NavGroup = {
+    ...ME_GROUP,
+    items: ME_GROUP.items.map((it) =>
+      it.href === '/actions'
+        ? { ...it, badgeCount: pendingActionsTotal }
+        : it,
+    ),
+  };
+
   // ТЗ 2026-05-26 §6 — фильтруем пункты «Памяти компании» в зависимости от
   // того, что пользователю разрешено видеть (роль + entitlement-флаги).
   const memoryAccess = useMemoryAccess();
@@ -492,7 +514,7 @@ export function Sidebar({
 
   const groups: NavGroup[] = [
     dailyGroup,
-    ME_GROUP,
+    meGroup,
     memoryGroup,
     ...(canSeeOperationsCoo ? [MANAGEMENT_GROUP] : []),
     referenceGroup,

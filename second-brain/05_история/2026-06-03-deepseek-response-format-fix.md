@@ -65,3 +65,22 @@ distilled: false
 - `column "dataClassAudit" does not exist` (42703) → `prisma db push` не применён на проде.
 - `behavior-metrics: нет merged.json` → метрики поведения не считаются.
 - Ollama 401 (Invalid API key format) — третичный fallback нерабочий.
+
+## Добивка по тому же логу (этот же заход: `1680c273` + `bb11babf`)
+- **jobId `:`** — cherry-pick канонического `b9ff5a24` с `dev`. BullMQ 5.x допускает `:`
+  в кастомном jobId только при РОВНО 3 сегментах (`a:b:c`); `quality:<id>` /
+  `meeting-roi:<id>` (2 части) падали с «Custom Id cannot contain :». Cherry-pick чище
+  ручного — нулевое расхождение с dev + регресс-спека `bullmq-jobid-rule.spec.ts`.
+- **Anthropic** — выведен из `LlmFallbackService` (MiniMax primary). Не используем (нет
+  ключа), каждый analyze ловил 403. Глубокая уборка (router-инъекция, протокол-адаптер,
+  seed-регистрация) отложена: `anthropic.service.ts` шарит helpers `buildSystemBlocks/
+  buildUserContent` с MinimaxService — файл удалять нельзя, нужен аккуратный рефактор.
+
+## Грабля: параллельная сессия редактирует ТОТ ЖЕ рабочий каталог
+При фиксе jobId всплыл typecheck-фейл в `merge.worker.spec.ts`. Оказалось — **вторая
+Claude-сессия в этом же `c:\work\z` прямо в процессе** правила `MergeWorker` (+s3-параметр
+конструктора), `transcript-cleaning`, `s3-keys`, `meetings.controller`. Мои edit'ы в
+`merge.worker.spec` не применились (строка изменилась под руками — и это спасло от клоббера).
+Урок: `git status --short` ДО редактирования незнакомого файла; коммитить строго свои файлы
+явными путями; чужой in-flight typecheck-фейл — не мой (проверка: `git diff <начало-сессии>
+HEAD -- <file>` пусто = я не трогал). Усиление [[feedback_parallel_sessions_git_check]].

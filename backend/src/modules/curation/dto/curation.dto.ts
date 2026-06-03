@@ -177,6 +177,41 @@ export const CurationSettingsSchema = z
      * лёгкий аудит-CurationItem (не блокирует канонизацию). Default 0.05 (5%).
      */
     auditSampleRate: z.number().min(0).max(1).optional(),
+    /**
+     * Action Center A2 «лестница доверия» (2026-06-02) — авто-подстройка
+     * пер-типовых порогов auto-canonical по override-rate. **Default false** —
+     * понижение порогов (больше авто-канонизации) opt-in: владелец Org
+     * осознанно включает автоматику. Kill-switch (повышение порога при
+     * высоком проценте ошибок провизорных карточек) работает ВСЕГДА,
+     * вне зависимости от этого флага.
+     */
+    autotuneEnabled: z.boolean().optional(),
+    /**
+     * A2 — нижняя граница, ниже которой авто-подстройка не опускает
+     * autoThresholdByType[type]. Default 0.6.
+     */
+    thresholdMin: z.number().min(0).max(1).optional(),
+    /**
+     * A2 — верхняя граница, выше которой авто-подстройка не поднимает
+     * autoThresholdByType[type]. Default 0.97.
+     */
+    thresholdMax: z.number().min(0).max(1).optional(),
+    /**
+     * A2 — шаг изменения порога за один проход cron. Default 0.02.
+     */
+    autotuneStep: z.number().min(0).max(1).optional(),
+    /**
+     * A2 — минимальное число решений (decided items / аудит-решений) по типу,
+     * прежде чем авто-подстройка / kill-switch будут применены. Default 20.
+     */
+    minDecisionsForAutotune: z.number().int().min(1).max(100_000).optional(),
+    /**
+     * A2 — максимально допустимая доля «неверных» провизорных карточек среди
+     * аудит-выборки. Превышение → kill-switch (provisionalThresholdByType[type]
+     * = 1.01, эффективно отключает провизорный путь для типа). Также служит
+     * порогом высокого/низкого override-rate для авто-подстройки. Default 0.2.
+     */
+    maxProvisionalOverride: z.number().min(0).max(1).optional(),
   })
   .strict();
 export type CurationSettingsDto = z.infer<typeof CurationSettingsSchema>;
@@ -208,6 +243,33 @@ export interface OverrideStatsItemDto {
 
 export interface OverrideStatsResponse {
   items: OverrideStatsItemDto[];
+}
+
+// ─────────────────────────── Provisional audit read-model (A2) ────
+//
+// Action Center A2 «лестница доверия» (2026-06-02) — агрегат «провизорных
+// ошибок» по resourceType. Считается ТОЛЬКО по аудит-выборке
+// (CurationItem.triageReason.reason='audit_sample'), по которой принято
+// решение (status='decided'). Высокий provisionalWrongRate сигналит, что
+// AI-судья пропускает плохие провизорные карточки → kill-switch отключает
+// провизорный путь для типа.
+
+export interface ProvisionalAuditStatsItemDto {
+  resourceType: string;
+  /** Число аудит-items с финальным решением (decided). */
+  auditDecided: number;
+  /**
+   * Среди них — те, чьё финальное решение ∈
+   * {reject, mark_as_misleading, supersede}: провизорная карточка оказалась
+   * неверной (отклонена / помечена ошибочной / заменена).
+   */
+  auditWrong: number;
+  /** auditWrong / auditDecided; 0 при auditDecided=0. */
+  provisionalWrongRate: number;
+}
+
+export interface ProvisionalAuditStatsResponse {
+  items: ProvisionalAuditStatsItemDto[];
 }
 
 // ─────────────────────────── Curator assignments (settings) ──────

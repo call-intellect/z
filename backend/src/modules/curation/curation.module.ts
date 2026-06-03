@@ -8,6 +8,7 @@ import { ConflictService } from './services/conflict.service';
 import { CurationService } from './services/curation.service';
 import { CuratorRoutingService } from './services/curator-routing.service';
 import { CardStaleDetectorCron } from './workers/card-stale-detector.cron';
+import { CurationAutotuneCron } from './workers/curation-autotune.cron';
 import {
   CompletenessScannerCron,
   CompletenessScannerService,
@@ -47,6 +48,8 @@ import {
     ConflictService,
     CuratorRoutingService,
     CardStaleDetectorCron,
+    // ── Action Center A2 «лестница доверия» (2026-06-02) ──
+    CurationAutotuneCron,
     // ── SBA α-4 wave 2 ──
     CompletenessScannerService,
     CompletenessScannerCron,

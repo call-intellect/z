@@ -36,6 +36,8 @@ import type {
   ListCurationQueueResponse,
   OverrideStatsItemDto,
   OverrideStatsResponse,
+  ProvisionalAuditStatsItemDto,
+  ProvisionalAuditStatsResponse,
   UpdateCurationSettingsBody,
 } from '../dto/curation.dto';
 
@@ -140,6 +142,21 @@ const DEFAULT_CRITICAL_TYPES = ['regulation', 'process', 'decision'] as const;
 const DEFAULT_PROVISIONAL_THRESHOLD = 0.8;
 const DEFAULT_AI_VERIFIER_ENABLED = true;
 const DEFAULT_AUDIT_SAMPLE_RATE = 0.05;
+// Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch.
+const DEFAULT_AUTOTUNE_ENABLED = false;
+const DEFAULT_THRESHOLD_MIN = 0.6;
+const DEFAULT_THRESHOLD_MAX = 0.97;
+const DEFAULT_AUTOTUNE_STEP = 0.02;
+const DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE = 20;
+const DEFAULT_MAX_PROVISIONAL_OVERRIDE = 0.2;
+/**
+ * A2 — значение порога, эффективно отключающее провизорный путь для типа:
+ * triage сравнивает `effectiveConfidence >= provisionalT`; при 1.01 условие
+ * никогда не выполняется (confidence clamped в [0..1]) → критический тип
+ * безопасно уходит к человеку (deep), как до A1. Используется kill-switch'ем
+ * в `CurationAutotuneCron`.
+ */
+export const KILL_SWITCH_PROVISIONAL_THRESHOLD = 1.01;
 
 /**
  * CurationService — публичный API Слоя 4 (см.
@@ -951,6 +968,89 @@ export class CurationService {
     return { items: result };
   }
 
+  // ──────────────────── provisional audit stats (A2) ──────────────
+
+  /**
+   * A2 «лестница доверия» (2026-06-02) — read-model «провизорной ошибки»
+   * по resourceType. Сигнал для kill-switch: насколько часто провизорно
+   * канонизированные карточки (прошедшие AI-судью) оказываются неверными при
+   * выборочной человеческой проверке.
+   *
+   * Считаем ТОЛЬКО аудит-выборку — CurationItem с
+   * `triageReason.reason='audit_sample'`, по которым принято финальное решение
+   * (status='decided'). Финал = последнее по createdAt решение ≠ 'escalate'
+   * (как в getOverrideStats).
+   *
+   * `auditWrong` — финальное решение ∈ {reject, mark_as_misleading, supersede}.
+   * Обоснование выбора: эти три типа означают «провизорная карточка была
+   * неверной» — её отклонили (reject), пометили вводящей в заблуждение
+   * (mark_as_misleading) или заменили другой версией (supersede). approve /
+   * approve_with_edits / split / merge — НЕ считаем ошибкой (карточка по сути
+   * подтверждена, возможно с правками/декомпозицией).
+   *
+   * `provisionalWrongRate = auditWrong / auditDecided` (0 при auditDecided=0).
+   */
+  async getProvisionalAuditStats(args: {
+    tenantId: string;
+  }): Promise<ProvisionalAuditStatsResponse> {
+    const items = await this.prisma.curationItem.findMany({
+      where: { tenantId: args.tenantId, status: 'decided' },
+      select: {
+        resourceType: true,
+        triageReason: true,
+        decisions: { select: { decisionType: true, createdAt: true } },
+      },
+    });
+
+    const WRONG_TYPES = new Set(['reject', 'mark_as_misleading', 'supersede']);
+    interface Acc {
+      auditDecided: number;
+      auditWrong: number;
+    }
+    const byType = items.reduce<Map<string, Acc>>((map, item) => {
+      // Только аудит-выборка (triageReason.reason='audit_sample').
+      if (!this.isAuditSample(item.triageReason)) return map;
+
+      const finalDecision = item.decisions
+        .filter((d) => d.decisionType !== 'escalate')
+        .reduce<{ decisionType: string; createdAt: Date } | null>((latest, d) => {
+          if (!latest || d.createdAt.getTime() > latest.createdAt.getTime()) {
+            return d;
+          }
+          return latest;
+        }, null);
+      if (!finalDecision) return map; // нет финального решения — не decided.
+
+      const acc = map.get(item.resourceType) ?? { auditDecided: 0, auditWrong: 0 };
+      acc.auditDecided += 1;
+      if (WRONG_TYPES.has(finalDecision.decisionType)) acc.auditWrong += 1;
+      map.set(item.resourceType, acc);
+      return map;
+    }, new Map());
+
+    const result: ProvisionalAuditStatsItemDto[] = [...byType.entries()].map(
+      ([resourceType, acc]) => ({
+        resourceType,
+        auditDecided: acc.auditDecided,
+        auditWrong: acc.auditWrong,
+        provisionalWrongRate:
+          acc.auditDecided > 0 ? acc.auditWrong / acc.auditDecided : 0,
+      }),
+    );
+    result.sort((a, b) => a.resourceType.localeCompare(b.resourceType));
+    return { items: result };
+  }
+
+  /** A2 — true, если CurationItem.triageReason.reason === 'audit_sample'. */
+  private isAuditSample(reason: Prisma.JsonValue): boolean {
+    return (
+      !!reason &&
+      typeof reason === 'object' &&
+      !Array.isArray(reason) &&
+      (reason as Record<string, unknown>).reason === 'audit_sample'
+    );
+  }
+
   // ──────────────────────────── settings ──────────────────────────
 
   async getSettings(tenantId: string): Promise<CurationSettingsDto> {
@@ -995,6 +1095,15 @@ export class CurationService {
       aiVerifierEnabled:
         args.patch.aiVerifierEnabled ?? current.aiVerifierEnabled,
       auditSampleRate: args.patch.auditSampleRate ?? current.auditSampleRate,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails.
+      autotuneEnabled: args.patch.autotuneEnabled ?? current.autotuneEnabled,
+      thresholdMin: args.patch.thresholdMin ?? current.thresholdMin,
+      thresholdMax: args.patch.thresholdMax ?? current.thresholdMax,
+      autotuneStep: args.patch.autotuneStep ?? current.autotuneStep,
+      minDecisionsForAutotune:
+        args.patch.minDecisionsForAutotune ?? current.minDecisionsForAutotune,
+      maxProvisionalOverride:
+        args.patch.maxProvisionalOverride ?? current.maxProvisionalOverride,
     };
     if (next.autoThreshold < next.deepReviewThreshold) {
       throw new BadRequestException({
@@ -1352,6 +1461,13 @@ export class CurationService {
       provisionalThresholdByType: {},
       aiVerifierEnabled: DEFAULT_AI_VERIFIER_ENABLED,
       auditSampleRate: DEFAULT_AUDIT_SAMPLE_RATE,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails.
+      autotuneEnabled: DEFAULT_AUTOTUNE_ENABLED,
+      thresholdMin: DEFAULT_THRESHOLD_MIN,
+      thresholdMax: DEFAULT_THRESHOLD_MAX,
+      autotuneStep: DEFAULT_AUTOTUNE_STEP,
+      minDecisionsForAutotune: DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE,
+      maxProvisionalOverride: DEFAULT_MAX_PROVISIONAL_OVERRIDE,
     };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
     const obj = raw as Record<string, unknown>;
@@ -1399,7 +1515,35 @@ export class CurationService {
         obj.auditSampleRate <= 1
           ? obj.auditSampleRate
           : def.auditSampleRate,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails.
+      autotuneEnabled:
+        typeof obj.autotuneEnabled === 'boolean'
+          ? obj.autotuneEnabled
+          : def.autotuneEnabled,
+      thresholdMin: this.parseUnit(obj.thresholdMin, DEFAULT_THRESHOLD_MIN),
+      thresholdMax: this.parseUnit(obj.thresholdMax, DEFAULT_THRESHOLD_MAX),
+      autotuneStep: this.parseUnit(obj.autotuneStep, DEFAULT_AUTOTUNE_STEP),
+      minDecisionsForAutotune:
+        typeof obj.minDecisionsForAutotune === 'number' &&
+        Number.isInteger(obj.minDecisionsForAutotune) &&
+        obj.minDecisionsForAutotune >= 1
+          ? obj.minDecisionsForAutotune
+          : DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE,
+      maxProvisionalOverride: this.parseUnit(
+        obj.maxProvisionalOverride,
+        DEFAULT_MAX_PROVISIONAL_OVERRIDE,
+      ),
     };
+  }
+
+  /** A2 — парс числа в [0..1] с fallback на дефолт (для guardrail-настроек). */
+  private parseUnit(raw: unknown, fallback: number): number {
+    return typeof raw === 'number' &&
+      Number.isFinite(raw) &&
+      raw >= 0 &&
+      raw <= 1
+      ? raw
+      : fallback;
   }
 
   /**

@@ -339,6 +339,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationProvisionalTotal!: Counter<'resource_type'>;
   private curationAuditSampleTotal!: Counter<'resource_type'>;
   private curationVerifierVerdictTotal!: Counter<'decision' | 'consensus_type'>;
+  // ── Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch ──
+  private curationKillSwitchTotal!: Counter<'resource_type'>;
+  private curationAutotuneAdjustmentTotal!: Counter<'resource_type' | 'direction'>;
   // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker ──
   // Cardinality-safe: tenant НЕ выносим в label (паттерн остальных curation/probe-метрик).
   // Top-100 tenant-агрегации делает Grafana / Prometheus recording rule поверх БД.
@@ -1757,6 +1760,17 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_verifier_verdict_total',
       help: 'A1 — вердикты AI-судьи canonical-verify (decision ∈ accept|reject|split_uncertain|unavailable × consensus_type).',
       labelNames: ['decision', 'consensus_type'] as const,
+    });
+    // ── Action Center A2 «лестница доверия» (2026-06-02) ──
+    this.curationKillSwitchTotal = this.getOrCreateCounter({
+      name: 'curation_kill_switch_total',
+      help: 'A2 — срабатывание kill-switch: провизорный путь для типа отключён (provisionalThresholdByType=1.01) из-за высокого процента ошибок аудита, по resource_type.',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationAutotuneAdjustmentTotal = this.getOrCreateCounter({
+      name: 'curation_autotune_adjustment_total',
+      help: 'A2 — авто-подстройка autoThresholdByType по override-rate (resource_type × direction ∈ up|down).',
+      labelNames: ['resource_type', 'direction'] as const,
     });
 
     // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker
@@ -4391,6 +4405,22 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Карточка-кандидат на stale (probe владельцу). */
   incCurationStale(args: { resourceType: string }): void {
     this.curationStaleDetectedTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A2 — сработал kill-switch (провизорный путь для типа отключён). */
+  incCurationKillSwitch(args: { resourceType: string }): void {
+    this.curationKillSwitchTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A2 — авто-подстройка autoThresholdByType (direction ∈ 'up' | 'down'). */
+  incCurationAutotuneAdjustment(args: {
+    resourceType: string;
+    direction: 'up' | 'down';
+  }): void {
+    this.curationAutotuneAdjustmentTotal.inc({
+      resource_type: args.resourceType,
+      direction: args.direction,
+    });
   }
 
   // ────────────────────── curation wave 2 (SBA α-4 wave 2) ────────────

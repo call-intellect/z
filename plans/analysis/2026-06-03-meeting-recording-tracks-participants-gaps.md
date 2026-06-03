@@ -1,92 +1,121 @@
-# Анализ: пробелы записи встречи — аудиодорожки, участники, видео-плеер
+# Анализ: надёжность записи встречи — аудиодорожки, участники, видео-плеер
 
 **Дата:** 2026-06-03
-**Контекст:** тестовая встреча `01KT65ZKXJRHXMT5GC4N51E52C` («знакомство с платформой», ~17 мин, прод meet.crossmark.ru). Владелец продукта присутствовал лично, **слышал всех троих участников** (микрофоны работали). Несмотря на это, на фронте:
-- видео не проигрывается (плеер бесконечно крутится);
-- показаны 2 аудиодорожки вместо 3, одна из них почти пустая (38 сек);
-- список участников — 6 человек вместо 3;
-- транскрипт не подтягивался (**это починено** — см. ниже).
+**Статус:** глубокое исследование завершено (LiveKit-доки + issues + аудит кода через 4 агента). Корни **подтверждены**, не гипотезы. Реализация — отдельным ТЗ.
+**Встреча-образец:** `01KT65ZKXJRHXMT5GC4N51E52C` (прод meet.crossmark.ru). Владелец присутствовал лично, **слышал всех 3 участников** (микрофоны работали). Симптомы: видео не играет, 2 аудиодорожки вместо 3 (одна 38 сек), 6 участников вместо 3, транскрипт не подтягивался.
 
-> ⚠️ Эти три проблемы (видео, дорожки, участники) **НЕ решены**. Здесь — корневой анализ по коду и план, требующий реализации + тестов на реальной встрече с 3 участниками.
+> ⚠️ Видео / дорожки / участники — **НЕ починены**. Починено только отображение транскрипта (см. §0). Ниже — корневой разбор и план.
 
 ---
 
-## 0. Что уже починено в этой сессии (контекст)
+## 0. Что уже починено (контекст)
 
-Транскрипт не отображался из-за двух рассинхронов (см. отдельную рефлексию `second-brain/05_история/2026-06-03-*`):
-- `MergeWorker` не зеркалил `merged.json` в S3 и не проставлял `Transcript.mergedS3Url` → эндпоинт `/transcript` падал в 404, а `behavior-metrics`/`quality-score`/`custom-report` пропускались;
-- эндпоинт `/transcript` отдавал presigned-URL, а фронт ждёт `{ turns }`.
-
-Исправлено: merge зеркалит merged.json + проставляет mergedS3Url (с backfill на идемпотентном пути); эндпоинт отдаёт `turns` из БД-колонки. **Важно:** даже после этого фикса транскрипт будет НЕПОЛНЫМ, потому что вход транскрибации — per-track аудиодорожки, а они теряются (п. 2). То есть баг дорожек напрямую бьёт по качеству транскрипта.
+`MergeWorker` не зеркалил `merged.json` в S3 и не проставлял `Transcript.mergedS3Url` → `/transcript` падал в 404, behavior/quality/custom-report пропускались; эндпоинт отдавал presigned-URL вместо `turns`. Исправлено (коммит `64738b49`). **Но транскрипт всё равно будет неполным, пока не починены per-track дорожки** — они вход транскрибации.
 
 ---
 
-## 1. «6 участников вместо 3»
+## 1. «6 участников вместо 3» — баг НАШЕЙ генерации identity (не LiveKit)
 
-**Корень:** нестабильный `livekitIdentity` гостя между заходами/реконнектами.
+### Подтверждённый механизм
+LiveKit **сохраняет `identity` при reconnect** — при обеих формах (resume и full reconnection). Клиент переиспользует тот же токен на всю сессию; *«Expiration time only impacts the initial connection, and not subsequent reconnects»*. Identity **уникален в комнате**: при коллизии LiveKit выкидывает старую сессию (`DUPLICATE_IDENTITY`). Вывод: **если бы identity был стабилен, дубли были бы физически невозможны.** Значит на каждый заход выдавался НОВЫЙ identity.
 
-- `Participant` создаётся/обновляется в [livekit-events.handler.ts `onParticipantJoined`](../../backend/src/modules/webhooks/livekit-events.handler.ts#L171) по уникальному ключу `meetingId + livekitIdentity`.
-- Identity гостя выглядит как `guest:<случайный_id>` (из лога: `guest:1wp6bsccfpviFQZXh30cd`). **При каждом новом получении токена / реконнекте генерируется новый суффикс** → новая запись `Participant`.
-- Из слов владельца: Анастасия заходила дважды, у неё не работало видео, она переподключалась. Каждый реконнект = новый identity = +1 «участник».
-- Гости без имени (`name` пустой) показываются как «Participant» — на скриншоте видно несколько таких строк.
+### Где в коде
+- [participants.service.ts:197](../../backend/src/modules/participants/participants.service.ts#L197): `const guestId = nanoid(); livekitIdentity = ` + "`guest:${guestId}`" + ` — новый случайный при каждом проходе ветки создания гостя.
+- Cookie-reuse МЕХАНИЗМ есть: [participants.service.ts:154-183](../../backend/src/modules/participants/participants.service.ts#L154) переиспользует identity из подписанной куки `guest_session_<meetingId>` (TTL 24ч). НО он **хрупок и не срабатывает на практике**:
+- **Корень хрупкости:** [meetings.service.ts:476-487](../../backend/src/modules/meetings/meetings.service.ts#L476) `getAccess` определяет роль **только по `userId`**; для анонимного гостя всегда `role: 'none'`, куку не читает. → при reload страницы фронт ([MeetingPageShell.tsx](../../frontend/app/(public)/m/[id]/MeetingPageShell.tsx)) ведёт гостя через форму имени заново. При любом сбое доставки куки (другой поддомен/`cookieDomain`, приватный режим, очистка, истечение) → новый `nanoid` → новая строка Participant.
+- `onParticipantJoined` ([livekit-events.handler.ts:171](../../backend/src/modules/webhooks/livekit-events.handler.ts#L171)) матчит по `meetingId+livekitIdentity` — новый identity = новая строка.
 
-Итог: 3 реальных человека × (повторные заходы + реконнекты) = 6 строк `Participant`.
+**Итог:** 3 человека + повторные заходы/reload (особенно участник без видео, переподключавшийся) = 6 строк. Это **наш** баг, не LiveKit. Усугубляется тем, что webhook'и LiveKit неполны/переупорядочены (livekit#4227, #1130) — строить записи участников только на `participant_joined` нельзя.
 
-**Что делать (требует реализации):**
-1. **Стабилизировать identity гостя** — выдавать гостю стабильный id и переиспользовать его при повторном входе/реконнекте (cookie / localStorage на стороне гостевой страницы `(public)/m/[id]`; backend переиспользует identity вместо генерации нового). Это первопричина и для дорожек тоже.
-2. **Дедупликация/схлопывание** в UI и для AI: участников, у которых перекрываются интервалы `joinedAt..leftAt` и совпадает имя — объединять; «фантомные» сессии (0 опубликованных треков, мгновенный left) помечать/скрывать.
-3. Минимальный костыль до п.1: при `participant_joined` матчить ещё и по `name` (для именованных), не плодя дубль.
-
----
-
-## 2. «2 аудиодорожки вместо 3, одна — 38 сек тишины» — БАГ КОДА
-
-**Подтверждение из лога:** финализировались 2 дорожки — host (`12.4 МБ / 1044 сек`) и `guest:1wp6...` (`431 КБ / 38.84 сек`, transcript `textLength: 139`). Composite (`composite.mp4`, 383 МБ) содержит **полный смикшированный звук всех** — поэтому владелец слышал всех. Но per-track дорожки (вход для диаризации/транскрибации) — неполные.
-
-**Корень — реактивно-гоночная модель создания per-track egress:**
-- Дорожка создаётся ТОЛЬКО в [`RecordingsService.ensureTrackEgress`](../../backend/src/modules/recordings/recordings.service.ts#L206), вызываемом из webhook [`track_published`](../../backend/src/modules/webhooks/livekit-events.handler.ts#L240) **для audio-трека**.
-- `ensureTrackEgress` делает no-op, если `recording.status` ∉ {`recording`, `requested`}.
-- Запись авто-стартует на `room_started` → [`recordings.start`](../../backend/src/modules/webhooks/livekit-events.handler.ts#L133) **асинхронно** (сетевой вызов в LiveKit). Между «участник опубликовал микрофон» и «Recording создан/активен» есть окно гонки.
-- `track_published` приходит **один раз** при публикации трека. Если он пришёл до того, как Recording стал активен (или до его создания) — **второго шанса нет**, дорожка не создаётся.
-- Реконнект меняет identity → новый `track_published` мог прийти, когда запись уже `finalizing`/`ready` → снова no-op. Отсюда «38 сек» — обрывок одной из сессий.
-
-**Почему host записался полностью:** его аудио опубликовалось/переопубликовалось уже при активной записи. Гости, опубликовавшие звук раньше старта записи или под реконнект — потеряны.
-
-**Что делать (требует реализации):**
-1. **Проактивный «догон» уже опубликованных треков при старте записи.** В `recordings.start` (или на `egress_started` composite) — через LiveKit `RoomServiceClient.listParticipants` перечислить всех участников с опубликованными audio-треками и запустить `ensureTrackEgress` для каждого, не дожидаясь нового `track_published`. Это закрывает гонку «опубликовал до старта записи».
-2. **Подписка на повторную публикацию** — на реконнект/republish создавать дорожку и для нового identity, пока встреча активна (а не finalizing).
-3. Связать с п.1 раздела про identity — стабильный identity упрощает и дорожки.
-4. Альтернатива/подстраховка: если per-track для кого-то так и не собрался — **fallback на транскрибацию composite-аудио** (хуже для диаризации, но лучше, чем потеря спикера).
-
-**Приоритет высокий:** на встречах 1–2 часа потеря дорожек = потеря половины транскрипта и AI-отчёта. Ночные/длинные встречи усугубляют (больше реконнектов).
+### Фикс (реализация в ТЗ)
+1. `getAccess` ([meetings.service.ts:476](../../backend/src/modules/meetings/meetings.service.ts#L476)) — читать куку `guest_session_<meetingId>`, для валидной возвращать `role: 'guest'` (+ identity), чтобы фронт авто-джойнил, а не показывал форму имени. Прокинуть куку из контроллера.
+2. Стабилизировать guest identity по бизнес-ключу `meetingId + guestId` (guestId генерится ОДИН раз на первом входе, сохраняется в cookie/localStorage, переиспользуется). Best practice LiveKit: identity задаёт клиент, переиспользуя сохранённое значение.
+3. TTL гостевого токена ≥ длительности встречи (уже 4ч дефолт / до endedAt+5мин — приемлемо).
+4. Подстраховка для накопленных дублей: дедупликация/схлопывание участников по имени+интервалу в UI и для AI.
 
 ---
 
-## 3. Видео-плеер: бесконечная загрузка большого MP4
+## 2. «2 дорожки вместо 3 + обрывок 38 сек» — реактивная модель записи фундаментально ненадёжна
 
-**Состояние путей — исправно** (не баг кода доставки):
-- `composite.mp4` в S3 есть (лог `onCompositeEnded`, 383 МБ, 1043 сек).
-- Фронт при `recording.hasRecording` дёргает `/recording/download` → [`presignComposite`](../../backend/src/modules/recordings/recordings.service.ts#L670) → presigned-URL в Vidstack-плеер.
-- Аудиодорожки с того же S3 (reg.ru) **проигрываются** → presigned/CORS в браузере работают.
+### Подтверждённый механизм
+Per-track дорожки создаются **реактивно**: на webhook `track_published(audio)` вызываем `startTrackEgress`. У этого три независимых класса потери:
+1. **Webhook'и не гарантированы.** Официально LiveKit: *«webhooks have no guarantees around delivery»*. Потерян `track_published` 3-го участника → дорожки нет навсегда. Подтверждающие issues: [livekit#3976](https://github.com/livekit/livekit/issues/3976) (доходит только первый webhook), [#3725](https://github.com/livekit/livekit/issues/3725) (`track_published` без room после reconnect).
+2. **Гонка «опубликовал до старта записи» + reconnect-republish.** Реактивная подписка ловит только момент публикации; повторного `track_published` нет.
+3. **Обрывок 38 сек** = egress стартовал поздно / участник переподключился, старая дорожка закрылась, новую не подхватили. Симптом совпадает с [agents#3197](https://github.com/livekit/agents/issues/3197) (audio missing in egress).
 
-**Вероятные причины (по убыванию), требуют замера заголовков:**
-1. **MP4 без fast-start** (moov-atom в конце файла) — браузер не может играть прогрессивно, тянет все 383 МБ до первого кадра. На длинных встречах (2 ч) — гигабайты → «вечная крутилка». LiveKit `EncodedFileOutput` MP4 ([livekit-egress.client.ts#L55](../../backend/src/modules/recordings/livekit-egress.client.ts#L55)).
-2. reg.ru S3 не отдаёт `Accept-Ranges: bytes` / 206 на крупных объектах.
-3. Неверный `Content-Type` объекта (`application/octet-stream` вместо `video/mp4`) — egress пишет напрямую, наш `presignGet` тип ответа не форсит.
+Дополнительно: track composite не пишет mute-нутые на старте треки ([egress#203](https://github.com/livekit/egress/issues/203)); при нехватке CPU-ёмкости egress возвращает «no response from egress service» → в нашей модели тихая потеря (нет ретрая).
 
-**Что делать:**
-1. **Диагностика (1 мин):** DevTools → Network на `composite.mp4`: `Content-Type`, `Accept-Ranges`, статус 206 при перемотке, растёт ли Size. Это разведёт «moov/faststart» vs «доставка».
-2. Если moov в конце — пост-обработка egress в faststart (ffmpeg `-movflags +faststart`) либо HLS-выход вместо одного MP4 для длинных встреч.
-3. Форсить `ResponseContentType: 'video/mp4'` в presignGet для composite (дёшево, на случай п.3).
+### Где в коде (аудит подтвердил)
+- [livekit.service.ts:113-142](../../backend/src/modules/livekit/livekit.service.ts#L113) `ensureRoom` → `createRoom({ name })` — **поле `egress` НЕ передаётся**. Auto Egress отсутствует. Хуже: при недоступности LiveKit комната auto-create при первом join — `createRoom` вообще не выполняется.
+- [recordings.service.ts:206-312](../../backend/src/modules/recordings/recordings.service.ts#L206) `ensureTrackEgress`: no-op если статус ∉ {recording, requested} ([:215](../../backend/src/modules/recordings/recordings.service.ts#L215)); **нет ретрая** при ошибке startTrackEgress ([:265-277](../../backend/src/modules/recordings/recordings.service.ts#L265) — только log + return).
+- **Догон уже опубликованных треков отсутствует** — `listParticipants` к записи нигде не привязан.
+- Composite ([livekit-egress.client.ts:51](../../backend/src/modules/recordings/livekit-egress.client.ts#L51)) пишет полный микс → поэтому всех слышно; per-track ([:78](../../backend/src/modules/recordings/livekit-egress.client.ts#L78)) теряется.
+
+### Правильное решение — Auto Egress (декларативно при createRoom)
+LiveKit умеет писать каждый трек САМ, без реактивного webhook, через `RoomService.createRoom({ egress: RoomEgress })`:
+```
+RoomEgress {
+  room        // RoomCompositeEgressRequest — наш текущий composite (оставить)
+  tracks      // AutoTrackEgress — отдельный OGG на КАЖДЫЙ аудио-трек (нужное нам)
+  participant // AutoParticipantEgress — на участника (с транскодингом, дороже)
+}
+AutoTrackEgress { filepath: "…/{room_name}-{publisher_identity}-{time}", output: S3Upload }
+```
+`AutoTrackEgress` пишет сырой Opus→OGG (идеально для ASR, без транскодинга), покрывает треки опубликованные до/во время/после старта, mute-на-старте и republish после reconnect. Это снимает всю гонку. (Proto: `livekit_room.proto` `RoomEgress egress = 6`; Node SDK `CreateOptions.egress?: RoomEgress`.)
+
+### Фикс (реализация в ТЗ)
+1. **Главное:** в `ensureRoom` ([livekit.service.ts:113](../../backend/src/modules/livekit/livekit.service.ts#L113)) добавить `egress: RoomEgress` с `AutoTrackEgress` (+ оставить composite). Сверить точный API SDK через Context7 (структура `RoomEgress` менялась между версиями). Учесть ветку auto-create — гарантировать, что комната создаётся через `createRoom` (с egress), а не неявно.
+2. **Догон-fallback:** при старте записи `listParticipants(roomName)` → для каждого audio-трека без egress вызвать `startTrackEgress`. Закрывает гонку, если Auto Egress по комнате не настроен.
+3. Сделать реактивный `startTrackEgress` идемпотентным (проверка `listEgress` по trackId) и с **ретраем** при ошибке (вместо тихого return).
+4. Расширить окно ensureTrackEgress до статуса `active` (а не только requested/recording), чтобы republish не терялся.
+5. Прод-инфра: egress-контейнер с `--cap-add=SYS_ADMIN` (иначе Chrome-composite падает, v1.7.5+); мониторить `livekit_egress_available`.
 
 ---
 
-## Связь проблем (системный вывод)
+## 3. Видео: «вечная крутилка» большого MP4 = нет faststart (moov в конце)
 
-Нестабильный identity гостя (п.1) + гонка старта записи (п.2) = потеря per-track дорожек = неполный транскрипт и AI-отчёт. Это **одна системная проблема надёжности записи**, а не три отдельных. Видео (п.3) — независимый трек про доставку больших файлов, критичный для длинных встреч.
+### Подтверждённый механизм
+LiveKit Egress кодирует через GStreamer (`qtmux`/`mp4mux`), у которого **`faststart=false` по умолчанию** → атом `moov` (оглавление/смещения кадров) пишется в КОНЕЦ файла. Браузеру `moov` нужен ДО старта → при moov-в-конце он качает весь файл прежде первого кадра.
+- Маленький OGG (12 МБ) играет — потоковый контейнер, метаданные в начале.
+- Большой MP4 (**383 МБ / 17 мин**) — плеер крутится всё время докачки 383 МБ. На встречах 1–2 ч — гигабайты, «бесконечно».
 
-## Следующие шаги
-- [ ] Замерить заголовки `composite.mp4` (видео) — разведёт причину.
-- [ ] Тест на реальной встрече 3 участника + умышленный реконнект — воспроизвести потерю дорожек.
-- [ ] ТЗ на «надёжность per-track записи» (проактивный догон треков + стабильный identity).
-- [ ] (опц.) backfill-скрипт: для встреч с `turns != null && mergedS3Url == null` залить merged.json (иначе старые встречи не оживят behavior/quality/custom-report до ре-merge).
+Это объясняет все симптомы сразу: большой ≠ играет, маленький = играет, файл в S3 целый.
+
+### Вторичные факторы
+- **Range/206:** прогрессивное video требует `Accept-Ranges: bytes` + `206`. S3-совместимые (reg.ru/MinIO) обычно поддерживают, но без faststart всё равно не заиграет.
+- **Content-Type:** если egress залил MP4 как `application/octet-stream` — браузеры кроме Chrome отказывают. Лечится `ResponseContentType: 'video/mp4'` в presigned GET (дёшево, делать в любом случае).
+
+### Фикс (реализация в ТЗ)
+1. **Faststart-постобработка** после egress: `ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4` (без перекодирования, секунды), перезалить в S3. Единственный фикс, точно лечащий крутилку. *(ffmpeg = бинарь/infra-зависимость, не Python в backend-пути — CLAUDE.md §7 не нарушает; вызов subprocess из TS-воркера допустим.)*
+2. **Стратегически для длинных встреч:** `SegmentedFileOutput` (HLS) вместо одного MP4 — сегменты пишутся инкрементально, плеер играет сразу, нет лимита времени egress. Vidstack играет HLS нативно.
+3. **Сразу:** `ResponseContentType: 'video/mp4'` в [presignGet](../../backend/src/modules/recordings/s3.service.ts#L45) для composite.
+
+### Диагностика (подтвердить за минуту)
+DevTools → Network на `composite.mp4`: `Content-Type` (video/mp4?), `Accept-Ranges`/206, и **ползёт ли Size к ~383 МБ перед стартом** (если плеер ждёт ~100% — moov-в-конце подтверждён). Надёжнее: `ffprobe -v trace` / `ffmpeg -v trace -i` — где `moov` относительно `mdat`.
+
+---
+
+## Системный вывод
+
+Это **одна проблема надёжности записи**, не три:
+- Нестабильный guest identity (§1) множит участников И ломает привязку дорожек (AutoTrackEgress matchit по identity).
+- Реактивная модель egress (§2) теряет per-track дорожки → неполный транскрипт и AI-отчёт.
+- Видео (§3) — независимый трек про доставку больших файлов, критичный для длинных встреч.
+
+Правильная архитектура по LiveKit: **декларативный Auto Egress при createRoom + стабильный identity + faststart/HLS**, вместо реактивной webhook-модели.
+
+## План реализации (ТЗ, по приоритету)
+- [ ] **P0** Auto Egress (AutoTrackEgress) при createRoom + догон listParticipants + ретрай. → чинит дорожки/транскрипт.
+- [ ] **P0** Стабильный guest identity (getAccess читает куку + identity по meetingId+guestId). → чинит участников и привязку дорожек.
+- [ ] **P1** Faststart-постобработка MP4 + `ResponseContentType: video/mp4`. → чинит видео.
+- [ ] **P2** HLS SegmentedFileOutput для длинных встреч.
+- [ ] (опц.) backfill merged.json для старых встреч.
+
+## Источники (LiveKit)
+- Auto Egress: https://docs.livekit.io/home/egress/autoegress/ · Track Egress: https://docs.livekit.io/home/egress/track/ · Participant: https://docs.livekit.io/home/egress/participant/ · Outputs/HLS: https://docs.livekit.io/home/egress/outputs/
+- Webhooks (no delivery guarantee): https://docs.livekit.io/intro/basics/rooms-participants-tracks/webhooks-events/
+- Identity/reconnect: https://docs.livekit.io/home/client/connect/ · https://docs.livekit.io/intro/basics/rooms-participants-tracks/participants/ · Tokens: https://docs.livekit.io/frontends/authentication/tokens/
+- Proto RoomEgress/AutoTrackEgress: https://github.com/livekit/protocol/blob/main/protobufs/livekit_egress.proto
+- GStreamer qtmux faststart/moov: https://gstreamer.freedesktop.org/documentation/isomp4/qtmux.html · https://blog.livekit.io/livekit-universal-egress-launch/
+- MP4 faststart объяснение: https://cleverutils.com/mov-to-mp4/faststart-web-video · Range и video: https://www.zeng.dev/post/2023-http-range-and-play-mp4-in-browser/
+- Issues: livekit/livekit#3976, #3725, #4227, #1130; livekit/agents#3197, #656, #4705; livekit/egress#203, #143, #847

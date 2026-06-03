@@ -79,7 +79,8 @@ export class IntakeAutoTriageQueueService
         'IntakeAutoTriageQueueService: попытка enqueue до onModuleInit',
       );
     }
-    const jobId = `intake-auto-triage:${args.intakeIssueId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `intake-auto-triage_${args.intakeIssueId}`;
     await this.queue.add(
       'intake-auto-triage',
       { tenantId: args.tenantId, intakeIssueId: args.intakeIssueId },

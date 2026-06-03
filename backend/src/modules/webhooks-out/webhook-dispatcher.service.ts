@@ -83,7 +83,7 @@ export class WebhookDispatcherService implements OnModuleInit, OnModuleDestroy {
       await queue.add(
         'deliver',
         { deliveryId: delivery.id },
-        { jobId: `delivery:${delivery.id}` },
+        { jobId: `delivery_${delivery.id}` },
       );
       enqueued += 1;
     }
@@ -131,7 +131,7 @@ export class WebhookDispatcherService implements OnModuleInit, OnModuleDestroy {
       'deliver',
       { deliveryId },
       {
-        jobId: `delivery:${deliveryId}:retry:${Date.now()}`,
+        jobId: `delivery_${deliveryId}_retry_${Date.now()}`,
         delay: delayMs,
       },
     );

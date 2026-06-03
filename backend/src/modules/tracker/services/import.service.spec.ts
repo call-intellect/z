@@ -104,7 +104,7 @@ describe('ImportService.start', () => {
     const [name, data, opts] = queueAdd.mock.calls[0]!;
     expect(name).toBe('import-tracker');
     expect(data).toEqual({ tenantId: 't1', importLogId: 'imp-1' });
-    expect(opts).toMatchObject({ jobId: 'import-tracker:imp-1' });
+    expect(opts).toMatchObject({ jobId: 'import-tracker_imp-1' });
 
     expect(metrics.incImportStarted).toHaveBeenCalledTimes(1);
   });

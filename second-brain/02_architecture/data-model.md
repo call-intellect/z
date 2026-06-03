@@ -1267,3 +1267,33 @@ model PlatformSetting  { key @id, valueJson (Json), updatedBy?, updatedAt, creat
 Применяется через `bun run prisma:push` (не migrate). Подробнее: [[../01_projects/logging]].
 
 [[../index|← index]]
+
+## Curation — лестница доверия (Часть A, 2026-06-03)
+
+**Источник:** `plans/tz/2026-06-02-action-center-pending-confirmations.md` (Часть A). Модуль
+`backend/src/modules/curation`. Архитектура триажа — [[knowledge-core|knowledge-core.md]] §«Лестница
+доверия», профильная заметка — [[../01_projects/curation]].
+
+**`CardVersion` (расширение):**
+
+```prisma
+trustTier  TrustTier @default(human)   // auto | provisional | human
+@@index([tenantId, trustTier])
+enum TrustTier { auto provisional human }
+```
+
+`auto` — авто-канонизация не-критического типа; `provisional` — критический тип, канонизированный
+AI-судьёй (`curation-verify` debate) без человека; `human` — прошёл человека (или дефолт для старых
+записей). Применяется `prisma db push` (новый enum + поле + индекс). Опц. будущий backfill старых
+`CardVersion` (`createdByUserId IS NULL → auto`) пока отложен — дефолт `human`.
+
+**`Org.curationSettings` (Json, новые ключи):**
+
+- `autoThresholdByType` / `deepReviewThresholdByType` — пер-типовые калиброванные пороги (fallback на
+  глобальные `autoThreshold` / `deepReviewThreshold`).
+- `provisionalThreshold` + `provisionalThresholdByType` — нижняя граница провизорной полосы для
+  критических типов.
+- `aiVerifierEnabled` (default true) — включён ли AI-судья для критических типов.
+- `auditSampleRate` (default 0.05) — доля авто/провизорных решений, попадающих в аудит-выборку.
+- Autotune guardrails: `autotuneEnabled` (default false), `maxProvisionalOverride`, `thresholdMin`,
+  `thresholdMax`, `autotuneStep`, `minDecisionsForAutotune` — для `CurationAutotuneCron`.

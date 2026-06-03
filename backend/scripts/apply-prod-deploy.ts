@@ -96,6 +96,9 @@ const STEPS: Step[] = [
     // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema
     // (table-infer-schema / table-architect-pass / table-entity-check).
     'smart-tables',
+    // Action Center A1 «лестница доверия» (2026-06-02) — curation-verify
+    // (debate-curation-verify[-critic|-supporter|-neutral]).
+    'curation',
     // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals):
     // goal-extract / goal-hierarchy-link / goals-pulse-summarize.
     'goals',

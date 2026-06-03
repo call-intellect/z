@@ -147,6 +147,17 @@ export type LlmTaskType =
   | 'debate-decision-supersede-critic'
   | 'debate-decision-supersede-supporter'
   | 'debate-decision-supersede-neutral'
+  // Action Center A1 «лестница доверия» (2026-06-02) — Curation-Verify debate.
+  // AI-судья канонизации критических карточек (regulation/process/decision)
+  // Слоя 4. Зонтичный taskType + 3 stance-specific (critic/supporter/neutral),
+  // семейство `curation-verify` в MultiAgentDebateService.
+  //   - 'debate-curation-verify-critic'    → deepseek-v4-flash (cheap; склонна к reject)
+  //   - 'debate-curation-verify-supporter' → gpt-5.4-mini (diverse провайдер)
+  //   - 'debate-curation-verify-neutral'   → deepseek-v4-flash (cheap арбитр)
+  | 'debate-curation-verify'
+  | 'debate-curation-verify-critic'
+  | 'debate-curation-verify-supporter'
+  | 'debate-curation-verify-neutral'
   // SBA γ-1 — Specialist 3.7 (SkillProfile) + Clone API.
   // 'skill-trait-detect' — самая ответственная задача γ-1: 5+ reasoning-цитат
   //   сотрудника → один структурированный SkillTrait (эмерджентная категория +
@@ -567,6 +578,11 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'debate-decision-supersede-critic',
   'debate-decision-supersede-supporter',
   'debate-decision-supersede-neutral',
+  // Action Center A1 «лестница доверия» (2026-06-02) — Curation-Verify debate.
+  'debate-curation-verify',
+  'debate-curation-verify-critic',
+  'debate-curation-verify-supporter',
+  'debate-curation-verify-neutral',
   // SBA γ-1
   'skill-trait-detect',
   'skill-trait-merge',

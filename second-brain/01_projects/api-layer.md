@@ -191,6 +191,14 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`knowledge-core.md`](../02_architecture/knowledge-core.md) — `/api/v1/knowledge/blocks`, `/entities`, `/themes`, `/graph/*`, `/search`.
 
+## Curation (Слой 4)
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/curation/override-stats` | Доля override (`(reject + approve_with_edits) / decided`) per `resourceType` — read-model `CurationService.getOverrideStats`. Часть A «Лестница доверия». | `owner` `admin` |
+
+Полная карта курации (триаж, лестница доверия, AI-судья, autotune+kill-switch) — [[curation]]. Provisional-audit-статистика (`getProvisionalAuditStats`) пока только сервисный метод, отдельного эндпоинта нет.
+
 ## Org / RBAC / Admin / LLM
 
 См. [`orgs-and-rbac.md`](orgs-and-rbac.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).

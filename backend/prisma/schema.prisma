@@ -499,6 +499,18 @@ enum CurationItemStatus {
   cancelled
 }
 
+/// TrustTier — Action Center A1 «лестница доверия» (2026-06-02). Метка доверия
+/// версии карточки (CardVersion):
+///   - human       — версия создана/подтверждена человеком-куратором (decide).
+///   - auto        — авто-канонизация некритического типа (high confidence, без conflict).
+///   - provisional — провизорная канонизация критического типа AI-судьёй
+///                   (3-голосовый debate-консенсус accept). Подлежит аудит-выборке.
+enum TrustTier {
+  auto
+  provisional
+  human
+}
+
 /// CurationDecisionType — тип решения куратора по карточке.
 ///   - mark_as_misleading: SBA γ-1 — post-hoc пометка карточки специалиста (Skill traits)
 ///     как «неверная» direct manager'ом / admin'ом. Skill не проходит pre-approval (auto-canonical),
@@ -3403,6 +3415,9 @@ model CardVersion {
   /// Опц. CurationItem (связан через decision; денормализация для быстрой
   /// фильтрации без JOIN'а через CurationDecision).
   curationItemId     String?
+  /// Action Center A1 «лестница доверия» (2026-06-02) — метка доверия версии.
+  /// human (default, обратносовместимо) / auto / provisional. См. enum TrustTier.
+  trustTier          TrustTier @default(human)
   createdAt          DateTime @default(now())
 
   org                  Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -3429,6 +3444,8 @@ model CardVersion {
   @@index([tenantId, resourceType])
   @@index([resourceType, resourceId])
   @@index([curationItemId])
+  /// A1 — фильтрация версий по уровню доверия (аудит провизорных/авто).
+  @@index([tenantId, trustTier])
 }
 
 /// CuratorAssignment — гибкое назначение кураторов per-ResourceType (см.

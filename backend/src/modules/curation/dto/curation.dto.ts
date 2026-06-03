@@ -150,6 +150,33 @@ export const CurationSettingsSchema = z
     deepReviewThresholdByType: z
       .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
       .optional(),
+    /**
+     * Action Center A1 «лестница доверия» (2026-06-02) — порог провизорной
+     * AI-канонизации критических типов (regulation/process/decision). Если
+     * критический тип имеет conflict ≠ 'hard' И effectiveConfidence ≥ этого
+     * порога — карточка отправляется AI-судье (3-голосовый debate); при
+     * accept-консенсусе становится провизорно-канонической (trustTier=provisional),
+     * минуя человека. Иначе — deep review (человек). Default 0.8.
+     */
+    provisionalThreshold: z.number().min(0).max(1).optional(),
+    /**
+     * A1 — пер-типовая карта порога провизорной канонизации (override
+     * глобального provisionalThreshold для конкретного resourceType).
+     */
+    provisionalThresholdByType: z
+      .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
+      .optional(),
+    /**
+     * A1 — включён ли AI-судья (Curation-Verify debate) для критических
+     * типов. При false критические карточки всегда идут к человеку (deep).
+     * Default true.
+     */
+    aiVerifierEnabled: z.boolean().optional(),
+    /**
+     * A1 — доля авто/провизорных решений, на которую дополнительно создаётся
+     * лёгкий аудит-CurationItem (не блокирует канонизацию). Default 0.05 (5%).
+     */
+    auditSampleRate: z.number().min(0).max(1).optional(),
   })
   .strict();
 export type CurationSettingsDto = z.infer<typeof CurationSettingsSchema>;

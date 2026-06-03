@@ -30,6 +30,10 @@ import {
  *     (wave 2). Опционален: ConsistencyCheckerService инжектит ProbeService
  *     через `@Optional()` для unit-тестов.
  *   - RedisModule (@Global) — dedup-кеш для consistency-violations.
+ *   - AiModule (@Global) — MultiAgentDebateService для A1 «лестница доверия»
+ *     (AI-судья провизорной канонизации критических карточек). CurationService
+ *     инжектит его через @Optional(): в worker-процессе без AiModule зависимость
+ *     null → критические карточки безопасно идут к человеку (deep), как раньше.
  *
  * Экспортирует CurationService и ConflictService — публичный API для
  * специалистов Слоя 3 (вызывают triage / report). Также экспортирует

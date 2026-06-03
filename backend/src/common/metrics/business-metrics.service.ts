@@ -335,6 +335,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationAutoCanonicalTotal!: Counter<'resource_type'>;
   private curationConflictsTotal!: Counter<'relation_type' | 'resolution'>;
   private curationStaleDetectedTotal!: Counter<'resource_type'>;
+  // ── Action Center A1 «лестница доверия» (2026-06-02) ──
+  private curationProvisionalTotal!: Counter<'resource_type'>;
+  private curationAuditSampleTotal!: Counter<'resource_type'>;
+  private curationVerifierVerdictTotal!: Counter<'decision' | 'consensus_type'>;
   // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker ──
   // Cardinality-safe: tenant НЕ выносим в label (паттерн остальных curation/probe-метрик).
   // Top-100 tenant-агрегации делает Grafana / Prometheus recording rule поверх БД.
@@ -1737,6 +1741,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_stale_detected_total',
       help: 'SBA α-4 — CardStaleDetectorCron: сколько карточек помечено кандидатами на stale (resource_type).',
       labelNames: ['resource_type'] as const,
+    });
+    // ── Action Center A1 «лестница доверия» (2026-06-02) ──
+    this.curationProvisionalTotal = this.getOrCreateCounter({
+      name: 'curation_provisional_total',
+      help: 'A1 — критические карточки, провизорно канонизированные AI-судьёй (trustTier=provisional, минуя человека), по resource_type.',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationAuditSampleTotal = this.getOrCreateCounter({
+      name: 'curation_audit_sample_total',
+      help: 'A1 — авто/провизорные решения, попавшие в аудит-выборку (создан лёгкий аудит-CurationItem), по resource_type.',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationVerifierVerdictTotal = this.getOrCreateCounter({
+      name: 'curation_verifier_verdict_total',
+      help: 'A1 — вердикты AI-судьи canonical-verify (decision ∈ accept|reject|split_uncertain|unavailable × consensus_type).',
+      labelNames: ['decision', 'consensus_type'] as const,
     });
 
     // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker
@@ -4334,6 +4354,27 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Auto-canonical через triage (минуя CurationItem). */
   incCurationAutoCanonical(args: { resourceType: string }): void {
     this.curationAutoCanonicalTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A1 — провизорная AI-канонизация критического типа (trustTier=provisional). */
+  incCurationProvisional(args: { resourceType: string }): void {
+    this.curationProvisionalTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A1 — авто/провизорное решение попало в аудит-выборку. */
+  incCurationAuditSample(args: { resourceType: string }): void {
+    this.curationAuditSampleTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A1 — вердикт AI-судьи canonical-verify (decision × consensus_type). */
+  incCurationVerifierVerdict(args: {
+    decision: string;
+    consensusType: string;
+  }): void {
+    this.curationVerifierVerdictTotal.inc({
+      decision: args.decision,
+      consensus_type: args.consensusType,
+    });
   }
 
   /**

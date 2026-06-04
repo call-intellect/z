@@ -5,7 +5,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { type Job } from 'bullmq';
 
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -17,10 +17,7 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
   buildRoleMapExtractUserMessage,
@@ -39,17 +36,24 @@ import { RoleMapBuilderService } from '../services/role-map-builder.service';
 import { resolveRoleMapTenantTop } from '../utils/tenant-top';
 
 /**
- * SBA α-8 wave 4 — RoleMapBuilderWorker.
+ * SBA α-8 wave 4 — RoleMapBuilderWorker (handler `core.specialist-routing`,
+ * jobName=`3-8-role-map-builder`).
  *
- * Consumer `core.specialist-routing` с jobName=`3-8-role-map-builder`.
- * RouterService.matchSpecialists для signalType ∈ {expertise, competence,
- * methodology_step} диспатчит сюда.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
+ * signalType ∈ {expertise, competence, methodology_step}. Маршрутизацию по
+ * jobName делает диспетчер.
  *
  * Дебаунс — батч-окно per role:
  *   - Каждый job push'ит blockId в Redis-list `rolemap:batch:<tenantId>:<roleId>`.
  *   - SET sinceKey NX EX = `cfg.roleMap.batchTimeoutSeconds`.
  *   - При накоплении ≥ batchSize (5 на старте) — flush сейчас.
  *   - Иначе таймер (worker сам опрашивает раз в 30s) flush'ит просроченные.
+ *     Таймер живёт в onModuleInit (Worker'а у класса больше нет — единственный
+ *     Worker очереди в `SpecialistRoutingDispatcherWorker`).
+ *
+ * Kill-switch `ROLE_MAP_BUILDER_ENABLED` (default true): при false `handle`
+ * сразу выходит, а таймер не запускается — поведение как раньше (раньше Worker
+ * не поднимался вовсе).
  *
  * Идемпотентность: jobId = `3-8-role-map-builder_<blockId>` (см.
  * `CoreQueueService.enqueueSpecialistRouting`). RouterService на стороне
@@ -65,7 +69,6 @@ import { resolveRoleMapTenantTop } from '../utils/tenant-top';
 @Injectable()
 export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoleMapBuilderWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
   private timer: NodeJS.Timeout | null = null;
 
   static readonly SPECIALIST_NAME = '3-8-role-map-builder';
@@ -117,32 +120,12 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (!this.cfg.roleMap.builderEnabled) {
       this.logger.log(
-        'RoleMapBuilderWorker: disabled (ROLE_MAP_BUILDER_ENABLED=false), пропускаю инициализацию',
+        'RoleMapBuilderWorker: disabled (ROLE_MAP_BUILDER_ENABLED=false), таймер батчей не запускаю',
       );
       return;
     }
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) =>
-        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'role-map.builder', job, () =>
-          this.process(job),
-        ),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        `${RoleMapBuilderWorker.SPECIALIST_NAME}: job failed`,
-      );
-    });
+    // Worker очереди живёт централизованно в SpecialistRoutingDispatcherWorker;
+    // здесь — только таймер flush'а просроченных батчей.
     this.timer = setInterval(() => {
       void this.flushExpiredBatches().catch((err) => {
         this.logger.debug(
@@ -154,26 +137,28 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     if (this.timer && typeof this.timer.unref === 'function') {
       this.timer.unref();
     }
-    this.logger.log(
-      `RoleMapBuilderWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${RoleMapBuilderWorker.SPECIALIST_NAME})`,
-    );
   }
 
-  async onModuleDestroy(): Promise<void> {
+  onModuleDestroy(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-    }
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
     }
   }
 
   // ─────────────────────────── consumer ─────────────────────────────
 
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
+    if (!this.cfg.roleMap.builderEnabled) return;
+    await this.pipe.job(
+      SystemLogPipeline.KNOWLEDGE_GRAPH,
+      'role-map.builder',
+      job,
+      () => this.process(job),
+    );
+  }
+
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== RoleMapBuilderWorker.SPECIALIST_NAME) return;
     const { blockId, tenantId, signalType } = job.data;
     if (!RoleMapBuilderWorker.RELEVANT_SIGNALS.has(signalType)) return;
 

@@ -1,33 +1,24 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { RouterService } from '../services/router.service';
 import { Specialist39ExperimentsService } from '../services/specialist-3-9-experiments.service';
 
 /**
- * SBA β-6 — Experiment Tracker (Specialist 3.9) — consumer
+ * SBA β-6 — Experiment Tracker (Specialist 3.9) — handler
  * `core.specialist-routing` с jobName='3-9-experiments'.
  *
- * Запускается, когда `RouterService.dispatch` диспатчит блок с signalType ∈
- * { hypothesis, result, lesson } этому специалисту. Воркер фильтрует jobs
- * других специалистов по `job.name` (паттерн §5 контракта зонтичного).
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков с
+ * signalType ∈ { hypothesis, result, lesson }, которые `RouterService.dispatch`
+ * диспатчит этому специалисту. Маршрутизацию по jobName делает диспетчер.
  *
- * Логика делегируется в `Specialist39ExperimentsService.processBlock`.
+ * Логика делегируется в `Specialist39ExperimentsService.processBlock` и
+ * оборачивается в `PipelineRunner.job` для системного лог-пайплайна.
  *
  * Идемпотентность:
  *   - jobId диспатча = `'3-9-experiments_<blockId>'` (см. CoreQueueService).
@@ -38,25 +29,18 @@ import { Specialist39ExperimentsService } from '../services/specialist-3-9-exper
  * Метрики:
  *   - `core_specialist_pipeline_duration_seconds{type='experiment'}`.
  *   - `experiment_detector_runs_total{tenant_top, result}` — внутри сервиса.
- *
- * Concurrency=2 — баланс между параллелизмом и LLM rate-limit'ами; совпадает
- * с другими специалистами Слоя 3.
  */
 @Injectable()
-export class ExperimentDetectorWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class ExperimentDetectorWorker {
   private readonly logger = new Logger(ExperimentDetectorWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
-  /** jobName-фильтр. Совпадает с RouterService.SPECIALIST.EXPERIMENT_TRACKER. */
+  /** Имя специалиста (ключ маршрутизации диспетчера). Совпадает с RouterService.SPECIALIST.EXPERIMENT_TRACKER. */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.EXPERIMENT_TRACKER;
 
   @Inject(PipelineRunner)
   private readonly pipe!: PipelineRunner;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist39ExperimentsService)
     private readonly svc: Specialist39ExperimentsService,
@@ -64,45 +48,16 @@ export class ExperimentDetectorWorker
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) =>
-        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.experiment-detector', job, () =>
-          this.process(job),
-        ),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
+    await this.pipe.job(
+      SystemLogPipeline.KNOWLEDGE_GRAPH,
+      'kc.experiment-detector',
+      job,
+      () => this.process(job),
     );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'experiment-detector: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `ExperimentDetectorWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${ExperimentDetectorWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
   }
 
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== ExperimentDetectorWorker.SPECIALIST_NAME) {
-      return;
-    }
     const start = Date.now();
     const { blockId, tenantId } = job.data;
 

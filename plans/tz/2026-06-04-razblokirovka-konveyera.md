@@ -73,7 +73,7 @@
 
 ---
 
-## Ф2 — specialist-routing: 14 воркеров на одной очереди `[ ]`
+## Ф2 — specialist-routing: 14 воркеров на одной очереди `[x]`
 
 **Корень (баг #14, critical):** на очереди `core.specialist-routing` создаётся **14 конкурирующих** `new Worker(CORE_QUEUE_NAMES.SPECIALIST_ROUTING, ...)` (`specialist-3-14-goals.worker.ts:60-67`, `specialist-3-1-regulations.worker.ts:67-74`, `process-detector.worker.ts:74-84`, `experiment-detector.worker.ts:68-69`, `sprint-helper.worker.ts:44-45`, +role-map-builder/personal-relation-builder/helpfulness). `enqueueSpecialistRouting` делает `q.add(args.specialistName, payload, {jobId})` (`core-queue.service.ts:443-462`) — jobName=specialistName используется как (несуществующий) ключ маршрутизации. По модели BullMQ **один job → один воркер** (конкурирующие consumer'ы): job достаётся случайному воркеру, а каждый воркер делает `if (job.name !== SPECIALIST_NAME) return;` (`specialist-3-14-goals.worker.ts:91-95`) — **silent return без throw** → job помечается completed → ретрая нет (`queues.ts:192-197` attempts=5/removeOnFail не помогают, т.к. return, а не throw). Итог: ~13/14 блоков попадают «чужому» воркеру и молча теряются. Комментарий `queues.ts:87-94` «Multi-consumer: каждый специалист подписывается на свой jobName» фиксирует ошибочную (нереализуемую в BullMQ) посылку.
 

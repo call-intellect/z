@@ -1,30 +1,20 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 
 /**
  * SBA α-6 — Specialist 3.4 (Project / Customer Context) — эталонный референс
  * контракта специалиста §5 зонтичного.
  *
- * Consumer очереди `core.specialist-routing`, jobName='3-4-project-customer'.
- * Запускается, когда `RouterService.dispatch` диспатчит блок (`signalType='fact'`
- * с упомянутыми Customer / Vendor / Project / Client entities) этому
- * специалисту.
+ * Handler очереди `core.specialist-routing`, jobName='3-4-project-customer'.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch`, когда
+ * `RouterService.dispatch` диспатчит блок (`signalType='fact'` с упомянутыми
+ * Customer / Vendor / Project / Client entities) этому специалисту.
  *
  * Логика воркера:
  *   1. Получить блок по `blockId` + список упомянутых сущностей через
@@ -52,13 +42,10 @@ import { RouterService } from '../services/router.service';
  *   - Не эмитит probe/conflict (это делает CardRollupV2Service / Specialist34ProbeService).
  */
 @Injectable()
-export class Specialist34ProjectCustomerWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class Specialist34ProjectCustomerWorker {
   private readonly logger = new Logger(
     Specialist34ProjectCustomerWorker.name,
   );
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
   /**
    * Типы Entity, которые считаются «карточно-релевантными» для специалиста 3.4.
@@ -73,57 +60,19 @@ export class Specialist34ProjectCustomerWorker
   ] as const;
 
   /**
-   * Имя специалиста (jobName-фильтр для consumer'а). Должно совпадать со
+   * Имя специалиста (ключ маршрутизации диспетчера). Должно совпадать со
    * значением в `RouterService.SPECIALIST.PROJECT_CUSTOMER`.
    */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.PROJECT_CUSTOMER;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-4: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist34ProjectCustomerWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist34ProjectCustomerWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    // jobName-фильтр: пропускаем jobs других специалистов.
-    if (job.name !== Specialist34ProjectCustomerWorker.SPECIALIST_NAME) {
-      return;
-    }
-
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId } = job.data;
 

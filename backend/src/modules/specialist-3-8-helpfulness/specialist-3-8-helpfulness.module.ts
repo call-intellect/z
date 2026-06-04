@@ -58,6 +58,10 @@ import { Specialist38HelpfulnessWorker } from './workers/specialist-3-8-helpfuln
     Specialist38HelpfulnessService,
     Specialist38ProbeService,
     HelpfulnessApiService,
+    // Ф2 МТЗ — экспорт handler'а, чтобы единый SpecialistRoutingDispatcherWorker
+    // (в WorkersModule) мог инжектить его через DI. Модуль @Global, поэтому
+    // дополнительного import'а в WorkersModule не нужно.
+    Specialist38HelpfulnessWorker,
   ],
 })
 export class Specialist38HelpfulnessModule {}

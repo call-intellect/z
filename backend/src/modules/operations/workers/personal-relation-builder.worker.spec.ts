@@ -8,8 +8,10 @@ import {
 /**
  * SBA β-8 — PersonalRelationBuilderWorker unit-тесты.
  *
- * Worker инстанс не создаём целиком (BullMQ + Redis нужны для onModuleInit),
- * проверяем приватную process()-логику через прямой вызов.
+ * Ф2 МТЗ: воркер стал чистым handler'ом (без своего BullMQ Worker; jobName-
+ * маршрутизацию делает SpecialistRoutingDispatcherWorker). Проверяем приватную
+ * process()-логику через прямой вызов (handle() оборачивает её в PipelineRunner,
+ * который тут не инжектится).
  */
 describe('PersonalRelationBuilderWorker', () => {
   function buildWorker(overrides: {
@@ -21,7 +23,6 @@ describe('PersonalRelationBuilderWorker', () => {
     };
     const metrics = { incPersonalRelationBuilderRun: vi.fn() };
     const worker = new PersonalRelationBuilderWorker(
-      { client: {} } as never,
       prisma as never,
       metrics as never,
     );
@@ -116,22 +117,6 @@ describe('PersonalRelationBuilderWorker', () => {
     expect(metrics.incPersonalRelationBuilderRun).toHaveBeenCalledWith(
       expect.objectContaining({ result: 'skipped_low_confidence' }),
     );
-  });
-
-  it('skip jobName не совпадает', async () => {
-    const { worker, prisma } = buildWorker({});
-    await (worker as unknown as {
-      process(job: unknown): Promise<void>;
-    }).process({
-      name: '3-1-regulations',
-      data: {
-        blockId: 'b1',
-        tenantId: 't1',
-        signalType: 'team_friction',
-        specialistName: '3-1-regulations',
-      },
-    });
-    expect(prisma.ideaBlock.findUnique).not.toHaveBeenCalled();
   });
 });
 

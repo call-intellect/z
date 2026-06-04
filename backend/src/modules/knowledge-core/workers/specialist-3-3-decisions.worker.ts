@@ -1,20 +1,9 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 // Pulse Wave 6 §6.8 — Decision-Hygiene-Scorer enqueue после processBlock.
 // Optional: spec-тесты Specialist33Worker не передают DashboardModule в DI,
 // и поведение должно остаться идентичным.
@@ -23,12 +12,13 @@ import { RouterService } from '../services/router.service';
 import { Specialist33Service } from '../services/specialist-3-3-decisions.service';
 
 /**
- * SBA β-3 — Specialist 3.3 (Decisions) — consumer `core.specialist-routing`
+ * SBA β-3 — Specialist 3.3 (Decisions) — handler `core.specialist-routing`
  * с jobName='3-3-decisions'.
  *
- * Запускается, когда `RouterService.dispatch` диспатчит блок (`signalType ∈
- * { 'decision', 'rationale', 'decision_basis' }`) этому специалисту.
- * Воркер фильтрует jobs других специалистов по `job.name`.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
+ * (`signalType ∈ { 'decision', 'rationale', 'decision_basis' }`), которые
+ * `RouterService.dispatch` диспатчит этому специалисту. Маршрутизацию по
+ * jobName делает диспетчер.
  *
  * Логика делегируется в `Specialist33Service.processBlock`. См. sub-TZ
  * `plans/tz/2026-05-21-sba-beta-3-specialist-3-3-decisions.md` §5.
@@ -41,22 +31,15 @@ import { Specialist33Service } from '../services/specialist-3-3-decisions.servic
  *
  * Метрики:
  *   - `core_specialist_pipeline_duration_seconds{type='decision'}`.
- *
- * Concurrency=2 — баланс между параллелизмом и LLM rate-limit'ами,
- * совпадает с Specialist 3.1.
  */
 @Injectable()
-export class Specialist33DecisionsWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class Specialist33DecisionsWorker {
   private readonly logger = new Logger(Specialist33DecisionsWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
-  /** Имя специалиста (jobName-фильтр). Совпадает с RouterService.SPECIALIST.DECISIONS. */
+  /** Имя специалиста (ключ маршрутизации диспетчера). Совпадает с RouterService.SPECIALIST.DECISIONS. */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.DECISIONS;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist33Service) private readonly svc: Specialist33Service,
     @Inject(BusinessMetricsService)
@@ -68,44 +51,7 @@ export class Specialist33DecisionsWorker
     private readonly dashboardQueue?: DashboardQueueService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-3: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist33DecisionsWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist33DecisionsWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    // jobName-фильтр: пропускаем jobs других специалистов.
-    if (job.name !== Specialist33DecisionsWorker.SPECIALIST_NAME) {
-      return;
-    }
-
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId } = job.data;
 

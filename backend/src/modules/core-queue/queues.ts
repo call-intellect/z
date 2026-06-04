@@ -86,12 +86,22 @@ export const CORE_QUEUE_NAMES = {
   DUMP_CREATED: 'core.dump-created',
   /**
    * SBA α-3 — RouterService.dispatch публикует jobs в эту очередь после
-   * persist'а IdeaBlock'а. Multi-consumer: каждый специалист Слоя 3
-   * (3-1-regulations, 3-3-decisions, 3-4-project-customer, 3-5-insights,
-   * 3-6-ideas, 3-7-skill, 3-2-knowledge-clone) подписывается на свой jobName.
-   * Payload — `SpecialistRoutingJobData`. На α-3 consumer'ы ещё НЕ запущены —
-   * jobs накапливаются до появления первого специалиста (α-6, α-7, β-2, β-3, γ-1).
-   * jobId = `<specialistName>_<blockId>` — идемпотентно.
+   * persist'а IdeaBlock'а. `jobName` = имя специалиста (`3-1-regulations`,
+   * `3-3-decisions`, …, `3-14-goals`, `3-13-sprint-helper`).
+   *
+   * **Один Worker, диспетчер по jobName (Ф2 МТЗ «разблокировка конвейера»).**
+   * BullMQ НЕ поддерживает «per-jobName consumer» на общей очереди: каждый job
+   * достаётся ОДНОМУ случайному воркеру из конкурирующих consumer'ов. Раньше
+   * здесь поднималось 14 конкурирующих `new Worker(...)`, и каждый делал
+   * `if (job.name !== MY_NAME) return;` — silent return → completed → ретрая
+   * нет → ~13/14 блоков молча терялись. Теперь очередь обслуживает РОВНО ОДИН
+   * `SpecialistRoutingDispatcherWorker`, который по `job.name` (Map<name,handler>)
+   * делегирует в нужный специалист-handler; неизвестный jobName → throw (failed,
+   * виден). Named-processor паттерн.
+   *
+   * Payload — `SpecialistRoutingJobData` (для большинства) либо
+   * `SprintHelperJobData` (для `3-13-sprint-helper`).
+   * jobId = `<specialistName>_<blockId|cycleId>` — идемпотентно.
    */
   SPECIALIST_ROUTING: 'core.specialist-routing',
   /**

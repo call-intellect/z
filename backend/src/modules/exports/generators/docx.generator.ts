@@ -3,7 +3,6 @@ import type {
   AiResult,
   Meeting,
   MeetingChapter,
-  Task,
 } from '@prisma/client';
 import {
   Document,
@@ -22,7 +21,9 @@ export class DocxGenerator {
     meeting: Meeting;
     aiResult: AiResult | null;
     chapters: MeetingChapter[];
-    tasks: Task[];
+    // ТЗ Ф5.2 — рендерим только title; принимаем минимальную форму, чтобы сюда
+    // подходил и Prisma `Task`, и нормализованный `MeetingActionItem`.
+    tasks: ReadonlyArray<{ title: string }>;
   }): Promise<Buffer> {
     const sections: Paragraph[] = [];
 

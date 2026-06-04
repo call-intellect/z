@@ -96,6 +96,11 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutotuneEnabled', z.boolean()],
   // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
   ['knowledge.subjectAttributionEnabled', z.boolean()],
+  // Поэтапная раскатка (ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2):
+  // true = из встречи рождается ТОЛЬКО tracker Issue (видимый артефакт),
+  // пользовательский Task для action-items НЕ создаётся, а потребители
+  // читают задачи встречи из Issue. Дефолт FALSE — текущее поведение (Task).
+  ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
 
   // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],

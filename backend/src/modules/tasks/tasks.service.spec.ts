@@ -5,6 +5,8 @@ import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AuditLogService } from '../audit/audit-log.service';
 
+import type { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
+
 import type { TasksDispatcherService } from './tasks-dispatcher.service';
 import type { TasksRepository } from './tasks.repository';
 import { TasksService } from './tasks.service';
@@ -24,6 +26,10 @@ describe('TasksService', () => {
   let cfg: TypedConfigService;
   let dispatcher: { sendTask: ReturnType<typeof vi.fn> };
   let audit: { log: ReturnType<typeof vi.fn> };
+  let actionItems: {
+    isTrackerOnly: ReturnType<typeof vi.fn>;
+    listForMeeting: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     prisma = { meeting: { findUnique: vi.fn() } };
@@ -42,6 +48,11 @@ describe('TasksService', () => {
     } as unknown as TypedConfigService;
     dispatcher = { sendTask: vi.fn(async () => undefined) };
     audit = { log: vi.fn(async () => undefined) };
+    // Ф5.2 — по дефолту флаг OFF: listByMeeting читает Task через repo.
+    actionItems = {
+      isTrackerOnly: vi.fn(async () => false),
+      listForMeeting: vi.fn(async () => []),
+    };
   });
 
   function make(): TasksService {
@@ -51,6 +62,7 @@ describe('TasksService', () => {
       cfg,
       dispatcher as unknown as TasksDispatcherService,
       audit as unknown as AuditLogService,
+      actionItems as unknown as MeetingActionItemsService,
     );
   }
 

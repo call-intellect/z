@@ -15,6 +15,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
+import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 import { S3Service } from '../recordings/s3.service';
 import { WebhookDispatcherService } from '../webhooks-out/webhook-dispatcher.service';
 
@@ -44,6 +45,8 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BulkZipGenerator) private readonly zip: BulkZipGenerator,
     @Inject(WebhookDispatcherService) private readonly webhooks: WebhookDispatcherService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -132,11 +135,14 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
   private async buildMeetingMd(exp: Export): Promise<string> {
     const meetingId = exp.meetingIds[0];
     if (!meetingId) throw new Error('meetingIds пустой');
-    const [meeting, aiResult, chapters, tasks, transcript] = await Promise.all([
-      this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } }),
+    const meeting = await this.prisma.meeting.findUniqueOrThrow({
+      where: { id: meetingId },
+    });
+    const [aiResult, chapters, tasks, transcript] = await Promise.all([
       this.prisma.aiResult.findUnique({ where: { meetingId } }),
       this.prisma.meetingChapter.findMany({ where: { meetingId }, orderBy: { startMs: 'asc' } }),
-      this.prisma.task.findMany({ where: { meetingId }, orderBy: { createdAt: 'asc' } }),
+      // ТЗ Ф5.2 — задачи встречи через единый helper (OFF → Task, ON → Issue).
+      this.actionItems.listForMeeting({ meetingId, tenantId: meeting.tenantId ?? '' }),
       this.prisma.transcript.findUnique({ where: { meetingId } }),
     ]);
     const markdown = this.md.build({ meeting, aiResult, chapters, tasks, transcript });
@@ -152,11 +158,14 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
   private async buildMeetingDocx(exp: Export): Promise<string> {
     const meetingId = exp.meetingIds[0];
     if (!meetingId) throw new Error('meetingIds пустой');
-    const [meeting, aiResult, chapters, tasks] = await Promise.all([
-      this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } }),
+    const meeting = await this.prisma.meeting.findUniqueOrThrow({
+      where: { id: meetingId },
+    });
+    const [aiResult, chapters, tasks] = await Promise.all([
       this.prisma.aiResult.findUnique({ where: { meetingId } }),
       this.prisma.meetingChapter.findMany({ where: { meetingId }, orderBy: { startMs: 'asc' } }),
-      this.prisma.task.findMany({ where: { meetingId }, orderBy: { createdAt: 'asc' } }),
+      // ТЗ Ф5.2 — задачи встречи через единый helper (OFF → Task, ON → Issue).
+      this.actionItems.listForMeeting({ meetingId, tenantId: meeting.tenantId ?? '' }),
     ]);
     const buf = await this.docx.build({ meeting, aiResult, chapters, tasks });
     const key = `exports/${exp.userId}/${exp.id}.docx`;

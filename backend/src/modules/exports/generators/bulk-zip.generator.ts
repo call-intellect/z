@@ -6,6 +6,7 @@ import { ZipArchive } from 'archiver';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { MeetingActionItemsService } from '../../meetings/meeting-action-items.service';
 import { S3Service } from '../../recordings/s3.service';
 
 import { MdGenerator } from './md.generator';
@@ -41,6 +42,8 @@ export class BulkZipGenerator {
     @Inject(S3Service) private readonly s3: S3Service,
     @Inject(MdGenerator) private readonly md: MdGenerator,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
   ) {}
 
   async build(input: {
@@ -81,9 +84,10 @@ export class BulkZipGenerator {
           where: { meetingId: meeting.id },
           orderBy: { startMs: 'asc' },
         }),
-        this.prisma.task.findMany({
-          where: { meetingId: meeting.id },
-          orderBy: { createdAt: 'asc' },
+        // ТЗ Ф5.2 — задачи встречи через единый helper (OFF → Task, ON → Issue).
+        this.actionItems.listForMeeting({
+          meetingId: meeting.id,
+          tenantId: meeting.tenantId ?? '',
         }),
         this.prisma.transcript.findUnique({ where: { meetingId: meeting.id } }),
         this.prisma.recording.findUnique({

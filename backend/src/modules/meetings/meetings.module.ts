@@ -5,6 +5,7 @@ import { MeetingsBalanceModule } from '../meetings-balance/meetings-balance.modu
 
 import { IdleMeetingCron } from './cron/idle-meeting.cron';
 import { HostControlsService } from './host-controls.service';
+import { MeetingActionItemsService } from './meeting-action-items.service';
 import { MeetingsController } from './meetings.controller';
 import { MeetingsCrossmarkController } from './meetings.crossmark.controller';
 import { MeetingsRepository } from './meetings.repository';
@@ -29,9 +30,15 @@ import { MeetingsService } from './meetings.service';
     MeetingsService,
     MeetingsRepository,
     HostControlsService,
+    MeetingActionItemsService,
     IdleMeetingCron,
     IdempotencyInterceptor,
   ],
-  exports: [MeetingsService, MeetingsRepository, HostControlsService],
+  exports: [
+    MeetingsService,
+    MeetingsRepository,
+    HostControlsService,
+    MeetingActionItemsService,
+  ],
 })
 export class MeetingsModule {}

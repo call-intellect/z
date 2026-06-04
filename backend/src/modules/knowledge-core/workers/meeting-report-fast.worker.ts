@@ -40,6 +40,7 @@ import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -92,6 +93,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     private readonly participantContext: ParticipantContextService,
     @Inject(TaskAssigneeResolverService)
     private readonly assigneeResolver: TaskAssigneeResolverService,
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 —
+    // чтение AdminSetting-флага `knowledge.meetingTasksToTrackerOnly`
+    // (gate на создание пользовательского Task для action-items встречи).
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -456,6 +462,26 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     participants: readonly AiParticipantContext[];
   }): Promise<void> {
     if (args.tasks.length === 0) return;
+
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 —
+    // «единая видимая задача из встречи». Когда AdminSetting
+    // `knowledge.meetingTasksToTrackerOnly` включён, видимая задача — это
+    // tracker Issue (создаётся отдельным трекерным путём), поэтому
+    // пользовательский Task для action-items встречи НЕ создаём (return early).
+    // Дефолт (code-fallback FALSE) — поведение как раньше: создаём Task.
+    // Резюме/саммари отчёта (AiResult) этот gate не затрагивает.
+    const trackerOnly = await this.cfg.getDynamic<boolean>(
+      'knowledge.meetingTasksToTrackerOnly',
+      undefined,
+      false,
+    );
+    if (trackerOnly) {
+      this.logger.debug(
+        { meetingId: args.meetingId, tasks: args.tasks.length },
+        'meeting-report-fast: meetingTasksToTrackerOnly=on — пропуск создания Task (видимая задача = tracker Issue)',
+      );
+      return;
+    }
 
     // ТЗ 2026-06-04, Фаза 4 — пост-фактум резолв `assigneeUserId` из
     // `assigneeRaw` по участникам встречи. LLM `assigneeUserId` не отдаёт

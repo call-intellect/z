@@ -14,6 +14,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { BearerAuthGuard, RequireScope } from '../api-keys/bearer-auth.guard';
 import { CurrentApiUserId } from '../api-keys/current-api-key.decorator';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
+import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 
 import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 
@@ -33,7 +34,11 @@ import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 @UseInterceptors(ApiAccessLogInterceptor)
 @RequireEntitlement('feature.public_api')
 export class MeetingsPublicController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
+  ) {}
 
   @Get('meetings')
   @RequireScope('read')
@@ -96,11 +101,48 @@ export class MeetingsPublicController {
     @CurrentApiUserId() userId: string,
     @Param('id') id: string,
   ) {
-    await this.assertOwned(id, userId);
-    const items = await this.prisma.task.findMany({
-      where: { meetingId: id, userId },
-      orderBy: { createdAt: 'asc' },
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2.
+    // Внешний JSON-контракт ДОЛЖЕН остаться байт-в-байт прежним. При дефолте
+    // (флаг `knowledge.meetingTasksToTrackerOnly` = false, code-fallback) читаем
+    // Task напрямую — полный объект Prisma, форма ответа не меняется. При
+    // включённом флаге видимая задача = tracker Issue: берём её через единый
+    // helper и маппим в ТОТ ЖЕ набор полей, что отдавал Task.
+    const tenantId = await this.assertOwned(id, userId);
+    const trackerOnly = await this.actionItems.isTrackerOnly();
+    if (!trackerOnly) {
+      const items = await this.prisma.task.findMany({
+        where: { meetingId: id, userId },
+        orderBy: { createdAt: 'asc' },
+      });
+      return { items };
+    }
+    // Issue-ветка (флаг ON). tenantId встречи гарантирован assertOwned.
+    const normalized = await this.actionItems.listForMeeting({
+      meetingId: id,
+      tenantId: tenantId ?? '',
+      userId,
     });
+    const items = normalized.map((it) => ({
+      id: it.id,
+      tenantId: tenantId,
+      meetingId: it.meetingId,
+      userId,
+      title: it.title,
+      description: it.description,
+      status: it.status,
+      assigneeRaw: it.assigneeRaw,
+      assigneeUserId: it.assigneeUserId,
+      dueDate: it.dueDate,
+      sourceStartMs: null,
+      sourceEndMs: null,
+      sourceQuote: it.sourceQuote,
+      confidence: it.confidence,
+      createdManually: false,
+      evidenceBlockIds: [] as string[],
+      extractorVersion: it.extractorVersion,
+      createdAt: it.createdAt,
+      updatedAt: it.updatedAt,
+    }));
     return { items };
   }
 
@@ -119,10 +161,17 @@ export class MeetingsPublicController {
     return { items };
   }
 
-  private async assertOwned(meetingId: string, userId: string): Promise<void> {
+  /**
+   * Проверяет владение встречей; возвращает её `tenantId` (нужен для
+   * tenant-scope при чтении Issue в Ф5.2). Бросает 404, если не владелец.
+   */
+  private async assertOwned(
+    meetingId: string,
+    userId: string,
+  ): Promise<string | null> {
     const m = await this.prisma.meeting.findFirst({
       where: { id: meetingId, ownerId: userId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, tenantId: true },
     });
     if (!m) {
       throw new NotFoundException({
@@ -130,5 +179,6 @@ export class MeetingsPublicController {
         error: { code: 'meeting_not_found', message: 'Meeting not found' },
       });
     }
+    return m.tenantId;
   }
 }

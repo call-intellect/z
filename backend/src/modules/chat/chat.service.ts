@@ -21,6 +21,7 @@ import {
   type ChatV2Citation,
   type ChatV2Scope,
 } from '../knowledge-core/services/chat-v2.service';
+import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 import { QuotaService } from '../quotas/quota.service';
 import { RbacService } from '../rbac/rbac.service';
 
@@ -62,6 +63,8 @@ export class ChatService {
     @Inject(ChatV2Service) private readonly chatV2: ChatV2Service,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(EntitlementService) private readonly entitlements: EntitlementService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -101,9 +104,11 @@ export class ChatService {
         where: { meetingId: meeting.id },
         orderBy: { startMs: 'asc' },
       }),
-      this.prisma.task.findMany({
-        where: { meetingId: meeting.id },
-        orderBy: { createdAt: 'asc' },
+      // ТЗ Ф5.2 — задачи встречи через единый helper. По дефолту (флаг OFF)
+      // читает Task по meetingId (форма для контекста чата — только title).
+      this.actionItems.listForMeeting({
+        meetingId: meeting.id,
+        tenantId: meeting.tenantId ?? '',
       }),
       this.prisma.meetingTranscriptChunk.findMany({
         where: { meetingId: meeting.id },

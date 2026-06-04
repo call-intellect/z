@@ -31,7 +31,7 @@ interface CreatedTask {
   extractorVersion: string;
 }
 
-function buildWorker(): {
+function buildWorker(opts?: { trackerOnly?: boolean }): {
   worker: MeetingReportFastWorker;
   created: CreatedTask[];
 } {
@@ -53,12 +53,19 @@ function buildWorker(): {
 
   const assigneeResolver = new TaskAssigneeResolverService();
 
+  // ТЗ Ф5.2 — gate `meetingTasksToTrackerOnly`. По умолчанию OFF (false):
+  // задачи создаются как раньше (тесты Фазы 4). Можно включить через opts.
+  const cfg = {
+    getDynamic: vi.fn(async () => opts?.trackerOnly ?? false),
+  };
+
   const worker = new MeetingReportFastWorker(
     {} as never, // redis
     prisma as never,
     {} as never, // router
     {} as never, // participantContext (writeTasks получает participants аргументом)
     assigneeResolver,
+    cfg as never, // cfg (TypedConfigService) — gate meetingTasksToTrackerOnly
     undefined, // metrics @Optional()
   );
 
@@ -169,5 +176,52 @@ describe('MeetingReportFastWorker.writeTasks — Фаза 4 assignee resolve', (
     expect(created).toHaveLength(1);
     expect(created[0]?.assigneeUserId).toBeNull();
     expect(created[0]?.assigneeRaw).toBe('Сергей');
+  });
+});
+
+describe('MeetingReportFastWorker.writeTasks — Ф5.2 gate meetingTasksToTrackerOnly', () => {
+  it('флаг ON → пользовательский Task для action-items НЕ создаётся', async () => {
+    const { worker, created } = buildWorker({ trackerOnly: true });
+    const participants: AiParticipantContext[] = [
+      participant({
+        livekitIdentity: 'host:u-nastya',
+        displayName: 'Настя',
+        userId: 'u-nastya',
+        role: 'host',
+      }),
+    ];
+
+    await (worker as any).writeTasks({
+      meetingId: 'm-1',
+      tenantId: 't-1',
+      ownerId: 'owner-1',
+      tasks: [task('Подготовить отчёт', 'Настя')],
+      participants,
+    });
+
+    // Видимая задача = tracker Issue (создаётся отдельно), Task не пишем.
+    expect(created).toHaveLength(0);
+  });
+
+  it('флаг OFF (дефолт) → Task создаётся как раньше', async () => {
+    const { worker, created } = buildWorker({ trackerOnly: false });
+    const participants: AiParticipantContext[] = [
+      participant({
+        livekitIdentity: 'host:u-nastya',
+        displayName: 'Настя',
+        userId: 'u-nastya',
+        role: 'host',
+      }),
+    ];
+
+    await (worker as any).writeTasks({
+      meetingId: 'm-1',
+      tenantId: 't-1',
+      ownerId: 'owner-1',
+      tasks: [task('Подготовить отчёт', 'Настя')],
+      participants,
+    });
+
+    expect(created).toHaveLength(1);
   });
 });

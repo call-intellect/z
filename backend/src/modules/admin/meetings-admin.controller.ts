@@ -25,6 +25,7 @@ import { RetryService } from '../ai/services/retry.service';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { LivekitService } from '../livekit/livekit.service';
+import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 
 import { AdminAuditInterceptor } from './admin.audit.interceptor';
 
@@ -83,6 +84,8 @@ export class MeetingsAdminController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LivekitService) private readonly livekit: LivekitService,
     @Inject(RetryService) private readonly retryService: RetryService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
   ) {}
 
   @Get()
@@ -289,10 +292,13 @@ export class MeetingsAdminController {
         where: { meetingId: id, tenantId: meeting.tenantId },
         orderBy: { startMs: 'asc' },
       }),
-      // Задачи — то же.
-      this.prisma.task.findMany({
-        where: { meetingId: id, tenantId: meeting.tenantId },
-        orderBy: { createdAt: 'asc' },
+      // Задачи — через единый helper (ТЗ Ф5.2). По дефолту (флаг OFF) читает
+      // Task с фильтром по tenantId — поведение и форма идентичны прежним.
+      // При включённом флаге читает связанные Issue. tenant-широкий вызов
+      // (без userId) — admin видит все задачи встречи.
+      this.actionItems.listForMeeting({
+        meetingId: id,
+        tenantId: meeting.tenantId ?? '',
       }),
     ]);
 

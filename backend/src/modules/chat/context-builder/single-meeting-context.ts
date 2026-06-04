@@ -4,7 +4,6 @@ import type {
   MeetingChapter,
   MeetingChatMessage,
   MeetingTranscriptChunk,
-  Task,
 } from '@prisma/client';
 
 /**
@@ -28,7 +27,13 @@ export interface SingleMeetingInput {
   meeting: Meeting;
   aiResult: AiResult | null;
   chapters: MeetingChapter[];
-  tasks: Task[];
+  /**
+   * Задачи встречи. Берётся только `title` (для LLM-контекста), поэтому
+   * принимаем минимальную структурную форму — так сюда подходит как Prisma
+   * `Task`, так и нормализованный `MeetingActionItem` из `MeetingActionItemsService`
+   * (ТЗ Ф5.2 — единая видимая задача).
+   */
+  tasks: ReadonlyArray<{ title: string }>;
   chunks: MeetingTranscriptChunk[];
   history: MeetingChatMessage[];
   question: string;

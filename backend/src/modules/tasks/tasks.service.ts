@@ -10,6 +10,7 @@ import type { Task, TaskStatus } from '@prisma/client';
 import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
+import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 
 import type { CreateTaskDto } from './dto/create-task.dto';
 import type {
@@ -19,6 +20,31 @@ import type {
 import type { UpdateTaskDto } from './dto/update-task.dto';
 import { TasksDispatcherService } from './tasks-dispatcher.service';
 import { TasksRepository } from './tasks.repository';
+
+/**
+ * Структурная форма задачи встречи, потребляемая `TasksController.mapTask`.
+ * Прямой Prisma `Task` ей удовлетворяет; нормализованный `MeetingActionItem`
+ * (Ф5.2, режим Issue) мапится в неё в `listByMeeting`.
+ */
+export interface MeetingTaskView {
+  id: string;
+  meetingId: string;
+  userId: string;
+  title: string;
+  description: string | null;
+  status: string;
+  assigneeRaw: string | null;
+  assigneeUserId: string | null;
+  dueDate: Date | null;
+  sourceStartMs: number | null;
+  sourceEndMs: number | null;
+  sourceQuote: string | null;
+  confidence: number | null;
+  createdManually: boolean;
+  extractorVersion: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 /**
  * Бизнес-сервис задач (action items).
@@ -37,6 +63,8 @@ export class TasksService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(TasksDispatcherService) private readonly dispatcher: TasksDispatcherService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
   ) {}
 
   list(userId: string, query: ListTasksQuery): Promise<{ items: Task[]; total: number }> {
@@ -51,9 +79,49 @@ export class TasksService {
     });
   }
 
-  async listByMeeting(meetingId: string, userId: string): Promise<Task[]> {
-    await this.assertMeetingOwner(meetingId, userId);
-    return this.repo.listByMeeting(meetingId, userId);
+  /**
+   * Задачи одной встречи для пользователя (используется legacy-фронтом через
+   * `GET /api/v1/meetings/:id/tasks`).
+   *
+   * ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2.
+   * При дефолте (флаг `knowledge.meetingTasksToTrackerOnly` = false,
+   * code-fallback) читаем Task напрямую — форма ответа фронта не меняется
+   * (байт-в-байт). При включённом флаге видимая задача = tracker Issue: берём
+   * её через единый helper и наполняем недостающие до контракта `mapTask`
+   * поля (sourceStartMs/sourceEndMs/createdManually) нейтральными значениями.
+   */
+  async listByMeeting(
+    meetingId: string,
+    userId: string,
+  ): Promise<MeetingTaskView[]> {
+    const meeting = await this.assertMeetingOwner(meetingId, userId);
+    if (!(await this.actionItems.isTrackerOnly())) {
+      return this.repo.listByMeeting(meetingId, userId);
+    }
+    const normalized = await this.actionItems.listForMeeting({
+      meetingId,
+      tenantId: meeting.tenantId ?? '',
+      userId,
+    });
+    return normalized.map((it) => ({
+      id: it.id,
+      meetingId: it.meetingId,
+      userId,
+      title: it.title,
+      description: it.description,
+      status: it.status,
+      assigneeRaw: it.assigneeRaw,
+      assigneeUserId: it.assigneeUserId,
+      dueDate: it.dueDate,
+      sourceStartMs: null,
+      sourceEndMs: null,
+      sourceQuote: it.sourceQuote,
+      confidence: it.confidence,
+      createdManually: false,
+      extractorVersion: it.extractorVersion,
+      createdAt: it.createdAt,
+      updatedAt: it.updatedAt,
+    }));
   }
 
   async create(meetingId: string, userId: string, dto: CreateTaskDto): Promise<Task> {
@@ -152,13 +220,17 @@ export class TasksService {
 
   // ─────────────────────────── helpers ──────────────────────────────────
 
-  private async assertMeetingOwner(meetingId: string, userId: string): Promise<void> {
+  private async assertMeetingOwner(
+    meetingId: string,
+    userId: string,
+  ): Promise<{ tenantId: string | null }> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      select: { ownerId: true, deletedAt: true },
+      select: { ownerId: true, deletedAt: true, tenantId: true },
     });
     if (!meeting || meeting.deletedAt !== null || meeting.ownerId !== userId) {
       throw new NotFoundException('meeting_not_found');
     }
+    return { tenantId: meeting.tenantId };
   }
 }

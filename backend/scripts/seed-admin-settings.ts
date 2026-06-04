@@ -270,6 +270,11 @@ function buildSettings(): SettingSeed[] {
     // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
     // Дефолт TRUE — атрибуция критична для skill/persona/clone-проекций.
     ['knowledge.subjectAttributionEnabled', envBool('KNOWLEDGE_SUBJECT_ATTRIBUTION_ENABLED', true), 'high', 'Kill-switch атрибуции авторства IdeaBlock (false = subject не проставляется)'],
+    // ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2 — поэтапная раскатка единой
+    // видимой задачи из встречи. Дефолт FALSE — текущее поведение (Task создаётся,
+    // потребители читают Task). true = из встречи рождается только tracker Issue;
+    // пользовательский Task для action-items не создаётся, потребители читают Issue.
+    ['knowledge.meetingTasksToTrackerOnly', envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', false), 'high', 'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)'],
     // МТЗ «разблокировка конвейера» Ф5 — kill-switch записи в граф Apache AGE
     // (false = только Postgres, Cypher-вызовы no-op). Дефолт TRUE — граф критичен.
     ['graph.ageEnabled', envBool('GRAPH_AGE_ENABLED', true), 'high', 'Kill-switch записи в граф AGE (false = только Postgres)'],

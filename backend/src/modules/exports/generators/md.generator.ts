@@ -3,9 +3,18 @@ import type {
   AiResult,
   Meeting,
   MeetingChapter,
-  Task,
   Transcript,
 } from '@prisma/client';
+
+/**
+ * Минимальная форма задачи для рендера (ТЗ Ф5.2): берём только используемые
+ * поля, чтобы подходили и Prisma `Task`, и нормализованный `MeetingActionItem`.
+ */
+export interface ExportTaskLike {
+  title: string;
+  assigneeRaw: string | null;
+  dueDate: Date | null;
+}
 
 /**
  * Генератор Markdown-экспорта одной встречи. Без I/O — pure-функция.
@@ -16,7 +25,7 @@ export class MdGenerator {
     meeting: Meeting;
     aiResult: AiResult | null;
     chapters: MeetingChapter[];
-    tasks: Task[];
+    tasks: ReadonlyArray<ExportTaskLike>;
     transcript?: Transcript | null;
   }): string {
     const lines: string[] = [];

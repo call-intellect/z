@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 
 /**
  * Глобальный поиск для `⌘K` командной палитры.
@@ -75,7 +76,11 @@ export interface SearchResult {
 
 @Injectable()
 export class SearchService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MeetingActionItemsService)
+    private readonly actionItems: MeetingActionItemsService,
+  ) {}
 
   async search(args: {
     userId: string;
@@ -115,7 +120,7 @@ export class SearchService {
     ] = await Promise.all([
       wantsCards ? this.searchCards(args.userId, q, limit) : Promise.resolve([]),
       wantsMeetings ? this.searchMeetings(args.userId, q, limit) : Promise.resolve([]),
-      wantsTasks ? this.searchTasks(args.userId, q, limit) : Promise.resolve([]),
+      wantsTasks ? this.searchTasks(args.userId, tenantId, q, limit) : Promise.resolve([]),
       tenantWants('role') ? this.searchRoles(tenantId!, q, limit) : Promise.resolve([]),
       tenantWants('department') ? this.searchDepartments(tenantId!, q, limit) : Promise.resolve([]),
       tenantWants('person') ? this.searchPersons(tenantId!, q, limit) : Promise.resolve([]),
@@ -242,17 +247,18 @@ export class SearchService {
 
   private async searchTasks(
     userId: string,
+    tenantId: string | null,
     q: string,
     limit: number,
   ): Promise<SearchResultTaskItem[]> {
-    const rows = await this.prisma.task.findMany({
-      where: {
-        userId,
-        title: { contains: q, mode: 'insensitive' },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      select: { id: true, title: true, status: true, meetingId: true },
+    // ТЗ Ф5.2 — поиск action-items через единый helper. По дефолту (флаг OFF)
+    // ищет по Task пользователя (форма {id,title,status,meetingId} прежняя);
+    // при включённом флаге — по связанным со встречами Issue.
+    const rows = await this.actionItems.searchTitlesForUser({
+      tenantId: tenantId ?? '',
+      userId,
+      query: q,
+      limit,
     });
     return rows.map((t) => ({
       id: t.id,

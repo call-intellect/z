@@ -52,6 +52,13 @@ export const CreatePersonSchema = z.object({
   primaryDepartmentId: z.string().min(1).nullable().optional(),
   /** Опционально: сразу создать PersonRole. */
   roleId: z.string().min(1).nullable().optional(),
+  /**
+   * ТЗ «Команда + доступы» Фаза 2 — привязать создаваемую карточку к уже
+   * существующему участнику Org (Membership.userId). Используется кнопкой
+   * «создать карточку» для участника без Person. Сервис валидирует: должен
+   * быть членом Org и ещё не иметь связанной карточки.
+   */
+  linkUserId: z.string().min(1).nullable().optional(),
 });
 export type CreatePersonDto = z.infer<typeof CreatePersonSchema>;
 

@@ -22,6 +22,7 @@ import { RequireSubscription } from '../billing/guards/require-subscription.deco
 
 import { CreateOrgSchema, type CreateOrgDto } from './dto/create-org.dto';
 import { InviteMemberSchema, type InviteMemberDto } from './dto/invite-member.dto';
+import type { TeamRosterItem } from './dto/team-roster.dto';
 import { UpdateMemberSchema, type UpdateMemberDto } from './dto/update-member.dto';
 import { UpdateOrgSchema, type UpdateOrgDto } from './dto/update-org.dto';
 import { OrgInvitationsService } from './org-invitations.service';
@@ -119,6 +120,15 @@ export class OrgsController {
   ) {
     const members = await this.orgs.listMembers(id, user.id);
     return { members };
+  }
+
+  @Get(':id/team-roster')
+  async teamRoster(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ roster: TeamRosterItem[] }> {
+    const roster = await this.orgs.listTeamRoster(id, user.id);
+    return { roster };
   }
 
   @Patch(':id/members/:userId')

@@ -109,6 +109,31 @@ export interface CreatePersonRequest {
   email?: string;
   roleId?: string | null;
   departmentId?: string | null;
+  /** ТЗ «Команда + доступы» Фаза 2 — привязать карточку к участнику без Person. */
+  linkUserId?: string | null;
+}
+
+// ─── Team roster (объединённый список раздела «Команда») ───
+export interface TeamRosterItemApi {
+  personId: string | null;
+  userId: string | null;
+  fullName: string;
+  email: string | null;
+  roleId: string | null;
+  roleName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  invitationStatus: 'none' | 'pending' | 'accepted' | 'revoked' | 'expired';
+  systemRole:
+    | 'owner'
+    | 'admin'
+    | 'manager'
+    | 'coo'
+    | 'hr_partner'
+    | 'demo_observer'
+    | null;
+  telegramLinked: boolean;
+  hasPersonCard: boolean;
 }
 
 export interface UpdatePersonRequest {
@@ -269,6 +294,7 @@ export const personsDomainApi = {
         email: body.email,
         primaryDepartmentId: body.departmentId ?? null,
         roleId: body.roleId ?? null,
+        ...(body.linkUserId ? { linkUserId: body.linkUserId } : {}),
       },
       { headers: orgHeaders(orgId) },
     ),
@@ -297,6 +323,14 @@ export const personsDomainApi = {
     apiClient.post<{ ok: true }>(
       `/api/v1/orgs/${encodeURIComponent(orgId)}/invitations`,
       { personId },
+      { headers: orgHeaders(orgId) },
+    ),
+};
+
+export const teamRosterApi = {
+  list: (orgId: string) =>
+    apiClient.get<{ roster: TeamRosterItemApi[] }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/team-roster`,
       { headers: orgHeaders(orgId) },
     ),
 };

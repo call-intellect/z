@@ -1,19 +1,21 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Mail, Pencil, Plus, Trash2 } from 'lucide-react';
+import { IdCard, Mail, Pencil, Plus, Trash2 } from 'lucide-react';
 import useSWR from 'swr';
+import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
 import {
   departmentsApi,
   personsDomainApi,
   rolesDomainApi,
+  teamRosterApi,
   type DepartmentApi,
   type PersonDomainApi,
   type RoleDomainApi,
+  type TeamRosterItemApi,
 } from '@/api/structure.api';
-import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -43,7 +45,7 @@ import {
 const ALL_VALUE = '__all__';
 const NO_VALUE = '__none__';
 
-const INVITATION_LABELS: Record<PersonDomainApi['invitationStatus'], string> = {
+const INVITATION_LABELS: Record<TeamRosterItemApi['invitationStatus'], string> = {
   none: 'не приглашён',
   pending: 'приглашение отправлено',
   accepted: 'активен',
@@ -51,13 +53,48 @@ const INVITATION_LABELS: Record<PersonDomainApi['invitationStatus'], string> = {
   expired: 'приглашение истекло',
 };
 
+const SYSTEM_ROLE_LABELS: Record<
+  NonNullable<TeamRosterItemApi['systemRole']>,
+  string
+> = {
+  owner: 'Владелец',
+  admin: 'Администратор',
+  manager: 'Менеджер',
+  coo: 'Операционный директор',
+  hr_partner: 'HR-партнёр',
+  demo_observer: 'Наблюдатель',
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Маппинг строки ростера в PersonDomainApi для диалогов редактирования/
+ * удаления (работают только для строк с карточкой, personId !== null).
+ */
+function rosterToPerson(r: TeamRosterItemApi, orgId: string): PersonDomainApi {
+  return {
+    id: r.personId ?? '',
+    orgId,
+    fullName: r.fullName,
+    email: r.email,
+    roleId: r.roleId,
+    roleName: r.roleName,
+    departmentId: r.departmentId,
+    departmentName: r.departmentName,
+    userId: r.userId,
+    invitationStatus: r.invitationStatus,
+    createdAt: '',
+  };
+}
+
+type Prefill = { fullName?: string; email?: string; linkUserId?: string };
+
 type DialogState =
   | { kind: 'none' }
   | { kind: 'create' }
+  | { kind: 'createCard'; member: TeamRosterItemApi }
   | { kind: 'edit'; person: PersonDomainApi }
   | { kind: 'remove'; person: PersonDomainApi };
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function PersonsTab({
   orgId,
@@ -77,20 +114,9 @@ export function PersonsTab({
   const rolesSwr = useSWR(['persons-roles', orgId], () =>
     rolesDomainApi.list(orgId),
   );
-  const personsSwr = useSWR(
-    ['structure-persons', orgId, deptFilter, roleFilter, statusFilter],
-    () =>
-      personsDomainApi.list(orgId, {
-        ...(deptFilter !== ALL_VALUE && deptFilter !== NO_VALUE
-          ? { departmentId: deptFilter }
-          : {}),
-        ...(roleFilter !== ALL_VALUE && roleFilter !== NO_VALUE
-          ? { roleId: roleFilter }
-          : {}),
-        ...(statusFilter !== ALL_VALUE
-          ? { invitationStatus: statusFilter as PersonDomainApi['invitationStatus'] }
-          : {}),
-      }),
+  const rosterSwr = useSWR(
+    ['team-roster', orgId],
+    () => teamRosterApi.list(orgId),
     { revalidateOnFocus: false },
   );
 
@@ -98,19 +124,25 @@ export function PersonsTab({
   const roles = rolesSwr.data?.items ?? [];
 
   const items = useMemo(() => {
-    let list = personsSwr.data?.items ?? [];
+    let list = rosterSwr.data?.roster ?? [];
     if (deptFilter === NO_VALUE) list = list.filter((p) => !p.departmentId);
+    else if (deptFilter !== ALL_VALUE)
+      list = list.filter((p) => p.departmentId === deptFilter);
     if (roleFilter === NO_VALUE) list = list.filter((p) => !p.roleId);
+    else if (roleFilter !== ALL_VALUE)
+      list = list.filter((p) => p.roleId === roleFilter);
+    if (statusFilter !== ALL_VALUE)
+      list = list.filter((p) => p.invitationStatus === statusFilter);
     return list;
-  }, [personsSwr.data, deptFilter, roleFilter]);
+  }, [rosterSwr.data, deptFilter, roleFilter, statusFilter]);
 
-  const error = personsSwr.error;
+  const error = rosterSwr.error;
   if (error) {
     if (error instanceof ApiError && error.code === 'http_404') {
       return (
         <AdminEmpty
           title="Раздел в разработке"
-          description="API сотрудников ещё не подключён к backend."
+          description="API команды ещё не подключён к backend."
         />
       );
     }
@@ -118,14 +150,14 @@ export function PersonsTab({
       return (
         <AdminEmpty
           title="Недостаточно прав"
-          description="Запрос списка сотрудников отклонён сервером."
+          description="Запрос списка команды отклонён сервером."
         />
       );
     }
     return (
       <AdminError
         message={error instanceof Error ? error.message : 'Ошибка загрузки'}
-        onRetry={() => void personsSwr.mutate()}
+        onRetry={() => void rosterSwr.mutate()}
       />
     );
   }
@@ -183,13 +215,15 @@ export function PersonsTab({
         )}
       </div>
 
-      {personsSwr.isLoading ? (
+      {rosterSwr.isLoading ? (
         <AdminLoading rows={6} />
       ) : items.length === 0 ? (
         <AdminEmpty
-          title="Сотрудников не найдено"
+          title="Никого не найдено"
           description={
-            canEdit ? 'Добавьте первого сотрудника кнопкой выше.' : 'Список пуст.'
+            canEdit
+              ? 'Добавьте первого сотрудника кнопкой выше.'
+              : 'Список пуст.'
           }
         />
       ) : (
@@ -202,14 +236,23 @@ export function PersonsTab({
                 <th className="px-4 py-2 text-left">Должность</th>
                 <th className="px-4 py-2 text-left">Отдел</th>
                 <th className="px-4 py-2 text-left">Статус</th>
-                {canEdit && <th className="w-32 px-4 py-2" />}
+                <th className="px-4 py-2 text-left">Системная роль</th>
+                {canEdit && <th className="w-40 px-4 py-2" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
               {items.map((p) => (
-                <tr key={p.id} className="hover:bg-bg-overlay/30">
+                <tr
+                  key={p.personId ?? `member-${p.userId}`}
+                  className="hover:bg-bg-overlay/30"
+                >
                   <td className="px-4 py-2 font-medium text-fg-primary">
                     {p.fullName}
+                    {!p.hasPersonCard && (
+                      <span className="ml-2 text-xs font-normal text-fg-tertiary">
+                        нет карточки сотрудника
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-fg-secondary">
                     {p.email ?? '—'}
@@ -223,50 +266,80 @@ export function PersonsTab({
                   <td className="px-4 py-2">
                     <InvitationBadge status={p.invitationStatus} />
                   </td>
+                  <td className="px-4 py-2 text-fg-secondary">
+                    {p.systemRole ? SYSTEM_ROLE_LABELS[p.systemRole] : '—'}
+                  </td>
                   {canEdit && (
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-1">
-                        {p.invitationStatus !== 'accepted' && p.email && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label="Пригласить"
-                            title="Пригласить"
-                            onClick={async () => {
-                              try {
-                                await personsDomainApi.invite(orgId, p.id);
-                                toast.success('Приглашение отправлено.');
-                                void personsSwr.mutate();
-                              } catch (e) {
-                                toast.error(e instanceof ApiError
-                                      ? e.message
-                                      : 'Не удалось пригласить.');
+                        {p.hasPersonCard ? (
+                          <>
+                            {p.invitationStatus !== 'accepted' &&
+                              p.email &&
+                              p.personId && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  aria-label="Пригласить"
+                                  title="Пригласить"
+                                  onClick={async () => {
+                                    try {
+                                      await personsDomainApi.invite(
+                                        orgId,
+                                        p.personId as string,
+                                      );
+                                      toast.success('Приглашение отправлено.');
+                                      void rosterSwr.mutate();
+                                    } catch (e) {
+                                      toast.error(
+                                        e instanceof ApiError
+                                          ? e.message
+                                          : 'Не удалось пригласить.',
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Mail size={14} />
+                                </Button>
+                              )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Изменить"
+                              onClick={() =>
+                                setDialog({
+                                  kind: 'edit',
+                                  person: rosterToPerson(p, orgId),
+                                })
                               }
-                            }}
+                            >
+                              <Pencil size={14} />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Удалить"
+                              onClick={() =>
+                                setDialog({
+                                  kind: 'remove',
+                                  person: rosterToPerson(p, orgId),
+                                })
+                              }
+                            >
+                              <Trash2 size={14} className="text-danger" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setDialog({ kind: 'createCard', member: p })
+                            }
                           >
-                            <Mail size={14} />
+                            <IdCard size={14} className="mr-1" /> Создать карточку
                           </Button>
                         )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Изменить"
-                          onClick={() =>
-                            setDialog({ kind: 'edit', person: p })
-                          }
-                        >
-                          <Pencil size={14} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Удалить"
-                          onClick={() =>
-                            setDialog({ kind: 'remove', person: p })
-                          }
-                        >
-                          <Trash2 size={14} className="text-danger" />
-                        </Button>
                       </div>
                     </td>
                   )}
@@ -285,8 +358,26 @@ export function PersonsTab({
           onClose={() => setDialog({ kind: 'none' })}
           onDone={() => {
             setDialog({ kind: 'none' });
-            void personsSwr.mutate();
+            void rosterSwr.mutate();
             toast.success('Сотрудник добавлен.');
+          }}
+        />
+      )}
+      {dialog.kind === 'createCard' && (
+        <PersonEditDialog
+          orgId={orgId}
+          departments={departments}
+          roles={roles}
+          prefill={{
+            fullName: dialog.member.fullName,
+            email: dialog.member.email ?? undefined,
+            linkUserId: dialog.member.userId ?? undefined,
+          }}
+          onClose={() => setDialog({ kind: 'none' })}
+          onDone={() => {
+            setDialog({ kind: 'none' });
+            void rosterSwr.mutate();
+            toast.success('Карточка сотрудника создана.');
           }}
         />
       )}
@@ -299,7 +390,7 @@ export function PersonsTab({
           onClose={() => setDialog({ kind: 'none' })}
           onDone={() => {
             setDialog({ kind: 'none' });
-            void personsSwr.mutate();
+            void rosterSwr.mutate();
             toast.success('Сотрудник обновлён.');
           }}
         />
@@ -311,7 +402,7 @@ export function PersonsTab({
           onClose={() => setDialog({ kind: 'none' })}
           onDone={() => {
             setDialog({ kind: 'none' });
-            void personsSwr.mutate();
+            void rosterSwr.mutate();
             toast.success('Сотрудник удалён.');
           }}
         />
@@ -323,7 +414,7 @@ export function PersonsTab({
 function InvitationBadge({
   status,
 }: {
-  status: PersonDomainApi['invitationStatus'];
+  status: TeamRosterItemApi['invitationStatus'];
 }) {
   const variant: 'default' | 'secondary' | 'outline' =
     status === 'accepted' ? 'default' : 'secondary';
@@ -339,6 +430,7 @@ function PersonEditDialog({
   person,
   departments,
   roles,
+  prefill,
   onClose,
   onDone,
 }: {
@@ -346,28 +438,36 @@ function PersonEditDialog({
   person?: PersonDomainApi;
   departments: DepartmentApi[];
   roles: RoleDomainApi[];
+  prefill?: Prefill;
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [fullName, setFullName] = useState(person?.fullName ?? '');
-  const [email, setEmail] = useState(person?.email ?? '');
+  const [fullName, setFullName] = useState(
+    person?.fullName ?? prefill?.fullName ?? '',
+  );
+  const [email, setEmail] = useState(person?.email ?? prefill?.email ?? '');
   const [roleId, setRoleId] = useState<string | null>(person?.roleId ?? null);
   const [departmentId, setDepartmentId] = useState<string | null>(
     person?.departmentId ?? null,
   );
   const [busy, setBusy] = useState(false);
   const isEdit = Boolean(person);
+  const isCreateCard = Boolean(prefill?.linkUserId);
 
   const emailOk = !email.trim() || EMAIL_RE.test(email.trim());
   const canSubmit = fullName.trim().length > 0 && emailOk && !busy;
+
+  const title = isEdit
+    ? 'Изменить сотрудника'
+    : isCreateCard
+      ? 'Создать карточку сотрудника'
+      : 'Новый сотрудник';
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {isEdit ? 'Изменить сотрудника' : 'Новый сотрудник'}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -457,11 +557,16 @@ function PersonEditDialog({
                     email: email.trim() || undefined,
                     roleId,
                     departmentId,
+                    ...(prefill?.linkUserId
+                      ? { linkUserId: prefill.linkUserId }
+                      : {}),
                   });
                 }
                 onDone();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
+                toast.error(
+                  e instanceof ApiError ? e.message : 'Не удалось сохранить.',
+                );
               } finally {
                 setBusy(false);
               }
@@ -510,7 +615,9 @@ function RemovePersonDialog({
                 await personsDomainApi.remove(orgId, person.id);
                 onDone();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
+                toast.error(
+                  e instanceof ApiError ? e.message : 'Не удалось удалить.',
+                );
               } finally {
                 setBusy(false);
               }

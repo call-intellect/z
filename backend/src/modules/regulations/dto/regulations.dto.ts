@@ -68,6 +68,36 @@ export const ConfirmRegulationBodySchema = z.object({
 });
 export type ConfirmRegulationBody = z.infer<typeof ConfirmRegulationBodySchema>;
 
+// ── Action Center E1 «поправить карточку знаний» (2026-06-04) ──
+// «Это неверно» (dispute) — флаг без правки → обучающий сигнал misleading.
+export const DisputeRegulationBodySchema = z
+  .object({
+    kind: RegulationKindSchema,
+    reason: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+export type DisputeRegulationBody = z.infer<typeof DisputeRegulationBodySchema>;
+
+// «Исправить» (correct) — правка текста. owner/admin → сразу новая версия;
+// read-only → предложение в очередь курации. Поля валидны под нужный kind.
+export const CorrectRegulationBodySchema = z
+  .object({
+    kind: RegulationKindSchema,
+    correctedPayload: z
+      .object({
+        name: z.string().trim().min(1).max(300).optional(),
+        contentMd: z.string().trim().min(1).max(20000).optional(),
+        statement: z.string().trim().min(1).max(8000).optional(),
+        description: z.string().trim().min(1).max(20000).optional(),
+      })
+      .refine((p) => Object.values(p).some((v) => v !== undefined), {
+        message: 'Нужно изменить хотя бы одно поле',
+      }),
+    reason: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+export type CorrectRegulationBody = z.infer<typeof CorrectRegulationBodySchema>;
+
 // ─────────────────────────── Response DTOs ───────────────────────────
 
 export interface RegulationListItemDto {

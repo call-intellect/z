@@ -611,6 +611,100 @@ export class DecisionsService {
     }
   }
 
+  // ─────────────────────── dispute / correct (E1) ───────────────────
+  /**
+   * Action Center E1 «поправить карточку знаний» (2026-06-04) — «Это неверно».
+   * Флаг без правки текста → обучающий сигнал `misleading` через
+   * `CurationService.recordDecision(mark_as_misleading)`.
+   */
+  async dispute(args: {
+    tenantId: string;
+    id: string;
+    reason?: string;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    const existing = await this.prisma.decision.findFirst({
+      where: { id: args.id, tenantId: args.tenantId },
+      select: { id: true },
+    });
+    if (!existing) this.notFound(args.id);
+    await this.curation.recordDecision({
+      tenantId: args.tenantId,
+      resourceType: 'decision',
+      resourceId: args.id,
+      decisionType: 'mark_as_misleading',
+      recordedBy: args.actorUserId,
+      reason: args.reason ?? null,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Action Center E1 — «Исправить». owner/admin (`canApplyDirectly=true`) →
+   * применяем сразу (новая человеко-проверенная CardVersion). read-only →
+   * правка уходит предложением в очередь курации (анти-вандализм), без 403.
+   */
+  async correct(args: {
+    tenantId: string;
+    id: string;
+    correctedPayload: { statement?: string; rationale?: string };
+    reason?: string;
+    actorUserId: string;
+    canApplyDirectly: boolean;
+  }): Promise<{ ok: true; applied: boolean }> {
+    const existing = await this.prisma.decision.findFirst({
+      where: { id: args.id, tenantId: args.tenantId },
+    });
+    if (!existing) this.notFound(args.id);
+
+    if (!args.canApplyDirectly) {
+      await this.curation.submitProposal({
+        tenantId: args.tenantId,
+        resourceType: 'decision',
+        resourceId: args.id,
+        proposedPayload: args.correctedPayload,
+        submittedBy: args.actorUserId,
+        reason: args.reason ?? null,
+      });
+      return { ok: true, applied: false };
+    }
+
+    const before = {
+      statement: existing.statement,
+      rationale: existing.rationale,
+    };
+    const data: Prisma.DecisionUpdateInput = {};
+    if (args.correctedPayload.statement !== undefined) {
+      data.statement = args.correctedPayload.statement;
+      // legacy-поле `text` — короткая копия statement.
+      data.text = args.correctedPayload.statement.slice(0, 1000);
+    }
+    if (args.correctedPayload.rationale !== undefined) {
+      data.rationale = args.correctedPayload.rationale;
+    }
+    const updated = await this.prisma.decision.update({
+      where: { id: args.id },
+      data,
+    });
+    await this.writeCardVersion({
+      tenantId: args.tenantId,
+      decision: updated,
+      reviewerUserId: args.actorUserId,
+      changeReason: 'user_correction',
+    });
+    // Обучающий сэмпл approve_with_edits (label='correct'); before→after в context.
+    await this.curation.recordDecision({
+      tenantId: args.tenantId,
+      resourceType: 'decision',
+      resourceId: args.id,
+      decisionType: 'approve_with_edits',
+      recordedBy: args.actorUserId,
+      reason: args.reason ?? null,
+      context: { before, after: args.correctedPayload },
+    });
+    return { ok: true, applied: true };
+  }
+
   private notFound(id: string): never {
     throw new NotFoundException({
       ok: false,

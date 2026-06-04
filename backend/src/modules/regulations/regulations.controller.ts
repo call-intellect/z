@@ -25,6 +25,10 @@ import { RbacService, type ResourceType } from '../rbac/rbac.service';
 import {
   ConfirmRegulationBodySchema,
   type ConfirmRegulationBody,
+  CorrectRegulationBodySchema,
+  type CorrectRegulationBody,
+  DisputeRegulationBodySchema,
+  type DisputeRegulationBody,
   GetRegulationParamsSchema,
   ListRegulationsQuerySchema,
   type ListRegulationsQuery,
@@ -140,6 +144,59 @@ export class RegulationsController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t, body.kind);
     return this.svc.confirm({ tenantId: t, id, body });
+  }
+
+  @Post(':id/dispute')
+  @ApiOperation({
+    summary: 'Оспорить запись («это неверно») — обучающий сигнал',
+  })
+  async dispute(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(DisputeRegulationBodySchema))
+    body: DisputeRegulationBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t, body.kind);
+    return this.svc.dispute({
+      tenantId: t,
+      id,
+      kind: body.kind,
+      reason: body.reason,
+      actorUserId: user.id,
+    });
+  }
+
+  @Post(':id/correct')
+  @ApiOperation({
+    summary:
+      'Исправить запись (owner/admin — сразу; иначе — предложение в очередь курации)',
+  })
+  async correct(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(CorrectRegulationBodySchema))
+    body: CorrectRegulationBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; applied: boolean }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t, body.kind);
+    const canApplyDirectly = await this.rbac.check({
+      userId: user.id,
+      tenantId: t,
+      obj: this.mapKindToResourceType(body.kind),
+      act: 'write',
+    });
+    return this.svc.correct({
+      tenantId: t,
+      id,
+      kind: body.kind,
+      correctedPayload: body.correctedPayload,
+      reason: body.reason,
+      actorUserId: user.id,
+      canApplyDirectly,
+    });
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

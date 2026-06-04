@@ -798,6 +798,109 @@ export class CurationService {
     return { curationItemId: item.id, curationDecisionId: decision.id };
   }
 
+  // ──────────────────────────── submitProposal ─────────────────────
+  /**
+   * Action Center E1 «поправить карточку знаний» (2026-06-04) — пользователь
+   * без write-права предлагает правку провизорной карточки. Вместо 403-тупика
+   * создаём `CurationItem(level='light', status='pending')` с
+   * `triageReason.via='user_correction'` и `proposedPayload` = предложенными
+   * полями. Куратор (owner/admin или ассайнментный) увидит это в очереди и
+   * примет/отклонит. Анти-вандализм: правка НЕ применяется напрямую.
+   *
+   * Best-effort: ошибка разрешения кураторов или инкремента метрики не валит
+   * создание item'а (карточка останется в очереди с candidateCuratorIds=[],
+   * lifecycle-cron подберёт owner/admin при экспирации).
+   */
+  async submitProposal(input: {
+    tenantId: string;
+    resourceType: string;
+    resourceId: string;
+    proposedPayload: Record<string, unknown>;
+    submittedBy: string;
+    reason?: string | null;
+  }): Promise<{ curationItemId: string }> {
+    if (!input.tenantId || !input.resourceType || !input.resourceId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_submit_proposal_input',
+          message:
+            'tenantId / resourceType / resourceId обязательны для предложения правки',
+        },
+      });
+    }
+    if (!input.submittedBy) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'submitted_by_required',
+          message: 'submittedBy (User.id) обязателен',
+        },
+      });
+    }
+
+    let candidateCuratorIds: string[] = [];
+    try {
+      candidateCuratorIds = await this.routing.resolveCurators({
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        level: 'light',
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'curation.submitProposal: resolveCurators упал (best-effort, candidates=[])',
+      );
+      // candidateCuratorIds остаётся [] (инициализировано выше).
+    }
+
+    const triageReason = {
+      via: 'user_correction',
+      reason: input.reason ?? null,
+      submittedBy: input.submittedBy,
+    };
+
+    const item = await this.prisma.curationItem.create({
+      data: {
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        level: 'light',
+        status: 'pending',
+        triageReason: triageReason as Prisma.InputJsonValue,
+        proposedPayload: input.proposedPayload as Prisma.InputJsonValue,
+        candidateCuratorIds,
+      },
+    });
+
+    try {
+      this.metrics.incCurationItem({
+        resourceType: input.resourceType,
+        level: 'light',
+        status: 'pending',
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'curation.submitProposal: incCurationItem упал (best-effort)',
+      );
+    }
+
+    this.logger.log(
+      {
+        tenantId: input.tenantId,
+        itemId: item.id,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        submittedBy: input.submittedBy,
+        candidateCuratorIds,
+      },
+      'curation.submitProposal: правка-предложение поставлена в очередь курации',
+    );
+
+    return { curationItemId: item.id };
+  }
+
   // ──────────────────────────── list / get ────────────────────────
 
   async listQueue(args: {

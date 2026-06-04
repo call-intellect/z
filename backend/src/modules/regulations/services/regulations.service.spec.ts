@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CurationService } from '../../curation/services/curation.service';
 import { ListRegulationsQuerySchema } from '../dto/regulations.dto';
 
 import { RegulationsService } from './regulations.service';
@@ -69,7 +70,8 @@ describe('RegulationsService — trustTier в read-DTO', () => {
       },
     } as unknown as PrismaService;
 
-    svc = new RegulationsService(prisma);
+    const curation = {} as unknown as CurationService;
+    svc = new RegulationsService(prisma, curation);
   });
 
   it("getByIdAndKind('regulation'): currentVersion.trustTier=provisional → DTO.trustTier=provisional", async () => {
@@ -126,6 +128,210 @@ describe('RegulationsService — trustTier в read-DTO', () => {
       expect.objectContaining({
         include: { currentVersion: { select: { trustTier: true } } },
       }),
+    );
+  });
+});
+
+/**
+ * Action Center E1 «поправить карточку знаний» (2026-06-04) —
+ * dispute / correct по регламентам / процессам / политикам.
+ */
+describe('RegulationsService — E1 dispute / correct', () => {
+  let regFindFirst: ReturnType<typeof vi.fn>;
+  let regUpdate: ReturnType<typeof vi.fn>;
+  let procFindFirst: ReturnType<typeof vi.fn>;
+  let procUpdate: ReturnType<typeof vi.fn>;
+  let polFindFirst: ReturnType<typeof vi.fn>;
+  let polUpdate: ReturnType<typeof vi.fn>;
+  let cvFindFirst: ReturnType<typeof vi.fn>;
+  let cvCreate: ReturnType<typeof vi.fn>;
+  let recordDecisionMock: ReturnType<typeof vi.fn>;
+  let submitProposalMock: ReturnType<typeof vi.fn>;
+  let svc: RegulationsService;
+
+  beforeEach(() => {
+    regFindFirst = vi.fn();
+    regUpdate = vi.fn();
+    procFindFirst = vi.fn();
+    procUpdate = vi.fn();
+    polFindFirst = vi.fn();
+    polUpdate = vi.fn();
+    cvFindFirst = vi.fn().mockResolvedValue(null);
+    cvCreate = vi.fn().mockResolvedValue({ id: 'cv-1', version: 1 });
+    recordDecisionMock = vi
+      .fn()
+      .mockResolvedValue({ curationItemId: 'ci-1', curationDecisionId: 'cd-1' });
+    submitProposalMock = vi.fn().mockResolvedValue({ curationItemId: 'ci-2' });
+
+    const prisma = {
+      regulation: { findFirst: regFindFirst, update: regUpdate },
+      process: { findFirst: procFindFirst, update: procUpdate },
+      policy: { findFirst: polFindFirst, update: polUpdate },
+      cardVersion: { findFirst: cvFindFirst, create: cvCreate },
+    } as unknown as PrismaService;
+
+    const curation = {
+      recordDecision: recordDecisionMock,
+      submitProposal: submitProposalMock,
+    } as unknown as CurationService;
+
+    svc = new RegulationsService(prisma, curation);
+  });
+
+  it('dispute(regulation) → recordDecision(mark_as_misleading, resourceType=regulation)', async () => {
+    regFindFirst.mockResolvedValue(makeRegulation());
+
+    const res = await svc.dispute({
+      tenantId: 't-1',
+      id: 'r-1',
+      kind: 'regulation',
+      actorUserId: 'u-1',
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(recordDecisionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'regulation',
+        resourceId: 'r-1',
+        decisionType: 'mark_as_misleading',
+        recordedBy: 'u-1',
+      }),
+    );
+  });
+
+  it('dispute(process) → resourceType=process; dispute(policy) → resourceType=policy', async () => {
+    procFindFirst.mockResolvedValue({ id: 'p-1', name: 'Процесс' });
+    polFindFirst.mockResolvedValue({ id: 'pol-1', name: 'Политика' });
+
+    await svc.dispute({ tenantId: 't-1', id: 'p-1', kind: 'process', actorUserId: 'u-1' });
+    expect(recordDecisionMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ resourceType: 'process', resourceId: 'p-1' }),
+    );
+
+    await svc.dispute({ tenantId: 't-1', id: 'pol-1', kind: 'policy', actorUserId: 'u-1' });
+    expect(recordDecisionMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ resourceType: 'policy', resourceId: 'pol-1' }),
+    );
+  });
+
+  it('dispute: несуществующий id → NotFound (recordDecision НЕ вызван)', async () => {
+    regFindFirst.mockResolvedValue(null);
+
+    await expect(
+      svc.dispute({ tenantId: 't-1', id: 'nope', kind: 'regulation', actorUserId: 'u-1' }),
+    ).rejects.toThrow();
+    expect(recordDecisionMock).not.toHaveBeenCalled();
+  });
+
+  it('correct(regulation, canApplyDirectly=true): update + cardVersion + currentVersionId + approve_with_edits', async () => {
+    regFindFirst.mockResolvedValue(
+      makeRegulation({ name: 'Старое имя', contentMd: '# Старое', statement: 'старая суть' }),
+    );
+    regUpdate.mockResolvedValueOnce(
+      makeRegulation({ name: 'Новое имя', contentMd: '# Старое', statement: 'старая суть' }),
+    );
+    regUpdate.mockResolvedValueOnce(makeRegulation());
+
+    const res = await svc.correct({
+      tenantId: 't-1',
+      id: 'r-1',
+      kind: 'regulation',
+      correctedPayload: { name: 'Новое имя' },
+      actorUserId: 'u-1',
+      canApplyDirectly: true,
+    });
+
+    expect(res).toEqual({ ok: true, applied: true });
+    // контент обновлён
+    expect(regUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'r-1' },
+        data: expect.objectContaining({ name: 'Новое имя' }),
+      }),
+    );
+    // CardVersion создана с resourceType=regulation
+    expect(cvCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resourceType: 'regulation',
+          resourceId: 'r-1',
+          version: 1,
+          changeReason: 'user_correction',
+        }),
+      }),
+    );
+    // currentVersionId обновлён
+    expect(regUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'r-1' },
+        data: { currentVersionId: 'cv-1' },
+      }),
+    );
+    // approve_with_edits с before/after
+    expect(recordDecisionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decisionType: 'approve_with_edits',
+        resourceType: 'regulation',
+        context: expect.objectContaining({
+          before: expect.objectContaining({ name: 'Старое имя' }),
+          after: { name: 'Новое имя' },
+        }),
+      }),
+    );
+    expect(submitProposalMock).not.toHaveBeenCalled();
+  });
+
+  it('correct(regulation, canApplyDirectly=false): submitProposal вызван, regulation.update НЕ вызван', async () => {
+    regFindFirst.mockResolvedValue(makeRegulation());
+
+    const res = await svc.correct({
+      tenantId: 't-1',
+      id: 'r-1',
+      kind: 'regulation',
+      correctedPayload: { statement: 'новая суть' },
+      actorUserId: 'u-2',
+      canApplyDirectly: false,
+    });
+
+    expect(res).toEqual({ ok: true, applied: false });
+    expect(submitProposalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'regulation',
+        resourceId: 'r-1',
+        proposedPayload: { statement: 'новая суть' },
+        submittedBy: 'u-2',
+      }),
+    );
+    expect(regUpdate).not.toHaveBeenCalled();
+    expect(cvCreate).not.toHaveBeenCalled();
+    expect(recordDecisionMock).not.toHaveBeenCalled();
+  });
+
+  it('correct(process, apply): обновляет process + CardVersion resourceType=process', async () => {
+    procFindFirst.mockResolvedValue({ id: 'p-1', name: 'Старый', description: 'old', scope: null });
+    procUpdate.mockResolvedValueOnce({ id: 'p-1', name: 'Новый', description: 'old', scope: null });
+    procUpdate.mockResolvedValueOnce({ id: 'p-1' });
+
+    const res = await svc.correct({
+      tenantId: 't-1',
+      id: 'p-1',
+      kind: 'process',
+      correctedPayload: { name: 'Новый' },
+      actorUserId: 'u-1',
+      canApplyDirectly: true,
+    });
+
+    expect(res).toEqual({ ok: true, applied: true });
+    expect(procUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ name: 'Новый' }) }),
+    );
+    expect(cvCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ resourceType: 'process', resourceId: 'p-1' }),
+      }),
+    );
+    expect(recordDecisionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceType: 'process', decisionType: 'approve_with_edits' }),
     );
   });
 });

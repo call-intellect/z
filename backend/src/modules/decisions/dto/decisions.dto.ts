@@ -60,6 +60,32 @@ export const SetOutcomesBodySchema = z.object({
 });
 export type SetOutcomesBody = z.infer<typeof SetOutcomesBodySchema>;
 
+// ── Action Center E1 «поправить карточку знаний» (2026-06-04) ──
+// «Это неверно» (dispute) — флаг без правки → обучающий сигнал misleading.
+export const DisputeDecisionBodySchema = z
+  .object({
+    reason: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+export type DisputeDecisionBody = z.infer<typeof DisputeDecisionBodySchema>;
+
+// «Исправить» (correct) — правка текста. owner/admin → применяем сразу
+// (новая человеко-проверенная версия); read-only → предложение в очередь курации.
+export const CorrectDecisionBodySchema = z
+  .object({
+    correctedPayload: z
+      .object({
+        statement: z.string().trim().min(1).max(8000).optional(),
+        rationale: z.string().trim().max(8000).optional(),
+      })
+      .refine((p) => p.statement !== undefined || p.rationale !== undefined, {
+        message: 'Нужно изменить хотя бы одно поле',
+      }),
+    reason: z.string().trim().max(2000).optional(),
+  })
+  .strict();
+export type CorrectDecisionBody = z.infer<typeof CorrectDecisionBodySchema>;
+
 // Manual create — owner/admin only (UI на β-3 не добавляем; см. §14.3 sub-TZ).
 export const CreateDecisionBodySchema = z.object({
   statement: z.string().min(3).max(4_000),

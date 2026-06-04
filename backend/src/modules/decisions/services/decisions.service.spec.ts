@@ -150,3 +150,184 @@ describe('DecisionsService — trustTier в read-DTO', () => {
     );
   });
 });
+
+/**
+ * Action Center E1 «поправить карточку знаний» (2026-06-04) —
+ * dispute / correct по решению.
+ */
+describe('DecisionsService — E1 dispute / correct', () => {
+  let findFirstMock: ReturnType<typeof vi.fn>;
+  let updateMock: ReturnType<typeof vi.fn>;
+  let cvFindFirstMock: ReturnType<typeof vi.fn>;
+  let cvCreateMock: ReturnType<typeof vi.fn>;
+  let recordDecisionMock: ReturnType<typeof vi.fn>;
+  let submitProposalMock: ReturnType<typeof vi.fn>;
+  let svc: DecisionsService;
+
+  beforeEach(() => {
+    findFirstMock = vi.fn();
+    updateMock = vi.fn();
+    cvFindFirstMock = vi.fn().mockResolvedValue(null);
+    cvCreateMock = vi
+      .fn()
+      .mockResolvedValue({ id: 'cv-1', version: 1, trustTier: 'human' });
+    recordDecisionMock = vi
+      .fn()
+      .mockResolvedValue({ curationItemId: 'ci-1', curationDecisionId: 'cd-1' });
+    submitProposalMock = vi
+      .fn()
+      .mockResolvedValue({ curationItemId: 'ci-2' });
+
+    const prisma = {
+      decision: {
+        findFirst: findFirstMock,
+        update: updateMock,
+      },
+      cardVersion: {
+        findFirst: cvFindFirstMock,
+        create: cvCreateMock,
+      },
+    } as unknown as PrismaService;
+
+    const curation = {
+      recordDecision: recordDecisionMock,
+      submitProposal: submitProposalMock,
+    } as unknown as CurationService;
+    const conflicts = {} as unknown as ConflictService;
+
+    svc = new DecisionsService(prisma, curation, conflicts);
+  });
+
+  it('dispute → recordDecision(mark_as_misleading, resourceType=decision)', async () => {
+    findFirstMock.mockResolvedValue({ id: 'd-1' });
+
+    const res = await svc.dispute({
+      tenantId: 't-1',
+      id: 'd-1',
+      reason: 'устарело',
+      actorUserId: 'u-1',
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(recordDecisionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't-1',
+        resourceType: 'decision',
+        resourceId: 'd-1',
+        decisionType: 'mark_as_misleading',
+        recordedBy: 'u-1',
+      }),
+    );
+  });
+
+  it('dispute: несуществующий id → NotFound (recordDecision НЕ вызван)', async () => {
+    findFirstMock.mockResolvedValue(null);
+
+    await expect(
+      svc.dispute({ tenantId: 't-1', id: 'nope', actorUserId: 'u-1' }),
+    ).rejects.toThrow();
+    expect(recordDecisionMock).not.toHaveBeenCalled();
+  });
+
+  it('correct (canApplyDirectly=true): update + cardVersion + currentVersionId + approve_with_edits(before/after)', async () => {
+    findFirstMock.mockResolvedValue(
+      makeDecision({ statement: 'Старая суть', rationale: 'Старое обоснование' }),
+    );
+    updateMock.mockResolvedValue(
+      makeDecision({ statement: 'Новая суть', rationale: 'Старое обоснование' }),
+    );
+
+    const res = await svc.correct({
+      tenantId: 't-1',
+      id: 'd-1',
+      correctedPayload: { statement: 'Новая суть' },
+      reason: 'опечатка',
+      actorUserId: 'u-1',
+      canApplyDirectly: true,
+    });
+
+    expect(res).toEqual({ ok: true, applied: true });
+    // 1) контент обновлён (statement + legacy text).
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-1' },
+        data: expect.objectContaining({
+          statement: 'Новая суть',
+          text: 'Новая суть',
+        }),
+      }),
+    );
+    // 2) создана новая CardVersion.
+    expect(cvCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resourceType: 'decision',
+          resourceId: 'd-1',
+          version: 1,
+          changeReason: 'user_correction',
+        }),
+      }),
+    );
+    // 3) currentVersionId обновлён (второй update.decision вызов).
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-1' },
+        data: { currentVersionId: 'cv-1' },
+      }),
+    );
+    // 4) обучающий сэмпл approve_with_edits с before/after.
+    expect(recordDecisionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decisionType: 'approve_with_edits',
+        resourceType: 'decision',
+        context: {
+          before: { statement: 'Старая суть', rationale: 'Старое обоснование' },
+          after: { statement: 'Новая суть' },
+        },
+      }),
+    );
+    expect(submitProposalMock).not.toHaveBeenCalled();
+  });
+
+  it('correct (canApplyDirectly=false): submitProposal вызван, decision.update НЕ вызван', async () => {
+    findFirstMock.mockResolvedValue(makeDecision());
+
+    const res = await svc.correct({
+      tenantId: 't-1',
+      id: 'd-1',
+      correctedPayload: { rationale: 'Новое обоснование' },
+      actorUserId: 'u-2',
+      canApplyDirectly: false,
+    });
+
+    expect(res).toEqual({ ok: true, applied: false });
+    expect(submitProposalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't-1',
+        resourceType: 'decision',
+        resourceId: 'd-1',
+        proposedPayload: { rationale: 'Новое обоснование' },
+        submittedBy: 'u-2',
+      }),
+    );
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(cvCreateMock).not.toHaveBeenCalled();
+    expect(recordDecisionMock).not.toHaveBeenCalled();
+  });
+
+  it('correct: несуществующий id → NotFound', async () => {
+    findFirstMock.mockResolvedValue(null);
+
+    await expect(
+      svc.correct({
+        tenantId: 't-1',
+        id: 'nope',
+        correctedPayload: { statement: 'x' },
+        actorUserId: 'u-1',
+        canApplyDirectly: true,
+      }),
+    ).rejects.toThrow();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(submitProposalMock).not.toHaveBeenCalled();
+  });
+});

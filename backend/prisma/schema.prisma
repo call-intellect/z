@@ -5535,6 +5535,9 @@ model Decision {
   confidence         Decimal?                     @db.Decimal(4, 3)
   /// Класс данных. Default 'sensitive' — решения чаще всего стратегические.
   dataClass          DataClass                    @default(sensitive)
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (policyVersion + sources).
+  /// Заполняется Specialist 3.3 в enforce-режиме; читается snapshot-cron'ом.
+  dataClassAudit     Json?
   /// Последняя активная CardVersion (после triage).
   currentVersionId   String?
   /// Эмбеддинг (statement + rationale preview) — для KNN-дедупа.
@@ -5658,6 +5661,9 @@ model Insight {
   /// Класс данных. Default 'internal' (sub-ТЗ — Insight чаще про процесс,
   /// чем про конкретного человека).
   dataClass        DataClass                    @default(internal)
+  /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (policyVersion + sources).
+  /// Заполняется Specialist 3.5 в enforce-режиме; читается snapshot-cron'ом.
+  dataClassAudit   Json?
   /// Последняя активная CardVersion (после triage).
   currentVersionId String?
   /// Эмбеддинг (statement) — для KNN-кластеризации.

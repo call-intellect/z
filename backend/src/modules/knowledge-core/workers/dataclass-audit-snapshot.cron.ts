@@ -107,23 +107,46 @@ export class DataClassAuditSnapshotCron {
   async snapshotVersionDrift(): Promise<void> {
     const currentVersion = this.cfg.dataClassPolicy.version;
     // Простая стратегия: сканируем insights + decisions (две тяжёлые проекции).
+    // Ф8 (2026-06-04): обе модели получили колонку `dataClassAudit` (db push),
+    // поэтому raw-SQL ниже валиден. На случай будущего дрейфа схемы (колонку
+    // снова уберут / переименуют таблицу) защищаемся `to_regclass`-проверкой
+    // существования колонки — как в patch-backfill-dataclass-audit.ts:96-99 —
+    // и собираем UNION только из реально присутствующих проекций. Если ни
+    // одной — выходим с warn, не роняя cron Postgres-ошибкой 42703/42P01.
     try {
+      const subqueries: string[] = [];
+      for (const table of ['insights', 'decisions']) {
+        const present = await this.dataClassAuditColumnExists(table);
+        if (present) {
+          subqueries.push(
+            `SELECT "tenantId", "dataClassAudit"->>'policyVersion' as v ` +
+              `FROM ${table} WHERE "dataClassAudit" IS NOT NULL`,
+          );
+        } else {
+          this.logger.warn(
+            { table },
+            'dataclass-audit-snapshot.versionDrift: колонка dataClassAudit отсутствует — проекция пропущена (schema drift)',
+          );
+        }
+      }
+      if (subqueries.length === 0) {
+        this.logger.warn(
+          'dataclass-audit-snapshot.versionDrift: нет проекций с колонкой dataClassAudit — drift не считается',
+        );
+        return;
+      }
+
       // Используем raw query — Prisma не умеет фильтровать по Json.policyVersion
-      // эффективно без `path`-операции. Для MVP — простой $queryRaw.
-      const rows = await this.prisma.$queryRaw<
+      // эффективно без `path`-операции. Для MVP — простой $queryRawUnsafe
+      // (имена таблиц/колонок собраны из whitelisted-констант выше, не из ввода;
+      // единственный пользовательский параметр — currentVersion — параметризован).
+      const sql =
+        `SELECT "tenantId", COUNT(*)::bigint as cnt FROM (` +
+        `${subqueries.join(' UNION ALL ')}` +
+        `) t WHERE v IS NOT NULL AND v <> $1 GROUP BY "tenantId"`;
+      const rows = await this.prisma.$queryRawUnsafe<
         Array<{ tenantId: string; cnt: bigint }>
-      >`
-        SELECT "tenantId", COUNT(*)::bigint as cnt
-        FROM (
-          SELECT "tenantId", "dataClassAudit"->>'policyVersion' as v
-          FROM insights WHERE "dataClassAudit" IS NOT NULL
-          UNION ALL
-          SELECT "tenantId", "dataClassAudit"->>'policyVersion' as v
-          FROM decisions WHERE "dataClassAudit" IS NOT NULL
-        ) t
-        WHERE v IS NOT NULL AND v <> ${currentVersion}
-        GROUP BY "tenantId"
-      `;
+      >(sql, currentVersion);
       for (const r of rows) {
         this.versionDrift.set({ org_id: r.tenantId }, Number(r.cnt));
       }
@@ -132,6 +155,34 @@ export class DataClassAuditSnapshotCron {
         { err: err instanceof Error ? err.message : String(err) },
         'dataclass-audit-snapshot.versionDrift: skip (best-effort)',
       );
+    }
+  }
+
+  /**
+   * Ф8 (2026-06-04) — существует ли колонка `dataClassAudit` в указанной
+   * таблице. Защищает raw-SQL drift-запрос от Postgres-ошибки 42703 при
+   * будущем дрейфе схемы. `to_regclass` отсекает несуществующую таблицу
+   * (42P01), затем смотрим `information_schema.columns`. Любая ошибка → false
+   * (best-effort: лучше пропустить метрику, чем уронить cron).
+   */
+  private async dataClassAuditColumnExists(table: string): Promise<boolean> {
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ ok: boolean }>>`
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = ${table}
+            AND column_name = 'dataClassAudit'
+        ) AND to_regclass(${`public.${table}`}) IS NOT NULL AS ok
+      `;
+      return rows[0]?.ok === true;
+    } catch (err) {
+      this.logger.debug(
+        { table, err: err instanceof Error ? err.message : String(err) },
+        'dataclass-audit-snapshot: проверка колонки не удалась — считаем отсутствующей',
+      );
+      return false;
     }
   }
 

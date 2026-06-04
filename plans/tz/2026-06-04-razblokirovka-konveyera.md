@@ -211,7 +211,7 @@
 
 ---
 
-## Ф8 — код ↔ схема: `dataClassAudit` + машинный гард класса `[ ]`
+## Ф8 — код ↔ схема: `dataClassAudit` + машинный гард класса `[x]`
 
 **Корень (баги #29/#30, finding `schema-drift`, medium):** поле `dataClassAudit Json?` есть в схеме только у 6 моделей — `AiUsageLog` (`schema.prisma:1398`), `Card` (2121), `ConflictItem` (3420), `ProbeEvent` (5778), `SkillProfile` (7068), `ExecutablePersona` (7386). У `Insight` (model:5544, `@@map("insights")`:5622) и `Decision` (5428, `@@map("decisions")`:5533) поля НЕТ. При этом `specialist-3-5-insights.service.ts:806` делает `insight.create({...,dataClassAudit})`, `specialist-3-3-decisions.service.ts:837` — `decision.create({...,dataClassAudit})`, а `dataclass-audit-snapshot.cron.ts:113-126` raw-SQL читает `FROM insights ... dataClassAudit` / `FROM decisions` → Postgres `42703 column "dataClassAudit" does not exist`. **tsc СТРУКТУРНО слеп** к лишнему `dataClassAudit` в `create({data:...})` (generic `Subset<T,Args>`) — typecheck проходит, рантайм падает. Доп.: cron PROJECTIONS (`dataclass-audit-snapshot.cron.ts:27-41`) перечисляет 13 kind'ов, у 7 нет колонки → `count({where:{dataClassAudit:{not:null}}})` бросает ValidationError, метрика молча skip (`:83-97`).
 

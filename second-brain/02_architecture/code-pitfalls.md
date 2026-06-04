@@ -384,4 +384,28 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 - Финальная матрица по всем 9 каналам с размерными порогами / chunk size / скидками — [llm-cache-status.md](llm-cache-status.md).
 - Описание эксперимента + как переверифицировать — [backend/test/eval/cache-experiment/README.md](../../backend/test/eval/cache-experiment/README.md).
 
+## Prisma: tsc структурно слеп к лишнему ключу в `create({data})` / `where` (2026-06-04)
+
+`prisma generate` + `tsc --noEmit` **не ловят** лишний/несуществующий ключ внутри
+`create({ data: {...} })`, `update({ data })`, `where`, `select` — generic
+`Subset<T, Args>` принимает любой объект структурно. Поэтому
+`insight.create({ ..., dataClassAudit })` проходил typecheck **зелёным**, но падал
+в рантайме `42703 column "dataClassAudit" does not exist`, пока поля не было в
+схеме (Ф8 `plans/tz/2026-06-04-razblokirovka-konveyera.md`). Тот же класс —
+`skillTrait.findMany({ where: { tenantId } })` при отсутствии `tenantId` у модели.
+
+**Гард (двухслойный):**
+1. **Аннотировать литерал типом** — `const data: Prisma.InsightCreateInput = {...}`
+   — тогда tsc ловит лишний ключ **верхнего уровня** (cheap, см. type-guard
+   `backend/src/modules/knowledge-core/workers/dataclass-audit-schema.types.spec.ts`).
+   **Не помогает** для вложенного `where`/`data` (`{ not: ... }`, nested relation).
+2. **Интеграционный тест против РЕАЛЬНОГО Postgres** — единственное, что ловит
+   вложенный дрейф и несуществующую колонку. Мок убивает смысл (он именно про
+   tsc-слепоту + живую БД). См.
+   `backend/test/integration/knowledge-core/dataclass-audit-schema.integration.spec.ts`
+   (skip'ается без dev-стека — это ок для CI без docker).
+
+**Вывод:** «добавить typecheck» класс «код↔схема» НЕ закрывает. Закрывает —
+аннотация литерала (верхний уровень) + integration-тест на критпуть (вложенное).
+
 [[../index|← index]]

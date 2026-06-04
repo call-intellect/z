@@ -9,6 +9,7 @@ import {
   SystemLogCategory,
   SystemLogContour,
   SystemLogLevel,
+  SystemLogPipeline,
 } from '@prisma/client';
 
 /** Порядок уровней для сравнения «не ниже». */
@@ -24,6 +25,7 @@ export const LOG_LEVEL_ORDER: Record<SystemLogLevel, number> = {
 const LEVEL_VALUES = Object.values(SystemLogLevel) as SystemLogLevel[];
 const CATEGORY_VALUES = Object.values(SystemLogCategory) as SystemLogCategory[];
 const CONTOUR_VALUES = Object.values(SystemLogContour) as SystemLogContour[];
+const PIPELINE_VALUES = Object.values(SystemLogPipeline) as SystemLogPipeline[];
 
 const MAX_ENABLED_CATEGORIES = 20;
 const MAX_DISABLED_MODULES = 200;
@@ -169,7 +171,16 @@ function normalizeModuleList(value: unknown): string[] {
 }
 
 /** Re-export enum-значений для удобства импорта в модуле. */
-export { SystemLogCategory, SystemLogContour, SystemLogLevel, CONTOUR_VALUES, CATEGORY_VALUES, LEVEL_VALUES };
+export {
+  SystemLogCategory,
+  SystemLogContour,
+  SystemLogLevel,
+  SystemLogPipeline,
+  CONTOUR_VALUES,
+  CATEGORY_VALUES,
+  LEVEL_VALUES,
+  PIPELINE_VALUES,
+};
 
 /** Вход для записи лога. Все поля кроме level/message опциональны. */
 export interface WriteLogInput {
@@ -177,6 +188,8 @@ export interface WriteLogInput {
   message: string;
   category?: SystemLogCategory;
   contour?: SystemLogContour;
+  /** Процессный контур цепочки (pipeline). Если не задан — берётся из ctx. */
+  pipeline?: SystemLogPipeline;
   module?: string;
   action?: string;
   details?: unknown;

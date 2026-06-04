@@ -13,11 +13,16 @@ import {
   type CurationItem,
   type CurationLevel,
   Prisma,
+  type TrustTier,
 } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  type DebateVerdict,
+  MultiAgentDebateService,
+} from '../../ai/services/multi-agent-debate.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { SkillTraitCategoryService } from '../../skills/services/skill-trait-categories.service';
 import type {
@@ -29,6 +34,10 @@ import type {
   CurationSettingsDto,
   ListCurationQueueQuery,
   ListCurationQueueResponse,
+  OverrideStatsItemDto,
+  OverrideStatsResponse,
+  ProvisionalAuditStatsItemDto,
+  ProvisionalAuditStatsResponse,
   UpdateCurationSettingsBody,
 } from '../dto/curation.dto';
 
@@ -64,13 +73,24 @@ export interface TriageInput {
   dataClass?: 'public' | 'internal' | 'sensitive' | 'private';
 }
 
-export type TriageDecision = 'auto' | 'light' | 'deep';
+/**
+ * Action Center A1 «лестница доверия» (2026-06-02) — добавлен маркер
+ * `'provisional'`: критическая карточка прошла AI-судью (3-голосовый
+ * debate-консенсус accept) и канонизирована провизорно (trustTier=provisional),
+ * минуя человека. По форме результата идентичен `'auto'` (есть cardVersionId,
+ * нет curationItemId — кроме случая попадания в аудит-выборку).
+ */
+export type TriageDecision = 'auto' | 'provisional' | 'light' | 'deep';
 
 export interface TriageResult {
   decision: TriageDecision;
-  /** Если 'auto' — id созданного CardVersion. Иначе — null. */
+  /** Если 'auto' | 'provisional' — id созданного CardVersion. Иначе — null. */
   cardVersionId: string | null;
-  /** Если 'light' | 'deep' — id созданного CurationItem. Иначе — null. */
+  /**
+   * Если 'light' | 'deep' — id созданного CurationItem. Для 'auto'/'provisional'
+   * обычно null, НО если решение попало в аудит-выборку — id лёгкого
+   * аудит-CurationItem (не блокирующего; карточка уже канонизирована).
+   */
   curationItemId: string | null;
   /** Кандидаты-кураторы (после dispatch'а). */
   candidateCuratorIds: string[];
@@ -118,6 +138,25 @@ export interface RecordDecisionInput {
 const DEFAULT_AUTO_THRESHOLD = 0.85;
 const DEFAULT_DEEP_REVIEW_THRESHOLD = 0.6;
 const DEFAULT_CRITICAL_TYPES = ['regulation', 'process', 'decision'] as const;
+// Action Center A1 «лестница доверия» (2026-06-02).
+const DEFAULT_PROVISIONAL_THRESHOLD = 0.8;
+const DEFAULT_AI_VERIFIER_ENABLED = true;
+const DEFAULT_AUDIT_SAMPLE_RATE = 0.05;
+// Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch.
+const DEFAULT_AUTOTUNE_ENABLED = false;
+const DEFAULT_THRESHOLD_MIN = 0.6;
+const DEFAULT_THRESHOLD_MAX = 0.97;
+const DEFAULT_AUTOTUNE_STEP = 0.02;
+const DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE = 20;
+const DEFAULT_MAX_PROVISIONAL_OVERRIDE = 0.2;
+/**
+ * A2 — значение порога, эффективно отключающее провизорный путь для типа:
+ * triage сравнивает `effectiveConfidence >= provisionalT`; при 1.01 условие
+ * никогда не выполняется (confidence clamped в [0..1]) → критический тип
+ * безопасно уходит к человеку (deep), как до A1. Используется kill-switch'ем
+ * в `CurationAutotuneCron`.
+ */
+export const KILL_SWITCH_PROVISIONAL_THRESHOLD = 1.01;
 
 /**
  * CurationService — публичный API Слоя 4 (см.
@@ -166,6 +205,16 @@ export class CurationService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
+    /**
+     * Action Center A1 «лестница доверия» (2026-06-02) — AI-судья
+     * (3-голосовый debate) для провизорной канонизации критических карточек.
+     * @Optional, потому что CurationModule поднимается и в worker-процессе,
+     * где AiModule может отсутствовать. Если null — критические карточки
+     * безопасно идут к человеку (deep), как раньше.
+     */
+    @Optional()
+    @Inject(MultiAgentDebateService)
+    private readonly debate: MultiAgentDebateService | null = null,
   ) {}
 
   // ──────────────────────────── triage ────────────────────────────
@@ -202,13 +251,25 @@ export class CurationService {
         ? Math.max(0, Math.min(1, input.calibratedConfidence))
         : input.confidence;
 
-    // 1. auto-canonical
-    if (
-      !isCritical &&
-      conflict === 'none' &&
-      effectiveConfidence >= settings.autoThreshold
-    ) {
-      const version = await this.createInitialCardVersion(input);
+    // A0 «лестница доверия» (2026-06-02) — пер-типовые пороги перекрывают
+    // глобальные для конкретного resourceType. Если карта не задана или в ней
+    // нет типа — fallback на глобальный порог (обратносовместимо). Гейты
+    // criticalTypes / conflict='hard' НЕ затрагиваются.
+    const autoT =
+      settings.autoThresholdByType?.[input.resourceType] ?? settings.autoThreshold;
+    const deepT =
+      settings.deepReviewThresholdByType?.[input.resourceType] ??
+      settings.deepReviewThreshold;
+    // A1 — порог провизорной AI-канонизации критического типа (пер-типовый
+    // override → глобальный).
+    const provisionalT =
+      settings.provisionalThresholdByType?.[input.resourceType] ??
+      settings.provisionalThreshold ??
+      DEFAULT_PROVISIONAL_THRESHOLD;
+
+    // 1. auto-canonical (некритический тип, без конфликта, high confidence).
+    if (!isCritical && conflict === 'none' && effectiveConfidence >= autoT) {
+      const version = await this.createInitialCardVersion(input, 'auto');
       this.metrics.incCurationAutoCanonical({ resourceType: input.resourceType });
       this.logger.log(
         {
@@ -219,21 +280,84 @@ export class CurationService {
         },
         'curation.triage: auto-canonical',
       );
+      const auditItemId = await this.maybeCreateAuditSample({
+        input,
+        settings,
+        trustTier: 'auto',
+      });
       return {
         decision: 'auto',
         cardVersionId: version.id,
-        curationItemId: null,
+        curationItemId: auditItemId,
         candidateCuratorIds: [],
       };
     }
 
+    // 1b. A1 «лестница доверия» — провизорная AI-канонизация критического типа.
+    // Критический тип (regulation/process/decision) больше НЕ блокируется
+    // человеком безусловно: уверенная карточка без hard-конфликта проходит
+    // AI-судью (3-голосовый debate); при accept-консенсусе становится
+    // провизорно-канонической (trustTier=provisional), минуя человека.
+    // Все остальные гейты (conflict='hard', низкая confidence) сохранены.
+    if (
+      isCritical &&
+      conflict !== 'hard' &&
+      settings.aiVerifierEnabled &&
+      this.debate &&
+      effectiveConfidence >= provisionalT
+    ) {
+      const verdict = await this.runAiVerifier(input);
+      const accepted =
+        verdict !== null &&
+        verdict.decision === 'accept' &&
+        (verdict.consensusType === 'unanimous' ||
+          verdict.consensusType === 'majority');
+      this.metrics.incCurationVerifierVerdict({
+        decision: verdict?.decision ?? 'unavailable',
+        consensusType: verdict?.consensusType ?? 'unavailable',
+      });
+      if (accepted) {
+        const version = await this.createInitialCardVersion(input, 'provisional');
+        this.metrics.incCurationProvisional({ resourceType: input.resourceType });
+        this.logger.log(
+          {
+            tenantId: input.tenantId,
+            resourceType: input.resourceType,
+            resourceId: input.resourceId,
+            versionId: version.id,
+            consensusType: verdict?.consensusType,
+          },
+          'curation.triage: provisional-canonical (AI-судья accept)',
+        );
+        const auditItemId = await this.maybeCreateAuditSample({
+          input,
+          settings,
+          trustTier: 'provisional',
+        });
+        return {
+          decision: 'provisional',
+          cardVersionId: version.id,
+          curationItemId: auditItemId,
+          candidateCuratorIds: [],
+        };
+      }
+      // reject / split / verifier недоступен → безопасный fallback к человеку
+      // (deep CurationItem) ниже. Метрика verifier-verdict уже записана.
+      this.logger.log(
+        {
+          tenantId: input.tenantId,
+          resourceType: input.resourceType,
+          resourceId: input.resourceId,
+          verdict: verdict?.decision ?? 'unavailable',
+          consensusType: verdict?.consensusType ?? 'unavailable',
+        },
+        'curation.triage: AI-судья НЕ дал accept-консенсус → deep review (человек)',
+      );
+    }
+
     // 2. deep / light
     let level: CurationLevel;
-    if (
-      isCritical ||
-      conflict === 'hard' ||
-      effectiveConfidence < settings.deepReviewThreshold
-    ) {
+    if (isCritical || conflict === 'hard' || effectiveConfidence < deepT) {
       level = 'deep';
     } else {
       level = 'light';
@@ -250,8 +374,12 @@ export class CurationService {
       conflictSignal: conflict,
       conflictIds: input.conflictIds ?? [],
       criticalType: isCritical,
-      autoThreshold: settings.autoThreshold,
-      deepReviewThreshold: settings.deepReviewThreshold,
+      // A0 — фактически применённые пороги (с учётом пер-типового override).
+      autoThreshold: autoT,
+      deepReviewThreshold: deepT,
+      // Глобальные пороги для прозрачности (видно, был ли override).
+      autoThresholdGlobal: settings.autoThreshold,
+      deepThresholdGlobal: settings.deepReviewThreshold,
     };
 
     // ВНИМАНИЕ: dispatchProbe вне транзакции (notifications в БД создаются
@@ -465,6 +593,8 @@ export class CurationService {
           createdByUserId: input.reviewerUserId,
           curationDecisionId: decision.id,
           curationItemId: item.id,
+          // A1 — решение человека-куратора → метка доверия 'human'.
+          trustTier: 'human',
         });
       }
 
@@ -753,6 +883,174 @@ export class CurationService {
     };
   }
 
+  // ──────────────────────────── override stats (A0) ───────────────
+
+  /**
+   * A0 «лестница доверия» (2026-06-02) — read-model override-rate по
+   * resourceType. Для каждого типа считает долю «переопределений» куратором
+   * (reject + approve_with_edits) среди items с финальным решением.
+   *
+   * Финальное решение = ПОСЛЕДНЕЕ по createdAt решение типа ≠ 'escalate'
+   * (escalate — это переадресация, не финал; item остаётся pending до
+   * настоящего решения). Items вообще без не-escalate решений не считаются
+   * decided.
+   *
+   * Высокий overrideRate сигналит: для типа порог auto-canonical занижен —
+   * кандидат на ручную/будущую авто-подстройку autoThresholdByType.
+   */
+  async getOverrideStats(args: { tenantId: string }): Promise<OverrideStatsResponse> {
+    const items = await this.prisma.curationItem.findMany({
+      where: { tenantId: args.tenantId },
+      select: {
+        resourceType: true,
+        decisions: { select: { decisionType: true, createdAt: true } },
+      },
+    });
+
+    interface Acc {
+      totalDecided: number;
+      approve: number;
+      approveWithEdits: number;
+      reject: number;
+      other: number;
+    }
+    const byType = items.reduce<Map<string, Acc>>((map, item) => {
+      // Финал = последнее по createdAt решение ≠ 'escalate'.
+      const finalDecision = item.decisions
+        .filter((d) => d.decisionType !== 'escalate')
+        .reduce<{ decisionType: string; createdAt: Date } | null>((latest, d) => {
+          if (!latest || d.createdAt.getTime() > latest.createdAt.getTime()) {
+            return d;
+          }
+          return latest;
+        }, null);
+      if (!finalDecision) return map; // нет финального решения — не decided.
+
+      const acc =
+        map.get(item.resourceType) ??
+        { totalDecided: 0, approve: 0, approveWithEdits: 0, reject: 0, other: 0 };
+      acc.totalDecided += 1;
+      switch (finalDecision.decisionType) {
+        case 'approve':
+          acc.approve += 1;
+          break;
+        case 'approve_with_edits':
+          acc.approveWithEdits += 1;
+          break;
+        case 'reject':
+          acc.reject += 1;
+          break;
+        default:
+          // split / merge / supersede / mark_as_misleading / merge_categories.
+          acc.other += 1;
+          break;
+      }
+      map.set(item.resourceType, acc);
+      return map;
+    }, new Map());
+
+    const result: OverrideStatsItemDto[] = [...byType.entries()].map(
+      ([resourceType, acc]) => ({
+        resourceType,
+        totalDecided: acc.totalDecided,
+        approve: acc.approve,
+        approveWithEdits: acc.approveWithEdits,
+        reject: acc.reject,
+        other: acc.other,
+        overrideRate:
+          acc.totalDecided > 0
+            ? (acc.reject + acc.approveWithEdits) / acc.totalDecided
+            : 0,
+      }),
+    );
+    // Стабильный порядок — по resourceType (детерминизм для UI/тестов).
+    result.sort((a, b) => a.resourceType.localeCompare(b.resourceType));
+    return { items: result };
+  }
+
+  // ──────────────────── provisional audit stats (A2) ──────────────
+
+  /**
+   * A2 «лестница доверия» (2026-06-02) — read-model «провизорной ошибки»
+   * по resourceType. Сигнал для kill-switch: насколько часто провизорно
+   * канонизированные карточки (прошедшие AI-судью) оказываются неверными при
+   * выборочной человеческой проверке.
+   *
+   * Считаем ТОЛЬКО аудит-выборку — CurationItem с
+   * `triageReason.reason='audit_sample'`, по которым принято финальное решение
+   * (status='decided'). Финал = последнее по createdAt решение ≠ 'escalate'
+   * (как в getOverrideStats).
+   *
+   * `auditWrong` — финальное решение ∈ {reject, mark_as_misleading, supersede}.
+   * Обоснование выбора: эти три типа означают «провизорная карточка была
+   * неверной» — её отклонили (reject), пометили вводящей в заблуждение
+   * (mark_as_misleading) или заменили другой версией (supersede). approve /
+   * approve_with_edits / split / merge — НЕ считаем ошибкой (карточка по сути
+   * подтверждена, возможно с правками/декомпозицией).
+   *
+   * `provisionalWrongRate = auditWrong / auditDecided` (0 при auditDecided=0).
+   */
+  async getProvisionalAuditStats(args: {
+    tenantId: string;
+  }): Promise<ProvisionalAuditStatsResponse> {
+    const items = await this.prisma.curationItem.findMany({
+      where: { tenantId: args.tenantId, status: 'decided' },
+      select: {
+        resourceType: true,
+        triageReason: true,
+        decisions: { select: { decisionType: true, createdAt: true } },
+      },
+    });
+
+    const WRONG_TYPES = new Set(['reject', 'mark_as_misleading', 'supersede']);
+    interface Acc {
+      auditDecided: number;
+      auditWrong: number;
+    }
+    const byType = items.reduce<Map<string, Acc>>((map, item) => {
+      // Только аудит-выборка (triageReason.reason='audit_sample').
+      if (!this.isAuditSample(item.triageReason)) return map;
+
+      const finalDecision = item.decisions
+        .filter((d) => d.decisionType !== 'escalate')
+        .reduce<{ decisionType: string; createdAt: Date } | null>((latest, d) => {
+          if (!latest || d.createdAt.getTime() > latest.createdAt.getTime()) {
+            return d;
+          }
+          return latest;
+        }, null);
+      if (!finalDecision) return map; // нет финального решения — не decided.
+
+      const acc = map.get(item.resourceType) ?? { auditDecided: 0, auditWrong: 0 };
+      acc.auditDecided += 1;
+      if (WRONG_TYPES.has(finalDecision.decisionType)) acc.auditWrong += 1;
+      map.set(item.resourceType, acc);
+      return map;
+    }, new Map());
+
+    const result: ProvisionalAuditStatsItemDto[] = [...byType.entries()].map(
+      ([resourceType, acc]) => ({
+        resourceType,
+        auditDecided: acc.auditDecided,
+        auditWrong: acc.auditWrong,
+        provisionalWrongRate:
+          acc.auditDecided > 0 ? acc.auditWrong / acc.auditDecided : 0,
+      }),
+    );
+    result.sort((a, b) => a.resourceType.localeCompare(b.resourceType));
+    return { items: result };
+  }
+
+  /** A2 — true, если CurationItem.triageReason.reason === 'audit_sample'. */
+  private isAuditSample(reason: Prisma.JsonValue): boolean {
+    return (
+      !!reason &&
+      typeof reason === 'object' &&
+      !Array.isArray(reason) &&
+      (reason as Record<string, unknown>).reason === 'audit_sample'
+    );
+  }
+
   // ──────────────────────────── settings ──────────────────────────
 
   async getSettings(tenantId: string): Promise<CurationSettingsDto> {
@@ -768,12 +1066,44 @@ export class CurationService {
     patch: UpdateCurationSettingsBody;
   }): Promise<CurationSettingsDto> {
     const current = await this.getSettings(args.tenantId);
+    // A0 — пер-типовые карты заменяются целиком (если переданы), иначе
+    // сохраняются текущие. Нормализуем, чтобы в БД легли только валидные записи.
+    const autoByType = this.normalizeThresholdMap(
+      args.patch.autoThresholdByType ?? current.autoThresholdByType ?? {},
+    );
+    const deepByType = this.normalizeThresholdMap(
+      args.patch.deepReviewThresholdByType ?? current.deepReviewThresholdByType ?? {},
+    );
+    // A1 — пер-типовая карта провизорных порогов (как auto/deep).
+    const provisionalByType = this.normalizeThresholdMap(
+      args.patch.provisionalThresholdByType ??
+        current.provisionalThresholdByType ??
+        {},
+    );
     const next: CurationSettingsDto = {
       autoThreshold: args.patch.autoThreshold ?? current.autoThreshold,
       deepReviewThreshold:
         args.patch.deepReviewThreshold ?? current.deepReviewThreshold,
       criticalTypes: args.patch.criticalTypes ?? current.criticalTypes,
       itemExpiryDays: args.patch.itemExpiryDays ?? current.itemExpiryDays,
+      autoThresholdByType: autoByType,
+      deepReviewThresholdByType: deepByType,
+      // A1 «лестница доверия».
+      provisionalThreshold:
+        args.patch.provisionalThreshold ?? current.provisionalThreshold,
+      provisionalThresholdByType: provisionalByType,
+      aiVerifierEnabled:
+        args.patch.aiVerifierEnabled ?? current.aiVerifierEnabled,
+      auditSampleRate: args.patch.auditSampleRate ?? current.auditSampleRate,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails.
+      autotuneEnabled: args.patch.autotuneEnabled ?? current.autotuneEnabled,
+      thresholdMin: args.patch.thresholdMin ?? current.thresholdMin,
+      thresholdMax: args.patch.thresholdMax ?? current.thresholdMax,
+      autotuneStep: args.patch.autotuneStep ?? current.autotuneStep,
+      minDecisionsForAutotune:
+        args.patch.minDecisionsForAutotune ?? current.minDecisionsForAutotune,
+      maxProvisionalOverride:
+        args.patch.maxProvisionalOverride ?? current.maxProvisionalOverride,
     };
     if (next.autoThreshold < next.deepReviewThreshold) {
       throw new BadRequestException({
@@ -784,6 +1114,20 @@ export class CurationService {
             'autoThreshold должен быть >= deepReviewThreshold (иначе triage не имеет «light» окна)',
         },
       });
+    }
+    // A0 — инвариант auto ≥ deep сохраняется и на уровне каждого типа,
+    // присутствующего в обеих картах (иначе у типа нет «light»-окна).
+    for (const [type, autoVal] of Object.entries(autoByType)) {
+      const deepVal = deepByType[type];
+      if (deepVal !== undefined && autoVal < deepVal) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'invalid_thresholds',
+            message: `autoThresholdByType[${type}] должен быть >= deepReviewThresholdByType[${type}]`,
+          },
+        });
+      }
     }
     await this.prisma.org.update({
       where: { id: args.tenantId },
@@ -810,9 +1154,13 @@ export class CurationService {
   }
 
   /**
-   * Создаёт первую CardVersion (`version=1`) для auto-canonical.
+   * Создаёт первую CardVersion (`version=1`) для auto/provisional canonical.
+   * A1 — `trustTier` помечает уровень доверия (auto | provisional).
    */
-  private async createInitialCardVersion(input: TriageInput) {
+  private async createInitialCardVersion(
+    input: TriageInput,
+    trustTier: TrustTier,
+  ) {
     return this.appendCardVersion(this.prisma, {
       tenantId: input.tenantId,
       resourceType: input.resourceType,
@@ -822,7 +1170,130 @@ export class CurationService {
       createdByUserId: input.createdByUserId ?? null,
       curationDecisionId: null,
       curationItemId: null,
+      trustTier,
     });
+  }
+
+  /**
+   * A1 «лестница доверия» — вызов AI-судьи (3-голосовый debate, семейство
+   * `curation-verify`) по готовому payload'у критической карточки.
+   *
+   * Возвращает DebateVerdict или null при любой проблеме (debate недоступен,
+   * judge бросил, fallbackUsed без голосов). Caller трактует null/неуверенный
+   * verdict как «к человеку» (безопасный fallback).
+   */
+  private async runAiVerifier(input: TriageInput): Promise<DebateVerdict | null> {
+    if (!this.debate) return null;
+    try {
+      const verdict = await this.debate.judge({
+        taskFamily: 'curation-verify',
+        taskType: 'debate-curation-verify',
+        task: `Карточка ${input.resourceType} корректна, обоснована и должна быть канонизирована в память компании? Verdict строго: accept | reject.`,
+        candidates: [{ resourceType: input.resourceType, candidate: input.proposedPayload }],
+        contextBlocks: [],
+        tenantId: input.tenantId,
+      });
+      // Все голоса упали (fallbackUsed без votes) → трактуем как недоступность.
+      if (verdict.fallbackUsed === 'provider_unavailable' && verdict.votes.length === 0) {
+        return null;
+      }
+      return verdict;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: input.tenantId,
+          resourceType: input.resourceType,
+          resourceId: input.resourceId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'curation.runAiVerifier: debate.judge упал — fallback к человеку (deep)',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * A1 — аудит-выборка: с вероятностью `auditSampleRate` создаёт ЛЁГКИЙ
+   * (level='light', status='pending') аудит-CurationItem поверх уже
+   * канонизированной (auto/provisional) карточки. НЕ блокирует канонизацию —
+   * это пост-фактум выборочная человеческая проверка качества авто-решений.
+   *
+   * Возвращает id созданного аудит-item'а или null (не попал в выборку).
+   */
+  private async maybeCreateAuditSample(args: {
+    input: TriageInput;
+    settings: CurationSettingsDto;
+    trustTier: TrustTier;
+  }): Promise<string | null> {
+    const rate = args.settings.auditSampleRate ?? DEFAULT_AUDIT_SAMPLE_RATE;
+    if (!this.shouldSample(rate)) return null;
+    try {
+      const candidates = await this.routing.resolveCurators({
+        tenantId: args.input.tenantId,
+        resourceType: args.input.resourceType,
+        level: 'light',
+        criteria: args.input.criteria,
+      });
+      const item = await this.prisma.curationItem.create({
+        data: {
+          tenantId: args.input.tenantId,
+          resourceType: args.input.resourceType,
+          resourceId: args.input.resourceId,
+          level: 'light',
+          status: 'pending',
+          triageReason: {
+            reason: 'audit_sample',
+            trustTier: args.trustTier,
+            auditSampleRate: rate,
+          } as Prisma.InputJsonValue,
+          proposedPayload: args.input.proposedPayload as Prisma.InputJsonValue,
+          candidateCuratorIds: candidates,
+          expiresAt: this.expiryDate(args.settings.itemExpiryDays),
+        },
+      });
+      this.metrics.incCurationItem({
+        resourceType: args.input.resourceType,
+        level: 'light',
+        status: 'pending',
+      });
+      this.metrics.incCurationAuditSample({ resourceType: args.input.resourceType });
+      await this.dispatchProbe({
+        item,
+        candidateCuratorIds: candidates,
+        dataClass: args.input.dataClass,
+      });
+      this.logger.log(
+        {
+          tenantId: args.input.tenantId,
+          itemId: item.id,
+          resourceType: args.input.resourceType,
+          trustTier: args.trustTier,
+        },
+        'curation.triage: создан аудит-CurationItem (audit_sample, не блокирует)',
+      );
+      return item.id;
+    } catch (err) {
+      // Best-effort: ошибка аудит-выборки не должна валить триаж.
+      this.logger.warn(
+        {
+          tenantId: args.input.tenantId,
+          resourceType: args.input.resourceType,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'curation.maybeCreateAuditSample: не удалось создать аудит-item (best-effort)',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * A1 — детерминированная обёртка над сэмплингом. Вынесена в метод, чтобы
+   * тесты могли проверять граничные rate=1 (всегда) и rate=0 (никогда).
+   */
+  private shouldSample(rate: number): boolean {
+    if (!Number.isFinite(rate) || rate <= 0) return false;
+    if (rate >= 1) return true;
+    return Math.random() < rate;
   }
 
   /**
@@ -843,6 +1314,8 @@ export class CurationService {
       createdByUserId: string | null;
       curationDecisionId: string | null;
       curationItemId: string | null;
+      /** A1 — уровень доверия версии. Default 'human' (создаётся человеком). */
+      trustTier?: TrustTier;
     },
   ) {
     const last = await db.cardVersion.findFirst({
@@ -863,6 +1336,7 @@ export class CurationService {
         createdByUserId: args.createdByUserId,
         curationDecisionId: args.curationDecisionId,
         curationItemId: args.curationItemId,
+        trustTier: args.trustTier ?? 'human',
       },
     });
     // SBA α-5 dialog-layer — эмит для CacheInvalidationService.
@@ -979,6 +1453,21 @@ export class CurationService {
         (this.cfg.curation.criticalTypesDefault as readonly string[])?.slice() ??
         [...DEFAULT_CRITICAL_TYPES],
       itemExpiryDays: this.cfg.curation.itemExpiryDays ?? 30,
+      // A0 — пер-типовые пороги по умолчанию пусты (нет override).
+      autoThresholdByType: {},
+      deepReviewThresholdByType: {},
+      // A1 «лестница доверия» — дефолты.
+      provisionalThreshold: DEFAULT_PROVISIONAL_THRESHOLD,
+      provisionalThresholdByType: {},
+      aiVerifierEnabled: DEFAULT_AI_VERIFIER_ENABLED,
+      auditSampleRate: DEFAULT_AUDIT_SAMPLE_RATE,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails.
+      autotuneEnabled: DEFAULT_AUTOTUNE_ENABLED,
+      thresholdMin: DEFAULT_THRESHOLD_MIN,
+      thresholdMax: DEFAULT_THRESHOLD_MAX,
+      autotuneStep: DEFAULT_AUTOTUNE_STEP,
+      minDecisionsForAutotune: DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE,
+      maxProvisionalOverride: DEFAULT_MAX_PROVISIONAL_OVERRIDE,
     };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
     const obj = raw as Record<string, unknown>;
@@ -998,7 +1487,90 @@ export class CurationService {
         typeof obj.itemExpiryDays === 'number'
           ? obj.itemExpiryDays
           : def.itemExpiryDays,
+      // A0 — парсим пер-типовые карты; невалидные записи отбрасываем,
+      // отсутствие карты → {} (поведение как раньше).
+      autoThresholdByType: this.normalizeThresholdMap(obj.autoThresholdByType),
+      deepReviewThresholdByType: this.normalizeThresholdMap(
+        obj.deepReviewThresholdByType,
+      ),
+      // A1 «лестница доверия» — провизорный порог / AI-судья / аудит-выборка.
+      provisionalThreshold:
+        typeof obj.provisionalThreshold === 'number' &&
+        Number.isFinite(obj.provisionalThreshold) &&
+        obj.provisionalThreshold >= 0 &&
+        obj.provisionalThreshold <= 1
+          ? obj.provisionalThreshold
+          : def.provisionalThreshold,
+      provisionalThresholdByType: this.normalizeThresholdMap(
+        obj.provisionalThresholdByType,
+      ),
+      aiVerifierEnabled:
+        typeof obj.aiVerifierEnabled === 'boolean'
+          ? obj.aiVerifierEnabled
+          : def.aiVerifierEnabled,
+      auditSampleRate:
+        typeof obj.auditSampleRate === 'number' &&
+        Number.isFinite(obj.auditSampleRate) &&
+        obj.auditSampleRate >= 0 &&
+        obj.auditSampleRate <= 1
+          ? obj.auditSampleRate
+          : def.auditSampleRate,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails.
+      autotuneEnabled:
+        typeof obj.autotuneEnabled === 'boolean'
+          ? obj.autotuneEnabled
+          : def.autotuneEnabled,
+      thresholdMin: this.parseUnit(obj.thresholdMin, DEFAULT_THRESHOLD_MIN),
+      thresholdMax: this.parseUnit(obj.thresholdMax, DEFAULT_THRESHOLD_MAX),
+      autotuneStep: this.parseUnit(obj.autotuneStep, DEFAULT_AUTOTUNE_STEP),
+      minDecisionsForAutotune:
+        typeof obj.minDecisionsForAutotune === 'number' &&
+        Number.isInteger(obj.minDecisionsForAutotune) &&
+        obj.minDecisionsForAutotune >= 1
+          ? obj.minDecisionsForAutotune
+          : DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE,
+      maxProvisionalOverride: this.parseUnit(
+        obj.maxProvisionalOverride,
+        DEFAULT_MAX_PROVISIONAL_OVERRIDE,
+      ),
     };
+  }
+
+  /** A2 — парс числа в [0..1] с fallback на дефолт (для guardrail-настроек). */
+  private parseUnit(raw: unknown, fallback: number): number {
+    return typeof raw === 'number' &&
+      Number.isFinite(raw) &&
+      raw >= 0 &&
+      raw <= 1
+      ? raw
+      : fallback;
+  }
+
+  /**
+   * A0 «лестница доверия» — валидация пер-типовой карты порогов.
+   * Принимает только записи `{ [resourceType: string]: number в [0..1] }`;
+   * всё прочее (не-объект, нечисловые/вне-диапазона значения) отбрасывается.
+   * Возвращает `{}` для отсутствующей/невалидной карты.
+   */
+  private normalizeThresholdMap(
+    raw: unknown,
+  ): Record<string, number> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      const type = key.trim();
+      if (
+        type.length >= 1 &&
+        type.length <= 80 &&
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value >= 0 &&
+        value <= 1
+      ) {
+        out[type] = value;
+      }
+    }
+    return out;
   }
 
   // ──────────────────────────── mappers ─────────────────────────

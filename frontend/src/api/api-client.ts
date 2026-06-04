@@ -27,6 +27,22 @@ type BackendErrorPayload = {
 
 const AUTH_EXPIRED_EVENT = 'auth:expired';
 
+/**
+ * Текущая Org пользователя — добавляется в `X-Org-Id` по умолчанию ко всем
+ * запросам. Нужна глобальным `SubscriptionGuard`/`EntitlementGuard` на бэке:
+ * они — global APP_GUARD и выполняются ДО controller-scoped `CookieAuthGuard`,
+ * поэтому tenant резолвят ТОЛЬКО из заголовка (req.user ещё не выставлен,
+ * single-org fallback недоступен). Без X-Org-Id мутирующие @RequireSubscription
+ * эндпоинты (создание/завершение встречи, регенерация отчёта и т.д.) падают с
+ * 403 tenant_required. Синхронизируется из auth-context (`setApiClientOrgId`).
+ * Явный per-call `X-Org-Id` (admin cross-org вызовы) имеет приоритет.
+ */
+let defaultOrgId: string | null = null;
+
+export function setApiClientOrgId(orgId: string | null): void {
+  defaultOrgId = orgId;
+}
+
 function emitAuthExpired(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
@@ -120,6 +136,14 @@ export class ApiClient {
       for (const [k, v] of Object.entries(opts.headers)) {
         headers[k] = v;
       }
+    }
+
+    // X-Org-Id по умолчанию (текущая Org). Явный per-call заголовок не перетираем.
+    const hasExplicitOrg = Object.keys(headers).some(
+      (k) => k.toLowerCase() === 'x-org-id',
+    );
+    if (!hasExplicitOrg && defaultOrgId) {
+      headers['X-Org-Id'] = defaultOrgId;
     }
 
     const init: RequestInit = {

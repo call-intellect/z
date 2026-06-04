@@ -202,27 +202,37 @@ export const CORE_DEFAULT_JOB_OPTIONS: JobsOptions = {
  */
 export interface RawEventJobData {
   rawEventId: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /** Payload для job'а `core.block-distill`. */
 export interface BlockDistillJobData {
   blockId: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /** Payload для job'а `core.block-linker`. */
 export interface BlockLinkerJobData {
   blockId: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /** Payload для job'а `core.entity-resolver`. */
 export interface EntityResolverJobData {
   entityId: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /** Payload для job'а `core.card-rollup-v2`. Дополнительно reason — для логов. */
 export interface CardRollupV2JobData {
   cardId: string;
   reason?: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /**
@@ -315,6 +325,8 @@ export interface SpecialistRoutingJobData {
   signalType: string;
   /** Имя специалиста, на которого диспатчем (для логов и для match jobName). */
   specialistName: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /**
@@ -333,6 +345,8 @@ export interface SprintHelperJobData {
   cycleId: string;
   tenantId: string;
   reason?: 'cron' | 'meeting_completed' | 'manual';
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /**
@@ -346,6 +360,8 @@ export interface RebuildKnowledgeProfileJobData {
   personId: string;
   tenantId: string;
   reason?: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /**
@@ -363,6 +379,8 @@ export interface ProbeEventJobData {
  */
 export interface IdeaClustererJobData {
   tenantId: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /**
@@ -374,6 +392,8 @@ export interface RebuildSkillProfileJobData {
   profileId: string;
   tenantId: string;
   reason?: string;
+  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
+  traceId?: string;
 }
 
 /**

@@ -9,6 +9,7 @@ import { Cron } from '@nestjs/schedule';
 import { type EntityLinkType, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -17,6 +18,7 @@ import {
   type SpecialistRoutingJobData,
 } from '../../core-queue/queues';
 import { RouterService } from '../../knowledge-core/services/router.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 /**
@@ -63,6 +65,9 @@ export class PersonalRelationBuilderWorker
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.PERSONAL_RELATION;
   private static readonly MIN_CONFIDENCE = 0.6;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -73,7 +78,10 @@ export class PersonalRelationBuilderWorker
   onModuleInit(): void {
     this.worker = new Worker<SpecialistRoutingJobData>(
       CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'operations.personal-relation', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

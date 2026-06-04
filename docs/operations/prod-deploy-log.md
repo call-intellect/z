@@ -60,27 +60,89 @@ docker compose run --rm --no-deps backend \
 
 ---
 
-### 🧠 2026-06-03 — DeepSeek response_format fix + унификация дешёвой модели (`deepseek-chat` → `deepseek-v4-flash`)
+### 🎥 2026-06-03 — Надёжность записи v2: per-track дорожки (reconcile) + фильтр участников по kind + faststart видео
 
-**Контекст.** Боевой прогон встречи 2026-06-03 показал деградацию всего AI-слоя: `deepseek.service.ts` слал DeepSeek неподдерживаемые форматы. Probe (`scripts/eval/probe-deepseek-formats.ts` с `PROBE_MODEL=deepseek-v4-flash`) + офиц. дока подтвердили: DeepSeek-V4 (даже flash) поддерживает только `response_format: json_object` (требует слово «json» в промпте) и `tools + tool_choice='auto'`; `json_schema` (strict и без) → `400 «This response_format type is unavailable now»`, forced/required tool_choice → `400 «Thinking mode does not support…»`. Фикс провайдер-уровневый: `json_schema` для любой модели DeepSeek → авто-конверт в tool-путь; `json_object` → гарантия слова «json». Чинит `chapters`/`tasks`/`meeting-extract-actions`/`block-ingest`/`meeting-report-fast`. Параллельно выводим легаси-модель `deepseek-chat` из эксплуатации (везде `deepseek-v4-flash`).
+План: [plans/tz/2026-06-03-meeting-recording-reliability.md](../../plans/tz/2026-06-03-meeting-recording-reliability.md). Поверх PR #17. **Схема БД НЕ меняется, скриптов нет.**
+
+**Что выкатывается:**
+- Фаза 1 (P0) — надёжные per-track аудиодорожки: догон на старте записи + cron `recording-track-reconcile` (`*/1`) + in-process lock идемпотентности + метрика `recording_track_egress_failed_total`.
+- Фаза 2 (P1) — `participant_joined` фильтрует по `ParticipantKind` (создаёт только `STANDARD`; egress/agent/sip — no-op), fallback на префикс `host:`/`guest:` если kind отсутствует.
+- Фаза 3 (P1) — `FaststartWorker` (очередь `recording.faststart`): `ffmpeg -movflags +faststart` для composite, **за флагом, дефолт OFF**.
 
 - **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
-- **Шаг 6 — Patch** — `patch-deepseek-chat-to-flash.ts` — все `LlmTaskRoute` с `deepseek/deepseek-chat` (любой tier + legacy `providers[]`) → `deepseek-v4-flash`. Идемпотентен, `editedByAdmin` не трогает, повторный прогон = 0 кандидатов. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: patch`, `args: ['--apply']`, `skipBootstrap: true`). Сначала dry-run:
-  ```bash
-  docker compose exec backend bun run scripts/patch-deepseek-chat-to-flash.ts            # dry-run
-  docker compose exec backend bun run scripts/patch-deepseek-chat-to-flash.ts --apply    # запись
-  ```
-  Либо через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
-- **Шаг 7 — Seed** — 14 сидов `seed-llm-task-routes-*.ts` обновлены (`deepseek-chat`→`deepseek-v4-flash`). Для уже-засеянного прода перепрогон **не обязателен** (патч Шага 6 покрывает существующие данные); правка сидов нужна, чтобы bootstrap чистого прода не вернул `deepseek-chat`.
-- **Шаг 11 — Docker rebuild** — **обязателен** (правка `deepseek.service.ts` — это код): `docker compose up -d --build backend`.
-- **Шаг 12 — Smoke** (после rebuild, на новой встрече или ретрае пайплайна):
-  - В логах backend по taskType `chapters`/`tasks`/`block-ingest`/`meeting-extract-actions`/`meeting-report-fast` больше нет `response_format не поддерживается` и `This response_format type is unavailable now` от DeepSeek.
-  - `meeting-report-fast` отдаёт отчёт через primary DeepSeek (а не fallback на MiniMax).
-  - `curl -s localhost:3000/metrics | grep -i deepseek_schema_to_tool` — счётчик авто-конверта json_schema→tool растёт (теперь и на flash).
-  - Идемпотентность: повторный `patch-deepseek-chat-to-flash.ts` (dry-run) → `updatedTier=0, updatedLegacy=0`.
+- **Шаг 1 — ENV** — **3 новых опциональных** (есть код-дефолты, можно не выставлять):
+  - `RECORDING_TRACK_RECONCILE_ENABLED` — kill-switch сверки дорожек. **Дефолт `true`** (P0-фикс активен сразу). `false` — только если сверка создаёт проблемы.
+  - `RECORDING_FASTSTART_ENABLED` — **дефолт `true`** (faststart включён сразу; операция идемпотентна и безопасна — `-c copy`, перезалив после `exit 0`). Kill-switch: `false`.
+  - `RECORDING_FASTSTART_MIN_BYTES` — **дефолт `52428800` (50 МиБ)**. Composite меньше порога не ремуксится (мелкий файл и так играет сразу). Поднять/опустить по вкусу.
+- **Шаг 11 — Docker rebuild** — **обязателен с пересборкой образа** (правки backend + **новый бинарь `ffmpeg` в Dockerfile**): `docker compose up -d --build backend`. ⚠ Образ должен пересобраться (не только рестарт) — иначе `recording.faststart` и `clip.render` упадут с `ENOENT ffmpeg`. Проверка: `docker compose exec backend ffmpeg -version` → версия печатается.
+- **Шаг 12 — Smoke**:
+  - cron сверки зарегистрирован: `docker compose logs backend | grep -E 'RecordingTrackReconcileCron|recording-track-reconcile'`.
+  - очередь faststart инициализирована: `docker compose logs backend | grep -E 'FaststartWorker запущен|recording.faststart'`.
+  - **дорожки (главное):** провести тест-встречу 3 говоривших + умышленный reconnect одного → в результате встречи 3 полные аудиодорожки (не 2), транскрипт со всеми тремя.
+  - участники: в отчёте «Участники» только реальные люди (без egress-фантомов), даже под записью.
+  - **faststart (работает сразу, проверка эффекта):** после записи встречи (>50 МБ composite) в логах `docker compose logs backend | grep 'faststart: composite переупакован'` → есть запись; видео на странице результата стартует за пару секунд, без «вечной крутилки». Опц. убедиться `ffprobe -v trace https://<presigned> 2>&1 | grep -E 'moov|mdat'` → `moov` ПЕРЕД `mdat`. Если нужно выключить — `RECORDING_FASTSTART_ENABLED=false`.
 
 ---
 
+### 🧹 2026-06-03 — Фикс egress-фантомов + Content-Type видео + списание MeetingsBalance
+
+Багфикс по итогам тестовой конференции (без изменения схемы БД).
+
+**Что выкатывается:**
+- `webhooks/livekit-events.handler.ts` — `participant_joined` игнорирует identity не `host:`/`guest:` (egress-рекордеры больше не плодят фантомных гостей «Participant»).
+- `recordings/s3.service.ts` + `recordings.service.ts` — presign композита форсит `ResponseContentType=video/mp4` + `inline` (S3 отдавал mp4 как `octet-stream`, видео не игралось в плеере).
+- `meetings-balance/meetings-balance.service.ts` — `consume` переведён с битого `$executeRaw UPDATE meetings_balance` (таблица не существовала — `relation does not exist`, баланс не списывался) на типизированный `prisma.meetingsBalance.updateMany`. **Без миграции схемы.**
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 1 — ENV** — новых ENV нет.
+- **Шаг 6 — Patch** — 1 новый, идемпотентный, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true`): `scripts/patch-cleanup-egress-phantom-participants.ts` — удаляет уже накопленных фантомных Participant'ов (identity не `host:`/`guest:`) + их `MeetingParticipantBehavior`. Прогон: сначала `--dry-run`, затем без флага, либо через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (правки backend): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - провести тест-встречу хост+гость → в отчёте «Участники» ровно 2 строки, `participantsCount=2` в behavior-metrics (без «Participant»-фантомов).
+  - на странице результата видео проигрывается в плеере; запрос к `composite.mp4` в Network отдаёт `Content-Type: video/mp4`.
+  - создание встречи залогиненным юзером с балансом списывает 1 встречу: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.meetingsBalance.findMany({take:3,orderBy:{updatedAt:'desc'}}).then(r=>{console.log(r);return p.\$disconnect();});"` — `totalConsumed` растёт, ошибки `relation \"meetings_balance\" does not exist` пропали из логов.
+
+---
+
+### 🪵 2026-06-03 — Логирование: процессные контуры (pipeline) + сквозной traceId + мост Nest Logger → БД
+
+План: [plans/tz/2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md). Модуль `backend/src/modules/logging`.
+
+**Что выкатывается:**
+- Новый enum `SystemLogPipeline` + поле `SystemLog.pipeline?` + 2 индекса (`[pipeline, createdAt]`, `[traceId, createdAt]`).
+- Мост `DbLoggerBridge` (`app.useLogger` в `main.ts`): все `this.logger.*` по бэкенду/воркерам дублируются в `SystemLog`.
+- HTTP-логирование (REQUEST) **отключено** — `RequestLoggingInterceptor` снят из `LoggingModule` (ошибки запросов пишет `AllExceptionsFilter`).
+- Инструментованы 48 воркеров + livekit-вебхуки (`pipeline`/`traceId`); админка — фильтр контура, вид «Цепочка» (`GET /platform/logs/chain?traceId=`), русские лейблы enum'ов.
+- **Live-стрим по WebSocket** `LogStreamGateway` (Socket.IO namespace `/ws/platform-logs`, только super_admin) — заменяет поллинг в `/admin/logs` (тумблер «● Live»). Схему БД не меняет.
+
+- **Шаг 4 — Prisma** — **обязательно** (аддитивно, без data-loss: nullable-поле `pipeline` + новый enum + 2 индекса): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер.
+- **Шаг 1 — ENV** — новых ENV нет (все `LOG_DB_*` уже существуют и опциональны). После выката HTTP-логи перестанут писаться — это ожидаемо (D3).
+- **Шаг 11 — Docker rebuild** — обязателен (правки `main.ts` + воркеров + фронт `/admin/logs`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - мост работает: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.systemLog.count({where:{pipeline:{not:null}}}).then(n=>{console.log('logs with pipeline:',n);return p.\$disconnect();});"` — после прохода встречи > 0.
+  - вид «Цепочка»: `/admin/logs` (super_admin) → у записи встречи кликнуть `traceId` (`mtg_<id>`) → Drawer «Цепочка» показывает webhook → транскрипцию → AI → KC одной лентой.
+  - REQUEST-логов больше нет: фильтр «Категория = REQUEST» за свежий период пуст.
+  - WS live: на `/admin/logs` включить «● Live» → индикатор зелёный (`connected`), новые логи появляются сверху без обновления страницы. За nginx убедиться, что `/ws/platform-logs` проксируется с `Upgrade`/`Connection` заголовками (как для существующих `/ws/*`).
+
+---
+
+### 🪜 2026-06-03 — Action Center Часть A: Лестница доверия (пер-типовые пороги + AI-судья + autotune)
+
+План: [plans/tz/2026-06-02-action-center-pending-confirmations.md](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть A). Модуль `backend/src/modules/curation`.
+
+**Что выкатывается:**
+- A0 — триаж курации сравнивает калиброванную уверенность с пер-типовыми порогами `autoThresholdByType`/`deepReviewThresholdByType` (`Org.curationSettings`, fallback на глобальные); read-model `getOverrideStats` + `GET /api/v1/curation/override-stats` (owner/admin).
+- A1 — `CardVersion.trustTier` (enum `TrustTier {auto|provisional|human}`); критические типы (`regulation`/`process`/`decision`) в провизорной полосе проходят AI-судью `curation-verify` (3 голоса) → провизорная канонизация без человека либо deep review. Аудит-выборка 5%. Новые taskType `debate-curation-verify-*`.
+- A2 — `CurationAutotuneCron` (`@Cron('0 3 * * *')`): kill-switch (всегда активен) + автоподстройка порогов (opt-in `autotuneEnabled`).
+
+- **Шаг 4 — Prisma** — **обязательно** (новый enum `TrustTier` + поле `CardVersion.trustTier @default(human)` + `@@index([tenantId, trustTier])`; безопасно — defaulted, без data-loss): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер (`prisma db push --accept-data-loss`).
+- **Шаг 7 — Seed** — маршруты AI-судьи (идемпотентно, уже в агрегаторе `apply-prod-deploy.ts`, phase `seed-llm-routes`): `docker compose exec backend bun run scripts/seed-llm-task-routes-curation.ts` (cheap-цепочка `deepseek-v4-flash`→`gpt-5.4-mini`→`qwen3.5:9b`, без anthropic). Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Опционально — без сидера работает code-fallback chain.
+- **Шаг 11 — Docker rebuild** — обязателен (новый cron + curation-сервисы): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - новый REST: `curl -i -H 'Cookie:<owner_session>' -H 'X-Org-Id:<orgId>' https://prod.host/api/v1/curation/override-stats` → 200 (доля override per resourceType).
+  - новый cron зарегистрирован: `docker compose logs backend | grep -E 'CurationAutotuneCron'`.
+  - новые LLM taskType: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.llmTaskRoute.count({where:{taskType:{startsWith:'debate-curation-verify-'}}}).then(n=>{console.log('curation-verify routes:',n);return p.\$disconnect();});"`.
+- **Заметка (долг):** опц. будущий backfill `CardVersion.trustTier` (existing → `auto` при `createdByUserId IS NULL`) — пока отложен, дефолт `human` безопасен.
 ### 🎯 2026-06-02 — Goals OKR v2 (Граф целей): специалист 3-14 + авто-прогресс + пульс + дерево
 
 **Контекст.** Достройка модуля `goals` до «графа целей» (Цель → измеримые Key Results): авто-добыча из встреч (специалист `3-14-goals`), авто-прогресс KR (cron), еженедельный пульс (cron + доставка), дерево + мост к гипотезам. Принцип M0 — ручной контроль первичен, авто не перетирает `manualOverride`-поля. Изменения схемы **аддитивны** (только новые модели/поля/enum/FK). ТЗ — `plans/tz/2026-06-02-goals-okr-v2.md`.
@@ -1655,6 +1717,13 @@ docker compose exec backend bun run scripts/patch-prompt-role-profile-build-fase
 docker compose exec backend bun run scripts/patch-chat-v2-to-pro.ts
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
+
+# 6.12 — Восстановить fallback-цепочку meeting-report-fast (2026-06-03)
+# Нормализованный primary (deepseek-v4-pro) затенял legacy 3-провайдерную
+# цепочку → single-provider timeout без fallback. Дописывает secondary
+# (openai-via-proxy/gpt-5.4-mini) + tertiary (ollama/qwen3.5:9b). Идемпотентен.
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts --dry-run
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts
 
 # 6.10 — Первичная миграция грантов CloneAccessGrant (2026-05-26, коммит 87fef5d)
 # ОБЯЗАТЕЛЬНО ДО переключения CLONE_V2_ENABLED=true (см. Шаг 1).

@@ -1,6 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { SystemLogCategory } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { LogService } from '../../logging/log.service';
 
 import {
   type VoxPollOptions,
@@ -8,6 +10,11 @@ import {
   VoxError,
   type VoxSubmitOptions,
 } from './vox.types';
+
+/** Превью текста для DB-логов — обрезаем, чтобы не раздувать payload. */
+function textPreview(text: string, max = 2000): string {
+  return text.length > max ? `${text.slice(0, max)}…[+${text.length - max}]` : text;
+}
 
 const NETWORK_RETRY_DELAYS_MS = [3000, 8000, 15000];
 const DEFAULT_POLL_INTERVAL_MS = 2000;
@@ -28,7 +35,33 @@ const DEFAULT_POLL_MAX_ATTEMPTS = 60;
 export class VoxService {
   private readonly logger = new Logger(VoxService.name);
 
-  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
+  constructor(
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // DB-логи (система логов в БД). Optional — чтобы unit-тесты могли строить
+    // VoxService без LoggingModule (`new VoxService(cfg)`). В рантайме всегда
+    // резолвится (LoggingModule @Global). Логи наследуют traceId/pipeline из
+    // ALS-контекста воркера (ai.transcribe → pipeline TRANSCRIPTION).
+    @Optional() @Inject(LogService) private readonly logs?: LogService,
+  ) {}
+
+  /** Best-effort запись в DB-лог под модулем `vox`. */
+  private dbLog(
+    level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
+    action: string,
+    message: string,
+    details?: unknown,
+    error?: unknown,
+  ): void {
+    this.logs?.write({
+      level,
+      category: SystemLogCategory.JOB,
+      module: 'vox',
+      action,
+      message,
+      ...(details !== undefined ? { details } : {}),
+      ...(error !== undefined ? { error } : {}),
+    });
+  }
 
   // ─────────────────────────── submit ──────────────────────────────────────
 
@@ -78,6 +111,15 @@ export class VoxService {
           throw new VoxError('Vox submit: пустой taskId в ответе');
         }
         this.logger.debug({ taskId: json.taskId }, 'Vox submit OK — задача принята');
+        this.dbLog('INFO', 'vox.submit', `vox: задача принята (${json.taskId})`, {
+          taskId: json.taskId,
+          audioSizeBytes: audio.byteLength,
+          model,
+          language,
+          punctuationMode,
+          diarizationEnabled,
+          attempt: attempt + 1,
+        });
         return { taskId: json.taskId };
       } catch (err) {
         lastError = err;
@@ -87,9 +129,17 @@ export class VoxService {
         this.logger.warn(
           `Vox submit attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : String(err)}; retry in ${delay} ms`,
         );
+        this.dbLog(
+          'WARN',
+          'vox.submit.retry',
+          `vox submit: попытка ${attempt + 1} не удалась, ретрай через ${delay}мс`,
+          { attempt: attempt + 1, delayMs: delay },
+          err,
+        );
         await sleep(delay);
       }
     }
+    this.dbLog('ERROR', 'vox.submit.failed', 'vox submit: устойчиво недоступен', undefined, lastError);
     throw new VoxError(
       `Vox submit устойчиво недоступен: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
       lastError,
@@ -134,11 +184,47 @@ export class VoxService {
 
       const result = parseVoxResult(raw);
       this.logger.debug({ taskId, attempt: i + 1, status: result.status }, 'Vox poll: ответ');
+      // DEBUG-лог каждой попытки — виден в БД при minLevel=DEBUG (детальная отладка ASR).
+      this.dbLog('DEBUG', 'vox.poll', `vox poll: попытка ${i + 1}, статус=${result.status}`, {
+        taskId,
+        attempt: i + 1,
+        status: result.status,
+      });
       if (result.status === 'COMPLETED') {
+        const wordsCount = result.words?.length ?? 0;
+        const textLength = result.transcriptText.length;
         this.logger.debug(
-          { taskId, wordsCount: result.words?.length ?? 0, durationSeconds: result.durationSeconds },
+          { taskId, wordsCount, durationSeconds: result.durationSeconds },
           'Vox poll COMPLETED',
         );
+        // Результат транскрипции в DB-логи (видно текст, слова, длительность).
+        this.dbLog(
+          'INFO',
+          'vox.completed',
+          `vox: транскрипция готова — ${wordsCount} слов, ${textLength} символов, ${result.durationSeconds}с`,
+          {
+            taskId,
+            wordsCount,
+            textLength,
+            durationSeconds: result.durationSeconds,
+            transcriptPreview: textPreview(result.transcriptText),
+          },
+        );
+        // Guard: COMPLETED, но пусто. Диагностируем — тишина/битое аудио ИЛИ
+        // mismatch ключей ответа Vox (логируем сырые ключи payload'а).
+        if (wordsCount === 0 && textLength === 0) {
+          this.dbLog(
+            'WARN',
+            'vox.empty',
+            'vox: COMPLETED, но транскрипт ПУСТОЙ (нет слов и текста)',
+            {
+              taskId,
+              durationSeconds: result.durationSeconds,
+              rawKeys: raw && typeof raw === 'object' ? Object.keys(raw as object) : [],
+              rawPreview: textPreview(JSON.stringify(raw ?? null), 1500),
+            },
+          );
+        }
         return {
           status: 'COMPLETED',
           transcriptText: result.transcriptText,
@@ -147,12 +233,21 @@ export class VoxService {
         };
       }
       if (result.status === 'FAILED') {
+        this.dbLog('ERROR', 'vox.failed', `vox: задача FAILED — ${result.errorMessage ?? '(без сообщения)'}`, {
+          taskId,
+          errorMessage: result.errorMessage ?? null,
+        });
         throw new VoxError(
           `Vox FAILED: ${result.errorMessage ?? '(без сообщения)'}`,
         );
       }
       // Иначе — статус «в процессе» (PROCESSING/PENDING/...) — ждём дальше.
     }
+    this.dbLog('ERROR', 'vox.timeout', `vox poll: таймаут (${maxAttempts}×${intervalMs}мс)`, {
+      taskId,
+      maxAttempts,
+      intervalMs,
+    });
     throw new VoxError(`Vox poll timeout: ${maxAttempts} попыток × ${intervalMs} ms`);
   }
 }
@@ -186,13 +281,21 @@ function parseVoxResult(raw: unknown): {
 } {
   const obj = (raw ?? {}) as Record<string, unknown>;
   const status = typeof obj.status === 'string' ? obj.status.toUpperCase() : '';
+  // Vox может отдавать текст под разными ключами / вложенно в `result`.
+  // Покрываем известные варианты, иначе молча получаем пустой транскрипт.
+  const nested = (obj.result ?? obj.data ?? {}) as Record<string, unknown>;
   const transcriptText =
-    typeof obj.transcriptText === 'string'
-      ? obj.transcriptText
-      : typeof obj.transcript_text === 'string'
-        ? obj.transcript_text
-        : '';
-  const durationRaw = obj.durationSeconds ?? obj.duration_seconds ?? 0;
+    firstString(
+      obj.transcriptText,
+      obj.transcript_text,
+      obj.text,
+      obj.transcription,
+      nested.transcriptText,
+      nested.transcript_text,
+      nested.text,
+    ) ?? '';
+  const durationRaw =
+    obj.durationSeconds ?? obj.duration_seconds ?? nested.durationSeconds ?? nested.duration_seconds ?? 0;
   const durationSeconds =
     typeof durationRaw === 'number'
       ? durationRaw
@@ -206,7 +309,11 @@ function parseVoxResult(raw: unknown): {
         ? obj.error_message
         : undefined;
 
-  const wordsRaw = (obj.words ?? obj.wordsTimestamps ?? []) as unknown[];
+  const wordsRaw = (obj.words ??
+    obj.wordsTimestamps ??
+    nested.words ??
+    nested.wordsTimestamps ??
+    []) as unknown[];
   const words = Array.isArray(wordsRaw)
     ? wordsRaw
         .map((w): { word: string; startMs: number; endMs: number } | null => {
@@ -233,6 +340,14 @@ function parseVoxResult(raw: unknown): {
     ...(words && words.length > 0 ? { words } : {}),
     ...(errorMessage !== undefined ? { errorMessage } : {}),
   };
+}
+
+/** Первое непустое строковое значение из переданных кандидатов. */
+function firstString(...vals: unknown[]): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return undefined;
 }
 
 function numericMs(v: unknown): number | null {

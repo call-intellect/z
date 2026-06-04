@@ -259,15 +259,31 @@ export const personsDomainApi = {
       { headers: orgHeaders(orgId) },
     ),
 
+  // Бэкенд-контракт: { name, email, primaryDepartmentId, roleId } (CreatePersonSchema).
+  // UI-модель использует fullName/departmentId — мапим имена полей здесь.
   create: (orgId: string, body: CreatePersonRequest) =>
-    apiClient.post<{ person: PersonDomainApi }>('/api/v1/persons', body, {
-      headers: orgHeaders(orgId),
-    }),
+    apiClient.post<{ person: PersonDomainApi }>(
+      '/api/v1/persons',
+      {
+        name: body.fullName,
+        email: body.email,
+        primaryDepartmentId: body.departmentId ?? null,
+        roleId: body.roleId ?? null,
+      },
+      { headers: orgHeaders(orgId) },
+    ),
 
   update: (orgId: string, id: string, body: UpdatePersonRequest) =>
     apiClient.patch<{ person: PersonDomainApi }>(
       `/api/v1/persons/${encodeURIComponent(id)}`,
-      body,
+      {
+        ...(body.fullName !== undefined ? { name: body.fullName } : {}),
+        ...(body.email !== undefined ? { email: body.email } : {}),
+        ...(body.departmentId !== undefined
+          ? { primaryDepartmentId: body.departmentId }
+          : {}),
+        ...(body.roleId !== undefined ? { roleId: body.roleId } : {}),
+      },
       { headers: orgHeaders(orgId) },
     ),
 

@@ -41,15 +41,29 @@ export class S3Service implements OnModuleDestroy {
   /**
    * Возвращает presigned URL для скачивания (`GetObject`).
    * `ttlSeconds` по умолчанию — `cfg.s3.presignedTtlSeconds`.
+   *
+   * `responseContentType` / `responseContentDisposition` перекрывают
+   * заголовки в ответе S3 (через `response-content-*` query-параметры) вне
+   * зависимости от того, с каким Content-Type объект был залит. Нужно для
+   * inline-просмотра видео: egress-загрузка композита нередко проставляет
+   * `binary/octet-stream`, из-за чего браузер/Vidstack отказывается проигрывать
+   * mp4. Принудительный `video/mp4` + `inline` это лечит.
    */
   async presignGet(
     key: string,
     ttlSeconds?: number,
+    opts?: { responseContentType?: string; responseContentDisposition?: string },
   ): Promise<{ url: string; expiresAt: Date }> {
     const expiresIn = ttlSeconds ?? this.cfg.s3.presignedTtlSeconds;
     const command = new GetObjectCommand({
       Bucket: this.cfg.s3.bucket,
       Key: key,
+      ...(opts?.responseContentType
+        ? { ResponseContentType: opts.responseContentType }
+        : {}),
+      ...(opts?.responseContentDisposition
+        ? { ResponseContentDisposition: opts.responseContentDisposition }
+        : {}),
     });
     const url = await getSignedUrl(this.client, command, { expiresIn });
     const expiresAt = new Date(Date.now() + expiresIn * 1000);

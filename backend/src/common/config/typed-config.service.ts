@@ -1404,6 +1404,34 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────── recording reliability ─────────────────
+  /**
+   * Надёжность записи (ТЗ 2026-06-03 meeting-recording-reliability):
+   *   - trackReconcileEnabled — периодическая сверка per-track дорожек (P0, ON).
+   *   - faststartEnabled      — faststart-постобработка composite MP4 (P1, ON).
+   *   - faststartMinBytes     — порог: ниже него composite не ремуксится (мелкий
+   *     файл и так играет мгновенно). Дефолт 50 МиБ.
+   */
+  get recording() {
+    return {
+      trackReconcileEnabled: this.resolveSync<boolean>(
+        'recording.trackReconcileEnabled',
+        'RECORDING_TRACK_RECONCILE_ENABLED',
+        true,
+      ),
+      faststartEnabled: this.resolveSync<boolean>(
+        'recording.faststartEnabled',
+        'RECORDING_FASTSTART_ENABLED',
+        true,
+      ),
+      faststartMinBytes: this.resolveSync<number>(
+        'recording.faststartMinBytes',
+        'RECORDING_FASTSTART_MIN_BYTES',
+        52_428_800,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── quotas ────────────────────────────
   get quotas() {
     return {

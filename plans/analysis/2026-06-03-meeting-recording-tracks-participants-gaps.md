@@ -14,24 +14,31 @@
 
 ---
 
-## 1. «6 участников вместо 3» — баг НАШЕЙ генерации identity (не LiveKit)
+## 1. «6 участников вместо 3» — корень: egress-рекордеры как фантомы-участники (+ вторичный баг identity)
 
-### Подтверждённый механизм
-LiveKit **сохраняет `identity` при reconnect** — при обеих формах (resume и full reconnection). Клиент переиспользует тот же токен на всю сессию; *«Expiration time only impacts the initial connection, and not subsequent reconnects»*. Identity **уникален в комнате**: при коллизии LiveKit выкидывает старую сессию (`DUPLICATE_IDENTITY`). Вывод: **если бы identity был стабилен, дубли были бы физически невозможны.** Значит на каждый заход выдавался НОВЫЙ identity.
+> **Коррекция (2026-06-03):** первоначальная гипотеза этого анализа («нестабильный guest identity при reconnect») оказалась НЕ основным корнем. Более прямую причину нашёл программист (PR #17, коммит `371f9895`), и она доказуемо точнее — reconnect-теория не подтверждается арифметикой. Identity-баг реален, но это **вторичный** фактор (см. ниже).
 
-### Где в коде
+### Подтверждённый primary-корень — egress-рекордеры заходят в комнату как участники
+**Egress-рекордеры LiveKit подключаются к комнате как участники.** Room Composite Egress и каждый per-track egress заходят (headless-recorder) с `ParticipantKind = EGRESS` и identity вида `EG_...` без имени. Обработчик [`onParticipantJoined`](../../backend/src/modules/webhooks/livekit-events.handler.ts#L171) создавал на них fallback-`Participant` (`name='Participant'`, `role='guest'`).
+
+**Арифметика сходится точно:** 3 реальных + composite egress (1) + track egress host (1) + track egress guest (1) = **ровно 6**. Вся «шестёрка» = 3 человека + 3 egress-рекордера; reconnect-дубли для этой встречи не требуются для объяснения.
+
+**Уже исправлено в PR #17:** `onParticipantJoined` игнорирует identity без префикса `host:`/`guest:` + one-off `patch-cleanup-egress-phantom-participants.ts` (чистка накопленных). См. ТЗ — там это **усилено** (фильтр по `ParticipantKind`, а не по строковому префиксу).
+
+### Вторичный фактор (P2) — нестабильный guest identity при reload/reconnect
+LiveKit **сохраняет `identity` при reconnect** (resume и full reconnection): клиент переиспользует тот же токен на всю сессию (*«Expiration time only impacts the initial connection, and not subsequent reconnects»*), а identity уникален в комнате (коллизия → `DUPLICATE_IDENTITY`). Значит дубли возникают, только если на новый заход выдаётся НОВЫЙ identity — это и есть наш баг, но он даёт лишь дополнительные строки при перезаходе реального гостя, не объясняет основную «шестёрку».
+
+Где в коде:
 - [participants.service.ts:197](../../backend/src/modules/participants/participants.service.ts#L197): `const guestId = nanoid(); livekitIdentity = ` + "`guest:${guestId}`" + ` — новый случайный при каждом проходе ветки создания гостя.
-- Cookie-reuse МЕХАНИЗМ есть: [participants.service.ts:154-183](../../backend/src/modules/participants/participants.service.ts#L154) переиспользует identity из подписанной куки `guest_session_<meetingId>` (TTL 24ч). НО он **хрупок и не срабатывает на практике**:
-- **Корень хрупкости:** [meetings.service.ts:476-487](../../backend/src/modules/meetings/meetings.service.ts#L476) `getAccess` определяет роль **только по `userId`**; для анонимного гостя всегда `role: 'none'`, куку не читает. → при reload страницы фронт ([MeetingPageShell.tsx](../../frontend/app/(public)/m/[id]/MeetingPageShell.tsx)) ведёт гостя через форму имени заново. При любом сбое доставки куки (другой поддомен/`cookieDomain`, приватный режим, очистка, истечение) → новый `nanoid` → новая строка Participant.
-- `onParticipantJoined` ([livekit-events.handler.ts:171](../../backend/src/modules/webhooks/livekit-events.handler.ts#L171)) матчит по `meetingId+livekitIdentity` — новый identity = новая строка.
-
-**Итог:** 3 человека + повторные заходы/reload (особенно участник без видео, переподключавшийся) = 6 строк. Это **наш** баг, не LiveKit. Усугубляется тем, что webhook'и LiveKit неполны/переупорядочены (livekit#4227, #1130) — строить записи участников только на `participant_joined` нельзя.
+- Cookie-reuse МЕХАНИЗМ есть ([participants.service.ts:154-183](../../backend/src/modules/participants/participants.service.ts#L154), подписанная кука `guest_session_<meetingId>`, TTL 24ч), но **хрупок**: [meetings.service.ts:476-487](../../backend/src/modules/meetings/meetings.service.ts#L476) `getAccess` определяет роль **только по `userId`**; для анонимного гостя всегда `role: 'none'`, куку не читает → при reload фронт ([MeetingPageShell.tsx](../../frontend/app/(public)/m/[id]/MeetingPageShell.tsx)) ведёт гостя через форму имени заново. Любой сбой доставки куки (другой поддомен/`cookieDomain`, приватный режим, очистка, истечение) → новый `nanoid` → новая строка Participant.
+- `onParticipantJoined` ([livekit-events.handler.ts:171](../../backend/src/modules/webhooks/livekit-events.handler.ts#L171)) матчит по `meetingId+livekitIdentity` — новый identity = новая строка. Усугубляется тем, что webhook'и LiveKit неполны/переупорядочены (livekit#4227, #1130) — строить записи участников только на `participant_joined` нельзя.
 
 ### Фикс (реализация в ТЗ)
-1. `getAccess` ([meetings.service.ts:476](../../backend/src/modules/meetings/meetings.service.ts#L476)) — читать куку `guest_session_<meetingId>`, для валидной возвращать `role: 'guest'` (+ identity), чтобы фронт авто-джойнил, а не показывал форму имени. Прокинуть куку из контроллера.
-2. Стабилизировать guest identity по бизнес-ключу `meetingId + guestId` (guestId генерится ОДИН раз на первом входе, сохраняется в cookie/localStorage, переиспользуется). Best practice LiveKit: identity задаёт клиент, переиспользуя сохранённое значение.
-3. TTL гостевого токена ≥ длительности встречи (уже 4ч дефолт / до endedAt+5мин — приемлемо).
-4. Подстраховка для накопленных дублей: дедупликация/схлопывание участников по имени+интервалу в UI и для AI.
+1. **Primary (сделано, усилить):** фильтровать egress-участников по `ParticipantKind = EGRESS` в `onParticipantJoined` (вместо строкового префикса) + чистка накопленных фантомов patch-скриптом.
+2. `getAccess` ([meetings.service.ts:476](../../backend/src/modules/meetings/meetings.service.ts#L476)) — читать куку `guest_session_<meetingId>`, для валидной возвращать `role: 'guest'` (+ identity), чтобы фронт авто-джойнил, а не показывал форму имени. Прокинуть куку из контроллера.
+3. Стабилизировать guest identity по бизнес-ключу `meetingId + guestId` (guestId генерится ОДИН раз на первом входе, сохраняется в cookie/localStorage, переиспользуется). Best practice LiveKit: identity задаёт клиент, переиспользуя сохранённое значение. Заодно стабилизирует привязку per-track дорожек (AutoTrackEgress матчит по identity).
+4. TTL гостевого токена ≥ длительности встречи (уже 4ч дефолт / до endedAt+5мин — приемлемо).
+5. Подстраховка для накопленных дублей: дедупликация/схлопывание участников по имени+интервалу в UI и для AI.
 
 ---
 
@@ -98,15 +105,16 @@ DevTools → Network на `composite.mp4`: `Content-Type` (video/mp4?), `Accept-
 ## Системный вывод
 
 Это **одна проблема надёжности записи**, не три:
-- Нестабильный guest identity (§1) множит участников И ломает привязку дорожек (AutoTrackEgress matchit по identity).
+- «6 участников» (§1): primary — egress-рекордеры как фантомы-участники (исправлено PR #17); вторично — нестабильный guest identity, который ещё и ломает привязку дорожек (AutoTrackEgress матчит по identity).
 - Реактивная модель egress (§2) теряет per-track дорожки → неполный транскрипт и AI-отчёт.
 - Видео (§3) — независимый трек про доставку больших файлов, критичный для длинных встреч.
 
-Правильная архитектура по LiveKit: **декларативный Auto Egress при createRoom + стабильный identity + faststart/HLS**, вместо реактивной webhook-модели.
+Правильная архитектура по LiveKit: **фильтр egress-участников по `ParticipantKind` + декларативный Auto Egress при createRoom + стабильный identity + faststart/HLS**, вместо реактивной webhook-модели.
 
 ## План реализации (ТЗ, по приоритету)
+- [x] **P0** Фильтр egress-фантомов в `onParticipantJoined` + чистка накопленных (PR #17; усилить до `ParticipantKind`). → чинит «6 участников».
 - [ ] **P0** Auto Egress (AutoTrackEgress) при createRoom + догон listParticipants + ретрай. → чинит дорожки/транскрипт.
-- [ ] **P0** Стабильный guest identity (getAccess читает куку + identity по meetingId+guestId). → чинит участников и привязку дорожек.
+- [ ] **P0** Стабильный guest identity (getAccess читает куку + identity по meetingId+guestId). → чинит вторичные дубли участников и привязку дорожек.
 - [ ] **P1** Faststart-постобработка MP4 + `ResponseContentType: video/mp4`. → чинит видео.
 - [ ] **P2** HLS SegmentedFileOutput для длинных встреч.
 - [ ] (опц.) backfill merged.json для старых встреч.

@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { RedisService } from '../../../common/redis/redis.service';
 import {
   CORE_QUEUE_NAMES,
   type RoleProfileJobData,
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { RoleProfileService } from '../../role-profiles/services/role-profile.service';
 
 const WORKER_NAME = 'role-profile';
@@ -38,6 +40,9 @@ export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoleProfileWorker.name);
   private worker: Worker<RoleProfileJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(RoleProfileService)
@@ -48,7 +53,10 @@ export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<RoleProfileJobData>(
       CORE_QUEUE_NAMES.ROLE_PROFILE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.role-profile', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

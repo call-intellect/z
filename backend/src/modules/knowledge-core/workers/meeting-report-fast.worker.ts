@@ -39,6 +39,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -63,6 +64,7 @@ import {
   CORE_QUEUE_NAMES,
   type MeetingReportFastJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 
 /** Максимум ретраев перед поднятием exception (как в meeting-analyze-v2). */
 const MAX_LLM_RETRIES = 2;
@@ -71,6 +73,9 @@ const MAX_LLM_RETRIES = 2;
 export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MeetingReportFastWorker.name);
   private worker: Worker<MeetingReportFastJobData> | null = null;
+
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
 
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
@@ -84,7 +89,10 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<MeetingReportFastJobData>(
       CORE_QUEUE_NAMES.MEETING_REPORT_FAST,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'kc.meeting-report-fast', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

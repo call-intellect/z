@@ -36,7 +36,6 @@ import {
   Post,
   Query,
   UseGuards,
-  UsePipes,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -115,9 +114,8 @@ export class ReferralsController {
       'Создать партнёрский профиль. Достаточно contractAccepted=true (реквизиты — позже).',
   })
   @ApiOkResponse({ type: ReferralViewDto })
-  @UsePipes(new ZodValidationPipe(CreateReferralBodySchema))
   async create(
-    @Body() body: CreateReferralBody,
+    @Body(new ZodValidationPipe(CreateReferralBodySchema)) body: CreateReferralBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<ReferralViewBody> {
     const ref = await this.referrals.create({
@@ -136,9 +134,8 @@ export class ReferralsController {
   @Patch('me')
   @ApiOperation({ summary: 'Обновить inn / legalForm / payoutDetails.' })
   @ApiOkResponse({ type: ReferralViewDto })
-  @UsePipes(new ZodValidationPipe(UpdateReferralBodySchema))
   async update(
-    @Body() body: UpdateReferralBody,
+    @Body(new ZodValidationPipe(UpdateReferralBodySchema)) body: UpdateReferralBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<ReferralViewBody> {
     const ref = await this.referrals.update(user.id, {
@@ -262,13 +259,14 @@ export class ReferralsController {
   @Post('me/promo-event')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @UsePipes(new ZodValidationPipe(PromoEventBodySchema))
   @ApiOperation({
     summary:
       'Трекинг промо-полосы рефералки (impression / click / dismissed). 204 без тела.',
   })
   @ApiNoContentResponse({ description: 'Метрика инкрементирована.' })
-  trackPromoEvent(@Body() body: PromoEventBody): void {
+  trackPromoEvent(
+    @Body(new ZodValidationPipe(PromoEventBodySchema)) body: PromoEventBody,
+  ): void {
     switch (body.type) {
       case 'impression':
         this.metrics.incReferralPromoImpression({ role: body.role });

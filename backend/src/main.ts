@@ -11,6 +11,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { TypedConfigService } from './common/config/index';
 import { GlobalZodValidationPipe } from './common/pipes/zod-validation.pipe';
+import { DbLoggerBridge } from './modules/logging/db-logger.bridge';
 
 async function bootstrap(): Promise<void> {
   // bodyParser: false — собственный JSON-парсер с `verify`, который сохраняет
@@ -18,7 +19,13 @@ async function bootstrap(): Promise<void> {
   // для верификации LiveKit-вебхуков). Парсинг `req.body` остаётся прежним.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
+    // Буферизуем bootstrap-логи и заменяем логгер на мост Nest Logger → БД ниже.
+    bufferLogs: true,
   });
+
+  // Мост технического логирования: все `this.logger.*` по приложению (включая
+  // воркеры/кроны) дублируются в БД (SystemLog). См. db-logger.bridge.ts.
+  app.useLogger(app.get(DbLoggerBridge));
 
   // Tochka шлёт webhook JWT-строкой (Content-Type: application/jose / text/plain
   // / application/x-www-form-urlencoded). Подключаем express.text() ТОЛЬКО для

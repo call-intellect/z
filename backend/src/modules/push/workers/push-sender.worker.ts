@@ -7,11 +7,13 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { RedisService } from '../../../common/redis/redis.service';
 import {
   CORE_QUEUE_NAMES,
   type PushSendJobData,
 } from '../../core-queue/queues';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { WebPushSender } from '../services/web-push-sender.service';
 
 /**
@@ -36,6 +38,9 @@ export class PushSenderWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PushSenderWorker.name);
   private worker: Worker<PushSendJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(WebPushSender) private readonly sender: WebPushSender,
@@ -44,7 +49,10 @@ export class PushSenderWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<PushSendJobData>(
       CORE_QUEUE_NAMES.PUSH_SEND,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.NOTIFICATIONS, 'push.sender', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 5,

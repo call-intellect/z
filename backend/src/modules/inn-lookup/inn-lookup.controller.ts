@@ -16,7 +16,6 @@ import {
   Inject,
   Post,
   UseGuards,
-  UsePipes,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -56,7 +55,6 @@ export class InnLookupController {
   @Post('inn-lookup')
   @UseGuards(CookieAuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @UsePipes(new ZodValidationPipe(InnLookupBodySchema))
   @ApiOperation({
     summary: 'Лукап реквизитов компании по ИНН.',
     description:
@@ -64,7 +62,9 @@ export class InnLookupController {
       'tochka_then_dadata). Кэш 30 дней. При не-найдено → 404.',
   })
   @ApiOkResponse({ type: InnLookupResultDto })
-  async lookup(@Body() body: InnLookupBody): Promise<InnLookupResultBody> {
+  async lookup(
+    @Body(new ZodValidationPipe(InnLookupBodySchema)) body: InnLookupBody,
+  ): Promise<InnLookupResultBody> {
     return this.service.lookup(body.inn);
   }
 
@@ -75,13 +75,12 @@ export class InnLookupController {
   @Post('admin/inn-lookup/invalidate')
   @UseGuards(CookieAuthGuard, SuperAdminGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @UsePipes(new ZodValidationPipe(InnInvalidateBodySchema))
   @ApiOperation({
     summary: 'Инвалидировать кэш лукапа для одного ИНН (super_admin).',
   })
   @ApiOkResponse({ type: InnInvalidateResultDto })
   async invalidate(
-    @Body() body: InnInvalidateBody,
+    @Body(new ZodValidationPipe(InnInvalidateBodySchema)) body: InnInvalidateBody,
   ): Promise<InnInvalidateResultBody> {
     const deleted = await this.service.invalidate(body.inn);
     return { deleted };

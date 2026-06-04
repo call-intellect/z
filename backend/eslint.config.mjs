@@ -94,6 +94,19 @@ export default tseslint.config(
           message:
             'Прямой Cypher запрещён вне common/graph/. Используй GraphService.',
         },
+        {
+          // Запрет `@UsePipes(new ZodValidationPipe(...))` на уровне метода/класса.
+          //
+          // Method-scoped `@UsePipes(pipe)` прогоняет пайп через ВСЕ параметры
+          // хендлера, а ZodValidationPipe слепо делает `schema.safeParse(value)`.
+          // Объектная схема падает на строковом `@Param`/`@CurrentUser`/`@Ip` →
+          // 400 ещё до бизнес-логики (баг активации подписки, 2026-06-03).
+          // Канон — пайп на уровне параметра: `@Body(new ZodValidationPipe(schema))`.
+          selector:
+            "Decorator[expression.callee.name='UsePipes'][expression.arguments.0.callee.name='ZodValidationPipe']",
+          message:
+            '@UsePipes(new ZodValidationPipe(...)) валидирует ВСЕ параметры метода (включая @Param/@CurrentUser) и даёт ложный 400. Используй пайп на уровне параметра: @Body(new ZodValidationPipe(schema)).',
+        },
       ],
     },
   },

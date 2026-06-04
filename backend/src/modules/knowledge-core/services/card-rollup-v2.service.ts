@@ -93,8 +93,8 @@ export interface CardRollupV2Result {
   personSubjectIds: string[];
   /** SBA α-6: уверенность rollup'а [0..1]. */
   confidence: number;
-  /** SBA α-6: решение triage. */
-  triageDecision: 'auto' | 'light' | 'deep' | 'skipped';
+  /** SBA α-6: решение triage. A1 — 'provisional' (AI-судья) для критических типов. */
+  triageDecision: 'auto' | 'provisional' | 'light' | 'deep' | 'skipped';
   /** SBA α-6: была ли карточка фактически обновлена в этом вызове. */
   applied: boolean;
   /** SBA α-6: id созданной CardVersion (если auto). */

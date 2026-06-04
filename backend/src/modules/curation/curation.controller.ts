@@ -130,6 +130,19 @@ export class CurationController {
     });
   }
 
+  // ──────────────────────────── override stats (A0) ──────────────────
+
+  @Get('curation/override-stats')
+  @ApiOperation({ summary: 'Override-rate по resourceType (для автоподстройки порогов)' })
+  async getOverrideStats(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ) {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t, 'curation_item');
+    return this.curation.getOverrideStats({ tenantId: t });
+  }
+
   // ──────────────────────────── conflicts ────────────────────────────
 
   @Get('curation/conflicts')

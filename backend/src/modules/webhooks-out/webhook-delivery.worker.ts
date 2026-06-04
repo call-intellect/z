@@ -8,9 +8,11 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 import { EncryptionService } from '../security/encryption.service';
 import { SsrfGuardService } from '../security/ssrf-guard.service';
 
@@ -47,6 +49,9 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhookDeliveryWorker.name);
   private worker: Worker<WebhookDeliveryJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(SubscriptionsRepository) private readonly repo: SubscriptionsRepository,
@@ -63,7 +68,10 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<WebhookDeliveryJobData>(
       WEBHOOK_DELIVERY_QUEUE,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'webhooks-out.delivery', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 5,

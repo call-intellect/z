@@ -13,10 +13,12 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { S3Service } from '../../recordings/s3.service';
 import { type ClipRenderJobData, QUEUE_NAMES } from '../queues';
 
@@ -44,6 +46,9 @@ export class ClipRenderWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ClipRenderWorker.name);
   private worker: Worker<ClipRenderJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -57,7 +62,10 @@ export class ClipRenderWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<ClipRenderJobData>(
       QUEUE_NAMES.CLIP_RENDER,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.AI_ANALYSIS, 'ai.clip-render', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 1,

@@ -24,6 +24,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private recordingsBytesTotal!: Counter<string>;
   private recordingsDeletedTotal!: Counter<'reason'>;
   private recordingsFailedTotal!: Counter<'reason'>;
+  private recordingTrackEgressFailedTotal!: Counter<'reason'>;
 
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
@@ -335,6 +336,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationAutoCanonicalTotal!: Counter<'resource_type'>;
   private curationConflictsTotal!: Counter<'relation_type' | 'resolution'>;
   private curationStaleDetectedTotal!: Counter<'resource_type'>;
+  // ── Action Center A1 «лестница доверия» (2026-06-02) ──
+  private curationProvisionalTotal!: Counter<'resource_type'>;
+  private curationAuditSampleTotal!: Counter<'resource_type'>;
+  private curationVerifierVerdictTotal!: Counter<'decision' | 'consensus_type'>;
+  // ── Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch ──
+  private curationKillSwitchTotal!: Counter<'resource_type'>;
+  private curationAutotuneAdjustmentTotal!: Counter<'resource_type' | 'direction'>;
   // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker ──
   // Cardinality-safe: tenant НЕ выносим в label (паттерн остальных curation/probe-метрик).
   // Top-100 tenant-агрегации делает Grafana / Prometheus recording rule поверх БД.
@@ -935,6 +943,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.recordingsFailedTotal = this.getOrCreateCounter({
       name: 'recordings_failed_total',
       help: 'Сколько Egress-задач упало (по причине: timeout/s3-error/livekit-error/...).',
+      labelNames: ['reason'] as const,
+    });
+
+    this.recordingTrackEgressFailedTotal = this.getOrCreateCounter({
+      name: 'recording_track_egress_failed_total',
+      help: 'Сколько стартов per-track audio egress упало (дорожка не собралась). Алерт при росте = потеря дорожек/деградация транскрипта.',
       labelNames: ['reason'] as const,
     });
 
@@ -1756,6 +1770,33 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_stale_detected_total',
       help: 'SBA α-4 — CardStaleDetectorCron: сколько карточек помечено кандидатами на stale (resource_type).',
       labelNames: ['resource_type'] as const,
+    });
+    // ── Action Center A1 «лестница доверия» (2026-06-02) ──
+    this.curationProvisionalTotal = this.getOrCreateCounter({
+      name: 'curation_provisional_total',
+      help: 'A1 — критические карточки, провизорно канонизированные AI-судьёй (trustTier=provisional, минуя человека), по resource_type.',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationAuditSampleTotal = this.getOrCreateCounter({
+      name: 'curation_audit_sample_total',
+      help: 'A1 — авто/провизорные решения, попавшие в аудит-выборку (создан лёгкий аудит-CurationItem), по resource_type.',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationVerifierVerdictTotal = this.getOrCreateCounter({
+      name: 'curation_verifier_verdict_total',
+      help: 'A1 — вердикты AI-судьи canonical-verify (decision ∈ accept|reject|split_uncertain|unavailable × consensus_type).',
+      labelNames: ['decision', 'consensus_type'] as const,
+    });
+    // ── Action Center A2 «лестница доверия» (2026-06-02) ──
+    this.curationKillSwitchTotal = this.getOrCreateCounter({
+      name: 'curation_kill_switch_total',
+      help: 'A2 — срабатывание kill-switch: провизорный путь для типа отключён (provisionalThresholdByType=1.01) из-за высокого процента ошибок аудита, по resource_type.',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationAutotuneAdjustmentTotal = this.getOrCreateCounter({
+      name: 'curation_autotune_adjustment_total',
+      help: 'A2 — авто-подстройка autoThresholdByType по override-rate (resource_type × direction ∈ up|down).',
+      labelNames: ['resource_type', 'direction'] as const,
     });
 
     // ── curation wave 2 (SBA α-4 wave 2) — CompletenessSlot + ConsistencyChecker
@@ -3208,6 +3249,15 @@ export class BusinessMetricsService implements OnModuleInit {
     this.recordingsFailedTotal.inc({ reason });
   }
 
+  /**
+   * Провал старта per-track audio egress (дорожка спикера не собралась).
+   * ТЗ 2026-06-03 meeting-recording-reliability §117 — мониторинг egress-ёмкости:
+   * рост этой метрики = дорожки теряются (даже с reconcile-бэкстопом), нужен алерт.
+   */
+  incTrackEgressStartFailed(args: { reason: string }): void {
+    this.recordingTrackEgressFailedTotal.inc({ reason: args.reason });
+  }
+
   /** Алиас под имя из ТЗ Фазы 4 (`incRecordingsFailed({reason})`). */
   incRecordingsFailed(args: { reason: string }): void {
     this.recordingsFailedTotal.inc({ reason: args.reason });
@@ -4414,6 +4464,27 @@ export class BusinessMetricsService implements OnModuleInit {
     this.curationAutoCanonicalTotal.inc({ resource_type: args.resourceType });
   }
 
+  /** A1 — провизорная AI-канонизация критического типа (trustTier=provisional). */
+  incCurationProvisional(args: { resourceType: string }): void {
+    this.curationProvisionalTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A1 — авто/провизорное решение попало в аудит-выборку. */
+  incCurationAuditSample(args: { resourceType: string }): void {
+    this.curationAuditSampleTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A1 — вердикт AI-судьи canonical-verify (decision × consensus_type). */
+  incCurationVerifierVerdict(args: {
+    decision: string;
+    consensusType: string;
+  }): void {
+    this.curationVerifierVerdictTotal.inc({
+      decision: args.decision,
+      consensus_type: args.consensusType,
+    });
+  }
+
   /**
    * Конфликты — создание (resolution='created') или резолюция
    * (resolution='accept_new'|'keep_old'|'merge'|'evolving'|'dismissed').
@@ -4428,6 +4499,22 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Карточка-кандидат на stale (probe владельцу). */
   incCurationStale(args: { resourceType: string }): void {
     this.curationStaleDetectedTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A2 — сработал kill-switch (провизорный путь для типа отключён). */
+  incCurationKillSwitch(args: { resourceType: string }): void {
+    this.curationKillSwitchTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** A2 — авто-подстройка autoThresholdByType (direction ∈ 'up' | 'down'). */
+  incCurationAutotuneAdjustment(args: {
+    resourceType: string;
+    direction: 'up' | 'down';
+  }): void {
+    this.curationAutotuneAdjustmentTotal.inc({
+      resource_type: args.resourceType,
+      direction: args.direction,
+    });
   }
 
   // ────────────────────── curation wave 2 (SBA α-4 wave 2) ────────────

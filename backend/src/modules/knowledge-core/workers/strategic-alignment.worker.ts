@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -23,6 +24,7 @@ import {
   type StrategicAlignmentJobData,
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
   buildGoalAlignmentMessages,
   GOAL_ALIGNMENT_JSON_SCHEMA,
@@ -65,6 +67,9 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StrategicAlignmentWorker.name);
   private worker: Worker<StrategicAlignmentJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -90,7 +95,10 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<StrategicAlignmentJobData>(
       CORE_QUEUE_NAMES.STRATEGIC_ALIGNMENT,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.strategic-alignment', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

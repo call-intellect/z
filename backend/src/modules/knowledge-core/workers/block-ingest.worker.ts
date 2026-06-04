@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../../common/config/index';
 import { GraphService } from '../../../common/graph/graph.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -24,6 +25,7 @@ import {
   type RawEventJobData,
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { S3Service } from '../../recordings/s3.service';
 import {
   ENTITY_TYPE_VALUES,
@@ -95,6 +97,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockIngestWorker.name);
   private worker: Worker<RawEventJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -121,7 +126,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<RawEventJobData>(
       CORE_QUEUE_NAMES.RAW_EVENTS,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.block-ingest', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 2,

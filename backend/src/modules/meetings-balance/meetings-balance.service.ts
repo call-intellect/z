@@ -146,8 +146,16 @@ export class MeetingsBalanceService {
   }
 
   /**
-   * Списать `amount` встреч. Атомарно через `executeRaw UPDATE ... WHERE
-   * balance >= amount`. При недостатке — `ForbiddenException`.
+   * Списать `amount` встреч. Атомарно: один `UPDATE ... WHERE balance >= amount`
+   * (Prisma `updateMany` с условием — ровно такой SQL). При недостатке —
+   * `ForbiddenException`.
+   *
+   * Раньше тут был `$executeRaw UPDATE meetings_balance`, но модель
+   * `MeetingsBalance` не имеет `@@map`, поэтому реальная таблица называется
+   * `MeetingsBalance` (camelCase) — raw-запрос падал с
+   * `relation "meetings_balance" does not exist`, и баланс НИКОГДА не списывался
+   * (ошибка глоталась fail-open в caller'е). Переход на типизированный Prisma —
+   * как в `grant` — лечит это без миграции схемы.
    *
    * fail-open: если БД упала с не-Prisma-known ошибкой — пробрасываем
    * как есть (NestJS отдаст 500). Это сознательно: ForbiddenException
@@ -155,15 +163,13 @@ export class MeetingsBalanceService {
    */
   async consume(tenantId: string, amount = 1): Promise<void> {
     if (amount <= 0) return;
-    // tenant_id хранится как TEXT (Org.id — cuid, не uuid) — без каста.
-    const affected = await this.prisma.$executeRaw`
-      UPDATE meetings_balance
-         SET balance = balance - ${amount},
-             total_consumed = total_consumed + ${amount},
-             updated_at = NOW()
-       WHERE tenant_id = ${tenantId}
-         AND balance >= ${amount}
-    `;
+    const { count: affected } = await this.prisma.meetingsBalance.updateMany({
+      where: { tenantId, balance: { gte: amount } },
+      data: {
+        balance: { decrement: amount },
+        totalConsumed: { increment: amount },
+      },
+    });
     if (affected === 0) {
       this.logger.warn(
         `MeetingsBalance.consume: недостаточно баланса для org=${tenantId} (нужно ${amount})`,

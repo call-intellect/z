@@ -1,31 +1,53 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { Mail, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  IdCard,
+  Mail,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
 import useSWR from 'swr';
+import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
 import {
   departmentsApi,
   personsDomainApi,
   rolesDomainApi,
-  type DepartmentApi,
+  teamRosterApi,
   type PersonDomainApi,
-  type RoleDomainApi,
+  type TeamRosterItemApi,
 } from '@/api/structure.api';
-import { toast } from 'sonner';
+import { orgsApi } from '@/api/orgs.api';
+import {
+  mapOrgInvitationCreateResultDtoToDomain,
+  type OrgInvitationCreateResultDomain,
+} from '@/domain/org-invitations';
+import { useAuth } from '@/contexts/auth-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/ui/shadcn/dropdown-menu';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
+import { InviteEmployeeDialog } from '@/ui/components/team/InviteEmployeeDialog';
+import { InviteCreatedDialog } from '@/ui/components/team/InviteCreatedDialog';
+import {
+  PersonEditDialog,
+  RemovePersonDialog,
+} from '@/ui/components/team/PersonDialogs';
 import {
   Select,
   SelectContent,
@@ -43,7 +65,7 @@ import {
 const ALL_VALUE = '__all__';
 const NO_VALUE = '__none__';
 
-const INVITATION_LABELS: Record<PersonDomainApi['invitationStatus'], string> = {
+const INVITATION_LABELS: Record<TeamRosterItemApi['invitationStatus'], string> = {
   none: 'не приглашён',
   pending: 'приглашение отправлено',
   accepted: 'активен',
@@ -51,13 +73,44 @@ const INVITATION_LABELS: Record<PersonDomainApi['invitationStatus'], string> = {
   expired: 'приглашение истекло',
 };
 
+const SYSTEM_ROLE_LABELS: Record<
+  NonNullable<TeamRosterItemApi['systemRole']>,
+  string
+> = {
+  owner: 'Владелец',
+  admin: 'Администратор',
+  manager: 'Менеджер',
+  coo: 'Операционный директор',
+  hr_partner: 'HR-партнёр',
+  demo_observer: 'Наблюдатель',
+};
+
+/**
+ * Маппинг строки ростера в PersonDomainApi для диалогов редактирования/
+ * удаления (работают только для строк с карточкой, personId !== null).
+ */
+function rosterToPerson(r: TeamRosterItemApi, orgId: string): PersonDomainApi {
+  return {
+    id: r.personId ?? '',
+    orgId,
+    fullName: r.fullName,
+    email: r.email,
+    roleId: r.roleId,
+    roleName: r.roleName,
+    departmentId: r.departmentId,
+    departmentName: r.departmentName,
+    userId: r.userId,
+    invitationStatus: r.invitationStatus,
+    createdAt: '',
+  };
+}
+
 type DialogState =
   | { kind: 'none' }
   | { kind: 'create' }
+  | { kind: 'createCard'; member: TeamRosterItemApi }
   | { kind: 'edit'; person: PersonDomainApi }
   | { kind: 'remove'; person: PersonDomainApi };
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function PersonsTab({
   orgId,
@@ -66,10 +119,16 @@ export function PersonsTab({
   orgId: string;
   canEdit: boolean;
 }) {
+  const { user } = useAuth();
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
   const [deptFilter, setDeptFilter] = useState<string>(ALL_VALUE);
   const [roleFilter, setRoleFilter] = useState<string>(ALL_VALUE);
   const [statusFilter, setStatusFilter] = useState<string>(ALL_VALUE);
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [createdInvite, setCreatedInvite] =
+    useState<OrgInvitationCreateResultDomain | null>(null);
+  const [createdDialogOpen, setCreatedDialogOpen] = useState(false);
 
   const deptsSwr = useSWR(['persons-departments', orgId], () =>
     departmentsApi.list(orgId),
@@ -77,20 +136,9 @@ export function PersonsTab({
   const rolesSwr = useSWR(['persons-roles', orgId], () =>
     rolesDomainApi.list(orgId),
   );
-  const personsSwr = useSWR(
-    ['structure-persons', orgId, deptFilter, roleFilter, statusFilter],
-    () =>
-      personsDomainApi.list(orgId, {
-        ...(deptFilter !== ALL_VALUE && deptFilter !== NO_VALUE
-          ? { departmentId: deptFilter }
-          : {}),
-        ...(roleFilter !== ALL_VALUE && roleFilter !== NO_VALUE
-          ? { roleId: roleFilter }
-          : {}),
-        ...(statusFilter !== ALL_VALUE
-          ? { invitationStatus: statusFilter as PersonDomainApi['invitationStatus'] }
-          : {}),
-      }),
+  const rosterSwr = useSWR(
+    ['team-roster', orgId],
+    () => teamRosterApi.list(orgId),
     { revalidateOnFocus: false },
   );
 
@@ -98,19 +146,134 @@ export function PersonsTab({
   const roles = rolesSwr.data?.items ?? [];
 
   const items = useMemo(() => {
-    let list = personsSwr.data?.items ?? [];
+    let list = rosterSwr.data?.roster ?? [];
     if (deptFilter === NO_VALUE) list = list.filter((p) => !p.departmentId);
+    else if (deptFilter !== ALL_VALUE)
+      list = list.filter((p) => p.departmentId === deptFilter);
     if (roleFilter === NO_VALUE) list = list.filter((p) => !p.roleId);
+    else if (roleFilter !== ALL_VALUE)
+      list = list.filter((p) => p.roleId === roleFilter);
+    if (statusFilter !== ALL_VALUE)
+      list = list.filter((p) => p.invitationStatus === statusFilter);
     return list;
-  }, [personsSwr.data, deptFilter, roleFilter]);
+  }, [rosterSwr.data, deptFilter, roleFilter, statusFilter]);
 
-  const error = personsSwr.error;
+  const currentUserIsOwner = useMemo(
+    () =>
+      (rosterSwr.data?.roster ?? []).some(
+        (r) => r.userId === user?.id && r.systemRole === 'owner',
+      ),
+    [rosterSwr.data, user?.id],
+  );
+
+  const refresh = () => void rosterSwr.mutate();
+
+  const handleInvitePerson = async (personId: string) => {
+    try {
+      await personsDomainApi.invite(orgId, personId);
+      toast.success('Приглашение отправлено.');
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось пригласить.');
+    }
+  };
+
+  const handleChangeRole = async (
+    targetUserId: string,
+    role: 'owner' | 'admin' | 'manager',
+  ) => {
+    try {
+      await orgsApi.updateMember(orgId, targetUserId, { role });
+      toast.success('Системная роль обновлена.');
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось изменить роль.');
+    }
+  };
+
+  const handleRemoveMember = async (targetUserId: string) => {
+    const ok = await ask({
+      title: 'Удалить участника из компании?',
+      description:
+        'Аккаунт потеряет доступ к компании. Карточка сотрудника (если есть) сохранится.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await orgsApi.removeMember(orgId, targetUserId);
+      toast.success('Участник удалён из компании.');
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
+    }
+  };
+
+  const handleResetTelegram = async (targetUserId: string, name: string) => {
+    const ok = await ask({
+      title: 'Сбросить привязку Telegram?',
+      description: `${name} потеряет доступ к боту до повторного подключения.`,
+      confirmLabel: 'Сбросить',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await orgsApi.resetMemberTelegramBinding(orgId, targetUserId);
+      toast.success(
+        res.removed > 0
+          ? `Привязка Telegram сброшена (удалено: ${res.removed}).`
+          : 'Активных привязок Telegram не было.',
+      );
+      refresh();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : 'Не удалось сбросить привязку.',
+      );
+    }
+  };
+
+  const handleResend = async (invitationId: string) => {
+    try {
+      const res = await orgsApi.resendInvitation(orgId, invitationId);
+      const created = mapOrgInvitationCreateResultDtoToDomain(res.invitation);
+      setCreatedInvite(created);
+      setCreatedDialogOpen(true);
+      toast.success('Приглашение перевыпущено — обновите ссылку у сотрудника.');
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось перевыпустить.');
+    }
+  };
+
+  const handleRevoke = async (invitationId: string) => {
+    const ok = await ask({
+      title: 'Отозвать приглашение?',
+      confirmLabel: 'Отозвать',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await orgsApi.revokeInvitation(orgId, invitationId);
+      toast.success('Приглашение отозвано.');
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось отозвать.');
+    }
+  };
+
+  const handleInviteCreated = (created: OrgInvitationCreateResultDomain) => {
+    setCreatedInvite(created);
+    setCreatedDialogOpen(true);
+    refresh();
+  };
+
+  const error = rosterSwr.error;
   if (error) {
     if (error instanceof ApiError && error.code === 'http_404') {
       return (
         <AdminEmpty
           title="Раздел в разработке"
-          description="API сотрудников ещё не подключён к backend."
+          description="API команды ещё не подключён к backend."
         />
       );
     }
@@ -118,14 +281,14 @@ export function PersonsTab({
       return (
         <AdminEmpty
           title="Недостаточно прав"
-          description="Запрос списка сотрудников отклонён сервером."
+          description="Запрос списка команды отклонён сервером."
         />
       );
     }
     return (
       <AdminError
         message={error instanceof Error ? error.message : 'Ошибка загрузки'}
-        onRetry={() => void personsSwr.mutate()}
+        onRetry={() => void rosterSwr.mutate()}
       />
     );
   }
@@ -177,19 +340,30 @@ export function PersonsTab({
           </Select>
         </div>
         {canEdit && (
-          <Button size="sm" onClick={() => setDialog({ kind: 'create' })}>
-            <Plus size={14} className="mr-1" /> Добавить сотрудника
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setInviteDialogOpen(true)}
+            >
+              <UserPlus size={14} className="mr-1" /> Пригласить
+            </Button>
+            <Button size="sm" onClick={() => setDialog({ kind: 'create' })}>
+              <Plus size={14} className="mr-1" /> Добавить сотрудника
+            </Button>
+          </div>
         )}
       </div>
 
-      {personsSwr.isLoading ? (
+      {rosterSwr.isLoading ? (
         <AdminLoading rows={6} />
       ) : items.length === 0 ? (
         <AdminEmpty
-          title="Сотрудников не найдено"
+          title="Никого не найдено"
           description={
-            canEdit ? 'Добавьте первого сотрудника кнопкой выше.' : 'Список пуст.'
+            canEdit
+              ? 'Добавьте первого сотрудника кнопкой выше.'
+              : 'Список пуст.'
           }
         />
       ) : (
@@ -202,14 +376,32 @@ export function PersonsTab({
                 <th className="px-4 py-2 text-left">Должность</th>
                 <th className="px-4 py-2 text-left">Отдел</th>
                 <th className="px-4 py-2 text-left">Статус</th>
-                {canEdit && <th className="w-32 px-4 py-2" />}
+                <th className="px-4 py-2 text-left">Системная роль</th>
+                {canEdit && <th className="w-40 px-4 py-2" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
               {items.map((p) => (
-                <tr key={p.id} className="hover:bg-bg-overlay/30">
+                <tr
+                  key={p.personId ?? `member-${p.userId}`}
+                  className="hover:bg-bg-overlay/30"
+                >
                   <td className="px-4 py-2 font-medium text-fg-primary">
-                    {p.fullName}
+                    {p.hasPersonCard && p.personId ? (
+                      <Link
+                        href={`/structure/persons/${p.personId}`}
+                        className="hover:underline"
+                      >
+                        {p.fullName}
+                      </Link>
+                    ) : (
+                      p.fullName
+                    )}
+                    {!p.hasPersonCard && (
+                      <span className="ml-2 text-xs font-normal text-fg-tertiary">
+                        нет карточки сотрудника
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-fg-secondary">
                     {p.email ?? '—'}
@@ -223,51 +415,162 @@ export function PersonsTab({
                   <td className="px-4 py-2">
                     <InvitationBadge status={p.invitationStatus} />
                   </td>
+                  <td className="px-4 py-2 text-fg-secondary">
+                    {p.systemRole ? SYSTEM_ROLE_LABELS[p.systemRole] : '—'}
+                  </td>
                   {canEdit && (
                     <td className="px-4 py-2 text-right">
-                      <div className="flex justify-end gap-1">
-                        {p.invitationStatus !== 'accepted' && p.email && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
                           <Button
                             size="icon"
                             variant="ghost"
-                            aria-label="Пригласить"
-                            title="Пригласить"
-                            onClick={async () => {
-                              try {
-                                await personsDomainApi.invite(orgId, p.id);
-                                toast.success('Приглашение отправлено.');
-                                void personsSwr.mutate();
-                              } catch (e) {
-                                toast.error(e instanceof ApiError
-                                      ? e.message
-                                      : 'Не удалось пригласить.');
-                              }
-                            }}
+                            aria-label="Действия"
                           >
-                            <Mail size={14} />
+                            <MoreHorizontal size={16} />
                           </Button>
-                        )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Изменить"
-                          onClick={() =>
-                            setDialog({ kind: 'edit', person: p })
-                          }
-                        >
-                          <Pencil size={14} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Удалить"
-                          onClick={() =>
-                            setDialog({ kind: 'remove', person: p })
-                          }
-                        >
-                          <Trash2 size={14} className="text-danger" />
-                        </Button>
-                      </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          {p.hasPersonCard && p.personId ? (
+                            <>
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  setDialog({
+                                    kind: 'edit',
+                                    person: rosterToPerson(p, orgId),
+                                  })
+                                }
+                              >
+                                <Pencil size={14} className="mr-2" /> Редактировать карточку
+                              </DropdownMenuItem>
+                              {p.invitationStatus !== 'accepted' &&
+                                p.email &&
+                                !p.userId && (
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      void handleInvitePerson(p.personId as string)
+                                    }
+                                  >
+                                    <Mail size={14} className="mr-2" /> Пригласить
+                                  </DropdownMenuItem>
+                                )}
+                              {(p.invitationStatus === 'pending' ||
+                                p.invitationStatus === 'expired') &&
+                                p.invitationId && (
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      void handleResend(p.invitationId as string)
+                                    }
+                                  >
+                                    Перевыпустить приглашение
+                                  </DropdownMenuItem>
+                                )}
+                              {p.invitationStatus === 'pending' &&
+                                p.invitationId && (
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      void handleRevoke(p.invitationId as string)
+                                    }
+                                  >
+                                    Отозвать приглашение
+                                  </DropdownMenuItem>
+                                )}
+                            </>
+                          ) : (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                setDialog({ kind: 'createCard', member: p })
+                              }
+                            >
+                              <IdCard size={14} className="mr-2" /> Создать карточку
+                            </DropdownMenuItem>
+                          )}
+
+                          {p.userId &&
+                            p.userId !== user?.id &&
+                            p.systemRole && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuSub>
+                                  <DropdownMenuSubTrigger>
+                                    Системная роль
+                                  </DropdownMenuSubTrigger>
+                                  <DropdownMenuSubContent>
+                                    {currentUserIsOwner && (
+                                      <DropdownMenuItem
+                                        onSelect={() =>
+                                          void handleChangeRole(
+                                            p.userId as string,
+                                            'owner',
+                                          )
+                                        }
+                                      >
+                                        Владелец
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem
+                                      onSelect={() =>
+                                        void handleChangeRole(
+                                          p.userId as string,
+                                          'admin',
+                                        )
+                                      }
+                                    >
+                                      Администратор
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() =>
+                                        void handleChangeRole(
+                                          p.userId as string,
+                                          'manager',
+                                        )
+                                      }
+                                    >
+                                      Менеджер
+                                    </DropdownMenuItem>
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuSub>
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    void handleResetTelegram(
+                                      p.userId as string,
+                                      p.fullName,
+                                    )
+                                  }
+                                >
+                                  Сбросить Telegram
+                                </DropdownMenuItem>
+                                {p.systemRole !== 'owner' && (
+                                  <DropdownMenuItem
+                                    className="text-danger focus:text-danger"
+                                    onSelect={() =>
+                                      void handleRemoveMember(p.userId as string)
+                                    }
+                                  >
+                                    Удалить из компании
+                                  </DropdownMenuItem>
+                                )}
+                              </>
+                            )}
+
+                          {p.hasPersonCard && p.personId && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-danger focus:text-danger"
+                                onSelect={() =>
+                                  setDialog({
+                                    kind: 'remove',
+                                    person: rosterToPerson(p, orgId),
+                                  })
+                                }
+                              >
+                                <Trash2 size={14} className="mr-2" /> Удалить карточку
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   )}
                 </tr>
@@ -285,8 +588,26 @@ export function PersonsTab({
           onClose={() => setDialog({ kind: 'none' })}
           onDone={() => {
             setDialog({ kind: 'none' });
-            void personsSwr.mutate();
+            void rosterSwr.mutate();
             toast.success('Сотрудник добавлен.');
+          }}
+        />
+      )}
+      {dialog.kind === 'createCard' && (
+        <PersonEditDialog
+          orgId={orgId}
+          departments={departments}
+          roles={roles}
+          prefill={{
+            fullName: dialog.member.fullName,
+            email: dialog.member.email ?? undefined,
+            linkUserId: dialog.member.userId ?? undefined,
+          }}
+          onClose={() => setDialog({ kind: 'none' })}
+          onDone={() => {
+            setDialog({ kind: 'none' });
+            void rosterSwr.mutate();
+            toast.success('Карточка сотрудника создана.');
           }}
         />
       )}
@@ -299,7 +620,7 @@ export function PersonsTab({
           onClose={() => setDialog({ kind: 'none' })}
           onDone={() => {
             setDialog({ kind: 'none' });
-            void personsSwr.mutate();
+            void rosterSwr.mutate();
             toast.success('Сотрудник обновлён.');
           }}
         />
@@ -311,11 +632,27 @@ export function PersonsTab({
           onClose={() => setDialog({ kind: 'none' })}
           onDone={() => {
             setDialog({ kind: 'none' });
-            void personsSwr.mutate();
+            void rosterSwr.mutate();
             toast.success('Сотрудник удалён.');
           }}
         />
       )}
+
+      {confirmDialog}
+      <InviteEmployeeDialog
+        open={inviteDialogOpen}
+        orgId={orgId}
+        onOpenChange={setInviteDialogOpen}
+        onCreated={handleInviteCreated}
+      />
+      <InviteCreatedDialog
+        open={createdDialogOpen}
+        result={createdInvite}
+        onOpenChange={(next) => {
+          setCreatedDialogOpen(next);
+          if (!next) setCreatedInvite(null);
+        }}
+      />
     </div>
   );
 }
@@ -323,7 +660,7 @@ export function PersonsTab({
 function InvitationBadge({
   status,
 }: {
-  status: PersonDomainApi['invitationStatus'];
+  status: TeamRosterItemApi['invitationStatus'];
 }) {
   const variant: 'default' | 'secondary' | 'outline' =
     status === 'accepted' ? 'default' : 'secondary';
@@ -331,195 +668,5 @@ function InvitationBadge({
     <Badge variant={variant} className="text-[10px]">
       {INVITATION_LABELS[status]}
     </Badge>
-  );
-}
-
-function PersonEditDialog({
-  orgId,
-  person,
-  departments,
-  roles,
-  onClose,
-  onDone,
-}: {
-  orgId: string;
-  person?: PersonDomainApi;
-  departments: DepartmentApi[];
-  roles: RoleDomainApi[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [fullName, setFullName] = useState(person?.fullName ?? '');
-  const [email, setEmail] = useState(person?.email ?? '');
-  const [roleId, setRoleId] = useState<string | null>(person?.roleId ?? null);
-  const [departmentId, setDepartmentId] = useState<string | null>(
-    person?.departmentId ?? null,
-  );
-  const [busy, setBusy] = useState(false);
-  const isEdit = Boolean(person);
-
-  const emailOk = !email.trim() || EMAIL_RE.test(email.trim());
-  const canSubmit = fullName.trim().length > 0 && emailOk && !busy;
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit ? 'Изменить сотрудника' : 'Новый сотрудник'}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="p-name">Имя</Label>
-            <Input
-              id="p-name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="p-email">Email</Label>
-            <Input
-              id="p-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-invalid={!emailOk}
-            />
-            {!emailOk && (
-              <p className="text-xs text-danger">Некорректный email.</p>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5">
-              <Label>Должность</Label>
-              <Select
-                value={roleId ?? NO_VALUE}
-                onValueChange={(v) => setRoleId(v === NO_VALUE ? null : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Не задана" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_VALUE}>Без должности</SelectItem>
-                  {roles.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Отдел</Label>
-              <Select
-                value={departmentId ?? NO_VALUE}
-                onValueChange={(v) =>
-                  setDepartmentId(v === NO_VALUE ? null : v)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Не задан" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_VALUE}>Без отдела</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Отмена
-          </Button>
-          <Button
-            disabled={!canSubmit}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                if (person) {
-                  await personsDomainApi.update(orgId, person.id, {
-                    fullName: fullName.trim(),
-                    email: email.trim() || undefined,
-                    roleId,
-                    departmentId,
-                  });
-                } else {
-                  await personsDomainApi.create(orgId, {
-                    fullName: fullName.trim(),
-                    email: email.trim() || undefined,
-                    roleId,
-                    departmentId,
-                  });
-                }
-                onDone();
-              } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {isEdit ? 'Сохранить' : 'Создать'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function RemovePersonDialog({
-  orgId,
-  person,
-  onClose,
-  onDone,
-}: {
-  orgId: string;
-  person: PersonDomainApi;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Удалить сотрудника «{person.fullName}»?</DialogTitle>
-          <DialogDescription>
-            Связи с упоминаниями в IdeaBlock/Decision сохраняются — имя
-            останется видимым с пометкой «удалён».
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Отмена
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await personsDomainApi.remove(orgId, person.id);
-                onDone();
-              } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Удалить
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -1300,3 +1300,37 @@ AI-судьёй (`curation-verify` debate) без человека; `human` — 
 - `auditSampleRate` (default 0.05) — доля авто/провизорных решений, попадающих в аудит-выборку.
 - Autotune guardrails: `autotuneEnabled` (default false), `maxProvisionalOverride`, `thresholdMin`,
   `thresholdMax`, `autotuneStep`, `minDecisionsForAutotune` — для `CurationAutotuneCron`.
+
+## EmployeeCapabilityOverride — персональные доступы сотрудников (Фаза 5 «Команда+доступы», 2026-06-04)
+
+**Источник:** `plans/tz/2026-06-03-team-section-and-employee-access.md` (Фаза 5). Модуль
+`backend/src/modules/orgs` (`CapabilitiesService`). Профильные заметки — [[../01_projects/api-layer]],
+[[../01_projects/frontend-pages]].
+
+Персональный **override доступа** поверх дефолта роли/тарифа: владелец/админ Org может точечно
+выдать (`allow`) или забрать (`deny`) конкретную капабилити у участника, не меняя его системную роль и
+не трогая тариф. Эффективный доступ = дефолт роли/тарифа ± дельта override (override строго перекрывает
+дефолт). Подмножество управляемых капабилити: `memory:regulations`, `memory:entities`, `feature:graph`,
+`panel:operations`. `useMemoryAccess` учитывает override.
+
+```prisma
+model EmployeeCapabilityOverride {
+  id              String    @id @default(cuid())
+  tenantId        String                          // → Org
+  grantedToUserId String                          // → User (кому выдан override)
+  capability      String                          // memory:regulations | memory:entities | feature:graph | panel:operations
+  effect          String                          // 'allow' | 'deny' (дельта поверх дефолта роли/тарифа)
+  expiresAt       DateTime?                        // опц. срок действия (null = бессрочно)
+  grantedById     String                          // → User (кто выдал)
+  grantedAt       DateTime  @default(now())
+  revokedAt       DateTime?                        // soft-revoke (запись остаётся как audit)
+  revokedBy       String?                          // → User (кто отозвал)
+  @@unique([tenantId, grantedToUserId, capability])
+}
+```
+
+Уникальный ключ `[tenantId, grantedToUserId, capability]` — на одного пользователя в одной Org не
+более одного override на каждую капабилити. Применяется `prisma db push` (безопасное добавление таблицы,
+без потери данных) — деплой-шаг. Скриптов/seed нет.
+
+[[../index|← index]]

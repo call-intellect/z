@@ -6,6 +6,7 @@ import { ConversationalLinkCodeService } from '../conversational/link-code.servi
 import { MailModule } from '../mail/mail.module';
 import { TablesModule } from '../tables/tables.module';
 
+import { CapabilitiesService } from './capabilities.service';
 import { OrgInvitationRemindersCron } from './cron/org-invitation-reminders.cron';
 import { OrgInvitationsService } from './org-invitations.service';
 import {
@@ -41,7 +42,8 @@ import { OrgsService } from './orgs.service';
     OrgInvitationsService,
     ConversationalLinkCodeService,
     OrgInvitationRemindersCron,
+    CapabilitiesService,
   ],
-  exports: [OrgsService, OrgInvitationsService],
+  exports: [OrgsService, OrgInvitationsService, CapabilitiesService],
 })
 export class OrgsModule {}

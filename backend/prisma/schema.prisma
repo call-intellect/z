@@ -1039,6 +1039,11 @@ model User {
   /// ТЗ 2026-05-26 — обратная relation для soft-revoke (см. CloneAccessGrant.revokedBy).
   cloneAccessGrantsRevoked  CloneAccessGrant[] @relation("CloneAccessGrant_revokedBy")
 
+  // ── ТЗ «Команда + доступы» Фаза 5 — персональные override доступа ──
+  /// Override'ы доступа, выданные/полученные пользователем (дельта поверх роли/тарифа).
+  capabilityOverridesReceived EmployeeCapabilityOverride[] @relation("ECO_grantedTo")
+  capabilityOverridesGranted  EmployeeCapabilityOverride[] @relation("ECO_grantedBy")
+
   // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
   /// Реферальный профиль пользователя (один user → один Referral).
   /// См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9.
@@ -2421,6 +2426,10 @@ model Org {
   /// person/role-клону. Без CLONE_V2_ENABLED не используется (legacy RBAC).
   cloneAccessGrants CloneAccessGrant[]
 
+  // ── ТЗ «Команда + доступы» Фаза 5 — персональные override доступа ──
+  /// Дельты доступа (allow/deny) поверх дефолта роли/тарифа для сотрудников Org.
+  employeeCapabilityOverrides EmployeeCapabilityOverride[] @relation("OrgEmployeeCapabilityOverrides")
+
   // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
   /// Юр.реквизиты Org. Заполняются InnLookupService (Точка OpenBanking →
   /// DaData fallback) или вручную через `/api/v1/billing/billing-details`.
@@ -2612,6 +2621,29 @@ model OrgInvitation {
   @@index([email, status])
   @@index([expiresAt])
   @@index([personId])
+}
+
+/// ТЗ «Команда + доступы» Фаза 5 — персональный override доступа сотрудника
+/// поверх дефолта роли/тарифа. effect='allow' открывает, 'deny' закрывает.
+/// Только небиллинговые «что человек видит» оси (память/панели/граф/чат).
+model EmployeeCapabilityOverride {
+  id              String    @id @default(cuid())
+  tenantId        String
+  grantedToUserId String
+  capability      String
+  effect          String
+  expiresAt       DateTime?
+  grantedById     String
+  grantedAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  revokedBy       String?
+
+  org       Org  @relation("OrgEmployeeCapabilityOverrides", fields: [tenantId], references: [id], onDelete: Cascade)
+  grantedTo User @relation("ECO_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
+  grantedBy User @relation("ECO_grantedBy", fields: [grantedById], references: [id])
+
+  @@unique([tenantId, grantedToUserId, capability])
+  @@index([tenantId, grantedToUserId])
 }
 
 // ──────────────────────────── llm-prices (Фаза 0 knowledge-core) ────────────────────────────

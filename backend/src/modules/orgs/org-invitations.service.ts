@@ -108,6 +108,13 @@ export class OrgInvitationsService {
     /** Имя сотрудника — для шаблона письма и Person. Если не передано — берём localpart email'а. */
     name?: string | null;
     role: MembershipRole;
+    /**
+     * ТЗ «Команда + доступы» Фаза 0.1: бизнес-Person, для которого создаётся
+     * приглашение. Если задан — email/имя берём из карточки (когда не переданы
+     * явно), сохраняем personId в OrgInvitation (для accept-линковки) и
+     * дедупим повторные приглашения этому же сотруднику.
+     */
+    personId?: string | null;
   }): Promise<OrgInvitationCreateResult> {
     const ctx = await this.rbac.loadContext(input.actorUserId, input.orgId);
     if (!ctx || (ctx.role !== 'owner' && ctx.role !== 'admin' && !ctx.isSuperAdmin)) {
@@ -120,12 +127,59 @@ export class OrgInvitationsService {
       });
     }
 
+    // ТЗ «Команда + доступы» Фаза 0.1: приглашение по бизнес-Person. Если
+    // personId задан — валидируем карточку, берём из неё email/имя (когда не
+    // переданы явно) и дедупим повторные приглашения этому сотруднику.
+    let resolvedPerson: { email: string | null; name: string } | null = null;
+    if (input.personId) {
+      const person = await this.prisma.person.findUnique({
+        where: { id: input.personId },
+        select: {
+          tenantId: true,
+          deletedAt: true,
+          userId: true,
+          email: true,
+          name: true,
+        },
+      });
+      if (!person || person.tenantId !== input.orgId || person.deletedAt) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'person_not_found',
+            message: 'Сотрудник не найден в этой компании',
+          },
+        });
+      }
+      resolvedPerson = { email: person.email, name: person.name };
+
+      const existingByPerson = await this.prisma.orgInvitation.findFirst({
+        where: {
+          orgId: input.orgId,
+          personId: input.personId,
+          status: 'pending',
+        },
+      });
+      if (existingByPerson) {
+        throw new ConflictException({
+          ok: false,
+          error: {
+            code: 'invitation_already_exists',
+            message: 'Этому сотруднику уже отправлено активное приглашение',
+          },
+        });
+      }
+    }
+
+    const effectiveEmail = input.email ?? resolvedPerson?.email ?? null;
+    const effectiveName = input.name ?? resolvedPerson?.name ?? null;
+
     const normalizedEmail =
-      typeof input.email === 'string' && input.email.trim().length > 0
-        ? input.email.trim().toLowerCase()
+      typeof effectiveEmail === 'string' && effectiveEmail.trim().length > 0
+        ? effectiveEmail.trim().toLowerCase()
         : null;
     const displayName =
-      (input.name?.trim() ||
+      (effectiveName?.trim() ||
         (normalizedEmail ? normalizedEmail.split('@')[0] : null) ||
         'Сотрудник').slice(0, 120);
 
@@ -200,6 +254,7 @@ export class OrgInvitationsService {
         linkCode,
         magicTokenHash,
         tempPasswordHash,
+        personId: input.personId ?? null,
       },
       include: { org: { select: { name: true } }, inviter: { select: { name: true } } },
     });

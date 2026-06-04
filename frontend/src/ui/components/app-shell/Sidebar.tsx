@@ -49,6 +49,7 @@ import {
   Truck,
   User,
   UserRound,
+  Users,
   Workflow,
   KeyRound,
   type LucideIcon,
@@ -230,6 +231,12 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
 const DAILY_GROUP: NavGroup = {
   label: 'Каждый день',
   items: [
+    // ТЗ «Команда + доступы» Фаза 1 — единый раздел управления людьми
+    // (структура компании + участники). Виден всем; действия внутри гейтятся
+    // ролью. Переехал из свёрнутого «Справочника» наверх как daily-driver
+    // владельца. tourTarget welcome.structure перенесён сюда (был на /structure
+    // в «Справочнике»).
+    { href: '/structure', label: 'Команда', icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
     { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump', overviewTarget: 'overview.dump' },
@@ -324,7 +331,6 @@ const REFERENCE_GROUP: NavGroup = {
       defaultCollapsed: true,
       storageKey: 'sidebar.reference.open',
       items: [
-        { href: '/structure', label: 'Структура', icon: Network, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
         // SBA α-9 wave 3 — Company Foundation.
         { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company', tourTarget: 'welcome.company' },
         { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments', tourTarget: 'welcome.departments' },

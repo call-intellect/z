@@ -258,7 +258,7 @@
 
 ---
 
-## Ф10 — free_note: SegmentBuilder распознаёт `kind='free_note'` `[ ]`
+## Ф10 — free_note: SegmentBuilder распознаёт `kind='free_note'` `[x]`
 
 **Корень (баг #4, medium):** payload free_note = `{ kind:'free_note', userId, text, metadata }` (`conversational-ingest.adapter.ts:49-54`) — полей `fullText`/`transcript` нет. `SegmentBuilderService`: `tryAsMeeting` требует `transcript.turns` (`segment-builder.service.ts:89-94`) → null; `tryGetFullText` читает СТРОГО `payload.fullText` (`:81-85`) → null; падает в `buildFallback` (`:78,159-173`), который делает `JSON.stringify(payload)` и кладёт всю обёртку `kind/userId/metadata` в `Segment.text`. Дальше `buildBlockIngestPrompt` (`block-ingest.prompt.ts:542-552`) подставляет `s.text` дословно в LLM → извлечение деградирует на JSON-шуме. Канал «записи мыслей» работает хуже, чем должен.
 

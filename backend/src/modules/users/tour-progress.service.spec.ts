@@ -69,6 +69,17 @@ describe('TourProgressService.get', () => {
     const { svc } = buildDeps(undefined);
     await expect(svc.get('u-1')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('не вырезает overview и demo (фикс 400 на турах)', async () => {
+    const { svc } = buildDeps({
+      overview: { completedAt: '2026-06-03T10:00:00.000Z' },
+      demo: { skipped: true },
+    });
+    expect(await svc.get('u-1')).toEqual({
+      overview: { completedAt: '2026-06-03T10:00:00.000Z' },
+      demo: { skipped: true },
+    });
+  });
 });
 
 describe('TourProgressService.update', () => {
@@ -148,6 +159,25 @@ describe('TourProgressService.update', () => {
     await expect(
       svc.update('u-1', null, { tourId: 'welcome' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('update для overview больше не 400 — пишет и возвращает запись', async () => {
+    const { svc, update } = buildDeps({});
+    const res = await svc.update('u-1', 'org-1', {
+      tourId: 'overview',
+      completedAt: '2026-06-03T10:00:00.000Z',
+    });
+    expect(res).toEqual({
+      overview: { completedAt: '2026-06-03T10:00:00.000Z' },
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'u-1' },
+      data: {
+        tourProgress: {
+          overview: { completedAt: '2026-06-03T10:00:00.000Z' },
+        },
+      },
+    });
   });
 });
 

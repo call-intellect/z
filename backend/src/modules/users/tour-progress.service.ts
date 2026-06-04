@@ -22,9 +22,10 @@ import type { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-import type {
-  TourId,
-  TourProgressResponse,
+import {
+  TourIdSchema,
+  type TourId,
+  type TourProgressResponse,
 } from './dto/tour-progress.dto';
 
 interface TourEntry {
@@ -166,7 +167,7 @@ export class TourProgressService {
     if (typeof raw !== 'object' || Array.isArray(raw)) return {};
     const out: TourProgressResponse = {};
     const obj = raw as Record<string, unknown>;
-    for (const key of ['welcome', 'project', 'meeting'] as const) {
+    for (const key of TourIdSchema.options) {
       const entry = obj[key];
       if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
         const e = entry as Record<string, unknown>;

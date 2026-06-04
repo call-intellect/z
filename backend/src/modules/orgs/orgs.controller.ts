@@ -161,6 +161,7 @@ export class OrgsController {
       email: body.email ?? null,
       name: body.name ?? null,
       role: body.role,
+      personId: body.personId ?? null,
     });
     return { invitation };
   }

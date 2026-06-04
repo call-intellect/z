@@ -24,6 +24,12 @@ export const InviteMemberSchema = z.object({
   /** Имя сотрудника (для шаблона письма и карточки). */
   name: z.string().trim().min(1, 'Имя обязательно').max(120).optional(),
   role: z.enum(['admin', 'manager']).default('manager'),
+  /**
+   * Бизнес-Person, для которого создаётся приглашение (ТЗ «Команда + доступы»
+   * Фаза 0.1). Если задан — email/имя берутся из карточки (когда не переданы
+   * явно), а при accept'е Person.userId линкуется к новому пользователю.
+   */
+  personId: z.string().min(1).optional(),
 });
 
 export type InviteMemberDto = z.infer<typeof InviteMemberSchema>;

@@ -50,7 +50,7 @@
 
 ---
 
-## Ф1 — Vox/транскрибация: разорвать зацикленность ASR `[ ]`
+## Ф1 — Vox/транскрибация: разорвать зацикленность ASR `[x]`
 
 **Корень (pipelineMap «TranscribeWorker + VoxService», finding `transcribe-loop`, баг #2):** `transcribe.worker.ts:311` вызывает `this.vox.poll(submitted.taskId)` БЕЗ опций → дефолты `vox.service.ts:20-21` (`DEFAULT_POLL_INTERVAL_MS=2000`, `DEFAULT_POLL_MAX_ATTEMPTS=60`) = жёсткий потолок **120с**. Аудио ~27 мин (durationSeconds=1617) Vox `v3_rnnt` не успевает за 120с, честно держит `PROCESSING` → `vox.service.ts:246-251` throw `VoxError('Vox poll timeout')` → `transcribe.worker.ts:322-324` rethrow, job падает. `TranscriptTrack` создаётся ТОЛЬКО после успешного poll (`transcribe.worker.ts:350-362`), а poll всегда падает → для дорожки №1 строка не пишется никогда. Очередь `ai.transcribe` берёт `DEFAULT_JOB_OPTIONS` attempts=5 (`queues.ts:67-72`) → BullMQ ретраит С НАЧАЛА: `transcribe.worker.ts:174` итерирует `audioTracks` с idx=0 (host), `transcribe.worker.ts:306` делает новый `vox.submit` → новый taskId каждый retry. Идемпотентность `transcribe.worker.ts:139-143` (по `tracks.length>0`) не срабатывает (треков 0). Итог: 5 заходов, 5 taskId, дальше дорожки №1 не уходит.
 

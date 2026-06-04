@@ -264,6 +264,8 @@ export class TypedConfigService {
         model: this.get('VOX_MODEL'),
         language: this.get('VOX_LANGUAGE'),
         punctuationMode: this.get('VOX_PUNCTUATION_MODE'),
+        pollIntervalMs: this.get('VOX_POLL_INTERVAL_MS'),
+        pollMaxAttempts: this.get('VOX_POLL_MAX_ATTEMPTS'),
       },
       openai: {
         apiKey: this.get('OPENAI_API_KEY'),

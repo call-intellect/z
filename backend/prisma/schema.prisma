@@ -1258,6 +1258,7 @@ model AudioTrack {
   livekitIdentity String
   trackId         String
   trackEgressId   String?
+  voxTaskId       String?
   audioUrl        String
   startedAt       DateTime
   endedAt         DateTime
@@ -1302,6 +1303,7 @@ model TranscriptTrack {
   /// Array<{ word: string; startMs: number; endMs: number }>
   words           Json
 
+  @@unique([transcriptId, livekitIdentity])
   @@index([transcriptId])
 }
 

@@ -57,7 +57,7 @@ describe('OrgsService.listTeamRoster', () => {
         primaryDepartment: { id: 'dep-1', name: 'Продажи' },
         personRoles: [{ role: { id: 'r-pr', name: 'PersonRole-должность' } }],
         appointments: [{ role: { id: 'r-app', name: 'Менеджер' } }],
-        invitations: [{ status: 'accepted' }],
+        invitations: [{ id: 'inv-1', status: 'accepted' }],
       },
     ]);
     prisma.membership.findMany.mockResolvedValue([
@@ -92,6 +92,7 @@ describe('OrgsService.listTeamRoster', () => {
       systemRole: 'manager',
       hasPersonCard: true,
       telegramLinked: true,
+      invitationId: 'inv-1',
     });
 
     const ownerRow = roster.find((r) => r.userId === 'u-owner');
@@ -101,6 +102,7 @@ describe('OrgsService.listTeamRoster', () => {
       fullName: 'Влад Владельцев',
       systemRole: 'owner',
       invitationStatus: 'accepted',
+      invitationId: null,
       hasPersonCard: false,
       telegramLinked: false,
     });

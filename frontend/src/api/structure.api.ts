@@ -124,6 +124,7 @@ export interface TeamRosterItemApi {
   departmentId: string | null;
   departmentName: string | null;
   invitationStatus: 'none' | 'pending' | 'accepted' | 'revoked' | 'expired';
+  invitationId: string | null;
   systemRole:
     | 'owner'
     | 'admin'

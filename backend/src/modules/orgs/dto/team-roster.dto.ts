@@ -15,6 +15,7 @@ export const TeamRosterItemSchema = z.object({
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   invitationStatus: z.enum(['none', 'pending', 'accepted', 'revoked', 'expired']),
+  invitationId: z.string().nullable(),
   systemRole: z
     .enum(['owner', 'admin', 'manager', 'coo', 'hr_partner', 'demo_observer'])
     .nullable(),
